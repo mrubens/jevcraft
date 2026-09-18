@@ -4,6 +4,13 @@ const { TypeSafe } = require('../src/typesafe');
 const { interpret } = require('../src/objectives');
 const fs = require('fs');
 const cases = [
+  ['Jev please make it daytime', { kind: 'operator_command' }],
+  ['Jev teleport me to you', { kind: 'operator_command' }],
+  ['Jev put me in Creative', { kind: 'operator_command' }],
+  ['Jev summon a cow', { kind: 'operator_command' }],
+  ['Jev get me a command block', { kind: 'obtain', item: 'command_block', count: 1 }],
+  ['Jev do not change the time', { kind: 'other' }],
+  ['Jev what does teleport do?', { kind: 'other' }],
   ['Jev get me three grass blocks', { kind: 'obtain', item: 'grass_block', count: 3, deliver: true }],
   ['jev get me a pumpkin', { kind: 'obtain', item: 'pumpkin', count: 1, deliver: true }],
   ['Jev build a house', { kind: 'house', material: 'oak_planks' }],

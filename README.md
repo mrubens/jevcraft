@@ -56,6 +56,20 @@ State is stored under `.bot-state/`, separately for each server and bot identity
 
 In Creative mode, Jev takes requested items and building materials directly from the Creative inventory, preserves existing inventory slots, and confirms server inventory updates. Item delivery still checks actual recipient pickup. This path is gated by the bot's server-reported Creative mode and is unavailable in Survival. Normal walking/following is supported; following a player through the air is not implemented.
 
+## Requested operator commands
+
+The player world enables command blocks and gives Jev operator level 4. `MC_COMMAND_USERS` lists the player names allowed to request operator commands (currently DoloresDoodle in the local configuration). An empty list disables this entry point.
+
+- `Jev get me a command block` uses the Creative inventory and ordinary verified delivery.
+- `Jev please make it daytime`, `Jev stop the rain`, or `Jev set the difficulty to peaceful` change world settings.
+- `Jev teleport me to you` moves the speaker to Jev; `Jev teleport yourself to me` moves Jev to the speaker.
+- `Jev put me in Creative`, `Jev summon a cow at my position`, and `Jev enable keep inventory when we die` are also classified from natural language.
+- Exact commands remain available with `Jev run /...`, for example `Jev run /time query daytime`. They execute as Jev, so `@s` and relative coordinates refer to Jev.
+
+`src/command-classifier.js` builds nested Jev choices from the actual server command tree, then selects typed arguments from server completions, the item catalog, online players, observed positions, and values present in the request. The current 26.1 operator catalog exposes 90 root commands. A final semantic check compares the assembled command with the request before dispatch. This is selection and validation, with no generated command text. Complex free-form NBT/JSON or missing arguments may require an exact command; catalog coverage does not mean every phrasing or argument form is understood.
+
+Commands require a fresh player-chat event from an allowed sender. They are unavailable to the autonomous planner, and ordinary bot speech cannot send slash commands. Commands pause active work, append the request, classification judgments, and dispatch record to `.bot-state/<identity>-commands.jsonl`, and are never replayed by resume, restart, or failure recovery. Server replies are relayed when received. Ask a new command explicitly to run it again. Operator permissions do not make normal gathering/building switch to commands on its own.
+
 ## Execution
 
 `src/objectives.js` batches independent Jev questions for outcome, quantity, delivery, and player target. Quantity options come from numbers/phrases actually present in the request. `src/catalog.js` builds nested choices from all 1,506 registry items, with lexical hints and bounded category/family/variant branches. Jev traverses those choices; there is no fixed item-command whitelist. `src/knowledge.js` expands 887 craftable outputs and 61 smeltable outputs from the server's recipe and loot data in `data/vanilla-26.1.json`, including ingredient alternatives, harvest tools, and special drops. Regenerate it with `python3 scripts/extract-knowledge.py <inner-server-26.1.jar>`. Known recipes and arithmetic stay in code. Jev selects among feasible observed resource targets, with recorded decisions and stale-state checks.
@@ -86,6 +100,7 @@ npm run plan
 node scripts/eval-intents.js
 node scripts/eval-decisions.js
 node scripts/eval-survival.js
+MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/commands-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/movement-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 ACCEPT_SCENARIO=controlled node scripts/shelter-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 ACCEPT_SCENARIO=controlled node scripts/food-test.js
@@ -95,6 +110,8 @@ MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- find a way to 
 ```
 
 The acceptance runner joins with a new player identity, checks that its inventory is empty and its mode is survival, interprets the actual request through Jev, and records events plus the saved goal under `artifacts/<run-id>/`. It never grants items, teleports, or changes game mode. The default deadline is 30 minutes (`ACCEPT_TIMEOUT_MS` overrides it).
+
+The separate operator-command test prints its temporary identities and setup file. On an isolated fixture, grant those identities OP, set the bot to Creative and time to night, then create the printed setup file. It verifies requested commands and observed effects, impersonation rejection, ordinary item delivery, and restart without command replay. Remove the temporary OP roles afterward. `scripts/eval-commands.js` additionally checks ten natural-language requests against a read-only command-catalog connection named TreeProbe on port 25567, which needs temporary OP to see the full tree; it never dispatches the inferred commands.
 
 Set `ACCEPT_CYCLES=2` on a fresh Normal trial to continue autonomous survival after the useful request completes. Success then also requires 48,000 uninterrupted world ticks since the initial empty-inventory observation. The runner rejects resumed cycle trials and records death or other failures. This mode has a 55-minute default deadline.
 

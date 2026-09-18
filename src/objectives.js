@@ -8,6 +8,7 @@ const { chatNames, parseAddress } = require('./chat-address');
 const { resolveItem } = require('./catalog');
 
 const TYPES = {
+  operator_command: 'Ask for a Minecraft command effect: change time, weather, difficulty, or player game mode (Creative, Survival, Adventure, Spectator); teleport; summon; change rules, effects, enchantments, experience, scores, permissions, or other server command settings. "Put me in Creative" changes game mode. Polite action questions are requests. Never use commands merely as a means to build, craft, collect, or follow. Stop this bot task is stop. Informational questions, quotes and negated commands are other.',
   house: 'Build a small house or shelter.',
   obtain: 'Get, gather, collect, bring or give a Minecraft item or block, of any kind.',
   craft: 'Make or craft an inventory item such as a tool, chest, stairs, planks, or other recipe output.',
@@ -17,7 +18,7 @@ const TYPES = {
   stop: 'Stop or cancel the current task.',
   status: 'Report progress on the current task.',
   resume: 'Continue or retry the saved task.',
-  other: 'Conversation or a request that is not an item goal, house, Nether route, movement, or task control.',
+  other: 'Conversation, informational questions, negated instructions, or unsupported requests. Excludes item goals, houses, Nether routes, movement, task controls AND explicit operator actions such as changing time/weather/game mode or teleporting.',
 };
 
 // Candidate extraction is exact code; Jev selects which mentioned quantity
@@ -53,7 +54,7 @@ async function interpret(client, request, from, username, context = {}) {
       availablePlayers: context.players || [from] },
     questions: {
       addressed: noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.'),
-      objective: choice('Categorize the requested outcome in `request`. Item requests belong to obtain or craft regardless of which particular Minecraft item is named. Recipes and feasibility are checked after routing. A placed house is house; crafting an item is craft. Coming once differs from continuously following.', TYPES),
+      objective: choice('Categorize the requested outcome in `request` in the Minecraft game. Creative, Survival, Adventure and Spectator name game modes even when the word "mode" is omitted. Item requests belong to obtain or craft regardless of which particular Minecraft item is named. Recipes and feasibility are checked after routing. A placed house is house; crafting an item is craft. Coming once differs from continuously following. Changing the world or player with an explicitly requested command effect is operator_command.', TYPES),
       quantity: choice('Assuming an item request, select the quantity applying to the requested output. Candidates were extracted from this request. "A/an" or "a single" item means 1. Stacks contain 64 items. If no requested output quantity is stated, select unspecified; do not invent a batch size.',
         { ...Object.fromEntries(numbers.map(n => [n, `${n} items requested by a quantity in the message`])), unspecified: 'No stated output quantity; the application will use its default.' }),
       delivery: noul('Assuming an item request, does the player ask the bot to bring, give, or fetch the item for them? "Get me" includes delivery; "craft a chest" by itself only asks the bot to make and retain it.'),

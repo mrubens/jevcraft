@@ -13,7 +13,9 @@ async function approachForHandover(bot, task, receiver) {
     const p = origin.offset(x, y, z);
     const center = p.offset(0.5, 0, 0.5);
     const distance = center.distanceTo(receiver.position);
-    if (distance < 2.2 || distance > 3 || Math.abs(center.y - receiver.position.y) > 0.6) continue;
+    // GoalBlock can stop slightly short of the block center. Leave room
+    // inside the three-block handover limit instead of selecting its edge.
+    if (distance < 2.2 || distance > 2.6 || Math.abs(center.y - receiver.position.y) > 0.6) continue;
     if (bot.blockAt(p)?.boundingBox !== 'empty' || bot.blockAt(p.offset(0, 1, 0))?.boundingBox !== 'empty' ||
         bot.blockAt(p.offset(0, -1, 0))?.boundingBox !== 'block') continue;
     if (['water', 'lava'].includes(bot.blockAt(p)?.name)) continue;

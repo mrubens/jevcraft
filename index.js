@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const mineflayer = require('mineflayer');
 const { pathfinder } = require('mineflayer-pathfinder');
 const { configureMovements } = require('./src/movement');
@@ -11,6 +12,8 @@ const { runGoal, runIdle, createSurvival } = require('./src/work');
 const { Task } = require('./src/skills');
 const { parseAddress } = require('./src/chat-address');
 const { compatibilityPlugin } = require('./src/compatibility');
+const { requestedCommand, createCommandAccess } = require('./src/commands');
+const { classifyCommand } = require('./src/command-classifier');
 
 const config = {
   host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
@@ -22,6 +25,17 @@ const bot = mineflayer.createBot(config);
 bot.loadPlugin(compatibilityPlugin);
 bot.loadPlugin(pathfinder);
 const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+const commandLog = path.join(__dirname, '.bot-state', `${identity}-commands.jsonl`);
+bot._client.on('declare_commands', tree => {
+  bot.commandTree = tree;
+  fs.mkdirSync(path.dirname(commandLog), { recursive: true });
+  fs.writeFileSync(path.join(__dirname, '.bot-state', `${identity}-command-tree.json`), JSON.stringify(tree));
+});
+let commandAccess;
+bot.loadPlugin(() => { commandAccess = createCommandAccess(bot, {
+  users: (process.env.MC_COMMAND_USERS || '').split(',').map(name => name.trim()).filter(Boolean),
+  audit: event => { fs.mkdirSync(path.dirname(commandLog), { recursive: true }); fs.appendFileSync(commandLog, JSON.stringify(event) + '\n'); },
+}); });
 const store = new GoalStore(path.join(__dirname, '.bot-state', `${identity}.json`));
 const survivalStore = new GoalStore(path.join(__dirname, '.bot-state', `${identity}-survival.json`));
 const idleStore = new GoalStore(path.join(__dirname, '.bot-state', `${identity}-idle.json`));
@@ -85,8 +99,13 @@ const idleTimer = setInterval(() => {
   if (ready && !active && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
 }, 500);
 
-bot.on('chat', (from, request) => {
-  if (from === bot.username) return;
+bot._client.on('playerChat', data => {
+  const player = Object.values(bot.players).find(p => p.uuid === data.sender);
+  if (!player || player.username === bot.username || typeof data.plainMessage !== 'string') return;
+  const from = player.username, request = data.plainMessage;
+  let literal;
+  try { literal = requestedCommand(request, bot.username); }
+  catch (err) { bot.chat(err.message); return; }
   const address = parseAddress(request, bot.username);
   // Acknowledgements from other bots must never start new work. New goals
   // require an explicit name; short controls remain convenient when unprefixed.
@@ -102,11 +121,34 @@ bot.on('chat', (from, request) => {
   const revision = generation;
   pendingRequests++;
   pending = pending.then(async () => {
-    const spec = await interpret(client, request, from, bot.username, {
+    const spec = literal ? { kind: 'operator_command' } : await interpret(client, request, from, bot.username, {
       registry: bot.registry, players: Object.keys(bot.players),
       inventory: Object.fromEntries(bot.inventory.items().map(item => [item.name, item.count])),
     });
     if (!spec || revision !== generation) return;
+    if (spec.kind === 'operator_command') {
+      const allowed = (process.env.MC_COMMAND_USERS || '').split(',').map(name => name.trim().toLowerCase());
+      if (!allowed.includes(from.toLowerCase())) { bot.chat(`${from} is not enabled for Jev's operator commands`); return; }
+      const resolution = literal ? { command: literal } : await classifyCommand(client, bot, request, from);
+      if (revision !== generation) return;
+      const command = commandAccess.accept(data, { resolvedCommand: resolution.command, interpretation: { routing: spec.interpretation, command: resolution.judgments } });
+      if (!command) return;
+      await stop('interrupted');
+      if (revision !== generation) return;
+      survival.state.paused = true; saveSurvival();
+      const feedback = [];
+      const collect = (message, position, original, sender) => {
+        if (position === 'system' && sender == null && feedback.length < 4) feedback.push(message);
+      };
+      bot.on('messagestr', collect);
+      try {
+        bot.chat(`Running your command once: ${command.command}`);
+        command.dispatch();
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } finally { bot.removeListener('messagestr', collect); }
+      for (const reply of feedback) bot.chat(`Command response: ${reply}`);
+      return;
+    }
     if (spec.kind === 'status') {
       const g = active?.goal || store.read();
       bot.chat(active?.idle ? `Between requests: ${g.lastError || g.survivalAction?.action || 'watching survival needs'}. Health ${bot.health}, food ${bot.food}.` :
