@@ -2,10 +2,8 @@
 
 // Minimal TypeSafe System One client.
 //
-// The official @typesafe-ai/sdk needs Node 20 and this machine is on 18, so we
-// talk to POST /v1/systemone directly. Node 18 has global fetch, which is all
-// the endpoint needs. The request and response shapes below mirror the SDK's
-// types exactly, so swapping the SDK back in later is a drop-in change.
+// Uses the documented POST /v1/systemone endpoint with native fetch. Keep
+// credentials here; decision code passes only state and typed questions.
 
 const BASE_URL = process.env.TYPESAFE_BASE_URL || 'https://api.typesafe.ai';
 const MODEL = process.env.TYPESAFE_DEFAULT_MODEL || 'jev-latest';
@@ -42,16 +40,16 @@ class TypeSafe {
   }
 
   // Ask a batch of questions about one state. Every question is answered
-  // independently and in parallel server-side, so speculative questions cost
-  // tokens but no extra latency.
-  async systemOne({ state, questions, model = this.model }) {
+  // independently server-side. Measure latency and token use for each workload.
+  async systemOne({ state, questions, model = this.model, signal }) {
     const body = JSON.stringify({ state, questions, model });
     let lastErr;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      signal?.throwIfAborted();
       if (attempt > 0) {
         const backoff = Math.min(500 * 2 ** (attempt - 1), 5000);
-        await new Promise((r) => setTimeout(r, backoff * (1 - Math.random() * 0.25)));
+        await require('node:timers/promises').setTimeout(backoff * (1 - Math.random() * 0.25), undefined, { signal });
       }
 
       const controller = new AbortController();
@@ -64,7 +62,7 @@ class TypeSafe {
             'Content-Type': 'application/json',
           },
           body,
-          signal: controller.signal,
+          signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
         });
 
         const requestId = res.headers.get('x-request-id') || undefined;
@@ -84,6 +82,7 @@ class TypeSafe {
 
         return JSON.parse(text);
       } catch (err) {
+        signal?.throwIfAborted();
         // Timeouts and connection failures are worth another attempt; a 4xx is not.
         if (err instanceof TypeSafeError && !RETRY_STATUSES.has(err.status)) throw err;
         lastErr = err;

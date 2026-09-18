@@ -9,7 +9,8 @@ const { deliver } = require('./delivery');
 const { reservedForConstruction, portalSiteClear, selectPortalSite } = require('./build-sites');
 const { updateDigCapabilities } = require('./movement');
 const { tunnelStep } = require('./tunneling');
-const { maintainVitals, checkAir, digWithAirGuard } = require('./vitals');
+const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = require('./vitals');
+const { decideTree } = require('./decisions');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -175,11 +176,11 @@ async function explore(bot, task, goal, save, resource) {
   }
 }
 
-async function mine(bot, task, step, goal, save) {
+function miningCandidates(bot, step, goal) {
   const names = Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
   if (step.drops === 'flint') names.push('gravel');
   const ids = names.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
-  const candidates = bot.findBlocks({ matching: ids, maxDistance: 48, count: 32,
+  return bot.findBlocks({ matching: ids, maxDistance: 48, count: 32,
     useExtraInfo: b => faces.some(f => {
       const neighbor = bot.blockAt(b.position.plus(f));
       return air(neighbor) || neighbor?.name === 'water';
@@ -189,8 +190,13 @@ async function mine(bot, task, step, goal, save) {
     const k = `${p}`;
     return !goal.unreachable?.[k] || Date.now() - goal.unreachable[k] > 120000;
   });
+}
+
+async function mine(bot, task, step, goal, save, selected) {
+  const candidates = selected ? [selected] : miningCandidates(bot, step, goal);
   if (!candidates.length) {
     if (step.depth !== null && step.depth !== undefined) {
+      const names = Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
       const ore = find(bot, names, 64, 16)[0];
       const target = ore || bot.entity.position.floored().offset(24, step.depth - bot.entity.position.floored().y, 0);
       await tunnelStep(bot, task, goal, save, target, { dig, navigate });
@@ -218,6 +224,7 @@ async function mine(bot, task, step, goal, save) {
     goal.unreachable[`${p}`] = Date.now();
   }
   save();
+  if (selected) throw new Error(goal.lastMiningError || `No ${step.drops} collected at ${selected}`);
   await explore(bot, task, goal, save, step.block);
 }
 
@@ -422,6 +429,133 @@ async function buildHouseStep(bot, task, goal, save) {
   return verifyHouse(bot, blueprint).ok;
 }
 
+function decisionObservation(bot, goal) {
+  const hostiles = new Set(['zombie', 'husk', 'drowned', 'skeleton', 'stray', 'creeper', 'spider', 'cave_spider', 'witch', 'pillager', 'phantom']);
+  return {
+    playerRequest: goal.request, retainedGoal: goal.kind,
+    inventory: planningInventory(bot), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel,
+    survivalFacts: { healthMaximum: 20, hungerMaximum: 20, hungerNeedsAttention: bot.food <= 16,
+      injured: bot.health < 20, hungerAllowsNaturalHealing: bot.food >= 18, safeFoodCarried: !!chooseFood(bot) },
+    dimension: bot.game.dimension, position: { ...bot.entity.position.floored() },
+    daylight: bot.time?.timeOfDay < 12000 ? 'day' : bot.time?.timeOfDay < 23000 ? 'night' : 'dawn',
+    nearbyThreats: Object.values(bot.entities || {}).filter(e => hostiles.has(e.name) && e.position.distanceTo(bot.entity.position) < 24)
+      .map(e => ({ id: e.id, name: e.name, distance: Math.round(e.position.distanceTo(bot.entity.position)) })),
+    recentFailures: goal.decisionFailures || {},
+  };
+}
+
+async function houseDecisionStep(bot, task, goal, save, client, onStep) {
+  if (goal.blueprint && !bot.blockAt(pos(goal.blueprint.origin))) {
+    const home = pos(goal.blueprint.entrance);
+    goal.step = { action: 'return_to_site', position: { ...home } }; save();
+    await navigate(bot, task, new goals.GoalNear(home.x, home.y, home.z, 2));
+    return false;
+  }
+  if (goal.blueprint && verifyHouse(bot, goal.blueprint).ok) return true;
+  const subtasks = {};
+  const leaf = (description, run, valid = () => true) => ({ description, run, valid });
+  if (!goal.blueprint) {
+    const site = selectSite(bot, goal.material);
+    subtasks.choose_site = { description: 'Select and reserve a level house site before construction.', children: {
+      [site ? 'reserve_site' : 'survey_ground']: site
+        ? leaf(`Reserve the inspected building site at ${pos(site.origin)}.`, async () => { goal.blueprint = site; save(); })
+        : leaf('Walk to another surveyed dry area to look for a level building site.', () => explore(bot, task, goal, save, 'flat building site')),
+    } };
+  }
+  const missing = goal.blueprint ? goal.blueprint.blocks.filter(p => bot.blockAt(pos(p))?.name !== p.material) : houseBlueprint(bot.entity.position, goal.material).blocks;
+  const stock = planningInventory(bot);
+  if ((stock[goal.material] || 0) < missing.length) {
+    const inv = { ...stock };
+    for (const station of ['crafting_table', 'furnace']) if (find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
+    const step = planFor(goal.material, missing.length, inv)[0];
+    const actions = {};
+    if (step?.action === 'mine') {
+      for (const p of miningCandidates(bot, step, goal).slice(0, 16)) {
+        if (Object.keys(actions).length >= 4) break;
+        // Do not ask Jev to choose unsupported targets such as the trunk it
+        // stands on or floating remnants with no currently feasible approach.
+        if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) continue;
+        if (!bot.canDigBlock(bot.blockAt(p))) {
+          const route = bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalGetToBlock(p.x, p.y, p.z), 300);
+          if (route.status !== 'success') continue;
+        }
+        const name = bot.blockAt(p).name;
+        const key = `gather_${p.x}_${p.y}_${p.z}`;
+        actions[key] = leaf({ action: bot.canDigBlock(bot.blockAt(p)) ? 'dig and collect' : 'approach, dig and collect',
+          block: name, position: { ...p }, distance: Math.round(p.distanceTo(bot.entity.position)),
+          elevationChange: p.y - Math.floor(bot.entity.position.y), resourceNeeded: step.drops },
+        async () => { goal.step = step; save(); await mine(bot, task, step, goal, save, p); },
+        () => bot.blockAt(p)?.name === name);
+      }
+      if (!Object.keys(actions).length) actions.explore_resource = leaf(`Search for a reachable source of ${step.drops}.`, () => acquireStep(bot, task, goal.material, missing.length, goal, save));
+    } else {
+      actions[step?.action || 'prepare_material'] = leaf(`Execute the next verified recipe dependency: ${JSON.stringify(step)}.`, () => acquireStep(bot, task, goal.material, missing.length, goal, save));
+    }
+    subtasks.gather_materials = { description: `Obtain materials: ${stock[goal.material] || 0} ${goal.material} carried, ${missing.length} blocks remain to build.`, children: actions };
+  }
+  if (goal.blueprint) {
+    const obstructed = goal.blueprint.empty.filter(p => !air(bot.blockAt(pos(p))));
+    const clear = {};
+    for (const p of obstructed.slice(0, 3)) {
+      if (!bot.blockAt(pos(p))?.diggable) continue;
+      clear[`clear_${p.x}_${p.y}_${p.z}`] = leaf(`Clear ${bot.blockAt(pos(p)).name} from the house interior at ${pos(p)}.`, () => dig(bot, task, pos(p)));
+    }
+    if (Object.keys(clear).length) subtasks.clear_interior = { description: 'Clear the interior and doorway so the house remains traversable.', children: clear };
+    if ((stock[goal.material] || 0) > 0 && missing.length) {
+      const layer = Math.min(...missing.map(p => p.y));
+      const actions = {};
+      for (const p of missing.filter(p => p.y === layer).slice(0, 4)) {
+        const q = pos(p);
+        const block = bot.blockAt(q);
+        const empty = air(block);
+        if ((!empty && !block?.diggable) || (empty && !faces.some(f => bot.blockAt(q.plus(f))?.boundingBox === 'block'))) continue;
+        const key = `${empty ? 'place' : 'clear'}_${p.x}_${p.y}_${p.z}`;
+        if (goal.decisionFailures?.[key]?.at > Date.now() - 120000) continue;
+        actions[key] = leaf(`${empty ? `Place ${p.material}` : `Clear ${block.name} for construction`} at ${q}; build the lowest unfinished layer first.`, async () => {
+          goal.step = { action: empty ? 'place' : 'clear', position: { ...q }, material: p.material }; save();
+          if (empty) await place(bot, task, q, p.material); else await dig(bot, task, q);
+        }, () => bot.blockAt(q)?.name === block.name);
+      }
+      if (Object.keys(actions).length) subtasks.build = { description: 'Use carried materials to construct the foundation, walls, then roof.', children: actions };
+    }
+  }
+  if (!Object.keys(subtasks).length) throw new Blocked('No feasible house action remains; inspect the saved construction failures');
+  const tree = { build_house: { description: 'Continue the retained player request to build a house.', children: subtasks } };
+  if (chooseFood(bot) && (bot.food <= 16 || (bot.health <= 12 && bot.food < 20))) {
+    tree.restore_food = { description: 'Pause house work to restore hunger and allow health regeneration.', children: {
+      eat_carried_food: { description: 'Eat a safe food item already in inventory.', children: {
+        eat: leaf('Eat and verify that hunger increased, retaining the house goal.', () => maintainVitals(bot, task, step => { goal.survivalAction = step; save(); })),
+      } },
+    } };
+  }
+  const state = decisionObservation(bot, goal);
+  const fingerprint = JSON.stringify(state);
+  const controller = new AbortController();
+  const watcher = setInterval(() => {
+    try { task.check(); checkAir(bot); }
+    catch (err) { controller.abort(err); }
+  }, 100);
+  let decision;
+  try {
+    decision = await decideTree(client, { state, tree, signal: controller.signal,
+      isFresh: () => JSON.stringify(decisionObservation(bot, goal)) === fingerprint });
+  } finally { clearInterval(watcher); }
+  task.check(); checkAir(bot);
+  const record = { at: new Date().toISOString(), path: decision.path, latencyMs: decision.latencyMs,
+    usage: decision.usage, judgments: decision.judgments, stale: decision.stale || !decision.action.valid() };
+  goal.decisions ||= []; goal.decisions.push(record); goal.decisions = goal.decisions.slice(-40);
+  save(); onStep(goal);
+  if (record.stale) return false;
+  try { await decision.action.run(); }
+  catch (err) {
+    task.check(); if (err.name === 'NeedsAir') throw err;
+    goal.decisionFailures ||= {};
+    goal.decisionFailures[decision.path.at(-1)] = { at: Date.now(), reason: err.message };
+    throw err;
+  }
+  return !!goal.blueprint && verifyHouse(bot, goal.blueprint).ok;
+}
+
 async function netherStep(bot, task, goal, save) {
   if (String(bot.game.dimension).includes('nether')) return true;
   const portal = find(bot, ['nether_portal'], 64, 1)[0];
@@ -478,7 +612,7 @@ async function netherStep(bot, task, goal, save) {
   return false;
 }
 
-async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () => {} } = {}) {
+async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () => {}, decisionClient } = {}) {
   const save = () => store.save(goal);
   const movements = bot.pathfinder.movements;
   movements.exclusionAreasBreak = (movements.exclusionAreasBreak || []).filter(rule => rule !== bot._constructionProtection);
@@ -492,12 +626,16 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
     const location = bot.entity.position.clone();
     try {
       let complete = false;
-      await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
+      // Immediate air/critical hunger responses stay in code. For house work,
+      // Jev chooses ordinary eating interruptions alongside task progress.
+      if (!decisionClient || goal.kind !== 'house' || needsAir(bot) || bot.food <= 6 || bot.health <= 6) {
+        await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
+      }
       const needsSupplies = !goal.expeditionReady && (
         (goal.kind === 'concrete' && countOf(bot, 'purple_concrete') + (goal.delivered || 0) < goal.count && !goal.pendingDelivery) ||
         (goal.kind === 'nether' && !String(bot.game.dimension).includes('nether') && !find(bot, ['nether_portal'], 64, 1).length && !goal.portalFrame));
       const prepared = !needsSupplies || await prepareExpeditionStep(bot, task, goal, save);
-      if (prepared && goal.kind === 'house') complete = await buildHouseStep(bot, task, goal, save);
+      if (prepared && goal.kind === 'house') complete = decisionClient ? await houseDecisionStep(bot, task, goal, save, decisionClient, onStep) : await buildHouseStep(bot, task, goal, save);
       if (prepared && goal.kind === 'concrete') {
         if ((goal.delivered || 0) >= goal.count) complete = true;
         else if (goal.pendingDelivery || await acquireStep(bot, task, 'purple_concrete', goal.count - (goal.delivered || 0), goal, save)) {

@@ -69,6 +69,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
     const started = Date.now();
     let lastProgress = started;
     let previous = bot.entity.position.clone();
+    const visited = new Set([`${previous.floored()}`]);
     timer = setInterval(() => {
       if (stopWhen?.()) {
         acquired = true;
@@ -83,8 +84,15 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
         bot.clearControlStates?.();
         return;
       }
-      if (bot.entity.position.distanceTo(previous) >= 1) { previous = bot.entity.position.clone(); lastProgress = Date.now(); }
+      if (bot.entity.position.distanceTo(previous) >= 1) {
+        previous = bot.entity.position.clone();
+        const cell = `${previous.floored()}`;
+        if (!visited.has(cell)) { visited.add(cell); lastProgress = Date.now(); }
+      }
       if (task.cancelled || Date.now() - started > timeoutMs || Date.now() - lastProgress > stallMs) {
+        if (!task.cancelled) bot.emit?.('navigation_stall', { position: { ...bot.entity.position }, goal,
+          controls: { ...bot.controlState }, inWater: bot.entity.isInWater, oxygen: bot.oxygenLevel,
+          feet: bot.blockAt?.(bot.entity.position)?.name, head: bot.blockAt?.(bot.entity.position.offset(0, 1.62, 0))?.name });
         bot.pathfinder.setGoal(null);
         reject(task.cancelled ? new Cancelled(task.label) : new Error('navigation timed out'));
       }

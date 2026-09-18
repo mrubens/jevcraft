@@ -97,3 +97,14 @@ test('resource pickup ends a mining approach without excavating the rest of the 
   assert(stopped);
   assert.equal(bot.entity.position.y, 64);
 });
+
+test('bobbing in place does not indefinitely reset the navigation stall timer', async () => {
+  const { navigate } = require('../src/skills');
+  const bot = { entity: { position: new Vec3(0, 62, 0), isInWater: true },
+    pathfinder: { goto: () => new Promise(() => {}), setGoal: () => {} } };
+  const motion = setInterval(() => { bot.entity.position.y = bot.entity.position.y === 62 ? 64 : 62; }, 80);
+  const started = Date.now();
+  try { await assert.rejects(navigate(bot, new Task('test', 'swim'), {}, { timeoutMs: 2000, stallMs: 300 }), /timed out/); }
+  finally { clearInterval(motion); }
+  assert(Date.now() - started < 1500);
+});

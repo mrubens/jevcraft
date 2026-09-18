@@ -12,6 +12,7 @@ const { TypeSafe } = require('../src/typesafe');
 const { interpret, GoalStore, verifyHouse } = require('../src/objectives');
 const { runGoal, inventory } = require('../src/work');
 const { Task } = require('../src/skills');
+const client = new TypeSafe();
 const request = process.argv.slice(2).join(' ') || 'build a house';
 const resumeId = process.env.ACCEPT_RESUME;
 if (resumeId && !/^[a-z0-9]+$/.test(resumeId)) throw new Error('Invalid resume run id');
@@ -19,6 +20,7 @@ const id = resumeId || Date.now().toString(36);
 const username = `Trial${id}`;
 const directory = path.join(__dirname, '..', 'artifacts', id);
 fs.mkdirSync(directory, { recursive: true });
+const goalStore = new GoalStore(path.join(directory, 'goal.json'));
 const log = entry => { console.log(JSON.stringify(entry)); fs.appendFileSync(path.join(directory, 'events.jsonl'), JSON.stringify(entry) + '\n'); };
 const bot = mineflayer.createBot({
   host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
@@ -32,9 +34,16 @@ const timer = setTimeout(() => { task.cancel(); bot.pathfinder.setGoal(null); bo
 bot.on('chat', (from, message) => { if (from === username) log({ chat: message }); });
 bot.on('death', () => {
   log({ death: true, position: bot.entity.position, dimension: bot.game.dimension, inventory: inventory(bot) });
+  const saved = goalStore.read();
+  if (saved) {
+    saved.status = 'failed'; saved.lastError = 'Death during acceptance';
+    saved.death = { at: new Date().toISOString(), position: { ...bot.entity.position }, dimension: bot.game.dimension };
+    goalStore.save(saved);
+  }
   task.cancel(); bot.pathfinder.setGoal(null); bot.clearControlStates(); bot.stopDigging();
 });
 bot.on('health', () => log({ health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, position: bot.entity?.position }));
+bot.on('navigation_stall', details => log({ navigationStall: details }));
 let lastUnsafeRouteLog = 0;
 bot.on('path_update', route => {
   const points = [bot.entity.position, ...(route.path || [])];
@@ -54,9 +63,9 @@ bot.once('spawn', async () => {
     if (!resumeId && Object.keys(initial).length) throw new Error('Acceptance requires empty inventory');
     if (bot.game.gameMode !== 'survival') throw new Error(`Acceptance requires survival; got ${bot.game.gameMode}`);
     if (process.env.ACCEPT_DIFFICULTY && bot.game.difficulty !== process.env.ACCEPT_DIFFICULTY) throw new Error(`Expected ${process.env.ACCEPT_DIFFICULTY} difficulty; got ${bot.game.difficulty}`);
-    const saved = resumeId ? new GoalStore(path.join(directory, 'goal.json')).read() : null;
+    const saved = resumeId ? goalStore.read() : null;
     if (resumeId && (!saved || Object.keys(saved.initialInventory || {}).length)) throw new Error('Missing original empty-inventory evidence');
-    const spec = saved || await interpret(new TypeSafe(), `${username}, ${request}`, 'TestPlayer', username);
+    const spec = saved || await interpret(client, `${username}, ${request}`, 'TestPlayer', username);
     if (!spec || !['house', 'concrete', 'nether'].includes(spec.kind)) throw new Error('Jev did not recognize acceptance request');
     if (spec.kind === 'concrete') {
       receiver = mineflayer.createBot({ host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
@@ -72,8 +81,9 @@ bot.once('spawn', async () => {
     }
     if (resumeId) log({ resumed: resumeId, inventory: initial, originalCreatedAt: goal.createdAt });
     log({ start: { kind: goal.kind, count: goal.count, request: goal.request, from: goal.from, initialInventory: goal.initialInventory, initialPosition: goal.initialPosition, createdAt: goal.createdAt, scenario: goal.scenario }, username, server: `${process.env.MC_HOST}:${process.env.MC_PORT}`, gameMode: bot.game.gameMode, difficulty: bot.game.difficulty, timeOfDay: bot.time.timeOfDay });
-    const result = await runGoal(bot, task, goal, new GoalStore(path.join(directory, 'goal.json')), {
-      onStep: g => log({ step: g.step, survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }),
+    const result = await runGoal(bot, task, goal, goalStore, {
+      decisionClient: client,
+      onStep: g => log({ step: g.step, decision: g.decisions?.at(-1), survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }),
     });
     const verified = result.ok && (goal.kind === 'house' ? verifyHouse(bot, goal.blueprint).ok :
       goal.kind === 'concrete' ? (goal.delivered >= goal.count && (inventory(receiver).purple_concrete || 0) >= goal.receiverInitialConcrete + goal.count) : String(bot.game.dimension).includes('nether'));

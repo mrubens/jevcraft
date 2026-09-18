@@ -44,7 +44,8 @@ function launch(goal) {
   const session = { task, goal };
   active = session;
   session.promise = runGoal(bot, task, goal, store, {
-    onStep: g => console.log(JSON.stringify({ status: g.status, step: g.step, position: bot.entity.position, error: g.lastError })),
+    decisionClient: client,
+    onStep: g => console.log(JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError })),
   }).catch(err => {
     if (err.name !== 'Cancelled') {
       goal.status = 'blocked'; goal.lastError = err.message; store.save(goal);
@@ -55,8 +56,12 @@ function launch(goal) {
 
 bot.on('chat', (from, request) => {
   if (from === bot.username) return;
+  const address = parseAddress(request, bot.username);
+  // Acknowledgements from other bots must never start new work. New goals
+  // require an explicit name; short controls remain convenient when unprefixed.
+  if (!address.explicit && !/^(stop|cancel|resume|status)( please)?[.!?]?$/i.test(address.text)) return;
   // Stop has a synchronous fast path, even while a network request is pending.
-  const normalized = parseAddress(request, bot.username).text;
+  const normalized = address.text;
   if (/^(stop|cancel)( please)?[.!]?$/i.test(normalized)) {
     generation++;
     stop().catch(console.error);
@@ -69,7 +74,7 @@ bot.on('chat', (from, request) => {
     if (!spec || revision !== generation) return;
     if (spec.kind === 'status') {
       const g = active?.goal || store.read();
-      bot.chat(g ? `${g.status}: ${g.request}. ${g.lastError || JSON.stringify(g.step || {})}` : 'No saved task.');
+      bot.chat(g ? `${g.status}: ${g.request}. ${g.lastError || g.decisions?.at(-1)?.path?.join(' > ') || JSON.stringify(g.step || {})}` : 'No saved task.');
       return;
     }
     if (spec.kind === 'other') {

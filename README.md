@@ -1,6 +1,6 @@
 # JevBot
 
-A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat and ordinary code to execute and verify survival tasks. No OpenRouter token is required.
+A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat and choose ongoing house-building actions. Ordinary code executes and verifies survival tasks. No OpenRouter token is required.
 
 The broader target is a survival companion that can obtain food and shelter, maintain tools, avoid hazards, and follow player requests on Normal difficulty. See `GOAL.md` for the proposed expanded acceptance criteria. House construction has passed on Normal difficulty; extended autonomous survival is not yet demonstrated.
 
@@ -58,6 +58,10 @@ State is stored under `.bot-state/`, separately for each server and bot identity
 
 `src/work.js` repeatedly observes inventory and executes the next missing dependency. It records failed mining coordinates, explores with a persistent search history, uses bounded navigation, and saves progress after actions. Failures produce a concrete blocker; five consecutive execution errors or an exhausted search stop the task for inspection.
 
+House building now uses nested Jev choices through `src/decisions.js`: current priority → subtask → bounded action. Options include site selection, resource targets, clearing, placement, and eating carried food. Conditional branch questions are batched, unavailable options are rejected, and changed observations discard stale answers. Logs and saved state contain the selected path, probabilities, latency, and token usage; “Jev status” shows the latest path. Immediate air/critical hunger responses stay in code. Foraging, threat escape, nighttime shelter, and idle survival are still unfinished; concrete and Nether task sequencing remains deterministic for now.
+
+New work requires an explicit “Jev …” or login-name prefix. This prevents other bots' acknowledgements from becoming commands. Short stop, cancel, status, and resume controls also work without a prefix.
+
 Resource expeditions carry spare wood, a stone pickaxe, and a portable crafting table. `src/tunneling.js` excavates supported staircase steps and rejects liquids, missing footing, and protected building foundations. Navigation limits drops, avoids digging straight down, and waits for landing before another action. `src/vitals.js` checks hunger and air during tasks; autonomous foraging, threat response, and overnight behavior are still incomplete.
 
 `src/compatibility.js` contains application-side workarounds for mining-speed tags, named difficulty packets in 26.1, pathfinder results that otherwise share mutable search nodes, and nearby animals incorrectly overwriting the player's oxygen reading. Low air interrupts work and triggers a swimming route back to breathable air. Three controlled dives passed without damage; broad underwater exploration remains unproven. Installed dependency files remain unmodified.
@@ -69,6 +73,7 @@ Resource expeditions carry spare wood, a stone pickaxe, and a portable crafting 
 ```sh
 npm test
 npm run plan
+node scripts/eval-decisions.js
 MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- build a house
 MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- get me 32 purple concrete
 MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- find a way to the Nether
