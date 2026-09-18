@@ -31,3 +31,35 @@ test('crafting confirms one recipe and returns cursor output and unused grid ing
   assert.deepEqual(visible, { oak_planks: 6, stick: 4 });
   assert.equal(cursor, null); assert.equal(grid, null);
 });
+
+test('requesting a workstation produces a carried item even when that station exists nearby', async () => {
+  const registry = require('minecraft-data')('26.1');
+  for (const target of ['crafting_table', 'furnace']) {
+    const stock = { oak_planks: 4, cobblestone: 8 };
+    let crafted = 0;
+    const stations = { crafting_table: new Vec3(1, 64, 0), furnace: new Vec3(0, 64, 1) };
+    const bot = {
+      registry, game: { gameMode: 'survival' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true },
+      _catalogObservation: { at: Date.now(), position: { x: 0.5, y: 64, z: 0.5 }, nearby: [] },
+      findBlocks: ({ matching }) => Object.entries(stations).filter(([name]) => matching.includes(registry.blocksByName[name].id)).map(([, p]) => p),
+      blockAt: p => ({ name: Object.keys(stations).find(name => stations[name].equals(p)), position: p }),
+      pathfinder: { goto: async goal => assert(goal.isEnd(bot.entity.position.floored())), setGoal: () => {} },
+      inventory: { slots: [], items: () => Object.entries(stock).filter(([, count]) => count).map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id })) },
+      craft: async (recipe, count, table) => {
+        crafted++;
+        assert.equal(recipe.result.id, registry.itemsByName[target].id);
+        assert.equal(count, 1);
+        assert.equal(table?.name || null, target === 'furnace' ? 'crafting_table' : null);
+        for (const delta of recipe.delta) {
+          const name = registry.items[delta.id].name;
+          stock[name] = (stock[name] || 0) + delta.count;
+        }
+      },
+    };
+    assert.equal(await acquireStep(bot, new Task('craft', target), target, 1, {}, () => {}), false);
+    assert.equal(stock[target], 1);
+    assert.equal(crafted, 1);
+    assert.equal(await acquireStep(bot, new Task('craft', target), target, 1, {}, () => {}), true);
+    assert.equal(crafted, 1);
+  }
+});

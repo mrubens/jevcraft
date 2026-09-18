@@ -137,8 +137,10 @@ class Survival {
     const blocks = shelter.missingShell(bot, refuge).sort((a, b) => {
       // Finish a full-height wall on the threat-facing side first. Roof comes
       // last so every placement has a solid adjacent anchor.
-      const rank = p => (p.y === refuge.origin.y + 2 ? 1000 : 0) +
-        (threat ? Math.hypot(p.x - threat.entity.position.x, p.z - threat.entity.position.z) * 10 : 0) + p.y - refuge.origin.y;
+      const rank = p => p.y < refuge.origin.y
+        ? -1000 + Math.abs(p.x - refuge.origin.x) + Math.abs(p.z - refuge.origin.z)
+        : (p.y === refuge.origin.y + 2 ? 1000 : 0) +
+          (threat ? Math.hypot(p.x - threat.entity.position.x, p.z - threat.entity.position.z) * 10 : 0) + p.y - refuge.origin.y;
       return rank(a) - rank(b);
     });
     for (const p of blocks) {

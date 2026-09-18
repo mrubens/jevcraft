@@ -6,6 +6,13 @@ const replaceable = b => b && ['air', 'cave_air', 'void_air', 'short_grass', 'ta
 const solid = b => b?.boundingBox === 'block' && !['sand', 'gravel', 'magma_block', 'cactus', 'powder_snow', 'ice', 'packed_ice', 'blue_ice'].includes(b.name);
 const position = p => new Vec3(p.x, p.y, p.z);
 const buildingMaterials = new Set(['dirt', 'cobblestone', 'cobbled_deepslate', 'oak_planks', 'birch_planks', 'andesite', 'diorite', 'granite', 'stone']);
+const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
+
+function foundation(origin) {
+  const o = position(origin), blocks = [];
+  for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) blocks.push(o.offset(x, -1, z));
+  return blocks;
+}
 
 function shell(origin) {
   const o = position(origin);
@@ -21,7 +28,10 @@ function safeSite(bot, origin, goal) {
   const o = position(origin);
   if (reservedForConstruction(goal, o)) return false;
   if (!replaceable(bot.blockAt(o)) || !replaceable(bot.blockAt(o.offset(0, 1, 0)))) return false;
-  for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) if (!solid(bot.blockAt(o.offset(x, -1, z)))) return false;
+  // Begin on real dry footing. Missing peripheral floor cells can be built
+  // outward from that anchor; water, falling blocks and unloaded cells cannot.
+  if (!solid(bot.blockAt(o.offset(0, -1, 0)))) return false;
+  if (foundation(o).some(p => { const b = bot.blockAt(p); return !solid(b) && !air(b); })) return false;
   if (!exits(bot, { origin }).length) return false;
   return shell(o).every(p => {
     const b = bot.blockAt(p);
@@ -39,7 +49,7 @@ function shelterSites(bot, goal, maxDistance = 12) {
 }
 
 function enclosure(shelter) {
-  if (shelter.kind !== 'house') return shell(shelter.origin);
+  if (shelter.kind !== 'house') return [...foundation(shelter.origin), ...shell(shelter.origin)];
   const o = position(shelter.origin);
   return [...shelter.blueprint.blocks.map(position), o.offset(0, 0, -2), o.offset(0, 1, -2)];
 }
@@ -67,4 +77,4 @@ function exits(bot, shelter) {
     .filter(exit => replaceable(bot.blockAt(exit.outside)) && replaceable(bot.blockAt(exit.outside.offset(0, 1, 0))) && solid(bot.blockAt(exit.outside.offset(0, -1, 0))));
 }
 
-module.exports = { shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, exits, buildingMaterials, solid, replaceable };
+module.exports = { foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, exits, buildingMaterials, solid, replaceable };

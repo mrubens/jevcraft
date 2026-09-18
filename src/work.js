@@ -46,7 +46,7 @@ async function prepareExpeditionStep(bot, task, goal, save) {
   }
   if (pickaxeTier(bot) < 2) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return false; }
   if (countOf(bot, 'oak_log') < 8) { await acquireStep(bot, task, 'oak_log', 8, goal, save); return false; }
-  if (!countOf(bot, 'crafting_table')) { await acquireStep(bot, task, 'crafting_table', 1, goal, save, { portable: true }); return false; }
+  if (!countOf(bot, 'crafting_table')) { await acquireStep(bot, task, 'crafting_table', 1, goal, save); return false; }
   goal.expeditionReady = true; delete goal.preparingExpedition;
   goal.step = { action: 'prepared_expedition', minimumPickaxeTier: 2, supplies: { oak_log: 8, crafting_table: 1 }, foodPoints: foodSupply(bot) };
   save(); return true;
@@ -265,7 +265,10 @@ async function mine(bot, task, step, goal, save, selected) {
 }
 
 async function workstation(bot, task, name) {
-  let p = find(bot, [name], 32, 1)[0];
+  // Use a carried table nearby instead of spending ingredients/scaffolding
+  // walking back to a distant bench. Existing nearby player tables may still
+  // be reused, but only tables placed by this session are collected afterward.
+  let p = find(bot, [name], name === 'crafting_table' && countOf(bot, name) ? 4 : 32, 1)[0];
   if (!p) {
     const o = bot.entity.position.floored();
     for (const dy of [0, -1, 1, -2, 2]) for (let dx = -2; dx <= 2 && !p; dx++) for (let dz = -2; dz <= 2 && !p; dz++) {
@@ -298,7 +301,7 @@ async function craft(bot, task, step, goal) {
   try { await bot.craft(recipe, 1, table); }
   finally { task.check(); await settleCraftInventory(bot, task); }
   await waitFor(task, () => countOf(bot, step.item) >= before + recipe.result.count);
-  if (table && goal?.expeditionReady && bot._ownedWorkstations?.has(`crafting_table:${table.position}`)) {
+  if (table && (goal?.expeditionReady || goal?.preparingExpedition) && bot._ownedWorkstations?.has(`crafting_table:${table.position}`)) {
     const count = countOf(bot, 'crafting_table');
     await dig(bot, task, table.position);
     await navigate(bot, task, new goals.GoalNear(table.position.x, table.position.y, table.position.z, 1));
@@ -414,11 +417,11 @@ function catalogPlan(bot, item, count, stock) {
     ? planCatalog(bot.registry, item, count, stock, { nearby: [...new Set([...nearby, ...alternatives])], tools }) : plan;
 }
 
-async function acquireStep(bot, task, item, count, goal, save, { portable = false, minimumMiningY } = {}) {
+async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY } = {}) {
   task.check(); checkAir(bot);
   const inv = planningInventory(bot);
   if ((inv[item] || 0) >= count) return true;
-  for (const station of ['crafting_table', 'furnace']) if (!(portable && station === item) && find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
+  for (const station of ['crafting_table', 'furnace']) if (station !== item && find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
   const step = catalogPlan(bot, item, count, inv)[0];
   if (!step) throw new Error(`No progress step for ${item}`);
   if (minimumMiningY !== undefined && step.action === 'mine') step.minimumY = minimumMiningY;
@@ -656,7 +659,7 @@ async function obtainStep(bot, task, goal, save, client, onStep) {
     return deliver(bot, task, goal, save);
   }
   const stock = planningInventory(bot);
-  for (const station of ['crafting_table', 'furnace']) if (find(bot, [station], 32, 1).length) stock[station] = Math.max(stock[station] || 0, 1);
+  for (const station of ['crafting_table', 'furnace']) if (station !== goal.item && find(bot, [station], 32, 1).length) stock[station] = Math.max(stock[station] || 0, 1);
   const plan = catalogPlan(bot, goal.item, remaining, stock);
   // Catalog routing replaced the old named concrete workflow. Preserve its
   // tool/wood/table preparation for any request whose recipe needs a descent,

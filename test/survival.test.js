@@ -128,3 +128,35 @@ test('shelter sealing reselects material when positioning spends the last select
   await controller.refugeStep(task, {}, () => {});
   assert(shelter.sealed(bot, refuge));
 });
+
+test('a ledge shelter builds anchored peripheral foundations before walls and retains its exit', async () => {
+  const origin = new Vec3(0, 64, 0), blocks = new Map([['(0, 63, 0)', 'stone'], ['(0, 63, -2)', 'stone']]);
+  let stock = 40;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: {},
+    entity: { position: origin.offset(0.5, 0, 0.5) }, inventory: { items: () => [{ name: 'cobblestone', count: stock }] },
+    blockAt: p => ({ name: blocks.get(`${p}`) || 'air', boundingBox: blocks.has(`${p}`) ? 'block' : 'empty' }) });
+  assert(shelter.safeSite(bot, origin, {}));
+  const refuge = { origin: { ...origin }, dimension: 'overworld' };
+  assert.equal(shelter.missingShell(bot, refuge).length, 33);
+  const directions = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 1, 0), new Vec3(0, -1, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+  const controller = new Survival(bot, { place: async (b, t, p, material) => {
+    assert(directions.some(d => shelter.solid(bot.blockAt(p.plus(d)))), `No anchor at ${p}`);
+    if (p.y >= origin.y) assert(shelter.foundation(origin).every(q => shelter.solid(bot.blockAt(q))), 'Build the complete floor before enclosing the room');
+    stock--; blocks.set(`${p}`, material);
+  } }, { state: { shelters: [refuge] } });
+  await controller.refugeStep(new Task('test', 'build refuge'), {}, () => {});
+  assert(shelter.sealed(bot, refuge));
+  assert.equal(stock, 7);
+  assert.equal(shelter.exits(bot, refuge).length, 1);
+});
+
+test('shelter foundation planning rejects liquids, unloaded terrain and unsupported central footing', () => {
+  const origin = new Vec3(0, 64, 0);
+  for (const invalid of ['water', 'lava', 'gravel', null]) {
+    const bot = { blockAt: p => p.equals(origin.offset(1, -1, 0))
+      ? invalid === null ? null : { name: invalid, boundingBox: invalid === 'gravel' ? 'block' : 'empty' }
+      : { name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' } };
+    assert(!shelter.safeSite(bot, origin, {}));
+  }
+  assert(!shelter.safeSite({ blockAt: () => ({ name: 'air', boundingBox: 'empty' }) }, origin, {}));
+});
