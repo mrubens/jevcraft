@@ -2,7 +2,7 @@
 
 A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat and ordinary code to execute and verify survival tasks. No OpenRouter token is required.
 
-The broader target is a survival companion that can obtain food and shelter, maintain tools, avoid hazards, and follow player requests on Normal difficulty. See `GOAL.md` for the proposed expanded acceptance criteria. Current live evidence is from Peaceful worlds; general survival is not yet demonstrated.
+The broader target is a survival companion that can obtain food and shelter, maintain tools, avoid hazards, and follow player requests on Normal difficulty. See `GOAL.md` for the proposed expanded acceptance criteria. House construction has passed on Normal difficulty; extended autonomous survival is not yet demonstrated.
 
 The current development target is:
 
@@ -21,6 +21,7 @@ Open **Minecraft Java Edition 26.1**, choose **Multiplayer → Direct Connection
 | `localhost:25567` | Flat survival test world with prepared resources; used for current mechanics trials |
 | `localhost:25566` | Natural survival world, seed 12345; the completed house is at X 83, Y 136, Z −32 |
 | `localhost:25565` | Original development server |
+| `localhost:25568` | Fresh natural world on Normal difficulty, seed 95812; a verified house is at X −7, Y 67, Z 3 |
 
 Press **F3** to see your coordinates, and **Tab** to see online players. Acceptance bots are named `Trial<run-id>` and leave when their trial ends. They execute their assigned test and do not accept chat commands. Trial logs and checkpoints are in `artifacts/<run-id>/events.jsonl` and `goal.json`.
 
@@ -56,6 +57,10 @@ State is stored under `.bot-state/`, separately for each server and bot identity
 `src/plan.js` resolves material, crafting, smelting and tool dependencies. Ingredients are reserved while expanding recipes so shared dependencies cannot spend the same materials twice. Recipes are checked against installed Minecraft data in tests.
 
 `src/work.js` repeatedly observes inventory and executes the next missing dependency. It records failed mining coordinates, explores with a persistent search history, uses bounded navigation, and saves progress after actions. Failures produce a concrete blocker; five consecutive execution errors or an exhausted search stop the task for inspection.
+
+Resource expeditions carry spare wood, a stone pickaxe, and a portable crafting table. `src/tunneling.js` excavates supported staircase steps and rejects liquids, missing footing, and protected building foundations. Navigation limits drops, avoids digging straight down, and waits for landing before another action. `src/vitals.js` checks hunger and air during tasks; autonomous foraging, threat response, and overnight behavior are still incomplete.
+
+`src/compatibility.js` contains application-side workarounds for mining-speed tags, named difficulty packets in 26.1, and pathfinder results that otherwise share mutable search nodes. Installed dependency files remain unmodified.
 
 `src/agent.js`, `src/act.js`, and much of `src/skills.js` contain the earlier experimental flat action loop. They remain available for comparison, but `index.js` now runs the verified objective executor. Other free-form commands from the experimental loop are not currently routed by the new entry point.
 

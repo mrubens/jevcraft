@@ -11,3 +11,4 @@ artifacts/
 .test-server/
 
 .test-fixture/
+.test-survival/

@@ -13,7 +13,7 @@ Implemented:
 
 Evidence:
 
-- `npm test`: 23 tests pass, including chat nickname parsing, simulated resource consumption, recipe comparisons with Minecraft 26.1 data, rejection of incomplete houses, checkpoint round-trip, invalid Jev labels, cancellation of a pending navigation, navigation stall/hard deadlines, foundation protection, furnace output accounting while the inventory window is open, and mining speed with correct harvest restrictions.
+- `npm test`: 34 tests pass, including chat nickname parsing, recipe resource accounting, structure verification, cancellation/deadlines/landing, staircase safety, food selection/eating cancellation, tool durability planning, and dependency compatibility regressions. Eating and tool replacement still need dedicated live checks.
 - `node scripts/eval-intents.js`: all 14 real Jev calls matched expected interpretation (including the `Jev` nickname, half a stack, unsupported glass castle, stop, status and resume). Full answers in `artifacts/intent-eval.json`.
 - First survival trial `artifacts/mu76ypz4/`: FAILED honestly while navigating steep mountain/ocean terrain on seed 12345. No items acquired, no claimed success. Led to less brittle building-site checks and exploration targeting visible dry land.
 - Second survival trial `artifacts/mu772kzs/`: PASSED house acceptance as Trialmu772kzs. Empty inventory at spawn, gathered 24 oak logs, crafted 96 planks, and verified all 96 structural blocks plus clear interior/doorway at (83, 136, -32). Recovered from navigation and placement errors. No grants or teleports. Session 12261 exited 0.
@@ -28,6 +28,12 @@ Evidence:
 - Controlled Nether trial `artifacts/mu781ks4/`: PASSED after resumptions to correct mining speed and a portal foundation bug. Started empty; crafted wooden, stone, iron and diamond pickaxes; mined/smelted iron; made flint and steel; mined obsidian; built and lit a portal at (29,64,-14); entered `the_nether`. Final session 59165 exited 0. No grants or teleports.
 - Portal bug: support dirt was mined from the planned foundation, deepening the resource pit. Gathering now excludes construction foundations/approaches, dirt gathering prefers surface soil, scaffolding is obtained before site selection, and the entire portal footing is checked. Navigation also respects construction exclusions.
 - Natural concrete regression `mu77bn3e`, session 23355: FAILED by falling from a high place. The revised search descended from the mountain but safe movement is still unreliable. Server log confirms death at 13:39:05 local. Requires fall prevention and recovery; this must not be counted as success.
+- Fall investigation found unlimited water drops, direct downward excavation during navigation, arrival before landing, and mutable AStar results reused across partial searches. Movement now caps drops, waits for footing, and uses independent path nodes. Targeted regression tests cover these cases.
+- Natural concrete trial `mu792c3f`: FAILED honestly on reachable-ground search; descended alive but got stuck at about (149,93,-2). This motivated explicit staircase digging.
+- Natural concrete trial `mu79d9l3`: still running, latest session 3025. Started empty, obtained a stone pickaxe and spare wood, dug over 40 supported staircase steps from y141 toward low terrain, and collected all 16 required sand. Resumed to load landing and path-node fixes, retaining the same inventory and excavation. Repeated damage while underwater exposed inadequate air management; Peaceful regeneration helped it survive. Completion and safe underwater gathering are not yet proven.
+- Fresh Normal world on port 25568, seed 95812, server session 60167, directory `.test-survival/`. The server console confirmed Normal before acceptance. No world grants or modifications during acceptance.
+- Normal house trial `mu79me41`: PASSED uninterrupted (session 70845, exit 0), starting empty in survival on confirmed Normal difficulty. Gathered 24 logs, crafted 96 planks, built and verified all structural blocks and clear interior/doorway at (-7,67,3). This is a daytime house check, not the two-cycle survival milestone.
+- Added safe food selection, cancellable eating with hunger verification, and low-air surfacing checks during tasks. Food selection and eating cancellation have unit coverage; the house trial did not need to eat, so real food consumption/foraging remains unproven. The natural concrete trial shows surfacing needs further work.
 - Checked installed Mineflayer 4.39.0 against its published npm tarball: identical, including inventory synchronization support. No dependency patches are required.
 - Reproduced installation and all initial tests from a clean checkout with `npm ci`. Declared Node >=22 to match dependencies.
 - Added an application-side workaround for the upstream `incorrect_for_wooden_tool` material bug: pickaxe blocks retain harvest requirements but use correct tool-speed multipliers. The original Nether trial mines each obsidian for 75 seconds; the corrected diamond-pickaxe calculation is 9.4 seconds. See https://github.com/PrismarineJS/mineflayer/issues/3921.
@@ -36,7 +42,7 @@ Still required:
 
 1. Complete and independently verify natural-world concrete and Nether trials. House passed in a natural world; concrete and Nether passed in the controlled fixture.
 2. Test placement, crafting, smelting, hardening and portal entry in-game; resolve failures found.
-3. Add reliable underground progression/resource search, tool replacement, and recovery through hostile terrain where needed.
+3. Finish and validate underground progression/resource search, tool replacement, and recovery through hostile terrain. Staircase excavation is live, but full natural-world Nether progression remains unproven.
 4. Re-run the updated concrete workflow uninterrupted, and test partial delivery/cancellation live. Full delivery is now proven in the controlled fixture.
 5. Test cancellation, restart/resume, death/disconnect, and repeated-failure behavior through the actual chat entry point.
 6. Reconcile experimental legacy command support and current limited routing, and document accurate tested scope.

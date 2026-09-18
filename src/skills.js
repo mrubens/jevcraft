@@ -66,6 +66,11 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000 } 
     let lastProgress = started;
     let previous = bot.entity.position.clone();
     timer = setInterval(() => {
+      if (bot.entity.isInWater && bot.oxygenLevel <= 6) {
+        bot.pathfinder.setGoal(null);
+        reject(new Error('Low air: surface before continuing navigation'));
+        return;
+      }
       if (bot.entity.position.distanceTo(previous) >= 1) { previous = bot.entity.position.clone(); lastProgress = Date.now(); }
       if (task.cancelled || Date.now() - started > timeoutMs || Date.now() - lastProgress > stallMs) {
         bot.pathfinder.setGoal(null);
@@ -76,6 +81,16 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000 } 
   try {
     await Promise.race([bot.pathfinder.goto(goal), watchdog]);
     task.check();
+    // Pathfinder can report arrival while the bot is still almost a block
+    // above its landing. Starting the next dig then can remove the next step
+    // before landing and turn a staircase into one continuous damaging fall.
+    const landingDeadline = Date.now() + 2500;
+    if (bot.entity.onGround === false && !bot.entity.isInWater) bot.clearControlStates();
+    while (bot.entity.onGround === false && !bot.entity.isInWater) {
+      task.check();
+      if (Date.now() >= landingDeadline) throw new Error('Navigation ended without safe footing');
+      await sleep(50);
+    }
     if (goal.isEnd && !goal.isEnd(bot.entity.position.floored())) {
       throw new Error('Navigation ended before reaching the destination');
     }

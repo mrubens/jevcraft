@@ -60,3 +60,15 @@ test('navigation has a hard deadline even while moving', async () => {
     await assert.rejects(navigate(bot, new Task('test', 'wandering'), {}, { timeoutMs: 250, stallMs: 200 }), /timed out/);
   } finally { clearInterval(motion); }
 });
+
+test('navigation waits to land before the next digging action can start', async () => {
+  const { navigate } = require('../src/skills');
+  let stopped = false;
+  const bot = { entity: { position: new Vec3(0, 64.9, 0), onGround: false }, clearControlStates: () => { stopped = true; },
+    pathfinder: { goto: async () => {}, setGoal: () => {} } };
+  setTimeout(() => { bot.entity.position.y = 64; bot.entity.onGround = true; }, 80);
+  await navigate(bot, new Task('test', 'land'), {});
+  assert(stopped);
+  assert(bot.entity.onGround);
+  assert.equal(bot.entity.position.y, 64);
+});

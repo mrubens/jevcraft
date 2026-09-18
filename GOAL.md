@@ -10,6 +10,8 @@ Accept natural-language commands in Minecraft chat addressed as “Jev …”, r
 
 Use Jev as the only runtime model initially. Ordinary code owns Minecraft rules and actions. Document demonstrated limitations before considering OpenRouter.
 
+Commit and push tested milestones regularly to the private repository, with accurate progress notes and remaining limitations.
+
 ## Acceptance
 
 - Survive two consecutive full day/night cycles on Normal difficulty from an empty inventory while completing a useful player request, without deaths in that run.
@@ -18,4 +20,4 @@ Use Jev as the only runtime model initially. Ordinary code owns Minecraft rules 
 - Separately test cancellation, process restart, disconnect, death recovery, and exhausted-resource/unreachable-goal handling. Report failed trials as failures; do not erase or relabel them.
 - Use no item grants, teleports, creative mode, time changes, or difficulty changes during acceptance runs. Controlled resource worlds are allowed for debugging and must be labeled separately.
 
-The current implementation has only been exercised on Peaceful difficulty. Controlled tests establish specific mechanics, not general survival competence. Full game completion and defeating the Ender Dragon are outside this initial companion milestone.
+House construction has passed in a fresh natural world on Normal difficulty. Other completed live checks are from Peaceful worlds. Controlled tests establish specific mechanics, not general survival competence. Full game completion and defeating the Ender Dragon are outside this initial companion milestone.

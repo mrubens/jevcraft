@@ -10,6 +10,7 @@ const { interpret, GoalStore } = require('./src/objectives');
 const { runGoal } = require('./src/work');
 const { Task } = require('./src/skills');
 const { parseAddress } = require('./src/chat-address');
+const { compatibilityPlugin } = require('./src/compatibility');
 
 const config = {
   host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
@@ -18,6 +19,7 @@ const config = {
 };
 const client = new TypeSafe();
 const bot = mineflayer.createBot(config);
+bot.loadPlugin(compatibilityPlugin);
 bot.loadPlugin(pathfinder);
 const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');
 const store = new GoalStore(path.join(__dirname, '.bot-state', `${identity}.json`));
@@ -33,6 +35,7 @@ async function stop(status = 'cancelled') {
   bot.pathfinder.setGoal(null);
   bot.clearControlStates();
   bot.stopDigging();
+  bot.deactivateItem();
   await active.promise;
 }
 

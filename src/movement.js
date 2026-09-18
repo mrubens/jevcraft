@@ -1,14 +1,32 @@
 'use strict';
 const { Movements } = require('mineflayer-pathfinder');
-const { fixMiningMaterials } = require('./compatibility');
+const { fixMiningMaterials, fixPathfinderResults } = require('./compatibility');
+
+class SurvivalMovements extends Movements {
+  getLandingBlock(node, direction) {
+    const landing = super.getLandingBlock(node, direction);
+    return landing && node.y - landing.position.y <= this.maxDropDown ? landing : null;
+  }
+
+  getMoveDown(node, neighbors) {
+    // General navigation must not excavate a shaft beneath the bot's feet.
+    // Underground work uses explicit, inspected staircase actions.
+    if (this.getBlock(node, 0, -1, 0).climbable) super.getMoveDown(node, neighbors);
+  }
+}
 
 function configureMovements(bot) {
   fixMiningMaterials(bot.registry);
-  const movement = new Movements(bot);
+  fixPathfinderResults();
+  const movement = new SurvivalMovements(bot);
   movement.canDig = true;
   movement.allow1by1towers = true;
   movement.allowParkour = false;
+  movement.allowSprinting = false;
   movement.maxDropDown = 3;
+  // Pathfinder otherwise treats water as a safe landing at ANY depth,
+  // even when a cliff has ledges between the bot and that water.
+  movement.infiniteLiquidDropdownDistance = false;
   movement.liquidCost = 4;
   // Let navigation clear vegetation and soft terrain. Resource mining stays
   // explicit, and navigation cannot tear down plank houses or stone machines.

@@ -8,6 +8,8 @@ const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
 const { reservedForConstruction, portalSiteClear, selectPortalSite } = require('./build-sites');
 const { updateDigCapabilities } = require('./movement');
+const { tunnelStep } = require('./tunneling');
+const { maintainVitals } = require('./vitals');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -17,6 +19,22 @@ class Blocked extends Error { constructor(message) { super(message); this.name =
 
 function inventory(bot) {
   return bot.inventory.items().reduce((o, i) => { o[i.name] = (o[i.name] || 0) + i.count; return o; }, {});
+}
+
+function planningInventory(bot) {
+  const stock = inventory(bot);
+  for (const item of bot.inventory.items()) {
+    const durability = bot.registry.itemsByName[item.name]?.maxDurability;
+    if (item.name.endsWith('_pickaxe') && durability && durability - (item.durabilityUsed || 0) < 8) stock[item.name] -= item.count;
+  }
+  return stock;
+}
+
+async function prepareExpeditionStep(bot, task, goal, save) {
+  if (pickaxeTier(bot) < 2) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return false; }
+  if (countOf(bot, 'oak_log') < 8) { await acquireStep(bot, task, 'oak_log', 8, goal, save); return false; }
+  if (!countOf(bot, 'crafting_table')) { await acquireStep(bot, task, 'crafting_table', 1, goal, save, { portable: true }); return false; }
+  goal.expeditionReady = true; save(); return true;
 }
 
 async function waitFor(task, predicate, timeout = 4000) {
@@ -100,6 +118,18 @@ async function explore(bot, task, goal, save, resource) {
     target = observed[0];
     search.observedTarget = { ...target };
   }
+  // When a known resource is well below us, circling the same mountain does
+  // not get closer. Approach through a dry, supported staircase. Stay above
+  // a water-covered deposit rather than tunnelling into the water itself.
+  if (observed.length && search.attempts > 3 && target.y < bot.entity.position.y - 8 && pickaxeTier(bot) >= 1) {
+    let surface = target.clone();
+    for (let y = target.y + 1; y <= target.y + 16; y++) {
+      const b = bot.blockAt(new Vec3(target.x, y, target.z));
+      if (b?.name === 'water') surface.y = y + 2;
+    }
+    await tunnelStep(bot, task, goal, save, surface, { dig, navigate });
+    return;
+  }
   save();
   // Keep the same waypoint until reached. Rotating on every short walk made
   // the bot circle the mountain forever instead of reaching the wider ring.
@@ -156,7 +186,14 @@ async function mine(bot, task, step, goal, save) {
     const k = `${p}`;
     return !goal.unreachable?.[k] || Date.now() - goal.unreachable[k] > 120000;
   });
-  if (!candidates.length) { await explore(bot, task, goal, save, step.block); return; }
+  if (!candidates.length) {
+    if (step.depth !== null && step.depth !== undefined) {
+      const ore = find(bot, names, 64, 16)[0];
+      const target = ore || bot.entity.position.floored().offset(24, step.depth - bot.entity.position.floored().y, 0);
+      await tunnelStep(bot, task, goal, save, target, { dig, navigate });
+    } else await explore(bot, task, goal, save, step.block);
+    return;
+  }
   for (const p of candidates.slice(0, 8)) {
     task.check();
     try {
@@ -189,6 +226,7 @@ async function workstation(bot, task, name) {
       const q = o.offset(dx, 0, dz);
       if (air(bot.blockAt(q)) && bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block') {
         await place(bot, task, q, name); p = q;
+        bot._ownedWorkstations ||= new Set(); bot._ownedWorkstations.add(`${name}:${q}`);
       }
     }
   }
@@ -197,7 +235,7 @@ async function workstation(bot, task, name) {
   return bot.blockAt(p);
 }
 
-async function craft(bot, task, step) {
+async function craft(bot, task, step, goal) {
   const table = step.needs_table ? await workstation(bot, task, 'crafting_table') : null;
   const id = bot.registry.itemsByName[step.item]?.id;
   const recipe = bot.recipesFor(id, null, step.count, table)[0];
@@ -209,6 +247,13 @@ async function craft(bot, task, step) {
   const batches = step.needs_table ? 1 : Math.ceil(step.count / recipe.result.count);
   await bot.craft(recipe, batches, table);
   await waitFor(task, () => countOf(bot, step.item) >= before + batches * recipe.result.count);
+  if (table && goal?.expeditionReady && bot._ownedWorkstations?.has(`crafting_table:${table.position}`)) {
+    const count = countOf(bot, 'crafting_table');
+    await dig(bot, task, table.position);
+    await navigate(bot, task, new goals.GoalNear(table.position.x, table.position.y, table.position.z, 1));
+    await waitFor(task, () => countOf(bot, 'crafting_table') > count);
+    bot._ownedWorkstations.delete(`crafting_table:${table.position}`);
+  }
 }
 
 async function smelt(bot, task, step) {
@@ -281,16 +326,16 @@ async function harden(bot, task, goal, save) {
   }
 }
 
-async function acquireStep(bot, task, item, count, goal, save) {
+async function acquireStep(bot, task, item, count, goal, save, { portable = false } = {}) {
   if (countOf(bot, item) >= count) return true;
-  const inv = inventory(bot);
-  for (const station of ['crafting_table', 'furnace']) if (find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
+  const inv = planningInventory(bot);
+  for (const station of ['crafting_table', 'furnace']) if (!(portable && station === item) && find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
   const step = planFor(item, count, inv)[0];
   if (!step) throw new Error(`No progress step for ${item}`);
   goal.step = step;
   save();
   if (step.action === 'mine') await mine(bot, task, step, goal, save);
-  else if (step.action === 'craft') await craft(bot, task, step);
+  else if (step.action === 'craft') await craft(bot, task, step, goal);
   else if (step.action === 'smelt') await smelt(bot, task, step);
   else if (step.action === 'harden') await harden(bot, task, goal, save);
   else throw new Error(`Unknown action ${step.action}`);
@@ -443,15 +488,20 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
     const location = bot.entity.position.clone();
     try {
       let complete = false;
-      if (goal.kind === 'house') complete = await buildHouseStep(bot, task, goal, save);
-      if (goal.kind === 'concrete') {
+      await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); });
+      const needsSupplies = !goal.expeditionReady && (
+        (goal.kind === 'concrete' && countOf(bot, 'purple_concrete') + (goal.delivered || 0) < goal.count && !goal.pendingDelivery) ||
+        (goal.kind === 'nether' && !String(bot.game.dimension).includes('nether') && !find(bot, ['nether_portal'], 64, 1).length && !goal.portalFrame));
+      const prepared = !needsSupplies || await prepareExpeditionStep(bot, task, goal, save);
+      if (prepared && goal.kind === 'house') complete = await buildHouseStep(bot, task, goal, save);
+      if (prepared && goal.kind === 'concrete') {
         if ((goal.delivered || 0) >= goal.count) complete = true;
         else if (goal.pendingDelivery || await acquireStep(bot, task, 'purple_concrete', goal.count - (goal.delivered || 0), goal, save)) {
           goal.step = { action: 'deliver', count: goal.count - (goal.delivered || 0), recipient: goal.from }; save();
           complete = await deliver(bot, task, goal, save);
         }
       }
-      if (goal.kind === 'nether') complete = await netherStep(bot, task, goal, save);
+      if (prepared && goal.kind === 'nether') complete = await netherStep(bot, task, goal, save);
       task.check();
       goal.failures = 0;
       delete goal.lastError;
@@ -488,4 +538,4 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
   return { ok: false, reason: goal.lastError, goal };
 }
 
-module.exports = { runGoal, acquireStep, inventory, selectSite, explore, smelt, dig, place, waitFor, Blocked };
+module.exports = { runGoal, acquireStep, inventory, planningInventory, selectSite, explore, smelt, dig, place, waitFor, Blocked };

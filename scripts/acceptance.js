@@ -6,6 +6,7 @@ const path = require('path');
 const mineflayer = require('mineflayer');
 const { pathfinder } = require('mineflayer-pathfinder');
 const { configureMovements } = require('../src/movement');
+const { compatibilityPlugin } = require('../src/compatibility');
 require('../src/env').loadEnv();
 const { TypeSafe } = require('../src/typesafe');
 const { interpret, GoalStore, verifyHouse } = require('../src/objectives');
@@ -23,12 +24,26 @@ const bot = mineflayer.createBot({
   host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
   username, auth: 'offline', version: process.env.MC_VERSION || false,
 });
+bot.loadPlugin(compatibilityPlugin);
 bot.loadPlugin(pathfinder);
 let receiver;
 const task = new Task('acceptance', request);
 const timer = setTimeout(() => { task.cancel(); bot.pathfinder.setGoal(null); bot.stopDigging(); }, Number(process.env.ACCEPT_TIMEOUT_MS || 1800000));
 bot.on('chat', (from, message) => { if (from === username) log({ chat: message }); });
-bot.on('death', () => task.cancel());
+bot.on('death', () => {
+  log({ death: true, position: bot.entity.position, dimension: bot.game.dimension, inventory: inventory(bot) });
+  task.cancel(); bot.pathfinder.setGoal(null); bot.clearControlStates(); bot.stopDigging();
+});
+bot.on('health', () => log({ health: bot.health, food: bot.food, position: bot.entity?.position }));
+let lastUnsafeRouteLog = 0;
+bot.on('path_update', route => {
+  const points = [bot.entity.position, ...(route.path || [])];
+  const maxDrop = Math.max(0, ...points.slice(1).map((p, i) => points[i].y - p.y));
+  if (maxDrop > 3 && Date.now() - lastUnsafeRouteLog > 5000) {
+    lastUnsafeRouteLog = Date.now();
+    log({ unsafePlannedDrop: maxDrop, path: points.slice(0, 16).map(p => ({ x: p.x, y: p.y, z: p.z })) });
+  }
+});
 bot.on('error', err => log({ error: err.message }));
 bot.on('kicked', reason => log({ kicked: reason }));
 bot.once('spawn', async () => {
@@ -38,6 +53,7 @@ bot.once('spawn', async () => {
     const initial = inventory(bot);
     if (!resumeId && Object.keys(initial).length) throw new Error('Acceptance requires empty inventory');
     if (bot.game.gameMode !== 'survival') throw new Error(`Acceptance requires survival; got ${bot.game.gameMode}`);
+    if (process.env.ACCEPT_DIFFICULTY && bot.game.difficulty !== process.env.ACCEPT_DIFFICULTY) throw new Error(`Expected ${process.env.ACCEPT_DIFFICULTY} difficulty; got ${bot.game.difficulty}`);
     const saved = resumeId ? new GoalStore(path.join(directory, 'goal.json')).read() : null;
     if (resumeId && (!saved || Object.keys(saved.initialInventory || {}).length)) throw new Error('Missing original empty-inventory evidence');
     const spec = saved || await interpret(new TypeSafe(), `${username}, ${request}`, 'TestPlayer', username);
@@ -55,7 +71,7 @@ bot.once('spawn', async () => {
       goal.receiverInitialConcrete ??= inventory(receiver).purple_concrete || 0;
     }
     if (resumeId) log({ resumed: resumeId, inventory: initial, originalCreatedAt: goal.createdAt });
-    log({ start: { kind: goal.kind, count: goal.count, request: goal.request, from: goal.from, initialInventory: goal.initialInventory, initialPosition: goal.initialPosition, createdAt: goal.createdAt, scenario: goal.scenario }, username, server: `${process.env.MC_HOST}:${process.env.MC_PORT}`, gameMode: bot.game.gameMode });
+    log({ start: { kind: goal.kind, count: goal.count, request: goal.request, from: goal.from, initialInventory: goal.initialInventory, initialPosition: goal.initialPosition, createdAt: goal.createdAt, scenario: goal.scenario }, username, server: `${process.env.MC_HOST}:${process.env.MC_PORT}`, gameMode: bot.game.gameMode, difficulty: bot.game.difficulty, timeOfDay: bot.time.timeOfDay });
     const result = await runGoal(bot, task, goal, new GoalStore(path.join(directory, 'goal.json')), {
       onStep: g => log({ step: g.step, position: bot.entity.position, inventory: inventory(bot), error: g.lastError }),
     });
