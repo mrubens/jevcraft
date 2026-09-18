@@ -17,6 +17,7 @@ const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
 const { surfaceMovement } = require('./surface');
 const { foodSupply } = require('./foraging');
+const { observeRecipeAlternatives } = require('./resource-observation');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -171,6 +172,9 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = false } 
     search.visited ||= {};
     const key = p => `${Math.floor(p.x / 8)},${Math.floor(p.y / 8)},${Math.floor(p.z / 8)}`;
     const distance = p => observed.length ? p.distanceTo(target) : Math.hypot(p.x - target.x, p.z - target.z);
+    if (search.progressLeg !== search.leg) {
+      search.progressLeg = search.leg; search.bestDistance = distance(bot.entity.position); search.walksWithoutProgress = 0;
+    }
     land.sort((a, b) => distance(a) + (search.visited[key(a)] || 0) * 24 -
       distance(b) - (search.visited[key(b)] || 0) * 24);
     let destination;
@@ -190,7 +194,13 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = false } 
     try {
       await navigate(bot, task, new goals.GoalBlock(destination.x, destination.y, destination.z), surface ? { timeoutMs: 20000, stallMs: 5000 } : {});
       search.failedLegs = 0;
-      if (Math.hypot(bot.entity.position.x - target.x, bot.entity.position.z - target.z) < 6) search.leg++;
+      const remaining = distance(bot.entity.position);
+      if (remaining < search.bestDistance - 2) { search.bestDistance = remaining; search.walksWithoutProgress = 0; }
+      else search.walksWithoutProgress++;
+      // A geometric waypoint can lie in a lake or behind impassable terrain.
+      // Reaching other ground is not progress toward it. Move on after three
+      // successful walks that fail to approach, preserving the global budget.
+      if (remaining < 6 || (!observed.length && search.walksWithoutProgress >= 3)) search.leg++;
     } catch (err) {
       task.check();
       if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err;
@@ -396,7 +406,11 @@ function catalogPlan(bot, item, count, stock) {
     try { enchantments = i.enchants.map(e => e.name); } catch (_) {}
     return { name: i.name, enchantments };
   });
-  return planCatalog(bot.registry, item, count, stock, { nearby: bot._catalogObservation.nearby, tools });
+  const nearby = bot._catalogObservation.nearby;
+  const plan = planCatalog(bot.registry, item, count, stock, { nearby, tools });
+  const alternatives = observeRecipeAlternatives(bot, plan);
+  return alternatives.some(name => !nearby.includes(name))
+    ? planCatalog(bot.registry, item, count, stock, { nearby: [...new Set([...nearby, ...alternatives])], tools }) : plan;
 }
 
 async function acquireStep(bot, task, item, count, goal, save, { portable = false, minimumMiningY } = {}) {
@@ -885,4 +899,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked };
+module.exports = { runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked };

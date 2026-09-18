@@ -26,6 +26,17 @@ test('exploration reaches a distant waypoint through intermediate walks before r
   assert.equal(goal.search.sand.leg, 1);
   assert.equal(bot.entity.position.x, 27);
 });
+
+test('exploration leaves an unreachable geometric waypoint instead of spending the entire search there', async () => {
+  const registry = require('minecraft-data')('26.1');
+  const bot = { registry, entity: { position: new Vec3(22, 64, 8) }, blockAt: () => ({ name: 'air' }),
+    findBlocks: ({ matching }) => matching.includes(registry.blocksByName.grass_block.id) ? [new Vec3(22, 63, 8)] : [],
+    pathfinder: { goto: async () => {}, setGoal() {} } };
+  const goal = { search: { rose_bush: { origin: { x: 0, y: 64, z: 0 }, attempts: 0, leg: 0 } } };
+  for (let n = 0; n < 3; n++) await explore(bot, new Task('test', 'search'), goal, () => {}, 'rose_bush');
+  assert.equal(goal.search.rose_bush.leg, 1);
+  assert.equal(goal.search.rose_bush.attempts, 3);
+});
 test('an empty path resolving successfully is not accepted as arrival', async () => {
   const { navigate } = require('../src/skills');
   const { goals } = require('mineflayer-pathfinder');

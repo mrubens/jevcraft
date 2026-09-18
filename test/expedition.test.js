@@ -30,7 +30,8 @@ test('catalog concrete prepares carried expedition supplies before starting a de
 
 test('deep catalog requests acquire missing supplies before attempting the ore', async () => {
   const bot = fixture({ stone_pickaxe: 1, oak_log: 7, crafting_table: 1 }, {
-    findBlocks: ({ matching }) => {
+    findBlocks: ({ matching, maxDistance }) => {
+      if (maxDistance === 64) return []; // Read-only alternative recipe survey.
       if (matching.includes(registry.blocksByName.oak_log.id)) throw new Error('reached spare wood acquisition');
       return [];
     },

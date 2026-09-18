@@ -168,6 +168,14 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 - Resumed concrete diagnostic `mu7j48rq` FAILED again (runner 46435, exit 1), exhausting 128 rose-bush search steps without any concrete or delivery. A read-only rejoin found no red/blue flowers within 64 blocks at its final position; it did not establish that flowers were omitted from an otherwise available observation. Recipe alternatives and exploration still need work. Both original and resumed failures remain recorded.
 - Milestone `9fb5efd` was pushed and deployed to the player's Jev with the complete purple-house checkpoint preserved. The fresh second Nether world is `.test-nether/world-2/` on port 25572; the first failed world remains intact. Its new empty-inventory Normal trial is ongoing with the food and obsidian changes. The uninterrupted endurance trial continues independently on its original code and world.
 
+### Two-cycle endurance and recipe alternatives (2026-09-18)
+
+- Fresh natural Normal endurance `mu7j1633` PASSED (runner 42563, exit 0). It began empty at (10.5,64,9.5), independently verified its 96-block house, and survived exactly 48,000 elapsed ticks across two day/night cycles without dying. It hunted chickens, crafted cooking equipment, cooked two chickens and sealed/left its remembered house for both nights. Logged minimum health and food were both 20. No grants, teleports, Creative mode, time/difficulty changes or restarts were used. This establishes two-cycle survival and a useful request; natural eating and tool replacement remain unproven (controlled checks already pass).
+- Fresh Nether trial `mu7k3zw5` FAILED (runner 61506, exit 1) after obtaining its food reserve, tools and flint and steel. Further iron acquisition entered hostile cave terrain; repeated escape searches found no safe route, then blocked at health 16 with food 20 and two cooked chickens still carried. Food preparation worked, but route/threat handling remains insufficient. The failed `world-2` and checkpoint are preserved.
+- Ingredient observation now derives competing resource groups from actual intermediate recipes and surveys them separately from abundant stone/logs. The planner can choose poppies, tulips or cornflowers when those are observed instead of committing to an unseen high-yield flower. Resource exploration also advances past an unobserved geometric waypoint after three walks without meaningful approach; the total search budget remains bounded.
+- All 103 unit tests passed. Controlled `recipe-alternative-mu7kf1r8` PASSED (runner 29056, exit 0): the broad observation contained 48 nearby stone blocks and omitted the prepared poppies, while the recipe survey found them; Jev gathered two and crafted exactly two red dye from empty Survival inventory. Setup teleport, stone patch and flowers are fixture-only and recorded. This establishes alternative selection and execution, not natural concrete acceptance.
+- The player's Jev was updated to pushed milestone `81e4960` with its completed house checkpoint preserved. A fresh empty-inventory Normal concrete trial is starting in `.test-concrete/world-2/` on port 25571 with the food, observation and exploration changes. The previous concrete world and both failed runs remain intact.
+
 Still required:
 
 1. Complete and independently verify natural-world concrete and Nether trials. House passed in a natural world; concrete and Nether passed in the controlled fixture.
@@ -176,6 +184,6 @@ Still required:
 4. Re-run the updated concrete workflow uninterrupted, and test partial delivery/cancellation live. Full delivery is now proven in the controlled fixture.
 5. Extend the passed controlled chat cancellation, restart/resume and death/disconnect checks to demanding natural-world situations.
 6. Improve recipe alternatives and resource exploration after an unavailable source. Literal and classified operator commands already have live authorization and no-replay checks.
-7. Complete the Normal survival acceptance in `GOAL.md`, including two full cycles and natural eating/tool maintenance evidence. Food, night safety, tool replacement and recovery are implemented and individually tested, but the combined acceptance is incomplete.
+7. Complete the remaining Normal survival acceptance in `GOAL.md`, including natural eating/tool maintenance evidence. Two full cycles with a useful request now pass; the combined acceptance is still incomplete.
 
 Do not mark the goal complete based on unit tests or the presence of implementation. Live acceptance and recovery evidence are still missing.
