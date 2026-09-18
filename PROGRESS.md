@@ -160,14 +160,22 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 - All 96 unit tests passed after the preparation and shelter fixes. Fresh Normal endurance `mu7j1633` has completed its house, survived the first night in it, hunted chickens and cooked two chickens from naturally gathered ingredients. At 26,840/48,000 ticks it still had health/food 20. Two-cycle survival and natural eating remain unverified; the original process continues without restart.
 - Fresh natural Normal Nether trial `mu7jlb6w` FAILED (runner 9995, exit 1): it prepared supplies and crafted flint and steel, then took repeated underground hostile damage and exhausted safe food-search routes at health 0.91/food 14. Its catalog plan also incorrectly chose ender chests as the cheap obsidian source without the diamond-tool dependency. Preserve this failure and its world for diagnosis; no grants, teleports, mode/time/difficulty changes were used.
 
+### Food reserves and natural obsidian dependencies (2026-09-18)
+
+- Normal expeditions now require 12 carried safe food points before the preparation flag can become ready. Full hunger alone does not satisfy this reserve. The survival controller keeps the player request saved and selects among available hunting/cooking actions until the prerequisite is met; Creative acquisition and Peaceful preparation keep their existing behavior.
+- Catalog search no longer treats an unobserved crafted object as a raw deposit. Natural obsidian now requires iron and diamond tool progression rather than wandering for ender chests. Compatible mining sources must also support the chosen harvest tool. These are planning corrections, not a claim that the complete natural Nether route has passed.
+- All 99 unit tests passed. Survival evaluation passed 5/5 in `artifacts/survival-eval-mu7k0gmf.json`, including full hunger with missing expedition food. Controlled Normal `expedition-mu7k0g3s` PASSED (runner 38917, exit 0): from empty inventory, hunted chickens, cooked two, and carried a stone pickaxe, eight spare oak logs and a portable table before ore acquisition. The real recipient classifier also correctly kept the requested lapis for the bot. Setup teleport, prepared logs/stone, summoned chickens and fixture time/difficulty changes are recorded separately; the initial two fills were reissued after chunk loading. Fixture difficulty was restored to Peaceful after completion.
+- Resumed concrete diagnostic `mu7j48rq` FAILED again (runner 46435, exit 1), exhausting 128 rose-bush search steps without any concrete or delivery. A read-only rejoin found no red/blue flowers within 64 blocks at its final position; it did not establish that flowers were omitted from an otherwise available observation. Recipe alternatives and exploration still need work. Both original and resumed failures remain recorded.
+- Milestone `9fb5efd` was pushed and deployed to the player's Jev with the complete purple-house checkpoint preserved. The fresh second Nether world is `.test-nether/world-2/` on port 25572; the first failed world remains intact. Its new empty-inventory Normal trial is ongoing with the food and obsidian changes. The uninterrupted endurance trial continues independently on its original code and world.
+
 Still required:
 
 1. Complete and independently verify natural-world concrete and Nether trials. House passed in a natural world; concrete and Nether passed in the controlled fixture.
-2. Test placement, crafting, smelting, hardening and portal entry in-game; resolve failures found.
+2. Resolve failures in long natural-world acquisition chains. Placement, crafting, smelting, hardening and portal entry have controlled live checks; those do not prove natural-world progression.
 3. Finish and validate underground progression/resource search, tool replacement, and recovery through hostile terrain. Staircase excavation is live, but full natural-world Nether progression remains unproven.
 4. Re-run the updated concrete workflow uninterrupted, and test partial delivery/cancellation live. Full delivery is now proven in the controlled fixture.
-5. Test cancellation, restart/resume, death/disconnect, and repeated-failure behavior through the actual chat entry point.
-6. Reconcile experimental legacy command support and current limited routing, and document accurate tested scope.
-7. Expanded survival scope requested: food/hunger, health/threats, night safety, tool replacement, and death recovery on Normal difficulty. Proposed acceptance criteria are in `GOAL.md`; these are not yet implemented or proven.
+5. Extend the passed controlled chat cancellation, restart/resume and death/disconnect checks to demanding natural-world situations.
+6. Improve recipe alternatives and resource exploration after an unavailable source. Literal and classified operator commands already have live authorization and no-replay checks.
+7. Complete the Normal survival acceptance in `GOAL.md`, including two full cycles and natural eating/tool maintenance evidence. Food, night safety, tool replacement and recovery are implemented and individually tested, but the combined acceptance is incomplete.
 
 Do not mark the goal complete based on unit tests or the presence of implementation. Live acceptance and recovery evidence are still missing.

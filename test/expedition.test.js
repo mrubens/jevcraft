@@ -49,3 +49,17 @@ test('an already acquired ordinary item finishes without preparing an expedition
   const result = await runGoal(bot, new Task('test', goal.request), goal, { save() {} }, { survival, maxSteps: 1 });
   assert(result.ok); assert.equal(goal.expeditionReady, undefined);
 });
+
+test('Normal expeditions cannot descend with tools and spare wood but no safe food reserve', async () => {
+  const bot = fixture({ stone_pickaxe: 1, oak_log: 8, crafting_table: 1 }, { game: { gameMode: 'survival', difficulty: 'normal' } });
+  const goal = { kind: 'obtain', item: 'purple_concrete', count: 32, request: 'get 32 purple concrete' };
+  await runGoal(bot, new Task('test', goal.request), goal, { save() {} }, { survival, maxSteps: 1 });
+  assert.equal(goal.preparingExpedition, true);
+  assert.equal(goal.expeditionReady, undefined);
+  assert.equal(goal.step.action, 'prepare_expedition_food');
+  assert.equal(goal.step.carriedFoodPoints, 0);
+  bot.inventory.items().push({ name: 'cooked_chicken', count: 2 });
+  await runGoal(bot, new Task('test', goal.request), goal, { save() {} }, { survival, maxSteps: 1 });
+  assert.equal(goal.expeditionReady, true);
+  assert.equal(goal.step.foodPoints, 12);
+});

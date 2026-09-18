@@ -77,3 +77,21 @@ test('concrete crafts requested color and hardens the powder', () => {
   assert.equal(plan[0].item, 'red_concrete_powder');
   assert.equal(plan[1].item, 'red_concrete');
 });
+
+test('natural obsidian progression requires diamonds rather than searching for unobserved ender chests', () => {
+  const plan = planCatalog(registry, 'obsidian', 10, { stone_pickaxe: 1, oak_log: 8, crafting_table: 1 });
+  assert(plan.some(s => s.item === 'iron_pickaxe'));
+  assert(plan.some(s => s.drops === 'diamond'));
+  assert(plan.some(s => s.item === 'diamond_pickaxe'));
+  assert.equal(plan.at(-1).tool, 'diamond_pickaxe');
+  assert.equal(plan.at(-1).block, 'obsidian');
+  assert(!plan.at(-1).sources.includes('ender_chest'));
+});
+
+test('a mining action cannot combine sources needing stronger harvest tools', () => {
+  const copy = { ...registry, blocksArray: registry.blocksArray.map(b => b.name === 'stone'
+    ? { ...b, harvestTools: { [registry.itemsByName.diamond_pickaxe.id]: true } } : b) };
+  const step = planCatalog(copy, 'cobblestone', 1, { wooden_pickaxe: 1 }, { nearby: ['cobblestone'] }).at(-1);
+  assert.equal(step.tool, 'wooden_pickaxe');
+  assert(!step.sources.includes('stone'), 'the chosen wooden pickaxe must not authorize the diamond-only source');
+});

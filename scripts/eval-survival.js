@@ -16,6 +16,7 @@ const registry = require('minecraft-data')('26.1');
     { name: 'dusk-house-without-refuge', timeOfDay: 10800, kind: 'house', expected: true },
     { name: 'night-concrete-without-refuge', timeOfDay: 15000, kind: 'concrete', expected: true },
     { name: 'hungry-with-carried-raw-chicken', timeOfDay: 4000, kind: 'survive', food: 14, inventory: [{ name: 'chicken', count: 2 }], expected: true, cooking: true },
+    { name: 'full-hunger-but-expedition-needs-food', timeOfDay: 4000, kind: 'obtain', preparingExpedition: true, inventory: [{ name: 'chicken', count: 2 }], expected: true, cooking: true },
   ]) {
     const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal' },
       time: { timeOfDay: scenario.timeOfDay }, entity: { position: new Vec3(0, 64, 0) }, entities: {},
@@ -25,7 +26,7 @@ const registry = require('minecraft-data')('26.1');
     const controller = new Survival(bot, { acquireStep: async (b, t, output, amount) => { cooked = { output, amount }; } }, { client });
     let built = false;
     controller.refugeStep = async () => { built = true; };
-    const goal = { kind: scenario.kind, request: scenario.kind === 'house' ? 'Build a house' : 'Get me 32 purple concrete' };
+    const goal = { kind: scenario.kind, preparingExpedition: scenario.preparingExpedition, request: scenario.kind === 'house' ? 'Build a house' : 'Get me 32 purple concrete' };
     const handled = await controller.step(new Task('eval', goal.request), goal, () => {});
     const record = { name: scenario.name, pass: handled === scenario.expected && (scenario.cooking ? cooked?.output === 'cooked_chicken' && cooked.amount === 2 && !built : built === scenario.expected),
       expectedShelter: scenario.expected && !scenario.cooking, cooked, handled, decision: goal.decisions?.at(-1) };

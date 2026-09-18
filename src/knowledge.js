@@ -62,13 +62,19 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
   const have = name => stock[name] || 0;
   const add = (name, amount) => { stock[name] = have(name) + amount; };
   const slots = recipe => recipe.shape ? recipe.shape.flat().filter(Boolean) : recipe.ingredients;
+  // A drop table describes what breaking a block yields, not where that
+  // block can be found. Never plan an unobserved crafted object as a raw
+  // resource deposit (for example ender chests as a source of obsidian).
+  const usableSource = (name, source) => !name.endsWith('_concrete') &&
+    !(data.recipes[source.block] && !/(ore|log|stem|hyphae|wood)$/.test(source.block) &&
+      (source.block === name || !observed.has(source.block)));
   function estimate(name, trail = new Set(), depth = 0) {
     if (have(name)) return 0;
     if (trail.has(name) || depth > 5) return 1000;
     const next = new Set([...trail, name]);
     let best = Infinity;
     for (const source of data.sources[name] || []) {
-      if (source.enchantment) continue;
+      if (source.enchantment || !usableSource(name, source)) continue;
       const cost = (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0);
       best = Math.min(best, cost);
     }
@@ -134,7 +140,7 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
       for (const source of sources) {
         // Craftable objects should be made from ingredients. Do not roam the
         // world destroying other players' chests or houses as a cheap source.
-        if (name.endsWith('_concrete') || (data.recipes[name] && source.block === name && !/(ore|log|stem|hyphae|wood)$/.test(name))) continue;
+        if (!usableSource(name, source)) continue;
         methods.push({ cost: (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0), run: () => {
           let tool = source.tool;
           if (source.enchantment) {
@@ -143,7 +149,8 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
             tool = enchanted.name;
           } else if (source.allowedTools.length) tool = source.allowedTools.find(t => have(t)) || source.allowedTools[0];
           if (tool) acquire(tool, 1);
-          const compatible = sources.filter(s => s.tool === source.tool && s.enchantment === source.enchantment && JSON.stringify(s.properties) === JSON.stringify(source.properties));
+          const compatible = sources.filter(s => usableSource(name, s) && s.tool === source.tool && s.enchantment === source.enchantment &&
+            (!s.allowedTools.length || s.allowedTools.includes(tool)) && JSON.stringify(s.properties) === JSON.stringify(source.properties));
           steps.push({ action: 'mine', block: source.block, sources: [...new Set(compatible.map(s => s.block))], drops: name, count: missing,
             depth: source.depth, tier: tool?.endsWith('_pickaxe') ? TOOL_TIERS.indexOf(tool.split('_')[0]) + 1 : 0,
             tool, enchantment: source.enchantment, properties: source.properties, consumes: {}, produces: { [name]: missing } }); add(name, missing);

@@ -16,6 +16,7 @@ const { checkThreats } = require('./danger');
 const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
 const { surfaceMovement } = require('./surface');
+const { foodSupply } = require('./foraging');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -37,11 +38,16 @@ function planningInventory(bot) {
 }
 
 async function prepareExpeditionStep(bot, task, goal, save) {
+  goal.preparingExpedition = true;
+  if (bot.game.difficulty && bot.game.difficulty !== 'peaceful' && foodSupply(bot) < 12) {
+    goal.step = { action: 'prepare_expedition_food', carriedFoodPoints: foodSupply(bot), requiredFoodPoints: 12 };
+    save(); return false;
+  }
   if (pickaxeTier(bot) < 2) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return false; }
   if (countOf(bot, 'oak_log') < 8) { await acquireStep(bot, task, 'oak_log', 8, goal, save); return false; }
   if (!countOf(bot, 'crafting_table')) { await acquireStep(bot, task, 'crafting_table', 1, goal, save, { portable: true }); return false; }
   goal.expeditionReady = true; delete goal.preparingExpedition;
-  goal.step = { action: 'prepared_expedition', minimumPickaxeTier: 2, supplies: { oak_log: 8, crafting_table: 1 } };
+  goal.step = { action: 'prepared_expedition', minimumPickaxeTier: 2, supplies: { oak_log: 8, crafting_table: 1 }, foodPoints: foodSupply(bot) };
   save(); return true;
 }
 
