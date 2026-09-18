@@ -47,6 +47,7 @@ bot.on('death', () => {
 });
 bot.on('health', () => log({ health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, position: bot.entity?.position }));
 bot.on('navigation_stall', details => log({ navigationStall: details }));
+bot.on('navigation_recovery', details => log({ navigationRecovery: details }));
 bot.on('handover', details => log({ handover: details }));
 let lastUnsafeRouteLog = 0;
 bot.on('path_update', route => {

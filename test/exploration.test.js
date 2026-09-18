@@ -109,3 +109,68 @@ test('bobbing in place does not indefinitely reset the navigation stall timer', 
   finally { clearInterval(motion); }
   assert(Date.now() - started < 1500);
 });
+
+function correctionFixture({ safe = true } = {}) {
+  const { EventEmitter } = require('node:events');
+  const bot = new EventEmitter();
+  const controls = {};
+  let attempts = 0, corrections;
+  Object.assign(bot, {
+    entity: { position: new Vec3(0.5, 64, 0.7), onGround: false },
+    blockAt: p => ({ name: p.y === 63 ? 'stone' : 'air',
+      shapes: p.y === 63 && safe ? [[0, 0, 0, 1, 1, 1]] : [] }),
+    clearControlStates: () => { for (const k of Object.keys(controls)) controls[k] = false; },
+    setControlState: (key, value) => { controls[key] = value; },
+    lookAt: async () => {},
+    pathfinder: {
+      goto: () => {
+        attempts++;
+        corrections = setInterval(() => bot.emit('forcedMove'), 10);
+        return new Promise(() => {});
+      },
+      setGoal: () => clearInterval(corrections),
+    },
+  });
+  return { bot, controls, attempts: () => attempts, dispose: () => clearInterval(corrections) };
+}
+
+test('a repeated server correction permits one ordinary movement recovery then fails cleanly', async () => {
+  const { navigate } = require('../src/skills');
+  const fixture = correctionFixture();
+  const { bot, controls } = fixture;
+  let recoveries = 0;
+  bot.on('navigation_recovery', () => { recoveries++; });
+  // Simulate observed physics only after the recovery actually uses controls.
+  const motion = setInterval(() => {
+    if (controls.forward) { bot.entity.position.z = 0.55; bot.entity.onGround = true; }
+  }, 10);
+  try {
+    await assert.rejects(navigate(bot, new Task('test', 'recover'), {}, { timeoutMs: 2000 }), /Repeated server/);
+    assert.equal(fixture.attempts(), 2);
+    assert.equal(recoveries, 1);
+    assert.equal(bot.listenerCount('forcedMove'), 0);
+    assert(Object.values(controls).every(v => !v));
+  } finally { clearInterval(motion); fixture.dispose(); }
+});
+
+test('navigation recovery refuses unsupported footing and respects cancellation and the original deadline', async () => {
+  const { navigate } = require('../src/skills');
+  for (const kind of ['unsafe', 'cancel', 'deadline', 'air']) {
+    const fixture = correctionFixture({ safe: kind !== 'unsafe' });
+    const { bot, controls } = fixture;
+    const task = new Task('test', kind);
+    const started = Date.now();
+    const interrupt = setInterval(() => {
+      if (!controls.forward) return;
+      if (kind === 'cancel') task.cancel();
+      if (kind === 'air') bot.oxygenLevel = 10;
+    }, 10);
+    try {
+      await assert.rejects(navigate(bot, task, {}, { timeoutMs: 350 }), kind === 'cancel' ? { name: 'Cancelled' } : kind === 'air' ? { name: 'NeedsAir' } : /Repeated server/);
+      assert.equal(fixture.attempts(), 1);
+      assert(Date.now() - started < 1000);
+      assert.equal(bot.listenerCount('forcedMove'), 0);
+      assert(Object.values(controls).every(v => !v));
+    } finally { clearInterval(interrupt); fixture.dispose(); }
+  }
+});

@@ -60,12 +60,72 @@ class Cancelled extends Error {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+class NavigationCorrectionLoop extends Error {
+  constructor() { super('Repeated server movement corrections at the same position'); }
+}
+
+// A saved position can already overlap a wall by floating-point precision.
+// Walk inward on the same inspected, solid floor cell; never rewrite position
+// or onGround, excavate an escape, or extend the original navigation deadline.
+async function recoverNavigation(bot, task, deadline, stopWhen) {
+  const start = bot.entity.position.clone();
+  const cell = start.floored();
+  const floor = bot.blockAt?.(cell.offset(0, -1, 0));
+  const fullFloor = floor?.shapes?.some(s => s.length === 6 && s.every((v, i) => v === [0, 0, 0, 1, 1, 1][i]));
+  const clear = p => { const b = bot.blockAt?.(p); return b && b.shapes?.length === 0 && !['water', 'lava', 'fire', 'soul_fire', 'powder_snow', 'sweet_berry_bush'].includes(b.name); };
+  if (start.y - cell.y > 0.05 || bot.entity.isInWater || bot.entity.isInLava || !fullFloor ||
+    ['magma_block', 'cactus'].includes(floor?.name) || bot.pathfinder.movements?.blocksToAvoid?.has(floor.type) ||
+    !clear(cell) || !clear(cell.offset(0, 1, 0))) return false;
+  const target = cell.offset(0.5, 0, 0.5);
+  const distance = () => Math.hypot(bot.entity.position.x - target.x, bot.entity.position.z - target.z);
+  const until = Math.min(deadline, Date.now() + 1500);
+  bot.clearControlStates();
+  try {
+    while (Date.now() < until) {
+      task.check(); checkAir(bot);
+      if (stopWhen?.()) return true;
+      if (!bot.entity.position.floored().equals(cell)) return false;
+      if (distance() <= 0.18 && bot.entity.onGround) return true;
+      await bot.lookAt(target.offset(0, 1.62, 0), true);
+      bot.setControlState('sneak', true);
+      bot.setControlState('forward', distance() > 0.12);
+      await sleep(50);
+    }
+    return false;
+  } finally {
+    bot.clearControlStates();
+    bot.emit?.('navigation_recovery', { from: start, position: { ...bot.entity.position }, onGround: bot.entity.onGround });
+  }
+}
+
 /** Move somewhere, aborting cleanly if the task is cancelled mid-path. */
 async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (let attempt = 0; ; attempt++) {
+    task.check(); checkAir(bot);
+    if (stopWhen?.()) return;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error('navigation timed out');
+    try { return await navigateAttempt(bot, task, goal, { timeoutMs: remaining, stallMs, stopWhen }); }
+    catch (err) {
+      if (!(err instanceof NavigationCorrectionLoop) || attempt > 0 ||
+        !await recoverNavigation(bot, task, deadline, stopWhen)) throw err;
+    }
+  }
+}
+
+async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }) {
   task.check(); checkAir(bot);
   if (stopWhen?.()) return;
   let timer;
   let acquired = false;
+  let corrections = [];
+  const corrected = () => {
+    const now = Date.now(), p = bot.entity.position;
+    corrections = corrections.filter(c => now - c.at < 2000 && p.distanceTo(c.position) < 0.25);
+    corrections.push({ at: now, position: p.clone() });
+  };
+  bot.on?.('forcedMove', corrected);
   const watchdog = new Promise((resolve, reject) => {
     const started = Date.now();
     let lastProgress = started;
@@ -100,6 +160,11 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
           feet: bot.blockAt?.(bot.entity.position)?.name, head: bot.blockAt?.(bot.entity.position.offset(0, 1.62, 0))?.name });
         bot.pathfinder.setGoal(null);
         reject(task.cancelled ? new Cancelled(task.label) : new Error('navigation timed out'));
+        return;
+      }
+      if (corrections.length >= 4 && Date.now() - corrections.at(-1).at < 500) {
+        reject(new NavigationCorrectionLoop());
+        bot.pathfinder.setGoal(null); bot.stopDigging?.(); bot.clearControlStates?.();
       }
     }, 100);
   });
@@ -125,6 +190,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
     throw err;
   } finally {
     clearInterval(timer);
+    bot.removeListener?.('forcedMove', corrected);
   }
 }
 

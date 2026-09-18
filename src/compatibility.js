@@ -14,7 +14,18 @@ function fixMiningMaterials(registry) {
   }
 }
 
+function fixPlayerDimensions(physics) {
+  // Minecraft stores EntityDimensions as floats, then widens them to doubles
+  // for collision tests. Using decimal doubles lets us enter a wall by ~1e-8
+  // blocks. In 26.1 the resulting corrections repeatedly clear onGround and
+  // prevent jumping out. Only replace upstream defaults, preserving overrides.
+  if (physics?.playerHalfWidth === 0.3) physics.playerHalfWidth = Math.fround(0.6) / 2;
+  if (physics?.playerHeight === 1.8) physics.playerHeight = Math.fround(1.8);
+}
+
 function compatibilityPlugin(bot) {
+  fixPlayerDimensions(bot.physics);
+  bot.once?.('spawn', () => fixPlayerDimensions(bot.physics));
   // 26.1's protocol decoder returns named difficulty values; Mineflayer's
   // game plugin still indexes a numeric lookup table and loses that value.
   bot._client.on('difficulty', packet => {
@@ -57,4 +68,4 @@ function fixPathfinderResults() {
   AStar.prototype[patched] = true;
 }
 
-module.exports = { fixMiningMaterials, compatibilityPlugin, fixPathfinderResults };
+module.exports = { fixMiningMaterials, compatibilityPlugin, fixPathfinderResults, fixPlayerDimensions };

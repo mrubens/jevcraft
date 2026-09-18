@@ -64,3 +64,36 @@ test('path smoothing and execution cannot corrupt an ongoing AStar search', () =
   assert.equal(second.path[0].toPlace[0].returnPos.x, 0);
   assert.equal(move.y, 70);
 });
+
+test('walking into a wall keeps the server-sized player outside its collision box', () => {
+  const { Physics, PlayerState } = require('prismarine-physics');
+  const { Vec3 } = require('vec3');
+  const { fixPlayerDimensions } = require('../src/compatibility');
+  const registry = require('prismarine-registry')('26.1');
+  const Block = require('prismarine-block')(registry);
+  const world = { getBlock(p) {
+    const cell = p.floored();
+    const name = cell.y === 62 || (cell.x === 58 && cell.y === 63) ? 'stone' : 'air';
+    const block = Block.fromStateId(registry.blocksByName[name].defaultState);
+    block.position = cell;
+    return block;
+  } };
+  function walk(fixed) {
+    const physics = Physics(registry, world);
+    if (fixed) fixPlayerDimensions(physics);
+    const bot = { version: '26.1', entity: { position: new Vec3(57.5, 63, -2.5), velocity: new Vec3(0, 0, 0),
+      onGround: true, yaw: -Math.PI / 2, pitch: 0, effects: {}, attributes: {} }, inventory: { slots: [] } };
+    const controls = Object.fromEntries(['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'].map(k => [k, k === 'forward']));
+    let state = new PlayerState(bot, controls);
+    for (let tick = 0; tick < 50; tick++) state = physics.simulatePlayer(state, world);
+    return state;
+  }
+  assert(walk(false).pos.x + Math.fround(0.6) / 2 > 58, 'the old physics overlaps the server wall');
+  const corrected = walk(true);
+  assert.equal(corrected.pos.x + Math.fround(0.6) / 2, 58);
+  assert(corrected.onGround);
+  assert.equal(corrected.pos.y, 63);
+  const custom = { playerHalfWidth: 0.4, playerHeight: 2 };
+  fixPlayerDimensions(custom);
+  assert.deepEqual(custom, { playerHalfWidth: 0.4, playerHeight: 2 });
+});
