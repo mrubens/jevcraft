@@ -2,6 +2,7 @@
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
+const { safeFromHostiles } = require('./danger');
 
 const directions = [new Vec3(1, 0, 0), new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(0, 0, -1)];
 const faces = [...directions, new Vec3(0, 1, 0), new Vec3(0, -1, 0)];
@@ -16,6 +17,7 @@ function stairOptions(bot, goal, target) {
   const choices = [];
   for (const d of directions) for (const height of heights) {
     const destination = feet.plus(d).offset(0, height, 0);
+    if (!safeFromHostiles(bot, destination.offset(0.5, 0, 0.5))) continue;
     const floor = bot.blockAt(destination.offset(0, -1, 0));
     if (dangerous(floor) || floor.boundingBox !== 'block') continue;
     const clear = [];

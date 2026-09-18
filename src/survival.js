@@ -8,6 +8,7 @@ const { maintainVitals, chooseFood, checkAir } = require('./vitals');
 const { foodSupply, forageChoices } = require('./foraging');
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
+const { surveyRoute } = require('./skills');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
@@ -66,7 +67,7 @@ class Survival {
         .sort((a, b) => distance(b) - distance(a));
       for (const p of candidates.slice(0, 16)) {
         const destination = new goals.GoalBlock(p.x, p.y, p.z);
-        const route = bot.pathfinder.getPathTo(movements, destination, 150);
+        const route = await surveyRoute(bot, task, movements, destination, 150);
         if (route.status !== 'success') continue;
         // Do not run through another hostile to escape the closest one.
         if (route.path.some(point => danger.some(t => t.entity.position.distanceTo(pos(point)) < Math.min(4, t.distance - 1)))) continue;
@@ -88,7 +89,10 @@ class Survival {
     let refuge = this.currentShelter();
     if (!refuge) {
       const sites = shelter.shelterSites(bot, goal);
-      const site = sites.find(p => bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalBlock(p.x, p.y, p.z), 150).status === 'success');
+      let site;
+      for (const p of sites) {
+        if ((await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalBlock(p.x, p.y, p.z), 150)).status === 'success') { site = p; break; }
+      }
       if (!site) throw new Error('No reachable, supported 3 by 3 shelter site observed');
       refuge = { origin: { ...site }, dimension: bot.game.dimension, createdAt: new Date().toISOString() };
       this.state.shelters.push(refuge); save();

@@ -37,6 +37,19 @@ test('exploration leaves an unreachable geometric waypoint instead of spending t
   assert.equal(goal.search.rose_bush.leg, 1);
   assert.equal(goal.search.rose_bush.attempts, 3);
 });
+
+test('route surveys continue partial searches while respecting cancellation and deadlines', async () => {
+  const { surveyRoute } = require('../src/skills');
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, pathfinder: {
+    getPathFromTo: function * () { yield { result: { status: 'partial', path: [1] } }; yield { result: { status: 'success', path: [1, 2] } }; },
+  } };
+  assert.deepEqual(await surveyRoute(bot, new Task('test', 'survey'), {}, {}, 100), { status: 'success', path: [1, 2] });
+  const cancelled = new Task('test', 'cancel');
+  bot.pathfinder.getPathFromTo = function * () { yield { result: { status: 'partial', path: [] } }; cancelled.cancel(); yield { result: { status: 'success', path: [] } }; };
+  await assert.rejects(surveyRoute(bot, cancelled, {}, {}, 100), { name: 'Cancelled' });
+  bot.pathfinder.getPathFromTo = function * () { while (true) yield { result: { status: 'partial', path: [] } }; };
+  assert.equal((await surveyRoute(bot, new Task('test', 'deadline'), {}, {}, 20)).status, 'timeout');
+});
 test('an empty path resolving successfully is not accepted as arrival', async () => {
   const { navigate } = require('../src/skills');
   const { goals } = require('mineflayer-pathfinder');

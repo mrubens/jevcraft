@@ -60,6 +60,23 @@ class Cancelled extends Error {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// getPathTo returns only the first 40 ms slice, even when a larger timeout is
+// supplied. A partial result is an unfinished search, not proof of no route.
+async function surveyRoute(bot, task, movements, goal, timeoutMs = 500) {
+  task.check(); checkAir(bot);
+  if (!bot.pathfinder.getPathFromTo) return bot.pathfinder.getPathTo(movements, goal, timeoutMs);
+  const deadline = Date.now() + timeoutMs;
+  let last;
+  for (const { result } of bot.pathfinder.getPathFromTo(movements, bot.entity.position, goal,
+    { timeout: timeoutMs, tickTimeout: Math.min(20, timeoutMs) })) {
+    task.check(); checkAir(bot); last = result;
+    if (result.status !== 'partial') return result;
+    if (Date.now() >= deadline) return { ...result, status: 'timeout' };
+    await sleep(0); // Let physics, new mob observations and cancellation run.
+  }
+  return last || { status: 'noPath', path: [] };
+}
+
 class NavigationCorrectionLoop extends Error {
   constructor() { super('Repeated server movement corrections at the same position'); }
 }
@@ -943,6 +960,7 @@ module.exports = {
   explore,
   ensureCraftingTable,
   navigate,
+  surveyRoute,
   equipBestTool,
   pickaxeTier,
   countOf,

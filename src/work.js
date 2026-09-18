@@ -2,7 +2,7 @@
 
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { navigate, equipBestTool, pickaxeTier, countOf } = require('./skills');
+const { navigate, surveyRoute, equipBestTool, pickaxeTier, countOf } = require('./skills');
 const { MINEABLE } = require('./plan');
 const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
@@ -12,7 +12,7 @@ const { tunnelStep } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = require('./vitals');
 const { decideTree } = require('./decisions');
 const { Survival } = require('./survival');
-const { checkThreats } = require('./danger');
+const { checkThreats, safeFromHostiles } = require('./danger');
 const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
 const { surfaceMovement } = require('./surface');
@@ -139,7 +139,8 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = false } 
     let target = pos(search.origin).offset(Math.round(Math.cos(angle) * radius), 0, Math.round(Math.sin(angle) * radius));
     const resourceNames = [...new Set([...Object.entries(MINEABLE).filter(([name, data]) => name === resource || data.drops === resource).map(([name]) => name),
       ...(bot.registry.blocksByName[resource] ? [resource] : []), ...sourceBlocks(bot.registry, resource)])];
-    const observed = find(bot, resourceNames, 128, 8).filter(p => !reservedForConstruction(goal, p));
+    const observed = find(bot, resourceNames, 128, 8).filter(p => !reservedForConstruction(goal, p) && safeFromHostiles(bot, p) &&
+      !(goal.unreachable?.[`${p}`] > Date.now() - 120000));
     if (observed.length) {
       target = observed[0];
       search.observedTarget = { ...target };
@@ -184,7 +185,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = false } 
       checked.add(key(candidate));
       if (checked.size > 16) break;
       const targetGoal = new goals.GoalBlock(candidate.x, candidate.y, candidate.z);
-      const route = bot.pathfinder.getPathTo ? bot.pathfinder.getPathTo(bot.pathfinder.movements, targetGoal, 500) : { status: 'success' };
+      const route = bot.pathfinder.getPathTo ? await surveyRoute(bot, task, bot.pathfinder.movements, targetGoal, 500) : { status: 'success' };
       if (route.status === 'success' && (!surface || (route.path || []).every(p => surface.allowed(p)))) { destination = candidate; break; }
       search.visited[key(candidate)] = (search.visited[key(candidate)] || 0) + 1;
     }
@@ -223,7 +224,7 @@ function miningCandidates(bot, step, goal) {
       (step.drops !== 'dirt' || (b.position.y >= bot.entity.position.floored().y - 1 && air(bot.blockAt(b.position.offset(0, 1, 0))))),
   }).filter(p => {
     const k = `${p}`;
-    return !goal.unreachable?.[k] || Date.now() - goal.unreachable[k] > 120000;
+    return safeFromHostiles(bot, p) && (!goal.unreachable?.[k] || Date.now() - goal.unreachable[k] > 120000);
   });
 }
 
@@ -232,7 +233,7 @@ async function mine(bot, task, step, goal, save, selected) {
   if (!candidates.length) {
     if (step.depth !== null && step.depth !== undefined) {
       const names = step.sources || Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
-      const ore = find(bot, names, 64, 16)[0];
+      const ore = find(bot, names, 64, 16).find(p => safeFromHostiles(bot, p));
       const target = ore || bot.entity.position.floored().offset(24, step.depth - bot.entity.position.floored().y, 0);
       await tunnelStep(bot, task, goal, save, target, { dig, navigate });
     } else await explore(bot, task, goal, save, step.block);

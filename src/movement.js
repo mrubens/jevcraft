@@ -1,11 +1,17 @@
 'use strict';
 const { Movements } = require('mineflayer-pathfinder');
 const { fixMiningMaterials, fixPathfinderResults } = require('./compatibility');
+const { hostileEntities, safeFromHostiles } = require('./danger');
+const { Vec3 } = require('vec3');
 
 class SurvivalMovements extends Movements {
   getNeighbors(node) {
     const neighbors = super.getNeighbors(node);
-    return this.allowedPosition ? neighbors.filter(next => this.allowedPosition(next)) : neighbors;
+    if (!this._hostileObservation || Date.now() - this._hostileObservation.at > 250) {
+      this._hostileObservation = { at: Date.now(), entities: hostileEntities(this.bot, 64) };
+    }
+    return neighbors.filter(next => (!this.allowedPosition || this.allowedPosition(next)) &&
+      safeFromHostiles(this.bot, new Vec3(next.x + 0.5, next.y, next.z + 0.5), this._hostileObservation.entities));
   }
 
   getLandingBlock(node, direction) {

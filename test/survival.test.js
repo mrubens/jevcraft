@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
-const { threats, checkThreats } = require('../src/danger');
+const { threats, checkThreats, safeFromHostiles } = require('../src/danger');
 const shelter = require('../src/shelter');
 const { reservedForConstruction } = require('../src/build-sites');
 const { Task, navigate } = require('../src/skills');
@@ -21,6 +21,18 @@ test('threat visibility uses the entire ray and respects solid cover', () => {
   assert.doesNotThrow(() => checkThreats(bot));
   bot.world.raycast = () => null;
   assert.throws(() => checkThreats(bot), { name: 'NeedsSafety' });
+});
+
+test('ordinary routes avoid observed hostile ranges while preserving retreat and Creative movement', () => {
+  const bot = { game: { gameMode: 'survival', difficulty: 'normal' }, time: { timeOfDay: 14000 },
+    entity: { position: new Vec3(0, 64, 0) }, entities: { 1: { name: 'skeleton', position: new Vec3(25, 64, 0) } } };
+  assert(safeFromHostiles(bot, new Vec3(4, 64, 0)));
+  assert(!safeFromHostiles(bot, new Vec3(6, 64, 0)));
+  bot.entity.position.x = 15; // A moving mob has already entered the buffer.
+  assert(safeFromHostiles(bot, new Vec3(14, 64, 0)));
+  assert(!safeFromHostiles(bot, new Vec3(16, 64, 0)));
+  bot.game.gameMode = 'creative';
+  assert(safeFromHostiles(bot, new Vec3(25, 64, 0)));
 });
 
 test('a shelter is safe only with complete nonfalling shell, floor, and clear interior', () => {
