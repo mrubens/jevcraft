@@ -15,6 +15,7 @@ const { Survival } = require('./survival');
 const { checkThreats } = require('./danger');
 const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
+const { surfaceMovement } = require('./surface');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -116,75 +117,79 @@ function find(bot, names, distance = 48, count = 32) {
   return ids.length ? bot.findBlocks({ matching: ids, maxDistance: distance, count }) : [];
 }
 
-async function explore(bot, task, goal, save, resource) {
-  goal.search ||= {};
-  const search = goal.search[resource] ||= { attempts: 0, origin: { ...bot.entity.position.floored() } };
-  if (search.attempts >= 128) throw new Blocked(`Could not find reachable ${resource} after 128 exploration steps`);
-  search.attempts++;
-  search.leg ||= 0;
-  const angle = (search.leg % 8) * Math.PI / 4;
-  const radius = 24 * (1 + Math.floor(search.leg / 8));
-  let target = pos(search.origin).offset(Math.round(Math.cos(angle) * radius), 0, Math.round(Math.sin(angle) * radius));
-  const resourceNames = [...new Set([...Object.entries(MINEABLE).filter(([name, data]) => name === resource || data.drops === resource).map(([name]) => name),
-    ...(bot.registry.blocksByName[resource] ? [resource] : []), ...sourceBlocks(bot.registry, resource)])];
-  const observed = find(bot, resourceNames, 128, 8).filter(p => !reservedForConstruction(goal, p));
-  if (observed.length) {
-    target = observed[0];
-    search.observedTarget = { ...target };
-  }
-  // When a known resource is well below us, circling the same mountain does
-  // not get closer. Approach through a dry, supported staircase. Stay above
-  // a water-covered deposit rather than tunnelling into the water itself.
-  if (observed.length && search.attempts > 3 && target.y < bot.entity.position.y - 8 && pickaxeTier(bot) >= 1) {
-    let surface = target.clone();
-    for (let y = target.y + 1; y <= target.y + 16; y++) {
-      const b = bot.blockAt(new Vec3(target.x, y, target.z));
-      if (b?.name === 'water') surface.y = y + 2;
-    }
-    await tunnelStep(bot, task, goal, save, surface, { dig, navigate });
-    return;
-  }
-  save();
-  // Keep the same waypoint until reached. Rotating on every short walk made
-  // the bot circle the mountain forever instead of reaching the wider ring.
-  const landIds = ['grass_block', 'dirt', 'stone', 'sand'].map(n => bot.registry.blocksByName[n]?.id).filter(n => n !== undefined);
-  // Filter surface blocks before truncating results. Taking the nearest 512
-  // solids first filled the list with underground stone and hid every shore.
-  const land = bot.findBlocks({ matching: landIds, maxDistance: 48, count: 256,
-    useExtraInfo: b => b.position.distanceTo(bot.entity.position) > 8 &&
-      air(bot.blockAt(b.position.offset(0, 1, 0))) && air(bot.blockAt(b.position.offset(0, 2, 0))),
-  }).map(p => p.offset(0, 1, 0))
-    .sort((a, b) => Math.hypot(a.x - target.x, a.z - target.z) - Math.hypot(b.x - target.x, b.z - target.z));
-  if (!land.length) throw new Error(`No visible dry landing while searching for ${resource}`);
-  search.visited ||= {};
-  const key = p => `${Math.floor(p.x / 8)},${Math.floor(p.y / 8)},${Math.floor(p.z / 8)}`;
-  const distance = p => observed.length ? p.distanceTo(target) : Math.hypot(p.x - target.x, p.z - target.z);
-  land.sort((a, b) => distance(a) + (search.visited[key(a)] || 0) * 24 -
-    distance(b) - (search.visited[key(b)] || 0) * 24);
-  let destination;
-  const checked = new Set();
-  for (const candidate of land) {
-    if (checked.has(key(candidate))) continue;
-    checked.add(key(candidate));
-    if (checked.size > 16) break;
-    const targetGoal = new goals.GoalBlock(candidate.x, candidate.y, candidate.z);
-    const route = bot.pathfinder.getPathTo ? bot.pathfinder.getPathTo(bot.pathfinder.movements, targetGoal, 500) : { status: 'success' };
-    if (route.status === 'success') { destination = candidate; break; }
-    search.visited[key(candidate)] = (search.visited[key(candidate)] || 0) + 1;
-  }
-  if (!destination) { search.leg++; save(); throw new Error(`No reachable surveyed ground while searching for ${resource}`); }
-  search.visited[key(destination)] = (search.visited[key(destination)] || 0) + 1;
-  save();
+async function explore(bot, task, goal, save, resource, { surfaceOnly = false } = {}) {
+  const surface = surfaceOnly ? surfaceMovement(bot) : null;
   try {
-    await navigate(bot, task, new goals.GoalBlock(destination.x, destination.y, destination.z));
-    search.failedLegs = 0;
-    if (Math.hypot(bot.entity.position.x - target.x, bot.entity.position.z - target.z) < 6) search.leg++;
-  } catch (err) {
-    task.check();
-    if (err.name === 'NeedsAir') throw err;
-    if ((search.failedLegs = (search.failedLegs || 0) + 1) >= 2) { search.leg++; search.failedLegs = 0; }
-    throw new Error(`Searching for ${resource}: ${err.message}`);
-  }
+    goal.search ||= {};
+    const search = goal.search[resource] ||= { attempts: 0, origin: { ...bot.entity.position.floored() } };
+    if (search.attempts >= 128) throw new Blocked(`Could not find reachable ${resource} after 128 exploration steps`);
+    search.attempts++;
+    search.leg ||= 0;
+    const angle = (search.leg % 8) * Math.PI / 4;
+    const radius = 24 * (1 + Math.floor(search.leg / 8));
+    let target = pos(search.origin).offset(Math.round(Math.cos(angle) * radius), 0, Math.round(Math.sin(angle) * radius));
+    const resourceNames = [...new Set([...Object.entries(MINEABLE).filter(([name, data]) => name === resource || data.drops === resource).map(([name]) => name),
+      ...(bot.registry.blocksByName[resource] ? [resource] : []), ...sourceBlocks(bot.registry, resource)])];
+    const observed = find(bot, resourceNames, 128, 8).filter(p => !reservedForConstruction(goal, p));
+    if (observed.length) {
+      target = observed[0];
+      search.observedTarget = { ...target };
+    }
+    // When a known resource is well below us, circling the same mountain does
+    // not get closer. Approach through a dry, supported staircase. Stay above
+    // a water-covered deposit rather than tunnelling into the water itself.
+    if (observed.length && search.attempts > 3 && target.y < bot.entity.position.y - 8 && pickaxeTier(bot) >= 1) {
+      let surface = target.clone();
+      for (let y = target.y + 1; y <= target.y + 16; y++) {
+        const b = bot.blockAt(new Vec3(target.x, y, target.z));
+        if (b?.name === 'water') surface.y = y + 2;
+      }
+      await tunnelStep(bot, task, goal, save, surface, { dig, navigate });
+      return;
+    }
+    save();
+    // Keep the same waypoint until reached. Rotating on every short walk made
+    // the bot circle the mountain forever instead of reaching the wider ring.
+    const landIds = ['grass_block', 'dirt', 'stone', 'sand'].map(n => bot.registry.blocksByName[n]?.id).filter(n => n !== undefined);
+    // Filter surface blocks before truncating results. Taking the nearest 512
+    // solids first filled the list with underground stone and hid every shore.
+    const land = bot.findBlocks({ matching: landIds, maxDistance: 48, count: 256,
+      useExtraInfo: b => b.position.distanceTo(bot.entity.position) > 8 &&
+        air(bot.blockAt(b.position.offset(0, 1, 0))) && air(bot.blockAt(b.position.offset(0, 2, 0))) &&
+        (!surface || surface.isSurface(b.position.offset(0, 1, 0))),
+    }).map(p => p.offset(0, 1, 0))
+      .sort((a, b) => Math.hypot(a.x - target.x, a.z - target.z) - Math.hypot(b.x - target.x, b.z - target.z));
+    if (!land.length) throw new Error(`No visible dry landing while searching for ${resource}`);
+    search.visited ||= {};
+    const key = p => `${Math.floor(p.x / 8)},${Math.floor(p.y / 8)},${Math.floor(p.z / 8)}`;
+    const distance = p => observed.length ? p.distanceTo(target) : Math.hypot(p.x - target.x, p.z - target.z);
+    land.sort((a, b) => distance(a) + (search.visited[key(a)] || 0) * 24 -
+      distance(b) - (search.visited[key(b)] || 0) * 24);
+    let destination;
+    const checked = new Set();
+    for (const candidate of land) {
+      if (checked.has(key(candidate))) continue;
+      checked.add(key(candidate));
+      if (checked.size > 16) break;
+      const targetGoal = new goals.GoalBlock(candidate.x, candidate.y, candidate.z);
+      const route = bot.pathfinder.getPathTo ? bot.pathfinder.getPathTo(bot.pathfinder.movements, targetGoal, 500) : { status: 'success' };
+      if (route.status === 'success' && (!surface || (route.path || []).every(p => surface.allowed(p)))) { destination = candidate; break; }
+      search.visited[key(candidate)] = (search.visited[key(candidate)] || 0) + 1;
+    }
+    if (!destination) { search.leg++; save(); throw new Error(`No reachable surveyed ground while searching for ${resource}`); }
+    search.visited[key(destination)] = (search.visited[key(destination)] || 0) + 1;
+    save();
+    try {
+      await navigate(bot, task, new goals.GoalBlock(destination.x, destination.y, destination.z), surface ? { timeoutMs: 20000, stallMs: 5000 } : {});
+      search.failedLegs = 0;
+      if (Math.hypot(bot.entity.position.x - target.x, bot.entity.position.z - target.z) < 6) search.leg++;
+    } catch (err) {
+      task.check();
+      if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err;
+      if ((search.failedLegs = (search.failedLegs || 0) + 1) >= 2) { search.leg++; search.failedLegs = 0; }
+      throw new Error(`Searching for ${resource}: ${err.message}`);
+    }
+  } finally { surface?.restore(); }
 }
 
 function miningCandidates(bot, step, goal) {
@@ -760,12 +765,13 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
   survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
   goal.survival = survival.state;
   protectConstruction(bot, goal);
-  goal.status = 'running'; goal.failures = 0; save();
+  goal.status = 'running'; goal.failures = 0; goal.stalls = 0; save();
   for (let n = 0; n < (goal.kind === 'follow' ? Infinity : maxSteps); n++) {
     task.interruptCheck = undefined;
     task.check();
     updateDigCapabilities(bot);
     const before = JSON.stringify(inventory(bot));
+    const constructionBefore = constructionObservation(bot, goal);
     const location = bot.entity.position.clone();
     try {
       let complete = false;
@@ -800,13 +806,15 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       goal.history.push({ time: new Date().toISOString(), step: goal.step, inventory: inventory(bot), position: { ...bot.entity.position }, dimension: bot.game.dimension });
       goal.history = goal.history.slice(-40);
       if (complete) {
+        if (goal.kind === 'house') survival.rememberHouse(goal.blueprint);
         goal.status = 'complete'; goal.completedAt = new Date().toISOString(); save();
         bot.chat(['obtain', 'craft'].includes(goal.kind) ? (goal.deliver ? `Delivered ${goal.count} ${goal.item.replaceAll('_', ' ')} to ${goal.from}; pickup confirmed.` : `Obtained ${goal.count} ${goal.item.replaceAll('_', ' ')}; inventory verified.`) :
           goal.kind === 'come' ? `Here with ${goal.target || goal.from}.` : goal.kind === 'concrete' ? `Delivered ${goal.count} purple concrete to ${goal.from}; pickup confirmed.` :
           goal.kind === 'house' ? `House verified at ${pos(goal.blueprint.origin)}: floor, walls, roof and clear doorway.` : 'Nether route verified: I entered the Nether.');
         return { ok: true, goal };
       }
-      const unchanged = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 1;
+      const unchanged = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 1 &&
+        constructionBefore === constructionObservation(bot, goal);
       goal.stalls = unchanged && goal.kind !== 'follow' ? (goal.stalls || 0) + 1 : 0;
       if (goal.stalls > 30) throw new Blocked(`No measurable progress on ${JSON.stringify(goal.step)}`);
     } catch (err) {
@@ -817,7 +825,8 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       // A partial craft/build can change inventory before its promise fails.
       // Replan that observed progress; only consecutive no-progress errors
       // exhaust retries.
-      goal.failures = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 2 ? goal.failures + 1 : 0;
+      goal.failures = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 2 &&
+        constructionBefore === constructionObservation(bot, goal) ? goal.failures + 1 : 0;
       if (err.name === 'Blocked' || goal.failures >= 5) {
         goal.status = 'blocked'; save();
         bot.chat(`Blocked: ${err.message}. Progress saved; say resume to retry.`);
@@ -832,4 +841,11 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
   return { ok: false, reason: goal.lastError, goal };
 }
 
-module.exports = { runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, selectSite, explore, smelt, dig, place, waitFor, Blocked };
+// Placement in Creative consumes no inventory. Observe the actual construction
+// blocks, including cleared obstructions, when deciding whether work progressed.
+function constructionObservation(bot, goal) {
+  const positions = [...(goal.blueprint?.blocks || []), ...(goal.blueprint?.empty || []), ...(goal.portalFrame?.blocks || [])];
+  return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
+}
+
+module.exports = { runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked };

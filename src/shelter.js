@@ -38,12 +38,22 @@ function shelterSites(bot, goal, maxDistance = 12) {
   return spots.filter(p => safeSite(bot, p, goal)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
 }
 
-function missingShell(bot, shelter) { return shell(shelter.origin).filter(p => !solid(bot.blockAt(p))); }
+function enclosure(shelter) {
+  if (shelter.kind !== 'house') return shell(shelter.origin);
+  const o = position(shelter.origin);
+  return [...shelter.blueprint.blocks.map(position), o.offset(0, 0, -2), o.offset(0, 1, -2)];
+}
+function missingShell(bot, shelter) { return enclosure(shelter).filter(p => !solid(bot.blockAt(p))); }
 function inside(bot, shelter) {
-  return shelter.dimension === bot.game.dimension && bot.entity.position.floored().equals(position(shelter.origin));
+  if (shelter.dimension !== bot.game.dimension) return false;
+  const feet = bot.entity.position.floored(), o = position(shelter.origin);
+  return shelter.kind === 'house' ? Math.abs(feet.x - o.x) <= 1 && Math.abs(feet.z - o.z) <= 1 && feet.y >= o.y && feet.y < o.y + 2 : feet.equals(o);
 }
 function sealed(bot, shelter) {
   const o = position(shelter.origin);
+  if (shelter.kind === 'house') return !missingShell(bot, shelter).length && shelter.blueprint.empty
+    .filter(p => !(p.x === o.x && p.z === o.z - 2))
+    .every(p => replaceable(bot.blockAt(position(p))));
   return !missingShell(bot, shelter).length && solid(bot.blockAt(o.offset(0, -1, 0))) &&
     replaceable(bot.blockAt(o)) && replaceable(bot.blockAt(o.offset(0, 1, 0)));
 }
@@ -52,8 +62,9 @@ function materialStock(bot) {
 }
 function exits(bot, shelter) {
   const o = position(shelter.origin);
-  return directions.map(d => ({ door: o.plus(d), outside: o.plus(d.scaled(2)) }))
+  return (shelter.kind === 'house' ? [{ door: o.offset(0, 0, -2), outside: o.offset(0, 0, -3) }] :
+    directions.map(d => ({ door: o.plus(d), outside: o.plus(d.scaled(2)) })))
     .filter(exit => replaceable(bot.blockAt(exit.outside)) && replaceable(bot.blockAt(exit.outside.offset(0, 1, 0))) && solid(bot.blockAt(exit.outside.offset(0, -1, 0))));
 }
 
-module.exports = { shell, safeSite, shelterSites, missingShell, inside, sealed, materialStock, exits, buildingMaterials, solid, replaceable };
+module.exports = { shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, exits, buildingMaterials, solid, replaceable };

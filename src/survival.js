@@ -6,6 +6,7 @@ const shelter = require('./shelter');
 const { decideTree } = require('./decisions');
 const { maintainVitals, chooseFood, checkAir } = require('./vitals');
 const { foodSupply, forageChoices } = require('./foraging');
+const { verifyHouse } = require('./objectives');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
@@ -29,8 +30,17 @@ class Survival {
   currentShelter() {
     const bot = this.bot;
     return this.state.shelters.filter(s => s.dimension === bot.game.dimension &&
-      pos(s.origin).distanceTo(bot.entity.position) < 48 && bot.blockAt(pos(s.origin)))
-      .sort((a, b) => pos(a.origin).distanceTo(bot.entity.position) - pos(b.origin).distanceTo(bot.entity.position))[0];
+      pos(s.origin).distanceTo(bot.entity.position) < 128 && bot.blockAt(pos(s.origin)))
+      .sort((a, b) => pos(a.origin).distanceTo(bot.entity.position) + (a.verifiedAt ? 0 : 32) -
+        pos(b.origin).distanceTo(bot.entity.position) - (b.verifiedAt ? 0 : 32))[0];
+  }
+
+  rememberHouse(blueprint) {
+    if (!blueprint || !verifyHouse(this.bot, blueprint).ok) return false;
+    if (this.state.shelters.some(s => s.kind === 'house' && s.dimension === this.bot.game.dimension && pos(s.origin).equals(pos(blueprint.origin)))) return false;
+    this.state.shelters.push({ kind: 'house', origin: { ...blueprint.origin }, blueprint,
+      dimension: this.bot.game.dimension, verifiedAt: new Date().toISOString(), createdAt: new Date().toISOString() });
+    return true;
   }
 
   report(goal, save, action) {
@@ -160,6 +170,7 @@ class Survival {
     goal.survival = this.state;
     task.interruptCheck = undefined;
     if (bot.game.gameMode === 'creative') return false;
+    if (this.rememberHouse(goal.blueprint)) save();
     await maintainVitals(bot, task, action => this.report(goal, save, action));
     const refuge = this.currentShelter();
     if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) {
@@ -186,11 +197,11 @@ class Survival {
         shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null },
       recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot),
       foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: 12, hungerMaximum: 20, starvationAt: 0 } };
-    const tree = {
+    const tree = night(bot) && needsShelter ? {} : {
       continue_request: { description: goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Only suitable when hunger and daylight permit survival preparations afterwards.', run: async () => {} },
     };
     if (needsShelter) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.', run: () => this.refugeStep(task, goal, save) };
-    if (needsFood) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
+    if (needsFood && !(night(bot) && needsShelter)) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
       children: forageChoices(bot, task, goal, save, this.actions, this.state) };
     if (!this.client) {
       if (needsShelter) await tree.secure_shelter.run();

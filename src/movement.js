@@ -3,6 +3,11 @@ const { Movements } = require('mineflayer-pathfinder');
 const { fixMiningMaterials, fixPathfinderResults } = require('./compatibility');
 
 class SurvivalMovements extends Movements {
+  getNeighbors(node) {
+    const neighbors = super.getNeighbors(node);
+    return this.allowedPosition ? neighbors.filter(next => this.allowedPosition(next)) : neighbors;
+  }
+
   getLandingBlock(node, direction) {
     const landing = super.getLandingBlock(node, direction);
     return landing && node.y - landing.position.y <= this.maxDropDown ? landing : null;

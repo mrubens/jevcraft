@@ -8,6 +8,7 @@ const { reservedForConstruction } = require('../src/build-sites');
 const { Task, navigate } = require('../src/skills');
 const { Survival } = require('../src/survival');
 const { EventEmitter } = require('node:events');
+const { houseBlueprint, verifyHouse } = require('../src/objectives');
 
 test('threat visibility uses the entire ray and respects solid cover', () => {
   const bot = { entity: { position: new Vec3(0, 64, 0) }, time: { timeOfDay: 13000 },
@@ -69,4 +70,27 @@ test('shelter construction rechecks materials consumed by the approach before se
   }, { state });
   await controller.refugeStep(new Task('house', 'build a house'), { survival: state }, () => {});
   assert.equal(placed, 0, 'Do not close the room when travel spent the remaining roof materials');
+});
+
+test('a completed house becomes a persistent refuge with a temporary two-block night closure', async () => {
+  const blueprint = houseBlueprint(new Vec3(0, 64, 0));
+  const blocks = new Map(blueprint.blocks.map(p => [`${new Vec3(p.x, p.y, p.z)}`, p.material]));
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: {}, time: { timeOfDay: 14000 },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, inventory: { items: () => [{ name: 'dirt', count: 2 }] },
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty' }) });
+  const actions = { place: async (b, t, p, material) => blocks.set(`${p}`, material),
+    dig: async (b, t, p) => blocks.delete(`${p}`), navigate: async (b, t, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } };
+  const survival = new Survival(bot, actions);
+  assert.equal(survival.rememberHouse(blueprint), true);
+  assert.equal(survival.rememberHouse(blueprint), false, 'Do not duplicate a remembered home');
+  const restored = new Survival(bot, actions, { state: JSON.parse(JSON.stringify(survival.state)) });
+  const refuge = restored.currentShelter();
+  assert.equal(refuge.kind, 'house');
+  assert.equal(shelter.missingShell(bot, refuge).length, 2);
+  await restored.refugeStep(new Task('test', 'shelter'), {}, () => {});
+  assert(shelter.inside(bot, refuge)); assert(shelter.sealed(bot, refuge));
+  assert.equal(blocks.size, blueprint.blocks.length + 2);
+  await restored.leave(new Task('test', 'leave'), {}, () => {}, refuge);
+  assert(!shelter.inside(bot, refuge));
+  assert(verifyHouse(bot, blueprint).ok, 'The original house is intact and its doorway is clear again');
 });
