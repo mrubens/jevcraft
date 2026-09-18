@@ -135,7 +135,7 @@ bot.on('chat', (from, request) => {
       initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
     store.save(goal);
     bot.chat(spec.kind === 'house' ? `Building a small ${spec.material} house with a floor, doorway and roof.` :
-      ['obtain', 'craft'].includes(spec.kind) ? `Working out the dependencies for ${spec.count} ${spec.item.replaceAll('_', ' ')}${spec.deliver ? ` for ${from}` : ''}.` :
+      ['obtain', 'craft'].includes(spec.kind) ? `${bot.game.gameMode === 'creative' ? 'Taking from Creative inventory' : 'Working out the dependencies for'} ${spec.count} ${spec.item.replaceAll('_', ' ')}${spec.deliver ? ` for ${from}` : ''}.` :
       spec.kind === 'come' ? `Coming to ${spec.target}.` : spec.kind === 'follow' ? `Following ${spec.target}; say Jev stop to stop.` :
       'I will establish a portal route and enter the Nether to verify it.');
     launch(goal);

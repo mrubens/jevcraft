@@ -20,7 +20,7 @@ Open **Minecraft Java Edition 26.1**, choose **Multiplayer → Direct Connection
 
 | Address | World |
 | --- | --- |
-| `localhost:25570` | Player world: natural Peaceful Survival, with interactive **Jev** |
+| `localhost:25570` | Player world: natural terrain, Creative mode with Peaceful difficulty, with interactive **Jev** |
 | `localhost:25567` | Flat survival test world with prepared resources; used for current mechanics trials |
 | `localhost:25566` | Natural survival world, seed 12345; the completed house is at X 83, Y 136, Z −32 |
 | `localhost:25565` | Original development server |
@@ -53,6 +53,8 @@ Use Node 22 or newer, as required by Mineflayer. The local servers run Minecraft
 `stop` cancels the active task and pauses autonomous movement between requests. `status` reports the task or current survival action. `resume` retries saved progress, or reactivates idle survival if no task remains. A new supported request replaces the old one after its current action has stopped. Running tasks automatically resume when the bot process restarts; cancelled or blocked tasks require `resume`.
 
 State is stored under `.bot-state/`, separately for each server and bot identity. House coordinates are fixed once selected. Completion comes from world/inventory checks, never solely from a model's opinion.
+
+In Creative mode, Jev takes requested items and building materials directly from the Creative inventory, preserves existing inventory slots, and confirms server inventory updates. Item delivery still checks actual recipient pickup. This path is gated by the bot's server-reported Creative mode and is unavailable in Survival. Normal walking/following is supported; following a player through the air is not implemented.
 
 ## Execution
 

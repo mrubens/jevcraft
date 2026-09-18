@@ -159,6 +159,7 @@ class Survival {
     const bot = this.bot;
     goal.survival = this.state;
     task.interruptCheck = undefined;
+    if (bot.game.gameMode === 'creative') return false;
     await maintainVitals(bot, task, action => this.report(goal, save, action));
     const refuge = this.currentShelter();
     if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) {

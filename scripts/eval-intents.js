@@ -4,6 +4,7 @@ const { TypeSafe } = require('../src/typesafe');
 const { interpret } = require('../src/objectives');
 const fs = require('fs');
 const cases = [
+  ['Jev get me three grass blocks', { kind: 'obtain', item: 'grass_block', count: 3, deliver: true }],
   ['jev get me a pumpkin', { kind: 'obtain', item: 'pumpkin', count: 1, deliver: true }],
   ['Jev build a house', { kind: 'house', material: 'oak_planks' }],
   ['Jev make a birch plank house', { kind: 'house', material: 'birch_planks' }],

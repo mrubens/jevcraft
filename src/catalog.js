@@ -80,18 +80,26 @@ async function resolveItem(client, registry, request, { blocksOnly = false, cont
   const judgments = [];
   const started = performance.now();
   let children = catalogTree(registry, { blocksOnly });
+  const contains = (node, item) => node.item === item || !!node.children && Object.values(node.children).some(child => contains(child, item));
   for (let depth = 0; depth < 12; depth++) {
     const keys = Object.keys(children);
     let selected = keys[0];
     if (keys.length !== 1) {
+      // A family's name alone can be misleading: grass_block belongs to the
+      // block family, while short_grass belongs to grass. Show actual relevant
+      // descendants at every branch without removing any catalog options.
+      const options = Object.fromEntries(keys.map(key => {
+        const matches = suggestions.filter(s => contains(children[key], s.item)).slice(0, 8).map(s => s.item);
+        return [key, `${children[key].description}${matches.length ? `. Relevant catalog entries in this branch: ${matches.join(', ')}` : ''}`];
+      }));
       const response = await client.systemOne({ state: { request, selectedCatalogPath: path, lexicalSuggestions: suggestions, ...context }, questions: {
         item: choice({ task: blocksOnly ? 'Select the next catalog branch containing the requested building material.' :
           'Select the next catalog branch containing the item the player wants obtained or crafted. Select the requested output, not a tool or ingredient needed to obtain it.',
         guidance: 'Each branch is generated from the actual Minecraft catalog. Match the requested species, color, and item kind. Bare grass means the grass plant unless grass block/turf is specified. Lexical suggestions are hints, not restrictions. Choose none only if none of these branches contains the requested item.' },
-        { ...Object.fromEntries(keys.map(key => [key, children[key].description])), none: 'No branch contains the requested item or material.' }),
+        { ...options, none: 'No branch contains the requested item or material.' }),
       } });
       selected = response.answers?.item?.choice;
-      judgments.push({ path: [...path], options: Object.fromEntries(keys.map(key => [key, children[key].description])), answer: response.answers?.item, usage: response.usage });
+      judgments.push({ path: [...path], options, answer: response.answers?.item, usage: response.usage });
       if (selected === 'none') return { item: null, path, judgments, latencyMs: Math.round(performance.now() - started) };
       if (!Object.hasOwn(children, selected)) throw new Error('Jev selected an item outside the Minecraft catalog hierarchy');
     }

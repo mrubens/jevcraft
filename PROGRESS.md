@@ -83,6 +83,13 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 - Validation after the handover fixes: 59 unit tests passed; real intent evaluation passed 19/19. Trial `mu7dxtz3` passed after resuming: exactly three stairs collected by the receiver, one retained. Earlier failures remain recorded. The drop had been overshooting nearby recipients; handover now selects clear standing room roughly 2–3 blocks away before the directed throw.
 - User-world pumpkin delivery completed at 20:05:36 UTC: server pickup evidence confirms DoloresDoodle collected exactly one pumpkin. The saved task is complete with count=1 and delivered=1. Jev is running the updated code; extra previously collected pumpkins were retained.
 
+### Creative play support (2026-09-18)
+
+- User requested Creative play. Changed the player world's default mode and both online players (DoloresDoodle/Jev) to Creative, preserving Peaceful difficulty and the existing terrain. Confirmed both playerGameType values were 1; persisted gamemode=creative in the local server properties. The isolated survival servers retain their modes.
+- Added server-mode-gated Creative inventory acquisition for item requests and house materials. It uses empty slots, respects stack limits, preserves carried items, and synchronizes against the server before reporting success. Survival cannot use this path. Creative skips survival-maintenance interruptions. Movement remains ground navigation; aerial following is not implemented.
+- Controlled Creative inventory/delivery trial `creative-mu7ecw5y` PASSED: 96 purple concrete across two stacks, then a Jev-routed request delivering exactly three grass blocks to the recipient while retaining the concrete. Prior trials `creative-mu7e9z9y` and `creative-mu7ebl6m` passed inventory acquisition but FAILED item interpretation. The recorded second failure chose the grass family instead of the block family. Added relevant actual descendant items to each branch's descriptions, keeping all catalog branches selectable. Real routing evaluation then passed 20/20 and unit tests passed 62/62.
+- Earlier fresh Survival stair-delivery rerun `mu7e1n81` FAILED its 120-second deadline searching the depleted fixture for reachable oak logs; no items were granted and the failed artifact remains. The previously recorded resumed delivery success is still the handover evidence.
+
 Still required:
 
 1. Complete and independently verify natural-world concrete and Nether trials. House passed in a natural world; concrete and Nether passed in the controlled fixture.

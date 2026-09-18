@@ -14,6 +14,7 @@ const { decideTree } = require('./decisions');
 const { Survival } = require('./survival');
 const { checkThreats } = require('./danger');
 const { planCatalog, sourceBlocks } = require('./knowledge');
+const { takeCreativeItem } = require('./creative');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -78,7 +79,7 @@ async function dig(bot, task, p, { done, requiredTool, enchantment } = {}) {
     if (!tool) throw new Blocked(`Need ${enchantment || ''} ${requiredTool || 'tool'} to collect ${block.name}`);
     await bot.equip(tool, 'hand');
   } else await equipBestTool(bot, block);
-  if (block.harvestTools && !block.harvestTools[bot.heldItem?.type]) throw new Error(`Missing harvest tool for ${block.name}`);
+  if (bot.game?.gameMode !== 'creative' && block.harvestTools && !block.harvestTools[bot.heldItem?.type]) throw new Error(`Missing harvest tool for ${block.name}`);
   await digWithAirGuard(bot, task, block);
   await waitFor(task, () => bot.blockAt(p)?.type !== block.type);
 }
@@ -352,6 +353,8 @@ async function harden(bot, task, goal, save, item = 'purple_concrete') {
 }
 
 function catalogPlan(bot, item, count, stock) {
+  if (bot.game?.gameMode === 'creative') return (stock[item] || 0) >= count ? [] :
+    [{ action: 'creative_inventory', item, count, consumes: {}, produces: { [item]: count - (stock[item] || 0) } }];
   if (!bot._catalogObservation || Date.now() - bot._catalogObservation.at > 5000 || bot.entity.position.distanceTo(pos(bot._catalogObservation.position)) > 8) {
     const ids = bot.registry.blocksArray.filter(b => /(_log|_wood|_ore)$|^(stone|sand|gravel|dirt|poppy|cornflower)$/.test(b.name)).map(b => b.id);
     const nearby = bot.findBlocks({ matching: ids, maxDistance: 32, count: 48,
@@ -382,6 +385,7 @@ async function executeAcquisition(bot, task, step, goal, save) {
   goal.step = step;
   save();
   if (step.action === 'mine') await mine(bot, task, step, goal, save);
+  else if (step.action === 'creative_inventory') await takeCreativeItem(bot, task, step.item, step.count);
   else if (step.action === 'craft') await craft(bot, task, step, goal);
   else if (step.action === 'smelt') await smelt(bot, task, step);
   else if (step.action === 'harden') await harden(bot, task, goal, save, step.item);
@@ -768,7 +772,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       if (await survival.step(task, goal, save, onStep)) {
         goal.stalls = 0; goal.failures = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
-      task.interruptCheck = () => checkThreats(bot);
+      task.interruptCheck = bot.game.gameMode === 'creative' ? undefined : () => checkThreats(bot);
       // Immediate air/critical hunger responses stay in code. For house work,
       // Jev chooses ordinary eating interruptions alongside task progress.
       if (!decisionClient || goal.kind !== 'house' || needsAir(bot) || bot.food <= 6 || bot.health <= 6) {
