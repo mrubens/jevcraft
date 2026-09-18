@@ -3,10 +3,12 @@ const { goals } = require('mineflayer-pathfinder');
 const { safeFood, checkAir } = require('./vitals');
 const { threats, checkThreats } = require('./danger');
 const { surfaceMovement } = require('./surface');
+const { knowledge } = require('./knowledge');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-// These ordinary passive animals drop food that is safe to eat raw. Cooking
-// and broader farming are separate options; raw chicken is deliberately absent.
-const prey = { cow: 'beef', pig: 'porkchop', sheep: 'mutton' };
+// Raw chicken is an ingredient, never edible reserve. Its cooking dependency
+// comes from the same server recipe catalog used for requested items.
+const prey = { cow: 'beef', pig: 'porkchop', sheep: 'mutton', chicken: 'chicken' };
+const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 function foodSupply(bot) {
   return bot.inventory.items().filter(i => safeFood(bot, i))
     .reduce((sum, i) => sum + i.count * bot.registry.foodsByName[i.name].foodPoints, 0);
@@ -28,7 +30,8 @@ function candidates(bot, state) {
 async function hunt(bot, task, target, actions, goal, save) {
   const surface = surfaceMovement(bot);
   try {
-    const before = foodSupply(bot);
+    const item = prey[target.name];
+    const before = count(bot, item), foodBefore = foodSupply(bot);
     const deadline = Date.now() + 45000;
     const weapon = bot.inventory.items().filter(i => /_(sword|axe)$/.test(i.name))
       .sort((a, b) => ['wooden', 'stone', 'iron', 'diamond', 'netherite'].findIndex(t => b.name.startsWith(t)) -
@@ -60,24 +63,41 @@ async function hunt(bot, task, target, actions, goal, save) {
     await sleep(500);
     const drops = Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === prey[target.name] && e.position.distanceTo(target.position) < 8);
     for (const drop of drops) {
-      if (foodSupply(bot) > before) break;
+      if (count(bot, item) > before) break;
       const p = drop.position.floored();
-      await actions.navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 1), { timeoutMs: 10000, stopWhen: () => foodSupply(bot) > before });
+      await actions.navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 1), { timeoutMs: 10000, stopWhen: () => count(bot, item) > before });
       await sleep(500);
     }
-    if (foodSupply(bot) <= before) throw new Error(`No food pickup confirmed after hunting ${target.name}`);
-    goal.survivalAction = { action: 'food_collected', source: target.name, attacks, foodPointsGained: foodSupply(bot) - before, at: new Date().toISOString() };
+    if (count(bot, item) <= before) throw new Error(`No food ingredient pickup confirmed after hunting ${target.name}`);
+    goal.survivalAction = { action: 'food_collected', source: target.name, item, count: count(bot, item) - before,
+      needsCooking: !safeFood(bot, { name: item }), attacks, foodPointsGained: foodSupply(bot) - foodBefore, at: new Date().toISOString() };
     save();
   } finally { surface.restore(); }
 }
 
 function forageChoices(bot, task, goal, save, actions, state) {
   const choices = {};
+  for (const [output, inputs] of Object.entries(knowledge(bot.registry).smelting)) {
+    if (!safeFood(bot, { name: output })) continue;
+    const input = inputs.find(name => count(bot, name) > 0);
+    if (!input) continue;
+    const amount = Math.min(count(bot, input), 4, Math.max(1, Math.ceil((12 - foodSupply(bot)) / bot.registry.foodsByName[output].foodPoints)));
+    const targetCount = count(bot, output) + amount;
+    choices[`cook_${output}`] = { description: { action: 'Cook carried ingredients into safe food using the recipe dependencies; gather a furnace, tool and fuel if needed.',
+      input, carried: count(bot, input), output, amount, safeToEatRaw: safeFood(bot, { name: input }) },
+    valid: () => count(bot, input) >= amount,
+    run: async () => {
+      goal.survivalAction = { action: 'cook_food', input, output, amount, at: new Date().toISOString() }; save();
+      task.interruptCheck = () => checkThreats(bot);
+      try { await actions.acquireStep(bot, task, output, targetCount, goal, save); }
+      finally { task.interruptCheck = undefined; }
+    } };
+  }
   for (const target of candidates(bot, state)) {
     const observed = target.position.clone();
-    choices[`hunt_${target.id}`] = { description: { action: 'hunt a passive animal and verify food pickup',
+    choices[`hunt_${target.id}`] = { description: { action: 'hunt a passive animal and verify ingredient pickup; chicken must be cooked before eating',
       animal: target.name, position: { ...target.position.floored() }, distance: Math.round(target.position.distanceTo(bot.entity.position)),
-      availableWeapon: bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name))?.name || 'bare hands', food: prey[target.name] },
+      availableWeapon: bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name))?.name || 'bare hands', food: prey[target.name], needsCooking: !safeFood(bot, { name: prey[target.name] }) },
     valid: () => bot.entities[target.id] === target && target.isValid !== false && target.position.distanceTo(observed) < 2,
     run: async () => {
       goal.survivalAction = { action: 'gather_food', animal: target.name, position: { ...target.position }, at: new Date().toISOString() }; save();

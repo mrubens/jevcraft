@@ -86,7 +86,9 @@ House building uses nested Jev choices through `src/decisions.js`: current prior
 
 `src/survival.js` preserves the player request while preparing shelter or food. Jev chooses between work, shelter, and observed food targets; at night, ordinary outdoor work waits for shelter. Code handles immediate air, eating, and threat interruptions; an exposed hostile interrupts mining/navigation and triggers a bounded escape. Completed houses become remembered refuges: Jev can temporarily seal their two-block doorway and reopen it on exit. Small emergency shelters remain available when no home is nearby. Both paths verify the enclosure and exit. Shelter material counts are checked again after navigation, which can spend scaffolding or alter natural walls.
 
-Between requests the same controller maintains a food reserve and seeks shelter on hostile difficulties. On Peaceful it waits nearby unless a real survival need arises. Food collection currently hunts observed cows, pigs, or sheep, remembers failed targets, and verifies edible item pickup. Surface food routes inspect loaded columns, permit natural tree canopies, exclude underground destinations and paths, and disable digging/scaffolding during search and pursuit. A controlled empty-inventory test gathered four porkchops without damage; a Normal natural trial gathered beef but failed during shelter preparation, prompting the material-budget fix. Cooking, broader farming, actual eating under hunger, hostile escape, and overnight endurance still need live validation. Nether task sequencing and the legacy concrete checkpoint path remain deterministic; new item requests use the catalog planner.
+Between requests the same controller maintains a food reserve and seeks shelter on hostile difficulties. On Peaceful it waits nearby unless a real survival need arises. Food collection hunts observed cows, pigs, sheep, or chickens, remembers failed targets, and verifies actual ingredient pickup. Raw chicken never counts as edible reserve. Cooking choices come from the server's smelting catalog and carried ingredients; the existing dependency planner obtains missing tools, furnace materials, and fuel. Jev selects among cooking and observed hunting targets. Surface food routes inspect loaded columns, permit natural tree canopies, exclude underground destinations and paths, and disable digging/scaffolding during search and pursuit.
+
+A controlled Normal test started empty, hunted chickens, gathered wood/stone, crafted a pickaxe and furnace, cooked the chicken, and ate one to restore hunger from 16 to 20 at full health. Its prepared terrain and externally induced hunger make it mechanics evidence. Broader farming, hostile escape, natural-world food supply, and two-cycle endurance still need validation. Nether task sequencing and the legacy concrete checkpoint path remain deterministic; new item requests use the catalog planner.
 
 New work requires an explicit “Jev …” or login-name prefix. This prevents other bots' acknowledgements from becoming commands. Short stop, cancel, status, and resume controls also work without a prefix.
 
@@ -109,6 +111,7 @@ MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/creative-house-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/movement-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/tool-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/recovery-test.js
+MC_HOST=127.0.0.1 MC_PORT=25567 COOK_SITE=800 node scripts/cooking-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 ACCEPT_SCENARIO=controlled node scripts/shelter-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 ACCEPT_SCENARIO=controlled node scripts/food-test.js
 MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- build a house
@@ -126,13 +129,15 @@ Set `ACCEPT_CYCLES=2` on a fresh Normal trial to continue autonomous survival af
 
 `scripts/recovery-test.js` separately exercises the real chat entry point. Its printed setup uses an isolated fixture's console to position test players and logs, kick the bot, and inject death. It verifies crafting, automatic reconnect, persistent stop across reconnect/process restart, actual dropped-item retrieval, and resumption of the same request without bot-issued commands. These injected faults and setup teleports make it a controlled mechanics test, not survival acceptance.
 
+`scripts/cooking-test.js` prints fixture setup and synchronization files, then hunts and cooks from an empty inventory. Choose unused prepared ground with `COOK_SITE`. After cooking, apply the printed hunger effect, acknowledge setup using its file, clear the effect as soon as the script requests it, and acknowledge that too. Eating requires both an observed consumed item and an increased food bar; later replenishment does not erase that evidence. Restore the isolated fixture's difficulty afterward. This test must not be counted as unmodified natural-world acceptance.
+
 A separate local vanilla test server is kept in `.test-server/` on port 25566, bound to localhost, with seed 12345 and peaceful difficulty. It is separate from the existing server on 25565. Server files, credentials, goal state and trial artifacts are excluded from Git.
 
 ## Current limits
 
 Natural terrain exploration, underground progression, restart recovery during furnace work, and survival in hostile difficulty still need end-to-end validation and improvements. Tool replacement and delivery have passed controlled mechanics checks; that does not establish sustained tool maintenance or resource supply during natural exploration. Delivery records server pickup events and has passed an independent recipient-inventory check in the controlled world. A Nether frame requires mined obsidian; lava-bucket casting is not implemented.
 
-The latest fresh Normal endurance trial built its house and survived its first night inside it, then failed at 30,000/48,000 ticks when its food-search budget ran out. Health and hunger remained full, but it did not demonstrate eating or two complete cycles. Observed chickens were outside the current food-gathering capabilities; that limitation needs addressing before another endurance attempt.
+The last completed fresh Normal endurance trial built its house and survived its first night inside it, then failed at 30,000/48,000 ticks when its food-search budget ran out. Health and hunger remained full, but it did not demonstrate eating or two complete cycles. Chickens observed in that run were unsupported at the time; hunting and cooking them now pass controlled mechanics checks, and a fresh endurance run is required.
 
 A controlled flat fixture also runs on port 25567. `node scripts/fixture-commands.js` prints setup commands that place trees, exposed resources, flowers, and water. Run them only before a trial. Label these trials with `ACCEPT_SCENARIO=controlled-resources`; they do not establish natural-world search performance.
 
