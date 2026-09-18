@@ -264,6 +264,7 @@ async function workstation(bot, task, name) {
 }
 
 async function craft(bot, task, step, goal) {
+  await settleCraftInventory(bot, task);
   const table = step.needs_table ? await workstation(bot, task, 'crafting_table') : null;
   const id = bot.registry.itemsByName[step.item]?.id;
   const recipe = step.recipe ? new (require('prismarine-recipe')(bot.registry).Recipe)({ result: { id, count: step.recipe.count },
@@ -272,11 +273,12 @@ async function craft(bot, task, step, goal) {
   if (!recipe) throw new Error(`No usable recipe for ${step.count} ${step.item}`);
   const before = countOf(bot, step.item);
   task.check();
-  // Mineflayer's 26.1 table window can desynchronize between repeated crafts.
-  // Close and confirm one table batch at a time, then replan from real stock.
-  const batches = step.needs_table ? 1 : Math.ceil(step.count / recipe.result.count);
-  await bot.craft(recipe, batches, table);
-  await waitFor(task, () => countOf(bot, step.item) >= before + batches * recipe.result.count);
+  // Both 26.1 crafting windows can desynchronize between repeated crafts.
+  // Execute one recipe, reconcile cursor/grid contents, and replan from the
+  // server inventory. A partial or ignored click must not imply lost supplies.
+  try { await bot.craft(recipe, 1, table); }
+  finally { task.check(); await settleCraftInventory(bot, task); }
+  await waitFor(task, () => countOf(bot, step.item) >= before + recipe.result.count);
   if (table && goal?.expeditionReady && bot._ownedWorkstations?.has(`crafting_table:${table.position}`)) {
     const count = countOf(bot, 'crafting_table');
     await dig(bot, task, table.position);
@@ -284,6 +286,21 @@ async function craft(bot, task, step, goal) {
     await waitFor(task, () => countOf(bot, 'crafting_table') > count);
     bot._ownedWorkstations.delete(`crafting_table:${table.position}`);
   }
+}
+
+async function settleCraftInventory(bot, task) {
+  task.check();
+  if (bot._syncWindow) await bot._syncWindow(bot.inventory);
+  if (bot.inventory.selectedItem) {
+    await bot.putSelectedItemRange(bot.inventory.inventoryStart, bot.inventory.inventoryEnd, bot.inventory);
+    if (bot._syncWindow) await bot._syncWindow(bot.inventory);
+  }
+  for (let slot = 1; slot <= 4; slot++) {
+    task.check();
+    if (bot.inventory.slots?.[slot]) await bot.putAway(slot);
+  }
+  if (bot._syncWindow) await bot._syncWindow(bot.inventory);
+  task.check();
 }
 
 async function smelt(bot, task, step) {

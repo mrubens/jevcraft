@@ -1,0 +1,249 @@
+'use strict';
+
+const path = require('path');
+const fs = require('fs');
+const mineflayer = require('mineflayer');
+const { pathfinder } = require('mineflayer-pathfinder');
+const { configureMovements } = require('./movement');
+const { interpret, GoalStore } = require('./objectives');
+const { runGoal, runIdle, createSurvival } = require('./work');
+const { Task } = require('./skills');
+const { parseAddress } = require('./chat-address');
+const { compatibilityPlugin } = require('./compatibility');
+const { requestedCommand, createCommandAccess } = require('./commands');
+const { classifyCommand } = require('./command-classifier');
+const { recordDeath, observeAliveInventory } = require('./recovery');
+
+function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state') } = {}) {
+  let ended = false, spawned = false, resolveClosed;
+  const connectedAt = Date.now();
+  const closed = new Promise(resolve => { resolveClosed = resolve; });
+  const bot = mineflayer.createBot({ ...config, respawn: false });
+  bot.on('physicsTick', () => { if (!ended) observeAliveInventory(bot); });
+  bot.loadPlugin(compatibilityPlugin);
+  bot.loadPlugin(pathfinder);
+  const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const commandLog = path.join(stateDirectory, `${identity}-commands.jsonl`);
+  bot._client.on('declare_commands', tree => {
+    if (ended) return;
+    bot.commandTree = tree;
+    fs.mkdirSync(path.dirname(commandLog), { recursive: true });
+    fs.writeFileSync(path.join(stateDirectory, `${identity}-command-tree.json`), JSON.stringify(tree));
+  });
+  let commandAccess;
+  bot.loadPlugin(() => { commandAccess = createCommandAccess(bot, {
+    users: (process.env.MC_COMMAND_USERS || '').split(',').map(name => name.trim()).filter(Boolean),
+    audit: event => { fs.mkdirSync(path.dirname(commandLog), { recursive: true }); fs.appendFileSync(commandLog, JSON.stringify(event) + '\n'); },
+  }); });
+  const store = new GoalStore(path.join(stateDirectory, `${identity}.json`));
+  const survivalStore = new GoalStore(path.join(stateDirectory, `${identity}-survival.json`));
+  const idleStore = new GoalStore(path.join(stateDirectory, `${identity}-idle.json`));
+  const survival = createSurvival(bot, { state: survivalStore.read() || store.read()?.survival, client });
+  if (!survivalStore.read() && store.read()?.status === 'cancelled') survival.state.paused = true;
+  const saveSurvival = () => { if (!ended) { survival.state.version = 1; survivalStore.save(survival.state); } };
+  const saveGoal = goal => { if (!ended) store.save(goal); };
+  const workStore = { save: goal => { saveGoal(goal); saveSurvival(); } };
+  let active = null;
+  let pending = Promise.resolve();
+  let generation = 0;
+  let ready = false;
+  let pendingRequests = 0;
+
+  async function stop(status = 'cancelled') {
+    if (status === 'cancelled') { survival.state.paused = true; saveSurvival(); }
+    if (!active) {
+      if (status === 'cancelled') {
+        const saved = store.read();
+        if (saved && ['pending', 'running', 'recovering'].includes(saved.status)) { saved.status = 'cancelled'; saveGoal(saved); }
+      }
+      return;
+    }
+    active.task.cancel();
+    if (!active.idle) { active.goal.status = status; workStore.save(active.goal); }
+    bot.pathfinder.setGoal(null);
+    bot.clearControlStates();
+    bot.stopDigging();
+    bot.deactivateItem();
+    await active.promise;
+  }
+
+  function launch(goal) {
+    survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
+    const task = new Task(goal.kind, goal.request);
+    const session = { task, goal };
+    active = session;
+    session.promise = runGoal(bot, task, goal, workStore, {
+      decisionClient: client, survival,
+      onStep: g => console.log(JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError })),
+    }).catch(err => {
+      if (err.name !== 'Cancelled') {
+        goal.status = 'blocked'; goal.lastError = err.message; saveGoal(goal);
+        console.error(err); bot.chat(`Blocked: ${err.message}`);
+      }
+    }).finally(() => { if (active === session) active = null; });
+  }
+
+  function launchIdle() {
+    const retained = store.read();
+    const goal = { ...(idleStore.read() || {}), version: 1, kind: 'survive', request: 'Stay alive and prepare supplies between player requests',
+      retainedRequest: retained?.request, blueprint: retained?.blueprint, portalFrame: retained?.portalFrame, survival: survival.state };
+    const task = new Task('survival', goal.request);
+    const session = { task, goal, idle: true };
+    active = session;
+    session.promise = runIdle(bot, task, goal, { save: g => { if (!ended) idleStore.save(g); saveSurvival(); } }, {
+      survival, decisionClient: client,
+      onStep: g => console.log(JSON.stringify({ idle: true, survivalAction: g.survivalAction, decision: g.decisions?.at(-1)?.path, health: bot.health, food: bot.food, position: bot.entity.position, error: g.lastError })),
+    }).catch(err => {
+      if (err.name !== 'Cancelled') {
+        survival.state.idleBlocked = err.message; saveSurvival();
+        console.error(err); bot.chat(err.message);
+      }
+    }).finally(() => { if (active === session) active = null; });
+  }
+
+  const idleTimer = setInterval(() => {
+    if (ready && !active && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
+  }, 500);
+
+  bot._client.on('playerChat', data => {
+    if (ended) return;
+    const player = Object.values(bot.players).find(p => p.uuid === data.sender);
+    if (!player || player.username === bot.username || typeof data.plainMessage !== 'string') return;
+    const from = player.username, request = data.plainMessage;
+    let literal;
+    try { literal = requestedCommand(request, bot.username); }
+    catch (err) { bot.chat(err.message); return; }
+    const address = parseAddress(request, bot.username);
+    // Acknowledgements from other bots must never start new work. New goals
+    // require an explicit name; short controls remain convenient when unprefixed.
+    if (!address.explicit && !/^(stop|cancel|resume|status)( please)?[.!?]?$/i.test(address.text)) return;
+    // Stop has a synchronous fast path, even while a network request is pending.
+    const normalized = address.text;
+    if (/^(stop|cancel)( please)?[.!]?$/i.test(normalized)) {
+      generation++;
+      stop().catch(console.error);
+      bot.chat('Stopped. Progress saved; say resume to continue.');
+      return;
+    }
+    if (!ready) { bot.chat('Still loading the world; please repeat the request in a moment. Stop is available now.'); return; }
+    const revision = generation;
+    pendingRequests++;
+    pending = pending.then(async () => {
+      if (revision !== generation || ended) return;
+      const spec = literal ? { kind: 'operator_command' } : await interpret(client, request, from, bot.username, {
+        registry: bot.registry, players: Object.keys(bot.players),
+        inventory: Object.fromEntries(bot.inventory.items().map(item => [item.name, item.count])),
+      });
+      if (!spec || revision !== generation) return;
+      if (spec.kind === 'operator_command') {
+        const allowed = (process.env.MC_COMMAND_USERS || '').split(',').map(name => name.trim().toLowerCase());
+        if (!allowed.includes(from.toLowerCase())) { bot.chat(`${from} is not enabled for Jev's operator commands`); return; }
+        const resolution = literal ? { command: literal } : await classifyCommand(client, bot, request, from);
+        if (revision !== generation) return;
+        const command = commandAccess.accept(data, { resolvedCommand: resolution.command, interpretation: { routing: spec.interpretation, command: resolution.judgments } });
+        if (!command) return;
+        await stop('interrupted');
+        if (revision !== generation) return;
+        survival.state.paused = true; saveSurvival();
+        const feedback = [];
+        const collect = (message, position, original, sender) => {
+          if (position === 'system' && sender == null && feedback.length < 4) feedback.push(message);
+        };
+        bot.on('messagestr', collect);
+        try {
+          bot.chat(`Running your command once: ${command.command}`);
+          command.dispatch();
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } finally { bot.removeListener('messagestr', collect); }
+        for (const reply of feedback) bot.chat(`Command response: ${reply}`);
+        return;
+      }
+      if (spec.kind === 'status') {
+        const g = active?.goal || store.read();
+        bot.chat(active?.idle ? `Between requests: ${g.lastError || g.survivalAction?.action || 'watching survival needs'}. Health ${bot.health}, food ${bot.food}.` :
+          g ? `${g.status}: ${g.request}. ${g.lastError || g.decisions?.at(-1)?.path?.join(' > ') || JSON.stringify(g.step || {})}` : 'No saved task.');
+        return;
+      }
+      if (spec.kind === 'other') {
+        bot.chat('Tell me what item to obtain or craft, who to follow or come to, or what house material to use. I will check the dependencies.');
+        return;
+      }
+      if (spec.kind === 'clarify') { bot.chat(spec.message); return; }
+      if (spec.kind === 'stop') { generation++; await stop(); bot.chat('Stopped.'); return; }
+      if (spec.kind === 'resume') {
+        if (active?.idle) await stop('interrupted');
+        if (revision !== generation || ended) return;
+        if (active) { bot.chat('Already working on the saved task.'); return; }
+        const saved = store.read();
+        if (!saved || saved.status === 'complete') {
+          survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
+          bot.chat('Resuming survival between requests.'); return;
+        }
+        launch(saved); return;
+      }
+      await stop('replaced');
+      if (revision !== generation || ended) return;
+      const goal = { ...spec, version: 1, status: 'pending', createdAt: new Date().toISOString(),
+        requesterPosition: bot.players[from]?.entity ? { ...bot.players[from].entity.position } : null,
+        initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
+      saveGoal(goal);
+      bot.chat(spec.kind === 'house' ? `Building a small ${spec.material} house with a floor, doorway and roof.` :
+        ['obtain', 'craft'].includes(spec.kind) ? `${bot.game.gameMode === 'creative' ? 'Taking from Creative inventory' : 'Working out the dependencies for'} ${spec.count} ${spec.item.replaceAll('_', ' ')}${spec.deliver ? ` for ${from}` : ''}.` :
+        spec.kind === 'come' ? `Coming to ${spec.target}.` : spec.kind === 'follow' ? `Following ${spec.target}; say Jev stop to stop.` :
+        'I will establish a portal route and enter the Nether to verify it.');
+      launch(goal);
+    }).catch(err => { console.error(err); if (!ended && revision === generation) bot.chat(`Could not process request: ${err.message}`); }).finally(() => { pendingRequests--; });
+  });
+
+  bot.once('spawn', async () => {
+    try {
+      spawned = true;
+      configureMovements(bot);
+      console.log(`[bot] spawned as ${bot.username} (${bot.version})`);
+      await bot.waitForChunksToLoad();
+      if (ended || !bot.isAlive) return;
+      ready = true;
+      console.log(JSON.stringify({ sessionReady: true, username: bot.username }));
+      const saved = store.read();
+      if (saved && ['running', 'recovering'].includes(saved.status) && !survival.state.paused) {
+        bot.chat(survival.state.recovery?.status === 'pending' ? 'I respawned. Checking whether I can recover my items, then continuing the saved task.' : 'Resuming my saved task.');
+        launch(saved);
+      } else if (survival.state.deathBlocked) bot.chat(survival.state.deathBlocked);
+      else bot.chat('Call me Jev: "Jev come here", "Jev follow me", "Jev craft a chest", or "Jev get me 8 birch stairs".');
+    } catch (err) { console.error('[bot] spawn:', err); bot.quit('Could not initialize the world'); }
+  });
+  bot.on('death', () => {
+    ready = false; generation++;
+    // A dead player can rejoin before respawning. No work has started in this
+    // connection, so request respawn directly without recording a second death.
+    if (!spawned && survival.state.recovery?.status === 'pending') { bot.respawn(); return; }
+    recordDeath(bot, survival.state);
+    const saved = active && !active.idle ? active.goal : store.read();
+    if (saved && ['pending', 'running', 'recovering'].includes(saved.status)) {
+      saved.lastError = 'The bot died; recovering from observed inventory after respawn';
+      saved.status = survival.state.deathBlocked ? 'blocked' : 'recovering';
+      saveGoal(saved);
+    }
+    saveSurvival();
+    console.log(JSON.stringify({ death: survival.state.recovery, blocked: survival.state.deathBlocked }));
+    if (!spawned) { bot.respawn(); return; }
+    // Reconnect to discard all old inventory/window promises before respawning.
+    // They must not issue a late action against the new life's inventory.
+    stop(survival.state.deathBlocked ? 'blocked' : 'recovering').catch(console.error);
+    bot.quit('Respawning after death');
+  });
+  function close(reason) {
+    if (ended) return;
+    ready = false; clearInterval(idleTimer); generation++;
+    if (active && !active.task.cancelled) stop('running').catch(console.error);
+    // Fence late saves from this connection before a replacement reads state.
+    ended = true;
+    resolveClosed({ reason, spawned, uptimeMs: Date.now() - connectedAt });
+  }
+  bot.on('end', reason => close(reason));
+  bot.on('kicked', reason => console.error('[bot] kicked:', reason));
+  bot.on('error', err => console.error('[bot]', err.message));
+  return { bot, closed, shutdown() { close('shutdown'); bot.quit('Shutting down'); } };
+}
+
+module.exports = { createSession };

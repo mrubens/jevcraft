@@ -7,6 +7,7 @@ const { decideTree } = require('./decisions');
 const { maintainVitals, chooseFood, checkAir } = require('./vitals');
 const { foodSupply, forageChoices } = require('./foraging');
 const { verifyHouse } = require('./objectives');
+const { recoverItems } = require('./recovery');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
@@ -169,7 +170,10 @@ class Survival {
     const bot = this.bot;
     goal.survival = this.state;
     task.interruptCheck = undefined;
-    if (bot.game.gameMode === 'creative') return false;
+    if (bot.game.gameMode === 'creative') {
+      await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate);
+      return false;
+    }
     if (this.rememberHouse(goal.blueprint)) save();
     await maintainVitals(bot, task, action => this.report(goal, save, action));
     const refuge = this.currentShelter();
@@ -187,6 +191,10 @@ class Survival {
       onStep(goal); return true;
     }
     const needsShelter = shelterNeeded(bot);
+    if (!needsShelter && this.state.recovery?.status === 'pending') {
+      this.report(goal, save, { action: 'recover_items', origin: this.state.recovery.position });
+      if (await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate)) { onStep(goal); return true; }
+    }
     const needsFood = foodSupply(bot) < 12 && (bot.food <= 18 || goal.stockFood ||
       (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful'));
     if (!needsShelter && !needsFood) return false;

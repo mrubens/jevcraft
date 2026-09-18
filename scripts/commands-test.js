@@ -37,6 +37,7 @@ observer.once('spawn', async () => {
   try {
     await sleep(1000); start();
     await until(() => observer.players[username]?.entity, 'bot online');
+    await until(() => fs.existsSync(path.join(directory, 'bot.log')) && fs.readFileSync(path.join(directory, 'bot.log'), 'utf8').includes('"sessionReady":true'), 'bot world ready');
     log({ setupRequired: { op: [username, owner], creative: username, time: 'night' }, setupFile: path.join(directory, 'ready') });
     await until(() => fs.existsSync(path.join(directory, 'ready')), 'operator setup', 180000);
     await sleep(1000);
