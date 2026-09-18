@@ -22,6 +22,19 @@ function compatibilityPlugin(bot) {
     const difficulty = typeof packet.difficulty === 'number' ? names[packet.difficulty] : packet.difficulty;
     if (names.includes(difficulty)) bot.game.difficulty = difficulty;
   });
+  // Mineflayer 4.39's named-metadata path updates bot.oxygenLevel for EVERY
+  // entity, including dolphins with 6000 air ticks (displayed as 400 bubbles).
+  // Restore only this player's latest reading after the built-in listener.
+  let ownOxygen = 20;
+  bot._client.on('entity_metadata', packet => {
+    if (packet.entityId === bot.entity?.id) {
+      const keys = bot.registry?.entitiesByName?.player?.metadataKeys;
+      const index = keys ? keys.indexOf('air_supply') : 1;
+      const air = packet.metadata.find(entry => entry.key === index);
+      if (air && Number.isFinite(air.value)) ownOxygen = Math.max(0, Math.min(20, Math.round(air.value / 15)));
+    }
+    bot.oxygenLevel = ownOxygen;
+  });
 }
 
 function fixPathfinderResults() {

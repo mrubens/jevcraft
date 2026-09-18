@@ -4,6 +4,8 @@ Build and locally test a Jev-powered Minecraft survival companion. Starting with
 
 It should act autonomously to stay alive between requests, and interrupt ordinary work when immediate survival needs require attention.
 
+Use Jev for ongoing nested decisions: choose the current priority, a subtask within that priority, and the next bounded action or recovery tactic from feasible observed options. Start with house building and survival interruptions. Preserve the player's goal across interruptions, record an inspectable decision trail, avoid repeatedly choosing failed routes, discard stale decisions, and measure actual model latency. Exact recipes, action availability, movement mechanics, immediate emergency responses, and completion verification remain in code.
+
 Retain the concrete acceptance requests: “build a house,” “get me 32 purple concrete,” and “find a way to the Nether.” Verify each outcome against the world, recipient inventory/pickup evidence, or actual dimension transition. Keep persistent goals, recipe dependencies, exploration, bounded execution, cancellation, restart/resume, and honest blocker reporting. Add recovery after death, including safe retrieval of dropped items where feasible and replanning from remaining resources when retrieval is unsafe or items are gone.
 
 Accept natural-language commands in Minecraft chat addressed as “Jev …”, regardless of its login username, including immediate stop, status, and resume controls.

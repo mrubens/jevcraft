@@ -34,7 +34,7 @@ bot.on('death', () => {
   log({ death: true, position: bot.entity.position, dimension: bot.game.dimension, inventory: inventory(bot) });
   task.cancel(); bot.pathfinder.setGoal(null); bot.clearControlStates(); bot.stopDigging();
 });
-bot.on('health', () => log({ health: bot.health, food: bot.food, position: bot.entity?.position }));
+bot.on('health', () => log({ health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, position: bot.entity?.position }));
 let lastUnsafeRouteLog = 0;
 bot.on('path_update', route => {
   const points = [bot.entity.position, ...(route.path || [])];
@@ -73,7 +73,7 @@ bot.once('spawn', async () => {
     if (resumeId) log({ resumed: resumeId, inventory: initial, originalCreatedAt: goal.createdAt });
     log({ start: { kind: goal.kind, count: goal.count, request: goal.request, from: goal.from, initialInventory: goal.initialInventory, initialPosition: goal.initialPosition, createdAt: goal.createdAt, scenario: goal.scenario }, username, server: `${process.env.MC_HOST}:${process.env.MC_PORT}`, gameMode: bot.game.gameMode, difficulty: bot.game.difficulty, timeOfDay: bot.time.timeOfDay });
     const result = await runGoal(bot, task, goal, new GoalStore(path.join(directory, 'goal.json')), {
-      onStep: g => log({ step: g.step, position: bot.entity.position, inventory: inventory(bot), error: g.lastError }),
+      onStep: g => log({ step: g.step, survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }),
     });
     const verified = result.ok && (goal.kind === 'house' ? verifyHouse(bot, goal.blueprint).ok :
       goal.kind === 'concrete' ? (goal.delivered >= goal.count && (inventory(receiver).purple_concrete || 0) >= goal.receiverInitialConcrete + goal.count) : String(bot.game.dimension).includes('nether'));

@@ -9,7 +9,7 @@ const { deliver } = require('./delivery');
 const { reservedForConstruction, portalSiteClear, selectPortalSite } = require('./build-sites');
 const { updateDigCapabilities } = require('./movement');
 const { tunnelStep } = require('./tunneling');
-const { maintainVitals } = require('./vitals');
+const { maintainVitals, checkAir, digWithAirGuard } = require('./vitals');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -53,21 +53,23 @@ async function stepOff(bot, task, p) {
   await navigate(bot, task, new goals.GoalBlock(exit.x, exit.y, exit.z));
 }
 
-async function dig(bot, task, p) {
-  task.check();
+async function dig(bot, task, p, { done } = {}) {
+  task.check(); checkAir(bot);
+  if (done?.()) return;
   let block = bot.blockAt(p);
   if (air(block)) return;
   if (!block?.diggable) throw new Error(`Cannot dig ${block?.name || 'unloaded block'}`);
   if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) await stepOff(bot, task, p);
   if (!bot.canDigBlock(block)) {
-    await navigate(bot, task, new goals.GoalGetToBlock(p.x, p.y, p.z));
+    await navigate(bot, task, new goals.GoalGetToBlock(p.x, p.y, p.z), { stopWhen: done });
   }
   task.check();
+  if (done?.()) return;
   block = bot.blockAt(p);
   if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) throw new Error('Refusing to dig directly beneath feet');
   await equipBestTool(bot, block);
   if (block.harvestTools && !block.harvestTools[bot.heldItem?.type]) throw new Error(`Missing harvest tool for ${block.name}`);
-  await bot.dig(block);
+  await digWithAirGuard(bot, task, block);
   await waitFor(task, () => bot.blockAt(p)?.type !== block.type);
 }
 
@@ -93,7 +95,7 @@ async function place(bot, task, p, material) {
       await waitFor(task, () => bot.blockAt(p)?.name === material ||
         (material.endsWith('_concrete_powder') && bot.blockAt(p)?.name === material.replace('_powder', '')));
       return;
-    } catch (err) { task.check(); placementError = err.message; }
+    } catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; placementError = err.message; }
   }
   throw new Error(`Cannot place ${material} at ${p}: ${placementError}`);
 }
@@ -167,6 +169,7 @@ async function explore(bot, task, goal, save, resource) {
     if (Math.hypot(bot.entity.position.x - target.x, bot.entity.position.z - target.z) < 6) search.leg++;
   } catch (err) {
     task.check();
+    if (err.name === 'NeedsAir') throw err;
     if ((search.failedLegs = (search.failedLegs || 0) + 1) >= 2) { search.leg++; search.failedLegs = 0; }
     throw new Error(`Searching for ${resource}: ${err.message}`);
   }
@@ -195,21 +198,22 @@ async function mine(bot, task, step, goal, save) {
     return;
   }
   for (const p of candidates.slice(0, 8)) {
-    task.check();
+    task.check(); checkAir(bot);
+    const before = countOf(bot, step.drops);
     try {
-      const before = countOf(bot, step.drops);
-      await dig(bot, task, p);
+      await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before });
       await sleep(650);
       if (countOf(bot, step.drops) > before) return;
       const drop = Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === step.drops)
         .sort((a, b) => a.position.distanceTo(p) - b.position.distanceTo(p))[0];
       if (drop) {
         const d = drop.position.floored();
-        try { await navigate(bot, task, new goals.GoalNear(d.x, d.y, d.z, 1)); } catch (e) { task.check(); }
+        try { await navigate(bot, task, new goals.GoalNear(d.x, d.y, d.z, 1)); } catch (e) { task.check(); if (e.name === 'NeedsAir') throw e; }
         await sleep(650);
       }
       if (countOf(bot, step.drops) > before) return;
-    } catch (e) { task.check(); goal.lastMiningError = e.message; }
+    } catch (e) { task.check(); if (e.name === 'NeedsAir') throw e; goal.lastMiningError = e.message; }
+    if (countOf(bot, step.drops) > before) return;
     goal.unreachable ||= {};
     goal.unreachable[`${p}`] = Date.now();
   }
@@ -221,9 +225,9 @@ async function workstation(bot, task, name) {
   let p = find(bot, [name], 32, 1)[0];
   if (!p) {
     const o = bot.entity.position.floored();
-    for (let dx = -2; dx <= 2 && !p; dx++) for (let dz = -2; dz <= 2 && !p; dz++) {
+    for (const dy of [0, -1, 1, -2, 2]) for (let dx = -2; dx <= 2 && !p; dx++) for (let dz = -2; dz <= 2 && !p; dz++) {
       if (!dx && !dz) continue;
-      const q = o.offset(dx, 0, dz);
+      const q = o.offset(dx, dy, dz);
       if (air(bot.blockAt(q)) && bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block') {
         await place(bot, task, q, name); p = q;
         bot._ownedWorkstations ||= new Set(); bot._ownedWorkstations.add(`${name}:${q}`);
@@ -327,8 +331,8 @@ async function harden(bot, task, goal, save) {
 }
 
 async function acquireStep(bot, task, item, count, goal, save, { portable = false } = {}) {
-  if (countOf(bot, item) >= count) return true;
   const inv = planningInventory(bot);
+  if ((inv[item] || 0) >= count) return true;
   for (const station of ['crafting_table', 'furnace']) if (!(portable && station === item) && find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
   const step = planFor(item, count, inv)[0];
   if (!step) throw new Error(`No progress step for ${item}`);
@@ -488,7 +492,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
     const location = bot.entity.position.clone();
     try {
       let complete = false;
-      await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); });
+      await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
       const needsSupplies = !goal.expeditionReady && (
         (goal.kind === 'concrete' && countOf(bot, 'purple_concrete') + (goal.delivered || 0) < goal.count && !goal.pendingDelivery) ||
         (goal.kind === 'nether' && !String(bot.game.dimension).includes('nether') && !find(bot, ['nether_portal'], 64, 1).length && !goal.portalFrame));
@@ -520,6 +524,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
     } catch (err) {
       task.check();
       goal.lastError = err.message;
+      if (err.name === 'NeedsAir') { save(); onStep(goal); continue; }
       // A partial craft/build can change inventory before its promise fails.
       // Replan that observed progress; only consecutive no-progress errors
       // exhaust retries.

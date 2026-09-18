@@ -29,6 +29,22 @@ test('difficulty accepts both numeric and 26.1 named protocol values', () => {
   assert.equal(bot.game.difficulty, 'peaceful');
 });
 
+test('nearby animals cannot overwrite the bot oxygen reading', () => {
+  const { EventEmitter } = require('node:events');
+  const { compatibilityPlugin } = require('../src/compatibility');
+  const bot = { _client: new EventEmitter(), entity: { id: 10 }, registry: require('prismarine-registry')('26.1') };
+  const key = bot.registry.entitiesByName.player.metadataKeys.indexOf('air_supply');
+  // Reproduce the upstream listener: it does not check entityId.
+  bot._client.on('entity_metadata', packet => { bot.oxygenLevel = packet.metadata[0].value / 15; });
+  compatibilityPlugin(bot);
+  bot._client.emit('entity_metadata', { entityId: 10, metadata: [{ key, value: 150 }] });
+  assert.equal(bot.oxygenLevel, 10);
+  bot._client.emit('entity_metadata', { entityId: 99, metadata: [{ key, value: 6000 }] });
+  assert.equal(bot.oxygenLevel, 10);
+  bot._client.emit('entity_metadata', { entityId: 10, metadata: [{ key, value: 300 }] });
+  assert.equal(bot.oxygenLevel, 20);
+});
+
 test('path smoothing and execution cannot corrupt an ongoing AStar search', () => {
   const AStar = require('mineflayer-pathfinder/lib/astar');
   const Move = require('mineflayer-pathfinder/lib/move');

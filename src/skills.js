@@ -3,13 +3,15 @@
 const { goals } = require('mineflayer-pathfinder');
 const { Vec3 } = require('vec3');
 const { MINEABLE, TOOL_TIERS } = require('./plan');
+const { checkAir, needsAir, NeedsAir } = require('./vitals');
 
 /** Best pickaxe tier carried: 0 bare hands, 1 wooden, 2 stone, 3 iron, ... */
 function pickaxeTier(bot) {
   let best = 0;
   for (const item of bot.inventory.items()) {
     const m = /^(\w+)_pickaxe$/.exec(item.name);
-    if (m) best = Math.max(best, TOOL_TIERS.indexOf(m[1]) + 1);
+    const maximum = bot.registry?.itemsByName?.[item.name]?.maxDurability;
+    if (m && (!maximum || maximum - (item.durabilityUsed || 0) >= 8)) best = Math.max(best, TOOL_TIERS.indexOf(m[1]) + 1);
   }
   return best;
 }
@@ -58,17 +60,27 @@ class Cancelled extends Error {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Move somewhere, aborting cleanly if the task is cancelled mid-path. */
-async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000 } = {}) {
-  task.check();
+async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen } = {}) {
+  task.check(); checkAir(bot);
+  if (stopWhen?.()) return;
   let timer;
-  const watchdog = new Promise((_, reject) => {
+  let acquired = false;
+  const watchdog = new Promise((resolve, reject) => {
     const started = Date.now();
     let lastProgress = started;
     let previous = bot.entity.position.clone();
     timer = setInterval(() => {
-      if (bot.entity.isInWater && bot.oxygenLevel <= 6) {
+      if (stopWhen?.()) {
+        acquired = true;
+        resolve();
+        bot.pathfinder.setGoal(null); bot.stopDigging?.(); bot.clearControlStates?.();
+        return;
+      }
+      if (needsAir(bot)) {
+        reject(new NeedsAir());
         bot.pathfinder.setGoal(null);
-        reject(new Error('Low air: surface before continuing navigation'));
+        bot.stopDigging?.();
+        bot.clearControlStates?.();
         return;
       }
       if (bot.entity.position.distanceTo(previous) >= 1) { previous = bot.entity.position.clone(); lastProgress = Date.now(); }
@@ -91,7 +103,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000 } 
       if (Date.now() >= landingDeadline) throw new Error('Navigation ended without safe footing');
       await sleep(50);
     }
-    if (goal.isEnd && !goal.isEnd(bot.entity.position.floored())) {
+    if (!acquired && goal.isEnd && !goal.isEnd(bot.entity.position.floored())) {
       throw new Error('Navigation ended before reaching the destination');
     }
   } catch (err) {
@@ -107,14 +119,15 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000 } 
 async function equipBestTool(bot, block) {
   let best = null;
   let bestTime = block.digTime(null, false, false, false, [], {});
+  const remaining = item => (bot.registry?.itemsByName?.[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
   for (const item of bot.inventory.items()) {
     const time = block.digTime(item.type, false, false, false, [], {});
-    if (time < bestTime) {
+    if (time < bestTime || (best && time === bestTime && remaining(item) > remaining(best))) {
       bestTime = time;
       best = item;
     }
   }
-  if (best && (!bot.heldItem || bot.heldItem.type !== best.type)) {
+  if (best && (!bot.heldItem || bot.heldItem.type !== best.type || bot.heldItem.slot !== best.slot)) {
     await bot.equip(best, 'hand');
   }
 }

@@ -2,6 +2,10 @@
 // Run these console commands only BEFORE a fresh controlled-world trial.
 // This places world resources, never items in the bot inventory. The bot must
 // mine, craft, smelt and build in survival. It is not a natural-world benchmark.
+if (process.argv.includes('--air-only')) {
+  console.log('fill -8 59 -12 -3 59 -8 stone\nfill -8 60 -12 -3 63 -8 water');
+  process.exit(0);
+}
 const lines = ['setworldspawn 0 64 0', 'time set day'];
 for (const x of [10, 16, 22]) for (const z of [8, 14, 20]) {
   lines.push(`fill ${x - 1} 68 ${z - 1} ${x + 1} 69 ${z + 1} oak_leaves[persistent=true]`);

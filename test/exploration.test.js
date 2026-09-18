@@ -72,3 +72,28 @@ test('navigation waits to land before the next digging action can start', async 
   assert(bot.entity.onGround);
   assert.equal(bot.entity.position.y, 64);
 });
+
+test('navigation interrupts promptly for air even while making progress', async () => {
+  const { navigate } = require('../src/skills');
+  let stopped = false;
+  const bot = { oxygenLevel: 20, entity: { position: new Vec3(0, 60, 0), isInWater: true },
+    clearControlStates: () => {}, stopDigging: () => {},
+    pathfinder: { goto: () => new Promise(() => {}), setGoal: () => { stopped = true; } } };
+  setTimeout(() => { bot.oxygenLevel = 12; bot.entity.position.x += 2; }, 20);
+  await assert.rejects(navigate(bot, new Task('test', 'dive'), {}), { name: 'NeedsAir' });
+  assert(stopped);
+});
+
+test('resource pickup ends a mining approach without excavating the rest of the route', async () => {
+  const { navigate } = require('../src/skills');
+  const { goals } = require('mineflayer-pathfinder');
+  let collected = false;
+  let stopped = false;
+  const bot = { entity: { position: new Vec3(0, 64, 0), onGround: true },
+    clearControlStates: () => {}, stopDigging: () => {},
+    pathfinder: { goto: () => new Promise(() => {}), setGoal: () => { stopped = true; } } };
+  setTimeout(() => { collected = true; }, 20);
+  await navigate(bot, new Task('test', 'mine'), new goals.GoalBlock(20, 30, 0), { stopWhen: () => collected });
+  assert(stopped);
+  assert.equal(bot.entity.position.y, 64);
+});

@@ -60,7 +60,7 @@ State is stored under `.bot-state/`, separately for each server and bot identity
 
 Resource expeditions carry spare wood, a stone pickaxe, and a portable crafting table. `src/tunneling.js` excavates supported staircase steps and rejects liquids, missing footing, and protected building foundations. Navigation limits drops, avoids digging straight down, and waits for landing before another action. `src/vitals.js` checks hunger and air during tasks; autonomous foraging, threat response, and overnight behavior are still incomplete.
 
-`src/compatibility.js` contains application-side workarounds for mining-speed tags, named difficulty packets in 26.1, and pathfinder results that otherwise share mutable search nodes. Installed dependency files remain unmodified.
+`src/compatibility.js` contains application-side workarounds for mining-speed tags, named difficulty packets in 26.1, pathfinder results that otherwise share mutable search nodes, and nearby animals incorrectly overwriting the player's oxygen reading. Low air interrupts work and triggers a swimming route back to breathable air. Three controlled dives passed without damage; broad underwater exploration remains unproven. Installed dependency files remain unmodified.
 
 `src/agent.js`, `src/act.js`, and much of `src/skills.js` contain the earlier experimental flat action loop. They remain available for comparison, but `index.js` now runs the verified objective executor. Other free-form commands from the experimental loop are not currently routed by the new entry point.
 
