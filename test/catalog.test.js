@@ -95,3 +95,25 @@ test('a mining action cannot combine sources needing stronger harvest tools', ()
   assert.equal(step.tool, 'wooden_pickaxe');
   assert(!step.sources.includes('stone'), 'the chosen wooden pickaxe must not authorize the diamond-only source');
 });
+
+test('nested wool and bed recipes finish within the connection heartbeat budget', async () => {
+  const { Worker } = require('node:worker_threads');
+  const worker = new Worker(`
+    const { parentPort, workerData } = require('node:worker_threads');
+    const { planCatalog } = require(workerData.knowledge);
+    const registry = require(workerData.minecraftData)('26.1');
+    const stock = { oak_log: 1, oak_planks: 2, wooden_axe: 5, stone_pickaxe: 1, bamboo: 1, wooden_pickaxe: 1, dirt: 8 };
+    const plan = planCatalog(registry, 'white_bed', 2, stock);
+    parentPort.postMessage(plan);
+  `, { eval: true, workerData: { knowledge: require.resolve('../src/knowledge'), minecraftData: require.resolve('minecraft-data') } });
+  let timer;
+  try {
+    const plan = await new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('Recipe planning blocked for more than two seconds')), 2000);
+      worker.once('message', resolve); worker.once('error', reject);
+    });
+    assert.equal(plan.at(-1).item, 'white_bed');
+    assert.equal(plan.at(-1).count, 2);
+    assert(plan.some(s => s.item === 'white_wool' && s.count === 6));
+  } finally { clearTimeout(timer); await worker.terminate(); }
+});

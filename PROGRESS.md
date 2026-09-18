@@ -210,6 +210,12 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 - All 112 unit tests passed. Controlled `ledge-delivery-mu7luykd` PASSED (runner 77743, exit 0): a receiver near the edge of a raised, single-block-wide stone row collected exactly 32 sticks and five individual stone axes. Both clients independently verified inventory; both stayed at y72 and the sender retained health 20. Fixture setup grants, teleports and the ten-block row are recorded separately. No changes were made to the player's terrain for this test.
 - Player sessions now log handover positions, drops and pickup events to make future reports diagnosable.
 
+### Recipe-planning connection freeze (2026-09-18, 23:50 UTC)
+
+- The live request `jev make 2 beds` repeatedly timed out the player's Jev while a synchronous recipe-cost estimate saturated its JavaScript thread. An offline reproduction of the same two-bed plan took 50.473 seconds. Per-path memoization still took 5.510 seconds and was not deployed.
+- Replaced recursive preference-cost expansion with six bounded passes over the actual recipe graph, invalidated whenever planning inventory changes. Full acquisition still checks real ingredient counts, tool requirements, cycles and its own expansion limit. The same plan took 35.319 milliseconds locally, with identical displayed steps. All 113 tests passed, including a worker-isolated regression with a two-second planning deadline.
+- Preserved player checkpoints in `artifacts/deploy-recipe-performance/`. The unresponsive old process did not handle SIGTERM, so it was terminated and replaced with the fixed version. No player world reset was performed; the bed request remains saved.
+
 Still required:
 
 1. Complete and independently verify natural-world concrete and Nether trials. House passed in a natural world; concrete and Nether passed in the controlled fixture.

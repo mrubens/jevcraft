@@ -58,9 +58,10 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
   let stock = { ...inventory };
   const steps = [];
   const visiting = new Set();
+  let estimates;
   let expansions = 0;
   const have = name => stock[name] || 0;
-  const add = (name, amount) => { stock[name] = have(name) + amount; };
+  const add = (name, amount) => { stock[name] = have(name) + amount; estimates = undefined; };
   const slots = recipe => recipe.shape ? recipe.shape.flat().filter(Boolean) : recipe.ingredients;
   // A drop table describes what breaking a block yields, not where that
   // block can be found. Never plan an unobserved crafted object as a raw
@@ -68,22 +69,37 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
   const usableSource = (name, source) => !name.endsWith('_concrete') &&
     !(data.recipes[source.block] && !/(ore|log|stem|hyphae|wood)$/.test(source.block) &&
       (source.block === name || !observed.has(source.block)));
-  function estimate(name, trail = new Set(), depth = 0) {
-    if (have(name)) return 0;
-    if (trail.has(name) || depth > 5) return 1000;
-    const next = new Set([...trail, name]);
-    let best = Infinity;
-    for (const source of data.sources[name] || []) {
-      if (source.enchantment || !usableSource(name, source)) continue;
-      const cost = (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0);
-      best = Math.min(best, cost);
+  // These costs rank real acquisition methods; they do not authorize actions.
+  // Evaluate the recipe graph in bounded passes instead of recursively
+  // expanding every repeated ingredient/alternative on the game event loop.
+  const costRecipes = Object.entries(data.recipes).flatMap(([output, recipes]) =>
+    recipes.map(recipe => ({ output, slots: slots(recipe), count: recipe.count })));
+  function estimate(name) {
+    if (!estimates) {
+      let costs = {};
+      for (const [item, amount] of Object.entries(stock)) if (amount > 0) costs[item] = 0;
+      for (const [item, sources] of Object.entries(data.sources)) for (const source of sources) {
+        if (source.enchantment || !usableSource(item, source)) continue;
+        const cost = (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0);
+        costs[item] = Math.min(costs[item] ?? 1000, cost);
+      }
+      // Six dependency layers are sufficient for this preference heuristic.
+      // Exact dependency execution below still detects cycles and checks the
+      // full recipe/tool chain, with its separate expansion budget.
+      for (let pass = 0; pass < 6; pass++) {
+        const next = { ...costs };
+        for (const recipe of costRecipes) {
+          const cost = recipe.slots.reduce((sum, alternatives) => sum + Math.min(...alternatives.map(item => costs[item] ?? 1000)), 0) / recipe.count + 1;
+          next[recipe.output] = Math.min(next[recipe.output] ?? 1000, cost);
+        }
+        for (const [output, inputs] of Object.entries(data.smelting)) for (const input of inputs) {
+          next[output] = Math.min(next[output] ?? 1000, (costs[input] ?? 1000) + 12);
+        }
+        costs = next;
+      }
+      estimates = costs;
     }
-    for (const recipe of (data.recipes[name] || []).slice(0, 16)) {
-      const cost = slots(recipe).reduce((sum, alternatives) => sum + Math.min(...alternatives.map(ing => estimate(ing, next, depth + 1))), 0) / recipe.count + 1;
-      best = Math.min(best, cost);
-    }
-    for (const input of data.smelting[name] || []) best = Math.min(best, estimate(input, next, depth + 1) + 12);
-    return Number.isFinite(best) ? best : 1000;
+    return estimates[name] ?? 1000;
   }
   function chooseIngredient(alternatives, counts) {
     const preference = name => ({ oak_log: -4, oak_planks: -4, cobblestone: -3, stone: -2, coal: -1 }[name] || 0);
@@ -160,7 +176,7 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
       for (const method of methods) {
         const before = { ...stock }; const length = steps.length;
         try { method.run(); return; }
-        catch (err) { stock = before; steps.length = length; lastError = err; }
+        catch (err) { stock = before; estimates = undefined; steps.length = length; lastError = err; }
       }
       throw lastError || new PlanError(`No supported survival acquisition method for ${name}: it needs a source outside the current mining, crafting, smelting, and hardening actions.`, name);
     } finally { visiting.delete(name); }
