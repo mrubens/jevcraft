@@ -12,8 +12,8 @@ test('low air aborts the current mining attempt without trying other blocks', as
   let rejectDig;
   const bot = {
     oxygenLevel: 20, entity: { position: new Vec3(0.5, 64, 0.5) },
-    registry: { blocksByName: { sand: { id: 1 } } }, inventory: { items: () => [] },
-    findBlocks: ({ matching }) => matching.includes(1) ? [new Vec3(1, 63, 0), new Vec3(2, 63, 0)] : [],
+    registry: require('minecraft-data')('26.1'), inventory: { items: () => [] },
+    findBlocks: ({ matching }) => matching.includes(require('minecraft-data')('26.1').blocksByName.sand.id) ? [new Vec3(1, 63, 0), new Vec3(2, 63, 0)] : [],
     blockAt: p => ({ name: 'sand', position: p, type: 1, diggable: true, digTime: () => 1000 }),
     canDigBlock: () => true,
     dig: () => { digging++; return new Promise((resolve, reject) => { rejectDig = reject; bot.oxygenLevel = 12; }); },
@@ -93,7 +93,7 @@ test('a worn pickaxe does not satisfy acquisition and the replacement is equippe
   const fresh = { ...worn, durabilityUsed: 0, slot: 37 };
   let stock = [worn];
   const bot = { inventory: { items: () => stock }, entity: { position: new Vec3(0, 64, 0) },
-    registry: { itemsByName: { stone_pickaxe: { maxDurability: 131 } }, blocksByName: {} },
+    registry: require('minecraft-data')('26.1'),
     findBlocks: () => { throw new Error('replacement planning was reached'); } };
   assert.equal(pickaxeTier(bot), 0);
   await assert.rejects(acquireStep(bot, new Task('test', 'replace'), 'stone_pickaxe', 1, {}, () => {}), /replacement planning was reached/);

@@ -5,30 +5,62 @@ const path = require('path');
 const { choice, noul } = require('./typesafe');
 const { Vec3 } = require('vec3');
 const { chatNames, parseAddress } = require('./chat-address');
+const { resolveItem } = require('./catalog');
 
 const TYPES = {
   house: 'Build a small house or shelter.',
-  concrete: 'Obtain purple concrete blocks (not merely concrete powder).',
+  obtain: 'Get, gather, collect, bring or give a Minecraft item or block, of any kind.',
+  craft: 'Make or craft an inventory item such as a tool, chest, stairs, planks, or other recipe output.',
+  come: 'Come here, approach a player, or meet the speaker once.',
+  follow: 'Follow a player continuously, stay with them, or accompany them.',
   nether: 'Find or create a working route to the Nether.',
   stop: 'Stop or cancel the current task.',
   status: 'Report progress on the current task.',
   resume: 'Continue or retry the saved task.',
-  other: 'Any other request, conversation, or unsupported construction/material.',
+  other: 'Conversation or a request that is not an item goal, house, Nether route, movement, or task control.',
 };
 
-async function interpret(client, request, from, username) {
+// Candidate extraction is exact code; Jev selects which mentioned quantity
+// applies to the requested output. Never offer unrelated batch sizes.
+function quantityCandidates(request) {
+  const values = new Set();
+  const units = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+    'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const tens = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+  const names = [...units, ...Object.keys(tens), 'hundred', 'thousand'];
+  const pattern = new RegExp(`\\b(?:\\d+|(?:${names.join('|')})(?:[ -]+(?:and[ -]+)?(?:${names.join('|')}))*)\\b`, 'gi');
+  for (const match of request.matchAll(pattern)) {
+    let n = 0;
+    if (/^\d+$/.test(match[0])) n = Number(match[0]);
+    else for (const word of match[0].toLowerCase().split(/[ -]+/)) {
+      if (word === 'hundred') n = (n || 1) * 100;
+      else if (word === 'thousand') n = (n || 1) * 1000;
+      else if (word !== 'and') n += tens[word] ?? units.indexOf(word);
+    }
+    values.add(n);
+    if (/^\s+stacks?\b/i.test(request.slice(match.index + match[0].length))) values.add(n * 64);
+  }
+  if (/\bstack\b/i.test(request)) values.add(/\bhalf\s+(?:a\s+)?stack\b/i.test(request) ? 32 : 64);
+  if (/\b(?:a|an|single)\b/i.test(request)) values.add(1);
+  return [...values].filter(n => Number.isInteger(n) && n > 0 && n <= 1024).map(String);
+}
+
+async function interpret(client, request, from, username, context = {}) {
   const address = parseAddress(request, username);
-  const numbers = [...new Set(['32', '64', '16', '1', ...(request.match(/\b\d{1,4}\b/g) || [])])]
-    .filter(n => Number(n) > 0 && Number(n) <= 1024);
+  const numbers = quantityCandidates(address.text);
   const response = await client.systemOne({
-    state: { request, speaker: from, bot_name: username, bot_names: chatNames(username), explicitly_addressed: address.explicit },
+    state: { request, speaker: from, bot_name: username, bot_names: chatNames(username), explicitly_addressed: address.explicit,
+      availablePlayers: context.players || [from] },
     questions: {
       addressed: noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.'),
-      objective: choice('What outcome does the player request in `request`? Choose other if the specific requested item or building is unsupported.', TYPES),
-      quantity: choice('Assuming the request is to obtain purple concrete, how many blocks are requested? Default to 32 if unspecified. A stack is 64 and half a stack is 32.', Object.fromEntries(numbers.map(n => [n, `${n} blocks`]))),
+      objective: choice('Categorize the requested outcome in `request`. Item requests belong to obtain or craft regardless of which particular Minecraft item is named. Recipes and feasibility are checked after routing. A placed house is house; crafting an item is craft. Coming once differs from continuously following.', TYPES),
+      quantity: choice('Assuming an item request, select the quantity applying to the requested output. Candidates were extracted from this request. "A/an" or "a single" item means 1. Stacks contain 64 items. If no requested output quantity is stated, select unspecified; do not invent a batch size.',
+        { ...Object.fromEntries(numbers.map(n => [n, `${n} items requested by a quantity in the message`])), unspecified: 'No stated output quantity; the application will use its default.' }),
+      delivery: noul('Assuming an item request, does the player ask the bot to bring, give, or fetch the item for them? "Get me" includes delivery; "craft a chest" by itself only asks the bot to make and retain it.'),
+      target: choice('Assuming come or follow, which available player should the bot approach? "me" or no name means the speaker.', Object.fromEntries([...new Set([from, ...(context.players || [])])].map(name => [name, name === from ? `${name}: the speaker (me)` : name]))),
       material: choice('Assuming the request is a small house, which construction material does the player request? Use oak_planks for unspecified wood or no preference.', {
         oak_planks: 'Wooden oak planks; default house material.',
-        cobblestone: 'Cobblestone or stone.', dirt: 'Dirt.', other: 'A specified material outside these options.',
+        cobblestone: 'Cobblestone.', dirt: 'Dirt.', other: 'Any other explicitly specified building material; resolve it from the full block catalog.',
       }),
     },
   });
@@ -38,12 +70,26 @@ async function interpret(client, request, from, username) {
   }
   if (!address.explicit && a.addressed.noul < 0.5) return null;
   const kind = a.objective.choice;
-  if (kind === 'house' && !['oak_planks', 'cobblestone', 'dirt'].includes(a.material?.choice)) {
-    return { kind: 'other' };
+  const spec = { kind, request, from, interpretation: a, usage: response.usage };
+  if (['come', 'follow'].includes(kind)) {
+    const target = a.target?.choice;
+    if (![from, ...(context.players || [])].includes(target)) throw new Error('Unknown movement target');
+    spec.target = target;
   }
-  if (kind === 'concrete' && !numbers.includes(a.quantity?.choice)) throw new Error('Invalid concrete quantity');
-  return { kind, request, from, count: kind === 'concrete' ? Number(a.quantity.choice) : undefined,
-    material: kind === 'house' ? a.material.choice : undefined, interpretation: a, usage: response.usage };
+  if (['obtain', 'craft'].includes(kind) || (kind === 'house' && a.material?.choice === 'other')) {
+    const registry = context.registry || require('minecraft-data')('26.1');
+    const resolution = await resolveItem(client, registry, request, { blocksOnly: kind === 'house',
+      context: { inventory: context.inventory || {}, nearbyBlocks: context.nearbyBlocks || [] } });
+    spec.itemResolution = resolution;
+    if (!resolution.item) return { ...spec, kind: 'clarify', message: 'I could not match the requested item. Use its Minecraft item name so I can work out the recipe.' };
+    if (kind === 'house') spec.material = resolution.item;
+    else {
+      if (![...numbers, 'unspecified'].includes(a.quantity?.choice)) throw new Error('Invalid item quantity');
+      spec.item = resolution.item; spec.count = a.quantity.choice === 'unspecified' ? resolution.item.endsWith('_concrete') ? 32 : 1 : Number(a.quantity.choice);
+      spec.deliver = a.delivery?.noul >= 0.5;
+    }
+  } else if (kind === 'house') spec.material = a.material?.choice || 'oak_planks';
+  return spec;
 }
 
 class GoalStore {
@@ -88,4 +134,4 @@ function verifyHouse(bot, blueprint) {
   return { ok: !missing.length && !obstructed.length, missing: missing.length, obstructed: obstructed.length };
 }
 
-module.exports = { interpret, GoalStore, houseBlueprint, verifyHouse };
+module.exports = { interpret, quantityCandidates, GoalStore, houseBlueprint, verifyHouse };

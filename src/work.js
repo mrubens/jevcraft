@@ -3,7 +3,7 @@
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { navigate, equipBestTool, pickaxeTier, countOf } = require('./skills');
-const { planFor, MINEABLE } = require('./plan');
+const { MINEABLE } = require('./plan');
 const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
 const { reservedForConstruction, portalSiteClear, selectPortalSite } = require('./build-sites');
@@ -13,6 +13,7 @@ const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = requ
 const { decideTree } = require('./decisions');
 const { Survival } = require('./survival');
 const { checkThreats } = require('./danger');
+const { planCatalog, sourceBlocks } = require('./knowledge');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -56,7 +57,7 @@ async function stepOff(bot, task, p) {
   await navigate(bot, task, new goals.GoalBlock(exit.x, exit.y, exit.z));
 }
 
-async function dig(bot, task, p, { done } = {}) {
+async function dig(bot, task, p, { done, requiredTool, enchantment } = {}) {
   task.check(); checkAir(bot);
   if (done?.()) return;
   let block = bot.blockAt(p);
@@ -70,7 +71,13 @@ async function dig(bot, task, p, { done } = {}) {
   if (done?.()) return;
   block = bot.blockAt(p);
   if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) throw new Error('Refusing to dig directly beneath feet');
-  await equipBestTool(bot, block);
+  if (requiredTool || enchantment) {
+    const remaining = item => (bot.registry.itemsByName[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
+    const tool = bot.inventory.items().filter(item => (!requiredTool || item.name === requiredTool) && remaining(item) >= 8 &&
+      (!enchantment || item.enchants?.some(e => e.name === enchantment))).sort((a, b) => remaining(b) - remaining(a))[0];
+    if (!tool) throw new Blocked(`Need ${enchantment || ''} ${requiredTool || 'tool'} to collect ${block.name}`);
+    await bot.equip(tool, 'hand');
+  } else await equipBestTool(bot, block);
   if (block.harvestTools && !block.harvestTools[bot.heldItem?.type]) throw new Error(`Missing harvest tool for ${block.name}`);
   await digWithAirGuard(bot, task, block);
   await waitFor(task, () => bot.blockAt(p)?.type !== block.type);
@@ -117,7 +124,8 @@ async function explore(bot, task, goal, save, resource) {
   const angle = (search.leg % 8) * Math.PI / 4;
   const radius = 24 * (1 + Math.floor(search.leg / 8));
   let target = pos(search.origin).offset(Math.round(Math.cos(angle) * radius), 0, Math.round(Math.sin(angle) * radius));
-  const resourceNames = Object.entries(MINEABLE).filter(([name, data]) => name === resource || data.drops === resource).map(([name]) => name);
+  const resourceNames = [...new Set([...Object.entries(MINEABLE).filter(([name, data]) => name === resource || data.drops === resource).map(([name]) => name),
+    ...(bot.registry.blocksByName[resource] ? [resource] : []), ...sourceBlocks(bot.registry, resource)])];
   const observed = find(bot, resourceNames, 128, 8).filter(p => !reservedForConstruction(goal, p));
   if (observed.length) {
     target = observed[0];
@@ -179,14 +187,15 @@ async function explore(bot, task, goal, save, resource) {
 }
 
 function miningCandidates(bot, step, goal) {
-  const names = Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
+  const names = step.sources || Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
   if (step.drops === 'flint') names.push('gravel');
   const ids = names.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
   return bot.findBlocks({ matching: ids, maxDistance: 48, count: 32,
     useExtraInfo: b => faces.some(f => {
       const neighbor = bot.blockAt(b.position.plus(f));
       return air(neighbor) || neighbor?.name === 'water';
-    }) && (step.minimumY === undefined || b.position.y >= step.minimumY) && !reservedForConstruction(goal, b.position) &&
+    }) && (!step.properties || Object.entries(step.properties).every(([key, value]) => String(b.getProperties()[key]) === String(value))) &&
+      (step.minimumY === undefined || b.position.y >= step.minimumY) && !reservedForConstruction(goal, b.position) &&
       (step.drops !== 'dirt' || (b.position.y >= bot.entity.position.floored().y - 1 && air(bot.blockAt(b.position.offset(0, 1, 0))))),
   }).filter(p => {
     const k = `${p}`;
@@ -198,7 +207,7 @@ async function mine(bot, task, step, goal, save, selected) {
   const candidates = selected ? [selected] : miningCandidates(bot, step, goal);
   if (!candidates.length) {
     if (step.depth !== null && step.depth !== undefined) {
-      const names = Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
+      const names = step.sources || Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
       const ore = find(bot, names, 64, 16)[0];
       const target = ore || bot.entity.position.floored().offset(24, step.depth - bot.entity.position.floored().y, 0);
       await tunnelStep(bot, task, goal, save, target, { dig, navigate });
@@ -209,7 +218,7 @@ async function mine(bot, task, step, goal, save, selected) {
     task.check(); checkAir(bot);
     const before = countOf(bot, step.drops);
     try {
-      await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before });
+      await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before, requiredTool: step.tool, enchantment: step.enchantment });
       await sleep(650);
       if (countOf(bot, step.drops) > before) return;
       const drop = Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === step.drops)
@@ -251,7 +260,9 @@ async function workstation(bot, task, name) {
 async function craft(bot, task, step, goal) {
   const table = step.needs_table ? await workstation(bot, task, 'crafting_table') : null;
   const id = bot.registry.itemsByName[step.item]?.id;
-  const recipe = bot.recipesFor(id, null, step.count, table)[0];
+  const recipe = step.recipe ? new (require('prismarine-recipe')(bot.registry).Recipe)({ result: { id, count: step.recipe.count },
+    ...(step.recipe.shape ? { inShape: step.recipe.shape.map(row => row.map(name => name ? bot.registry.itemsByName[name].id : null)) } :
+      { ingredients: step.recipe.ingredients.map(name => bot.registry.itemsByName[name].id) }) }) : bot.recipesFor(id, null, step.count, table)[0];
   if (!recipe) throw new Error(`No usable recipe for ${step.count} ${step.item}`);
   const before = countOf(bot, step.item);
   task.check();
@@ -308,7 +319,8 @@ async function smelt(bot, task, step) {
   await waitFor(task, () => countOf(bot, step.item) >= before + needed);
 }
 
-async function harden(bot, task, goal, save) {
+async function harden(bot, task, goal, save, item = 'purple_concrete') {
+  const powder = `${item}_powder`;
   if (pickaxeTier(bot) < 1) throw new Error('Concrete needs a pickaxe');
   if (!goal.concreteStation) {
     const water = find(bot, ['water'], 48, 64);
@@ -325,35 +337,55 @@ async function harden(bot, task, goal, save) {
   const p = pos(goal.concreteStation);
   if (bot.entity.position.distanceTo(p) > 4) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2));
   const existing = bot.blockAt(p);
-  if (!['purple_concrete', 'purple_concrete_powder'].includes(existing?.name)) {
+  if (![item, powder].includes(existing?.name)) {
     if (!air(existing) && existing?.name !== 'water') await dig(bot, task, p);
-    await place(bot, task, p, 'purple_concrete_powder');
+    await place(bot, task, p, powder);
   }
-  await waitFor(task, () => bot.blockAt(p)?.name === 'purple_concrete');
-  const before = countOf(bot, 'purple_concrete');
+  await waitFor(task, () => bot.blockAt(p)?.name === item);
+  const before = countOf(bot, item);
   await dig(bot, task, p);
   await sleep(650);
-  if (countOf(bot, 'purple_concrete') <= before) {
+  if (countOf(bot, item) <= before) {
     await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 1));
-    await waitFor(task, () => countOf(bot, 'purple_concrete') > before);
+    await waitFor(task, () => countOf(bot, item) > before);
   }
 }
 
+function catalogPlan(bot, item, count, stock) {
+  if (!bot._catalogObservation || Date.now() - bot._catalogObservation.at > 5000 || bot.entity.position.distanceTo(pos(bot._catalogObservation.position)) > 8) {
+    const ids = bot.registry.blocksArray.filter(b => /(_log|_wood|_ore)$|^(stone|sand|gravel|dirt|poppy|cornflower)$/.test(b.name)).map(b => b.id);
+    const nearby = bot.findBlocks({ matching: ids, maxDistance: 32, count: 48,
+      useExtraInfo: b => faces.some(f => air(bot.blockAt(b.position.plus(f)))) }).map(p => bot.blockAt(p)?.name).filter(Boolean);
+    bot._catalogObservation = { at: Date.now(), position: { ...bot.entity.position }, nearby };
+  }
+  const tools = bot.inventory.items().filter(i => i.maxDurability).map(i => {
+    let enchantments = [];
+    try { enchantments = i.enchants.map(e => e.name); } catch (_) {}
+    return { name: i.name, enchantments };
+  });
+  return planCatalog(bot.registry, item, count, stock, { nearby: bot._catalogObservation.nearby, tools });
+}
+
 async function acquireStep(bot, task, item, count, goal, save, { portable = false, minimumMiningY } = {}) {
+  task.check(); checkAir(bot);
   const inv = planningInventory(bot);
   if ((inv[item] || 0) >= count) return true;
   for (const station of ['crafting_table', 'furnace']) if (!(portable && station === item) && find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
-  const step = planFor(item, count, inv)[0];
+  const step = catalogPlan(bot, item, count, inv)[0];
   if (!step) throw new Error(`No progress step for ${item}`);
   if (minimumMiningY !== undefined && step.action === 'mine') step.minimumY = minimumMiningY;
+  await executeAcquisition(bot, task, step, goal, save);
+  return false;
+}
+
+async function executeAcquisition(bot, task, step, goal, save) {
   goal.step = step;
   save();
   if (step.action === 'mine') await mine(bot, task, step, goal, save);
   else if (step.action === 'craft') await craft(bot, task, step, goal);
   else if (step.action === 'smelt') await smelt(bot, task, step);
-  else if (step.action === 'harden') await harden(bot, task, goal, save);
+  else if (step.action === 'harden') await harden(bot, task, goal, save, step.item);
   else throw new Error(`Unknown action ${step.action}`);
-  return false;
 }
 
 function selectSite(bot, material) {
@@ -470,7 +502,7 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
   if ((stock[goal.material] || 0) < missing.length) {
     const inv = { ...stock };
     for (const station of ['crafting_table', 'furnace']) if (find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
-    const step = planFor(goal.material, missing.length, inv)[0];
+    const step = catalogPlan(bot, goal.material, missing.length, inv)[0];
     const actions = {};
     if (step?.action === 'mine') {
       for (const p of miningCandidates(bot, step, goal).slice(0, 16)) {
@@ -531,8 +563,14 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
       } },
     } };
   }
-  const state = decisionObservation(bot, goal);
-  const fingerprint = JSON.stringify(state);
+  await decideAction(bot, task, goal, save, client, onStep, tree);
+  return !!goal.blueprint && verifyHouse(bot, goal.blueprint).ok;
+}
+
+async function decideAction(bot, task, goal, save, client, onStep, tree, context = {}) {
+  const observation = decisionObservation(bot, goal);
+  const state = { ...observation, ...context };
+  const fingerprint = JSON.stringify(observation);
   const controller = new AbortController();
   const watcher = setInterval(() => {
     try { task.check(); checkAir(bot); }
@@ -546,7 +584,7 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
   task.check(); checkAir(bot);
   const record = { at: new Date().toISOString(), path: decision.path, latencyMs: decision.latencyMs,
     state, options: JSON.parse(JSON.stringify(tree)), usage: decision.usage, judgments: decision.judgments,
-    stale: decision.stale || !decision.action.valid() };
+    stale: decision.stale || (decision.action.valid ? !decision.action.valid() : false) };
   goal.decisions ||= []; goal.decisions.push(record); goal.decisions = goal.decisions.slice(-40);
   save(); onStep(goal);
   if (record.stale) return false;
@@ -557,7 +595,71 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
     goal.decisionFailures[decision.path.at(-1)] = { at: Date.now(), reason: err.message };
     throw err;
   }
-  return !!goal.blueprint && verifyHouse(bot, goal.blueprint).ok;
+  return true;
+}
+
+async function obtainStep(bot, task, goal, save, client, onStep) {
+  if ((goal.delivered || 0) >= goal.count) return true;
+  const remaining = goal.count - (goal.delivered || 0);
+  if (goal.pendingDelivery || countOf(bot, goal.item) >= remaining) {
+    if (!goal.deliver) return true;
+    goal.step = { action: 'deliver', item: goal.item, count: remaining, recipient: goal.from }; save();
+    return deliver(bot, task, goal, save);
+  }
+  const stock = planningInventory(bot);
+  for (const station of ['crafting_table', 'furnace']) if (find(bot, [station], 32, 1).length) stock[station] = Math.max(stock[station] || 0, 1);
+  const plan = catalogPlan(bot, goal.item, remaining, stock);
+  const step = plan[0];
+  if (!step) return false;
+  const actions = {};
+  if (step.action === 'mine') {
+    for (const p of miningCandidates(bot, step, goal).slice(0, 12)) {
+      if (Object.keys(actions).length >= 4) break;
+      if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) continue;
+      if (!bot.canDigBlock(bot.blockAt(p)) && bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalGetToBlock(p.x, p.y, p.z), 200).status !== 'success') continue;
+      const block = bot.blockAt(p).name;
+      actions[`gather_${p.x}_${p.y}_${p.z}`] = { description: { block, position: { ...p },
+        distance: Math.round(p.distanceTo(bot.entity.position)), resource: step.drops, requiredTool: step.tool },
+      valid: () => bot.blockAt(p)?.name === block,
+      run: async () => { goal.step = step; save(); await mine(bot, task, step, goal, save, p); } };
+    }
+  }
+  if (!Object.keys(actions).length) actions[step.action === 'mine' ? 'find_resource' : 'execute_recipe'] = {
+    description: { action: step.action, dependency: step, rationale: `Required by the recipe graph for ${remaining} ${goal.item}` },
+    run: () => executeAcquisition(bot, task, step, goal, save),
+  };
+  if (!client) { await Object.values(actions)[0].run(); return false; }
+  await decideAction(bot, task, goal, save, client, onStep, {
+    obtain_item: { description: `Obtain ${remaining} ${goal.item}${goal.deliver ? ` and deliver to ${goal.from}` : ''}.`, children: {
+      [step.action]: { description: `Resolve the next ${step.action} dependency for ${step.item || step.drops}.`, children: actions },
+    } },
+  }, { acquisition: { item: goal.item, count: remaining, dependencies: plan.map(s => ({ action: s.action, item: s.item || s.drops, count: s.count, tool: s.tool })) } });
+  return false;
+}
+
+async function movementStep(bot, task, goal, save) {
+  let target = bot.players[goal.target || goal.from]?.entity;
+  if (!target && goal.requesterPosition) {
+    const p = goal.requesterPosition;
+    await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3));
+    target = bot.players[goal.target || goal.from]?.entity;
+  }
+  if (!target) throw new Blocked(`Cannot see ${goal.target || goal.from}. Come within view so I can find a route.`);
+  goal.requesterPosition = { ...target.position };
+  goal.step = { action: goal.kind, target: goal.target || goal.from, position: { ...target.position } }; save();
+  const distance = bot.entity.position.distanceTo(target.position);
+  if (distance <= 3) {
+    bot.pathfinder.setGoal(null); bot.clearControlStates();
+    if (goal.kind === 'come') return true;
+    for (let i = 0; i < 5; i++) { task.check(); await sleep(100); }
+    return false;
+  }
+  const before = bot.entity.position.clone();
+  try { await navigate(bot, task, new goals.GoalFollow(target, 2), { timeoutMs: goal.kind === 'follow' ? 5000 : 60000, stallMs: 5000 }); }
+  catch (err) {
+    task.check(); if (err.name === 'NeedsAir' || bot.entity.position.distanceTo(before) < 1) throw err;
+  }
+  return goal.kind === 'come' && target.position.distanceTo(bot.entity.position) <= 3;
 }
 
 async function netherStep(bot, task, goal, save) {
@@ -655,7 +757,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
   goal.survival = survival.state;
   protectConstruction(bot, goal);
   goal.status = 'running'; goal.failures = 0; save();
-  for (let n = 0; n < maxSteps; n++) {
+  for (let n = 0; n < (goal.kind === 'follow' ? Infinity : maxSteps); n++) {
     task.interruptCheck = undefined;
     task.check();
     updateDigCapabilities(bot);
@@ -677,6 +779,8 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
         (goal.kind === 'nether' && !String(bot.game.dimension).includes('nether') && !find(bot, ['nether_portal'], 64, 1).length && !goal.portalFrame));
       const prepared = !needsSupplies || await prepareExpeditionStep(bot, task, goal, save);
       if (prepared && goal.kind === 'house') complete = decisionClient ? await houseDecisionStep(bot, task, goal, save, decisionClient, onStep) : await buildHouseStep(bot, task, goal, save);
+      if (['obtain', 'craft'].includes(goal.kind)) complete = await obtainStep(bot, task, goal, save, decisionClient, onStep);
+      if (['come', 'follow'].includes(goal.kind)) complete = await movementStep(bot, task, goal, save);
       if (prepared && goal.kind === 'concrete') {
         if ((goal.delivered || 0) >= goal.count) complete = true;
         else if (goal.pendingDelivery || await acquireStep(bot, task, 'purple_concrete', goal.count - (goal.delivered || 0), goal, save)) {
@@ -693,12 +797,13 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       goal.history = goal.history.slice(-40);
       if (complete) {
         goal.status = 'complete'; goal.completedAt = new Date().toISOString(); save();
-        bot.chat(goal.kind === 'concrete' ? `Delivered ${goal.count} purple concrete to ${goal.from}; pickup confirmed.` :
+        bot.chat(['obtain', 'craft'].includes(goal.kind) ? (goal.deliver ? `Delivered ${goal.count} ${goal.item.replaceAll('_', ' ')} to ${goal.from}; pickup confirmed.` : `Obtained ${goal.count} ${goal.item.replaceAll('_', ' ')}; inventory verified.`) :
+          goal.kind === 'come' ? `Here with ${goal.target || goal.from}.` : goal.kind === 'concrete' ? `Delivered ${goal.count} purple concrete to ${goal.from}; pickup confirmed.` :
           goal.kind === 'house' ? `House verified at ${pos(goal.blueprint.origin)}: floor, walls, roof and clear doorway.` : 'Nether route verified: I entered the Nether.');
         return { ok: true, goal };
       }
       const unchanged = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 1;
-      goal.stalls = unchanged ? (goal.stalls || 0) + 1 : 0;
+      goal.stalls = unchanged && goal.kind !== 'follow' ? (goal.stalls || 0) + 1 : 0;
       if (goal.stalls > 30) throw new Blocked(`No measurable progress on ${JSON.stringify(goal.step)}`);
     } catch (err) {
       task.interruptCheck = undefined;

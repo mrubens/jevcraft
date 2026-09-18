@@ -6,11 +6,12 @@ const { explore } = require('../src/work');
 const { Task } = require('../src/skills');
 
 test('exploration reaches a distant waypoint through intermediate walks before rotating', async () => {
+  const registry = require('minecraft-data')('26.1');
   const bot = {
     entity: { position: new Vec3(0, 64, 0) },
-    registry: { blocksByName: { grass_block: { id: 1 } } },
+    registry,
     blockAt: () => ({ name: 'air' }),
-    findBlocks: () => [bot.entity.position.offset(9, -1, 0), bot.entity.position.offset(0, -1, 9)],
+    findBlocks: ({ matching }) => matching.includes(registry.blocksByName.grass_block.id) ? [bot.entity.position.offset(9, -1, 0), bot.entity.position.offset(0, -1, 9)] : [],
     pathfinder: { goto: async g => { bot.entity.position = new Vec3(g.x, g.y, g.z); }, setGoal: () => {} },
   };
   const task = new Task('test', 'search');

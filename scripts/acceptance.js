@@ -47,6 +47,7 @@ bot.on('death', () => {
 });
 bot.on('health', () => log({ health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, position: bot.entity?.position }));
 bot.on('navigation_stall', details => log({ navigationStall: details }));
+bot.on('handover', details => log({ handover: details }));
 let lastUnsafeRouteLog = 0;
 bot.on('path_update', route => {
   const points = [bot.entity.position, ...(route.path || [])];
@@ -69,8 +70,8 @@ bot.once('spawn', async () => {
     const saved = resumeId ? goalStore.read() : null;
     if (resumeId && (!saved || Object.keys(saved.initialInventory || {}).length)) throw new Error('Missing original empty-inventory evidence');
     const spec = saved || await interpret(client, `${username}, ${request}`, 'TestPlayer', username);
-    if (!spec || !['house', 'concrete', 'nether'].includes(spec.kind)) throw new Error('Jev did not recognize acceptance request');
-    if (spec.kind === 'concrete') {
+    if (!spec || !['house', 'concrete', 'nether', 'obtain', 'craft'].includes(spec.kind)) throw new Error('Jev did not recognize acceptance request');
+    if (spec.kind === 'concrete' || spec.deliver) {
       receiver = mineflayer.createBot({ host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
         username: saved?.from || `Receive${id}`, auth: 'offline', version: process.env.MC_VERSION || false });
       await new Promise((resolve, reject) => { receiver.once('spawn', resolve); receiver.once('error', reject); });
@@ -83,7 +84,7 @@ bot.once('spawn', async () => {
     if (receiver) {
       goal.from = receiver.username;
       goal.requesterPosition = { ...receiver.entity.position };
-      goal.receiverInitialConcrete ??= inventory(receiver).purple_concrete || 0;
+      goal.receiverInitialItem ??= goal.receiverInitialConcrete ?? inventory(receiver)[goal.item || 'purple_concrete'] ?? 0;
     }
     if (resumeId) log({ resumed: resumeId, inventory: initial, originalCreatedAt: goal.createdAt });
     log({ start: { kind: goal.kind, count: goal.count, request: goal.request, from: goal.from, initialInventory: goal.initialInventory, initialPosition: goal.initialPosition, createdAt: goal.createdAt, scenario: goal.scenario }, username, server: `${process.env.MC_HOST}:${process.env.MC_PORT}`, gameMode: bot.game.gameMode, difficulty: bot.game.difficulty, timeOfDay: bot.time.timeOfDay });
@@ -92,7 +93,9 @@ bot.once('spawn', async () => {
       onStep: g => log({ step: g.step, decision: g.decisions?.at(-1), survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }),
     });
     const verified = result.ok && (goal.kind === 'house' ? verifyHouse(bot, goal.blueprint).ok :
-      goal.kind === 'concrete' ? (goal.delivered >= goal.count && (inventory(receiver).purple_concrete || 0) >= goal.receiverInitialConcrete + goal.count) : String(bot.game.dimension).includes('nether'));
+      ['concrete', 'obtain', 'craft'].includes(goal.kind) ? (receiver
+        ? goal.delivered >= goal.count && (inventory(receiver)[goal.item || 'purple_concrete'] || 0) >= goal.receiverInitialItem + goal.count
+        : (inventory(bot)[goal.item] || 0) >= goal.count) : String(bot.game.dimension).includes('nether'));
     if (verified && cycles) {
       log({ usefulRequestVerified: goal.kind, phase: 'survival-between-requests', targetCycles: cycles, initialWorldAge });
       const idleGoal = { version: 1, kind: 'survive', request: 'Stay alive between player requests',

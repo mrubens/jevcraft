@@ -4,31 +4,39 @@ const { TypeSafe } = require('../src/typesafe');
 const { interpret } = require('../src/objectives');
 const fs = require('fs');
 const cases = [
-  ['JevBot build a house', 'house', 'oak_planks'],
-  ['JevBot make a cobblestone shelter', 'house', 'cobblestone'],
-  ['JevBot get me 32 purple concrete', 'concrete', 32],
-  ['JevBot bring half a stack of purple concrete', 'concrete', 32],
-  ['JevBot find a way to the nether', 'nether'],
-  ['JevBot build a glass castle', 'other'],
-  ['JevBot stop please', 'stop'],
-  ['JevBot resume', 'resume'],
-  ['Jev build a house', 'house', 'oak_planks'],
-  ['Jev, get me half a stack of purple concrete', 'concrete', 32],
-  ['jev find a way to the nether', 'nether'],
-  ['Jev stop', 'stop'],
-  ['Jev status', 'status'],
-  ['Jev resume', 'resume'],
+  ['jev get me a pumpkin', { kind: 'obtain', item: 'pumpkin', count: 1, deliver: true }],
+  ['Jev build a house', { kind: 'house', material: 'oak_planks' }],
+  ['Jev make a birch plank house', { kind: 'house', material: 'birch_planks' }],
+  ['Jev bring me grass', { kind: 'obtain', item: 'short_grass', count: 1, deliver: true }],
+  ['Jev get me a grass block', { kind: 'obtain', item: 'grass_block', count: 1, deliver: true }],
+  ['Jev craft a chest', { kind: 'craft', item: 'chest', count: 1, deliver: false }],
+  ['Jev make eight birch stairs', { kind: 'craft', item: 'birch_stairs', count: 8 }],
+  ['Jev craft two stone pickaxes', { kind: 'craft', item: 'stone_pickaxe', count: 2 }],
+  ['Jev get me two stacks of cobblestone', { kind: 'obtain', item: 'cobblestone', count: 128, deliver: true }],
+  ['Jev bring half a stack of purple concrete', { kind: 'obtain', item: 'purple_concrete', count: 32 }],
+  ['Jev collect 8 red concrete', { kind: 'obtain', item: 'red_concrete', count: 8 }],
+  ['Jev craft a furnace', { kind: 'craft', item: 'furnace', count: 1 }],
+  ['Jev get me bedrock', { kind: 'obtain', item: 'bedrock', count: 1 }],
+  ['Jev come here', { kind: 'come', target: 'TestPlayer' }],
+  ['Jev stay with Alex', { kind: 'follow', target: 'Alex' }],
+  ['Jev find a way to the nether', { kind: 'nether' }],
+  ['Jev stop', { kind: 'stop' }],
+  ['Jev status', { kind: 'status' }],
+  ['Jev resume', { kind: 'resume' }],
 ];
 (async () => {
   const client = new TypeSafe();
   const results = [];
-  for (const [request, kind, arg] of cases) {
-    const result = await interpret(client, request, 'TestPlayer', 'JevBot');
-    const pass = result?.kind === kind && (arg === undefined || result.material === arg || result.count === arg);
-    const record = { request, pass, expected: { kind, arg }, result };
-    results.push(record); console.log(JSON.stringify(record));
+  for (const [request, expected] of cases) {
+    const started = performance.now();
+    const result = await interpret(client, request, 'TestPlayer', 'JevBot', { players: ['TestPlayer', 'Alex'] });
+    const pass = Object.entries(expected).every(([key, value]) => result?.[key] === value);
+    const record = { request, pass, expected, latencyMs: Math.round(performance.now() - started), result };
+    results.push(record); console.log(JSON.stringify({ request, pass, expected, actual: { kind: result?.kind, item: result?.item, count: result?.count, target: result?.target }, latencyMs: record.latencyMs }));
   }
   fs.mkdirSync('artifacts', { recursive: true });
-  fs.writeFileSync('artifacts/intent-eval.json', JSON.stringify(results, null, 2));
+  const artifact = `artifacts/intent-eval-${Date.now()}.json`;
+  fs.writeFileSync(artifact, JSON.stringify(results, null, 2));
+  console.log(JSON.stringify({ passed: results.filter(r => r.pass).length, total: results.length, artifact }));
   if (results.some(r => !r.pass)) process.exitCode = 1;
 })().catch(err => { console.error(err.message); process.exitCode = 1; });

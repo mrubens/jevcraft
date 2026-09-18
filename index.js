@@ -102,7 +102,10 @@ bot.on('chat', (from, request) => {
   const revision = generation;
   pendingRequests++;
   pending = pending.then(async () => {
-    const spec = await interpret(client, request, from, bot.username);
+    const spec = await interpret(client, request, from, bot.username, {
+      registry: bot.registry, players: Object.keys(bot.players),
+      inventory: Object.fromEntries(bot.inventory.items().map(item => [item.name, item.count])),
+    });
     if (!spec || revision !== generation) return;
     if (spec.kind === 'status') {
       const g = active?.goal || store.read();
@@ -111,9 +114,10 @@ bot.on('chat', (from, request) => {
       return;
     }
     if (spec.kind === 'other') {
-      bot.chat('I can currently build a small wood/stone/dirt house, collect purple concrete, or establish a Nether route.');
+      bot.chat('Tell me what item to obtain or craft, who to follow or come to, or what house material to use. I will check the dependencies.');
       return;
     }
+    if (spec.kind === 'clarify') { bot.chat(spec.message); return; }
     if (spec.kind === 'stop') { generation++; await stop(); bot.chat('Stopped.'); return; }
     if (spec.kind === 'resume') {
       if (active?.idle) await stop('interrupted');
@@ -131,7 +135,9 @@ bot.on('chat', (from, request) => {
       initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
     store.save(goal);
     bot.chat(spec.kind === 'house' ? `Building a small ${spec.material} house with a floor, doorway and roof.` :
-      spec.kind === 'concrete' ? `Collecting ${spec.count} purple concrete blocks.` : 'I will establish a portal route and enter the Nether to verify it.');
+      ['obtain', 'craft'].includes(spec.kind) ? `Working out the dependencies for ${spec.count} ${spec.item.replaceAll('_', ' ')}${spec.deliver ? ` for ${from}` : ''}.` :
+      spec.kind === 'come' ? `Coming to ${spec.target}.` : spec.kind === 'follow' ? `Following ${spec.target}; say Jev stop to stop.` :
+      'I will establish a portal route and enter the Nether to verify it.');
     launch(goal);
   }).catch(err => { console.error(err); bot.chat(`Could not process request: ${err.message}`); }).finally(() => { pendingRequests--; });
 });
@@ -143,7 +149,7 @@ bot.once('spawn', async () => {
   ready = true;
   const saved = store.read();
   if (saved && saved.status === 'running') { bot.chat('Resuming my saved task.'); launch(saved); }
-  else bot.chat('Call me Jev: "Jev build a house", "Jev get me purple concrete", or "Jev find a way to the Nether".');
+  else bot.chat('Call me Jev: "Jev come here", "Jev follow me", "Jev craft a chest", or "Jev get me 8 birch stairs".');
 });
 bot.on('death', () => { ready = false; generation++; if (active) active.goal.lastError = 'The bot died'; stop('blocked').catch(console.error); });
 bot.on('end', () => {

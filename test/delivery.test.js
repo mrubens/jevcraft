@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('events');
 const { Vec3 } = require('vec3');
-const { deliver } = require('../src/delivery');
+const { deliver, dropHeld } = require('../src/delivery');
 const { Task } = require('../src/skills');
 
 function setup(collector = 7, pickup = 32) {
@@ -48,4 +48,21 @@ test('partial pickup is preserved and uncertain delivery is not silently repeate
   bot.toss = async () => { tossedAgain = true; };
   await assert.rejects(deliver(bot, task, goal, () => {}, { timeout: 0 }), /interrupted/);
   assert(!tossedAgain);
+});
+
+test('splitting a handover stack excludes its destination from the cursor return range', async () => {
+  let items = [{ name: 'pumpkin', type: 1, count: 17, slot: 36 }];
+  const bot = {
+    inventory: { items: () => items, firstEmptyInventorySlot: () => 9, inventoryStart: 9, inventoryEnd: 45 },
+    transfer: async options => {
+      assert.equal(options.sourceStart, 36);
+      assert.equal(options.sourceEnd, 37);
+      assert(options.destStart < options.sourceStart || options.destStart >= options.sourceEnd);
+      items = [{ name: 'pumpkin', type: 1, count: 16, slot: 36 }, { name: 'pumpkin', type: 1, count: 1, slot: 9 }];
+    },
+    equip: async item => { assert.equal(item.count, 1); },
+    _client: { write: () => { items = items.filter(i => i.slot !== 9); } },
+  };
+  await dropHeld(bot, new Task('test', 'hand over one pumpkin'), 'pumpkin', 1);
+  assert.equal(items[0].count, 16);
 });

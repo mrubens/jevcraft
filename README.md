@@ -1,10 +1,12 @@
 # JevBot
 
-A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat and choose ongoing house-building actions. Ordinary code executes and verifies survival tasks. No OpenRouter token is required.
+A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat, resolve items through a dynamic catalog hierarchy, and choose ongoing actions. Ordinary code executes and verifies survival tasks. No OpenRouter token is required.
 
 The broader target is a survival companion that can obtain food and shelter, maintain tools, avoid hazards, and follow player requests on Normal difficulty. See `GOAL.md` for the acceptance criteria. House construction has passed on Normal difficulty; extended autonomous survival is not yet demonstrated.
 
-The current development target is:
+Available requests include `Jev come here`, `Jev follow me`, `Jev craft a chest`, `Jev make eight birch stairs`, and `Jev get me a pumpkin`. Item routing covers the full Minecraft 26.1 catalog. Acquisition expands the selected item's crafting, smelting, tool, and block-drop dependencies; catalog recognition does not mean every item is obtainable yet. Shears are planned for grass plants; intact grass blocks require an existing Silk Touch tool. Enchanting, farming, trading, and arbitrary structure design are not implemented.
+
+The original development targets remain:
 
 - `build a house`: a 5×5 shelter with 96 floor, wall and roof blocks, an open doorway, and clear interior.
 - `get me 32 purple concrete`: gather ingredients, craft dye and powder, harden it in water, collect the concrete, and confirm pickup by the requesting player.
@@ -33,7 +35,7 @@ To run the interactive bot in the player world, use:
 MC_HOST=127.0.0.1 MC_PORT=25570 MC_VERSION=26.1 MC_USERNAME=Jev npm start
 ```
 
-Then send `Jev build a house`, `Jev get me 32 purple concrete`, or `Jev find a way to the Nether` in game chat. Use `Jev status`, `Jev stop`, and `Jev resume` to inspect or control its task. The nickname `Jev` works regardless of the bot's Minecraft username; addressing its full username also works. Keep the terminal open to see each action, position, and blocker. Concrete delivery requires the requesting player to be nearby and able to pick up the items.
+Then send `Jev come here`, `Jev follow me`, `Jev craft a chest`, `Jev get me a pumpkin`, `Jev build a house`, `Jev get me 32 purple concrete`, or `Jev find a way to the Nether` in game chat. Use `Jev status`, `Jev stop`, and `Jev resume` to inspect or control its task. The nickname `Jev` works regardless of the bot's Minecraft username; addressing its full username also works. Keep the terminal open to see each action, position, and blocker. Concrete delivery requires the requesting player to be nearby and able to pick up the items.
 
 The test servers bind to localhost, so these addresses work on this computer. World files are local and excluded from Git; cloning this repository does not start a Minecraft server.
 
@@ -54,7 +56,7 @@ State is stored under `.bot-state/`, separately for each server and bot identity
 
 ## Execution
 
-`src/objectives.js` asks Jev parallel typed questions for the requested outcome, material, and quantity, validates the answer, and provides goal persistence and house verification.
+`src/objectives.js` batches independent Jev questions for outcome, quantity, delivery, and player target. Quantity options come from numbers/phrases actually present in the request. `src/catalog.js` builds nested choices from all 1,506 registry items, with lexical hints and bounded category/family/variant branches. Jev traverses those choices; there is no fixed item-command whitelist. `src/knowledge.js` expands 887 craftable outputs and 61 smeltable outputs from the server's recipe and loot data in `data/vanilla-26.1.json`, including ingredient alternatives, harvest tools, and special drops. Regenerate it with `python3 scripts/extract-knowledge.py <inner-server-26.1.jar>`. Known recipes and arithmetic stay in code. Jev selects among feasible observed resource targets, with recorded decisions and stale-state checks.
 
 `src/plan.js` resolves material, crafting, smelting and tool dependencies. Ingredients are reserved while expanding recipes so shared dependencies cannot spend the same materials twice. Recipes are checked against installed Minecraft data in tests.
 
@@ -64,7 +66,7 @@ House building uses nested Jev choices through `src/decisions.js`: current prior
 
 `src/survival.js` preserves the player request while preparing shelter or food. Jev chooses between work, shelter, and observed food targets. Code handles immediate air, eating, and threat interruptions; an exposed hostile interrupts mining/navigation and triggers a bounded escape. The shelter uses inspected ground, carried blocks, verified walls/roof, saved coordinates, and a checked exit. A controlled empty-inventory build/exit/reentry check passed without damage. Shelter material counts are checked again after navigation, which can spend scaffolding or alter natural walls.
 
-Between requests the same controller maintains a food reserve and seeks shelter on hostile difficulties. On Peaceful it waits nearby unless a real survival need arises. Food collection currently hunts observed cows, pigs, or sheep, remembers failed targets, and verifies edible item pickup. A controlled empty-inventory test gathered four porkchops without damage; a Normal natural trial gathered beef but failed during shelter preparation, prompting the material-budget fix. Cooking, broader farming, actual eating under hunger, hostile escape, and overnight endurance still need live validation. Concrete and Nether task sequencing remains deterministic.
+Between requests the same controller maintains a food reserve and seeks shelter on hostile difficulties. On Peaceful it waits nearby unless a real survival need arises. Food collection currently hunts observed cows, pigs, or sheep, remembers failed targets, and verifies edible item pickup. A controlled empty-inventory test gathered four porkchops without damage; a Normal natural trial gathered beef but failed during shelter preparation, prompting the material-budget fix. Cooking, broader farming, actual eating under hunger, hostile escape, and overnight endurance still need live validation. Nether task sequencing and the legacy concrete checkpoint path remain deterministic; new item requests use the catalog planner.
 
 New work requires an explicit “Jev …” or login-name prefix. This prevents other bots' acknowledgements from becoming commands. Short stop, cancel, status, and resume controls also work without a prefix.
 
@@ -79,8 +81,10 @@ Resource expeditions carry spare wood, a stone pickaxe, and a portable crafting 
 ```sh
 npm test
 npm run plan
+node scripts/eval-intents.js
 node scripts/eval-decisions.js
 node scripts/eval-survival.js
+MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/movement-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 ACCEPT_SCENARIO=controlled node scripts/shelter-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 ACCEPT_SCENARIO=controlled node scripts/food-test.js
 MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- build a house
