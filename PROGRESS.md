@@ -50,6 +50,16 @@ Evidence:
 - Reproduced installation and all initial tests from a clean checkout with `npm ci`. Declared Node >=22 to match dependencies.
 - Added an application-side workaround for the upstream `incorrect_for_wooden_tool` material bug: pickaxe blocks retain harvest requirements but use correct tool-speed multipliers. The original Nether trial mines each obsidian for 75 seconds; the corrected diamond-pickaxe calculation is 9.4 seconds. See https://github.com/PrismarineJS/mineflayer/issues/3921.
 
+Latest survival milestone (2026-09-18, 19:15 UTC):
+
+- Added visible-threat interruptions during navigation/mining and a bounded dry-ground escape. Full-length visibility rays respect cover. Jev chooses shelter versus continued work as dusk approaches; immediate emergencies remain in code.
+- Added a persisted, verified 1 by 1 shelter with two-block headroom, a complete wall/roof shell, protected footing/approaches, and checked exit/reentry. The player request remains saved while sheltering. Shelter gathering is limited to the site's surface elevation after a live failure exposed excessive excavation.
+- Controlled shelter check `shelter-mu7c6ds7`: PASSED from empty inventory, gathering 25 dirt, entering/building/verifying the room at (2,64,-9), reloading saved state, exiting, reentering/resealing, and promptly cancelling shelter wait. Minimum health 20. Two preceding failed checks are preserved: the first had an insufficient test action limit; the second exposed the excavation/navigation bug. This is Peaceful mechanics evidence, not hostile survival acceptance.
+- Real Jev survival evaluation `survival-eval-mu7c5e76.json`: 3/3 correct (daytime work, dusk shelter, nighttime shelter). Actual model calls were 312 and 423 ms. Synthetic decisions do not prove night survival.
+- 49 unit tests passed, including cover visibility, complete shelter verification, and immediate navigation interruption without cancelling the retained request. House decision records now also include input state and offered options.
+- Both outstanding concrete trials ended FAILED: `mu79d9l3` could not complete the poppy search; `mu7a7wad` stalled on underwater gravel access. Their artifacts retain the earlier resumptions and failures. Neither completed delivery.
+- Fresh natural Normal world prepared on localhost:25569 in `.test-endurance/`, seed 95812. No gameplay acceptance has yet run there. Food foraging, idle survival, hostile escape, night endurance, and death/disconnect recovery remain unproven or unfinished.
+
 Still required:
 
 1. Complete and independently verify natural-world concrete and Nether trials. House passed in a natural world; concrete and Nether passed in the controlled fixture.

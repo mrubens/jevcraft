@@ -3,6 +3,7 @@ const { Vec3 } = require('vec3');
 const air = block => block && ['air', 'cave_air', 'void_air'].includes(block.name);
 
 function reservedForConstruction(goal, p) {
+  if (goal.survival?.shelters?.some(s => Math.abs(p.x - s.origin.x) <= 2 && Math.abs(p.z - s.origin.z) <= 2 && p.y >= s.origin.y - 2 && p.y <= s.origin.y + 2)) return true;
   const house = goal.blueprint?.origin;
   if (house && Math.abs(p.x - house.x) <= 3 && Math.abs(p.z - house.z) <= 4 && p.y >= house.y - 4) return true;
   const portal = goal.portalFrame?.origin;

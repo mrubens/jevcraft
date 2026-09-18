@@ -47,6 +47,7 @@ class Task {
   /** Throws if the task was cancelled, unwinding whatever skill is running. */
   check() {
     if (this.cancelled) throw new Cancelled(this.label);
+    this.interruptCheck?.();
   }
 }
 
@@ -71,6 +72,10 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
     let previous = bot.entity.position.clone();
     const visited = new Set([`${previous.floored()}`]);
     timer = setInterval(() => {
+      try { task.check(); }
+      catch (err) {
+        reject(err); bot.pathfinder.setGoal(null); bot.stopDigging?.(); bot.clearControlStates?.(); return;
+      }
       if (stopWhen?.()) {
         acquired = true;
         resolve();
@@ -91,7 +96,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
       }
       if (task.cancelled || Date.now() - started > timeoutMs || Date.now() - lastProgress > stallMs) {
         if (!task.cancelled) bot.emit?.('navigation_stall', { position: { ...bot.entity.position }, goal,
-          controls: { ...bot.controlState }, inWater: bot.entity.isInWater, oxygen: bot.oxygenLevel,
+          controls: Object.fromEntries(['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'].map(key => [key, bot.getControlState?.(key)])), inWater: bot.entity.isInWater, oxygen: bot.oxygenLevel,
           feet: bot.blockAt?.(bot.entity.position)?.name, head: bot.blockAt?.(bot.entity.position.offset(0, 1.62, 0))?.name });
         bot.pathfinder.setGoal(null);
         reject(task.cancelled ? new Cancelled(task.label) : new Error('navigation timed out'));

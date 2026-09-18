@@ -11,6 +11,8 @@ const { updateDigCapabilities } = require('./movement');
 const { tunnelStep } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = require('./vitals');
 const { decideTree } = require('./decisions');
+const { Survival } = require('./survival');
+const { checkThreats } = require('./danger');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -184,7 +186,7 @@ function miningCandidates(bot, step, goal) {
     useExtraInfo: b => faces.some(f => {
       const neighbor = bot.blockAt(b.position.plus(f));
       return air(neighbor) || neighbor?.name === 'water';
-    }) && !reservedForConstruction(goal, b.position) &&
+    }) && (step.minimumY === undefined || b.position.y >= step.minimumY) && !reservedForConstruction(goal, b.position) &&
       (step.drops !== 'dirt' || (b.position.y >= bot.entity.position.floored().y - 1 && air(bot.blockAt(b.position.offset(0, 1, 0))))),
   }).filter(p => {
     const k = `${p}`;
@@ -337,12 +339,13 @@ async function harden(bot, task, goal, save) {
   }
 }
 
-async function acquireStep(bot, task, item, count, goal, save, { portable = false } = {}) {
+async function acquireStep(bot, task, item, count, goal, save, { portable = false, minimumMiningY } = {}) {
   const inv = planningInventory(bot);
   if ((inv[item] || 0) >= count) return true;
   for (const station of ['crafting_table', 'furnace']) if (!(portable && station === item) && find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
   const step = planFor(item, count, inv)[0];
   if (!step) throw new Error(`No progress step for ${item}`);
+  if (minimumMiningY !== undefined && step.action === 'mine') step.minimumY = minimumMiningY;
   goal.step = step;
   save();
   if (step.action === 'mine') await mine(bot, task, step, goal, save);
@@ -542,7 +545,8 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
   } finally { clearInterval(watcher); }
   task.check(); checkAir(bot);
   const record = { at: new Date().toISOString(), path: decision.path, latencyMs: decision.latencyMs,
-    usage: decision.usage, judgments: decision.judgments, stale: decision.stale || !decision.action.valid() };
+    state, options: JSON.parse(JSON.stringify(tree)), usage: decision.usage, judgments: decision.judgments,
+    stale: decision.stale || !decision.action.valid() };
   goal.decisions ||= []; goal.decisions.push(record); goal.decisions = goal.decisions.slice(-40);
   save(); onStep(goal);
   if (record.stale) return false;
@@ -612,20 +616,31 @@ async function netherStep(bot, task, goal, save) {
   return false;
 }
 
-async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () => {}, decisionClient } = {}) {
+function createSurvival(bot, options) {
+  return new Survival(bot, { acquireStep, dig, place, navigate }, options);
+}
+
+async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () => {}, decisionClient, survival } = {}) {
   const save = () => store.save(goal);
+  survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
+  goal.survival = survival.state;
   const movements = bot.pathfinder.movements;
   movements.exclusionAreasBreak = (movements.exclusionAreasBreak || []).filter(rule => rule !== bot._constructionProtection);
   bot._constructionProtection = block => reservedForConstruction(goal, block.position) ? 100 : 0;
   movements.exclusionAreasBreak.push(bot._constructionProtection);
   goal.status = 'running'; goal.failures = 0; save();
   for (let n = 0; n < maxSteps; n++) {
+    task.interruptCheck = undefined;
     task.check();
     updateDigCapabilities(bot);
     const before = JSON.stringify(inventory(bot));
     const location = bot.entity.position.clone();
     try {
       let complete = false;
+      if (await survival.step(task, goal, save, onStep)) {
+        goal.stalls = 0; goal.failures = 0; delete goal.lastError; save(); onStep(goal); continue;
+      }
+      task.interruptCheck = () => checkThreats(bot);
       // Immediate air/critical hunger responses stay in code. For house work,
       // Jev chooses ordinary eating interruptions alongside task progress.
       if (!decisionClient || goal.kind !== 'house' || needsAir(bot) || bot.food <= 6 || bot.health <= 6) {
@@ -660,9 +675,10 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       goal.stalls = unchanged ? (goal.stalls || 0) + 1 : 0;
       if (goal.stalls > 30) throw new Blocked(`No measurable progress on ${JSON.stringify(goal.step)}`);
     } catch (err) {
+      task.interruptCheck = undefined;
       task.check();
       goal.lastError = err.message;
-      if (err.name === 'NeedsAir') { save(); onStep(goal); continue; }
+      if (err.name === 'NeedsAir' || err.name === 'NeedsSafety') { save(); onStep(goal); continue; }
       // A partial craft/build can change inventory before its promise fails.
       // Replan that observed progress; only consecutive no-progress errors
       // exhaust retries.
@@ -673,7 +689,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
         return { ok: false, reason: err.message, goal };
       }
       await sleep(300);
-    }
+    } finally { task.interruptCheck = undefined; }
     save(); onStep(goal);
   }
   goal.status = 'blocked'; goal.lastError = 'Action budget reached'; save();
@@ -681,4 +697,4 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
   return { ok: false, reason: goal.lastError, goal };
 }
 
-module.exports = { runGoal, acquireStep, inventory, planningInventory, selectSite, explore, smelt, dig, place, waitFor, Blocked };
+module.exports = { runGoal, createSurvival, acquireStep, inventory, planningInventory, selectSite, explore, smelt, dig, place, waitFor, Blocked };
