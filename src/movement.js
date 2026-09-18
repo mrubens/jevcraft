@@ -1,7 +1,9 @@
 'use strict';
 const { Movements } = require('mineflayer-pathfinder');
+const { fixMiningMaterials } = require('./compatibility');
 
 function configureMovements(bot) {
+  fixMiningMaterials(bot.registry);
   const movement = new Movements(bot);
   movement.canDig = true;
   movement.allow1by1towers = false;

@@ -13,7 +13,7 @@ Implemented:
 
 Evidence:
 
-- `npm test`: 16 tests pass, including simulated resource consumption, recipe comparisons with Minecraft 26.1 data, rejection of incomplete houses, checkpoint round-trip, invalid Jev labels, cancellation of a pending navigation, and furnace output accounting while the inventory window is open.
+- `npm test`: 17 tests pass, including simulated resource consumption, recipe comparisons with Minecraft 26.1 data, rejection of incomplete houses, checkpoint round-trip, invalid Jev labels, cancellation of a pending navigation, furnace output accounting while the inventory window is open, and mining speed with correct harvest restrictions.
 - `node scripts/eval-intents.js`: all 8 real Jev calls matched expected interpretation (including half a stack, unsupported glass castle, stop and resume). Full answers in `artifacts/intent-eval.json`.
 - First survival trial `artifacts/mu76ypz4/`: FAILED honestly while navigating steep mountain/ocean terrain on seed 12345. No items acquired, no claimed success. Led to less brittle building-site checks and exploration targeting visible dry land.
 - Second survival trial `artifacts/mu772kzs/`: PASSED house acceptance as Trialmu772kzs. Empty inventory at spawn, gathered 24 oak logs, crafted 96 planks, and verified all 96 structural blocks plus clear interior/doorway at (83, 136, -32). Recovered from navigation and placement errors. No grants or teleports. Session 12261 exited 0.
@@ -26,6 +26,8 @@ Evidence:
 - Actual chat control trial `artifacts/control-mu788ljj/`: PASSED stop, no subsequent movement/progress, resume of the same blueprint, and automatic resumption after restarting the bot process. No grants or teleports.
 - Controlled Nether trial `artifacts/mu781ks4/`: in progress. Started empty, crafted wooden, stone, iron and diamond pickaxes; mined/smelted iron; made flint and steel; collecting obsidian. Portal completion is not yet verified.
 - Checked installed Mineflayer 4.39.0 against its published npm tarball: identical, including inventory synchronization support. No dependency patches are required.
+- Reproduced installation and all initial tests from a clean checkout with `npm ci`. Declared Node >=22 to match dependencies.
+- Added an application-side workaround for the upstream `incorrect_for_wooden_tool` material bug: pickaxe blocks retain harvest requirements but use correct tool-speed multipliers. The original Nether trial mines each obsidian for 75 seconds; the corrected diamond-pickaxe calculation is 9.4 seconds. See https://github.com/PrismarineJS/mineflayer/issues/3921.
 
 Still required:
 

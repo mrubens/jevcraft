@@ -41,7 +41,7 @@ cp .env.example .env
 npm start
 ```
 
-The existing installation runs on Node 18 and connects to Minecraft 26.1. Credentials stay in `.env`. Say the bot's name before a request if other players are chatting.
+Use Node 22 or newer, as required by Mineflayer. The local servers run Minecraft 26.1. Credentials stay in `.env`. Say the bot's name before a request if other players are chatting.
 
 `stop` cancels the active task. `status` reports it. `resume` retries saved progress. A new supported request replaces the old one, after its current action has stopped. Running tasks automatically resume when the bot process restarts; cancelled or blocked tasks require `resume`.
 
