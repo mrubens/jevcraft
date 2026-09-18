@@ -20,6 +20,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   const closed = new Promise(resolve => { resolveClosed = resolve; });
   const bot = mineflayer.createBot({ ...config, respawn: false });
   bot.on('physicsTick', () => { if (!ended) observeAliveInventory(bot); });
+  bot.on('handover', event => { if (!ended) console.log(JSON.stringify({ handover: event })); });
   bot.loadPlugin(compatibilityPlugin);
   bot.loadPlugin(pathfinder);
   const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');

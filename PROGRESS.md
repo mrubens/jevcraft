@@ -203,6 +203,13 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 - A no-command diagnostic at the actual failed site returned to open sky at (55.5,56,-7.5), spending five carried dirt, with health 20 (`surface-return.jsonl`, runner 21156 exit 0). An intermediate resume then FAILED because surface travel disabled all scaffolding; that failure is preserved in `failed-before-surface-scaffolding/`. The subsequent resume (runner 28365) climbed out and resumed animal search at (28.34,64,7.46), health 20. Full Nether completion and a fresh uninterrupted rerun remain outstanding.
 - Acceptance logs now include per-tool slot, durability used and remaining durability so future natural tool replacement claims can be independently checked.
 
+### Narrow-ledge item delivery (2026-09-18, 23:46 UTC)
+
+- The player's logs confirmed repeated `Need clear standing room beside the requester` failures while handing over axes. Delivery only accepted standing positions 2.2–2.6 blocks away, excluding the two-block spacing available on a straight one-block-wide ledge. A later stone-axe delivery succeeded after repositioning; the earlier blocked wooden axes remained carried.
+- Handover now accepts 1.7–2.8 blocks with a clear, continuously supported drop corridor, checks full route-search results, and aims downward at supported ground near the recipient's feet. It checks the recipient and aim before every separate stack, so a moving player does not cause the remaining stacks to be blindly dropped. Receipt still requires observed pickup by the named recipient.
+- All 112 unit tests passed. Controlled `ledge-delivery-mu7luykd` PASSED (runner 77743, exit 0): a receiver near the edge of a raised, single-block-wide stone row collected exactly 32 sticks and five individual stone axes. Both clients independently verified inventory; both stayed at y72 and the sender retained health 20. Fixture setup grants, teleports and the ten-block row are recorded separately. No changes were made to the player's terrain for this test.
+- Player sessions now log handover positions, drops and pickup events to make future reports diagnosable.
+
 Still required:
 
 1. Complete and independently verify natural-world concrete and Nether trials. House passed in a natural world; concrete and Nether passed in the controlled fixture.

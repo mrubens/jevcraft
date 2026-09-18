@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('events');
 const { Vec3 } = require('vec3');
-const { deliver, dropHeld } = require('../src/delivery');
+const { deliver, dropHeld, safeHandoverPosition } = require('../src/delivery');
 const { Task } = require('../src/skills');
 
 function setup(collector = 7, pickup = 32) {
@@ -65,4 +65,28 @@ test('splitting a handover stack excludes its destination from the cursor return
   };
   await dropHeld(bot, new Task('test', 'hand over one pumpkin'), 'pumpkin', 1);
   assert.equal(items[0].count, 16);
+});
+
+test('handover accepts a single supported row at two blocks distance, including a player near its edge', () => {
+  const bot = { blockAt: p => ({ name: p.y === 63 && p.z === 0 ? 'stone' : 'air',
+    boundingBox: p.y === 63 && p.z === 0 ? 'block' : 'empty' }) };
+  for (const z of [0.5, 0.21, 0.79]) {
+    assert(safeHandoverPosition(bot, new Vec3(0.5, 64, 0.5), { position: new Vec3(2.5, 64, z) }));
+  }
+  assert(!safeHandoverPosition(bot, new Vec3(0.5, 64, 0.5), { position: new Vec3(2.5, 65, 0.5) }));
+  const blockAt = bot.blockAt;
+  bot.blockAt = p => p.x === 1 && p.y === 63 ? { name: 'air', boundingBox: 'empty' } : blockAt(p);
+  assert(!safeHandoverPosition(bot, new Vec3(0.5, 64, 0.5), { position: new Vec3(2.5, 64, 0.5) }), 'Do not throw across an unsupported gap');
+});
+
+test('each separate stack is rechecked before dropping when the recipient moves', async () => {
+  const stacks = [1, 2, 3].map(slot => ({ name: 'stone_axe', count: 1, slot }));
+  let held, checks = 0, writes = 0;
+  const bot = { inventory: { items: () => stacks }, equip: async item => { held = item; },
+    _client: { write: () => { writes++; stacks.splice(stacks.indexOf(held), 1); } } };
+  await assert.rejects(dropHeld(bot, new Task('test', 'axes'), 'stone_axe', 3, async () => {
+    if (++checks === 2) throw new Error('Requester moved');
+  }), /Requester moved/);
+  assert.equal(writes, 1);
+  assert.equal(stacks.length, 2);
 });

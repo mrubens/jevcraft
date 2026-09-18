@@ -2,29 +2,57 @@
 
 const { goals } = require('mineflayer-pathfinder');
 const { Vec3 } = require('vec3');
-const { navigate, countOf } = require('./skills');
+const { navigate, surveyRoute, countOf } = require('./skills');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+function handoverAim(bot, receiver) {
+  const feet = receiver.position.floored();
+  // Aim down toward the center of supported ground beneath the recipient.
+  // A chest-height throw can overshoot a close player on a narrow ledge.
+  return bot.blockAt?.(feet.offset(0, -1, 0))?.boundingBox === 'block'
+    ? feet.offset(0.5, 0.2, 0.5) : receiver.position.offset(0, 0.2, 0);
+}
+
+function safeHandoverPosition(bot, point, receiver) {
+  const distance = point.distanceTo(receiver.position);
+  if (distance < 1.7 || distance > 2.8 || Math.abs(point.y - receiver.position.y) > 0.6) return false;
+  const aim = handoverAim(bot, receiver);
+  const feet = point.floored();
+  if (bot.blockAt(feet)?.boundingBox !== 'empty' || bot.blockAt(feet.offset(0, 1, 0))?.boundingBox !== 'empty' ||
+      ['water', 'lava'].includes(bot.blockAt(feet)?.name)) return false;
+  // Check the whole drop corridor, not a wide area beside the player. A
+  // single supported row is sufficient, but throwing across a pit is not.
+  const samples = Math.ceil(point.distanceTo(aim) * 4);
+  for (let i = 0; i <= samples; i++) {
+    const p = point.plus(aim.minus(point).scaled(i / samples)).floored();
+    p.y = feet.y - 1;
+    const floor = bot.blockAt(p);
+    if (floor?.boundingBox !== 'block' || ['magma_block', 'cactus'].includes(floor.name)) return false;
+  }
+  const eye = point.offset(0, 1.32, 0), direction = aim.minus(eye);
+  const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
+  return !hit || eye.distanceTo(hit.intersect || hit.position) >= direction.norm() - 0.25;
+}
+
 async function approachForHandover(bot, task, receiver) {
   if (!bot.blockAt) return navigate(bot, task, new goals.GoalNear(receiver.position.x, receiver.position.y, receiver.position.z, 1));
+  if (safeHandoverPosition(bot, bot.entity.position, receiver)) return;
   const origin = receiver.position.floored();
   const candidates = [];
   for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) for (const y of [0, -1, 1]) {
     const p = origin.offset(x, y, z);
     const center = p.offset(0.5, 0, 0.5);
-    const distance = center.distanceTo(receiver.position);
-    // GoalBlock can stop slightly short of the block center. Leave room
-    // inside the three-block handover limit instead of selecting its edge.
-    if (distance < 2.2 || distance > 2.6 || Math.abs(center.y - receiver.position.y) > 0.6) continue;
-    if (bot.blockAt(p)?.boundingBox !== 'empty' || bot.blockAt(p.offset(0, 1, 0))?.boundingBox !== 'empty' ||
-        bot.blockAt(p.offset(0, -1, 0))?.boundingBox !== 'block') continue;
-    if (['water', 'lava'].includes(bot.blockAt(p)?.name)) continue;
+    if (!safeHandoverPosition(bot, center, receiver)) continue;
     candidates.push(p);
   }
   candidates.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
-  const target = candidates.find(p => bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalBlock(p.x, p.y, p.z), 200).status === 'success');
-  if (!target) throw new Error('Need clear standing room beside the requester to hand over items');
-  await navigate(bot, task, new goals.GoalBlock(target.x, target.y, target.z));
+  for (const target of candidates.slice(0, 12)) {
+    const destination = new goals.GoalBlock(target.x, target.y, target.z);
+    if ((await surveyRoute(bot, task, bot.pathfinder.movements, destination, 400)).status !== 'success') continue;
+    await navigate(bot, task, destination);
+    return;
+  }
+  throw new Error('Cannot reach a supported handover spot with a clear drop path to you');
 }
 async function waitCount(bot, task, item, predicate, timeout = 4000) {
   const end = Date.now() + timeout;
@@ -32,7 +60,7 @@ async function waitCount(bot, task, item, predicate, timeout = 4000) {
   throw new Error('Timed out waiting for handover inventory update');
 }
 
-async function dropHeld(bot, task, itemName, count) {
+async function dropHeld(bot, task, itemName, count, beforeDrop = async () => {}) {
   let remaining = count;
   while (remaining > 0) {
     task.check();
@@ -54,6 +82,8 @@ async function dropHeld(bot, task, itemName, count) {
     if (bot._syncWindow) await bot._syncWindow(bot.inventory);
     if (bot.setQuickBarSlot) bot.setQuickBarSlot(bot.quickBarSlot);
     if (bot.waitForTicks) await bot.waitForTicks(2);
+    task.check();
+    await beforeDrop();
     task.check();
     const before = countOf(bot, itemName);
     // Vanilla DROP_ALL_ITEMS (enum ordinal 3) is Ctrl-Q: a directed hand drop.
@@ -100,7 +130,14 @@ async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
   task.check();
   receiver = bot.players[goal.from]?.entity;
   if (!receiver || receiver.position.distanceTo(bot.entity.position) > 3) throw new Error('Requester moved out of handover range');
-  await bot.lookAt(receiver.position.plus(new Vec3(0, 1.2, 0)), true);
+  const aimDrop = async () => {
+    const current = bot.players[goal.from]?.entity;
+    if (!current || current.position.distanceTo(bot.entity.position) > 3 ||
+        (bot.blockAt && !safeHandoverPosition(bot, bot.entity.position, current))) throw new Error('Requester moved away from the safe handover spot');
+    receiver = current;
+    await bot.lookAt(handoverAim(bot, receiver), true);
+  };
+  await aimDrop();
   const knownEntities = new Set(Object.keys(bot.entities).map(Number));
   const before = countOf(bot, itemName);
   if (before < remaining) throw new Error(`Need ${remaining} ${label} for delivery, carrying ${before}`);
@@ -126,7 +163,7 @@ async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
   bot.on?.('entityUpdate', onDrop);
   try {
     bot.emit?.('handover', { event: 'start', position: { ...bot.entity.position }, recipient: { ...receiver.position }, yaw: bot.entity.yaw, pitch: bot.entity.pitch, count: remaining });
-    await dropHeld(bot, task, itemName, remaining);
+    await dropHeld(bot, task, itemName, remaining, aimDrop);
     const end = Date.now() + timeout;
     while ((goal.delivered || 0) < goal.count && Date.now() < end) {
       task.check();
@@ -139,4 +176,4 @@ async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
     return true;
   } finally { bot._client.removeListener('collect', onCollect); bot.removeListener?.('entityUpdate', onDrop); }
 }
-module.exports = { deliver, dropHeld };
+module.exports = { deliver, dropHeld, safeHandoverPosition };
