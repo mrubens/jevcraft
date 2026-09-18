@@ -74,7 +74,7 @@ test('navigation cancellation stops movement and settles before another action',
   const { Task, navigate } = require('../src/skills');
   const task = new Task('test', 'test');
   let stopped = false;
-  const bot = { pathfinder: { goto: () => new Promise(() => {}), setGoal: () => { stopped = true; } } };
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, pathfinder: { goto: () => new Promise(() => {}), setGoal: () => { stopped = true; } } };
   const pending = navigate(bot, task, {});
   task.cancel();
   await assert.rejects(pending, { name: 'Cancelled' });

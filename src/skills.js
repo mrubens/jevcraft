@@ -58,13 +58,16 @@ class Cancelled extends Error {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Move somewhere, aborting cleanly if the task is cancelled mid-path. */
-async function navigate(bot, task, goal) {
+async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000 } = {}) {
   task.check();
   let timer;
   const watchdog = new Promise((_, reject) => {
     const started = Date.now();
+    let lastProgress = started;
+    let previous = bot.entity.position.clone();
     timer = setInterval(() => {
-      if (task.cancelled || Date.now() - started > 20000) {
+      if (bot.entity.position.distanceTo(previous) >= 1) { previous = bot.entity.position.clone(); lastProgress = Date.now(); }
+      if (task.cancelled || Date.now() - started > timeoutMs || Date.now() - lastProgress > stallMs) {
         bot.pathfinder.setGoal(null);
         reject(task.cancelled ? new Cancelled(task.label) : new Error('navigation timed out'));
       }

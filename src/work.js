@@ -6,6 +6,8 @@ const { navigate, equipBestTool, pickaxeTier, countOf } = require('./skills');
 const { planFor, MINEABLE } = require('./plan');
 const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
+const { reservedForConstruction, portalSiteClear, selectPortalSite } = require('./build-sites');
+const { updateDigCapabilities } = require('./movement');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -91,7 +93,13 @@ async function explore(bot, task, goal, save, resource) {
   search.leg ||= 0;
   const angle = (search.leg % 8) * Math.PI / 4;
   const radius = 24 * (1 + Math.floor(search.leg / 8));
-  const target = pos(search.origin).offset(Math.round(Math.cos(angle) * radius), 0, Math.round(Math.sin(angle) * radius));
+  let target = pos(search.origin).offset(Math.round(Math.cos(angle) * radius), 0, Math.round(Math.sin(angle) * radius));
+  const resourceNames = Object.entries(MINEABLE).filter(([name, data]) => name === resource || data.drops === resource).map(([name]) => name);
+  const observed = find(bot, resourceNames, 128, 8).filter(p => !reservedForConstruction(goal, p));
+  if (observed.length) {
+    target = observed[0];
+    search.observedTarget = { ...target };
+  }
   save();
   // Keep the same waypoint until reached. Rotating on every short walk made
   // the bot circle the mountain forever instead of reaching the wider ring.
@@ -105,9 +113,10 @@ async function explore(bot, task, goal, save, resource) {
     .sort((a, b) => Math.hypot(a.x - target.x, a.z - target.z) - Math.hypot(b.x - target.x, b.z - target.z));
   if (!land.length) throw new Error(`No visible dry landing while searching for ${resource}`);
   search.visited ||= {};
-  const key = p => `${Math.floor(p.x / 8)},${Math.floor(p.z / 8)}`;
-  land.sort((a, b) => Math.hypot(a.x - target.x, a.z - target.z) + (search.visited[key(a)] || 0) * 24 -
-    Math.hypot(b.x - target.x, b.z - target.z) - (search.visited[key(b)] || 0) * 24);
+  const key = p => `${Math.floor(p.x / 8)},${Math.floor(p.y / 8)},${Math.floor(p.z / 8)}`;
+  const distance = p => observed.length ? p.distanceTo(target) : Math.hypot(p.x - target.x, p.z - target.z);
+  land.sort((a, b) => distance(a) + (search.visited[key(a)] || 0) * 24 -
+    distance(b) - (search.visited[key(b)] || 0) * 24);
   let destination;
   const checked = new Set();
   for (const candidate of land) {
@@ -141,7 +150,8 @@ async function mine(bot, task, step, goal, save) {
     useExtraInfo: b => faces.some(f => {
       const neighbor = bot.blockAt(b.position.plus(f));
       return air(neighbor) || neighbor?.name === 'water';
-    }),
+    }) && !reservedForConstruction(goal, b.position) &&
+      (step.drops !== 'dirt' || (b.position.y >= bot.entity.position.floored().y - 1 && air(bot.blockAt(b.position.offset(0, 1, 0))))),
   }).filter(p => {
     const k = `${p}`;
     return !goal.unreachable?.[k] || Date.now() - goal.unreachable[k] > 120000;
@@ -372,12 +382,19 @@ async function netherStep(bot, task, goal, save) {
     await waitFor(task, () => String(bot.game.dimension).includes('nether'), 12000);
     return true;
   }
+  // A frame with no placed blocks can be relocated when its original ground
+  // was excavated. Once construction begins its coordinates stay fixed.
+  if (goal.portalFrame && goal.portalFrame.blocks.every(p => bot.blockAt(pos(p))?.name !== 'obsidian') &&
+      !portalSiteClear(bot, goal.portalFrame.origin)) { delete goal.portalFrame; save(); }
   if (!goal.portalFrame) {
     if (!await acquireStep(bot, task, 'flint_and_steel', 1, goal, save)) return false;
     if (!await acquireStep(bot, task, 'obsidian', 10, goal, save)) return false;
-    const site = selectSite(bot, 'obsidian');
+    // Gather scaffolding before choosing the building site, so we never mine
+    // its foundations to obtain temporary supports.
+    if (!await acquireStep(bot, task, 'dirt', 3, goal, save)) return false;
+    const site = selectPortalSite(bot);
     if (!site) { await explore(bot, task, goal, save, 'portal site'); return false; }
-    const o = pos(site.origin);
+    const o = pos(site);
     // Minimal frame: two bottom/top blocks, three on each side, no corners.
     goal.portalFrame = { origin: { ...o }, blocks: [
       ...[1, 2].flatMap(x => [o.offset(x, 0, 0), o.offset(x, 4, 0)]),
@@ -395,6 +412,7 @@ async function netherStep(bot, task, goal, save) {
     const scaffold = [o.offset(0, 0, 0), o.offset(3, 0, 0), o.offset(0, 4, 0)];
     const neededDirt = scaffold.filter(p => air(bot.blockAt(p))).length;
     if (!await acquireStep(bot, task, 'dirt', neededDirt, goal, save)) return false;
+    await navigate(bot, task, new goals.GoalBlock(o.x, o.y, o.z - 1));
     for (const p of scaffold.slice(0, 2)) if (air(bot.blockAt(p))) await place(bot, task, p, 'dirt');
     for (const p of missing) {
       if (p.y === o.y + 4 && air(bot.blockAt(scaffold[2]))) await place(bot, task, scaffold[2], 'dirt');
@@ -413,9 +431,14 @@ async function netherStep(bot, task, goal, save) {
 
 async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () => {} } = {}) {
   const save = () => store.save(goal);
+  const movements = bot.pathfinder.movements;
+  movements.exclusionAreasBreak = (movements.exclusionAreasBreak || []).filter(rule => rule !== bot._constructionProtection);
+  bot._constructionProtection = block => reservedForConstruction(goal, block.position) ? 100 : 0;
+  movements.exclusionAreasBreak.push(bot._constructionProtection);
   goal.status = 'running'; goal.failures = 0; save();
   for (let n = 0; n < maxSteps; n++) {
     task.check();
+    updateDigCapabilities(bot);
     const before = JSON.stringify(inventory(bot));
     const location = bot.entity.position.clone();
     try {
@@ -450,7 +473,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       // A partial craft/build can change inventory before its promise fails.
       // Replan that observed progress; only consecutive no-progress errors
       // exhaust retries.
-      goal.failures = before === JSON.stringify(inventory(bot)) ? goal.failures + 1 : 0;
+      goal.failures = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 2 ? goal.failures + 1 : 0;
       if (err.name === 'Blocked' || goal.failures >= 5) {
         goal.status = 'blocked'; save();
         bot.chat(`Blocked: ${err.message}. Progress saved; say resume to retry.`);

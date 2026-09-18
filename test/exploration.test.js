@@ -35,3 +35,28 @@ test('an empty path resolving successfully is not accepted as arrival', async ()
   await assert.rejects(navigate(bot, new Task('test', 'test'), new goals.GoalBlock(10, 64, 0)), /before reaching/);
   assert(stopped);
 });
+
+test('navigation stops when stationary, but allows a longer route that makes progress', async () => {
+  const { navigate } = require('../src/skills');
+  let stopped = false;
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, pathfinder: {
+    goto: () => new Promise(() => {}), setGoal: () => { stopped = true; },
+  } };
+  await assert.rejects(navigate(bot, new Task('test', 'stalled'), {}, { timeoutMs: 2000, stallMs: 100 }), /timed out/);
+  assert(stopped);
+  const motion = setInterval(() => { bot.entity.position.x++; }, 50);
+  bot.pathfinder.goto = () => new Promise(resolve => setTimeout(resolve, 450));
+  try { await navigate(bot, new Task('test', 'moving'), {}, { timeoutMs: 2000, stallMs: 200 }); }
+  finally { clearInterval(motion); }
+});
+
+test('navigation has a hard deadline even while moving', async () => {
+  const { navigate } = require('../src/skills');
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, pathfinder: {
+    goto: () => new Promise(() => {}), setGoal: () => {},
+  } };
+  const motion = setInterval(() => { bot.entity.position.x++; }, 50);
+  try {
+    await assert.rejects(navigate(bot, new Task('test', 'wandering'), {}, { timeoutMs: 250, stallMs: 200 }), /timed out/);
+  } finally { clearInterval(motion); }
+});

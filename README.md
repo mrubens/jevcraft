@@ -2,13 +2,15 @@
 
 A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat and ordinary code to execute and verify survival tasks. No OpenRouter token is required.
 
+The broader target is a survival companion that can obtain food and shelter, maintain tools, avoid hazards, and follow player requests on Normal difficulty. See `GOAL.md` for the proposed expanded acceptance criteria. Current live evidence is from Peaceful worlds; general survival is not yet demonstrated.
+
 The current development target is:
 
 - `build a house`: a 5×5 shelter with 96 floor, wall and roof blocks, an open doorway, and clear interior.
 - `get me 32 purple concrete`: gather ingredients, craft dye and powder, harden it in water, collect the concrete, and confirm pickup by the requesting player.
 - `find a way to the Nether`: use an existing portal or acquire a frame and ignition materials, build a portal, and verify entry into the Nether.
 
-These workflows are **under live testing**, not yet all proven end to end. A house has passed in a natural world, and gathering and delivering 32 concrete blocks has passed in a prepared resource world. See `PROGRESS.md` for evidence and remaining work.
+These workflows are **under live testing**. A house has passed in a natural world. Gathering and delivering 32 concrete blocks, plus constructing and entering a Nether portal, have passed in a prepared resource world. Natural-world concrete and Nether runs remain incomplete. See `PROGRESS.md` for evidence and remaining work.
 
 ## Join and watch locally
 

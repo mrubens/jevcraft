@@ -21,6 +21,7 @@ const MINEABLE = {
   oak_log: { drops: 'oak_log', tier: 0 },
   birch_log: { drops: 'birch_log', tier: 0 },
   dirt: { drops: 'dirt', tier: 0 },
+  grass_block: { drops: 'dirt', tier: 0 },
   sand: { drops: 'sand', tier: 0 },
   gravel: { drops: 'gravel', tier: 0 },
   poppy: { drops: 'poppy', tier: 0 },
