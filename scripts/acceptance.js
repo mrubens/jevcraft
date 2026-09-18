@@ -31,6 +31,9 @@ const bot = mineflayer.createBot({
 });
 bot.loadPlugin(compatibilityPlugin);
 bot.loadPlugin(pathfinder);
+const toolState = () => bot.inventory.items().filter(i => bot.registry.itemsByName[i.name]?.maxDurability)
+  .map(i => ({ name: i.name, slot: i.slot, durabilityUsed: i.durabilityUsed || 0,
+    remaining: bot.registry.itemsByName[i.name].maxDurability - (i.durabilityUsed || 0) }));
 let receiver;
 const task = new Task('acceptance', request);
 const timer = setTimeout(() => { task.cancel(); bot.pathfinder.setGoal(null); bot.stopDigging(); }, Number(process.env.ACCEPT_TIMEOUT_MS || (cycles ? (cycles * 20 + 15) * 60000 : 1800000)));
@@ -91,7 +94,7 @@ bot.once('spawn', async () => {
     log({ start: { kind: goal.kind, count: goal.count, request: goal.request, from: goal.from, initialInventory: goal.initialInventory, initialPosition: goal.initialPosition, createdAt: goal.createdAt, scenario: goal.scenario }, username, server: `${process.env.MC_HOST}:${process.env.MC_PORT}`, gameMode: bot.game.gameMode, difficulty: bot.game.difficulty, timeOfDay: bot.time.timeOfDay });
     const result = await runGoal(bot, task, goal, goalStore, {
       decisionClient: client, survival,
-      onStep: g => log({ step: g.step, decision: g.decisions?.at(-1), survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }),
+      onStep: g => log({ step: g.step, decision: g.decisions?.at(-1), survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), tools: toolState(), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }),
     });
     const verified = result.ok && (goal.kind === 'house' ? verifyHouse(bot, goal.blueprint).ok :
       ['concrete', 'obtain', 'craft'].includes(goal.kind) ? (receiver
@@ -110,12 +113,12 @@ bot.once('spawn', async () => {
           lastLogged = Date.now();
           log({ endurance: { elapsedTicks: bot.time.age - initialWorldAge, targetTicks: cycles * 24000,
             timeOfDay: bot.time.timeOfDay, action: g.survivalAction, decision: g.decisions?.at(-1)?.path },
-          position: bot.entity.position, inventory: inventory(bot), health: bot.health, food: bot.food, error: g.lastError });
+          position: bot.entity.position, inventory: inventory(bot), tools: toolState(), health: bot.health, food: bot.food, error: g.lastError });
         },
       });
       log({ cyclesSurvived: cycles, elapsedTicks: bot.time.age - initialWorldAge });
     }
-    log({ acceptance: verified ? 'PASS' : 'FAIL', reason: result.reason, inventory: inventory(bot), dimension: bot.game.dimension, receiverInventory: receiver ? inventory(receiver) : undefined });
+    log({ acceptance: verified ? 'PASS' : 'FAIL', reason: result.reason, inventory: inventory(bot), tools: toolState(), dimension: bot.game.dimension, receiverInventory: receiver ? inventory(receiver) : undefined });
     process.exitCode = verified ? 0 : 1;
   } catch (err) { log({ acceptance: 'FAIL', error: err.message }); process.exitCode = 1; }
   finally { clearTimeout(timer); receiver?.quit(); bot.quit(); setTimeout(() => process.exit(process.exitCode || 0), 500); }

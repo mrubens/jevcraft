@@ -15,7 +15,7 @@ const { Survival } = require('./survival');
 const { checkThreats, safeFromHostiles } = require('./danger');
 const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
-const { surfaceMovement } = require('./surface');
+const { surfaceObserver, surfaceMovement, returnToSurface } = require('./surface');
 const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives } = require('./resource-observation');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -127,6 +127,10 @@ function find(bot, names, distance = 48, count = 32) {
 }
 
 async function explore(bot, task, goal, save, resource, { surfaceOnly = false } = {}) {
+  if (surfaceOnly && !surfaceObserver(bot)(bot.entity.position.floored())) {
+    await returnToSurface(bot, task, goal, save);
+    return;
+  }
   const surface = surfaceOnly ? surfaceMovement(bot) : null;
   try {
     goal.search ||= {};

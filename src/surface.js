@@ -1,5 +1,8 @@
 'use strict';
 const { Vec3 } = require('vec3');
+const { goals } = require('mineflayer-pathfinder');
+const { surveyRoute, navigate } = require('./skills');
+const { safeFromHostiles } = require('./danger');
 
 // Inspect loaded columns, ignoring tree canopies but not terrain, roofs or
 // water. Two clear cave blocks are not evidence of a surface destination.
@@ -33,9 +36,57 @@ function surfaceMovement(bot) {
   // Permit leaving a house or a tree's immediate cover without allowing a
   // downhill cave route. Every subsequent surface step remains constrained.
   const allowed = p => isSurface(p) || (Math.abs(p.x - start.x) <= 4 && Math.abs(p.z - start.z) <= 4 && p.y >= start.y);
-  Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: false,
-    scafoldingBlocks: [], allowedPosition: p => allowed(p) && (!previous.allowedPosition || previous.allowedPosition(p)) });
+  // Existing carried scaffolding can bridge a step or climb an open ravine.
+  // The position filter, rather than disabling all placement, keeps the route
+  // on observed surface terrain. Hunting still cannot excavate into a cave.
+  Object.assign(movements, { canDig: false, allowSprinting: false,
+    allowedPosition: p => allowed(p) && (!previous.allowedPosition || previous.allowedPosition(p)) });
   return { isSurface, allowed, restore: () => Object.assign(movements, previous) };
 }
 
-module.exports = { surfaceObserver, surfaceMovement };
+// Gathering stone or cooking can leave us under terrain. Surface-only travel
+// intentionally cannot leave a deep alcove, so first route to an inspected
+// surface landing using ordinary mining/scaffolding capabilities. Keep the
+// lower bound local to prevent this recovery from becoming a deeper cave trip.
+async function returnToSurface(bot, task, goal, save) {
+  const isSurface = surfaceObserver(bot), start = bot.entity.position.floored();
+  if (isSurface(start)) return;
+  const movements = bot.pathfinder.movements, previous = movements.allowedPosition;
+  movements.allowedPosition = p => p.y >= start.y - 3 && (!previous || previous(p));
+  const state = goal.surfaceReturn ||= { attempts: 0, visited: {} };
+  try {
+    task.check();
+    if (++state.attempts > 24) {
+      const error = new Error('Could not return to the surface after 24 recovery steps'); error.name = 'Blocked'; throw error;
+    }
+    const clear = p => ['air', 'cave_air', 'void_air'].includes(bot.blockAt(p)?.name);
+    const candidates = bot.findBlocks({ matching: ['grass_block', 'dirt', 'stone', 'sand', 'gravel', 'deepslate'].map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined),
+      maxDistance: 48, count: 128, useExtraInfo: block => {
+        const p = block.position.offset(0, 1, 0);
+        return p.y >= start.y - 3 && clear(p) && clear(p.offset(0, 1, 0)) && isSurface(p) && safeFromHostiles(bot, p);
+      },
+    }).map(p => p.offset(0, 1, 0));
+    const key = p => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)},${Math.floor(p.z / 4)}`;
+    candidates.sort((a, b) => a.distanceTo(start) + (state.visited[key(a)] || 0) * 16 - b.distanceTo(start) - (state.visited[key(b)] || 0) * 16);
+    const checked = new Set();
+    for (const target of candidates) {
+      if (checked.has(key(target))) continue;
+      checked.add(key(target));
+      if (checked.size > 12) break;
+      const destination = new goals.GoalBlock(target.x, target.y, target.z);
+      const route = await surveyRoute(bot, task, movements, destination, 700);
+      if (route.status !== 'success') continue;
+      state.visited[key(target)] = (state.visited[key(target)] || 0) + 1;
+      goal.survivalAction = { action: 'return_to_surface', from: { ...start }, target: { ...target }, at: new Date().toISOString() };
+      save();
+      await navigate(bot, task, destination, { timeoutMs: 20000, stallMs: 5000 });
+      if (!surfaceObserver(bot)(bot.entity.position.floored())) throw new Error('Surface destination changed while returning from underground');
+      delete goal.surfaceReturn; save();
+      return;
+    }
+    save();
+    throw new Error(`No safe route from underground to an observed surface landing (${Math.min(checked.size, 12)} areas checked)`);
+  } finally { movements.allowedPosition = previous; }
+}
+
+module.exports = { surfaceObserver, surfaceMovement, returnToSurface };

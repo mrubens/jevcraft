@@ -195,6 +195,14 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 - Fresh natural Normal Nether `mu7le8ry` started empty at (10.5,68,-6.5), time 1199, in `.test-nether/world-4/` with the workstation and foundation fixes. Runner 57017 and server 94205 are live. The failed world-3 remains preserved; this new trial is ongoing, not a pass.
 - At the user's request, created `.play-server/peaceful-survival-20260918/` on the same `localhost:25570` address. The old Creative world `.play-server/world/` is preserved. Prior Jev checkpoints/logs/settings are archived in `artifacts/creative-before-peaceful-20260918T232643Z/`. Jev and DoloresDoodle both joined the new world; console queries confirmed Survival for both, empty inventories and Peaceful difficulty. Jev loaded the shelter/workstation fixes. Player server is runner 49142; Jev runner 44577. This player world is separate from acceptance testing.
 
+### Natural eating and return from underground food preparation (2026-09-18, 23:40 UTC)
+
+- Resumed natural Normal concrete diagnostic `mu7kikry` demonstrated eating and healing after escaping a zombie. It consumed one of its two naturally hunted/cooked chickens at hunger 16 and health 17.67, then reached hunger/health 20. Exact event references and before/after inventory are in `artifacts/mu7kikry/natural-eating-evidence.json`. This satisfies natural eating evidence; the diagnostic remains resumed and concrete delivery is incomplete.
+- Fresh Nether `mu7le8ry` FAILED (runner 57017, exit 1) after hunting/cooking its first chicken. Mining furnace stone left it under terrain at (53,56,-12), and surface-only animal search could not leave that location. Its original checkpoint/events are preserved in `failed-before-surface-return/`.
+- Surface searches now first return to an inspected surface landing with ordinary mining/scaffolding, a bounded search and a three-block lower limit. Normal surface hunting continues to prohibit digging/cave routes, but permits its existing carried scaffolding. Movement restrictions are restored on completion, failure and cancellation. All 110 unit tests passed.
+- A no-command diagnostic at the actual failed site returned to open sky at (55.5,56,-7.5), spending five carried dirt, with health 20 (`surface-return.jsonl`, runner 21156 exit 0). An intermediate resume then FAILED because surface travel disabled all scaffolding; that failure is preserved in `failed-before-surface-scaffolding/`. The subsequent resume (runner 28365) climbed out and resumed animal search at (28.34,64,7.46), health 20. Full Nether completion and a fresh uninterrupted rerun remain outstanding.
+- Acceptance logs now include per-tool slot, durability used and remaining durability so future natural tool replacement claims can be independently checked.
+
 Still required:
 
 1. Complete and independently verify natural-world concrete and Nether trials. House passed in a natural world; concrete and Nether passed in the controlled fixture.
@@ -203,6 +211,6 @@ Still required:
 4. Re-run the updated concrete workflow uninterrupted, and test partial delivery/cancellation live. Full delivery is now proven in the controlled fixture.
 5. Extend the passed controlled chat cancellation, restart/resume and death/disconnect checks to demanding natural-world situations.
 6. Improve recipe alternatives and resource exploration after an unavailable source. Literal and classified operator commands already have live authorization and no-replay checks.
-7. Complete the remaining Normal survival acceptance in `GOAL.md`, including natural eating/tool maintenance evidence. Two full cycles with a useful request now pass; the combined acceptance is still incomplete.
+7. Complete the remaining Normal survival acceptance in `GOAL.md`, including natural tool maintenance evidence. Natural eating and two full cycles with a useful request now pass; the combined acceptance is still incomplete.
 
 Do not mark the goal complete based on unit tests or the presence of implementation. Live acceptance and recovery evidence are still missing.
