@@ -150,6 +150,8 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 - Controlled Normal `cooking-mu7iv9xy` PASSED (runner 21715, exit 0): empty inventory; hunted three chickens; gathered logs and eight cobblestone; crafted a table, wooden pickaxe and furnace; cooked two chickens. External fixture hunger was cleared when food reached 16. Observed eating reduced cooked chicken from two to one and restored food from 16 to 20; health remained 20 throughout. The controller then replenished its reserve. Prepared terrain, summoned chickens, setup teleport and hunger effects are explicitly fixture-only; no bot-issued commands or item grants were used. Fixture difficulty was restored to Peaceful afterward.
 - Recovery/command milestone `6a37f1f` was pushed and deployed to the player's Jev. The saved player request had changed during testing: `jev make a big house out of purple concrete` was complete, and its checkpoint was preserved during the update. The player server was not restarted.
 
+- Committed/pushed cooking milestone `88162f2` and restarted only the player's Jev with the completed purple-concrete-house checkpoint preserved. Fresh Normal endurance `mu7j1633` began empty at (10.5,64,9.5), time 456, in `.test-endurance/world-cycles-4/` (port 25569), seed 95812. Runner session 42563; server session 84516. This run is ongoing, not a pass. Older failed worlds remain intact, and no acceptance world commands are used.
+
 Still required:
 
 1. Complete and independently verify natural-world concrete and Nether trials. House passed in a natural world; concrete and Nether passed in the controlled fixture.
