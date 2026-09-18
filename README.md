@@ -26,6 +26,8 @@ Open **Minecraft Java Edition 26.1**, choose **Multiplayer → Direct Connection
 | `localhost:25565` | Original development server |
 | `localhost:25568` | Fresh natural world on Normal difficulty, seed 95812; a verified house is at X −7, Y 67, Z 3 |
 | `localhost:25569` | Isolated Normal-difficulty endurance trials; separate from the player world |
+| `localhost:25571` | Isolated natural Normal concrete-delivery trial |
+| `localhost:25572` | Isolated natural Normal Nether-progression trial |
 
 Press **F3** to see your coordinates, and **Tab** to see online players. Acceptance bots are named `Trial<run-id>` and leave when their trial ends. They execute their assigned test and do not accept chat commands. Trial logs and checkpoints are in `artifacts/<run-id>/events.jsonl` and `goal.json`.
 
@@ -92,7 +94,9 @@ A controlled Normal test started empty, hunted chickens, gathered wood/stone, cr
 
 New work requires an explicit “Jev …” or login-name prefix. This prevents other bots' acknowledgements from becoming commands. Short stop, cancel, status, and resume controls also work without a prefix.
 
-Resource expeditions carry spare wood, a stone pickaxe, and a portable crafting table. `src/tunneling.js` excavates supported staircase steps and rejects liquids, missing footing, and protected building foundations. Navigation limits drops, avoids digging straight down, and waits for landing before another action. Shelter material gathering stays at the site's surface elevation and protects its approach.
+Jev classifies item recipients separately: “craft me a chest” requests delivery, while “craft a chest,” “collect lapis for yourself,” and “get eight blocks and keep them” leave the output in its inventory.
+
+Resource expeditions carry spare wood, a stone pickaxe, and a portable crafting table. Catalog item requests now prepare those supplies when a recipe needs underground resources beyond immediate digging reach; ordinary surface pickups keep their direct path. `src/tunneling.js` excavates supported staircase steps and rejects liquids, missing footing, and protected building foundations. Navigation limits drops, avoids digging straight down, and waits for landing before another action. Shelter material gathering stays at the site's surface elevation and protects its approach. If positioning spends a selected shelter material, sealing rechecks the remaining shell and chooses from the actual remaining stock.
 
 `src/compatibility.js` contains application-side workarounds for mining-speed tags, named difficulty packets in 26.1, pathfinder results that otherwise share mutable search nodes, nearby animals incorrectly overwriting the player's oxygen reading, and player collision dimensions. Collision dimensions now match Minecraft's float precision, preventing tiny wall overlaps that caused repeated server corrections and blocked jumping. Navigation can recover once from an already stuck position by walking toward the center of an inspected solid floor cell, within its original deadline. A retained-world diagnostic reproduced the old bug, verified recovery, and repeated the route without corrections at full health. Low air interrupts work and triggers a swimming route back to breathable air. Three controlled dives passed without damage; broad underwater exploration remains unproven. Installed dependency files remain unmodified.
 
@@ -111,6 +115,7 @@ MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/creative-house-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/movement-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/tool-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/recovery-test.js
+MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/expedition-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 COOK_SITE=800 node scripts/cooking-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 ACCEPT_SCENARIO=controlled node scripts/shelter-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 ACCEPT_SCENARIO=controlled node scripts/food-test.js

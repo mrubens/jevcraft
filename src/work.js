@@ -40,7 +40,9 @@ async function prepareExpeditionStep(bot, task, goal, save) {
   if (pickaxeTier(bot) < 2) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return false; }
   if (countOf(bot, 'oak_log') < 8) { await acquireStep(bot, task, 'oak_log', 8, goal, save); return false; }
   if (!countOf(bot, 'crafting_table')) { await acquireStep(bot, task, 'crafting_table', 1, goal, save, { portable: true }); return false; }
-  goal.expeditionReady = true; save(); return true;
+  goal.expeditionReady = true; delete goal.preparingExpedition;
+  goal.step = { action: 'prepared_expedition', minimumPickaxeTier: 2, supplies: { oak_log: 8, crafting_table: 1 } };
+  save(); return true;
 }
 
 async function waitFor(task, predicate, timeout = 4000) {
@@ -635,6 +637,18 @@ async function obtainStep(bot, task, goal, save, client, onStep) {
   const stock = planningInventory(bot);
   for (const station of ['crafting_table', 'furnace']) if (find(bot, [station], 32, 1).length) stock[station] = Math.max(stock[station] || 0, 1);
   const plan = catalogPlan(bot, goal.item, remaining, stock);
+  // Catalog routing replaced the old named concrete workflow. Preserve its
+  // tool/wood/table preparation for any request whose recipe needs a descent,
+  // while leaving nearby surface pickups and Creative inventory immediate.
+  if (!goal.expeditionReady && bot.game.gameMode !== 'creative') {
+    const underground = plan.find(s => s.action === 'mine' && Number.isFinite(s.depth) && s.depth < bot.entity.position.y - 8);
+    const withinReach = underground && miningCandidates(bot, underground, goal).some(p => bot.canDigBlock(bot.blockAt(p)));
+    if (goal.preparingExpedition || (underground && !withinReach)) {
+      goal.preparingExpedition = true; save();
+      await prepareExpeditionStep(bot, task, goal, save);
+      return false;
+    }
+  }
   const step = plan[0];
   if (!step) return false;
   const actions = {};

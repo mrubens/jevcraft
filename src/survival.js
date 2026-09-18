@@ -142,7 +142,18 @@ class Survival {
       const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
       if (!material) throw new Error('Shelter material inventory changed before sealing');
       if (!['air', 'cave_air', 'void_air'].includes(bot.blockAt(p)?.name)) await this.actions.dig(bot, task, p);
-      await this.actions.place(bot, task, p, material); save();
+      try { await this.actions.place(bot, task, p, material); }
+      catch (err) {
+        task.check();
+        // Reaching a placement can spend the selected block as scaffolding.
+        // Other shelter blocks may still be available: reobserve the shell
+        // and choose from current inventory on the next bounded step.
+        if (err.name === 'Blocked' && !bot.inventory.items().some(i => i.name === material && i.count > 0) && shelter.materialStock(bot) > 0) {
+          save(); return;
+        }
+        throw err;
+      }
+      save();
     }
     if (!shelter.inside(bot, refuge) || !shelter.sealed(bot, refuge)) throw new Error('Shelter verification failed');
     refuge.verifiedAt = new Date().toISOString();

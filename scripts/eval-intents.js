@@ -18,12 +18,16 @@ const cases = [
   ['Jev bring me grass', { kind: 'obtain', item: 'short_grass', count: 1, deliver: true }],
   ['Jev get me a grass block', { kind: 'obtain', item: 'grass_block', count: 1, deliver: true }],
   ['Jev craft a chest', { kind: 'craft', item: 'chest', count: 1, deliver: false }],
-  ['Jev make eight birch stairs', { kind: 'craft', item: 'birch_stairs', count: 8 }],
-  ['Jev craft two stone pickaxes', { kind: 'craft', item: 'stone_pickaxe', count: 2 }],
+  ['Jev collect 1 lapis lazuli for yourself', { kind: 'obtain', item: 'lapis_lazuli', count: 1, deliver: false }],
+  ['Jev get yourself a stone pickaxe', { kind: 'obtain', item: 'stone_pickaxe', count: 1, deliver: false }],
+  ['Jev collect 8 red concrete and keep it', { kind: 'obtain', item: 'red_concrete', count: 8, deliver: false }],
+  ['Jev craft me a chest', { kind: 'craft', item: 'chest', count: 1, deliver: true }],
+  ['Jev make eight birch stairs', { kind: 'craft', item: 'birch_stairs', count: 8, deliver: false }],
+  ['Jev craft two stone pickaxes', { kind: 'craft', item: 'stone_pickaxe', count: 2, deliver: false }],
   ['Jev get me two stacks of cobblestone', { kind: 'obtain', item: 'cobblestone', count: 128, deliver: true }],
-  ['Jev bring half a stack of purple concrete', { kind: 'obtain', item: 'purple_concrete', count: 32 }],
-  ['Jev collect 8 red concrete', { kind: 'obtain', item: 'red_concrete', count: 8 }],
-  ['Jev craft a furnace', { kind: 'craft', item: 'furnace', count: 1 }],
+  ['Jev bring half a stack of purple concrete', { kind: 'obtain', item: 'purple_concrete', count: 32, deliver: true }],
+  ['Jev collect 8 red concrete', { kind: 'obtain', item: 'red_concrete', count: 8, deliver: false }],
+  ['Jev craft a furnace', { kind: 'craft', item: 'furnace', count: 1, deliver: false }],
   ['Jev get me bedrock', { kind: 'obtain', item: 'bedrock', count: 1 }],
   ['Jev come here', { kind: 'come', target: 'TestPlayer' }],
   ['Jev stay with Alex', { kind: 'follow', target: 'Alex' }],
@@ -40,7 +44,7 @@ const cases = [
     const result = await interpret(client, request, 'TestPlayer', 'JevBot', { players: ['TestPlayer', 'Alex'] });
     const pass = Object.entries(expected).every(([key, value]) => result?.[key] === value);
     const record = { request, pass, expected, latencyMs: Math.round(performance.now() - started), result };
-    results.push(record); console.log(JSON.stringify({ request, pass, expected, actual: { kind: result?.kind, item: result?.item, count: result?.count, target: result?.target }, latencyMs: record.latencyMs }));
+    results.push(record); console.log(JSON.stringify({ request, pass, expected, actual: { kind: result?.kind, item: result?.item, count: result?.count, target: result?.target, deliver: result?.deliver }, latencyMs: record.latencyMs }));
   }
   fs.mkdirSync('artifacts', { recursive: true });
   const artifact = `artifacts/intent-eval-${Date.now()}.json`;

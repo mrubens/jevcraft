@@ -13,4 +13,6 @@ artifacts/
 .test-fixture/
 .test-survival/
 .test-endurance/
+.test-concrete/
+.test-nether/
 .play-server/

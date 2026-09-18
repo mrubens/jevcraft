@@ -94,3 +94,25 @@ test('a completed house becomes a persistent refuge with a temporary two-block n
   assert(!shelter.inside(bot, refuge));
   assert(verifyHouse(bot, blueprint).ok, 'The original house is intact and its doorway is clear again');
 });
+
+test('shelter sealing reselects material when positioning spends the last selected block', async () => {
+  const origin = new Vec3(0, 64, 0), blocks = new Map();
+  let items = [{ name: 'oak_planks', count: 1 }, { name: 'cobblestone', count: 32 }];
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: {},
+    entity: { position: origin.offset(0.5, 0, 0.5) }, inventory: { items: () => items },
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty' }) });
+  const refuge = { origin: { ...origin }, dimension: 'overworld' }, state = { shelters: [refuge] };
+  const controller = new Survival(bot, { place: async (b, t, p, material) => {
+    if (material === 'oak_planks') {
+      items = items.filter(i => i.name !== 'oak_planks');
+      const err = new Error('Need more oak_planks'); err.name = 'Blocked'; throw err;
+    }
+    assert.equal(material, 'cobblestone');
+    items[0].count--; blocks.set(`${p}`, material);
+  } }, { state });
+  const task = new Task('test', 'seal with current materials');
+  await controller.refugeStep(task, {}, () => {});
+  assert(!shelter.sealed(bot, refuge));
+  await controller.refugeStep(task, {}, () => {});
+  assert(shelter.sealed(bot, refuge));
+});
