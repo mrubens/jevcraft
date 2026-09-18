@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { choice, noul } = require('./typesafe');
 const { Vec3 } = require('vec3');
+const { chatNames, parseAddress } = require('./chat-address');
 
 const TYPES = {
   house: 'Build a small house or shelter.',
@@ -16,12 +17,13 @@ const TYPES = {
 };
 
 async function interpret(client, request, from, username) {
+  const address = parseAddress(request, username);
   const numbers = [...new Set(['32', '64', '16', '1', ...(request.match(/\b\d{1,4}\b/g) || [])])]
     .filter(n => Number(n) > 0 && Number(n) <= 1024);
   const response = await client.systemOne({
-    state: { request, speaker: from, bot_name: username },
+    state: { request, speaker: from, bot_name: username, bot_names: chatNames(username), explicitly_addressed: address.explicit },
     questions: {
-      addressed: noul('Is `request` directed at `bot_name` asking the bot to act or report, rather than conversation with another player?'),
+      addressed: noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.'),
       objective: choice('What outcome does the player request in `request`? Choose other if the specific requested item or building is unsupported.', TYPES),
       quantity: choice('Assuming the request is to obtain purple concrete, how many blocks are requested? Default to 32 if unspecified. A stack is 64 and half a stack is 32.', Object.fromEntries(numbers.map(n => [n, `${n} blocks`]))),
       material: choice('Assuming the request is a small house, which construction material does the player request? Use oak_planks for unspecified wood or no preference.', {
@@ -34,7 +36,7 @@ async function interpret(client, request, from, username) {
   if (!a || !Object.hasOwn(TYPES, a.objective?.choice) || !Number.isFinite(a.addressed?.noul)) {
     throw new Error('Invalid Jev interpretation response');
   }
-  if (a.addressed.noul < 0.5) return null;
+  if (!address.explicit && a.addressed.noul < 0.5) return null;
   const kind = a.objective.choice;
   if (kind === 'house' && !['oak_planks', 'cobblestone', 'dirt'].includes(a.material?.choice)) {
     return { kind: 'other' };

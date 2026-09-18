@@ -12,6 +12,12 @@ const cases = [
   ['JevBot build a glass castle', 'other'],
   ['JevBot stop please', 'stop'],
   ['JevBot resume', 'resume'],
+  ['Jev build a house', 'house', 'oak_planks'],
+  ['Jev, get me half a stack of purple concrete', 'concrete', 32],
+  ['jev find a way to the nether', 'nether'],
+  ['Jev stop', 'stop'],
+  ['Jev status', 'status'],
+  ['Jev resume', 'resume'],
 ];
 (async () => {
   const client = new TypeSafe();

@@ -30,7 +30,7 @@ To run the interactive bot in the flat world, use:
 MC_HOST=127.0.0.1 MC_PORT=25567 MC_VERSION=26.1 MC_USERNAME=JevBot npm start
 ```
 
-Then send `JevBot, build a house`, `JevBot, get me 32 purple concrete`, or `JevBot, find a way to the Nether` in game chat. Use `JevBot, status`, `JevBot, stop`, and `JevBot, resume` to inspect or control its task. Keep the terminal open to see each action, position, and blocker. Concrete delivery requires the requesting player to be nearby and able to pick up the items.
+Then send `Jev build a house`, `Jev get me 32 purple concrete`, or `Jev find a way to the Nether` in game chat. Use `Jev status`, `Jev stop`, and `Jev resume` to inspect or control its task. The nickname `Jev` works regardless of the bot's Minecraft username; addressing its full username also works. Keep the terminal open to see each action, position, and blocker. Concrete delivery requires the requesting player to be nearby and able to pick up the items.
 
 The test servers bind to localhost, so these addresses work on this computer. World files are local and excluded from Git; cloning this repository does not start a Minecraft server.
 

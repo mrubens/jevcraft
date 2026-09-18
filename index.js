@@ -9,6 +9,7 @@ const { TypeSafe } = require('./src/typesafe');
 const { interpret, GoalStore } = require('./src/objectives');
 const { runGoal } = require('./src/work');
 const { Task } = require('./src/skills');
+const { parseAddress } = require('./src/chat-address');
 
 const config = {
   host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
@@ -52,7 +53,7 @@ function launch(goal) {
 bot.on('chat', (from, request) => {
   if (from === bot.username) return;
   // Stop has a synchronous fast path, even while a network request is pending.
-  const normalized = request.replace(new RegExp(`^${bot.username}[,:]?\\s+`, 'i'), '').trim();
+  const normalized = parseAddress(request, bot.username).text;
   if (/^(stop|cancel)( please)?[.!]?$/i.test(normalized)) {
     generation++;
     stop().catch(console.error);
@@ -96,7 +97,7 @@ bot.once('spawn', async () => {
   await bot.waitForChunksToLoad();
   const saved = store.read();
   if (saved && saved.status === 'running') { bot.chat('Resuming my saved task.'); launch(saved); }
-  else bot.chat('Ready: build a house, collect purple concrete, or find a way to the Nether.');
+  else bot.chat('Call me Jev: "Jev build a house", "Jev get me purple concrete", or "Jev find a way to the Nether".');
 });
 bot.on('death', () => { generation++; if (active) active.goal.lastError = 'The bot died'; stop('blocked').catch(console.error); });
 bot.on('end', () => {

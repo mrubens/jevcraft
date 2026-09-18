@@ -7,6 +7,7 @@ const mineflayer = require('mineflayer');
 require('../src/env').loadEnv();
 const id = Date.now().toString(36);
 const username = `Ctrl${id}`;
+const address = process.env.CHAT_NAME || 'Jev';
 const host = process.env.MC_HOST || '127.0.0.1';
 const port = Number(process.env.MC_PORT || 25567);
 const version = process.env.MC_VERSION || '26.1';
@@ -41,10 +42,10 @@ observer.once('spawn', async () => {
     startBot();
     await until(() => observer.players[username]?.entity, 'bot spawn');
     await sleep(1000);
-    observer.chat(`${username} build a house`);
+    observer.chat(`${address} build a house`);
     await until(() => state()?.history?.some(h => (h.inventory.oak_log || 0) > 0), 'real survival gathering');
     const blueprint = state().blueprint;
-    observer.chat(`${username} stop`);
+    observer.chat(`${address} stop`);
     await until(() => state()?.status === 'cancelled', 'stop checkpoint');
     await sleep(1500);
     const paused = state();
@@ -54,7 +55,7 @@ observer.once('spawn', async () => {
     if (state().history.length !== paused.history.length) throw new Error('Bot executed more steps after stop');
     log({ check: 'stop halts movement and task steps', pass: true });
 
-    observer.chat(`${username} resume`);
+    observer.chat(`${address} resume`);
     await until(() => state()?.status === 'running' && state().history.length > paused.history.length, 'resume progress');
     if (JSON.stringify(state().blueprint) !== JSON.stringify(blueprint)) throw new Error('Resume moved the building site');
     log({ check: 'resume retains goal and site and progresses', pass: true });
@@ -67,7 +68,7 @@ observer.once('spawn', async () => {
     await until(() => state()?.history?.length > checkpoint.history.length, 'automatic restart resume');
     if (JSON.stringify(state().blueprint) !== JSON.stringify(blueprint)) throw new Error('Restart moved the building site');
     log({ check: 'process restart resumes saved task', pass: true });
-    observer.chat(`${username} stop`);
+    observer.chat(`${address} stop`);
     await until(() => state()?.status === 'cancelled', 'final stop');
     log({ result: 'PASS', username, stateFile });
   } catch (err) { log({ result: 'FAIL', error: err.message }); process.exitCode = 1; }
