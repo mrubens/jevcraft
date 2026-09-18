@@ -10,11 +10,14 @@ const { compatibilityPlugin } = require('../src/compatibility');
 require('../src/env').loadEnv();
 const { TypeSafe } = require('../src/typesafe');
 const { interpret, GoalStore, verifyHouse } = require('../src/objectives');
-const { runGoal, inventory } = require('../src/work');
+const { runGoal, runIdle, createSurvival, inventory } = require('../src/work');
 const { Task } = require('../src/skills');
 const client = new TypeSafe();
 const request = process.argv.slice(2).join(' ') || 'build a house';
 const resumeId = process.env.ACCEPT_RESUME;
+const cycles = Number(process.env.ACCEPT_CYCLES || 0);
+if (!Number.isInteger(cycles) || cycles < 0 || cycles > 10) throw new Error('ACCEPT_CYCLES must be an integer from 0 to 10');
+if (cycles && resumeId) throw new Error('Cycle acceptance requires an uninterrupted new run');
 if (resumeId && !/^[a-z0-9]+$/.test(resumeId)) throw new Error('Invalid resume run id');
 const id = resumeId || Date.now().toString(36);
 const username = `Trial${id}`;
@@ -30,7 +33,7 @@ bot.loadPlugin(compatibilityPlugin);
 bot.loadPlugin(pathfinder);
 let receiver;
 const task = new Task('acceptance', request);
-const timer = setTimeout(() => { task.cancel(); bot.pathfinder.setGoal(null); bot.stopDigging(); }, Number(process.env.ACCEPT_TIMEOUT_MS || 1800000));
+const timer = setTimeout(() => { task.cancel(); bot.pathfinder.setGoal(null); bot.stopDigging(); }, Number(process.env.ACCEPT_TIMEOUT_MS || (cycles ? (cycles * 20 + 15) * 60000 : 1800000)));
 bot.on('chat', (from, message) => { if (from === username) log({ chat: message }); });
 bot.on('death', () => {
   log({ death: true, position: bot.entity.position, dimension: bot.game.dimension, inventory: inventory(bot) });
@@ -74,6 +77,9 @@ bot.once('spawn', async () => {
       await receiver.waitForChunksToLoad();
     }
     const goal = saved || { ...spec, version: 1, initialInventory: initial, initialPosition: { ...bot.entity.position }, createdAt: new Date().toISOString(), scenario: process.env.ACCEPT_SCENARIO || 'natural' };
+    const initialWorldAge = bot.time.age;
+    if (cycles && (!Number.isFinite(initialWorldAge) || !bot.time.doDaylightCycle)) throw new Error('Cycle acceptance requires a running world clock');
+    const survival = createSurvival(bot, { state: goal.survival, client });
     if (receiver) {
       goal.from = receiver.username;
       goal.requesterPosition = { ...receiver.entity.position };
@@ -82,11 +88,29 @@ bot.once('spawn', async () => {
     if (resumeId) log({ resumed: resumeId, inventory: initial, originalCreatedAt: goal.createdAt });
     log({ start: { kind: goal.kind, count: goal.count, request: goal.request, from: goal.from, initialInventory: goal.initialInventory, initialPosition: goal.initialPosition, createdAt: goal.createdAt, scenario: goal.scenario }, username, server: `${process.env.MC_HOST}:${process.env.MC_PORT}`, gameMode: bot.game.gameMode, difficulty: bot.game.difficulty, timeOfDay: bot.time.timeOfDay });
     const result = await runGoal(bot, task, goal, goalStore, {
-      decisionClient: client,
+      decisionClient: client, survival,
       onStep: g => log({ step: g.step, decision: g.decisions?.at(-1), survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }),
     });
     const verified = result.ok && (goal.kind === 'house' ? verifyHouse(bot, goal.blueprint).ok :
       goal.kind === 'concrete' ? (goal.delivered >= goal.count && (inventory(receiver).purple_concrete || 0) >= goal.receiverInitialConcrete + goal.count) : String(bot.game.dimension).includes('nether'));
+    if (verified && cycles) {
+      log({ usefulRequestVerified: goal.kind, phase: 'survival-between-requests', targetCycles: cycles, initialWorldAge });
+      const idleGoal = { version: 1, kind: 'survive', request: 'Stay alive between player requests',
+        blueprint: goal.blueprint, portalFrame: goal.portalFrame, survival: survival.state };
+      const idleStore = new GoalStore(path.join(directory, 'idle.json'));
+      let lastLogged = 0;
+      await runIdle(bot, task, idleGoal, idleStore, { decisionClient: client, survival,
+        until: () => bot.time.age - initialWorldAge >= cycles * 24000,
+        onStep: g => {
+          if (Date.now() - lastLogged < 10000 && !g.lastError) return;
+          lastLogged = Date.now();
+          log({ endurance: { elapsedTicks: bot.time.age - initialWorldAge, targetTicks: cycles * 24000,
+            timeOfDay: bot.time.timeOfDay, action: g.survivalAction, decision: g.decisions?.at(-1)?.path },
+          position: bot.entity.position, inventory: inventory(bot), health: bot.health, food: bot.food, error: g.lastError });
+        },
+      });
+      log({ cyclesSurvived: cycles, elapsedTicks: bot.time.age - initialWorldAge });
+    }
     log({ acceptance: verified ? 'PASS' : 'FAIL', reason: result.reason, inventory: inventory(bot), dimension: bot.game.dimension, receiverInventory: receiver ? inventory(receiver) : undefined });
     process.exitCode = verified ? 0 : 1;
   } catch (err) { log({ acceptance: 'FAIL', error: err.message }); process.exitCode = 1; }

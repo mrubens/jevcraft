@@ -60,6 +60,16 @@ Latest survival milestone (2026-09-18, 19:15 UTC):
 - Both outstanding concrete trials ended FAILED: `mu79d9l3` could not complete the poppy search; `mu7a7wad` stalled on underwater gravel access. Their artifacts retain the earlier resumptions and failures. Neither completed delivery.
 - Fresh natural Normal world prepared on localhost:25569 in `.test-endurance/`, seed 95812. No gameplay acceptance has yet run there. Food foraging, idle survival, hostile escape, night endurance, and death/disconnect recovery remain unproven or unfinished.
 
+Food, idle survival, and player world (2026-09-18, 19:29 UTC):
+
+- Fresh Normal house trial `mu7c9xal`: PASSED uninterrupted with the nested Jev controller, beginning empty and verifying the complete house at (-69,65,21). Finished with health 20 and food 20. World retained as `.test-endurance/world/`.
+- Added food targets to ongoing Jev decisions, bounded passive-animal hunting, verified edible pickup, failed-target cooldowns, and between-request survival. Explicit stop pauses idle movement as well as task work; resume can reactivate either. Survival/shelter state persists separately from the latest player request. Peaceful idle behavior stays nearby because hunger maintenance is unnecessary there.
+- Controlled food trial `food-mu7cggaq`: PASSED from empty inventory, gathering four porkchops with minimum health 20. Natural Normal food trial `food-mu7chnvh` gathered three beef but FAILED in shelter preparation. Navigation had spent or changed part of the shelter budget, leaving the bot short after enclosing itself. Added an entry-material recheck, travel reserve, safe-site exit requirement, and shortage escape; a regression test covers this failure.
+- Controlled shelter rerun `shelter-mu7co30f`: PASSED after the budget correction, including exit/reentry and cancellation, minimum health 20. Real survival decision evaluation again passed 3/3 (327–344 ms).
+- Live chat/control trial `control-mu7cia0q`: PASSED ignored chatter, explicit idle stop, task stop, resume with same goal, and process restart. No site was selected before the check, so no additional site-continuity claim.
+- User requested a separate play world, then changed creative to Peaceful Survival before creation. Created `.play-server/` on localhost:25570, survival/peaceful, natural seed 95812, interactive username `Jev`. An independent connection confirmed game mode, difficulty, Jev online and spawn near (-10,67,3). The user has begun a house request there; do not restart this bot or modify that world as part of development tests.
+- Added `ACCEPT_CYCLES` endurance mode. Fresh Normal trial `mu7cpppi` is running on localhost:25569 in the new `.test-endurance/world-cycles-1/` with two cycles required, starting empty at world time 382. It has not yet passed. No grants, teleports, creative mode, time changes, or difficulty changes are used.
+
 Still required:
 
 1. Complete and independently verify natural-world concrete and Nether trials. House passed in a natural world; concrete and Nether passed in the controlled fixture.

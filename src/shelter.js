@@ -22,6 +22,7 @@ function safeSite(bot, origin, goal) {
   if (reservedForConstruction(goal, o)) return false;
   if (!replaceable(bot.blockAt(o)) || !replaceable(bot.blockAt(o.offset(0, 1, 0)))) return false;
   for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) if (!solid(bot.blockAt(o.offset(x, -1, z)))) return false;
+  if (!exits(bot, { origin }).length) return false;
   return shell(o).every(p => {
     const b = bot.blockAt(p);
     return replaceable(b) || solid(b);

@@ -5,6 +5,7 @@ const { threats, immediateThreat, checkThreats } = require('./danger');
 const shelter = require('./shelter');
 const { decideTree } = require('./decisions');
 const { maintainVitals, chooseFood, checkAir } = require('./vitals');
+const { foodSupply, forageChoices } = require('./foraging');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
@@ -83,15 +84,22 @@ class Survival {
     }
     const missing = shelter.missingShell(bot, refuge);
     const stock = shelter.materialStock(bot);
-    if (stock < missing.length) {
-      this.report(goal, save, { action: 'gather_shelter_materials', need: missing.length, carried: stock, origin: refuge.origin });
+    // Navigation can consume scaffold blocks or clear natural walls. Keep a
+    // small travel reserve, then recheck the actual shell after entering.
+    const required = missing.length + (shelter.inside(bot, refuge) ? 0 : 4);
+    if (stock < required) {
+      if (shelter.inside(bot, refuge)) {
+        await this.leave(task, goal, save, refuge);
+        if (shelter.inside(bot, refuge)) return;
+      }
+      this.report(goal, save, { action: 'gather_shelter_materials', need: required, carried: stock, origin: refuge.origin });
       task.interruptCheck = () => checkThreats(bot);
       try {
         const logs = bot.inventory.items().filter(i => i.name === 'oak_log').reduce((n, i) => n + i.count, 0);
         const planks = bot.inventory.items().filter(i => i.name === 'oak_planks').reduce((n, i) => n + i.count, 0);
         const dirt = bot.inventory.items().filter(i => i.name === 'dirt').reduce((n, i) => n + i.count, 0);
         await this.actions.acquireStep(bot, task, logs ? 'oak_planks' : 'dirt',
-          logs ? planks + Math.min(logs * 4, missing.length - stock) : dirt + missing.length - stock, goal, save,
+          logs ? planks + Math.min(logs * 4, required - stock) : dirt + required - stock, goal, save,
           { minimumMiningY: refuge.origin.y - 1 });
       } finally { task.interruptCheck = undefined; }
       return;
@@ -108,6 +116,7 @@ class Survival {
       const o = pos(refuge.origin);
       await this.actions.navigate(bot, task, new goals.GoalBlock(o.x, o.y, o.z), { timeoutMs: 20000 });
     }
+    if (shelter.materialStock(bot) < shelter.missingShell(bot, refuge).length) return;
     this.report(goal, save, { action: 'seal_shelter', origin: refuge.origin });
     const threat = immediateThreat(bot);
     const blocks = shelter.missingShell(bot, refuge).sort((a, b) => {
@@ -165,18 +174,28 @@ class Survival {
       else await this.flee(task, goal, save);
       onStep(goal); return true;
     }
-    if (!shelterNeeded(bot)) return false;
+    const needsShelter = shelterNeeded(bot);
+    const needsFood = foodSupply(bot) < 12 && (bot.food <= 18 || goal.stockFood ||
+      (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful'));
+    if (!needsShelter && !needsFood) return false;
     const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay,
       health: bot.health, food: bot.food, safeFoodCarried: !!chooseFood(bot),
       survivalFacts: { difficulty: bot.game.difficulty, hostileMobsSpawnAtNight: true,
         nightStartsAt: 11500, dawnAt: 23000, daylightTicksRemaining: Math.max(0, 11500 - bot.time.timeOfDay),
         shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null },
-      recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot) };
+      recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot),
+      foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: 12, hungerMaximum: 20, starvationAt: 0 } };
     const tree = {
-      secure_shelter: { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.', run: () => this.refugeStep(task, goal, save) },
-      continue_request: { description: 'Spend the next action on the player request while outside. Only suitable when there is enough daylight to finish preparing and entering shelter afterwards.', run: async () => {} },
+      continue_request: { description: goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Only suitable when hunger and daylight permit survival preparations afterwards.', run: async () => {} },
     };
-    if (!this.client) { await tree.secure_shelter.run(); onStep(goal); return true; }
+    if (needsShelter) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.', run: () => this.refugeStep(task, goal, save) };
+    if (needsFood) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
+      children: forageChoices(bot, task, goal, save, this.actions, this.state) };
+    if (!this.client) {
+      if (needsShelter) await tree.secure_shelter.run();
+      else await Object.values(tree.obtain_food.children)[0].run();
+      onStep(goal); return true;
+    }
     const controller = new AbortController();
     const watcher = setInterval(() => { try { task.check(); checkAir(bot); checkThreats(bot); } catch (err) { controller.abort(err); } }, 100);
     let decision;
@@ -184,8 +203,9 @@ class Survival {
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) }); }
     finally { clearInterval(watcher); }
     task.check(); checkAir(bot); checkThreats(bot);
+    if (!decision.stale && decision.action.valid && !decision.action.valid()) decision.stale = true;
     goal.decisions ||= [];
-    goal.decisions.push({ at: new Date().toISOString(), path: decision.path, state, options: Object.keys(tree),
+    goal.decisions.push({ at: new Date().toISOString(), path: decision.path, state, options: JSON.parse(JSON.stringify(tree)),
       latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, stale: decision.stale });
     goal.decisions = goal.decisions.slice(-40); save(); onStep(goal);
     if (decision.stale) return true;

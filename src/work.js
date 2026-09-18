@@ -617,17 +617,43 @@ async function netherStep(bot, task, goal, save) {
 }
 
 function createSurvival(bot, options) {
-  return new Survival(bot, { acquireStep, dig, place, navigate }, options);
+  return new Survival(bot, { acquireStep, dig, place, navigate, explore }, options);
+}
+
+function protectConstruction(bot, goal) {
+  const movements = bot.pathfinder.movements;
+  movements.exclusionAreasBreak = (movements.exclusionAreasBreak || []).filter(rule => rule !== bot._constructionProtection);
+  bot._constructionProtection = block => reservedForConstruction(goal, block.position) ? 100 : 0;
+  movements.exclusionAreasBreak.push(bot._constructionProtection);
+}
+
+async function runIdle(bot, task, goal, store, { survival, decisionClient, onStep = () => {}, until = () => false } = {}) {
+  survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
+  goal.survival = survival.state;
+  const save = () => store.save(goal);
+  protectConstruction(bot, goal);
+  let failures = 0;
+  while (!until()) {
+    task.interruptCheck = undefined; task.check(); updateDigCapabilities(bot);
+    try {
+      await survival.step(task, goal, save, onStep);
+      failures = 0; delete goal.lastError; save(); onStep(goal);
+    } catch (err) {
+      task.interruptCheck = undefined; task.check();
+      if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) failures++;
+      goal.lastError = err.message; save(); onStep(goal);
+      if (failures >= 5) throw new Blocked(`Survival needs help: ${err.message}`);
+    } finally { task.interruptCheck = undefined; }
+    for (let n = 0; n < 10; n++) { task.check(); await sleep(100); }
+  }
+  return { ok: true, goal };
 }
 
 async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () => {}, decisionClient, survival } = {}) {
   const save = () => store.save(goal);
   survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
   goal.survival = survival.state;
-  const movements = bot.pathfinder.movements;
-  movements.exclusionAreasBreak = (movements.exclusionAreasBreak || []).filter(rule => rule !== bot._constructionProtection);
-  bot._constructionProtection = block => reservedForConstruction(goal, block.position) ? 100 : 0;
-  movements.exclusionAreasBreak.push(bot._constructionProtection);
+  protectConstruction(bot, goal);
   goal.status = 'running'; goal.failures = 0; save();
   for (let n = 0; n < maxSteps; n++) {
     task.interruptCheck = undefined;
@@ -697,4 +723,4 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
   return { ok: false, reason: goal.lastError, goal };
 }
 
-module.exports = { runGoal, createSurvival, acquireStep, inventory, planningInventory, selectSite, explore, smelt, dig, place, waitFor, Blocked };
+module.exports = { runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, selectSite, explore, smelt, dig, place, waitFor, Blocked };

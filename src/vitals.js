@@ -77,8 +77,10 @@ async function surfaceForAir(bot, task, onAction = () => {}) {
   } finally { bot.clearControlStates(); }
 }
 
+function safeFood(bot, item) { return !!bot.registry.foodsByName?.[item.name] && !unsafeFoods.has(item.name); }
+
 function chooseFood(bot) {
-  return bot.inventory.items().filter(item => bot.registry.foodsByName?.[item.name] && !unsafeFoods.has(item.name))
+  return bot.inventory.items().filter(item => safeFood(bot, item))
     .sort((a, b) => {
       const value = item => bot.registry.foodsByName[item.name].effectiveQuality - (item.name.includes('golden') ? 100 : 0);
       return value(b) - value(a);
@@ -122,4 +124,4 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   return true;
 }
 
-module.exports = { chooseFood, maintainVitals, needsAir, checkAir, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
+module.exports = { chooseFood, safeFood, maintainVitals, needsAir, checkAir, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };

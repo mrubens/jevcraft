@@ -13,3 +13,4 @@ artifacts/
 .test-fixture/
 .test-survival/
 .test-endurance/
+.play-server/

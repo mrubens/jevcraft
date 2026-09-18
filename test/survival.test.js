@@ -6,6 +6,8 @@ const { threats, checkThreats } = require('../src/danger');
 const shelter = require('../src/shelter');
 const { reservedForConstruction } = require('../src/build-sites');
 const { Task, navigate } = require('../src/skills');
+const { Survival } = require('../src/survival');
+const { EventEmitter } = require('node:events');
 
 test('threat visibility uses the entire ray and respects solid cover', () => {
   const bot = { entity: { position: new Vec3(0, 64, 0) }, time: { timeOfDay: 13000 },
@@ -51,4 +53,20 @@ test('a newly observed threat interrupts an in-flight navigation', async () => {
   finally { clearTimeout(timer); }
   assert.equal(stopped, true);
   assert.equal(task.cancelled, false, 'The player task remains resumable after a survival interruption');
+});
+
+test('shelter construction rechecks materials consumed by the approach before sealing exits', async () => {
+  let carried = 29;
+  let placed = 0;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' },
+    entity: { position: new Vec3(5.5, 64, 0.5) },
+    inventory: { items: () => [{ name: 'dirt', count: carried }] },
+    blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }) });
+  const state = { shelters: [{ origin: { x: 0, y: 64, z: 0 }, dimension: 'overworld' }] };
+  const controller = new Survival(bot, {
+    navigate: async () => { bot.entity.position = new Vec3(0.5, 64, 0.5); carried = 2; },
+    place: async () => { placed++; },
+  }, { state });
+  await controller.refugeStep(new Task('house', 'build a house'), { survival: state }, () => {});
+  assert.equal(placed, 0, 'Do not close the room when travel spent the remaining roof materials');
 });

@@ -7,7 +7,7 @@ const { configureMovements } = require('./src/movement');
 require('./src/env').loadEnv();
 const { TypeSafe } = require('./src/typesafe');
 const { interpret, GoalStore } = require('./src/objectives');
-const { runGoal } = require('./src/work');
+const { runGoal, runIdle, createSurvival } = require('./src/work');
 const { Task } = require('./src/skills');
 const { parseAddress } = require('./src/chat-address');
 const { compatibilityPlugin } = require('./src/compatibility');
@@ -23,15 +23,23 @@ bot.loadPlugin(compatibilityPlugin);
 bot.loadPlugin(pathfinder);
 const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');
 const store = new GoalStore(path.join(__dirname, '.bot-state', `${identity}.json`));
+const survivalStore = new GoalStore(path.join(__dirname, '.bot-state', `${identity}-survival.json`));
+const idleStore = new GoalStore(path.join(__dirname, '.bot-state', `${identity}-idle.json`));
+const survival = createSurvival(bot, { state: survivalStore.read() || store.read()?.survival, client });
+if (!survivalStore.read() && store.read()?.status === 'cancelled') survival.state.paused = true;
+const saveSurvival = () => { survival.state.version = 1; survivalStore.save(survival.state); };
+const workStore = { save: goal => { store.save(goal); saveSurvival(); } };
 let active = null;
 let pending = Promise.resolve();
 let generation = 0;
+let ready = false;
+let pendingRequests = 0;
 
 async function stop(status = 'cancelled') {
+  if (status === 'cancelled') { survival.state.paused = true; saveSurvival(); }
   if (!active) return;
   active.task.cancel();
-  active.goal.status = status;
-  store.save(active.goal);
+  if (!active.idle) { active.goal.status = status; workStore.save(active.goal); }
   bot.pathfinder.setGoal(null);
   bot.clearControlStates();
   bot.stopDigging();
@@ -40,11 +48,12 @@ async function stop(status = 'cancelled') {
 }
 
 function launch(goal) {
+  survival.state.paused = false; delete survival.state.idleBlocked; saveSurvival();
   const task = new Task(goal.kind, goal.request);
   const session = { task, goal };
   active = session;
-  session.promise = runGoal(bot, task, goal, store, {
-    decisionClient: client,
+  session.promise = runGoal(bot, task, goal, workStore, {
+    decisionClient: client, survival,
     onStep: g => console.log(JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError })),
   }).catch(err => {
     if (err.name !== 'Cancelled') {
@@ -53,6 +62,28 @@ function launch(goal) {
     }
   }).finally(() => { if (active === session) active = null; });
 }
+
+function launchIdle() {
+  const retained = store.read();
+  const goal = { ...(idleStore.read() || {}), version: 1, kind: 'survive', request: 'Stay alive and prepare supplies between player requests',
+    retainedRequest: retained?.request, blueprint: retained?.blueprint, portalFrame: retained?.portalFrame, survival: survival.state };
+  const task = new Task('survival', goal.request);
+  const session = { task, goal, idle: true };
+  active = session;
+  session.promise = runIdle(bot, task, goal, { save: g => { idleStore.save(g); saveSurvival(); } }, {
+    survival, decisionClient: client,
+    onStep: g => console.log(JSON.stringify({ idle: true, survivalAction: g.survivalAction, decision: g.decisions?.at(-1)?.path, health: bot.health, food: bot.food, position: bot.entity.position, error: g.lastError })),
+  }).catch(err => {
+    if (err.name !== 'Cancelled') {
+      survival.state.idleBlocked = err.message; saveSurvival();
+      console.error(err); bot.chat(err.message);
+    }
+  }).finally(() => { if (active === session) active = null; });
+}
+
+const idleTimer = setInterval(() => {
+  if (ready && !active && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
+}, 500);
 
 bot.on('chat', (from, request) => {
   if (from === bot.username) return;
@@ -69,12 +100,14 @@ bot.on('chat', (from, request) => {
     return;
   }
   const revision = generation;
+  pendingRequests++;
   pending = pending.then(async () => {
     const spec = await interpret(client, request, from, bot.username);
     if (!spec || revision !== generation) return;
     if (spec.kind === 'status') {
       const g = active?.goal || store.read();
-      bot.chat(g ? `${g.status}: ${g.request}. ${g.lastError || g.decisions?.at(-1)?.path?.join(' > ') || JSON.stringify(g.step || {})}` : 'No saved task.');
+      bot.chat(active?.idle ? `Between requests: ${g.lastError || g.survivalAction?.action || 'watching survival needs'}. Health ${bot.health}, food ${bot.food}.` :
+        g ? `${g.status}: ${g.request}. ${g.lastError || g.decisions?.at(-1)?.path?.join(' > ') || JSON.stringify(g.step || {})}` : 'No saved task.');
       return;
     }
     if (spec.kind === 'other') {
@@ -83,9 +116,13 @@ bot.on('chat', (from, request) => {
     }
     if (spec.kind === 'stop') { generation++; await stop(); bot.chat('Stopped.'); return; }
     if (spec.kind === 'resume') {
+      if (active?.idle) await stop('interrupted');
       if (active) { bot.chat('Already working on the saved task.'); return; }
       const saved = store.read();
-      if (!saved || saved.status === 'complete') { bot.chat('No unfinished task to resume.'); return; }
+      if (!saved || saved.status === 'complete') {
+        survival.state.paused = false; delete survival.state.idleBlocked; saveSurvival();
+        bot.chat('Resuming survival between requests.'); return;
+      }
       launch(saved); return;
     }
     await stop('replaced');
@@ -96,19 +133,21 @@ bot.on('chat', (from, request) => {
     bot.chat(spec.kind === 'house' ? `Building a small ${spec.material} house with a floor, doorway and roof.` :
       spec.kind === 'concrete' ? `Collecting ${spec.count} purple concrete blocks.` : 'I will establish a portal route and enter the Nether to verify it.');
     launch(goal);
-  }).catch(err => { console.error(err); bot.chat(`Could not process request: ${err.message}`); });
+  }).catch(err => { console.error(err); bot.chat(`Could not process request: ${err.message}`); }).finally(() => { pendingRequests--; });
 });
 
 bot.once('spawn', async () => {
   configureMovements(bot);
   console.log(`[bot] spawned as ${bot.username} (${bot.version})`);
   await bot.waitForChunksToLoad();
+  ready = true;
   const saved = store.read();
   if (saved && saved.status === 'running') { bot.chat('Resuming my saved task.'); launch(saved); }
   else bot.chat('Call me Jev: "Jev build a house", "Jev get me purple concrete", or "Jev find a way to the Nether".');
 });
-bot.on('death', () => { generation++; if (active) active.goal.lastError = 'The bot died'; stop('blocked').catch(console.error); });
+bot.on('death', () => { ready = false; generation++; if (active) active.goal.lastError = 'The bot died'; stop('blocked').catch(console.error); });
 bot.on('end', () => {
+  ready = false; clearInterval(idleTimer);
   generation++;
   // A disconnect must not turn an already cancelled task back into running.
   if (active && !active.task.cancelled) stop('running').catch(console.error);
