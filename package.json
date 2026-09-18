@@ -1,0 +1,24 @@
+{
+  "name": "craft-mineflayer-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Minecraft bot whose natural-language understanding runs on TypeSafe's Jev model",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "plan": "node scripts/try-plan.js",
+    "live": "node scripts/live-test.js",
+    "test": "node --test test/*.test.js",
+    "accept": "node scripts/acceptance.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "mineflayer": "^4.39.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "minecraft-data": "^3.0.0",
+    "vec3": "^0.1.10"
+  }
+}
