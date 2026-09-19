@@ -118,6 +118,11 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
     let lastError;
     try {
       const methods = [];
+      if (name === 'water_bucket') methods.push({ cost: 8, run: () => {
+        acquire('bucket', missing); add('bucket', -missing);
+        steps.push({ action: 'fill_bucket', item: name, count: missing, consumes: { bucket: missing }, produces: { water_bucket: missing } });
+        add(name, missing);
+      } });
       if (name.endsWith('_concrete')) methods.push({ cost: 1, run: () => {
         ensurePickaxe(); const powder = `${name}_powder`; acquire(powder, missing); add(powder, -missing);
         steps.push({ action: 'harden', item: name, count: missing, consumes: { [powder]: missing }, produces: { [name]: missing } }); add(name, missing);

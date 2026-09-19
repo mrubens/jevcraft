@@ -33,6 +33,7 @@ const { enterEnd } = require('./end-portal');
 const { fightEndStep } = require('./end-combat');
 const { exitEnd } = require('./end-exit');
 const { prepareEndSupplies } = require('./end-supplies');
+const { collectWater } = require('./water');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -557,6 +558,7 @@ async function executeAcquisition(bot, task, step, goal, save) {
   else if (step.action === 'craft') await craft(bot, task, step, goal);
   else if (step.action === 'smelt') await smelt(bot, task, step);
   else if (step.action === 'harden') await harden(bot, task, goal, save, step.item);
+  else if (step.action === 'fill_bucket') await collectWater(bot, task, goal, save, { navigate, explore });
   else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep });
   else throw new Error(`Unknown action ${step.action}`);
 }

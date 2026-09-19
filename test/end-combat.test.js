@@ -127,3 +127,20 @@ test('End exit needs player kill credit, an observed active portal, an exit even
   assert.equal(goal.endReturn.source, 'living_exit_portal_return');
   assert.equal(bot.pathfinder.movements.canDig, false);
 });
+
+test('a dragon charge aborts a pending Jev choice and hands control to the cancellable reflex', async () => {
+  const { bot, goal, task } = fixture();
+  entity(bot, 8, 'end_crystal', new Vec3(24, 70, 0));
+  entity(bot, 9, 'end_crystal', new Vec3(-24, 70, 0));
+  const dragon = entity(bot, 20, 'ender_dragon', new Vec3(40, 66, .5), { phase: 6 });
+  let aborted = false, reflex = false;
+  bot.look = async () => { reflex = true; task.cancel(); };
+  const client = { systemOne: async ({ signal }) => {
+    dragon.metadata[registry.entitiesByName.ender_dragon.metadataKeys.indexOf('phase')] = 8;
+    return new Promise((resolve, reject) => signal.addEventListener('abort', () => { aborted = true; reject(signal.reason); }, { once: true }));
+  } };
+  await assert.rejects(fightEndStep(bot, task, goal, () => {}, {}, client), { name: 'Cancelled' });
+  assert(aborted); assert(reflex); assert.equal(goal.endCombat.lastInterrupted.reason, 'dragon_charge_or_contact');
+  assert.equal(bot.listenerCount('entityMoved'), 0); assert.equal(task.interruptCheck, undefined);
+  assert.equal(bot.pathfinder.movements.canDig, false);
+});

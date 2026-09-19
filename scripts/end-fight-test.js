@@ -17,16 +17,23 @@ require('../src/env').loadEnv(); const { TypeSafe } = require('../src/typesafe')
 const id = Date.now().toString(36), username = `Fight${id}`, directory = path.join(__dirname, '..', 'artifacts', `end-fight-${id}`);
 fs.mkdirSync(directory, { recursive: true });
 const log = data => { const line = JSON.stringify({ at: new Date().toISOString(), ...data }); console.log(line); fs.appendFileSync(path.join(directory, 'events.jsonl'), line + '\n'); };
+async function main() {
+const harness = process.env.END_DASHBOARD_PORT ? await require('../src/harness/server').startHarness({
+  port: Number(process.env.END_DASHBOARD_PORT), artifacts: path.join(__dirname, '..', 'artifacts'),
+}) : null;
 const bot = mineflayer.createBot({ host: '127.0.0.1', port: fixturePort, username, version: '26.1', auth: 'offline' });
 bot.loadPlugin(compatibilityPlugin); bot.loadPlugin(pathfinder);
 const task = new Task('controlled End fight'), timer = setTimeout(() => task.cancel(), 30 * 60000), client = new TypeSafe();
-let goal, detach, deaths = 0, minimumHealth = 20, finishing = false;
-const save = () => fs.writeFileSync(path.join(directory, 'goal.json'), JSON.stringify(goal, null, 2));
+let goal, detach, observation, deaths = 0, minimumHealth = 20, finishing = false;
+const save = () => { fs.writeFileSync(path.join(directory, 'goal.json'), JSON.stringify(goal, null, 2)); observation?.sample('step', undefined, goal); };
+observation = harness?.attach(bot, { getGoal: () => goal, server: `127.0.0.1:${fixturePort} · controlled End trial` });
+if (harness) log({ observatory: harness.url, directory });
 bot.on('death', () => { deaths++; log({ death: true, position: bot.entity.position, dimension: dimension(bot) }); task.cancel(); });
 bot.on('health', () => { minimumHealth = Math.min(minimumHealth, bot.health); log({ health: bot.health, food: bot.food, position: bot.entity.position }); });
 bot._client.on('entity_velocity', packet => { if (packet.entityId === bot.entity?.id) log({ playerVelocity: packet.velocity, position: bot.entity.position }); });
 bot.on('forcedMove', () => log({ forcedMove: true, position: bot.entity.position, velocity: bot.entity.velocity }));
 bot.on('end_combat', evidence => log({ evidence }));
+bot.on('fall_recovery', evidence => log({ fallRecovery: evidence }));
 bot.on('error', err => log({ error: err.message }));
 bot.on('end', reason => { if (!finishing) { log({ result: 'FAIL', reason: `Disconnected: ${reason}`, directory }); clearTimeout(timer); process.exitCode = 1; } });
 bot.once('spawn', async () => {
@@ -35,7 +42,7 @@ bot.once('spawn', async () => {
     const commands = ['gamerule minecraft:spawn_mobs false',
       'execute in minecraft:the_end run fill -3 62 42 3 62 48 end_stone',
       'execute in minecraft:the_end run fill -3 63 42 3 66 48 air',
-      ...['diamond_sword', 'diamond_pickaxe', 'diamond_helmet', 'diamond_chestplate', 'diamond_leggings', 'diamond_boots', 'shield', 'bow'].map(item => `give ${username} ${item}`),
+      ...['diamond_sword', 'diamond_pickaxe', 'diamond_helmet', 'diamond_chestplate', 'diamond_leggings', 'diamond_boots', 'shield', 'bow', 'water_bucket'].map(item => `give ${username} ${item}`),
       `give ${username} arrow 256`, `give ${username} cooked_beef 64`, `give ${username} cobblestone 64`,
       `execute in minecraft:the_end run tp ${username} 0.5 63 45.5`];
     fs.writeFileSync(path.join(directory, 'setup.json'), JSON.stringify(commands, null, 2));
@@ -63,5 +70,11 @@ bot.once('spawn', async () => {
       inventory: inventory(bot), milestones: goal.gameProgress.milestones,
       limitations: 'Granted equipment, constructed landing, teleported to End and disabled natural mob spawning; not natural progression or winning acceptance' });
   } catch (err) { log({ result: 'FAIL', error: err.stack, position: bot.entity?.position, health: bot.health, deaths, directory }); process.exitCode = 1; }
-  finally { finishing = true; detach?.(); clearTimeout(timer); bot.pathfinder.setGoal(null); bot.clearControlStates(); bot.quit(); setTimeout(() => process.exit(process.exitCode || 0), 500); }
+  finally {
+    finishing = true; detach?.(); clearTimeout(timer); bot.pathfinder.setGoal(null); bot.clearControlStates();
+    if (harness) { fs.writeFileSync(path.join(directory, 'trace.json'), JSON.stringify(harness.trace.view())); await harness.close(); }
+    bot.quit(); setTimeout(() => process.exit(process.exitCode || 0), 500);
+  }
 });
+}
+main().catch(err => { log({ result: 'FAIL', error: err.stack, directory }); process.exitCode = 1; });

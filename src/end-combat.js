@@ -10,6 +10,8 @@ const { aimAtEntity, shootBow } = require('./projectiles');
 const { decideTree } = require('./decisions');
 const { canStrike } = require('./combat');
 const { durable, carriedEquipment } = require('./mob-policy');
+const { fallDanger, recoverFall } = require('./fall-recovery');
+const { endEmergency, checkEndEmergency, evadeDragon } = require('./end-safety');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
 const vector = p => new Vec3(p.x, p.y, p.z);
@@ -44,9 +46,10 @@ function observeArena(bot, state, now = Date.now()) {
 }
 
 function endHazards(bot) {
-  return Object.values(bot.entities).filter(e => live(bot, e) && ['end_crystal', 'area_effect_cloud', 'dragon_fireball'].includes(e.name))
+  return Object.values(bot.entities).filter(e => live(bot, e) && (['end_crystal', 'area_effect_cloud', 'dragon_fireball'].includes(e.name) ||
+    e.name === 'ender_dragon' && !perched(bot, e) && metadata(bot, e, 'phase') !== 9))
     .map(e => ({ entity: e, radius: e.name === 'end_crystal' ? 12 : e.name === 'area_effect_cloud' ?
-      Math.max(1, Number(metadata(bot, e, 'radius')) || 3) + 2 : 6 }));
+      Math.max(1, Number(metadata(bot, e, 'radius')) || 3) + 2 : e.name === 'ender_dragon' ? 16 : 6 }));
 }
 function safeEndPoint(bot, p, hazards = endHazards(bot)) {
   // Navigation allows retreat from an already close mob. A place to stand,
@@ -147,8 +150,20 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     return sample.velocity;
   };
   bot.on('entityMoved', moved); if (dragon) moved(dragon);
+  const respond = async () => {
+    // Emergency handlers must not trip the guard that interrupted ordinary
+    // planning. They still retain cancellation and the caller's guard.
+    task.interruptCheck = oldInterrupt;
+    if (fallDanger(bot)) await recoverFall(bot, task, goal, save);
+    else await evadeDragon(bot, task, goal, save, { allowed: p => policy.allowed(p.floored()) && safeFromHostiles(bot, p) });
+  };
   try {
-    task.interruptCheck = () => { oldInterrupt?.(); if (dimension(bot) !== 'end' || bot.health <= 0) throw blocked('End combat interrupted by dimension change or death'); };
+    if (endEmergency(bot)) { await respond(); return; }
+    task.interruptCheck = () => {
+      oldInterrupt?.();
+      if (dimension(bot) !== 'end' || bot.health <= 0) throw blocked('End combat interrupted by dimension change or death');
+      checkEndEmergency(bot);
+    };
     if (safeEndPoint(bot, bot.entity.position)) {
       if (await maintainVitals(bot, task, action => { goal.survivalAction = { ...action, at: new Date().toISOString() }; save(); })) return;
     }
@@ -241,11 +256,15 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     goal.step = { action: 'end_combat', selected: decision.path, dragonHealth: beforeDragon, observedCrystals: crystals.length }; save();
     try { await decision.action.run(); }
     catch (err) {
-      if (['Cancelled', 'Blocked'].includes(err.name)) throw err;
+      if (['Cancelled', 'Blocked', 'EndEmergency'].includes(err.name)) throw err;
       // Moving targets, a newly visible cloud or an obstructed route require
       // a fresh bounded choice. They do not invalidate the retained goal.
       state.lastInterrupted = { at: Date.now(), action: decision.path, reason: err.message }; save();
     }
+  } catch (err) {
+    if (err.name !== 'EndEmergency') throw err;
+    state.lastInterrupted = { at: Date.now(), reason: err.message }; save();
+    await respond();
   } finally {
     const after = dragon && metadata(bot, dragon, 'health');
     if (Number.isFinite(after) && after < beforeDragon) { state.lastDamage = { at: Date.now(), before: beforeDragon, after }; progress = true; bot.emit('end_combat', { damage: state.lastDamage }); }

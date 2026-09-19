@@ -25,6 +25,7 @@ function goalView(goal = {}) {
     endPortal: goal.endPortal,
     endCombat: goal.endCombat,
     endReturn: goal.endReturn,
+    fallRecoveries: goal.fallRecoveries,
     recoveryAction: goal.recoveryAdvice?.active ? goal.recoveryAction : undefined,
     recoveryAdvice: goal.recoveryAdvice?.history?.at(-1) && (({ model, diagnosis, status, steps, outcome }) =>
       ({ model, diagnosis, status, steps, outcome }))(goal.recoveryAdvice.history.at(-1)),
