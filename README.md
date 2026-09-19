@@ -20,7 +20,8 @@ Open **Minecraft Java Edition 26.1**, choose **Multiplayer → Direct Connection
 
 | Address | World |
 | --- | --- |
-| `localhost:25570` | Player world: fresh natural terrain, Survival mode with Peaceful difficulty, with interactive **Jev** |
+| `localhost:25577` | Current player world: fresh natural terrain, Peaceful Survival, with interactive **Jev**; Observatory at `http://127.0.0.1:3045/?session=live` |
+| `localhost:25570` | Previous Peaceful Survival player world, preserved with its completed Nether route |
 | `localhost:25567` | Flat survival test world with prepared resources; used for current mechanics trials |
 | `localhost:25566` | Natural survival world, seed 12345; the completed house is at X 83, Y 136, Z −32 |
 | `localhost:25565` | Original development server |
@@ -34,7 +35,7 @@ Press **F3** to see your coordinates, and **Tab** to see online players. Accepta
 To run the interactive bot in the player world, use:
 
 ```sh
-MC_HOST=127.0.0.1 MC_PORT=25570 MC_VERSION=26.1 MC_USERNAME=Jev npm start
+MC_HOST=127.0.0.1 MC_PORT=25577 MC_VERSION=26.1 MC_USERNAME=Jev JEV_DASHBOARD_PORT=3045 npm start
 ```
 
 Then send `Jev come here`, `Jev follow me`, `Jev craft a chest`, `Jev get me a pumpkin`, `Jev build a house`, `Jev get me 32 purple concrete`, or `Jev find a way to the Nether` in game chat. Use `Jev status`, `Jev stop`, and `Jev resume` to inspect or control its task. The nickname `Jev` works regardless of the bot's Minecraft username; addressing its full username also works. Keep the terminal open to see each action, position, and blocker. Concrete delivery requires the requesting player to be nearby and able to pick up the items.
