@@ -7,6 +7,7 @@ const list = tasks => tasks.map(t => `${t.count} ${name(t.item)}`).join(', ');
 function friendlyProblem(error) {
   const text = String(error?.message || error || '');
   if (/silk touch/i.test(text)) return 'I need a tool with Silk Touch to pick up that block.';
+  if (/That place is in the /i.test(text)) return text;
   if (/No supported survival acquisition|bedrock/i.test(text)) return 'I don\'t know a way to get that in Survival.';
   if (/handover was interrupted|pickup.*(?:unconfirmed|not confirmed)/i.test(text)) return 'I\'m not sure you got all the items. Please check the ground nearby before asking for more.';
   if (/recipient|player.*(?:visible|loaded)|cannot see|can.t see|pickup.*confirm/i.test(text)) return 'I need you a bit closer so I can give you the items.';
@@ -34,6 +35,7 @@ function activity(step = {}) {
     case 'explore': case 'approach_discovery': case 'approach_found_creature': return `I'm looking for ${name(step.name || step.entity || step.resource)}.`;
     case 'come': return "I'm coming to you.";
     case 'follow': return "I'm following you.";
+    case 'visit': return `I'm heading to ${step.label || 'the saved place'}.`;
     case 'eat': case 'eat_food': return "I'm eating something.";
     case 'return_to_surface': case 'ascend_to_surface': return "I'm finding a way back up.";
     case 'prepare_expedition_food': return "I'm packing some food for the trip.";
@@ -49,6 +51,7 @@ function completion(goal) {
     return `Found ${name(goal.discoveryTarget.name)}! It's at ${Math.floor(p.x)}, ${Math.floor(p.y)}, ${Math.floor(p.z)}.`;
   }
   if (goal.kind === 'come') return `I'm here with ${goal.target || goal.from}!`;
+  if (goal.kind === 'visit') return `I'm at ${goal.destination.label}!`;
   if (goal.kind === 'house' || goal.kind === 'build') return 'The building is done! I checked it for missing blocks.';
   if (goal.kind === 'win') return 'We beat the dragon! I made it back home alive.';
   if (goal.kind === 'concrete') return `You got ${goal.count} purple concrete!`;

@@ -179,6 +179,54 @@ only ten. `artifacts/batch-missing-input-analysis-20260919.json` records the sto
 ledger and sequence. Acquisition methods need to verify their net result before
 being accepted; batch trimming cannot correct this earlier failure.
 
+## Persistent companion memory
+
+`src/memory.js` maintains an atomic, bounded local notebook per server/bot and
+optional `MC_WORLD_ID` namespace. Notes, named places, and request summaries are
+scoped to their speaker. Places include dimensions; automatic place records come
+only from completed, verified discoveries or builds. Recent resource hints share
+one ledger across requests and restarts and retain their observed-block checks,
+30-minute expiry, and 512-block search bound. Named places and notes do not expire
+on that timer. Chest inventories and full conversation transcripts are not stored.
+
+Jev classifies memory operations and selects names from verbatim message spans,
+coordinates from parsed input or observed player positions, and references from
+actual saved entries. Returning to a place uses ordinary navigation; recall never
+starts travel. Remember/recall/forget does not cancel ongoing work. A fresh repeat
+copies supported gameplay intent, never delivered counts, schematics, or operator
+commands. Stop aborts the same request-bound classifier calls as other chat work.
+
+The automated suite passed 455 tests, including persistence, separate owners and
+worlds, corrections, forget across restart, history outcomes, clean repeated
+requests, source invalidation, verified place creation, and dimension/cancellation
+guards. The designer test also verifies that remembered preferences reach its
+request context. Live classifier evaluation `memory-routing-mu8t5850` passed all
+11 cases, including an implicit personal preference, a paraphrased return-home
+request, recalling vs repeating, negation, preference-based catalog selection, and
+a fresh explicit wood choice overriding memory. Existing companion routing also
+passed all nine cases in `companion-routing-mu8t590y`.
+
+The earlier memory classifier runs are retained. One exposed missing evidence in
+the location selector; it now receives the actual observed positions. Another
+showed personal preferences being discarded as ordinary discussion; a separate
+Jev judgment now passes those statements to the memory classifier.
+
+```sh
+node scripts/memory-routing-test.js
+MC_PORT=<isolated-port> node scripts/memory-live-test.js
+```
+
+For the gameplay fixture, apply the generated `setup.json` only in the isolated
+server console, then create `ready`. The test rejects ports 25565 and 25577 and
+uses the production session and real player chat. `memory-live-mu8t1osf` and the
+final `memory-live-mu8vk4xr` passed on 2026-09-19: Jev saved the player's home
+position, retained it and a wood preference through a reconnect, recalled home
+without moving, walked back on request, and reported the completed task. A note
+saved during follow left follow active; stop and forgetting home then worked.
+The observing client independently saw arrival within three blocks. Both runs
+finished at health 20, without deaths or bot-issued operator commands. Terrain
+and initial positions were controlled; this is not fresh Survival acceptance.
+
 ## Stop during request interpretation
 
 All nested classifiers for a player request share its cancellation signal.

@@ -69,8 +69,9 @@ test('site planning preserves existing buildings and unbuilt foundation terrain,
 });
 test('designer submits the requested model, catalog schema and observed world, without persisting credentials', async () => {
   let body;
+  const memory = { notes: [{ note: 'I prefer cherry planks' }] };
   const result = await designBuilding(world(), new Task('design'), 'build cherry', {
-    apiKey: 'test-secret', model: MODEL,
+    apiKey: 'test-secret', model: MODEL, memory,
     fetchImpl: async (url, options) => {
       assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
       assert.equal(options.headers.Authorization, 'Bearer test-secret');
@@ -82,6 +83,7 @@ test('designer submits the requested model, catalog schema and observed world, w
   assert(body.response_format.json_schema.schema.properties.palette.items.enum.includes('cherry_planks'));
   assert(!body.response_format.json_schema.schema.properties.palette.items.enum.includes('command_block'));
   const state = JSON.parse(body.messages[1].content);
+  assert.deepEqual(state.memory, memory);
   assert.equal(state.request, 'build cherry');
   assert.equal(state.world.inventory[0].name, 'oak_log');
   assert(state.world.terrain.length > 0);

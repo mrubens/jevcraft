@@ -18,7 +18,7 @@ const { takeCreativeItem } = require('./creative');
 const { surfaceObserver, surfaceMovement, returnToSurface, beginSurfaceAscent, surfaceReturnComplete } = require('./surface');
 const { bootstrapPickaxe } = require('./tool-recovery');
 const { foodSupply } = require('./foraging');
-const { observeRecipeAlternatives, knownResourceLocations, isSurfaceResource } = require('./resource-observation');
+const { observeRecipeAlternatives, knownResourceLocations, knownResourceNames, rememberResources, isSurfaceResource } = require('./resource-observation');
 const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('./designer');
 const { designWithJev } = require('./build-templates');
 const { dryMiningPositions, approachDryMining, miningMovement } = require('./mining-access');
@@ -37,6 +37,7 @@ const { collectWater } = require('./water');
 const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
 const { batchPlan, remainingOutputs } = require('./batch-plan');
+const { visitPlace } = require('./memory');
 const { selectBundleBatch, batchOutputs } = require('./bundle-batch');
 const { remainingBuildBatch, materialCounts, createBuildBatch } = require('./build-batch');
 const { matchesBuildBlock, placementGoal, buildCellComplete, buildFootprint, blockOwnership } = require('./build-blocks');
@@ -335,6 +336,7 @@ async function miningCandidates(bot, task, step, goal) {
   const candidates = bot.findBlocksAsync
     ? await bot.findBlocksAsync(options, () => { task.check(); checkAir(bot); }) : bot.findBlocks(options);
   task.check(); checkAir(bot);
+  rememberResources(bot, goal, candidates);
   return candidates.filter(p => {
     const k = `${p}`;
     return safeFromHostiles(bot, p) && (!goal.unreachable?.[k] || Date.now() - goal.unreachable[k] > 120000);
@@ -634,8 +636,10 @@ function catalogPlan(bot, item, count, stock, goal = {}) {
     .map(({ item, count }) => ({ action: 'creative_inventory', item, count, consumes: {}, produces: { [item]: count - (stock[item] || 0) } }));
   if (!bot._catalogObservation || Date.now() - bot._catalogObservation.at > 5000 || bot.entity.position.distanceTo(pos(bot._catalogObservation.position)) > 8) {
     const ids = bot.registry.blocksArray.filter(b => /(_log|_wood|_ore)$|^(stone|sand|gravel|dirt|poppy|cornflower)$/.test(b.name)).map(b => b.id);
-    const nearby = bot.findBlocks({ matching: ids, maxDistance: 32, count: 48,
-      useExtraInfo: b => faces.some(f => air(bot.blockAt(b.position.plus(f)))) }).map(p => bot.blockAt(p)?.name).filter(Boolean);
+    const positions = bot.findBlocks({ matching: ids, maxDistance: 32, count: 48,
+      useExtraInfo: b => faces.some(f => air(bot.blockAt(b.position.plus(f)))) });
+    rememberResources(bot, goal, positions);
+    const nearby = positions.map(p => bot.blockAt(p)?.name).filter(Boolean);
     bot._catalogObservation = { at: Date.now(), position: { ...bot.entity.position }, nearby };
   }
   const tools = bot.inventory.items().filter(i => i.maxDurability).map(i => {
@@ -643,7 +647,7 @@ function catalogPlan(bot, item, count, stock, goal = {}) {
     try { enchantments = i.enchants.map(e => e.name); } catch (_) {}
     return { name: i.name, enchantments };
   });
-  const nearby = bot._catalogObservation.nearby;
+  const nearby = [...new Set([...bot._catalogObservation.nearby, ...knownResourceNames(bot, goal)])];
   const equipment = carriedEquipment(bot).map(item => item.name);
   const makePlan = nearby => Array.isArray(item) ? batchPlan(bot.registry, outputs, stock, { nearby, tools, equipment }).steps :
     planCatalog(bot.registry, item, count, stock, { nearby, tools, equipment });
@@ -926,8 +930,8 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
       goal.designFallbackReason = goal.designError || (mode === 'jev' ? 'Jev templates selected' : 'No OpenRouter designer key configured');
       bot.chat("I'm working out a simpler way to build it.");
     } else goal.designAttempts = (goal.designAttempts || 0) + 1;
-    try { goal.design = fallback ? await designWithJev(bot, task, goal.request, client) :
-      await designBuilding(bot, task, goal.request, { previousDraft: goal.designDraft, feedback: goal.designError }); }
+    try { goal.design = fallback ? await designWithJev(bot, task, goal.request, client, goal.memoryContext) :
+      await designBuilding(bot, task, goal.request, { previousDraft: goal.designDraft, feedback: goal.designError, memory: goal.memoryContext }); }
     catch (err) {
       if (!fallback && ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) goal.designAttempts--;
       goal.designError = err.message;
@@ -1448,6 +1452,8 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       if (goal.kind === 'find') complete = await discoverStep(bot, task, goal, save, { navigate, explore,
         boatTravel: target => boatTravelStep(bot, task, goal, save, target, { acquireStep }) });
       if (['come', 'follow'].includes(goal.kind)) complete = await movementStep(bot, task, goal, save);
+      if (goal.kind === 'visit') complete = await visitPlace(bot, task, goal, save, { navigate,
+        boatTravel: target => boatTravelStep(bot, task, goal, save, target, { acquireStep }) });
       if (prepared && goal.kind === 'concrete') {
         if ((goal.delivered || 0) >= goal.count) complete = true;
         else if (goal.pendingDelivery || await acquireStep(bot, task, 'purple_concrete', goal.count - (goal.delivered || 0), goal, save)) {

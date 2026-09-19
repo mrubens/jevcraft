@@ -23,6 +23,7 @@ function goalView(goal = {}) {
     tasks: goal.tasks?.map(({ kind, item, count, delivered, status, step }) => ({ kind, item, count, delivered, status, step })),
     activeTask: goal.activeTask, batch: goal.batch, discoveryTarget: goal.discoveryTarget, discovery: goal.discovery,
     opportunistic: goal.opportunistic, boatTravel: goal.boatTravel,
+    destination: goal.destination,
     mobHunt: goal.mobHunt,
     strongholdSearch: goal.strongholdSearch,
     endPortal: goal.endPortal,

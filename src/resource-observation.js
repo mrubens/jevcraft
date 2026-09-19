@@ -32,6 +32,12 @@ function knownResourceLocations(bot, goal, names) {
   return result.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
 }
 
+function knownResourceNames(bot, goal) {
+  const names = [...new Set(Object.values(goal?.resourceMemory || {}).map(e => e.name))];
+  return [...new Set(knownResourceLocations(bot, goal, names).map(p =>
+    goal.resourceMemory[`${bot.game?.dimension || 'overworld'}:${p.x},${p.y},${p.z}`]?.name).filter(Boolean))];
+}
+
 // Observe competing ingredients separately from abundant stone and logs.
 // Groups come from actual alternative recipes, including intermediate outputs
 // such as dyes. A small fixed list of flowers would miss new catalog recipes.
@@ -75,4 +81,4 @@ function observeRecipeAlternatives(bot, plan, goal = {}) {
   return [...nearby];
 }
 
-module.exports = { recipeSourceGroups, observeRecipeAlternatives, rememberResources, knownResourceLocations, isSurfaceResource };
+module.exports = { recipeSourceGroups, observeRecipeAlternatives, rememberResources, knownResourceLocations, knownResourceNames, isSurfaceResource };

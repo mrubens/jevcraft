@@ -18,6 +18,7 @@ const { bundleSummary } = require('./item-bundle');
 const { friendlyProblem } = require('./speech');
 const { withRequestSignal } = require('./typesafe');
 const { suspendPrevious, resumeSaved } = require('./suspended-tasks');
+const { CompanionMemory, position } = require('./memory');
 
 function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness } = {}) {
   let ended = false, spawned = false, resolveClosed;
@@ -50,10 +51,17 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   const store = new GoalStore(path.join(stateDirectory, `${identity}.json`));
   const survivalStore = new GoalStore(path.join(stateDirectory, `${identity}-survival.json`));
   const idleStore = new GoalStore(path.join(stateDirectory, `${identity}-idle.json`));
+  const memoryIdentity = process.env.MC_WORLD_ID ? `${identity}-${process.env.MC_WORLD_ID.replace(/[^a-zA-Z0-9_-]/g, '_')}` : identity;
+  const memorySeed = store.read(), needsMemoryId = memorySeed && !memorySeed.memoryId;
+  const memory = new CompanionMemory(path.join(stateDirectory, `${memoryIdentity}-memory.json`), {
+    seedGoal: memorySeed, seedResources: { ...idleStore.read()?.resourceMemory, ...memorySeed?.resourceMemory },
+  });
+  if (needsMemoryId && memorySeed.memoryId) store.save(memorySeed);
+  bot.companionMemory = memory;
   const survival = createSurvival(bot, { state: survivalStore.read() || store.read()?.survival, client });
   if (!survivalStore.read() && store.read()?.status === 'cancelled') survival.state.paused = true;
   const saveSurvival = () => { if (!ended) { survival.state.version = 1; survivalStore.save(survival.state); } };
-  const saveGoal = goal => { if (!ended) store.save(goal); };
+  const saveGoal = goal => { if (!ended) { memory.recordGoal(goal, bot); store.save(goal); } };
   const workStore = { save: goal => { saveGoal(goal); saveSurvival(); } };
   let active = null;
   let pending = Promise.resolve();
@@ -87,6 +95,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   }
 
   function launch(goal) {
+    memory.bind(goal);
+    goal.memoryContext = memory.context(goal.from);
     survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
     const task = new Task(goal.kind, goal.request);
     const session = { task, goal };
@@ -107,10 +117,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const retained = store.read();
     const goal = { ...(idleStore.read() || {}), version: 1, kind: 'survive', request: 'Stay alive and prepare supplies between player requests',
       retainedRequest: retained?.request, blueprint: retained?.blueprint, portalFrame: retained?.portalFrame, survival: survival.state };
+    memory.bind(goal);
     const task = new Task('survival', goal.request);
     const session = { task, goal, idle: true };
     active = session;
-    session.promise = runIdle(bot, task, goal, { save: g => { if (!ended) idleStore.save(g); saveSurvival(); } }, {
+    session.promise = runIdle(bot, task, goal, { save: g => { if (!ended) { idleStore.save(g); memory.flush(); } saveSurvival(); } }, {
       survival, decisionClient: client,
       onStep: g => { console.log(JSON.stringify({ idle: true, survivalAction: g.survivalAction, decision: g.decisions?.at(-1)?.path, health: bot.health, food: bot.food, position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g); },
     }).catch(err => {
@@ -181,12 +192,14 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       bot.chat(statusMessage(bot, active, store.read())); return;
     }
     const revision = generation;
+    const requestPosition = { speakerPosition: position(bot.players[from]?.entity?.position), botPosition: position(bot.entity?.position), dimension: bot.game.dimension };
     const requestClient = withRequestSignal(client, requestController.signal);
     pendingRequests++;
     pending = pending.then(async () => {
       if (revision !== generation || ended) return;
       const spec = literal ? { kind: 'operator_command' } : await interpret(requestClient, request, from, bot.username, {
         registry: bot.registry, players: Object.keys(bot.players),
+        ...requestPosition, memory: memory.context(from),
         inventory: Object.fromEntries(bot.inventory.items().map(item => [item.name, item.count])),
       });
       if (!spec || revision !== generation) return;
@@ -221,6 +234,12 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         bot.chat('Ask for items or a full set, a biome or creature to find, someone to follow, or a structure to build.');
         return;
       }
+      if (spec.kind === 'memory') {
+        bot.chat(memory.handle(spec));
+        if (active?.goal.from === from) active.goal.memoryContext = memory.context(from);
+        observation?.sample('memory', { operation: spec.memory.operation });
+        return;
+      }
       if (spec.kind === 'clarify') { bot.chat(spec.message); return; }
       if (spec.kind === 'stop') { invalidateRequests(); await stop(); bot.chat('Stopped.'); return; }
       if (spec.kind === 'resume') {
@@ -238,6 +257,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         spec.kind === 'find' ? `I will look for ${spec.discoveryTarget.name.replaceAll('_', ' ')} and tell you where I find it.` :
         spec.kind === 'house' ? `Building a small ${spec.material} house with a floor, doorway and roof.` :
         ['obtain', 'craft'].includes(spec.kind) ? `I'll get ${spec.count} ${spec.item.replaceAll('_', ' ')}${spec.deliver ? ` for ${from}` : ''}.` :
+        spec.kind === 'visit' ? `I'll head to ${spec.destination.label}.` :
         spec.kind === 'come' ? `Coming to ${spec.target}.` : spec.kind === 'follow' ? `Following ${spec.target}; say Jev stop to stop.` :
         spec.kind === 'win' ? "Let's beat the dragon! I'll gather supplies and take it one step at a time." :
         "I'll get a Nether portal working, then go through to check it.");
@@ -289,6 +309,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (active && !active.task.cancelled) stop('running').catch(console.error);
     // Fence late saves from this connection before a replacement reads state.
     ended = true;
+    memory.flush();
     resolveClosed({ reason, spawned, uptimeMs: Date.now() - connectedAt });
   }
   bot.on('end', reason => close(reason));

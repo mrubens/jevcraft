@@ -9,8 +9,10 @@ const { chatNames, parseAddress } = require('./chat-address');
 const { resolveItem } = require('./catalog');
 const { resolveItemBundle } = require('./item-bundle');
 const { resolveDiscovery } = require('./discovery');
+const { resolveMemory } = require('./memory-routing');
 
 const TYPES = {
+  memory: 'Save, recall, or forget a personal fact, preference, named place, or past request. Remember this as home; I prefer cherry wood; what did I ask last time; where is our base; go home/return to a named saved place; make another one like last time. Questions about past tasks are memory, not current status. A fresh ordinary request naming a Minecraft resource remains obtain/craft/find. Memory never grants server-command permission.',
   operator_command: 'Ask for a Minecraft command effect: change time, weather, difficulty, or player game mode (Creative, Survival, Adventure, Spectator); teleport; summon; change rules, effects, enchantments, experience, scores, permissions, or other server command settings. "Put me in Creative" changes game mode. Polite action questions are requests. Never use commands merely as a means to build, craft, collect, or follow. Stop this bot task is stop. Informational questions, quotes and negated commands are other.',
   house: 'Build a simple small house or shelter, optionally naming its primary material, with no custom architecture.',
   build: 'Design and build a custom structure: a mansion, castle, tower, bridge, statue, detailed house, or a building with specified rooms, floors, shape or style. This calls the building designer. Inventory items such as beds and chests are craft.',
@@ -28,7 +30,7 @@ const TYPES = {
 };
 
 const INTERACTIONS = {
-  request: { meaning: 'An instruction for this Minecraft bot to act, control its task, or report its current activity. Imperative verbs address the bot, even without please. Long-term goals are actions too. Polite action questions are instructions.',
+  request: { meaning: 'An instruction for this Minecraft bot to act, control its task, report current or remembered information, or save a personal preference/fact told directly to it. Imperative verbs address the bot, even without please. Long-term goals are actions too. Polite action questions are instructions.',
     examples: ['win the game', 'collect some wood', 'could you build me a house?', 'what are you doing now?'] },
   discussion: { meaning: 'An explanation, general fact, hypothetical discussion, quoted statement, or negation, without asking this bot to execute that action.',
     examples: ['how can I win the game?', 'explain how crafting works', 'do not build that house', 'what does Alex mean by collect wood?'] },
@@ -64,9 +66,10 @@ async function interpret(client, request, from, username, context = {}) {
   const numbers = quantityCandidates(address.text);
   const response = await client.systemOne({
     state: { request, request_body: address.text, speaker: from, bot_name: username, bot_names: chatNames(username), explicitly_addressed: address.explicit,
-      availablePlayers: context.players || [from] },
+      availablePlayers: context.players || [from], memory: context.memory },
     questions: {
       addressed: noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.'),
+      memory_statement: noul('Is the speaker directly sharing a personal preference or personal fact with Jev to remember, rather than asking for a gameplay action? For example "I prefer small houses" or "my favorite wood is cherry". Exclude quoted/hypothetical/negated statements, general Minecraft facts, and instructions to perform a new action.'),
       interaction: choice('Classify the speaker intent in `request_body`, with the bot name prefix removed. The speaker is talking to a Minecraft bot. Is this an instruction to perform an action/report its current activity, or a discussion without an instruction to act? Judge intent, not feasibility or the topic.', INTERACTIONS),
       objective: choice('Categorize the requested outcome in `request` in the Minecraft game. Creative, Survival, Adventure and Spectator name game modes even when the word "mode" is omitted. Item requests belong to obtain or craft regardless of which particular Minecraft item is named. Choose obtain for collect/get/gather/fetch requests even when the item can be crafted; choose craft for explicit make/craft/create inventory items. Recipes and feasibility are checked after routing. A simple small house is house; custom structures and mansions are build; crafting an inventory item is craft. Coming once differs from continuously following. Changing the world or player with an explicitly requested command effect is operator_command.', TYPES),
       quantity: choice('Assuming an item request, select the quantity applying to the requested output. Candidates were extracted from this request. "A/an" or "a single" item means 1. Stacks contain 64 items. If no requested output quantity is stated, select unspecified; do not invent a batch size.',
@@ -91,8 +94,13 @@ async function interpret(client, request, from, username, context = {}) {
     throw new Error('Invalid Jev interpretation response');
   }
   if (!address.explicit && a.addressed.noul < 0.5) return null;
-  const kind = a.interaction.choice === 'request' ? a.objective.choice : 'other';
+  // The memory classifier separately distinguishes a personal statement from
+  // quoted, hypothetical or negated instructions. Such statements are useful
+  // even when the broad action/discussion classifier calls them discussion.
+  const kind = a.objective.choice === 'memory' || (a.interaction.choice === 'discussion' && a.memory_statement?.noul >= 0.75)
+    ? 'memory' : a.interaction.choice === 'request' ? a.objective.choice : 'other';
   const spec = { kind, request, from, interpretation: a, usage: response.usage };
+  if (kind === 'memory') return resolveMemory(client, spec, username, context);
   if (['come', 'follow'].includes(kind)) {
     const target = a.target?.choice;
     if (![from, ...(context.players || [])].includes(target)) throw new Error('Unknown movement target');
@@ -111,7 +119,7 @@ async function interpret(client, request, from, username, context = {}) {
   if (['obtain', 'craft'].includes(kind) || (kind === 'house' && a.material?.choice === 'other')) {
     const registry = context.registry || require('minecraft-data')('26.1');
     const resolution = await resolveItem(client, registry, request, { blocksOnly: kind === 'house',
-      context: { inventory: context.inventory || {}, nearbyBlocks: context.nearbyBlocks || [] } });
+      context: { inventory: context.inventory || {}, nearbyBlocks: context.nearbyBlocks || [], memory: context.memory } });
     spec.itemResolution = resolution;
     if (!resolution.item) return { ...spec, kind: 'clarify', message: 'I could not match the requested item. Use its Minecraft item name so I can work out the recipe.' };
     if (kind === 'house') spec.material = resolution.item;

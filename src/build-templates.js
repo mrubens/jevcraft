@@ -35,13 +35,13 @@ function templateSchematic({ style, floors, size, material }) {
     size: [width, height, depth], palette: [...new Set([material, 'glass'])], regions, entrance: [middle, 1, 0] };
 }
 
-async function designWithJev(bot, task, request, client) {
+async function designWithJev(bot, task, request, client, memory) {
   const controller = new AbortController();
   const watcher = setInterval(() => { try { task.check(); checkAir(bot); } catch (e) { controller.abort(e); } }, 100);
   const cancellable = { systemOne: args => { task.check(); return client.systemOne({ ...args, signal: controller.signal }); } };
   try {
     const world = surveyForDesign(bot);
-    const response = await cancellable.systemOne({ state: { request, world, templates: 'Rectangular cottage, mansion or tower, one to three floors, glass windows, stepped roof, open entrance and interior full-block stairs. No custom shapes, bridges or statues.' }, questions: {
+    const response = await cancellable.systemOne({ state: { request, world, memory, templates: 'Rectangular cottage, mansion or tower, one to three floors, glass windows, stepped roof, open entrance and interior full-block stairs. No custom shapes, bridges or statues.' }, questions: {
       style: choice('Choose the closest supported structure that can fulfill this request. Select unsupported if the requested shape or essential feature cannot be represented by these templates.', {
         cottage: 'Small rectangular house/cottage, optionally multiple floors.', mansion: 'Large rectangular mansion with windows, wide entrance and multiple floors.', tower: 'Tall square tower with interior stairs.', unsupported: 'Requires another structure or custom geometry, such as bridge, castle battlements, statue, circular dome, complex wings or unsupported essential details.',
       }),
@@ -57,7 +57,7 @@ async function designWithJev(bot, task, request, client) {
     if (answers.material?.choice === 'specified') {
       const supported = new Set(buildPalette(bot.registry));
       const catalog = { ...bot.registry, itemsArray: bot.registry.itemsArray.filter(i => supported.has(i.name)) };
-      resolution = await resolveItem(cancellable, catalog, request, { blocksOnly: true, context: { purpose: 'Primary structural material for a building. A wood species means that species of planks.' } });
+      resolution = await resolveItem(cancellable, catalog, request, { blocksOnly: true, context: { purpose: 'Primary structural material for a building. A wood species means that species of planks.', memory } });
       if (!resolution.item) { const err = new Error('The requested material is not supported by the template builder'); err.name = 'Blocked'; throw err; }
       material = resolution.item;
     } else if (answers.material?.choice !== 'default') throw new Error('Invalid Jev building material judgment');

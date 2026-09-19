@@ -14,6 +14,7 @@ JevBot uses [Mineflayer](https://github.com/PrismarineJS/mineflayer) to play and
 - **Combine requests.** Plan shared materials for multiple outputs, batch compatible gathering and crafting steps, and track each delivery. Full diamond armor means all four pieces.
 - **Build from descriptions.** Turn a request and nearby world observations into a saved schematic, gather its materials, prepare suitable ground, and place the blocks. Without a generative model, Jev can use configurable building templates.
 - **Explore with you.** Come, follow, find observed blocks and creatures, search for biomes, swim, and use boats for suitable surveyed crossings.
+- **Remember your world.** Save named places and personal notes, recall past tasks, and return to remembered locations after reconnecting.
 - **Handle survival needs.** Seek food and shelter, cook and eat, prepare tools, respond to hazards, and attempt recovery without forgetting the player’s request.
 - **Show its work.** Inspect terrain, inventory, activity, and decisions in a local 3D Observatory. Stop and resume tasks from chat or the live viewer.
 
@@ -97,6 +98,42 @@ Start a request with **“Jev …”** or the bot’s configured username. These
 A new request replaces the active task. Put related item requests in one message to have them planned together. Combined requests support up to 16 different item types, with shared recipe dependencies, reserved outputs, and saved delivery progress.
 
 Running tasks resume after reconnects and process restarts. Stopped or blocked tasks wait for `resume`. State is stored in `.bot-state/`, separately for each server and bot identity.
+
+## Memory
+
+Jev keeps a local notebook across reconnects and restarts. Try:
+
+```text
+Jev remember this as home
+Jev go home
+Jev where is home?
+Jev remember I prefer cherry planks
+Jev get me two of my favorite planks
+Jev what did I ask you to do last time?
+Jev make another one like last time
+Jev forget home
+```
+
+“Here” means the speaking player's observed position, not Jev's. Named places
+include their dimension; Jev walks there through ordinary gameplay and reports
+when a place is in another dimension. Remembering or recalling something does not
+replace the active task. “Again” starts a fresh copy of a remembered gathering,
+crafting, building, discovery, or saved-place request; `resume` continues saved
+progress. Memory never replays operator commands.
+
+Each player's notes and places are separate. Explicit current instructions take
+priority over remembered preferences. Item interpretation and building design can
+use those preferences. Completed discoveries and builds also save useful places,
+and recent resource observations are shared between tasks, with fresh block checks
+and expiry. Remembered locations are last-known observations, not a guarantee that
+blocks, creatures, or structures are still there. Chest inventories are not tracked.
+
+The notebook keeps up to 32 notes, 32 places, and 24 task summaries per player
+(with server-wide bounds). `Jev what do you remember?` gives a short summary;
+`Jev forget everything you remember about me` clears that player's notebook.
+Notebook files live in `.bot-state/*-memory.json` and are excluded from Git.
+Set `MC_WORLD_ID` to give a replacement world at the same server address a fresh
+memory namespace. This setting does not reset saved gameplay tasks.
 
 ## Building
 
