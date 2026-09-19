@@ -1,10 +1,10 @@
 # JevBot
 
-A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat, resolve items through a dynamic catalog hierarchy, and choose ongoing actions. Ordinary code executes and verifies survival tasks. No OpenRouter token is required.
+A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat, resolve items through a dynamic catalog hierarchy, and choose ongoing actions. Ordinary code executes and verifies survival tasks. Jev can connect through TypeSafe or OpenRouter. An optional OpenRouter design model generates custom building schematics.
 
-The broader target is a survival companion that can obtain food and shelter, maintain tools, avoid hazards, and follow player requests on Normal difficulty. See `GOAL.md` for the acceptance criteria. House construction has passed on Normal difficulty; extended autonomous survival is not yet demonstrated.
+The broader target is a survival companion that can obtain food and shelter, maintain tools, avoid hazards, and follow player requests on Normal difficulty. See `GOAL.md` for the acceptance criteria. House construction and two full day/night cycles have passed on Normal difficulty; the complete survival acceptance remains unfinished.
 
-Available requests include `Jev come here`, `Jev follow me`, `Jev craft a chest`, `Jev make eight birch stairs`, and `Jev get me a pumpkin`. Item routing covers the full Minecraft 26.1 catalog. Acquisition expands the selected item's crafting, smelting, tool, and block-drop dependencies; catalog recognition does not mean every item is obtainable yet. Shears are planned for grass plants; intact grass blocks require an existing Silk Touch tool. Enchanting, farming, trading, and arbitrary structure design are not implemented.
+Available requests include `Jev come here`, `Jev follow me`, `Jev craft a chest`, `Jev make eight birch stairs`, `Jev get me a pumpkin`, and `Jev build a mansion out of cherry`. Item routing covers the full Minecraft 26.1 catalog. Acquisition expands the selected item's crafting, smelting, tool, and block-drop dependencies; catalog recognition does not mean every item is obtainable yet. Shears are planned for grass plants; intact grass blocks require an existing Silk Touch tool. Enchanting, farming and trading are not implemented.
 
 The original development targets remain:
 
@@ -20,7 +20,7 @@ Open **Minecraft Java Edition 26.1**, choose **Multiplayer → Direct Connection
 
 | Address | World |
 | --- | --- |
-| `localhost:25570` | Player world: natural terrain, Creative mode with Peaceful difficulty, with interactive **Jev** |
+| `localhost:25570` | Player world: fresh natural terrain, Survival mode with Peaceful difficulty, with interactive **Jev** |
 | `localhost:25567` | Flat survival test world with prepared resources; used for current mechanics trials |
 | `localhost:25566` | Natural survival world, seed 12345; the completed house is at X 83, Y 136, Z −32 |
 | `localhost:25565` | Original development server |
@@ -46,7 +46,7 @@ The test servers bind to localhost, so these addresses work on this computer. Wo
 ```sh
 npm install
 cp .env.example .env
-# Set TYPESAFE_API_KEY and Minecraft connection settings in .env.
+# Set TYPESAFE_API_KEY or OPENROUTER_API_KEY, plus Minecraft connection settings.
 npm start
 ```
 
@@ -59,6 +59,20 @@ After death, Jev respawns through a fresh connection and replans from actual inv
 State is stored under `.bot-state/`, separately for each server and bot identity. House coordinates are fixed once selected. Completion comes from world/inventory checks, never solely from a model's opinion.
 
 In Creative mode, Jev takes requested items and building materials directly from the Creative inventory, preserves existing inventory slots, and confirms server inventory updates. Item delivery still checks actual recipient pickup. This path is gated by the bot's server-reported Creative mode and is unavailable in Survival. Normal walking/following is supported; following a player through the air is not implemented.
+
+## Building designer
+
+Describe a structure in chat, for example `Jev build a compact cherry mansion with two floors and big windows`. Jev routes the request to the building tool. A simple `Jev build a house` keeps the existing 5×5 shelter workflow; `make two beds` remains an inventory recipe request.
+
+With `OPENROUTER_API_KEY` set, the designer uses `anthropic/claude-fable-5.1` by default (`OPENROUTER_BUILD_MODEL` overrides it). It receives the request, nearby ground survey, game mode, dimension, inventory, supported block palette and construction limits. It returns cuboid regions describing a schematic. Code checks dimensions, palette, grounded connectivity, entrance, stair headroom and interior floor access before selecting a site. An invalid draft gets one repair attempt with the validation error.
+
+OpenRouter is optional. In the default `BUILD_DESIGNER=auto` mode, a missing key or two failed designer attempts selects a Jev template fallback. Jev chooses a cottage, mansion or tower, one to three floors, size and a material through the actual block catalog. Code assembles a stepped roof, windows, entrance and accessible stairs. The bot announces this fallback and reports a blocker for unsupported shapes instead of silently substituting a different structure. Set `BUILD_DESIGNER=jev` to always use templates, or `openrouter` to require a generated design.
+
+Designs, material lists, site coordinates and progress are saved with the goal. Resume reuses the saved schematic and checks actual blocks; it does not generate a new design. Jev chooses gathering, clearing and placement work. Survival obtains materials through the existing dependencies; Creative uses the Creative inventory. Building never autonomously invokes `/fill`, `/give` or another operator command. An unexpected block added to the surveyed work area stops construction for inspection.
+
+Current generated-design limits are 25×16×25, 256 regions, 16 palette entries and 6,000 solid blocks. The supported palette contains full cubes; oriented stairs/doors, fluids, gravity blocks and redstone behavior are outside this executor. It requires a loaded, dry site with a supported entrance and at most three blocks of ground variation. Large builds and rare Survival materials can still encounter movement or acquisition blockers. Custom designs do not yet become remembered survival shelters. A controlled Creative trial completed an 865-block Fable-designed cherry mansion; a fresh connection verified every block/opening and walked both floors without digging or scaffolding. This is construction evidence, not proof of gathering a mansion’s materials in Survival.
+
+Jev remains a decision model through either provider. `JEV_PROVIDER=openrouter` uses the OpenRouter Decisions API with `typesafe/jev-1.13`; this is separate from the generative designer. If no provider is specified, an existing TypeSafe key takes precedence, otherwise the OpenRouter key is used for Jev.
 
 ## Requested operator commands
 
@@ -88,9 +102,9 @@ House building uses nested Jev choices through `src/decisions.js`: current prior
 
 `src/survival.js` preserves the player request while preparing shelter or food. Jev chooses between work, shelter, and observed food targets; at night, ordinary outdoor work waits for shelter. Code handles immediate air, eating, and threat interruptions; an exposed hostile interrupts mining/navigation and triggers a bounded escape. Ordinary route planning, ore selection and staircase excavation keep distance from observed hostiles, while allowing retreat if a mob has already approached. Route feasibility checks continue partial searches within their deadline rather than treating the first time slice as failure. Completed houses become remembered refuges: Jev can temporarily seal their two-block doorway and reopen it on exit. Small emergency shelters remain available when no home is nearby. Both paths verify the enclosure and exit. Shelter material counts are checked again after navigation, which can spend scaffolding or alter natural walls.
 
-Between requests the same controller maintains a food reserve and seeks shelter on hostile difficulties. On Peaceful it waits nearby unless a real survival need arises. Food collection hunts observed cows, pigs, sheep, or chickens, remembers failed targets, and verifies actual ingredient pickup. Raw chicken never counts as edible reserve. Cooking choices come from the server's smelting catalog and carried ingredients; the existing dependency planner obtains missing tools, furnace materials, and fuel. Jev selects among cooking and observed hunting targets. Surface food routes inspect loaded columns, permit natural tree canopies, exclude underground destinations and paths, and disable digging/scaffolding during search and pursuit.
+Between requests the same controller maintains a food reserve and seeks shelter on hostile difficulties. On Peaceful it waits nearby unless a real survival need arises. Food collection hunts observed cows, pigs, sheep, or chickens, remembers failed targets, and verifies actual ingredient pickup. Raw chicken never counts as edible reserve. Cooking choices come from the server's smelting catalog and carried ingredients; the existing dependency planner obtains missing tools, furnace materials, and fuel. Jev selects among cooking and observed hunting targets. Surface food routes inspect loaded columns, permit natural tree canopies, exclude underground destinations and paths, and prohibit cave excavation during search and pursuit while permitting carried scaffolding.
 
-A controlled Normal test started empty, hunted chickens, gathered wood/stone, crafted a pickaxe and furnace, cooked the chicken, and ate one to restore hunger from 16 to 20 at full health. Its prepared terrain and externally induced hunger make it mechanics evidence. A separate uninterrupted natural Normal trial has now built its house, hunted/cooked food and survived two full cycles by returning to shelter both nights. Natural eating and tool replacement, broader farming, and reliable hostile-cave travel still need validation. Nether task sequencing and the legacy concrete checkpoint path remain deterministic; new item requests use the catalog planner.
+A controlled Normal test started empty, hunted chickens, gathered wood/stone, crafted a pickaxe and furnace, cooked the chicken, and ate one to restore hunger from 16 to 20 at full health. Its prepared terrain and externally induced hunger make it mechanics evidence. A separate uninterrupted natural Normal trial has now built its house, hunted/cooked food and survived two full cycles by returning to shelter both nights. Natural eating/healing has since been observed in a resumed Normal diagnostic; natural tool replacement, broader farming, and reliable hostile-cave travel still need validation. Nether task sequencing and the legacy concrete checkpoint path remain deterministic; new item requests use the catalog planner.
 
 New work requires an explicit “Jev …” or login-name prefix. This prevents other bots' acknowledgements from becoming commands. Short stop, cancel, status, and resume controls also work without a prefix.
 
@@ -110,6 +124,9 @@ npm run plan
 node scripts/eval-intents.js
 node scripts/eval-decisions.js
 node scripts/eval-survival.js
+JEV_PROVIDER=openrouter node scripts/eval-intents.js
+MC_PORT=25567 node scripts/designer-test.js
+# Add DESIGN_BUILD=1 for the controlled Creative fixture; perform its printed setup first.
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/commands-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/creative-house-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/movement-test.js

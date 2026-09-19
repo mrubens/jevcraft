@@ -12,7 +12,7 @@ Retain the concrete acceptance requests: “build a house,” “get me 32 purpl
 
 Accept natural-language commands in Minecraft chat addressed as “Jev …”, regardless of its login username, including immediate stop, status, and resume controls.
 
-Use Jev as the only runtime model initially. Ordinary code owns Minecraft rules and actions. Document demonstrated limitations before considering OpenRouter.
+The initial survival controller uses Jev for runtime decisions; ordinary code owns Minecraft rules and actions. The user has now authorized an optional OpenRouter building-design tool using `anthropic/claude-fable-5.1`. It takes the requested structure and observed world state and returns a validated, persistent schematic for Jev to execute. Without that service, Jev selects and configures supported building templates. Jev decisions may connect through TypeSafe or OpenRouter. This design extension does not relax the original natural-survival acceptance criteria below.
 
 Commit and push tested milestones regularly to the private repository, with accurate progress notes and remaining limitations.
 

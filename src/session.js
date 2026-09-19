@@ -166,7 +166,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         return;
       }
       if (spec.kind === 'other') {
-        bot.chat('Tell me what item to obtain or craft, who to follow or come to, or what house material to use. I will check the dependencies.');
+        bot.chat('Tell me what item to obtain or craft, who to follow or come to, or describe a structure to build. I will check the dependencies.');
         return;
       }
       if (spec.kind === 'clarify') { bot.chat(spec.message); return; }
@@ -180,6 +180,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
           survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
           bot.chat('Resuming survival between requests.'); return;
         }
+        if (saved.kind === 'build' && !saved.design) saved.designAttempts = 0;
         launch(saved); return;
       }
       await stop('replaced');
@@ -188,7 +189,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         requesterPosition: bot.players[from]?.entity ? { ...bot.players[from].entity.position } : null,
         initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);
-      bot.chat(spec.kind === 'house' ? `Building a small ${spec.material} house with a floor, doorway and roof.` :
+      bot.chat(spec.kind === 'build' ? 'I will survey the area, ask the building designer for a schematic, then gather materials and build it.' :
+        spec.kind === 'house' ? `Building a small ${spec.material} house with a floor, doorway and roof.` :
         ['obtain', 'craft'].includes(spec.kind) ? `${bot.game.gameMode === 'creative' ? 'Taking from Creative inventory' : 'Working out the dependencies for'} ${spec.count} ${spec.item.replaceAll('_', ' ')}${spec.deliver ? ` for ${from}` : ''}.` :
         spec.kind === 'come' ? `Coming to ${spec.target}.` : spec.kind === 'follow' ? `Following ${spec.target}; say Jev stop to stop.` :
         'I will establish a portal route and enter the Nether to verify it.');

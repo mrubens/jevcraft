@@ -27,13 +27,19 @@ const noul = (instructions, criteria = null) => ({ type: 'noul', instructions, c
 const score = (instructions, criteria) => ({ type: 'score', instructions, criteria });
 
 class TypeSafe {
-  constructor({ apiKey = process.env.TYPESAFE_API_KEY, model = MODEL, timeout = 10000, maxRetries = 2 } = {}) {
+  constructor({ provider = process.env.JEV_PROVIDER || (process.env.TYPESAFE_API_KEY ? 'typesafe' : process.env.OPENROUTER_API_KEY ? 'openrouter' : 'typesafe'),
+    apiKey, model, timeout = 10000, maxRetries = 2 } = {}) {
+    if (!['typesafe', 'openrouter'].includes(provider)) throw new TypeSafeError('JEV_PROVIDER must be typesafe or openrouter');
+    apiKey ??= provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : process.env.TYPESAFE_API_KEY;
+    model ??= provider === 'openrouter' ? process.env.OPENROUTER_JEV_MODEL || 'typesafe/jev-1.13' : MODEL;
     if (!apiKey) {
       throw new TypeSafeError(
-        'No TypeSafe API key. Set TYPESAFE_API_KEY in the environment or in bot/.env',
+        `No ${provider} API key. Set ${provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'TYPESAFE_API_KEY'} in the environment or in bot/.env`,
       );
     }
     this.apiKey = apiKey;
+    this.provider = provider;
+    this.endpoint = provider === 'openrouter' ? 'https://openrouter.ai/api/alpha/decisions' : `${BASE_URL}/v1/systemone`;
     this.model = model;
     this.timeout = timeout;
     this.maxRetries = maxRetries;
@@ -42,7 +48,14 @@ class TypeSafe {
   // Ask a batch of questions about one state. Every question is answered
   // independently server-side. Measure latency and token use for each workload.
   async systemOne({ state, questions, model = this.model, signal }) {
-    const body = JSON.stringify({ state, questions, model });
+    // OpenRouter accepts omitted optional criteria, but rejects explicit null
+    // for Noul questions. Preserve the caller's native questions unchanged.
+    const wireQuestions = this.provider === 'openrouter' ? Object.fromEntries(Object.entries(questions).map(([id, question]) => {
+      if (question.criteria !== null) return [id, question];
+      const { criteria: _criteria, ...rest } = question;
+      return [id, rest];
+    })) : questions;
+    const body = JSON.stringify({ state, questions: wireQuestions, model });
     let lastErr;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
@@ -55,7 +68,7 @@ class TypeSafe {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeout);
       try {
-        const res = await fetch(`${BASE_URL}/v1/systemone`, {
+        const res = await fetch(this.endpoint, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${this.apiKey}`,

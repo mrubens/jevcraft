@@ -18,6 +18,8 @@ const { takeCreativeItem } = require('./creative');
 const { surfaceObserver, surfaceMovement, returnToSurface } = require('./surface');
 const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives } = require('./resource-observation');
+const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('./designer');
+const { designWithJev } = require('./build-templates');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -80,6 +82,9 @@ async function dig(bot, task, p, { done, requiredTool, enchantment } = {}) {
   }
   task.check();
   if (done?.()) return;
+  // A route to a ground block may end on top of it. Recheck after travel as
+  // well as before it; move aside before replacing a foundation cell.
+  if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) await stepOff(bot, task, p);
   block = bot.blockAt(p);
   if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) throw new Error('Refusing to dig directly beneath feet');
   if (requiredTool || enchantment) {
@@ -654,6 +659,135 @@ async function decideAction(bot, task, goal, save, client, onStep, tree, context
   return true;
 }
 
+async function designedBuildStep(bot, task, goal, save, client, onStep) {
+  // Mineflayer emits this only for placements performed by this bot, including
+  // pathfinder scaffolding. Persist ownership so resume can clear that access.
+  const placed = (_old, block) => {
+    if (!goal.blueprint) return;
+    const p = block.position;
+    goal.buildOwned ||= {};
+    goal.buildOwned[`${p.x},${p.y},${p.z}`] = block.stateId ?? block.name;
+    save();
+  };
+  bot.on('blockPlaced', placed);
+  try { return await executeDesignedBuildStep(bot, task, goal, save, client, onStep); }
+  finally { bot.removeListener('blockPlaced', placed); }
+}
+
+async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = () => {}) {
+  if (!goal.design) {
+    const mode = process.env.BUILD_DESIGNER || 'auto';
+    if (!['auto', 'jev', 'openrouter'].includes(mode)) throw new Blocked('BUILD_DESIGNER must be auto, jev or openrouter');
+    const fallback = mode === 'jev' || mode === 'auto' && (!process.env.OPENROUTER_API_KEY || (goal.designAttempts || 0) >= 2);
+    if (!fallback && (goal.designAttempts || 0) >= 2) throw new Blocked(`Building designer could not produce a usable schematic after two attempts: ${goal.designError || 'request failed'}`);
+    goal.step = { action: 'design_building' }; save(); onStep(goal);
+    if (fallback) {
+      if (!client) throw new Blocked('The building fallback needs a configured Jev connection');
+      goal.designFallbackReason = goal.designError || (mode === 'jev' ? 'Jev templates selected' : 'No OpenRouter designer key configured');
+      bot.chat('Using Jev building templates: cottages, mansions and towers with up to three floors. Custom shapes need the design model.');
+    } else goal.designAttempts = (goal.designAttempts || 0) + 1;
+    try { goal.design = fallback ? await designWithJev(bot, task, goal.request, client) :
+      await designBuilding(bot, task, goal.request, { previousDraft: goal.designDraft, feedback: goal.designError }); }
+    catch (err) {
+      if (!fallback && ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) goal.designAttempts--;
+      goal.designError = err.message;
+      if (err.draft) goal.designDraft = err.draft;
+      save(); throw err;
+    }
+    delete goal.designDraft; delete goal.designError;
+    save();
+    bot.chat(`Design ready: ${goal.design.source.name}, ${goal.design.blocks.length} blocks. I will find a supported site and build it.`);
+    return false;
+  }
+  const schematic = validateSchematic(goal.design.source, bot.registry);
+  if (!goal.blueprint) {
+    goal.blueprint = selectSchematicSite(bot, schematic);
+    if (!goal.blueprint) {
+      goal.step = { action: 'find_build_site', dimensions: schematic.source.size }; save();
+      await explore(bot, task, goal, save, 'supported building site', { surfaceOnly: true });
+      return false;
+    }
+    save();
+    bot.chat(`Building ${goal.design.source.name} near ${pos(goal.blueprint.origin)}.`);
+  }
+  const blueprint = goal.blueprint;
+  if (!bot.blockAt(pos(blueprint.origin))) {
+    const p = pos(blueprint.entrance);
+    await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2)); return false;
+  }
+  if (verifyHouse(bot, blueprint).ok && !schematicScaffolding(bot, goal).length) return true;
+  const missing = blueprint.blocks.filter(p => bot.blockAt(pos(p))?.name !== p.material);
+  const obstructions = [...new Map([...blueprint.empty.filter(p => !air(bot.blockAt(pos(p)))), ...schematicScaffolding(bot, goal)]
+    .map(p => [`${p.x},${p.y},${p.z}`, p])).values()];
+  const changed = [...missing, ...obstructions].find(p => {
+    const block = bot.blockAt(pos(p));
+    return block && !canClearSchematicBlock(blueprint, goal.buildOwned, block);
+  });
+  if (changed) throw new Blocked(`The building site changed at ${pos(changed)}; preserving the unexpected ${bot.blockAt(pos(changed)).name}. Clear it or request a new build`);
+  const needed = missing.reduce((m, p) => { m[p.material] = (m[p.material] || 0) + 1; return m; }, {});
+  const tree = {};
+  for (const [material, amount] of Object.entries(needed)) {
+    const batch = Math.min(amount, 64);
+    if (countOf(bot, material) > 0) continue;
+    tree[`gather_${material}`] = { description: `Gather ${batch} ${material} for the saved schematic; ${amount} remain.`, children: {
+      acquire: { description: 'Execute the next actual crafting/mining dependency or use Creative inventory when in Creative.',
+        run: () => acquireStep(bot, task, material, batch, goal, save) },
+    } };
+  }
+  if (blueprint.bounds.max.y - bot.entity.position.y > 3 && countOf(bot, 'dirt') < 16) {
+    tree.prepare_scaffolding = { description: 'Carry ordinary dirt scaffolding to reach higher parts of the design safely.', children: {
+      gather: { description: 'Obtain 32 dirt for temporary construction access.', run: () => acquireStep(bot, task, 'dirt', 32, goal, save) },
+    } };
+  }
+  const layer = Math.min(...missing.map(p => p.y));
+  const placements = {};
+  const placementCost = p => pos(p).distanceTo(bot.entity.position) +
+    (goal.decisionFailures?.[`place_${p.x}_${p.y}_${p.z}`]?.at > Date.now() - 120000 ? 10000 : 0);
+  for (const p of missing.filter(p => p.y === layer).sort((a, b) => placementCost(a) - placementCost(b))) {
+    if (Object.keys(placements).length >= 4) break;
+    if (!countOf(bot, p.material)) continue;
+    const block = bot.blockAt(pos(p));
+    if (!block || (!air(block) && !block.diggable)) continue;
+    if (air(block) && !faces.some(f => bot.blockAt(pos(p).plus(f))?.boundingBox === 'block')) continue;
+    const key = `place_${p.x}_${p.y}_${p.z}`;
+    placements[key] = { description: `Place the schematic's ${p.material} at ${pos(p)}, finishing the lowest layer first.`,
+      run: async () => {
+        goal.step = { action: 'build_schematic', position: { x: p.x, y: p.y, z: p.z }, material: p.material, remainingBlocks: missing.length }; save();
+        if (!canClearSchematicBlock(blueprint, goal.buildOwned, bot.blockAt(pos(p)))) throw new Blocked(`Building site changed at ${pos(p)}`);
+        if (!air(bot.blockAt(pos(p)))) await dig(bot, task, pos(p));
+        await place(bot, task, pos(p), p.material);
+      } };
+  }
+  if (Object.keys(placements).length) tree.place_blocks = { description: 'Place carried materials according to the saved design.', children: placements };
+  const clearing = {};
+  const clearCandidates = obstructions.filter(p => {
+    const block = bot.blockAt(pos(p));
+    return !missing.length || block?.name !== 'dirt' || goal.buildOwned?.[`${p.x},${p.y},${p.z}`] !== (block.stateId ?? block.name);
+  }).sort((a, b) => b.y - a.y || pos(a).distanceTo(bot.entity.position) - pos(b).distanceTo(bot.entity.position));
+  for (const p of clearCandidates.slice(0, 4)) {
+    const block = bot.blockAt(pos(p));
+    if (!block?.diggable) continue;
+    clearing[`clear_${p.x}_${p.y}_${p.z}`] = { description: `Clear ${block.name} from the designed interior/opening at ${pos(p)}.`,
+      run: async () => {
+        if (!canClearSchematicBlock(blueprint, goal.buildOwned, bot.blockAt(pos(p)))) throw new Blocked(`Building site changed at ${pos(p)}`);
+        goal.step = { action: 'clear_schematic', position: p }; save();
+        if (!bot.canDigBlock(bot.blockAt(pos(p)))) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3));
+        if (!canClearSchematicBlock(blueprint, goal.buildOwned, bot.blockAt(pos(p)))) throw new Blocked(`Building site changed at ${pos(p)}`);
+        await dig(bot, task, pos(p));
+        delete goal.buildOwned?.[`${p.x},${p.y},${p.z}`];
+        delete blueprint.initialBlocks?.[`${p.x},${p.y},${p.z}`];
+        save();
+      } };
+  }
+  if (Object.keys(clearing).length) tree.clear_space = { description: 'Keep the designed rooms, windows and entrance clear.', children: clearing };
+  if (!Object.keys(tree).length) throw new Blocked('No reachable schematic construction action remains; progress and the design are saved');
+  if (client) await decideAction(bot, task, goal, save, client, onStep, {
+    build_design: { description: `Execute the saved ${goal.design.source.name} schematic.`, children: tree },
+  }, { building: { name: goal.design.source.name, description: goal.design.source.description, remainingMaterials: needed, missingBlocks: missing.length } });
+  else await Object.values(Object.values(tree)[0].children)[0].run();
+  return verifyHouse(bot, blueprint).ok && !schematicScaffolding(bot, goal).length;
+}
+
 async function obtainStep(bot, task, goal, save, client, onStep) {
   if ((goal.delivered || 0) >= goal.count) return true;
   const remaining = goal.count - (goal.delivered || 0);
@@ -825,7 +959,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
   goal.survival = survival.state;
   protectConstruction(bot, goal);
   goal.status = 'running'; goal.failures = 0; goal.stalls = 0; save();
-  for (let n = 0; n < (goal.kind === 'follow' ? Infinity : maxSteps); n++) {
+  for (let n = 0; n < (goal.kind === 'follow' ? Infinity : goal.kind === 'build' ? Math.max(maxSteps, 30000) : maxSteps); n++) {
     task.interruptCheck = undefined;
     task.check();
     updateDigCapabilities(bot);
@@ -848,6 +982,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
         (goal.kind === 'nether' && !String(bot.game.dimension).includes('nether') && !find(bot, ['nether_portal'], 64, 1).length && !goal.portalFrame));
       const prepared = !needsSupplies || await prepareExpeditionStep(bot, task, goal, save);
       if (prepared && goal.kind === 'house') complete = decisionClient ? await houseDecisionStep(bot, task, goal, save, decisionClient, onStep) : await buildHouseStep(bot, task, goal, save);
+      if (goal.kind === 'build') complete = await designedBuildStep(bot, task, goal, save, decisionClient, onStep);
       if (['obtain', 'craft'].includes(goal.kind)) complete = await obtainStep(bot, task, goal, save, decisionClient, onStep);
       if (['come', 'follow'].includes(goal.kind)) complete = await movementStep(bot, task, goal, save);
       if (prepared && goal.kind === 'concrete') {
@@ -869,6 +1004,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
         goal.status = 'complete'; goal.completedAt = new Date().toISOString(); save();
         bot.chat(['obtain', 'craft'].includes(goal.kind) ? (goal.deliver ? `Delivered ${goal.count} ${goal.item.replaceAll('_', ' ')} to ${goal.from}; pickup confirmed.` : `Obtained ${goal.count} ${goal.item.replaceAll('_', ' ')}; inventory verified.`) :
           goal.kind === 'come' ? `Here with ${goal.target || goal.from}.` : goal.kind === 'concrete' ? `Delivered ${goal.count} purple concrete to ${goal.from}; pickup confirmed.` :
+          goal.kind === 'build' ? `${goal.design.source.name} finished at ${pos(goal.blueprint.origin)}; all schematic blocks and openings verified.` :
           goal.kind === 'house' ? `House verified at ${pos(goal.blueprint.origin)}: floor, walls, roof and clear doorway.` : 'Nether route verified: I entered the Nether.');
         return { ok: true, goal };
       }
@@ -907,4 +1043,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked };
+module.exports = { runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep };

@@ -4,6 +4,25 @@ const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
 const { stairOptions, tunnelStep } = require('../src/tunneling');
 const { Task } = require('../src/skills');
+const { dig } = require('../src/work');
+
+test('approaching a foundation moves off its top before digging', async () => {
+  const target = new Vec3(10, 63, 10);
+  let removed = false, routes = 0;
+  const bot = { game: { gameMode: 'creative' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true },
+    inventory: { items: () => [] },
+    blockAt: p => ({ position: p, type: p.y === 63 && !(removed && p.equals(target)) ? 1 : 0,
+      name: p.y === 63 && !(removed && p.equals(target)) ? 'grass_block' : 'air', boundingBox: p.y === 63 ? 'block' : 'empty', diggable: true, digTime: () => 100 }),
+    canDigBlock: b => b.position.distanceTo(bot.entity.position) < 5,
+    pathfinder: { setGoal: () => {}, goto: async goal => {
+      routes++;
+      bot.entity.position = routes === 1 ? target.offset(0.5, 1, 0.5) : new Vec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+    } },
+    dig: async () => { assert(!target.equals(bot.entity.position.floored().offset(0, -1, 0))); removed = true; },
+  };
+  await dig(bot, new Task('foundation'), target);
+  assert(removed); assert.equal(routes, 2);
+});
 
 function world() {
   const blocks = new Map();
