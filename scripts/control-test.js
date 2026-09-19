@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const mineflayer = require('mineflayer');
+const { compatibilityPlugin } = require('../src/compatibility');
 require('../src/env').loadEnv();
 const id = Date.now().toString(36);
 const username = `Ctrl${id}`;
@@ -36,10 +37,20 @@ async function killBot() {
   child.kill('SIGTERM'); await exited;
 }
 const observer = mineflayer.createBot({ host, port, version, username: `Check${id}`, auth: 'offline' });
+observer.loadPlugin(compatibilityPlugin);
+const replies = [];
+observer.on('chat', (from, message) => {
+  if (from === username) { replies.push(message); log({ botChat: message }); }
+});
 observer.on('error', err => log({ observerError: err.message }));
 observer.once('spawn', async () => {
   try {
     await observer.waitForChunksToLoad();
+    if (process.env.CONTROL_DIFFICULTY && observer.game.difficulty !== process.env.CONTROL_DIFFICULTY) {
+      throw new Error(`Expected ${process.env.CONTROL_DIFFICULTY}, got ${observer.game.difficulty}`);
+    }
+    log({ scenario: process.env.CONTROL_SCENARIO || 'live control test', server: `${host}:${port}`,
+      difficulty: observer.game.difficulty, gameMode: observer.game.gameMode });
     startBot();
     await until(() => observer.players[username]?.entity, 'bot spawn');
     await sleep(1000);
@@ -60,6 +71,12 @@ observer.once('spawn', async () => {
     await until(() => state()?.history?.some(h => (h.inventory.oak_log || 0) > 0), 'real survival gathering');
     let blueprint = state().blueprint;
     const createdAt = state().createdAt;
+    if (state().initialInventory?.length) throw new Error('Control trial did not start with empty inventory');
+    const beforeStatus = replies.length;
+    observer.chat(`${address} status`);
+    const statusReply = await until(() => replies.slice(beforeStatus).find(message => message.startsWith('running:')), 'live status reply', 10000);
+    if (state().createdAt !== createdAt || state().status !== 'running') throw new Error('Status changed the active task');
+    log({ check: 'status reports the retained running request without replacing it', pass: true, statusReply });
     observer.chat(`${address} stop`);
     await until(() => state()?.status === 'cancelled', 'stop checkpoint');
     await sleep(1500);

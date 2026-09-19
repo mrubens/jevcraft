@@ -54,7 +54,7 @@ bot.once('spawn', async () => {
     } catch (err) { if (err.name !== 'Cancelled' || !goal.expeditionReady) throw err; }
     const actual = inventory(bot);
     assert(goal.expeditionReady); assert(pickaxeTier(bot) >= 2);
-    assert(actual.oak_log >= 8); assert(actual.crafting_table >= 1);
+    assert(actual.oak_log >= 4); assert(actual.crafting_table >= 1);
     if (withFood) assert(foodSupply(bot) >= 12, 'A Normal expedition must carry safe food before descending');
     assert(!actual.lapis_lazuli, 'The check stops before ore acquisition');
     log({ result: 'PASS', inventory: actual, foodPoints: foodSupply(bot), directory });

@@ -73,6 +73,22 @@ test('an observed deposit eight blocks below continues its inspected staircase',
   assert.equal(goal.search.obsidian.attempts, 5);
 });
 
+test('a stranded tree perch can take a short dry exit when every distant route fails', async () => {
+  const registry = require('minecraft-data')('26.1'), landing = new Vec3(-488, 74, 200), distant = new Vec3(-478, 74, 200);
+  const bot = { registry, game: { minY: 0, height: 90 }, entity: { position: new Vec3(-487.51, 77, 199.5) },
+    blockAt: p => ({ position: p, name: p.y <= 74 ? 'dirt' : 'air', boundingBox: p.y <= 74 ? 'block' : 'empty' }),
+    findBlocks: ({ matching, maxDistance, useExtraInfo }) => matching.includes(registry.blocksByName.dirt.id)
+      ? [maxDistance <= 8 ? landing : distant].filter(p => useExtraInfo(bot.blockAt(p))) : [],
+    pathfinder: { movements: { allow1by1towers: true }, setGoal() {},
+      getPathTo: (_movement, g) => ({ status: g.x === landing.x ? 'success' : 'noPath', path: [] }),
+      goto: async g => { assert.equal(bot.pathfinder.movements.allow1by1towers, false); bot.entity.position = new Vec3(g.x + .5, g.y, g.z + .5); } },
+  };
+  await explore(bot, new Task('perch exit'), {}, () => {}, 'oak_log');
+  assert.equal(bot.entity.position.y, 75);
+  assert.equal(bot.entity.position.z, 200.5);
+  assert.equal(bot.pathfinder.movements.allow1by1towers, true, 'Restores the ordinary movement policy');
+});
+
 test('exploration leaves an unreachable geometric waypoint instead of spending the entire search there', async () => {
   const registry = require('minecraft-data')('26.1');
   const bot = { registry, game: { minY: 0, height: 100 }, entity: { position: new Vec3(22, 64, 8) }, blockAt: () => ({ name: 'air' }),

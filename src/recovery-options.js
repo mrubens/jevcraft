@@ -7,6 +7,7 @@ const { safeFromHostiles, threats } = require('./danger');
 const { recipeSourceGroups } = require('./resource-observation');
 const { surfaceObserver } = require('./surface');
 const shelter = require('./shelter');
+const { pillarDescent, descendPillar } = require('./pillar-recovery');
 const pos = p => new Vec3(p.x, p.y, p.z);
 const stock = bot => Object.fromEntries(bot.inventory.items().map(i => [i.name, countOf(bot, i.name)]));
 
@@ -15,6 +16,9 @@ const stock = bot => Object.fromEntries(bot.inventory.items().map(i => [i.name, 
 async function recoveryOptions(bot, task, goal, actions) {
   const options = [], inventory = stock(bot), usable = actions.planningInventory(bot), origin = bot.entity.position.floored();
   const add = (description, action) => options.push({ id: `option_${options.length + 1}`, description, ...action });
+  const descent = pillarDescent(bot, goal);
+  if (descent) add('Remove the exposed pillar block beneath me and descend exactly one block onto the observed solid landing. Recheck safety before digging.',
+    { kind: 'descend_pillar', descent });
   const plans = [];
   const requested = goal.item || (goal.kind === 'concrete' ? 'purple_concrete' : goal.kind === 'nether' ? 'obsidian' : null);
   for (const item of new Set([requested, goal.step?.item, goal.step?.drops].filter(n => bot.registry.itemsByName[n]))) {
@@ -89,6 +93,10 @@ async function recoveryOptions(bot, task, goal, actions) {
 }
 
 async function executeRecoveryOption(bot, task, goal, save, action, actions) {
+  if (action.kind === 'descend_pillar') {
+    if (!await descendPillar(bot, task, goal, save, action.descent)) throw new Error('The inspected pillar descent is no longer available');
+    return true;
+  }
   if (action.kind === 'acquire') return actions.acquireStep(bot, task, action.item, action.count, goal, save);
   if (action.kind === 'surface') { await actions.surfaceStep(bot, task, goal, save); return surfaceObserver(bot)(bot.entity.position); }
   if (!['relocate', 'shelter'].includes(action.kind)) throw new Error('Unknown recovery action');

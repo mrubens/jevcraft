@@ -27,7 +27,7 @@ test('surface search accepts forest canopy but rejects cave floors and roofs', (
   bot.blockAt = () => null;
   assert(!surfaceObserver(bot)(new Vec3(0, 64, 0)), 'Unloaded terrain cannot establish surface safety');
 });
-test('surface routes can use carried scaffolding but cannot dig or descend into a cave, and restore normal mining', () => {
+test('surface routes can bridge but cannot pillar up, dig or descend into a cave, and restore normal mining', () => {
   const { bot, blocks } = world();
   blocks.set('(0, 67, 0)', 'oak_planks');
   const before = { ...bot.pathfinder.movements };
@@ -36,7 +36,7 @@ test('surface routes can use carried scaffolding but cannot dig or descend into 
   assert(!policy.allowed(new Vec3(1, 60, 0)));
   assert(!policy.allowed(new Vec3(20, 24, 0)));
   assert.equal(bot.pathfinder.movements.canDig, false);
-  assert.equal(bot.pathfinder.movements.allow1by1towers, true);
+  assert.equal(bot.pathfinder.movements.allow1by1towers, false);
   assert.deepEqual(bot.pathfinder.movements.scafoldingBlocks, [1]);
   policy.restore();
   for (const [key, value] of Object.entries(before)) assert.deepEqual(bot.pathfinder.movements[key], value);

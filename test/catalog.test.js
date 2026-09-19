@@ -103,14 +103,24 @@ test('nested wool and bed recipes finish within the connection heartbeat budget'
     const { planCatalog } = require(workerData.knowledge);
     const registry = require(workerData.minecraftData)('26.1');
     const stock = { oak_log: 1, oak_planks: 2, wooden_axe: 5, stone_pickaxe: 1, bamboo: 1, wooden_pickaxe: 1, dirt: 8 };
-    const plan = planCatalog(registry, 'white_bed', 2, stock);
-    parentPort.postMessage(plan);
+    parentPort.postMessage({ ready: true });
+    parentPort.once('message', () => parentPort.postMessage({ plan: planCatalog(registry, 'white_bed', 2, stock) }));
   `, { eval: true, workerData: { knowledge: require.resolve('../src/knowledge'), minecraftData: require.resolve('minecraft-data') } });
   let timer;
   try {
     const plan = await new Promise((resolve, reject) => {
-      timer = setTimeout(() => reject(new Error('Recipe planning blocked for more than two seconds')), 2000);
-      worker.once('message', resolve); worker.once('error', reject);
+      // Registry loading and worker startup are not synchronous recipe work.
+      // Measure the existing heartbeat bound after the worker is ready; full
+      // suite/process contention otherwise turns startup into a false failure.
+      timer = setTimeout(() => reject(new Error('Recipe test worker did not start')), 10000);
+      worker.on('message', message => {
+        if (message.ready) {
+          clearTimeout(timer);
+          timer = setTimeout(() => reject(new Error('Recipe planning blocked for more than two seconds')), 2000);
+          worker.postMessage('plan');
+        } else resolve(message.plan);
+      });
+      worker.once('error', reject);
     });
     assert.equal(plan.at(-1).item, 'white_bed');
     assert.equal(plan.at(-1).count, 2);

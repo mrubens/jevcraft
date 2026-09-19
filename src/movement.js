@@ -3,6 +3,7 @@ const { Movements } = require('mineflayer-pathfinder');
 const { fixMiningMaterials, fixPathfinderResults } = require('./compatibility');
 const { hostileEntities, safeFromHostiles } = require('./danger');
 const { Vec3 } = require('vec3');
+const { damagingTerrain } = require('./terrain');
 
 class SurvivalMovements extends Movements {
   getNeighbors(node) {
@@ -10,7 +11,10 @@ class SurvivalMovements extends Movements {
     if (!this._hostileObservation || Date.now() - this._hostileObservation.at > 250) {
       this._hostileObservation = { at: Date.now(), entities: hostileEntities(this.bot, 64) };
     }
-    return neighbors.filter(next => (!this.allowedPosition || this.allowedPosition(next)) &&
+    // Upstream checks body space but accepts a damaging solid as the floor.
+    // A ruined portal's magma must not become an ordinary walking surface.
+    return neighbors.filter(next => ![-1, 0, 1].some(dy => damagingTerrain.has(this.getBlock(next, 0, dy, 0).name)) &&
+      (!this.allowedPosition || this.allowedPosition(next)) &&
       safeFromHostiles(this.bot, new Vec3(next.x + 0.5, next.y, next.z + 0.5), this._hostileObservation.entities));
   }
 
@@ -24,6 +28,15 @@ class SurvivalMovements extends Movements {
     // while the full player body catches the adjacent wall. Route those moves
     // through cardinal cells so the executor can align before stepping up/out.
     if (this.getBlock(node, 0, 0, 0).liquid || this.getBlock(node, direction.x, 0, direction.z).liquid) return;
+    // A diagonal crosses both corner cells with the player's full width.
+    // The upstream graph accepts it when just one corner is traversable,
+    // which can skim the other corner's lava even with a dry destination.
+    for (const [dx, dz] of [[direction.x, 0], [0, direction.z]]) {
+      if ([-1, 0, 1].some(dy => {
+        const block = this.getBlock(node, dx, dy, dz);
+        return damagingTerrain.has(block.name) || dy <= 0 && block.liquid;
+      })) return;
+    }
     const candidates = [];
     super.getMoveDiagonal(node, direction, candidates);
     neighbors.push(...candidates.filter(next => next.y <= node.y));
@@ -40,6 +53,10 @@ function configureMovements(bot) {
   fixMiningMaterials(bot.registry);
   fixPathfinderResults();
   const movement = new SurvivalMovements(bot);
+  for (const name of damagingTerrain) {
+    const block = bot.registry.blocksByName[name];
+    if (block) movement.blocksToAvoid.add(block.id);
+  }
   movement.canDig = true;
   movement.allow1by1towers = true;
   movement.allowParkour = false;

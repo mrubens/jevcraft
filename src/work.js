@@ -23,6 +23,7 @@ const { designWithJev } = require('./build-templates');
 const { dryMiningPositions, approachDryMining, miningMovement } = require('./mining-access');
 const { dryPassable, supportCell } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
+const { descendPillar } = require('./pillar-recovery');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -50,10 +51,10 @@ async function prepareExpeditionStep(bot, task, goal, save) {
     save(); return false;
   }
   if (pickaxeTier(bot) < 2) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return false; }
-  if (countOf(bot, 'oak_log') < 8) { await acquireStep(bot, task, 'oak_log', 8, goal, save); return false; }
+  if (countOf(bot, 'oak_log') < 4) { await acquireStep(bot, task, 'oak_log', 4, goal, save); return false; }
   if (!countOf(bot, 'crafting_table')) { await acquireStep(bot, task, 'crafting_table', 1, goal, save); return false; }
   goal.expeditionReady = true; delete goal.preparingExpedition;
-  goal.step = { action: 'prepared_expedition', minimumPickaxeTier: 2, supplies: { oak_log: 8, crafting_table: 1 }, foodPoints: foodSupply(bot) };
+  goal.step = { action: 'prepared_expedition', minimumPickaxeTier: 2, supplies: { oak_log: 4, crafting_table: 1 }, foodPoints: foodSupply(bot) };
   save(); return true;
 }
 
@@ -200,7 +201,6 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
         (!surface || surface.isSurface(b.position.offset(0, 1, 0))),
     }).map(p => p.offset(0, 1, 0))
       .sort((a, b) => Math.hypot(a.x - target.x, a.z - target.z) - Math.hypot(b.x - target.x, b.z - target.z));
-    if (!land.length) throw new Error(`No visible dry landing while searching for ${resource}`);
     search.visited ||= {};
     const key = p => `${Math.floor(p.x / 8)},${Math.floor(p.y / 8)},${Math.floor(p.z / 8)}`;
     const distance = p => observed.length ? p.distanceTo(target) : Math.hypot(p.x - target.x, p.z - target.z);
@@ -220,6 +220,26 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       if (route.status === 'success' && (!surface || (route.path || []).every(p => surface.allowed(p)))) { destination = candidate; break; }
       search.visited[key(candidate)] = (search.visited[key(candidate)] || 0) + 1;
     }
+    if (!destination) {
+      // A long route can fail from a tree perch even when a short safe step
+      // down is available. Survey that local exit before declaring no route;
+      // the normal >8-block exploration filter deliberately omits these cells.
+      const nearby = bot.findBlocks({ matching: landIds, maxDistance: 8, count: 64,
+        useExtraInfo: b => b.position.offset(0, 1, 0).distanceTo(bot.entity.position) > 1 &&
+          dryPassable(bot.blockAt(b.position.offset(0, 1, 0))) && dryPassable(bot.blockAt(b.position.offset(0, 2, 0))) &&
+          (!surface || surface.isSurface(b.position.offset(0, 1, 0))),
+      }).map(p => p.offset(0, 1, 0)).sort((a, b) =>
+        (search.visited[key(a)] || 0) * 24 + a.distanceTo(bot.entity.position) -
+        (search.visited[key(b)] || 0) * 24 - b.distanceTo(bot.entity.position));
+      for (const candidate of nearby.slice(0, 8)) {
+        const route = bot.pathfinder.getPathTo ? await surveyRoute(bot, task, bot.pathfinder.movements,
+          new goals.GoalBlock(candidate.x, candidate.y, candidate.z), 500) : { status: 'success' };
+        if (route.status === 'success' && (!surface || (route.path || []).every(p => surface.allowed(p)))) {
+          destination = candidate; break;
+        }
+      }
+    }
+    if (!destination && await descendPillar(bot, task, goal, save)) return;
     if (!destination) { search.leg++; save(); throw new Error(`No reachable surveyed ground while searching for ${resource}`); }
     search.visited[key(destination)] = (search.visited[key(destination)] || 0) + 1;
     save();

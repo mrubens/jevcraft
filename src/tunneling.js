@@ -5,6 +5,7 @@ const { reservedForConstruction } = require('./build-sites');
 const { safeFromHostiles } = require('./danger');
 const { surveyRoute } = require('./skills');
 const { dryPassable: passable, dryBodySpace } = require('./terrain');
+const { descendPillar } = require('./pillar-recovery');
 
 const directions = [new Vec3(1, 0, 0), new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(0, 0, -1)];
 const faces = [...directions, new Vec3(0, 1, 0), new Vec3(0, -1, 0)];
@@ -164,6 +165,7 @@ async function retreatForTunnel(bot, task, goal, save, { navigate }) {
       if (!dry(bot.entity.position.floored())) throw new Error('Tunnel retreat landing changed before arrival');
       save(); return;
     }
+    if (await descendPillar(bot, task, goal, save)) return;
     throw new Error('No existing dry route away from the blocked staircase');
   } finally { Object.assign(movement, previous); }
 }

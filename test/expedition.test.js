@@ -29,7 +29,7 @@ test('catalog concrete prepares carried expedition supplies before starting a de
 });
 
 test('deep catalog requests acquire missing supplies before attempting the ore', async () => {
-  const bot = fixture({ stone_pickaxe: 1, oak_log: 7, crafting_table: 1 }, {
+  const bot = fixture({ stone_pickaxe: 1, oak_log: 3, crafting_table: 1 }, {
     findBlocks: ({ matching, maxDistance }) => {
       if (maxDistance === 64) return []; // Read-only alternative recipe survey.
       if (matching.includes(registry.blocksByName.oak_log.id)) throw new Error('reached spare wood acquisition');
@@ -49,6 +49,16 @@ test('an already acquired ordinary item finishes without preparing an expedition
   const goal = { kind: 'obtain', item: 'pumpkin', count: 1, request: 'get a pumpkin' };
   const result = await runGoal(bot, new Task('test', goal.request), goal, { save() {} }, { survival, maxSteps: 1 });
   assert(result.ok); assert.equal(goal.expeditionReady, undefined);
+});
+
+test('an iron pickaxe request uses six carried logs without demanding two more', async () => {
+  const bot = fixture({ stone_pickaxe: 1, wooden_pickaxe: 1, oak_log: 6, crafting_table: 1 },
+    { game: { gameMode: 'survival', difficulty: 'peaceful' } });
+  const goal = { kind: 'obtain', item: 'iron_pickaxe', count: 1, request: 'get me an iron pickaxe' };
+  await runGoal(bot, new Task('test', goal.request), goal, { save() {} }, { survival, maxSteps: 1 });
+  assert.equal(goal.expeditionReady, true);
+  assert.equal(goal.history[0].step.action, 'prepared_expedition');
+  assert.equal(goal.history[0].inventory.oak_log, 6);
 });
 
 test('Normal expeditions cannot descend with tools and spare wood but no safe food reserve', async () => {

@@ -46,10 +46,10 @@ function surfaceMovement(bot) {
   // riverbanks even when the pathfinder had a safe swimming route across.
   const allowed = p => isSurface(p) || surfaceSwimming(p) ||
     (Math.abs(p.x - start.x) <= 4 && Math.abs(p.z - start.z) <= 4 && p.y >= start.y);
-  // Existing carried scaffolding can bridge a step or climb an open ravine.
-  // The position filter, rather than disabling all placement, keeps the route
-  // on observed surface terrain. Hunting still cannot excavate into a cave.
-  Object.assign(movements, { canDig: false, allowSprinting: false,
+  // Carried scaffolding can bridge a gap, but searching for trees must not
+  // build vertical pillars that strand the bot above the available ground.
+  // Hunting still cannot excavate into a cave.
+  Object.assign(movements, { canDig: false, allowSprinting: false, allow1by1towers: false,
     allowedPosition: p => allowed(p) && (!previous.allowedPosition || previous.allowedPosition(p)) });
   return { isSurface, allowed, restore: () => Object.assign(movements, previous) };
 }

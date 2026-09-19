@@ -3,6 +3,8 @@ const { Vec3 } = require('vec3');
 
 const travelHazards = new Set(['water', 'lava', 'bubble_column', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant',
   'fire', 'soul_fire', 'powder_snow', 'sweet_berry_bush', 'cobweb']);
+const damagingTerrain = new Set(['lava', 'fire', 'soul_fire', 'magma_block', 'cactus', 'campfire', 'soul_campfire',
+  'sweet_berry_bush', 'wither_rose', 'powder_snow']);
 
 // Movement needs collision-free, harmless space, which includes grass, leaf
 // litter and other non-colliding plants. Placement still requires its own check.
@@ -29,4 +31,4 @@ function supportCell(point) {
   return new Vec3(Math.floor(point.x), Math.ceil(point.y) - 1, Math.floor(point.z));
 }
 
-module.exports = { dryPassable, dryBodySpace, supportCell };
+module.exports = { dryPassable, dryBodySpace, supportCell, damagingTerrain };
