@@ -80,6 +80,34 @@ log and finished exactly four glass from the original four sand, retaining one
 spare plank. Earlier failing fixtures exposed stale open-container counts and
 are retained in `artifacts/`.
 
+Fuel accounting also preserves the initial furnace properties sent while its
+window opens. Mineflayer can subscribe too late to those packets; after a
+reopen, missing `totalFuel` made a burning furnace report zero fuel and consume
+an extra plank. The compatibility layer observes properties before opening,
+then reconciles fuel and cooking progress after each update, regardless of
+packet order. Readings belong to that window opening and are discarded on
+close, open failure, or disconnect. Known remaining burn ticks are usable even
+before the total-duration packet arrives. Stop is checked before refueling and
+after waiting for initial fuel status.
+
+`test/furnace-properties.test.js` exercises the installed Mineflayer furnace
+plugin with initial packets arriving before its open promise resolves. It also
+checks property order, other window IDs, reused IDs, failed opens, and disconnect
+cleanup. `test/smelting.test.js` verifies remaining burn time and cancellation
+before a fuel transfer.
+
+A stricter fuel-budget check in `scripts/workstation-access-test.js` reproduced
+the real-server failure in `workstation-access-mu8qyh4i`: two glass took three
+planks across stop/resume. After the fix, `workstation-access-mu8r2rjk` passed on
+2026-09-19 with exactly two planks loaded, two glass, two chests, and two spare
+planks left from the original 20. The reopened furnace correctly reported 4.95
+seconds of remaining burn. Both recordings are retained; these are controlled
+mechanics fixtures, not fresh Survival acceptance runs.
+
+The related missing-fuel fixture `furnace-recovery-mu8r5275` also passed: after
+its fuel was removed externally, Jev made replacement fuel from the supplied
+log, completed exactly four glass, and retained two planks with health 20.
+
 ## Stop during request interpretation
 
 All nested classifiers for a player request share its cancellation signal.

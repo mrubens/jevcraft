@@ -72,3 +72,48 @@ test('burning fuel is not replaced from stale player inventory or the next recip
   await smelt(bot, new Task('fuel reserve'), { item: 'glass', from: 'sand', count: 2 });
   assert(collected);
 });
+
+test('remaining burn ticks protect the recipe reserve even before the total-fuel packet arrives', async () => {
+  let reads = 0, collected = false;
+  const furnace = {
+    fuel: null, fuelSeconds: 5, inputItem: () => ({ name: 'sand', count: 1 }), fuelItem: () => null,
+    outputItem: () => !collected && ++reads >= 2 ? { name: 'glass', count: 1 } : null,
+    putFuel: async () => assert.fail('known remaining burn time must not be replaced'),
+    takeOutput: async () => { collected = true; }, close: () => {},
+  };
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) },
+    inventory: { items: () => [{ name: 'oak_planks', count: 3 }, ...(collected ? [{ name: 'glass', count: 1 }] : [])] },
+    registry: { itemsByName: { oak_planks: { id: 1 } }, blocksByName: { furnace: { id: 1 } } },
+    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: p => ({ name: 'furnace', position: p }),
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+    pathfinder: { movements: {}, goto: async () => {}, setGoal: () => {} }, openFurnace: async () => furnace,
+  };
+  await smelt(bot, new Task('burn ticks'), { item: 'glass', from: 'sand', count: 1 });
+  assert(collected);
+});
+
+test('stop after collecting output or while waiting for fuel status prevents loading more fuel', async () => {
+  for (const phase of ['after output', 'awaiting status']) {
+    const task = new Task(phase);
+    let collected = 0, output = phase === 'after output' ? 1 : 0, closed = false, timer;
+    const furnace = {
+      fuel: phase === 'awaiting status' ? null : 0,
+      inputItem: () => ({ name: 'sand', count: 1 }), fuelItem: () => null,
+      outputItem: () => output ? { name: 'glass', count: output } : null,
+      takeOutput: async () => { collected = output; output = 0; task.cancel(); },
+      putFuel: async () => assert.fail('stop must fence off the next fuel transfer'), close: () => { closed = true; },
+    };
+    const bot = {
+      entity: { position: new Vec3(0, 64, 0) }, inventory: { items: () => [{ name: 'oak_planks', count: 3 }, { name: 'glass', count: collected }] },
+      registry: { itemsByName: { oak_planks: { id: 1 } } }, blockAt: p => ({ name: 'furnace', position: p }),
+      world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+      pathfinder: { movements: {}, goto: async () => {}, setGoal: () => {} }, openFurnace: async () => furnace,
+    };
+    const goal = { smelting: { item: 'glass', from: 'sand', targetInventory: output + 1, position: { x: 1, y: 64, z: 0 } } };
+    if (phase === 'awaiting status') timer = setTimeout(() => task.cancel(), 25);
+    try { await assert.rejects(smelt(bot, task, goal.smelting, goal), { name: 'Cancelled' }); }
+    finally { clearTimeout(timer); }
+    assert(closed); assert(goal.smelting); assert.equal(collected, phase === 'after output' ? 1 : 0);
+  }
+});

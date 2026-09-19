@@ -532,16 +532,18 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       if (missingInput > carried(step.from)) throw new SmeltingSuppliesNeeded(step.from, missingInput);
       if (missingInput) await furnace.putInput(bot.registry.itemsByName[step.from].id, null, missingInput);
       const fuel = async () => {
+        task.check();
         const input = furnace.inputItem(), current = furnace.fuelItem();
         // A consumed plank is now burn time, not missing stock to replace.
         // Wait for both the fuel stack and active burn to empty before adding
         // more, so this batch cannot swallow the next recipe's fuel reserve.
-        if (!input || current || furnace.fuel > 0) return;
-        if (furnace.fuel === null) { await sleep(100); if (furnace.fuelItem() || furnace.fuel > 0) return; }
+        const burning = () => furnace.fuelSeconds > 0 || furnace.fuel > 0;
+        if (!input || current || burning()) return;
+        if (furnace.fuel === null) { await sleep(100); task.check(); if (furnace.fuelItem() || burning()) return; }
         const wanted = Math.ceil(Math.min(input.count, needed - taken) / 1.5);
         const extra = Math.min(wanted, carried('oak_planks'));
         if (extra) await furnace.putFuel(bot.registry.itemsByName.oak_planks.id, null, extra);
-        else if (!current && !(furnace.fuel > 0)) throw new SmeltingSuppliesNeeded('oak_planks', wanted);
+        else if (!current && !burning()) throw new SmeltingSuppliesNeeded('oak_planks', wanted);
       };
       await fuel();
       const deadline = Date.now() + amount * 12000 + 10000;

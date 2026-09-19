@@ -12,7 +12,7 @@ fs.mkdirSync(directory, { recursive: true });
 const log = value => { const row = JSON.stringify({ at: new Date().toISOString(), ...value }); console.log(row); fs.appendFileSync(path.join(directory, 'events.jsonl'), row + '\n'); };
 const connect = prefix => { const b = mineflayer.createBot({ host: '127.0.0.1', port, username: prefix + id, version: '26.1', auth: 'offline' }); b.loadPlugin(compatibilityPlugin); b.loadPlugin(pathfinder); return b; };
 const bot = connect('Bench'), observer = connect('See'), task = new Task('workstation alternatives');
-let activeTask = task, active = false, digs = 0, deaths = 0, inputs = 0;
+let activeTask = task, active = false, digs = 0, deaths = 0, inputs = 0, fuelLoaded = 0;
 const opens = [], placements = [], originalWrite = bot._client.write;
 const sealedTable = new Vec3(x + 2, 64, 0), table = new Vec3(x + 9, 64, 0), sealedFurnace = new Vec3(x + 2, 64, 3), furnace = new Vec3(x + 9, 64, 3);
 bot._client.write = function (name, packet, ...args) {
@@ -54,8 +54,14 @@ const prepare = async (name, commands) => {
     const goal = {}, save = () => fs.writeFileSync(path.join(directory, 'furnace-goal.json'), JSON.stringify(goal, null, 2));
     const stopped = activeTask = new Task('pause furnace after first output'), originalOpen = bot.openFurnace;
     bot.openFurnace = async block => {
-      const window = await originalOpen.call(bot, block), put = window.putInput, take = window.takeOutput;
+      const window = await originalOpen.call(bot, block), put = window.putInput, take = window.takeOutput, putFuel = window.putFuel;
+      log({ phase: 'opened furnace', windowId: window.id, fuel: window.fuel, fuelSeconds: window.fuelSeconds, totalFuel: window.totalFuel });
       window.putInput = async (...args) => { inputs++; return put.apply(window, args); };
+      window.putFuel = async (...args) => {
+        log({ phase: 'load fuel', count: args[2], fuel: window.fuel, fuelSeconds: window.fuelSeconds, totalFuel: window.totalFuel,
+          input: window.inputItem()?.count || 0, storedFuel: window.fuelItem()?.count || 0 });
+        await putFuel.apply(window, args); fuelLoaded += args[2];
+      };
       window.takeOutput = async () => { await take.call(window); if (activeTask === stopped) stopped.cancel(); };
       return window;
     };
@@ -64,6 +70,8 @@ const prepare = async (name, commands) => {
     activeTask = task;
     await smelt(bot, task, goal.smelting, goal, save);
     assert.equal(countOf(bot, 'glass'), 2); assert.equal(inputs, 1); assert(!goal.smelting);
+    assert.equal(fuelLoaded, 2, 'two planks cover two glass even across pause/resume');
+    assert.equal(countOf(bot, 'oak_planks'), 10, 'keep planks reserved for the second chest');
     assert(opens.filter(o => o.name === 'furnace').every(o => new Vec3(o.position.x, o.position.y, o.position.z).equals(furnace)));
     log({ phase: 'alternate furnace and resume', opens, inputs, inventory: inventory(bot) });
     active = false;
