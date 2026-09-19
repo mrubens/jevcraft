@@ -121,6 +121,65 @@ test('cancelled or interrupted retrieval remains pending and restores movement s
   assert.deepEqual(bot.pathfinder.movements, original);
 });
 
+test('retrieval tries another visible stack when the closest drop is unreachable or unsafe', async () => {
+  for (const kind of ['noPath', 'hazard']) {
+    const { bot, recovery, supply } = fixture();
+    recovery.inventoryBeforeDeath = { oak_log: 2, stick: 4 };
+    bot.entities[9] = { id: 9, position: new Vec3(4.5, 64, .5), getDroppedItem: () => ({ name: 'oak_log', count: 2 }) };
+    bot.entities[10] = { id: 10, position: new Vec3(7.5, 64, .5), getDroppedItem: () => ({ name: 'stick', count: 4 }) };
+    bot.pathfinder.getPathTo = (_m, g) => g.x === 4 && kind === 'noPath' ? { status: 'noPath', path: [] } :
+      { status: 'success', path: [new Vec3(g.x, 64, 0)] };
+    bot.blockAt = p => ({ name: p.x === 4 && kind === 'hazard' ? 'lava' : 'air' });
+    let destination;
+    assert(await recoverItems(bot, new Task('alternate drops'), recovery, () => {}, async (_b, _t, g) => {
+      destination = g; supply([{ name: 'stick', count: 4 }]); delete bot.entities[10];
+    }), kind);
+    assert.equal(destination.x, 7);
+    assert.equal(recovery.recovered.stick, 4);
+    assert.equal(recovery.recovered.oak_log || 0, 0);
+    assert.equal(recovery.status, 'pending');
+  }
+});
+
+test('retrieval finishes a sliced path search before deciding there is no route', async () => {
+  const { bot, recovery, supply } = fixture();
+  let slices = 0;
+  bot.pathfinder.getPathTo = () => ({ status: 'partial', path: [] });
+  bot.pathfinder.getPathFromTo = function * () {
+    slices++; yield { result: { status: 'partial', path: [] } };
+    slices++; yield { result: { status: 'success', path: [new Vec3(5, 64, 0)] } };
+  };
+  assert(await recoverItems(bot, new Task('finish searching'), recovery, () => {}, async () => supply([{ name: 'oak_log', count: 2 }])));
+  assert.equal(slices, 2);
+  assert.equal(recovery.recovered.oak_log, 2);
+});
+
+test('stop during route search keeps recovery pending and restores movement before travel', async () => {
+  const { bot, recovery } = fixture(), task = new Task('stop searching');
+  const original = { ...bot.pathfinder.movements }, guard = task.interruptCheck = () => {};
+  bot.pathfinder.getPathFromTo = function * () {
+    yield { result: { status: 'partial', path: [] } };
+    task.cancel();
+    yield { result: { status: 'success', path: [new Vec3(5, 64, 0)] } };
+  };
+  await assert.rejects(recoverItems(bot, task, recovery, () => {}, async () => assert.fail('must not travel')), { name: 'Cancelled' });
+  assert.equal(recovery.status, 'pending');
+  assert.deepEqual(bot.pathfinder.movements, original);
+  assert.equal(task.interruptCheck, guard);
+});
+
+test('stopping after a pickup checkpoints that progress and restores the existing interrupt guard', async () => {
+  const { bot, recovery, supply } = fixture(), task = new Task('stop after pickup');
+  const original = task.interruptCheck = () => {};
+  let saved;
+  await assert.rejects(recoverItems(bot, task, recovery, () => { saved = structuredClone(recovery); }, async () => {
+    supply([{ name: 'oak_log', count: 2 }]); task.cancel(); task.check();
+  }), { name: 'Cancelled' });
+  assert.equal(saved.recovered.oak_log, 2);
+  assert.equal(saved.status, 'pending');
+  assert.equal(task.interruptCheck, original);
+});
+
 test('reconnection creates fresh sessions with bounded backoff and stops on explicit shutdown', async () => {
   const controller = new AbortController();
   const reports = [];

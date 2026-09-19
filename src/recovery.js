@@ -3,6 +3,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { checkThreats, threats } = require('./danger');
 const { checkAir } = require('./vitals');
+const { surveyRoute } = require('./skills');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const stock = bot => bot.inventory.items().reduce((out, item) => { out[item.name] = (out[item.name] || 0) + item.count; return out; }, {});
 const pos = p => new Vec3(p.x, p.y, p.z);
@@ -56,9 +57,16 @@ async function recoverItems(bot, task, recovery, save, navigate) {
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
   if (!Object.keys(lost).some(name => missing(name))) return finish('recovered the recorded item quantities');
   const before = stock(bot);
+  let pickupBaseline = before;
   const countPickups = () => {
     const after = stock(bot);
-    for (const name of Object.keys(lost)) recovery.recovered[name] = (recovery.recovered[name] || 0) + Math.min(missing(name), Math.max(0, (after[name] || 0) - (before[name] || 0)));
+    let changed = false;
+    for (const name of Object.keys(lost)) {
+      const count = Math.min(missing(name), Math.max(0, (after[name] || 0) - (pickupBaseline[name] || 0)));
+      if (count) { recovery.recovered[name] = (recovery.recovered[name] || 0) + count; changed = true; }
+    }
+    pickupBaseline = after;
+    if (changed) save();
     return after;
   };
   let candidates = findCandidates();
@@ -75,32 +83,49 @@ async function recoverItems(bot, task, recovery, save, navigate) {
     }
   }
   if (!candidates.length && bot.entity.position.distanceTo(origin) <= 4) return finish('no matching dropped items are visible at the death location');
-  const destination = candidates[0]?.position || origin;
-  const target = candidates.length ? new goals.GoalBlock(Math.floor(destination.x), Math.floor(destination.y), Math.floor(destination.z)) :
-    new goals.GoalNear(origin.x, origin.y, origin.z, 2);
   const movement = bot.pathfinder.movements;
   const previous = { canDig: movement.canDig, allow1by1towers: movement.allow1by1towers,
     allowSprinting: movement.allowSprinting, scafoldingBlocks: movement.scafoldingBlocks, maxDropDown: movement.maxDropDown };
   Object.assign(movement, { canDig: false, allow1by1towers: false, allowSprinting: false, scafoldingBlocks: [], maxDropDown: 2 });
+  const previousInterrupt = task.interruptCheck;
+  task.interruptCheck = () => { previousInterrupt?.(); checkThreats(bot); };
   try {
-    const route = bot.pathfinder.getPathTo(movement, target, 250);
-    if (route.status !== 'success') return finish('no complete observed route to the dropped items');
-    const danger = threats(bot, 128);
-    if (route.path.some(p => ['water', 'lava', 'fire', 'soul_fire', 'powder_snow'].includes(bot.blockAt(pos(p))?.name) ||
-      danger.some(t => t.entity.position.distanceTo(pos(p)) < 12))) return finish('the observed retrieval route crosses water or a hazard');
+    let target, selected;
+    const routeDeadline = Date.now() + 3000;
+    // A trapped nearby stack says nothing about the other drops. Search a
+    // bounded set of observed alternatives before abandoning retrieval, and
+    // finish each incremental search instead of treating "partial" as noPath.
+    for (const candidate of candidates.length ? candidates.slice(0, 8) : [null]) {
+      task.check(); checkAir(bot);
+      const budget = Math.min(500, routeDeadline - Date.now());
+      if (budget <= 0) break;
+      const p = candidate?.position || origin;
+      const destination = candidate ? new goals.GoalBlock(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)) :
+        new goals.GoalNear(origin.x, origin.y, origin.z, 2);
+      const route = await surveyRoute(bot, task, movement, destination, budget);
+      const danger = threats(bot, 128);
+      const unsafe = route.path?.some(p => ['water', 'lava', 'fire', 'soul_fire', 'powder_snow'].includes(bot.blockAt(pos(p))?.name) ||
+        danger.some(t => t.entity.position.distanceTo(pos(p)) < 12));
+      if (route.status === 'success' && !unsafe) { target = destination; selected = candidate; break; }
+    }
+    if (!target) return finish('I cannot safely reach the items that are left');
     recovery.startedAt ||= new Date().toISOString(); recovery.attempts++; save();
-    task.interruptCheck = () => checkThreats(bot);
     await navigate(bot, task, target, { timeoutMs: Math.min(12000, 30000 - (Date.now() - Date.parse(recovery.startedAt))), stallMs: 4000 });
     await sleep(600); task.check(); checkAir(bot);
     const after = countPickups();
-    if (candidates.length && JSON.stringify(before) === JSON.stringify(after)) (recovery.failedEntities ||= []).push(candidates[0].id);
+    if (selected && JSON.stringify(before) === JSON.stringify(after)) (recovery.failedEntities ||= []).push(selected.id);
     save(); bot.emit?.('death_recovery', recovery);
     return true;
   } catch (err) {
     task.check();
     if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err;
     return finish(`could not safely reach the dropped items: ${err.message}`);
-  } finally { Object.assign(movement, previous); task.interruptCheck = undefined; }
+  } finally {
+    // A pickup can precede stop/disconnect while navigation is unwinding. Keep
+    // that observed progress in the same checkpoint, without counting it twice.
+    Object.assign(movement, previous); task.interruptCheck = previousInterrupt;
+    countPickups();
+  }
 }
 
 module.exports = { recordDeath, recoverItems, observeAliveInventory };

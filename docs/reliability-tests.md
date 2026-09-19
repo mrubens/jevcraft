@@ -69,3 +69,40 @@ Chat/Observatory stop, death, and disconnect abort outstanding interpretation
 calls and fence off old results, allowing a new request to proceed without waiting
 for the old call's timeout/retries. `test/typesafe-provider.test.js` checks this
 with a deliberately stalled transport and a subsequent fresh request.
+
+## Reachable death drops
+
+An unreachable nearby stack no longer causes Jev to abandon every drop. Recovery
+checks up to eight visible matching stacks, with a three-second search budget,
+and chooses a complete route that avoids water and observed threats. Searches
+yield between pathfinder slices so an unfinished search is not mistaken for
+proof that no route exists, and stop can interrupt the search. Retrieval keeps
+digging, scaffolding, and towers disabled, then restores the previous movement
+settings and interruption guard.
+
+Items observed in inventory before navigation unwinds on stop are checkpointed
+as recovered. A failed or interrupted trip never invents missing inventory.
+The existing distance, health, hunger, five-attempt, and 30-second travel limits
+remain in effect. This is bounded retrieval of observed drops, not a search
+across unknown chunks or a promise to recover every death inventory.
+
+`test/recovery.test.js` covers blocked/unsafe nearest stacks, incremental route
+search, cancellation during search and after pickup, inventory evidence, and
+restoration of movement settings. For the real-server fixture:
+
+```sh
+MC_PORT=<isolated-port> node scripts/recovery-routes-test.js
+```
+
+Apply `setup.json` in the isolated server console and create `ready`. When the
+script requests the controlled kill, run that command there. After respawn,
+apply `relocate.json` and create `relocated`. This traps one actual death-drop
+stack in a bedrock enclosure while leaving another farther stack reachable.
+Ports 25565 and 25577 are explicitly rejected. Supplies, terrain, the death,
+and drop locations are controlled; this is not natural Survival acceptance.
+
+On 2026-09-19, `recovery-routes-mu8podjh` passed: Jev bypassed the closer trapped
+12-log stack, walked around its enclosure to recover all eight planks, and
+finished the bounded attempt with health 20. An independent client observed the
+pickup. The trapped logs remained intact, with no digging or block placement
+and no additional deaths.
