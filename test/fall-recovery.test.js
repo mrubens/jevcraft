@@ -68,7 +68,10 @@ test('filling rejects stale reach and requires an actual empty-to-water inventor
   for (const behavior of ['success', 'no_ack', 'moved']) {
     const { bot, task, stock } = fixture(); stock.water_bucket = 0; stock.bucket = 1;
     bot.blockAt = () => ({ name: 'water', metadata: 0 }); bot.world.raycast = () => null;
-    bot.lookAt = async () => { if (behavior === 'moved') bot.entity.position.x = 10; };
+    bot.lookAt = async (point, immediate) => {
+      assert.equal(immediate, true, 'Fluid interactions must not wait for a turn while the current moves the player');
+      if (behavior === 'moved') bot.entity.position.x = 10;
+    };
     let used = 0;
     bot.activateItem = () => { used++; if (behavior === 'success') { stock.water_bucket = 1; stock.bucket = 0; } };
     const promise = fillWaterBucket(bot, task, new Vec3(0, 1, 0), { timeoutMs: 30 });

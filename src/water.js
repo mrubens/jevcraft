@@ -21,7 +21,10 @@ async function fillWaterBucket(bot, task, position, { timeoutMs = 2500, guard = 
     if (delta.norm() > 4.5 || hit && eye.distanceTo(hit.intersect || hit.position) < delta.norm() - .1) throw new Error('Water source is outside visible interaction reach');
   };
   checkReach();
-  await bot.lookAt(position.offset(.5, .5, .5), false); check();
+  // Bucket use carries its rotation in use_item. Waiting for a smooth turn
+  // lets a flowing current move the player away from the calculated aim.
+  // Aim immediately from the current position, as in the falling placement.
+  await bot.lookAt(position.offset(.5, .5, .5), true); check();
   checkReach();
   if (!sourceWater(bot.blockAt(position))) throw new Error('Water source changed before filling the bucket');
   bot.activateItem();
