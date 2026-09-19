@@ -75,7 +75,17 @@ function render(updateScene = true) {
   if (viewer) {
     $('world-empty').hidden = !!snapshot.world;
     text('world-empty', snapshot.position ? 'This older recording includes positions but no terrain. The trail shows where Jev went. Live capture adds nearby blocks.' : 'No terrain or position was recorded. Select another session or connect the live observer.');
-    if (updateScene) viewer.update(snapshot, false, frames.slice(Math.max(0, index - 80), index + 1).map(f => f.snapshot?.position).filter(Boolean));
+    if (updateScene) {
+      const liveMotion = follow && data.mode === 'live';
+      // Keep captured terrain around the buffered camera, rather than around
+      // a newer position that can be twelve blocks ahead while running.
+      const cameraFrame = liveMotion && ['behind', 'eyes'].includes(viewer.mode) ? frames.findLast(f => Date.parse(f.at) <= Date.now() - 3000 && f.snapshot?.dimension === snapshot.dimension) : null;
+      viewer.update({ ...snapshot, world: cameraFrame?.snapshot.world || snapshot.world }, false,
+        frames.slice(Math.max(0, index - 80), index + 1).map(f => f.snapshot?.position).filter(Boolean),
+        liveMotion ? frames.slice(-40).filter(f => f.snapshot?.position && Number.isFinite(Date.parse(f.at))).map(f => ({
+          at: Date.parse(f.at), position: f.snapshot.position, yaw: f.snapshot.yaw, pitch: f.snapshot.pitch, dimension: f.snapshot.dimension,
+        })) : null);
+    }
   }
   text('event-time', frame ? `EVENT ${frame.id} · ${time(frame.at)}` : 'NO OBSERVATIONS');
   text('event-label', frame?.label || 'Waiting for observations');
@@ -169,7 +179,7 @@ $('play').addEventListener('click', () => {
 });
 for (const mode of ['orbit', 'behind', 'eyes', 'top']) $(mode).addEventListener('click', () => {
   viewer?.setMode(mode); for (const name of ['orbit','behind','eyes','top']) { $(name).className = mode === name ? 'selected' : ''; $(name).setAttribute('aria-pressed',String(mode === name)); }
-  $('viewport').title = mode === 'behind' ? 'Third-person follow camera · scroll to change distance' : mode === 'eyes' ? 'Camera follows Jev’s recorded position and gaze' : mode === 'top' ? 'Scroll to zoom · right-drag to pan' : 'Drag to orbit · scroll to zoom · right-drag to pan';
+  $('viewport').title = mode === 'behind' ? 'Smooth third-person camera · about 3 seconds behind live · scroll to change distance' : mode === 'eyes' ? 'Camera follows Jev’s recorded position and gaze · about 3 seconds behind live' : mode === 'top' ? 'Scroll to zoom · right-drag to pan' : 'Drag to orbit · scroll to zoom · right-drag to pan';
 });
 $('recenter').addEventListener('click', () => viewer?.reset());
 $('blueprint').addEventListener('change', () => viewer?.setPreview($('blueprint').checked));

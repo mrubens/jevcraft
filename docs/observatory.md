@@ -31,7 +31,7 @@ The viewer listens only on loopback. Live stop uses the same cancellation path a
 
 ## Explore
 
-- Drag to orbit, scroll to zoom, right-drag to pan. `Behind Jev` follows from behind and slightly above the avatar, turning with its recorded yaw; scroll to adjust follow distance. The camera eases between observations and moves closer when captured terrain obstructs it. `Jev's eyes` follows recorded position, yaw and pitch. `Top` gives an overhead view. `Recenter` returns to Jev.
+- Drag to orbit, scroll to zoom, right-drag to pan. `Behind Jev` follows from behind and slightly above the avatar; scroll to adjust follow distance. Live follow cameras play buffered observations about three seconds behind live so movement is continuous between polling updates. The third-person camera turns gradually around Jev, pulls in for solid terrain and eases back out; foliage becomes translucent to avoid camera jumps beneath trees. `Jev's eyes` follows recorded position, yaw and pitch. `Top` gives an overhead view. `Recenter` returns to Jev.
 - The orange line is the recorded planned route. The muted line is recent travel. Translucent blue blocks show the saved construction blueprint at its actual coordinates.
 - Cutaway hides captured layers above the selected relative height. Hover a block for its name and world coordinates.
 - Textures are enabled when a local Minecraft client is found. Use the `Textures` checkbox to switch to the original block colors. The label shows which Minecraft version supplied the textures.
