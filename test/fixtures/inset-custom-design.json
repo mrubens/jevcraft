@@ -1,0 +1,389 @@
+{
+  "name": "Desert Pyramid",
+  "description": "A 13-tier stepped sandstone pyramid with a hidden inner chamber, glowing altar and a tunnel entrance on the north face.",
+  "size": [
+    25,
+    13,
+    25
+  ],
+  "palette": [
+    "sandstone",
+    "smooth_sandstone",
+    "red_sandstone",
+    "orange_terracotta",
+    "glowstone",
+    "sea_lantern",
+    "air"
+  ],
+  "regions": [
+    {
+      "from": [
+        0,
+        0,
+        0
+      ],
+      "to": [
+        24,
+        0,
+        24
+      ],
+      "block": "smooth_sandstone"
+    },
+    {
+      "from": [
+        1,
+        1,
+        1
+      ],
+      "to": [
+        23,
+        1,
+        23
+      ],
+      "block": "sandstone"
+    },
+    {
+      "from": [
+        2,
+        2,
+        2
+      ],
+      "to": [
+        22,
+        2,
+        22
+      ],
+      "block": "sandstone"
+    },
+    {
+      "from": [
+        3,
+        3,
+        3
+      ],
+      "to": [
+        21,
+        3,
+        21
+      ],
+      "block": "sandstone"
+    },
+    {
+      "from": [
+        4,
+        4,
+        4
+      ],
+      "to": [
+        20,
+        4,
+        20
+      ],
+      "block": "orange_terracotta"
+    },
+    {
+      "from": [
+        5,
+        5,
+        5
+      ],
+      "to": [
+        19,
+        5,
+        19
+      ],
+      "block": "sandstone"
+    },
+    {
+      "from": [
+        6,
+        6,
+        6
+      ],
+      "to": [
+        18,
+        6,
+        18
+      ],
+      "block": "sandstone"
+    },
+    {
+      "from": [
+        7,
+        7,
+        7
+      ],
+      "to": [
+        17,
+        7,
+        17
+      ],
+      "block": "sandstone"
+    },
+    {
+      "from": [
+        8,
+        8,
+        8
+      ],
+      "to": [
+        16,
+        8,
+        16
+      ],
+      "block": "orange_terracotta"
+    },
+    {
+      "from": [
+        9,
+        9,
+        9
+      ],
+      "to": [
+        15,
+        9,
+        15
+      ],
+      "block": "sandstone"
+    },
+    {
+      "from": [
+        10,
+        10,
+        10
+      ],
+      "to": [
+        14,
+        10,
+        14
+      ],
+      "block": "sandstone"
+    },
+    {
+      "from": [
+        11,
+        11,
+        11
+      ],
+      "to": [
+        13,
+        11,
+        13
+      ],
+      "block": "smooth_sandstone"
+    },
+    {
+      "from": [
+        12,
+        12,
+        12
+      ],
+      "to": [
+        12,
+        12,
+        12
+      ],
+      "block": "glowstone"
+    },
+    {
+      "from": [
+        6,
+        1,
+        6
+      ],
+      "to": [
+        18,
+        4,
+        18
+      ],
+      "block": "air"
+    },
+    {
+      "from": [
+        6,
+        0,
+        6
+      ],
+      "to": [
+        18,
+        0,
+        18
+      ],
+      "block": "red_sandstone"
+    },
+    {
+      "from": [
+        12,
+        1,
+        1
+      ],
+      "to": [
+        12,
+        2,
+        5
+      ],
+      "block": "air"
+    },
+    {
+      "from": [
+        11,
+        1,
+        11
+      ],
+      "to": [
+        13,
+        1,
+        13
+      ],
+      "block": "red_sandstone"
+    },
+    {
+      "from": [
+        12,
+        2,
+        12
+      ],
+      "to": [
+        12,
+        2,
+        12
+      ],
+      "block": "glowstone"
+    },
+    {
+      "from": [
+        7,
+        5,
+        7
+      ],
+      "to": [
+        7,
+        5,
+        7
+      ],
+      "block": "sea_lantern"
+    },
+    {
+      "from": [
+        17,
+        5,
+        7
+      ],
+      "to": [
+        17,
+        5,
+        7
+      ],
+      "block": "sea_lantern"
+    },
+    {
+      "from": [
+        7,
+        5,
+        17
+      ],
+      "to": [
+        7,
+        5,
+        17
+      ],
+      "block": "sea_lantern"
+    },
+    {
+      "from": [
+        17,
+        5,
+        17
+      ],
+      "to": [
+        17,
+        5,
+        17
+      ],
+      "block": "sea_lantern"
+    },
+    {
+      "from": [
+        12,
+        5,
+        12
+      ],
+      "to": [
+        12,
+        5,
+        12
+      ],
+      "block": "sea_lantern"
+    },
+    {
+      "from": [
+        6,
+        3,
+        12
+      ],
+      "to": [
+        6,
+        3,
+        12
+      ],
+      "block": "glowstone"
+    },
+    {
+      "from": [
+        18,
+        3,
+        12
+      ],
+      "to": [
+        18,
+        3,
+        12
+      ],
+      "block": "glowstone"
+    },
+    {
+      "from": [
+        12,
+        3,
+        18
+      ],
+      "to": [
+        12,
+        3,
+        18
+      ],
+      "block": "glowstone"
+    },
+    {
+      "from": [
+        10,
+        3,
+        6
+      ],
+      "to": [
+        10,
+        3,
+        6
+      ],
+      "block": "glowstone"
+    },
+    {
+      "from": [
+        14,
+        3,
+        6
+      ],
+      "to": [
+        14,
+        3,
+        6
+      ],
+      "block": "glowstone"
+    }
+  ],
+  "entrance": [
+    12,
+    1,
+    1
+  ]
+}

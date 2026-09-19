@@ -86,13 +86,13 @@ In Creative mode, Jev takes requested items and building materials directly from
 
 Describe a structure in chat, for example `Jev build a compact cherry mansion with two floors and big windows`. Jev routes the request to the building tool. A simple `Jev build a house` keeps the existing 5×5 shelter workflow; `make two beds` remains an inventory recipe request.
 
-With `OPENROUTER_API_KEY` set, the designer uses `anthropic/claude-fable-5.1` by default (`OPENROUTER_BUILD_MODEL` overrides it). It receives the request, nearby ground survey, game mode, dimension, inventory, supported block palette and construction limits. It returns cuboid regions describing a schematic. Code checks dimensions, palette, grounded connectivity, entrance, stair headroom and interior floor access before selecting a site. An invalid draft gets one repair attempt with the validation error.
+With `OPENROUTER_API_KEY` set, the designer uses `anthropic/claude-fable-5.1` by default (`OPENROUTER_BUILD_MODEL` overrides it). It receives the request, nearby ground survey, game mode, dimension, inventory, supported block palette and construction limits. It returns cuboid regions describing a schematic. Code checks dimensions, palette, grounded connectivity, entrance, stair headroom and interior floor access before selecting a site. Inset entrances are accepted when a supported walking route reaches the exterior. Decorative structures can omit an entrance. Invalid drafts go back to the same advisor with concrete validation feedback, with up to four total attempts; each failed draft is retained.
 
-OpenRouter is optional. In the default `BUILD_DESIGNER=auto` mode, a missing key or two failed designer attempts selects a Jev template fallback. Jev chooses a cottage, mansion or tower, one to three floors, size and a material through the actual block catalog. Code assembles a stepped roof, windows, entrance and accessible stairs. The bot announces this fallback and reports a blocker for unsupported shapes instead of silently substituting a different structure. Set `BUILD_DESIGNER=jev` to always use templates, or `openrouter` to require a generated design.
+OpenRouter is optional. In the default `BUILD_DESIGNER=auto` mode, a missing key selects a Jev template fallback. With an OpenRouter key, custom designs stay on the general schematic-and-repair path and never silently switch to fixed templates after validation failures. Jev chooses a cottage, mansion or tower, one to three floors, size and a material through the actual block catalog. Code assembles a stepped roof, windows, entrance and accessible stairs. The bot announces this fallback and reports a blocker for unsupported shapes instead of silently substituting a different structure. Set `BUILD_DESIGNER=jev` to always use templates, or `openrouter` to require a generated design.
 
 Designs, material lists, site coordinates and progress are saved with the goal. Resume reuses the saved schematic and checks actual blocks; it does not generate a new design. Jev chooses gathering, clearing and placement work. Survival obtains materials through the existing dependencies; Creative uses the Creative inventory. Building never autonomously invokes `/fill`, `/give` or another operator command. An unexpected block added to the surveyed work area stops construction for inspection.
 
-Current generated-design limits are 25×16×25, 256 regions, 16 palette entries and 6,000 solid blocks. The supported palette contains full cubes; oriented stairs/doors, fluids, gravity blocks and redstone behavior are outside this executor. It requires a loaded, dry site with a supported entrance and at most three blocks of ground variation. Large builds and rare Survival materials can still encounter movement or acquisition blockers. Custom designs do not yet become remembered survival shelters. A controlled Creative trial completed an 865-block Fable-designed cherry mansion; a fresh connection verified every block/opening and walked both floors without digging or scaffolding. This is construction evidence, not proof of gathering a mansion’s materials in Survival.
+Current generated-design limits are 25×16×25, 256 regions, 16 palette entries and 6,000 solid blocks. The supported palette contains full cubes; oriented stairs/doors, fluids, gravity blocks and redstone behavior are outside this executor. It requires a loaded, dry site with a supported approach and at most three blocks of ground variation. Natural sand and gravel are valid site terrain. Large builds and rare Survival materials can still encounter movement or acquisition blockers. Custom designs do not yet become remembered survival shelters. A controlled Creative trial built and independently verified an 84-block advisor-designed solid monument using the same executor, with no shape-specific branch. A previous controlled Creative trial completed an 865-block Fable-designed cherry mansion; a fresh connection verified every block/opening and walked both floors without digging or scaffolding. This is construction evidence, not proof of gathering a mansion’s materials in Survival.
 
 Jev remains a decision model through either provider. `JEV_PROVIDER=openrouter` uses the OpenRouter Decisions API with `typesafe/jev-1.13`; this is separate from the generative designer. If no provider is specified, an existing TypeSafe key takes precedence, otherwise the OpenRouter key is used for Jev.
 
@@ -241,3 +241,23 @@ Validation scripts: `scripts/swim-test.js` and `scripts/companion-live-test.js`
 require an explicit isolated `MC_PORT` and record their setup commands. They reject
 the occupied player-world port and are controlled mechanics fixtures, never fresh
 Survival acceptance. `scripts/companion-routing-test.js` checks live Jev routing.
+
+
+### Boat travel
+
+For discovery, surface resource searches, come and follow, Jev can choose a boat
+for a surveyed water crossing of at least 16 blocks. Code checks level source
+water, boat-and-rider clearance, loaded terrain, nearby entities, health and safe
+shores; Jev decides whether boating fits the request. An explicit request to swim
+or avoid boats is respected. Small puddles continue to use swimming.
+
+Jev reuses a carried boat or obtains one through the normal recipe graph, places
+and boards it, paddles with bounded client vehicle physics, gets out, recovers its
+own empty boat and swims onto the bank. It stops on cancellation or server movement
+corrections. Other players' boats and occupied boats are never broken for cleanup.
+Failed optional trips have a cooldown and a two-failure limit per goal.
+
+This first boating route planner requires an observed shore at both ends within
+80 blocks. Unknown ocean crossings, waterfalls, flowing-water courses and ice
+boating are not supported. The craft/cross/land/recover trial uses a controlled
+lake and granted planks; it is not natural-world acceptance.

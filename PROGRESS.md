@@ -510,3 +510,48 @@ Winning-game goal remains ACTIVE and incomplete. No fresh full winning trial was
 started while handling these live companion requests; all previous failures and
 acceptance limitations remain. Continue the fresh Normal Survival journey next,
 keeping the occupied peaceful world and unrelated Mindcraft separate.
+
+## 2026-09-19 13:43 UTC — Boat travel, general schematics, and matching robot skin
+
+- Shared robot texture now gives the back the same light shell color as the front.
+  Regenerated original PNG/SVG/pack and updated the locally installed resource pack;
+  Observatory rear view verified. Pushed 0c654e6. Minecraft pack still requires
+  enabling/reloading in the game client; this is not a globally uploaded account skin.
+- Boat travel surveys received source water, boat-width clearance and safe shores.
+  Jev chooses useful long crossings for movement/discovery/surface gathering, prepares
+  a boat through ordinary recipes, places/mounts/paddles it with normal protocol
+  controls, dismounts and recovers only its own boat. Puddles remain swim candidates.
+  Corrections, hazards, obstacles and cancellation stop paddling; no privileged
+  commands or teleports are used by the routine. Current scope is observed level
+  shore-to-shore crossings within an 80-block survey, not unknown ocean navigation.
+- Fixed modern passenger removal and vanilla dismount input; hull recovery respects
+  attack timing, and ordinary buoyant movement reaches the surface after dismount.
+- General advisor schematics now accept non-enterable monuments (entrance null) and
+  reachable inset entrances. Existing floor/headroom/support/exterior access checks
+  remain. Design failures get specific repair feedback for up to four attempts and
+  retain drafts. With the advisor configured they no longer fall back to an unrelated
+  house. No pyramid template or keyword exception was added. Actual failed 2255-block
+  inset draft validates unchanged; shape/materials remain advisor-generated.
+
+Validation: all336 tests pass (/tmp/jev-final-boats-shapes-suite.log). Controlled
+boat-mu8fkzk4 PASS: crafted boat, 62-block water crossing, independent vehicle/rider
+observer, actual shore arrival, recovered boat, health20/nodeaths/no vehicle
+corrections. Reverse trip cancellation stopped after20 packets, dismounted, then
+walked again. Saved-server statistics independently record65.29m boat travel. Final
+fluid height matches source water8/9. Earlier setup/clearance/dismount/swimming
+failures and intermediate pass boat-mu8fiwup remain preserved. Controlled
+build-shape-mu8fa9ph PASS: live advisor generated four cuboids/84 blocks with null
+entrance; general builder placed all84; separate observer verified actual world
+blocks/empty spaces. Both fixtures used recorded commands/grants and do NOT count
+as fresh survival or winning acceptance. Isolated25579 saved/stopped13:37:39UTC.
+
+Deployed frozen .bot-state/runtimes/boats-builds-20260919-1338, runner4381,
+log .bot-state/jev-play-peaceful-20260919-boats-builds.log. One graceful bot reconnect;
+player server34258 untouched. Fresh snapshot confirms same position, health/food20
+and preserved purple-concrete request in interrupted state (not auto-resumed).
+Temporary preview3046 stopped; live Observatory3045 refreshed.
+
+Next user request: combine recipe dependencies across multi-item tasks, gather the
+shared materials first and batch crafting/smelting, instead of completing each item
+from scratch. Existing bundle execution is sequential and not yet optimized.
+Winning goal stays ACTIVE/incomplete with all prior acceptance limitations.

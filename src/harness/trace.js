@@ -22,7 +22,7 @@ function goalView(goal = {}) {
     gameProgress: goal.gameProgress,
     tasks: goal.tasks?.map(({ kind, item, count, delivered, status, step }) => ({ kind, item, count, delivered, status, step })),
     activeTask: goal.activeTask, discoveryTarget: goal.discoveryTarget, discovery: goal.discovery,
-    opportunistic: goal.opportunistic,
+    opportunistic: goal.opportunistic, boatTravel: goal.boatTravel,
     mobHunt: goal.mobHunt,
     strongholdSearch: goal.strongholdSearch,
     endPortal: goal.endPortal,

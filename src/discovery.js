@@ -106,7 +106,7 @@ async function biomeLocations(bot, task, name) {
   return locations.sort((a, b) => a.distanceTo(center) - b.distanceTo(center));
 }
 
-async function discoverStep(bot, task, goal, save, { navigate, explore }) {
+async function discoverStep(bot, task, goal, save, { navigate, explore, boatTravel }) {
   const target = goal.discoveryTarget;
   if (!target || !['biome', 'entity', 'block'].includes(target.kind)) throw new Error('Missing discovery target');
   const state = goal.discovery ||= { visits: 0, observed: [] };
@@ -147,6 +147,7 @@ async function discoverStep(bot, task, goal, save, { navigate, explore }) {
     if (near) return finish(near);
   }
   state.observed = candidates.slice(0, 16).map(p => ({ ...p })); save();
+  if (candidates[0] && boatTravel && await boatTravel(candidates[0])) return false;
   const policy = target.kind === 'biome' ? surfaceMovement(bot) : null;
   try {
     for (const p of candidates.slice(0, 8)) {

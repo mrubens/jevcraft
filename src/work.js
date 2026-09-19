@@ -38,6 +38,7 @@ const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
 const { opportunisticMining } = require('./opportunistic-mining');
 const { friendlyProblem, completion } = require('./speech');
+const { boatTravelStep } = require('./boats');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -188,6 +189,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       target = observed[0];
       search.observedTarget = { ...target };
     }
+    if (surfaceOnly && await boatTravelStep(bot, task, goal, save, target, { acquireStep })) return;
     // When a known resource is well below us, circling the same mountain does
     // not get closer. Approach through a dry, supported staircase. Stay above
     // a water-covered deposit rather than tunnelling into the water itself.
@@ -801,13 +803,21 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
   if (!goal.design) {
     const mode = process.env.BUILD_DESIGNER || 'auto';
     if (!['auto', 'jev', 'openrouter'].includes(mode)) throw new Blocked('BUILD_DESIGNER must be auto, jev or openrouter');
-    const fallback = mode === 'jev' || mode === 'auto' && (!process.env.OPENROUTER_API_KEY || (goal.designAttempts || 0) >= 2);
-    if (!fallback && (goal.designAttempts || 0) >= 2) throw new Blocked(`Building designer could not produce a usable schematic after two attempts: ${goal.designError || 'request failed'}`);
+    const fallback = mode === 'jev' || mode === 'auto' && !process.env.OPENROUTER_API_KEY;
+    // Recheck saved geometry after a validator update, before paying for a
+    // replacement or silently reducing the user's request to a house template.
+    if (!fallback && goal.designDraft) {
+      try {
+        goal.design = { ...validateSchematic(goal.designDraft, bot.registry), backend: 'validated-saved-draft', createdAt: new Date().toISOString() };
+        delete goal.designDraft; delete goal.designError; delete goal.designFallbackReason; save(); return false;
+      } catch (error) { goal.designError = error.message; }
+    }
+    if (!fallback && (goal.designAttempts || 0) >= 4) throw new Blocked(`Building designer could not produce a usable plan after four attempts: ${goal.designError || 'request failed'}`);
     goal.step = { action: 'design_building' }; save(); onStep(goal);
     if (fallback) {
       if (!client) throw new Blocked('The building fallback needs a configured Jev connection');
       goal.designFallbackReason = goal.designError || (mode === 'jev' ? 'Jev templates selected' : 'No OpenRouter designer key configured');
-      bot.chat('I can plan a cottage, mansion, or tower with up to three floors.');
+      bot.chat("I'm working out a simpler way to build it.");
     } else goal.designAttempts = (goal.designAttempts || 0) + 1;
     try { goal.design = fallback ? await designWithJev(bot, task, goal.request, client) :
       await designBuilding(bot, task, goal.request, { previousDraft: goal.designDraft, feedback: goal.designError }); }
@@ -815,6 +825,11 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
       if (!fallback && ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) goal.designAttempts--;
       goal.designError = err.message;
       if (err.draft) goal.designDraft = err.draft;
+      if (!['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) {
+        (goal.designHistory ||= []).push({ at: new Date().toISOString(), attempt: goal.designAttempts, error: err.message, draft: err.draft });
+        goal.designHistory = goal.designHistory.slice(-4);
+        if (!fallback && err.draft && goal.designAttempts < 4) err.name = 'DesignRepair';
+      }
       save(); throw err;
     }
     delete goal.designDraft; delete goal.designError;
@@ -980,6 +995,7 @@ async function movementStep(bot, task, goal, save) {
     return false;
   }
   const before = bot.entity.position.clone();
+  if (await boatTravelStep(bot, task, goal, save, target.position, { acquireStep })) return false;
   try { await navigate(bot, task, new goals.GoalFollow(target, 2), { timeoutMs: goal.kind === 'follow' ? 5000 : 60000, stallMs: 5000 }); }
   catch (err) {
     task.check(); if (err.name === 'NeedsAir' || bot.entity.position.distanceTo(before) < 1) throw err;
@@ -1129,6 +1145,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
 async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () => {}, decisionClient, survival, recoveryAdviser } = {}) {
   const save = () => store.save(goal);
   task.opportunityClient = decisionClient;
+  if (goal.boatTravel?.placed?.uuid && goal.boatTravel.placed.dimension === bot.game.dimension) (bot._ownedBoats ||= new Set()).add(goal.boatTravel.placed.uuid);
   survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
   goal.survival = survival.state;
   protectConstruction(bot, goal);
@@ -1177,7 +1194,8 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       if (['obtain', 'craft'].includes(goal.kind)) complete = await obtainStep(bot, task, goal, save, decisionClient, onStep);
       if (goal.kind === 'bundle') complete = await bundleStep(bot, task, goal, save,
         (child, checkpoint) => obtainStep(bot, task, child, checkpoint, decisionClient, () => onStep(goal)));
-      if (goal.kind === 'find') complete = await discoverStep(bot, task, goal, save, { navigate, explore });
+      if (goal.kind === 'find') complete = await discoverStep(bot, task, goal, save, { navigate, explore,
+        boatTravel: target => boatTravelStep(bot, task, goal, save, target, { acquireStep }) });
       if (['come', 'follow'].includes(goal.kind)) complete = await movementStep(bot, task, goal, save);
       if (prepared && goal.kind === 'concrete') {
         if ((goal.delivered || 0) >= goal.count) complete = true;
@@ -1222,6 +1240,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       task.interruptCheck = undefined;
       task.check();
       goal.lastError = err.message;
+      if (err.name === 'DesignRepair') { save(); onStep(goal); continue; }
       if (err.name === 'NeedsAir' || err.name === 'NeedsSafety') { save(); onStep(goal); continue; }
       // A partial craft/build can change inventory before its promise fails.
       // Replan that observed progress; only consecutive no-progress errors

@@ -43,7 +43,7 @@ test('schematic rejects unknown execution fields, unsupported blocks, unbounded 
     d => { d.size = [99999, 99999, 99999]; },
     d => { d.regions[0].to[0] = 5; },
     d => { d.regions[0].from[1] = -1; },
-    d => { d.entrance = [1, 1, 1]; },
+    d => { d.entrance = [-1, 1, 1]; },
     d => { d.entrance = [0, 1, 4]; },
     d => { d.regions.push({ from: [2, 2, 2], to: [2, 2, 2], block: 'glass' }); },
   ]) {
@@ -135,6 +135,72 @@ test('every template has supported geometry and walkable access to each floor', 
     }
     for (let floor = 0; floor < floors; floor++) assert(queue.some(p => p[1] === floor * 4 + 1 && p[0] >= 3 && p[2] >= 6), `${style}/${floors}/${size}: floor ${floor} reachable`);
   }
+});
+
+test('an inset entrance with an open walkway is accepted and the site approach uses its exterior edge', () => {
+  const source = draft(); source.entrance = [2, 1, 1];
+  const result = validateSchematic(source, registry);
+  assert(result.access[0] === 0 || result.access[0] === 4 || result.access[2] === 0 || result.access[2] === 4);
+  const bot = world(), before = bot.blockAt;
+  bot.blockAt = p => p.y <= 63 ? { ...before(p), name: 'sand' } : before(p);
+  const site = selectSchematicSite(bot, result);
+  assert(site, 'Natural desert sand is a valid building site');
+  assert(site.entrance.x < site.origin.x || site.entrance.x >= site.origin.x + 5 || site.entrance.z < site.origin.z || site.entrance.z >= site.origin.z + 5);
+});
+
+test('the retained real custom draft validates without changing any of its geometry', () => {
+  const source = require('./fixtures/inset-custom-design.json');
+  const result = validateSchematic(source, registry);
+  assert.equal(result.blocks.length, 2255);
+  assert.deepEqual(result.source, source);
+  assert.deepEqual(result.access, [12, 1, 0]);
+});
+
+test('a saved custom plan is revalidated without changing its shape or calling a template', async t => {
+  const previous = process.env.OPENROUTER_API_KEY, previousMode = process.env.BUILD_DESIGNER;
+  process.env.OPENROUTER_API_KEY = 'test'; process.env.BUILD_DESIGNER = 'auto';
+  t.after(() => {
+    if (previous === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = previous;
+    if (previousMode === undefined) delete process.env.BUILD_DESIGNER; else process.env.BUILD_DESIGNER = previousMode;
+  });
+  const source = draft(); source.entrance = [2, 1, 1];
+  const goal = { request: 'build my unusual structure', designDraft: source, designAttempts: 2, designError: 'entrance must be on an exterior edge' };
+  t.mock.method(global, 'fetch', () => { throw new Error('Valid saved geometry needs no new model call'); });
+  await designedBuildStep(world(), new Task('recheck'), goal, () => {}, { systemOne: () => { throw new Error('Do not substitute a template'); } });
+  assert.deepEqual(goal.design.source, source);
+  assert.equal(goal.designDraft, undefined);
+  assert.equal(goal.design.backend, 'validated-saved-draft');
+});
+
+test('invalid custom geometry gets another advisor repair instead of falling into fixed templates', async t => {
+  const previous = process.env.OPENROUTER_API_KEY, previousMode = process.env.BUILD_DESIGNER;
+  process.env.OPENROUTER_API_KEY = 'test'; process.env.BUILD_DESIGNER = 'auto';
+  t.after(() => {
+    if (previous === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = previous;
+    if (previousMode === undefined) delete process.env.BUILD_DESIGNER; else process.env.BUILD_DESIGNER = previousMode;
+  });
+  const bad = draft(); bad.regions[0].to[0] = 30;
+  const goal = { request: 'build an arch', designDraft: bad, designAttempts: 2 }, bot = world(); bot.chat = () => {};
+  let calls = 0;
+  t.mock.method(global, 'fetch', async (_url, options) => {
+    calls++;
+    const messages = JSON.parse(options.body).messages;
+    assert(messages.at(-1).content.includes('region out of bounds'));
+    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(draft()) } }] }) };
+  });
+  await designedBuildStep(bot, new Task('repair'), goal, () => {}, { systemOne: () => { throw new Error('Do not substitute a template'); } });
+  assert.equal(calls, 1); assert.equal(goal.designAttempts, 3); assert(goal.design);
+});
+
+test('a sealed interior entrance is rejected and a non-enterable sculpture needs no invented door', () => {
+  const source = { name: 'Monument', description: 'A solid stone monument', size: [5, 5, 5], palette: ['stone'],
+    regions: [{ from: [0, 0, 0], to: [4, 4, 4], block: 'stone' }], entrance: null };
+  const monument = validateSchematic(source, registry);
+  assert.equal(monument.blocks.length, 125);
+  assert(selectSchematicSite(world(), monument));
+  source.regions.push({ from: [2, 1, 2], to: [2, 2, 2], block: 'air' });
+  source.entrance = [2, 1, 2];
+  assert.throws(() => validateSchematic(source, registry), /no walkable route to the exterior/);
 });
 
 test('a closed stairwell is rejected even when all blocks and the entrance are supported', () => {

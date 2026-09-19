@@ -26,6 +26,20 @@ function fixPlayerDimensions(physics) {
 function compatibilityPlugin(bot) {
   require('./block-search').installBlockSearch(bot);
   fixPlayerDimensions(bot.physics);
+  // Modern set_passengers names the VEHICLE and its remaining passengers.
+  // Mineflayer only removes our mount when entityId is -1 (never sent here).
+  bot._client.on('set_passengers', ({ entityId, passengers }) => {
+    const observed = bot.entities?.[entityId];
+    if (observed) {
+      for (const old of observed.passengers || []) if (!passengers.includes(old.id) && old.vehicle === observed) delete old.vehicle;
+      observed.passengers = (observed.passengers || []).filter(e => passengers.includes(e.id));
+    }
+    if (bot.vehicle?.id === entityId && !passengers.includes(bot.entity?.id)) {
+      const vehicle = bot.vehicle;
+      vehicle.passengers = (vehicle.passengers || []).filter(e => e.id !== bot.entity.id);
+      delete bot.entity.vehicle; bot.vehicle = null; bot.emit('dismount', vehicle);
+    }
+  });
   bot.once?.('spawn', () => fixPlayerDimensions(bot.physics));
   const commandFields = bot.registry?.protocol?.play?.toServer?.types?.packet_client_command?.[1];
   const command = Array.isArray(commandFields) && commandFields.find(f => f.name === 'actionId');

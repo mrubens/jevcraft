@@ -11,10 +11,10 @@ const SCHEMA = { type: 'object', additionalProperties: false,
     palette: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 16 },
     regions: { type: 'array', minItems: 1, maxItems: LIMITS.regions, items: { type: 'object', additionalProperties: false,
       required: ['from', 'to', 'block'], properties: { from: vectorSchema, to: vectorSchema, block: { type: 'string' } } } },
-    entrance: vectorSchema,
+    entrance: { anyOf: [vectorSchema, { type: 'null' }] },
   } };
 const replaceable = b => b && (['air', 'cave_air', 'void_air', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'leaf_litter', 'snow', 'vine'].includes(b.name) || /_leaves$|_log$/.test(b.name));
-const naturalGround = b => b?.boundingBox === 'block' && /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|stone|deepslate|granite|diorite|andesite|tuff|sandstone|red_sandstone|terracotta)$/.test(b.name);
+const naturalGround = b => b?.boundingBox === 'block' && /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|stone|deepslate|granite|diorite|andesite|tuff|sand|red_sand|gravel|sandstone|red_sandstone|terracotta)$/.test(b.name);
 
 // Restrict the designer to geometry the current placement executor can verify
 // exactly. Oriented doors/stairs, gravity blocks, fluids and commands are not
@@ -60,34 +60,40 @@ function validateSchematic(input, registry) {
     if (cells.has(k) && !connected.has(k)) { connected.add(k); queue.push(cells.get(k)); }
   }
   if (connected.size !== cells.size) fail('floating disconnected blocks');
-  vector(input.entrance, 'entrance');
-  const e = vec(input.entrance);
-  if (input.entrance.some((n, i) => n < 0 || n >= input.size[i]) || e.y < 1 || e.y + 1 >= input.size[1] ||
-      ![0, input.size[0] - 1].includes(e.x) && ![0, input.size[2] - 1].includes(e.z)) fail('entrance must be on an exterior edge');
-  if (cells.has(key(e)) || cells.has(key(e.offset(0, 1, 0))) || !cells.has(key(e.offset(0, -1, 0)))) fail('entrance needs a floor and two clear blocks');
-  // Check ordinary walking/jumping access, including jump headroom. A pretty
-  // upper floor with a staircase blocked by its own ceiling is not usable.
-  const walkable = p => p.x >= 0 && p.z >= 0 && p.x < input.size[0] && p.z < input.size[2] && p.y >= 1 && p.y + 1 < input.size[1] &&
-    cells.has(key(p.offset(0, -1, 0))) && !cells.has(key(p)) && !cells.has(key(p.offset(0, 1, 0)));
-  const reached = new Set([key(e)]), walking = [e];
-  for (let i = 0; i < walking.length; i++) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const dy of [-1, 0, 1]) {
-    const p = walking[i], next = p.offset(dx, dy, dz), k = key(next);
-    if (!reached.has(k) && walkable(next) && (dy <= 0 || !cells.has(key(p.offset(0, 2, 0))))) { reached.add(k); walking.push(next); }
+  let access = null;
+  if (input.entrance !== null) {
+    vector(input.entrance, 'entrance');
+    const e = vec(input.entrance);
+    if (input.entrance.some((n, i) => n < 0 || n >= input.size[i]) || e.y < 1 || e.y + 1 >= input.size[1]) fail('entrance must be inside the build bounds with standing headroom');
+    if (cells.has(key(e)) || cells.has(key(e.offset(0, 1, 0))) || !cells.has(key(e.offset(0, -1, 0)))) fail('entrance needs a floor and two clear blocks');
+    // Check ordinary walking/jumping access, including jump headroom. A pretty
+    // upper floor with a staircase blocked by its own ceiling is not usable.
+    const walkable = p => p.x >= 0 && p.z >= 0 && p.x < input.size[0] && p.z < input.size[2] && p.y >= 1 && p.y + 1 < input.size[1] &&
+      cells.has(key(p.offset(0, -1, 0))) && !cells.has(key(p)) && !cells.has(key(p.offset(0, 1, 0)));
+    const reached = new Set([key(e)]), walking = [e];
+    for (let i = 0; i < walking.length; i++) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const dy of [-1, 0, 1]) {
+      const p = walking[i], next = p.offset(dx, dy, dz), k = key(next);
+      if (!reached.has(k) && walkable(next) && (dy <= 0 || !cells.has(key(p.offset(0, 2, 0))))) { reached.add(k); walking.push(next); }
+    }
+    // Pyramids, porches and inset facades have real doors inside their bounding
+    // box. Require an actual walkable path to its edge, not a particular index.
+    access = walking.find(p => [0, input.size[0] - 1].includes(p.x) || [0, input.size[2] - 1].includes(p.z));
+    if (!access) fail('entrance has no walkable route to the exterior edge');
+    const inaccessible = {};
+    for (let x = 1; x < input.size[0] - 1; x++) for (let y = 1; y < input.size[1] - 1; y++) for (let z = 1; z < input.size[2] - 1; z++) {
+      const p = new Vec3(x, y, z);
+      if (walkable(p) && !reached.has(key(p))) inaccessible[y] = (inaccessible[y] || 0) + 1;
+    }
+    const blockedFloor = Object.entries(inaccessible).find(([, count]) => count >= 9);
+    if (blockedFloor) fail(`unreachable interior floor at y=${blockedFloor[0]} (${blockedFloor[1]} standing cells). Connect every room/floor to the entrance with one-block steps and clear two-block standing/jumping headroom above each stair; carve the upper floor over the stairs`);
   }
-  const inaccessible = {};
-  for (let x = 1; x < input.size[0] - 1; x++) for (let y = 1; y < input.size[1] - 1; y++) for (let z = 1; z < input.size[2] - 1; z++) {
-    const p = new Vec3(x, y, z);
-    if (walkable(p) && !reached.has(key(p))) inaccessible[y] = (inaccessible[y] || 0) + 1;
-  }
-  const blockedFloor = Object.entries(inaccessible).find(([, count]) => count >= 9);
-  if (blockedFloor) fail(`unreachable interior floor at y=${blockedFloor[0]} (${blockedFloor[1]} standing cells). Connect every room/floor to the entrance with one-block steps and clear two-block standing/jumping headroom above each stair; carve the upper floor over the stairs`);
   const blocks = [...cells.values()];
   const empty = [];
   for (let x = 0; x < input.size[0]; x++) for (let y = 0; y < input.size[1]; y++) for (let z = 0; z < input.size[2]; z++) {
     if (!cells.has(`${x},${y},${z}`)) empty.push({ x, y, z });
   }
   const materials = blocks.reduce((m, p) => { m[p.material] = (m[p.material] || 0) + 1; return m; }, {});
-  return { source: input, blocks, empty, materials };
+  return { source: input, blocks, empty, materials, access: access && [access.x, access.y, access.z] };
 }
 
 function surveyForDesign(bot) {
@@ -119,10 +125,10 @@ async function designBuilding(bot, task, request, { fetchImpl = fetch, apiKey = 
       method: 'POST', signal: controller.signal,
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, max_tokens: 10000, reasoning: { effort: 'low' }, provider: { require_parameters: true },
-        messages: [{ role: 'system', content: `Design an attractive, usable Minecraft structure matching the player request. Return only a schematic, never commands or code. Coordinates are local [x,y,z] inside size. Regions are inclusive filled cuboids, applied in order; air carves openings. Unspecified cells are air. Use only availableBlocks, at most 16 palette entries and ${LIMITS.regions} regions; dimensions at most 25x16x25 and at most ${LIMITS.blocks} solid blocks. All solid components must connect to a foundation at y=0. Include floors, walls, a roof, windows and generous walkable interiors for buildings. Make mansions visibly larger and architecturally richer than simple houses, with connected rooms and a usable entrance. Reserve a two-block-high entrance opening on an exterior edge at y>=1 with a floor directly beneath it; entrance gives its bottom air cell. Every interior floor must be reachable from the entrance by walking and one-block jumps; carve the floor above each staircase to leave jumping headroom over the current step as well as the destination. Use full-block stepped roof/stair geometry when needed; oriented block states and doors are not available in this executor. Design compactly with cuboids rather than listing thousands of individual blocks. The surveyed terrain informs the scale and style; code will choose and revalidate a nearby supported site.` },
+        messages: [{ role: 'system', content: `Design an attractive, usable Minecraft structure matching the player request. Return only a schematic, never commands or code. Coordinates are local [x,y,z] inside size. Regions are inclusive filled cuboids, applied in order; air carves openings. Unspecified cells are air. Use only availableBlocks, at most 16 palette entries and ${LIMITS.regions} regions; dimensions at most 25x16x25 and at most ${LIMITS.blocks} solid blocks. All solid components must connect to a foundation at y=0. Follow the requested shape rather than forcing every structure to be a house. Include floors, walls, a roof, windows and walkable interiors only when appropriate. Sculptures, monuments, arches and other structures need not have rooms or a doorway: use entrance:null when the structure is not meant to be entered. For structures meant to be entered, provide a usable entrance. In Survival, prefer common locally available materials and modest scale unless the user explicitly asks for rare materials or a huge build; do not add Nether-only decorative materials by default. Make mansions visibly larger and architecturally richer than simple houses, with connected rooms and a usable entrance. For an enterable structure, reserve a two-block-high entrance opening at y>=1 with a floor directly beneath it; entrance gives its bottom air cell. Inset entrances are allowed when a supported, two-block-high walking route reaches an exterior edge of the bounding box. Every interior floor must be reachable from the entrance by walking and one-block jumps; carve the floor above each staircase to leave jumping headroom over the current step as well as the destination. Use full-block stepped roof/stair geometry when needed; oriented block states and doors are not available in this executor. Design compactly with cuboids rather than listing thousands of individual blocks. The surveyed terrain informs the scale and style; code will choose and revalidate a nearby supported site.` },
           { role: 'user', content: JSON.stringify({ request, world }) },
           ...(previousDraft ? [{ role: 'assistant', content: JSON.stringify(previousDraft) },
-            { role: 'user', content: `The schematic failed validation: ${feedback}. Correct this issue while preserving the requested structure. Return the full corrected schematic.` }] : [])],
+            { role: 'user', content: `The schematic failed validation: ${feedback}. Correct this issue while preserving the requested structure and materials. Do not replace it with a different building type. Check all geometry, connections, entrance access and walkable interior floors before returning it. Return the full corrected schematic.` }] : [])],
         response_format: { type: 'json_schema', json_schema: { name: 'minecraft_schematic', strict: true, schema } } }),
     });
     if (!response.ok) throw new Error(`Building designer request failed (${response.status})`);
@@ -164,7 +170,7 @@ function selectSchematicSite(bot, schematic) {
     for (const p of schematic.blocks.filter(p => p.y === 0)) for (let y = ground.get(`${p.x},${p.z}`) + 1; y < baseY; y++) {
       blocks.push({ x: origin.x + p.x, y, z: origin.z + p.z, material: p.material });
     }
-    const e = vec(schematic.source.entrance), direction = e.z === 0 ? new Vec3(0, 0, -1) : e.z === depth - 1 ? new Vec3(0, 0, 1) : e.x === 0 ? new Vec3(-1, 0, 0) : new Vec3(1, 0, 0);
+    const e = vec(schematic.access || schematic.source.entrance || [Math.floor(width / 2), 1, 0]), direction = e.z === 0 ? new Vec3(0, 0, -1) : e.z === depth - 1 ? new Vec3(0, 0, 1) : e.x === 0 ? new Vec3(-1, 0, 0) : new Vec3(1, 0, 0);
     const entrance = origin.plus(e).plus(direction);
     if (!replaceable(bot.blockAt(entrance)) || !replaceable(bot.blockAt(entrance.offset(0, 1, 0))) || !naturalGround(bot.blockAt(entrance.offset(0, -1, 0)))) continue;
     const initialBlocks = {};

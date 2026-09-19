@@ -22,6 +22,7 @@ function activity(step = {}) {
   if (step.action === 'combined_request') return activity(step.detail || { action: 'collect', item: step.item });
   const item = name(step.item || step.drops || step.resource || step.name || step.block);
   switch (step.action) {
+    case 'boat_travel': return "I'm taking a boat across the water.";
     case 'craft': return `I'm making ${item}.`;
     case 'mine': case 'collect': return `I'm collecting ${item}.`;
     case 'deliver': return `I'm bringing you ${item}.`;

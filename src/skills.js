@@ -125,6 +125,10 @@ async function recoverNavigation(bot, task, deadline, stopWhen) {
 
 /** Move somewhere, aborting cleanly if the task is cancelled mid-path. */
 async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen } = {}) {
+  task.check();
+  // A stopped trip can leave our empty boat underfoot. Clear only that owned
+  // boat before player physics attempts to walk through its solid hull.
+  if (bot._ownedBoats?.size && !bot.vehicle) await require('./boats').clearOwnedBoatAtFeet(bot, task);
   const deadline = Date.now() + timeoutMs;
   for (let attempt = 0; ; attempt++) {
     task.check(); checkAir(bot);

@@ -3,6 +3,21 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { fixMiningMaterials } = require('../src/compatibility');
 
+test('modern passenger removal clears the mount for this player and other observed riders', () => {
+  const { EventEmitter } = require('node:events');
+  const bot = new EventEmitter(); bot._client = new EventEmitter();
+  const vehicle = { id: 3, passengers: [] }, other = { id: 4, vehicle };
+  bot.entity = { id: 2, vehicle }; bot.vehicle = vehicle; vehicle.passengers = [bot.entity, other];
+  bot.entities = { 2: bot.entity, 3: vehicle, 4: other };
+  let dismounts = 0; bot.on('dismount', () => dismounts++);
+  require('../src/compatibility').compatibilityPlugin(bot);
+  bot._client.emit('set_passengers', { entityId: 3, passengers: [4] });
+  assert.equal(bot.vehicle, null); assert.equal(bot.entity.vehicle, undefined); assert.equal(dismounts, 1);
+  assert.equal(other.vehicle, vehicle); assert.deepEqual(vehicle.passengers, [other]);
+  bot._client.emit('set_passengers', { entityId: 3, passengers: [] });
+  assert.equal(other.vehicle, undefined); assert.deepEqual(vehicle.passengers, []); assert.equal(dismounts, 1);
+});
+
 test('26.1 mining uses pickaxe speed while preserving harvest requirements', () => {
   const registry = require('prismarine-registry')('26.1');
   const Block = require('prismarine-block')(registry);
