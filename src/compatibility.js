@@ -29,17 +29,25 @@ function compatibilityPlugin(bot) {
   bot.once?.('spawn', () => fixPlayerDimensions(bot.physics));
   const commandFields = bot.registry?.protocol?.play?.toServer?.types?.packet_client_command?.[1];
   const command = Array.isArray(commandFields) && commandFields.find(f => f.name === 'actionId');
-  if (command?.type?.[0] === 'mapper' && typeof bot._client.write === 'function') {
+  if (typeof bot._client.write === 'function') {
     // Mineflayer's credits handler writes {action: 0}; its death handler uses
     // numeric actionId. The 26.1 mapper expects the named actionId instead.
-    const originalWrite = bot._client.write, names = command.type[1].mappings;
+    const originalWrite = bot._client.write, names = command?.type?.[0] === 'mapper' ? command.type[1].mappings : null;
     bot._client.write = function (name, packet, ...args) {
-      if (name === 'client_command') {
+      if (name === 'client_command' && names) {
         const value = packet.actionId ?? packet.action;
         if (Object.hasOwn(names, value)) packet = { actionId: names[value] };
       }
-      return originalWrite.call(this, name, packet, ...args);
+      const result = originalWrite.call(this, name, packet, ...args);
+      // Mineflayer's look promise checks yaw alone, while the physics loop
+      // smooths pitch independently. Keep evidence of the actual queued
+      // rotation so projectile release can wait for both axes.
+      if (['look', 'position_look'].includes(name) && Number.isFinite(packet.yaw) && Number.isFinite(packet.pitch)) {
+        bot.lastSentRotation = { yaw: packet.yaw, pitch: packet.pitch, at: Date.now() };
+      }
+      return result;
     };
+    bot._client.on('respawn', () => { delete bot.lastSentRotation; });
   }
   // lpVec3 is already decoded to blocks/tick. Mineflayer 4.39 still divides
   // these packets by 8000, as though they carried the older integer vector.

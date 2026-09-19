@@ -76,6 +76,23 @@ test('26.1 credits acknowledgement and respawn use the named client-command fiel
     ['client_command', { actionId: 'request_stats' }], ['other_packet', { action: 0 }]]);
 });
 
+test('aim evidence tracks only forwarded rotation packets and is cleared on dimension respawn', () => {
+  const { EventEmitter } = require('events'), writes = [];
+  const bot = { _client: new EventEmitter() };
+  bot._client.write = (name, packet) => { if (packet.reject) throw new Error('write failed'); writes.push([name, packet]); return true; };
+  require('../src/compatibility').compatibilityPlugin(bot);
+  assert.equal(bot._client.write('look', { yaw: 10, pitch: -45 }), true);
+  assert.equal(bot.lastSentRotation.pitch, -45);
+  bot._client.write('position', { x: 1, y: 64, z: 1 });
+  assert.equal(bot.lastSentRotation.pitch, -45);
+  bot._client.write('position_look', { x: 1, y: 64, z: 1, yaw: 20, pitch: -60 });
+  assert.equal(bot.lastSentRotation.yaw, 20); assert.equal(bot.lastSentRotation.pitch, -60);
+  assert.throws(() => bot._client.write('look', { yaw: 40, pitch: -30, reject: true }), /write failed/);
+  assert.equal(bot.lastSentRotation.pitch, -60, 'Failed writes do not count as sent');
+  bot._client.emit('respawn'); assert.equal(bot.lastSentRotation, undefined);
+  assert.equal(writes.length, 3, 'Tracking never sends extra packets');
+});
+
 test('path smoothing and execution cannot corrupt an ongoing AStar search', () => {
   const AStar = require('mineflayer-pathfinder/lib/astar');
   const Move = require('mineflayer-pathfinder/lib/move');

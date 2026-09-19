@@ -2,6 +2,7 @@
 const { Vec3 } = require('vec3');
 const { countOf } = require('./skills');
 const { fillWaterBucket } = require('./water');
+const { dryStanding } = require('./mining-access');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const down = new Vec3(0, -1, 0);
 
@@ -42,7 +43,7 @@ async function recoverFall(bot, task, goal, save, { timeoutMs = 12000, refill = 
   const before = countOf(bot, 'water_bucket'), emptyBefore = countOf(bot, 'bucket');
   bot.pathfinder.setGoal(null); bot.clearControlStates(); bot.stopDigging?.();
   const previousInterrupt = task.interruptCheck; task.interruptCheck = undefined;
-  let previous = bot.entity.position.clone(), used, failure, wetSince = 0;
+  let previous = bot.entity.position.clone(), used, failure, wetSince = 0, dryLanding;
   const check = () => {
     task.check();
     if (bot.game.dimension !== dimension || bot.health <= 0 || bot.isAlive === false) throw new Error('Fall recovery interrupted by dimension change or death');
@@ -87,11 +88,25 @@ async function recoverFall(bot, task, goal, save, { timeoutMs = 12000, refill = 
           return true;
         }
       } else wetSince = 0;
-      if (!used && bot.entity.onGround && Math.abs(bot.entity.velocity.y) < .1) {
-        // Only finish without water after a real stable landing. This branch
-        // does not create successful water-recovery evidence.
-        await sleep(150); check(); return false;
-      }
+      if (bot.entity.onGround && Math.abs(bot.entity.velocity.y) < .1 && dryStanding(bot, bot.entity.position)) {
+        if (!dryLanding || dryLanding.position.distanceTo(bot.entity.position) > .3) dryLanding = { at: Date.now(), position: bot.entity.position.clone() };
+        if (Date.now() - dryLanding.at >= 150) {
+          // Horizontal knockback can carry the player past the placed water.
+          // A real dry landing ends the airborne emergency; it does not prove
+          // that water protected the fall. Recover the spent bucket if the
+          // observed source is still reachable instead of waiting for water
+          // immersion that cannot occur while standing still on dry ground.
+          const evidence = { at: Date.now(), landing: { ...bot.entity.position }, initialHealth, health: bot.health,
+            outcome: 'stable_dry_landing', waterProtectionConfirmed: false, attemptedWater: !!used,
+            source: used && { ...used.position }, waterConsumed: converted ? 1 : 0 };
+          goal.lastFallLanding = evidence; save(); bot.emit('fall_recovery', evidence);
+          if (refill && converted && used) {
+            await fillWaterBucket(bot, task, used.position, { guard: check });
+            evidence.bucketRecovered = true; save();
+          }
+          return false;
+        }
+      } else dryLanding = undefined;
       await sleep(10);
     }
     throw new Error('No living landing in server-confirmed placed water within the fall-recovery deadline');

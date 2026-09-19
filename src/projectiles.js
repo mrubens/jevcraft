@@ -8,6 +8,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Vanilla 26.1 BowItem / AbstractArrow: full draw speed 3, then each tick
 // position += velocity, velocity *= float(0.99), velocity.y -= 0.05.
 const DRAG = Math.fround(.99), GRAVITY = .05, SPEED = 3;
+function sentAimMatches(rotation, solution) {
+  if (!rotation || !Number.isFinite(rotation.yaw) || !Number.isFinite(rotation.pitch)) return false;
+  const yaw = Math.PI - rotation.yaw * Math.PI / 180, pitch = -rotation.pitch * Math.PI / 180;
+  // Upstream look quantizes mouse movement to .15 degrees. Allow that
+  // rounding while rejecting incomplete yaw or pitch interpolation.
+  const tolerance = .2 * Math.PI / 180, difference = yaw - solution.yaw;
+  return Math.abs(Math.atan2(Math.sin(difference), Math.cos(difference))) < tolerance && Math.abs(pitch - solution.pitch) < tolerance;
+}
 function arrowPosition(origin, velocity, ticks) {
   const sum = (1 - DRAG ** ticks) / (1 - DRAG);
   return origin.plus(velocity.scaled(sum)).offset(0, -GRAVITY * (ticks - sum) / (1 - DRAG), 0);
@@ -101,16 +109,16 @@ async function shootBow(bot, task, target, { guard = () => {}, velocity = new Ve
     check();
     const solution = aimAtEntity(bot, target, motion());
     if (!solution) throw new Error('Arrow trajectory became obstructed while drawing');
-    // Forced look resolves before sending rotation. Wait for the ordinary
-    // look task, which finishes after the physics loop writes the look packet,
-    // before releasing; otherwise the arrow uses the previous server yaw.
+    // Neither forced look nor the ordinary yaw-only completion promise
+    // proves that the intended pitch was sent. Wait for the actual movement
+    // packet to carry both angles before releasing the arrow.
     let aimed = false, aimError;
     bot.look(solution.yaw, solution.pitch, false).then(() => { aimed = true; }, err => { aimError = err; aimed = true; });
     const aimDeadline = Date.now() + 2000;
-    while (!aimed && Date.now() < aimDeadline) { check(); await sleep(25); }
+    while ((!aimed || !sentAimMatches(bot.lastSentRotation, solution)) && !aimError && Date.now() < aimDeadline) { check(); await sleep(25); }
     check(); if (aimError) throw aimError;
-    if (!aimed) throw new Error('Bow aim was not sent before its deadline');
-    const before = countOf(bot, 'arrow');
+    if (!aimed || !sentAimMatches(bot.lastSentRotation, solution)) throw new Error('Bow yaw and pitch were not sent before their deadline');
+    const before = countOf(bot, 'arrow'), sentRotation = { ...bot.lastSentRotation };
     released = true; bot.deactivateItem(); drawing = false;
     const deadline = Date.now() + confirmationMs, expected = bow.enchants?.some(e => e.name === 'infinity') ? 0 : 1;
     while (Date.now() < deadline) {
@@ -120,6 +128,7 @@ async function shootBow(bot, task, target, { guard = () => {}, velocity = new Ve
       if (arrow && before - countOf(bot, 'arrow') === expected) return {
         at: Date.now(), targetId: target.id, target: target.name, arrowId: arrow.id, consumed: expected,
         origin: { ...solution.origin }, aim: { ...solution.target }, ticks: solution.ticks, velocity: { ...arrow.velocity },
+        sentRotation, intendedVelocity: { ...solution.velocity },
       };
       await sleep(50);
     }
@@ -135,4 +144,4 @@ async function shootBow(bot, task, target, { guard = () => {}, velocity = new Ve
   }
 }
 
-module.exports = { arrowPosition, bowSolution, clearShot, aimAtEntity, shootBow };
+module.exports = { arrowPosition, bowSolution, clearShot, aimAtEntity, shootBow, sentAimMatches };

@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const { EventEmitter } = require('events'), { Vec3 } = require('vec3');
 const registry = require('minecraft-data')('26.1');
-const { arrowPosition, bowSolution, aimAtEntity, shootBow } = require('../src/projectiles');
+const { arrowPosition, bowSolution, aimAtEntity, shootBow, sentAimMatches } = require('../src/projectiles');
 const { Task } = require('../src/skills');
 
 test('bow trajectories match independently stepped vanilla drag and gravity, including upward and moving targets', () => {
@@ -29,7 +29,7 @@ function fixture() {
     entities: { 8: target }, inventory: { items: () => [bow, arrows] },
     blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }),
     world: { raycast: () => null }, pathfinder: { setGoal() {} }, clearControlStates() {},
-    equip: async i => { bot.heldItem = i; }, look: async () => {},
+    equip: async i => { bot.heldItem = i; }, look: async (yaw, pitch) => { bot.lastSentRotation = { yaw: (Math.PI - yaw) * 180 / Math.PI, pitch: -pitch * 180 / Math.PI }; },
     activateItem: () => draws++, setQuickBarSlot: slot => { assert.notEqual(slot, bot.quickBarSlot); abandoned = true; bot.quickBarSlot = slot; },
     deactivateItem: () => {
       if (abandoned) return;
@@ -84,7 +84,10 @@ test('release waits for the rotation packet; cancellation during rotation never 
     let sent = false;
     bot.look = (yaw, pitch, force) => {
       assert.equal(force, false);
-      return new Promise(resolve => setTimeout(() => { sent = true; if (cancel) task.cancel(); resolve(); }, 60));
+      return new Promise(resolve => setTimeout(() => {
+        bot.lastSentRotation = { yaw: (Math.PI - yaw) * 180 / Math.PI, pitch: -pitch * 180 / Math.PI };
+        sent = true; if (cancel) task.cancel(); resolve();
+      }, 60));
     };
     const release = bot.deactivateItem;
     bot.deactivateItem = () => { assert(sent); release(); };
@@ -92,4 +95,34 @@ test('release waits for the rotation packet; cancellation during rotation never 
     if (cancel) { await assert.rejects(shot, { name: 'Cancelled' }); assert.equal(state().releases, 0); }
     else { await shot; assert.equal(state().releases, 1); }
   }
+});
+
+test('a yaw-complete look promise cannot release while the transmitted pitch is still interpolating', async () => {
+  for (const cancel of [false, true]) {
+    const { bot, target, state } = fixture(), task = new Task('pitch interpolation');
+    let pitchSent = false, timer;
+    bot.look = async (yaw, pitch) => {
+      bot.lastSentRotation = { yaw: (Math.PI - yaw) * 180 / Math.PI, pitch: 0 };
+      timer = setTimeout(() => {
+        assert.equal(state().releases, 0, 'Yaw completion must not release the arrow');
+        if (cancel) task.cancel();
+        else { bot.lastSentRotation.pitch = -pitch * 180 / Math.PI; pitchSent = true; }
+      }, 75);
+    };
+    const release = bot.deactivateItem;
+    bot.deactivateItem = () => { if (!state().abandoned) assert(pitchSent); release(); };
+    try {
+      const shot = shootBow(bot, task, target, { chargeMs: 0 });
+      if (cancel) { await assert.rejects(shot, { name: 'Cancelled' }); assert.equal(state().releases, 0); }
+      else { const result = await shot; assert.equal(state().releases, 1); assert(sentAimMatches(result.sentRotation, aimAtEntity(bot, target))); }
+    } finally { clearTimeout(timer); }
+  }
+});
+
+test('transmitted aim comparison handles circular yaw and sensitivity rounding without accepting a wrong pitch', () => {
+  const solution = { yaw: -Math.PI / 2, pitch: Math.PI / 4 };
+  assert(sentAimMatches({ yaw: -90, pitch: -45.075 }, solution));
+  assert.equal(sentAimMatches({ yaw: -90, pitch: -9 }, solution), false);
+  assert.equal(sentAimMatches({ yaw: -80, pitch: -45 }, solution), false);
+  assert.equal(sentAimMatches(undefined, solution), false);
 });

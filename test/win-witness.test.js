@@ -59,6 +59,19 @@ test('death, disconnect, temporary Creative or difficulty changes permanently in
   }
 });
 
+test('difficulty packets are checked even when the game plugin emits no game event', () => {
+  const f = fixture();
+  const updateDifficulty = packet => { f.bot.game.difficulty = packet.difficulty; };
+  f.bot._client.on('difficulty', updateDifficulty);
+  const witness = f.start();
+  f.bot._client.emit('difficulty', { difficulty: 'peaceful' });
+  f.bot._client.emit('difficulty', { difficulty: 'normal' });
+  f.win(); assert.equal(witness.verify().ok, false);
+  assert(witness.state.violations.some(v => v.reason.includes('Difficulty')));
+  witness.detach(); f.bot._client.removeListener('difficulty', updateDifficulty);
+  assert.equal(f.bot._client.eventNames().length, 0);
+});
+
 test('dimension loading is not a death, but living return waits for the live player state', () => {
   const f = fixture(), witness = f.start(); f.supplies(); f.go('end'); f.kill(); f.exit();
   f.bot.isAlive = false; f.go('overworld');

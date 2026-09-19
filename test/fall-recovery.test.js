@@ -59,6 +59,44 @@ test('fall cancellation and dimension changes release handlers and never claim a
     clearTimeout(timer); assert.equal(bot.listenerCount('physicsTick'), 0); assert.equal(goal.fallRecoveries, undefined);
   }
 });
+
+test('landing on dry ground after a water attempt ends the emergency without claiming a water landing', async () => {
+  for (const converted of [true, false]) {
+    const { bot, task, goal, stock } = fixture(); let clicks = 0;
+    bot.blockAt = p => ({ name: p.y < 1 ? 'stone' : stock.bucket && p.floored().x === 0 && p.floored().y === 1 ? 'water' : 'air',
+      boundingBox: p.y < 1 ? 'block' : 'empty', metadata: 0 });
+    const raycast = bot.world.raycast;
+    bot.world.raycast = (...args) => bot.heldItem?.name === 'bucket' ? null : raycast(...args);
+    bot.activateItem = () => {
+      clicks++;
+      if (bot.heldItem.name === 'bucket') { stock.water_bucket = 1; stock.bucket = 0; return; }
+      if (converted) { stock.water_bucket = 0; stock.bucket = 1; }
+      bot.entity.position.set(2.5, 1, .5); bot.entity.velocity.set(0, -.0784, 0); bot.entity.onGround = true;
+    };
+    const timer = setInterval(() => bot.emit('physicsTick'), 5);
+    try {
+      assert.equal(await recoverFall(bot, task, goal, () => {}, { timeoutMs: 700 }), false);
+      assert.equal(goal.fallRecoveries, undefined);
+      assert.equal(goal.lastFallLanding.outcome, 'stable_dry_landing');
+      assert.equal(goal.lastFallLanding.waterProtectionConfirmed, false);
+      assert.equal(goal.lastFallLanding.waterConsumed, converted ? 1 : 0);
+      assert.equal(goal.lastFallLanding.bucketRecovered, converted ? true : undefined);
+      assert.equal(stock.water_bucket, 1); assert.equal(clicks, converted ? 2 : 1);
+      assert.equal(bot.listenerCount('physicsTick'), 0);
+    } finally { clearInterval(timer); }
+  }
+});
+
+test('brief ground contact followed by another fall cannot complete the landing guard', async () => {
+  const { bot, task, goal } = fixture();
+  bot.activateItem = () => { bot.entity.position.y = 1; bot.entity.onGround = true; bot.entity.velocity.y = -.0784; };
+  const timer = setInterval(() => bot.emit('physicsTick'), 5);
+  const airborne = setTimeout(() => { bot.entity.onGround = false; bot.entity.position.y = 3; bot.entity.velocity.y = -.4; }, 65);
+  try {
+    await assert.rejects(recoverFall(bot, task, goal, () => {}, { timeoutMs: 180 }), /server-confirmed/);
+    assert.equal(goal.lastFallLanding, undefined); assert.equal(goal.fallRecoveries, undefined);
+  } finally { clearInterval(timer); clearTimeout(airborne); }
+});
 test('water acquisition plans the real iron bucket dependency and accounts for each consumed bucket', () => {
   const plan = planCatalog(registry, 'water_bucket', 2, { iron_ingot: 6, crafting_table: 1 });
   assert.deepEqual(plan.map(s => [s.action, s.item]), [['craft', 'bucket'], ['fill_bucket', 'water_bucket']]);

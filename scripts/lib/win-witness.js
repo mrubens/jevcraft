@@ -53,6 +53,9 @@ function watchWinAcceptance(bot, { resumed = false, scenario = 'natural', now = 
     }
   };
   on(bot, 'game', sample); on(bot, 'spawn', sample); on(bot, 'health', sample); on(bot.inventory, 'updateSlot', sample);
+  // The upstream difficulty listener updates state without emitting 'game'.
+  // Compatibility has normalized the value by the time this listener runs.
+  on(bot._client, 'difficulty', sample);
   on(bot, 'death', () => { state.deaths++; violate('Death during winning acceptance'); });
   on(bot, 'end', () => violate('Connection ended before witness was detached'));
   on(bot._client, 'advancements', packet => {
