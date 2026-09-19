@@ -169,10 +169,11 @@ $('play').addEventListener('click', () => {
 });
 for (const mode of ['orbit', 'eyes', 'top']) $(mode).addEventListener('click', () => {
   viewer?.setMode(mode); for (const name of ['orbit','eyes','top']) { $(name).className = mode === name ? 'selected' : ''; $(name).setAttribute('aria-pressed',String(mode === name)); }
-  text('camera-help', mode === 'eyes' ? 'Camera follows Jev’s recorded position and gaze' : mode === 'top' ? 'Scroll to zoom · right-drag to pan' : 'Drag to orbit · scroll to zoom · right-drag to pan');
+  $('viewport').title = mode === 'eyes' ? 'Camera follows Jev’s recorded position and gaze' : mode === 'top' ? 'Scroll to zoom · right-drag to pan' : 'Drag to orbit · scroll to zoom · right-drag to pan';
 });
 $('recenter').addEventListener('click', () => viewer?.reset());
 $('blueprint').addEventListener('change', () => viewer?.setPreview($('blueprint').checked));
+$('textures').addEventListener('change', () => viewer?.setTextures($('textures').checked));
 $('layer').addEventListener('input', () => { viewer?.setLayer($('layer').value); text('layer-value', $('layer').value === '12' ? 'All' : $('layer').value); });
 for (const action of ['stop','resume']) $(action).addEventListener('click', async () => {
   $('resume').disabled = true; if (action === 'stop') $('stop').disabled = true;

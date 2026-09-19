@@ -1,5 +1,6 @@
 import * as THREE from '/vendor/three.js';
 import { OrbitControls } from '/vendor/OrbitControls.js';
+import { MinecraftTextures } from './textures.js';
 
 const colors = { grass_block: '#91aa66', dirt: '#987759', stone: '#a1a499', sand: '#d8c89b', water: '#74adbd',
   cherry_leaves: '#e4b4c2', cherry_log: '#75504e', cherry_planks: '#cc9e9e', oak_log: '#806951', oak_leaves: '#6f915a',
@@ -40,6 +41,12 @@ export class WorldView {
     this.renderer.domElement.addEventListener('pointerleave', () => { document.querySelector('#hover').hidden = true; });
     new ResizeObserver(() => this.resize()).observe(container);
     this.resize(); this.reset();
+    this.textures = new MinecraftTextures(() => {
+      const status = this.textures.status(), label = document.querySelector('#texture-status'), toggle = document.querySelector('#textures');
+      if (label) { label.textContent = status.label; label.title = status.description; }
+      if (toggle) { toggle.disabled = !status.available; toggle.checked = status.available && this.textures.enabled; toggle.parentElement.title = status.description; }
+      if (this.snapshot) this.update(this.snapshot, true);
+    });
     this.renderer.setAnimationLoop(() => { if (this.mode !== 'eyes') this.controls.update(); this.renderer.render(this.scene, this.camera); });
   }
   resize() { const { width, height } = this.container.getBoundingClientRect(); if (!width || !height) return; this.renderer.setSize(width, height, false); this.camera.aspect = width / height; this.camera.updateProjectionMatrix(); }
@@ -51,6 +58,7 @@ export class WorldView {
   setMode(mode) { this.mode = mode; this.controls.enabled = mode !== 'eyes'; this.controls.enableRotate = mode !== 'top'; this.update(this.snapshot || {}, true); this.reset(); }
   setLayer(layer) { this.layer = Number(layer); this.worldKey = null; this.update(this.snapshot || {}, true); }
   setPreview(value) { this.preview = value; this.update(this.snapshot || {}, true); }
+  setTextures(value) { this.textures.enabled = value; this.textures.changed(); }
   eyeCamera() {
     if (this.mode !== 'eyes' || !this.snapshot?.position) return;
     const { position: p, yaw = 0, pitch = 0 } = this.snapshot;
@@ -78,10 +86,14 @@ export class WorldView {
           const entries = visible.filter(b => b[3] === id && (transparent || [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]].some(d => !occupied.has(`${b[0]+d[0]},${b[1]+d[1]},${b[2]+d[2]}`))));
           if (!entries.length) continue;
           const base = color(name);
-          const material = Array.from({ length: 6 }, (_, side) => new THREE.MeshLambertMaterial({
-            color: name === 'grass_block' && side !== 2 ? '#9b855e' : base,
-            transparent, opacity: transparent ? .62 : 1, depthWrite: !transparent,
-          }));
+          const material = Array.from({ length: 6 }, (_, side) => {
+            const map = this.textures?.get(name, side);
+            return new THREE.MeshLambertMaterial({
+              map, color: map ? '#ffffff' : name === 'grass_block' && side !== 2 ? '#9b855e' : base,
+              alphaTest: map ? .1 : 0,
+              transparent, opacity: transparent ? .62 : 1, depthWrite: !transparent,
+            });
+          });
           const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), material, entries.length);
           const matrix = new THREE.Matrix4();
           entries.forEach((b, i) => { matrix.makeTranslation(b[0] + .5, b[1] + .5, b[2] + .5); mesh.setMatrixAt(i, matrix); });

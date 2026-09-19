@@ -6,18 +6,20 @@ const { Trace } = require('./trace');
 const { Archive } = require('./archive');
 const { observeBot } = require('./observer');
 const { demo } = require('./demo');
+const { createTextures } = require('./textures');
 const publicDir = path.join(__dirname, '../../public/harness');
 
-async function startHarness({ port = 3040, artifacts, stateDirectory } = {}) {
+async function startHarness({ port = 3040, artifacts, stateDirectory, textureOptions } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid dashboard port');
   const archive = new Archive({ artifacts, stateDirectory });
   const trace = new Trace();
   const sample = demo();
+  const textures = createTextures(textureOptions);
   let observer, controlBusy = false;
   const threeDir = path.dirname(path.dirname(require.resolve('three')));
   const assets = new Map([
     ['/', [path.join(publicDir, 'index.html'), 'text/html']],
-    ...['style.css', 'app.js', 'world.js', 'decisions.js'].map(f => [`/${f}`, [path.join(publicDir, f), f.endsWith('.css') ? 'text/css' : 'text/javascript']]),
+    ...['style.css', 'app.js', 'world.js', 'decisions.js', 'textures.js'].map(f => [`/${f}`, [path.join(publicDir, f), f.endsWith('.css') ? 'text/css' : 'text/javascript']]),
     ['/vendor/three.js', [path.join(threeDir, 'build/three.module.js'), 'text/javascript']],
     ['/vendor/three.core.js', [path.join(threeDir, 'build/three.core.js'), 'text/javascript']],
     ['/vendor/OrbitControls.js', [path.join(threeDir, 'examples/jsm/controls/OrbitControls.js'), 'text/javascript']],
@@ -25,7 +27,7 @@ async function startHarness({ port = 3040, artifacts, stateDirectory } = {}) {
   const json = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
   function live(after = 0) { return { ...trace.view(after), capabilities: { controls: !!observer?.connected, terrain: true },
     observationError: trace.observationError,
-    note: 'Live observations from the attached bot. Only loaded nearby blocks are rendered; block shapes and colors are simplified.' }; }
+    note: 'Live observations from the attached bot. Only loaded nearby blocks are rendered. Shapes, lighting and biome tints are simplified; textures come from the local Minecraft client when available.' }; }
   async function session(id, after = 0) {
     if (id === 'live') return live(after);
     if (id === 'demo') return sample;
@@ -42,6 +44,14 @@ async function startHarness({ port = 3040, artifacts, stateDirectory } = {}) {
     if (req.headers.origin && req.headers.origin !== origin) return json(res, 403, { error: 'Cross-origin requests are not allowed' });
     try {
       const url = new URL(req.url, origin), pathname = url.pathname;
+      if (req.method === 'GET' && pathname === '/api/textures') return json(res, 200, await textures.manifest());
+      const texture = /^\/textures\/(block\/[a-z0-9_/-]+)\.png$/.exec(pathname);
+      if (req.method === 'GET' && texture) {
+        const png = await textures.png(texture[1]);
+        if (!png) return json(res, 404, { error: 'Texture not found' });
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=3600' });
+        return res.end(png);
+      }
       if (req.method === 'GET' && assets.has(pathname)) {
         const [file, type] = assets.get(pathname);
         let body = await fs.readFile(file);

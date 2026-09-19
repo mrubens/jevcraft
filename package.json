@@ -17,6 +17,7 @@
     "node": ">=22"
   },
   "dependencies": {
+    "fflate": "^0.8.2",
     "minecraft-data": "^3.0.0",
     "mineflayer": "^4.39.0",
     "mineflayer-pathfinder": "^2.4.5",

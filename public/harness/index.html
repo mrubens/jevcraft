@@ -13,14 +13,14 @@
     <section class="vitals" aria-label="Vitals"><div><span>HEALTH</span><strong id="health">—</strong><small> / 20</small><i><b id="health-bar"></b></i></div><div><span>FOOD</span><strong id="food">—</strong><small> / 20</small><i><b id="food-bar"></b></i></div><div><span>POSITION</span><strong id="position" class="coords">—</strong><small id="dimension">Unknown</small></div></section>
     <section class="world panel">
       <div class="panel-heading"><h2>Jev’s world <span id="world-badge" class="pill">3D</span></h2><div class="segmented" aria-label="Camera"><button id="orbit" class="selected" aria-pressed="true">Orbit</button><button id="eyes" aria-pressed="false">Jev’s eyes</button><button id="top" aria-pressed="false">Top</button></div></div>
-      <div id="viewport" role="region" aria-label="Interactive 3D view of terrain around Jev">
+      <div id="viewport" role="region" aria-label="Interactive 3D view of terrain around Jev" title="Drag to orbit · scroll to zoom · right-drag to pan">
         <div class="world-label"><span class="dot"></span><span id="world-description">Loading world…</span></div>
         <div id="world-empty" class="world-empty" hidden></div>
         <div id="hover" class="hover" hidden></div>
         <div class="legend"><span><i class="teal"></i>Jev</span><span><i class="orange"></i>Route</span><span><i class="blue"></i>Planned build</span><span><i class="gray"></i>Other entities</span></div>
         <button id="recenter" title="Center the camera on Jev">⌖ Recenter</button>
       </div>
-      <div class="world-toolbar"><span id="camera-help">Drag to orbit · scroll to zoom · right-drag to pan</span><label><input type="checkbox" id="blueprint" checked> Build preview</label><label for="layer">Cutaway</label><input id="layer" type="range" min="-4" max="12" value="12" aria-label="Maximum block height relative to Jev"><output id="layer-value">All</output></div>
+      <div class="world-toolbar"><span id="texture-status" role="status" title="Loading textures from your local Minecraft installation">Loading textures…</span><label><input type="checkbox" id="textures" checked disabled> Textures</label><label><input type="checkbox" id="blueprint" checked> Build preview</label><label for="layer">Cutaway</label><input id="layer" type="range" min="-4" max="12" value="12" aria-label="Maximum block height relative to Jev"><output id="layer-value">All</output></div>
     </section>
     <aside class="inspector panel">
       <div class="panel-heading"><h2>Inside the decision</h2><span id="source-badge" class="pill">—</span></div>
