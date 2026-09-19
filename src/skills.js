@@ -80,18 +80,23 @@ async function surveyRoute(bot, task, movements, goal, timeoutMs = 500) {
 class NavigationCorrectionLoop extends Error {
   constructor() { super('Repeated server movement corrections at the same position'); }
 }
+class NavigationStall extends Error {
+  constructor() { super('navigation timed out without reaching new ground'); }
+}
 
 // A saved position can already overlap a wall by floating-point precision.
-// Walk inward on the same inspected, solid floor cell; never rewrite position
-// or onGround, excavate an escape, or extend the original navigation deadline.
+// Walk inward on the same inspected floor cell, or recenter in existing water.
+// Never rewrite position/onGround, excavate an escape or extend the deadline.
 async function recoverNavigation(bot, task, deadline, stopWhen) {
   const start = bot.entity.position.clone();
   const cell = start.floored();
   const floor = bot.blockAt?.(cell.offset(0, -1, 0));
   const fullFloor = floor?.shapes?.some(s => s.length === 6 && s.every((v, i) => v === [0, 0, 0, 1, 1, 1][i]));
-  const clear = p => { const b = bot.blockAt?.(p); return b && b.shapes?.length === 0 && !['water', 'lava', 'fire', 'soul_fire', 'powder_snow', 'sweet_berry_bush'].includes(b.name); };
-  if (start.y - cell.y > 0.05 || bot.entity.isInWater || bot.entity.isInLava || !fullFloor ||
-    ['magma_block', 'cactus'].includes(floor?.name) || bot.pathfinder.movements?.blocksToAvoid?.has(floor.type) ||
+  const swimming = bot.entity.isInWater && ['water', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant'].includes(bot.blockAt?.(cell)?.name);
+  const clear = p => { const b = bot.blockAt?.(p); return b && b.shapes?.length === 0 &&
+    !['lava', 'fire', 'soul_fire', 'powder_snow', 'sweet_berry_bush', 'cobweb'].includes(b.name) && (swimming || b.name !== 'water'); };
+  if (bot.entity.isInLava || (!swimming && (start.y - cell.y > 0.05 || !fullFloor ||
+    ['magma_block', 'cactus'].includes(floor?.name) || bot.pathfinder.movements?.blocksToAvoid?.has(floor?.type))) ||
     !clear(cell) || !clear(cell.offset(0, 1, 0))) return false;
   const target = cell.offset(0.5, 0, 0.5);
   const distance = () => Math.hypot(bot.entity.position.x - target.x, bot.entity.position.z - target.z);
@@ -101,17 +106,20 @@ async function recoverNavigation(bot, task, deadline, stopWhen) {
     while (Date.now() < until) {
       task.check(); checkAir(bot);
       if (stopWhen?.()) return true;
-      if (!bot.entity.position.floored().equals(cell)) return false;
-      if (distance() <= 0.18 && bot.entity.onGround) return true;
+      const current = bot.entity.position, currentCell = current.floored();
+      if (currentCell.x !== cell.x || currentCell.z !== cell.z ||
+        (swimming ? current.y < start.y - 0.5 || current.y > start.y + 1 : currentCell.y !== cell.y)) return false;
+      if (distance() <= 0.15 && (swimming || bot.entity.onGround)) return true;
       await bot.lookAt(target.offset(0, 1.62, 0), true);
-      bot.setControlState('sneak', true);
-      bot.setControlState('forward', distance() > 0.12);
+      bot.setControlState('sneak', !swimming);
+      bot.setControlState('jump', swimming && current.y < start.y - 0.05);
+      bot.setControlState('forward', distance() > 0.1);
       await sleep(50);
     }
     return false;
   } finally {
     bot.clearControlStates();
-    bot.emit?.('navigation_recovery', { from: start, position: { ...bot.entity.position }, onGround: bot.entity.onGround });
+    bot.emit?.('navigation_recovery', { from: start, position: { ...bot.entity.position }, onGround: bot.entity.onGround, swimming: !!swimming });
   }
 }
 
@@ -125,7 +133,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
     if (remaining <= 0) throw new Error('navigation timed out');
     try { return await navigateAttempt(bot, task, goal, { timeoutMs: remaining, stallMs, stopWhen }); }
     catch (err) {
-      if (!(err instanceof NavigationCorrectionLoop) || attempt > 0 ||
+      if (!(err instanceof NavigationCorrectionLoop || err instanceof NavigationStall) || attempt > 0 ||
         !await recoverNavigation(bot, task, deadline, stopWhen)) throw err;
     }
   }
@@ -137,12 +145,19 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
   let timer;
   let acquired = false;
   let corrections = [];
+  let latestRoute;
+  const observedRoute = route => {
+    latestRoute = { status: route.status, path: (route.path || []).slice(0, 12).map(p => ({
+      x: p.x, y: p.y, z: p.z, toBreak: p.toBreak, toPlace: p.toPlace,
+    })) };
+  };
   const corrected = () => {
     const now = Date.now(), p = bot.entity.position;
     corrections = corrections.filter(c => now - c.at < 2000 && p.distanceTo(c.position) < 0.25);
     corrections.push({ at: now, position: p.clone() });
   };
   bot.on?.('forcedMove', corrected);
+  bot.on?.('path_update', observedRoute);
   const watchdog = new Promise((resolve, reject) => {
     const started = Date.now();
     let lastProgress = started;
@@ -172,11 +187,18 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
         if (!visited.has(cell)) { visited.add(cell); lastProgress = Date.now(); }
       }
       if (task.cancelled || Date.now() - started > timeoutMs || Date.now() - lastProgress > stallMs) {
-        if (!task.cancelled) bot.emit?.('navigation_stall', { position: { ...bot.entity.position }, goal,
+        if (!task.cancelled) {
+          bot._lastNavigationFailure = { at: Date.now(), position: { ...bot.entity.position },
+          goal: { type: goal.constructor?.name, x: goal.x, y: goal.y, z: goal.z, rangeSq: goal.rangeSq,
+            target: goal.entity ? { name: goal.entity.username || goal.entity.name, position: { ...goal.entity.position } } : undefined },
           controls: Object.fromEntries(['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'].map(key => [key, bot.getControlState?.(key)])), inWater: bot.entity.isInWater, oxygen: bot.oxygenLevel,
-          feet: bot.blockAt?.(bot.entity.position)?.name, head: bot.blockAt?.(bot.entity.position.offset(0, 1.62, 0))?.name });
+          feet: bot.blockAt?.(bot.entity.position)?.name, head: bot.blockAt?.(bot.entity.position.offset(0, 1.62, 0))?.name,
+          route: latestRoute };
+          bot.emit?.('navigation_stall', bot._lastNavigationFailure);
+        }
         bot.pathfinder.setGoal(null);
-        reject(task.cancelled ? new Cancelled(task.label) : new Error('navigation timed out'));
+        reject(task.cancelled ? new Cancelled(task.label) : Date.now() - started >= timeoutMs
+          ? new Error('navigation timed out') : new NavigationStall());
         return;
       }
       if (corrections.length >= 4 && Date.now() - corrections.at(-1).at < 500) {
@@ -208,6 +230,7 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
   } finally {
     clearInterval(timer);
     bot.removeListener?.('forcedMove', corrected);
+    bot.removeListener?.('path_update', observedRoute);
   }
 }
 

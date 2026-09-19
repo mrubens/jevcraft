@@ -43,3 +43,20 @@ test('navigation does not dig a vertical shaft directly beneath its feet', () =>
   movement.getMoveDown({ x: 0, y: 70, z: 0, remainingBlocks: 0 }, neighbors);
   assert.equal(neighbors.length, 0);
 });
+
+test('walking retains flat diagonals but climbs and swimming corners use cardinal routes', () => {
+  const bot = botFixture(), movement = configureMovements(bot);
+  for (const mode of ['flat', 'step', 'swim']) {
+    movement.getBlock = (p, dx, dy, dz) => {
+      const position = new Vec3(p.x + dx, p.y + dy, p.z + dz);
+      const physical = position.y < 70 || mode === 'step' && position.x === 1 && position.z === 1 && position.y === 70;
+      return { position, physical, safe: !physical, liquid: mode === 'swim' && position.y === 70,
+        height: position.y + (physical ? 1 : 0) };
+    };
+    const node = { x: 0, y: 70, z: 0, remainingBlocks: 0 }, diagonal = [], cardinal = [];
+    movement.getMoveDiagonal(node, new Vec3(1, 0, 1), diagonal);
+    assert.equal(diagonal.length, mode === 'flat' ? 1 : 0, mode);
+    movement.getMoveForward(node, new Vec3(1, 0, 0), cardinal);
+    assert(cardinal.length, 'Retains the cardinal approach instead of declaring the area inaccessible');
+  }
+});

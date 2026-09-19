@@ -211,3 +211,24 @@ test('navigation recovery refuses unsupported footing and respects cancellation 
     } finally { clearInterval(interrupt); fixture.dispose(); }
   }
 });
+
+test('a stalled swimmer recenters within its observed water cell once before retrying', async () => {
+  const { EventEmitter } = require('node:events'), { navigate } = require('../src/skills');
+  const bot = new EventEmitter(), controls = {};
+  let attempts = 0, recoveries = 0;
+  Object.assign(bot, { oxygenLevel: 20,
+    entity: { position: new Vec3(0.7, 59.2, 0.8), isInWater: true, onGround: false },
+    blockAt: p => ({ name: p.y <= 60 ? 'water' : 'air', shapes: [] }),
+    clearControlStates: () => { for (const key of Object.keys(controls)) controls[key] = false; },
+    setControlState: (key, value) => { controls[key] = value; }, lookAt: async () => {},
+    pathfinder: { setGoal() {}, goto: async () => { if (++attempts === 1) await new Promise(() => {}); } },
+  });
+  bot.on('navigation_recovery', event => { recoveries++; assert(event.swimming); });
+  const motion = setInterval(() => {
+    if (controls.forward) { assert(!controls.sneak); bot.entity.position.x = 0.5; bot.entity.position.z = 0.5; }
+  }, 10);
+  try { await navigate(bot, new Task('swimming corner'), {}, { timeoutMs: 1500, stallMs: 100 }); }
+  finally { clearInterval(motion); }
+  assert.equal(attempts, 2); assert.equal(recoveries, 1);
+  assert.equal(bot.entity.position.y, 59.2); assert(Object.values(controls).every(value => !value));
+});

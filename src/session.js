@@ -21,6 +21,12 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   const bot = mineflayer.createBot({ ...config, respawn: false });
   bot.on('physicsTick', () => { if (!ended) observeAliveInventory(bot); });
   bot.on('handover', event => { if (!ended) console.log(JSON.stringify({ handover: event })); });
+  for (const event of ['recovery_advice', 'recovery_result']) bot.on(event, data => {
+    if (ended) return;
+    const record = data.record || data;
+    console.log(JSON.stringify({ [event]: { status: record.status, model: record.model, diagnosis: record.diagnosis,
+      steps: record.steps, outcome: data.outcome || record.outcome, latencyMs: record.latencyMs, usage: record.usage } }));
+  });
   bot.loadPlugin(compatibilityPlugin);
   bot.loadPlugin(pathfinder);
   const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -162,7 +168,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (spec.kind === 'status') {
         const g = active?.goal || store.read();
         bot.chat(active?.idle ? `Between requests: ${g.lastError || g.survivalAction?.action || 'watching survival needs'}. Health ${bot.health}, food ${bot.food}.` :
-          g ? `${g.status}: ${g.request}. ${g.lastError || g.decisions?.at(-1)?.path?.join(' > ') || JSON.stringify(g.step || {})}` : 'No saved task.');
+          g ? `${g.status}: ${g.request}. ${(g.recoveryAdvice?.active ? `Trying Fable recovery: ${g.recoveryAction?.kind || 'planning'}` : g.lastError) || g.decisions?.at(-1)?.path?.join(' > ') || JSON.stringify(g.step || {})}` : 'No saved task.');
         return;
       }
       if (spec.kind === 'other') {

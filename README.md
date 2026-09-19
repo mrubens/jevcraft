@@ -1,6 +1,6 @@
 # JevBot
 
-A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat, resolve items through a dynamic catalog hierarchy, and choose ongoing actions. Ordinary code executes and verifies survival tasks. Jev can connect through TypeSafe or OpenRouter. An optional OpenRouter design model generates custom building schematics.
+A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat, resolve items through a dynamic catalog hierarchy, and choose ongoing actions. Ordinary code executes and verifies survival tasks. Jev can connect through TypeSafe or OpenRouter. An optional OpenRouter LLM generates custom building schematics and advises on recovery when Jev gets stuck.
 
 The broader target is a survival companion that can obtain food and shelter, maintain tools, avoid hazards, and follow player requests on Normal difficulty. See `GOAL.md` for the acceptance criteria. House construction and two full day/night cycles have passed on Normal difficulty; the complete survival acceptance remains unfinished.
 
@@ -55,6 +55,11 @@ Use Node 22 or newer, as required by Mineflayer. The local servers run Minecraft
 `stop` cancels the active task and pauses autonomous movement between requests, including while a reconnect is loading the world. `status` reports the task or current survival action. `resume` retries saved progress, or reactivates idle survival if no task remains. A new supported request replaces the old one after its current action has stopped. Running tasks automatically resume after a disconnect or process restart; cancelled or blocked tasks require `resume`. Connections retry with a bounded backoff; explicitly shutting down the process stops retries.
 
 After death, Jev respawns through a fresh connection and replans from actual inventory. It can retrieve matching drops at a nearby, loaded death location via an observed route without digging, scaffolding, water crossings, or known hostiles. Retrieval is bounded to five attempts/30 seconds within the five-minute drop window, and defers to immediate survival needs. Three deaths within ten minutes pause work for an explicit `resume`. A controlled live trial verified retrieval and resumption; this does not establish safe recovery through hostile terrain or from distant deaths.
+
+When three consecutive attempts fail without progress, or the executor reaches a concrete blocker, Jev can ask `anthropic/claude-fable-5.1` for help through OpenRouter. The adviser sees the original request, current inventory/tool durability, nearby terrain and threats, recipe alternatives, failed routes and recent attempts. It selects up to three executable recovery options: gather useful supplies or observed alternative ingredients, approach from a reachable nearby position, choose another supported shelter site, or return toward the surface. Jev checks and executes those steps, then resumes the same objective; ordinary world/inventory verification still determines success.
+
+This is enabled automatically with `OPENROUTER_API_KEY`; `RECOVERY_ADVISER=off` disables it and `OPENROUTER_RECOVERY_MODEL` overrides the model. Without a key, normal Jev decisions, bounded retries and honest blockers continue. Advice has a 45-second request timeout, a one-minute call cooldown, at most two calls for the same failure and six per saved goal. Plans expire after five minutes; each action gets at most twelve execution steps/two minutes. Stop, air loss and nearby threats interrupt the adviser. Death, dimension changes, changed requests and stale positions invalidate plans. The saved goal's `recoveryAdvice` records observations, selected actions, model usage and outcomes; credentials are never written there. LLM advice cannot issue operator commands or arbitrary code. Recovery is limited to implemented actions, so an accurate diagnosis can still end in a concrete blocker. A controlled trial with three injected navigation failures passed a real Fable call, two real repositioning actions, and the retained “come here” objective at full health. A retained natural flooded-shaft diagnostic received useful advice but still failed its staircase escape; that is not a successful recovery claim.
+
 
 State is stored under `.bot-state/`, separately for each server and bot identity. House coordinates are fixed once selected. Completion comes from world/inventory checks, never solely from a model's opinion.
 
@@ -126,6 +131,8 @@ node scripts/eval-decisions.js
 node scripts/eval-survival.js
 JEV_PROVIDER=openrouter node scripts/eval-intents.js
 MC_PORT=25567 node scripts/designer-test.js
+# Separate controlled recovery test; apply its printed setup, then create setup-ready.
+MC_PORT=25567 node scripts/recovery-adviser-test.js
 # Add DESIGN_BUILD=1 for the controlled Creative fixture; perform its printed setup first.
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/commands-test.js
 MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/creative-house-test.js

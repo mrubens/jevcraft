@@ -18,3 +18,5 @@ artifacts/
 .test-maintenance/
 .test-combat/
 .play-server/
+
+.test-fresh-nether/

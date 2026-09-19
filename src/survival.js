@@ -33,7 +33,7 @@ class Survival {
 
   currentShelter() {
     const bot = this.bot;
-    return this.state.shelters.filter(s => s.dimension === bot.game.dimension &&
+    return this.state.shelters.filter(s => (!(s.avoidUntil > Date.now()) || shelter.inside(bot, s)) && s.dimension === bot.game.dimension &&
       pos(s.origin).distanceTo(bot.entity.position) < 128 && bot.blockAt(pos(s.origin)))
       .sort((a, b) => pos(a.origin).distanceTo(bot.entity.position) + (a.verifiedAt ? 0 : 32) -
         pos(b.origin).distanceTo(bot.entity.position) - (b.verifiedAt ? 0 : 32))[0];

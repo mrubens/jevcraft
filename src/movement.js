@@ -19,6 +19,16 @@ class SurvivalMovements extends Movements {
     return landing && node.y - landing.position.y <= this.maxDropDown ? landing : null;
   }
 
+  getMoveDiagonal(node, direction, neighbors) {
+    // Diagonal jumps and swimming corners can look traversable to the graph
+    // while the full player body catches the adjacent wall. Route those moves
+    // through cardinal cells so the executor can align before stepping up/out.
+    if (this.getBlock(node, 0, 0, 0).liquid || this.getBlock(node, direction.x, 0, direction.z).liquid) return;
+    const candidates = [];
+    super.getMoveDiagonal(node, direction, candidates);
+    neighbors.push(...candidates.filter(next => next.y <= node.y));
+  }
+
   getMoveDown(node, neighbors) {
     // General navigation must not excavate a shaft beneath the bot's feet.
     // Underground work uses explicit, inspected staircase actions.

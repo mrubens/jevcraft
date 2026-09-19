@@ -22,6 +22,7 @@ const { designBuilding, validateSchematic, selectSchematicSite, canClearSchemati
 const { designWithJev } = require('./build-templates');
 const { dryMiningPositions, approachDryMining, miningMovement } = require('./mining-access');
 const { dryPassable } = require('./terrain');
+const { RecoveryAdviser } = require('./recovery-adviser');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -969,21 +970,41 @@ function protectConstruction(bot, goal) {
   movements.exclusionAreasBreak.push(bot._constructionProtection);
 }
 
-async function runIdle(bot, task, goal, store, { survival, decisionClient, onStep = () => {}, until = () => false } = {}) {
+function createRecoveryAdviser(bot) {
+  return new RecoveryAdviser(bot, { acquireStep, catalogPlan, planningInventory, surfaceStep, navigate });
+}
+
+async function tryRecovery(adviser, task, goal, save) {
+  try { return await adviser.suggest(task, goal, save); }
+  catch (err) {
+    task.check();
+    if (['NeedsAir', 'NeedsSafety'].includes(err.name)) return true;
+    throw err;
+  }
+}
+
+async function runIdle(bot, task, goal, store, { survival, decisionClient, recoveryAdviser, onStep = () => {}, until = () => false } = {}) {
   survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
   goal.survival = survival.state;
   const save = () => store.save(goal);
   protectConstruction(bot, goal);
+  recoveryAdviser ||= createRecoveryAdviser(bot);
   let failures = 0;
   while (!until()) {
     task.interruptCheck = undefined; task.check(); updateDigCapabilities(bot);
     try {
+      if (goal.recoveryAdvice?.active) {
+        await maintainVitals(bot, task);
+        if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
+      }
       await survival.step(task, goal, save, onStep);
       failures = 0; delete goal.lastError; save(); onStep(goal);
     } catch (err) {
       task.interruptCheck = undefined; task.check();
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) failures++;
       goal.lastError = err.message; save(); onStep(goal);
+      if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) recoveryAdviser.recordFailure(goal, err);
+      if (failures >= 3 && await tryRecovery(recoveryAdviser, task, goal, save)) { failures = 0; continue; }
       if (failures >= 5) throw new Blocked(`Survival needs help: ${err.message}`);
     } finally { task.interruptCheck = undefined; }
     for (let n = 0; n < 10; n++) { task.check(); await sleep(100); }
@@ -991,11 +1012,12 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, onSte
   return { ok: true, goal };
 }
 
-async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () => {}, decisionClient, survival } = {}) {
+async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () => {}, decisionClient, survival, recoveryAdviser } = {}) {
   const save = () => store.save(goal);
   survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
   goal.survival = survival.state;
   protectConstruction(bot, goal);
+  recoveryAdviser ||= createRecoveryAdviser(bot);
   goal.status = 'running'; goal.failures = 0; goal.stalls = 0; save();
   for (let n = 0; n < (goal.kind === 'follow' ? Infinity : goal.kind === 'build' ? Math.max(maxSteps, 30000) : maxSteps); n++) {
     task.interruptCheck = undefined;
@@ -1006,6 +1028,10 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
     const location = bot.entity.position.clone();
     try {
       let complete = false;
+      if (goal.recoveryAdvice?.active) {
+        await maintainVitals(bot, task);
+        if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
+      }
       if (await survival.step(task, goal, save, onStep)) {
         goal.stalls = 0; goal.failures = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
@@ -1060,6 +1086,10 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       // exhaust retries.
       goal.failures = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 2 &&
         constructionBefore === constructionObservation(bot, goal) ? goal.failures + 1 : 0;
+      recoveryAdviser.recordFailure(goal, err);
+      if ((err.name === 'Blocked' || goal.failures >= 3) && await tryRecovery(recoveryAdviser, task, goal, save)) {
+        goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
+      }
       if (err.name === 'Blocked' || goal.failures >= 5) {
         goal.status = 'blocked'; save();
         bot.chat(`Blocked: ${err.message}. Progress saved; say resume to retry.`);
