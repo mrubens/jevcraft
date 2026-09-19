@@ -101,8 +101,9 @@ async function dropHeld(bot, task, itemName, count, beforeDrop = async () => {})
 async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
   const itemName = goal.item || 'purple_concrete';
   const label = itemName.replaceAll('_', ' ');
-  const remaining = goal.count - (goal.delivered || 0);
-  if (remaining <= 0) return true;
+  const target = Math.min(goal.count, goal.pendingDelivery?.target ?? goal.deliveryTarget ?? goal.count);
+  const remaining = target - (goal.delivered || 0);
+  if (remaining <= 0) return (goal.delivered || 0) >= goal.count;
   if (goal.pendingDelivery) {
     // Extra carried stock cannot prove the previous throw was recovered. Only
     // confirmed recipient pickups may reduce the pre-throw inventory baseline.
@@ -147,19 +148,19 @@ async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
   const knownEntities = new Set(Object.keys(bot.entities).map(Number));
   const before = countOf(bot, itemName);
   if (before < remaining) throw new Error(`Need ${remaining} ${label} for delivery, carrying ${before}`);
-  goal.pendingDelivery = { inventoryBefore: before, deliveredBefore: goal.delivered || 0, count: remaining, at: new Date().toISOString() };
+  goal.pendingDelivery = { inventoryBefore: before, deliveredBefore: goal.delivered || 0, count: remaining, target, at: new Date().toISOString() };
   save();
   const onCollect = packet => {
     bot.emit?.('handover', { event: 'pickup', packet, item: bot.entities[packet.collectedEntityId]?.getDroppedItem?.()?.name, recipientId: receiver.id });
     if (packet.collectorEntityId !== receiver.id || knownEntities.has(packet.collectedEntityId)) return;
     const entity = bot.entities[packet.collectedEntityId];
     if (entity?.getDroppedItem?.()?.name !== itemName) return;
-    const amount = Math.min(packet.pickupItemCount, goal.count - (goal.delivered || 0));
+    const amount = Math.min(packet.pickupItemCount, target - (goal.delivered || 0));
     if (!Number.isInteger(amount) || amount <= 0) return;
     goal.delivered = (goal.delivered || 0) + amount;
     goal.deliveryEvidence ||= [];
     goal.deliveryEvidence.push({ recipient: goal.from, entity: packet.collectedEntityId, count: amount, at: new Date().toISOString() });
-    if (goal.delivered >= goal.count) delete goal.pendingDelivery;
+    if (goal.delivered >= target) delete goal.pendingDelivery;
     save();
   };
   bot._client.on('collect', onCollect);
@@ -171,15 +172,15 @@ async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
     bot.emit?.('handover', { event: 'start', position: { ...bot.entity.position }, recipient: { ...receiver.position }, yaw: bot.entity.yaw, pitch: bot.entity.pitch, count: remaining });
     await dropHeld(bot, task, itemName, remaining, aimDrop);
     const end = Date.now() + timeout;
-    while ((goal.delivered || 0) < goal.count && Date.now() < end) {
+    while ((goal.delivered || 0) < target && Date.now() < end) {
       task.check();
       await new Promise(r => setTimeout(r, 100));
     }
-    if ((goal.delivered || 0) < goal.count) {
+    if ((goal.delivered || 0) < target) {
       const err = new Error(`Dropped ${label} for ${goal.from}, but pickup of all ${remaining} items was not confirmed`);
       err.name = 'Blocked'; throw err;
     }
-    return true;
+    return (goal.delivered || 0) >= goal.count;
   } finally { bot._client.removeListener('collect', onCollect); bot.removeListener?.('entityUpdate', onDrop); }
 }
 module.exports = { deliver, dropHeld, safeHandoverPosition };

@@ -17,6 +17,7 @@ const { statusMessage } = require('./status');
 const { bundleSummary } = require('./item-bundle');
 const { friendlyProblem } = require('./speech');
 const { withRequestSignal } = require('./typesafe');
+const { suspendPrevious, resumeSaved } = require('./suspended-tasks');
 
 function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness } = {}) {
   let ended = false, spawned = false, resolveClosed;
@@ -125,12 +126,13 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (active?.idle) await stop('interrupted');
     if (revision !== generation || ended) return;
     if (active) { bot.chat('Already working on the saved task.'); return; }
-    const saved = store.read();
+    const current = store.read(), saved = resumeSaved(current);
     if (!saved || saved.status === 'complete') {
       survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
       bot.chat("I'm back! I'll look after myself while I wait for your next task."); return;
     }
     if (saved.kind === 'build' && !saved.design) saved.designAttempts = 0;
+    if (saved !== current) bot.chat(`Back to your earlier task: ${saved.request}.`);
     launch(saved);
   }
   observation = harness?.attach(bot, {
@@ -227,6 +229,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       await stop('replaced');
       if (revision !== generation || ended) return;
       const goal = { ...spec, version: 1, status: 'pending', createdAt: new Date().toISOString(),
+        suspendedTasks: suspendPrevious(store.read()),
         requesterPosition: bot.players[from]?.entity ? { ...bot.players[from].entity.position } : null,
         initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);

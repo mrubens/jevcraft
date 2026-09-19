@@ -72,7 +72,7 @@ async function bundleStep(bot, task, goal, save, execute, { prepare } = {}) {
   // reconnect between dropping and pickup could duplicate the player's items.
   const handingOver = goal.tasks.findIndex(child => child.pendingDelivery);
   if (handingOver < 0 && prepare && !await prepare()) return false;
-  const index = handingOver >= 0 ? handingOver : goal.tasks.findIndex(child => child.status !== 'complete');
+  const index = handingOver >= 0 ? handingOver : require('./bundle-batch').nextBatchTask(goal);
   if (index < 0) return true;
   const child = goal.tasks[index];
   child.from = goal.from; child.request ||= goal.request; child.status = 'running';

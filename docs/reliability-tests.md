@@ -3,6 +3,32 @@
 The roadmap remains open. These checks cover specific improvements, not every
 terrain, recipe, or interruption the bot may encounter.
 
+## Carrying batches for combined requests
+
+Ordinary combined requests still gather shared materials before crafting. When
+the whole request would overflow the working inventory, delivery targets split
+into smaller lots. Each lot retains the original request totals, confirmed
+deliveries, and kept-item reservations in the checkpoint. Requests to keep more
+items than fit in inventory explain the space problem instead of gathering an
+impossible load.
+
+Controlled Survival run `bundle-capacity-mu8l0ca5` crafted and delivered 40 wooden
+axes and two chests from granted logs. The first load contained 21 axes; the
+receiver stored them in a chest, then the bot resumed its saved checkpoint and
+delivered the remaining 19 axes and two chests. Independent receiver inventory
+and chest checks verified the exact totals. Peak carried inventory was 25 slots.
+Use `MC_PORT=<isolated-port> node scripts/bundle-capacity-test.js` with its printed
+`setup.json` and `ready` file to reproduce it.
+
+## Brief detours retain unfinished work
+
+Replacing an unfinished task saves it inside the new task's atomic checkpoint.
+After finishing a brief task such as coming to the player, `Jev resume` returns
+to the previous unfinished request, including its blueprint, furnace state, and
+confirmed deliveries. The latest eight unfinished tasks are retained, without
+nested copies. Old work only resumes when requested; finishing a detour does not
+automatically start it. The current unfinished task takes precedence on resume.
+
 ## Interrupted item handovers
 
 Delivery saves both inventory and confirmed delivery counts before a throw.

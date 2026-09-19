@@ -37,6 +37,7 @@ const { collectWater } = require('./water');
 const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
 const { batchPlan, remainingOutputs } = require('./batch-plan');
+const { selectBundleBatch, batchOutputs } = require('./bundle-batch');
 const { remainingBuildBatch, materialCounts, createBuildBatch } = require('./build-batch');
 const { chooseConstructionWork, approachConstruction } = require('./construction-access');
 const { opportunisticMining } = require('./opportunistic-mining');
@@ -1060,7 +1061,7 @@ async function prepareBuildTerrain(bot, task, goal, save) {
 async function obtainStep(bot, task, goal, save, client, onStep) {
   if (goal.smelting) { await smelt(bot, task, goal.smelting, goal, save); return false; }
   if ((goal.delivered || 0) >= goal.count) return true;
-  const remaining = goal.count - (goal.delivered || 0);
+  const remaining = (goal.deliver ? Math.min(goal.count, goal.deliveryTarget ?? goal.count) : goal.count) - (goal.delivered || 0);
   if (goal.pendingDelivery || countOf(bot, goal.item) >= remaining) {
     if (!goal.deliver) return true;
     goal.step = { action: 'deliver', item: goal.item, count: remaining, recipient: goal.from }; save();
@@ -1077,9 +1078,11 @@ async function prepareBundleStep(bot, task, goal, save, client, onStep) {
   Object.assign(work, { request: goal.request, from: goal.from, requesterPosition: goal.requesterPosition,
     resourceMemory: goal.resourceMemory ||= {}, opportunistic: goal.opportunistic ||= { primarySteps: 0, history: [], skipped: {} } });
   if (work.smelting) { await smelt(bot, task, work.smelting, work, save); return false; }
-  const outputs = remainingOutputs(goal), stock = planningInventory(bot);
-  for (const station of ['crafting_table', 'furnace']) if (!outputs.some(output => output.item === station) && find(bot, [station], 32, 1).length)
+  const stock = planningInventory(bot);
+  for (const station of ['crafting_table', 'furnace']) if (!remainingOutputs(goal).some(output => output.item === station) && find(bot, [station], 32, 1).length)
     stock[station] = Math.max(stock[station] || 0, 1);
+  const batch = selectBundleBatch(bot.registry, goal, stock, outputs => catalogPlan(bot, outputs, undefined, stock, work));
+  const outputs = batchOutputs(goal, batch);
   const plan = catalogPlan(bot, outputs, undefined, stock, work);
   goal.batch = { outputs, phase: plan.length ? ['mine', 'hunt_mob'].includes(plan[0].action) ? 'gather' : 'make' : 'deliver',
     materials: plan.filter(step => ['mine', 'hunt_mob'].includes(step.action)).map(step => ({ item: step.drops || step.item, count: step.count })),

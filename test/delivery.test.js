@@ -78,6 +78,13 @@ test('earlier completed handovers do not hide a new uncertain throw', async () =
   assert.equal(writes, 0); assert.equal(goal.delivered, 12);
 });
 
+test('finishing a carrying batch records delivery without completing the whole request', async () => {
+  const { bot, goal, task } = setup();
+  goal.count = 96; goal.deliveryTarget = 32;
+  assert.equal(await deliver(bot, task, goal, () => {}, { timeout: 0 }), false);
+  assert.equal(goal.delivered, 32); assert.equal(goal.count, 96); assert(!goal.pendingDelivery);
+});
+
 test('splitting a handover stack excludes its destination from the cursor return range', async () => {
   let items = [{ name: 'pumpkin', type: 1, count: 17, slot: 36 }];
   const bot = {
