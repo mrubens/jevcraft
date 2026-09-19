@@ -23,6 +23,8 @@ JEV_DASHBOARD_PORT=3041 npm start
 
 Use another port if the standalone viewer is still running. `index.js` creates one server across reconnects; `createSession` attaches the current bot and publishes step events. The optional adapter is in `src/harness/observer.js`. Without the environment variable, normal startup is unchanged and Three.js is not loaded.
 
+Acceptance trials can publish their own live, read-only view with `ACCEPT_DASHBOARD_PORT=3043 npm run accept -- 'get me 32 purple concrete'` (alongside the usual server and difficulty environment settings). This observes the existing trial bot; it does not create an extra player, enable game controls, or change the acceptance conditions. On normal completion or failure the runner saves its bounded terrain trace to `artifacts/<run>/observatory.json` before closing the viewer. That file can be reopened with `Open trace` in another Observatory instance.
+
 Integration points are limited to `index.js`, `src/session.js`, package manifests, `.env.example` and documentation; the remaining files are additive. The viewer was developed on `codex/jev-visual-harness` in an isolated worktree and is now integrated in the primary checkout. The live adapter also records Fable recovery advice and execution outcomes, labeled separately from Jev classifier judgments.
 
 The viewer listens only on loopback. Live stop uses the same cancellation path as chat; resume shares the existing saved-task logic. Recording controls are disabled. Requests must target the current connection epoch with fresh observations; stale/replaced connections are rejected. Stop can interrupt a queued resume. The API offers no arbitrary chat, operator command, teleport or movement endpoint.

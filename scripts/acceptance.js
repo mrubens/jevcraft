@@ -25,12 +25,20 @@ const directory = path.join(__dirname, '..', 'artifacts', id);
 fs.mkdirSync(directory, { recursive: true });
 const goalStore = new GoalStore(path.join(directory, 'goal.json'));
 const log = entry => { console.log(JSON.stringify(entry)); fs.appendFileSync(path.join(directory, 'events.jsonl'), JSON.stringify(entry) + '\n'); };
+async function main() {
+let currentGoal = { request, status: 'starting' }, observation;
+const harness = process.env.ACCEPT_DASHBOARD_PORT ? await require('../src/harness/server').startHarness({
+  port: Number(process.env.ACCEPT_DASHBOARD_PORT), artifacts: path.join(__dirname, '..', 'artifacts'),
+  stateDirectory: path.join(__dirname, '..', '.bot-state'),
+}) : null;
+if (harness) log({ observatory: harness.url, run: id });
 const bot = mineflayer.createBot({
   host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
   username, auth: 'offline', version: process.env.MC_VERSION || false,
 });
 bot.loadPlugin(compatibilityPlugin);
 bot.loadPlugin(pathfinder);
+observation = harness?.attach(bot, { getGoal: () => currentGoal, server: `${process.env.MC_HOST || 'localhost'}:${process.env.MC_PORT || 25565} · acceptance ${id}` });
 const toolState = () => bot.inventory.items().filter(i => bot.registry.itemsByName[i.name]?.maxDurability)
   .map(i => ({ name: i.name, slot: i.slot, durabilityUsed: i.durabilityUsed || 0,
     remaining: bot.registry.itemsByName[i.name].maxDurability - (i.durabilityUsed || 0) }));
@@ -106,6 +114,7 @@ bot.once('spawn', async () => {
       await receiver.waitForChunksToLoad();
     }
     const goal = saved || { ...spec, version: 1, initialInventory: initial, initialPosition: { ...bot.entity.position }, createdAt: new Date().toISOString(), scenario: process.env.ACCEPT_SCENARIO || 'natural' };
+    currentGoal = goal;
     const initialWorldAge = bot.time.age;
     if (cycles && (!Number.isFinite(initialWorldAge) || !bot.time.doDaylightCycle)) throw new Error('Cycle acceptance requires a running world clock');
     const survival = createSurvival(bot, { state: goal.survival, client });
@@ -118,7 +127,7 @@ bot.once('spawn', async () => {
     log({ start: { kind: goal.kind, count: goal.count, request: goal.request, from: goal.from, initialInventory: goal.initialInventory, initialPosition: goal.initialPosition, createdAt: goal.createdAt, scenario: goal.scenario }, username, server: `${process.env.MC_HOST}:${process.env.MC_PORT}`, gameMode: bot.game.gameMode, difficulty: bot.game.difficulty, timeOfDay: bot.time.timeOfDay });
     const result = await runGoal(bot, task, goal, goalStore, {
       decisionClient: client, survival,
-      onStep: g => { if (!finishing) log({ step: g.step, decision: g.decisions?.at(-1), survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), tools: toolState(), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }); },
+      onStep: g => { if (!finishing) { observation?.sample('step', undefined, g); log({ step: g.step, decision: g.decisions?.at(-1), survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), tools: toolState(), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }); } },
     });
     const verified = result.ok && (goal.kind === 'house' ? verifyHouse(bot, goal.blueprint).ok :
       ['concrete', 'obtain', 'craft'].includes(goal.kind) ? (receiver
@@ -129,11 +138,13 @@ bot.once('spawn', async () => {
       const idleGoal = { version: 1, kind: 'survive', request: 'Stay alive between player requests',
         blueprint: goal.blueprint, portalFrame: goal.portalFrame, survival: survival.state };
       const idleStore = new GoalStore(path.join(directory, 'idle.json'));
+      currentGoal = idleGoal;
       let lastLogged = 0;
       await runIdle(bot, task, idleGoal, idleStore, { decisionClient: client, survival,
         until: () => bot.time.age - initialWorldAge >= cycles * 24000,
         onStep: g => {
           if (finishing) return;
+          observation?.sample('step', undefined, g);
           if (Date.now() - lastLogged < 10000 && !g.lastError) return;
           lastLogged = Date.now();
           log({ endurance: { elapsedTicks: bot.time.age - initialWorldAge, targetTicks: cycles * 24000,
@@ -148,5 +159,12 @@ bot.once('spawn', async () => {
     log({ acceptance: verified ? 'PASS' : 'FAIL', reason: result.reason, inventory: inventory(bot), tools: toolState(), dimension: bot.game.dimension, receiverInventory: receiver ? inventory(receiver) : undefined });
     process.exitCode = verified ? 0 : 1;
   } catch (err) { if (!finishing) log({ acceptance: 'FAIL', error: err.message }); process.exitCode = 1; }
-  finally { finishing = true; clearTimeout(timer); receiver?.quit(); bot.quit(); setTimeout(() => process.exit(process.exitCode || 0), 500); }
+  finally {
+    finishing = true; clearTimeout(timer); receiver?.quit(); bot.quit();
+    if (harness) fs.writeFileSync(path.join(directory, 'observatory.json'), JSON.stringify({ format: 'jev-harness', version: 1, ...harness.trace.view() }));
+    await harness?.close();
+    setTimeout(() => process.exit(process.exitCode || 0), 500);
+  }
 });
+}
+main().catch(err => { log({ acceptance: 'FAIL', error: err.message }); process.exit(1); });

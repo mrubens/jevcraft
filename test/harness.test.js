@@ -95,6 +95,7 @@ test('HTTP viewer is loopback only, serves local 3D modules, rejects unsafe cont
   assert.equal((await control({sessionId:'demo',action:'stop'})).status,400);
   assert.equal((await control({sessionId:'live',action:'stop',expectedEpoch:1})).status,409);
   let stops=0; const b=bot(); harness.attach(b,{controls:{stop:async()=>{stops++;}}});b.emit('spawn');
+  assert.equal((await get('/api/sessions/live')).capabilities.controls,false); // An observation-only or partial adapter cannot advertise both UI controls.
   const valid={sessionId:'live',action:'stop',expectedEpoch:1};
   assert.equal((await control(valid,{'Origin':'https://unrelated.invalid'})).status,403);
   const badHostStatus = await new Promise((resolve,reject) => {

@@ -20,3 +20,4 @@ artifacts/
 .play-server/
 
 .test-fresh-nether/
+.test-fresh-concrete/
