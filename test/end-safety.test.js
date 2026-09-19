@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
 const { Task } = require('../src/skills');
-const { dragonThreat, checkEndEmergency, dodgeRoutes, evadeDragon } = require('../src/end-safety');
+const { dragonThreat, checkEndEmergency, dodgeRoutes, evadeOverTerrain, evadeDragon } = require('../src/end-safety');
 const registry = require('prismarine-registry')('26.1');
 function fixture() {
   const phase = registry.entitiesByName.ender_dragon.metadataKeys.indexOf('phase');
@@ -50,4 +50,24 @@ test('a small airborne knockback waits for real footing before inspecting a dodg
   const timer = setTimeout(() => { bot.entity.position.y = 64; bot.entity.onGround = true; }, 20);
   assert(await evadeDragon(bot, task, goal, () => {}, { timeoutMs: 10 }));
   clearTimeout(timer); assert(looked);
+});
+
+test('uneven-ground evasion surveys bounded routes without digging, placing or large drops and restores policy', async () => {
+  for (const cancel of [false, true]) {
+    const { bot, dragon } = fixture(), task = new Task('terrain dodge'), goal = { endCombat: {} };
+    const movement = bot.pathfinder.movements = { canDig: true, maxDropDown: 3, allowSprinting: false, allow1by1towers: true, scafoldingBlocks: [1] };
+    const original = { ...movement }; let surveys = 0, walked = false;
+    bot.pathfinder.getPathTo = (m, dest) => {
+      assert.equal(m.canDig, false); assert.equal(m.maxDropDown, 1); assert.deepEqual(m.scafoldingBlocks, []);
+      // Reject the first route because it requires terrain mutation.
+      return { status: 'success', path: [{ x: dest.x, y: dest.y, z: dest.z, toBreak: ++surveys === 1 ? [new Vec3(1, 64, 1)] : [] }] };
+    };
+    const run = evadeOverTerrain(bot, task, goal, () => {}, dragon, { walk: async (b, t, dest, options) => {
+      assert.equal(options.timeoutMs, 3000); assert.equal(options.stallMs, 1000);
+      walked = true; if (cancel) { task.cancel(); task.check(); }
+      bot.entity.position = new Vec3(dest.x + .5, dest.y, dest.z + .5);
+    } });
+    if (cancel) await assert.rejects(run, { name: 'Cancelled' }); else { assert(await run); assert.equal(goal.endCombat.lastEvasion.terrainRoute, true); }
+    assert(walked); assert.equal(surveys, 2); assert.deepEqual(movement, original);
+  }
 });

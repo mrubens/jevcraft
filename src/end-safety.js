@@ -1,5 +1,7 @@
 'use strict';
 const { Vec3 } = require('vec3');
+const { goals } = require('mineflayer-pathfinder');
+const { surveyRoute, navigate } = require('./skills');
 const { dryStanding } = require('./mining-access');
 const { fallDanger, recoverFall } = require('./fall-recovery');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -49,6 +51,54 @@ function dodgeRoutes(bot, dragon, allowed = () => true) {
   return routes;
 }
 
+async function evadeOverTerrain(bot, task, goal, save, dragon, { allowed = () => true, walk = navigate } = {}) {
+  const start = bot.entity.position.clone(), dimension = bot.game.dimension, toward = dragon.position.minus(start); toward.y = 0;
+  const check = () => {
+    task.check();
+    if (bot.game.dimension !== dimension || bot.health <= 0 || bot.isAlive === false) throw new Error('Terrain evasion interrupted by death or dimension change');
+  };
+  check();
+  const bearing = Math.atan2(toward.z, toward.x), candidates = [];
+  for (const angle of [Math.PI / 2, -Math.PI / 2, Math.PI, Math.PI * .75, -Math.PI * .75, Math.PI * .25, -Math.PI * .25]) {
+    const direction = new Vec3(Math.cos(bearing + angle), 0, Math.sin(bearing + angle));
+    for (const distance of [4, 6]) for (const dy of [0, -1, 1, -2, 2]) {
+      const p = start.plus(direction.scaled(distance)).floored().offset(.5, dy, .5);
+      if (allowed(p) && dryStanding(bot, p)) { candidates.push(p); break; }
+    }
+  }
+  const movement = bot.pathfinder.movements;
+  const previous = { canDig: movement.canDig, allowSprinting: movement.allowSprinting, maxDropDown: movement.maxDropDown,
+    allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks };
+  Object.assign(movement, { canDig: false, allowSprinting: true, maxDropDown: 1, allow1by1towers: false, scafoldingBlocks: [] });
+  try {
+    for (const p of candidates.slice(0, 8)) {
+      check();
+      if (fallDanger(bot)) return await recoverFall(bot, task, goal, save);
+      if (bot.entity.onGround === false || bot.entity.position.distanceTo(start) > .75) return false;
+      const destination = new goals.GoalBlock(Math.floor(p.x), p.y, Math.floor(p.z));
+      const route = await surveyRoute(bot, task, movement, destination, 100);
+      check();
+      if (bot.entity.onGround === false || bot.entity.position.distanceTo(start) > .75) return false;
+      if (route.status !== 'success' || route.path.some(n => n.toBreak?.length || n.toPlace?.length ||
+        !allowed(new Vec3(n.x + .5, n.y, n.z + .5)))) continue;
+      goal.step = { action: 'evade_dragon_over_terrain', from: { ...start }, destination: { ...p } }; save();
+      try {
+        await walk(bot, task, destination, { timeoutMs: 3000, stallMs: 1000, stopWhen: () => fallDanger(bot) });
+      } catch (err) {
+        check();
+        if (!fallDanger(bot)) {
+          goal.endCombat.lastEvasionInterrupted = { at: Date.now(), reason: err.message }; save(); return false;
+        }
+      }
+      check();
+      if (fallDanger(bot)) await recoverFall(bot, task, goal, save);
+      const evidence = { at: Date.now(), from: { ...start }, to: { ...bot.entity.position }, dragonId: dragon.id, terrainRoute: true };
+      goal.endCombat.lastEvasion = evidence; save(); bot.emit('end_combat', { evasion: evidence }); return true;
+    }
+    throw Object.assign(new Error('No surveyed walking escape from the dragon on loaded terrain'), { name: 'Blocked' });
+  } finally { bot.pathfinder.setGoal(null); bot.clearControlStates(); Object.assign(movement, previous); }
+}
+
 async function evadeDragon(bot, task, goal, save, { allowed, timeoutMs = 1600 } = {}) {
   task.check();
   const dimension = bot.game.dimension;
@@ -74,7 +124,7 @@ async function evadeDragon(bot, task, goal, save, { allowed, timeoutMs = 1600 } 
     const dragon = dragonThreat(bot);
     if (!dragon) return false;
     const route = dodgeRoutes(bot, dragon, allowed)[0];
-    if (!route) throw Object.assign(new Error('No observed level ground to evade the approaching dragon'), { name: 'Blocked' });
+    if (!route) return await evadeOverTerrain(bot, task, goal, save, dragon, { allowed });
     const start = bot.entity.position.clone();
     // use normal movement packets, never position edits
     await bot.look(Math.atan2(-route.direction.x, -route.direction.z), 0, true); check();
@@ -94,4 +144,4 @@ async function evadeDragon(bot, task, goal, save, { allowed, timeoutMs = 1600 } 
     return true;
   } finally { bot.clearControlStates(); }
 }
-module.exports = { dragonThreat, endEmergency, checkEndEmergency, dodgeRoutes, evadeDragon };
+module.exports = { dragonThreat, endEmergency, checkEndEmergency, dodgeRoutes, evadeOverTerrain, evadeDragon };
