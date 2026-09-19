@@ -224,6 +224,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         spec.kind === 'house' ? `Building a small ${spec.material} house with a floor, doorway and roof.` :
         ['obtain', 'craft'].includes(spec.kind) ? `${bot.game.gameMode === 'creative' ? 'Taking from Creative inventory' : 'Working out the dependencies for'} ${spec.count} ${spec.item.replaceAll('_', ' ')}${spec.deliver ? ` for ${from}` : ''}.` :
         spec.kind === 'come' ? `Coming to ${spec.target}.` : spec.kind === 'follow' ? `Following ${spec.target}; say Jev stop to stop.` :
+        spec.kind === 'win' ? 'I will work toward beating the game, keeping the overall goal saved through each stage. I will tell you if a needed action is not available yet.' :
         'I will establish a portal route and enter the Nether to verify it.');
       launch(goal);
     }).catch(err => { console.error(err); if (!ended && revision === generation) bot.chat(`Could not process request: ${err.message}`); }).finally(() => { pendingRequests--; });

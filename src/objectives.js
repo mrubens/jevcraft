@@ -16,10 +16,18 @@ const TYPES = {
   come: 'Come here, approach a player, or meet the speaker once.',
   follow: 'Follow a player continuously, stay with them, or accompany them.',
   nether: 'Find or create a working route to the Nether.',
+  win: 'Beat Minecraft or win the game through survival progression, defeating the Ender Dragon and returning alive. This is a gameplay objective, not permission to use commands. Questions about how to win and requests not to fight are other.',
   stop: 'Stop or cancel the current task.',
-  status: 'Report progress on the current task.',
+  status: 'Ask what this bot is doing now, how its current task is going, or whether it has finished. Report the bot current activity or progress.',
   resume: 'Continue or retry the saved task.',
-  other: 'Conversation, informational questions, negated instructions, or unsupported requests. Excludes item goals, houses, Nether routes, movement, task controls AND explicit operator actions such as changing time/weather/game mode or teleporting.',
+  other: 'Conversation, explanations, general questions about Minecraft, negated instructions, or unsupported requests. Do not execute a task merely mentioned as a topic. Requests for the bot current activity/progress are status; requests to perform a supported action use that action.',
+};
+
+const INTERACTIONS = {
+  request: { meaning: 'An instruction for this Minecraft bot to act, control its task, or report its current activity. Imperative verbs address the bot, even without please. Long-term goals are actions too. Polite action questions are instructions.',
+    examples: ['win the game', 'collect some wood', 'could you build me a house?', 'what are you doing now?'] },
+  discussion: { meaning: 'An explanation, general fact, hypothetical discussion, quoted statement, or negation, without asking this bot to execute that action.',
+    examples: ['how can I win the game?', 'explain how crafting works', 'do not build that house', 'what does Alex mean by collect wood?'] },
 };
 
 // Candidate extraction is exact code; Jev selects which mentioned quantity
@@ -51,10 +59,11 @@ async function interpret(client, request, from, username, context = {}) {
   const address = parseAddress(request, username);
   const numbers = quantityCandidates(address.text);
   const response = await client.systemOne({
-    state: { request, speaker: from, bot_name: username, bot_names: chatNames(username), explicitly_addressed: address.explicit,
+    state: { request, request_body: address.text, speaker: from, bot_name: username, bot_names: chatNames(username), explicitly_addressed: address.explicit,
       availablePlayers: context.players || [from] },
     questions: {
       addressed: noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.'),
+      interaction: choice('Classify the speaker intent in `request_body`, with the bot name prefix removed. The speaker is talking to a Minecraft bot. Is this an instruction to perform an action/report its current activity, or a discussion without an instruction to act? Judge intent, not feasibility or the topic.', INTERACTIONS),
       objective: choice('Categorize the requested outcome in `request` in the Minecraft game. Creative, Survival, Adventure and Spectator name game modes even when the word "mode" is omitted. Item requests belong to obtain or craft regardless of which particular Minecraft item is named. Choose obtain for collect/get/gather/fetch requests even when the item can be crafted; choose craft for explicit make/craft/create inventory items. Recipes and feasibility are checked after routing. A simple small house is house; custom structures and mansions are build; crafting an inventory item is craft. Coming once differs from continuously following. Changing the world or player with an explicitly requested command effect is operator_command.', TYPES),
       quantity: choice('Assuming an item request, select the quantity applying to the requested output. Candidates were extracted from this request. "A/an" or "a single" item means 1. Stacks contain 64 items. If no requested output quantity is stated, select unspecified; do not invent a batch size.',
         { ...Object.fromEntries(numbers.map(n => [n, `${n} items requested by a quantity in the message`])), unspecified: 'No stated output quantity; the application will use its default.' }),
@@ -71,11 +80,11 @@ async function interpret(client, request, from, username, context = {}) {
     },
   });
   const a = response.answers;
-  if (!a || !Object.hasOwn(TYPES, a.objective?.choice) || !Number.isFinite(a.addressed?.noul)) {
+  if (!a || !Object.hasOwn(TYPES, a.objective?.choice) || !Object.hasOwn(INTERACTIONS, a.interaction?.choice) || !Number.isFinite(a.addressed?.noul)) {
     throw new Error('Invalid Jev interpretation response');
   }
   if (!address.explicit && a.addressed.noul < 0.5) return null;
-  const kind = a.objective.choice;
+  const kind = a.interaction.choice === 'request' ? a.objective.choice : 'other';
   const spec = { kind, request, from, interpretation: a, usage: response.usage };
   if (['come', 'follow'].includes(kind)) {
     const target = a.target?.choice;

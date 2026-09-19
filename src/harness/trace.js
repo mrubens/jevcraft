@@ -19,6 +19,7 @@ function goalView(goal = {}) {
     item: goal.item, count: goal.count, delivered: goal.delivered, from: goal.from,
     interpretation: goal.interpretation, itemResolution: goal.itemResolution,
     step: goal.step, error: goal.lastError, survivalAction: goal.survivalAction,
+    gameProgress: goal.gameProgress,
     recoveryAction: goal.recoveryAdvice?.active ? goal.recoveryAction : undefined,
     recoveryAdvice: goal.recoveryAdvice?.history?.at(-1) && (({ model, diagnosis, status, steps, outcome }) =>
       ({ model, diagnosis, status, steps, outcome }))(goal.recoveryAdvice.history.at(-1)),

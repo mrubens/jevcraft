@@ -12,7 +12,9 @@ The original development targets remain:
 - `get me 32 purple concrete`: gather ingredients, craft dye and powder, harden it in water, collect the concrete, and confirm pickup by the requesting player.
 - `find a way to the Nether`: use an existing portal or acquire a frame and ignition materials, build a portal, and verify entry into the Nether.
 
-These workflows are **under live testing**. The house and 32-block concrete delivery have passed from empty starts in natural Normal worlds. Portal construction and entry have passed controlled tests and interactive Peaceful play, but fresh Normal Nether acceptance remains incomplete. The later game stages are not yet implemented. See `PROGRESS.md` for evidence and remaining work.
+These workflows are **under live testing**. The house and 32-block concrete delivery have passed from empty starts in natural Normal worlds. Portal construction and entry have passed controlled tests and interactive Peaceful play, but fresh Normal Nether acceptance remains incomplete. See `PROGRESS.md` for evidence and remaining work.
+
+`Jev beat Minecraft` starts a persistent game-completion objective. The controller uses the existing resource/portal actions and records observed progression in the Observatory. This is a partial implementation: blaze rods and ender pearls, stronghold exploration, End entry, and dragon combat still need executable actions. It reports missing capabilities as blockers rather than treating Nether entry as victory. Runtime completion requires fresh player-specific dragon-kill advancement credit followed by a living exit-portal return to the Overworld; death/respawn or a dragon disappearing cannot satisfy it. The full independent acceptance run remains outstanding. Questions such as `Jev how do you beat Minecraft?` do not launch the objective.
 
 ## Join and watch locally
 

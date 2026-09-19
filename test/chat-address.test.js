@@ -17,9 +17,25 @@ test('an explicit Jev prefix determines the addressee while Jev interprets the t
   const client = { systemOne: async ({ state }) => {
     assert.deepEqual(state.bot_names, ['JevBot', 'Jev']);
     assert(state.explicitly_addressed);
-    return { answers: { addressed: { noul: 0.1 }, objective: { choice: 'house' }, material: { choice: 'oak_planks' } } };
+    return { answers: { addressed: { noul: 0.1 }, interaction: { choice: 'request' }, objective: { choice: 'house' }, material: { choice: 'oak_planks' } } };
   } };
   const result = await interpret(client, 'Jev build a house', 'Player', 'JevBot');
   assert.equal(result.kind, 'house');
   assert.equal(result.material, 'oak_planks');
+});
+
+test('a direct name prefix does not turn an informational topic into an action', async () => {
+  const client = { systemOne: async () => ({ answers: { addressed: { noul: 1 },
+    interaction: { choice: 'discussion' }, objective: { choice: 'win' } } }) };
+  const result = await interpret(client, 'Jev how do you beat Minecraft?', 'Player', 'JevBot');
+  assert.equal(result.kind, 'other');
+  assert.equal(result.interpretation.objective.choice, 'win', 'Retain the raw judgments for diagnosis');
+});
+
+test('a missing or unoffered interaction judgment never dispatches a gameplay action', async () => {
+  for (const interaction of [undefined, { choice: 'unknown' }]) {
+    const client = { systemOne: async () => ({ answers: { addressed: { noul: 1 },
+      interaction, objective: { choice: 'win' } } }) };
+    await assert.rejects(interpret(client, 'Jev beat Minecraft', 'Player', 'JevBot'), /Invalid Jev interpretation/);
+  }
 });

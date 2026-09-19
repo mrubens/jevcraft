@@ -24,6 +24,7 @@ const { dryMiningPositions, approachDryMining, miningMovement } = require('./min
 const { dryPassable, supportCell } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
 const { descendPillar } = require('./pillar-recovery');
+const { gameStep, watchGameProgress, dimension } = require('./game-progress');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -1037,6 +1038,15 @@ function createSurvival(bot, options) {
   return new Survival(bot, { acquireStep, dig, place, navigate, explore }, options);
 }
 
+async function returnFromNether(bot, task, goal, save) {
+  if (dimension(bot) === 'overworld') return;
+  const portal = find(bot, ['nether_portal'], 64, 1)[0];
+  if (!portal) throw new Blocked('No loaded return portal observed in the Nether; saved progress retained');
+  goal.step = { action: 'return_overworld', portal: { ...portal } }; save();
+  await navigate(bot, task, new goals.GoalBlock(portal.x, portal.y, portal.z));
+  await waitFor(task, () => dimension(bot) === 'overworld', 12000);
+}
+
 function protectConstruction(bot, goal) {
   const movements = bot.pathfinder.movements;
   movements.exclusionAreasBreak = (movements.exclusionAreasBreak || []).filter(rule => rule !== bot._constructionProtection);
@@ -1093,6 +1103,8 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
   protectConstruction(bot, goal);
   recoveryAdviser ||= createRecoveryAdviser(bot);
   goal.status = 'running'; goal.failures = 0; goal.stalls = 0; save();
+  const stopObserving = goal.kind === 'win' ? watchGameProgress(bot, goal, save) : () => {};
+  try {
   for (let n = 0; n < (goal.kind === 'follow' ? Infinity : goal.kind === 'build' ? Math.max(maxSteps, 30000) : maxSteps); n++) {
     task.interruptCheck = undefined;
     task.check();
@@ -1117,7 +1129,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       }
       const needsSupplies = !goal.expeditionReady && (
         (goal.kind === 'concrete' && countOf(bot, 'purple_concrete') + (goal.delivered || 0) < goal.count && !goal.pendingDelivery) ||
-        (goal.kind === 'nether' && !String(bot.game.dimension).includes('nether') && !find(bot, ['nether_portal'], 64, 1).length && !goal.portalFrame));
+        (['nether', 'win'].includes(goal.kind) && dimension(bot) === 'overworld' && !find(bot, ['nether_portal'], 64, 1).length && !goal.portalFrame));
       const prepared = !needsSupplies || await prepareExpeditionStep(bot, task, goal, save);
       if (prepared && goal.kind === 'house') complete = decisionClient ? await houseDecisionStep(bot, task, goal, save, decisionClient, onStep) : await buildHouseStep(bot, task, goal, save);
       if (goal.kind === 'build') complete = await designedBuildStep(bot, task, goal, save, decisionClient, onStep);
@@ -1131,6 +1143,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
         }
       }
       if (prepared && goal.kind === 'nether') complete = await netherStep(bot, task, goal, save);
+      if (prepared && goal.kind === 'win') complete = await gameStep(bot, task, goal, save, {
+        acquireStep, enter_nether: netherStep, return_overworld: returnFromNether,
+      });
       task.check();
       goal.failures = 0;
       delete goal.lastError;
@@ -1143,7 +1158,8 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
         bot.chat(['obtain', 'craft'].includes(goal.kind) ? (goal.deliver ? `Delivered ${goal.count} ${goal.item.replaceAll('_', ' ')} to ${goal.from}; pickup confirmed.` : `Obtained ${goal.count} ${goal.item.replaceAll('_', ' ')}; inventory verified.`) :
           goal.kind === 'come' ? `Here with ${goal.target || goal.from}.` : goal.kind === 'concrete' ? `Delivered ${goal.count} purple concrete to ${goal.from}; pickup confirmed.` :
           goal.kind === 'build' ? `${goal.design.source.name} finished at ${pos(goal.blueprint.origin)}; all schematic blocks and openings verified.` :
-          goal.kind === 'house' ? `House verified at ${pos(goal.blueprint.origin)}: floor, walls, roof and clear doorway.` : 'Nether route verified: I entered the Nether.');
+          goal.kind === 'house' ? `House verified at ${pos(goal.blueprint.origin)}: floor, walls, roof and clear doorway.` :
+          goal.kind === 'win' ? 'Dragon defeat and return alive to the Overworld verified.' : 'Nether route verified: I entered the Nether.');
         return { ok: true, goal };
       }
       const unchanged = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 1 &&
@@ -1176,6 +1192,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
   goal.status = 'blocked'; goal.lastError = 'Action budget reached'; save();
   bot.chat('Action budget reached. Progress saved; say resume to continue.');
   return { ok: false, reason: goal.lastError, goal };
+  } finally { stopObserving(); }
 }
 
 // Placement in Creative consumes no inventory. Observe the actual construction
