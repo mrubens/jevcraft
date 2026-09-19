@@ -148,3 +148,19 @@ test('session adapter shares chat cancellation and detaches when the session clo
     await assert.rejects(callbacks.controls.stop(),/Connection ended/);
   }finally{session?.shutdown();mineflayer.createBot=original;}
 });
+
+test('live Fable advice remains separate from Jev classifier judgments and records recovery outcomes', () => {
+  const b = bot(), trace = new Trace(), goal = { request: 'find a way to the Nether', decisions: [
+    { at: '2026-09-18T19:00:00Z', path: ['gather'], judgments: [{ choice: 'gather' }] },
+  ] };
+  const observation = observeBot(trace, b, { getGoal: () => goal });
+  b.emit('spawn');
+  const advice = { model: 'anthropic/claude-fable-5.1', diagnosis: 'Use the dry ledge', steps: [{ kind: 'relocate' }], context: { inventory: { dirt: 3 } } };
+  b.emit('recovery_advice', advice);
+  assert.equal(trace.frames.at(-1).source, 'fable');
+  assert.equal(trace.frames.at(-1).detail.model, advice.model);
+  b.emit('recovery_result', { outcome: 'Recovery actions completed; retrying original objective' });
+  assert.equal(trace.frames.at(-1).source, 'rules');
+  assert.match(trace.frames.at(-1).label, /retrying original objective/);
+  observation.detach();
+});

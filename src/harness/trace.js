@@ -19,6 +19,9 @@ function goalView(goal = {}) {
     item: goal.item, count: goal.count, delivered: goal.delivered, from: goal.from,
     interpretation: goal.interpretation, itemResolution: goal.itemResolution,
     step: goal.step, error: goal.lastError, survivalAction: goal.survivalAction,
+    recoveryAction: goal.recoveryAdvice?.active ? goal.recoveryAction : undefined,
+    recoveryAdvice: goal.recoveryAdvice?.history?.at(-1) && (({ model, diagnosis, status, steps, outcome }) =>
+      ({ model, diagnosis, status, steps, outcome }))(goal.recoveryAdvice.history.at(-1)),
     dependencies: goal.decisions?.at(-1)?.state?.acquisition?.dependencies,
     blueprint: goal.blueprint && { origin: goal.blueprint.origin, blocks: goal.blueprint.blocks?.slice(0, 6000) },
   });

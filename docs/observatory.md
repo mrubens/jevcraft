@@ -23,7 +23,7 @@ JEV_DASHBOARD_PORT=3041 npm start
 
 Use another port if the standalone viewer is still running. `index.js` creates one server across reconnects; `createSession` attaches the current bot and publishes step events. The optional adapter is in `src/harness/observer.js`. Without the environment variable, normal startup is unchanged and Three.js is not loaded.
 
-Integration points are limited to `index.js`, `src/session.js`, package manifests, `.env.example` and documentation; the remaining files are additive. This work was developed on `codex/jev-visual-harness` in an isolated worktree. Integrate that branch before enabling capture in the primary checkout. No currently running Jev process was restarted or changed to build this viewer.
+Integration points are limited to `index.js`, `src/session.js`, package manifests, `.env.example` and documentation; the remaining files are additive. The viewer was developed on `codex/jev-visual-harness` in an isolated worktree and is now integrated in the primary checkout. The live adapter also records Fable recovery advice and execution outcomes, labeled separately from Jev classifier judgments.
 
 The viewer listens only on loopback. Live stop uses the same cancellation path as chat; resume shares the existing saved-task logic. Recording controls are disabled. Requests must target the current connection epoch with fresh observations; stale/replaced connections are rejected. Stop can interrupt a queued resume. The API offers no arbitrary chat, operator command, teleport or movement endpoint.
 

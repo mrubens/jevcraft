@@ -8,7 +8,7 @@ let viewer;
 try { viewer = new WorldView($('viewport')); }
 catch { $('world-empty').hidden = false; text('world-empty', '3D requires WebGL 2. The decision inspector and recordings still work in this browser.'); }
 let sessions = [], data, frames = [], selectedId, follow = true, playing = null, sessionId = '', fetchRevision = 0, online = false;
-const sourceNames = { jev: 'Jev classifier', rules: 'Execution rule', survival: 'Survival response', observed: 'Observation', stale: 'Discarded decision' };
+const sourceNames = { fable: 'Fable adviser', jev: 'Jev classifier', rules: 'Execution rule', survival: 'Survival response', observed: 'Observation', stale: 'Discarded decision' };
 let toastTimer;
 function toast(message) { text('toast', message); $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 5000); }
 async function json(url, options) { const response = await fetch(url, options); const value = await response.json(); if (!response.ok) throw new Error(value.error || 'Request failed'); return value; }
@@ -80,9 +80,11 @@ function render(updateScene = true) {
   text('event-time', frame ? `EVENT ${frame.id} · ${time(frame.at)}` : 'NO OBSERVATIONS');
   text('event-label', frame?.label || 'Waiting for observations');
   text('source-badge', sourceNames[frame?.source] || 'Observation'); $('source-badge').className = `pill ${frame?.source || ''}`;
-  const decision = snapshot.decision;
+  const advice = frame?.source === 'fable' ? frame.detail : null;
+  const decision = advice ? null : snapshot.decision;
   const currentDecision = frame?.source === 'jev' || frame?.kind === 'decision';
   const provenance = data.mode === 'demo' ? 'Illustration only. These choices and probabilities are synthetic.' :
+    advice ? 'Recovery advice from the configured LLM. Code validates and executes selected actions; completion is verified separately.' :
     frame?.source === 'jev' ? 'Recorded typed choices from Jev. Probabilities are shown only where the model response included them.' :
     frame?.source === 'stale' ? 'This decision was discarded because the state changed. It was not executed.' :
     frame?.source === 'rules' ? 'This event came from the executor or a rule. Any earlier Jev choice below is context, not a new decision.' :
@@ -92,7 +94,12 @@ function render(updateScene = true) {
   if (decision?.at) $('decision-meta').append(el('span', `${currentDecision ? 'Decision' : 'Last decision'} ${time(decision.at)}`));
   if (Number.isFinite(decision?.latencyMs)) $('decision-meta').append(el('span', `${decision.latencyMs} ms`));
   renderChoices(decision);
-  text('state-json', JSON.stringify(decision?.state || { message: 'No decision input was recorded for this observation.' }, null, 2));
+  if (advice) {
+    $('decision-meta').append(el('span', advice.model), el('span', `${advice.latencyMs} ms`));
+    $('choices').replaceChildren(el('p', advice.diagnosis));
+    for (const step of advice.steps || []) $('choices').append(el('p', `${human(step.kind)}: ${step.description || step.item || ''}`));
+  }
+  text('state-json', JSON.stringify(advice?.context || decision?.state || { message: 'No decision input was recorded for this observation.' }, null, 2));
   $('routing-details').hidden = !goal.interpretation && !goal.itemResolution;
   text('routing-json', JSON.stringify({ interpretation: goal.interpretation, itemResolution: goal.itemResolution }, null, 2));
   text('event-json', JSON.stringify(frame?.detail || {}, null, 2));

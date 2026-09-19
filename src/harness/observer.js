@@ -53,16 +53,16 @@ function observeBot(trace, bot, { getGoal = () => ({}), controls = {}, server = 
     const freshAction = action?.at && action.at !== previousAction;
     if (kind === 'step') { previousDecision = decision?.at; previousAction = action?.at; }
     if (kind === 'step') kind = freshDecision ? 'decision' : goal.lastError ? 'error' : freshAction ? 'survival' : 'action';
-    const label = kind === 'decision' ? decision.stale ? 'Discarded changed-state decision' : (decision.path || []).join(' → ') || 'Decision selected' : kind === 'survival' ? String(action.action || 'survival').replaceAll('_', ' ') :
+    const label = kind === 'recovery_advice' ? 'Fable recovery advice' : kind === 'recovery_result' ? detail?.outcome || 'Recovery outcome' : kind === 'decision' ? decision.stale ? 'Discarded changed-state decision' : (decision.path || []).join(' → ') || 'Decision selected' : kind === 'survival' ? String(action.action || 'survival').replaceAll('_', ' ') :
       kind === 'error' ? goal.lastError || 'Action failed' : kind === 'action' ? [goal.step?.action, goal.step?.item || goal.step?.block].filter(Boolean).join(' ').replaceAll('_', ' ') : kind.replaceAll('_', ' ');
-    trace.append({ kind, label, source: decisionSource(freshDecision ? decision : null, kind), snapshot: snapshot(goal), detail });
+    trace.append({ kind, label, source: kind === 'recovery_advice' && detail?.model ? 'fable' : decisionSource(freshDecision ? decision : null, kind), snapshot: snapshot(goal), detail });
     delete trace.observationError;
   }
   on('spawn', () => { trace.connected = true; sample('connection', { connected: true }); });
   on('path_update', p => { route = (p.path || []).slice(0, 128).map(position).filter(Boolean); });
   on('goal_reached', () => { route = []; });
   on('path_reset', () => { route = []; });
-  for (const kind of ['health', 'death', 'navigation_stall', 'navigation_recovery', 'handover']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
+  for (const kind of ['health', 'death', 'navigation_stall', 'navigation_recovery', 'handover', 'recovery_advice', 'recovery_result']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
   on('chat', (from, message) => sample('chat', { from, message }));
   const timer = setInterval(() => { if (trace.connected) sample(); }, 1000);
   timer.unref();
