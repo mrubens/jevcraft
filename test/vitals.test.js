@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { chooseFood, maintainVitals, airRoute, surfaceForAir } = require('../src/vitals');
+const { chooseFood, maintainVitals, airRoute, surfaceForAir, headSubmerged } = require('../src/vitals');
 const { Vec3 } = require('vec3');
 const { Task } = require('../src/skills');
 const { planningInventory } = require('../src/work');
@@ -51,11 +51,58 @@ test('surfacing refills the air bar and releases swimming controls', async () =>
   bot.clearControlStates = () => { controls.jump = false; controls.forward = false; };
   bot.setControlState = (key, value) => { controls[key] = value; };
   bot.lookAt = async () => {};
-  const refill = setInterval(() => { bot.oxygenLevel = Math.min(20, bot.oxygenLevel + 2); }, 50);
+  const refill = setInterval(() => {
+    bot.entity.position.y = 65;
+    bot.oxygenLevel = Math.min(20, bot.oxygenLevel + 2);
+  }, 50);
   try { await surfaceForAir(bot, new Task('test', 'surface')); }
   finally { clearInterval(refill); }
   assert.equal(bot.oxygenLevel, 20);
   assert(!controls.jump && !controls.forward);
+});
+
+test('a full initial air bar does not skip surfacing after an underwater reconnect', async () => {
+  const bot = waterWorld(), actions = [], controls = {};
+  bot.oxygenLevel = 20; bot.food = 20; bot.health = 20;
+  bot.pathfinder = { setGoal() {} }; bot.stopDigging = () => {};
+  bot.clearControlStates = () => { controls.jump = false; controls.forward = false; };
+  bot.lookAt = async () => {};
+  let jumped = false;
+  bot.setControlState = (key, value) => {
+    controls[key] = value;
+    if (key === 'jump' && value) { jumped = true; bot.entity.position.y = 65; }
+  };
+  await maintainVitals(bot, new Task('reconnected underwater'), action => actions.push(action));
+  assert(jumped); assert.equal(actions[0].action, 'surface');
+  assert.equal(bot.blockAt(bot.entity.position.offset(0, 1.62, 0).floored()).name, 'air');
+  assert(!controls.jump && !controls.forward);
+});
+
+test('breathable space above flowing water is not mistaken for submersion', () => {
+  const bot = { entity: { position: new Vec3(0.5, 59.2, 0.5) },
+    blockAt: p => ({ name: p.y === 60 ? 'water' : 'air', getProperties: () => ({ level: '4' }) }),
+  };
+  assert.equal(headSubmerged(bot), false);
+  bot.entity.position.y = 58.6;
+  assert.equal(headSubmerged(bot), true);
+  bot.entity.position.y = 59.2;
+  bot.blockAt = () => ({ name: 'water', getProperties: () => ({ level: '8' }) });
+  assert.equal(headSubmerged(bot), true, 'A falling water column with water above fills the whole eye block');
+});
+
+test('carried food restores the regeneration threshold for moderate injuries', async () => {
+  let eaten = 0;
+  const bot = { food: 17, health: 13.6, entity: {},
+    registry: { foodsByName: { cooked_beef: { effectiveQuality: 20.8 } } },
+    inventory: { items: () => [{ name: 'cooked_beef', count: 2 }] },
+    equip: async () => {}, consume: async () => { eaten++; bot.food = 20; }, deactivateItem() {},
+  };
+  assert(await maintainVitals(bot, new Task('heal in shelter')));
+  assert.equal(eaten, 1);
+  bot.food = 18;
+  assert.equal(await maintainVitals(bot, new Task('already regenerating')), false);
+  bot.food = 17; bot.health = 20;
+  assert.equal(await maintainVitals(bot, new Task('healthy')), false);
 });
 
 test('eating uses safe food and verifies restored hunger', async () => {

@@ -4,6 +4,7 @@ const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, navigate } = require('./skills');
 const { safeFromHostiles } = require('./danger');
 const { tunnelStep } = require('./tunneling');
+const { dryPassable } = require('./terrain');
 
 // Inspect loaded columns, ignoring tree canopies but not terrain, roofs or
 // water. Two clear cave blocks are not evidence of a surface destination.
@@ -36,7 +37,15 @@ function surfaceMovement(bot) {
   const start = bot.entity.position.floored();
   // Permit leaving a house or a tree's immediate cover without allowing a
   // downhill cave route. Every subsequent surface step remains constrained.
-  const allowed = p => isSurface(p) || (Math.abs(p.x - start.x) <= 4 && Math.abs(p.z - start.z) <= 4 && p.y >= start.y);
+  const surfaceSwimming = p => {
+    const feet = new Vec3(p.x, p.y, p.z), head = feet.offset(0, 1, 0);
+    return bot.blockAt(feet)?.name === 'water' && dryPassable(bot.blockAt(head)) && isSurface(head);
+  };
+  // A river's upper water cell is a surface route when the head remains in
+  // open air. Requiring the feet to be above the water stranded explorers on
+  // riverbanks even when the pathfinder had a safe swimming route across.
+  const allowed = p => isSurface(p) || surfaceSwimming(p) ||
+    (Math.abs(p.x - start.x) <= 4 && Math.abs(p.z - start.z) <= 4 && p.y >= start.y);
   // Existing carried scaffolding can bridge a step or climb an open ravine.
   // The position filter, rather than disabling all placement, keeps the route
   // on observed surface terrain. Hunting still cannot excavate into a cave.
@@ -60,7 +69,7 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
     if (++state.attempts > 192) {
       const error = new Error('Could not return to the surface after 192 recovery steps'); error.name = 'Blocked'; throw error;
     }
-    const clear = p => ['air', 'cave_air', 'void_air'].includes(bot.blockAt(p)?.name);
+    const clear = p => dryPassable(bot.blockAt(p));
     const candidates = bot.findBlocks({ matching: ['grass_block', 'dirt', 'stone', 'sand', 'gravel', 'deepslate'].map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined),
       maxDistance: 48, count: 128, useExtraInfo: block => {
         const p = block.position.offset(0, 1, 0);

@@ -10,6 +10,7 @@ const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute } = require('./skills');
 const { defendNearby } = require('./combat');
+const { reservedForConstruction } = require('./build-sites');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
@@ -140,7 +141,7 @@ class Survival {
         await this.actions.dig(bot, task, exit.door, { requireDrops: false });
       }
       const o = pos(refuge.origin);
-      await this.actions.navigate(bot, task, new goals.GoalBlock(o.x, o.y, o.z), { timeoutMs: 20000 });
+      await this.approachRefuge(task, goal, refuge, new goals.GoalBlock(o.x, o.y, o.z));
     }
     if (shelter.materialStock(bot) < shelter.missingShell(bot, refuge).length) return;
     this.report(goal, save, { action: 'seal_shelter', origin: refuge.origin });
@@ -175,6 +176,24 @@ class Survival {
     if (!shelter.inside(bot, refuge) || !shelter.sealed(bot, refuge)) throw new Error('Shelter verification failed');
     refuge.verifiedAt = new Date().toISOString();
     this.report(goal, save, { action: 'sheltered', origin: refuge.origin, health: bot.health });
+  }
+
+  async approachRefuge(task, goal, refuge, destination) {
+    const bot = this.bot, movement = bot.pathfinder?.movements;
+    const previous = movement?.exclusionAreasBreak;
+    // Selecting a still-empty surface site must not forbid excavating the
+    // natural approach beneath it. That reservation used to invalidate the
+    // very route which had just selected the site from an underground start.
+    // Existing/partial walls and every other construction remain protected.
+    const emptySite = refuge.kind !== 'house' && !refuge.verifiedAt &&
+      shelter.shell(refuge.origin).every(p => shelter.replaceable(bot.blockAt(p)));
+    if (emptySite && movement && bot._constructionProtection) {
+      const approaching = { ...goal, survival: { ...this.state, shelters: this.state.shelters.filter(s => s !== refuge) } };
+      movement.exclusionAreasBreak = (previous || []).filter(rule => rule !== bot._constructionProtection);
+      movement.exclusionAreasBreak.push(block => reservedForConstruction(approaching, block.position) ? 100 : 0);
+    }
+    try { await this.actions.navigate(bot, task, destination, { timeoutMs: 20000 }); }
+    finally { if (movement) movement.exclusionAreasBreak = previous; }
   }
 
   async leave(task, goal, save, refuge) {

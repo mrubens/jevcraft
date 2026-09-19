@@ -27,6 +27,19 @@ test('exploration reaches a distant waypoint through intermediate walks before r
   assert.equal(bot.entity.position.x, 27);
 });
 
+test('surface exploration recognizes ground covered by non-colliding forest vegetation', async () => {
+  const registry = require('minecraft-data')('26.1'), target = new Vec3(10, 63, 0);
+  for (const name of ['leaf_litter', 'short_grass', 'tall_grass']) {
+    const bot = { registry, game: { minY: 0, height: 80 }, entity: { position: new Vec3(0.5, 64, 0.5) },
+      blockAt: p => ({ position: p, name: p.y < 64 ? 'grass_block' : p.y === 64 ? name : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }),
+      findBlocks: ({ matching, useExtraInfo }) => matching.includes(registry.blocksByName.grass_block.id) && useExtraInfo(bot.blockAt(target)) ? [target] : [],
+      pathfinder: { movements: {}, setGoal() {}, goto: async g => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } },
+    };
+    await explore(bot, new Task('forest search'), {}, () => {}, 'rose_bush');
+    assert.equal(bot.entity.position.x, 10.5, name);
+  }
+});
+
 test('exploration leaves an unreachable geometric waypoint instead of spending the entire search there', async () => {
   const registry = require('minecraft-data')('26.1');
   const bot = { registry, game: { minY: 0, height: 100 }, entity: { position: new Vec3(22, 64, 8) }, blockAt: () => ({ name: 'air' }),

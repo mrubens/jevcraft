@@ -41,6 +41,22 @@ test('surface routes can use carried scaffolding but cannot dig or descend into 
   policy.restore();
   for (const [key, value] of Object.entries(before)) assert.deepEqual(bot.pathfinder.movements[key], value);
 });
+
+test('surface travel permits river swimming with open headroom while rejecting dives and covered water', () => {
+  const { bot } = world();
+  bot.blockAt = p => {
+    const name = p.x === 11 && p.y === 70 ? 'stone' : p.y < 64 ? p.x === 12 ? 'lava' : 'water' : 'air';
+    return { name, boundingBox: name === 'stone' ? 'block' : 'empty' };
+  };
+  bot.pathfinder.movements.allowedPosition = p => p.x < 20;
+  const policy = surfaceMovement(bot);
+  assert(policy.allowed(new Vec3(10, 63, 0)), 'Can cross the top of a river');
+  assert(!policy.allowed(new Vec3(10, 62, 0)), 'Head cannot submerge');
+  assert(!policy.allowed(new Vec3(11, 63, 0)), 'Cannot swim into a flooded cave');
+  assert(!policy.allowed(new Vec3(12, 63, 0)), 'Lava is never a swimming route');
+  assert(!bot.pathfinder.movements.allowedPosition(new Vec3(21, 63, 0)), 'Retains inherited restrictions');
+  policy.restore();
+});
 test('building progress observes placement and clearing with unchanged Creative inventory and position', () => {
   const { bot, blocks } = world();
   const p = new Vec3(1, 64, 1);

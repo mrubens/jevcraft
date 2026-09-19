@@ -3,10 +3,9 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute } = require('./skills');
 const { safeFromHostiles } = require('./danger');
+const { dryPassable: clear } = require('./terrain');
 
 const wet = new Set(['water', 'lava', 'bubble_column', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant']);
-const unsafe = new Set([...wet, 'fire', 'soul_fire', 'powder_snow', 'sweet_berry_bush']);
-const clear = block => block && !unsafe.has(block.name) && block.boundingBox === 'empty';
 const solid = block => block?.boundingBox === 'block' && !['magma_block', 'cactus'].includes(block.name);
 
 function dryStanding(bot, point) {

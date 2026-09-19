@@ -21,6 +21,7 @@ const { observeRecipeAlternatives, knownResourceLocations, isSurfaceResource } =
 const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('./designer');
 const { designWithJev } = require('./build-templates');
 const { dryMiningPositions, approachDryMining, miningMovement } = require('./mining-access');
+const { dryPassable } = require('./terrain');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -177,7 +178,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
     // solids first filled the list with underground stone and hid every shore.
     const land = bot.findBlocks({ matching: landIds, maxDistance: 48, count: 256,
       useExtraInfo: b => b.position.distanceTo(bot.entity.position) > 8 &&
-        air(bot.blockAt(b.position.offset(0, 1, 0))) && air(bot.blockAt(b.position.offset(0, 2, 0))) &&
+        dryPassable(bot.blockAt(b.position.offset(0, 1, 0))) && dryPassable(bot.blockAt(b.position.offset(0, 2, 0))) &&
         (!surface || surface.isSurface(b.position.offset(0, 1, 0))),
     }).map(p => p.offset(0, 1, 0))
       .sort((a, b) => Math.hypot(a.x - target.x, a.z - target.z) - Math.hypot(b.x - target.x, b.z - target.z));

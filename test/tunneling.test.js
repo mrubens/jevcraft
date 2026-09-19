@@ -60,6 +60,32 @@ test('staircase descends beside the bot without digging beneath its feet', async
   assert.equal(goal.tunnel.steps, 1);
 });
 
+test('a forest staircase descends through grass and leaf litter without treating vegetation as a wall', async () => {
+  for (const name of ['leaf_litter', 'short_grass', 'tall_grass', 'fern']) {
+    const bot = world(), feet = bot.entity.position.floored(), dug = [];
+    for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      for (const dy of [0, 1]) bot.blocks.set(`${feet.offset(x, dy, z)}`, { name, boundingBox: 'empty' });
+    }
+    const goal = {};
+    await tunnelStep(bot, new Task('forest descent'), goal, () => {}, feet.offset(20, -10, 0), {
+      dig: async (_bot, _task, p) => { dug.push(p); bot.blocks.set(`${p}`, { name: 'air' }); },
+      navigate: async (_bot, _task, target) => { bot.entity.position = new Vec3(target.x + 0.5, target.y, target.z + 0.5); },
+    });
+    assert.equal(bot.entity.position.y, feet.y - 1, name);
+    assert.equal(dug.length, 1, 'Only the ground block needs excavation');
+  }
+});
+
+test('non-colliding hazards still block staircase headroom', () => {
+  for (const name of ['sweet_berry_bush', 'cobweb', 'soul_fire', 'bubble_column', 'seagrass']) {
+    const bot = world(), feet = bot.entity.position.floored();
+    for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      bot.blocks.set(`${feet.offset(x, 1, z)}`, { name, boundingBox: 'empty', diggable: true });
+    }
+    assert.equal(stairOptions(bot, {}, feet.offset(20, -10, 0)).length, 0, name);
+  }
+});
+
 test('staircase refuses lava, missing footing, and construction foundations', () => {
   const bot = world();
   bot.blocks.set(`${new Vec3(1, 69, 0)}`, { name: 'lava', boundingBox: 'empty' });

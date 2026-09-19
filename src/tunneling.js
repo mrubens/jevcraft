@@ -4,10 +4,10 @@ const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
 const { safeFromHostiles } = require('./danger');
 const { surveyRoute } = require('./skills');
+const { dryPassable: passable } = require('./terrain');
 
 const directions = [new Vec3(1, 0, 0), new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(0, 0, -1)];
 const faces = [...directions, new Vec3(0, 1, 0), new Vec3(0, -1, 0)];
-const air = block => block && ['air', 'cave_air', 'void_air'].includes(block.name);
 const natural = /^(stone|deepslate|granite|diorite|andesite|tuff|dirt|grass_block|gravel|sand)$|_ore$/;
 const dangerous = block => !block || ['lava', 'water', 'fire', 'magma_block', 'powder_snow'].includes(block.name);
 const falling = block => block && (['sand', 'red_sand', 'gravel'].includes(block.name) || block.name.endsWith('_concrete_powder'));
@@ -39,7 +39,7 @@ function stairOptions(bot, goal, target) {
     const clear = [];
     // A jump needs three blocks of headroom in the cell we leave. Inspect and
     // clear that ceiling first, but never drop sand/gravel onto our own head.
-    if (height > 0 && !air(bot.blockAt(feet.offset(0, 2, 0)))) {
+    if (height > 0 && !passable(bot.blockAt(feet.offset(0, 2, 0)))) {
       if (falling(bot.blockAt(feet.offset(0, 2, 0))) || falling(bot.blockAt(feet.offset(0, 3, 0)))) continue;
       clear.push(feet.offset(0, 2, 0));
     }
@@ -47,7 +47,7 @@ function stairOptions(bot, goal, target) {
     const safe = clear.every(p => {
       const block = bot.blockAt(p);
       if (dangerous(block)) return false;
-      if (air(block)) return true;
+      if (passable(block)) return true;
       if (!natural.test(block.name) || !block.diggable || reservedForConstruction(goal, p)) return false;
       if (!safeExcavation(bot, p)) return false;
       return !block.harvestTools || bot.inventory.items().some(i => block.harvestTools[i.type]);
@@ -77,7 +77,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate }) {
   save();
   for (const p of choice.clear) {
     // Gravel can fall into a cleared headspace. Recheck it before entering.
-    for (let tries = 0; !air(bot.blockAt(p)); tries++) {
+    for (let tries = 0; !passable(bot.blockAt(p)); tries++) {
       task.check();
       if (tries >= 5) throw new Error('Falling blocks keep obstructing the staircase');
       if (!safeExcavation(bot, p)) throw new Error('Staircase excavation exposed a liquid or unstable wet ceiling');
@@ -130,7 +130,7 @@ async function resourceTunnelStep(bot, task, goal, save, target, resource, actio
 async function retreatForTunnel(bot, task, goal, save, { navigate }) {
   const start = bot.entity.position.floored(), tunnel = goal.tunnel;
   if ((tunnel.retreats || 0) >= 24) { const err = new Error('No dry underground approach after 24 retreats'); err.name = 'Blocked'; throw err; }
-  const dry = p => air(bot.blockAt(new Vec3(p.x, p.y, p.z))) && air(bot.blockAt(new Vec3(p.x, p.y + 1, p.z)));
+  const dry = p => passable(bot.blockAt(new Vec3(p.x, p.y, p.z))) && passable(bot.blockAt(new Vec3(p.x, p.y + 1, p.z)));
   const wetStart = [start, start.offset(0, 1, 0)].some(p => bot.blockAt(p)?.name === 'water');
   const movement = bot.pathfinder.movements;
   const previous = { canDig: movement.canDig, allow1by1towers: movement.allow1by1towers,

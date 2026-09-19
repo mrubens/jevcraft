@@ -9,6 +9,18 @@ class NeedsAir extends Error {
 
 function needsAir(bot) { return bot.oxygenLevel <= 12; }
 function checkAir(bot) { if (needsAir(bot)) throw new NeedsAir(); }
+function headSubmerged(bot) {
+  const eye = bot.entity?.position?.offset(0, bot.entity.eyeHeight || 1.62, 0);
+  if (!eye) return false;
+  const head = eye.floored(), block = bot.blockAt?.(head);
+  const water = b => b && ['water', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant'].includes(b.name);
+  if (!water(block)) return false;
+  const level = Number(block.getProperties?.().level ?? block.metadata ?? 0);
+  // Flowing water only fills part of a block. Its name alone cannot establish
+  // that the player's eyes are below the fluid surface.
+  const height = water(bot.blockAt(head.offset(0, 1, 0))) ? 1 : (8 - (level >= 8 ? 0 : level)) / 9;
+  return eye.y < head.y + height;
+}
 
 async function digWithAirGuard(bot, task, block) {
   task.check(); checkAir(bot);
@@ -61,7 +73,9 @@ async function surfaceForAir(bot, task, onAction = () => {}) {
   const deadline = Date.now() + 15000;
   let index = 0;
   try {
-    while (bot.oxygenLevel < 20) {
+    // A reconnect starts with a full client air bar even when the saved player
+    // is underwater. Require actual breathable headroom as well as full air.
+    while (bot.oxygenLevel < 20 || headSubmerged(bot)) {
       task.check();
       if (Date.now() >= deadline) throw new Error('Could not reach breathable air along the observed swimming route');
       const p = bot.entity.position;
@@ -99,8 +113,10 @@ async function until(task, predicate, timeout, message) {
 
 async function maintainVitals(bot, task, onAction = () => {}) {
   task.check();
-  if (needsAir(bot)) await surfaceForAir(bot, task, onAction);
-  if (!(bot.food <= 16 || (bot.health <= 12 && bot.food < 20))) return false;
+  if (needsAir(bot) || headSubmerged(bot)) await surfaceForAir(bot, task, onAction);
+  // Natural regeneration needs at least 18 hunger points. A sheltered injured
+  // player at 17 must not wait all night with carried food and no healing.
+  if (!(bot.food <= 16 || (bot.health < 20 && bot.food < 18) || (bot.health <= 12 && bot.food < 20))) return false;
   const food = chooseFood(bot);
   if (!food) return false; // The higher-level survival planner must forage.
   onAction({ action: 'eat', item: food.name, food: bot.food, health: bot.health });
@@ -124,4 +140,4 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   return true;
 }
 
-module.exports = { chooseFood, safeFood, maintainVitals, needsAir, checkAir, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
+module.exports = { chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };

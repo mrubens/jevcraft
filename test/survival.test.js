@@ -84,6 +84,33 @@ test('shelter construction rechecks materials consumed by the approach before se
   assert.equal(placed, 0, 'Do not close the room when travel spent the remaining roof materials');
 });
 
+test('an empty shelter reservation permits its approach while preserving other sites and restoring protection', async () => {
+  const origin = new Vec3(0, 64, 0), other = { origin: { x: 20, y: 64, z: 0 }, dimension: 'overworld' };
+  const refuge = { origin, dimension: 'overworld' }, state = { shelters: [refuge, other] }, goal = { survival: state };
+  const changed = new Map();
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' },
+    entity: { position: new Vec3(0.5, 58, 0.5) },
+    blockAt: p => ({ name: changed.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'), boundingBox: p.y < 64 ? 'block' : 'empty' }),
+    pathfinder: { movements: { exclusionAreasBreak: [] } },
+  });
+  bot._constructionProtection = block => reservedForConstruction(goal, block.position) ? 100 : 0;
+  const foreignRule = () => 5;
+  const original = bot.pathfinder.movements.exclusionAreasBreak = [foreignRule, bot._constructionProtection];
+  let expectProtected = false;
+  const controller = new Survival(bot, { navigate: async () => {
+    const rules = bot.pathfinder.movements.exclusionAreasBreak;
+    const cost = p => rules.reduce((sum, rule) => sum + rule({ position: p }), 0);
+    assert.equal(cost(origin.offset(0, -2, 0)), expectProtected ? 105 : 5);
+    assert.equal(cost(new Vec3(20, 63, 0)), 105, 'Other planned work remains protected');
+    throw new Error('approach failed');
+  } }, { state });
+  await assert.rejects(controller.approachRefuge(new Task('approach'), goal, refuge, {}), /approach failed/);
+  assert.equal(bot.pathfinder.movements.exclusionAreasBreak, original);
+  changed.set(`${origin.offset(1, 0, 0)}`, 'cobblestone'); expectProtected = true;
+  await assert.rejects(controller.approachRefuge(new Task('partial shelter'), goal, refuge, {}), /approach failed/);
+  assert.equal(bot.pathfinder.movements.exclusionAreasBreak, original);
+});
+
 test('a completed house becomes a persistent refuge with a temporary two-block night closure', async () => {
   const blueprint = houseBlueprint(new Vec3(0, 64, 0));
   const blocks = new Map(blueprint.blocks.map(p => [`${new Vec3(p.x, p.y, p.z)}`, p.material]));
