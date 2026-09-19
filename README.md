@@ -28,8 +28,8 @@ You need:
 ### 1. Install
 
 ```sh
-git clone https://github.com/mrubens/jevbot.git
-cd jevbot
+git clone https://github.com/mrubens/jevcraft.git
+cd jevcraft
 npm ci
 cp .env.example .env
 ```
