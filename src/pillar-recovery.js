@@ -18,9 +18,11 @@ function pillarDescent(bot, goal) {
   const feet = bot.entity.position, blockPosition = supportCell(feet), block = bot.blockAt(blockPosition);
   if (bot.entity.onGround === false || Math.abs(feet.y - blockPosition.y - 1) > 0.05 ||
     Math.abs(feet.x - blockPosition.x - .5) > .18 || Math.abs(feet.z - blockPosition.z - .5) > .18) return null;
-  if (!material.test(block?.name || '') || !block.diggable || !fullCube(block) || reservedForConstruction(goal, blockPosition)) return null;
+  const ownedAccess = goal.buildPhase === 'cleanup' && goal.buildOwned?.[`${blockPosition.x},${blockPosition.y},${blockPosition.z}`] === (block?.stateId ?? block?.name) &&
+    !goal.blueprint?.blocks?.some(p => p.x === blockPosition.x && p.y === blockPosition.y && p.z === blockPosition.z);
+  if (!material.test(block?.name || '') || !block.diggable || !fullCube(block) || reservedForConstruction(goal, blockPosition) && !ownedAccess) return null;
   const floor = bot.blockAt(blockPosition.offset(0, -1, 0));
-  if (!fullCube(floor) || !material.test(floor.name) && !['grass_block', 'bedrock'].includes(floor.name)) return null;
+  if (!fullCube(floor) || !material.test(floor.name) && !['grass_block', 'bedrock'].includes(floor.name) && !(ownedAccess && !['sand', 'red_sand', 'gravel'].includes(floor.name))) return null;
   if (!dryPassable(bot.blockAt(blockPosition.offset(0, 1, 0))) || !dryPassable(bot.blockAt(blockPosition.offset(0, 2, 0)))) return null;
   if (directions.filter(d => dryPassable(bot.blockAt(blockPosition.plus(d)))).length < 2) return null;
   for (const d of directions) for (const dy of [-1, 0, 1]) if (unsafe(bot.blockAt(blockPosition.plus(d).offset(0, dy, 0)))) return null;

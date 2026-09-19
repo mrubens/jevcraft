@@ -732,3 +732,96 @@ latency and usage preserved. This is scenario/replay evidence, not live combat.
 All352 tests PASS (/tmp/jev-end-choice-full.log). Next live diagnostic must use a
 new frozen runtime and copied world to test the new choices. Player worlds/bots
 remain untouched. Full fresh Normal Nether/winning acceptance is still unproven.
+
+## 2026-09-19 — Winning goal paused; repair construction in the player world
+
+At the user's explicit request, the winning goal was PAUSED at14:50UTC.
+No winning work should resume without the user. Q's copied End server was saved
+and stopped at14:50:05UTC before any bot joined: no fight/trial took place.
+
+Building diagnosis used the live player log/checkpoint, copied to
+artifacts/building-repair-20260919. The diamond-mansion earthworks repeatedly tried
+to reach adjacent high cells from below a sand bank. The new Survival tower draft
+had600blocks, including unrequested glowstone/red sandstone, and the executor
+reselected independent material branches after individual gathering steps.
+The user subsequently requested come; that completed. Do not replace that newer
+request with the old tower/mansion when updating the live runtime.
+
+Construction changes under validation:
+- Reachable visible work faces replace adjacent/nearby-only construction goals;
+  reject fragile corner-only visibility and inspect multiple work candidates.
+- Earthworks interleave cuts with reachable fills, completing the entire lowest
+  fill layer before raising any column, to avoid sealing neighboring trenches.
+- Persistent inventory-sized construction batches combine shared recipe inputs.
+  Jev still chooses feasible resource actions; code owns exact dependencies and
+  geometry. Creative retains its reusable one-item-per-material behavior.
+- Reserve all unplaced building materials, reuse surplus dirt/cobblestone for
+  access, record ownership, and prohibit new scaffolding during final cleanup.
+  Cleanup can descend only its own inspected temporary support onto a safe floor.
+  Construction digs retain ownership until the server acknowledges air.
+- Designer receives local material evidence and actual recipe effort, distinguishes
+  catalog support from local supply, and favors practical modest Survival designs.
+  The full-block palette now supports explicitly requested diamond/metal blocks.
+  No shape-specific pyramid/tower/mansion execution branch was added.
+
+Diagnostic trials on isolated25579, .test-fixture/building-20260919-a:
+- TowerA mu8iikuz andB mu8ik331 FAILED on face-access mismatches. C mu8iour0
+  reproduced B on resume. D mu8ipm9k built all600 blocks, then was deliberately
+  terminated for a scaffold-removal/replacement loop, NOT a completed build.
+  E mu8ixscc safely rejected an unexpected dirt block after that interrupted run;
+  it exposed the need for authoritative dig confirmation before deleting ownership.
+- BankA mu8inokr had an invalid fixture (flat-site shortcut). BankB mu8ipn53
+  andC mu8itm7l were terminated after they revealed fill-order/access dead ends.
+  Corrected bankD mu8iwbdx PASS15:10:09UTC:6cuts,23fills,27designblocks,
+  all50 permanentblocks plus empty space independently verified;health20,nodeaths.
+- Raw-material build mu8j26aj PASS15:16:44UTC: mined all44sand BEFORE the first
+  sandstone craft, made9sandstone and smelted8glass, then independently verified
+  the17-block arbitrary sculpture, health20, no deaths or remaining scaffold.
+- Real OpenRouter designer evaluation retained in designer-local-survival.json:
+  same default tower request and original carried inventory yielded266blocks,
+  using202sandstone and64already-carried diamondblocks, without rare decorative
+  detours. The80-200-block default target is guidance; this sample exceeded it.
+- Fresh full towerF mu8izjbc is still running; do not call it a PASS until final
+  block/empty-space/scaffold verification. A final hills/water/bank rerun is also
+  running. Their terminal evidence and deployment will be recorded below.
+
+Full361/361 automated tests PASS (/tmp/jev-building-final-suite.log), plus final
+focused33/33 after the underfoot-column guard (/tmp/jev-building-focused-final.log).
+Controlled trial setup uses recorded grants, terrain edits and teleports. These
+are construction diagnostics, not natural-world or winning acceptance. Interactive
+server25577 and unrelated25565 have not been altered for these tests.
+
+Terminal update15:24UTC: fresh towerF mu8izjbc PASS15:19:10UTC, all600
+blocks/openings verified by the separate client, zero remaining temporary
+scaffolds, health20, no deaths. Full run from untouched controlled plot, supplied
+finished materials; no recovery adviser needed. Raw-material run above separately
+proved combined gathering/crafting/smelting through actual final construction.
+
+Final terrainA mu8j6pwa FAILED15:19:31UTC after finishing hill geometry: removing
+nearby scaffolds first stranded access to two distant bridge blocks. Cleanup now
+orders upper/far scaffolds before nearby access and allows one bounded access
+repair for an already-stranded resumed cleanup; it cannot continually rebuild
+scaffolding. A new ordering regression covers the remote-before-near choice.
+Final terrainB mu8jcqu1 hills PASS15:23:39UTC,41permanentblocks and empty space
+verified. Water and bank portions pending. Final full363/363 tests PASS
+(/tmp/jev-build-final-363.log). A full inventory now rejects even a one-block
+batch whose inputs cannot fit instead of returning an impossible acquisition lot.
+
+Final terminal evidence15:29UTC:
+- terrainB mu8jcqu1 hills PASS included the single bounded cleanup-access repair;
+  its subsequent water portion FAILED15:24:36UTC. The worker sank into a pocket
+  between newly filled submerged cells and wrongly began searching for dirt.
+- Water construction now rises to the observed clear surface before selecting
+  work/navigation nodes, with bounded time and cancellation-safe jump release.
+  Separate final water mu8jindt PASS15:27:50UTC:70permanentblocks, empty space,
+  health20 and zero deaths verified by the independent client.
+- Separate final sand bank mu8jkcm3 PASS15:28:43UTC:50permanentblocks, empty
+  space, health20 and zero deaths independently verified.
+- Final full365/365 automated tests PASS (/tmp/jev-building-final-365.log).
+  Previous failures and their logs/checkpoints remain retained; no shape was
+  special-cased to make these tests pass. Winning acceptance remains PAUSED.
+
+Live deployment package is frozen at
+.bot-state/runtimes/building-20260919-1528 with per-file source hashes. It preserves
+the latest completed come request, shared player state, keys and Observatory3045.
+One graceful bot reconnect is planned; the player server/world/mode are untouched.

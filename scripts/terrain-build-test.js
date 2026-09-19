@@ -28,11 +28,11 @@ async function ready(b) { await new Promise(resolve => b.once('spawn', resolve))
 (async () => {
   try {
     await Promise.all([ready(bot), ready(witness)]);
-    for (const [i, kind] of ['hills', 'water'].entries()) {
+    for (const [i, kind] of ['hills', 'water', 'bank'].entries()) {
       if (process.env.TERRAIN_ONLY && process.env.TERRAIN_ONLY !== kind) continue;
       const x = 500 + i * 64;
       const commands = [`forceload add ${x} 0 ${x + 31} 31`, `fill ${x} 77 0 ${x + 25} 89 25 air`, `fill ${x} 77 0 ${x + 25} 80 25 stone`,
-        ...(kind === 'hills' ? [0, 3, 6, 9, 12, 15, 18, 21, 24].map(dx => `fill ${x + dx} 81 0 ${x + dx} 84 25 dirt`) : [`fill ${x + 4} 79 4 ${x + 25} 80 25 water`]),
+        ...(kind === 'bank' ? [`fill ${x + 4} 81 4 ${x + 25} 84 25 sand`, ...[6, 9, 12, 15, 18, 21, 24].map(dx => `fill ${x + dx} 81 4 ${x + dx} 84 25 air`), `give ${bot.username} iron_shovel 1`] : kind === 'hills' ? [0, 3, 6, 9, 12, 15, 18, 21, 24].map(dx => `fill ${x + dx} 81 0 ${x + dx} 84 25 dirt`) : [`fill ${x + 4} 79 4 ${x + 25} 80 25 water`]),
         `give ${bot.username} cobblestone 256`, `give ${bot.username} iron_pickaxe 1`, `give ${bot.username} bread 16`,
         `tp ${bot.username} ${x + 2.5} 81 2.5`, `tp ${witness.username} ${x + 1.5} 81 2.5`];
       const setupFile = path.join(directory, `setup-${kind}.json`), readyFile = path.join(directory, `ready-${kind}`);

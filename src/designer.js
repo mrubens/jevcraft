@@ -25,7 +25,7 @@ function buildPalette(registry) {
     (/_(planks|concrete|terracotta|wool|bricks|stained_glass)$/.test(b.name) ||
       ['glass', 'stone', 'smooth_stone', 'cobblestone', 'mossy_cobblestone', 'bricks', 'quartz_block', 'smooth_quartz',
         'sandstone', 'smooth_sandstone', 'red_sandstone', 'polished_andesite', 'polished_diorite', 'polished_granite',
-        'dirt', 'terracotta', 'sea_lantern', 'glowstone'].includes(b.name))).map(b => b.name).sort();
+        'dirt', 'terracotta', 'sea_lantern', 'glowstone', 'diamond_block', 'iron_block', 'gold_block', 'emerald_block', 'copper_block', 'lapis_block', 'coal_block', 'redstone_block', 'netherite_block'].includes(b.name))).map(b => b.name).sort();
 }
 const vec = a => new Vec3(...a);
 function validateSchematic(input, registry) {
@@ -107,7 +107,27 @@ function surveyForDesign(bot) {
       if (naturalGround(b) && replaceable(bot.blockAt(p.offset(0, 1, 0)))) { terrain.push({ dx, dz, groundY: y, block: b.name }); break; }
     }
   }
+  const nearby = new Set(terrain.map(cell => cell.block));
+  const ids = bot.registry.blocksArray.filter(b => /_log$|^(stone|sand|red_sand|sandstone|red_sandstone|dirt)$/.test(b.name)).map(b => b.id);
+  for (const p of bot.findBlocks?.({ matching: ids, maxDistance: 32, count: 64 }) || []) nearby.add(bot.blockAt(p)?.name);
+  const stock = Object.fromEntries(bot.inventory.items().map(i => [i.name, 0]));
+  for (const i of bot.inventory.items()) stock[i.name] += i.count;
+  const local = new Set(Object.keys(stock).filter(name => buildPalette(bot.registry).includes(name)));
+  for (const name of nearby) if (name?.endsWith('_log')) local.add(name.replace('_log', '_planks'));
+  if (nearby.has('stone')) local.add('cobblestone');
+  if (nearby.has('sand')) local.add('sandstone');
+  if (nearby.has('red_sand')) local.add('red_sandstone');
+  if (nearby.has('dirt')) local.add('dirt');
+  const { planCatalog } = require('./knowledge');
+  const materialGuide = [...local].map(block => {
+    try {
+      const plan = planCatalog(bot.registry, block, 64, stock, { nearby: [...nearby] });
+      return { block, carried: stock[block] || 0, for64Blocks: plan.map(s => ({ action: s.action, item: s.item || s.drops, count: s.count })) };
+    } catch { return { block, carried: stock[block] || 0, acquisition: 'No executable acquisition plan; use only what is carried' }; }
+  });
   return { dimension: bot.game.dimension, gameMode: bot.game.gameMode, position: { ...o }, terrain,
+    materials: { locallyObservedSources: [...nearby], practicalPalette: materialGuide,
+      catalogMeaning: 'availableBlocks lists supported block types, NOT supplies available here. Unlisted decorative materials may require distant biomes or another dimension.' },
     inventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })), limits: LIMITS, availableBlocks: buildPalette(bot.registry) };
 }
 
@@ -127,7 +147,7 @@ async function designBuilding(bot, task, request, { fetchImpl = fetch, apiKey = 
       method: 'POST', signal: controller.signal,
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, max_tokens: 10000, reasoning: { effort: 'low' }, provider: { require_parameters: true },
-        messages: [{ role: 'system', content: `Design an attractive, usable Minecraft structure matching the player request. Return only a schematic, never commands or code. Coordinates are local [x,y,z] inside size. Regions are inclusive filled cuboids, applied in order; air carves openings. Unspecified cells are air. Use only availableBlocks, at most 16 palette entries and ${LIMITS.regions} regions; dimensions at most 25x16x25 and at most ${LIMITS.blocks} solid blocks. All solid components must connect to a foundation at y=0. Follow the requested shape rather than forcing every structure to be a house. Include floors, walls, a roof, windows and walkable interiors only when appropriate. Sculptures, monuments, arches and other structures need not have rooms or a doorway: use entrance:null when the structure is not meant to be entered. For structures meant to be entered, provide a usable entrance. In Survival, prefer common locally available materials and modest scale unless the user explicitly asks for rare materials or a huge build; do not add Nether-only decorative materials by default. Make mansions visibly larger and architecturally richer than simple houses, with connected rooms and a usable entrance. For an enterable structure, reserve a two-block-high entrance opening at y>=1 with a floor directly beneath it; entrance gives its bottom air cell. Inset entrances are allowed when a supported, two-block-high walking route reaches an exterior edge of the bounding box. Every interior floor must be reachable from the entrance by walking and one-block jumps; carve the floor above each staircase to leave jumping headroom over the current step as well as the destination. Use full-block stepped roof/stair geometry when needed; oriented block states and doors are not available in this executor. Design compactly with cuboids rather than listing thousands of individual blocks. The surveyed terrain informs the scale and style; code will choose and revalidate a nearby supported site.` },
+        messages: [{ role: 'system', content: `Design an attractive, usable Minecraft structure matching the player request. Return only a schematic, never commands or code. Coordinates are local [x,y,z] inside size. Regions are inclusive filled cuboids, applied in order; air carves openings. Unspecified cells are air. Use only availableBlocks, at most 16 palette entries and ${LIMITS.regions} regions; dimensions at most 25x16x25 and at most ${LIMITS.blocks} solid blocks. All solid components must connect to a foundation at y=0. Follow the requested shape rather than forcing every structure to be a house. Include floors, walls, a roof, windows and walkable interiors only when appropriate. Sculptures, monuments, arches and other structures need not have rooms or a doorway: use entrance:null when the structure is not meant to be entered. For structures meant to be entered, provide a usable entrance. In Survival, use world.materials.practicalPalette for the main structure unless the request specifies another material. The for64Blocks recipes show the real gathering effort: prefer abundant carried supplies or cheap local materials. For an ordinary request without a size, aim for 80-200 solid blocks total; spend detail on shape, proportions and openings, not large bulk. Larger explicitly requested builds may use the full limits. Do not add Nether-only blocks, rare biome blocks, or smelted decorative variants unless the player requested them or enough are already carried. If a light block is not locally practical, leave a window/skylight instead. These are design choices, not reasons to ask the player questions. Make mansions visibly larger and architecturally richer than simple houses, with connected rooms and a usable entrance. For an enterable structure, reserve a two-block-high entrance opening at y>=1 with a floor directly beneath it; entrance gives its bottom air cell. Inset entrances are allowed when a supported, two-block-high walking route reaches an exterior edge of the bounding box. Every interior floor must be reachable from the entrance by walking and one-block jumps; carve the floor above each staircase to leave jumping headroom over the current step as well as the destination. Use full-block stepped roof/stair geometry when needed; oriented block states and doors are not available in this executor. Design compactly with cuboids rather than listing thousands of individual blocks. The surveyed terrain informs the scale and style; code will choose and revalidate a nearby supported site.` },
           { role: 'user', content: JSON.stringify({ request, world }) },
           ...(previousDraft ? [{ role: 'assistant', content: JSON.stringify(previousDraft) },
             { role: 'user', content: `The schematic failed validation: ${feedback}. Correct this issue while preserving the requested structure and materials. Do not replace it with a different building type. Check all geometry, connections, entrance access and walkable interior floors before returning it. Return the full corrected schematic.` }] : [])],
@@ -204,7 +224,7 @@ function schematicScaffolding(bot, goal) {
     const p = new Vec3(...key.split(',').map(Number));
     if (planned.has(key) || p.x < min.x - 3 || p.x > max.x + 3 || p.z < min.z - 3 || p.z > max.z + 3 || p.y < min.y || p.y > max.y + 3) return [];
     const block = bot.blockAt(p);
-    return block?.name === 'dirt' && (block.stateId ?? block.name) === state ? [{ ...p }] : [];
+    return ['dirt', 'cobblestone'].includes(block?.name) && (block.stateId ?? block.name) === state ? [{ ...p }] : [];
   });
 }
 module.exports = { MODEL, LIMITS, SCHEMA, buildPalette, validateSchematic, surveyForDesign, designBuilding, selectSchematicSite, canClearSchematicBlock, schematicScaffolding };

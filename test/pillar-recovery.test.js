@@ -105,3 +105,16 @@ test('optimistic client air cannot complete a descent without the server block a
   assert.equal(goal.step.landed, undefined);
   assert.equal(bot._client.listenerCount('block_change'), 0);
 });
+
+test('final construction cleanup can descend its own scaffold onto the finished floor, preserving unowned blocks', () => {
+  const { bot, blocks, goal } = fixture();
+  goal.blueprint = { blocks: [{ x: 0, y: 75, z: 0, material: 'smooth_sandstone' }], bounds: { min: { x: -2, y: 74, z: -2 }, max: { x: 2, y: 80, z: 2 } } };
+  blocks.set('(0, 75, 0)', 'smooth_sandstone');
+  goal.buildOwned = { '0,76,0': 'cobblestone' };
+  assert.equal(pillarDescent(bot, goal), null, 'normal work preserves the construction area');
+  goal.buildPhase = 'cleanup'; assert(pillarDescent(bot, goal));
+  delete goal.buildOwned['0,76,0']; assert.equal(pillarDescent(bot, goal), null);
+  goal.buildOwned['0,76,0'] = 'cobblestone';
+  goal.blueprint.blocks.push({ x: 0, y: 76, z: 0, material: 'cobblestone' });
+  assert.equal(pillarDescent(bot, goal), null, 'designed geometry is never a disposable scaffold');
+});

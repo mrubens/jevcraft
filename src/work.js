@@ -37,6 +37,8 @@ const { collectWater } = require('./water');
 const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
 const { batchPlan, remainingOutputs } = require('./batch-plan');
+const { remainingBuildBatch, materialCounts, createBuildBatch } = require('./build-batch');
+const { chooseConstructionWork, approachConstruction } = require('./construction-access');
 const { opportunisticMining } = require('./opportunistic-mining');
 const { friendlyProblem, completion } = require('./speech');
 const { boatTravelStep } = require('./boats');
@@ -130,7 +132,7 @@ async function syncPlacementInventory(bot, task) {
   if (failure) throw failure;
 }
 
-async function place(bot, task, p, material) {
+async function place(bot, task, p, material, { face } = {}) {
   task.check();
   if (bot.blockAt(p)?.name === material) return;
   if (!air(bot.blockAt(p)) && !['water', 'short_grass', 'tall_grass', 'fern', 'snow'].includes(bot.blockAt(p)?.name)) {
@@ -138,12 +140,12 @@ async function place(bot, task, p, material) {
   }
   await stepOff(bot, task, p);
   const eye = bot.entity.position.offset(0, 1.62, 0);
-  if (eye.distanceTo(p.offset(0.5, 0.5, 0.5)) > 4.5) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 4));
+  if (!face && eye.distanceTo(p.offset(0.5, 0.5, 0.5)) > 4.5) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 4));
   const item = bot.inventory.items().find(i => i.name === material);
   if (!item) throw new Blocked(`Need more ${material}`);
   await bot.equip(item, 'hand');
   let placementError = 'no adjacent solid anchor';
-  for (const f of faces) {
+  for (const f of face ? [face.face] : faces) {
     const ref = bot.blockAt(p.plus(f));
     if (ref?.boundingBox !== 'block') continue;
     task.check();
@@ -899,68 +901,93 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     return block && !canClearSchematicBlock(blueprint, goal.buildOwned, block);
   });
   if (changed) throw new Blocked(`The building site changed at ${pos(changed)}; preserving the unexpected ${bot.blockAt(pos(changed)).name}. Clear it or request a new build`);
-  const needed = missing.reduce((m, p) => { m[p.material] = (m[p.material] || 0) + 1; return m; }, {});
-  const tree = {};
-  for (const [material, amount] of Object.entries(needed)) {
-    const batch = Math.min(amount, bot.game.gameMode === 'creative' ? 1 : 64);
-    if (countOf(bot, material) > 0) continue;
-    tree[`gather_${material}`] = { description: `Gather ${batch} ${material} for the saved schematic; ${amount} remain.`, children: {
-      acquire: { description: 'Execute the next actual crafting/mining dependency or use Creative inventory when in Creative.',
-        run: () => acquireStep(bot, task, material, batch, goal, save) },
-    } };
+  // Retain one working lot instead of independently reselecting a material on
+  // every block. Recipe inputs shared by the lot are gathered together.
+  if (!goal.buildBatch || !remainingBuildBatch(bot, goal.buildBatch).length) {
+    delete goal.buildBatch;
+    if (missing.length) {
+      const stock = planningInventory(bot);
+      goal.buildBatch = createBuildBatch(bot, missing, outputs => catalogPlan(bot, outputs, undefined, stock, goal), stock);
+      save();
+    }
   }
-  if (blueprint.bounds.max.y - bot.entity.position.y > 3 && countOf(bot, 'dirt') < 16) {
-    tree.prepare_scaffolding = { description: 'Carry ordinary dirt scaffolding to reach higher parts of the design safely.', children: {
-      gather: { description: 'Obtain 32 dirt for temporary construction access.', run: () => acquireStep(bot, task, 'dirt', 32, goal, save) },
-    } };
+  const batch = goal.buildBatch;
+  if (goal.smelting) { await smelt(bot, task, goal.smelting, goal, save); return false; }
+  if (batch) {
+    const cells = remainingBuildBatch(bot, batch), outputs = materialCounts(cells);
+    if (bot.game.gameMode === 'creative') for (const output of outputs) output.count = 1;
+    if (batch.phase === 'gather' || outputs.some(o => !countOf(bot, o.item))) {
+      const stock = planningInventory(bot);
+      for (const station of ['crafting_table', 'furnace']) if (!outputs.some(o => o.item === station) && find(bot, [station], 32, 1).length)
+        stock[station] = Math.max(stock[station] || 0, 1);
+      const plan = catalogPlan(bot, outputs, undefined, stock, goal);
+      if (plan.length) {
+        goal.buildPhase = 'gather';
+        goal.holdWorkstation = plan[0].action === 'craft' && plan[1]?.action === 'craft';
+        await executePlannedAcquisition(bot, task, goal, save, client, onStep, plan, { outputs, purpose: 'materials for the next construction batch' });
+        return false;
+      }
+      batch.phase = 'build'; goal.buildPhase = 'build'; save();
+    }
   }
+  if (!missing.length) goal.buildPhase = 'cleanup';
   const layer = Math.min(...missing.map(p => p.y));
-  const placements = {};
-  const placementCost = p => pos(p).distanceTo(bot.entity.position) +
-    (goal.decisionFailures?.[`place_${p.x}_${p.y}_${p.z}`]?.at > Date.now() - 120000 ? 10000 : 0);
-  for (const p of missing.filter(p => p.y === layer).sort((a, b) => placementCost(a) - placementCost(b))) {
-    if (Object.keys(placements).length >= 4) break;
-    if (!countOf(bot, p.material)) continue;
+  const placements = (batch ? remainingBuildBatch(bot, batch) : []).filter(p => p.y === layer && countOf(bot, p.material) &&
+    (air(bot.blockAt(pos(p))) || bot.blockAt(pos(p))?.diggable) &&
+    faces.some(f => bot.blockAt(pos(p).plus(f))?.boundingBox === 'block'))
+    .map(p => ({ position: p, operation: air(bot.blockAt(pos(p))) ? 'place' : 'dig', material: p.material }));
+  const clearing = obstructions.filter(p => {
     const block = bot.blockAt(pos(p));
-    if (!block || (!air(block) && !block.diggable)) continue;
-    if (air(block) && !faces.some(f => bot.blockAt(pos(p).plus(f))?.boundingBox === 'block')) continue;
-    const key = `place_${p.x}_${p.y}_${p.z}`;
-    placements[key] = { description: `Place the schematic's ${p.material} at ${pos(p)}, finishing the lowest layer first.`,
-      run: async () => {
-        goal.step = { action: 'build_schematic', position: { x: p.x, y: p.y, z: p.z }, material: p.material, remainingBlocks: missing.length }; save();
-        if (!canClearSchematicBlock(blueprint, goal.buildOwned, bot.blockAt(pos(p)))) throw new Blocked(`Building site changed at ${pos(p)}`);
-        if (!air(bot.blockAt(pos(p)))) await dig(bot, task, pos(p));
-        await place(bot, task, pos(p), p.material);
-      } };
+    return block?.diggable && (!missing.length || !['dirt', 'cobblestone'].includes(block.name) || goal.buildOwned?.[`${p.x},${p.y},${p.z}`] !== (block.stateId ?? block.name));
+  }).sort((a, b) => b.y - a.y).map(p => ({ position: p, operation: 'dig', cleanup: true,
+    priority: !missing.length ? -p.y * 1000 - pos(p).distanceTo(pos(blueprint.entrance)) : 0 }));
+  // Clear reachable space before trying a face hidden by vegetation/scaffolds.
+  let work = await chooseConstructionWork(bot, task, goal, [...placements, ...clearing]);
+  if (!work && missing.length && countOf(bot, 'dirt') < 32) {
+    await acquireStep(bot, task, 'dirt', 32, goal, save); return false;
   }
-  if (Object.keys(placements).length) tree.place_blocks = { description: 'Place carried materials according to the saved design.', children: placements };
-  const clearing = {};
-  const clearCandidates = obstructions.filter(p => {
-    const block = bot.blockAt(pos(p));
-    return !missing.length || block?.name !== 'dirt' || goal.buildOwned?.[`${p.x},${p.y},${p.z}`] !== (block.stateId ?? block.name);
-  }).sort((a, b) => b.y - a.y || pos(a).distanceTo(bot.entity.position) - pos(b).distanceTo(bot.entity.position));
-  for (const p of clearCandidates.slice(0, 4)) {
-    const block = bot.blockAt(pos(p));
-    if (!block?.diggable) continue;
-    clearing[`clear_${p.x}_${p.y}_${p.z}`] = { description: `Clear ${block.name} from the designed interior/opening at ${pos(p)}.`,
-      run: async () => {
-        if (!canClearSchematicBlock(blueprint, goal.buildOwned, bot.blockAt(pos(p)))) throw new Blocked(`Building site changed at ${pos(p)}`);
-        goal.step = { action: 'clear_schematic', position: p }; save();
-        if (!bot.canDigBlock(bot.blockAt(pos(p)))) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3));
-        if (!canClearSchematicBlock(blueprint, goal.buildOwned, bot.blockAt(pos(p)))) throw new Blocked(`Building site changed at ${pos(p)}`);
-        await dig(bot, task, pos(p));
-        delete goal.buildOwned?.[`${p.x},${p.y},${p.z}`];
-        delete blueprint.initialBlocks?.[`${p.x},${p.y},${p.z}`];
-        save();
-      } };
+  if (!work && !missing.length && await descendPillar(bot, task, goal, save)) return false;
+  let repairedAccess = false;
+  if (!work && !missing.length && !(goal.cleanupAccessRepairs >= 1)) {
+    // A resumed cleanup may already be stranded after removing an access
+    // bridge. Permit one bounded repair, then remove the remote end first.
+    // Ordinary cleanup itself never continually builds replacement scaffolds.
+    goal.buildPhase = 'cleanup_access';
+    work = await chooseConstructionWork(bot, task, goal, clearing);
+    if (work) { goal.cleanupAccessRepairs = (goal.cleanupAccessRepairs || 0) + 1; repairedAccess = true; save(); }
+    else goal.buildPhase = 'cleanup';
   }
-  if (Object.keys(clearing).length) tree.clear_space = { description: 'Keep the designed rooms, windows and entrance clear.', children: clearing };
-  if (!Object.keys(tree).length) throw new Blocked('No reachable schematic construction action remains; progress and the design are saved');
-  if (client) await decideAction(bot, task, goal, save, client, onStep, {
-    build_design: { description: `Execute the saved ${goal.design.source.name} schematic.`, children: tree },
-  }, { building: { name: goal.design.source.name, description: goal.design.source.description, remainingMaterials: needed, missingBlocks: missing.length } });
-  else await Object.values(Object.values(tree)[0].children)[0].run();
+  if (!work) throw new Blocked('I cannot reach the next part of the building yet; the design and progress are saved');
+  const p = pos(work.position);
+  goal.step = { action: work.cleanup ? 'clear_schematic' : 'build_schematic', operation: work.operation,
+    position: { ...p }, material: work.material, remainingBlocks: missing.length }; save(); onStep(goal);
+  try { await executeConstructionWork(bot, task, goal, save, work); }
+  finally { if (repairedAccess) { goal.buildPhase = 'cleanup'; save(); } }
   return verifyHouse(bot, blueprint).ok && !schematicScaffolding(bot, goal).length;
+}
+
+async function executeConstructionWork(bot, task, goal, save, work) {
+  const p = pos(work.position);
+  if (work.operation === 'dig' && Object.keys(bot.blockAt(p)?.harvestTools || {}).length && pickaxeTier(bot) < 1 && bot.game.gameMode !== 'creative') {
+    await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return;
+  }
+  const face = await approachConstruction(bot, task, goal, p, work.operation);
+  if (!canClearSchematicBlock(goal.blueprint, goal.buildOwned, bot.blockAt(p))) throw new Blocked(`Building site changed at ${p}`);
+  if (work.operation === 'dig') {
+    // dig() first updates the local world optimistically. Keep ownership until
+    // the server confirms air, otherwise a rejected dig looks like a player's
+    // unexpected replacement after resume.
+    let confirmed = false;
+    const changed = packet => { if (packet.location?.x === p.x && packet.location.y === p.y && packet.location.z === p.z) confirmed = packet.type === 0; };
+    bot._client.on('block_change', changed);
+    try {
+      await dig(bot, task, p, { requireDrops: false });
+      await waitFor(task, () => confirmed && air(bot.blockAt(p)), 5000);
+    } finally { bot._client.removeListener('block_change', changed); }
+    delete goal.buildOwned?.[`${p.x},${p.y},${p.z}`];
+    // Retain the original name: grass and water can change state naturally.
+  } else await place(bot, task, p, work.material, { face });
+  save();
 }
 
 async function prepareBuildTerrain(bot, task, goal, save) {
@@ -977,28 +1004,27 @@ async function prepareBuildTerrain(bot, task, goal, save) {
     bot.chat(terrain.kind === 'shore_foundation' ? "I'll fill in a firm base by the water, then build on top." : "I'll level the ground here, then start building.");
     terrain.announced = true; save();
   }
-  if (toClear.length) {
-    // Cut from the top, never tunnel under the land being levelled.
-    const columns = new Map();
-    for (const p of toClear) { const key = `${p.x},${p.z}`; if (!columns.has(key) || columns.get(key).y < p.y) columns.set(key, p); }
-    const p = [...columns.values()].sort((a, b) => pos(a).distanceTo(bot.entity.position) - pos(b).distanceTo(bot.entity.position))[0];
-    const block = bot.blockAt(pos(p));
-    if (Object.keys(block.harvestTools || {}).length && pickaxeTier(bot) < 1) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
-    goal.step = { action: 'prepare_build_site', operation: 'level', position: { ...p }, remaining: toClear.length + toFill.length }; save();
-    await dig(bot, task, pos(p), { requireDrops: false });
-  } else {
-    const columns = new Map();
-    for (const p of toFill) { const key = `${p.x},${p.z}`; if (!columns.has(key) || columns.get(key).y > p.y) columns.set(key, p); }
-    const p = [...columns.values()].filter(p => faces.some(f => bot.blockAt(pos(p).plus(f))?.boundingBox === 'block'))
-      .sort((a, b) => pos(a).distanceTo(bot.entity.position) - pos(b).distanceTo(bot.entity.position))[0];
-    if (!p) throw new Blocked('No supported placement remains for the saved building foundation');
-    if (!countOf(bot, p.material)) {
-      await acquireStep(bot, task, p.material, Math.min(bot.game.gameMode === 'creative' ? 1 : 64, toFill.filter(block => block.material === p.material).length), goal, save); return;
-    }
-    goal.step = { action: 'prepare_build_site', operation: 'fill', position: { ...p }, remaining: toFill.length }; save();
-    if (!air(bot.blockAt(pos(p))) && bot.blockAt(pos(p))?.name !== 'water') await dig(bot, task, pos(p), { requireDrops: false });
-    await place(bot, task, pos(p), p.material);
+  const tops = new Map(), bottoms = new Map();
+  for (const p of toClear) { const k = `${p.x},${p.z}`; if (!tops.has(k) || tops.get(k).y < p.y) tops.set(k, p); }
+  for (const p of toFill) { const k = `${p.x},${p.z}`; if (!bottoms.has(k) || bottoms.get(k).y > p.y) bottoms.set(k, p); }
+  // Interleave reachable filling with top-down cuts. Removing every high cell
+  // first stranded the worker below the remaining land with no usable access.
+  // Finish each whole foundation layer before raising any column: a completed
+  // tall column can otherwise seal access to a neighboring deep trench.
+  const fillLayer = Math.min(...toFill.map(p => p.y));
+  const filling = [...bottoms.values()].filter(p => p.y === fillLayer && countOf(bot, p.material) &&
+    faces.some(f => bot.blockAt(pos(p).plus(f))?.boundingBox === 'block'))
+    .map(p => ({ position: p, material: p.material, operation: air(bot.blockAt(pos(p))) || bot.blockAt(pos(p)).name === 'water' ? 'place' : 'dig' }));
+  const cutting = [...tops.values()].map(p => ({ position: p, operation: 'dig' }));
+  const work = await chooseConstructionWork(bot, task, goal, [...filling, ...cutting]);
+  if (!work) {
+    const fill = toFill.find(p => !countOf(bot, p.material));
+    if (fill) { await acquireStep(bot, task, fill.material, Math.min(bot.game.gameMode === 'creative' ? 1 : 64, toFill.filter(p => p.material === fill.material).length), goal, save); return; }
+    if (countOf(bot, 'dirt') < 32) { await acquireStep(bot, task, 'dirt', 32, goal, save); return; }
+    throw new Blocked('I need a safe way to reach the next part of the ground; our building plan is saved');
   }
+  goal.step = { action: 'prepare_build_site', operation: work.operation === 'dig' ? 'level' : 'fill', position: { ...work.position }, remaining: toClear.length + toFill.length }; save();
+  await executeConstructionWork(bot, task, goal, save, work);
 }
 
 async function obtainStep(bot, task, goal, save, client, onStep) {
