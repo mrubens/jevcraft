@@ -378,6 +378,12 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 
 - Controlled snow fixture `snow-shelter-mu85jd0n` PASSED (runner 69958, exit 0): Jev cleared snow without tools and placed all 25 shelter blocks, verified the occupied enclosure, and retained health 20 with no deaths. The granted dirt, constructed snowy platform, fixed nighttime and disabled mob spawning are recorded. Exact source and server logs are preserved; this proves clearing/sealing, not natural gathering or hostile-night survival. The shared controlled server saved and stopped after both terminal runners.
 
+
+### Fresh Nether run after food and shelter fixes (2026-09-19, 08:59 UTC)
+
+- Pushed milestone `3ac23c0`. Fresh natural Normal Nether trial `mu85nosp` started from empty inventory at (-407.5,66,-1466.5), newly generated seed 2026091906, server `.test-fresh-nether/fresh-20260919-e`, port 25575. This regenerates the prior food-failure seed for a fresh regression; no retained world or player data is copied. The server confirms new-world generation, and setupCommands is empty.
+- Runtime is frozen at `3ac23c0` with source SHA-256 manifest and scenario copied to `artifacts/mu85nosp/`. Server PID 44260/session 33190, runner PID 44294/session 10924, deadline two hours, log `/tmp/jev-fresh-nether-e.log`, Observatory 3046. `caffeinate -is -w 44294` prevents sleep while this specific runner lives. Initial observations show Normal Survival, empty inventory and autonomous food search. This is ongoing, not a pass; inspect the actual runner before any restart or terminal claim. The interactive player world remains untouched.
+
 Still required:
 
 1. Complete and independently verify a fresh natural Normal Nether trial. Fresh natural house/endurance and concrete delivery now pass; Nether has only controlled and interactive Peaceful completion.
