@@ -81,6 +81,7 @@ bot.on('health', () => log({ health: bot.health, food: bot.food, oxygen: bot.oxy
 bot.on('navigation_stall', details => log({ navigationStall: details }));
 bot.on('navigation_recovery', details => log({ navigationRecovery: details }));
 bot.on('handover', details => log({ handover: details }));
+bot.on('mob_hunt', details => log({ mobHunt: details }));
 bot.on('recovery_advice', details => log({ recoveryAdvice: details }));
 bot.on('recovery_result', details => log({ recoveryResult: details }));
 let lastUnsafeRouteLog = 0;

@@ -1,0 +1,231 @@
+'use strict';
+const { Vec3 } = require('vec3');
+const { goals } = require('mineflayer-pathfinder');
+const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, observedDead } = require('./mob-policy');
+const { threats, checkThreats, NeedsSafety } = require('./danger');
+const { canStrike } = require('./combat');
+const { dryStanding } = require('./mining-access');
+const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
+const { checkAir } = require('./vitals');
+const { surveyRoute, countOf } = require('./skills');
+const { decideTree } = require('./decisions');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
+const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
+const valid = (bot, target) => bot.entities[target.id] === target && target.isValid !== false && !observedDead(bot, target);
+
+async function prepareCombatGear(bot, task, goal, save, actions) {
+  for (const [destination, names] of Object.entries(combatGear)) {
+    task.check(); checkAir(bot);
+    const current = equipped(bot, destination);
+    if (names.includes(current?.name) && durable(bot.registry, current)) continue;
+    const carried = carriedEquipment(bot).filter(item => names.includes(item.name)).sort((a, b) => names.indexOf(b.name) - names.indexOf(a.name))[0];
+    if (!carried) {
+      goal.step = { action: 'prepare_combat_equipment', destination, item: names[0] }; save();
+      // Worn equipment is still physically present; require an additional
+      // item rather than accepting that worn stack as its own replacement.
+      await actions.acquireStep(bot, task, names[0], countOf(bot, names[0]) + 1, goal, save);
+      return false;
+    }
+    await bot.equip(carried, destination);
+    task.check();
+    if (equipped(bot, destination)?.name !== carried.name) throw new Error(`Server did not confirm ${carried.name} equipped in ${destination}`);
+    goal.step = { action: 'equip_combat', item: carried.name, destination }; save();
+  }
+  return readyEquipment(bot);
+}
+
+function combatMovement(bot) {
+  const movements = bot.pathfinder.movements;
+  const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers,
+    allowParkour: movements.allowParkour, allowedPosition: movements.allowedPosition, scafoldingBlocks: movements.scafoldingBlocks };
+  const allowed = p => dryBodySpace(bot, p) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name) &&
+    (!previous.allowedPosition || previous.allowedPosition(p));
+  Object.assign(movements, { canDig: false, allow1by1towers: false, allowParkour: false, scafoldingBlocks: [], allowedPosition: allowed });
+  return { allowed, restore: () => Object.assign(movements, previous) };
+}
+
+function isolated(bot, target) {
+  if (threats(bot).some(t => t.entity !== target && (t.distance < 20 || t.entity.position.distanceTo(target.position) < 16))) return false;
+  // A sword sweep must not hit a nearby player or provoke another mob.
+  return !Object.values(bot.entities).some(e => e !== target && e !== bot.entity && valid(bot, e) &&
+    e.position && bot.registry.entitiesByName[e.name]?.metadataKeys?.includes('health') && e.position.distanceTo(target.position) < 4);
+}
+
+function canBegin(bot) {
+  return bot.game.gameMode === 'survival' && bot.game.difficulty !== 'peaceful' && bot.health >= 18 && bot.food >= 16 &&
+    bot.oxygenLevel > 12 && !(bot.entity.metadata?.[0] & 1) && readyEquipment(bot) && dryStanding(bot, bot.entity.position);
+}
+
+// The route exception names one live entity and expires with this action.
+// Other mobs, liquid, cliffs, cancellations and low health still interrupt it.
+function encounter(bot, task, target, expiresAt) {
+  const previous = bot._combatEncounter;
+  bot._combatEncounter = { task, target, dimension: bot.game.dimension, expiresAt };
+  return () => { bot._combatEncounter = previous; };
+}
+
+async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs = 30000, pickupWaitMs = 2500 } = {}) {
+  task.check(); checkAir(bot);
+  const state = goal.mobHunt, handler = handlers[target.name];
+  if (!handler || handler.item !== state?.item || !valid(bot, target) || !canBegin(bot) || !isolated(bot, target)) throw new Error('Mob encounter is no longer feasible');
+  const before = countOf(bot, state.item), start = bot.entity.position.clone(), deadline = Date.now() + timeoutMs;
+  const initialShieldWear = equipped(bot, 'off-hand').durabilityUsed || 0;
+  const restoreEncounter = encounter(bot, task, target, deadline), movement = combatMovement(bot);
+  const previousInterrupt = task.interruptCheck;
+  let dead = false, attacks = 0, shield = false;
+  const onDeath = entity => {
+    if (entity === target) { dead = true; bot._defeatedMobs ||= new WeakSet(); bot._defeatedMobs.add(entity); }
+  };
+  bot.on('entityDead', onDeath);
+  task.interruptCheck = () => {
+    previousInterrupt?.(); checkAir(bot); checkThreats(bot);
+    if (bot.health < 12 || bot.food < 12 || !readyEquipment(bot) || !isolated(bot, target)) throw new NeedsSafety({ entity: target, distance: target.position.distanceTo(bot.entity.position) });
+    if (Date.now() >= deadline) throw new Error(`Timed out fighting ${target.name} after ${Math.round(timeoutMs / 1000)} seconds`);
+    if (bot.entity.position.distanceTo(start) > 48) throw new Error(`${target.name} moved beyond the bounded combat area`);
+  };
+  const guard = () => task.check();
+  const lowerShield = () => { if (shield) { bot.deactivateItem(); shield = false; } };
+  try {
+    while (valid(bot, target) && !dead) {
+      guard();
+      if (!canStrike(bot, target)) {
+        lowerShield();
+        const destination = new goals.GoalFollow(target, 2);
+        const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 400);
+        if (route.status !== 'success' || !route.path.every(movement.allowed)) throw new Error(`No dry combat route to ${target.name}`);
+        await actions.navigate(bot, task, destination, { timeoutMs: Math.min(4000, deadline - Date.now()), stallMs: 1500,
+          stopWhen: () => dead || !valid(bot, target) || canStrike(bot, target) });
+        continue;
+      }
+      bot.pathfinder.setGoal(null); bot.clearControlStates();
+      await bot.lookAt(target.position.offset(0, Math.min((target.height || 1.8) / 2, 1.5), 0), true);
+      guard();
+      if (!valid(bot, target) || dead || !canStrike(bot, target)) continue;
+      lowerShield();
+      if (target.name === 'enderman') {
+        bot._provokedMobs ||= new Map();
+        bot._provokedMobs.set(target.id, target);
+        if (bot._provokedMobs.size > 64) bot._provokedMobs.delete(bot._provokedMobs.keys().next().value);
+      }
+      bot.attack(target); attacks++;
+      goal.step = { action: 'hunt_mob', entity: target.name, entityId: target.id, item: state.item, attacks, health: bot.health }; save();
+      const shieldWear = equipped(bot, 'off-hand').durabilityUsed || 0, swungAt = Date.now();
+      bot.activateItem(true); shield = true;
+      // Raising a shield has a startup delay. Blindly lowering it every 700 ms
+      // repeatedly exposed Jev exactly when an Enderman swung. Keep facing the
+      // target, then use observed shield wear as evidence of a blocked hit;
+      // the following sword swing fits inside the mob's attack cooldown.
+      const guardUntil = Math.min(deadline, swungAt + 1500);
+      while (Date.now() < guardUntil && valid(bot, target) && !dead) {
+        await sleep(50); guard();
+        if (Date.now() - swungAt >= 700 && (equipped(bot, 'off-hand').durabilityUsed || 0) > shieldWear) break;
+        await bot.lookAt(target.position.offset(0, Math.min((target.height || 1.8) / 2, 1.5), 0), true);
+      }
+    }
+    lowerShield();
+    // Entity removal can mean teleport/unload. Record it separately from death
+    // and never infer a drop from either event.
+    const pickupDeadline = Math.min(deadline, Date.now() + pickupWaitMs);
+    const unreachableDrops = new Set();
+    do {
+      await sleep(100); guard();
+      const drops = Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === state.item && e.position.distanceTo(target.position) < 8);
+      for (const drop of drops.slice(0, 4)) {
+        if (countOf(bot, state.item) > before) break;
+        guard();
+        const p = drop.position.floored(), key = `${drop.id}:${p}`, destination = new goals.GoalNear(p.x, p.y, p.z, 1);
+        // A drop still falling from a flying mob has no standing position yet.
+        // Reobserve it during the bounded pickup window instead of declaring
+        // no loot from one early snapshot.
+        if (!dryStanding(bot, p) || unreachableDrops.has(key)) continue;
+        const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 300);
+        if (route.status !== 'success' || !route.path.every(movement.allowed)) { unreachableDrops.add(key); continue; }
+        await actions.navigate(bot, task, destination, { timeoutMs: Math.min(4000, deadline - Date.now()), stallMs: 1500,
+          stopWhen: () => countOf(bot, state.item) > before });
+        for (let i = 0; i < 10 && countOf(bot, state.item) <= before; i++) { await sleep(50); guard(); }
+      }
+    } while (countOf(bot, state.item) <= before && Date.now() < pickupDeadline);
+    const pickedUp = Math.max(0, countOf(bot, state.item) - before);
+    const result = { at: new Date().toISOString(), entity: target.name, entityId: target.id, item: state.item,
+      deathObserved: dead, attacks, pickedUp, shieldWear: Math.max(0, (equipped(bot, 'off-hand')?.durabilityUsed || 0) - initialShieldWear),
+      health: bot.health, outcome: pickedUp ? 'pickup_confirmed' : dead ? 'no_pickup' : 'target_lost' };
+    state.history = [...(state.history || []), result].slice(-40);
+    state.encountersWithoutPickup = pickedUp ? 0 : (state.encountersWithoutPickup || 0) + 1;
+    state.avoided ||= {}; state.avoided[target.uuid || target.id] = Date.now();
+    if (pickedUp && goal.search?.[target.name]) goal.search[target.name] = { attempts: 0, origin: { ...bot.entity.position.floored() } };
+    bot.emit('mob_hunt', result); save();
+    if (!dead && !pickedUp) throw new Error(`${target.name} disappeared without a confirmed drop`);
+    if (state.encountersWithoutPickup >= 64) throw blocked(`No ${state.item} pickup in 64 encounters; progress saved`);
+    return result;
+  } finally {
+    lowerShield(); bot.pathfinder.setGoal(null); bot.clearControlStates();
+    bot.removeListener('entityDead', onDeath); movement.restore(); restoreEncounter();
+    task.interruptCheck = previousInterrupt;
+    if (dead) bot._provokedMobs?.delete(target.id);
+  }
+}
+
+async function huntObserved(bot, task, goal, save, actions, client) {
+  const state = goal.mobHunt;
+  if (!state) return false;
+  if (countOf(bot, state.item) >= state.targetCount) { delete goal.mobHunt; save(); return false; }
+  if (!canBegin(bot)) return false;
+  const candidates = Object.values(bot.entities).filter(e => e.name === state.entity && valid(bot, e) &&
+    e.position.distanceTo(bot.entity.position) < 24 && isolated(bot, e) &&
+    !(state.avoided?.[e.uuid || e.id] > Date.now() - 120000)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
+  const tree = {}, positions = new Map();
+  for (const target of candidates.slice(0, 4)) {
+    const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
+    try {
+      const route = canStrike(bot, target) ? { status: 'success', path: [] } :
+        await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalFollow(target, 2), 400);
+      if (route.status !== 'success' || !route.path.every(movement.allowed)) continue;
+      positions.set(target.id, target.position.clone());
+      tree[`hunt_${target.id}`] = { description: { action: 'Fight this observed isolated mob with carried armor, sword and shield, then verify item pickup.',
+        entity: target.name, position: { ...target.position }, distance: target.position.distanceTo(bot.entity.position),
+        item: state.item, randomDrop: true }, run: () => fightForDrop(bot, task, target, goal, save, actions) };
+    } finally { movement.restore(); restore(); }
+  }
+  if (!Object.keys(tree).length) return false;
+  tree.defer = { description: 'Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.', run: async () => {
+    state.avoided ||= {}; for (const target of candidates) state.avoided[target.uuid || target.id] = Date.now(); save();
+  } };
+  const snapshot = { request: goal.request, resource: state.item, need: state.targetCount - countOf(bot, state.item), health: bot.health, food: bot.food, dimension: dimension(bot) };
+  let decision;
+  if (client) {
+    const controller = new AbortController();
+    const watcher = setInterval(() => { if (task.cancelled || !canBegin(bot)) controller.abort(new Error('Combat decision interrupted')); }, 100);
+    try { decision = await decideTree(client, { state: snapshot, tree, signal: controller.signal,
+      isFresh: () => canBegin(bot) && bot.health === snapshot.health && candidates.every(e => !positions.has(e.id) ||
+        valid(bot, e) && e.position.distanceTo(positions.get(e.id)) < 2 && isolated(bot, e)) }); }
+    catch (err) { task.check(); if (controller.signal.aborted) return false; throw err; }
+    finally { clearInterval(watcher); }
+  } else decision = { path: [Object.keys(tree)[0]], action: Object.values(tree)[0] };
+  task.check(); checkAir(bot);
+  goal.decisions ||= []; goal.decisions.push({ at: new Date().toISOString(), state: snapshot, path: decision.path,
+    options: JSON.parse(JSON.stringify(tree)), latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, stale: decision.stale });
+  goal.decisions = goal.decisions.slice(-40); save();
+  if (decision.stale) return false;
+  await decision.action.run();
+  return decision.path[0] !== 'defer';
+}
+
+async function prepareMobHunt(bot, task, step, goal, save, actions) {
+  const handler = handlers[step.entity];
+  if (!handler || handler.item !== step.item) throw blocked(`Unsupported mob source ${step.entity} for ${step.item}`);
+  if (bot.game.difficulty === 'peaceful') throw blocked(`${step.entity} does not spawn in Peaceful; cannot obtain ${step.item} by hunting here`);
+  const previous = goal.mobHunt;
+  goal.mobHunt = { ...(previous?.item === step.item ? previous : {}), item: step.item, entity: step.entity,
+    targetCount: countOf(bot, step.item) + step.count };
+  goal.stockFood = true; save();
+  if (!await prepareCombatGear(bot, task, goal, save, actions)) return;
+  if (handler.dimension && dimension(bot) !== handler.dimension) { await actions.enterNether(bot, task, goal, save); return; }
+  if (!canBegin(bot)) {
+    goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: 18, neededFood: 16 }; save();
+    await sleep(500); task.check(); return;
+  }
+  await actions.explore(bot, task, goal, save, step.entity, { surfaceOnly: dimension(bot) === 'overworld' });
+}
+
+module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt };

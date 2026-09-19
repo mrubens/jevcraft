@@ -1,14 +1,29 @@
 'use strict';
+const { handlers, readyEquipment, observedDead } = require('./mob-policy');
 
 const hostileNames = new Set(['zombie', 'husk', 'drowned', 'skeleton', 'stray', 'bogged', 'creeper', 'spider',
   'cave_spider', 'witch', 'pillager', 'vindicator', 'ravager', 'phantom', 'blaze', 'wither_skeleton', 'hoglin', 'zoglin']);
 const ranged = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze']);
 
+function combatTarget(bot, entity) {
+  const encounter = bot._combatEncounter;
+  return !!encounter && encounter.target === entity && Object.hasOwn(handlers, entity.name) &&
+    bot.entities[entity.id] === entity && entity.isValid !== false && !encounter.task.cancelled &&
+    encounter.dimension === bot.game?.dimension && encounter.expiresAt > Date.now() &&
+    bot.health >= 12 && bot.food >= 12 && readyEquipment(bot);
+}
+
+function provokedEnderman(bot, entity) {
+  if (entity.name !== 'enderman') return false;
+  const key = bot.registry?.entitiesByName?.enderman?.metadataKeys?.indexOf('creepy');
+  return bot._provokedMobs?.get(entity.id) === entity || (key >= 0 && !!entity.metadata?.[key]);
+}
+
 function hostileEntities(bot, radius = 24) {
   const position = bot.entity.position;
   const daytime = bot.time?.timeOfDay < 12000 || bot.time?.timeOfDay >= 23000;
   return Object.values(bot.entities || {}).filter(entity => {
-    if (!hostileNames.has(entity.name) || !entity.position || entity.isValid === false) return false;
+    if ((!hostileNames.has(entity.name) && !provokedEnderman(bot, entity)) || !entity.position || entity.isValid === false || observedDead(bot, entity)) return false;
     if (entity.name === 'spider' && daytime && !(bot._recentHurtAt > Date.now() - 10000)) return false;
     return entity.position.distanceTo(position) <= radius;
   });
@@ -27,7 +42,7 @@ function threats(bot, radius = 24) {
 }
 
 function immediateThreat(bot) {
-  return threats(bot).find(t => t.visible && t.distance <= (ranged.has(t.entity.name) ? 16 : 8));
+  return threats(bot).find(t => !combatTarget(bot, t.entity) && t.visible && t.distance <= (ranged.has(t.entity.name) ? 16 : 8));
 }
 
 // Keep a route outside attack range plus a movement margin. If a mob already
@@ -36,6 +51,7 @@ function immediateThreat(bot) {
 function safeFromHostiles(bot, point, entities = hostileEntities(bot, 64)) {
   if (bot.game?.gameMode === 'creative' || bot.game?.difficulty === 'peaceful') return true;
   return entities.every(entity => {
+    if (combatTarget(bot, entity)) return true;
     const radius = ranged.has(entity.name) ? 20 : 12;
     return entity.position.distanceTo(point) >= Math.min(radius, entity.position.distanceTo(bot.entity.position) - 0.25);
   });
@@ -50,4 +66,4 @@ function checkThreats(bot) {
   if (threat) throw new NeedsSafety(threat);
 }
 
-module.exports = { hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety };
+module.exports = { hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provokedEnderman };

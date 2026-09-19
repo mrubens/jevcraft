@@ -1,6 +1,7 @@
 'use strict';
 const vanilla = require('../data/vanilla-26.1.json');
 const { ORE_DEPTH, TOOL_TIERS, PlanError } = require('./plan');
+const { mobSources, combatGear } = require('./mob-policy');
 const cached = new WeakMap();
 const ordinarySelf = new Set(vanilla.ordinarySelfDrops);
 const plain = value => value?.replace('minecraft:', '');
@@ -44,14 +45,14 @@ function knowledge(registry) {
   // Gravel can drop flint probabilistically; each actual mining action still
   // verifies pickup and retries with a bounded search budget.
   sources.flint ||= [{ block: 'gravel', allowedTools: [], depth: null }];
-  const result = { sources, recipes: vanilla.recipes, smelting: vanilla.smelting };
+  const result = { sources, mobSources: mobSources(), recipes: vanilla.recipes, smelting: vanilla.smelting };
   cached.set(registry, result);
   return result;
 }
 
 function sourceBlocks(registry, item) { return [...new Set((knowledge(registry).sources[item] || []).map(s => s.block))]; }
 
-function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools = [] } = {}) {
+function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools = [], equipment = [] } = {}) {
   if (!registry.itemsByName[item]) throw new PlanError(`No Minecraft item named ${item}`, item);
   const data = knowledge(registry);
   const observed = new Set(nearby);
@@ -83,6 +84,7 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
         const cost = (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0);
         costs[item] = Math.min(costs[item] ?? 1000, cost);
       }
+      for (const item of Object.keys(data.mobSources)) costs[item] = Math.min(costs[item] ?? 1000, 80);
       // Six dependency layers are sufficient for this preference heuristic.
       // Exact dependency execution below still detects cycles and checks the
       // full recipe/tool chain, with its separate expansion budget.
@@ -152,6 +154,15 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
         steps.push({ action: 'smelt', item: name, count: missing, from: input, fuel,
           consumes: { [input]: missing, oak_planks: fuel, furnace: 1 }, produces: { [name]: missing } }); add(name, missing);
       } });
+      for (const source of data.mobSources[name] || []) methods.push({ cost: 80, run: () => {
+        for (const names of Object.values(combatGear)) {
+          if (!names.some(tool => have(tool) > 0 || equipment.includes(tool))) acquire(names[0], 1);
+        }
+        // produces expresses the resource target for dependency planning;
+        // kills never credit this amount to the real inventory.
+        steps.push({ action: 'hunt_mob', ...source, count: missing, consumes: {}, produces: { [name]: missing } });
+        add(name, missing);
+      } });
       const sources = [...(data.sources[name] || [])].sort((a, b) => Number(observed.has(b.block)) - Number(observed.has(a.block)));
       for (const source of sources) {
         // Craftable objects should be made from ingredients. Do not roam the
@@ -178,7 +189,7 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
         try { method.run(); return; }
         catch (err) { stock = before; estimates = undefined; steps.length = length; lastError = err; }
       }
-      throw lastError || new PlanError(`No supported survival acquisition method for ${name}: it needs a source outside the current mining, crafting, smelting, and hardening actions.`, name);
+      throw lastError || new PlanError(`No supported survival acquisition method for ${name}: it needs a source outside the current mining, crafting, smelting, hardening, and supported mob actions.`, name);
     } finally { visiting.delete(name); }
   }
   function ensurePickaxe() {

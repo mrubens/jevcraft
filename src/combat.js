@@ -16,20 +16,22 @@ function defenseWeapon(bot) {
   return bot.inventory.items().filter(item => rank(item) > 0).sort((a, b) => rank(b) - rank(a))[0];
 }
 
-function strikeTarget(bot) {
+function canStrike(bot, entity) {
+  if (!entity?.position || entity.isValid === false) return false;
   const eye = bot.entity.position.offset(0, 1.62, 0);
-  return threats(bot, 5).find(({ entity, visible }) => {
-    if (!visible) return false;
-    const halfWidth = (entity.width || 0.6) / 2;
-    const closest = entity.position.clone();
-    closest.x = Math.max(entity.position.x - halfWidth, Math.min(eye.x, entity.position.x + halfWidth));
-    closest.z = Math.max(entity.position.z - halfWidth, Math.min(eye.z, entity.position.z + halfWidth));
-    closest.y = Math.max(entity.position.y, Math.min(eye.y, entity.position.y + (entity.height || 1.8)));
-    if (eye.distanceTo(closest) > 3) return false;
-    const aim = entity.position.offset(0, (entity.height || 1.8) / 2, 0), direction = aim.minus(eye);
-    const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
-    return !hit || eye.distanceTo(hit.intersect || hit.position) >= direction.norm() - 0.1;
-  });
+  const halfWidth = (entity.width || 0.6) / 2;
+  const closest = entity.position.clone();
+  closest.x = Math.max(entity.position.x - halfWidth, Math.min(eye.x, entity.position.x + halfWidth));
+  closest.z = Math.max(entity.position.z - halfWidth, Math.min(eye.z, entity.position.z + halfWidth));
+  closest.y = Math.max(entity.position.y, Math.min(eye.y, entity.position.y + (entity.height || 1.8)));
+  if (eye.distanceTo(closest) > 3) return false;
+  const aim = entity.position.offset(0, (entity.height || 1.8) / 2, 0), direction = aim.minus(eye);
+  const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
+  return !hit || eye.distanceTo(hit.intersect || hit.position) >= direction.norm() - 0.1;
+}
+
+function strikeTarget(bot) {
+  return threats(bot, 5).find(({ entity, visible }) => visible && canStrike(bot, entity));
 }
 
 // Immediate self-defense never chases a mob or chooses an unobserved target.
@@ -64,4 +66,4 @@ async function defendNearby(bot, task, goal, save) {
   save(); return true;
 }
 
-module.exports = { defenseWeapon, strikeTarget, defendNearby };
+module.exports = { defenseWeapon, canStrike, strikeTarget, defendNearby };

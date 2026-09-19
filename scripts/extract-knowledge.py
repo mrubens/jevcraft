@@ -66,6 +66,10 @@ with zipfile.ZipFile(jar) as archive:
 
     # Preserve exact conditions for special block drops rather than assuming
     # the normal drops table represents shears/Silk Touch behavior.
+    # Preserve the exact loot rules for the mob acquisition handlers. Random
+    # counts remain random; the executor must verify actual inventory pickup.
+    entity_loot = {entity: json.loads(archive.read(f'data/minecraft/loot_table/entities/{entity}.json'))
+                   for entity in ['blaze', 'enderman']}
     special = {}
     ordinary_self = set()
     for name in archive.namelist():
@@ -90,10 +94,11 @@ with zipfile.ZipFile(jar) as archive:
                         visit(node[key], active)
         visit(data)
 
-output = {'version': '26.1', 'source': 'Vanilla Minecraft server recipe, item/block-tag and block-loot catalogs',
+output = {'version': '26.1', 'source': 'Vanilla Minecraft server recipe, item/block-tag, block-loot and supported entity-loot catalogs',
           'sha256': hashlib.sha256(jar.read_bytes()).hexdigest(),
           'recipes': recipes, 'smelting': {key: sorted(values) for key, values in smelting.items()},
-          'specialDrops': special, 'ordinarySelfDrops': sorted(ordinary_self), 'resourceTags': resource_tags}
+          'specialDrops': special, 'ordinarySelfDrops': sorted(ordinary_self), 'resourceTags': resource_tags,
+          'entityLoot': entity_loot}
 destination = Path(__file__).resolve().parent.parent / 'data' / 'vanilla-26.1.json'
 destination.parent.mkdir(exist_ok=True)
 destination.write_text(json.dumps(output, separators=(',', ':')) + '\n')

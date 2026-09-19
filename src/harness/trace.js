@@ -20,6 +20,7 @@ function goalView(goal = {}) {
     interpretation: goal.interpretation, itemResolution: goal.itemResolution,
     step: goal.step, error: goal.lastError, survivalAction: goal.survivalAction,
     gameProgress: goal.gameProgress,
+    mobHunt: goal.mobHunt,
     recoveryAction: goal.recoveryAdvice?.active ? goal.recoveryAction : undefined,
     recoveryAdvice: goal.recoveryAdvice?.history?.at(-1) && (({ model, diagnosis, status, steps, outcome }) =>
       ({ model, diagnosis, status, steps, outcome }))(goal.recoveryAdvice.history.at(-1)),
@@ -34,6 +35,7 @@ function classify(row) {
   if (row.navigationStall) return ['error', 'Navigation stalled'];
   if (row.navigationRecovery) return ['recovery', 'Navigation recovery'];
   if (row.handover) return ['action', `Item handover · ${row.handover.event || 'update'}`];
+  if (row.mobHunt) return ['action', `Mob encounter · ${row.mobHunt.outcome}`];
   if (row.error || row.lastError) return ['error', row.error || row.lastError];
   if (row.survivalAction?.action) return ['survival', human(row.survivalAction.action)];
   if (row.step?.action) return ['action', `${human(row.step.action)} ${human(row.step.item || row.step.block || '')}`.trim()];

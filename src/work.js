@@ -25,6 +25,8 @@ const { dryPassable, supportCell } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
 const { descendPillar } = require('./pillar-recovery');
 const { gameStep, watchGameProgress, dimension } = require('./game-progress');
+const { carriedEquipment } = require('./mob-policy');
+const { huntObserved, prepareMobHunt, prepareCombatGear } = require('./mob-hunt');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -513,10 +515,11 @@ function catalogPlan(bot, item, count, stock, goal = {}) {
     return { name: i.name, enchantments };
   });
   const nearby = bot._catalogObservation.nearby;
-  const plan = planCatalog(bot.registry, item, count, stock, { nearby, tools });
+  const equipment = carriedEquipment(bot).map(item => item.name);
+  const plan = planCatalog(bot.registry, item, count, stock, { nearby, tools, equipment });
   const alternatives = observeRecipeAlternatives(bot, plan, goal);
   return alternatives.some(name => !nearby.includes(name))
-    ? planCatalog(bot.registry, item, count, stock, { nearby: [...new Set([...nearby, ...alternatives])], tools }) : plan;
+    ? planCatalog(bot.registry, item, count, stock, { nearby: [...new Set([...nearby, ...alternatives])], tools, equipment }) : plan;
 }
 
 async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY } = {}) {
@@ -539,6 +542,7 @@ async function executeAcquisition(bot, task, step, goal, save) {
   else if (step.action === 'craft') await craft(bot, task, step, goal);
   else if (step.action === 'smelt') await smelt(bot, task, step);
   else if (step.action === 'harden') await harden(bot, task, goal, save, step.item);
+  else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep });
   else throw new Error(`Unknown action ${step.action}`);
 }
 
@@ -1114,6 +1118,11 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
     const location = bot.entity.position.clone();
     try {
       let complete = false;
+      // A requested, equipped encounter can approach its selected mob. All
+      // other survival work keeps the ordinary hostile-avoidance policy.
+      if (await huntObserved(bot, task, goal, save, { navigate }, decisionClient)) {
+        goal.failures = 0; goal.stalls = 0; delete goal.lastError; save(); onStep(goal); continue;
+      }
       if (goal.recoveryAdvice?.active) {
         await maintainVitals(bot, task);
         if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
@@ -1145,6 +1154,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       if (prepared && goal.kind === 'nether') complete = await netherStep(bot, task, goal, save);
       if (prepared && goal.kind === 'win') complete = await gameStep(bot, task, goal, save, {
         acquireStep, enter_nether: netherStep, return_overworld: returnFromNether,
+        prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
       });
       task.check();
       goal.failures = 0;
