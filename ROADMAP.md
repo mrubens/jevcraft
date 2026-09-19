@@ -9,7 +9,7 @@ These are development priorities, not release dates. Existing capabilities and s
 - **Finish combined tasks efficiently.** Strengthen shared material planning, inventory reservations, furnace recovery, and delivery across long requests. Avoid repeated gathering trips and duplicate handovers after interruptions.
 - **Keep moving in natural terrain.** Improve swimming, shore exits, uneven footing, cave access, and getting off scaffolding. Detect a failed approach and try a different one before repeating it.
 - **Recover without losing the request.** Improve tool replacement, food preparation, death recovery, and resuming after a disconnect. Make blockers specific enough for a player to understand and help with.
-- **Keep shelter plans reachable.** The preserved natural run `mu8yf4yy` now leaves its canopy and reaches ground, but shelter gathering still retains the old treetop minimum mining height. Reconsider an unbuilt shelter when its site or supplies become impractical, and use available wood species for construction supplies.
+- **Keep shelter plans reachable.** Ground-level replanning and carried-wood supplies now let the preserved natural run `mu8yf4yy` finish a shelter, wait for dawn and resume its request. Continue checking shelter access and food preparation during longer natural journeys; the full request and day/night endurance check remain separate acceptance milestones.
 - **Make interruptions predictable.** Keep stop responsive during travel, model calls, crafting, and construction. Preserve the useful parts of a task when it is paused or replaced.
 - **Keep chat brief and useful.** Report meaningful changes and explain problems in everyday language; keep detailed diagnostics in the Observatory.
 

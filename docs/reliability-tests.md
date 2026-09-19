@@ -680,3 +680,50 @@ at y79 despite now standing on much lower ground. It did not complete the
 16-cobblestone delivery or the day/night endurance check. The preceding failure
 is preserved in `mu8yf4yy-before-canopy-landing`, and the resumed source/runtime
 and stop reason are recorded in the isolated world's manifest.
+
+## Shelter supplies after moving to lower ground
+
+The next regression reproduced three related failures: an unfinished y79 site
+remained the selected refuge after reaching y64, its minimum mining height
+excluded ground-level dirt, and spruce planks/logs were ignored in favor of
+hardcoded oak supplies. Unfinished sites now remain candidates only within
+12 blocks and three blocks of elevation, or while occupied. Their saved records
+still protect partial construction. Verified shelters and remembered houses
+remain available at the existing longer range.
+
+Shelter stock now includes every plank in the versioned recipe catalog. Carried
+logs, stripped wood, stems and bamboo blocks can become supplies through their
+actual recipes before gathering dirt. Craft targets are bounded by carried
+inputs and the missing material count. Mixed log/wood variants are handled in
+separate feasible batches because a catalog craft batch selects one variant;
+adding those stacks together previously could require fresh logs. Dirt gathering
+uses the lower of the current feet height and the refuge height, minus one,
+instead of preserving the height of a distant plan.
+
+All 501 automated tests passed, including catalog execution with mixed wood,
+old-site protection, remembered homes and current-ground supply limits.
+
+```sh
+MC_PORT=<isolated-port> node scripts/shelter-supplies-test.js
+```
+
+Apply the artifact's `setup.json` only in the isolated server console, then
+create `ready`. Ports 25565 and 25577 are rejected. This supplies terrain, a
+stale elevated shelter record and a small wood inventory; it is a controlled
+mechanics test. Run `shelter-supplies-mu90bepb` passed with three spruce logs,
+four planks and one dirt: the bot crafted 12 more planks, gathered nearby dirt,
+sealed a ground-level shelter, reloaded its checkpoint, left and resealed it.
+An independent client verified the shell and 41 block changes. Health stayed 20,
+with no deaths or bot commands.
+The final fixture `shelter-supplies-mu90eqmg` repeated this successfully with
+one spruce log and two stripped spruce wood blocks, proving that mixed recipe
+inputs also produce the supplies without seeking new trees.
+
+The original natural run `mu8yf4yy` was also resumed without fixture commands.
+It selected a new site at (-27,65,57), crafted the carried spruce wood, gathered
+ground-level dirt and verified its shelter at 23:18:17 UTC on 2026-09-19. It waited
+until dawn, left and crafted its first wooden pickaxe for the retained
+16-cobblestone request. This is resumed debugging, not a fresh uninterrupted
+Survival acceptance run. The prior failure remains in
+`mu8yf4yy-before-shelter-supplies`, with exact runtime hashes in the isolated
+world's `shelter-supplies-resume.json`.

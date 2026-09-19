@@ -1,11 +1,13 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { reservedForConstruction } = require('./build-sites');
+const { recipes } = require('../data/vanilla-26.1.json');
 const directions = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
 const replaceable = b => b && ['air', 'cave_air', 'void_air', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'leaf_litter'].includes(b.name);
 const solid = b => b?.boundingBox === 'block' && !['sand', 'gravel', 'magma_block', 'cactus', 'powder_snow', 'ice', 'packed_ice', 'blue_ice'].includes(b.name);
 const position = p => new Vec3(p.x, p.y, p.z);
-const buildingMaterials = new Set(['dirt', 'cobblestone', 'cobbled_deepslate', 'oak_planks', 'birch_planks', 'andesite', 'diorite', 'granite', 'stone']);
+const plankMaterials = Object.keys(recipes).filter(name => name.endsWith('_planks'));
+const buildingMaterials = new Set(['dirt', 'cobblestone', 'cobbled_deepslate', ...plankMaterials, 'andesite', 'diorite', 'granite', 'stone']);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
 
 function foundation(origin) {
@@ -70,6 +72,27 @@ function sealed(bot, shelter) {
 function materialStock(bot) {
   return bot.inventory.items().filter(i => buildingMaterials.has(i.name)).reduce((total, i) => total + i.count, 0);
 }
+function supplyTarget(bot, shortage) {
+  const stock = {};
+  for (const item of bot.inventory.items()) stock[item.name] = (stock[item.name] || 0) + item.count;
+  // Prefer a single inventory craft over gathering. These recipes also cover
+  // stripped wood, Nether stems and bamboo blocks, with their actual yields.
+  // Cap the target at carried inputs so this step never goes hunting more wood.
+  const crafts = plankMaterials.flatMap(item => recipes[item].flatMap(recipe => {
+    if (recipe.shape || recipe.ingredients?.length !== 1) return [];
+    // A catalog craft batch selects one ingredient variant for all crafts.
+    // Mixed log/stripped-wood stacks cannot be summed into a single batch:
+    // bound it by every carried variant the planner could select instead.
+    const counts = recipe.ingredients[0].map(input => stock[input] || 0).filter(count => count > 0);
+    const available = counts.length ? Math.min(...counts) * recipe.count : 0;
+    return available > 0 ? [{ item, available }] : [];
+  })).sort((a, b) => b.available - a.available);
+  if (crafts.length) {
+    const { item, available } = crafts[0];
+    return { item, count: (stock[item] || 0) + Math.min(shortage, available) };
+  }
+  return { item: 'dirt', count: (stock.dirt || 0) + shortage };
+}
 function exits(bot, shelter) {
   const o = position(shelter.origin);
   return (shelter.kind === 'house' ? [{ door: o.offset(0, 0, -2), outside: o.offset(0, 0, -3) }] :
@@ -77,4 +100,4 @@ function exits(bot, shelter) {
     .filter(exit => replaceable(bot.blockAt(exit.outside)) && replaceable(bot.blockAt(exit.outside.offset(0, 1, 0))) && solid(bot.blockAt(exit.outside.offset(0, -1, 0))));
 }
 
-module.exports = { foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, exits, buildingMaterials, solid, replaceable };
+module.exports = { foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, exits, buildingMaterials, solid, replaceable };

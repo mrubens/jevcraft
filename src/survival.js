@@ -34,7 +34,12 @@ class Survival {
   currentShelter() {
     const bot = this.bot;
     return this.state.shelters.filter(s => (!(s.avoidUntil > Date.now()) || shelter.inside(bot, s)) && s.dimension === bot.game.dimension &&
-      pos(s.origin).distanceTo(bot.entity.position) < 128 && bot.blockAt(pos(s.origin)))
+      pos(s.origin).distanceTo(bot.entity.position) < 128 && bot.blockAt(pos(s.origin)) &&
+      // An unfinished emergency site is useful only while nearby. After a
+      // descent or a gathering trip, choose a new local site instead of hauling
+      // supplies back up a tree. Retain old records to protect partial work.
+      (s.verifiedAt || s.kind === 'house' || shelter.inside(bot, s) ||
+        (pos(s.origin).distanceTo(bot.entity.position) <= 12 && Math.abs(s.origin.y - bot.entity.position.y) <= 3)))
       .sort((a, b) => pos(a.origin).distanceTo(bot.entity.position) + (a.verifiedAt ? 0 : 32) -
         pos(b.origin).distanceTo(bot.entity.position) - (b.verifiedAt ? 0 : 32))[0];
   }
@@ -122,12 +127,9 @@ class Survival {
       this.report(goal, save, { action: 'gather_shelter_materials', need: required, carried: stock, origin: refuge.origin });
       task.interruptCheck = () => checkThreats(bot);
       try {
-        const logs = bot.inventory.items().filter(i => i.name === 'oak_log').reduce((n, i) => n + i.count, 0);
-        const planks = bot.inventory.items().filter(i => i.name === 'oak_planks').reduce((n, i) => n + i.count, 0);
-        const dirt = bot.inventory.items().filter(i => i.name === 'dirt').reduce((n, i) => n + i.count, 0);
-        await this.actions.acquireStep(bot, task, logs ? 'oak_planks' : 'dirt',
-          logs ? planks + Math.min(logs * 4, required - stock) : dirt + required - stock, goal, save,
-          { minimumMiningY: refuge.origin.y - 1 });
+        const supply = shelter.supplyTarget(bot, required - stock);
+        await this.actions.acquireStep(bot, task, supply.item, supply.count, goal, save,
+          { minimumMiningY: Math.min(refuge.origin.y, bot.entity.position.floored().y) - 1 });
       } finally { task.interruptCheck = undefined; }
       return;
     }

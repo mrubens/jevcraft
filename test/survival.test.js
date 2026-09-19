@@ -203,3 +203,68 @@ test('shelter foundation planning rejects liquids, unloaded terrain and unsuppor
   }
   assert(!shelter.safeSite({ blockAt: () => ({ name: 'air', boundingBox: 'empty' }) }, origin, {}));
 });
+
+test('unfinished shelter plans stop pulling the bot back uphill after it leaves the area', () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, blockAt: () => ({ name: 'air', boundingBox: 'empty' }) });
+  const old = { origin: { x: 0, y: 79, z: 0 }, dimension: 'overworld' };
+  const state = { shelters: [old] }, controller = new Survival(bot, {}, { state });
+  assert.equal(controller.currentShelter(), undefined);
+  assert(reservedForConstruction({ survival: state }, new Vec3(0, 79, 0)), 'Partial work remains protected');
+  old.origin = { x: 30, y: 64, z: 0 };
+  assert.equal(controller.currentShelter(), undefined, 'Do not gather for a distant unfinished site');
+  old.origin = { x: 4, y: 66, z: 0 };
+  assert.equal(controller.currentShelter(), old, 'Nearby short climbs remain available');
+  old.origin.y = 79; old.verifiedAt = new Date().toISOString();
+  assert.equal(controller.currentShelter(), old, 'A verified home remains a remembered refuge');
+});
+
+test('shelter stock and carried-wood crafting use the full plank recipe catalog', async () => {
+  for (const [input, plank, yieldPerItem] of [['spruce_log', 'spruce_planks', 4], ['stripped_cherry_wood', 'cherry_planks', 4],
+    ['crimson_stem', 'crimson_planks', 4], ['bamboo_block', 'bamboo_planks', 2]]) {
+    const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' },
+      entity: { position: new Vec3(4.5, 64, 0.5) },
+      inventory: { items: () => [{ name: input, count: 2 }, { name: plank, count: 4 }, { name: 'dirt', count: 1 }] },
+      blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }) });
+    const refuge = { origin: { x: 0, y: 64, z: 0 }, dimension: 'overworld' };
+    assert.equal(shelter.materialStock(bot), 5);
+    let calls = 0;
+    const controller = new Survival(bot, { acquireStep: async (b, t, item, count) => {
+      calls++; assert.equal(item, plank); assert.equal(count, 4 + 2 * yieldPerItem, 'Only request what carried ingredients can make');
+    } }, { state: { shelters: [refuge] } });
+    await controller.refugeStep(new Task('shelter with available wood'), {}, () => {});
+    assert.equal(calls, 1);
+  }
+});
+
+test('shelter gathering follows the current ground height even when returning to an elevated home', async () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' },
+    entity: { position: new Vec3(4.5, 64, 0.5) }, inventory: { items: () => [] },
+    blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }) });
+  const refuge = { origin: { x: 0, y: 79, z: 0 }, dimension: 'overworld', verifiedAt: new Date().toISOString() };
+  let calls = 0;
+  const controller = new Survival(bot, { acquireStep: async (b, t, item, count, goal, save, options) => {
+    calls++; assert.equal(item, 'dirt'); assert.equal(options.minimumMiningY, 63);
+  } }, { state: { shelters: [refuge] } });
+  await controller.refugeStep(new Task('ground supplies'), {}, () => {});
+  assert.equal(calls, 1);
+});
+
+test('mixed wood variants never make shelter crafting ask for new logs', () => {
+  const registry = require('minecraft-data')('26.1'), { planCatalog } = require('../src/knowledge');
+  const stock = { spruce_log: 1, stripped_spruce_wood: 3 };
+  const bot = { inventory: { items: () => Object.entries(stock).filter(([, count]) => count > 0).map(([name, count]) => ({ name, count })) } };
+  for (let step = 0; step < 4 && (stock.spruce_planks || 0) < 16; step++) {
+    const target = shelter.supplyTarget(bot, 16 - (stock.spruce_planks || 0));
+    assert.equal(target.item, 'spruce_planks');
+    const plan = planCatalog(registry, target.item, target.count, stock);
+    assert(plan.length && plan.every(s => s.action === 'craft' && s.item === 'spruce_planks'));
+    for (const s of plan) {
+      for (const [name, count] of Object.entries(s.consumes)) { assert(stock[name] >= count); stock[name] -= count; }
+      for (const [name, count] of Object.entries(s.produces)) stock[name] = (stock[name] || 0) + count;
+    }
+  }
+  assert.equal(stock.spruce_planks, 16);
+  stock.spruce_log = 8;
+  assert.deepEqual(shelter.supplyTarget(bot, 1), { item: 'spruce_planks', count: 17 }, 'Only fill the shortage, allowing the recipe to round up');
+});
