@@ -125,3 +125,40 @@ test('each separate stack is rechecked before dropping when the recipient moves'
   assert.equal(writes, 1);
   assert.equal(stacks.length, 2);
 });
+
+function fullInventory() {
+  const items = [{ name: 'pumpkin', type: 1, count: 17, slot: 36 },
+    ...Array.from({ length: 35 }, (_, i) => ({ name: 'stone_axe', type: 2, count: 1, slot: i < 27 ? i + 9 : i + 10 }))];
+  let held;
+  const packets = [];
+  const bot = { inventory: { items: () => items, firstEmptyInventorySlot: () => null },
+    equip: async item => { held = item; }, transfer: async () => assert.fail('no room for a temporary stack'),
+    _client: { write: (name, packet) => {
+      assert.equal(name, 'block_dig'); packets.push(packet);
+      assert.equal(held.name, 'pumpkin');
+      held.count -= packet.status === 4 ? 1 : held.count;
+    } } };
+  return { bot, items, packets };
+}
+
+test('a full inventory can hand over an exact partial stack without discarding other items', async () => {
+  const { bot, items, packets } = fullInventory(), task = new Task('give five pumpkins');
+  let checks = 0;
+  await dropHeld(bot, task, 'pumpkin', 5, async () => { checks++; });
+  assert.equal(items[0].count, 12);
+  assert(items.slice(1).every(i => i.count === 1));
+  assert.equal(packets.length, 5); assert(packets.every(p => p.status === 4));
+  assert.equal(checks, 5, 'recheck the recipient before every single-item drop');
+});
+
+test('stop or a moving recipient interrupts a full-inventory handover before the next drop', async () => {
+  for (const reason of ['stop', 'moved']) {
+    const { bot, items, packets } = fullInventory(), task = new Task('give five pumpkins');
+    let checks = 0;
+    await assert.rejects(dropHeld(bot, task, 'pumpkin', 5, async () => {
+      if (++checks < 2) return;
+      if (reason === 'stop') task.cancel(); else throw new Error('Requester moved');
+    }), reason === 'stop' ? { name: 'Cancelled' } : /Requester moved/);
+    assert.equal(packets.length, 1); assert.equal(items[0].count, 16);
+  }
+});

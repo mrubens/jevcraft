@@ -40,6 +40,24 @@ after a throw and the bot still carries spare copies.
 `node --test test/delivery.test.js` covers spare stock, partial pickups, previous
 completed handovers, exact stack splitting, and a recipient moving away.
 
+When all inventory slots are occupied, a partial-stack handover uses ordinary
+single-item hand drops instead of requiring a temporary empty slot. It checks
+the recipient and cancellation before each drop, confirms the inventory change,
+and retains the rest of the stack and unrelated supplies. Full-stack handovers
+and splitting when space exists keep their existing behavior. Recipient pickup
+is still required before the delivery is counted as complete.
+
+`MC_PORT=<isolated-port> node scripts/full-inventory-delivery-test.js` reproduces
+this on a one-block-wide ledge. Apply the artifact directory's `setup.json` in
+the isolated console and create `ready`. Ports 25565 and 25577 are rejected.
+Controlled run `full-inventory-delivery-mu8q8133` passed on 2026-09-19: with all
+36 slots occupied, Jev delivered one pumpkin and then five pumpkins, retaining
+11 pumpkins and 35 axes. The receiving client's inventory confirmed exactly
+six pumpkins. Neither player fell or lost health, and replaying the completed
+checkpoints sent no additional drops. Automated tests also stop mid-handover
+and move the recipient before the next drop. Supplies and terrain are granted
+for this mechanics fixture; it is not natural Survival acceptance.
+
 ## Saved furnace batches
 
 A stopped batch retains its furnace position and output target. It collects

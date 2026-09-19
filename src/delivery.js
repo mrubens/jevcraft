@@ -66,17 +66,23 @@ async function dropHeld(bot, task, itemName, count, beforeDrop = async () => {})
     task.check();
     let stack = bot.inventory.items().find(i => i.name === itemName);
     if (!stack) throw new Error(`No ${itemName} left to hand over`);
-    const amount = Math.min(remaining, stack.count);
+    let amount = Math.min(remaining, stack.count), single = false;
     if (amount < stack.count) {
       const slot = bot.inventory.firstEmptyInventorySlot();
-      if (slot === null) throw new Error('Need an empty inventory slot to split the handover stack');
-      // The destination must not be inside the source range: transfer returns
-      // its cursor remainder to that range and would merge our split back in.
-      await bot.transfer({ window: bot.inventory, itemType: stack.type, metadata: null, count: amount,
-        sourceStart: stack.slot, sourceEnd: stack.slot + 1, destStart: slot, destEnd: slot + 1 });
-      if (bot._syncWindow) await bot._syncWindow(bot.inventory);
-      stack = bot.inventory.items().find(i => i.slot === slot);
-      if (!stack || stack.count !== amount) throw new Error('Could not prepare the exact handover stack');
+      if (slot == null) {
+        // A full inventory can still use ordinary Q to hand over one item.
+        // Keep the rest of the stack in hand and recheck aim/cancellation and
+        // server inventory before each next drop. Never discard spare stock.
+        amount = 1; single = true;
+      } else {
+        // The destination must not be inside the source range: transfer returns
+        // its cursor remainder to that range and would merge our split back in.
+        await bot.transfer({ window: bot.inventory, itemType: stack.type, metadata: null, count: amount,
+          sourceStart: stack.slot, sourceEnd: stack.slot + 1, destStart: slot, destEnd: slot + 1 });
+        if (bot._syncWindow) await bot._syncWindow(bot.inventory);
+        stack = bot.inventory.items().find(i => i.slot === slot);
+        if (!stack || stack.count !== amount) throw new Error('Could not prepare the exact handover stack');
+      }
     }
     await bot.equip(stack, 'hand');
     if (bot._syncWindow) await bot._syncWindow(bot.inventory);
@@ -86,9 +92,9 @@ async function dropHeld(bot, task, itemName, count, beforeDrop = async () => {})
     await beforeDrop();
     task.check();
     const before = countOf(bot, itemName);
-    // Vanilla DROP_ALL_ITEMS (enum ordinal 3) is Ctrl-Q: a directed hand drop.
+    // Vanilla DROP_ALL_ITEMS (3) is Ctrl-Q; DROP_ITEM (4) is ordinary Q.
     // Mineflayer.toss clicks outside an inventory window and scatters the stack.
-    bot._client.write('block_dig', { status: 3, location: new Vec3(0, 0, 0), face: 0, sequence: 0 });
+    bot._client.write('block_dig', { status: single ? 4 : 3, location: new Vec3(0, 0, 0), face: 0, sequence: 0 });
     if (bot.waitForTicks) await bot.waitForTicks(2);
     if (bot._syncWindow) await bot._syncWindow(bot.inventory);
     await waitCount(bot, task, itemName, n => n <= before - amount);
