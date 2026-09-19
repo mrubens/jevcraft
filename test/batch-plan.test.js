@@ -10,8 +10,10 @@ const context = { nearby: ['oak_log', 'stone', 'iron_ore', 'diamond_ore'] };
 function verify(outputs, initial = {}, options = context) {
   const plan = batchPlan(registry, outputs, initial, options), stock = { ...initial };
   for (const step of plan.steps) {
+    assert(Number.isSafeInteger(step.count) && step.count > 0, `${step.action} count must be a whole number`);
     for (const [name, count] of Object.entries(step.requires || {})) assert((stock[name] || 0) >= count, `${step.action} requires ${name}`);
     for (const [name, count] of Object.entries(step.consumes)) {
+      assert(Number.isSafeInteger(count) && count > 0, `${step.action} ${name} consumption must be a whole number`);
       assert((stock[name] || 0) >= count, `${step.action} ${step.item} lacks ${name}`); stock[name] -= count;
     }
     for (const [name, count] of Object.entries(step.produces)) stock[name] = (stock[name] || 0) + count;
@@ -44,13 +46,37 @@ test('all24 raw iron share one smelt before armor crafting, with one fuel allowa
 });
 
 test('combined smelting retains one local-wood fuel choice and preserves requested planks', () => {
-  // Provisional per-piece rounding still budgets 18 before merging to 16.
-  // Keep that separate known optimization from this fuel-species/reserve check.
-  const plan = verify([...armor('iron'), { item: 'birch_planks', count: 8 }], { ...readyTools, raw_iron: 24, birch_planks: 26 }, { nearby: ['birch_log'] });
+  const plan = verify([...armor('iron'), { item: 'birch_planks', count: 8 }], { ...readyTools, raw_iron: 24, birch_planks: 24 }, { nearby: ['birch_log'] });
   const smelts = plan.filter(step => step.action === 'smelt');
   assert.equal(smelts.length, 1); assert.equal(smelts[0].count, 24);
   assert.equal(smelts[0].fuelItem, 'birch_planks'); assert.equal(smelts[0].consumes.birch_planks, 16);
   assert(!plan.some(step => step.action === 'mine'));
+});
+
+test('shared furnace fuel gathers only the logs still needed after merging smelts', () => {
+  const outputs = [...armor('iron'), { item: 'birch_planks', count: 8 }];
+  const plan = verify(outputs, { ...readyTools, raw_iron: 24 }, { nearby: ['birch_log'] });
+  assert.equal(plan.filter(s => s.action === 'mine').length, 1);
+  assert.equal(plan.find(s => s.drops === 'birch_log').count, 6);
+  assert.equal(plan.find(s => s.item === 'birch_planks').count, 24);
+  assert.equal(plan.find(s => s.action === 'smelt').fuel, 16);
+});
+
+test('different furnace inputs retain separate rounded fuel allowances and reserved outputs', () => {
+  const plan = verify([{ item: 'glass', count: 1 }, { item: 'iron_ingot', count: 1 }, { item: 'birch_planks', count: 2 }],
+    { ...readyTools, sand: 1, raw_iron: 1, birch_planks: 4 }, { nearby: ['birch_log'] });
+  const smelts = plan.filter(s => s.action === 'smelt');
+  assert.equal(smelts.length, 2); assert.equal(smelts.reduce((n, s) => n + s.fuel, 0), 2);
+  assert(!plan.some(s => s.action === 'mine'));
+});
+
+test('fuel savings propagate through whole recipe yields across partially stocked inventories', () => {
+  for (let planks = 0; planks <= 28; planks++) {
+    const plan = verify([...armor('iron'), { item: 'birch_planks', count: 8 }],
+      { ...readyTools, raw_iron: 24, birch_planks: planks }, { nearby: ['birch_log'] });
+    const logs = plan.filter(s => s.drops === 'birch_log').reduce((sum, s) => sum + s.count, 0);
+    assert.equal(logs, Math.ceil(Math.max(0, 24 - planks) / 4), `${planks} carried planks`);
+  }
 });
 
 test('tools come before their ores even when their ingots are shared with final armor', () => {

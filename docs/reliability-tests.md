@@ -135,12 +135,49 @@ only its own fixture plot. Both recordings are retained.
 the supplied log and completed four glass, keeping two planks with health 20.
 These remain controlled mechanics fixtures, not fresh Survival acceptance.
 
-An existing planning inefficiency remains: provisional per-piece fuel rounding
-can request extra wood before compatible smelts merge and reduce the fuel
-allowance. With 24 raw iron and 24 birch planks, full iron armor plus eight kept
-planks fits the merged 16-plank fuel allowance, but the plan still requests one
-extra log. The reproducible plan is recorded in
-`artifacts/fuel-rounding-regression-20260919.json` for the next planning fix.
+The saved regression `artifacts/fuel-rounding-regression-20260919.json` showed
+provisional per-piece fuel rounding requesting an extra log even though the
+carried 24 birch planks covered a merged armor smelt and eight requested planks.
+After merging batches, the planner now works backward through the ordered
+actions to remove surplus supplies and their gathering/crafting dependencies.
+It retains whole recipe yields, tool requirements, requested-output reserves,
+and separate fuel allowances for smelts that cannot be merged.
+
+`test/batch-plan.test.js` checks the exact-stock regression, reduced log gathering,
+29 partial-inventory quantities, distinct furnace inputs, and tool progression.
+The isolated gameplay fixture is:
+
+```sh
+MC_PORT=<isolated-port> node scripts/fuel-batch-test.js
+```
+
+Apply its artifact directory's `setup.json` only in the isolated server console,
+then create `ready`. It grants 24 raw iron and 24 birch planks beside a furnace
+and crafting table, then requests full iron armor plus eight birch planks. It
+interrupts and reloads the saved goal during the furnace batch. An independent
+receiver verifies delivery; instrumentation checks one 24-item furnace load,
+16 fuel planks, all ingots ready before the first armor craft, and no digging.
+The script rejects ports 25565 and 25577. This is a controlled mechanics fixture,
+not fresh Survival acceptance.
+
+On 2026-09-19, `fuel-batch-mu8sat5x` passed: one 24-raw-iron furnace load used
+exactly 16 birch planks across a saved stop/resume. All 24 ingots were present
+before the first armor craft. The independent receiver obtained all four armor
+pieces and eight birch planks. Jev did no digging, retained his pickaxe, and
+finished with health 20 and no deaths. All 444 automated tests also passed.
+
+A separate seeded mixed-request ledger probe verified 82 of 96 plans. The other
+14 failed before this trimming stage with missing raw iron or cobblestone;
+each failure was also reproduced against the preceding committed batch planner.
+These are unresolved planning failures, recorded with their exact requests and
+inventories in `artifacts/batch-trimming-stress-20260919.json`. The first case is
+also saved in `artifacts/batch-trimming-failure.json` for the next reliability fix.
+Tracing that first case showed a net-zero recipe cycle: ten carried raw iron
+were compressed into a block and unpacked again while planning fifteen raw iron.
+The acquisition planner then treated the method as complete despite still having
+only ten. `artifacts/batch-missing-input-analysis-20260919.json` records the stock
+ledger and sequence. Acquisition methods need to verify their net result before
+being accepted; batch trimming cannot correct this earlier failure.
 
 ## Stop during request interpretation
 

@@ -66,7 +66,47 @@ function batchPlan(registry, outputs, inventory = {}, context = {}) {
     const node = ready[0]; pending.delete(node.id);
     if (node.step.action !== 'reserve_output') ordered.push(node.step);
   }
-  return { steps: ordered, reserved: plan.reserved, totals: plan.totals };
+  return { steps: trimSurplus(ordered, plan), reserved: plan.reserved, totals: plan.totals };
+}
+
+// Merging furnace work can reduce its rounded fuel cost. Work backward through
+// the actual ordered plan to remove supplies that are no longer needed, including
+// their gathering/crafting dependencies. Keep whole recipe yields and reusable
+// tool requirements; already reserved player outputs never enter this ledger.
+function trimSurplus(steps, { available, totals, reserved }) {
+  const stock = { ...available };
+  const before = steps.map(step => {
+    const carried = Object.fromEntries(Object.keys(step.produces).map(name => [name, stock[name] || 0]));
+    for (const [name, count] of Object.entries(step.consumes)) stock[name] = (stock[name] || 0) - count;
+    for (const [name, count] of Object.entries(step.produces)) stock[name] = (stock[name] || 0) + count;
+    return carried;
+  });
+  const needed = Object.fromEntries(Object.entries(totals).map(([name, count]) => [name, count - (reserved[name] || 0)]));
+  const result = [];
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const step = steps[i], unit = step.action === 'craft' ? step.recipe.count : 1;
+    const outputs = Object.entries(step.produces);
+    // An action that also consumes its own output needs a different quantity
+    // equation. Leave it intact rather than treating its gross yield as net.
+    if (outputs.length && outputs.every(([name]) => !step.consumes[name])) {
+      const batches = step.count / unit;
+      const keep = Math.max(...outputs.map(([name, count]) =>
+        Math.ceil(Math.max(0, (needed[name] || 0) - before[i][name]) / (count / batches))));
+      if (!keep) continue;
+      const keptBatches = Math.min(keep, batches);
+      step.count = keptBatches * unit;
+      for (const field of ['consumes', 'produces']) for (const name of Object.keys(step[field])) step[field][name] = step[field][name] / batches * keptBatches;
+      if (step.action === 'smelt') {
+        step.fuel = Math.ceil(step.count / ITEMS_PER_PLANK);
+        step.consumes[step.fuelItem || 'oak_planks'] = step.fuel;
+      }
+    }
+    const names = new Set([...Object.keys(step.requires || {}), ...Object.keys(step.consumes), ...Object.keys(step.produces)]);
+    for (const name of names) needed[name] = Math.max(step.requires?.[name] || 0,
+      (step.consumes[name] || 0) + Math.max(0, (needed[name] || 0) - (step.produces[name] || 0)));
+    result.push(step);
+  }
+  return result.reverse();
 }
 
 // Delivered quantities are irrevocable progress. Kept outputs still count as
