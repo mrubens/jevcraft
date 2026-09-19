@@ -524,3 +524,50 @@ with no acquisition errors, exactly one stone broken, no placement, all eight
 carried planks retained, health 20, no deaths, and no bot commands. All 482
 automated tests passed. These are controlled mechanics checks, not fresh
 Survival acceptance.
+
+## Replacing tools during resource requests
+
+The bounded replacement proof now runs for single-item, shared bundle and
+construction acquisition when their dependencies require a pickaxe. Previously
+it was reached only by an explicit pickaxe acquisition or surface escape. A
+nearly broken tool could therefore send an ordinary stone request searching for
+new wood despite having the last swing and ingredients for a replacement.
+
+The recipe graph must prove that all replacement ingredients are carried or
+that the only missing material is nearby stone within the worn tool's remaining
+durability. A crafting table already verified as reachable may satisfy the
+station requirement. No other planned inventory is treated as carried. One
+mining or crafting dependency executes at a time, with digging and scaffolding
+disabled for travel. The next step is recomputed from actual inventory, allowing
+recovery to continue after the old tool breaks or the connection restarts.
+Wet/unsafe targets, protected construction and minimum mining heights retain
+their restrictions. Healthy tools do not trigger this fallback.
+
+`test/tool-recovery.test.js` reproduces the missed ordinary-request recovery and
+the missing continuation after tool breakage, alongside recipe funding, station
+availability, inventory evidence and interruption checks. For the real fixture:
+
+```sh
+MC_PORT=<isolated-port> node scripts/tool-request-recovery-test.js
+```
+
+Apply `setup.json` in the isolated server console and create `ready`. Ports
+25565 and 25577 are rejected. The fixture supplies a wooden pickaxe with one
+use left, two cobblestone, two sticks, nearby stone and an existing world table.
+It requests eight cobblestone and a furnace, disconnects after the old tool
+breaks, reloads the saved request, and checks replacement and both deliveries
+with an independent client. Supplies and terrain are controlled; this is not
+fresh Survival acceptance.
+
+On 2026-09-19, `tool-request-recovery-mu8y8nez` passed: one final wooden-pickaxe
+use completed the replacement ingredients, then Jev disconnected and resumed
+from the saved combined request. He made exactly one stone pickaxe and one
+furnace, mined exactly 17 stone blocks (including the replacement ingredient),
+and delivered eight cobblestone plus the furnace. No wood was gathered, no
+blocks were placed, the replacement pickaxe remained carried, and health stayed
+20 with no deaths or bot commands. All 487 automated tests passed.
+
+The earlier runs remain recorded: `mu8y4szg` stopped at a missing fixture goal
+version; `mu8y6eck` completed the gameplay but failed the crafting-count check
+because its observer hook was installed before compatibility initialization.
+The final fixture sets the saved-goal version and installs its hook after spawn.

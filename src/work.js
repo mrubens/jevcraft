@@ -654,13 +654,20 @@ async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY 
   if (goal.smelting) { await smelt(bot, task, goal.smelting, goal, save); return false; }
   const inv = planningInventory(bot);
   if ((inv[item] || 0) >= count) return true;
-  if (item.endsWith('_pickaxe') && pickaxeTier(bot) < 1 && await bootstrapPickaxe(bot, task, goal, save, { mine: mineAtSource })) return false;
   const available = await withUsableWorkstations(bot, task, inv, [item]);
-  const step = catalogPlan(bot, item, count, available, goal)[0];
+  const plan = catalogPlan(bot, item, count, available, goal);
+  if (await prepareMiningTool(bot, task, goal, save, plan, available, { requestedTool: item.endsWith('_pickaxe'), minimumMiningY })) return false;
+  const step = plan[0];
   if (!step) throw new Error(`No progress step for ${item}`);
   if (minimumMiningY !== undefined && step.action === 'mine') step.minimumY = minimumMiningY;
   await executeAcquisition(bot, task, step, goal, save);
   return false;
+}
+
+async function prepareMiningTool(bot, task, goal, save, plan, available, { requestedTool = false, minimumMiningY } = {}) {
+  if (bot.game?.gameMode === 'creative' || pickaxeTier(bot) >= 1 ||
+      !requestedTool && !plan.some(step => step.action === 'mine' && step.tool?.endsWith('_pickaxe'))) return false;
+  return bootstrapPickaxe(bot, task, goal, save, { mine: mineAtSource, craft, available, minimumMiningY });
 }
 
 async function executeAcquisition(bot, task, step, goal, save) {
@@ -1142,7 +1149,7 @@ async function obtainStep(bot, task, goal, save, client, onStep) {
   }
   const stock = await withUsableWorkstations(bot, task, planningInventory(bot), [goal.item]);
   const plan = catalogPlan(bot, goal.item, remaining, stock, goal);
-  return executePlannedAcquisition(bot, task, goal, save, client, onStep, plan, { item: goal.item, count: remaining });
+  return executePlannedAcquisition(bot, task, goal, save, client, onStep, plan, { item: goal.item, count: remaining }, stock);
 }
 
 async function prepareBundleStep(bot, task, goal, save, client, onStep) {
@@ -1165,17 +1172,18 @@ async function prepareBundleStep(bot, task, goal, save, client, onStep) {
     goal.step = { action: 'combined_request', phase: goal.batch.phase, outputs, detail: work.step };
     save();
   };
-  await executePlannedAcquisition(bot, task, work, checkpoint, client, onStep, plan, { outputs });
+  await executePlannedAcquisition(bot, task, work, checkpoint, client, onStep, plan, { outputs }, stock);
   return false;
 }
 
-async function executePlannedAcquisition(bot, task, goal, save, client, onStep, plan, acquisition) {
+async function executePlannedAcquisition(bot, task, goal, save, client, onStep, plan, acquisition, available) {
   const first = plan[0];
   if (first?.action === 'mine') {
     if (await collectNearbyDrops(bot, task, first.drops, {
       onTarget: target => { goal.step = { action: 'collect', ...target }; save(); },
     })) return false;
   }
+  if (await prepareMiningTool(bot, task, goal, save, plan, available)) return false;
   // Catalog routing replaced the old named concrete workflow. Preserve its
   // tool/wood/table preparation for any request whose recipe needs a descent,
   // while leaving nearby surface pickups and Creative inventory immediate.
