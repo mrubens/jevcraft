@@ -50,8 +50,15 @@ class SurvivalMovements extends Movements {
     const edge = this.getBlock(node, direction.x, -1, direction.z);
     if (swimmableWater(edge) && edge.safe && this.getBlock(node, direction.x, 0, direction.z).safe &&
       !this.getBlock(node, direction.x, 0, direction.z).liquid) return edge;
-    const landing = super.getLandingBlock(node, direction);
-    return landing && node.y - landing.position.y <= this.maxDropDown ? landing : null;
+    // Upstream compares against the floor block, one below the eventual
+    // feet position. Convert that bound so a three-block allowance really
+    // permits a three-block drop, then validate the returned landing height.
+    const limit = this.maxDropDown;
+    try {
+      this.maxDropDown = limit + 1;
+      const landing = super.getLandingBlock(node, direction);
+      return landing && node.y - landing.position.y <= limit ? landing : null;
+    } finally { this.maxDropDown = limit; }
   }
 
   getMoveJumpUp(node, direction, neighbors) {

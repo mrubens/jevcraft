@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
-const { surfaceObserver, surfaceMovement, returnToSurface, beginSurfaceAscent, surfaceReturnComplete } = require('../src/surface');
+const { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete } = require('../src/surface');
 const { constructionObservation, explore } = require('../src/work');
 const { Task } = require('../src/skills');
 const { configureMovements } = require('../src/movement');
@@ -91,6 +91,79 @@ test('surface travel permits river swimming with open headroom while rejecting d
   assert(!policy.allowed(new Vec3(12, 63, 0)), 'Lava is never a swimming route');
   assert(!bot.pathfinder.movements.allowedPosition(new Vec3(21, 63, 0)), 'Retains inherited restrictions');
   policy.restore();
+});
+
+function canopyFixture() {
+  const registry = require('prismarine-registry')('26.1'), Block = require('prismarine-block')(registry);
+  const landing = new Vec3(1, 74, 0), blocks = new Map([['(0, 75, 0)', 'spruce_leaves'], ['(1, 73, 0)', 'spruce_log'], ['(1, 72, 0)', 'spruce_log']]);
+  const bot = { registry, game: { gameMode: 'survival', minY: 0, height: 100 }, entity: { position: new Vec3(.5, 76, .5), onGround: true },
+    entities: {}, inventory: { items: () => [] }, players: {},
+    blockAt(point) {
+      const p = point.floored(), name = blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air');
+      const block = Block.fromStateId(registry.blocksByName[name].defaultState); block.position = p; return block;
+    },
+    findBlocks({ matching, useExtraInfo }) {
+      const block = bot.blockAt(landing.offset(0, -1, 0));
+      return [].concat(matching).includes(block.type) && (!useExtraInfo || useExtraInfo(block)) ? [block.position] : [];
+    }, pathfinder: { movements: { canDig: true, allow1by1towers: true, scafoldingBlocks: [1], maxDropDown: 3 },
+      getPathTo: () => ({ status: 'success', path: [landing] }),
+      goto: async g => { bot.entity.position = new Vec3(g.x + .5, g.y, g.z + .5); }, setGoal() {} },
+  };
+  return { bot, landing, blocks };
+}
+
+test('surface exploration uses a lower trunk as an intermediate landing when ground is out of reach', async () => {
+  const { bot, landing } = canopyFixture(), goal = { request: 'get wood', item: 'spruce_log' };
+  const before = { ...bot.pathfinder.movements };
+  const travel = bot.pathfinder.goto;
+  bot.pathfinder.goto = async g => {
+    assert.equal(bot.pathfinder.movements.allow1by1towers, false);
+    assert.deepEqual(bot.pathfinder.movements.scafoldingBlocks, []);
+    await travel(g);
+  };
+  await explore(bot, new Task('leave tall tree'), goal, () => {}, 'spruce_log');
+  assert.equal(goal.step.action, 'descend_canopy');
+  assert(bot.entity.position.floored().equals(landing)); assert.equal(goal.item, 'spruce_log');
+  for (const [key, value] of Object.entries(before)) assert.deepEqual(bot.pathfinder.movements[key], value);
+});
+
+test('canopy descent rejects deep, wet, obstructed and unfinished routes without building or breaking a trunk', async () => {
+  for (const kind of ['too_deep', 'wet', 'blocked', 'partial', 'placing', 'trunk', 'detour', 'protected', 'cancel']) {
+    const { bot, blocks, landing } = canopyFixture(), task = new Task('tree exit'), goal = {};
+    if (kind === 'too_deep') { bot.entity.position.y = 78; blocks.set('(0, 77, 0)', 'spruce_leaves'); }
+    if (kind === 'wet') blocks.set(`${landing}`, 'water');
+    if (kind === 'blocked') blocks.set(`${landing}`, 'stone');
+    const exclusions = [b => b.position.x === 1 ? 100 : 0];
+    bot.pathfinder.movements.exclusionAreasBreak = exclusions;
+    const before = { ...bot.pathfinder.movements };
+    bot.pathfinder.getPathTo = movement => {
+      assert.equal(movement.exclusionAreasBreak[0], exclusions[0]);
+      if (kind === 'cancel') task.cancel();
+      return { status: kind === 'partial' ? 'partial' : kind === 'protected' ? 'noPath' : 'success',
+        path: [{ ...landing, ...(kind === 'placing' && { toPlace: [{}] }),
+          ...(kind === 'trunk' && { toBreak: [landing.offset(0, -1, 0)] }), ...(kind === 'detour' && { y: 70 }) }] };
+    };
+    const run = descendCanopy(bot, task, goal, () => {}, { move: async () => assert.fail(`Unsafe ${kind} route executed`) });
+    if (kind === 'cancel') await assert.rejects(run, { name: 'Cancelled' }); else assert.equal(await run, false, kind);
+    assert.equal(goal.step, undefined);
+    for (const [key, value] of Object.entries(before)) assert.deepEqual(bot.pathfinder.movements[key], value, kind);
+  }
+});
+
+test('canopy landings must still exist after the route survey and after walking', async () => {
+  for (const when of ['survey', 'walking']) {
+    const { bot, blocks, landing } = canopyFixture(), task = new Task('changing tree'), goal = {};
+    bot.pathfinder.getPathTo = () => {
+      if (when === 'survey') blocks.set(`${landing.offset(0, -1, 0)}`, 'air');
+      return { status: 'success', path: [landing] };
+    };
+    const run = descendCanopy(bot, task, goal, () => {}, { move: async () => {
+      assert.equal(when, 'walking'); bot.entity.position = landing.offset(.5, 0, .5);
+      blocks.set(`${landing.offset(0, -1, 0)}`, 'air');
+    } });
+    if (when === 'survey') assert.equal(await run, false); else await assert.rejects(run, /inspected landing/);
+    assert.equal(goal.step?.landed, undefined);
+  }
 });
 
 test('kelp and seagrass mark the water surface and never masquerade as dry underwater routes', () => {

@@ -15,7 +15,7 @@ const { Survival } = require('./survival');
 const { checkThreats, safeFromHostiles } = require('./danger');
 const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
-const { surfaceObserver, surfaceMovement, returnToSurface, beginSurfaceAscent, surfaceReturnComplete } = require('./surface');
+const { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete } = require('./surface');
 const { bootstrapPickaxe } = require('./tool-recovery');
 const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives, knownResourceLocations, knownResourceNames, rememberResources, isSurfaceResource } = require('./resource-observation');
@@ -298,6 +298,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
         }
       }
     }
+    if (!destination && await descendCanopy(bot, task, goal, save)) return;
     if (!destination && await descendPillar(bot, task, goal, save)) return;
     if (!destination) { search.leg++; save(); throw new Error(`No reachable surveyed ground while searching for ${resource}`); }
     search.visited[key(destination)] = (search.visited[key(destination)] || 0) + 1;

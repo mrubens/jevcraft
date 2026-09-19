@@ -4,7 +4,7 @@ const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, navigate } = require('./skills');
 const { safeFromHostiles } = require('./danger');
 const { tunnelStep } = require('./tunneling');
-const { dryPassable, dryLeaf, swimmableWater } = require('./terrain');
+const { dryPassable, dryLeaf, dryBodySpace, supportCell, swimmableWater } = require('./terrain');
 
 // Inspect loaded columns, ignoring tree canopies but not terrain, roofs or
 // water. Two clear cave blocks are not evidence of a surface destination.
@@ -55,6 +55,49 @@ function surfaceMovement(bot) {
     exclusionAreasBreak: [...(previous.exclusionAreasBreak || []), block => dryLeaf(block) ? 0 : 100],
     allowedPosition: p => allowed(p) && (!previous.allowedPosition || previous.allowedPosition(p)) });
   return { isSurface, allowed, restore: () => Object.assign(movements, previous) };
+}
+
+// Tree supports are useful intermediate landings, even when ordinary ground
+// is too far below. Each successful step loses height; no shaft digging,
+// invented landing or scaffold construction is needed for this recovery.
+async function descendCanopy(bot, task, goal, save, { move = navigate } = {}) {
+  task.check();
+  const start = bot.entity.position.clone(), footing = bot.blockAt(supportCell(start));
+  const tree = b => b?.boundingBox === 'block' && (dryLeaf(b) || /_log$/.test(b.name));
+  if (bot.entity.onGround === false || !tree(footing) || !dryBodySpace(bot, start)) return false;
+  const movement = bot.pathfinder.movements, policy = surfaceMovement(bot);
+  const previous = { scafoldingBlocks: movement.scafoldingBlocks, allowParkour: movement.allowParkour };
+  const inherited = movement.allowedPosition;
+  const allowed = p => p.y >= start.y - 3 && p.y <= start.y + 1 &&
+    Math.hypot(p.x - start.x, p.z - start.z) <= 8 && inherited(p);
+  Object.assign(movement, { scafoldingBlocks: [], allowParkour: false, allowedPosition: allowed });
+  const landingSafe = p => p.y < start.y - .5 && allowed(p) && tree(bot.blockAt(p.offset(0, -1, 0))) &&
+    dryBodySpace(bot, p) && safeFromHostiles(bot, p.offset(.5, 0, .5));
+  try {
+    const ids = bot.registry.blocksArray.filter(b => /_leaves$|_log$/.test(b.name)).map(b => b.id);
+    const candidates = bot.findBlocks({ matching: ids, maxDistance: 8, count: 48,
+      useExtraInfo: b => landingSafe(b.position.offset(0, 1, 0)),
+    }).map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(start) - b.distanceTo(start));
+    for (const p of candidates.slice(0, 8)) {
+      task.check();
+      const destination = new goals.GoalBlock(p.x, p.y, p.z);
+      const route = await surveyRoute(bot, task, movement, destination, 300);
+      if (route.status !== 'success' || (route.path || []).length > 16 ||
+          !(route.path || []).every(q => allowed(q) && !q.toPlace?.length &&
+            (q.toBreak || []).every(b => dryLeaf(bot.blockAt(new Vec3(b.x, b.y, b.z))))) || !landingSafe(p)) continue;
+      task.check();
+      goal.step = { action: 'descend_canopy', from: { ...start }, destination: { ...p } }; save();
+      await move(bot, task, destination, { timeoutMs: 12000, stallMs: 4000 });
+      task.check();
+      if (!landingSafe(p) || !dryBodySpace(bot, bot.entity.position) || bot.entity.onGround === false ||
+          !bot.entity.position.floored().equals(p)) throw new Error('Canopy descent did not reach the inspected landing');
+      goal.step.landed = { ...bot.entity.position }; save(); return true;
+    }
+    return false;
+  } finally {
+    policy.restore();
+    for (const [key, value] of Object.entries(previous)) if (value === undefined) delete movement[key]; else movement[key] = value;
+  }
 }
 
 // Open sky is not an exit from a ravine. After ordinary surface routes fail,
@@ -146,4 +189,4 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
   } finally { movements.allowedPosition = previous; Object.assign(movements, ordinary); }
 }
 
-module.exports = { surfaceObserver, surfaceMovement, returnToSurface, beginSurfaceAscent, surfaceReturnComplete };
+module.exports = { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete };

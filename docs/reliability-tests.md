@@ -635,3 +635,48 @@ now supplies the obstructed stance explicitly.
 `foliage-mining-mu8zc9u9` exposed a real pickup failure when the log fell beyond
 pickup reach under its remaining leaf roof; the access step now opens that
 headroom before mining instead of treating a broken log as collected inventory.
+
+## Short drops and intermediate tree landings
+
+The next inspection of `mu8yf4yy` found a dry trunk landing at y76 beside Jev's
+leaf perch at y78. Exploration omitted it because its destination catalog only
+listed ordinary ground. When ground routes fail, Jev now surveys lower log and
+dry-leaf landings within eight blocks, with at most three blocks of descent.
+Routes may clear leaves but cannot excavate trunks, place scaffolding or build
+towers. Each arrival must be lower than the starting perch and is rechecked for
+dry body space, standing position and remaining support. Existing inspected
+pillar descent can then continue down a trunk one block at a time.
+
+The movement allowance now measures the difference between feet positions.
+Upstream's floor-block comparison made a configured three-block limit allow
+only two blocks of actual descent. The conversion now permits a full three-block
+drop while retaining the configured limit for deeper drops, including water.
+Smaller allowances, such as the drop collector's two-block limit, remain smaller.
+
+The focused regressions fail on the previous code for both the omitted trunk
+landing and the drop-height boundary. They also cover wet, obstructed, stale and
+over-deep landings, forbidden excavation/placement, cancellation, and movement
+policy restoration. All 497 automated tests passed.
+
+```sh
+MC_PORT=<isolated-port> node scripts/canopy-descent-test.js
+```
+
+Apply the generated `setup.json` only in the isolated test console, then create
+`ready`. The test rejects ports 25565 and 25577. On 2026-09-19,
+`canopy-descent-mu8zxg45` passed: an empty Survival bot dropped from y72 to a trunk
+at y69, removed two independently observed trunk blocks in single-block pillar
+steps, and dropped from y67 to the ground at y64. A second client observed the
+trunk landing and 81 movement packets. Health stayed 20, with no deaths,
+scaffolding or bot commands. The supplied crown/trunk fixture is not natural
+Survival acceptance. An earlier setup attempt connected before the isolated
+server was listening and was preserved as an aborted setup, without gameplay.
+
+The resumed natural run also descended from the original y78 perch onto the
+y76 trunk, collected previously inaccessible wood, and reached ordinary ground
+at y64 with health 20. It was deliberately stopped after revealing the next
+blocker: shelter acquisition kept `minimumMiningY: 78` from an unbuilt shelter
+at y79 despite now standing on much lower ground. It did not complete the
+16-cobblestone delivery or the day/night endurance check. The preceding failure
+is preserved in `mu8yf4yy-before-canopy-landing`, and the resumed source/runtime
+and stop reason are recorded in the isolated world's manifest.

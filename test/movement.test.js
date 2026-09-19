@@ -23,6 +23,24 @@ test('movement refuses deep water drops as well as deep dry drops', () => {
   assert.equal(movement.allowSprinting, false);
 });
 
+test('drop allowance measures feet-to-landing distance, including a full three-block dry drop', () => {
+  const bot = botFixture(), Block = require('prismarine-block')(bot.registry);
+  let drop = 3;
+  bot.blockAt = point => {
+    const p = point.floored(), name = p.y < (p.x === 0 ? 70 : 70 - drop) ? 'stone' : 'air';
+    const block = Block.fromStateId(bot.registry.blocksByName[name].defaultState); block.position = p; return block;
+  };
+  const movement = configureMovements(bot); movement.canDig = false;
+  for (const limit of [2, 3]) for (drop of [limit, limit + 1]) {
+    movement.maxDropDown = limit;
+    const neighbors = [];
+    movement.getMoveDropDown({ x: 0, y: 70, z: 0, remainingBlocks: 0 }, new Vec3(1, 0, 0), neighbors);
+    assert.equal(neighbors.length, drop <= limit ? 1 : 0, `${drop}-block drop with allowance ${limit}`);
+    if (neighbors.length) assert.equal(neighbors[0].y, 70 - drop);
+    assert.equal(movement.maxDropDown, limit);
+  }
+});
+
 test('natural rock can be cleared only with a harvesting pickaxe; crafted blocks stay protected', () => {
   const bot = botFixture();
   const movement = configureMovements(bot);
