@@ -555,3 +555,77 @@ Next user request: combine recipe dependencies across multi-item tasks, gather t
 shared materials first and batch crafting/smelting, instead of completing each item
 from scratch. Existing bundle execution is sequential and not yet optimized.
 Winning goal stays ACTIVE/incomplete with all prior acceptance limitations.
+
+## 2026-09-19 14:15 UTC — Shared item batches and practical building sites
+
+- Compound tasks now use one stock ledger and dependency graph across every final
+  output. Requested outputs are reserved from ingredient spending. Compatible
+  mining/crafting/smelting jobs merge only without tool/station dependency cycles.
+  Required tools are still prepared first; delivered quantities and carried pieces
+  reduce remaining work. All outputs are prepared before handing over the list.
+- Full diamond armor gathers24 diamonds first; full iron armor uses one24-input
+  furnace load. Crafting reconciles cursor/grid/server state after every recipe in
+  a bounded batch at the same bench. Furnace batches up to64 retain their location
+  and output target across interruption; pending handovers are reconciled first.
+- Actual loose requested drops are collected before searching for another source.
+  The controlled run exposed a too-wide pickup goal; exact block approach fixes it.
+- Schematic upper-floor/roof reachability is now a diagnostic note, not a rejection
+  or reason to send the draft repeatedly back to the advisor. Hard bounds, supported
+  palette, connected geometry and entrance checks remain. No pyramid special case.
+- Site selection first prefers existing level ground, then plans bounded natural
+  cuts/fill, shallow-water foundations and an approach. It snapshots the affected
+  blocks, includes permanent supports in final verification, preserves recognizable
+  buildings and later player changes, and tolerates expected water flow/grass decay.
+  Limits: cut4, fill6,2400changedcells; loaded natural terrain only, no lava/deepwater.
+- Creative construction now carries one reusable item per material, avoiding a
+  needless96-block house-material allocation. Explicit item delivery counts remain
+  exact. No inventory is discarded.
+
+Validation: final full suite348/348 PASS (/tmp/jev-batch-terrain-final-c-tests.log).
+Controlled batch-mu8gjjzu PASS14:10:27UTC: mined24diamonds before first armor craft,
+made/delivered allfour pieces+bed; mined24rawiron and putall24in one furnace load,
+made/delivered allfourironpieces. Separate client verified the exact receiver
+items. Cancelled/reloaded midway through diamond gathering and after the first
+furnace output; no duplicated resource collection/input insertion. Health20,zero
+deaths. Earlier trials retained: A runner instrumentation before plugins loaded;
+B batch-mu8g8wor failed checkpoint loading because fixture lacked version1;
+C batch-mu8gaqgb exposed missed loose diamond and fixture missing food;
+D batch-mu8gdx8i exposed pickup radius too wide. Final exact block pickup passed.
+
+Controlled terrain-build-mu8gqfew hills PASS14:10:10UTC:21cuts,14fills,27designed
+blocks (41permanentblocks total), separate client verified final blocks/air,health20.
+Same run's water foundation completed but three upper sculpture blocks remained
+unreachable from the water; terminated14:14:20UTC, NOT a full pass. Root cause:
+water at planned foundation cells made the site selector unnecessarily raise the
+island. Foundation preparation now places the designed floor at the waterline.
+Regression verifies that height. Corrected water-only trial terrain-build-mu8gxtiq
+is running; inspect its actual runner57462 for outcome. The earlier terrain A
+fixture allowed a flat-site shortcut and failed its setup assertion, not earthworks.
+
+All these test worlds use recorded terrain edits, grants and teleports. They are
+controlled mechanics evidence, not fresh natural Survival or winning acceptance.
+Interactive server25577/34258 remained untouched during tests; its current diamond
+block house completed while this work ran. New frozen runtime prepared for one
+graceful bot update after the final island check. Winning goal remains ACTIVE and
+incomplete; no fresh full winning trial was started during these user requests.
+
+Terminal update 14:21UTC: corrected water-only terrain-build-mu8gxtiq PASS at
+14:16:01UTC, all70 permanent blocks and empty spaces independently verified,
+health20/nodeaths. This is the water scenario; the separate hills pass above is
+unchanged. Final348/348 tests pass. Isolated25579 saved/stopped14:16:50UTC. Saved
+server log and available participant statistics retained in the final batch/hill/
+water artifacts. No fresh-survival or winning acceptance claimed.
+
+Deployed frozen .bot-state/runtimes/batch-terrain-20260919-1416 at14:16:49UTC,
+runner17198, botPID57641, log .bot-state/jev-play-peaceful-20260919-batch-terrain.log.
+One graceful reconnect; player server25577/PID34258 was not restarted or reset.
+Fresh API and Observatory both confirm connected, health20. The latest player
+request was a diamond-block mansion and carried over correctly. It selected a
+site and started leveling, but live natural sand terrain exposed another failure:
+Jev fell from the work level near y72 to y65-67, made some further clearing
+progress after advisor relocation, then repeatedly could not path to higher cuts.
+At14:20:22UTC it paused and saved the mansion checkpoint. This live mansion is
+NOT a successful build; next terrain work must preserve/rebuild access during
+cut/fill and cover uneven sand slopes, not merely the controlled hill/island cases.
+Do not automatically replace or resume the player's request. Winning goal remains
+ACTIVE/incomplete.

@@ -61,13 +61,14 @@ function validateSchematic(input, registry) {
   }
   if (connected.size !== cells.size) fail('floating disconnected blocks');
   let access = null;
+  const notes = [];
   if (input.entrance !== null) {
     vector(input.entrance, 'entrance');
     const e = vec(input.entrance);
     if (input.entrance.some((n, i) => n < 0 || n >= input.size[i]) || e.y < 1 || e.y + 1 >= input.size[1]) fail('entrance must be inside the build bounds with standing headroom');
     if (cells.has(key(e)) || cells.has(key(e.offset(0, 1, 0))) || !cells.has(key(e.offset(0, -1, 0)))) fail('entrance needs a floor and two clear blocks');
-    // Check ordinary walking/jumping access, including jump headroom. A pretty
-    // upper floor with a staircase blocked by its own ceiling is not usable.
+    // Access informs placement and quality diagnostics. Interior/roof design
+    // belongs to the designer; this approximate walk graph is not a veto on it.
     const walkable = p => p.x >= 0 && p.z >= 0 && p.x < input.size[0] && p.z < input.size[2] && p.y >= 1 && p.y + 1 < input.size[1] &&
       cells.has(key(p.offset(0, -1, 0))) && !cells.has(key(p)) && !cells.has(key(p.offset(0, 1, 0)));
     const reached = new Set([key(e)]), walking = [e];
@@ -85,7 +86,8 @@ function validateSchematic(input, registry) {
       if (walkable(p) && !reached.has(key(p))) inaccessible[y] = (inaccessible[y] || 0) + 1;
     }
     const blockedFloor = Object.entries(inaccessible).find(([, count]) => count >= 9);
-    if (blockedFloor) fail(`unreachable interior floor at y=${blockedFloor[0]} (${blockedFloor[1]} standing cells). Connect every room/floor to the entrance with one-block steps and clear two-block standing/jumping headroom above each stair; carve the upper floor over the stairs`);
+    if (blockedFloor) notes.push({ kind: 'accessibility', y: Number(blockedFloor[0]), standingCells: blockedFloor[1],
+      message: 'Some upper surfaces have no walking route from the entrance. They may be roof or decorative areas; this does not prevent construction.' });
   }
   const blocks = [...cells.values()];
   const empty = [];
@@ -93,7 +95,7 @@ function validateSchematic(input, registry) {
     if (!cells.has(`${x},${y},${z}`)) empty.push({ x, y, z });
   }
   const materials = blocks.reduce((m, p) => { m[p.material] = (m[p.material] || 0) + 1; return m; }, {});
-  return { source: input, blocks, empty, materials, access: access && [access.x, access.y, access.z] };
+  return { source: input, blocks, empty, materials, notes, access: access && [access.x, access.y, access.z] };
 }
 
 function surveyForDesign(bot) {
@@ -181,12 +183,16 @@ function selectSchematicSite(bot, schematic) {
     return { origin: { ...origin }, blocks, empty, entrance: { ...entrance }, initialBlocks,
       bounds: { min: { x: origin.x, y: baseY - 3, z: origin.z }, max: { x: origin.x + width - 1, y: baseY + height - 1, z: origin.z + depth - 1 } } };
   }
-  return null;
+  return require('./build-terrain').planTerrainSite(bot, schematic, { naturalGround, replaceable });
 }
 function canClearSchematicBlock(blueprint, owned, block) {
   if (!block) return false;
   if (['air', 'cave_air', 'void_air'].includes(block.name)) return true;
   const p = block.position, key = `${p.x},${p.y},${p.z}`, state = block.stateId ?? block.name;
+  // Ordinary water flow and covered grass changing to dirt are natural state
+  // changes during earthworks, not newly placed player construction.
+  const original = blueprint.initialNames?.[key];
+  if (original === 'water' && block.name === 'water' || original === 'grass_block' && block.name === 'dirt') return true;
   return blueprint.initialBlocks?.[key] === state || owned?.[key] === state;
 }
 function schematicScaffolding(bot, goal) {

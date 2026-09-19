@@ -203,10 +203,12 @@ test('a sealed interior entrance is rejected and a non-enterable sculpture needs
   assert.throws(() => validateSchematic(source, registry), /no walkable route to the exterior/);
 });
 
-test('a closed stairwell is rejected even when all blocks and the entrance are supported', () => {
+test('a closed stairwell is a diagnostic note, not a reason to reject the designers geometry', () => {
   const d = templateSchematic({ style: 'mansion', floors: 2, size: 'normal', material: 'cherry_planks' });
   d.regions.push({ from: [1, 4, 1], to: [11, 4, 11], block: 'cherry_planks' });
-  assert.throws(() => validateSchematic(d, registry), /unreachable interior floor/);
+  const result = validateSchematic(d, registry);
+  assert(result.notes.some(note => note.kind === 'accessibility'));
+  assert.deepEqual(result.source, d);
 });
 
 test('Jev fallback retains structured judgments and rejects requests outside its templates', async () => {

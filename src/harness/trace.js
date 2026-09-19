@@ -21,7 +21,7 @@ function goalView(goal = {}) {
     step: goal.step, error: goal.lastError, survivalAction: goal.survivalAction,
     gameProgress: goal.gameProgress,
     tasks: goal.tasks?.map(({ kind, item, count, delivered, status, step }) => ({ kind, item, count, delivered, status, step })),
-    activeTask: goal.activeTask, discoveryTarget: goal.discoveryTarget, discovery: goal.discovery,
+    activeTask: goal.activeTask, batch: goal.batch, discoveryTarget: goal.discoveryTarget, discovery: goal.discovery,
     opportunistic: goal.opportunistic, boatTravel: goal.boatTravel,
     mobHunt: goal.mobHunt,
     strongholdSearch: goal.strongholdSearch,

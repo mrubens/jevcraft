@@ -61,13 +61,18 @@ async function resolveItemBundle(client, registry, request, numbers = [], contex
 // Child state is saved atomically with the parent, including pending handovers.
 // Completed deliveries are never replayed. Retained outputs are rechecked, as
 // a later recipe or a death may have consumed/lost them before the whole list ends.
-async function bundleStep(bot, task, goal, save, execute) {
+async function bundleStep(bot, task, goal, save, execute, { prepare } = {}) {
+  task.check();
   if (!Array.isArray(goal.tasks) || !goal.tasks.length) throw new Error('Combined request has no tasks');
   for (const child of goal.tasks) {
     if (!child.deliver && child.status === 'complete' &&
       bot.inventory.items().filter(i => i.name === child.item).reduce((n, i) => n + i.count, 0) < child.count) child.status = 'pending';
   }
-  const index = goal.tasks.findIndex(child => child.status !== 'complete');
+  // Reconcile an uncertain handover before planning new stock. Otherwise a
+  // reconnect between dropping and pickup could duplicate the player's items.
+  const handingOver = goal.tasks.findIndex(child => child.pendingDelivery);
+  if (handingOver < 0 && prepare && !await prepare()) return false;
+  const index = handingOver >= 0 ? handingOver : goal.tasks.findIndex(child => child.status !== 'complete');
   if (index < 0) return true;
   const child = goal.tasks[index];
   child.from = goal.from; child.request ||= goal.request; child.status = 'running';

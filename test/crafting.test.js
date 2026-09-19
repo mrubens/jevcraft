@@ -5,7 +5,7 @@ const { Vec3 } = require('vec3');
 const { acquireStep } = require('../src/work');
 const { Task } = require('../src/skills');
 
-test('crafting confirms one recipe and returns cursor output and unused grid ingredients', async () => {
+test('batch crafting confirms every recipe and returns cursor output and unused grid ingredients', async () => {
   const registry = require('minecraft-data')('26.1');
   const server = { oak_planks: 8 };
   let visible = { ...server }, cursor = null, grid = null;
@@ -21,14 +21,16 @@ test('crafting confirms one recipe and returns cursor output and unused grid ing
       assert.equal(recipe.result.count, 4);
       // Reproduce an optimistic local result while the real output remains
       // on the cursor and one unused ingredient remains in the grid.
-      server.oak_planks = 5; grid = { name: 'oak_planks', count: 1 }; cursor = { name: 'stick', count: 4 };
+      assert(server.oak_planks >= 2);
+      const extra = server.oak_planks > 2 ? 1 : 0;
+      server.oak_planks -= 2 + extra; grid = extra ? { name: 'oak_planks', count: extra } : null; cursor = { name: 'stick', count: 4 };
       visible = { stick: 16 };
     },
     putSelectedItemRange: async () => { server[cursor.name] = (server[cursor.name] || 0) + cursor.count; cursor = null; },
     putAway: async slot => { assert.equal(slot, 1); server[grid.name] += grid.count; grid = null; },
   };
   assert.equal(await acquireStep(bot, new Task('craft', '16 sticks'), 'stick', 16, {}, () => {}), false);
-  assert.deepEqual(visible, { oak_planks: 6, stick: 4 });
+  assert.deepEqual(visible, { oak_planks: 0, stick: 16 });
   assert.equal(cursor, null); assert.equal(grid, null);
 });
 

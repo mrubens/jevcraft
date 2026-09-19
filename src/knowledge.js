@@ -52,12 +52,31 @@ function knowledge(registry) {
 
 function sourceBlocks(registry, item) { return [...new Set((knowledge(registry).sources[item] || []).map(s => s.block))]; }
 
-function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools = [], equipment = [] } = {}) {
-  if (!registry.itemsByName[item]) throw new PlanError(`No Minecraft item named ${item}`, item);
+function planCatalog(registry, item, count, inventory = {}, options = {}) {
+  return planOutputs(registry, [{ item, count }], inventory, { ...options, reserveOutputs: false }).steps;
+}
+
+// One stock ledger for the whole request. Requested outputs are reserved before
+// planning ingredients, so a chest cannot spend the planks the player also wants.
+function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [], equipment = [], reserveOutputs = true } = {}) {
+  const totals = {};
+  for (const { item, count } of outputs) {
+    if (!registry.itemsByName[item]) throw new PlanError(`No Minecraft item named ${item}`, item);
+    if (!Number.isSafeInteger(count) || count < 1) throw new PlanError(`Invalid requested count for ${item}`, item);
+    totals[item] = (totals[item] || 0) + count;
+  }
+  const item = Object.keys(totals).join(', ');
   const data = knowledge(registry);
   const observed = new Set(nearby);
   let stock = { ...inventory };
   const steps = [];
+  const reserved = {}, missingOutputs = {};
+  for (const [name, amount] of Object.entries(totals)) {
+    reserved[name] = reserveOutputs ? Math.min(stock[name] || 0, amount) : 0;
+    stock[name] = (stock[name] || 0) - reserved[name];
+    missingOutputs[name] = amount - reserved[name];
+  }
+  const available = { ...stock };
   const visiting = new Set();
   let estimates;
   let expansions = 0;
@@ -125,7 +144,8 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
       } });
       if (name.endsWith('_concrete')) methods.push({ cost: 1, run: () => {
         ensurePickaxe(); const powder = `${name}_powder`; acquire(powder, missing); add(powder, -missing);
-        steps.push({ action: 'harden', item: name, count: missing, consumes: { [powder]: missing }, produces: { [name]: missing } }); add(name, missing);
+        const tool = Object.keys(stock).find(n => n.endsWith('_pickaxe') && have(n));
+        steps.push({ action: 'harden', item: name, count: missing, requires: { [tool]: 1 }, consumes: { [powder]: missing }, produces: { [name]: missing } }); add(name, missing);
       } });
       for (const recipe of data.recipes[name] || []) {
         const cost = slots(recipe).reduce((sum, alts) => sum + Math.min(...alts.map(ing => estimate(ing))), 0) / recipe.count + 1;
@@ -146,9 +166,8 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
           for (const [ingredient, amount] of Object.entries(ingredients)) {
             acquire(ingredient, amount * batches); add(ingredient, -amount * batches); consumes[ingredient] = amount * batches;
           }
-          if (table) consumes.crafting_table = 1;
           steps.push({ action: 'craft', item: name, count: batches * recipe.count, needs_table: table,
-            recipe: { ...chosen, count: recipe.count, id: recipe.id }, consumes, produces: { [name]: batches * recipe.count } });
+            recipe: { ...chosen, count: recipe.count, id: recipe.id }, requires: table ? { crafting_table: 1 } : {}, consumes, produces: { [name]: batches * recipe.count } });
           add(name, batches * recipe.count);
         } });
       }
@@ -157,7 +176,7 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
         const fuel = Math.ceil(missing / 1.5); acquire('oak_planks', fuel);
         add(input, -missing); add('oak_planks', -fuel);
         steps.push({ action: 'smelt', item: name, count: missing, from: input, fuel,
-          consumes: { [input]: missing, oak_planks: fuel, furnace: 1 }, produces: { [name]: missing } }); add(name, missing);
+          requires: { furnace: 1 }, consumes: { [input]: missing, oak_planks: fuel }, produces: { [name]: missing } }); add(name, missing);
       } });
       for (const source of data.mobSources[name] || []) methods.push({ cost: 80, run: () => {
         for (const names of Object.values(combatGear)) {
@@ -165,7 +184,8 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
         }
         // produces expresses the resource target for dependency planning;
         // kills never credit this amount to the real inventory.
-        steps.push({ action: 'hunt_mob', ...source, count: missing, consumes: {}, produces: { [name]: missing } });
+        const requires = Object.fromEntries(Object.values(combatGear).map(names => names.find(tool => have(tool))).filter(Boolean).map(name => [name, 1]));
+        steps.push({ action: 'hunt_mob', ...source, count: missing, requires, consumes: {}, produces: { [name]: missing } });
         add(name, missing);
       } });
       const sources = [...(data.sources[name] || [])].sort((a, b) => Number(observed.has(b.block)) - Number(observed.has(a.block)));
@@ -185,7 +205,7 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
             (!s.allowedTools.length || s.allowedTools.includes(tool)) && JSON.stringify(s.properties) === JSON.stringify(source.properties));
           steps.push({ action: 'mine', block: source.block, sources: [...new Set(compatible.map(s => s.block))], drops: name, count: missing,
             depth: source.depth, tier: tool?.endsWith('_pickaxe') ? TOOL_TIERS.indexOf(tool.split('_')[0]) + 1 : 0,
-            tool, enchantment: source.enchantment, properties: source.properties, consumes: {}, produces: { [name]: missing } }); add(name, missing);
+            tool, enchantment: source.enchantment, properties: source.properties, requires: tool ? { [tool]: 1 } : {}, consumes: {}, produces: { [name]: missing } }); add(name, missing);
         } });
       }
       methods.sort((a, b) => a.cost - b.cost);
@@ -200,8 +220,13 @@ function planCatalog(registry, item, count, inventory = {}, { nearby = [], tools
   function ensurePickaxe() {
     if (!Object.keys(stock).some(name => name.endsWith('_pickaxe') && have(name))) acquire('wooden_pickaxe', 1);
   }
-  acquire(item, count);
-  return steps;
+  for (const [name, amount] of Object.entries(missingOutputs)) {
+    if (!amount) continue;
+    acquire(name, amount); add(name, -amount);
+    // Reservation is a planning edge, never a gameplay action.
+    steps.push({ action: 'reserve_output', item: name, count: amount, consumes: { [name]: amount }, produces: {} });
+  }
+  return { steps: steps.filter(s => s.action !== 'reserve_output'), sequence: steps, available, reserved, totals };
 }
 
-module.exports = { knowledge, sourceBlocks, planCatalog };
+module.exports = { knowledge, sourceBlocks, planCatalog, planOutputs };
