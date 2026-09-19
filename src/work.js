@@ -943,7 +943,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     priority: !missing.length ? -p.y * 1000 - pos(p).distanceTo(pos(blueprint.entrance)) : 0 }));
   // Clear reachable space before trying a face hidden by vegetation/scaffolds.
   let work = await chooseConstructionWork(bot, task, goal, [...placements, ...clearing]);
-  if (!work && missing.length && countOf(bot, 'dirt') < 32) {
+  if (!work && missing.length && bot.game.gameMode !== 'creative' && countOf(bot, 'dirt') < 32) {
     await acquireStep(bot, task, 'dirt', 32, goal, save); return false;
   }
   if (!work && !missing.length && await descendPillar(bot, task, goal, save)) return false;

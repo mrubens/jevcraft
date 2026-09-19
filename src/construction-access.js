@@ -60,6 +60,7 @@ function constructionMovement(bot, goal) {
 }
 
 async function steadyConstructionSwim(bot, task) {
+  if (require('./flight').canFly(bot)) return;
   const feet = bot.entity.position.floored();
   if (bot.blockAt(feet)?.name !== 'water') return;
   let surface = feet.y;

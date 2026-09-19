@@ -33,6 +33,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), controls = {}, server = 
     if (!world || now - worldAt >= 2000) { world = terrain(bot); worldAt = now; }
     const items = bot.inventory?.items?.() || [];
     return { connected: trace.connected, position: position(bot.entity?.position), dimension: bot.game?.dimension,
+      gameMode: bot.game?.gameMode, flying: !!bot._creativeFlight?.active,
       health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, yaw: bot.entity?.yaw, pitch: bot.entity?.pitch,
       inventory: Object.fromEntries([...new Set(items.map(i => i.name))].map(n => [n, items.filter(i => i.name === n).reduce((a, i) => a + i.count, 0)])),
       tools: items.filter(i => bot.registry?.itemsByName?.[i.name]?.maxDurability).map(i => ({ name: i.name,
@@ -60,6 +61,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), controls = {}, server = 
   }
   on('spawn', () => { trace.connected = true; sample('connection', { connected: true }); });
   on('path_update', p => { route = (p.path || []).slice(0, 128).map(position).filter(Boolean); });
+  on('flight_route', p => { route = (p.path || []).slice(0, 128).map(position).filter(Boolean); });
   on('goal_reached', () => { route = []; });
   on('path_reset', () => { route = []; });
   for (const kind of ['health', 'death', 'navigation_stall', 'navigation_recovery', 'handover', 'mob_hunt', 'stronghold_search', 'end_combat', 'fall_recovery', 'recovery_advice', 'recovery_result']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));

@@ -24,6 +24,7 @@ function fixPlayerDimensions(physics) {
 }
 
 function compatibilityPlugin(bot) {
+  require('./flight').installFlight(bot);
   require('./block-search').installBlockSearch(bot);
   fixPlayerDimensions(bot.physics);
   // Modern set_passengers names the VEHICLE and its remaining passengers.
