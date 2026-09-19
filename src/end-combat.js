@@ -4,7 +4,7 @@ const { goals } = require('mineflayer-pathfinder');
 const { dimension } = require('./game-progress');
 const { countOf, surveyRoute } = require('./skills');
 const { dryStanding } = require('./mining-access');
-const { safeFromHostiles, checkThreats } = require('./danger');
+const { safeFromHostiles, hostileEntities } = require('./danger');
 const { checkAir, maintainVitals, chooseFood } = require('./vitals');
 const { aimAtEntity, shootBow } = require('./projectiles');
 const { decideTree } = require('./decisions');
@@ -49,7 +49,9 @@ function endHazards(bot) {
       Math.max(1, Number(metadata(bot, e, 'radius')) || 3) + 2 : 6 }));
 }
 function safeEndPoint(bot, p, hazards = endHazards(bot)) {
-  return safeFromHostiles(bot, p) && hazards.every(({ entity, radius }) =>
+  // Navigation allows retreat from an already close mob. A place to stand,
+  // draw or heal must satisfy the full buffer, not that retreat exception.
+  return safeFromHostiles(bot, p) && hostileEntities(bot, 64).every(e => p.distanceTo(e.position) >= 20) && hazards.every(({ entity, radius }) =>
     entity.name === 'area_effect_cloud' && Math.abs(p.y - entity.position.y) > 3 || p.distanceTo(entity.position) > radius);
 }
 

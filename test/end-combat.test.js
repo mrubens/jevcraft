@@ -37,6 +37,13 @@ test('End hazard envelopes include crystal blasts and observed breath radius; th
   assert.equal(safeEndPoint(bot, new Vec3(0, 70, 0)), true);
 });
 
+test('a provoked Enderman permits retreat but does not leave the current firing position classified safe', () => {
+  const { bot } = fixture();
+  entity(bot, 8, 'enderman', new Vec3(4, 64, .5), { creepy: true });
+  assert.equal(safeEndPoint(bot, bot.entity.position), false);
+  assert.equal(safeEndPoint(bot, new Vec3(-20, 64, .5)), true);
+});
+
 test('perched head geometry uses the actual part id and sitting phase; flying or flaming dragons are not melee candidates', () => {
   const { bot } = fixture(), dragon = entity(bot, 20, 'ender_dragon', new Vec3(0, 65, 0), { phase: 6 });
   const head = perchedHead(bot, dragon); assert.equal(head.id, 21); assert.deepEqual(head.position, new Vec3(0, 64, 6.5));

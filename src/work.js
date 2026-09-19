@@ -1148,7 +1148,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       if (!endTask && await survival.step(task, goal, save, onStep)) {
         goal.stalls = 0; goal.failures = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
-      task.interruptCheck = bot.game.gameMode === 'creative' ? undefined : () => checkThreats(bot);
+      task.interruptCheck = bot.game.gameMode === 'creative' || endTask ? undefined : () => checkThreats(bot);
       // Immediate air/critical hunger responses stay in code. For house work,
       // Jev chooses ordinary eating interruptions alongside task progress.
       if (!endTask && (!decisionClient || goal.kind !== 'house' || needsAir(bot) || bot.food <= 6 || bot.health <= 6)) {
