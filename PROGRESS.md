@@ -325,6 +325,12 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 - New controlled real-chat trial `unreachable-mu7xmmf1` PASSED (runner 91948, exit 0): bounded rejection without false success or automatic retry, status preserving bedrock and its blocker, then a fresh `Jev come here` request completed within 1.57 blocks of the independent witness. Both runs used new empty identities on the Peaceful flat fixture, without setup grants, teleports or injected errors; they are explicitly controlled rather than natural Normal acceptance. The fixture server saved and exited after both runners were terminal.
 - All 214 tests pass, including four status regressions. The updated status behavior is tested in the isolated fixture; the player's Jev remains on the stable search-fix runtime to avoid another unnecessary reconnect. It has gathered a diamond and honestly reported that the offline recipient is unavailable. Its world remains intact.
 
+### Fresh Nether run on frozen source (2026-09-19, 05:54 UTC)
+
+- Fresh natural Normal trial `mu7z1dep` started at 05:53:17 UTC with empty inventory at (-73.5,64,-27.5), source `e7f2248`, and a new generated world using seed 2026091903. It is ongoing, not a pass. Its immutable runtime copy and SHA-256 manifest are under `.test-fresh-nether/fresh-20260919-c/runtime`; artifacts remain under `artifacts/mu7z1dep/`. Source edits in the main worktree must not change this trial.
+- Server PID 38364/session 23911, port 25575, Normal Survival, view distance 6/simulation distance 4, JVM heap cap 1536 MB/two active processors. Runner PID 38404/session 64870, two-hour deadline, log `/tmp/jev-fresh-nether-c.log`, read-only Observatory 3046. This is the only extra live test world. Preserve the uninterrupted trial until its actual terminal outcome; observation timeouts are not grounds to restart it.
+- Subsequent player-world disconnects at 01:30:35, 01:46:22 and 01:50:44 local were `keepAliveError`, coinciding exactly with macOS wake events after maintenance sleeps. They differ from the earlier server-overload stalls. A process-scoped `caffeinate -is -w 38404` now prevents idle/system sleep while this trial lives; it changes no permanent power settings and ends with the runner.
+
 Still required:
 
 1. Complete and independently verify a fresh natural Normal Nether trial. Fresh natural house/endurance and concrete delivery now pass; Nether has only controlled and interactive Peaceful completion.
