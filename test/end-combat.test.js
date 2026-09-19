@@ -123,6 +123,17 @@ test('a changed combat target triggers a bounded replan while explicit cancellat
   }
 });
 
+test('two confirmed missed crystal shots require a different firing position before spending more arrows', async () => {
+  const { bot, goal, task } = fixture(); entity(bot, 8, 'end_crystal', new Vec3(24, 70, 0));
+  bot.findBlocks = () => [new Vec3(-8, 63, 0)]; let shots = 0, moved = 0;
+  const actions = { navigate: async (b, t, destination) => { moved++; bot.entity.position = new Vec3(destination.x + .5, destination.y, destination.z + .5); } };
+  const shot = async () => { shots++; return { ticks: 0, origin: { ...bot.entity.position.offset(0, 1.52, 0) } }; };
+  for (let n = 0; n < 3; n++) await fightEndStep(bot, task, goal, () => {}, actions, {}, { shot });
+  assert.equal(shots, 2); assert.equal(moved, 1); assert.equal(goal.endCombat.shots[0].outcome, 'target_remains');
+  await fightEndStep(bot, task, goal, () => {}, actions, {}, { shot });
+  assert.equal(shots, 3); assert.equal(goal.endCombat.destroyedCrystals.length, 0);
+});
+
 test('End exit needs player kill credit, an observed active portal, an exit event and a living landing', async () => {
   const { bot, goal, task } = fixture();
   await assert.rejects(exitEnd(bot, task, goal, () => {}, {}), /kill credit/);

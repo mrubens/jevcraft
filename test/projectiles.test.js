@@ -52,6 +52,11 @@ test('shots reject unloaded space, obstructed arcs and bystanders before drawing
   }
 });
 
+test('an unobstructed crystal shot favors the center of its hitbox over a narrow edge', () => {
+  const { bot, target } = fixture();
+  assert.deepEqual(aimAtEntity(bot, target).target, target.position.offset(0, 1, 0));
+});
+
 test('a released bow needs a new arrow entity and matching inventory consumption', async () => {
   for (const mode of ['confirmed', 'no_arrow', 'no_consume']) {
     const { bot, target, arrows } = fixture();

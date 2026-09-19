@@ -46,6 +46,17 @@ test('dodge corridors prefer sideways ground and reject cliffs across the whole 
   bot.blockAt = () => ({ name: 'air', boundingBox: 'empty' });
   assert.deepEqual(dodgeRoutes(bot, dragon), []);
 });
+
+test('a diagonal corner between half-block samples excludes the blocked dodge', () => {
+  const { bot, dragon } = fixture();
+  bot.entity.position = new Vec3(-11.5, 64, 33.47936015088597);
+  const direction = new Vec3(.942803353, 0, .333349423).unit();
+  dragon.position = bot.entity.position.plus(new Vec3(direction.z, 0, -direction.x).scaled(40));
+  const base = bot.blockAt;
+  bot.blockAt = p => Math.floor(p.x) === -12 && Math.floor(p.z) === 34 && p.y >= 64 && p.y < 66 ?
+    { name: 'end_stone', boundingBox: 'block' } : base(p);
+  assert(dodgeRoutes(bot, dragon).every(route => route.direction.dot(direction) < .99));
+});
 test('evasion cancellation clears movement and never publishes success', async () => {
   const { bot, controls } = fixture(), task = new Task('dodge'), goal = { endCombat: {} };
   const timer = setTimeout(() => task.cancel(), 30);
@@ -58,6 +69,7 @@ test('a small airborne knockback waits for real footing before inspecting a dodg
   bot.entity.position.y = 64.3; bot.entity.onGround = false; bot.entity.velocity = new Vec3(0, .31, 0);
   let looked = false;
   bot.look = async () => { assert.equal(bot.entity.onGround, true); assert.equal(bot.entity.position.y, 64); looked = true; };
+  bot.setControlState = (name, active) => { if (name === 'forward' && active) bot.entity.position.z += .3; };
   const timer = setTimeout(() => { bot.entity.position.y = 64; bot.entity.onGround = true; }, 20);
   assert(await evadeDragon(bot, task, goal, () => {}, { timeoutMs: 10 }));
   clearTimeout(timer); assert(looked);

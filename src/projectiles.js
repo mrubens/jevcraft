@@ -60,8 +60,10 @@ function aimAtEntity(bot, target, velocity = new Vec3(0, 0, 0), position = bot.e
   // Sample the actual target volume. In particular, a cage is not assumed to
   // be transparent; only trajectories whose block-shape raycasts are clear
   // are offered for execution.
-  const offsets = target.name === 'end_crystal' ? [1.7, 1, .4].flatMap(y =>
-    [0, -.85, -.5, .5, .85].flatMap(x => [0, -.85, -.5, .5, .85].map(z => [x, y, z]))) :
+  // Favor the center: vanilla bow spread makes a barely exposed edge much
+  // less reliable, especially at long range. Edge samples still permit cages.
+  const offsets = target.name === 'end_crystal' ? [1, 1.5, .5, 1.7, .3].flatMap(y =>
+    [0, -.5, .5, -.85, .85].flatMap(x => [0, -.5, .5, -.85, .85].map(z => [x, y, z]))) :
     [[0, target.name === 'ender_dragon' ? 1.5 : (target.height || 1.8) / 2, 0]];
   for (const offset of offsets) {
     const solution = bowSolution(origin, target.position.offset(...offset), velocity);

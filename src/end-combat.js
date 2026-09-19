@@ -22,6 +22,10 @@ function metadata(bot, entity, name) {
 }
 const perched = (bot, dragon) => [5, 6, 7].includes(metadata(bot, dragon, 'phase'));
 const crystalKey = entity => `${entity.position.x},${entity.position.y},${entity.position.z}`;
+function repeatedCrystalMiss(state, target, position) {
+  return (state.shots || []).filter(s => s.outcome === 'target_remains' && s.targetPosition && s.origin &&
+    vector(s.targetPosition).distanceTo(target.position) < .1 && vector(s.origin).offset(0, -1.52, 0).distanceTo(position) < 4).length >= 2;
+}
 function observeArena(bot, state, now = Date.now()) {
   const crystals = Object.values(bot.entities).filter(e => live(bot, e) && e.name === 'end_crystal');
   const known = state.knownCrystals ||= {}, seen = new Set(crystals.map(crystalKey));
@@ -114,7 +118,8 @@ async function arenaRoutes(bot, task, goal, policy, focus) {
     const p = candidate.p, destination = new goals.GoalBlock(p.x, p.y, p.z);
     const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 250);
     if (route.status === 'success' && route.path.every(policy.allowed)) routes.push({ ...candidate, destination,
-      clearCrystalShot: focus?.name === 'end_crystal' && !!aimAtEntity(bot, focus, new Vec3(0, 0, 0), p.offset(.5, 0, .5)),
+      clearCrystalShot: focus?.name === 'end_crystal' && !repeatedCrystalMiss(goal.endCombat, focus, p.offset(.5, 0, .5)) &&
+        !!aimAtEntity(bot, focus, new Vec3(0, 0, 0), p.offset(.5, 0, .5)),
       targetDistance: target && p.offset(.5, 0, .5).distanceTo(target), desiredHorizontalRange: desiredRange });
     if (routes.length === 3) break;
   }
@@ -184,10 +189,13 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         const result = await shot(bot, task, target, { guard: () => {
           guardShot(); if (target === dragon && perched(bot, dragon)) throw new Error('The dragon perched while drawing');
         }, velocity: target === dragon ? velocity : new Vec3(0, 0, 0) });
+        result.targetPosition = { ...targetPosition };
         state.shots.push(result); state.shots = state.shots.slice(-256); save();
         const until = Date.now() + Math.min(5000, Math.ceil(result.ticks * 50) + 500);
         while (Date.now() < until) { check(); if (!safeEndPoint(bot, bot.entity.position)) break; await sleep(50); }
+        if (target.name === 'end_crystal' && Date.now() >= until) result.outcome = live(bot, target) ? 'target_remains' : 'unconfirmed_target_lost';
         if (target.name === 'end_crystal' && explosion && !live(bot, target)) {
+          result.outcome = 'confirmed_crystal_explosion';
           const evidence = { at: Date.now(), id: target.id, position: { ...targetPosition }, source: 'explosion_and_entity_removed' };
           state.destroyedCrystals.push(evidence); bot.emit('end_combat', { crystal: evidence }); progress = true;
           Object.assign(state.knownCrystals[crystalKey(target)], { status: 'destroyed', confirmedAt: evidence.at });
@@ -196,7 +204,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     };
     const bow = bot.inventory.items().some(i => i.name === 'bow' && durable(bot.registry, i));
     if (safe && bot.health >= 12 && bow && countOf(bot, 'arrow') > 0) {
-      for (const target of crystals) if (aimAtEntity(bot, target)) tree[`crystal_${target.id}`] = {
+      for (const target of crystals) if (!repeatedCrystalMiss(state, target, bot.entity.position) && aimAtEntity(bot, target)) tree[`crystal_${target.id}`] = {
         description: { action: 'Destroy an observed healing crystal with a clear bow trajectory', position: { ...target.position } }, run: () => shoot(target),
       };
       if (dragon && !perched(bot, dragon)) {
@@ -278,4 +286,4 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
   }
 }
 
-module.exports = { metadata, perched, perchedHead, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };
+module.exports = { metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };

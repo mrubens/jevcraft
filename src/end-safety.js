@@ -55,7 +55,10 @@ function dodgeRoutes(bot, dragon, allowed = () => true) {
   const routes = [];
   for (const direction of directions) {
     let distance = 0;
-    for (let d = .5; d <= 8; d += .5) {
+    // Include the executor's .8-block lookahead; half-block samples can miss
+    // a narrow diagonal corner crossed by the player's bounding box.
+    for (let sample = 1; sample <= 40; sample++) {
+      const d = sample * .2;
       const center = start.plus(direction.scaled(d));
       if (!allowed(center) || ![-.3, .3].every(x => [-.3, .3].every(z => {
         const p = center.offset(x, 0, z);
@@ -156,6 +159,10 @@ async function evadeDragon(bot, task, goal, save, { allowed, timeoutMs = 1600 } 
       await sleep(25);
     }
     check();
+    if (bot.entity.position.distanceTo(start) < .2) {
+      bot.clearControlStates();
+      return await evadeOverTerrain(bot, task, goal, save, dragon, { allowed });
+    }
     const evidence = { at: Date.now(), from: { ...start }, to: { ...bot.entity.position }, hazard: { id: dragon.id, name: dragon.name } };
     goal.endCombat.lastEvasion = evidence; save(); bot.emit('end_combat', { evasion: evidence });
     return true;
