@@ -663,3 +663,39 @@ server launch exited at missing EULA before loading a world/listening; its files
 are archived in this fixture's aborted-wrong-cwd directory. No player server was
 restarted. Revalidate runner23418 before deciding it finished or starting another
 heavy test. Full fresh Normal Nether/winning acceptance remains incomplete.
+
+## 2026-09-19 14:40 UTC — New-cloud escape from the actual player position
+
+End O end-fight-mu8hanxv is terminal FAILED14:32:45UTC (runner23418 exit1), alive
+at health20/nodeaths.26shots,6locally confirmed crystal explosions; independent
+stopped-server region/player/advancement audit confirms zero remaining crystals,
+dragonhealth178.25, living Survival player in End and no kill advancement. Original
+world, source, trace, setup, classification and server-verification.json retained.
+Server17669 saved/stopped14:33:27UTC. This supersedes the previous running note.
+
+Exact trace shows a breath cloud arrived as Jev walked down a one-block ledge.
+The hazard restriction compared escape points with the older route origin, now
+farther from the cloud than Jev. This forbade even a step directly away from it.
+Regression using the recorded coordinates FAILed before the fix. Hazard distance
+now compares with the actual current position while keeping the original route
+area/drop bounds and previous movement restrictions. Further inward travel stays
+forbidden. Focused22/22 and full350/350 PASS (/tmp/jev-end-escape-after.log and
+/tmp/jev-end-escape-full.log).
+
+Added an explicitly controlled END_RESUME mode to the End fixture; it loads a
+recorded identity/goal into a separate copied world, verifies actual Survival/
+Normal/End state and existing arrows, and applies no new setup commands. Original
+failures stay untouched; a resumed result cannot count as fresh acceptance.
+
+End P end-fight-mu8htd2a is RUNNING in .test-fixture/dragon-20260919-p/runtime;
+server38024/25579, runner62060, log /tmp/jev-end-p.log, Observatory3046. It copied
+O's saved failed world/player and resumes Fightmu8hanxv with178.25dragonhealth,
+zero crystals,230arrows and the original equipment. It includes fe4ac84 refreshed
+aiming plus this escape correction; exact source hashes are retained. Inherited
+grants/teleport/mob-spawning change are still disqualifying for acceptance. No new
+grants, teleport, world edits or mob commands were applied in P. Cloud damaged
+the player on join to17health; at14:38:55UTC it walked the uneven escape and
+continued out of the cloud, then regenerated to20. The complete fight/exit result
+is pending. Revalidate62060 before treating it as terminal or starting another
+heavy server. Interactive server25577 and unrelated25565 remain untouched.
+Full natural Nether progression and fresh winning acceptance remain incomplete.

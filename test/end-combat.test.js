@@ -57,6 +57,21 @@ test('continuous evasions between a dragon and cloud are not rejected by voxel-c
   } finally { policy.restore(); }
 });
 
+test('a cloud arriving during movement permits retreat from the current position, not a stale route origin', () => {
+  const { bot } = fixture();
+  bot.entity.position = new Vec3(-8.48255943866737, 62, 11.5);
+  const policy = arenaMovement(bot);
+  // Recorded End O: the cloud arrived while Jev stepped off a one-block ledge.
+  // By landing, he was closer to it than when the ordinary route began.
+  bot.entity.position = new Vec3(-7.170140192063626, 61, 10.092254133875322);
+  const cloud = entity(bot, 277, 'area_effect_cloud', new Vec3(-6.839787510025595, 61, 6.97640353841328), { radius: 3 });
+  const away = bot.entity.position.minus(cloud.position).unit();
+  try {
+    assert(policy.allowedPoint(bot.entity.position.plus(away.scaled(.2))), 'The first step away from the newly arrived cloud must be allowed');
+    assert.equal(policy.allowedPoint(bot.entity.position.minus(away.scaled(.3))), false, 'Moving further into the cloud is still forbidden');
+  } finally { policy.restore(); }
+});
+
 test('perched head geometry uses the actual part id and sitting phase; flying or flaming dragons are not melee candidates', () => {
   const { bot } = fixture(), dragon = entity(bot, 20, 'ender_dragon', new Vec3(0, 65, 0), { phase: 6 });
   const head = perchedHead(bot, dragon); assert.equal(head.id, 21); assert.deepEqual(head.position, new Vec3(0, 64, 6.5));

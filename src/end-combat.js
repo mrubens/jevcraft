@@ -79,13 +79,15 @@ function arenaMovement(bot, center) {
   const cantBreak = new Set(movement.blocksCantBreak);
   if (carriedEquipment(bot).some(i => /_pickaxe$/.test(i.name))) cantBreak.delete(bot.registry.blocksByName.end_stone.id);
   // Receding from an already close cloud/crystal is permitted; entering its
-  // danger radius from outside is not. All routes use loaded block geometry.
+  // danger radius from outside is not. Compare hazards with the live position:
+  // a new cloud or knockback can put us closer than the original route start.
+  // A stale distance would forbid even the first step back out of danger.
   const allowedPoint = point => {
     return point.y >= start.y - 3 && point.distanceTo(start) <= 64 &&
       (!center || Math.hypot(point.x - center.x, point.z - center.z) <= Math.max(96, Math.hypot(start.x - center.x, start.z - center.z))) &&
       (!previous.allowedPosition || previous.allowedPosition(point.floored())) &&
       endHazards(bot).every(({ entity, radius }) =>
-        hazardDistance(point, entity) >= Math.min(radius, hazardDistance(start, entity) - .1));
+        hazardDistance(point, entity) >= Math.min(radius, hazardDistance(bot.entity.position, entity) - .1));
   };
   const allowed = p => allowedPoint(vector(p).offset(.5, 0, .5));
   Object.assign(movement, { canDig: true, blocksCantBreak: cantBreak, allow1by1towers: false, allowSprinting: false,

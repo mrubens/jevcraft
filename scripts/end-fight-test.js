@@ -14,7 +14,13 @@ const { waitFor, inventory } = require('../src/work');
 const fixturePort = Number(process.env.MC_PORT || 25579);
 if ([25565, 25577].includes(fixturePort)) throw new Error('End fixtures cannot use an interactive server port');
 require('../src/env').loadEnv(); const { TypeSafe } = require('../src/typesafe');
-const id = Date.now().toString(36), username = `Fight${id}`, directory = path.join(__dirname, '..', 'artifacts', `end-fight-${id}`);
+const resumeId = process.env.END_RESUME;
+if (resumeId && !/^end-fight-[a-z0-9]+$/.test(resumeId)) throw new Error('Invalid controlled End resume id');
+const resumeDirectory = resumeId && path.join(__dirname, '..', 'artifacts', resumeId);
+const prior = resumeDirectory && fs.readFileSync(path.join(resumeDirectory, 'events.jsonl'), 'utf8').trim().split('\n')
+  .map(line => JSON.parse(line)).find(event => event.username);
+if (resumeId && !/^Fight[a-z0-9]+$/.test(prior?.username || '')) throw new Error('Resume requires a recorded controlled player identity');
+const id = Date.now().toString(36), username = prior?.username || `Fight${id}`, directory = path.join(__dirname, '..', 'artifacts', `end-fight-${id}`);
 fs.mkdirSync(directory, { recursive: true });
 const log = data => { const line = JSON.stringify({ at: new Date().toISOString(), ...data }); console.log(line); fs.appendFileSync(path.join(directory, 'events.jsonl'), line + '\n'); };
 async function main() {
@@ -39,6 +45,14 @@ bot.on('end', reason => { if (!finishing) { log({ result: 'FAIL', reason: `Disco
 bot.once('spawn', async () => {
   try {
     await bot.waitForChunksToLoad(); configureMovements(bot);
+    if (resumeId) {
+      goal = JSON.parse(fs.readFileSync(path.join(resumeDirectory, 'goal.json'), 'utf8'));
+      assert.equal(goal.controlled, true); assert.equal(goal.kind, 'win');
+      assert.equal(dimension(bot), 'end'); assert(countOf(bot, 'arrow') > 0);
+      log({ phase: 'resumed_controlled_trial', username, resumedFrom: resumeId, directory,
+        initialInventory: inventory(bot), position: bot.entity.position,
+        priorDragon: goal.endCombat?.dragon, limitations: 'Copied failed controlled world/player state; not a fresh fight or acceptance' });
+    } else {
     const commands = ['gamerule minecraft:spawn_mobs false',
       ...['diamond_sword', 'diamond_pickaxe', 'diamond_helmet', 'diamond_chestplate', 'diamond_leggings', 'diamond_boots', 'shield', 'bow', 'water_bucket'].map(item => `give ${username} ${item}`),
       `give ${username} arrow 256`, `give ${username} cooked_beef 64`, `give ${username} cobblestone 64`,
@@ -48,8 +62,9 @@ bot.once('spawn', async () => {
     await waitFor(task, () => fs.existsSync(path.join(directory, 'ready')), 180000);
     await waitFor(task, () => dimension(bot) === 'end' && bot.isAlive !== false && countOf(bot, 'arrow') === 256, 30000);
     await bot.waitForChunksToLoad();
-    assert.equal(bot.game.gameMode, 'survival'); assert.equal(bot.game.difficulty, 'normal');
     goal = { kind: 'win', request: 'Jev defeat the dragon and return alive', controlled: true };
+    }
+    assert.equal(bot.game.gameMode, 'survival'); assert.equal(bot.game.difficulty, 'normal');
     detach = watchGameProgress(bot, goal, save); save();
     assert(await prepareCombatGear(bot, task, goal, save, { acquireStep: async () => { throw new Error('Fixture equipment was not supplied'); } }));
     await waitFor(task, () => Object.values(bot.entities).some(e => e.name === 'ender_dragon'), 30000);
@@ -64,7 +79,8 @@ bot.once('spawn', async () => {
     }
     assert(goal.gameProgress.milestones.dragon_defeated); assert(goal.gameProgress.milestones.exit_portal_used);
     assert(goal.endReturn); assert.equal(dimension(bot), 'overworld'); assert(bot.health > 0); assert.equal(deaths, 0);
-    log({ result: 'PASS', scenario: 'controlled End combat and living portal return', username, minimumHealth, deaths, directory,
+    log({ result: 'PASS', scenario: resumeId ? 'resumed controlled End combat and living portal return' : 'controlled End combat and living portal return',
+      resumedFrom: resumeId, username, minimumHealth, deaths, directory,
       inventory: inventory(bot), milestones: goal.gameProgress.milestones,
       limitations: 'Granted equipment, teleported to End and disabled natural mob spawning; not natural progression or winning acceptance' });
   } catch (err) { log({ result: 'FAIL', error: err.stack, position: bot.entity?.position, health: bot.health, deaths, directory }); process.exitCode = 1; }
