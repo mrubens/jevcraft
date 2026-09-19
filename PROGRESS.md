@@ -354,6 +354,11 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 - `surface-recovery-mu8441p1` PASSED (runner 63220, exit 0) from another copy of the original failure, retaining original identity, inventory and health: one final wooden-pickaxe swing yielded the missing cobblestone, crafting produced a fresh stone pickaxe, and one retreat allowed a different ascent around lava to Y72. No deaths or health loss (11.2667 throughout); the stone pickaxe retained 63 uses. Independent saved server player data confirms position, Survival mode, health and inventory. No gameplay commands were used, but this is a resumed diagnostic with a new search budget, not fresh acceptance.
 - All 241 unit tests passed (`/tmp/jev-pit-final-c-tests.log`, runner 37466, exit 0), including last-use recipe feasibility, missing pickup, cancellation, persisted escape elevation, bounded downhill retreat and candidate-budget regression. Each terminal diagnostic server was saved and stopped. Interactive Jev remains unchanged. Full natural Nether entry and the winning run remain incomplete.
 
+### Fresh Nether verification after ravine recovery (2026-09-19, 08:19 UTC)
+
+- Pushed recovery milestone `3dc8cbc`. New fresh natural Normal trial `mu84840f` is running from empty inventory on newly generated seed 2026091906, server `.test-fresh-nether/fresh-20260919-d`, port 25575. Its frozen runtime and SHA-256 manifest contain source `3dc8cbc`; ongoing worktree edits cannot change the run. The scenario and source manifest are also retained in `artifacts/mu84840f/`.
+- Server PID 42253/session 37532 (1 GiB heap, two processors, view distance 4/simulation 3); runner PID 42280/session 87585, two-hour deadline, log `/tmp/jev-fresh-nether-d.log`, Observatory 3046. Process-scoped `caffeinate -is -w 42280` prevents sleep only while this runner lives. Initial observations confirm empty inventory, Normal Survival and autonomous food exploration. No setup gameplay commands were used. It is ongoing, not a pass; preserve it until its actual terminal outcome.
+
 Still required:
 
 1. Complete and independently verify a fresh natural Normal Nether trial. Fresh natural house/endurance and concrete delivery now pass; Nether has only controlled and interactive Peaceful completion.
