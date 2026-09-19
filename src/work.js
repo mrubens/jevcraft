@@ -156,7 +156,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
   try {
     goal.search ||= {};
     const search = goal.search[resource] ||= { attempts: 0, origin: { ...bot.entity.position.floored() } };
-    if (search.attempts >= 128) throw new Blocked(`Could not find reachable ${resource} after 128 exploration steps`);
+    if (search.attempts >= 128) throw new Blocked(`Could not find reachable ${resource} after 128 exploration steps without collecting it`);
     search.attempts++;
     search.leg ||= 0;
     const angle = (search.leg % 8) * Math.PI / 4;
@@ -339,7 +339,19 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
         goal.unreachable ||= {}; goal.unreachable[`${p}`] = Date.now(); save(); throw e;
       }
       goal.lastMiningError = e.message;
-    } finally { access?.restore(); }
+    } finally {
+      access?.restore();
+      const collected = countOf(bot, step.drops) - before, search = goal.search?.[step.block];
+      if (collected > 0 && search) {
+        // This budget bounds fruitless searching, not the lifetime of a
+        // resource request. Finding part of a deposit earns another search
+        // from that location if the remaining quantity lies elsewhere.
+        Object.assign(search, { attempts: 0, leg: 0, origin: { ...bot.entity.position.floored() }, failedLegs: 0,
+          lastPickup: { item: step.drops, count: collected, at: new Date().toISOString() } });
+        delete search.progressLeg; delete search.observedTarget;
+        save();
+      }
+    }
     if (countOf(bot, step.drops) > before) return;
     goal.unreachable ||= {};
     goal.unreachable[`${p}`] = Date.now();

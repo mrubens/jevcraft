@@ -198,7 +198,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (spec.kind === 'status') {
         const g = active?.goal || store.read();
         bot.chat(active?.idle ? `Between requests: ${g.lastError || g.survivalAction?.action || 'watching survival needs'}. Health ${bot.health}, food ${bot.food}.` :
-          g ? `${g.status}: ${g.request}. ${(g.recoveryAdvice?.active ? `Trying Fable recovery: ${g.recoveryAction?.kind || 'planning'}` : g.lastError) || g.decisions?.at(-1)?.path?.join(' > ') || JSON.stringify(g.step || {})}` : 'No saved task.');
+          g ? `${g.status}: ${g.request}. ${(g.recoveryAdvice?.active ? 'Trying a different approach' : g.lastError) || g.decisions?.at(-1)?.path?.join(' > ') || JSON.stringify(g.step || {})}` : 'No saved task.');
         return;
       }
       if (spec.kind === 'other') {

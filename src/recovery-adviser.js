@@ -102,7 +102,7 @@ class RecoveryAdviser {
       record.context = observation.context; record.options = observation.options;
       if (!observation.options.length) { record.status = 'unavailable'; record.outcome = 'No executable recovery options observed'; save(); return false; }
       record.status = 'asking'; save();
-      this.bot.chat?.('I am stuck. Asking Fable for a recovery plan; your request is saved.');
+      this.bot.chat?.("I'm stuck. Let me think for a bit.");
       const advice = await this.ask(this.bot, task, observation, { ...this.requestOptions, apiKey: this.apiKey });
       task.check();
       if (identity(goal) !== record.objective || life(goal) !== record.life || this.bot.game.dimension !== record.dimension) throw new Error('Recovery advice became stale');
@@ -111,7 +111,10 @@ class RecoveryAdviser {
         state.active = { historyAt: record.at, objective: record.objective, life: record.life, dimension: record.dimension,
           steps: structuredClone(advice.steps), cursor: 0, attempts: 0, expiresAt: Date.now() + LIMITS.planMs,
           anchor: { ...this.bot.entity.position } };
-        this.bot.chat?.(`Fable suggested: ${advice.steps.map(s => s.kind === 'acquire' ? `obtain ${s.count} ${s.item}` : s.kind.replaceAll('_', ' ')).join(', ')}. Trying that now.`);
+        const describe = s => s.kind === 'acquire' ? `gathering ${s.count} ${s.item.replaceAll('_', ' ')}` :
+          ({ surface: 'getting back to the surface', relocate: 'a different approach', shelter: 'another shelter spot',
+            descend_pillar: 'digging down off this pillar' }[s.kind] || 'a different approach');
+        this.bot.chat?.(`I have an idea. I'll try ${advice.steps.map(describe).join(', then ')}.`);
       }
       save(); this.bot.emit?.('recovery_advice', record);
       return !!state.active;
@@ -162,7 +165,7 @@ class RecoveryAdviser {
       if (complete) { active.cursor++; active.attempts = 0; delete active.actionStartedAt; }
       if (active.cursor >= active.steps.length) {
         this.finish(goal, save, 'Recovery actions completed; retrying original objective');
-        this.bot.chat?.('Recovery steps finished. Retrying your original request.');
+        this.bot.chat?.('Okay, back to your request.');
       } else save();
       return true;
     } catch (err) {
