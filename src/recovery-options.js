@@ -5,7 +5,7 @@ const { surveyRoute, countOf } = require('./skills');
 const { dryStanding, miningMovement } = require('./mining-access');
 const { safeFromHostiles, threats } = require('./danger');
 const { recipeSourceGroups } = require('./resource-observation');
-const { surfaceObserver } = require('./surface');
+const { surfaceReturnComplete } = require('./surface');
 const shelter = require('./shelter');
 const { pillarDescent, descendPillar } = require('./pillar-recovery');
 const pos = p => new Vec3(p.x, p.y, p.z);
@@ -42,7 +42,7 @@ async function recoveryOptions(bot, task, goal, actions) {
         { kind: 'acquire', item, count, dependencies: plan.slice(0, 8) });
     } catch (_) {}
   }
-  if (bot.game.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position)) {
+  if (bot.game.dimension === 'overworld' && !surfaceReturnComplete(bot, goal)) {
     add('Return toward the observed surface using inspected routes or an explicit staircase; pause the current worksite.', { kind: 'surface' });
   }
 
@@ -98,7 +98,7 @@ async function executeRecoveryOption(bot, task, goal, save, action, actions) {
     return true;
   }
   if (action.kind === 'acquire') return actions.acquireStep(bot, task, action.item, action.count, goal, save);
-  if (action.kind === 'surface') { await actions.surfaceStep(bot, task, goal, save); return surfaceObserver(bot)(bot.entity.position); }
+  if (action.kind === 'surface') { await actions.surfaceStep(bot, task, goal, save); return surfaceReturnComplete(bot, goal); }
   if (!['relocate', 'shelter'].includes(action.kind)) throw new Error('Unknown recovery action');
   const p = pos(action.position);
   if (p.distanceTo(bot.entity.position) > 24 || !dryStanding(bot, p) || !safeFromHostiles(bot, p)) throw new Error('Recovery destination is no longer safe or nearby');

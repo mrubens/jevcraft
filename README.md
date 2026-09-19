@@ -68,6 +68,8 @@ This is enabled automatically with `OPENROUTER_API_KEY`; `RECOVERY_ADVISER=off` 
 
 State is stored under `.bot-state/`, separately for each server and bot identity. House coordinates are fixed once selected. Completion comes from world/inventory checks, never solely from a model's opinion.
 
+When surface exploration cannot leave a ravine, Jev can retain an observed higher landing and excavate an inspected staircase toward it. Seeing open sky at the bottom no longer ends that recovery. Existing exits are tried without spending crafting ingredients; a blocked stair can retreat a few steps. An almost-broken pickaxe may gather its replacement's final stone ingredients only when the recipe catalog proves the remaining swings and carried supplies suffice. Ordinary expedition planning still excludes worn tools, and recovery requires actual item pickup and crafting confirmation.
+
 In Creative mode, Jev takes requested items and building materials directly from the Creative inventory, preserves existing inventory slots, and confirms server inventory updates. Item delivery still checks actual recipient pickup. This path is gated by the bot's server-reported Creative mode and is unavailable in Survival. Normal walking/following is supported; following a player through the air is not implemented.
 
 ## Building designer

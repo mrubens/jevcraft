@@ -146,7 +146,10 @@ async function retreatForTunnel(bot, task, goal, save, { navigate }) {
       const p = b.position.offset(0, 1, 0);
       return p.y >= start.y - 2 && p.y <= start.y + 8 && !p.equals(start) && dry(p) && safeFromHostiles(bot, p);
     } }).map(p => p.offset(0, 1, 0));
-    const cost = p => p.distanceTo(start) + (tunnel.visited?.[`${p}`] || 0) * 8 + (tunnel.retreatVisited?.[`${p}`] || 0) * 16;
+    // Retreat should first retrace the inspected staircase. Penalizing visited
+    // steps hid a one-block escape behind twelve unreachable unexplored areas.
+    // Repeated retreats to the same cell still lose priority and remain bounded.
+    const cost = p => p.distanceTo(start) - (tunnel.visited?.[`${p}`] ? 16 : 0) + (tunnel.retreatVisited?.[`${p}`] || 0) * 16;
     candidates.sort((a, b) => cost(a) - cost(b));
     const checked = new Set();
     for (const p of candidates) {

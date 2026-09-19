@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
-const { surfaceObserver, surfaceMovement, returnToSurface } = require('../src/surface');
+const { surfaceObserver, surfaceMovement, returnToSurface, beginSurfaceAscent, surfaceReturnComplete } = require('../src/surface');
 const { constructionObservation, explore } = require('../src/work');
 const { Task } = require('../src/skills');
 
@@ -85,7 +85,7 @@ function undergroundFixture() {
     return useExtraInfo(block) ? [target] : [];
   };
   bot.pathfinder.getPathFromTo = function * (movements) {
-    assert.equal(movements.canDig, true, 'Returning to the surface may use the existing mining capability');
+    assert.equal(movements.canDig, false, 'Survey existing exits before spending recovery-tool ingredients');
     assert(movements.allowedPosition(new Vec3(1, 56, 0)));
     assert(!movements.allowedPosition(new Vec3(1, 51, 0)), 'Recovery must not descend farther into the cave');
     assert(!movements.allowedPosition(new Vec3(-1, 60, 0)), 'Preserve other movement restrictions');
@@ -125,6 +125,57 @@ test('failed or cancelled surface recovery restores movement policy and keeps it
     assert.equal(goal.surfaceReturn.attempts, 1);
     assert.equal(bot.entity.position.y, 55);
   }
+});
+
+test('an open ravine retains its observed rim across restart instead of treating sky as a completed exit', async () => {
+  const { bot } = world();
+  bot.registry = require('minecraft-data')('26.1');
+  bot.entity.position = new Vec3(.5, 51, .5);
+  bot.blockAt = p => ({ name: p.y < (p.x >= 5 ? 64 : 51) ? 'stone' : 'air',
+    boundingBox: p.y < (p.x >= 5 ? 64 : 51) ? 'block' : 'empty', position: p });
+  const target = new Vec3(6, 64, 0), goal = {};
+  assert(surfaceObserver(bot)(bot.entity.position), 'The failed location really has open sky');
+  assert(beginSurfaceAscent(bot, goal, [new Vec3(2, 51, 0), target]));
+  const restored = JSON.parse(JSON.stringify(goal));
+  assert(!surfaceReturnComplete(bot, restored));
+  assert.equal(restored.surfaceReturn.minimumY, 64);
+  bot.findBlocks = ({ useExtraInfo }) => [new Vec3(1, 50, 0), target.offset(0, -1, 0)].filter(p => useExtraInfo(bot.blockAt(p)));
+  bot.pathfinder.getPathTo = (_m, g) => { assert.equal(g.y, 64); return { status: 'success', path: [] }; };
+  await returnToSurface(bot, new Task('ravine exit'), restored, () => {}, { navigate: async (_bot, _task, g) => {
+    bot.entity.position = new Vec3(g.x + .5, g.y, g.z + .5);
+  } });
+  assert.equal(bot.entity.position.y, 64);
+  assert.equal(restored.surfaceReturn, undefined);
+});
+
+test('surface escalation requires nearby higher observed ground rather than an invented ascent', () => {
+  const { bot } = world(), goal = {};
+  assert(!beginSurfaceAscent(bot, goal, [new Vec3(5, 64, 0), new Vec3(100, 80, 0), new Vec3(4, 120, 0)]));
+  assert.equal(goal.surfaceReturn, undefined);
+});
+
+test('an obstructed ascent can retreat down its existing stair without excavating or dropping farther', async () => {
+  const { bot } = world();
+  bot.registry = require('minecraft-data')('26.1');
+  bot.entity.position = new Vec3(.5, 55, .5);
+  bot.inventory = { items: () => [] };
+  const retreat = new Vec3(1, 54, 0), open = new Set(['(0, 55, 0)', '(0, 56, 0)', '(1, 54, 0)', '(1, 55, 0)']);
+  bot.blockAt = p => ({ position: p, name: open.has(`${p}`) ? 'air' : p.equals(retreat.offset(0, -1, 0)) ? 'stone' : 'oak_planks',
+    boundingBox: open.has(`${p}`) ? 'empty' : 'block', diggable: true });
+  bot.findBlocks = ({ maxDistance, useExtraInfo }) => maxDistance === 16 && useExtraInfo(bot.blockAt(retreat.offset(0, -1, 0))) ? [retreat.offset(0, -1, 0)] : [];
+  bot.pathfinder.getPathTo = (movement, g) => {
+    assert.equal(g.y, 54); assert(movement.allowedPosition(retreat));
+    assert(!movement.allowedPosition(new Vec3(1, 51, 0)));
+    return { status: 'success', path: [retreat] };
+  };
+  const goal = {};
+  await returnToSurface(bot, new Task('obstructed ascent'), goal, () => {}, {
+    dig: async () => assert.fail('Do not dig through the obstruction'),
+    navigate: async (_bot, _task, g) => { bot.entity.position = new Vec3(g.x + .5, g.y, g.z + .5); },
+  });
+  assert.equal(bot.entity.position.y, 54);
+  assert.equal(goal.surfaceReturn.ascent.retreats, 1);
+  assert.equal(bot.pathfinder.movements.canDig, true);
 });
 
 test('deep surface recovery excavates one supported step at a time and preserves the mining worksite', async () => {

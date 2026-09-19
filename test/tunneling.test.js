@@ -155,6 +155,27 @@ test('a dry staircase cannot choose a new submerged retreat, and failure restore
   assert.deepEqual(bot.pathfinder.movements, before);
 });
 
+test('retreat surveys the known stair before its budget is spent on unreachable new areas', async () => {
+  const known = new Vec3(1, 59, 0), candidates = [known];
+  for (const x of [-6, -3, 0, 3, 6]) for (const z of [-6, -3, 0, 3, 6]) if (x || z) candidates.push(new Vec3(x, 60, z));
+  let surveyed = 0;
+  const bot = { registry: require('minecraft-data')('26.1'), game: { difficulty: 'normal' },
+    entity: { position: new Vec3(.5, 60, .5) },
+    blockAt: p => { const solid = p.y < (p.x === 1 && p.z === 0 ? 59 : 60);
+      return { position: p, name: solid ? 'stone' : 'air', boundingBox: solid ? 'block' : 'empty' }; },
+    findBlocks: ({ useExtraInfo }) => candidates.map(p => p.offset(0, -1, 0)).filter(p => useExtraInfo(bot.blockAt(p))),
+    pathfinder: { movements: {}, getPathTo: (_m, g) => { surveyed++;
+      return { status: g.x === known.x && g.y === known.y && g.z === known.z ? 'success' : 'noPath', path: [known] }; } },
+  };
+  const goal = { tunnel: { visited: { [`${known}`]: 1 } } };
+  await retreatForTunnel(bot, new Task('retrace stair'), goal, () => {}, { navigate: async (_bot, _task, g) => {
+    bot.entity.position = new Vec3(g.x + .5, g.y, g.z + .5);
+  } });
+  assert.equal(surveyed, 1);
+  assert.equal(bot.entity.position.y, 59);
+  assert.equal(goal.tunnel.retreats, 1);
+});
+
 test('resource shafts survive shelter and other-resource interruptions without beginning another descent', async () => {
   const bot = world(); bot.game = { dimension: 'overworld' };
   bot.pathfinder = { movements: { canDig: true, allow1by1towers: true, scafoldingBlocks: [1] },

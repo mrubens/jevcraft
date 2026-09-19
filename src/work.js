@@ -15,7 +15,8 @@ const { Survival } = require('./survival');
 const { checkThreats, safeFromHostiles } = require('./danger');
 const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
-const { surfaceObserver, surfaceMovement, returnToSurface } = require('./surface');
+const { surfaceObserver, surfaceMovement, returnToSurface, beginSurfaceAscent, surfaceReturnComplete } = require('./surface');
+const { bootstrapPickaxe } = require('./tool-recovery');
 const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives, knownResourceLocations, isSurfaceResource } = require('./resource-observation');
 const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('./designer');
@@ -77,7 +78,7 @@ async function stepOff(bot, task, p) {
   await navigate(bot, task, new goals.GoalBlock(exit.x, exit.y, exit.z));
 }
 
-async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops = true } = {}) {
+async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops = true, minimumToolDurability = 8 } = {}) {
   task.check(); checkAir(bot);
   if (done?.()) return;
   let block = bot.blockAt(p);
@@ -96,7 +97,7 @@ async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops
   if (p.equals(supportCell(bot.entity.position))) throw new Error('Refusing to dig directly beneath feet');
   if (requiredTool || enchantment) {
     const remaining = item => (bot.registry.itemsByName[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
-    const tool = bot.inventory.items().filter(item => (!requiredTool || item.name === requiredTool) && remaining(item) >= 8 &&
+    const tool = bot.inventory.items().filter(item => (!requiredTool || item.name === requiredTool) && remaining(item) >= minimumToolDurability &&
       (!enchantment || item.enchants?.some(e => e.name === enchantment))).sort((a, b) => remaining(b) - remaining(a))[0];
     if (!tool) throw new Blocked(`Need ${enchantment || ''} ${requiredTool || 'tool'} to collect ${block.name}`);
     await bot.equip(tool, 'hand');
@@ -151,7 +152,7 @@ function find(bot, names, distance = 48, count = 32) {
 }
 
 async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfaceResource(resource) } = {}) {
-  if (surfaceOnly && !surfaceObserver(bot)(bot.entity.position)) {
+  if (surfaceOnly && !surfaceReturnComplete(bot, goal)) {
     await surfaceStep(bot, task, goal, save);
     return;
   }
@@ -159,6 +160,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
   try {
     goal.search ||= {};
     const search = goal.search[resource] ||= { attempts: 0, origin: { ...bot.entity.position.floored() } };
+    const stalledSurface = search.walksWithoutProgress >= 3;
     if (search.attempts >= 128) throw new Blocked(`Could not find reachable ${resource} after 128 exploration steps without collecting it`);
     search.attempts++;
     search.leg ||= 0;
@@ -222,6 +224,11 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       const route = bot.pathfinder.getPathTo ? await surveyRoute(bot, task, bot.pathfinder.movements, targetGoal, 500) : { status: 'success' };
       if (route.status === 'success' && (!surface || (route.path || []).every(p => surface.allowed(p)))) { destination = candidate; break; }
       search.visited[key(candidate)] = (search.visited[key(candidate)] || 0) + 1;
+    }
+    if (surface && (!destination || stalledSurface) && beginSurfaceAscent(bot, goal, land)) {
+      save(); surface.restore();
+      await surfaceStep(bot, task, goal, save);
+      return;
     }
     if (!destination) {
       // A long route can fail from a tree perch even when a short safe step
@@ -289,7 +296,7 @@ async function miningCandidates(bot, task, step, goal) {
 
 async function mine(bot, task, step, goal, save, selected) {
   const surfaceOnly = isSurfaceResource(step.block);
-  if (surfaceOnly && !surfaceObserver(bot)(bot.entity.position)) {
+  if (surfaceOnly && !surfaceReturnComplete(bot, goal)) {
     await surfaceStep(bot, task, goal, save); return;
   }
   const surface = surfaceOnly ? surfaceMovement(bot) : null;
@@ -300,6 +307,7 @@ async function mine(bot, task, step, goal, save, selected) {
 async function surfaceStep(bot, task, goal, save) {
   await returnToSurface(bot, task, goal, save, { dig, navigate, prepareTool: async () => {
     if (pickaxeTier(bot) >= 1) return true;
+    if (await bootstrapPickaxe(bot, task, goal, save, { mine: mineAtSource })) return false;
     const plan = catalogPlan(bot, 'stone_pickaxe', 1, planningInventory(bot), goal);
     const step = plan[0];
     if (!step) return true;
@@ -329,7 +337,8 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
     try {
       await approachDryMining(bot, task, p, { navigate });
       access = miningMovement(bot);
-      await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before, requiredTool: step.tool, enchantment: step.enchantment });
+      await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before, requiredTool: step.tool, enchantment: step.enchantment,
+        minimumToolDurability: step.minimumToolDurability });
       await sleep(650);
       if (countOf(bot, step.drops) > before) return;
       const drop = Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === step.drops)
@@ -526,6 +535,7 @@ async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY 
   task.check(); checkAir(bot);
   const inv = planningInventory(bot);
   if ((inv[item] || 0) >= count) return true;
+  if (item.endsWith('_pickaxe') && pickaxeTier(bot) < 1 && await bootstrapPickaxe(bot, task, goal, save, { mine: mineAtSource })) return false;
   for (const station of ['crafting_table', 'furnace']) if (station !== item && find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
   const step = catalogPlan(bot, item, count, inv, goal)[0];
   if (!step) throw new Error(`No progress step for ${item}`);
@@ -1212,4 +1222,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep };
+module.exports = { runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep };

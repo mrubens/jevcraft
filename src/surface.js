@@ -54,14 +54,36 @@ function surfaceMovement(bot) {
   return { isSurface, allowed, restore: () => Object.assign(movements, previous) };
 }
 
+// Open sky is not an exit from a ravine. After ordinary surface routes fail,
+// retain a nearby observed higher landing as the minimum escape elevation.
+// This is only proposed from actual dry surface candidates, never a guessed Y.
+function beginSurfaceAscent(bot, goal, candidates) {
+  const start = bot.entity.position;
+  const target = candidates.filter(p => p.y >= start.y + 4 && p.y <= start.y + 32 &&
+    Math.hypot(p.x - start.x, p.z - start.z) <= 24 && safeFromHostiles(bot, p))
+    .sort((a, b) => a.y - b.y || a.distanceTo(start) - b.distanceTo(start))[0];
+  if (!target) return false;
+  goal.surfaceReturn ||= { attempts: 0, visited: {} };
+  Object.assign(goal.surfaceReturn, { minimumY: target.y, target: { ...target }, reason: 'No progress through surface routes below observed higher ground' });
+  return true;
+}
+
+function surfaceReturnComplete(bot, goal, isSurface = surfaceObserver(bot)) {
+  return isSurface(bot.entity.position) && bot.entity.position.y >= (goal.surfaceReturn?.minimumY ?? -Infinity);
+}
+
 // Gathering stone or cooking can leave us under terrain. Surface-only travel
 // intentionally cannot leave a deep alcove, so first route to an inspected
 // surface landing using ordinary mining/scaffolding capabilities. Keep the
 // lower bound local to prevent this recovery from becoming a deeper cave trip.
 async function returnToSurface(bot, task, goal, save, actions = {}) {
   const isSurface = surfaceObserver(bot), start = bot.entity.position.floored();
-  if (isSurface(bot.entity.position)) { if (goal.surfaceReturn) { delete goal.surfaceReturn; save(); } return; }
+  if (surfaceReturnComplete(bot, goal, isSurface)) { if (goal.surfaceReturn) { delete goal.surfaceReturn; save(); } return; }
   const movements = bot.pathfinder.movements, previous = movements.allowedPosition;
+  const ordinary = { canDig: movements.canDig, scafoldingBlocks: movements.scafoldingBlocks, allow1by1towers: movements.allow1by1towers };
+  // First try existing exits without spending the very ingredients needed to
+  // replace a tool. Explicit staircase recovery owns any necessary excavation.
+  Object.assign(movements, { canDig: false, scafoldingBlocks: [], allow1by1towers: false });
   movements.allowedPosition = p => p.y >= start.y - 3 && (!previous || previous(p));
   const state = goal.surfaceReturn ||= { attempts: 0, visited: {} };
   try {
@@ -73,7 +95,7 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
     const candidates = bot.findBlocks({ matching: ['grass_block', 'dirt', 'stone', 'sand', 'gravel', 'deepslate'].map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined),
       maxDistance: 48, count: 128, useExtraInfo: block => {
         const p = block.position.offset(0, 1, 0);
-        return p.y >= start.y - 3 && clear(p) && clear(p.offset(0, 1, 0)) && isSurface(p) && safeFromHostiles(bot, p);
+        return p.y >= Math.max(start.y - 3, state.minimumY ?? -Infinity) && clear(p) && clear(p.offset(0, 1, 0)) && isSurface(p) && safeFromHostiles(bot, p);
       },
     }).map(p => p.offset(0, 1, 0));
     const key = p => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)},${Math.floor(p.z / 4)}`;
@@ -91,14 +113,15 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       state.visited[key(target)] = (state.visited[key(target)] || 0) + 1;
       goal.survivalAction = { action: 'return_to_surface', from: { ...start }, target: { ...target }, at: new Date().toISOString() };
       save();
-      await navigate(bot, task, destination, { timeoutMs: 20000, stallMs: 5000 });
-      if (!surfaceObserver(bot)(bot.entity.position)) throw new Error('Surface destination changed while returning from underground');
+      await (actions.navigate || navigate)(bot, task, destination, { timeoutMs: 20000, stallMs: 5000 });
+      if (!surfaceReturnComplete(bot, goal)) throw new Error('Surface destination changed while returning from underground');
       delete goal.surfaceReturn; save();
       return;
     }
     if (actions.dig) {
+      Object.assign(movements, ordinary);
       if (actions.prepareTool && !await actions.prepareTool()) { save(); return; }
-      const target = candidates[0]?.clone() || start.offset(24, 32, 0);
+      const target = candidates[0]?.clone() || (state.target ? new Vec3(state.target.x, state.target.y, state.target.z) : start.offset(24, 32, 0));
       target.y = Math.max(target.y, start.y + 1);
       state.ascent ||= { entrance: { ...start }, steps: 0, visited: {} };
       // Keep the exit staircase separate from the suspended mining worksite.
@@ -108,14 +131,16 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
         goal.survivalAction = { action: 'return_to_surface', from: { ...start }, target: { ...target }, at: new Date().toISOString() };
         save();
       };
-      movements.allowedPosition = p => p.y >= start.y && (!previous || previous(p));
+      // Stair choices already rise or stay level. Keep the three-block local
+      // retreat allowance so an obstructed step can back out along the stairs
+      // we just excavated, rather than forbidding its only dry escape.
       await tunnelStep(bot, task, ascentGoal, record, target, { dig: actions.dig, navigate: actions.navigate || navigate });
-      if (surfaceObserver(bot)(bot.entity.position)) { delete goal.surfaceReturn; save(); }
+      if (surfaceReturnComplete(bot, goal)) { delete goal.surfaceReturn; save(); }
       return;
     }
     save();
     throw new Error(`No safe route from underground to an observed surface landing (${Math.min(checked.size, 12)} areas checked)`);
-  } finally { movements.allowedPosition = previous; }
+  } finally { movements.allowedPosition = previous; Object.assign(movements, ordinary); }
 }
 
-module.exports = { surfaceObserver, surfaceMovement, returnToSurface };
+module.exports = { surfaceObserver, surfaceMovement, returnToSurface, beginSurfaceAscent, surfaceReturnComplete };
