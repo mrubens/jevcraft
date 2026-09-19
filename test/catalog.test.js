@@ -49,6 +49,33 @@ test('crafting uses observed birch and reserves ingredients across dependencies'
   assert.equal(stock.chest, 1);
 });
 
+test('smelting uses carried or observed local wood instead of requiring oak fuel', () => {
+  for (const [stock, nearby] of [[{ birch_log: 1 }, []], [{}, ['birch_log']]]) {
+    const plan = planCatalog(registry, 'glass', 4, { furnace: 1, sand: 4, ...stock }, { nearby });
+    assert(!plan.some(s => s.drops === 'oak_log' || s.item === 'oak_planks'), 'local birch covers the fuel dependency');
+    const smelt = plan.find(s => s.action === 'smelt');
+    assert.equal(smelt.fuelItem, 'birch_planks'); assert.equal(smelt.consumes.birch_planks, 3);
+    assert(plan.some(s => s.item === 'birch_planks'));
+  }
+});
+
+test('fuel plank membership follows vanilla tags and excludes non-flammable Nether wood', () => {
+  const { fuelPlanks } = require('../src/fuel');
+  assert(fuelPlanks.includes('birch_planks')); assert(fuelPlanks.includes('bamboo_planks')); assert(fuelPlanks.includes('pale_oak_planks'));
+  assert(!fuelPlanks.includes('crimson_planks')); assert(!fuelPlanks.includes('warped_planks'));
+  for (const name of fuelPlanks) {
+    const plan = planCatalog(registry, 'glass', 2, { furnace: 1, sand: 2, [name]: 2 });
+    assert.equal(plan.length, 1); assert.equal(plan[0].fuelItem, name); assert.equal(plan[0].consumes[name], 2);
+  }
+  const plan = planCatalog(registry, 'glass', 2, { furnace: 1, sand: 2, crimson_planks: 64, warped_planks: 64, birch_log: 1 });
+  assert.equal(plan.at(-1).fuelItem, 'birch_planks');
+});
+
+test('a spare oak plank does not cause a fuel-gathering trip when another carried wood covers the batch', () => {
+  const plan = planCatalog(registry, 'glass', 4, { furnace: 1, sand: 4, oak_planks: 1, birch_planks: 3 });
+  assert.equal(plan.length, 1); assert.equal(plan[0].fuelItem, 'birch_planks'); assert.equal(plan[0].consumes.birch_planks, 3);
+});
+
 test('stairs preserve species and correct recipe batch size', () => {
   const plan = planCatalog(registry, 'birch_stairs', 8, { birch_log: 4 });
   assert(!plan.some(s => s.action === 'mine'));

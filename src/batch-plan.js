@@ -1,6 +1,7 @@
 'use strict';
 const { planOutputs } = require('./knowledge');
 const { PlanError } = require('./plan');
+const { ITEMS_PER_PLANK } = require('./fuel');
 
 // Exact recipes determine amounts. Dependencies retain both consumable lots and
 // reusable tools/stations; joining two jobs must never introduce a tool cycle.
@@ -48,8 +49,8 @@ function batchPlan(registry, outputs, inventory = {}, context = {}) {
     for (const field of ['consumes', 'produces']) for (const [name, count] of Object.entries(node.step[field]))
       kept.step[field][name] = (kept.step[field][name] || 0) + count;
     if (kept.step.action === 'smelt') {
-      kept.step.fuel = Math.ceil(kept.step.count / 1.5);
-      kept.step.consumes.oak_planks = kept.step.fuel;
+      kept.step.fuel = Math.ceil(kept.step.count / ITEMS_PER_PLANK);
+      kept.step.consumes[kept.step.fuelItem || 'oak_planks'] = kept.step.fuel;
     }
     for (const dependency of node.dependencies) kept.dependencies.add(dependency);
     nodes.delete(node.id);

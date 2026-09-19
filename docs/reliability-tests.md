@@ -108,6 +108,40 @@ The related missing-fuel fixture `furnace-recovery-mu8r5275` also passed: after
 its fuel was removed externally, Jev made replacement fuel from the supplied
 log, completed exactly four glass, and retained two planks with health 20.
 
+Smelting plans now choose a burnable plank species from carried stock or the
+observed recipe graph, instead of requiring oak. The matching vanilla server's
+item tags supply the ten allowed plank types; crimson and warped wood are
+excluded. Larger carried stacks take precedence over a stray oak plank. One
+fuel species is retained across a shared recipe plan so compatible smelts still
+merge. Its item name is saved with the furnace batch and used for refueling;
+older checkpoints without that field retain their oak behavior. Fuel quantities
+use the verified 300-tick plank burn and 200-tick normal smelt durations.
+
+Automated coverage checks every allowed plank type, locally observed birch,
+non-flammable wood, requested-plank reservations, shared iron-armor smelting,
+and selected-fuel persistence across interruption. This policy currently uses
+planks; coal and mixed-fuel optimization remain separate work.
+
+On 2026-09-19, `station-replacement-mu8rwe06` passed with `STATION_WOOD=birch`
+and `STATION_TEST_X=2200`: Jev made and placed replacement stations, resumed,
+and delivered a chest plus four glass using three birch planks as fuel. The
+receiver independently confirmed both items and both stations; two birch logs
+and one plank remained, with health 20. The preceding parallel run completed
+the request but failed its station-count assertion; the observer now counts
+only its own fixture plot. Both recordings are retained.
+
+`furnace-recovery-mu8rtr0x` also passed with `FURNACE_TEST_WOOD=birch` and
+`FURNACE_TEST_X=2300`: after fuel removal, Jev made replacement birch fuel from
+the supplied log and completed four glass, keeping two planks with health 20.
+These remain controlled mechanics fixtures, not fresh Survival acceptance.
+
+An existing planning inefficiency remains: provisional per-piece fuel rounding
+can request extra wood before compatible smelts merge and reduce the fuel
+allowance. With 24 raw iron and 24 birch planks, full iron armor plus eight kept
+planks fits the merged 16-plank fuel allowance, but the plan still requests one
+extra log. The reproducible plan is recorded in
+`artifacts/fuel-rounding-regression-20260919.json` for the next planning fix.
+
 ## Stop during request interpretation
 
 All nested classifiers for a player request share its cancellation signal.

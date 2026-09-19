@@ -9,6 +9,7 @@ const { runGoal, waitFor, inventory } = require('../src/work');
 const port = Number(process.env.MC_PORT);
 if (!Number.isInteger(port) || port < 1 || port > 65535 || [25565, 25577].includes(port)) throw new Error('Explicit isolated MC_PORT required');
 const id = Date.now().toString(36), x = Number(process.env.STATION_TEST_X || 2100), directory = path.resolve('artifacts', `station-replacement-${id}`);
+const logItem = `${process.env.STATION_WOOD || 'oak'}_log`;
 fs.mkdirSync(directory, { recursive: true });
 const log = value => { const row = JSON.stringify({ at: new Date().toISOString(), ...value }); console.log(row); fs.appendFileSync(path.join(directory, 'events.jsonl'), row + '\n'); };
 const connect = prefix => { const b = mineflayer.createBot({ host: '127.0.0.1', port, username: prefix + id, version: '26.1', auth: 'offline' }); b.loadPlugin(compatibilityPlugin); b.loadPlugin(pathfinder); return b; };
@@ -21,7 +22,11 @@ bot._client.write = function (name, packet, ...args) {
   if (active && name === 'block_place') { const block = bot.blockAt(packet.location); if (stations.includes(block?.name)) opens.push({ name: block.name, position: { ...block.position } }); }
   return originalWrite.call(this, name, packet, ...args);
 };
-receiver.on('blockUpdate', (old, block) => { if (active && stations.includes(block?.name) && old?.name !== block.name) placements.push({ name: block.name, position: { ...block.position } }); });
+receiver.on('blockUpdate', (old, block) => {
+  if (active && stations.includes(block?.name) && old?.name !== block.name &&
+      block.position.x >= x - 8 && block.position.x <= x + 12 && block.position.z >= -8 && block.position.z <= 10)
+    placements.push({ name: block.name, position: { ...block.position } });
+});
 for (const b of [bot, receiver]) { b.on('error', e => log({ error: e.message })); b.on('death', () => { deaths++; task.cancel(); }); }
 const timer = setTimeout(() => task.cancel(), 5 * 60000);
 const ready = async b => { await new Promise(r => b.once('spawn', r)); await b.waitForChunksToLoad(); configureMovements(b); };
@@ -33,10 +38,10 @@ const ready = async b => { await new Promise(r => b.once('spawn', r)); await b.w
       `setblock ${sealedTable.x} 64 0 crafting_table`, `setblock ${sealedFurnace.x} 64 3 furnace`,
       `gamemode survival ${bot.username}`, `gamemode survival ${receiver.username}`,
       `tp ${bot.username} ${x + .5} 64 .5`, `tp ${receiver.username} ${x - 3.5} 64 3.5`,
-      `give ${bot.username} oak_log 6`, `give ${bot.username} sand 4`, `give ${bot.username} cobblestone 8`];
+      `give ${bot.username} ${logItem} 6`, `give ${bot.username} sand 4`, `give ${bot.username} cobblestone 8`];
     fs.writeFileSync(path.join(directory, 'setup.json'), JSON.stringify(commands, null, 2)); log({ phase: 'setup', directory });
     await waitFor(task, () => fs.existsSync(path.join(directory, 'ready')), 180000);
-    await waitFor(task, () => countOf(bot, 'oak_log') === 6 && bot.entity.position.x > x && bot.entity.position.y === 64, 10000);
+    await waitFor(task, () => countOf(bot, logItem) === 6 && bot.entity.position.x > x && bot.entity.position.y === 64, 10000);
     assert.equal(countOf(bot, 'crafting_table'), 0); assert.equal(countOf(bot, 'furnace'), 0);
     const nativeCraft = bot.craft, nativeOpen = bot.openFurnace;
     bot.craft = async function (recipe, count, table) { await nativeCraft.call(this, recipe, count, table); const name = bot.registry.items[recipe.result.id].name; crafted[name] = (crafted[name] || 0) + recipe.result.count * count; };
@@ -71,6 +76,6 @@ const ready = async b => { await new Promise(r => b.once('spawn', r)); await b.w
     assert.equal(goal.tasks[0].delivered, 1); assert.equal(goal.tasks[1].delivered, 4);
     log({ result: 'PASS', crafted, placements, inputs, fuelLoaded, digs, deaths, health: bot.health,
       independentlyReceived: inventory(receiver), remainingInventory: inventory(bot), resumed: true, directory });
-  } catch (e) { log({ result: 'FAIL', error: e.stack, inventory: inventory(bot), position: bot.entity?.position, directory }); process.exitCode = 1; }
+  } catch (e) { log({ result: 'FAIL', error: e.stack, crafted, placements, inventory: inventory(bot), position: bot.entity?.position, directory }); process.exitCode = 1; }
   finally { clearTimeout(timer); bot.pathfinder.setGoal(null); bot.clearControlStates(); bot.quit(); receiver.quit(); setTimeout(() => process.exit(process.exitCode || 0), 500); }
 })();

@@ -98,7 +98,10 @@ output = {'version': '26.1', 'source': 'Vanilla Minecraft server recipe, item/bl
           'sha256': hashlib.sha256(jar.read_bytes()).hexdigest(),
           'recipes': recipes, 'smelting': {key: sorted(values) for key, values in smelting.items()},
           'specialDrops': special, 'ordinarySelfDrops': sorted(ordinary_self), 'resourceTags': resource_tags,
-          'entityLoot': entity_loot}
+          'entityLoot': entity_loot,
+          # FuelValues.vanillaBurnTimes adds #planks at 300 ticks, then removes
+          # #non_flammable_wood. Keep membership from the matching server tags.
+          'fuelPlanks': sorted(set(ingredient('#minecraft:planks')) - set(ingredient('#minecraft:non_flammable_wood')))}
 destination = Path(__file__).resolve().parent.parent / 'data' / 'vanilla-26.1.json'
 destination.parent.mkdir(exist_ok=True)
 destination.write_text(json.dumps(output, separators=(',', ':')) + '\n')

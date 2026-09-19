@@ -43,6 +43,16 @@ test('all24 raw iron share one smelt before armor crafting, with one fuel allowa
   assert(plan.indexOf(smelts[0]) < plan.findIndex(step => step.item === 'iron_helmet'));
 });
 
+test('combined smelting retains one local-wood fuel choice and preserves requested planks', () => {
+  // Provisional per-piece rounding still budgets 18 before merging to 16.
+  // Keep that separate known optimization from this fuel-species/reserve check.
+  const plan = verify([...armor('iron'), { item: 'birch_planks', count: 8 }], { ...readyTools, raw_iron: 24, birch_planks: 26 }, { nearby: ['birch_log'] });
+  const smelts = plan.filter(step => step.action === 'smelt');
+  assert.equal(smelts.length, 1); assert.equal(smelts[0].count, 24);
+  assert.equal(smelts[0].fuelItem, 'birch_planks'); assert.equal(smelts[0].consumes.birch_planks, 16);
+  assert(!plan.some(step => step.action === 'mine'));
+});
+
 test('tools come before their ores even when their ingots are shared with final armor', () => {
   const outputs = [...armor('diamond'), ...armor('iron')];
   const plan = verify(outputs);

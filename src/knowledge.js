@@ -2,6 +2,7 @@
 const vanilla = require('../data/vanilla-26.1.json');
 const { ORE_DEPTH, TOOL_TIERS, PlanError } = require('./plan');
 const { mobSources, combatGear } = require('./mob-policy');
+const { fuelPlanks, ITEMS_PER_PLANK } = require('./fuel');
 const cached = new WeakMap();
 const ordinarySelf = new Set(vanilla.ordinarySelfDrops);
 const plain = value => value?.replace('minecraft:', '');
@@ -78,7 +79,7 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
   }
   const available = { ...stock };
   const visiting = new Set();
-  let estimates;
+  let estimates, selectedFuel;
   let expansions = 0;
   const have = name => stock[name] || 0;
   const add = (name, amount) => { stock[name] = have(name) + amount; estimates = undefined; };
@@ -173,10 +174,17 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
       }
       for (const input of data.smelting[name] || []) methods.push({ cost: estimate(input) + 12, run: () => {
         acquire(input, missing); acquire('furnace', 1);
-        const fuel = Math.ceil(missing / 1.5); acquire('oak_planks', fuel);
-        add(input, -missing); add('oak_planks', -fuel);
-        steps.push({ action: 'smelt', item: name, count: missing, from: input, fuel,
-          requires: { furnace: 1 }, consumes: { [input]: missing, oak_planks: fuel }, produces: { [name]: missing } }); add(name, missing);
+        // Select from the same observed recipe graph as other ingredients.
+        // Keep one fuel species through this shared plan so armor pieces can
+        // still merge into one smelt rather than separate fuel-specific jobs.
+        if (!selectedFuel) {
+          const mostCarried = Math.max(...fuelPlanks.map(have));
+          selectedFuel = chooseIngredient(mostCarried > 0 ? fuelPlanks.filter(fuel => have(fuel) === mostCarried) : fuelPlanks, {});
+        }
+        const fuel = Math.ceil(missing / ITEMS_PER_PLANK); acquire(selectedFuel, fuel);
+        add(input, -missing); add(selectedFuel, -fuel);
+        steps.push({ action: 'smelt', item: name, count: missing, from: input, fuel, fuelItem: selectedFuel,
+          requires: { furnace: 1 }, consumes: { [input]: missing, [selectedFuel]: fuel }, produces: { [name]: missing } }); add(name, missing);
       } });
       for (const source of data.mobSources[name] || []) methods.push({ cost: 80, run: () => {
         for (const names of Object.values(combatGear)) {
@@ -210,9 +218,9 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
       }
       methods.sort((a, b) => a.cost - b.cost);
       for (const method of methods) {
-        const before = { ...stock }; const length = steps.length;
+        const before = { ...stock }, beforeFuel = selectedFuel; const length = steps.length;
         try { method.run(); return; }
-        catch (err) { stock = before; estimates = undefined; steps.length = length; lastError = err; }
+        catch (err) { stock = before; selectedFuel = beforeFuel; estimates = undefined; steps.length = length; lastError = err; }
       }
       throw lastError || new PlanError(`No supported survival acquisition method for ${name}: it needs a source outside the current mining, crafting, smelting, hardening, and supported mob actions.`, name);
     } finally { visiting.delete(name); }

@@ -117,3 +117,30 @@ test('stop after collecting output or while waiting for fuel status prevents loa
     assert(closed); assert(goal.smelting); assert.equal(collected, phase === 'after output' ? 1 : 0);
   }
 });
+
+test('selected non-oak fuel survives stop/resume and leaves another wood untouched', async () => {
+  const registry = require('minecraft-data')('26.1'), first = new Task('birch fuel'), goal = {};
+  let planks = 5, glass = 0, output = 0, loads = 0, saved;
+  const furnace = {
+    fuel: 0, inputItem: () => output ? null : { name: 'sand', count: 2 }, fuelItem: () => null,
+    outputItem: () => output ? { name: 'glass', count: output } : null,
+    putFuel: async (type, metadata, count) => {
+      assert.equal(type, registry.itemsByName.birch_planks.id); assert.equal(count, 2);
+      loads++; planks -= count; output = 2; first.cancel();
+    },
+    takeOutput: async () => { glass += output; output = 0; }, close: () => {},
+  };
+  const bot = {
+    registry, entity: { position: new Vec3(0, 64, 0) },
+    inventory: { items: () => [{ name: 'birch_planks', count: planks }, { name: 'oak_planks', count: 12 }, { name: 'glass', count: glass }] },
+    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: p => ({ name: 'furnace', position: p }),
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+    pathfinder: { movements: {}, goto: async () => {}, setGoal: () => {} }, openFurnace: async () => furnace,
+  };
+  const step = { item: 'glass', from: 'sand', count: 2, fuelItem: 'birch_planks' };
+  await assert.rejects(smelt(bot, first, step, goal, () => { saved = structuredClone(goal); }), { name: 'Cancelled' });
+  assert.equal(saved.smelting.fuelItem, 'birch_planks');
+  await smelt(bot, new Task('resume birch fuel'), { ...step, fuelItem: 'oak_planks' }, saved);
+  assert.equal(glass, 2); assert.equal(planks, 3); assert.equal(loads, 1); assert(!saved.smelting);
+  assert.equal(bot.inventory.items().find(i => i.name === 'oak_planks').count, 12);
+});
