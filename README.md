@@ -1,263 +1,214 @@
 # JevBot
 
-A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat, resolve items through a dynamic catalog hierarchy, and choose ongoing actions. Ordinary code executes and verifies survival tasks. Jev can connect through TypeSafe or OpenRouter. An optional OpenRouter LLM generates custom building schematics and advises on recovery when Jev gets stuck.
+A Minecraft companion you can talk to in game chat. Ask Jev to gather supplies, build something, find a biome, or follow you on an adventure.
 
-The target is a survival companion that can autonomously beat Minecraft from an empty start in a fresh natural world on Normal difficulty: progress through the Nether, locate a stronghold, defeat the Ender Dragon and return alive. Food, shelter, equipment, hazard avoidance and player requests remain part of the goal. See `GOAL.md` for the full acceptance criteria. House construction, two full day/night cycles and fresh natural concrete delivery have passed; fresh Normal Nether completion and the later game stages remain unfinished.
+JevBot uses [Mineflayer](https://github.com/PrismarineJS/mineflayer) to play and [TypeSafe’s Jev](https://typesafe.ai/) to understand requests and choose actions. An optional LLM through [OpenRouter](https://openrouter.ai/) designs custom structures and helps with recovery. Recipes, movement, inventory handling, and checks that work is actually finished live in code.
 
-Available requests include `Jev come here`, `Jev follow me`, `Jev craft a chest`, `Jev make eight birch stairs`, `Jev get me a pumpkin`, and `Jev build a mansion out of cherry`. Item routing covers the full Minecraft 26.1 catalog. Acquisition expands the selected item's crafting, smelting, tool, and block-drop dependencies; catalog recognition does not mean every item is obtainable yet. Shears are planned for grass plants; intact grass blocks require an existing Silk Touch tool. Enchanting, farming and trading are not implemented.
+**Experimental, targeting Minecraft Java Edition 26.1.** Gathering, building, exploration, and survival support are available, but difficult terrain and long tasks can still need help. Fully autonomous game completion is a development goal, not a finished capability.
 
-The original development targets remain:
+[Quick start](#quick-start) · [Chat commands](#talking-to-jev) · [Building](#building) · [Observatory](#watching-jev) · [Roadmap](ROADMAP.md)
 
-- `build a house`: a 5×5 shelter with 96 floor, wall and roof blocks, an open doorway, and clear interior.
-- `get me 32 purple concrete`: gather ingredients, craft dye and powder, harden it in water, collect the concrete, and confirm pickup by the requesting player.
-- `find a way to the Nether`: use an existing portal or acquire a frame and ignition materials, build a portal, and verify entry into the Nether.
+## What Jev can do
 
-These workflows are **under live testing**. The house and 32-block concrete delivery have passed from empty starts in natural Normal worlds. Portal construction and entry have passed controlled tests and interactive Peaceful play, but fresh Normal Nether acceptance remains incomplete. See `PROGRESS.md` for evidence and remaining work.
+- **Gather and craft.** Resolve items from the Minecraft catalog and work through recipes, ingredients, harvest tools, smelting, and concrete hardening.
+- **Combine requests.** Plan shared materials for multiple outputs, batch compatible gathering and crafting steps, and track each delivery. Full diamond armor means all four pieces.
+- **Build from descriptions.** Turn a request and nearby world observations into a saved schematic, gather its materials, prepare suitable ground, and place the blocks. Without a generative model, Jev can use configurable building templates.
+- **Explore with you.** Come, follow, find observed blocks and creatures, search for biomes, swim, and use boats for suitable surveyed crossings.
+- **Handle survival needs.** Seek food and shelter, cook and eat, prepare tools, respond to hazards, and attempt recovery without forgetting the player’s request.
+- **Show its work.** Inspect terrain, inventory, activity, and decisions in a local 3D Observatory. Stop and resume tasks from chat or the live viewer.
 
-`Jev beat Minecraft` starts a persistent game-completion objective. The controller uses resource/portal actions and records observed progression in the Observatory. End entry activates observed frames and verifies the living dimension transition. End combat now has Jev-selected bow shots, surveyed arena movement, perched-head attacks and hazard checks, but a complete dragon fight and living exit remain unverified. Stronghold travel and underground access also remain unverified in natural play. Missing capabilities report concrete blockers. Runtime completion requires fresh player-specific dragon-kill advancement credit followed by a living exit-portal return to the Overworld; death/respawn or a dragon disappearing cannot satisfy it. The full independent acceptance run remains outstanding. Questions such as `Jev how do you beat Minecraft?` do not launch the objective.
+## Quick start
 
-Stronghold search throws real Eyes of Ender while preserving twelve for the portal, verifies both item consumption and the observed entity flight, and triangulates consistent bearings. Jev chooses among surveyed surface waypoints; descending Eyes provide a bounded excavation hint. Bearings and search budgets persist across restarts. Only a complete observed inward-facing portal-frame ring establishes the located milestone. A controlled live test estimated a stronghold within 0.41 blocks of an independent console verification and executed a real Jev-selected waypoint. The search itself receives no seed knowledge or locating-command results; the controlled test used granted Eyes, platforms and teleports, so it does not establish natural stronghold completion.
+You need:
 
-End entry reobserves the saved frame ring, counts missing Eyes, and routes supply shortages through the ordinary acquisition chain. Each insertion requires both a changed frame and exactly one consumed Eye. Navigation stays outside the portal interior until all nine active portal blocks are observed; the final crossing waits for the actual End dimension packet. A controlled lava-backed fixture verified ten insertions and a living arrival at full health. This does not establish natural stronghold access or a winning run.
+- Node.js **22 or newer** and npm.
+- A running **Minecraft Java Edition 26.1** server and a Minecraft client to play alongside the bot. The repository does not include or start a game server.
+- A **TypeSafe API key or OpenRouter API key**. The bot runs locally; model calls require network access.
 
-Before entering the End, winning tasks require durable combat equipment, a bow, 192 arrows, bridge blocks, a pickaxe and a larger food reserve. These use ordinary acquisition dependencies; the full natural supply chain is still incomplete. Bow execution computes trajectories from vanilla physics, rejects obstructed paths and bystanders, waits for the aim packet before release, and verifies both the launched arrow and inventory consumption. Cancellation abandons the draw without firing. A controlled fixture destroyed ground, elevated and vanilla-shaped caged crystals with three arrows and no damage. A separate actual End trial confirmed crystal destruction, dragon damage and eating/healing, but ended on a phase-change interruption before victory. Changed combat conditions now trigger a bounded replan; they do not establish success.
-
-End preparation includes an ordinary crafted-and-filled water bucket. Emergency handling interrupts pending decisions, bow draws and eating for dragon charges, nearby fireballs, breath clouds and dangerous falls. Escape routes inspect the player's footprint, handle small knockback landings and use short surveyed routes over one-block steps. Crystal locations persist across tracking loss; after two shots leave the same crystal alive, the controller requires a different firing position. Clear shots prefer the center of the crystal hitbox.
-
-Controlled tests verified a full-health 40-block water landing and bucket recovery, a water landing after an actual dragon launch, and removal of all ten crystals in one encounter (independent saved-world audit). Subsequent encounters exposed refill, terrain, eating-interruption and retry failures; exact evidence and failed runs are retained in [PROGRESS.md](PROGRESS.md). The current fixes still need a successful complete encounter. Dragon defeat, living exit, the full natural supply chain and fresh winning acceptance remain unverified.
-
-Blaze rods and ender pearls now have mob acquisition actions backed by the matching vanilla loot tables. Jev selects among observed, reachable, isolated targets after equipping an iron-or-better sword and armor plus a shield. Encounters have a time/travel limit, preserve avoidance of other threats, and verify actual inventory pickup; a death or disappearance never guarantees loot. Equipment and crafting dependencies feed the Eyes of Ender recipe graph. Winning tasks prepare combat gear before entering the Nether. These encounters have passed a controlled Normal arena trial with granted gear and summoned mobs; finding suitable mobs and completing the whole chain in natural terrain remain unproven. Peaceful hunting reports its missing mob source without changing difficulty.
-
-## Join and watch locally
-
-Open **Minecraft Java Edition 26.1**, choose **Multiplayer → Direct Connection**, and enter one of these addresses on the machine running the servers:
-
-| Address | World |
-| --- | --- |
-| `localhost:25577` | Current player world: fresh natural terrain, Peaceful Survival, with interactive **Jev**; Observatory at `http://127.0.0.1:3045/?session=live` |
-| `localhost:25570` | Previous Peaceful Survival player world, preserved with its completed Nether route |
-| `localhost:25567` | Flat survival test world with prepared resources; used for current mechanics trials |
-| `localhost:25566` | Natural survival world, seed 12345; the completed house is at X 83, Y 136, Z −32 |
-| `localhost:25565` | Original development server |
-| `localhost:25568` | Fresh natural world on Normal difficulty, seed 95812; a verified house is at X −7, Y 67, Z 3 |
-| `localhost:25569` | Isolated Normal-difficulty endurance trials; separate from the player world |
-| `localhost:25571` | Isolated natural Normal concrete-delivery trial |
-| `localhost:25572` | Isolated natural Normal Nether-progression trial |
-
-Press **F3** to see your coordinates, and **Tab** to see online players. Acceptance bots are named `Trial<run-id>` and leave when their trial ends. They execute their assigned test and do not accept chat commands. Trial logs and checkpoints are in `artifacts/<run-id>/events.jsonl` and `goal.json`.
-
-To run the interactive bot in the player world, use:
+### 1. Install
 
 ```sh
-MC_HOST=127.0.0.1 MC_PORT=25577 MC_VERSION=26.1 MC_USERNAME=Jev JEV_DASHBOARD_PORT=3045 npm start
+git clone https://github.com/mrubens/jevbot.git
+cd jevbot
+npm ci
+cp .env.example .env
 ```
 
-Then send `Jev come here`, `Jev follow me`, `Jev craft a chest`, `Jev get me a pumpkin`, `Jev build a house`, `Jev get me 32 purple concrete`, or `Jev find a way to the Nether` in game chat. Use `Jev status`, `Jev stop`, and `Jev resume` to inspect or control its task. The nickname `Jev` works regardless of the bot's Minecraft username; addressing its full username also works. Keep the terminal open to see each action, position, and blocker. Concrete delivery requires the requesting player to be nearby and able to pick up the items.
+### 2. Configure
 
-The test servers bind to localhost, so these addresses work on this computer. World files are local and excluded from Git; cloning this repository does not start a Minecraft server.
+Edit `.env` with your server address and one model provider:
 
-## Run
+```dotenv
+TYPESAFE_API_KEY=your_typesafe_key
+# Alternatively, set OPENROUTER_API_KEY=your_openrouter_key
+
+MC_HOST=localhost
+MC_PORT=25565
+MC_VERSION=26.1
+MC_USERNAME=Jev
+MC_AUTH=offline
+
+JEV_DASHBOARD_PORT=3040
+```
+
+Use `MC_AUTH=offline` when your server supports offline authentication. For an authenticated server, use `MC_AUTH=microsoft` with the bot’s Minecraft account and complete the sign-in prompt. Your own player and the bot need separate identities.
+
+### 3. Start and join
 
 ```sh
-npm install
-cp .env.example .env
-# Set TYPESAFE_API_KEY or OPENROUTER_API_KEY, plus Minecraft connection settings.
 npm start
 ```
 
-Use Node 22 or newer, as required by Mineflayer. The local servers run Minecraft 26.1. Credentials stay in `.env`. Say the bot's name before a request if other players are chatting.
+Join the same server from **Multiplayer → Direct Connection** in Minecraft. Then try:
 
-`stop` cancels the active task and pauses autonomous movement between requests, including while a reconnect is loading the world. `status` reports the task or current survival action. `resume` retries saved progress, or reactivates idle survival if no task remains. A new supported request replaces the old one after its current action has stopped. Running tasks automatically resume after a disconnect or process restart; cancelled or blocked tasks require `resume`. Connections retry with a bounded backoff; explicitly shutting down the process stops retries.
+```text
+Jev come here
+Jev craft me a chest
+Jev build a house
+```
 
-After death, Jev respawns through a fresh connection and replans from actual inventory. It can retrieve matching drops at a nearby, loaded death location via an observed route without digging, scaffolding, water crossings, or known hostiles. Retrieval is bounded to five attempts/30 seconds within the five-minute drop window, and defers to immediate survival needs. Three deaths within ten minutes pause work for an explicit `resume`. A controlled live trial verified retrieval and resumption; this does not establish safe recovery through hostile terrain or from distant deaths.
+With the dashboard setting above, open [the live Observatory](http://127.0.0.1:3040/?session=live). Keep the bot process running while you play.
 
-When three consecutive attempts fail without progress, or the executor reaches a concrete blocker, Jev can ask `anthropic/claude-fable-5.1` for help through OpenRouter. The adviser sees the original request, current inventory/tool durability, nearby terrain and threats, recipe alternatives, failed routes and recent attempts. It selects up to three executable recovery options: gather useful supplies or observed alternative ingredients, approach from a reachable nearby position, choose another supported shelter site, or return toward the surface. Jev checks and executes those steps, then resumes the same objective; ordinary world/inventory verification still determines success.
+## Talking to Jev
 
-This is enabled automatically with `OPENROUTER_API_KEY`; `RECOVERY_ADVISER=off` disables it and `OPENROUTER_RECOVERY_MODEL` overrides the model. Without a key, normal Jev decisions, bounded retries and honest blockers continue. Advice has a 45-second request timeout, a one-minute call cooldown, at most two calls for the same failure and six per saved goal. Plans expire after fifteen minutes. Ordinary actions get at most twelve execution steps/two minutes; supply actions allow up to 96 steps within two minutes based on their recipe dependencies, and surface returns allow up to 192 inspected steps within ten minutes. These bounds let a deep ascent or twelve-block supply request finish without removing cancellation or safety checks. Stop, air loss and nearby threats interrupt the adviser. Death, dimension changes, changed requests and stale positions invalidate plans. The saved goal's `recoveryAdvice` records observations, selected actions, model usage and outcomes; credentials are never written there. LLM advice cannot issue operator commands or arbitrary code. Recovery is limited to implemented actions, so an accurate diagnosis can still end in a concrete blocker. A controlled trial with three injected navigation failures passed a real Fable call, two real repositioning actions, and the retained “come here” objective at full health. A retained natural flooded-shaft diagnostic received useful advice but still failed its staircase escape; that is not a successful recovery claim.
+Start a request with **“Jev …”** or the bot’s configured username. These are examples, not a fixed command vocabulary:
 
+| Request | What it does |
+| --- | --- |
+| `Jev come here` | Move toward the speaker. |
+| `Jev follow me` | Keep following the speaker until stopped or replaced by another task. |
+| `Jev get me a pumpkin` | Find, collect, and deliver one pumpkin. |
+| `Jev make eight birch stairs` | Gather ingredients and craft the requested quantity. |
+| `Jev give me full diamond armor and a bed` | Plan all four armor pieces and one bed together, sharing their material requirements. |
+| `Jev get me 32 purple concrete` | Obtain ingredients, craft powder, harden it in water, and deliver the blocks. |
+| `Jev find a cherry biome` | Explore using observed biome data. |
+| `Jev find a sheep` | Look for and approach a sheep without attacking it. |
+| `Jev build a small cherry mansion` | Request a custom building design. |
+| `Jev find a way to the Nether` | Work toward a portal and verify entry; survival progression remains experimental. |
 
-State is stored under `.bot-state/`, separately for each server and bot identity. House coordinates are fixed once selected. Completion comes from world/inventory checks, never solely from a model's opinion.
+**“For me” requests delivery.** `Jev craft me a chest` brings the chest to you; `Jev craft a chest` keeps it in the bot’s inventory. Stay nearby for handovers: delivery requires observed pickup by the intended player.
 
-When surface exploration cannot leave a ravine, Jev can retain an observed higher landing and excavate an inspected staircase toward it. Seeing open sky at the bottom no longer ends that recovery. Existing exits are tried without spending crafting ingredients; a blocked stair can retreat a few steps. An almost-broken pickaxe may gather its replacement's final stone ingredients only when the recipe catalog proves the remaining swings and carried supplies suffice. Ordinary expedition planning still excludes worn tools, and recovery requires actual item pickup and crafting confirmation.
+| Control | Effect |
+| --- | --- |
+| `Jev status` | Describe the current task or survival activity. |
+| `Jev stop` | Cancel active movement and pause work, saving progress. |
+| `Jev resume` | Continue a saved task or resume idle survival behavior. |
 
-In Creative mode, Jev takes requested items and building materials directly from the Creative inventory, preserves existing inventory slots, and confirms server inventory updates. Construction needs only one reusable item per material; item-delivery requests still obtain the exact requested quantity. Item delivery still checks actual recipient pickup. This path is gated by the bot's server-reported Creative mode and is unavailable in Survival. Normal walking/following is supported; following a player through the air is not implemented.
+A new request replaces the active task. Put related item requests in one message to have them planned together. Combined requests support up to 16 different item types, with shared recipe dependencies, reserved outputs, and saved delivery progress.
 
-## Building designer
+Running tasks resume after reconnects and process restarts. Stopped or blocked tasks wait for `resume`. State is stored in `.bot-state/`, separately for each server and bot identity.
 
-Describe a structure in chat, for example `Jev build a compact cherry mansion with two floors and big windows`. Jev routes the request to the building tool. A simple `Jev build a house` keeps the existing 5×5 shelter workflow; `make two beds` remains an inventory recipe request.
+## Building
 
-With `OPENROUTER_API_KEY` set, the designer uses `anthropic/claude-fable-5.1` by default (`OPENROUTER_BUILD_MODEL` overrides it). It receives the request, nearby ground survey, game mode, dimension, inventory, supported block palette and construction limits. The survey also distinguishes locally practical materials from merely supported block types and includes the actual recipe costs for 64 blocks. Survival designs favor small builds and local supplies unless the player requests otherwise; precious full blocks such as diamond blocks are supported when requested. It returns cuboid regions describing a schematic. Code checks dimensions, palette, grounded connectivity and entrance access before selecting a site. Approximate interior/roof walking checks are diagnostic notes, not reasons to reject the design or ask for another revision. Inset entrances are accepted when a supported walking route reaches the exterior. Decorative structures can omit an entrance. Invalid drafts go back to the same advisor with concrete validation feedback, with up to four total attempts; each failed draft is retained.
+Describe the structure, material, and features you want:
 
-OpenRouter is optional. In the default `BUILD_DESIGNER=auto` mode, a missing key selects a Jev template fallback. With an OpenRouter key, custom designs stay on the general schematic-and-repair path and never silently switch to fixed templates after validation failures. Jev chooses a cottage, mansion or tower, one to three floors, size and a material through the actual block catalog. Code assembles a stepped roof, windows, entrance and accessible stairs. The bot announces this fallback and reports a blocker for unsupported shapes instead of silently substituting a different structure. Set `BUILD_DESIGNER=jev` to always use templates, or `openrouter` to require a generated design.
+```text
+Jev build a compact cherry mansion with two floors and big windows
+Jev build a small sandstone watchtower
+Jev build a cobblestone sculpture
+```
 
-Designs, material lists, site coordinates and progress are saved with the goal. Resume reuses the saved schematic and checks actual blocks; it does not generate a new design. Code retains construction batches, combines their shared recipe inputs, and sizes them to fit inventory. Jev chooses resource actions from feasible candidates; exact geometry and recipe dependencies determine the construction order. Survival obtains materials through the existing dependencies; Creative uses the Creative inventory. Building never autonomously invokes `/fill`, `/give` or another operator command. An unexpected block added to the surveyed work area stops construction for inspection.
+With an OpenRouter key, the designer receives the request, nearby terrain, inventory, game mode, and supported materials. It produces a schematic that Jev saves and executes. In Survival, Jev gathers materials through ordinary recipes; in Creative, it uses the Creative inventory.
 
-Current generated-design limits are 25×16×25, 256 regions, 16 palette entries and 6,000 solid blocks. The supported palette contains full cubes; oriented stairs/doors, fluids, gravity blocks and redstone behavior are outside this executor. It prefers an existing level site. Otherwise it surveys nearby natural ground and can cut up to four blocks, fill up to six, and prepare a supported approach or shallow-water island foundation, within a 2,400-cell earthwork budget. Earthworks fill a whole foundation layer before raising neighboring columns. Construction approaches a visible face within reach, considers alternative reachable work, and reserves the building materials while reusing surplus dirt or stone for access. Final cleanup disables new scaffolding and waits for server-confirmed digging before releasing ownership. Work proceeds through normal digging and placement with ordinary materials; it preserves recognizable builds and stops for unexpected new blocks. Unknown terrain, lava and deep water are excluded. Natural sand and gravel are valid site terrain. Large builds and rare Survival materials can still encounter movement or acquisition blockers. Custom designs do not yet become remembered survival shelters. Controlled Survival tests independently verified a 600-block saved tower including scaffold cleanup, builds on hills and a high sand bank, a 70-block shallow-water foundation/build, and a 17-block glass/sandstone build that gathered all 44 shared sand before crafting. These use isolated prepared terrain and recorded supplies; they are not fresh natural-world acceptance. A controlled Creative trial built and independently verified an 84-block advisor-designed solid monument using the same executor, with no shape-specific branch. A previous controlled Creative trial completed an 865-block Fable-designed cherry mansion; a fresh connection verified every block/opening and walked both floors without digging or scaffolding. This is construction evidence, not proof of gathering a mansion’s materials in Survival.
+Jev prefers level ground but can also cut natural terrain, fill gaps, and prepare a shallow-water foundation. Site preparation has bounded excavation and fill limits, protects recognizable existing builds, and stops if unexpected blocks appear. The saved design and site are reused on resume.
 
-Jev remains a decision model through either provider. `JEV_PROVIDER=openrouter` uses the OpenRouter Decisions API with `typesafe/jev-1.13`; this is separate from the generative designer. If no provider is specified, an existing TypeSafe key takes precedence, otherwise the OpenRouter key is used for Jev.
+The current executor supports full-cube structures up to **25 × 16 × 25 blocks**, with at most **6,000 solid blocks** and **16 materials**. Oriented stairs and doors, fluids, gravity blocks, and working redstone are not supported schematic elements. These limits apply to construction; inventory crafting can still make items such as stairs.
 
-## Requested operator commands
+Without an OpenRouter key, Jev selects and configures cottage, mansion, or tower templates. Unsupported shapes report a limitation. With a key, failed custom designs stay on the schematic repair path rather than silently becoming a template. A simple `Jev build a house` uses the compact shelter workflow.
 
-The player world enables command blocks and gives Jev operator level 4. `MC_COMMAND_USERS` lists the player names allowed to request operator commands (currently DoloresDoodle in the local configuration). An empty list disables this entry point.
+## Model configuration
 
-- `Jev get me a command block` uses the Creative inventory and ordinary verified delivery.
-- `Jev please make it daytime`, `Jev stop the rain`, or `Jev set the difficulty to peaceful` change world settings.
-- `Jev teleport me to you` moves the speaker to Jev; `Jev teleport yourself to me` moves Jev to the speaker.
-- `Jev put me in Creative`, `Jev summon a cow at my position`, and `Jev enable keep inventory when we die` are also classified from natural language.
-- Exact commands remain available with `Jev run /...`, for example `Jev run /time query daytime`. They execute as Jev, so `@s` and relative coordinates refer to Jev.
+Jev handles request interpretation and ordinary action selection through either provider. The optional generative model has two separate jobs: building design and advice when repeated attempts get stuck.
 
-`src/command-classifier.js` builds nested Jev choices from the actual server command tree, then selects typed arguments from server completions, the item catalog, online players, observed positions, and values present in the request. The current 26.1 operator catalog exposes 90 root commands. A final semantic check compares the assembled command with the request before dispatch. This is selection and validation, with no generated command text. Complex free-form NBT/JSON or missing arguments may require an exact command; catalog coverage does not mean every phrasing or argument form is understood.
+| Setting | Purpose |
+| --- | --- |
+| `TYPESAFE_API_KEY` | Use Jev through TypeSafe. |
+| `OPENROUTER_API_KEY` | Use Jev through OpenRouter and enable optional design/recovery calls. |
+| `JEV_PROVIDER` | Force `typesafe` or `openrouter`. Otherwise, a TypeSafe key takes precedence. |
+| `TYPESAFE_DEFAULT_MODEL` | TypeSafe decision model; default `jev-latest`. |
+| `OPENROUTER_JEV_MODEL` | OpenRouter decision model; default `typesafe/jev-1.13`. |
+| `BUILD_DESIGNER` | `auto` uses OpenRouter when configured, otherwise templates; `jev` always uses templates; `openrouter` requires generated designs. |
+| `OPENROUTER_BUILD_MODEL` | Generative building model. |
+| `RECOVERY_ADVISER` | `auto` enables advice when an OpenRouter key is available; `off` disables it. |
+| `OPENROUTER_RECOVERY_MODEL` | Generative recovery model. |
 
-Commands require a fresh player-chat event from an allowed sender. They are unavailable to the autonomous planner, and ordinary bot speech cannot send slash commands. Commands pause active work, append the request, classification judgments, and dispatch record to `.bot-state/<identity>-commands.jsonl`, and are never replayed by resume, restart, or failure recovery. Server replies are relayed when received. Ask a new command explicitly to run it again. Operator permissions do not make normal gathering/building switch to commands on its own.
+Both generative model settings currently default to `anthropic/claude-fable-5.1`; configure model IDs available to your OpenRouter account. Recovery advice selects from implemented actions and has call, time, and execution limits. It cannot run arbitrary code or operator commands.
 
-## Execution
+See [`.env.example`](.env.example) for connection and viewer settings. Keep credentials in `.env`, which is excluded from Git.
 
-`src/objectives.js` batches independent Jev questions for outcome, quantity, delivery, and player target. Quantity options come from numbers/phrases actually present in the request. `src/catalog.js` builds nested choices from all 1,506 registry items, with lexical hints and bounded category/family/variant branches. Jev traverses those choices; there is no fixed item-command whitelist. `src/knowledge.js` expands 887 craftable outputs and 61 smeltable outputs from the server's recipe and loot data in `data/vanilla-26.1.json`, including ingredient alternatives, harvest tools, and special drops. Regenerate it with `python3 scripts/extract-knowledge.py <inner-server-26.1.jar>`. Known recipes and arithmetic stay in code. Jev selects among feasible observed resource targets, with recorded decisions and stale-state checks.
+## Watching Jev
 
-`src/plan.js` resolves material, crafting, smelting and tool dependencies. Ingredients are reserved while expanding recipes so shared dependencies cannot spend the same materials twice. Recipes are checked against installed Minecraft data in tests.
+The **Observatory** is a local browser view of the bot’s loaded surroundings, with:
 
-`src/work.js` repeatedly observes inventory and executes the next missing dependency. It records failed mining coordinates, explores with a persistent search history, uses bounded navigation, and saves progress after actions. Failures produce a concrete blocker; five consecutive execution errors or an exhausted search stop the task for inspection.
+- Orbit, behind-the-bot, first-person, and top-down cameras.
+- Terrain textures from your local Minecraft installation, plus route and building overlays.
+- Inventory, health, activity, and recorded decision choices.
+- A timeline, recording export/import, and live stop/resume controls.
 
-Combined item requests share one dependency graph and material ledger. Compatible gathering, crafting and smelting steps are combined without merging across tool dependencies. For example, a full diamond set gathers24 diamonds before crafting armor; an iron set gathers24 raw iron for one furnace batch. Carried items and completed deliveries reduce remaining requirements; requested ingredients are reserved from other recipes. The whole output set is prepared before delivery. Crafting runs a bounded batch at the same bench, reconciling server inventory, cursor and unused grid ingredients after each individual recipe. Furnace loads hold up to64 items and retain their position/output target across interruption so resuming does not mine their inputs again. The 26.1 client can optimistically report several outputs before server reconciliation; only verified inventory satisfies a dependency.
+Enable it with `JEV_DASHBOARD_PORT=3040` when starting the bot. To browse recordings and the illustrated demo without connecting a bot:
 
-House building uses nested Jev choices through `src/decisions.js`: current priority → subtask → bounded action. Options include site selection, resource targets, clearing, and placement. Conditional branch questions are batched, unavailable options are rejected, and changed observations discard stale answers. Logs and saved state contain the observed state, options, selected path, probabilities, latency, and token usage; “Jev status” shows the latest path.
+```sh
+npm run harness
+```
 
-`src/survival.js` preserves the player request while preparing shelter or food. Jev chooses between work, shelter, and observed food targets; at night, ordinary outdoor work waits for shelter. Code handles immediate air, eating, and threat interruptions; an exposed hostile interrupts mining/navigation and triggers a bounded escape. Ordinary route planning, ore selection and staircase excavation keep distance from observed hostiles, while allowing retreat if a mob has already approached. Route feasibility checks continue partial searches within their deadline rather than treating the first time slice as failure. Completed houses become remembered refuges: Jev can temporarily seal their two-block doorway and reopen it on exit. Small emergency shelters remain available when no home is nearby. Both paths verify the enclosure and exit. Shelter material counts are checked again after navigation, which can spend scaffolding or alter natural walls. Snow and vegetation are cleared without requiring a tool to harvest their drops.
+Open [localhost:3040](http://127.0.0.1:3040). Use a different port if a live viewer is already running. The standalone viewer does not control Minecraft. See the [Observatory guide](docs/observatory.md) for controls, texture configuration, and recording details.
 
-Between requests the same controller maintains a food reserve and seeks shelter on hostile difficulties. On Peaceful it waits nearby unless a real survival need arises. Food collection hunts observed adult cows, mooshrooms, pigs, sheep, chickens, or rabbits, derives their food drops from the matching server loot tables, remembers failed targets, and verifies actual ingredient pickup. Babies and hostile rabbit variants are excluded. Raw chicken never counts as edible reserve. Cooking choices come from the server's smelting catalog and carried ingredients; the existing dependency planner obtains missing tools, furnace materials, and fuel. Jev selects among cooking and observed hunting targets. Surface food routes inspect loaded columns, permit natural tree canopies, exclude underground destinations and paths, and prohibit cave excavation during search and pursuit while permitting carried bridges. Surface searches cannot build vertical pillars; exploration checks nearby exits before reporting a distant route failure.
+## Optional operator commands
 
-A controlled Normal test started empty, hunted chickens, gathered wood/stone, crafted a pickaxe and furnace, cooked the chicken, and ate one to restore hunger from 16 to 20 at full health. Its prepared terrain and externally induced hunger make it mechanics evidence. A separate uninterrupted natural Normal trial has now built its house, hunted/cooked food and survived two full cycles by returning to shelter both nights. Natural eating/healing has since been observed in a resumed Normal diagnostic; natural tool replacement, broader farming, and reliable hostile-cave travel still need validation. Nether task sequencing and the legacy concrete checkpoint path remain deterministic; new item requests use the catalog planner.
+Jev can translate explicit player requests such as `Jev make it daytime`, `Jev stop the rain`, or `Jev teleport me to you` into server commands. To enable this, grant the bot the required server permissions and list allowed players:
 
-New work requires an explicit “Jev …” or login-name prefix. This prevents other bots' acknowledgements from becoming commands. Short stop, cancel, status, and resume controls also work without a prefix.
+```dotenv
+MC_COMMAND_USERS=YourPlayerName,AnotherPlayer
+```
 
-Jev classifies item recipients separately: “craft me a chest” requests delivery, while “craft a chest,” “collect lapis for yourself,” and “get eight blocks and keep them” leave the output in its inventory.
+Leave this empty to disable command requests. Exact commands also work, for example `Jev run /time query daytime`. They execute as the bot, so `@s` and relative coordinates refer to Jev.
 
-Resource expeditions carry four spare oak logs, a stone-or-better pickaxe, and a portable crafting table. Outside Peaceful mode, preparation also requires a safe food reserve of 12 hunger points before descending, even at full hunger. Catalog item requests prepare these supplies when a recipe needs underground resources beyond immediate digging reach; ordinary surface pickups keep their direct path. Unobserved crafted objects are not treated as raw resource deposits: an obsidian plan must obtain a diamond pickaxe instead of searching for ender chests. `src/tunneling.js` excavates supported staircase steps and rejects liquids, missing footing, and protected building foundations. Navigation limits drops and avoids blind shafts. A stranded bot can dismantle an exposed pillar one block at a time when the block directly underneath is a verified solid landing, outside protected construction and away from hazards. Each descent requires server confirmation and a stable landing; the recovery adviser can also select this observed action. Shelter material gathering stays at the site's surface elevation and protects its approach. If positioning spends a selected shelter material, sealing rechecks the remaining shell and chooses from the actual remaining stock.
+Operator commands require a fresh request from an allowed player and are never used autonomously for gathering, building, or recovery. Stop/resume and reconnects do not replay them. Complex command arguments may need an exact slash command.
 
-`src/compatibility.js` contains application-side workarounds for mining-speed tags, named difficulty packets in 26.1, pathfinder results that otherwise share mutable search nodes, nearby animals incorrectly overwriting the player's oxygen reading, and player collision dimensions. Collision dimensions now match Minecraft's float precision, preventing tiny wall overlaps that caused repeated server corrections and blocked jumping. Navigation can recover once from an already stuck position by walking toward the center of an inspected solid floor cell, within its original deadline. A retained-world diagnostic reproduced the old bug, verified recovery, and repeated the route without corrections at full health. Low air interrupts work and triggers a swimming route back to breathable air. Three controlled dives passed without damage; broad underwater exploration remains unproven. Installed dependency files remain unmodified.
+## Development
 
-`src/agent.js`, `src/act.js`, and much of `src/skills.js` contain the earlier experimental flat action loop. They remain available for comparison, but `index.js` now runs the verified objective executor. Other free-form commands from the experimental loop are not currently routed by the new entry point.
+The application is CommonJS JavaScript. The main pieces are:
 
-## Tests
+| Area | Entry points |
+| --- | --- |
+| Connection, chat, and persistence | `index.js`, `src/session.js`, `src/objectives.js` |
+| Jev requests and catalog routing | `src/typesafe.js`, `src/catalog.js`, `src/decisions.js` |
+| Recipes, combined tasks, and execution | `src/knowledge.js`, `src/batch-plan.js`, `src/item-bundle.js`, `src/work.js` |
+| Survival, travel, and recovery | `src/survival.js`, `src/movement.js`, `src/boats.js`, `src/recovery-adviser.js` |
+| Schematics and viewer | `src/designer.js`, `src/harness/`, `public/harness/` |
+
+Typed model decisions choose among feasible options. Code owns recipe arithmetic, action execution, cancellation, and verification against actual inventory and world observations.
+
+Run the local checks without a Minecraft server or API key:
 
 ```sh
 npm test
 npm run plan
-node scripts/eval-intents.js
-node scripts/eval-decisions.js
-node scripts/eval-survival.js
-JEV_PROVIDER=openrouter node scripts/eval-intents.js
-MC_PORT=25567 node scripts/designer-test.js
-# Separate controlled recovery test; apply its printed setup, then create setup-ready.
-MC_PORT=25567 node scripts/recovery-adviser-test.js
-# Add DESIGN_BUILD=1 for the controlled Creative fixture; perform its printed setup first.
-MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/commands-test.js
-MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/creative-house-test.js
-MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/movement-test.js
-MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/tool-test.js
-MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/recovery-test.js
-MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/expedition-test.js
-MC_HOST=127.0.0.1 MC_PORT=25567 EXPEDITION_FOOD=1 EXPEDITION_SITE=1000 node scripts/expedition-test.js
-MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/recipe-alternative-test.js
-MC_HOST=127.0.0.1 MC_PORT=25567 node scripts/hostile-route-test.js
-MC_HOST=127.0.0.1 MC_PORT=25567 COOK_SITE=800 node scripts/cooking-test.js
-MC_HOST=127.0.0.1 MC_PORT=25567 ACCEPT_SCENARIO=controlled node scripts/shelter-test.js
-MC_HOST=127.0.0.1 MC_PORT=25567 ACCEPT_SCENARIO=controlled node scripts/food-test.js
-MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- build a house
-MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- get me 32 purple concrete
-MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- find a way to the Nether
-# Use a separate newly generated natural Normal world for the full journey.
-MC_HOST=127.0.0.1 MC_PORT=25575 MC_VERSION=26.1 ACCEPT_TIMEOUT_MS=21600000 npm run accept -- beat Minecraft
 ```
 
-The acceptance runner requires an explicit isolated `MC_PORT` before loading `.env` and rejects the known interactive ports 25565 and 25577. It joins with a new player identity, checks that its inventory is empty and its mode is survival, interprets the actual request through Jev, and records events plus the saved goal under `artifacts/<run-id>/`. It never grants items, teleports, or changes game mode. The default deadline is 30 minutes (`ACCEPT_TIMEOUT_MS` overrides it).
+Classifier evaluations make live model calls but do not require a game server:
 
-Winning trials additionally require an uninterrupted empty Normal Survival start in the Overworld. A separate observer reads live dimension, inventory, health and advancement events without consulting the bot's goal state. It requires observed blaze rods, pearls and Eyes before End entry, fresh dragon-kill credit, an exit-portal event and a living return. Deaths, disconnects and observed mode/difficulty changes invalidate the trial. Its evidence is retained in `events.jsonl` and `win-witness.json`. Even a verified runtime finish is labeled `PENDING_SERVER_VERIFICATION`: saved server player/advancement/dragon data, fresh-world provenance and the absence of gameplay assistance still need an independent audit. No full winning acceptance run has passed.
+```sh
+node scripts/eval-intents.js
+node scripts/companion-routing-test.js
+```
 
-The separate tool-mechanics test gathers ingredients, crafts a wooden pickaxe, repeatedly mines/reuses cobblestone, and verifies replacement before breakage. It passed on prepared Survival/Peaceful terrain: the old tool retained 52 uses and the replacement acquired its first use. For a crowded fixture, an optional initially nonexistent `TOOL_SETUP_FILE` makes the test wait after printing its username; prepare a clear starting location, record any console setup, then create that file. The recorded passing trial used a setup teleport, so it is controlled debugging rather than Normal survival acceptance.
+Gameplay tests need a **separate, disposable Minecraft server**. Read each script’s setup instructions first; controlled fixtures can place blocks, grant items, or change game settings. For an acceptance trial against a separately prepared server:
 
-The separate operator-command test prints its temporary identities and setup file. On an isolated fixture, grant those identities OP, set the bot to Creative and time to night, then create the printed setup file. It verifies requested commands and observed effects, impersonation rejection, ordinary item delivery, and restart without command replay. Remove the temporary OP roles afterward. `scripts/eval-commands.js` additionally checks ten natural-language requests against a read-only command-catalog connection named TreeProbe on port 25567, which needs temporary OP to see the full tree; it never dispatches the inferred commands.
+```sh
+MC_HOST=127.0.0.1 MC_PORT=25579 MC_VERSION=26.1 npm run accept -- build a house
+```
 
-Set `ACCEPT_CYCLES=2` on a fresh Normal trial to continue autonomous survival after the useful request completes. Success then also requires 48,000 uninterrupted world ticks since the initial empty-inventory observation. The runner rejects resumed cycle trials and records death or other failures. This mode has a 55-minute default deadline.
+The acceptance runner requires an explicit isolated port, uses a separate bot identity, and writes evidence under `artifacts/`. A controlled fixture passing is not proof that the same task works from an empty inventory in a natural world.
 
-`scripts/recovery-test.js` separately exercises the real chat entry point. Its printed setup uses an isolated fixture's console to position test players and logs, kick the bot, and inject death. It verifies crafting, automatic reconnect, persistent stop across reconnect/process restart, actual dropped-item retrieval, and resumption of the same request without bot-issued commands. These injected faults and setup teleports make it a controlled mechanics test, not survival acceptance.
+For contributions, include a reproducible request, expected behavior, relevant configuration, and what you tested. Bug reports are most useful with the Minecraft version, game mode/difficulty, and a short log or Observatory recording. Review recordings before sharing: they can contain chat, player names, and world coordinates.
 
-`scripts/cooking-test.js` prints fixture setup and synchronization files, then hunts and cooks from an empty inventory. Choose unused prepared ground with `COOK_SITE`. After cooking, apply the printed hunger effect, acknowledge setup using its file, clear the effect as soon as the script requests it, and acknowledge that too. Eating requires both an observed consumed item and an increased food bar; later replenishment does not erase that evidence. Restore the isolated fixture's difficulty afterward. This test must not be counted as unmodified natural-world acceptance.
+## Current limitations
 
-A separate local vanilla test server is kept in `.test-server/` on port 25566, bound to localhost, with seed 12345 and peaceful difficulty. It is separate from the existing server on 25565. Server files, credentials, goal state and trial artifacts are excluded from Git.
+- Recognizing an item does not guarantee a working Survival acquisition path. Farming, trading, and enchanting are not implemented; some blocks need an already enchanted tool.
+- Rare resources, complex terrain, large builds, and long expeditions can still get stuck. Recovery can only use actions the bot knows how to execute.
+- Boat travel requires loaded, level water and observed shores within its survey range; open-ocean exploration and flying follow are not supported.
+- Building preparation does not clear arbitrary player structures or handle deep-water and lava foundations.
+- `Jev beat Minecraft` starts an experimental progression objective. Reliable fresh-start Nether progression and a complete dragon defeat with a living return remain unfinished.
 
-## Visual observatory
-
-Run `npm run harness` to explore the illustrated 3D scene and existing run recordings at `http://127.0.0.1:3040` without starting a bot. The viewer has orbit/behind/first-person/top cameras, a cutaway, route and build overlays, inventory, recorded classifier choices, and a scrubbable timeline. For live capture, set `JEV_DASHBOARD_PORT=3040` when starting the bot. See [the observatory guide](docs/observatory.md) for integration, controls, recording limits and validation.
-
-## Current limits
-
-Natural terrain exploration, underground progression, restart recovery during furnace work, and survival in hostile difficulty still need end-to-end validation and improvements. Natural iron-pickaxe replacement has been observed, including in the failed fresh Normal Nether trial (later lost to lava). A resumed natural Normal concrete trial completed gathering, hardening and delivery of 32 purple concrete, independently verified in the recipient inventory; its earlier failures remain preserved. Fresh uninterrupted Normal concrete trial `mu7uhz06` also passed, with all 32 blocks verified in the independent receiver inventory. Fresh Normal Nether completion remains outstanding: `mu7sfld6` died in lava after gathering six obsidian. Delivery records server pickup events as well as independent recipient-inventory checks. A Nether frame requires mined obsidian; lava-bucket casting is not implemented. Temporary portal anchors reuse carried dirt or ordinary non-burning stone, including mixed stacks. Placement refreshes inventory before choosing the next stack, and saved anchors count as construction progress. A controlled test built the frame with andesite/diorite/granite and verified actual Nether entry; this does not prove natural acquisition of the obsidian. Dry route checks use exact standing heights on farmland and dirt paths instead of treating their support blocks as body obstructions.
-
-Fresh Normal endurance trial `mu7j1633` passed exactly 48,000 elapsed ticks without death after independently verifying its house. It gathered and cooked chicken and sheltered both nights; health and hunger remained 20 throughout. This proves the two-cycle/useful-request requirement, while eating and tool replacement still have controlled evidence only. The earlier food-search and navigation failures remain recorded in `PROGRESS.md` and their artifact directories.
-
-A controlled flat fixture also runs on port 25567. `node scripts/fixture-commands.js` prints setup commands that place trees, exposed resources, flowers, and water. Run them only before a trial. Label these trials with `ACCEPT_SCENARIO=controlled-resources`; they do not establish natural-world search performance.
-
-To resume a stopped trial without granting items or resetting its survival progress, set `ACCEPT_RESUME=<run-id>` with the original server port. The runner reuses the original player identity and original empty-inventory evidence.
-
-### Companion requests and discovery
-
-Jev can keep up to 16 different requested item types in one saved list. For example,
-`Jev give me full diamond armor and a bed` resolves all four armor pieces and one
-white bed. Per-item counts and recipients are classified separately. Each item uses
-the existing recipe graph and confirmed pickup/delivery checks. Stop/resume and
-restarts preserve completed handovers. Execution currently works through the list
-one item at a time; it does not yet optimize all recipes into one gathering trip.
-
-`Jev find a cherry biome`, `Jev find a sheep`, and `Jev find a cherry log` use the
-running server's catalogs and ordinary loaded-world observations. Finding an animal
-does not attack it. `Get me a cherry log` still gathers and delivers the item.
-Surface searches retain a distant heading to explore new terrain. Rare biomes may
-require a long trip; searches are bounded, and targets in another dimension require
-getting to that dimension first. No seed lookup or privileged locate command is used.
-
-Ordinary water routes prefer swimming to placing a bridge and include explicit
-surface entry and shore exit transitions. While mining, Jev can choose one useful
-exposed ore after every three successful primary mining actions. Optional detours
-are limited to six blocks and twelve seconds, require usable tools, inventory room
-and safe dry access, cannot excavate or scaffold a route, and return to the original
-request. Player chat uses short everyday wording; detailed errors stay in logs.
-
-### Robot appearance
-
-The Observatory uses the original `public/harness/jev-robot.png` Minecraft skin.
-Rebuild the PNG, editable SVG and resource pack with
-`node scripts/create-robot-skin.js`. The exact 64x64 UV layout is generated in code.
-
-For the local offline Minecraft 26.1 server, enable **Jev-Robot.zip** in
-**Options → Resource Packs**. The pack is already copied into this computer's
-Minecraft resourcepacks folder. Offline Jev's UUID selects the wide Efe default
-skin; the pack replaces that texture. It affects only clients with the pack enabled,
-and other players using the same default skin will also look like the robot.
-It does not change armor, inventory, health, or server gameplay. This is a local
-resource-pack appearance, not a globally uploaded Mojang account skin.
-
-Validation scripts: `scripts/swim-test.js` and `scripts/companion-live-test.js`
-require an explicit isolated `MC_PORT` and record their setup commands. They reject
-the occupied player-world port and are controlled mechanics fixtures, never fresh
-Survival acceptance. `scripts/companion-routing-test.js` checks live Jev routing.
-
-
-### Boat travel
-
-For discovery, surface resource searches, come and follow, Jev can choose a boat
-for a surveyed water crossing of at least 16 blocks. Code checks level source
-water, boat-and-rider clearance, loaded terrain, nearby entities, health and safe
-shores; Jev decides whether boating fits the request. An explicit request to swim
-or avoid boats is respected. Small puddles continue to use swimming.
-
-Jev reuses a carried boat or obtains one through the normal recipe graph, places
-and boards it, paddles with bounded client vehicle physics, gets out, recovers its
-own empty boat and swims onto the bank. It stops on cancellation or server movement
-corrections. Other players' boats and occupied boats are never broken for cleanup.
-Failed optional trips have a cooldown and a two-failure limit per goal.
-
-This first boating route planner requires an observed shore at both ends within
-80 blocks. Unknown ocean crossings, waterfalls, flowing-water courses and ice
-boating are not supported. The craft/cross/land/recover trial uses a controlled
-lake and granted planks; it is not natural-world acceptance.
+See the [roadmap](ROADMAP.md) for priorities and planned improvements.
