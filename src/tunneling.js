@@ -4,7 +4,7 @@ const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
 const { safeFromHostiles } = require('./danger');
 const { surveyRoute } = require('./skills');
-const { dryPassable: passable } = require('./terrain');
+const { dryPassable: passable, dryBodySpace } = require('./terrain');
 
 const directions = [new Vec3(1, 0, 0), new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(0, 0, -1)];
 const faces = [...directions, new Vec3(0, 1, 0), new Vec3(0, -1, 0)];
@@ -130,7 +130,7 @@ async function resourceTunnelStep(bot, task, goal, save, target, resource, actio
 async function retreatForTunnel(bot, task, goal, save, { navigate }) {
   const start = bot.entity.position.floored(), tunnel = goal.tunnel;
   if ((tunnel.retreats || 0) >= 24) { const err = new Error('No dry underground approach after 24 retreats'); err.name = 'Blocked'; throw err; }
-  const dry = p => passable(bot.blockAt(new Vec3(p.x, p.y, p.z))) && passable(bot.blockAt(new Vec3(p.x, p.y + 1, p.z)));
+  const dry = p => dryBodySpace(bot, p);
   const wetStart = [start, start.offset(0, 1, 0)].some(p => bot.blockAt(p)?.name === 'water');
   const movement = bot.pathfinder.movements;
   const previous = { canDig: movement.canDig, allow1by1towers: movement.allow1by1towers,

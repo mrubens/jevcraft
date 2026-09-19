@@ -32,4 +32,15 @@ function selectPortalSite(bot) {
   return surfaces.find(p => portalSiteClear(bot, p)) || null;
 }
 
-module.exports = { reservedForConstruction, portalSiteClear, selectPortalSite };
+// Temporary portal anchors can use ordinary non-burning full blocks already
+// collected underground. Obsidian stays reserved for the actual frame.
+const portalSupportBlocks = new Set(['dirt', 'cobblestone', 'cobbled_deepslate', 'stone', 'deepslate',
+  'andesite', 'diorite', 'granite', 'tuff', 'sandstone', 'red_sandstone', 'netherrack', 'end_stone']);
+function portalSupports(bot) {
+  const counts = {};
+  for (const item of bot.inventory.items()) if (portalSupportBlocks.has(item.name)) counts[item.name] = (counts[item.name] || 0) + item.count;
+  const materials = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return { count: materials.reduce((sum, [, count]) => sum + count, 0), material: materials[0]?.[0] };
+}
+
+module.exports = { reservedForConstruction, portalSiteClear, selectPortalSite, portalSupports };

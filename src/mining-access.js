@@ -3,19 +3,19 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute } = require('./skills');
 const { safeFromHostiles } = require('./danger');
-const { dryPassable: clear } = require('./terrain');
+const { dryPassable: clear, dryBodySpace, supportCell } = require('./terrain');
 
 const wet = new Set(['water', 'lava', 'bubble_column', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant']);
 const solid = block => block?.boundingBox === 'block' && !['magma_block', 'cactus'].includes(block.name);
 
 function dryStanding(bot, point) {
-  const p = point.floored();
-  return clear(bot.blockAt(p)) && clear(bot.blockAt(p.offset(0, 1, 0))) && solid(bot.blockAt(p.offset(0, -1, 0)));
+  const support = supportCell(point);
+  return dryBodySpace(bot, point) && solid(bot.blockAt(support));
 }
 
 function miningReach(bot, point, blockPosition) {
   const feet = point.floored();
-  if (feet.x === blockPosition.x && feet.z === blockPosition.z && blockPosition.y < feet.y) return false;
+  if (feet.x === blockPosition.x && feet.z === blockPosition.z && blockPosition.y < point.y) return false;
   const eye = point.offset(0, 1.62, 0), aim = blockPosition.offset(0.5, 0.5, 0.5), direction = aim.minus(eye);
   if (direction.norm() > 4.5) return false;
   const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
@@ -51,7 +51,7 @@ function miningMovement(bot) {
   const allowed = point => {
     const feet = new Vec3(point.x, point.y, point.z), head = feet.offset(0, 1, 0);
     const wading = ['water', 'bubble_column'].includes(bot.blockAt(feet)?.name);
-    const breathable = clear(bot.blockAt(head)) && (clear(bot.blockAt(feet)) || wading);
+    const breathable = dryBodySpace(bot, feet) || (wading && clear(bot.blockAt(head)));
     const exitingWater = wetStart && feet.y >= start.y && feet.distanceTo(start) <= 8 &&
       [feet, head].every(q => clear(bot.blockAt(q)) || ['water', 'bubble_column'].includes(bot.blockAt(q)?.name));
     return (breathable || exitingWater) && (!previous.allowedPosition || previous.allowedPosition(point));

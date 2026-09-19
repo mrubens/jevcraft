@@ -63,3 +63,33 @@ test('cancelled mining approach restores the inherited restrictions before execu
   await assert.rejects(approachDryMining(bot, task, target, { navigate: async () => assert.fail('Cancelled') }), { name: 'Cancelled' });
   assert.deepEqual(bot.pathfinder.movements, before);
 });
+
+test('dry mining accepts exact farmland/path standing heights and rejects body collisions or water', async () => {
+  const { dryBodySpace } = require('../src/terrain');
+  const registry = require('prismarine-registry')('26.1'), Block = require('prismarine-block')(registry);
+  const { bot, target } = fixture();
+  let support = 'dirt_path', ceiling = false;
+  bot.blockAt = point => {
+    const p = point.floored();
+    const name = p.y === 63 ? support : ceiling && p.y === 65 ? 'stone' : 'air';
+    const block = Block.fromStateId(registry.blocksByName[name].defaultState); block.position = p; return block;
+  };
+  bot.entity.position = new Vec3(0.5, 63.9375, 0.5);
+  assert(dryStanding(bot, bot.entity.position));
+  assert(!miningReach(bot, bot.entity.position, new Vec3(0, 63, 0)), 'Never mine the partial block supporting our own feet');
+  const original = { ...bot.pathfinder.movements };
+  bot.pathfinder.getPathFromTo = function * (movement) {
+    assert(movement.allowedPosition(new Vec3(2.5, 63.9375, 0.5)));
+    yield { result: { status: 'success', path: [new Vec3(2.5, 63.9375, 0.5)] } };
+  };
+  bot.canDigBlock = () => true;
+  await approachDryMining(bot, new Task('path crossing'), target, { navigate: async (_b, _t, goal) => {
+    bot.entity.position = new Vec3(goal.x + 0.5, 63.9375, goal.z + 0.5);
+  } });
+  assert.deepEqual(bot.pathfinder.movements, original);
+  support = 'farmland'; assert(dryBodySpace(bot, new Vec3(2.5, 63.9375, 0.5)));
+  support = 'stone'; assert(!dryBodySpace(bot, new Vec3(2.5, 63.9375, 0.5)), 'Full block still collides with feet');
+  support = 'water'; assert(!dryBodySpace(bot, new Vec3(2.5, 63.9375, 0.5)), 'Must not reinterpret water as partial dry footing');
+  support = 'dirt_path'; ceiling = true;
+  assert(!dryBodySpace(bot, new Vec3(2.5, 63.9375, 0.5)), 'Check the entire 1.8 block body, including the top cell');
+});

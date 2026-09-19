@@ -60,7 +60,7 @@ function surfaceMovement(bot) {
 // lower bound local to prevent this recovery from becoming a deeper cave trip.
 async function returnToSurface(bot, task, goal, save, actions = {}) {
   const isSurface = surfaceObserver(bot), start = bot.entity.position.floored();
-  if (isSurface(start)) { if (goal.surfaceReturn) { delete goal.surfaceReturn; save(); } return; }
+  if (isSurface(bot.entity.position)) { if (goal.surfaceReturn) { delete goal.surfaceReturn; save(); } return; }
   const movements = bot.pathfinder.movements, previous = movements.allowedPosition;
   movements.allowedPosition = p => p.y >= start.y - 3 && (!previous || previous(p));
   const state = goal.surfaceReturn ||= { attempts: 0, visited: {} };
@@ -92,7 +92,7 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       goal.survivalAction = { action: 'return_to_surface', from: { ...start }, target: { ...target }, at: new Date().toISOString() };
       save();
       await navigate(bot, task, destination, { timeoutMs: 20000, stallMs: 5000 });
-      if (!surfaceObserver(bot)(bot.entity.position.floored())) throw new Error('Surface destination changed while returning from underground');
+      if (!surfaceObserver(bot)(bot.entity.position)) throw new Error('Surface destination changed while returning from underground');
       delete goal.surfaceReturn; save();
       return;
     }
@@ -110,7 +110,7 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       };
       movements.allowedPosition = p => p.y >= start.y && (!previous || previous(p));
       await tunnelStep(bot, task, ascentGoal, record, target, { dig: actions.dig, navigate: actions.navigate || navigate });
-      if (surfaceObserver(bot)(bot.entity.position.floored())) { delete goal.surfaceReturn; save(); }
+      if (surfaceObserver(bot)(bot.entity.position)) { delete goal.surfaceReturn; save(); }
       return;
     }
     save();

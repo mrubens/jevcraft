@@ -6,7 +6,7 @@ const { navigate, surveyRoute, equipBestTool, pickaxeTier, countOf } = require('
 const { MINEABLE } = require('./plan');
 const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
-const { reservedForConstruction, portalSiteClear, selectPortalSite } = require('./build-sites');
+const { reservedForConstruction, portalSiteClear, selectPortalSite, portalSupports } = require('./build-sites');
 const { updateDigCapabilities } = require('./movement');
 const { resourceTunnelStep } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = require('./vitals');
@@ -21,7 +21,7 @@ const { observeRecipeAlternatives, knownResourceLocations, isSurfaceResource } =
 const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('./designer');
 const { designWithJev } = require('./build-templates');
 const { dryMiningPositions, approachDryMining, miningMovement } = require('./mining-access');
-const { dryPassable } = require('./terrain');
+const { dryPassable, supportCell } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
@@ -79,7 +79,7 @@ async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops
   let block = bot.blockAt(p);
   if (air(block)) return;
   if (!block?.diggable) throw new Error(`Cannot dig ${block?.name || 'unloaded block'}`);
-  if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) await stepOff(bot, task, p);
+  if (p.equals(supportCell(bot.entity.position))) await stepOff(bot, task, p);
   if (!bot.canDigBlock(block)) {
     await navigate(bot, task, new goals.GoalGetToBlock(p.x, p.y, p.z), { stopWhen: done });
   }
@@ -87,9 +87,9 @@ async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops
   if (done?.()) return;
   // A route to a ground block may end on top of it. Recheck after travel as
   // well as before it; move aside before replacing a foundation cell.
-  if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) await stepOff(bot, task, p);
+  if (p.equals(supportCell(bot.entity.position))) await stepOff(bot, task, p);
   block = bot.blockAt(p);
-  if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) throw new Error('Refusing to dig directly beneath feet');
+  if (p.equals(supportCell(bot.entity.position))) throw new Error('Refusing to dig directly beneath feet');
   if (requiredTool || enchantment) {
     const remaining = item => (bot.registry.itemsByName[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
     const tool = bot.inventory.items().filter(item => (!requiredTool || item.name === requiredTool) && remaining(item) >= 8 &&
@@ -100,6 +100,17 @@ async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops
   if (requireDrops && bot.game?.gameMode !== 'creative' && block.harvestTools && !block.harvestTools[bot.heldItem?.type]) throw new Error(`Missing harvest tool for ${block.name}`);
   await digWithAirGuard(bot, task, block);
   await waitFor(task, () => bot.blockAt(p)?.type !== block.type);
+}
+
+async function syncPlacementInventory(bot, task) {
+  if (!bot._syncWindow) return;
+  // Block confirmation can arrive before the last item leaves its slot. Ask
+  // for the authoritative window before choosing the next material/stack.
+  let finished = false, failure;
+  bot._syncWindow(bot.inventory).then(() => { finished = true; }, err => { failure = err; finished = true; });
+  await waitFor(task, () => finished, 4000);
+  task.check();
+  if (failure) throw failure;
 }
 
 async function place(bot, task, p, material) {
@@ -123,6 +134,7 @@ async function place(bot, task, p, material) {
       await bot.placeBlock(ref, f.scaled(-1));
       await waitFor(task, () => bot.blockAt(p)?.name === material ||
         (material.endsWith('_concrete_powder') && bot.blockAt(p)?.name === material.replace('_powder', '')));
+      if (bot.game.gameMode !== 'creative') await syncPlacementInventory(bot, task);
       return;
     } catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; placementError = err.message; }
   }
@@ -135,7 +147,7 @@ function find(bot, names, distance = 48, count = 32) {
 }
 
 async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfaceResource(resource) } = {}) {
-  if (surfaceOnly && !surfaceObserver(bot)(bot.entity.position.floored())) {
+  if (surfaceOnly && !surfaceObserver(bot)(bot.entity.position)) {
     await surfaceStep(bot, task, goal, save);
     return;
   }
@@ -245,7 +257,7 @@ function miningCandidates(bot, step, goal) {
 
 async function mine(bot, task, step, goal, save, selected) {
   const surfaceOnly = isSurfaceResource(step.block);
-  if (surfaceOnly && !surfaceObserver(bot)(bot.entity.position.floored())) {
+  if (surfaceOnly && !surfaceObserver(bot)(bot.entity.position)) {
     await surfaceStep(bot, task, goal, save); return;
   }
   const surface = surfaceOnly ? surfaceMovement(bot) : null;
@@ -609,7 +621,7 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
         if (Object.keys(actions).length >= 4) break;
         // Do not ask Jev to choose unsupported targets such as the trunk it
         // stands on or floating remnants with no currently feasible approach.
-        if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) continue;
+        if (p.equals(supportCell(bot.entity.position))) continue;
         if (!bot.canDigBlock(bot.blockAt(p))) {
           const route = bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalGetToBlock(p.x, p.y, p.z), 300);
           if (route.status !== 'success') continue;
@@ -856,7 +868,7 @@ async function obtainStep(bot, task, goal, save, client, onStep) {
   if (step.action === 'mine') {
     for (const p of miningCandidates(bot, step, goal).slice(0, 12)) {
       if (Object.keys(actions).length >= 4) break;
-      if (p.equals(bot.entity.position.floored().offset(0, -1, 0))) continue;
+      if (p.equals(supportCell(bot.entity.position))) continue;
       if (!bot.canDigBlock(bot.blockAt(p)) && bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalGetToBlock(p.x, p.y, p.z), 200).status !== 'success') continue;
       const block = bot.blockAt(p).name;
       actions[`gather_${p.x}_${p.y}_${p.z}`] = { description: { block, position: { ...p },
@@ -903,6 +915,14 @@ async function movementStep(bot, task, goal, save) {
   return goal.kind === 'come' && target.position.distanceTo(bot.entity.position) <= 3;
 }
 
+async function preparePortalSupports(bot, task, goal, save, needed) {
+  const carried = portalSupports(bot);
+  if (carried.count >= needed) return true;
+  const material = carried.material || 'cobblestone';
+  await acquireStep(bot, task, material, countOf(bot, material) + needed - carried.count, goal, save);
+  return false;
+}
+
 async function netherStep(bot, task, goal, save) {
   if (String(bot.game.dimension).includes('nether')) return true;
   const portal = find(bot, ['nether_portal'], 64, 1)[0];
@@ -914,16 +934,21 @@ async function netherStep(bot, task, goal, save) {
   }
   // A frame with no placed blocks can be relocated when its original ground
   // was excavated. Once construction begins its coordinates stay fixed.
-  if (goal.portalFrame && goal.portalFrame.blocks.every(p => bot.blockAt(pos(p))?.name !== 'obsidian') &&
+  if (goal.portalFrame && goal.portalFrame.blocks.every(p => bot.blockAt(pos(p)) && bot.blockAt(pos(p)).name !== 'obsidian') &&
+      !(goal.portalFrame.supports || []).some(p => bot.blockAt(pos(p))?.name === p.material) &&
       !portalSiteClear(bot, goal.portalFrame.origin)) { delete goal.portalFrame; save(); }
   if (!goal.portalFrame) {
     if (!await acquireStep(bot, task, 'flint_and_steel', 1, goal, save)) return false;
     if (!await acquireStep(bot, task, 'obsidian', 10, goal, save)) return false;
     // Gather scaffolding before choosing the building site, so we never mine
     // its foundations to obtain temporary supports.
-    if (!await acquireStep(bot, task, 'dirt', 3, goal, save)) return false;
+    if (!await preparePortalSupports(bot, task, goal, save, 3)) return false;
     const site = selectPortalSite(bot);
-    if (!site) { await explore(bot, task, goal, save, 'portal site'); return false; }
+    if (!site) {
+      if (surfaceObserver(bot)(bot.entity.position)) await explore(bot, task, goal, save, 'portal site', { surfaceOnly: true });
+      else await surfaceStep(bot, task, goal, save);
+      return false;
+    }
     const o = pos(site);
     // Minimal frame: two bottom/top blocks, three on each side, no corners.
     goal.portalFrame = { origin: { ...o }, blocks: [
@@ -940,12 +965,20 @@ async function netherStep(bot, task, goal, save) {
     // beam cannot be placed in midair: build its left corner after the column.
     const o = pos(frame.origin);
     const scaffold = [o.offset(0, 0, 0), o.offset(3, 0, 0), o.offset(0, 4, 0)];
-    const neededDirt = scaffold.filter(p => air(bot.blockAt(p))).length;
-    if (!await acquireStep(bot, task, 'dirt', neededDirt, goal, save)) return false;
+    const neededSupports = scaffold.filter(p => air(bot.blockAt(p))).length;
+    if (!await preparePortalSupports(bot, task, goal, save, neededSupports)) return false;
     await navigate(bot, task, new goals.GoalBlock(o.x, o.y, o.z - 1));
-    for (const p of scaffold.slice(0, 2)) if (air(bot.blockAt(p))) await place(bot, task, p, 'dirt');
+    const anchor = async p => {
+      const material = portalSupports(bot).material;
+      if (!material) throw new Blocked('Portal supports were consumed during travel; need another ordinary stone block');
+      frame.supports ||= [];
+      frame.supports = frame.supports.filter(s => !pos(s).equals(p));
+      frame.supports.push({ ...p, material }); save();
+      await place(bot, task, p, material);
+    };
+    for (const p of scaffold.slice(0, 2)) if (air(bot.blockAt(p))) await anchor(p);
     for (const p of missing) {
-      if (p.y === o.y + 4 && air(bot.blockAt(scaffold[2]))) await place(bot, task, scaffold[2], 'dirt');
+      if (p.y === o.y + 4 && air(bot.blockAt(scaffold[2]))) await anchor(scaffold[2]);
       await place(bot, task, pos(p), 'obsidian');
     }
   }
