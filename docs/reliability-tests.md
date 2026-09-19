@@ -781,3 +781,14 @@ and sufficient cobblestone. At the time of this increment it is waiting for
 dawn with health 20; the delivery is not yet verified. The preceding failure is
 preserved in `mu8yf4yy-before-return-delivery`, with the source hash and active
 runner recorded in the isolated world's `return-delivery-resume.json`.
+
+The ten-minute debugging runner reached its deadline while still safely
+sheltered. Its terminal cancellation and pre-resume checkpoint remain in
+`mu8yf4yy-before-delivery-night-timeout`. A subsequent resume on commit
+`5b2a447`, with a 25-minute allowance, completed at 23:41:52 UTC on 2026-09-19.
+Jev left the shelter and delivered uphill from (-5.49,70,10.5) to the waiting
+receiver at (-4.5,71,9.5). The receiving client's inventory and pickup packet
+both confirmed exactly 16 cobblestone. Jev retained two cobblestone and health
+20. The goal is `complete`, the runner exited successfully, and the original
+test server was stopped. This completes the preserved resumed request, not
+fresh-start acceptance or the two-cycle endurance requirement.
