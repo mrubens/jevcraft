@@ -15,7 +15,7 @@ function rect(x, y, w, h, color) {
 function cube(u, v, w, h, d) {
   rect(u + d, v, w, d, colors.shell); rect(u + d + w, v, w, d, colors.shadow);
   rect(u, v + d, d, h, colors.side); rect(u + d, v + d, w, h, colors.shell);
-  rect(u + d + w, v + d, d, h, colors.side); rect(u + 2 * d + w, v + d, w, h, colors.shadow);
+  rect(u + d + w, v + d, d, h, colors.side); rect(u + 2 * d + w, v + d, w, h, colors.shell);
   return { x: u + d, y: v + d, back: u + 2 * d + w };
 }
 const head = cube(0, 0, 8, 8, 8);
