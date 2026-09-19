@@ -5,8 +5,32 @@ const { hostileEntities, safeFromHostiles } = require('./danger');
 const { Vec3 } = require('vec3');
 const Move = require('mineflayer-pathfinder/lib/move');
 const { damagingTerrain } = require('./terrain');
+const { isDoor, doorAt, doorAllowsDirection } = require('./doors');
 
 class SurvivalMovements extends Movements {
+  getMoveForward(node, direction, neighbors) {
+    const target = new Vec3(node.x + direction.x, node.y, node.z + direction.z);
+    const here = this.getBlock(node, 0, 0, 0), there = this.getBlock(node, direction.x, 0, direction.z);
+    if (!isDoor(here.name) && !isDoor(there.name)) return super.getMoveForward(node, direction, neighbors);
+    const doors = [];
+    for (const [block, p] of [[here, node], [there, target]]) {
+      if (!isDoor(block.name)) continue;
+      const door = doorAt(this.bot, p);
+      if (!door || !doorAllowsDirection(door, direction)) return;
+      doors.push(door);
+    }
+    const floor = this.getBlock(node, direction.x, -1, direction.z), head = this.getBlock(node, direction.x, 1, direction.z);
+    // Ordinary level thresholds only. Do not open a door onto a drop or use
+    // its thin panel as a walking support or a substitute for headroom.
+    if (!floor.physical || Math.abs(floor.height - node.y) > .01 || !isDoor(there.name) && (!there.safe || !head.safe)) return;
+    const cost = 1 + this.exclusionStep(there) + this.getNumEntitiesAt(there.position, 0, 0, 0) * this.entityCost;
+    if (cost > 100) return;
+    const interactions = doors.filter(d => !d.getProperties().open).map(d => ({ ...d.position, dx: 0, dy: 0, dz: 0, useOne: true }));
+    const move = new Move(target.x, target.y, target.z, node.remainingBlocks, cost + interactions.length, [], interactions);
+    if (isDoor(there.name)) move.doorway = { ...target };
+    neighbors.push(move);
+  }
+
   getNeighbors(node) {
     const neighbors = super.getNeighbors(node);
     if (!this._hostileObservation || Date.now() - this._hostileObservation.at > 250) {
@@ -75,6 +99,7 @@ function configureMovements(bot) {
   fixMiningMaterials(bot.registry);
   fixPathfinderResults();
   const movement = new SurvivalMovements(bot);
+  for (const block of bot.registry.blocksArray) if (isDoor(block.name)) movement.fences.add(block.id);
   for (const name of damagingTerrain) {
     const block = bot.registry.blocksByName[name];
     if (block) movement.blocksToAvoid.add(block.id);

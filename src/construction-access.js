@@ -3,7 +3,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, navigate } = require('./skills');
 const { checkAir } = require('./vitals');
-const { placementGoal, matchesBuildBlock } = require('./build-blocks');
+const { placementGoal, buildCellComplete } = require('./build-blocks');
 const key = p => `${p.x},${p.y},${p.z}`;
 const vec = p => new Vec3(p.x, p.y, p.z);
 const directions = [new Vec3(0, 1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, -1, 0)];
@@ -64,7 +64,7 @@ function constructionMovement(bot, goal) {
   const m = bot.pathfinder.movements;
   const previous = { canDig: m.canDig, scafoldingBlocks: m.scafoldingBlocks, exclusionAreasPlace: m.exclusionAreasPlace, countScaffoldingItems: m.countScaffoldingItems, getScaffoldingItem: m.getScaffoldingItem };
   const reserved = {};
-  for (const p of goal.blueprint?.blocks || []) if (!matchesBuildBlock(bot.blockAt(vec(p)), p)) reserved[p.material] = (reserved[p.material] || 0) + 1;
+  for (const p of goal.blueprint?.blocks || []) if (!p.companion && !buildCellComplete(bot, p)) reserved[p.material] = (reserved[p.material] || 0) + 1;
   const spare = name => goal.buildPhase === 'cleanup' ? 0 : Math.max(0, (bot.inventory?.items() || []).filter(i => i.name === name).reduce((n, i) => n + i.count, 0) - (reserved[name] || 0));
   const planned = new Set((goal.blueprint?.blocks || []).map(key));
   // Access must not demolish the building or consume reserved materials. Use

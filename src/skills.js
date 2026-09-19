@@ -148,6 +148,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
 async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }) {
   task.check(); checkAir(bot);
   if (stopWhen?.()) return;
+  const doorUse = require('./doors').guardNavigationDoors(bot, task, goal);
   let timer;
   let acquired = false;
   let corrections = [];
@@ -170,7 +171,7 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
     let previous = bot.entity.position.clone();
     const visited = new Set([`${previous.floored()}`]);
     timer = setInterval(() => {
-      try { task.check(); }
+      try { task.check(); if (doorUse.error) throw doorUse.error; }
       catch (err) {
         reject(err); bot.pathfinder.setGoal(null); bot.stopDigging?.(); bot.clearControlStates?.(); return;
       }
@@ -234,6 +235,7 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
     task.check();
     throw err;
   } finally {
+    doorUse.restore();
     clearInterval(timer);
     bot.removeListener?.('forcedMove', corrected);
     bot.removeListener?.('path_update', observedRoute);
@@ -279,12 +281,15 @@ async function followSpeaker(bot, task, { target }) {
   bot.chat(`Following you, ${target}.`);
   // A dynamic goal: pathfinder re-plans as the player moves, so this skill just
   // holds the goal open until something cancels it.
-  bot.pathfinder.setGoal(new goals.GoalFollow(player.entity, 2), true);
+  const goal = new goals.GoalFollow(player.entity, 2), doorUse = require('./doors').guardNavigationDoors(bot, task, goal, true);
+  bot.pathfinder.setGoal(goal, true);
   try {
     while (!task.cancelled && bot.players[target] && bot.players[target].entity) {
+      if (doorUse.error) throw doorUse.error;
       await sleep(250);
     }
   } finally {
+    doorUse.restore();
     bot.pathfinder.setGoal(null);
   }
 }

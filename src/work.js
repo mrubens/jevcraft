@@ -39,7 +39,9 @@ const { bundleStep } = require('./item-bundle');
 const { batchPlan, remainingOutputs } = require('./batch-plan');
 const { selectBundleBatch, batchOutputs } = require('./bundle-batch');
 const { remainingBuildBatch, materialCounts, createBuildBatch } = require('./build-batch');
-const { matchesBuildBlock, placementGoal } = require('./build-blocks');
+const { matchesBuildBlock, placementGoal, buildCellComplete, buildFootprint, blockOwnership } = require('./build-blocks');
+const { isDoor, doorPairMatches } = require('./doors');
+const interactableBlocks = new Set(require('mineflayer-pathfinder/lib/interactable.json'));
 const { chooseConstructionWork, approachConstruction } = require('./construction-access');
 const { opportunisticMining } = require('./opportunistic-mining');
 const { friendlyProblem, completion } = require('./speech');
@@ -136,8 +138,9 @@ async function syncPlacementInventory(bot, task) {
 
 async function place(bot, task, p, material, { face, properties } = {}) {
   task.check();
-  const cell = { material, properties };
-  if (matchesBuildBlock(bot.blockAt(p), cell)) return;
+  const cell = { ...p, material, properties };
+  if (buildCellComplete(bot, cell)) return;
+  if (isDoor(material) && !air(bot.blockAt(p.offset(0, 1, 0)))) throw new Error(`A door needs room for its top half at ${p}`);
   if (!air(bot.blockAt(p)) && !['water', 'short_grass', 'tall_grass', 'fern', 'snow'].includes(bot.blockAt(p)?.name)) {
     throw new Error(`Placement obstructed by ${bot.blockAt(p)?.name} at ${p}`);
   }
@@ -156,14 +159,18 @@ async function place(bot, task, p, material, { face, properties } = {}) {
     const ref = bot.blockAt(p.plus(f));
     if (ref?.boundingBox !== 'block') continue;
     task.check();
+    const wasSneaking = bot.getControlState?.('sneak') || false;
+    const sneak = interactableBlocks.has(ref.name) && !wasSneaking;
     try {
+      if (sneak) { bot.setControlState('sneak', true); await bot.waitForTicks(1); task.check(); }
       if (face?.to) await bot._placeBlockWithOptions(ref, f.scaled(-1), { delta: face.to.minus(ref.position), swingArm: 'right' });
       else await bot.placeBlock(ref, f.scaled(-1));
-      await waitFor(task, () => matchesBuildBlock(bot.blockAt(p), cell) ||
+      await waitFor(task, () => buildCellComplete(bot, cell) ||
         (material.endsWith('_concrete_powder') && bot.blockAt(p)?.name === material.replace('_powder', '')));
       if (bot.game.gameMode !== 'creative') await syncPlacementInventory(bot, task);
       return;
     } catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; placementError = err.message; }
+    finally { if (sneak) bot.setControlState('sneak', wasSneaking); }
   }
   throw new Error(`Cannot place ${material} at ${p}: ${placementError}`);
 }
@@ -865,7 +872,7 @@ async function designedBuildStep(bot, task, goal, save, client, onStep) {
     if (!goal.blueprint) return;
     const p = block.position;
     goal.buildOwned ||= {};
-    goal.buildOwned[`${p.x},${p.y},${p.z}`] = block.stateId ?? block.name;
+    goal.buildOwned[`${p.x},${p.y},${p.z}`] = blockOwnership(block);
     save();
   };
   bot.on('blockPlaced', placed);
@@ -931,14 +938,27 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     await prepareBuildTerrain(bot, task, goal, save); return false;
   }
   if (verifyHouse(bot, blueprint).ok && !schematicScaffolding(bot, goal).length) return true;
-  const missing = blueprint.blocks.filter(p => !matchesBuildBlock(bot.blockAt(pos(p)), p));
-  const obstructions = [...new Map([...blueprint.empty.filter(p => !air(bot.blockAt(pos(p)))), ...schematicScaffolding(bot, goal)]
+  const missing = blueprint.blocks.filter(p => !p.companion && !buildCellComplete(bot, p));
+  const blockedParts = missing.flatMap(p => buildFootprint(p).slice(1).filter(part => !air(bot.blockAt(pos(part))) &&
+    (!isDoor(bot.blockAt(pos(p))?.name) || !matchesBuildBlock(bot.blockAt(pos(part)), part))));
+  const obstructions = [...new Map([...blueprint.empty.filter(p => !air(bot.blockAt(pos(p)))), ...blockedParts, ...schematicScaffolding(bot, goal)]
     .map(p => [`${p.x},${p.y},${p.z}`, p])).values()];
-  const changed = [...missing, ...obstructions].find(p => {
+  const changed = [...missing.flatMap(buildFootprint), ...obstructions].find(p => {
     const block = bot.blockAt(pos(p));
     return block && !canClearSchematicBlock(blueprint, goal.buildOwned, block);
   });
   if (changed) throw new Blocked(`The building site changed at ${pos(changed)}; preserving the unexpected ${bot.blockAt(pos(changed)).name}. Clear it or request a new build`);
+  // Recover our own wrongly oriented piece before gathering another copy.
+  // This also repairs a door whose server-created upper half is missing.
+  const repairs = missing.filter(p => bot.blockAt(pos(p))?.name === p.material)
+    .map(p => ({ position: p, operation: 'dig', material: p.material, properties: p.properties }));
+  if (repairs.length) {
+    const repair = await chooseConstructionWork(bot, task, goal, repairs);
+    if (repair) {
+      goal.step = { action: 'build_schematic', operation: 'repair', position: { ...repair.position }, material: repair.material }; save(); onStep(goal);
+      await executeConstructionWork(bot, task, goal, save, repair); return false;
+    }
+  }
   // Retain one working lot instead of independently reselecting a material on
   // every block. Recipe inputs shared by the lot are gathered together.
   if (!goal.buildBatch || !remainingBuildBatch(bot, goal.buildBatch).length) {
@@ -972,6 +992,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
   const layer = Math.min(...missing.map(p => p.y));
   const availablePlacements = (batch ? remainingBuildBatch(bot, batch) : []).filter(p => countOf(bot, p.material) &&
     (air(bot.blockAt(pos(p))) || bot.blockAt(pos(p))?.diggable) &&
+    (!isDoor(p.material) || !air(bot.blockAt(pos(p))) || air(bot.blockAt(pos(p).offset(0, 1, 0)))) &&
     faces.some(f => bot.blockAt(pos(p).plus(f))?.boundingBox === 'block'))
     .map(p => ({ position: p, operation: air(bot.blockAt(pos(p))) ? 'place' : 'dig', material: p.material, properties: p.properties }));
   const placements = availablePlacements.filter(p => p.position.y === layer);
@@ -1015,7 +1036,8 @@ async function executeConstructionWork(bot, task, goal, save, work) {
     await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return;
   }
   const face = await approachConstruction(bot, task, goal, p, work.operation, work);
-  if (!canClearSchematicBlock(goal.blueprint, goal.buildOwned, bot.blockAt(p))) throw new Blocked(`Building site changed at ${p}`);
+  const footprint = buildFootprint({ ...p, material: work.material, properties: work.properties });
+  for (const part of footprint) if (!canClearSchematicBlock(goal.blueprint, goal.buildOwned, bot.blockAt(pos(part)))) throw new Blocked(`Building site changed at ${pos(part)}`);
   if (work.operation === 'dig') {
     // dig() first updates the local world optimistically. Keep ownership until
     // the server confirms air, otherwise a rejected dig looks like a player's
@@ -1025,11 +1047,30 @@ async function executeConstructionWork(bot, task, goal, save, work) {
     bot._client.on('block_change', changed);
     try {
       await dig(bot, task, p, { requireDrops: false });
-      await waitFor(task, () => confirmed && air(bot.blockAt(p)), 5000);
+      await waitFor(task, () => confirmed && footprint.every(part => air(bot.blockAt(pos(part)))), 5000);
     } finally { bot._client.removeListener('block_change', changed); }
-    delete goal.buildOwned?.[`${p.x},${p.y},${p.z}`];
+    for (const part of footprint) delete goal.buildOwned?.[`${part.x},${part.y},${part.z}`];
     // Retain the original name: grass and water can change state naturally.
-  } else await place(bot, task, p, work.material, { face, properties: work.properties });
+  } else {
+    let placed = false;
+    const observe = (_old, block) => { if (block.position.equals(p)) placed = true; };
+    bot.on('blockPlaced', observe);
+    try { await place(bot, task, p, work.material, { face, properties: work.properties }); }
+    finally {
+      bot.removeListener('blockPlaced', observe);
+      // A door's second block is created by the server, not a second placement.
+      // Capture both acknowledgements even when stop arrives on blockPlaced.
+      if (placed && footprint.length > 1) {
+        const deadline = Date.now() + 250;
+        while (!doorPairMatches(bot.blockAt(p), bot.blockAt(p.offset(0, 1, 0))) && Date.now() < deadline) await sleep(25);
+        if (doorPairMatches(bot.blockAt(p), bot.blockAt(p.offset(0, 1, 0)))) {
+          goal.buildOwned ||= {};
+          for (const part of footprint) goal.buildOwned[`${part.x},${part.y},${part.z}`] = blockOwnership(bot.blockAt(pos(part)));
+        }
+        save();
+      }
+    }
+  }
   save();
 }
 

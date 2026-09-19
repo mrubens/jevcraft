@@ -25,8 +25,9 @@ cell consumes one item in Survival; there are no double-slab cells. Neighboring
 stairs form corner shapes automatically. The schematic does not override those
 derived shapes, request waterlogging, or supply arbitrary state IDs.
 
-The foundation layer uses full blocks. Doors and other oriented block families
-remain outside the designer palette. Entrance and interior diagnostics still use
+The foundation layer uses full blocks. [Wooden doors](doors.md) also have explicit
+placement and verification; other oriented families remain outside the palette.
+Entrance and interior diagnostics still use
 an approximate cell walk graph; exact block-state verification does not prove
 that every possible generated interior is navigable.
 

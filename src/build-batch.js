@@ -1,12 +1,13 @@
 'use strict';
 const { Vec3 } = require('vec3');
-const { matchesBuildBlock } = require('./build-blocks');
+const { buildCellComplete, buildFootprint } = require('./build-blocks');
+const { isDoor } = require('./doors');
 const Heap = require('mineflayer-pathfinder/lib/heap');
 function remainingBuildBatch(bot, batch) {
-  return batch.cells.filter(p => !matchesBuildBlock(bot.blockAt(new Vec3(p.x, p.y, p.z)), p));
+  return batch.cells.filter(p => !p.companion && !buildCellComplete(bot, p));
 }
 function materialCounts(cells) {
-  return Object.entries(cells.reduce((counts, p) => { counts[p.material] = (counts[p.material] || 0) + 1; return counts; }, {}))
+  return Object.entries(cells.filter(p => !p.companion).reduce((counts, p) => { counts[p.material] = (counts[p.material] || 0) + 1; return counts; }, {}))
     .map(([item, count]) => ({ item, count }));
 }
 function planFitsInventory(registry, plan, stock, limit = 30) {
@@ -22,7 +23,7 @@ function planFitsInventory(registry, plan, stock, limit = 30) {
   return true;
 }
 function orderBuildCells(bot, missing) {
-  const sorted = [...missing].sort((a, b) => a.y - b.y || a.x - b.x || a.z - b.z);
+  const sorted = missing.filter(p => !p.companion).sort((a, b) => a.y - b.y || a.x - b.x || a.z - b.z);
   if (!sorted.some(p => p.properties) || !bot.blockAt) return sorted;
   const key = p => `${p.x},${p.y},${p.z}`, pending = new Map(sorted.map(p => [key(p), p])), ordered = [], planned = new Map();
   const rank = new Map(sorted.map((p, i) => [key(p), i])), ready = new Heap(), queued = new Set();
@@ -33,8 +34,9 @@ function orderBuildCells(bot, missing) {
   const enqueue = cell => {
     const k = key(cell);
     if (queued.has(k)) return;
-    const half = cell.properties?.half || cell.properties?.type;
+    const half = isDoor(cell.material) ? null : cell.properties?.half || cell.properties?.type;
     const supported = faces.some(face => {
+      if (isDoor(cell.material) && face.y !== -1) return false;
       if (half && face.y && face.y !== (half === 'bottom' ? -1 : 1)) return false;
       const p = new Vec3(cell.x, cell.y, cell.z).plus(face), refKey = key(p);
       if (pending.has(refKey)) return false;
@@ -52,11 +54,12 @@ function orderBuildCells(bot, missing) {
   for (const cell of sorted) enqueue(cell);
   while (!ready.isEmpty()) {
     const { cell } = ready.pop(), k = key(cell);
-    pending.delete(k); planned.set(k, cell); ordered.push(cell);
+    pending.delete(k); ordered.push(cell);
+    for (const part of buildFootprint(cell)) planned.set(key(part), part);
     // Only adjacent dependents can become ready. Repeated full scans can stall
     // network ticks on a long connected roof whose anchors run in reverse order.
-    for (const face of faces) {
-      const next = pending.get(key(new Vec3(cell.x, cell.y, cell.z).plus(face)));
+    for (const part of buildFootprint(cell)) for (const face of faces) {
+      const next = pending.get(key(new Vec3(part.x, part.y, part.z).plus(face)));
       if (next) enqueue(next);
     }
   }

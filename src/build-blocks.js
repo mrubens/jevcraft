@@ -1,6 +1,7 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
+const { isDoor, doorPairMatches } = require('./doors');
 const opposite = { north: 'south', south: 'north', east: 'west', west: 'east' };
 const directions = [new Vec3(0, -1, 0), new Vec3(0, 1, 0), new Vec3(0, 0, -1), new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(1, 0, 0)];
 
@@ -12,6 +13,11 @@ function regionProperties(material, value) {
   const properties = Object.fromEntries(Object.entries(value || {}).filter(([, v]) => v !== null));
   if (Object.keys(value || {}).some(k => !['facing', 'half'].includes(k))) throw new Error('unsupported block property');
   const stair = material.endsWith('_stairs'), slab = material.endsWith('_slab');
+  if (isDoor(material)) {
+    if (!Object.hasOwn(opposite, properties.facing)) throw new Error(`${material} needs a cardinal facing`);
+    if (properties.half !== undefined) throw new Error('door regions specify the bottom position; half must be null');
+    return { facing: properties.facing, half: 'lower' };
+  }
   if (!stair && !slab) {
     if (Object.keys(properties).length) throw new Error(`${material} does not support oriented properties`);
     return undefined;
@@ -28,8 +34,32 @@ function matchesBuildBlock(block, cell) {
   return Object.entries(cell.properties || {}).every(([key, value]) => String(observed[key]) === String(value));
 }
 
+function buildFootprint(cell) {
+  return isDoor(cell.material) && cell.properties?.half === 'lower' ? [cell,
+    { ...cell, y: cell.y + 1, companion: true, properties: { ...cell.properties, half: 'upper' } }] : [cell];
+}
+
+function buildCellComplete(bot, cell) {
+  const parts = buildFootprint(cell), observed = parts.map(p => bot.blockAt(new Vec3(p.x, p.y, p.z)));
+  return parts.every((p, i) => matchesBuildBlock(observed[i], p)) && (parts.length === 1 || doorPairMatches(...observed));
+}
+
+function blockOwnership(block) {
+  if (!isDoor(block.name)) return block.stateId ?? block.name;
+  const p = block.getProperties();
+  // Opening a door or powering it is normal use, not replacement of the bot's
+  // work. Keep its identity and static orientation when recording ownership.
+  return { stateId: block.stateId, name: block.name, properties: { facing: p.facing, half: p.half, hinge: p.hinge } };
+}
+
+function matchesOwnership(block, owned) {
+  return owned && typeof owned === 'object' ? matchesBuildBlock(block, { material: owned.name, properties: owned.properties }) :
+    owned === (block.stateId ?? block.name);
+}
+
 function placementGoal(bot, point, cell = {}) {
   const p = new Vec3(point.x, point.y, point.z), state = cell.properties || {};
+  if (isDoor(cell.material)) return new goals.GoalPlaceBlock(p, bot.world, { range: 4.25, facing: opposite[state.facing], faces: [new Vec3(0, -1, 0)] });
   const half = state.half || state.type;
   // GoalPlaceBlock's facing means the face toward the player, opposite the
   // player's horizontal look direction used by Minecraft for stairs.
@@ -57,4 +87,4 @@ function placementGoal(bot, point, cell = {}) {
   return goal;
 }
 
-module.exports = { regionProperties, matchesBuildBlock, placementGoal };
+module.exports = { regionProperties, matchesBuildBlock, placementGoal, buildFootprint, buildCellComplete, blockOwnership, matchesOwnership };
