@@ -174,7 +174,9 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
     // When a known resource is well below us, circling the same mountain does
     // not get closer. Approach through a dry, supported staircase. Stay above
     // a water-covered deposit rather than tunnelling into the water itself.
-    if (!surfaceOnly && observed.length && search.attempts > 3 && target.y < bot.entity.position.y - 8 && pickaxeTier(bot) >= 1) {
+    // Continue until the deposit is within vertical mining reach. Stopping
+    // eight blocks above it stranded the bot in a closed deep-cave staircase.
+    if (!surfaceOnly && observed.length && search.attempts > 3 && target.y < bot.entity.position.y - 3 && pickaxeTier(bot) >= 1) {
       let surface = target.clone();
       for (let y = target.y + 1; y <= target.y + 16; y++) {
         const b = bot.blockAt(new Vec3(target.x, y, target.z));
@@ -186,7 +188,10 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
     save();
     // Keep the same waypoint until reached. Rotating on every short walk made
     // the bot circle the mountain forever instead of reaching the wider ring.
-    const landIds = ['grass_block', 'dirt', 'stone', 'sand'].map(n => bot.registry.blocksByName[n]?.id).filter(n => n !== undefined);
+    const landIds = ['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'mycelium', 'moss_block', 'stone', 'deepslate', 'tuff',
+      'granite', 'diorite', 'andesite', 'cobblestone', 'cobbled_deepslate', 'sand', 'red_sand', 'gravel', 'sandstone',
+      'red_sandstone', 'netherrack', 'basalt', 'blackstone', 'end_stone', 'obsidian', 'clay', 'snow_block']
+      .map(n => bot.registry.blocksByName[n]?.id).filter(n => n !== undefined);
     // Filter surface blocks before truncating results. Taking the nearest 512
     // solids first filled the list with underground stone and hid every shore.
     const land = bot.findBlocks({ matching: landIds, maxDistance: 48, count: 256,

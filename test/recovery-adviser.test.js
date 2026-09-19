@@ -119,6 +119,40 @@ test('a recovery action that never completes is bounded and records its failure'
   assert.equal(goal.recoveryAdvice.active, undefined);
 });
 
+test('deep surface recovery survives restart and continues beyond twelve inspected steps, with a hard limit', async () => {
+  const { bot, goal, task } = fixture();
+  bot.entity.position.y = -50;
+  const surface = { id: 'option_1', kind: 'surface', description: 'Return to the surface' };
+  const adviser = new RecoveryAdviser(bot, {}, { ...config, ask: async () => ({ diagnosis: 'Leave this blocked shaft', steps: [surface] }),
+    execute: async () => { bot.entity.position.y++; return bot.entity.position.y >= 64; } });
+  await adviser.suggest(task, goal, () => {});
+  let restored = goal;
+  for (let i = 0; i < 114; i++) {
+    if (i === 13) restored = JSON.parse(JSON.stringify(restored));
+    assert(await adviser.step(task, restored, () => {}));
+  }
+  assert.equal(bot.entity.position.y, 64); assert.equal(restored.recoveryAdvice.active, undefined);
+  assert.match(restored.recoveryAdvice.history[0].outcome, /Recovery actions completed/);
+  assert.equal(restored.recoveryAdvice.calls, 1);
+
+  const stalled = fixture();
+  const stuck = new RecoveryAdviser(stalled.bot, {}, { ...config, ask: async () => ({ diagnosis: 'Try returning', steps: [surface] }), execute: async () => false });
+  await stuck.suggest(stalled.task, stalled.goal, () => {});
+  stalled.goal.recoveryAdvice.active.attempts = LIMITS.surfaceSteps;
+  await assert.rejects(stuck.step(stalled.task, stalled.goal, () => {}), /budget exhausted/);
+  assert.equal(stalled.goal.recoveryAdvice.active, undefined);
+});
+
+test('supply recovery budgets include gathering and the final inventory verification', async () => {
+  const { bot, goal, task } = fixture(); let steps = 0;
+  const supplies = { ...option, dependencies: [{ action: 'mine', block: 'dirt', count: 12 }] };
+  const adviser = new RecoveryAdviser(bot, {}, { ...config, ask: async () => ({ diagnosis: 'Gather footing', steps: [supplies] }), execute: async () => ++steps >= 13 });
+  await adviser.suggest(task, goal, () => {});
+  for (let i = 0; i < 13; i++) assert(await adviser.step(task, goal, () => {}));
+  assert.equal(goal.recoveryAdvice.active, undefined);
+  assert.match(goal.recoveryAdvice.history[0].outcome, /Recovery actions completed/);
+});
+
 test('runGoal escalates repeated survival failures, executes the plan, then verifies the retained objective', async () => {
   const { bot, goal, task } = fixture(); let recovered = false, asks = 0, failures = 0;
   const adviser = new RecoveryAdviser(bot, {}, { ...config, ask: async (...args) => { asks++; return advice(...args); },

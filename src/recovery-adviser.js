@@ -4,11 +4,25 @@ const { MODEL } = require('./designer');
 const { checkAir, needsAir } = require('./vitals');
 const { checkThreats, immediateThreat } = require('./danger');
 const { recoveryOptions, executeRecoveryOption } = require('./recovery-options');
-const LIMITS = { calls: 6, sameFailure: 2, cooldownMs: 60000, requestMs: 45000, planMs: 300000, actionMs: 120000, actionSteps: 12 };
+const LIMITS = { calls: 6, sameFailure: 2, cooldownMs: 60000, requestMs: 45000, planMs: 900000, actionMs: 120000, actionSteps: 12,
+  surfaceMs: 600000, surfaceSteps: 192 };
 const emergency = err => ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name);
 const identity = goal => JSON.stringify([goal.request, goal.kind, goal.item, goal.count, goal.from]);
 const life = goal => goal.survival?.deaths?.at(-1)?.at || null;
 const available = bot => !needsAir(bot) && (bot.health ?? 20) > 8 && (bot.food ?? 20) > 6 && !immediateThreat(bot);
+
+function actionBudget(action) {
+  // One surface action can require a hundred individually inspected stair
+  // steps. Twelve attempts cut off healthy progress deep underground.
+  if (action.kind === 'surface') return { steps: LIMITS.surfaceSteps, ms: LIMITS.surfaceMs };
+  if (action.kind === 'acquire' && action.dependencies?.length) {
+    const units = action.dependencies.reduce((n, step) => n + Math.min(32, Math.max(1, Number(step.count) || 1)), 0);
+    // Allow ingredient gathering plus travel/crafting/verification actions;
+    // requesting twelve blocks cannot finish in exactly twelve step calls.
+    return { steps: Math.min(96, Math.max(LIMITS.actionSteps, 8 + units * 2)), ms: LIMITS.actionMs };
+  }
+  return { steps: LIMITS.actionSteps, ms: LIMITS.actionMs };
+}
 
 function validateAdvice(value, options) {
   if (!value || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'diagnosis,steps') throw new Error('Invalid recovery advice fields');
@@ -126,8 +140,9 @@ class RecoveryAdviser {
     }
     if (!available(this.bot)) return false; // Survival gets first chance to handle emergencies.
     const action = active.steps[active.cursor];
+    const budget = actionBudget(action);
     active.actionStartedAt ||= Date.now();
-    if (++active.attempts > LIMITS.actionSteps || Date.now() - active.actionStartedAt > LIMITS.actionMs) {
+    if (++active.attempts > budget.steps || Date.now() - active.actionStartedAt > budget.ms) {
       this.finish(goal, save, 'Recovery action budget exhausted'); throw new Error('Recovery action budget exhausted');
     }
     const bounded = Object.create(task);
@@ -137,7 +152,7 @@ class RecoveryAdviser {
         const err = new Error('Recovery interrupted for critical vitals'); err.name = 'NeedsSafety'; throw err;
       }
       if (life(goal) !== active.life || this.bot.game.dimension !== active.dimension) throw new Error('Recovery world changed during execution');
-      if (Date.now() > Math.min(active.expiresAt, active.actionStartedAt + LIMITS.actionMs)) throw new Error('Recovery action timed out');
+      if (Date.now() > Math.min(active.expiresAt, active.actionStartedAt + budget.ms)) throw new Error('Recovery action timed out');
     };
     goal.recoveryAction = { ...action, at: new Date().toISOString(), attempt: active.attempts }; save();
     try {

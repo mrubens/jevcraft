@@ -40,6 +40,39 @@ test('surface exploration recognizes ground covered by non-colliding forest vege
   }
 });
 
+test('underground exploration uses deep-cave footing while rejecting flooded landings', async () => {
+  const registry = require('minecraft-data')('26.1');
+  for (const material of ['deepslate', 'tuff', 'andesite']) {
+    const dry = new Vec3(10, -48, 0), flooded = new Vec3(9, -48, 0);
+    const bot = { registry, entity: { position: new Vec3(.5, -47, .5) },
+      blockAt: p => ({ position: p, name: p.y < -47 ? material : p.x === flooded.x && p.y === -47 ? 'water' : 'air', boundingBox: p.y < -47 ? 'block' : 'empty' }),
+      findBlocks: ({ matching, useExtraInfo }) => matching.includes(registry.blocksByName[material].id)
+        ? [flooded, dry].filter(p => useExtraInfo(bot.blockAt(p))) : [],
+      pathfinder: { movements: {}, setGoal() {}, goto: async g => { bot.entity.position = new Vec3(g.x + .5, g.y, g.z + .5); } },
+    };
+    await explore(bot, new Task('cave search'), {}, () => {}, 'obsidian');
+    assert.equal(bot.entity.position.x, 10.5, `${material} dry landing`);
+    assert.equal(bot.entity.position.y, -47);
+  }
+});
+
+test('an observed deposit eight blocks below continues its inspected staircase', async () => {
+  const registry = require('minecraft-data')('26.1'), deposit = new Vec3(-62, -55, -117), work = new Vec3(-70, -47, -117);
+  const bot = { registry, game: { dimension: 'overworld' }, entity: { position: new Vec3(-61.7, -47, -116.5) },
+    inventory: { items: () => [{ name: 'diamond_pickaxe', count: 1, type: registry.itemsByName.diamond_pickaxe.id }] },
+    blockAt: p => ({ name: p.equals(deposit) ? 'obsidian' : p.equals(deposit.offset(0, 1, 0)) ? 'water' : 'air', position: p }),
+    findBlocks: ({ matching }) => matching.includes(registry.blocksByName.obsidian.id) ? [deposit] : [],
+    pathfinder: { movements: {}, setGoal() {}, getPathTo: () => ({ status: 'success', path: [] }),
+      goto: async g => { bot.entity.position = new Vec3(g.x, g.y, g.z); } },
+  };
+  const goal = { search: { obsidian: { attempts: 4, origin: { x: -62, y: -47, z: -117 } } },
+    miningSites: { 'overworld:obsidian': { workPosition: { ...work }, steps: 74, visited: {} } } };
+  await explore(bot, new Task('continue cave approach'), goal, () => {}, 'obsidian');
+  assert.equal(goal.step.action, 'return_to_mine');
+  assert.deepEqual(goal.step.destination, { ...work });
+  assert.equal(goal.search.obsidian.attempts, 5);
+});
+
 test('exploration leaves an unreachable geometric waypoint instead of spending the entire search there', async () => {
   const registry = require('minecraft-data')('26.1');
   const bot = { registry, game: { minY: 0, height: 100 }, entity: { position: new Vec3(22, 64, 8) }, blockAt: () => ({ name: 'air' }),
