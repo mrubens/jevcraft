@@ -262,11 +262,11 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
   } finally { surface?.restore(); }
 }
 
-function miningCandidates(bot, step, goal) {
+async function miningCandidates(bot, task, step, goal) {
   const names = step.sources || Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
   if (step.drops === 'flint') names.push('gravel');
   const ids = names.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
-  return bot.findBlocks({ matching: ids, maxDistance: 48, count: 32,
+  const options = { matching: ids, maxDistance: 48, count: 32,
     useExtraInfo: b => faces.some(f => {
       const neighbor = bot.blockAt(b.position.plus(f));
       return air(neighbor) || neighbor?.name === 'water';
@@ -274,7 +274,11 @@ function miningCandidates(bot, step, goal) {
       (step.minimumY === undefined || b.position.y >= step.minimumY) && !reservedForConstruction(goal, b.position) &&
       (step.drops !== 'dirt' || (b.position.y >= bot.entity.position.floored().y - 1 && air(bot.blockAt(b.position.offset(0, 1, 0))))) &&
       dryMiningPositions(bot, b.position, 1).length > 0,
-  }).filter(p => {
+  };
+  const candidates = bot.findBlocksAsync
+    ? await bot.findBlocksAsync(options, () => { task.check(); checkAir(bot); }) : bot.findBlocks(options);
+  task.check(); checkAir(bot);
+  return candidates.filter(p => {
     const k = `${p}`;
     return safeFromHostiles(bot, p) && (!goal.unreachable?.[k] || Date.now() - goal.unreachable[k] > 120000);
   });
@@ -305,7 +309,7 @@ async function surfaceStep(bot, task, goal, save) {
 }
 
 async function mineAtSource(bot, task, step, goal, save, selected) {
-  const candidates = selected ? [selected] : miningCandidates(bot, step, goal);
+  const candidates = selected ? [selected] : await miningCandidates(bot, task, step, goal);
   if (!candidates.length) {
     if (step.depth !== null && step.depth !== undefined) {
       const names = step.sources || Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
@@ -654,7 +658,7 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
     const step = catalogPlan(bot, goal.material, missing.length, inv, goal)[0];
     const actions = {};
     if (step?.action === 'mine') {
-      for (const p of miningCandidates(bot, step, goal).slice(0, 16)) {
+      for (const p of (await miningCandidates(bot, task, step, goal)).slice(0, 16)) {
         if (Object.keys(actions).length >= 4) break;
         // Do not ask Jev to choose unsupported targets such as the trunk it
         // stands on or floating remnants with no currently feasible approach.
@@ -892,7 +896,7 @@ async function obtainStep(bot, task, goal, save, client, onStep) {
   // while leaving nearby surface pickups and Creative inventory immediate.
   if (!goal.expeditionReady && bot.game.gameMode !== 'creative') {
     const underground = plan.find(s => s.action === 'mine' && Number.isFinite(s.depth) && s.depth < bot.entity.position.y - 8);
-    const withinReach = underground && miningCandidates(bot, underground, goal).some(p => bot.canDigBlock(bot.blockAt(p)));
+    const withinReach = underground && (await miningCandidates(bot, task, underground, goal)).some(p => bot.canDigBlock(bot.blockAt(p)));
     if (goal.preparingExpedition || (underground && !withinReach)) {
       goal.preparingExpedition = true; save();
       await prepareExpeditionStep(bot, task, goal, save);
@@ -903,7 +907,7 @@ async function obtainStep(bot, task, goal, save, client, onStep) {
   if (!step) return false;
   const actions = {};
   if (step.action === 'mine') {
-    for (const p of miningCandidates(bot, step, goal).slice(0, 12)) {
+    for (const p of (await miningCandidates(bot, task, step, goal)).slice(0, 12)) {
       if (Object.keys(actions).length >= 4) break;
       if (p.equals(supportCell(bot.entity.position))) continue;
       if (!bot.canDigBlock(bot.blockAt(p)) && bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalGetToBlock(p.x, p.y, p.z), 200).status !== 'success') continue;

@@ -24,6 +24,7 @@ function fixPlayerDimensions(physics) {
 }
 
 function compatibilityPlugin(bot) {
+  require('./block-search').installBlockSearch(bot);
   fixPlayerDimensions(bot.physics);
   bot.once?.('spawn', () => fixPlayerDimensions(bot.physics));
   // 26.1's protocol decoder returns named difficulty values; Mineflayer's
