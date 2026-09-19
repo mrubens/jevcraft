@@ -91,7 +91,7 @@ test('a completed house becomes a persistent refuge with a temporary two-block n
     entity: { position: new Vec3(0.5, 64, 0.5) }, inventory: { items: () => [{ name: 'dirt', count: 2 }] },
     blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty' }) });
   const actions = { place: async (b, t, p, material) => blocks.set(`${p}`, material),
-    dig: async (b, t, p) => blocks.delete(`${p}`), navigate: async (b, t, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } };
+    dig: async (b, t, p, options) => { assert.equal(options.requireDrops, false, 'Opening our shelter does not require harvesting its closure'); blocks.delete(`${p}`); }, navigate: async (b, t, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } };
   const survival = new Survival(bot, actions);
   assert.equal(survival.rememberHouse(blueprint), true);
   assert.equal(survival.rememberHouse(blueprint), false, 'Do not duplicate a remembered home');

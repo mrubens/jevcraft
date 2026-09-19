@@ -125,8 +125,8 @@ class Survival {
         const exit = shelter.exits(bot, refuge).sort((a, b) => a.outside.distanceTo(bot.entity.position) - b.outside.distanceTo(bot.entity.position))[0];
         if (!exit) throw new Error('The saved shelter has no safe approach');
         await this.actions.navigate(bot, task, new goals.GoalBlock(exit.outside.x, exit.outside.y, exit.outside.z), { timeoutMs: 20000 });
-        await this.actions.dig(bot, task, exit.door.offset(0, 1, 0));
-        await this.actions.dig(bot, task, exit.door);
+        await this.actions.dig(bot, task, exit.door.offset(0, 1, 0), { requireDrops: false });
+        await this.actions.dig(bot, task, exit.door, { requireDrops: false });
       }
       const o = pos(refuge.origin);
       await this.actions.navigate(bot, task, new goals.GoalBlock(o.x, o.y, o.z), { timeoutMs: 20000 });
@@ -173,8 +173,11 @@ class Survival {
     if (!exits.length) { await this.wait(task, goal, save, 'Nearby threats still block the shelter exits'); return; }
     const exit = exits[0];
     this.report(goal, save, { action: 'leave_shelter', origin: refuge.origin });
-    await this.actions.dig(bot, task, exit.door.offset(0, 1, 0));
-    await this.actions.dig(bot, task, exit.door);
+    // Opening our temporary closure is necessary even if the last pick broke.
+    // Bare-handed stone clearing loses its drop but must not imprison the bot
+    // inside a one-cell shelter with no room to place a crafting table.
+    await this.actions.dig(bot, task, exit.door.offset(0, 1, 0), { requireDrops: false });
+    await this.actions.dig(bot, task, exit.door, { requireDrops: false });
     await this.actions.navigate(bot, task, new goals.GoalBlock(exit.outside.x, exit.outside.y, exit.outside.z), { timeoutMs: 10000 });
   }
 

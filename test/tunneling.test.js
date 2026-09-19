@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
-const { stairOptions, tunnelStep } = require('../src/tunneling');
+const { stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation } = require('../src/tunneling');
 const { Task } = require('../src/skills');
 const { dig } = require('../src/work');
 
@@ -22,6 +22,21 @@ test('approaching a foundation moves off its top before digging', async () => {
   };
   await dig(bot, new Task('foundation'), target);
   assert(removed); assert.equal(routes, 2);
+});
+
+test('a broken pickaxe does not prevent clearing a shelter exit, while resource mining still requires drops', async () => {
+  const target = new Vec3(1, 64, 0); let removed = false;
+  const bot = { game: { gameMode: 'survival' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true },
+    inventory: { items: () => [] }, canDigBlock: () => true,
+    blockAt: p => ({ position: p, type: removed ? 0 : 1, name: removed ? 'air' : 'cobblestone',
+      diggable: true, harvestTools: { 1: true }, digTime: () => 7500 }),
+    dig: async () => { removed = true; },
+  };
+  const task = new Task('exit');
+  await assert.rejects(dig(bot, task, target), /Missing harvest tool/);
+  assert(!removed);
+  await dig(bot, task, target, { requireDrops: false });
+  assert(removed);
 });
 
 function world() {
@@ -52,4 +67,106 @@ test('staircase refuses lava, missing footing, and construction foundations', ()
   assert.equal(stairOptions(bot, { blueprint: { origin: { x: 0, y: 70, z: 0 } } }, new Vec3(5, 60, 0)).length, 0);
   bot.blockAt = p => ({ name: 'air', position: p, boundingBox: 'empty' });
   assert.equal(stairOptions(bot, {}, new Vec3(5, 60, 0)).length, 0);
+});
+
+test('staircase does not release water above a falling sand or gravel column', () => {
+  const bot = world(), p = new Vec3(1, 70, 0);
+  bot.blocks.set(`${p.offset(0, 1, 0)}`, { name: 'gravel' });
+  bot.blocks.set(`${p.offset(0, 2, 0)}`, { name: 'sand' });
+  assert(safeExcavation(bot, p));
+  bot.blocks.set(`${p.offset(0, 3, 0)}`, { name: 'water' });
+  assert(!safeExcavation(bot, p));
+});
+
+test('ascending staircase clears inspected jump headroom but rejects wet or falling ceilings', async () => {
+  const bot = world(), feet = bot.entity.position.floored(), dug = [];
+  const overhead = feet.offset(0, 2, 0), target = new Vec3(8, 80, 0);
+  await tunnelStep(bot, new Task('ascend'), {}, () => {}, target, {
+    dig: async (_bot, _task, p) => { dug.push(p); bot.blocks.set(`${p}`, { name: 'air' }); },
+    navigate: async (_bot, _task, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+  });
+  assert(dug[0].equals(overhead), 'Clear current jump ceiling before stepping up');
+  assert.equal(bot.entity.position.y, feet.y + 1);
+  assert(dug.every(p => !p.equals(feet.offset(0, -1, 0))));
+  for (const name of ['water', 'gravel']) {
+    const unsafe = world(); unsafe.blocks.set(`${overhead}`, { name, diggable: true, boundingBox: 'block' });
+    assert(stairOptions(unsafe, {}, target).every(option => option.destination.y <= feet.y));
+  }
+});
+
+function retreatFixture(wet) {
+  const target = new Vec3(2, 60, 0), water = new Vec3(1, 60, 0);
+  const inherited = p => p.z >= 0;
+  const bot = { registry: require('minecraft-data')('26.1'), game: { difficulty: 'normal' },
+    entity: { position: new Vec3(0.5, 60, 0.5) },
+    blockAt: p => ({ position: p, name: p.y < 60 ? 'stone' : p.x === 1 || wet && p.x === 0 ? 'water' : 'air', boundingBox: p.y < 60 ? 'block' : 'empty' }),
+    findBlocks: ({ useExtraInfo }) => useExtraInfo(bot.blockAt(target.offset(0, -1, 0))) ? [target.offset(0, -1, 0)] : [],
+    pathfinder: { movements: { canDig: true, allow1by1towers: true, scafoldingBlocks: [1], allowedPosition: inherited },
+      getPathFromTo: function * (movement) {
+        assert.equal(movement.canDig, false); assert.deepEqual(movement.scafoldingBlocks, []);
+        assert(!movement.allowedPosition(new Vec3(1, 59, 0)), 'Cannot retreat deeper through water');
+        assert(!movement.allowedPosition(new Vec3(2, 60, -1)), 'Retains inherited restrictions');
+        yield { result: { status: 'success', path: [water, target] } };
+      } },
+  };
+  return { bot, target };
+}
+test('a flooded staircase retreats through existing water to dry footing without digging', async () => {
+  const { bot, target } = retreatFixture(true), before = { ...bot.pathfinder.movements }, goal = { tunnel: { visited: {} } };
+  await retreatForTunnel(bot, new Task('retreat'), goal, () => {}, { navigate: async () => {
+    assert.equal(bot.pathfinder.movements.canDig, false);
+    bot.entity.position = target.offset(0.5, 0, 0.5);
+  } });
+  assert.equal(goal.step.action, 'retreat_from_tunnel');
+  assert.equal(goal.tunnel.retreats, 1);
+  assert.deepEqual(bot.pathfinder.movements, before);
+});
+test('a dry staircase cannot choose a new submerged retreat, and failure restores movement rules', async () => {
+  const { bot } = retreatFixture(false), before = { ...bot.pathfinder.movements };
+  await assert.rejects(retreatForTunnel(bot, new Task('retreat'), { tunnel: {} }, () => {}, {
+    navigate: async () => assert.fail('Must not enter the water'),
+  }), /No existing dry route/);
+  assert.deepEqual(bot.pathfinder.movements, before);
+});
+
+test('resource shafts survive shelter and other-resource interruptions without beginning another descent', async () => {
+  const bot = world(); bot.game = { dimension: 'overworld' };
+  bot.pathfinder = { movements: { canDig: true, allow1by1towers: true, scafoldingBlocks: [1] },
+    getPathFromTo: function * (movement) {
+      assert.equal(movement.canDig, false); assert.equal(movement.allow1by1towers, false);
+      assert.deepEqual(movement.scafoldingBlocks, []);
+      yield { result: { status: 'success', path: [] } };
+    } };
+  let digs = 0;
+  const actions = { dig: async (_bot, _task, p) => { digs++; bot.blocks.set(`${p}`, { name: 'air' }); },
+    navigate: async (_bot, _task, target) => { bot.entity.position = new Vec3(target.x + 0.5, target.y, target.z + 0.5); } };
+  const task = new Task('mine'), goal = {}, target = new Vec3(10, 40, 0);
+  await resourceTunnelStep(bot, task, goal, () => {}, target, 'diamond_ore', actions);
+  const diamondSite = JSON.parse(JSON.stringify(goal.miningSites['overworld:diamond_ore']));
+  bot.entity.position = new Vec3(50.5, 70, 0.5);
+  await resourceTunnelStep(bot, task, goal, () => {}, target, 'iron_ore', actions);
+  const countBefore = digs, before = { ...bot.pathfinder.movements };
+  const resumed = JSON.parse(JSON.stringify(goal));
+  await resourceTunnelStep(bot, task, resumed, () => {}, new Vec3(70, 40, 0), 'diamond_ore', actions);
+  assert.equal(digs, countBefore, 'Walking back must not excavate another shaft');
+  assert.equal(resumed.step.action, 'return_to_mine');
+  assert.equal(resumed.tunnel.steps, diamondSite.steps);
+  assert.deepEqual(resumed.tunnel.workPosition, diamondSite.workPosition);
+  assert.deepEqual(bot.pathfinder.movements, before);
+  assert(resumed.miningSites['overworld:iron_ore']);
+});
+
+test('unreachable saved shafts record bounded retry failures and restore movement rules', async () => {
+  const bot = world(); bot.game = { dimension: 'overworld' };
+  bot.pathfinder = { movements: { canDig: true, allow1by1towers: true, scafoldingBlocks: [1] },
+    getPathFromTo: function * () { yield { result: { status: 'noPath', path: [] } }; } };
+  const before = { ...bot.pathfinder.movements };
+  const site = { steps: 20, visited: {}, workPosition: { x: 20, y: 30, z: 0 } };
+  const goal = { miningSites: { 'overworld:diamond_ore': site } };
+  const actions = { dig: async () => assert.fail('Must not mine while retrying'), navigate: async () => assert.fail('No route') };
+  for (let i = 1; i <= 3; i++) {
+    await assert.rejects(resourceTunnelStep(bot, new Task('mine'), goal, () => {}, new Vec3(10, 40, 0), 'diamond_ore', actions), /No existing route/);
+    assert.equal(site.rejoinFailures, i); assert.deepEqual(bot.pathfinder.movements, before);
+  }
+  assert(site.rejoinBlockedUntil > Date.now());
 });

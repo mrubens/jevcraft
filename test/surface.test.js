@@ -110,3 +110,54 @@ test('failed or cancelled surface recovery restores movement policy and keeps it
     assert.equal(bot.entity.position.y, 55);
   }
 });
+
+test('deep surface recovery excavates one supported step at a time and preserves the mining worksite', async () => {
+  const { bot } = world(), changed = new Map();
+  bot.entity.position = new Vec3(0.5, 16, 0.5);
+  bot.registry = require('minecraft-data')('26.1');
+  bot.inventory = { items: () => [{ type: 1 }] };
+  bot.findBlocks = () => [];
+  bot.blockAt = p => {
+    const name = changed.get(`${p}`) || (p.y < 64 ? 'stone' : 'air');
+    return { name, position: p, boundingBox: name === 'stone' ? 'block' : 'empty', diggable: true, harvestTools: name === 'stone' ? { 1: true } : undefined };
+  };
+  changed.set('(0, 16, 0)', 'air'); changed.set('(0, 17, 0)', 'air');
+  const mining = { steps: 35, target: { x: -30, y: 2, z: -40 }, visited: {} };
+  const goal = { tunnel: mining }, before = { ...bot.pathfinder.movements };
+  let digCount = 0;
+  for (let step = 0; step < 48 && !surfaceObserver(bot)(bot.entity.position.floored()); step++) {
+    const start = bot.entity.position.floored();
+    await returnToSurface(bot, new Task('exit'), goal, () => {}, {
+      dig: async (_bot, _task, p) => {
+        assert(!p.equals(bot.entity.position.floored().offset(0, -1, 0)));
+        changed.set(`${p}`, 'air'); digCount++;
+      },
+      navigate: async (_bot, _task, target) => {
+        assert.equal(target.y, start.y + 1);
+        assert.equal(bot.blockAt(new Vec3(target.x, target.y - 1, target.z)).name, 'stone');
+        bot.entity.position = new Vec3(target.x + 0.5, target.y, target.z + 0.5);
+      },
+    });
+    assert.equal(bot.entity.position.y, start.y + 1);
+    for (const [key, value] of Object.entries(before)) assert.deepEqual(bot.pathfinder.movements[key], value);
+    assert.equal(goal.tunnel, mining);
+    assert.equal(goal.tunnel.steps, 35);
+  }
+  assert(digCount > 48);
+  assert(bot.entity.position.y >= 62, 'Escapes the deep cave through a real opening to the sky');
+  assert(surfaceObserver(bot)(bot.entity.position.floored()));
+  assert.equal(goal.surfaceReturn, undefined);
+  assert.equal(goal.step.action, 'ascend_to_surface');
+});
+
+test('surface ascent yields for replacement-tool preparation and can be cancelled without excavating', async () => {
+  const { bot } = undergroundFixture(); bot.findBlocks = () => [];
+  const task = new Task('exit'), goal = {};
+  let preparations = 0;
+  const actions = { prepareTool: async () => { preparations++; return false; }, dig: async () => assert.fail('No tool yet') };
+  await returnToSurface(bot, task, goal, () => {}, actions);
+  assert.equal(preparations, 1); assert.equal(bot.entity.position.y, 55);
+  task.cancel();
+  await assert.rejects(returnToSurface(bot, task, goal, () => {}, actions), { name: 'Cancelled' });
+  assert.equal(preparations, 1);
+});

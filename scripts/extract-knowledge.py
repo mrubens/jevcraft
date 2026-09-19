@@ -16,6 +16,20 @@ with zipfile.ZipFile(jar) as archive:
     tags = {name.removeprefix('data/minecraft/tags/item/').removesuffix('.json'):
             json.loads(archive.read(name)).get('values', [])
             for name in archive.namelist() if name.startswith('data/minecraft/tags/item/') and name.endswith('.json')}
+    block_tags = {name.removeprefix('data/minecraft/tags/block/').removesuffix('.json'):
+                  json.loads(archive.read(name)).get('values', [])
+                  for name in archive.namelist() if name.startswith('data/minecraft/tags/block/') and name.endswith('.json')}
+
+    def block_values(value, visited=frozenset()):
+        if isinstance(value, list):
+            return sorted(set(v for element in value for v in block_values(element, visited)))
+        if isinstance(value, dict):
+            return block_values(value['id'], visited)
+        if value.startswith('#'):
+            tag = plain(value[1:])
+            return [] if tag in visited else block_values(block_tags.get(tag, []), visited | {tag})
+        return [plain(value)]
+    resource_tags = {tag: block_values('#minecraft:' + tag) for tag in ['flowers', 'logs_that_burn']}
 
     def ingredient(value, visited=frozenset()):
         if isinstance(value, list):
@@ -76,10 +90,10 @@ with zipfile.ZipFile(jar) as archive:
                         visit(node[key], active)
         visit(data)
 
-output = {'version': '26.1', 'source': 'Vanilla Minecraft server recipe, item-tag and block-loot catalogs',
+output = {'version': '26.1', 'source': 'Vanilla Minecraft server recipe, item/block-tag and block-loot catalogs',
           'sha256': hashlib.sha256(jar.read_bytes()).hexdigest(),
           'recipes': recipes, 'smelting': {key: sorted(values) for key, values in smelting.items()},
-          'specialDrops': special, 'ordinarySelfDrops': sorted(ordinary_self)}
+          'specialDrops': special, 'ordinarySelfDrops': sorted(ordinary_self), 'resourceTags': resource_tags}
 destination = Path(__file__).resolve().parent.parent / 'data' / 'vanilla-26.1.json'
 destination.parent.mkdir(exist_ok=True)
 destination.write_text(json.dumps(output, separators=(',', ':')) + '\n')

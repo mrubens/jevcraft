@@ -8,7 +8,7 @@ const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
 const { reservedForConstruction, portalSiteClear, selectPortalSite } = require('./build-sites');
 const { updateDigCapabilities } = require('./movement');
-const { tunnelStep } = require('./tunneling');
+const { resourceTunnelStep } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = require('./vitals');
 const { decideTree } = require('./decisions');
 const { Survival } = require('./survival');
@@ -17,7 +17,7 @@ const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
 const { surfaceObserver, surfaceMovement, returnToSurface } = require('./surface');
 const { foodSupply } = require('./foraging');
-const { observeRecipeAlternatives } = require('./resource-observation');
+const { observeRecipeAlternatives, knownResourceLocations, isSurfaceResource } = require('./resource-observation');
 const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('./designer');
 const { designWithJev } = require('./build-templates');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -70,7 +70,7 @@ async function stepOff(bot, task, p) {
   await navigate(bot, task, new goals.GoalBlock(exit.x, exit.y, exit.z));
 }
 
-async function dig(bot, task, p, { done, requiredTool, enchantment } = {}) {
+async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops = true } = {}) {
   task.check(); checkAir(bot);
   if (done?.()) return;
   let block = bot.blockAt(p);
@@ -94,7 +94,7 @@ async function dig(bot, task, p, { done, requiredTool, enchantment } = {}) {
     if (!tool) throw new Blocked(`Need ${enchantment || ''} ${requiredTool || 'tool'} to collect ${block.name}`);
     await bot.equip(tool, 'hand');
   } else await equipBestTool(bot, block);
-  if (bot.game?.gameMode !== 'creative' && block.harvestTools && !block.harvestTools[bot.heldItem?.type]) throw new Error(`Missing harvest tool for ${block.name}`);
+  if (requireDrops && bot.game?.gameMode !== 'creative' && block.harvestTools && !block.harvestTools[bot.heldItem?.type]) throw new Error(`Missing harvest tool for ${block.name}`);
   await digWithAirGuard(bot, task, block);
   await waitFor(task, () => bot.blockAt(p)?.type !== block.type);
 }
@@ -131,9 +131,9 @@ function find(bot, names, distance = 48, count = 32) {
   return ids.length ? bot.findBlocks({ matching: ids, maxDistance: distance, count }) : [];
 }
 
-async function explore(bot, task, goal, save, resource, { surfaceOnly = false } = {}) {
+async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfaceResource(resource) } = {}) {
   if (surfaceOnly && !surfaceObserver(bot)(bot.entity.position.floored())) {
-    await returnToSurface(bot, task, goal, save);
+    await surfaceStep(bot, task, goal, save);
     return;
   }
   const surface = surfaceOnly ? surfaceMovement(bot) : null;
@@ -148,8 +148,10 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = false } 
     let target = pos(search.origin).offset(Math.round(Math.cos(angle) * radius), 0, Math.round(Math.sin(angle) * radius));
     const resourceNames = [...new Set([...Object.entries(MINEABLE).filter(([name, data]) => name === resource || data.drops === resource).map(([name]) => name),
       ...(bot.registry.blocksByName[resource] ? [resource] : []), ...sourceBlocks(bot.registry, resource)])];
-    const observed = find(bot, resourceNames, 128, 8).filter(p => !reservedForConstruction(goal, p) && safeFromHostiles(bot, p) &&
-      !(goal.unreachable?.[`${p}`] > Date.now() - 120000));
+    const observed = [...new Map([...find(bot, resourceNames, 128, 8), ...knownResourceLocations(bot, goal, resourceNames)]
+      .map(p => [`${p}`, p])).values()].filter(p => !reservedForConstruction(goal, p) && safeFromHostiles(bot, p) &&
+      !(goal.unreachable?.[`${p}`] > Date.now() - 120000) && (!surface || !bot.blockAt(p) || surface.isSurface(p)))
+      .sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
     if (observed.length) {
       target = observed[0];
       search.observedTarget = { ...target };
@@ -157,13 +159,13 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = false } 
     // When a known resource is well below us, circling the same mountain does
     // not get closer. Approach through a dry, supported staircase. Stay above
     // a water-covered deposit rather than tunnelling into the water itself.
-    if (observed.length && search.attempts > 3 && target.y < bot.entity.position.y - 8 && pickaxeTier(bot) >= 1) {
+    if (!surfaceOnly && observed.length && search.attempts > 3 && target.y < bot.entity.position.y - 8 && pickaxeTier(bot) >= 1) {
       let surface = target.clone();
       for (let y = target.y + 1; y <= target.y + 16; y++) {
         const b = bot.blockAt(new Vec3(target.x, y, target.z));
         if (b?.name === 'water') surface.y = y + 2;
       }
-      await tunnelStep(bot, task, goal, save, surface, { dig, navigate });
+      await resourceTunnelStep(bot, task, goal, save, surface, resource, { dig, navigate });
       return;
     }
     save();
@@ -238,13 +240,37 @@ function miningCandidates(bot, step, goal) {
 }
 
 async function mine(bot, task, step, goal, save, selected) {
+  const surfaceOnly = isSurfaceResource(step.block);
+  if (surfaceOnly && !surfaceObserver(bot)(bot.entity.position.floored())) {
+    await surfaceStep(bot, task, goal, save); return;
+  }
+  const surface = surfaceOnly ? surfaceMovement(bot) : null;
+  try { return await mineAtSource(bot, task, step, goal, save, selected); }
+  finally { surface?.restore(); }
+}
+
+async function surfaceStep(bot, task, goal, save) {
+  await returnToSurface(bot, task, goal, save, { dig, navigate, prepareTool: async () => {
+    if (pickaxeTier(bot) >= 1) return true;
+    const plan = catalogPlan(bot, 'stone_pickaxe', 1, planningInventory(bot), goal);
+    const step = plan[0];
+    if (!step) return true;
+    // Craft from carried wood/stone. Recursing into surface log gathering here
+    // would ask the same recovery to provide its own missing prerequisites.
+    if (step.action === 'mine' && isSurfaceResource(step.block)) throw new Blocked(`Cannot excavate a surface exit: need wood for a replacement pickaxe; no usable pickaxe or carried ingredients`);
+    await executeAcquisition(bot, task, step, goal, save);
+    return false;
+  } });
+}
+
+async function mineAtSource(bot, task, step, goal, save, selected) {
   const candidates = selected ? [selected] : miningCandidates(bot, step, goal);
   if (!candidates.length) {
     if (step.depth !== null && step.depth !== undefined) {
       const names = step.sources || Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
       const ore = find(bot, names, 64, 16).find(p => safeFromHostiles(bot, p));
       const target = ore || bot.entity.position.floored().offset(24, step.depth - bot.entity.position.floored().y, 0);
-      await tunnelStep(bot, task, goal, save, target, { dig, navigate });
+      await resourceTunnelStep(bot, task, goal, save, target, step.block, { dig, navigate });
     } else await explore(bot, task, goal, save, step.block);
     return;
   }
@@ -405,7 +431,7 @@ async function harden(bot, task, goal, save, item = 'purple_concrete') {
   }
 }
 
-function catalogPlan(bot, item, count, stock) {
+function catalogPlan(bot, item, count, stock, goal = {}) {
   if (bot.game?.gameMode === 'creative') return (stock[item] || 0) >= count ? [] :
     [{ action: 'creative_inventory', item, count, consumes: {}, produces: { [item]: count - (stock[item] || 0) } }];
   if (!bot._catalogObservation || Date.now() - bot._catalogObservation.at > 5000 || bot.entity.position.distanceTo(pos(bot._catalogObservation.position)) > 8) {
@@ -421,7 +447,7 @@ function catalogPlan(bot, item, count, stock) {
   });
   const nearby = bot._catalogObservation.nearby;
   const plan = planCatalog(bot.registry, item, count, stock, { nearby, tools });
-  const alternatives = observeRecipeAlternatives(bot, plan);
+  const alternatives = observeRecipeAlternatives(bot, plan, goal);
   return alternatives.some(name => !nearby.includes(name))
     ? planCatalog(bot.registry, item, count, stock, { nearby: [...new Set([...nearby, ...alternatives])], tools }) : plan;
 }
@@ -431,7 +457,7 @@ async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY 
   const inv = planningInventory(bot);
   if ((inv[item] || 0) >= count) return true;
   for (const station of ['crafting_table', 'furnace']) if (station !== item && find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
-  const step = catalogPlan(bot, item, count, inv)[0];
+  const step = catalogPlan(bot, item, count, inv, goal)[0];
   if (!step) throw new Error(`No progress step for ${item}`);
   if (minimumMiningY !== undefined && step.action === 'mine') step.minimumY = minimumMiningY;
   await executeAcquisition(bot, task, step, goal, save);
@@ -563,7 +589,7 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
   if ((stock[goal.material] || 0) < missing.length) {
     const inv = { ...stock };
     for (const station of ['crafting_table', 'furnace']) if (find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
-    const step = catalogPlan(bot, goal.material, missing.length, inv)[0];
+    const step = catalogPlan(bot, goal.material, missing.length, inv, goal)[0];
     const actions = {};
     if (step?.action === 'mine') {
       for (const p of miningCandidates(bot, step, goal).slice(0, 16)) {
@@ -798,7 +824,7 @@ async function obtainStep(bot, task, goal, save, client, onStep) {
   }
   const stock = planningInventory(bot);
   for (const station of ['crafting_table', 'furnace']) if (station !== goal.item && find(bot, [station], 32, 1).length) stock[station] = Math.max(stock[station] || 0, 1);
-  const plan = catalogPlan(bot, goal.item, remaining, stock);
+  const plan = catalogPlan(bot, goal.item, remaining, stock, goal);
   // Catalog routing replaced the old named concrete workflow. Preserve its
   // tool/wood/table preparation for any request whose recipe needs a descent,
   // while leaving nearby surface pickups and Creative inventory immediate.

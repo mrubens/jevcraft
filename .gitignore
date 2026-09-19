@@ -15,4 +15,5 @@ artifacts/
 .test-endurance/
 .test-concrete/
 .test-nether/
+.test-maintenance/
 .play-server/

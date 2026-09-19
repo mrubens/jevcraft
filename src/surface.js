@@ -3,6 +3,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, navigate } = require('./skills');
 const { safeFromHostiles } = require('./danger');
+const { tunnelStep } = require('./tunneling');
 
 // Inspect loaded columns, ignoring tree canopies but not terrain, roofs or
 // water. Two clear cave blocks are not evidence of a surface destination.
@@ -48,16 +49,16 @@ function surfaceMovement(bot) {
 // intentionally cannot leave a deep alcove, so first route to an inspected
 // surface landing using ordinary mining/scaffolding capabilities. Keep the
 // lower bound local to prevent this recovery from becoming a deeper cave trip.
-async function returnToSurface(bot, task, goal, save) {
+async function returnToSurface(bot, task, goal, save, actions = {}) {
   const isSurface = surfaceObserver(bot), start = bot.entity.position.floored();
-  if (isSurface(start)) return;
+  if (isSurface(start)) { if (goal.surfaceReturn) { delete goal.surfaceReturn; save(); } return; }
   const movements = bot.pathfinder.movements, previous = movements.allowedPosition;
   movements.allowedPosition = p => p.y >= start.y - 3 && (!previous || previous(p));
   const state = goal.surfaceReturn ||= { attempts: 0, visited: {} };
   try {
     task.check();
-    if (++state.attempts > 24) {
-      const error = new Error('Could not return to the surface after 24 recovery steps'); error.name = 'Blocked'; throw error;
+    if (++state.attempts > 192) {
+      const error = new Error('Could not return to the surface after 192 recovery steps'); error.name = 'Blocked'; throw error;
     }
     const clear = p => ['air', 'cave_air', 'void_air'].includes(bot.blockAt(p)?.name);
     const candidates = bot.findBlocks({ matching: ['grass_block', 'dirt', 'stone', 'sand', 'gravel', 'deepslate'].map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined),
@@ -69,7 +70,9 @@ async function returnToSurface(bot, task, goal, save) {
     const key = p => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)},${Math.floor(p.z / 4)}`;
     candidates.sort((a, b) => a.distanceTo(start) + (state.visited[key(a)] || 0) * 16 - b.distanceTo(start) - (state.visited[key(b)] || 0) * 16);
     const checked = new Set();
-    for (const target of candidates) {
+    // Retry complete exit routes periodically as the staircase opens up.
+    // Repeating twelve expensive searches at every one-block step stalls work.
+    for (const target of !state.ascent || state.ascent.steps % 8 === 0 ? candidates : []) {
       if (checked.has(key(target))) continue;
       checked.add(key(target));
       if (checked.size > 12) break;
@@ -82,6 +85,23 @@ async function returnToSurface(bot, task, goal, save) {
       await navigate(bot, task, destination, { timeoutMs: 20000, stallMs: 5000 });
       if (!surfaceObserver(bot)(bot.entity.position.floored())) throw new Error('Surface destination changed while returning from underground');
       delete goal.surfaceReturn; save();
+      return;
+    }
+    if (actions.dig) {
+      if (actions.prepareTool && !await actions.prepareTool()) { save(); return; }
+      const target = candidates[0]?.clone() || start.offset(24, 32, 0);
+      target.y = Math.max(target.y, start.y + 1);
+      state.ascent ||= { entrance: { ...start }, steps: 0, visited: {} };
+      // Keep the exit staircase separate from the suspended mining worksite.
+      const ascentGoal = { ...goal, tunnel: state.ascent };
+      const record = () => {
+        goal.step = { ...ascentGoal.step, action: 'ascend_to_surface' };
+        goal.survivalAction = { action: 'return_to_surface', from: { ...start }, target: { ...target }, at: new Date().toISOString() };
+        save();
+      };
+      movements.allowedPosition = p => p.y >= start.y && (!previous || previous(p));
+      await tunnelStep(bot, task, ascentGoal, record, target, { dig: actions.dig, navigate: actions.navigate || navigate });
+      if (surfaceObserver(bot)(bot.entity.position.floored())) { delete goal.surfaceReturn; save(); }
       return;
     }
     save();

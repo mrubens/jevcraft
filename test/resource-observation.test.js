@@ -5,7 +5,7 @@ const { Vec3 } = require('vec3');
 const registry = require('minecraft-data')('26.1');
 const { planCatalog } = require('../src/knowledge');
 const { catalogPlan } = require('../src/work');
-const { recipeSourceGroups, observeRecipeAlternatives } = require('../src/resource-observation');
+const { recipeSourceGroups, observeRecipeAlternatives, isSurfaceResource, knownResourceLocations } = require('../src/resource-observation');
 
 test('intermediate dye alternatives come from the recipe catalog', () => {
   const plan = planCatalog(registry, 'purple_concrete', 32, { stone_pickaxe: 1, crafting_table: 1 });
@@ -39,4 +39,28 @@ test('recipe observations refresh after travel and do not invent missing ingredi
   observeRecipeAlternatives(bot, plan); assert.equal(calls, initial);
   bot.entity.position.x += 9;
   observeRecipeAlternatives(bot, plan); assert(calls > initial);
+});
+
+test('remembered recipe sources survive travel and serialization but expire when observed gone', () => {
+  const flower = new Vec3(20, 64, 0), goal = {}, stock = { blue_dye: 2, sand: 16, gravel: 16, stone_pickaxe: 1, crafting_table: 1 };
+  let seen = true, loaded = true;
+  const bot = { registry, game: { gameMode: 'survival', dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) },
+    inventory: { items: () => [] },
+    findBlocks: ({ matching }) => seen && matching.includes(registry.blocksByName.poppy.id) ? [flower] : [],
+    blockAt: p => p.equals(flower) ? loaded ? { name: seen ? 'poppy' : 'air' } : null : { name: 'air' } };
+  assert.equal(catalogPlan(bot, 'purple_concrete', 32, stock, goal)[0].drops, 'poppy');
+  const resumed = JSON.parse(JSON.stringify(goal));
+  seen = false; loaded = false; bot.entity.position.x = 120; bot._recipeObservations = {};
+  assert.equal(catalogPlan(bot, 'purple_concrete', 32, stock, resumed)[0].drops, 'poppy');
+  assert.deepEqual(knownResourceLocations(bot, resumed, ['poppy']), [flower]);
+  bot.game.dimension = 'nether';
+  assert.deepEqual(knownResourceLocations(bot, resumed, ['poppy']), []);
+  bot.game.dimension = 'overworld'; loaded = true; bot._recipeObservations = {};
+  assert.equal(catalogPlan(bot, 'purple_concrete', 32, stock, resumed)[0].drops, 'rose_bush');
+  assert.deepEqual(resumed.resourceMemory, {});
+});
+
+test('surface resource classification comes from vanilla flower and overworld wood tags', () => {
+  for (const name of ['poppy', 'rose_bush', 'red_tulip', 'cornflower', 'cherry_log', 'birch_log']) assert(isSurfaceResource(name), name);
+  for (const name of ['diamond_ore', 'gravel', 'spore_blossom', 'chorus_flower', 'warped_stem']) assert(!isSurfaceResource(name), name);
 });

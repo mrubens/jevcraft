@@ -29,9 +29,9 @@ test('exploration reaches a distant waypoint through intermediate walks before r
 
 test('exploration leaves an unreachable geometric waypoint instead of spending the entire search there', async () => {
   const registry = require('minecraft-data')('26.1');
-  const bot = { registry, entity: { position: new Vec3(22, 64, 8) }, blockAt: () => ({ name: 'air' }),
+  const bot = { registry, game: { minY: 0, height: 100 }, entity: { position: new Vec3(22, 64, 8) }, blockAt: () => ({ name: 'air' }),
     findBlocks: ({ matching }) => matching.includes(registry.blocksByName.grass_block.id) ? [new Vec3(22, 63, 8)] : [],
-    pathfinder: { goto: async () => {}, setGoal() {} } };
+    pathfinder: { movements: {}, goto: async () => {}, setGoal() {} } };
   const goal = { search: { rose_bush: { origin: { x: 0, y: 64, z: 0 }, attempts: 0, leg: 0 } } };
   for (let n = 0; n < 3; n++) await explore(bot, new Task('test', 'search'), goal, () => {}, 'rose_bush');
   assert.equal(goal.search.rose_bush.leg, 1);
