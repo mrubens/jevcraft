@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
 const { Task } = require('../src/skills');
-const { dragonThreat, checkEndEmergency, dodgeRoutes, evadeOverTerrain, evadeDragon } = require('../src/end-safety');
+const { breathThreat, endEmergency, dragonThreat, checkEndEmergency, dodgeRoutes, evadeOverTerrain, evadeDragon } = require('../src/end-safety');
 const registry = require('prismarine-registry')('26.1');
 function fixture() {
   const phase = registry.entitiesByName.ender_dragon.metadataKeys.indexOf('phase');
@@ -23,6 +23,17 @@ test('charging and close flying dragons trigger reflexes, while distant flight a
   dragon.position.x = 10; assert.equal(dragonThreat(bot), dragon);
   for (const value of [5, 6, 7, 9]) { dragon.metadata[phase] = value; assert.equal(dragonThreat(bot), undefined); }
   dragon.metadata[phase] = 8; dragon.position.y = 105; assert.equal(dragonThreat(bot), undefined);
+});
+
+test('a newly arrived breath cloud or approaching fireball triggers immediate evasion', () => {
+  const { bot, dragon, phase } = fixture(); dragon.metadata[phase] = 6;
+  const cloud = { id: 21, name: 'area_effect_cloud', position: bot.entity.position.offset(4.9, 3, 0),
+    metadata: { [registry.entitiesByName.area_effect_cloud.metadataKeys.indexOf('radius')]: 3 } };
+  bot.entities[21] = cloud;
+  assert.equal(breathThreat(bot), cloud); assert.equal(endEmergency(bot), 'dragon_breath_cloud');
+  cloud.position.y += .1; assert.equal(breathThreat(bot), undefined);
+  const fireball = { id: 22, name: 'dragon_fireball', position: bot.entity.position.offset(10, 10, 0) };
+  bot.entities[22] = fireball; assert.equal(breathThreat(bot), fireball); assert.equal(endEmergency(bot), 'incoming_dragon_fireball');
 });
 test('dodge corridors prefer sideways ground and reject cliffs across the whole player footprint', () => {
   const { bot, dragon } = fixture();

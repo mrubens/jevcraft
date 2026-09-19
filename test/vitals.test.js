@@ -128,6 +128,16 @@ test('eating can be cancelled while waiting for the server', async () => {
   assert(stopped);
 });
 
+test('an emerging hazard interrupts eating even when the task itself was not cancelled', async () => {
+  const task = new Task('eat with threat guard'); let hazard = false, stopped = false;
+  task.interruptCheck = () => { if (hazard) throw Object.assign(new Error('New breath cloud'), { name: 'EndEmergency' }); };
+  const bot = { food: 17, health: 13, entity: {}, registry: { foodsByName: { apple: { effectiveQuality: 6.4 } } },
+    inventory: { items: () => [{ name: 'apple' }] }, equip: async () => {},
+    consume: () => { hazard = true; return new Promise(() => {}); }, deactivateItem: () => { stopped = true; } };
+  await assert.rejects(maintainVitals(bot, task), { name: 'EndEmergency' });
+  assert(stopped); assert.equal(task.cancelled, false);
+});
+
 test('near-broken tools are not counted as a usable planned supply', () => {
   const stock = [{ name: 'stone_pickaxe', count: 1, durabilityUsed: 128 }, { name: 'stone_pickaxe', count: 1, durabilityUsed: 0 }];
   const bot = { inventory: { items: () => stock }, registry: { itemsByName: { stone_pickaxe: { maxDurability: 131 } } } };

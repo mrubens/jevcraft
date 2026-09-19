@@ -11,7 +11,7 @@ const { decideTree } = require('./decisions');
 const { canStrike } = require('./combat');
 const { durable, carriedEquipment } = require('./mob-policy');
 const { fallDanger, recoverFall } = require('./fall-recovery');
-const { endEmergency, checkEndEmergency, evadeDragon } = require('./end-safety');
+const { cloudRadius, hazardDistance, endEmergency, checkEndEmergency, evadeDragon } = require('./end-safety');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
 const vector = p => new Vec3(p.x, p.y, p.z);
@@ -49,13 +49,13 @@ function endHazards(bot) {
   return Object.values(bot.entities).filter(e => live(bot, e) && (['end_crystal', 'area_effect_cloud', 'dragon_fireball'].includes(e.name) ||
     e.name === 'ender_dragon' && !perched(bot, e) && metadata(bot, e, 'phase') !== 9))
     .map(e => ({ entity: e, radius: e.name === 'end_crystal' ? 12 : e.name === 'area_effect_cloud' ?
-      Math.max(1, Number(metadata(bot, e, 'radius')) || 3) + 2 : e.name === 'ender_dragon' ? 16 : 6 }));
+      cloudRadius(bot, e) : e.name === 'ender_dragon' ? 16 : 6 }));
 }
 function safeEndPoint(bot, p, hazards = endHazards(bot)) {
   // Navigation allows retreat from an already close mob. A place to stand,
   // draw or heal must satisfy the full buffer, not that retreat exception.
-  return safeFromHostiles(bot, p) && hostileEntities(bot, 64).every(e => p.distanceTo(e.position) >= 20) && hazards.every(({ entity, radius }) =>
-    entity.name === 'area_effect_cloud' && Math.abs(p.y - entity.position.y) > 3 || p.distanceTo(entity.position) > radius);
+  return safeFromHostiles(bot, p) && hostileEntities(bot, 64).every(e => p.distanceTo(e.position) >= 20) &&
+    hazards.every(({ entity, radius }) => hazardDistance(p, entity) > radius);
 }
 
 // The server assigns the dragon's eight part ids immediately after its root.
@@ -80,8 +80,8 @@ function arenaMovement(bot, center) {
     return point.y >= start.y - 3 && point.distanceTo(start) <= 64 &&
       (!center || Math.hypot(point.x - center.x, point.z - center.z) <= Math.max(96, Math.hypot(start.x - center.x, start.z - center.z))) &&
       (!previous.allowedPosition || previous.allowedPosition(point.floored())) &&
-      endHazards(bot).every(({ entity, radius }) => entity.name === 'area_effect_cloud' && Math.abs(point.y - entity.position.y) > 3 ||
-        point.distanceTo(entity.position) >= Math.min(radius, start.distanceTo(entity.position) - .1));
+      endHazards(bot).every(({ entity, radius }) =>
+        hazardDistance(point, entity) >= Math.min(radius, hazardDistance(start, entity) - .1));
   };
   const allowed = p => allowedPoint(vector(p).offset(.5, 0, .5));
   Object.assign(movement, { canDig: true, blocksCantBreak: cantBreak, allow1by1towers: false, allowSprinting: false,

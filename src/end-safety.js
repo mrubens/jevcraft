@@ -6,6 +6,21 @@ const { dryStanding } = require('./mining-access');
 const { fallDanger, recoverFall } = require('./fall-recovery');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+function cloudRadius(bot, entity) {
+  const index = bot.registry.entitiesByName.area_effect_cloud.metadataKeys.indexOf('radius');
+  return Math.max(1, Number(entity.metadata?.[index]) || 3) + 2;
+}
+function hazardDistance(point, entity) {
+  if (entity.name !== 'area_effect_cloud') return point.distanceTo(entity.position);
+  if (Math.abs(point.y - entity.position.y) > 3) return Infinity;
+  return Math.hypot(point.x - entity.position.x, point.z - entity.position.z);
+}
+function breathThreat(bot) {
+  const entities = Object.values(bot.entities).filter(e => e.isValid !== false);
+  return entities.find(e => e.name === 'area_effect_cloud' && hazardDistance(bot.entity.position, e) <= cloudRadius(bot, e)) ||
+    entities.find(e => e.name === 'dragon_fireball' && e.position.distanceTo(bot.entity.position) < 18);
+}
+
 function dragonThreat(bot) {
   const p = bot.entity.position;
   return Object.values(bot.entities).find(e => {
@@ -21,6 +36,8 @@ function dragonThreat(bot) {
 }
 function endEmergency(bot) {
   if (fallDanger(bot)) return 'dangerous_fall';
+  const breath = breathThreat(bot);
+  if (breath) return breath.name === 'area_effect_cloud' ? 'dragon_breath_cloud' : 'incoming_dragon_fireball';
   if (dragonThreat(bot)) return 'dragon_charge_or_contact';
   return null;
 }
@@ -92,7 +109,7 @@ async function evadeOverTerrain(bot, task, goal, save, dragon, { allowed = () =>
       }
       check();
       if (fallDanger(bot)) await recoverFall(bot, task, goal, save);
-      const evidence = { at: Date.now(), from: { ...start }, to: { ...bot.entity.position }, dragonId: dragon.id, terrainRoute: true };
+      const evidence = { at: Date.now(), from: { ...start }, to: { ...bot.entity.position }, hazard: { id: dragon.id, name: dragon.name }, terrainRoute: true };
       goal.endCombat.lastEvasion = evidence; save(); bot.emit('end_combat', { evasion: evidence }); return true;
     }
     throw Object.assign(new Error('No surveyed walking escape from the dragon on loaded terrain'), { name: 'Blocked' });
@@ -121,14 +138,14 @@ async function evadeDragon(bot, task, goal, save, { allowed, timeoutMs = 1600 } 
       }
       await sleep(10);
     }
-    const dragon = dragonThreat(bot);
+    const dragon = breathThreat(bot) || dragonThreat(bot);
     if (!dragon) return false;
     const route = dodgeRoutes(bot, dragon, allowed)[0];
     if (!route) return await evadeOverTerrain(bot, task, goal, save, dragon, { allowed });
     const start = bot.entity.position.clone();
     // use normal movement packets, never position edits
     await bot.look(Math.atan2(-route.direction.x, -route.direction.z), 0, true); check();
-    goal.step = { action: 'evade_dragon', from: { ...start }, destination: { ...route.destination } }; save();
+    goal.step = { action: 'evade_dragon', hazard: dragon.name, from: { ...start }, destination: { ...route.destination } }; save();
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline && bot.entity.position.distanceTo(start) < route.distance - .7) {
       check();
@@ -139,9 +156,9 @@ async function evadeDragon(bot, task, goal, save, { allowed, timeoutMs = 1600 } 
       await sleep(25);
     }
     check();
-    const evidence = { at: Date.now(), from: { ...start }, to: { ...bot.entity.position }, dragonId: dragon.id };
+    const evidence = { at: Date.now(), from: { ...start }, to: { ...bot.entity.position }, hazard: { id: dragon.id, name: dragon.name } };
     goal.endCombat.lastEvasion = evidence; save(); bot.emit('end_combat', { evasion: evidence });
     return true;
   } finally { bot.clearControlStates(); }
 }
-module.exports = { dragonThreat, endEmergency, checkEndEmergency, dodgeRoutes, evadeOverTerrain, evadeDragon };
+module.exports = { cloudRadius, hazardDistance, breathThreat, dragonThreat, endEmergency, checkEndEmergency, dodgeRoutes, evadeOverTerrain, evadeDragon };

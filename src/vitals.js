@@ -128,10 +128,8 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   try {
     const cancelled = new Promise((_, reject) => {
       watcher = setInterval(() => {
-        if (task.cancelled) {
-          bot.deactivateItem();
-          try { task.check(); } catch (err) { reject(err); }
-        }
+        try { task.check(); }
+        catch (err) { bot.deactivateItem(); reject(err); }
       }, 100);
     });
     await Promise.race([bot.consume(), cancelled]);
