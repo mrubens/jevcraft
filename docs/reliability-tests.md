@@ -88,6 +88,45 @@ calls and fence off old results, allowing a new request to proceed without waiti
 for the old call's timeout/retries. `test/typesafe-provider.test.js` checks this
 with a deliberately stalled transport and a subsequent fresh request.
 
+## Reachable crafting tables and furnaces
+
+Being close to a workstation does not mean it can be opened. Jev now checks for
+a reachable, visible block face and tries up to eight observed alternatives.
+Searches finish their incremental pathfinding slices within a three-second
+combined search budget. Travel has a separate 20-second overall limit, with
+shorter limits per attempt. Digging, towers, and scaffolding are disabled for
+this access check and restored afterward, including on stop. Geometry and
+inventory accounting stay in code.
+
+A carried table can be placed nearby when existing nearby tables cannot be
+reached. Player workstations are preserved. A saved smelting batch remains tied
+to its original furnace; a blocked furnace does not cause its ingredients to
+be forgotten or the batch to move to another furnace. An unloaded saved
+location is approached before declaring its furnace missing. If no observed
+station can be reached and none is carried, Jev reports the access problem;
+this change does not excavate access or automatically gather another station.
+
+`test/crafting.test.js`, `test/smelting.test.js`, and
+`test/workstation-access.test.js` cover sealed nearest tables, alternative
+selection, incremental searches, cancellation, changed blocks, movement
+restoration, saved furnace identity, and unloaded saved locations.
+
+For the isolated gameplay fixture, run
+`MC_PORT=<isolated-port> node scripts/workstation-access-test.js`. Apply its
+artifact directory's `setup.json` to the isolated console, then create
+`setup-ready`. When requested, apply `portable.json` and create `portable-ready`.
+Ports 25565 and 25577 are rejected. Terrain, supplied materials, and repositioning
+are controlled; this is not natural Survival acceptance.
+
+On 2026-09-19, `workstation-access-mu8qm35r` passed on Minecraft 26.1 Survival:
+Jev bypassed a sealed table and furnace, crafted a chest at the alternative
+table, and smelted two glass at the alternative furnace. Stopping after the
+first glass and resuming opened the same furnace without loading input twice.
+He then placed a carried table near the blocked one and crafted a second chest.
+An independent client confirmed that placement and the intact enclosure and
+original stations. There was no digging, no death or health loss, and all 64
+carried cobblestone remained unused.
+
 ## Reachable death drops
 
 An unreachable nearby stack no longer causes Jev to abandon every drop. Recovery

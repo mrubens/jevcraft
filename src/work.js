@@ -43,6 +43,7 @@ const { matchesBuildBlock, placementGoal, buildCellComplete, buildFootprint, blo
 const { isDoor, doorPairMatches } = require('./doors');
 const interactableBlocks = new Set(require('mineflayer-pathfinder/lib/interactable.json'));
 const { chooseConstructionWork, approachConstruction } = require('./construction-access');
+const { approachWorkstation } = require('./workstation-access');
 const { opportunisticMining } = require('./opportunistic-mining');
 const { friendlyProblem, completion } = require('./speech');
 const { boatTravelStep } = require('./boats');
@@ -416,21 +417,24 @@ async function workstation(bot, task, name) {
   // Use a carried table nearby instead of spending ingredients/scaffolding
   // walking back to a distant bench. Existing nearby player tables may still
   // be reused, but only tables placed by this session are collected afterward.
-  let p = find(bot, [name], name === 'crafting_table' && countOf(bot, name) ? 4 : 32, 1)[0];
-  if (!p) {
-    const o = bot.entity.position.floored();
-    for (const dy of [0, -1, 1, -2, 2]) for (let dx = -2; dx <= 2 && !p; dx++) for (let dz = -2; dz <= 2 && !p; dz++) {
-      if (!dx && !dz) continue;
-      const q = o.offset(dx, dy, dz);
-      if (air(bot.blockAt(q)) && bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block') {
-        await place(bot, task, q, name); p = q;
-        bot._ownedWorkstations ||= new Set(); bot._ownedWorkstations.add(`${name}:${q}`);
-      }
+  const candidates = find(bot, [name], name === 'crafting_table' && countOf(bot, name) ? 4 : 32, 8);
+  const existing = await approachWorkstation(bot, task, name, candidates);
+  if (existing) return existing;
+  if (!countOf(bot, name)) throw new Blocked(`I can't reach a ${name.replaceAll('_', ' ')}. I need one I can use.`);
+  let p;
+  const o = bot.entity.position.floored();
+  for (const dy of [0, -1, 1, -2, 2]) for (let dx = -2; dx <= 2 && !p; dx++) for (let dz = -2; dz <= 2 && !p; dz++) {
+    if (!dx && !dz) continue;
+    const q = o.offset(dx, dy, dz);
+    if (air(bot.blockAt(q)) && bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block') {
+      await place(bot, task, q, name); p = q;
+      bot._ownedWorkstations ||= new Set(); bot._ownedWorkstations.add(`${name}:${q}`);
     }
   }
   if (!p) throw new Error(`No place for ${name}`);
-  await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2));
-  return bot.blockAt(p);
+  const placed = await approachWorkstation(bot, task, name, [p]);
+  if (!placed) throw new Blocked(`I can't reach the ${name.replaceAll('_', ' ')} I placed`);
+  return placed;
 }
 
 async function craft(bot, task, step, goal) {
@@ -489,9 +493,13 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   let block;
   if (pending) {
     const p = pos(pending.position);
-    await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2));
-    block = bot.blockAt(p);
-    if (block?.name !== 'furnace') throw new Blocked('The furnace holding our saved batch is missing');
+    // Return to the recorded area before deciding that an unloaded furnace
+    // disappeared. Once observed, the same visible-face checks apply.
+    if (!bot.blockAt(p)) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3));
+    if (bot.blockAt(p)?.name !== 'furnace') throw new Blocked('The furnace holding our saved batch is missing');
+    // Never switch furnaces while the saved ingredients/output belong to this one.
+    block = await approachWorkstation(bot, task, 'furnace', [p]);
+    if (!block) throw new Blocked("I can't reach the furnace holding our saved batch");
   } else block = await workstation(bot, task, 'furnace');
   const before = countOf(bot, step.item);
   const needed = Math.min(pending ? pending.targetInventory - before : step.count, 64);

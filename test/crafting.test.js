@@ -45,7 +45,8 @@ test('requesting a workstation produces a carried item even when that station ex
       _catalogObservation: { at: Date.now(), position: { x: 0.5, y: 64, z: 0.5 }, nearby: [] },
       findBlocks: ({ matching }) => Object.entries(stations).filter(([name]) => matching.includes(registry.blocksByName[name].id)).map(([, p]) => p),
       blockAt: p => ({ name: Object.keys(stations).find(name => stations[name].equals(p)), position: p }),
-      pathfinder: { goto: async goal => assert(goal.isEnd(bot.entity.position.floored())), setGoal: () => {} },
+      world: { raycast: () => ({ position: stations.crafting_table }) },
+      pathfinder: { movements: {}, goto: async goal => assert(goal.isEnd(bot.entity.position.floored())), setGoal: () => {} },
       inventory: { slots: [], items: () => Object.entries(stock).filter(([, count]) => count).map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id })) },
       craft: async (recipe, count, table) => {
         crafted++;
@@ -64,4 +65,40 @@ test('requesting a workstation produces a carried item even when that station ex
     assert.equal(await acquireStep(bot, new Task('craft', target), target, 1, {}, () => {}), true);
     assert.equal(crafted, 1);
   }
+});
+
+test('crafting bypasses a sealed nearest table and uses a reachable alternative without digging', async () => {
+  const registry = require('minecraft-data')('26.1');
+  const Chunk = require('prismarine-chunk')(registry), World = require('prismarine-world')(registry);
+  const world = new World(() => new Chunk()).sync;
+  for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) world.setColumn(x, z, new Chunk());
+  const set = (p, name) => world.setBlockStateId(p, registry.blocksByName[name].defaultState);
+  const sealed = new Vec3(2, 64, 0), usable = new Vec3(8, 64, 0), stock = { oak_planks: 8 };
+  for (let x = -4; x <= 12; x++) for (let z = -4; z <= 4; z++) set(new Vec3(x, 63, z), 'stone');
+  for (let x = 1; x <= 3; x++) for (let y = 64; y <= 67; y++) for (let z = -1; z <= 1; z++) set(new Vec3(x, y, z), 'stone');
+  set(sealed, 'crafting_table'); set(usable, 'crafting_table');
+  let surveys = 0;
+  const movement = { canDig: true, allow1by1towers: true, scafoldingBlocks: [1] }, original = { ...movement };
+  const bot = {
+    registry, world, game: { gameMode: 'survival' }, entity: { position: new Vec3(.5, 64, .5), onGround: true },
+    _catalogObservation: { at: Date.now(), position: { x: .5, y: 64, z: .5 }, nearby: [] },
+    blockAt: p => world.getBlock(p),
+    findBlocks: ({ matching, count }) => matching.includes(registry.blocksByName.crafting_table.id) ? [sealed, usable].slice(0, count) : [],
+    inventory: { slots: [], items: () => Object.entries(stock).filter(([, count]) => count).map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id })) },
+    pathfinder: {
+      movements: movement, setGoal: () => {},
+      getPathTo: (m, goal) => {
+        surveys++; assert.equal(m.canDig, false); assert.deepEqual(m.scafoldingBlocks, []);
+        return { status: goal.pos.equals(sealed) ? 'noPath' : 'success' };
+      },
+      goto: async goal => { if (goal.pos?.equals(usable)) bot.entity.position = new Vec3(6.5, 64, .5); },
+    },
+    craft: async (recipe, count, table) => {
+      assert(table.position.equals(usable), 'must not try to open the sealed nearest table');
+      for (const delta of recipe.delta) { const name = registry.items[delta.id].name; stock[name] = (stock[name] || 0) + delta.count; }
+    },
+  };
+  await acquireStep(bot, new Task('reachable table'), 'chest', 1, {}, () => {});
+  assert.equal(stock.chest, 1); assert.equal(surveys, 2); assert.deepEqual(movement, original);
+  assert.equal(bot.blockAt(sealed.offset(-1, 0, 0)).name, 'stone');
 });

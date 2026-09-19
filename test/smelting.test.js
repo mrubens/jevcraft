@@ -18,8 +18,9 @@ test('smelting observes window output and verifies inventory after closing', { t
     entity: { position: new Vec3(0, 64, 0) },
     inventory: { items: () => closed && collected ? [{ name: 'iron_ingot', count: 1 }] : [] },
     registry: { blocksByName: { furnace: { id: 1 } } },
-    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: () => ({ name: 'furnace' }),
-    pathfinder: { goto: async () => {}, setGoal: () => {} },
+    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: p => ({ name: 'furnace', position: p }),
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+    pathfinder: { movements: {}, goto: async () => {}, setGoal: () => {} },
     openFurnace: async () => furnace,
   };
   await smelt(bot, new Task('smelt', 'test'), { item: 'iron_ingot', from: 'raw_iron', count: 1 });
@@ -40,8 +41,9 @@ test('interrupted furnace batches resume their remaining output without loading 
   const goal = { smelting: { item: 'iron_ingot', from: 'raw_iron', count: 2, targetInventory: 2, position: { x: 1, y: 64, z: 0 } } };
   const bot = {
     entity: { position: new Vec3(0, 64, 0) }, inventory: { items: () => held ? [{ name: 'iron_ingot', count: held }] : [] },
-    registry: { itemsByName: {} }, blockAt: () => ({ name: 'furnace' }),
-    pathfinder: { goto: async () => {}, setGoal: () => {} }, openFurnace: async () => furnace,
+    registry: { itemsByName: {} }, blockAt: p => ({ name: 'furnace', position: p }),
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+    pathfinder: { movements: {}, goto: async () => {}, setGoal: () => {} }, openFurnace: async () => furnace,
   };
   await assert.rejects(smelt(bot, first, goal.smelting, goal), { name: 'Cancelled' });
   assert.equal(goal.smelting.targetInventory, 2); assert.equal(held, 1); assert.equal(closed, 1);
@@ -63,8 +65,9 @@ test('burning fuel is not replaced from stale player inventory or the next recip
     entity: { position: new Vec3(0, 64, 0) },
     inventory: { items: () => [{ name: 'oak_planks', count: 3 }, ...(collected ? [{ name: 'glass', count: 2 }] : [])] },
     registry: { itemsByName: {}, blocksByName: { furnace: { id: 1 } } },
-    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: () => ({ name: 'furnace' }),
-    pathfinder: { goto: async () => {}, setGoal: () => {} }, openFurnace: async () => furnace,
+    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: p => ({ name: 'furnace', position: p }),
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+    pathfinder: { movements: {}, goto: async () => {}, setGoal: () => {} }, openFurnace: async () => furnace,
   };
   await smelt(bot, new Task('fuel reserve'), { item: 'glass', from: 'sand', count: 2 });
   assert(collected);
