@@ -167,9 +167,9 @@ $('play').addEventListener('click', () => {
   text('play', 'Ⅱ Pause replay');
   playing = setInterval(() => { const index = frames.findIndex(f => f.id === selectedId); if (index >= frames.length - 1) return stopPlayback(); select(frames[index + 1].id); }, 1000);
 });
-for (const mode of ['orbit', 'eyes', 'top']) $(mode).addEventListener('click', () => {
-  viewer?.setMode(mode); for (const name of ['orbit','eyes','top']) { $(name).className = mode === name ? 'selected' : ''; $(name).setAttribute('aria-pressed',String(mode === name)); }
-  $('viewport').title = mode === 'eyes' ? 'Camera follows Jev’s recorded position and gaze' : mode === 'top' ? 'Scroll to zoom · right-drag to pan' : 'Drag to orbit · scroll to zoom · right-drag to pan';
+for (const mode of ['orbit', 'behind', 'eyes', 'top']) $(mode).addEventListener('click', () => {
+  viewer?.setMode(mode); for (const name of ['orbit','behind','eyes','top']) { $(name).className = mode === name ? 'selected' : ''; $(name).setAttribute('aria-pressed',String(mode === name)); }
+  $('viewport').title = mode === 'behind' ? 'Third-person follow camera · scroll to change distance' : mode === 'eyes' ? 'Camera follows Jev’s recorded position and gaze' : mode === 'top' ? 'Scroll to zoom · right-drag to pan' : 'Drag to orbit · scroll to zoom · right-drag to pan';
 });
 $('recenter').addEventListener('click', () => viewer?.reset());
 $('blueprint').addEventListener('change', () => viewer?.setPreview($('blueprint').checked));
