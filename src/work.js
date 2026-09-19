@@ -462,6 +462,10 @@ async function settleCraftInventory(bot, task) {
   task.check();
 }
 
+class SmeltingSuppliesNeeded extends Error {
+  constructor(item, count) { super(`The saved furnace batch needs ${count} ${item}`); this.item = item; this.count = count; }
+}
+
 async function smelt(bot, task, step, goal, save = () => {}) {
   task.check();
   const pending = goal?.smelting;
@@ -481,7 +485,12 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     save();
   }
   const furnace = await bot.openFurnace(block);
-  let taken = 0;
+  // While a container is open Mineflayer updates that window's player slots;
+  // bot.inventory can still contain the pre-transfer counts until it closes.
+  const carried = name => Array.isArray(furnace.slots) && Number.isInteger(furnace.inventoryStart)
+    ? furnace.slots.slice(furnace.inventoryStart, furnace.inventoryEnd).filter(i => i?.name === name).reduce((n, i) => n + i.count, 0)
+    : countOf(bot, name);
+  let taken = 0, supplies;
   const collect = async () => {
     const output = furnace.outputItem();
     if (!output) return;
@@ -497,13 +506,19 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       if (existing && existing.name !== step.from) throw new Error('Furnace contains another input');
       const amount = needed - taken;
       const missingInput = Math.max(0, amount - (existing?.count || 0));
+      if (missingInput > carried(step.from)) throw new SmeltingSuppliesNeeded(step.from, missingInput);
       if (missingInput) await furnace.putInput(bot.registry.itemsByName[step.from].id, null, missingInput);
       const fuel = async () => {
         const input = furnace.inputItem(), current = furnace.fuelItem();
-        if (!input || current && current.name !== 'oak_planks') return;
+        // A consumed plank is now burn time, not missing stock to replace.
+        // Wait for both the fuel stack and active burn to empty before adding
+        // more, so this batch cannot swallow the next recipe's fuel reserve.
+        if (!input || current || furnace.fuel > 0) return;
+        if (furnace.fuel === null) { await sleep(100); if (furnace.fuelItem() || furnace.fuel > 0) return; }
         const wanted = Math.ceil(Math.min(input.count, needed - taken) / 1.5);
-        const extra = Math.min(Math.max(0, wanted - (current?.count || 0)), countOf(bot, 'oak_planks'));
+        const extra = Math.min(wanted, carried('oak_planks'));
         if (extra) await furnace.putFuel(bot.registry.itemsByName.oak_planks.id, null, extra);
+        else if (!current && !(furnace.fuel > 0)) throw new SmeltingSuppliesNeeded('oak_planks', wanted);
       };
       await fuel();
       const deadline = Date.now() + amount * 12000 + 10000;
@@ -515,11 +530,26 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         if (taken < needed) await sleep(250);
       }
     }
+  } catch (error) {
+    if (!(error instanceof SmeltingSuppliesNeeded)) throw error;
+    supplies = error;
   } finally {
     try { if (bot._syncWindow) await bot._syncWindow(furnace); }
     finally { furnace.close(); }
   }
   if (bot._syncWindow) await bot._syncWindow(bot.inventory);
+  if (supplies) {
+    if (!goal?.smelting) throw new Blocked(supplies.message);
+    // Close the furnace before finding supplies, retaining its location and
+    // output target. A separate saved subtask avoids recursively resuming the
+    // same hungry furnace or replanning ore already cooking inside it.
+    const work = goal.smelting.supplyWork ||= { kind: 'obtain', request: goal.request, from: goal.from };
+    goal.smelting.missingSupply = { item: supplies.item, count: supplies.count };
+    const checkpoint = () => { goal.step = { action: 'refuel_furnace', detail: work.step, item: supplies.item }; save(); };
+    checkpoint();
+    await acquireStep(bot, task, supplies.item, supplies.count, work, checkpoint);
+    return;
+  }
   await waitFor(task, () => countOf(bot, step.item) >= before + needed);
   if (goal) { delete goal.smelting; save(); }
 }

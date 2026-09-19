@@ -16,6 +16,7 @@ const { recordDeath, observeAliveInventory } = require('./recovery');
 const { statusMessage } = require('./status');
 const { bundleSummary } = require('./item-bundle');
 const { friendlyProblem } = require('./speech');
+const { withRequestSignal } = require('./typesafe');
 
 function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness } = {}) {
   let ended = false, spawned = false, resolveClosed;
@@ -56,6 +57,12 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   let active = null;
   let pending = Promise.resolve();
   let generation = 0;
+  let requestController = new AbortController();
+  function invalidateRequests() {
+    generation++;
+    requestController.abort(new Error('Player request interrupted'));
+    requestController = new AbortController();
+  }
   let ready = false;
   let pendingRequests = 0;
   let observation;
@@ -130,7 +137,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     server: `${config.host}:${config.port}`,
     getGoal: () => active?.goal || store.read() || {},
     controls: {
-      stop: async () => { if (ended) throw new Error('Connection ended'); generation++; await stop(); },
+      stop: async () => { if (ended) throw new Error('Connection ended'); invalidateRequests(); await stop(); },
       resume: async () => {
         if (ended || !ready) throw new Error('The bot is not ready');
         const revision = generation; pendingRequests++;
@@ -160,7 +167,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // Stop has a synchronous fast path, even while a network request is pending.
     const normalized = address.text;
     if (/^(stop|cancel)( please)?[.!]?$/i.test(normalized)) {
-      generation++;
+      invalidateRequests();
       stop().catch(console.error);
       bot.chat('Stopped. I saved our progress. Say "Jev resume" to keep going.');
       return;
@@ -172,10 +179,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       bot.chat(statusMessage(bot, active, store.read())); return;
     }
     const revision = generation;
+    const requestClient = withRequestSignal(client, requestController.signal);
     pendingRequests++;
     pending = pending.then(async () => {
       if (revision !== generation || ended) return;
-      const spec = literal ? { kind: 'operator_command' } : await interpret(client, request, from, bot.username, {
+      const spec = literal ? { kind: 'operator_command' } : await interpret(requestClient, request, from, bot.username, {
         registry: bot.registry, players: Object.keys(bot.players),
         inventory: Object.fromEntries(bot.inventory.items().map(item => [item.name, item.count])),
       });
@@ -183,7 +191,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (spec.kind === 'operator_command') {
         const allowed = (process.env.MC_COMMAND_USERS || '').split(',').map(name => name.trim().toLowerCase());
         if (!allowed.includes(from.toLowerCase())) { bot.chat(`${from} is not enabled for Jev's operator commands`); return; }
-        const resolution = literal ? { command: literal } : await classifyCommand(client, bot, request, from);
+        const resolution = literal ? { command: literal } : await classifyCommand(requestClient, bot, request, from);
         if (revision !== generation) return;
         const command = commandAccess.accept(data, { resolvedCommand: resolution.command, interpretation: { routing: spec.interpretation, command: resolution.judgments } });
         if (!command) return;
@@ -212,7 +220,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         return;
       }
       if (spec.kind === 'clarify') { bot.chat(spec.message); return; }
-      if (spec.kind === 'stop') { generation++; await stop(); bot.chat('Stopped.'); return; }
+      if (spec.kind === 'stop') { invalidateRequests(); await stop(); bot.chat('Stopped.'); return; }
       if (spec.kind === 'resume') {
         await resume(revision); return;
       }
@@ -252,7 +260,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     } catch (err) { console.error('[bot] spawn:', err); bot.quit('Could not initialize the world'); }
   });
   bot.on('death', () => {
-    ready = false; generation++;
+    ready = false; invalidateRequests();
     // A dead player can rejoin before respawning. No work has started in this
     // connection, so request respawn directly without recording a second death.
     if (!spawned && survival.state.recovery?.status === 'pending') { bot.respawn(); return; }
@@ -274,7 +282,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   function close(reason) {
     if (ended) return;
     observation?.detach(String(reason || 'connection closed'));
-    ready = false; clearInterval(idleTimer); generation++;
+    ready = false; clearInterval(idleTimer); invalidateRequests();
     if (active && !active.task.cancelled) stop('running').catch(console.error);
     // Fence late saves from this connection before a replacement reads state.
     ended = true;

@@ -26,6 +26,15 @@ const choice = (instructions, criteria) => ({ type: 'choice', instructions, crit
 const noul = (instructions, criteria = null) => ({ type: 'noul', instructions, criteria });
 const score = (instructions, criteria) => ({ type: 'score', instructions, criteria });
 
+// Bind every nested classifier call to the same player-request lifetime,
+// including catalog traversal and command argument classification.
+function withRequestSignal(client, signal) {
+  return { systemOne(args) {
+    signal.throwIfAborted();
+    return client.systemOne({ ...args, signal: args.signal ? AbortSignal.any([signal, args.signal]) : signal });
+  } };
+}
+
 class TypeSafe {
   constructor({ provider = process.env.JEV_PROVIDER || (process.env.TYPESAFE_API_KEY ? 'typesafe' : process.env.OPENROUTER_API_KEY ? 'openrouter' : 'typesafe'),
     apiKey, model, timeout = 10000, maxRetries = 2 } = {}) {
@@ -109,4 +118,4 @@ class TypeSafe {
   }
 }
 
-module.exports = { TypeSafe, TypeSafeError, choice, noul, score };
+module.exports = { TypeSafe, TypeSafeError, choice, noul, score, withRequestSignal };

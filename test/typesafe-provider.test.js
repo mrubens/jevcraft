@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { TypeSafe, choice, noul } = require('../src/typesafe');
+const { TypeSafe, choice, noul, withRequestSignal } = require('../src/typesafe');
 
 test('OpenRouter Jev uses the Decisions endpoint and retains native typed questions', async t => {
   let sent;
@@ -30,4 +30,29 @@ test('TypeSafe remains independently selectable with its original endpoint', asy
   await new TypeSafe({ provider: 'typesafe', apiKey: 'test-key' }).systemOne({ state: {}, questions: {} });
   assert(url.endsWith('/v1/systemone'));
   assert.throws(() => new TypeSafe({ provider: 'unknown', apiKey: 'test-key' }), /JEV_PROVIDER/);
+});
+
+test('interrupting a request aborts an outstanding classification without retries or blocking the next one', async t => {
+  let calls = 0, started;
+  const began = new Promise(resolve => { started = resolve; });
+  t.mock.method(global, 'fetch', async (_url, { signal }) => {
+    if (++calls > 1) return { ok: true, headers: { get: () => null }, text: async () => '{"answers":{}}' };
+    started();
+    await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+  });
+  const client = new TypeSafe({ provider: 'typesafe', apiKey: 'test', timeout: 60000 });
+  const lifetime = new AbortController(), bound = withRequestSignal(client, lifetime.signal);
+  const pending = bound.systemOne({ state: 'old request', questions: {} });
+  await began; lifetime.abort(new Error('Player request interrupted'));
+  await assert.rejects(pending, /interrupted/); assert.equal(calls, 1);
+  assert.throws(() => bound.systemOne({ state: 'stale nested catalog', questions: {} }), /interrupted/);
+  const next = withRequestSignal(client, new AbortController().signal);
+  assert.deepEqual(await next.systemOne({ state: 'new request', questions: {} }), { answers: {} });
+});
+
+test('request lifetime preserves cancellation from a nested classifier too', async () => {
+  const parent = new AbortController(), nested = new AbortController(); let received;
+  const client = withRequestSignal({ systemOne: async args => { received = args.signal; } }, parent.signal);
+  await client.systemOne({ signal: nested.signal }); nested.abort(); assert(received.aborted);
+  assert(!parent.signal.aborted);
 });

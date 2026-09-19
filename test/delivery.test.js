@@ -50,6 +50,34 @@ test('partial pickup is preserved and uncertain delivery is not silently repeate
   assert(!tossedAgain);
 });
 
+test('spare inventory never excuses an unconfirmed throw after reconnect', async () => {
+  const { bot, goal, task } = setup();
+  goal.count = 1; goal.item = 'purple_concrete';
+  goal.pendingDelivery = { inventoryBefore: 33, deliveredBefore: 0, count: 1 };
+  let writes = 0; bot._client.write = () => { writes++; };
+  // Still carrying 32 is more than the requested one, but one was lost from
+  // the saved 33. Replaying would give the player two if the first was picked up.
+  await assert.rejects(deliver(bot, task, goal, () => {}, { timeout: 0 }), /interrupted/);
+  assert.equal(writes, 0); assert(goal.pendingDelivery);
+});
+
+test('confirmed partial handover subtracts only that pickup from the inventory baseline', async () => {
+  const { bot, goal, task } = setup();
+  goal.count = 44; goal.delivered = 12;
+  goal.pendingDelivery = { inventoryBefore: 44, deliveredBefore: 0, count: 44 };
+  assert(await deliver(bot, task, goal, () => {}, { timeout: 0 }));
+  assert.equal(goal.delivered, 44); assert.equal(goal.pendingDelivery, undefined);
+});
+
+test('earlier completed handovers do not hide a new uncertain throw', async () => {
+  const { bot, goal, task } = setup();
+  goal.count = 44; goal.delivered = 12;
+  goal.pendingDelivery = { inventoryBefore: 33, deliveredBefore: 12, count: 32 };
+  let writes = 0; bot._client.write = () => { writes++; };
+  await assert.rejects(deliver(bot, task, goal, () => {}, { timeout: 0 }), /interrupted/);
+  assert.equal(writes, 0); assert.equal(goal.delivered, 12);
+});
+
 test('splitting a handover stack excludes its destination from the cursor return range', async () => {
   let items = [{ name: 'pumpkin', type: 1, count: 17, slot: 36 }];
   const bot = {

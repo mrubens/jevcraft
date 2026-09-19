@@ -104,14 +104,20 @@ async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
   const remaining = goal.count - (goal.delivered || 0);
   if (remaining <= 0) return true;
   if (goal.pendingDelivery) {
-    if (countOf(bot, itemName) < goal.pendingDelivery.inventoryBefore) {
+    // Extra carried stock cannot prove the previous throw was recovered. Only
+    // confirmed recipient pickups may reduce the pre-throw inventory baseline.
+    // Older checkpoints lack deliveredBefore: reconcile conservatively.
+    const baseline = goal.pendingDelivery.deliveredBefore ?? (goal.delivered || 0);
+    const confirmed = Math.max(0, (goal.delivered || 0) - baseline);
+    const expected = goal.pendingDelivery.inventoryBefore - confirmed;
+    if (countOf(bot, itemName) < expected) {
       const dropped = Object.values(bot.entities).find(e => e.position && e.getDroppedItem?.()?.name === itemName &&
         e.position.distanceTo(bot.entity.position) <= 8);
       if (dropped) {
         await navigate(bot, task, new goals.GoalNear(dropped.position.x, dropped.position.y, dropped.position.z, 0));
-        await waitCount(bot, task, itemName, n => n >= remaining);
+        await waitCount(bot, task, itemName, n => n >= expected);
       }
-      if (countOf(bot, itemName) < remaining) {
+      if (countOf(bot, itemName) < expected) {
         const err = new Error(`${label} handover was interrupted; receiver pickup is unconfirmed. Check the dropped items before requesting a replacement.`);
         err.name = 'Blocked'; throw err;
       }
@@ -141,7 +147,7 @@ async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
   const knownEntities = new Set(Object.keys(bot.entities).map(Number));
   const before = countOf(bot, itemName);
   if (before < remaining) throw new Error(`Need ${remaining} ${label} for delivery, carrying ${before}`);
-  goal.pendingDelivery = { inventoryBefore: before, count: remaining, at: new Date().toISOString() };
+  goal.pendingDelivery = { inventoryBefore: before, deliveredBefore: goal.delivered || 0, count: remaining, at: new Date().toISOString() };
   save();
   const onCollect = packet => {
     bot.emit?.('handover', { event: 'pickup', packet, item: bot.entities[packet.collectedEntityId]?.getDroppedItem?.()?.name, recipientId: receiver.id });
