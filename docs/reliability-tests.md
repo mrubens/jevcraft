@@ -735,3 +735,49 @@ bounded retry did not resolve it. Its final goal is `blocked`, with the material
 retained. The runner exited with FAIL and the isolated server was stopped. Thus
 the shelter regression is fixed, but the complete delivery and natural endurance
 milestones remain unproven; return routing is the next recorded blocker.
+
+## Return travel and handovers on slopes
+
+Read-only diagnosis of the saved failure found an ordinary 49-node route from
+the cave toward the receiver. Delivery never tried it: it required a complete
+local drop corridor before starting the trip. The receiver stood on sloping
+ground by a drop, with no qualifying flat corridor. Both the route result and
+the observed receiver terrain are preserved in the run's artifacts.
+
+Delivery now approaches a distant visible receiver first, then observes local
+handover positions. A moving receiver is checked again before any inventory is
+dropped. Navigation excludes the requested item from its scaffolding choices
+and restores the previous movement settings on completion, error or stop.
+Supported one-block height differences are permitted; each crossed column needs
+dry, harmless ground within the players' floor-height range, and the eye ray
+must remain clear. Gaps and larger drops are still rejected. Uphill handovers
+raise the aim slightly so the stack clears the step instead of hitting its side.
+
+The failing unit regressions covered the rejected distant approach, cancellation,
+moving players and sloped ground. The final automated suite has 505 passing tests.
+Real-server fixtures are reproducible with:
+
+```sh
+MC_PORT=<isolated-port> node scripts/return-delivery-test.js
+MC_PORT=<isolated-port> DELIVERY_TEST_UPHILL=1 node scripts/return-delivery-test.js
+```
+
+Apply each generated `setup.json` only in the isolated console, then create
+`ready`. Interactive ports 25565 and 25577 are rejected. The supplied terrain
+is a narrow staircase from y49 to a ledge near y71; the bot receives 17
+cobblestone and must deliver exactly 16 without using them to build its route.
+`return-delivery-mu90sdd6` passed the downhill handover with 119 independently
+observed movement packets. The first uphill run `return-delivery-mu90tnpy`
+failed: its low aim stopped the stack short, and the recipient received nothing.
+That failed checkpoint remains intact. With corrected aim,
+`return-delivery-mu90x1z0` passed uphill with 117 movement packets. Both passing
+runs independently verified 16 received, one retained, no terrain changes,
+health 20, no deaths or bot commands, and no duplicate throw when reopening the
+completed checkpoint. These supplied fixtures are not natural acceptance.
+
+The same natural run was resumed with staged return travel. It left the cave
+and returned to its verified shelter as night approached, retaining the request
+and sufficient cobblestone. At the time of this increment it is waiting for
+dawn with health 20; the delivery is not yet verified. The preceding failure is
+preserved in `mu8yf4yy-before-return-delivery`, with the source hash and active
+runner recorded in the isolated world's `return-delivery-resume.json`.

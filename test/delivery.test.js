@@ -108,7 +108,7 @@ test('handover accepts a single supported row at two blocks distance, including 
   for (const z of [0.5, 0.21, 0.79]) {
     assert(safeHandoverPosition(bot, new Vec3(0.5, 64, 0.5), { position: new Vec3(2.5, 64, z) }));
   }
-  assert(!safeHandoverPosition(bot, new Vec3(0.5, 64, 0.5), { position: new Vec3(2.5, 65, 0.5) }));
+  assert(!safeHandoverPosition(bot, new Vec3(0.5, 64, 0.5), { position: new Vec3(2.5, 65, 0.5) }), 'An airborne recipient is not supported');
   const blockAt = bot.blockAt;
   bot.blockAt = p => p.x === 1 && p.y === 63 ? { name: 'air', boundingBox: 'empty' } : blockAt(p);
   assert(!safeHandoverPosition(bot, new Vec3(0.5, 64, 0.5), { position: new Vec3(2.5, 64, 0.5) }), 'Do not throw across an unsupported gap');
@@ -161,4 +161,66 @@ test('stop or a moving recipient interrupts a full-inventory handover before the
     }), reason === 'stop' ? { name: 'Cancelled' } : /Requester moved/);
     assert.equal(packets.length, 1); assert.equal(items[0].count, 16);
   }
+});
+
+test('delivery travels to a distant visible player before surveying the local throwing corridor', async () => {
+  const { bot, goal, task } = setup();
+  bot.entity.position = new Vec3(0.5, 49, 0.5);
+  bot.players.Player.entity.position = new Vec3(20.5, 71, 0.5);
+  let arrived = false, trips = 0;
+  bot.blockAt = p => !arrived ? null : { name: p.y < 71 ? 'stone' : 'air', boundingBox: p.y < 71 ? 'block' : 'empty' };
+  bot.pathfinder.movements = {};
+  const scaffolding = [1, 2]; bot.pathfinder.movements.scafoldingBlocks = scaffolding;
+  bot.pathfinder.getPathTo = () => { assert(arrived, 'Do not preflight the final handover from the cave'); return { status: 'success', path: [] }; };
+  bot.pathfinder.goto = async destination => {
+    trips++;
+    assert.deepEqual(bot.pathfinder.movements.scafoldingBlocks, [2], 'Do not build with the delivery items');
+    if (destination.constructor.name === 'GoalNear') {
+      assert.equal(destination.y, 71); arrived = true; bot.entity.position = new Vec3(18.5, 71, 0.5);
+    } else bot.entity.position = new Vec3(destination.x + .5, destination.y, destination.z + .5);
+  };
+  assert(await deliver(bot, task, goal, () => {}, { timeout: 0 }));
+  assert.equal(trips, 1); assert.equal(goal.delivered, 32);
+  assert.equal(bot.pathfinder.movements.scafoldingBlocks, scaffolding);
+});
+
+test('a stopped return trip never drops inventory or marks delivery pending', async () => {
+  const { bot, goal, task } = setup();
+  bot.entity.position = new Vec3(0, 40, 0); bot.players.Player.entity.position = new Vec3(20, 70, 0);
+  bot.blockAt = () => null;
+  const scaffolding = [1, 2]; bot.pathfinder.movements = { scafoldingBlocks: scaffolding };
+  let writes = 0; bot._client.write = () => { writes++; };
+  bot.pathfinder.goto = async () => task.cancel();
+  await assert.rejects(deliver(bot, task, goal, () => {}), { name: 'Cancelled' });
+  assert.equal(writes, 0); assert.equal(goal.pendingDelivery, undefined); assert.equal(goal.delivered, undefined);
+  assert.equal(bot.pathfinder.movements.scafoldingBlocks, scaffolding);
+});
+
+test('handover can cross a supported one-block step but never a gap or hazardous floor', () => {
+  for (const rise of [-1, 1]) {
+    const point = new Vec3(.5, 64, .5), receiver = { position: new Vec3(2.5, 64 + rise, .5) };
+    const floor = x => x < 1 ? 63 : 63 + rise;
+    const bot = { blockAt: p => ({ name: p.y <= floor(p.x) ? 'stone' : 'air', boundingBox: p.y <= floor(p.x) ? 'block' : 'empty' }) };
+    assert(safeHandoverPosition(bot, point, receiver), `${rise} step`);
+    const original = bot.blockAt;
+    for (const name of ['air', 'magma_block', 'campfire', 'water']) {
+      bot.blockAt = p => p.x === 1 ? { name, boundingBox: ['air', 'water'].includes(name) ? 'empty' : 'block' } : original(p);
+      assert(!safeHandoverPosition(bot, point, receiver), name);
+    }
+    bot.blockAt = original;
+    bot.world = { raycast: () => ({ intersect: point.offset(.1, 1, 0) }) };
+    assert(!safeHandoverPosition(bot, point, receiver), 'An obstruction still blocks the drop');
+    receiver.position.y += rise;
+    assert(!safeHandoverPosition(bot, point, receiver), 'No two-block drops');
+  }
+});
+
+test('a player moving during the return trip is reobserved before any handover', async () => {
+  const { bot, goal, task } = setup();
+  bot.entity.position = new Vec3(.5, 40, .5); bot.players.Player.entity.position = new Vec3(20.5, 70, .5);
+  bot.blockAt = () => null;
+  bot.pathfinder.goto = async () => { bot.entity.position = new Vec3(18.5, 70, .5); bot.players.Player.entity.position = new Vec3(40.5, 70, .5); };
+  let writes = 0; bot._client.write = () => { writes++; };
+  assert.equal(await deliver(bot, task, goal, () => {}), false);
+  assert.equal(writes, 0); assert.equal(goal.pendingDelivery, undefined);
 });

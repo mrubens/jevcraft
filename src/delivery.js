@@ -3,31 +3,45 @@
 const { goals } = require('mineflayer-pathfinder');
 const { Vec3 } = require('vec3');
 const { navigate, surveyRoute, countOf } = require('./skills');
+const { dryBodySpace, dryPassable, damagingTerrain } = require('./terrain');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-function handoverAim(bot, receiver) {
+function handoverAim(bot, receiver, from = bot.entity?.position) {
   const feet = receiver.position.floored();
   // Aim down toward the center of supported ground beneath the recipient.
   // A chest-height throw can overshoot a close player on a narrow ledge.
+  // Across an upward step, lift the aim enough to clear its edge. Aiming at
+  // those feet sent the item into the riser before the player could collect it.
+  const height = from && receiver.position.y - from.y > .6 ? .65 : .2;
   return bot.blockAt?.(feet.offset(0, -1, 0))?.boundingBox === 'block'
-    ? feet.offset(0.5, 0.2, 0.5) : receiver.position.offset(0, 0.2, 0);
+    ? feet.offset(0.5, height, 0.5) : receiver.position.offset(0, height, 0);
 }
 
 function safeHandoverPosition(bot, point, receiver) {
   const distance = point.distanceTo(receiver.position);
-  if (distance < 1.7 || distance > 2.8 || Math.abs(point.y - receiver.position.y) > 0.6) return false;
-  const aim = handoverAim(bot, receiver);
+  if (distance < 1.7 || distance > 2.8 || Math.abs(point.y - receiver.position.y) > 1.01) return false;
+  const aim = handoverAim(bot, receiver, point);
   const feet = point.floored();
-  if (bot.blockAt(feet)?.boundingBox !== 'empty' || bot.blockAt(feet.offset(0, 1, 0))?.boundingBox !== 'empty' ||
-      ['water', 'lava'].includes(bot.blockAt(feet)?.name)) return false;
+  const receiverFeet = receiver.position.floored();
+  const supported = p => {
+    const block = bot.blockAt(p);
+    return block?.boundingBox === 'block' && !damagingTerrain.has(block.name);
+  };
+  if (!dryBodySpace(bot, point) || !dryBodySpace(bot, receiver.position) ||
+      !supported(feet.offset(0, -1, 0)) || !supported(receiverFeet.offset(0, -1, 0))) return false;
   // Check the whole drop corridor, not a wide area beside the player. A
-  // single supported row is sufficient, but throwing across a pit is not.
+  // single supported row or a one-block step is sufficient. Each crossed
+  // column needs dry support within the two players' floor heights; a cliff
+  // below that band cannot masquerade as a safe downhill handover.
   const samples = Math.ceil(point.distanceTo(aim) * 4);
   for (let i = 0; i <= samples; i++) {
     const p = point.plus(aim.minus(point).scaled(i / samples)).floored();
-    p.y = feet.y - 1;
-    const floor = bot.blockAt(p);
-    if (floor?.boundingBox !== 'block' || ['magma_block', 'cactus'].includes(floor.name)) return false;
+    let ground = false;
+    for (let y = Math.min(feet.y, receiverFeet.y) - 1; y <= Math.max(feet.y, receiverFeet.y) - 1; y++) {
+      p.y = y;
+      if (supported(p) && dryPassable(bot.blockAt(p.offset(0, 1, 0)))) { ground = true; break; }
+    }
+    if (!ground) return false;
   }
   const eye = point.offset(0, 1.32, 0), direction = aim.minus(eye);
   const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
@@ -105,6 +119,15 @@ async function dropHeld(bot, task, itemName, count, beforeDrop = async () => {})
 // Do not equate tossing an item with delivery. The receiver must actually
 // collect it, and an interrupted handover must not silently duplicate it.
 async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
+  const movement = bot.pathfinder.movements, previous = movement?.scafoldingBlocks;
+  const item = bot.registry?.itemsByName?.[goal.item || 'purple_concrete']?.id;
+  // Navigation must not build its return route out of the requested delivery.
+  if (previous && item !== undefined) movement.scafoldingBlocks = previous.filter(id => id !== item);
+  try { return await deliverItems(bot, task, goal, save, { timeout }); }
+  finally { if (movement) movement.scafoldingBlocks = previous; }
+}
+
+async function deliverItems(bot, task, goal, save, { timeout }) {
   const itemName = goal.item || 'purple_concrete';
   const label = itemName.replaceAll('_', ' ');
   const target = Math.min(goal.count, goal.pendingDelivery?.target ?? goal.deliveryTarget ?? goal.count);
@@ -139,6 +162,22 @@ async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
     receiver = bot.players[goal.from]?.entity;
   }
   if (!receiver) throw new Error(`Cannot see ${goal.from} to deliver ${label}`);
+  // Returning from a mine is a trip, not a local drop-position survey. A
+  // visible player can be far above us, and the final corridor may only become
+  // available after approaching through terrain or loading nearby chunks.
+  if (bot.entity.position.distanceTo(receiver.position) > 6) {
+    const target = receiver.position.clone();
+    await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 3), {
+      stopWhen: () => {
+        const current = bot.players[goal.from]?.entity;
+        return !current || current.position.distanceTo(target) > 4;
+      },
+    });
+    task.check();
+    receiver = bot.players[goal.from]?.entity;
+    if (!receiver) throw new Error(`Cannot see ${goal.from} to deliver ${label}`);
+    if (bot.entity.position.distanceTo(receiver.position) > 6) return false;
+  }
   await approachForHandover(bot, task, receiver);
   task.check();
   receiver = bot.players[goal.from]?.entity;
