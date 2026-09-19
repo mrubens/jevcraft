@@ -5,6 +5,7 @@ const registry = require('prismarine-registry')('26.1');
 const { Task } = require('../src/skills');
 const { metadata, perchedHead, observeArena, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep } = require('../src/end-combat');
 const { exitEnd } = require('../src/end-exit');
+const { dodgeRoutes } = require('../src/end-safety');
 function fixture() {
   const bot = Object.assign(new EventEmitter(), { _client: new EventEmitter(), registry,
     health: 20, food: 20, oxygenLevel: 20, isAlive: true, game: { gameMode: 'survival', dimension: 'the_end' },
@@ -42,6 +43,18 @@ test('a provoked Enderman permits retreat but does not leave the current firing 
   entity(bot, 8, 'enderman', new Vec3(4, 64, .5), { creepy: true });
   assert.equal(safeEndPoint(bot, bot.entity.position), false);
   assert.equal(safeEndPoint(bot, new Vec3(-20, 64, .5)), true);
+});
+
+test('continuous evasions between a dragon and cloud are not rejected by voxel-center rounding', () => {
+  const { bot } = fixture();
+  bot.entity.position = new Vec3(-8.134908614838846, 64, 16.52985303765932);
+  const dragon = entity(bot, 20, 'ender_dragon', new Vec3(-1.1656053750352129, 68.76007488966775, 2.783597633921879), { phase: 3 });
+  entity(bot, 21, 'area_effect_cloud', new Vec3(-15.5, 64, 20.5), { radius: 7 });
+  const policy = arenaMovement(bot);
+  try {
+    assert(dodgeRoutes(bot, dragon, policy.allowedPoint).length > 0);
+    assert.equal(dodgeRoutes(bot, dragon, p => policy.allowed(p.floored())).length, 0);
+  } finally { policy.restore(); }
 });
 
 test('perched head geometry uses the actual part id and sitting phase; flying or flaming dragons are not melee candidates', () => {

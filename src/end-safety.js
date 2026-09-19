@@ -51,17 +51,31 @@ function dodgeRoutes(bot, dragon, allowed = () => true) {
 
 async function evadeDragon(bot, task, goal, save, { allowed, timeoutMs = 1600 } = {}) {
   task.check();
-  const dragon = dragonThreat(bot);
-  if (!dragon) return false;
-  const route = dodgeRoutes(bot, dragon, allowed)[0];
-  if (!route) throw Object.assign(new Error('No observed level ground to evade the approaching dragon'), { name: 'Blocked' });
-  const start = bot.entity.position.clone(), dimension = bot.game.dimension;
+  const dimension = bot.game.dimension;
   bot.pathfinder.setGoal(null); bot.clearControlStates(); bot.stopDigging?.();
   const check = () => {
     task.check();
     if (bot.game.dimension !== dimension || bot.health <= 0 || bot.isAlive === false) throw new Error('Dragon evasion interrupted by death or dimension change');
   };
   try {
+    // Even a small wing hit briefly lifts the feet off the ground. Surveying
+    // that fractional Y as a standing level falsely reports a terrain trap.
+    // Let ordinary physics land small hops; escalating launches immediately
+    // hand over to the water recovery instead of waiting for impact.
+    const landingDeadline = Date.now() + 2000;
+    while (bot.entity.onGround === false) {
+      check();
+      if (fallDanger(bot)) return await recoverFall(bot, task, goal, save);
+      if (Date.now() >= landingDeadline) {
+        goal.step = { action: 'await_knockback_landing', position: { ...bot.entity.position } }; save(); return false;
+      }
+      await sleep(10);
+    }
+    const dragon = dragonThreat(bot);
+    if (!dragon) return false;
+    const route = dodgeRoutes(bot, dragon, allowed)[0];
+    if (!route) throw Object.assign(new Error('No observed level ground to evade the approaching dragon'), { name: 'Blocked' });
+    const start = bot.entity.position.clone();
     // use normal movement packets, never position edits
     await bot.look(Math.atan2(-route.direction.x, -route.direction.z), 0, true); check();
     goal.step = { action: 'evade_dragon', from: { ...start }, destination: { ...route.destination } }; save();

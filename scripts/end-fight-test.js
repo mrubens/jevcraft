@@ -1,5 +1,5 @@
 'use strict';
-// Controlled End encounter from granted equipment and a constructed landing.
+// Controlled End encounter from granted equipment and a teleport to the island.
 // The dragon/crystals keep ordinary AI. This is not fresh-start acceptance.
 const fs = require('fs'), path = require('path'), assert = require('node:assert/strict');
 const mineflayer = require('mineflayer'), { pathfinder } = require('mineflayer-pathfinder');
@@ -40,8 +40,6 @@ bot.once('spawn', async () => {
   try {
     await bot.waitForChunksToLoad(); configureMovements(bot);
     const commands = ['gamerule minecraft:spawn_mobs false',
-      'execute in minecraft:the_end run fill -3 62 42 3 62 48 end_stone',
-      'execute in minecraft:the_end run fill -3 63 42 3 66 48 air',
       ...['diamond_sword', 'diamond_pickaxe', 'diamond_helmet', 'diamond_chestplate', 'diamond_leggings', 'diamond_boots', 'shield', 'bow', 'water_bucket'].map(item => `give ${username} ${item}`),
       `give ${username} arrow 256`, `give ${username} cooked_beef 64`, `give ${username} cobblestone 64`,
       `execute in minecraft:the_end run tp ${username} 0.5 63 45.5`];
@@ -68,7 +66,7 @@ bot.once('spawn', async () => {
     assert(goal.endReturn); assert.equal(dimension(bot), 'overworld'); assert(bot.health > 0); assert.equal(deaths, 0);
     log({ result: 'PASS', scenario: 'controlled End combat and living portal return', username, minimumHealth, deaths, directory,
       inventory: inventory(bot), milestones: goal.gameProgress.milestones,
-      limitations: 'Granted equipment, constructed landing, teleported to End and disabled natural mob spawning; not natural progression or winning acceptance' });
+      limitations: 'Granted equipment, teleported to End and disabled natural mob spawning; not natural progression or winning acceptance' });
   } catch (err) { log({ result: 'FAIL', error: err.stack, position: bot.entity?.position, health: bot.health, deaths, directory }); process.exitCode = 1; }
   finally {
     finishing = true; detach?.(); clearTimeout(timer); bot.pathfinder.setGoal(null); bot.clearControlStates();

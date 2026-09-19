@@ -76,17 +76,17 @@ function arenaMovement(bot, center) {
   if (carriedEquipment(bot).some(i => /_pickaxe$/.test(i.name))) cantBreak.delete(bot.registry.blocksByName.end_stone.id);
   // Receding from an already close cloud/crystal is permitted; entering its
   // danger radius from outside is not. All routes use loaded block geometry.
-  const allowed = p => {
-    const point = vector(p).offset(.5, 0, .5);
+  const allowedPoint = point => {
     return point.y >= start.y - 3 && point.distanceTo(start) <= 64 &&
       (!center || Math.hypot(point.x - center.x, point.z - center.z) <= Math.max(96, Math.hypot(start.x - center.x, start.z - center.z))) &&
-      (!previous.allowedPosition || previous.allowedPosition(p)) &&
+      (!previous.allowedPosition || previous.allowedPosition(point.floored())) &&
       endHazards(bot).every(({ entity, radius }) => entity.name === 'area_effect_cloud' && Math.abs(point.y - entity.position.y) > 3 ||
         point.distanceTo(entity.position) >= Math.min(radius, start.distanceTo(entity.position) - .1));
   };
+  const allowed = p => allowedPoint(vector(p).offset(.5, 0, .5));
   Object.assign(movement, { canDig: true, blocksCantBreak: cantBreak, allow1by1towers: false, allowSprinting: false,
     scafoldingBlocks: ['cobblestone', 'end_stone'].map(n => bot.registry.itemsByName[n].id), allowedPosition: allowed });
-  return { allowed, restore: () => Object.assign(movement, previous) };
+  return { allowed, allowedPoint, restore: () => Object.assign(movement, previous) };
 }
 
 async function arenaRoutes(bot, task, goal, policy, focus) {
@@ -155,7 +155,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // planning. They still retain cancellation and the caller's guard.
     task.interruptCheck = oldInterrupt;
     if (fallDanger(bot)) await recoverFall(bot, task, goal, save);
-    else await evadeDragon(bot, task, goal, save, { allowed: p => policy.allowed(p.floored()) && safeFromHostiles(bot, p) });
+    else await evadeDragon(bot, task, goal, save, { allowed: p => policy.allowedPoint(p) && safeFromHostiles(bot, p) });
   };
   try {
     if (endEmergency(bot)) { await respond(); return; }

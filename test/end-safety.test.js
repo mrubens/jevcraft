@@ -41,3 +41,13 @@ test('evasion cancellation clears movement and never publishes success', async (
   await assert.rejects(evadeDragon(bot, task, goal, () => {}), { name: 'Cancelled' });
   clearTimeout(timer); assert(Object.values(controls).every(value => !value)); assert.equal(goal.endCombat.lastEvasion, undefined);
 });
+
+test('a small airborne knockback waits for real footing before inspecting a dodge corridor', async () => {
+  const { bot } = fixture(), task = new Task('airborne dodge'), goal = { endCombat: {} };
+  bot.entity.position.y = 64.3; bot.entity.onGround = false; bot.entity.velocity = new Vec3(0, .31, 0);
+  let looked = false;
+  bot.look = async () => { assert.equal(bot.entity.onGround, true); assert.equal(bot.entity.position.y, 64); looked = true; };
+  const timer = setTimeout(() => { bot.entity.position.y = 64; bot.entity.onGround = true; }, 20);
+  assert(await evadeDragon(bot, task, goal, () => {}, { timeoutMs: 10 }));
+  clearTimeout(timer); assert(looked);
+});
