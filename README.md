@@ -165,6 +165,10 @@ Set `ACCEPT_CYCLES=2` on a fresh Normal trial to continue autonomous survival af
 
 A separate local vanilla test server is kept in `.test-server/` on port 25566, bound to localhost, with seed 12345 and peaceful difficulty. It is separate from the existing server on 25565. Server files, credentials, goal state and trial artifacts are excluded from Git.
 
+## Visual observatory
+
+Run `npm run harness` to explore the illustrated 3D scene and existing run recordings at `http://127.0.0.1:3040` without starting a bot. The viewer has orbit/first-person/top cameras, a cutaway, route and build overlays, inventory, recorded classifier choices, and a scrubbable timeline. For live capture, set `JEV_DASHBOARD_PORT=3040` when starting the bot. See [the observatory guide](docs/observatory.md) for integration, controls, recording limits and validation.
+
 ## Current limits
 
 Natural terrain exploration, underground progression, restart recovery during furnace work, and survival in hostile difficulty still need end-to-end validation and improvements. Tool replacement and delivery have passed controlled mechanics checks; that does not establish sustained tool maintenance or resource supply during natural exploration. Delivery records server pickup events and has passed an independent recipient-inventory check in the controlled world. A Nether frame requires mined obsidian; lava-bucket casting is not implemented. Temporary portal anchors reuse carried dirt or ordinary non-burning stone, including mixed stacks. Placement refreshes inventory before choosing the next stack, and saved anchors count as construction progress. A controlled test built the frame with andesite/diorite/granite and verified actual Nether entry; this does not prove natural acquisition of the obsidian. Dry route checks use exact standing heights on farmland and dirt paths instead of treating their support blocks as body obstructions.

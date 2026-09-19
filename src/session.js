@@ -14,7 +14,7 @@ const { requestedCommand, createCommandAccess } = require('./commands');
 const { classifyCommand } = require('./command-classifier');
 const { recordDeath, observeAliveInventory } = require('./recovery');
 
-function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state') } = {}) {
+function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness } = {}) {
   let ended = false, spawned = false, resolveClosed;
   const connectedAt = Date.now();
   const closed = new Promise(resolve => { resolveClosed = resolve; });
@@ -55,6 +55,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   let generation = 0;
   let ready = false;
   let pendingRequests = 0;
+  let observation;
 
   async function stop(status = 'cancelled') {
     if (status === 'cancelled') { survival.state.paused = true; saveSurvival(); }
@@ -81,10 +82,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     active = session;
     session.promise = runGoal(bot, task, goal, workStore, {
       decisionClient: client, survival,
-      onStep: g => console.log(JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError })),
+      onStep: g => { console.log(JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g); },
     }).catch(err => {
       if (err.name !== 'Cancelled') {
         goal.status = 'blocked'; goal.lastError = err.message; saveGoal(goal);
+        observation?.sample('error', { message: err.message }, goal);
         console.error(err); bot.chat(`Blocked: ${err.message}`);
       }
     }).finally(() => { if (active === session) active = null; });
@@ -99,14 +101,42 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     active = session;
     session.promise = runIdle(bot, task, goal, { save: g => { if (!ended) idleStore.save(g); saveSurvival(); } }, {
       survival, decisionClient: client,
-      onStep: g => console.log(JSON.stringify({ idle: true, survivalAction: g.survivalAction, decision: g.decisions?.at(-1)?.path, health: bot.health, food: bot.food, position: bot.entity.position, error: g.lastError })),
+      onStep: g => { console.log(JSON.stringify({ idle: true, survivalAction: g.survivalAction, decision: g.decisions?.at(-1)?.path, health: bot.health, food: bot.food, position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g); },
     }).catch(err => {
       if (err.name !== 'Cancelled') {
         survival.state.idleBlocked = err.message; saveSurvival();
+        observation?.sample('error', { message: err.message }, goal);
         console.error(err); bot.chat(err.message);
       }
     }).finally(() => { if (active === session) active = null; });
   }
+
+  async function resume(revision = generation) {
+    if (active?.idle) await stop('interrupted');
+    if (revision !== generation || ended) return;
+    if (active) { bot.chat('Already working on the saved task.'); return; }
+    const saved = store.read();
+    if (!saved || saved.status === 'complete') {
+      survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
+      bot.chat('Resuming survival between requests.'); return;
+    }
+    if (saved.kind === 'build' && !saved.design) saved.designAttempts = 0;
+    launch(saved);
+  }
+  observation = harness?.attach(bot, {
+    server: `${config.host}:${config.port}`,
+    getGoal: () => active?.goal || store.read() || {},
+    controls: {
+      stop: async () => { if (ended) throw new Error('Connection ended'); generation++; await stop(); },
+      resume: async () => {
+        if (ended || !ready) throw new Error('The bot is not ready');
+        const revision = generation; pendingRequests++;
+        const operation = pending.then(() => resume(revision));
+        pending = operation.catch(() => {}).finally(() => { pendingRequests--; });
+        return operation;
+      },
+    },
+  });
 
   const idleTimer = setInterval(() => {
     if (ready && !active && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
@@ -178,16 +208,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (spec.kind === 'clarify') { bot.chat(spec.message); return; }
       if (spec.kind === 'stop') { generation++; await stop(); bot.chat('Stopped.'); return; }
       if (spec.kind === 'resume') {
-        if (active?.idle) await stop('interrupted');
-        if (revision !== generation || ended) return;
-        if (active) { bot.chat('Already working on the saved task.'); return; }
-        const saved = store.read();
-        if (!saved || saved.status === 'complete') {
-          survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
-          bot.chat('Resuming survival between requests.'); return;
-        }
-        if (saved.kind === 'build' && !saved.design) saved.designAttempts = 0;
-        launch(saved); return;
+        await resume(revision); return;
       }
       await stop('replaced');
       if (revision !== generation || ended) return;
@@ -243,6 +264,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   });
   function close(reason) {
     if (ended) return;
+    observation?.detach(String(reason || 'connection closed'));
     ready = false; clearInterval(idleTimer); generation++;
     if (active && !active.task.cancelled) stop('running').catch(console.error);
     // Fence late saves from this connection before a replacement reads state.
