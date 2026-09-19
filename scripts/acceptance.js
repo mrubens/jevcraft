@@ -35,8 +35,29 @@ const toolState = () => bot.inventory.items().filter(i => bot.registry.itemsByNa
   .map(i => ({ name: i.name, slot: i.slot, durabilityUsed: i.durabilityUsed || 0,
     remaining: bot.registry.itemsByName[i.name].maxDurability - (i.durabilityUsed || 0) }));
 let receiver;
+let finishing = false;
 const task = new Task('acceptance', request);
 const timer = setTimeout(() => { task.cancel(); bot.pathfinder.setGoal(null); bot.stopDigging(); }, Number(process.env.ACCEPT_TIMEOUT_MS || (cycles ? (cycles * 20 + 15) * 60000 : 1800000)));
+function disconnected(client, reason) {
+  if (finishing) return;
+  finishing = true;
+  process.exitCode = 1;
+  const message = `Acceptance connection ended for ${client.username}: ${reason || 'disconnected'}`;
+  const disconnectedAt = new Date().toISOString();
+  task.cancel(); clearTimeout(timer);
+  bot.pathfinder.setGoal(null); bot.clearControlStates(); bot.stopDigging();
+  const record = () => {
+    const saved = goalStore.read();
+    if (saved) { saved.status = 'failed'; saved.lastError = message; saved.disconnectedAt = disconnectedAt; goalStore.save(saved); }
+  };
+  record();
+  log({ acceptance: 'FAIL', reason: message, disconnected: client.username, at: new Date().toISOString() });
+  receiver?.quit(); bot.quit();
+  // An inventory/server promise may never resolve once its socket is gone.
+  // End the failed runner instead of reporting stale survival observations.
+  setTimeout(() => { record(); process.exit(1); }, 500);
+}
+bot.on('end', reason => disconnected(bot, reason));
 bot.on('chat', (from, message) => { if (from === username) log({ chat: message }); });
 bot.on('death', () => {
   log({ death: true, position: bot.entity.position, dimension: bot.game.dimension, inventory: inventory(bot) });
@@ -78,6 +99,7 @@ bot.once('spawn', async () => {
     if (spec.kind === 'concrete' || spec.deliver) {
       receiver = mineflayer.createBot({ host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
         username: saved?.from || `Receive${id}`, auth: 'offline', version: process.env.MC_VERSION || false });
+      receiver.on('end', reason => disconnected(receiver, reason));
       await new Promise((resolve, reject) => { receiver.once('spawn', resolve); receiver.once('error', reject); });
       await receiver.waitForChunksToLoad();
     }
@@ -94,7 +116,7 @@ bot.once('spawn', async () => {
     log({ start: { kind: goal.kind, count: goal.count, request: goal.request, from: goal.from, initialInventory: goal.initialInventory, initialPosition: goal.initialPosition, createdAt: goal.createdAt, scenario: goal.scenario }, username, server: `${process.env.MC_HOST}:${process.env.MC_PORT}`, gameMode: bot.game.gameMode, difficulty: bot.game.difficulty, timeOfDay: bot.time.timeOfDay });
     const result = await runGoal(bot, task, goal, goalStore, {
       decisionClient: client, survival,
-      onStep: g => log({ step: g.step, decision: g.decisions?.at(-1), survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), tools: toolState(), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }),
+      onStep: g => { if (!finishing) log({ step: g.step, decision: g.decisions?.at(-1), survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), tools: toolState(), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }); },
     });
     const verified = result.ok && (goal.kind === 'house' ? verifyHouse(bot, goal.blueprint).ok :
       ['concrete', 'obtain', 'craft'].includes(goal.kind) ? (receiver
@@ -109,6 +131,7 @@ bot.once('spawn', async () => {
       await runIdle(bot, task, idleGoal, idleStore, { decisionClient: client, survival,
         until: () => bot.time.age - initialWorldAge >= cycles * 24000,
         onStep: g => {
+          if (finishing) return;
           if (Date.now() - lastLogged < 10000 && !g.lastError) return;
           lastLogged = Date.now();
           log({ endurance: { elapsedTicks: bot.time.age - initialWorldAge, targetTicks: cycles * 24000,
@@ -118,8 +141,10 @@ bot.once('spawn', async () => {
       });
       log({ cyclesSurvived: cycles, elapsedTicks: bot.time.age - initialWorldAge });
     }
+    if (finishing) return;
+    finishing = true;
     log({ acceptance: verified ? 'PASS' : 'FAIL', reason: result.reason, inventory: inventory(bot), tools: toolState(), dimension: bot.game.dimension, receiverInventory: receiver ? inventory(receiver) : undefined });
     process.exitCode = verified ? 0 : 1;
-  } catch (err) { log({ acceptance: 'FAIL', error: err.message }); process.exitCode = 1; }
-  finally { clearTimeout(timer); receiver?.quit(); bot.quit(); setTimeout(() => process.exit(process.exitCode || 0), 500); }
+  } catch (err) { if (!finishing) log({ acceptance: 'FAIL', error: err.message }); process.exitCode = 1; }
+  finally { finishing = true; clearTimeout(timer); receiver?.quit(); bot.quit(); setTimeout(() => process.exit(process.exitCode || 0), 500); }
 });

@@ -13,8 +13,10 @@ test('low air aborts the current mining attempt without trying other blocks', as
   const bot = {
     oxygenLevel: 20, entity: { position: new Vec3(0.5, 64, 0.5) },
     registry: require('minecraft-data')('26.1'), inventory: { items: () => [] },
+    pathfinder: { movements: { canDig: true } },
     findBlocks: ({ matching }) => matching.includes(require('minecraft-data')('26.1').blocksByName.sand.id) ? [new Vec3(1, 63, 0), new Vec3(2, 63, 0)] : [],
-    blockAt: p => ({ name: 'sand', position: p, type: 1, diggable: true, digTime: () => 1000 }),
+    blockAt: p => ({ name: p.y >= 64 ? 'air' : p.x === 0 ? 'stone' : 'sand', position: p,
+      type: p.y >= 64 ? 0 : 1, boundingBox: p.y >= 64 ? 'empty' : 'block', diggable: true, digTime: () => 1000 }),
     canDigBlock: () => true,
     dig: () => { digging++; return new Promise((resolve, reject) => { rejectDig = reject; bot.oxygenLevel = 12; }); },
     stopDigging: () => rejectDig(new Error('Digging aborted')),
@@ -22,7 +24,7 @@ test('low air aborts the current mining attempt without trying other blocks', as
   const goal = {};
   await assert.rejects(acquireStep(bot, new Task('test', 'sand'), 'sand', 1, goal, () => {}), { name: 'NeedsAir' });
   assert.equal(digging, 1);
-  assert.equal(goal.unreachable, undefined);
+  assert(goal.unreachable['(1, 63, 0)'] > Date.now() - 1000, 'Do not retry the same interrupted dive immediately');
 });
 
 function waterWorld() {

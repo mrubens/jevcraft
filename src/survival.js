@@ -9,6 +9,7 @@ const { foodSupply, forageChoices } = require('./foraging');
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute } = require('./skills');
+const { defendNearby } = require('./combat');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
@@ -66,12 +67,13 @@ class Survival {
         distance(p) >= distance(bot.entity.position) + 4 && !(this.state.failedEscapes?.[`${p}`] > Date.now() - 60000))
         .sort((a, b) => distance(b) - distance(a));
       for (const p of candidates.slice(0, 16)) {
+        if (await defendNearby(bot, task, goal, save)) return;
         const destination = new goals.GoalBlock(p.x, p.y, p.z);
         const route = await surveyRoute(bot, task, movements, destination, 150);
         if (route.status !== 'success') continue;
         // Do not run through another hostile to escape the closest one.
         if (route.path.some(point => danger.some(t => t.entity.position.distanceTo(pos(point)) < Math.min(4, t.distance - 1)))) continue;
-        try { await this.actions.navigate(bot, task, destination, { timeoutMs: 7000, stallMs: 3000 }); return; }
+        try { await this.actions.navigate(bot, task, destination, { timeoutMs: 7000, stallMs: 3000 }); delete this.state.trappedSince; return; }
         catch (err) {
           task.check(); if (err.name === 'NeedsAir') throw err;
           this.state.failedEscapes ||= {}; this.state.failedEscapes[`${p}`] = Date.now(); save();
@@ -80,7 +82,16 @@ class Survival {
           return;
         }
       }
-      throw new Error('No observed safe escape route from the nearby hostile');
+      // In a narrow tunnel, wait for the next bounded defensive action rather
+      // than spending five failed route searches while a mob hits us. The
+      // encounter still has a deadline and reports a concrete blocker.
+      this.state.trappedSince ||= Date.now();
+      if (Date.now() - this.state.trappedSince > 30000) {
+        const error = new Error('No safe escape after 30 seconds of defending the constrained position'); error.name = 'Blocked'; throw error;
+      }
+      this.report(goal, save, { action: 'hold_defensive_position', threats: danger.map(t => t.entity.name),
+        reason: 'No safe retreat; defend visible hostiles that enter reach' });
+      for (let n = 0; n < 2; n++) { task.check(); checkAir(bot); await sleep(100); }
     } finally { Object.assign(movements, previous); bot.clearControlStates(); }
   }
 
@@ -198,18 +209,21 @@ class Survival {
     await maintainVitals(bot, task, action => this.report(goal, save, action));
     const refuge = this.currentShelter();
     if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) {
+      delete this.state.trappedSince;
       if (shelterNeeded(bot) || threats(bot).some(t => t.distance < 20)) await this.wait(task, goal, save);
       else await this.leave(task, goal, save, refuge);
       onStep(goal); return true;
     }
     const emergency = immediateThreat(bot);
     if (emergency) {
+      if (await defendNearby(bot, task, goal, save)) { onStep(goal); return true; }
       // Sealing a nearby prepared site is faster than a long retreat. Otherwise
       // get clear first; ordinary digging must never continue under fire.
       if (refuge && pos(refuge.origin).distanceTo(bot.entity.position) < 3 && shelter.materialStock(bot) >= shelter.missingShell(bot, refuge).length) await this.refugeStep(task, goal, save);
       else await this.flee(task, goal, save);
       onStep(goal); return true;
     }
+    delete this.state.trappedSince;
     const needsShelter = shelterNeeded(bot);
     if (!needsShelter && this.state.recovery?.status === 'pending') {
       this.report(goal, save, { action: 'recover_items', origin: this.state.recovery.position });

@@ -20,6 +20,7 @@ const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives, knownResourceLocations, isSurfaceResource } = require('./resource-observation');
 const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('./designer');
 const { designWithJev } = require('./build-templates');
+const { dryMiningPositions, approachDryMining, miningMovement } = require('./mining-access');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -232,7 +233,8 @@ function miningCandidates(bot, step, goal) {
       return air(neighbor) || neighbor?.name === 'water';
     }) && (!step.properties || Object.entries(step.properties).every(([key, value]) => String(b.getProperties()[key]) === String(value))) &&
       (step.minimumY === undefined || b.position.y >= step.minimumY) && !reservedForConstruction(goal, b.position) &&
-      (step.drops !== 'dirt' || (b.position.y >= bot.entity.position.floored().y - 1 && air(bot.blockAt(b.position.offset(0, 1, 0))))),
+      (step.drops !== 'dirt' || (b.position.y >= bot.entity.position.floored().y - 1 && air(bot.blockAt(b.position.offset(0, 1, 0))))) &&
+      dryMiningPositions(bot, b.position, 1).length > 0,
   }).filter(p => {
     const k = `${p}`;
     return safeFromHostiles(bot, p) && (!goal.unreachable?.[k] || Date.now() - goal.unreachable[k] > 120000);
@@ -277,7 +279,10 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
   for (const p of candidates.slice(0, 8)) {
     task.check(); checkAir(bot);
     const before = countOf(bot, step.drops);
+    let access;
     try {
+      await approachDryMining(bot, task, p, { navigate });
+      access = miningMovement(bot);
       await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before, requiredTool: step.tool, enchantment: step.enchantment });
       await sleep(650);
       if (countOf(bot, step.drops) > before) return;
@@ -289,7 +294,13 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
         await sleep(650);
       }
       if (countOf(bot, step.drops) > before) return;
-    } catch (e) { task.check(); if (e.name === 'NeedsAir') throw e; goal.lastMiningError = e.message; }
+    } catch (e) {
+      task.check();
+      if (['NeedsAir', 'NeedsSafety'].includes(e.name)) {
+        goal.unreachable ||= {}; goal.unreachable[`${p}`] = Date.now(); save(); throw e;
+      }
+      goal.lastMiningError = e.message;
+    } finally { access?.restore(); }
     if (countOf(bot, step.drops) > before) return;
     goal.unreachable ||= {};
     goal.unreachable[`${p}`] = Date.now();

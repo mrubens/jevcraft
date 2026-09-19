@@ -16,4 +16,5 @@ artifacts/
 .test-concrete/
 .test-nether/
 .test-maintenance/
+.test-combat/
 .play-server/
