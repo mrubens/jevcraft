@@ -699,3 +699,36 @@ continued out of the cloud, then regenerated to20. The complete fight/exit resul
 is pending. Revalidate62060 before treating it as terminal or starting another
 heavy server. Interactive server25577 and unrelated25565 remain untouched.
 Full natural Nether progression and fresh winning acceptance remain incomplete.
+
+## 2026-09-19 14:49 UTC — Explain actual combat opportunities to Jev
+
+End P end-fight-mu8htd2a was deliberately TERMINATED_FOR_NEXT_ITERATION at
+14:48:31UTC, runner62060 exit143, after its useful mechanics evidence and a new
+behavioral bottleneck were identified. It was still alive at20health,zero deaths;
+dragonhealth169.5. This is unfinished, NOT a PASS or a natural acceptance run.
+The copied original O failure remains unchanged. P's trace was exported before
+termination; source, goal, events, classification, termination reason and saved
+server log retained. Server38024 saved/stopped normally14:48:31UTC. P exercised
+uneven cloud escape, repeated evasions/eating, and refreshed bow aim (one shot
+refined four times and was followed by actual dragon damage).
+
+The decision trail showed repeated waits at full health despite executable clear
+shots; descriptions warned about healing crystals even after all known positions
+were destroyed/checked absent. The generic root question also asked for a survival
+priority instead of a bounded arena action. decideTree now allows a domain-specific
+root question without changing its conditional nested questions. End choices carry
+explicit phase mechanics, present safety/healing facts, actual crystal evidence and
+compact shot outcomes. Route/wait/attack descriptions state their actual purpose.
+Jev still chooses; execution guards and emergency reflexes stay in code.
+
+Real Jev evaluation A end-decisions-mu8i202a scored6/7: it incorrectly chose dragon
+damage ahead of a reachable crystal. Explicit crystal-first mechanics corrected
+that. B end-decisions-mu8i2ulk PASS7/7 across healthy shots, slight regeneration,
+resolved earlier danger, crystal priority, reachable head, low-health healing and
+approaching a head. Held-out replay end-decisions-mu8i4bu5 PASS3/3: new question/
+fact summary over three recorded O observations with their original candidate
+descriptions changed the original wait to a shot. Inputs, outputs, probabilities,
+latency and usage preserved. This is scenario/replay evidence, not live combat.
+All352 tests PASS (/tmp/jev-end-choice-full.log). Next live diagnostic must use a
+new frozen runtime and copied world to test the new choices. Player worlds/bots
+remain untouched. Full fresh Normal Nether/winning acceptance is still unproven.

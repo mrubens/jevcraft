@@ -28,6 +28,15 @@ test('a changed world discards a decision before it reaches an action', async ()
   assert.equal(result.action, undefined);
 });
 
+test('a domain action question overrides only the root and retains independent conditional child questions', async () => {
+  const rootInstructions = { task: 'Choose the next feasible combat action', mechanics: 'Flying targets can be hurt.' };
+  await decideTree({ systemOne: async ({ questions }) => {
+    assert.deepEqual(questions.branch_0.instructions, rootInstructions);
+    assert.match(questions.branch_1.instructions.task, /Assuming.*build_house/);
+    return { answers: { branch_0: { choice: 'eat' } } };
+  } }, { state: {}, tree: tree(), rootInstructions });
+});
+
 test('unavailable selected options fail closed and singleton branches need no inference', async () => {
   await assert.rejects(decideTree({ systemOne: async () => ({ answers: { branch_0: { choice: 'invented' } } }) }, { state: {}, tree: tree() }), /unavailable/);
   const result = await decideTree({ systemOne: () => assert.fail('No choice needs inference') }, { state: {}, tree: { only: { description: 'One feasible action' } } });

@@ -12,6 +12,7 @@ const { canStrike } = require('./combat');
 const { durable, carriedEquipment } = require('./mob-policy');
 const { fallDanger, recoverFall } = require('./fall-recovery');
 const { cloudRadius, hazardDistance, endEmergency, checkEndEmergency, evadeDragon } = require('./end-safety');
+const { endDecisionInstructions, endDecisionState } = require('./end-decisions');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
 const vector = p => new Vec3(p.x, p.y, p.z);
@@ -207,13 +208,15 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     const bow = bot.inventory.items().some(i => i.name === 'bow' && durable(bot.registry, i));
     if (safe && bot.health >= 12 && bow && countOf(bot, 'arrow') > 0) {
       for (const target of crystals) if (!repeatedCrystalMiss(state, target, bot.entity.position) && aimAtEntity(bot, target)) tree[`crystal_${target.id}`] = {
-        description: { action: 'Destroy an observed healing crystal with a clear bow trajectory', position: { ...target.position } }, run: () => shoot(target),
+        description: { action: 'Destroy an observed healing crystal with a clear bow trajectory, removing a source of dragon health regeneration', position: { ...target.position } }, run: () => shoot(target),
       };
       if (dragon && !perched(bot, dragon)) {
         for (let n = 0; n < 6; n++) { check(); await sleep(50); }
         let motionNow; try { motionNow = velocity(); } catch (_) { /* no feasible predicted shot */ }
-        if (motionNow && aimAtEntity(bot, dragon, motionNow)) tree.shoot_dragon = {
-          description: { action: 'Shoot the flying dragon using its observed motion; healing crystals may undo the damage', health: beforeDragon, healingCrystals: crystals.length }, run: () => shoot(dragon),
+        const trajectory = motionNow && aimAtEntity(bot, dragon, motionNow);
+        if (trajectory) tree.shoot_dragon = {
+          description: { action: 'Shoot the currently arrow-vulnerable flying dragon along the checked clear trajectory',
+            safeFiringPosition: true, flightSeconds: trajectory.ticks / 20, dragonHealth: beforeDragon, observedHealingCrystals: crystals.length }, run: () => shoot(dragon),
         };
       }
     }
@@ -236,7 +239,10 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     if (!Object.keys(tree).some(key => key.startsWith('crystal_')) || bot.health < 16) for (const route of await arenaRoutes(bot, task, goal, policy, focus)) {
       tree[`move_${route.key}`] = { description: { action: focus?.name === 'unresolved_crystal_location'
         ? 'Approach a previously observed crystal location to check whether the crystal remains. Loss of entity tracking did not establish destruction.'
-        : 'Move along this surveyed arena route to escape hazards, gain a firing angle or approach a perched head',
+        : !safe ? 'Escape the unsafe current position along this surveyed route'
+        : focus?.name === 'ender_dragon_head' ? 'Approach the perched head to get within sword reach'
+        : focus?.name === 'end_crystal' ? 'Change firing position for an observed healing crystal'
+        : 'Reposition along this surveyed route to gain a future attack opportunity',
         position: { ...route.p }, visits: state.visits[route.key] || 0, target: focus?.name,
         clearCrystalShot: focus?.name === 'end_crystal' ? route.clearCrystalShot : undefined,
         targetDistance: route.targetDistance, currentTargetDistance: focus?.position?.distanceTo(bot.entity.position),
@@ -251,8 +257,10 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // displace executable actions. Renew that allowance only after actual
     // movement, damage, crystal destruction or observed health recovery.
     if (safe && dragon && ((state.idleObservations || 0) < 5 || !Object.keys(tree).length)) tree.observe = {
-      description: { action: 'Briefly observe the dragon to wait for a vulnerable flight or perch, or allow food regeneration',
-        health: bot.health, dragonPhase: metadata(bot, dragon, 'phase'), pausesWithoutProgress: state.idleObservations || 0 }, run: async () => {
+      description: { action: 'Wait one second without attacking or moving',
+        health: bot.health, canRegenerate: bot.health < 20 && bot.food >= 18,
+        usefulAttackAvailableNow: !!tree.shoot_dragon || !!tree.strike_head || crystals.some(c => tree[`crystal_${c.id}`]),
+        dragonPhase: metadata(bot, dragon, 'phase'), pausesWithoutProgress: state.idleObservations || 0 }, run: async () => {
       state.idleObservations = (state.idleObservations || 0) + 1;
       bot.clearControlStates(); for (let n = 0; n < 10; n++) { check(); if (!safeEndPoint(bot, bot.entity.position)) break; await sleep(100); }
     } };
@@ -260,12 +268,11 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     if (!client) throw blocked('End action selection needs the configured Jev decision client');
     const controller = new AbortController(), watcher = setInterval(() => { try { check(); } catch (err) { controller.abort(err); } }, 50);
     let decision;
-    try { decision = await decideTree(client, { tree, state: { request: goal.request, task: 'Defeat the Ender Dragon. Destroy healing crystals first when feasible, avoid breath clouds, attack vulnerable phases, and preserve health.',
-      health: bot.health, food: bot.food, arrows: countOf(bot, 'arrow'), position: { ...bot.entity.position }, dragon: state.dragon,
-      perchedHead: head && { position: { ...head.position }, reachable: canStrike(bot, head) }, crystals: state.observedCrystals,
-      unresolvedCrystalLocations: unresolved,
-      noProgress: state.noProgress, pausesWithoutProgress: state.idleObservations || 0,
-      recentShots: state.shots.slice(-3), lastInterruption: state.lastInterrupted, lastError: goal.lastError }, signal: controller.signal,
+    try { decision = await decideTree(client, { tree, rootInstructions: endDecisionInstructions,
+      state: endDecisionState({ request: goal.request, health: bot.health, food: bot.food, arrows: countOf(bot, 'arrow'),
+        position: { ...bot.entity.position }, safe, dragon: state.dragon,
+        head: head && { position: { ...head.position }, reachable: canStrike(bot, head) }, crystals: state.observedCrystals, combat: state }),
+      signal: controller.signal,
       isFresh: () => dimension(bot) === 'end' && bot.health >= healthBefore && bot.entity.position.distanceTo(start) < 1 }); }
     finally { clearInterval(watcher); }
     check();

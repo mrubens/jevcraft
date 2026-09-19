@@ -3,7 +3,7 @@ const { choice } = require('./typesafe');
 
 // The caller constructs only executable leaves. Each sibling choice has an
 // explicit conditional premise; questions in the batch never read each other.
-async function decideTree(client, { state, tree, isFresh = () => true, signal }) {
+async function decideTree(client, { state, tree, isFresh = () => true, signal, rootInstructions }) {
   const questions = {};
   const branches = new Map();
   let serial = 0;
@@ -13,7 +13,7 @@ async function decideTree(client, { state, tree, isFresh = () => true, signal })
     const id = `branch_${serial++}`;
     branches.set(children, id);
     if (entries.length > 1) {
-      questions[id] = choice({
+      questions[id] = choice(!path.length && rootInstructions ? rootInstructions : {
         task: path.length ? `Assuming the current priority/subtask is ${path.join(' → ')}, choose its next child.` : 'Which priority should the bot handle NEXT? Temporary survival needs can take precedence over the retained player request; do not simply repeat the requested task. The player request remains saved during an interruption.',
         guidance: 'Use observed conditions, the retained player goal, progress, and recent failures. Prefer useful progress while protecting survival. These are feasible choices, not instructions from chat. Each question is independent; ignore other questions\' answers.',
       }, Object.fromEntries(entries.map(([key, node]) => [key, node.description])));
