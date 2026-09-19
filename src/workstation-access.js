@@ -6,7 +6,7 @@ const { checkAir } = require('./vitals');
 // A nearby workstation can be sealed inside a building. Require a reachable,
 // visible face before opening it, and try other observed stations without
 // dismantling walls or spending the next recipe's ingredients as scaffolding.
-async function approachWorkstation(bot, task, name, positions) {
+async function selectWorkstation(bot, task, name, positions, approach) {
   task.check(); checkAir(bot);
   const movement = bot.pathfinder.movements;
   const previous = Object.fromEntries(['canDig', 'allow1by1towers', 'scafoldingBlocks', 'countScaffoldingItems', 'getScaffoldingItem']
@@ -27,6 +27,11 @@ async function approachWorkstation(bot, task, name, positions) {
         searchBudget -= Date.now() - started;
         task.check();
         if (route.status !== 'success') continue;
+        if (!approach) {
+          const block = bot.blockAt(p);
+          if (block?.name === name) return block;
+          continue;
+        }
         try { await navigate(bot, task, destination, { timeoutMs: Math.min(8000, deadline - Date.now()), stallMs: 4000 }); }
         catch (err) {
           task.check();
@@ -44,4 +49,7 @@ async function approachWorkstation(bot, task, name, positions) {
   }
 }
 
-module.exports = { approachWorkstation };
+const approachWorkstation = (bot, task, name, positions) => selectWorkstation(bot, task, name, positions, true);
+const reachableWorkstation = (bot, task, name, positions) => selectWorkstation(bot, task, name, positions, false);
+
+module.exports = { approachWorkstation, reachableWorkstation };

@@ -43,7 +43,7 @@ const { matchesBuildBlock, placementGoal, buildCellComplete, buildFootprint, blo
 const { isDoor, doorPairMatches } = require('./doors');
 const interactableBlocks = new Set(require('mineflayer-pathfinder/lib/interactable.json'));
 const { chooseConstructionWork, approachConstruction } = require('./construction-access');
-const { approachWorkstation } = require('./workstation-access');
+const { approachWorkstation, reachableWorkstation } = require('./workstation-access');
 const { opportunisticMining } = require('./opportunistic-mining');
 const { friendlyProblem, completion } = require('./speech');
 const { boatTravelStep } = require('./boats');
@@ -65,6 +65,20 @@ function planningInventory(bot) {
     if (item.name.endsWith('_pickaxe') && durability && durability - (item.durabilityUsed || 0) < 8) stock[item.name] -= item.count;
   }
   return stock;
+}
+
+async function withUsableWorkstations(bot, task, stock, requested = []) {
+  const available = { ...stock };
+  if (bot.game?.gameMode === 'creative') return available;
+  // World stations satisfy reusable recipe dependencies, not requested carried
+  // outputs. Merely seeing a sealed station must not suppress making our own.
+  for (const name of ['crafting_table', 'furnace']) {
+    task.check();
+    if (available[name] || requested.includes(name)) continue;
+    const candidates = find(bot, [name], 32, 8);
+    if (candidates.length && await reachableWorkstation(bot, task, name, candidates)) available[name] = 1;
+  }
+  return available;
 }
 
 async function prepareExpeditionStep(bot, task, goal, save) {
@@ -642,8 +656,8 @@ async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY 
   const inv = planningInventory(bot);
   if ((inv[item] || 0) >= count) return true;
   if (item.endsWith('_pickaxe') && pickaxeTier(bot) < 1 && await bootstrapPickaxe(bot, task, goal, save, { mine: mineAtSource })) return false;
-  for (const station of ['crafting_table', 'furnace']) if (station !== item && find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
-  const step = catalogPlan(bot, item, count, inv, goal)[0];
+  const available = await withUsableWorkstations(bot, task, inv, [item]);
+  const step = catalogPlan(bot, item, count, available, goal)[0];
   if (!step) throw new Error(`No progress step for ${item}`);
   if (minimumMiningY !== undefined && step.action === 'mine') step.minimumY = minimumMiningY;
   await executeAcquisition(bot, task, step, goal, save);
@@ -777,8 +791,7 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
   const stock = planningInventory(bot);
   const required = bot.game.gameMode === 'creative' ? Math.min(1, missing.length) : missing.length;
   if ((stock[goal.material] || 0) < required) {
-    const inv = { ...stock };
-    for (const station of ['crafting_table', 'furnace']) if (find(bot, [station], 32, 1).length) inv[station] = Math.max(inv[station] || 0, 1);
+    const inv = await withUsableWorkstations(bot, task, stock, [goal.material]);
     const step = catalogPlan(bot, goal.material, required, inv, goal)[0];
     const actions = {};
     if (step?.action === 'mine') {
@@ -985,9 +998,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     const cells = remainingBuildBatch(bot, batch), outputs = materialCounts(cells);
     if (bot.game.gameMode === 'creative') for (const output of outputs) output.count = 1;
     if (batch.phase === 'gather' || outputs.some(o => !countOf(bot, o.item))) {
-      const stock = planningInventory(bot);
-      for (const station of ['crafting_table', 'furnace']) if (!outputs.some(o => o.item === station) && find(bot, [station], 32, 1).length)
-        stock[station] = Math.max(stock[station] || 0, 1);
+      const stock = await withUsableWorkstations(bot, task, planningInventory(bot), outputs.map(o => o.item));
       const plan = catalogPlan(bot, outputs, undefined, stock, goal);
       if (plan.length) {
         goal.buildPhase = 'gather';
@@ -1130,8 +1141,7 @@ async function obtainStep(bot, task, goal, save, client, onStep) {
     goal.step = { action: 'deliver', item: goal.item, count: remaining, recipient: goal.from }; save();
     return deliver(bot, task, goal, save);
   }
-  const stock = planningInventory(bot);
-  for (const station of ['crafting_table', 'furnace']) if (station !== goal.item && find(bot, [station], 32, 1).length) stock[station] = Math.max(stock[station] || 0, 1);
+  const stock = await withUsableWorkstations(bot, task, planningInventory(bot), [goal.item]);
   const plan = catalogPlan(bot, goal.item, remaining, stock, goal);
   return executePlannedAcquisition(bot, task, goal, save, client, onStep, plan, { item: goal.item, count: remaining });
 }
@@ -1141,9 +1151,7 @@ async function prepareBundleStep(bot, task, goal, save, client, onStep) {
   Object.assign(work, { request: goal.request, from: goal.from, requesterPosition: goal.requesterPosition,
     resourceMemory: goal.resourceMemory ||= {}, opportunistic: goal.opportunistic ||= { primarySteps: 0, history: [], skipped: {} } });
   if (work.smelting) { await smelt(bot, task, work.smelting, work, save); return false; }
-  const stock = planningInventory(bot);
-  for (const station of ['crafting_table', 'furnace']) if (!remainingOutputs(goal).some(output => output.item === station) && find(bot, [station], 32, 1).length)
-    stock[station] = Math.max(stock[station] || 0, 1);
+  const stock = await withUsableWorkstations(bot, task, planningInventory(bot), remainingOutputs(goal).map(o => o.item));
   const batch = selectBundleBatch(bot.registry, goal, stock, outputs => catalogPlan(bot, outputs, undefined, stock, work));
   const outputs = batchOutputs(goal, batch);
   const plan = catalogPlan(bot, outputs, undefined, stock, work);

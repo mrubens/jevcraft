@@ -45,7 +45,7 @@ test('requesting a workstation produces a carried item even when that station ex
       _catalogObservation: { at: Date.now(), position: { x: 0.5, y: 64, z: 0.5 }, nearby: [] },
       findBlocks: ({ matching }) => Object.entries(stations).filter(([name]) => matching.includes(registry.blocksByName[name].id)).map(([, p]) => p),
       blockAt: p => ({ name: Object.keys(stations).find(name => stations[name].equals(p)), position: p }),
-      world: { raycast: () => ({ position: stations.crafting_table }) },
+      world: { raycast: (_eye, ray) => ({ position: Math.abs(ray.x) > Math.abs(ray.z) ? stations.crafting_table : stations.furnace }) },
       pathfinder: { movements: {}, goto: async goal => assert(goal.isEnd(bot.entity.position.floored())), setGoal: () => {} },
       inventory: { slots: [], items: () => Object.entries(stock).filter(([, count]) => count).map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id })) },
       craft: async (recipe, count, table) => {
@@ -77,7 +77,6 @@ test('crafting bypasses a sealed nearest table and uses a reachable alternative 
   for (let x = -4; x <= 12; x++) for (let z = -4; z <= 4; z++) set(new Vec3(x, 63, z), 'stone');
   for (let x = 1; x <= 3; x++) for (let y = 64; y <= 67; y++) for (let z = -1; z <= 1; z++) set(new Vec3(x, y, z), 'stone');
   set(sealed, 'crafting_table'); set(usable, 'crafting_table');
-  let surveys = 0;
   const movement = { canDig: true, allow1by1towers: true, scafoldingBlocks: [1] }, original = { ...movement };
   const bot = {
     registry, world, game: { gameMode: 'survival' }, entity: { position: new Vec3(.5, 64, .5), onGround: true },
@@ -88,7 +87,7 @@ test('crafting bypasses a sealed nearest table and uses a reachable alternative 
     pathfinder: {
       movements: movement, setGoal: () => {},
       getPathTo: (m, goal) => {
-        surveys++; assert.equal(m.canDig, false); assert.deepEqual(m.scafoldingBlocks, []);
+        assert.equal(m.canDig, false); assert.deepEqual(m.scafoldingBlocks, []);
         return { status: goal.pos.equals(sealed) ? 'noPath' : 'success' };
       },
       goto: async goal => { if (goal.pos?.equals(usable)) bot.entity.position = new Vec3(6.5, 64, .5); },
@@ -99,6 +98,6 @@ test('crafting bypasses a sealed nearest table and uses a reachable alternative 
     },
   };
   await acquireStep(bot, new Task('reachable table'), 'chest', 1, {}, () => {});
-  assert.equal(stock.chest, 1); assert.equal(surveys, 2); assert.deepEqual(movement, original);
+  assert.equal(stock.chest, 1); assert.deepEqual(movement, original);
   assert.equal(bot.blockAt(sealed.offset(-1, 0, 0)).name, 'stone');
 });

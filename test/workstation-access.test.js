@@ -1,8 +1,8 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
-const { approachWorkstation } = require('../src/workstation-access');
-const { smelt } = require('../src/work');
+const { approachWorkstation, reachableWorkstation } = require('../src/workstation-access');
+const { smelt, acquireStep } = require('../src/work');
 const { Task } = require('../src/skills');
 
 function fixture() {
@@ -77,4 +77,55 @@ test('a saved furnace outside loaded chunks is approached before being declared 
   const goal = { smelting: { item: 'glass', from: 'sand', count: 1, targetInventory: 1, position: { ...p } } };
   await smelt(bot, new Task('return to saved furnace'), goal.smelting, goal);
   assert.equal(trips, 1); assert.equal(held, 1); assert(!goal.smelting);
+});
+
+test('recipe planning makes a replacement when all observed stations of the needed kind are inaccessible', async () => {
+  for (const [station, target, stock] of [
+    ['crafting_table', 'chest', { oak_planks: 12 }],
+    ['furnace', 'glass', { oak_planks: 2, cobblestone: 8, sand: 2 }],
+  ]) {
+    const { bot, p, set } = fixture(), table = new Vec3(1, 64, 0), crafted = [];
+    set(p, station);
+    if (station === 'furnace') set(table, 'crafting_table');
+    bot._catalogObservation = { at: Date.now(), position: { ...bot.entity.position }, nearby: [] };
+    bot.inventory = { slots: [], items: () => Object.entries(stock).filter(([, count]) => count)
+      .map(([name, count]) => ({ name, count, type: bot.registry.itemsByName[name].id })) };
+    bot.findBlocks = ({ matching, count }) => [p, table].filter(q => matching.includes(bot.blockAt(q)?.type)).slice(0, count);
+    bot.pathfinder.getPathTo = () => ({ status: 'noPath' });
+    bot.pathfinder.goto = async () => assert.fail('do not walk to an unusable station during recipe planning');
+    bot.craft = async (recipe, count, usedTable) => {
+      const item = bot.registry.items[recipe.result.id].name;
+      crafted.push(item); assert.equal(count, 1);
+      assert.equal(usedTable?.name || null, station === 'furnace' ? 'crafting_table' : null);
+      for (const delta of recipe.delta) { const name = bot.registry.items[delta.id].name; stock[name] = (stock[name] || 0) + delta.count; }
+    };
+    const goal = {};
+    assert.equal(await acquireStep(bot, new Task('replace blocked station'), target, station === 'furnace' ? 2 : 1, goal, () => {}), false);
+    assert.deepEqual(crafted, [station]); assert.equal(stock[station], 1); assert.equal(goal.step.item, station);
+    assert.equal(stock[target] || 0, 0, 'the original requested output remains unfinished');
+  }
+});
+
+test('checking a distant usable station does not travel or consume materials during planning', async () => {
+  const { bot, p } = fixture(), position = bot.entity.position.clone(), previous = { ...bot.pathfinder.movements };
+  bot.pathfinder.getPathFromTo = function * () {
+    yield { result: { status: 'partial' } }; yield { result: { status: 'success' } };
+  };
+  bot.pathfinder.goto = async () => assert.fail('availability is a survey, not a trip');
+  assert((await reachableWorkstation(bot, new Task('inspect furnace'), 'furnace', [p])).position.equals(p));
+  assert(bot.entity.position.equals(position)); assert.deepEqual(bot.pathfinder.movements, previous);
+});
+
+test('stop while planning station access prevents crafting a replacement and restores movement', async () => {
+  const { bot, p, set } = fixture(), task = new Task('stop planning'), original = { ...bot.pathfinder.movements };
+  set(p, 'crafting_table');
+  bot.inventory = { slots: [], items: () => [{ name: 'oak_planks', count: 12, type: bot.registry.itemsByName.oak_planks.id }] };
+  bot.findBlocks = ({ matching }) => matching.includes(bot.registry.blocksByName.crafting_table.id) ? [p] : [];
+  bot.pathfinder.getPathFromTo = function * () {
+    yield { result: { status: 'partial' } }; task.cancel(); yield { result: { status: 'success' } };
+  };
+  bot.craft = async () => assert.fail('stop must prevent the next recipe');
+  const goal = {};
+  await assert.rejects(acquireStep(bot, task, 'chest', 1, goal, () => {}), { name: 'Cancelled' });
+  assert.equal(goal.step, undefined); assert.deepEqual(bot.pathfinder.movements, original);
 });

@@ -130,14 +130,22 @@ A carried table can be placed nearby when existing nearby tables cannot be
 reached. Player workstations are preserved. A saved smelting batch remains tied
 to its original furnace; a blocked furnace does not cause its ingredients to
 be forgotten or the batch to move to another furnace. An unloaded saved
-location is approached before declaring its furnace missing. If no observed
-station can be reached and none is carried, Jev reports the access problem;
-this change does not excavate access or automatically gather another station.
+location is approached before declaring its furnace missing.
+
+Recipe planning now uses the same access survey before counting a world station
+as available. It does not walk, dig, place blocks, or spend materials during
+that survey. If no observed station can be reached and none is carried, the
+ordinary recipe graph includes making a replacement and its ingredients. This
+applies to single requests, combined requests, house materials, and custom-build
+batches. A request for a carried table or furnace still needs an inventory item;
+an existing station cannot stand in for that output. Saved smelting batches
+continue to require their original furnace rather than making a replacement.
 
 `test/crafting.test.js`, `test/smelting.test.js`, and
 `test/workstation-access.test.js` cover sealed nearest tables, alternative
 selection, incremental searches, cancellation, changed blocks, movement
-restoration, saved furnace identity, and unloaded saved locations.
+restoration, saved furnace identity, unloaded saved locations, replacement
+recipes, and cancellation during planning.
 
 For the isolated gameplay fixture, run
 `MC_PORT=<isolated-port> node scripts/workstation-access-test.js`. Apply its
@@ -154,6 +162,22 @@ He then placed a carried table near the blocked one and crafted a second chest.
 An independent client confirmed that placement and the intact enclosure and
 original stations. There was no digging, no death or health loss, and all 64
 carried cobblestone remained unused.
+
+`MC_PORT=<isolated-port> node scripts/station-replacement-test.js` covers the
+case with no usable stations and none carried. Apply its artifact directory's
+`setup.json` in the isolated console, then create `ready`. Both player-server
+ports are rejected. The supplied materials and sealed enclosure make this a
+controlled Survival mechanics test, not fresh acceptance.
+
+On 2026-09-19, `station-replacement-mu8rew5i` passed the combined request for a
+chest and four glass. Jev turned four of six supplied logs into 16 planks,
+crafted exactly one table and one furnace, placed them, and loaded all four
+sand as one batch using three planks of fuel. The test stopped after crafting
+the furnace and resumed from the saved checkpoint without duplicating either
+station. The independent receiving client got exactly one chest and four glass,
+observed both new stations, and verified that the sealed original stations and
+their enclosure remained intact. Jev retained two logs and one plank, with
+health 20, no deaths, and no digging.
 
 ## Reachable death drops
 
