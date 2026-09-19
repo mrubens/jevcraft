@@ -23,6 +23,8 @@ function goalView(goal = {}) {
     mobHunt: goal.mobHunt,
     strongholdSearch: goal.strongholdSearch,
     endPortal: goal.endPortal,
+    endCombat: goal.endCombat,
+    endReturn: goal.endReturn,
     recoveryAction: goal.recoveryAdvice?.active ? goal.recoveryAction : undefined,
     recoveryAdvice: goal.recoveryAdvice?.history?.at(-1) && (({ model, diagnosis, status, steps, outcome }) =>
       ({ model, diagnosis, status, steps, outcome }))(goal.recoveryAdvice.history.at(-1)),

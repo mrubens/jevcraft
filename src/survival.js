@@ -250,8 +250,9 @@ class Survival {
       this.report(goal, save, { action: 'recover_items', origin: this.state.recovery.position });
       if (await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate)) { onStep(goal); return true; }
     }
-    const expeditionFood = goal.preparingExpedition && bot.game.difficulty !== 'peaceful';
-    const needsFood = foodSupply(bot) < 12 && (bot.food <= 18 || goal.stockFood || expeditionFood ||
+    const expeditionFood = (goal.preparingExpedition || goal.preparingEnd) && bot.game.difficulty !== 'peaceful';
+    const desiredFood = goal.preparingEnd ? 64 : 12;
+    const needsFood = foodSupply(bot) < desiredFood && (bot.food <= 18 || goal.stockFood || expeditionFood ||
       (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful'));
     if (!needsShelter && !needsFood) return false;
     const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay,
@@ -260,7 +261,7 @@ class Survival {
         nightStartsAt: 11500, dawnAt: 23000, daylightTicksRemaining: Math.max(0, 11500 - bot.time.timeOfDay),
         shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null },
       recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot),
-      foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: 12, hungerMaximum: 20, starvationAt: 0,
+      foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: desiredFood, hungerMaximum: 20, starvationAt: 0,
         requiredBeforeExpedition: !!expeditionFood } };
     const tree = (night(bot) && needsShelter) || (expeditionFood && needsFood) ? {} : {
       continue_request: { description: goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Only suitable when hunger and daylight permit survival preparations afterwards.', run: async () => {} },

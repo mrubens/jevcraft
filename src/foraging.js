@@ -94,6 +94,7 @@ async function hunt(bot, task, target, actions, goal, save) {
       await sleep(500);
     }
     if (count(bot, item) <= before) throw new Error(`No food ingredient pickup confirmed after hunting ${target.name}`);
+    if (goal.search?.['food animals']) goal.search['food animals'].attempts = 0;
     goal.survivalAction = { action: 'food_collected', source: target.name, item, count: count(bot, item) - before,
       needsCooking: !safeFood(bot, { name: item }), attacks, foodPointsGained: foodSupply(bot) - foodBefore, at: new Date().toISOString() };
     save();
@@ -118,7 +119,22 @@ async function forageChoices(bot, task, goal, save, actions, state) {
       finally { task.interruptCheck = undefined; }
     } };
   }
-  for (const target of await candidates(bot, task, state)) {
+  const prey = await candidates(bot, task, state);
+  const weapon = bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name));
+  const logs = bot.registry.blocksArray.filter(b => /_log$|^(crimson|warped)_stem$/.test(b.name)).map(b => b.id);
+  if (prey.length && !weapon && actions.acquireStep && bot.findBlocks?.({ matching: logs, maxDistance: 32, count: 1 }).length) {
+    choices.prepare_hunting_sword = {
+      description: { action: 'Craft a wooden sword from nearby observed wood before hunting. Fewer hits reduce repeated chasing, especially for rabbits.',
+        animals: prey.map(e => e.name), weapon: 'wooden_sword', currentWeapon: 'bare hands' },
+      run: async () => {
+        goal.survivalAction = { action: 'prepare_hunting_weapon', item: 'wooden_sword', at: new Date().toISOString() }; save();
+        task.interruptCheck = () => checkThreats(bot);
+        try { await actions.acquireStep(bot, task, 'wooden_sword', 1, goal, save); }
+        finally { task.interruptCheck = undefined; }
+      },
+    };
+  }
+  for (const target of prey) {
     const observed = target.position.clone();
     const item = preyFood(bot, target);
     choices[`hunt_${target.id}`] = { description: { action: 'hunt a passive animal and verify ingredient pickup; chicken must be cooked before eating',

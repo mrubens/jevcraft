@@ -29,6 +29,24 @@ test('difficulty accepts both numeric and 26.1 named protocol values', () => {
   assert.equal(bot.game.difficulty, 'peaceful');
 });
 
+test('decoded lpVec3 projectile velocities retain blocks per tick without changing older integer protocols', () => {
+  const { EventEmitter } = require('events'), { Vec3 } = require('vec3');
+  const { compatibilityPlugin } = require('../src/compatibility');
+  for (const version of ['26.1', '1.21.4']) {
+    const entity = { velocity: new Vec3(0, 0, 0) };
+    const bot = { _client: new EventEmitter(), entities: { 8: entity }, registry: require('prismarine-registry')(version) };
+    for (const name of ['spawn_entity', 'entity_velocity']) {
+      bot._client.on(name, packet => entity.velocity.set(packet.velocity.x / 8000, packet.velocity.y / 8000, packet.velocity.z / 8000));
+    }
+    compatibilityPlugin(bot);
+    for (const name of ['spawn_entity', 'entity_velocity']) {
+      bot._client.emit(name, { entityId: 8, velocity: { x: 2, y: -.5, z: 1 } });
+      assert.equal(entity.velocity.x, version === '26.1' ? 2 : 2 / 8000);
+      assert.equal(entity.velocity.y, version === '26.1' ? -.5 : -.5 / 8000);
+    }
+  }
+});
+
 test('nearby animals cannot overwrite the bot oxygen reading', () => {
   const { EventEmitter } = require('node:events');
   const { compatibilityPlugin } = require('../src/compatibility');
@@ -43,6 +61,19 @@ test('nearby animals cannot overwrite the bot oxygen reading', () => {
   assert.equal(bot.oxygenLevel, 10);
   bot._client.emit('entity_metadata', { entityId: 10, metadata: [{ key, value: 300 }] });
   assert.equal(bot.oxygenLevel, 20);
+});
+
+test('26.1 credits acknowledgement and respawn use the named client-command field', () => {
+  const { EventEmitter } = require('events'), writes = [];
+  const bot = { _client: new EventEmitter(), registry: require('prismarine-registry')('26.1') };
+  bot._client.write = (...args) => writes.push(args);
+  require('../src/compatibility').compatibilityPlugin(bot);
+  bot._client.write('client_command', { action: 0 });
+  bot._client.write('client_command', { actionId: 0 });
+  bot._client.write('client_command', { actionId: 'request_stats' });
+  bot._client.write('other_packet', { action: 0 });
+  assert.deepEqual(writes, [['client_command', { actionId: 'perform_respawn' }], ['client_command', { actionId: 'perform_respawn' }],
+    ['client_command', { actionId: 'request_stats' }], ['other_packet', { action: 0 }]]);
 });
 
 test('path smoothing and execution cannot corrupt an ongoing AStar search', () => {

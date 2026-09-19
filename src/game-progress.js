@@ -111,6 +111,7 @@ async function gameStep(bot, task, goal, save, actions) {
     // Gather combat supplies in the Overworld before a first Nether trip;
     // iron ore is not available to repair this dependency once inside.
     if (stage.action === 'enter_nether' && actions.prepare_combat && !await actions.prepare_combat(bot, task, goal, save)) return false;
+    if (stage.action === 'enter_end' && actions.prepare_end && !await actions.prepare_end(bot, task, goal, save)) return false;
     const execute = actions[stage.action];
     if (!execute) throw Object.assign(new Error(`Game progression is blocked at ${stage.phase.replaceAll('_', ' ')}: the ${stage.action.replaceAll('_', ' ')} action is not implemented yet. Earlier progress is saved.`), { name: 'Blocked' });
     await execute(bot, task, goal, save);

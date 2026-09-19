@@ -25,6 +25,24 @@ test('raw chicken is carried ingredient evidence, never edible reserve', () => {
   assert.equal(foodSupply(bot), 12); assert.equal(chooseFood(bot).name, 'cooked_chicken');
 });
 
+test('observed prey and nearby wood let Jev prepare a real hunting sword; carried weapons remove that choice', async () => {
+  const items = [], bot = fixture(items), goal = {};
+  bot.entities[1] = { id: 1, name: 'rabbit', position: new Vec3(3, 64, .5), isValid: true };
+  bot.findBlocks = () => [new Vec3(8, 64, 0)];
+  let planned;
+  const actions = { acquireStep: async (b, t, item, count) => {
+    planned = planCatalog(registry, item, count, {}, { nearby: ['oak_log'] });
+  } };
+  const choices = await forageChoices(bot, new Task('food'), goal, () => {}, actions, {});
+  assert(choices.hunt_1); assert(choices.prepare_hunting_sword);
+  await choices.prepare_hunting_sword.run();
+  assert(planned.some(step => step.item === 'crafting_table'));
+  assert.equal(planned.at(-1).item, 'wooden_sword');
+  assert.equal(foodSupply(bot), 0);
+  items.push({ name: 'stone_axe', count: 1 });
+  assert.equal((await forageChoices(bot, new Task('food'), goal, () => {}, actions, {})).prepare_hunting_sword, undefined);
+});
+
 test('carried raw chicken exposes catalog cooking and plans real furnace, tool and fuel dependencies', async () => {
   const bot = fixture([{ name: 'chicken', count: 3 }]);
   let plan;
@@ -123,7 +141,7 @@ test('surface food choices include rabbits and mooshrooms, but exclude babies an
 });
 
 test('rabbit hunt verifies real meat pickup and exposes its catalog cooking dependency', async () => {
-  const items = [], bot = fixture(items), goal = {};
+  const items = [], bot = fixture(items), goal = { search: { 'food animals': { attempts: 110, leg: 9, visited: { old: 2 } } } };
   const rabbit = { id: 1, name: 'rabbit', height: 0.6, isValid: true, position: new Vec3(2, 64, 0.5) };
   bot.entities[1] = rabbit;
   bot.attack = () => { rabbit.isValid = false; items.push({ name: 'rabbit', count: 1 }); };
@@ -131,6 +149,7 @@ test('rabbit hunt verifies real meat pickup and exposes its catalog cooking depe
   assert.equal(goal.survivalAction.item, 'rabbit');
   assert.equal(goal.survivalAction.count, 1);
   assert.equal(goal.survivalAction.foodPointsGained, 3);
+  assert.deepEqual(goal.search['food animals'], { attempts: 0, leg: 9, visited: { old: 2 } }, 'Confirmed pickup resets only the no-progress budget, preserving search coverage');
   assert.equal(foodSupply(bot), 3);
   let plan;
   const choices = await forageChoices(bot, new Task('test', 'cook'), goal, () => {}, {

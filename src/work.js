@@ -30,6 +30,9 @@ const { carriedEquipment } = require('./mob-policy');
 const { huntObserved, prepareMobHunt, prepareCombatGear } = require('./mob-hunt');
 const { findStronghold } = require('./stronghold');
 const { enterEnd } = require('./end-portal');
+const { fightEndStep } = require('./end-combat');
+const { exitEnd } = require('./end-exit');
+const { prepareEndSupplies } = require('./end-supplies');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -1132,20 +1135,23 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       let complete = false;
       // A requested, equipped encounter can approach its selected mob. All
       // other survival work keeps the ordinary hostile-avoidance policy.
-      if (await huntObserved(bot, task, goal, save, { navigate }, decisionClient)) {
+      const endTask = goal.kind === 'win' && dimension(bot) === 'end';
+      if (!endTask && await huntObserved(bot, task, goal, save, { navigate }, decisionClient)) {
         goal.failures = 0; goal.stalls = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
       if (goal.recoveryAdvice?.active) {
         await maintainVitals(bot, task);
         if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
       }
-      if (await survival.step(task, goal, save, onStep)) {
+      // End combat owns eating and arena escape. Overworld nighttime shelter
+      // choices are invalid in the End, where the dragon can destroy them.
+      if (!endTask && await survival.step(task, goal, save, onStep)) {
         goal.stalls = 0; goal.failures = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
       task.interruptCheck = bot.game.gameMode === 'creative' ? undefined : () => checkThreats(bot);
       // Immediate air/critical hunger responses stay in code. For house work,
       // Jev chooses ordinary eating interruptions alongside task progress.
-      if (!decisionClient || goal.kind !== 'house' || needsAir(bot) || bot.food <= 6 || bot.health <= 6) {
+      if (!endTask && (!decisionClient || goal.kind !== 'house' || needsAir(bot) || bot.food <= 6 || bot.health <= 6)) {
         await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
       }
       const needsSupplies = !goal.expeditionReady && (
@@ -1167,7 +1173,10 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       if (prepared && goal.kind === 'win') complete = await gameStep(bot, task, goal, save, {
         acquireStep, enter_nether: netherStep, return_overworld: returnFromNether,
         enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate }),
+        fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate }, decisionClient),
+        exit_end: (bot, task, goal, save) => exitEnd(bot, task, goal, save, { navigate }),
         prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
+        prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
         find_stronghold: (bot, task, goal, save) => findStronghold(bot, task, goal, save, {
           navigate, explore, surfaceStep,
           tunnel: async (bot, task, goal, save, target, resource) => {

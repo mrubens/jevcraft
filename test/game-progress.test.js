@@ -66,6 +66,15 @@ test('missing later actions report a concrete saved blocker; cancellation and Cr
   await assert.rejects(gameStep(bot, task, goal, () => {}, {}), { name: 'Cancelled' });
 });
 
+test('End entry waits for combat supplies instead of spending Eyes before preparation', async () => {
+  const { bot, goal, task } = fixture(); observeProgress(bot, goal);
+  goal.gameProgress.milestones.stronghold_located = { source: 'observed_end_portal_frame_ring' };
+  let entered = 0, ready = false;
+  const actions = { prepare_end: async () => ready, enter_end: async () => entered++ };
+  await gameStep(bot, task, goal, () => {}, actions); assert.equal(entered, 0);
+  ready = true; await gameStep(bot, task, goal, () => {}, actions); assert.equal(entered, 1);
+});
+
 test('fresh player kill credit plus living exit-portal return is required for completion', () => {
   const { bot, goal, give } = fixture(); let now = 1000, saves = 0;
   const detach = watchGameProgress(bot, goal, () => saves++, { now: () => now });
