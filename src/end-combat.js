@@ -19,6 +19,29 @@ function metadata(bot, entity, name) {
   return index >= 0 ? entity.metadata?.[index] : undefined;
 }
 const perched = (bot, dragon) => [5, 6, 7].includes(metadata(bot, dragon, 'phase'));
+const crystalKey = entity => `${entity.position.x},${entity.position.y},${entity.position.z}`;
+function observeArena(bot, state, now = Date.now()) {
+  const crystals = Object.values(bot.entities).filter(e => live(bot, e) && e.name === 'end_crystal');
+  const known = state.knownCrystals ||= {}, seen = new Set(crystals.map(crystalKey));
+  for (const e of crystals) known[crystalKey(e)] = { id: e.id, position: { ...e.position }, status: 'observed', lastSeenAt: now };
+  for (const [key, entry] of Object.entries(known)) {
+    if (seen.has(key) || ['destroyed', 'absent_on_revisit'].includes(entry.status)) continue;
+    // Entity tracking range is not world destruction. Keep missing targets
+    // until a close, loaded revisit has had time to receive entity packets.
+    entry.status = 'unresolved';
+    const p = vector(entry.position), close = Math.hypot(p.x - bot.entity.position.x, p.z - bot.entity.position.z) < 24;
+    if (close && bot.blockAt(p)) {
+      entry.absentSince ??= now;
+      if (now - entry.absentSince >= 1500) { entry.status = 'absent_on_revisit'; entry.revisitedAt = now; }
+    } else delete entry.absentSince;
+  }
+  const dragon = Object.values(bot.entities).find(e => live(bot, e) && e.name === 'ender_dragon');
+  if (dragon) {
+    state.lastDragon = { position: { ...dragon.position }, phase: metadata(bot, dragon, 'phase'), at: now };
+    if (perched(bot, dragon)) state.arenaCenter = { ...dragon.position };
+  }
+  return crystals;
+}
 
 function endHazards(bot) {
   return Object.values(bot.entities).filter(e => live(bot, e) && ['end_crystal', 'area_effect_cloud', 'dragon_fireball'].includes(e.name))
@@ -40,7 +63,7 @@ function perchedHead(bot, dragon) {
     position: dragon.position.offset(Math.sin(dragon.yaw) * 6.5, -1, Math.cos(dragon.yaw) * 6.5) };
 }
 
-function arenaMovement(bot) {
+function arenaMovement(bot, center) {
   const movement = bot.pathfinder.movements, start = bot.entity.position.clone();
   const previous = { canDig: movement.canDig, blocksCantBreak: movement.blocksCantBreak, allow1by1towers: movement.allow1by1towers,
     allowSprinting: movement.allowSprinting, scafoldingBlocks: movement.scafoldingBlocks, allowedPosition: movement.allowedPosition };
@@ -50,7 +73,9 @@ function arenaMovement(bot) {
   // danger radius from outside is not. All routes use loaded block geometry.
   const allowed = p => {
     const point = vector(p).offset(.5, 0, .5);
-    return point.y >= start.y - 3 && point.distanceTo(start) <= 64 && (!previous.allowedPosition || previous.allowedPosition(p)) &&
+    return point.y >= start.y - 3 && point.distanceTo(start) <= 64 &&
+      (!center || Math.hypot(point.x - center.x, point.z - center.z) <= Math.max(96, Math.hypot(start.x - center.x, start.z - center.z))) &&
+      (!previous.allowedPosition || previous.allowedPosition(p)) &&
       endHazards(bot).every(({ entity, radius }) => entity.name === 'area_effect_cloud' && Math.abs(point.y - entity.position.y) > 3 ||
         point.distanceTo(entity.position) >= Math.min(radius, start.distanceTo(entity.position) - .1));
   };
@@ -61,6 +86,8 @@ function arenaMovement(bot) {
 
 async function arenaRoutes(bot, task, goal, policy, focus) {
   const current = bot.entity.position, visits = goal.endCombat.visits ||= {}, buckets = new Map();
+  const target = focus?.position || focus;
+  const desiredRange = focus?.name === 'end_crystal' ? Math.max(24, Math.min(56, (target.y - current.y) * 1.1)) : 0;
   const floors = bot.findBlocks({ matching: ['end_stone', 'obsidian', 'bedrock'].map(n => bot.registry.blocksByName[n].id),
     maxDistance: 64, count: 256, useExtraInfo: block => {
       const p = block.position.offset(.5, 1, .5);
@@ -70,7 +97,10 @@ async function arenaRoutes(bot, task, goal, policy, focus) {
     const p = floor.offset(0, 1, 0), point = p.offset(.5, 0, .5);
     if (!policy.allowed(p)) continue;
     const key = `${Math.floor(p.x / 8)},${Math.floor(p.z / 8)}`;
-    const score = (visits[key] || 0) * 30 + (focus ? Math.hypot(point.x - focus.x, point.z - focus.z) : -point.distanceTo(current)) + Math.abs(point.y - current.y);
+    // A high caged crystal needs a shallow approach angle. Walking directly
+    // underneath it makes the obsidian column obscure more of its hitbox.
+    const distance = target && Math.hypot(point.x - target.x, point.z - target.z);
+    const score = (visits[key] || 0) * 30 + (target ? Math.abs(distance - desiredRange) : -point.distanceTo(current)) + Math.abs(point.y - current.y);
     if (!buckets.has(key) || score < buckets.get(key).score) buckets.set(key, { p, key, score });
   }
   const routes = [];
@@ -78,7 +108,9 @@ async function arenaRoutes(bot, task, goal, policy, focus) {
     task.check();
     const p = candidate.p, destination = new goals.GoalBlock(p.x, p.y, p.z);
     const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 250);
-    if (route.status === 'success' && route.path.every(policy.allowed)) routes.push({ ...candidate, destination });
+    if (route.status === 'success' && route.path.every(policy.allowed)) routes.push({ ...candidate, destination,
+      clearCrystalShot: focus?.name === 'end_crystal' && !!aimAtEntity(bot, focus, new Vec3(0, 0, 0), p.offset(.5, 0, .5)),
+      targetDistance: target && p.offset(.5, 0, .5).distanceTo(target), desiredHorizontalRange: desiredRange });
     if (routes.length === 3) break;
   }
   return routes;
@@ -93,7 +125,8 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
   if (goal.gameProgress?.milestones.dragon_defeated) return;
   const state = goal.endCombat ||= { steps: 0, shots: [], destroyedCrystals: [], visits: {}, noProgress: 0 };
   if (++state.steps > 1200 || state.noProgress >= 80) throw blocked('End combat exhausted its bounded action budget without verified damage, a crystal explosion or new ground');
-  const policy = arenaMovement(bot), oldInterrupt = task.interruptCheck;
+  observeArena(bot, state);
+  const policy = arenaMovement(bot, state.arenaCenter), oldInterrupt = task.interruptCheck;
   const started = Date.now(), start = bot.entity.position.clone(), healthBefore = bot.health;
   const dragons = Object.values(bot.entities).filter(e => live(bot, e) && e.name === 'ender_dragon');
   if (dragons.length > 1) { policy.restore(); throw blocked('More than one observed dragon; target is ambiguous'); }
@@ -118,7 +151,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       if (await maintainVitals(bot, task, action => { goal.survivalAction = { ...action, at: new Date().toISOString() }; save(); })) return;
     }
     if (bot.food < 16 && !chooseFood(bot)) throw blocked('End combat has no carried food to restore hunger');
-    const crystals = Object.values(bot.entities).filter(e => live(bot, e) && e.name === 'end_crystal');
+    const crystals = observeArena(bot, state);
     state.observedCrystals = crystals.map(e => ({ id: e.id, position: { ...e.position } }));
     state.dragon = dragon && { id: dragon.id, position: { ...dragon.position }, health: beforeDragon, phase: metadata(bot, dragon, 'phase') };
     const tree = {}, safe = safeEndPoint(bot, bot.entity.position);
@@ -140,6 +173,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         if (target.name === 'end_crystal' && explosion && !live(bot, target)) {
           const evidence = { at: Date.now(), id: target.id, position: { ...targetPosition }, source: 'explosion_and_entity_removed' };
           state.destroyedCrystals.push(evidence); bot.emit('end_combat', { crystal: evidence }); progress = true;
+          Object.assign(state.knownCrystals[crystalKey(target)], { status: 'destroyed', confirmedAt: evidence.at });
         }
       } finally { bot._client.removeListener('explosion', observeExplosion); }
     };
@@ -166,11 +200,17 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         bot.attack(fresh); for (let n = 0; n < 8; n++) { check(); await sleep(100); }
       } };
     }
-    const focus = crystals[0]?.position || (head ? head.position : dragon?.position);
+    const unresolved = Object.values(state.knownCrystals).filter(e => e.status === 'unresolved');
+    const remembered = unresolved.sort((a, b) => vector(a.position).distanceTo(bot.entity.position) - vector(b.position).distanceTo(bot.entity.position))[0];
+    const focus = crystals[0] || (remembered && { name: 'unresolved_crystal_location', position: vector(remembered.position) }) ||
+      head || dragon || (state.arenaCenter && vector(state.arenaCenter)) || (state.lastDragon && vector(state.lastDragon.position));
     // Reposition when arcs are blocked or the dragon is perched, and always
     // expose escape positions when healing or avoiding a breath cloud.
     if (!Object.keys(tree).some(key => key.startsWith('crystal_')) || bot.health < 16) for (const route of await arenaRoutes(bot, task, goal, policy, focus)) {
-      tree[`move_${route.key}`] = { description: { action: 'Move along this surveyed arena route to escape hazards or gain a firing angle', position: { ...route.p }, visits: state.visits[route.key] || 0 }, run: async () => {
+      tree[`move_${route.key}`] = { description: { action: 'Move along this surveyed arena route to escape hazards, gain a firing angle or approach a perched head',
+        position: { ...route.p }, visits: state.visits[route.key] || 0, target: focus?.name,
+        clearCrystalShot: route.clearCrystalShot, targetDistance: route.targetDistance,
+        desiredHorizontalRange: route.desiredHorizontalRange }, run: async () => {
         state.visits[route.key] = (state.visits[route.key] || 0) + 1; save();
         const initiallySafe = safeEndPoint(bot, bot.entity.position);
         await actions.navigate(bot, task, route.destination, { timeoutMs: 18000, stallMs: 4000,
@@ -185,8 +225,10 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     const controller = new AbortController(), watcher = setInterval(() => { try { check(); } catch (err) { controller.abort(err); } }, 50);
     let decision;
     try { decision = await decideTree(client, { tree, state: { request: goal.request, task: 'Defeat the Ender Dragon. Destroy healing crystals first when feasible, avoid breath clouds, attack vulnerable phases, and preserve health.',
-      health: bot.health, food: bot.food, arrows: countOf(bot, 'arrow'), dragon: state.dragon, crystals: state.observedCrystals,
-      noProgress: state.noProgress, recentShots: state.shots.slice(-3), lastError: goal.lastError }, signal: controller.signal,
+      health: bot.health, food: bot.food, arrows: countOf(bot, 'arrow'), position: { ...bot.entity.position }, dragon: state.dragon,
+      perchedHead: head && { position: { ...head.position }, reachable: canStrike(bot, head) }, crystals: state.observedCrystals,
+      unresolvedCrystalLocations: unresolved,
+      noProgress: state.noProgress, recentShots: state.shots.slice(-3), lastInterruption: state.lastInterrupted, lastError: goal.lastError }, signal: controller.signal,
       isFresh: () => dimension(bot) === 'end' && bot.health >= healthBefore && bot.entity.position.distanceTo(start) < 1 }); }
     finally { clearInterval(watcher); }
     check();
@@ -215,4 +257,4 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
   }
 }
 
-module.exports = { metadata, perched, perchedHead, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };
+module.exports = { metadata, perched, perchedHead, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };

@@ -55,8 +55,8 @@ function clearShot(bot, origin, solution, target) {
   return true;
 }
 
-function aimAtEntity(bot, target, velocity = new Vec3(0, 0, 0)) {
-  const origin = bot.entity.position.offset(0, 1.52, 0);
+function aimAtEntity(bot, target, velocity = new Vec3(0, 0, 0), position = bot.entity.position) {
+  const origin = position.offset(0, 1.52, 0);
   // Sample the actual target volume. In particular, a cage is not assumed to
   // be transparent; only trajectories whose block-shape raycasts are clear
   // are offered for execution.

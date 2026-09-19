@@ -3,7 +3,7 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const { EventEmitter } = require('events'), { Vec3 } = require('vec3');
 const registry = require('prismarine-registry')('26.1');
 const { Task } = require('../src/skills');
-const { metadata, perchedHead, safeEndPoint, arenaMovement, fightEndStep } = require('../src/end-combat');
+const { metadata, perchedHead, observeArena, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep } = require('../src/end-combat');
 const { exitEnd } = require('../src/end-exit');
 function fixture() {
   const bot = Object.assign(new EventEmitter(), { _client: new EventEmitter(), registry,
@@ -45,6 +45,34 @@ test('perched head geometry uses the actual part id and sitting phase; flying or
     dragon.metadata[registry.entitiesByName.ender_dragon.metadataKeys.indexOf('phase')] = phase;
     assert.equal(perchedHead(bot, dragon), null);
   }
+});
+
+test('arena routes seek a shallower angle for high crystals instead of only approaching the pillar', async () => {
+  const { bot, goal, task } = fixture(); goal.endCombat = { visits: {} };
+  const crystal = entity(bot, 8, 'end_crystal', new Vec3(.5, 104, 40.5));
+  bot.findBlocks = () => [new Vec3(0, 63, 8), new Vec3(0, 63, -8)];
+  const original = bot.entity.position.clone();
+  const routes = await arenaRoutes(bot, task, goal, { allowed: () => true }, crystal);
+  assert.equal(routes[0].p.z, -8, 'The first route backs away to gain an angle above the column');
+  assert.equal(routes[0].desiredHorizontalRange, 44);
+  assert.equal(typeof routes[0].clearCrystalShot, 'boolean');
+  assert.deepEqual(bot.entity.position, original, 'Candidate aim checks must never move the real player');
+});
+
+test('unloaded crystals remain unresolved across reloads; dragon tracking loss preserves the observed arena', () => {
+  const { bot } = fixture(), state = {};
+  const crystal = entity(bot, 8, 'end_crystal', new Vec3(50, 104, 40));
+  const dragon = entity(bot, 20, 'ender_dragon', new Vec3(0, 65, 0), { phase: 6 });
+  observeArena(bot, state, 1000); delete bot.entities[8]; delete bot.entities[20];
+  observeArena(bot, state, 10000);
+  assert.equal(state.knownCrystals['50,104,40'].status, 'unresolved');
+  assert.deepEqual(state.arenaCenter, { ...dragon.position });
+  const reloaded = JSON.parse(JSON.stringify(state));
+  bot.entity.position = new Vec3(49, 64, 40);
+  observeArena(bot, reloaded, 11000); assert.equal(reloaded.knownCrystals['50,104,40'].status, 'unresolved');
+  observeArena(bot, reloaded, 12600); assert.equal(reloaded.knownCrystals['50,104,40'].status, 'absent_on_revisit');
+  bot.entities[8] = crystal; observeArena(bot, reloaded, 13000);
+  assert.equal(reloaded.knownCrystals['50,104,40'].status, 'observed');
 });
 
 test('End controller verifies an explosion and removal together; crystal loss alone is not success or dragon credit', async () => {
