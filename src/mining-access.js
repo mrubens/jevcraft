@@ -77,4 +77,30 @@ async function approachDryMining(bot, task, p, { navigate }) {
   } finally { policy.restore(); }
 }
 
-module.exports = { dryStanding, miningReach, dryMiningPositions, approachDryMining, miningMovement };
+// Ore depth is a search hint, not the depth of a block already observed nearby.
+// A short dry walk does not need the supplies for an underground expedition.
+async function reachableLocalMine(bot, task, candidates) {
+  task.check();
+  if (candidates.some(p => dryStanding(bot, bot.entity.position) && miningReach(bot, bot.entity.position, p) && bot.canDigBlock(bot.blockAt(p)))) return true;
+  const movement = bot.pathfinder.movements, policy = miningMovement(bot);
+  const previous = { allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks };
+  Object.assign(movement, { allow1by1towers: false, scafoldingBlocks: [] });
+  const origin = bot.entity.position.clone(), minimumY = origin.y - 8, deadline = Date.now() + 1500;
+  try {
+    for (const p of candidates.filter(p => p.distanceTo(origin) <= 16 && p.y >= minimumY).slice(0, 4)) {
+      for (const target of dryMiningPositions(bot, p).slice(0, 3)) {
+        task.check();
+        if (Date.now() >= deadline) return false;
+        const route = await surveyRoute(bot, task, movement, new goals.GoalBlock(target.x, target.y, target.z), Math.min(250, deadline - Date.now()));
+        if (route.status === 'success' && (route.path || []).length <= 32 &&
+            (route.path || []).every(q => q.y >= minimumY && policy.allowed(q) && !q.toBreak?.length && !q.toPlace?.length)) return true;
+      }
+    }
+    return false;
+  } finally {
+    policy.restore();
+    for (const [key, value] of Object.entries(previous)) if (value === undefined) delete movement[key]; else movement[key] = value;
+  }
+}
+
+module.exports = { dryStanding, miningReach, dryMiningPositions, approachDryMining, miningMovement, reachableLocalMine };

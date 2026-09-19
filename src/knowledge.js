@@ -82,7 +82,17 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
   let estimates, selectedFuel;
   let expansions = 0;
   const have = name => stock[name] || 0;
-  const add = (name, amount) => { stock[name] = have(name) + amount; estimates = undefined; };
+  const add = (name, amount) => {
+    if (have(name) + amount < 0) throw new PlanError(`Recipe plan would spend unavailable ${name}`, name);
+    stock[name] = have(name) + amount; estimates = undefined;
+  };
+  // An ingredient must not borrow from the output currently being acquired.
+  // Otherwise packing/unpacking a carried stack can masquerade as new supply.
+  // Reusable tool/station requirements still use acquire and may use that stock.
+  function consume(name, amount) {
+    if (visiting.has(name)) throw new PlanError(`Recipe cycle while consuming ${name}`, name);
+    acquire(name, amount); add(name, -amount);
+  }
   const slots = recipe => recipe.shape ? recipe.shape.flat().filter(Boolean) : recipe.ingredients;
   // A drop table describes what breaking a block yields, not where that
   // block can be found. Never plan an unobserved crafted object as a raw
@@ -125,7 +135,7 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
   }
   function chooseIngredient(alternatives, counts) {
     const preference = name => ({ oak_log: -4, oak_planks: -4, cobblestone: -3, stone: -2, coal: -1 }[name] || 0);
-    return alternatives.filter(name => registry.itemsByName[name]).sort((a, b) =>
+    return alternatives.filter(name => registry.itemsByName[name] && !visiting.has(name)).sort((a, b) =>
       ((have(a) > (counts[a] || 0) ? -100 : estimate(a)) - (have(b) > (counts[b] || 0) ? -100 : estimate(b))) ||
       preference(a) - preference(b) || a.localeCompare(b))[0];
   }
@@ -139,12 +149,12 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
     try {
       const methods = [];
       if (name === 'water_bucket') methods.push({ cost: 8, run: () => {
-        acquire('bucket', missing); add('bucket', -missing);
+        consume('bucket', missing);
         steps.push({ action: 'fill_bucket', item: name, count: missing, consumes: { bucket: missing }, produces: { water_bucket: missing } });
         add(name, missing);
       } });
       if (name.endsWith('_concrete')) methods.push({ cost: 1, run: () => {
-        ensurePickaxe(); const powder = `${name}_powder`; acquire(powder, missing); add(powder, -missing);
+        ensurePickaxe(); const powder = `${name}_powder`; consume(powder, missing);
         const tool = Object.keys(stock).find(n => n.endsWith('_pickaxe') && have(n));
         steps.push({ action: 'harden', item: name, count: missing, requires: { [tool]: 1 }, consumes: { [powder]: missing }, produces: { [name]: missing } }); add(name, missing);
       } });
@@ -153,7 +163,7 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
         methods.push({ cost, run: () => {
           const table = recipe.shape ? recipe.shape.length > 2 || recipe.shape.some(row => row.length > 2) : recipe.ingredients.length > 4;
           if (table) acquire('crafting_table', 1);
-          const batches = Math.ceil(missing / recipe.count);
+          const batches = Math.ceil((needed - have(name)) / recipe.count);
           const ingredients = {};
           const pick = alts => {
             if (!alts) return null;
@@ -165,7 +175,7 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
           const chosen = recipe.shape ? { shape: recipe.shape.map(row => row.map(pick)) } : { ingredients: recipe.ingredients.map(pick) };
           const consumes = {};
           for (const [ingredient, amount] of Object.entries(ingredients)) {
-            acquire(ingredient, amount * batches); add(ingredient, -amount * batches); consumes[ingredient] = amount * batches;
+            consume(ingredient, amount * batches); consumes[ingredient] = amount * batches;
           }
           steps.push({ action: 'craft', item: name, count: batches * recipe.count, needs_table: table,
             recipe: { ...chosen, count: recipe.count, id: recipe.id }, requires: table ? { crafting_table: 1 } : {}, consumes, produces: { [name]: batches * recipe.count } });
@@ -173,7 +183,10 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
         } });
       }
       for (const input of data.smelting[name] || []) methods.push({ cost: estimate(input) + 12, run: () => {
-        acquire(input, missing); acquire('furnace', 1);
+        acquire('furnace', 1);
+        // Build the station first, then reserve the full input before preparing
+        // fuel. A furnace spends cobblestone; plank fuel can spend input logs.
+        consume(input, missing);
         // Select from the same observed recipe graph as other ingredients.
         // Keep one fuel species through this shared plan so armor pieces can
         // still merge into one smelt rather than separate fuel-specific jobs.
@@ -181,8 +194,7 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
           const mostCarried = Math.max(...fuelPlanks.map(have));
           selectedFuel = chooseIngredient(mostCarried > 0 ? fuelPlanks.filter(fuel => have(fuel) === mostCarried) : fuelPlanks, {});
         }
-        const fuel = Math.ceil(missing / ITEMS_PER_PLANK); acquire(selectedFuel, fuel);
-        add(input, -missing); add(selectedFuel, -fuel);
+        const fuel = Math.ceil(missing / ITEMS_PER_PLANK); consume(selectedFuel, fuel);
         steps.push({ action: 'smelt', item: name, count: missing, from: input, fuel, fuelItem: selectedFuel,
           requires: { furnace: 1 }, consumes: { [input]: missing, [selectedFuel]: fuel }, produces: { [name]: missing } }); add(name, missing);
       } });
@@ -193,8 +205,11 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
         // produces expresses the resource target for dependency planning;
         // kills never credit this amount to the real inventory.
         const requires = Object.fromEntries(Object.values(combatGear).map(names => names.find(tool => have(tool))).filter(Boolean).map(name => [name, 1]));
-        steps.push({ action: 'hunt_mob', ...source, count: missing, requires, consumes: {}, produces: { [name]: missing } });
-        add(name, missing);
+        const remaining = needed - have(name);
+        if (remaining > 0) {
+          steps.push({ action: 'hunt_mob', ...source, count: remaining, requires, consumes: {}, produces: { [name]: remaining } });
+          add(name, remaining);
+        }
       } });
       const sources = [...(data.sources[name] || [])].sort((a, b) => Number(observed.has(b.block)) - Number(observed.has(a.block)));
       for (const source of sources) {
@@ -209,17 +224,23 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
             tool = enchanted.name;
           } else if (source.allowedTools.length) tool = source.allowedTools.find(t => have(t)) || source.allowedTools[0];
           if (tool) acquire(tool, 1);
+          const remaining = needed - have(name);
+          if (remaining <= 0) return;
           const compatible = sources.filter(s => usableSource(name, s) && s.tool === source.tool && s.enchantment === source.enchantment &&
             (!s.allowedTools.length || s.allowedTools.includes(tool)) && JSON.stringify(s.properties) === JSON.stringify(source.properties));
-          steps.push({ action: 'mine', block: source.block, sources: [...new Set(compatible.map(s => s.block))], drops: name, count: missing,
+          steps.push({ action: 'mine', block: source.block, sources: [...new Set(compatible.map(s => s.block))], drops: name, count: remaining,
             depth: source.depth, tier: tool?.endsWith('_pickaxe') ? TOOL_TIERS.indexOf(tool.split('_')[0]) + 1 : 0,
-            tool, enchantment: source.enchantment, properties: source.properties, requires: tool ? { [tool]: 1 } : {}, consumes: {}, produces: { [name]: missing } }); add(name, missing);
+            tool, enchantment: source.enchantment, properties: source.properties, requires: tool ? { [tool]: 1 } : {}, consumes: {}, produces: { [name]: remaining } }); add(name, remaining);
         } });
       }
       methods.sort((a, b) => a.cost - b.cost);
       for (const method of methods) {
         const before = { ...stock }, beforeFuel = selectedFuel; const length = steps.length;
-        try { method.run(); return; }
+        try {
+          method.run();
+          if (have(name) < needed) throw new PlanError(`Recipe method did not obtain enough ${name}`, name);
+          return;
+        }
         catch (err) { stock = before; selectedFuel = beforeFuel; estimates = undefined; steps.length = length; lastError = err; }
       }
       throw lastError || new PlanError(`No supported survival acquisition method for ${name}: it needs a source outside the current mining, crafting, smelting, hardening, and supported mob actions.`, name);

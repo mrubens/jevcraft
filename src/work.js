@@ -21,7 +21,7 @@ const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives, knownResourceLocations, knownResourceNames, rememberResources, isSurfaceResource } = require('./resource-observation');
 const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('./designer');
 const { designWithJev } = require('./build-templates');
-const { dryMiningPositions, approachDryMining, miningMovement } = require('./mining-access');
+const { dryMiningPositions, approachDryMining, miningMovement, reachableLocalMine } = require('./mining-access');
 const { dryPassable, supportCell } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
 const { descendPillar } = require('./pillar-recovery');
@@ -1196,7 +1196,7 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
   // while leaving nearby surface pickups and Creative inventory immediate.
   if (!goal.expeditionReady && bot.game.gameMode !== 'creative') {
     const underground = plan.find(s => s.action === 'mine' && Number.isFinite(s.depth) && s.depth < bot.entity.position.y - 8);
-    const withinReach = underground && (await miningCandidates(bot, task, underground, goal)).some(p => bot.canDigBlock(bot.blockAt(p)));
+    const withinReach = underground && await reachableLocalMine(bot, task, await miningCandidates(bot, task, underground, goal));
     if (goal.preparingExpedition || (underground && !withinReach)) {
       goal.preparingExpedition = true; save();
       await prepareExpeditionStep(bot, task, goal, save);

@@ -166,18 +166,77 @@ before the first armor craft. The independent receiver obtained all four armor
 pieces and eight birch planks. Jev did no digging, retained his pickaxe, and
 finished with health 20 and no deaths. All 444 automated tests also passed.
 
-A separate seeded mixed-request ledger probe verified 82 of 96 plans. The other
+A separate seeded mixed-request ledger probe initially verified 82 of 96 plans. The other
 14 failed before this trimming stage with missing raw iron or cobblestone;
 each failure was also reproduced against the preceding committed batch planner.
-These are unresolved planning failures, recorded with their exact requests and
+These failures were recorded with their exact requests and
 inventories in `artifacts/batch-trimming-stress-20260919.json`. The first case is
-also saved in `artifacts/batch-trimming-failure.json` for the next reliability fix.
+also saved in `artifacts/batch-trimming-failure.json`.
 Tracing that first case showed a net-zero recipe cycle: ten carried raw iron
 were compressed into a block and unpacked again while planning fifteen raw iron.
 The acquisition planner then treated the method as complete despite still having
 only ten. `artifacts/batch-missing-input-analysis-20260919.json` records the stock
-ledger and sequence. Acquisition methods need to verify their net result before
-being accepted; batch trimming cannot correct this earlier failure.
+ledger and sequence. The acquisition-accounting fix below now verifies the net
+result before accepting a method; batch trimming alone cannot correct it.
+
+## Acquisition accounting
+
+`src/knowledge.js` prevents ingredient acquisition from consuming its own pending
+output. Existing resource blocks can still be unpacked, and existing tools can
+still serve as reusable prerequisites. Each acquisition method must leave enough
+actual stock for its target, and the ledger rejects negative quantities. Failed
+methods roll back their stock, steps, and fuel choice before trying another source.
+
+Furnace construction now precedes budgeting its smelting inputs. Those inputs are
+reserved before fuel preparation, so the same cobblestone cannot build a furnace
+and become stone, and the same logs cannot become both charcoal and plank fuel.
+Mining and hunting recalculate their remaining target after preparing tools.
+
+`test/acquisition-accounting.test.js` covers raw-iron and nugget conversion cycles,
+valid unpacking, furnace construction, charcoal fuel, reusable tools, and a mixed
+stone/armor/plank request. It also replays 96 seeded mixed requests through every
+action's prerequisites, consumption, production, and requested final inventory.
+All 96 pass, as do the exact 14 previously saved failures. All 466 automated tests
+passed on 2026-09-19.
+
+```sh
+MC_PORT=<isolated-port> node scripts/acquisition-accounting-test.js
+```
+
+Apply its `setup.json` only in the isolated server console, then create `ready`.
+The fixture supplies nine raw iron, eight cobblestone, 21 birch planks, a stone
+pickaxe, a placed crafting table, and seven nearby iron ore blocks. Eight exposed
+stone blocks stand on a solid bedrock test platform to isolate material accounting
+from terrain excavation. It requests
+eight stone, two iron chestplates, and four planks. It must mine the missing
+materials, craft and place a furnace, survive a saved stop/resume, smelt both
+batches, and deliver all outputs to an independent receiver. Instrumentation
+checks exact material use and no deaths. It rejects ports 25565 and 25577. These
+controlled supplies do not establish natural Survival acceptance.
+
+The first run, `acquisition-accounting-mu8w1qb5`, was stopped after exposing an
+additional access problem: with 15 of 16 raw iron gathered, ore just outside
+arm's reach triggered underground expedition preparation and an unnecessary wood
+search. Ore's catalog depth was being mistaken for the observed block's depth.
+`reachableLocalMine` now surveys a bounded short route to dry mining positions
+before requiring expedition supplies. The survey does not travel, dig, or place
+blocks, rejects deep descents and diving routes, and restores movement settings
+on cancellation. `test/mining-access.test.js` covers those boundaries.
+
+The next run, `acquisition-accounting-mu8w7a2f`, completed the request and verified
+all three deliveries, two input batches, and 17 fuel planks, but failed its exact
+mining-count assertion. Ten stone blocks were broken to collect eight drops:
+excavating the thin stone platform let drops fall into lower terrain. The final
+fixture uses exposed stone on bedrock so that this material-accounting check
+does not depend on recovering falling drops. That terrain/pickup behavior remains
+separate reliability work; the earlier failed result is retained.
+
+The final run, `acquisition-accounting-mu8wf9zp`, passed on 2026-09-19. The
+independent observer counted exactly eight stone and seven iron ore blocks mined,
+one furnace crafted and placed, and two chestplates crafted. One 16-raw-iron load
+and one eight-cobblestone load used 17 birch planks. After the saved stop/resume,
+the receiver obtained eight stone, two chestplates, and four planks. Jev retained
+his pickaxe, finished with health 20, and had no deaths.
 
 ## Persistent companion memory
 

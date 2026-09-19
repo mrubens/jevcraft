@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
 const { Task } = require('../src/skills');
-const { dryStanding, miningReach, dryMiningPositions, approachDryMining } = require('../src/mining-access');
+const { dryStanding, miningReach, dryMiningPositions, approachDryMining, reachableLocalMine } = require('../src/mining-access');
 
 function fixture() {
   const changed = new Map(), target = new Vec3(8, 64, 0);
@@ -17,6 +17,42 @@ function fixture() {
   };
   return { bot, changed, target };
 }
+
+test('ore a short dry walk away needs no underground expedition or world changes', async () => {
+  const { bot, target } = fixture(), before = { ...bot.pathfinder.movements }, origin = bot.entity.position.clone();
+  assert(!bot.canDigBlock(bot.blockAt(target)));
+  bot.pathfinder.getPathFromTo = function * (movement) {
+    assert.equal(movement.canDig, false); assert.equal(movement.allow1by1towers, false);
+    assert.deepEqual(movement.scafoldingBlocks, []);
+    yield { result: { status: 'success', path: [new Vec3(3, 64, 0), new Vec3(5, 64, 0)] } };
+  };
+  assert(await reachableLocalMine(bot, new Task('ore'), [target]));
+  assert(bot.entity.position.equals(origin)); assert.deepEqual(bot.pathfinder.movements, before);
+});
+
+test('deep, wet, obstructed or unfinished ore routes still require expedition preparation', async () => {
+  const { bot, target, changed } = fixture(), before = { ...bot.pathfinder.movements };
+  for (const result of [{ status: 'noPath', path: [] }, { status: 'partial', path: [] },
+    { status: 'success', path: [new Vec3(3, 54, 0)] },
+    { status: 'success', path: [{ x: 3, y: 64, z: 0, toBreak: [new Vec3(3, 64, 0)] }] },
+    { status: 'success', path: [{ x: 3, y: 64, z: 0, toPlace: [{}] }] }]) {
+    bot.pathfinder.getPathFromTo = function * () { yield { result }; };
+    assert.equal(await reachableLocalMine(bot, new Task('ore'), [target]), false);
+  }
+  changed.set('(3, 64, 0)', 'water'); changed.set('(3, 65, 0)', 'water');
+  bot.pathfinder.getPathFromTo = function * () { yield { result: { status: 'success', path: [new Vec3(3, 64, 0)] } }; };
+  assert.equal(await reachableLocalMine(bot, new Task('ore'), [target]), false);
+  bot.pathfinder.getPathFromTo = () => assert.fail('Deep/far sources are outside local survey');
+  assert.equal(await reachableLocalMine(bot, new Task('ore'), [new Vec3(8, 16, 0), new Vec3(40, 64, 0)]), false);
+  assert.deepEqual(bot.pathfinder.movements, before);
+});
+
+test('cancelling a local ore survey restores movement settings', async () => {
+  const { bot, target } = fixture(), before = { ...bot.pathfinder.movements }, task = new Task('ore');
+  bot.pathfinder.getPathFromTo = function * () { task.cancel(); yield { result: { status: 'success', path: [] } }; };
+  await assert.rejects(reachableLocalMine(bot, task, [target]), { name: 'Cancelled' });
+  assert.deepEqual(bot.pathfinder.movements, before);
+});
 
 test('mining access requires dry supported feet, reach and sight rather than a neighboring water cell', () => {
   const { bot, changed, target } = fixture();
