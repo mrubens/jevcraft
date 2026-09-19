@@ -28,6 +28,7 @@ const { descendPillar } = require('./pillar-recovery');
 const { gameStep, watchGameProgress, dimension } = require('./game-progress');
 const { carriedEquipment } = require('./mob-policy');
 const { huntObserved, prepareMobHunt, prepareCombatGear } = require('./mob-hunt');
+const { findStronghold } = require('./stronghold');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -1165,6 +1166,13 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       if (prepared && goal.kind === 'win') complete = await gameStep(bot, task, goal, save, {
         acquireStep, enter_nether: netherStep, return_overworld: returnFromNether,
         prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
+        find_stronghold: (bot, task, goal, save) => findStronghold(bot, task, goal, save, {
+          navigate, explore, surfaceStep,
+          tunnel: async (bot, task, goal, save, target, resource) => {
+            if (pickaxeTier(bot) < 1) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
+            await resourceTunnelStep(bot, task, goal, save, target, resource, { dig, navigate });
+          },
+        }, decisionClient),
       });
       task.check();
       goal.failures = 0;

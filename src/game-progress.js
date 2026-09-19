@@ -74,6 +74,13 @@ function nextGameStage(bot, goal) {
   if (verifyGameCompletion(bot, goal)) return { phase: 'complete' };
   const where = dimension(bot), m = goal.gameProgress?.milestones || {};
   if (where === 'end') return m.dragon_defeated ? { phase: 'return_alive', action: 'exit_end' } : { phase: 'defeat_dragon', action: 'fight_dragon' };
+  // Survey throws deliberately spend eyes. Do not send Jev back to the Nether
+  // after each throw while it still has a spare and twelve portal eyes. A
+  // pending pickup gets a chance before deciding whether supplies are short.
+  if (where === 'overworld' && m.stronghold_located) return { phase: 'enter_end', action: 'enter_end' };
+  if (where === 'overworld' && goal.strongholdSearch && (count(bot, 'ender_eye') >= 13 || goal.strongholdSearch.pendingPickup)) {
+    return { phase: 'find_stronghold', action: 'find_stronghold' };
+  }
   // Carry a reserve for eye throws; execution always replans from inventory,
   // so loss, crafting batches and partial pickups do not advance a fake counter.
   const target = 16, eyes = count(bot, 'ender_eye');

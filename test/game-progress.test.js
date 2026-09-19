@@ -44,6 +44,18 @@ test('game steps call existing actions while retaining the original request and 
   assert(goal.gameProgress.milestones.nether_entered);
 });
 
+test('ordinary survey eye use continues searching and pending pickup precedes supply replenishment', () => {
+  const { bot, goal, give } = fixture(); observeProgress(bot, goal);
+  goal.strongholdSearch = { bearings: [], throws: 1 };
+  give({ ender_eye: 15 }); assert.equal(nextGameStage(bot, goal).action, 'find_stronghold');
+  give({ ender_eye: 12 }); assert.equal(nextGameStage(bot, goal).action, 'enter_nether');
+  goal.strongholdSearch.pendingPickup = { end: { x: 1, y: 64, z: 1 } };
+  assert.equal(nextGameStage(bot, goal).action, 'find_stronghold');
+  delete goal.strongholdSearch.pendingPickup;
+  goal.gameProgress.milestones.stronghold_located = { source: 'observed_end_portal_frame_ring' };
+  give({ ender_eye: 11 }); assert.equal(nextGameStage(bot, goal).action, 'enter_end', 'Portal action must count actual empty frames instead of discarding spent-eye progress');
+});
+
 test('missing later actions report a concrete saved blocker; cancellation and Creative do not execute', async () => {
   const { bot, goal, task, give } = fixture(); give({ ender_eye: 16 });
   await assert.rejects(gameStep(bot, task, goal, () => {}, {}), /find stronghold action is not implemented/);
