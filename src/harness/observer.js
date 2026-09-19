@@ -40,7 +40,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), controls = {}, server = 
         remaining: bot.registry.itemsByName[i.name].maxDurability - (i.durabilityUsed || 0) })),
       goal: goalView(goal), decision: goal.decisions?.at(-1), world, route,
       memory: bot.companionMemory ? { places: bot.companionMemory.state.places.length,
-        notes: bot.companionMemory.state.notes.length, tasks: bot.companionMemory.state.history.length } : undefined,
+        notes: bot.companionMemory.state.notes.length, preferences: bot.companionMemory.state.preferences.length, tasks: bot.companionMemory.state.history.length } : undefined,
       entities: Object.values(bot.entities || {}).filter(e => e !== bot.entity && e.position?.distanceTo(bot.entity.position) < 24)
         .slice(0, 50).map(e => ({ id: e.id, name: e.username || e.name, position: position(e.position), kind: e.type })),
     };

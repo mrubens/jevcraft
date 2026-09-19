@@ -240,6 +240,64 @@ his pickaxe, finished with health 20, and had no deaths.
 
 ## Persistent companion memory
 
+### Implicit wood preferences
+
+Normal player requests can now teach a soft wood-species default. Candidate
+species come from the active Minecraft catalog's plank types; one additional Jev
+Choice judges the current request alongside routing. Only a confident explicit
+choice for the speaker's own supplies/build is retained. Quotes, negations,
+discovery-only requests, ambiguous species, and orders for another player or the
+bot are excluded. The notebook retains the source request and task ID, scoped to
+the player/world. Defaulted variants, repeats, resumes, and task-history eviction
+cannot create additional evidence or overwrite a newer choice.
+
+Current instructions outrank explicit notes, which outrank learned defaults.
+Explicit wood notes are judged separately before catalog selection so a competing
+inferred choice does not confuse the selector. The policy reaches single items,
+bundles, simple houses, Jev templates, and the custom designer's memory prompt.
+The custom designer treats inferred materials as preferences subject to local
+feasibility. Task history is excluded from material-choice context, preventing a
+forgotten preference from being re-inferred from an old request. Older notebooks
+load without inventing preferences from past bot-selected defaults.
+
+Validation on 2026-09-19:
+
+- All 473 automated tests passed; the final memory persistence checks also
+  passed after adding the history-eviction/resume guard.
+- `implicit-memory-routing-mu8x6frq`: 14 real-Jev cases passed, including one
+  cherry request followed by unspecified planks, stairs, a house and a bundle;
+  current oak/birch choices; explicit-note priority; player isolation; negated and
+  other-recipient requests; and normal defaults after forgetting.
+- `implicit-memory-design-mu8x8acv`: three real-Jev template designs passed:
+  inherited cherry, explicitly requested birch, and a birch note overriding the
+  learned cherry choice. This checks design selection/validation, not placement.
+- `implicit-memory-live-mu8wyr87` and `implicit-memory-live-mu8x3905`: real player
+  chat in isolated Survival taught cherry from a single delivered log, survived
+  reconnect, delivered cherry planks when unspecified, honored an explicit oak
+  request, and forgot the choice across a second reconnect. An independent player
+  received one cherry log, two cherry planks and two oak planks. No bot commands,
+  deaths, or self-reinforcement occurred; final health was 20. The later guard is
+  covered by automated persistence checks. These used controlled supplies, not
+  fresh Survival acceptance.
+
+The earlier failed classifier records are retained: bundle coverage initially
+rejected a correct preferred variant (`mu8wvyp0`), forgotten preferences leaked
+through task history (`mu8x00x3`), and competing explicit/inferred hints selected
+the wrong species (`mu8x382o`). The fixes change the supplied evidence and typed
+decision workflow rather than lowering acceptance thresholds.
+
+```sh
+node scripts/implicit-memory-routing-test.js
+node scripts/implicit-memory-design-test.js
+MC_PORT=<isolated-port> node scripts/implicit-memory-live-test.js
+```
+
+For the gameplay fixture, apply `setup.json` in the isolated server console, then
+create its `ready` file. Ports 25565 and 25577 are rejected. `MEMORY_CASE` can select
+one routing example after the shared learning setup for focused failure diagnosis.
+
+### Places, notes, and task history
+
 `src/memory.js` maintains an atomic, bounded local notebook per server/bot and
 optional `MC_WORLD_ID` namespace. Notes, named places, and request summaries are
 scoped to their speaker. Places include dimensions; automatic place records come

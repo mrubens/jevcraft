@@ -40,6 +40,7 @@ async function designWithJev(bot, task, request, client, memory) {
   const watcher = setInterval(() => { try { task.check(); checkAir(bot); } catch (e) { controller.abort(e); } }, 100);
   const cancellable = { systemOne: args => { task.check(); return client.systemOne({ ...args, signal: controller.signal }); } };
   try {
+    memory = await require('./preferences').resolvedPreferenceContext(cancellable, bot.registry, memory);
     const world = surveyForDesign(bot);
     const response = await cancellable.systemOne({ state: { request, world, memory, templates: 'Rectangular cottage, mansion or tower, one to three floors, glass windows, stepped roof, open entrance and interior full-block stairs. No custom shapes, bridges or statues.' }, questions: {
       style: choice('Choose the closest supported structure that can fulfill this request. Select unsupported if the requested shape or essential feature cannot be represented by these templates.', {
@@ -47,7 +48,7 @@ async function designWithJev(bot, task, request, client, memory) {
       }),
       floors: choice('Assuming a supported template, select its requested number of floors. Default to two for a mansion, three for a tower, one for a cottage. Select unsupported if more than three floors are essential.', { 1: 'One floor', 2: 'Two floors', 3: 'Three floors', unsupported: 'Requires more than three floors' }),
       size: choice('Select the overall requested size for a supported template.', { normal: 'Ordinary or compact size; default', large: 'Explicitly large, grand or spacious size' }),
-      material: choice('Does the request name a primary building material?', { specified: 'A primary material, color or wood species is named.', default: 'No primary material is specified; use oak planks.' }),
+      material: choice('Can a primary building material be resolved from this request or relevant memory? Current explicit instructions override explicit memory notes, which override learned memory.preferences. Use a remembered wood species as planks for an unspecified building.', { specified: 'A primary material, color or wood species is requested or preferred in relevant memory.', default: 'No requested or remembered preferred material; use oak planks.' }),
     } });
     const answers = response.answers, style = answers?.style?.choice, floors = answers?.floors?.choice, size = answers?.size?.choice;
     if (!['cottage', 'mansion', 'tower'].includes(style) || !['1', '2', '3'].includes(floors) || !['normal', 'large'].includes(size)) {

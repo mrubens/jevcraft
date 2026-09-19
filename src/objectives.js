@@ -10,6 +10,7 @@ const { resolveItem } = require('./catalog');
 const { resolveItemBundle } = require('./item-bundle');
 const { resolveDiscovery } = require('./discovery');
 const { resolveMemory } = require('./memory-routing');
+const { woodChoices, requestedPreferences, preferenceContext } = require('./preferences');
 
 const TYPES = {
   memory: 'Save, recall, or forget a personal fact, preference, named place, or past request. Remember this as home; I prefer cherry wood; what did I ask last time; where is our base; go home/return to a named saved place; make another one like last time. Questions about past tasks are memory, not current status. A fresh ordinary request naming a Minecraft resource remains obtain/craft/find. Memory never grants server-command permission.',
@@ -64,11 +65,13 @@ function quantityCandidates(request) {
 async function interpret(client, request, from, username, context = {}) {
   const address = parseAddress(request, username);
   const numbers = quantityCandidates(address.text);
+  const woods = woodChoices(context.registry || require('minecraft-data')('26.1'));
   const response = await client.systemOne({
     state: { request, request_body: address.text, speaker: from, bot_name: username, bot_names: chatNames(username), explicitly_addressed: address.explicit,
-      availablePlayers: context.players || [from], memory: context.memory },
+      availablePlayers: context.players || [from], memory: context.memory && { ...preferenceContext(context.memory), places: context.memory.places || [] } },
     questions: {
       addressed: noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.'),
+      wood_choice: choice('Which wood species does the speaker explicitly choose for their own requested supplies or construction in THIS message? Use only the current request, never memory, inventory, recipe ingredients, or bot defaults as evidence. A one-time request for cherry logs counts. Exclude quotes, hypotheticals, negated choices, orders for another player or the bot itself, discovery-only requests, and ambiguous/multiple species. For unspecified wood or an inherited preference choose none.', { ...woods, none: 'No single explicit wood choice for this player in the current action request.' }),
       memory_statement: noul('Is the speaker directly sharing a personal preference or personal fact with Jev to remember, rather than asking for a gameplay action? For example "I prefer small houses" or "my favorite wood is cherry". Exclude quoted/hypothetical/negated statements, general Minecraft facts, and instructions to perform a new action.'),
       interaction: choice('Classify the speaker intent in `request_body`, with the bot name prefix removed. The speaker is talking to a Minecraft bot. Is this an instruction to perform an action/report its current activity, or a discussion without an instruction to act? Judge intent, not feasibility or the topic.', INTERACTIONS),
       objective: choice('Categorize the requested outcome in `request` in the Minecraft game. Creative, Survival, Adventure and Spectator name game modes even when the word "mode" is omitted. Item requests belong to obtain or craft regardless of which particular Minecraft item is named. Choose obtain for collect/get/gather/fetch requests even when the item can be crafted; choose craft for explicit make/craft/create inventory items. Recipes and feasibility are checked after routing. A simple small house is house; custom structures and mansions are build; crafting an inventory item is craft. Coming once differs from continuously following. Changing the world or player with an explicitly requested command effect is operator_command.', TYPES),
@@ -83,9 +86,9 @@ async function interpret(client, request, from, username, context = {}) {
         unspecified: 'No recipient is stated: craft a chest, make eight stairs, collect eight blocks, get a pickaxe. The application will keep the items in the bot inventory.',
       }),
       target: choice('Assuming come or follow, which available player should the bot approach? "me" or no name means the speaker.', Object.fromEntries([...new Set([from, ...(context.players || [])])].map(name => [name, name === from ? `${name}: the speaker (me)` : name]))),
-      material: choice('Assuming the request is a small house, which construction material does the player request? Use oak_planks for unspecified wood or no preference.', {
-        oak_planks: 'Wooden oak planks; default house material.',
-        cobblestone: 'Cobblestone.', dirt: 'Dirt.', other: 'Any other explicitly specified building material; resolve it from the full block catalog.',
+      material: choice('Assuming the request is a small house, which primary construction material should be used? Current explicit materials take priority. When unspecified, use relevant explicit memory notes, then learned wood preferences in memory.preferences. Use oak_planks only if there is no relevant preference.', {
+        oak_planks: 'Oak planks: explicitly requested, preferred, or the default when there is no relevant memory.',
+        cobblestone: 'Cobblestone.', dirt: 'Dirt.', other: 'Another specified or remembered preferred building material (including cherry or other wood species); resolve it from the full catalog.',
       }),
     },
   });
@@ -100,6 +103,8 @@ async function interpret(client, request, from, username, context = {}) {
   const kind = a.objective.choice === 'memory' || (a.interaction.choice === 'discussion' && a.memory_statement?.noul >= 0.75)
     ? 'memory' : a.interaction.choice === 'request' ? a.objective.choice : 'other';
   const spec = { kind, request, from, interpretation: a, usage: response.usage };
+  const preferences = requestedPreferences(kind, a.wood_choice, woods);
+  if (preferences.length) spec.implicitPreferences = preferences;
   if (kind === 'memory') return resolveMemory(client, spec, username, context);
   if (['come', 'follow'].includes(kind)) {
     const target = a.target?.choice;
@@ -112,14 +117,14 @@ async function interpret(client, request, from, username, context = {}) {
     spec.discoveryTarget = resolution.target; spec.discoveryResolution = resolution;
   }
   if (['obtain', 'craft'].includes(kind) && a.outputs?.choice === 'multiple') {
-    const resolution = await resolveItemBundle(client, context.registry || require('minecraft-data')('26.1'), request, numbers, { inventory: context.inventory || {} });
+    const resolution = await resolveItemBundle(client, context.registry || require('minecraft-data')('26.1'), request, numbers, { inventory: context.inventory || {}, memory: context.memory });
     if (!resolution.items.length) return { ...spec, kind: 'clarify', message: 'I could not resolve the whole item list. Please name the items or armor material so I can keep every part of your request.' };
     return { ...spec, kind: 'bundle', tasks: resolution.items.map(item => ({ ...item, from, status: 'pending' })), itemResolution: resolution };
   }
-  if (['obtain', 'craft'].includes(kind) || (kind === 'house' && a.material?.choice === 'other')) {
+  if (['obtain', 'craft'].includes(kind) || (kind === 'house' && (a.material?.choice === 'other' || context.memory?.notes?.length || context.memory?.preferences?.length))) {
     const registry = context.registry || require('minecraft-data')('26.1');
     const resolution = await resolveItem(client, registry, request, { blocksOnly: kind === 'house',
-      context: { inventory: context.inventory || {}, nearbyBlocks: context.nearbyBlocks || [], memory: context.memory } });
+      context: { inventory: context.inventory || {}, nearbyBlocks: context.nearbyBlocks || [], memory: context.memory, ...(kind === 'house' && { purpose: 'Primary structural material for a house. A preferred wood species means its planks, not its log or a decorative item.' }) } });
     spec.itemResolution = resolution;
     if (!resolution.item) return { ...spec, kind: 'clarify', message: 'I could not match the requested item. Use its Minecraft item name so I can work out the recipe.' };
     if (kind === 'house') spec.material = resolution.item;

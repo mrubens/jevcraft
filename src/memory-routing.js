@@ -74,8 +74,9 @@ async function resolveMemory(client, spec, username, context) {
   }
   const places = (memory.places || []).map(e => ({ ...e, description: `PLACE ${e.label}, ${e.dimension}, ${JSON.stringify(e.position)}, saved ${e.at}` }));
   const notes = (memory.notes || []).map(e => ({ ...e, description: `NOTE ${e.note}, saved ${e.at}` }));
+  const preferences = (memory.preferences || []).map(e => ({ ...e, description: `LEARNED PREFERENCE ${e.category}: ${e.value}, inferred from the player's request ${e.request}, at ${e.at}. A soft default, not an explicit favorite.` }));
   const history = (memory.history || []).map(e => ({ ...e, description: `PAST TASK (${e.status}) ${e.request}, at ${e.at}` }));
-  const entries = operation === 'visit' ? places : operation === 'repeat' ? history.filter(e => e.intent) : [...places, ...notes, ...history];
+  const entries = operation === 'visit' ? places : operation === 'repeat' ? history.filter(e => e.intent) : [...places, ...notes, ...preferences, ...history];
   const selected = await select(client, state, entries,
     `Select the saved entry matching the current ${operation} request. For last/previous choose the latest matching timestamp. Choose none if ambiguous or missing. Names may be paraphrased.`,
     { none: 'No unambiguous saved entry matches.', ...(['recall', 'forget'].includes(operation) && { all: operation === 'forget' ? 'The speaker explicitly wants to forget ALL of their saved memories.' : 'The speaker asks generally what is remembered, without a particular subject.' }) });

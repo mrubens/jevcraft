@@ -1,10 +1,12 @@
 'use strict';
 const { choice, noul } = require('./typesafe');
 const { catalogTree, itemCandidates } = require('./catalog');
+const { resolvedPreferenceContext } = require('./preferences');
 
 // Multi-label traversal preserves all requested outputs. Each question is a
 // separate yes/no judgment; a single Choice would discard sibling items.
 async function resolveItemBundle(client, registry, request, numbers = [], context = {}) {
+  context = { ...context, memory: await resolvedPreferenceContext(client, registry, context.memory) };
   let frontier = Object.entries(catalogTree(registry)).map(([key, node]) => ({ path: [key], node }));
   const items = [], judgments = [], started = performance.now();
   const suggestions = itemCandidates(registry, request).map(item => item.name);
@@ -21,7 +23,7 @@ async function resolveItemBundle(client, registry, request, numbers = [], contex
       const response = await client.systemOne({ state: { request, candidates, context }, questions:
         Object.fromEntries(page.map((_, i) => [`candidate_${i}`, noul({
           task: `Does candidates.candidate_${i} contain at least one of the FINAL outputs the player requests? Select every requested output, including members of explicitly requested sets.`,
-          rules: 'Full armor means helmet, chestplate, leggings and boots in the named material, not weapons or horse/wolf armor. Exclude ingredients, tools needed to obtain outputs, negated items, and optional suggestions. An unspecified variant means ONE ordinary default, not all variants: white for an uncolored bed/wool, oak for unspecified wooden objects. Honor explicit colors/species. A branch can contain a requested output even when its description only shows some examples.',
+          rules: 'Full armor means helmet, chestplate, leggings and boots in the named material, not weapons or horse/wolf armor. Exclude ingredients, tools needed to obtain outputs, negated items, and optional suggestions. An unspecified variant means ONE ordinary default, not all variants: white for an uncolored bed/wool; for unspecified wooden objects use relevant explicit context.memory notes, then context.memory.preferences, then oak if neither applies. Honor current explicit colors/species over memory, and choose only one matching variant. A branch can contain a requested output even when its description only shows some examples.',
         })])) });
       judgments.push({ candidates, answers: response.answers, usage: response.usage });
       for (let i = 0; i < page.length; i++) {
@@ -38,7 +40,7 @@ async function resolveItemBundle(client, registry, request, numbers = [], contex
   }
   if (frontier.length) throw new Error('Multi-item catalog exceeded its depth limit');
   if (!items.length) return { items: [], judgments };
-  const questions = { covered: noul('Do selectedOutputs cover ALL final item outputs requested in request, including every piece of a requested set, with no extra unrequested outputs? Ingredients mentioned only as a means are not outputs. Answer no if any output is missing or any unrelated item was added.') };
+  const questions = { covered: noul('Do selectedOutputs cover ALL final item outputs requested in request, including every piece of a requested set, with no extra unrequested outputs? Ingredients mentioned only as a means are not outputs. For an unspecified variant, one matching default counts as satisfying the requested item: use explicit context.memory notes, then learned context.memory.preferences for wood, otherwise ordinary white/oak defaults. A preferred cherry plank is still a plank, not an extra output. Past tasks in memory are not current requests and must not add outputs. Answer no if any output is missing or any unrelated item was added.') };
   for (const [i, item] of items.entries()) {
     questions[`quantity_${i}`] = choice(`How many ${item} are requested in request? Apply numbers only to this output. A full set contains one of each member; two sets contain two of each. An unspecified amount is default.`,
       { ...Object.fromEntries(numbers.map(n => [n, `${n} of ${item}`])), default: 'No explicit amount: one item (or the ordinary concrete batch).' });
@@ -47,7 +49,7 @@ async function resolveItemBundle(client, registry, request, numbers = [], contex
       bot: 'Keep it, for yourself, or no recipient specified.',
     });
   }
-  const response = await client.systemOne({ state: { request, selectedOutputs: items }, questions });
+  const response = await client.systemOne({ state: { request, selectedOutputs: items, context }, questions });
   judgments.push({ selectedOutputs: items, answers: response.answers, usage: response.usage });
   if (!(response.answers?.covered?.noul >= 0.65)) return { items: [], judgments, incomplete: true };
   const outputs = items.map((item, i) => {

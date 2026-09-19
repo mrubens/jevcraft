@@ -128,6 +128,20 @@ and recent resource observations are shared between tasks, with fresh block chec
 and expiry. Remembered locations are last-known observations, not a guarantee that
 blocks, creatures, or structures are still there. Chest inventories are not tracked.
 
+Jev also learns a **soft wood preference from ordinary requests**. After
+“Jev give me a cherry log,” “Jev give me two planks” favors cherry planks without
+needing a separate `remember` instruction. This carries across logs, planks,
+wooden variants, simple houses, and the building designer. Current instructions
+come first, then explicit notes such as “I prefer birch,” then the most recent
+learned choice. The custom designer balances inferred preferences against local
+materials instead of treating them as required ingredients.
+
+These choices are player-specific and survive restarts. Jev does not learn a new
+preference from its own defaults, repeated tasks, negated requests, or supplies
+ordered for someone else. “Jev what wood do I prefer?” explains what he noticed;
+“Jev forget my wood preference” can remove the learned choice. Task history stays
+available for recall, but does not recreate erased preferences.
+
 The notebook keeps up to 32 notes, 32 places, and 24 task summaries per player
 (with server-wide bounds). `Jev what do you remember?` gives a short summary;
 `Jev forget everything you remember about me` clears that player's notebook.

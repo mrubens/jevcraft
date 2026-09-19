@@ -1,5 +1,6 @@
 'use strict';
 const { choice } = require('./typesafe');
+const { resolvedPreferenceContext } = require('./preferences');
 const words = text => String(text).toLowerCase().replace(/[_-]/g, ' ').replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean);
 const stem = word => word.endsWith('ies') ? word.slice(0, -3) + 'y' : word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word;
 const ignored = new Set(['jev', 'jevbot', 'get', 'bring', 'me', 'some', 'a', 'an', 'the', 'of', 'please', 'make', 'craft', 'build', 'give', 'collect', 'gather', 'find', 'can', 'you', 'i', 'want', 'need', 'stack', 'half', 'using', 'with', 'from', 'house', 'shelter']);
@@ -75,6 +76,7 @@ function catalogTree(registry, { blocksOnly = false } = {}) {
 }
 
 async function resolveItem(client, registry, request, { blocksOnly = false, context = {} } = {}) {
+  context = { ...context, memory: await resolvedPreferenceContext(client, registry, context.memory) };
   const suggestions = itemCandidates(registry, request, { blocksOnly }).map(item => ({ item: item.name, category: categoryOf(registry, item) }));
   const path = [];
   const judgments = [];
@@ -95,7 +97,7 @@ async function resolveItem(client, registry, request, { blocksOnly = false, cont
       const response = await client.systemOne({ state: { request, selectedCatalogPath: path, lexicalSuggestions: suggestions, ...context }, questions: {
         item: choice({ task: blocksOnly ? 'Select the next catalog branch containing the requested building material.' :
           'Select the next catalog branch containing the item the player wants obtained or crafted. Select the requested output, not a tool or ingredient needed to obtain it.',
-        guidance: 'Each branch is generated from the actual Minecraft catalog. Match the requested species, color, and item kind. Bare grass means the grass plant unless grass block/turf is specified. Lexical suggestions are hints, not restrictions. Choose none only if none of these branches contains the requested item.' },
+        guidance: 'Each branch is generated from the actual Minecraft catalog. Match the requested species, color, and item kind. Current explicit choices override memory. For an unspecified wood variant, use relevant explicit memory notes first, then memory.preferences as a soft default; a remembered species applies to logs, planks, and wooden variants, not unrelated items. If there is no relevant wood preference, use oak as the ordinary unspecified wood default. Do not add outputs or infer a new player choice from a default. Bare grass means the grass plant unless grass block/turf is specified. Lexical suggestions are hints, not restrictions. Choose none only if none of these branches contains the requested item.' },
         { ...options, none: 'No branch contains the requested item or material.' }),
       } });
       selected = response.answers?.item?.choice;
