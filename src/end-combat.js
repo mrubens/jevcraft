@@ -232,9 +232,12 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // Reposition when arcs are blocked or the dragon is perched, and always
     // expose escape positions when healing or avoiding a breath cloud.
     if (!Object.keys(tree).some(key => key.startsWith('crystal_')) || bot.health < 16) for (const route of await arenaRoutes(bot, task, goal, policy, focus)) {
-      tree[`move_${route.key}`] = { description: { action: 'Move along this surveyed arena route to escape hazards, gain a firing angle or approach a perched head',
+      tree[`move_${route.key}`] = { description: { action: focus?.name === 'unresolved_crystal_location'
+        ? 'Approach a previously observed crystal location to check whether the crystal remains. Loss of entity tracking did not establish destruction.'
+        : 'Move along this surveyed arena route to escape hazards, gain a firing angle or approach a perched head',
         position: { ...route.p }, visits: state.visits[route.key] || 0, target: focus?.name,
-        clearCrystalShot: route.clearCrystalShot, targetDistance: route.targetDistance,
+        clearCrystalShot: focus?.name === 'end_crystal' ? route.clearCrystalShot : undefined,
+        targetDistance: route.targetDistance, currentTargetDistance: focus?.position?.distanceTo(bot.entity.position),
         desiredHorizontalRange: route.desiredHorizontalRange }, run: async () => {
         state.visits[route.key] = (state.visits[route.key] || 0) + 1; save();
         const initiallySafe = safeEndPoint(bot, bot.entity.position);
@@ -242,7 +245,13 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
           stopWhen: () => initiallySafe && !safeEndPoint(bot, bot.entity.position) });
       } };
     }
-    if (safe && dragon) tree.observe = { description: { action: 'Briefly observe the dragon to wait for a vulnerable flight or perch, or allow food regeneration', health: bot.health, dragonPhase: metadata(bot, dragon, 'phase') }, run: async () => {
+    // A pause can reveal a vulnerable phase, but it must not indefinitely
+    // displace executable actions. Renew that allowance only after actual
+    // movement, damage, crystal destruction or observed health recovery.
+    if (safe && dragon && ((state.idleObservations || 0) < 5 || !Object.keys(tree).length)) tree.observe = {
+      description: { action: 'Briefly observe the dragon to wait for a vulnerable flight or perch, or allow food regeneration',
+        health: bot.health, dragonPhase: metadata(bot, dragon, 'phase'), pausesWithoutProgress: state.idleObservations || 0 }, run: async () => {
+      state.idleObservations = (state.idleObservations || 0) + 1;
       bot.clearControlStates(); for (let n = 0; n < 10; n++) { check(); if (!safeEndPoint(bot, bot.entity.position)) break; await sleep(100); }
     } };
     if (!Object.keys(tree).length) throw blocked('No observed safe End route, reachable dragon head or clear bow shot; supplies and position are saved');
@@ -253,7 +262,8 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       health: bot.health, food: bot.food, arrows: countOf(bot, 'arrow'), position: { ...bot.entity.position }, dragon: state.dragon,
       perchedHead: head && { position: { ...head.position }, reachable: canStrike(bot, head) }, crystals: state.observedCrystals,
       unresolvedCrystalLocations: unresolved,
-      noProgress: state.noProgress, recentShots: state.shots.slice(-3), lastInterruption: state.lastInterrupted, lastError: goal.lastError }, signal: controller.signal,
+      noProgress: state.noProgress, pausesWithoutProgress: state.idleObservations || 0,
+      recentShots: state.shots.slice(-3), lastInterruption: state.lastInterrupted, lastError: goal.lastError }, signal: controller.signal,
       isFresh: () => dimension(bot) === 'end' && bot.health >= healthBefore && bot.entity.position.distanceTo(start) < 1 }); }
     finally { clearInterval(watcher); }
     check();
@@ -279,6 +289,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     const cell = `${Math.floor(bot.entity.position.x / 4)},${Math.floor(bot.entity.position.z / 4)}`;
     state.ground ||= {};
     if (start.distanceTo(bot.entity.position) >= 3 && !state.ground[cell]) { state.ground[cell] = true; progress = true; }
+    if (progress || start.distanceTo(bot.entity.position) >= 3 || bot.health > healthBefore) state.idleObservations = 0;
     state.noProgress = progress ? 0 : (state.noProgress || 0) + 1;
     state.lastActionAt = started; save();
     bot.removeListener('entityMoved', moved); task.interruptCheck = oldInterrupt;

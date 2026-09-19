@@ -166,9 +166,13 @@ MC_HOST=127.0.0.1 MC_PORT=25567 ACCEPT_SCENARIO=controlled node scripts/food-tes
 MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- build a house
 MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- get me 32 purple concrete
 MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1 npm run accept -- find a way to the Nether
+# Use a separate newly generated natural Normal world for the full journey.
+MC_HOST=127.0.0.1 MC_PORT=25575 MC_VERSION=26.1 ACCEPT_TIMEOUT_MS=21600000 npm run accept -- beat Minecraft
 ```
 
-The acceptance runner joins with a new player identity, checks that its inventory is empty and its mode is survival, interprets the actual request through Jev, and records events plus the saved goal under `artifacts/<run-id>/`. It never grants items, teleports, or changes game mode. The default deadline is 30 minutes (`ACCEPT_TIMEOUT_MS` overrides it).
+The acceptance runner requires an explicit isolated `MC_PORT` before loading `.env` and rejects the known interactive ports 25565 and 25577. It joins with a new player identity, checks that its inventory is empty and its mode is survival, interprets the actual request through Jev, and records events plus the saved goal under `artifacts/<run-id>/`. It never grants items, teleports, or changes game mode. The default deadline is 30 minutes (`ACCEPT_TIMEOUT_MS` overrides it).
+
+Winning trials additionally require an uninterrupted empty Normal Survival start in the Overworld. A separate observer reads live dimension, inventory, health and advancement events without consulting the bot's goal state. It requires observed blaze rods, pearls and Eyes before End entry, fresh dragon-kill credit, an exit-portal event and a living return. Deaths, disconnects and observed mode/difficulty changes invalidate the trial. Its evidence is retained in `events.jsonl` and `win-witness.json`. Even a verified runtime finish is labeled `PENDING_SERVER_VERIFICATION`: saved server player/advancement/dragon data, fresh-world provenance and the absence of gameplay assistance still need an independent audit. No full winning acceptance run has passed.
 
 The separate tool-mechanics test gathers ingredients, crafts a wooden pickaxe, repeatedly mines/reuses cobblestone, and verifies replacement before breakage. It passed on prepared Survival/Peaceful terrain: the old tool retained 52 uses and the replacement acquired its first use. For a crowded fixture, an optional initially nonexistent `TOOL_SETUP_FILE` makes the test wait after printing its username; prepare a clear starting location, record any console setup, then create that file. The recorded passing trial used a setup teleport, so it is controlled debugging rather than Normal survival acceptance.
 

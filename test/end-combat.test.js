@@ -134,6 +134,42 @@ test('two confirmed missed crystal shots require a different firing position bef
   assert.equal(shots, 3); assert.equal(goal.endCombat.destroyedCrystals.length, 0);
 });
 
+test('repeated observation yields to an executable crystal revisit and renews only after actual movement', async () => {
+  const { bot, goal, task } = fixture();
+  entity(bot, 20, 'ender_dragon', new Vec3(50, 65, 0), { phase: 6, health: 200 });
+  goal.endCombat = { steps: 0, shots: [], destroyedCrystals: [], visits: {}, idleObservations: 4,
+    knownCrystals: { remembered: { position: { x: 80, y: 95, z: 0 }, status: 'unresolved' } } };
+  bot.findBlocks = () => [new Vec3(8, 63, 0)]; let moves = 0, choices = 0;
+  const client = { systemOne: async ({ questions }) => {
+    choices++;
+    const options = questions.branch_0.criteria;
+    assert(options.observe);
+    assert.match(options['move_1,0'].action, /previously observed crystal/);
+    assert(options['move_1,0'].targetDistance < options['move_1,0'].currentTargetDistance);
+    assert.equal(options['move_1,0'].clearCrystalShot, undefined, 'Unknown is not a confirmed blocked shot');
+    return { answers: { branch_0: { choice: 'observe' } } };
+  } };
+  const actions = { navigate: async () => { moves++; if (moves > 1) bot.entity.position = new Vec3(8.5, 64, .5); } };
+  await fightEndStep(bot, task, goal, () => {}, actions, client);
+  assert.equal(goal.endCombat.idleObservations, 5);
+  await fightEndStep(bot, task, goal, () => {}, actions, client);
+  assert.equal(moves, 1); assert.equal(choices, 1);
+  assert.equal(goal.endCombat.idleObservations, 5, 'A no-op route must not renew waiting');
+  await fightEndStep(bot, task, goal, () => {}, actions, client);
+  assert.equal(moves, 2); assert.equal(goal.endCombat.idleObservations, 0);
+  assert.equal(goal.endCombat.knownCrystals.remembered.status, 'unresolved');
+});
+
+test('observation stays available with no executable alternatives but retains the no-progress bound', async () => {
+  const { bot, goal, task } = fixture();
+  entity(bot, 20, 'ender_dragon', new Vec3(50, 65, 0), { phase: 6, health: 200 });
+  goal.endCombat = { steps: 0, shots: [], destroyedCrystals: [], visits: {}, idleObservations: 5, noProgress: 79 };
+  await fightEndStep(bot, task, goal, () => {}, {}, {});
+  assert.equal(goal.endCombat.idleObservations, 6); assert.equal(goal.endCombat.noProgress, 80);
+  await assert.rejects(fightEndStep(bot, task, goal, () => {}, {}, {}), /bounded action budget/);
+  assert.equal(bot.listenerCount('entityMoved'), 0); assert.equal(task.interruptCheck, undefined);
+});
+
 test('End exit needs player kill credit, an observed active portal, an exit event and a living landing', async () => {
   const { bot, goal, task } = fixture();
   await assert.rejects(exitEnd(bot, task, goal, () => {}, {}), /kill credit/);

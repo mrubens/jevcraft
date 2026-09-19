@@ -7,11 +7,18 @@ const mineflayer = require('mineflayer');
 const { pathfinder } = require('mineflayer-pathfinder');
 const { configureMovements } = require('../src/movement');
 const { compatibilityPlugin } = require('../src/compatibility');
+// Resolve an explicit test endpoint before .env can supply the player server.
+const acceptancePort = Number(process.env.MC_PORT);
+if (!Number.isInteger(acceptancePort) || acceptancePort < 1 || acceptancePort > 65535 || [25565, 25577].includes(acceptancePort)) {
+  throw new Error('Acceptance requires an explicit isolated MC_PORT, excluding interactive ports 25565 and 25577');
+}
 require('../src/env').loadEnv();
 const { TypeSafe } = require('../src/typesafe');
 const { interpret, GoalStore, verifyHouse } = require('../src/objectives');
 const { runGoal, runIdle, createSurvival, inventory } = require('../src/work');
 const { Task } = require('../src/skills');
+const { verifyGameCompletion } = require('../src/game-progress');
+const { watchWinAcceptance } = require('./lib/win-witness');
 const client = new TypeSafe();
 const request = process.argv.slice(2).join(' ') || 'build a house';
 const resumeId = process.env.ACCEPT_RESUME;
@@ -26,14 +33,14 @@ fs.mkdirSync(directory, { recursive: true });
 const goalStore = new GoalStore(path.join(directory, 'goal.json'));
 const log = entry => { console.log(JSON.stringify(entry)); fs.appendFileSync(path.join(directory, 'events.jsonl'), JSON.stringify(entry) + '\n'); };
 async function main() {
-let currentGoal = { request, status: 'starting' }, observation;
+let currentGoal = { request, status: 'starting' }, observation, winWitness;
 const harness = process.env.ACCEPT_DASHBOARD_PORT ? await require('../src/harness/server').startHarness({
   port: Number(process.env.ACCEPT_DASHBOARD_PORT), artifacts: path.join(__dirname, '..', 'artifacts'),
   stateDirectory: path.join(__dirname, '..', '.bot-state'),
 }) : null;
 if (harness) log({ observatory: harness.url, run: id });
 const bot = mineflayer.createBot({
-  host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
+  host: process.env.MC_HOST || 'localhost', port: acceptancePort,
   username, auth: 'offline', version: process.env.MC_VERSION || false,
 });
 bot.loadPlugin(compatibilityPlugin);
@@ -57,6 +64,7 @@ function disconnected(client, reason) {
   const record = () => {
     const saved = goalStore.read();
     if (saved) { saved.status = 'failed'; saved.lastError = message; saved.disconnectedAt = disconnectedAt; goalStore.save(saved); }
+    if (winWitness) fs.writeFileSync(path.join(directory, 'win-witness.json'), JSON.stringify(winWitness.state, null, 2));
   };
   record();
   log({ acceptance: 'FAIL', reason: message, disconnected: client.username, at: new Date().toISOString() });
@@ -84,6 +92,7 @@ bot.on('handover', details => log({ handover: details }));
 bot.on('mob_hunt', details => log({ mobHunt: details }));
 bot.on('stronghold_search', details => log({ strongholdSearch: details }));
 bot.on('end_combat', details => log({ endCombat: details }));
+bot.on('fall_recovery', details => log({ fallRecovery: details }));
 bot.on('recovery_advice', details => log({ recoveryAdvice: details }));
 bot.on('recovery_result', details => log({ recoveryResult: details }));
 let lastUnsafeRouteLog = 0;
@@ -108,9 +117,11 @@ bot.once('spawn', async () => {
     const saved = resumeId ? goalStore.read() : null;
     if (resumeId && (!saved || Object.keys(saved.initialInventory || {}).length)) throw new Error('Missing original empty-inventory evidence');
     const spec = saved || await interpret(client, `${username}, ${request}`, 'TestPlayer', username);
-    if (!spec || !['house', 'concrete', 'nether', 'obtain', 'craft'].includes(spec.kind)) throw new Error('Jev did not recognize acceptance request');
+    if (!spec || !['house', 'concrete', 'nether', 'obtain', 'craft', 'win'].includes(spec.kind)) throw new Error('Jev did not recognize acceptance request');
+    if (spec.kind === 'win') winWitness = watchWinAcceptance(bot, { resumed: !!resumeId,
+      scenario: process.env.ACCEPT_SCENARIO || 'natural', record: evidence => log({ winWitness: evidence }) });
     if (spec.kind === 'concrete' || spec.deliver) {
-      receiver = mineflayer.createBot({ host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
+      receiver = mineflayer.createBot({ host: process.env.MC_HOST || 'localhost', port: acceptancePort,
         username: saved?.from || `Receive${id}`, auth: 'offline', version: process.env.MC_VERSION || false });
       receiver.on('end', reason => disconnected(receiver, reason));
       await new Promise((resolve, reject) => { receiver.once('spawn', resolve); receiver.once('error', reject); });
@@ -130,9 +141,11 @@ bot.once('spawn', async () => {
     log({ start: { kind: goal.kind, count: goal.count, request: goal.request, from: goal.from, initialInventory: goal.initialInventory, initialPosition: goal.initialPosition, createdAt: goal.createdAt, scenario: goal.scenario }, username, server: `${process.env.MC_HOST}:${process.env.MC_PORT}`, gameMode: bot.game.gameMode, difficulty: bot.game.difficulty, timeOfDay: bot.time.timeOfDay });
     const result = await runGoal(bot, task, goal, goalStore, {
       decisionClient: client, survival,
-      onStep: g => { if (!finishing) { observation?.sample('step', undefined, g); log({ step: g.step, decision: g.decisions?.at(-1), survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), tools: toolState(), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }); } },
+      onStep: g => { if (!finishing) { winWitness?.sample(); observation?.sample('step', undefined, g); log({ step: g.step, decision: g.decisions?.at(-1), survivalAction: g.survivalAction, position: bot.entity.position, inventory: inventory(bot), tools: toolState(), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, error: g.lastError }); } },
     });
+    const witnessedWin = winWitness?.verify();
     const verified = result.ok && (goal.kind === 'house' ? verifyHouse(bot, goal.blueprint).ok :
+      goal.kind === 'win' ? verifyGameCompletion(bot, goal) && witnessedWin.ok :
       ['concrete', 'obtain', 'craft'].includes(goal.kind) ? (receiver
         ? goal.delivered >= goal.count && (inventory(receiver)[goal.item || 'purple_concrete'] || 0) >= goal.receiverInitialItem + goal.count
         : (inventory(bot)[goal.item] || 0) >= goal.count) : String(bot.game.dimension).includes('nether'));
@@ -159,11 +172,15 @@ bot.once('spawn', async () => {
     }
     if (finishing) return;
     finishing = true;
-    log({ acceptance: verified ? 'PASS' : 'FAIL', reason: result.reason, inventory: inventory(bot), tools: toolState(), dimension: bot.game.dimension, receiverInventory: receiver ? inventory(receiver) : undefined });
+    log({ acceptance: verified ? goal.kind === 'win' ? 'PENDING_SERVER_VERIFICATION' : 'PASS' : 'FAIL',
+      runtimeVerified: verified, winningWitness: witnessedWin,
+      reason: result.reason, inventory: inventory(bot), tools: toolState(), dimension: bot.game.dimension, receiverInventory: receiver ? inventory(receiver) : undefined });
     process.exitCode = verified ? 0 : 1;
   } catch (err) { if (!finishing) log({ acceptance: 'FAIL', error: err.message }); process.exitCode = 1; }
   finally {
-    finishing = true; clearTimeout(timer); receiver?.quit(); bot.quit();
+    finishing = true; clearTimeout(timer);
+    if (winWitness) { fs.writeFileSync(path.join(directory, 'win-witness.json'), JSON.stringify(winWitness.state, null, 2)); winWitness.detach(); }
+    receiver?.quit(); bot.quit();
     if (harness) fs.writeFileSync(path.join(directory, 'observatory.json'), JSON.stringify({ format: 'jev-harness', version: 1, ...harness.trace.view() }));
     await harness?.close();
     setTimeout(() => process.exit(process.exitCode || 0), 500);
