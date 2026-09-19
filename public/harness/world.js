@@ -1,6 +1,7 @@
 import * as THREE from '/vendor/three.js';
 import { OrbitControls } from '/vendor/OrbitControls.js';
 import { MinecraftTextures } from './textures.js';
+import { robotParts } from './robot.js';
 
 const colors = { grass_block: '#91aa66', dirt: '#987759', stone: '#a1a499', sand: '#d8c89b', water: '#74adbd',
   cherry_leaves: '#e4b4c2', cherry_log: '#75504e', cherry_planks: '#cc9e9e', oak_log: '#806951', oak_leaves: '#6f915a',
@@ -43,6 +44,9 @@ export class WorldView {
     this.container = container; this.mode = 'orbit'; this.layer = 12; this.preview = true; this.target = new THREE.Vector3();
     this.behindDistance = 4.5; this.cameraBlocks = new Set(); this.motionFrames = [];
     this.scene = new THREE.Scene(); this.scene.background = new THREE.Color('#dfe8df');
+    this.robotTexture = new THREE.TextureLoader().load('/jev-robot.png', () => { if (this.snapshot) this.update(this.snapshot, true); });
+    this.robotTexture.magFilter = THREE.NearestFilter; this.robotTexture.minFilter = THREE.NearestFilter;
+    this.robotTexture.colorSpace = THREE.SRGBColorSpace;
     this.scene.fog = new THREE.Fog('#dfe8df', 55, 140);
     this.camera = new THREE.PerspectiveCamera(43, 1, .05, 250);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -129,8 +133,9 @@ export class WorldView {
     this.controls.target.copy(focus); this.camera.lookAt(focus);
     for (const mesh of this.overlay.children) if (mesh.userData.jevAvatar) {
       mesh.visible = this.boomLength >= 1;
-      mesh.position.set(position.x - this.origin.x, position.y - this.origin.y + mesh.userData.jevHeight, position.z - this.origin.z);
-      if (!mesh.userData.jevRing) mesh.rotation.y = yaw;
+      const offset = mesh.userData.jevOffset || 0, rotation = yaw + Math.PI;
+      mesh.position.set(position.x - this.origin.x + Math.cos(rotation)*offset, position.y - this.origin.y + mesh.userData.jevHeight, position.z - this.origin.z - Math.sin(rotation)*offset);
+      if (!mesh.userData.jevRing) mesh.rotation.y = rotation;
     }
   }
   update(snapshot, force = false, trail = this.trail || [], motionFrames) {
@@ -184,7 +189,12 @@ export class WorldView {
     line(trail, '#78998a', .08); line(snapshot.route, '#eea052', .2);
     const avatar = (p, tint, isJev) => {
       const center = local(p);
-      for (const [w,h,d,y,c] of [[.5,.72,.3,.72,tint],[.46,.46,.46,1.4,isJev?'#e7d7b5':'#b7b3a4'],[.17,.5,.22,.25,'#576554']]) {
+      if (isJev) for (const mesh of robotParts(this.robotTexture)) {
+        const yaw = (snapshot.yaw || 0) + Math.PI, x = mesh.userData.jevOffset;
+        mesh.position.copy(center).add(new THREE.Vector3(Math.cos(yaw)*x, mesh.userData.jevHeight, -Math.sin(yaw)*x));
+        mesh.rotation.y = yaw; this.overlay.add(mesh);
+      }
+      for (const [w,h,d,y,c] of isJev ? [] : [[.5,.72,.3,.72,tint],[.46,.46,.46,1.4,'#b7b3a4'],[.17,.5,.22,.25,'#576554']]) {
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshLambertMaterial({ color: c }));
         mesh.position.copy(center).add(new THREE.Vector3(0,y,0)); mesh.rotation.y = isJev ? snapshot.yaw || 0 : 0; mesh.userData = { jevAvatar: isJev, jevHeight: y }; this.overlay.add(mesh);
       }

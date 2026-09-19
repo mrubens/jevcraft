@@ -167,7 +167,8 @@ test('building tool uses the Jev fallback without invoking a text model', async 
     systemOne: async () => ({ answers: { style: { choice: 'cottage' }, floors: { choice: '1' }, size: { choice: 'normal' }, material: { choice: 'default' } } }),
   });
   assert.equal(goal.design.backend, 'jev-template');
-  assert(messages.some(m => m.includes('templates')));
+  assert(messages.some(m => m.includes('cottage')));
+  assert(messages.every(m => !/templates|schematic|model/.test(m)), 'Player chat uses ordinary words');
   assert.equal(goal.designAttempts, undefined);
 });
 

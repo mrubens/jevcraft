@@ -6,6 +6,8 @@ const { choice, noul } = require('./typesafe');
 const { Vec3 } = require('vec3');
 const { chatNames, parseAddress } = require('./chat-address');
 const { resolveItem } = require('./catalog');
+const { resolveItemBundle } = require('./item-bundle');
+const { resolveDiscovery } = require('./discovery');
 
 const TYPES = {
   operator_command: 'Ask for a Minecraft command effect: change time, weather, difficulty, or player game mode (Creative, Survival, Adventure, Spectator); teleport; summon; change rules, effects, enchantments, experience, scores, permissions, or other server command settings. "Put me in Creative" changes game mode. Polite action questions are requests. Never use commands merely as a means to build, craft, collect, or follow. Stop this bot task is stop. Informational questions, quotes and negated commands are other.',
@@ -13,6 +15,7 @@ const TYPES = {
   build: 'Design and build a custom structure: a mansion, castle, tower, bridge, statue, detailed house, or a building with specified rooms, floors, shape or style. This calls the building designer. Inventory items such as beds and chests are craft.',
   obtain: 'Get, gather, collect, bring or give a Minecraft item or block, of any kind.',
   craft: 'Make or craft an inventory item such as a tool, chest, stairs, planks, or other recipe output.',
+  find: 'Find, seek, show or travel to a biome, living creature, or block in the world through exploration. Find a sheep, find a cherry biome, find a cherry log. Find me means come; get/bring/give an item means obtain. This does not authorize locate/teleport commands.',
   come: 'Come here, approach a player, or meet the speaker once.',
   follow: 'Follow a player continuously, stay with them, or accompany them.',
   nether: 'Find or create a working route to the Nether.',
@@ -67,6 +70,9 @@ async function interpret(client, request, from, username, context = {}) {
       objective: choice('Categorize the requested outcome in `request` in the Minecraft game. Creative, Survival, Adventure and Spectator name game modes even when the word "mode" is omitted. Item requests belong to obtain or craft regardless of which particular Minecraft item is named. Choose obtain for collect/get/gather/fetch requests even when the item can be crafted; choose craft for explicit make/craft/create inventory items. Recipes and feasibility are checked after routing. A simple small house is house; custom structures and mansions are build; crafting an inventory item is craft. Coming once differs from continuously following. Changing the world or player with an explicitly requested command effect is operator_command.', TYPES),
       quantity: choice('Assuming an item request, select the quantity applying to the requested output. Candidates were extracted from this request. "A/an" or "a single" item means 1. Stacks contain 64 items. If no requested output quantity is stated, select unspecified; do not invent a batch size.',
         { ...Object.fromEntries(numbers.map(n => [n, `${n} items requested by a quantity in the message`])), unspecified: 'No stated output quantity; the application will use its default.' }),
+      outputs: choice('Assuming an obtain/craft request, does the player want one type of output or multiple types/a set? Full diamond armor is four outputs even without listing them. Ingredients mentioned only as a means to make one output do not count.', {
+        single: 'One type of final item, possibly many copies.', multiple: 'Several distinct final items or a full set, such as full armor, or armor and a bed.',
+      }),
       delivery: choice('Assuming an item request, identify the recipient stated in `request`. The speaker is the human and you/yourself refers to the bot. Select unspecified when the request only says to make, craft, get or collect an item without naming its recipient. Do not infer a recipient merely because a human issued the request.', {
         speaker: 'The human speaker: get me, bring me, give me, craft me, for me. Bring/deliver without another named recipient also means the speaker.',
         bot: 'The bot: for yourself, get yourself, for your own use, keep it.',
@@ -90,6 +96,16 @@ async function interpret(client, request, from, username, context = {}) {
     const target = a.target?.choice;
     if (![from, ...(context.players || [])].includes(target)) throw new Error('Unknown movement target');
     spec.target = target;
+  }
+  if (kind === 'find') {
+    const resolution = await resolveDiscovery(client, context.registry || require('minecraft-data')('26.1'), request);
+    if (!resolution.target) return { ...spec, kind: 'clarify', message: 'Which Minecraft biome, creature, or block should I look for?' };
+    spec.discoveryTarget = resolution.target; spec.discoveryResolution = resolution;
+  }
+  if (['obtain', 'craft'].includes(kind) && a.outputs?.choice === 'multiple') {
+    const resolution = await resolveItemBundle(client, context.registry || require('minecraft-data')('26.1'), request, numbers, { inventory: context.inventory || {} });
+    if (!resolution.items.length) return { ...spec, kind: 'clarify', message: 'I could not resolve the whole item list. Please name the items or armor material so I can keep every part of your request.' };
+    return { ...spec, kind: 'bundle', tasks: resolution.items.map(item => ({ ...item, from, status: 'pending' })), itemResolution: resolution };
   }
   if (['obtain', 'craft'].includes(kind) || (kind === 'house' && a.material?.choice === 'other')) {
     const registry = context.registry || require('minecraft-data')('26.1');

@@ -14,6 +14,8 @@ const { requestedCommand, createCommandAccess } = require('./commands');
 const { classifyCommand } = require('./command-classifier');
 const { recordDeath, observeAliveInventory } = require('./recovery');
 const { statusMessage } = require('./status');
+const { bundleSummary } = require('./item-bundle');
+const { friendlyProblem } = require('./speech');
 
 function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness } = {}) {
   let ended = false, spawned = false, resolveClosed;
@@ -88,7 +90,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (err.name !== 'Cancelled') {
         goal.status = 'blocked'; goal.lastError = err.message; saveGoal(goal);
         observation?.sample('error', { message: err.message }, goal);
-        console.error(err); bot.chat(`Blocked: ${err.message}`);
+        console.error(err); bot.chat(`${friendlyProblem(err)} Say "Jev resume" to try again.`);
       }
     }).finally(() => { if (active === session) active = null; });
   }
@@ -107,7 +109,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (err.name !== 'Cancelled') {
         survival.state.idleBlocked = err.message; saveSurvival();
         observation?.sample('error', { message: err.message }, goal);
-        console.error(err); bot.chat(err.message);
+        console.error(err); bot.chat(friendlyProblem(err));
       }
     }).finally(() => { if (active === session) active = null; });
   }
@@ -119,7 +121,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const saved = store.read();
     if (!saved || saved.status === 'complete') {
       survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
-      bot.chat('Resuming survival between requests.'); return;
+      bot.chat("I'm back! I'll look after myself while I wait for your next task."); return;
     }
     if (saved.kind === 'build' && !saved.design) saved.designAttempts = 0;
     launch(saved);
@@ -150,7 +152,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const from = player.username, request = data.plainMessage;
     let literal;
     try { literal = requestedCommand(request, bot.username); }
-    catch (err) { bot.chat(err.message); return; }
+    catch (err) { console.error(err); bot.chat('I could not use that command. Please check what you asked me to do.'); return; }
     const address = parseAddress(request, bot.username);
     // Acknowledgements from other bots must never start new work. New goals
     // require an explicit name; short controls remain convenient when unprefixed.
@@ -160,7 +162,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (/^(stop|cancel)( please)?[.!]?$/i.test(normalized)) {
       generation++;
       stop().catch(console.error);
-      bot.chat('Stopped. Progress saved; say resume to continue.');
+      bot.chat('Stopped. I saved our progress. Say "Jev resume" to keep going.');
       return;
     }
     if (!ready) { bot.chat('Still loading the world; please repeat the request in a moment. Stop is available now.'); return; }
@@ -206,7 +208,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         return;
       }
       if (spec.kind === 'other') {
-        bot.chat('Tell me what item to obtain or craft, who to follow or come to, or describe a structure to build. I will check the dependencies.');
+        bot.chat('Ask for items or a full set, a biome or creature to find, someone to follow, or a structure to build.');
         return;
       }
       if (spec.kind === 'clarify') { bot.chat(spec.message); return; }
@@ -220,14 +222,16 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         requesterPosition: bot.players[from]?.entity ? { ...bot.players[from].entity.position } : null,
         initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);
-      bot.chat(spec.kind === 'build' ? 'I will survey the area, ask the building designer for a schematic, then gather materials and build it.' :
+      bot.chat(spec.kind === 'build' ? "I'll make a plan, find a good spot, and build it for you." :
+        spec.kind === 'bundle' ? `Working on the whole list: ${bundleSummary(spec)}.` :
+        spec.kind === 'find' ? `I will look for ${spec.discoveryTarget.name.replaceAll('_', ' ')} and tell you where I find it.` :
         spec.kind === 'house' ? `Building a small ${spec.material} house with a floor, doorway and roof.` :
-        ['obtain', 'craft'].includes(spec.kind) ? `${bot.game.gameMode === 'creative' ? 'Taking from Creative inventory' : 'Working out the dependencies for'} ${spec.count} ${spec.item.replaceAll('_', ' ')}${spec.deliver ? ` for ${from}` : ''}.` :
+        ['obtain', 'craft'].includes(spec.kind) ? `I'll get ${spec.count} ${spec.item.replaceAll('_', ' ')}${spec.deliver ? ` for ${from}` : ''}.` :
         spec.kind === 'come' ? `Coming to ${spec.target}.` : spec.kind === 'follow' ? `Following ${spec.target}; say Jev stop to stop.` :
-        spec.kind === 'win' ? 'I will work toward beating the game, keeping the overall goal saved through each stage. I will tell you if a needed action is not available yet.' :
-        'I will establish a portal route and enter the Nether to verify it.');
+        spec.kind === 'win' ? "Let's beat the dragon! I'll gather supplies and take it one step at a time." :
+        "I'll get a Nether portal working, then go through to check it.");
       launch(goal);
-    }).catch(err => { console.error(err); if (!ended && revision === generation) bot.chat(`Could not process request: ${err.message}`); }).finally(() => { pendingRequests--; });
+    }).catch(err => { console.error(err); if (!ended && revision === generation) bot.chat('I had trouble understanding that. Please try saying it another way.'); }).finally(() => { pendingRequests--; });
   });
 
   bot.once('spawn', async () => {
@@ -241,9 +245,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       console.log(JSON.stringify({ sessionReady: true, username: bot.username }));
       const saved = store.read();
       if (saved && ['running', 'recovering'].includes(saved.status) && !survival.state.paused) {
-        bot.chat(survival.state.recovery?.status === 'pending' ? 'I respawned. Checking whether I can recover my items, then continuing the saved task.' : 'Resuming my saved task.');
+        bot.chat(survival.state.recovery?.status === 'pending' ? "I'm back! I'll look for my dropped items, then carry on." : "I'm back! I'll carry on where I left off.");
         launch(saved);
-      } else if (survival.state.deathBlocked) bot.chat(survival.state.deathBlocked);
+      } else if (survival.state.deathBlocked) bot.chat("I keep getting hurt there. I'll wait here. Say Jev resume when you're ready.");
       else bot.chat('Call me Jev: "Jev come here", "Jev follow me", "Jev craft a chest", or "Jev get me 8 birch stairs".');
     } catch (err) { console.error('[bot] spawn:', err); bot.quit('Could not initialize the world'); }
   });

@@ -446,3 +446,67 @@ Do not mark the goal complete based on unit tests or the presence of implementat
 - Live isolated `aim-mu8d1xv1` PASSED on25579: three large pitch changes reproduced premature native promise completion (e.g. transmitted -8.59degrees for desired -60.15), while the new guard waited until both requested angles were transmitted. Health20 and position remained unchanged. No grants, gameplay commands, attacks or navigation; exact relevant source hashes/copies and result retained. It is a rotation diagnostic, not a verified bow hit or winning run. That short client exited normally before server21517 was saved/stopped.
 - Acceptance observation now also checks raw difficulty events because Mineflayer does not emit `game` for them. All311 tests passed (`/tmp/jev-end-landing-final-tests.log`, runner44909, exit0), including full packet-angle, cancellation, dry-landing and acceptance-witness regressions.
 - No isolated game test server/runner is currently live. Interactive server34258 and bot37480 remain unchanged. The proposed next fresh full winning trial has NOT started: the user's live requests now prioritize swimming/puddle crossing and natural-language biome/entity discovery (`find a cherry biome`, `find a sheep`, and broader cherry-log search). Keep the full winning objective active while implementing/testing those companion capabilities separately from the occupied player world.
+
+## 2026-09-19 13:06 UTC — Companion update deployed to the occupied world
+
+User-steered work implemented together: small-pool swimming, biome/creature/block
+finding, full armor and compound item requests, bounded opportunistic ore mining,
+plain child-friendly chat, and an original robot appearance.
+
+- Multi-label TypeSafe catalog traversal retains every requested output and checks
+  whole-list coverage before accepting it. Four diamond armor slots plus a default
+  white bed, separate quantities, delivery state and restart-safe child completion.
+  Item tasks execute sequentially; shared-trip optimization is not implemented.
+- Discovery uses actual biome/entity/item registries, loaded blocks and entities.
+  Fixed prismarine-biome's captured stale registry: received biome IDs must resolve
+  against the current server registry. Retained 512-block surface frontiers replace
+  small repeated rings for surface resource searches. No privileged locating.
+- Water cost now favors swimming, with explicit top-water entry and buoyant shore
+  exit because upstream started landings too low and measured jumps from water
+  beneath the swimmer. Existing hazard/drop/cancellation safeguards retained.
+- Optional visible ore detours: Jev Choice, six-block radius, ten path steps, twelve
+  seconds, no path digging/scaffolding, health/food/tool/capacity checks, no chained
+  searches. Available once per three successful primary mining actions.
+- Plain in-game explanations and status; technical state retained for debugging.
+- Robot PNG/SVG/resource pack plus six-part textured Observatory avatar. Verified
+  in browser, including correcting the front/back orientation. Local resource pack
+  installed at Minecraft/resourcepacks/Jev-Robot.zip but NOT enabled in the running
+  client. CUA cannot target the game window (only launcher is exposed; java rejected).
+  User can enable through Options > Resource Packs. Wide Efe replacement also affects
+  other users of that default skin; it is not a globally uploaded account skin.
+
+Validation evidence (all controlled and separate from the player world):
+
+- `swim-mu8dwdkk` PASS: shallow pool 29 water ticks; deep pool 37 swimming ticks;
+  both dry far-bank arrivals; health/air20; zero blocks placed; cobblestone64 intact.
+  Earlier runs retained: `mu8dfom1` setup timeout before applying commands;
+  `mu8dlhc8` and `mu8dmtzi` shallow PASS/deep bridge FAIL; `mu8dqbtc` bad Move import
+  failed at runtime. Corrected import and transitions in successful final run.
+- `companion-routing-mu8dxi4k`: all nine live Jev examples PASS, including full armor
+  plus bed, different per-item counts, ingredient mentions excluded, cherry biome,
+  sheep, cherry log, obtaining a log, and find-me interpreted as come.
+- `companion-live-mu8eebqf` PASS: craft all armor from granted24diamonds and bed from
+  granted wool/planks, independently verify receiver holds one of each, cancel and
+  reload after two completed deliveries without repeating them; approach/confirm
+  sheep, cherry log, actual cherry biome; choose and collect nearby diamond while
+  retaining coal task, return in about4.2s, maximum detour3.61blocks, far ore intact,
+  health20/nodeaths. These grants/mobs/platform/biome edits/teleports are NOT natural
+  gathering or winning-game acceptance. A failed biome run and two conservative
+  optional-ore declines retained; standing instruction adjusted to allow useful
+  extras unless the player explicitly prohibits them.
+- Full existing+new suite319/319 PASS; four additional focused safety/biome tests
+  added afterward; companion/camera/status/designer focused checks also PASS.
+
+Deployment: old player bot PID37480 was gracefully stopped once after its mansion
+request was blocked and it was idle; server PID34258 was untouched. New frozen
+runtime `.bot-state/runtimes/companion-20260919-1303`, exec13814, log
+`.bot-state/jev-play-peaceful-20260919-companion.log`. Source hashes and prior goal
+retained. Jev rejoined25577 with health/food20 and the same position/inventory.
+Observatory3045 connected. Saved mansion remains blocked by changed site dirt;
+this update does not erase/rewrite that task or authorize removing player changes.
+Isolated swimming/companion server25579 saved/stopped at13:06UTC.
+
+Winning-game goal remains ACTIVE and incomplete. No fresh full winning trial was
+started while handling these live companion requests; all previous failures and
+acceptance limitations remain. Continue the fresh Normal Survival journey next,
+keeping the occupied peaceful world and unrelated Mindcraft separate.

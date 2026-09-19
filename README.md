@@ -199,3 +199,45 @@ Fresh Normal endurance trial `mu7j1633` passed exactly 48,000 elapsed ticks with
 A controlled flat fixture also runs on port 25567. `node scripts/fixture-commands.js` prints setup commands that place trees, exposed resources, flowers, and water. Run them only before a trial. Label these trials with `ACCEPT_SCENARIO=controlled-resources`; they do not establish natural-world search performance.
 
 To resume a stopped trial without granting items or resetting its survival progress, set `ACCEPT_RESUME=<run-id>` with the original server port. The runner reuses the original player identity and original empty-inventory evidence.
+
+### Companion requests and discovery
+
+Jev can keep up to 16 different requested item types in one saved list. For example,
+`Jev give me full diamond armor and a bed` resolves all four armor pieces and one
+white bed. Per-item counts and recipients are classified separately. Each item uses
+the existing recipe graph and confirmed pickup/delivery checks. Stop/resume and
+restarts preserve completed handovers. Execution currently works through the list
+one item at a time; it does not yet optimize all recipes into one gathering trip.
+
+`Jev find a cherry biome`, `Jev find a sheep`, and `Jev find a cherry log` use the
+running server's catalogs and ordinary loaded-world observations. Finding an animal
+does not attack it. `Get me a cherry log` still gathers and delivers the item.
+Surface searches retain a distant heading to explore new terrain. Rare biomes may
+require a long trip; searches are bounded, and targets in another dimension require
+getting to that dimension first. No seed lookup or privileged locate command is used.
+
+Ordinary water routes prefer swimming to placing a bridge and include explicit
+surface entry and shore exit transitions. While mining, Jev can choose one useful
+exposed ore after every three successful primary mining actions. Optional detours
+are limited to six blocks and twelve seconds, require usable tools, inventory room
+and safe dry access, cannot excavate or scaffold a route, and return to the original
+request. Player chat uses short everyday wording; detailed errors stay in logs.
+
+### Robot appearance
+
+The Observatory uses the original `public/harness/jev-robot.png` Minecraft skin.
+Rebuild the PNG, editable SVG and resource pack with
+`node scripts/create-robot-skin.js`. The exact 64x64 UV layout is generated in code.
+
+For the local offline Minecraft 26.1 server, enable **Jev-Robot.zip** in
+**Options → Resource Packs**. The pack is already copied into this computer's
+Minecraft resourcepacks folder. Offline Jev's UUID selects the wide Efe default
+skin; the pack replaces that texture. It affects only clients with the pack enabled,
+and other players using the same default skin will also look like the robot.
+It does not change armor, inventory, health, or server gameplay. This is a local
+resource-pack appearance, not a globally uploaded Mojang account skin.
+
+Validation scripts: `scripts/swim-test.js` and `scripts/companion-live-test.js`
+require an explicit isolated `MC_PORT` and record their setup commands. They reject
+the occupied player-world port and are controlled mechanics fixtures, never fresh
+Survival acceptance. `scripts/companion-routing-test.js` checks live Jev routing.

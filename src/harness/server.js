@@ -19,7 +19,9 @@ async function startHarness({ port = 3040, artifacts, stateDirectory, textureOpt
   const threeDir = path.dirname(path.dirname(require.resolve('three')));
   const assets = new Map([
     ['/', [path.join(publicDir, 'index.html'), 'text/html']],
-    ...['style.css', 'app.js', 'world.js', 'decisions.js', 'textures.js'].map(f => [`/${f}`, [path.join(publicDir, f), f.endsWith('.css') ? 'text/css' : 'text/javascript']]),
+    ...['style.css', 'app.js', 'world.js', 'decisions.js', 'textures.js', 'robot.js'].map(f => [`/${f}`, [path.join(publicDir, f), f.endsWith('.css') ? 'text/css' : 'text/javascript']]),
+    ['/jev-robot.png', [path.join(publicDir, 'jev-robot.png'), 'image/png']],
+    ['/jev-robot-pack.zip', [path.join(publicDir, 'jev-robot-pack.zip'), 'application/zip']],
     ['/vendor/three.js', [path.join(threeDir, 'build/three.module.js'), 'text/javascript']],
     ['/vendor/three.core.js', [path.join(threeDir, 'build/three.core.js'), 'text/javascript']],
     ['/vendor/OrbitControls.js', [path.join(threeDir, 'examples/jsm/controls/OrbitControls.js'), 'text/javascript']],

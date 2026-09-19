@@ -34,6 +34,10 @@ const { fightEndStep } = require('./end-combat');
 const { exitEnd } = require('./end-exit');
 const { prepareEndSupplies } = require('./end-supplies');
 const { collectWater } = require('./water');
+const { discoverStep, explorationTarget } = require('./discovery');
+const { bundleStep } = require('./item-bundle');
+const { opportunisticMining } = require('./opportunistic-mining');
+const { friendlyProblem, completion } = require('./speech');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -157,7 +161,7 @@ function find(bot, names, distance = 48, count = 32) {
   return ids.length ? bot.findBlocks({ matching: ids, maxDistance: distance, count }) : [];
 }
 
-async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfaceResource(resource) } = {}) {
+async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfaceResource(resource), frontier = surfaceOnly } = {}) {
   if (surfaceOnly && !surfaceReturnComplete(bot, goal)) {
     await surfaceStep(bot, task, goal, save);
     return;
@@ -173,6 +177,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
     const angle = (search.leg % 8) * Math.PI / 4;
     const radius = 24 * (1 + Math.floor(search.leg / 8));
     let target = pos(search.origin).offset(Math.round(Math.cos(angle) * radius), 0, Math.round(Math.sin(angle) * radius));
+    if (frontier) target = explorationTarget(search, resource, bot.entity.position);
     const resourceNames = [...new Set([...Object.entries(MINEABLE).filter(([name, data]) => name === resource || data.drops === resource).map(([name]) => name),
       ...(bot.registry.blocksByName[resource] ? [resource] : []), ...sourceBlocks(bot.registry, resource)])];
     const observed = [...new Map([...find(bot, resourceNames, 128, 8), ...knownResourceLocations(bot, goal, resourceNames)]
@@ -306,7 +311,11 @@ async function mine(bot, task, step, goal, save, selected) {
     await surfaceStep(bot, task, goal, save); return;
   }
   const surface = surfaceOnly ? surfaceMovement(bot) : null;
-  try { return await mineAtSource(bot, task, step, goal, save, selected); }
+  try {
+    const before = countOf(bot, step.drops);
+    await mineAtSource(bot, task, step, goal, save, selected);
+    if (countOf(bot, step.drops) > before) await opportunisticMining(bot, task, goal, save, step, { navigate, dig });
+  }
   finally { surface?.restore(); }
 }
 
@@ -798,7 +807,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     if (fallback) {
       if (!client) throw new Blocked('The building fallback needs a configured Jev connection');
       goal.designFallbackReason = goal.designError || (mode === 'jev' ? 'Jev templates selected' : 'No OpenRouter designer key configured');
-      bot.chat('Using Jev building templates: cottages, mansions and towers with up to three floors. Custom shapes need the design model.');
+      bot.chat('I can plan a cottage, mansion, or tower with up to three floors.');
     } else goal.designAttempts = (goal.designAttempts || 0) + 1;
     try { goal.design = fallback ? await designWithJev(bot, task, goal.request, client) :
       await designBuilding(bot, task, goal.request, { previousDraft: goal.designDraft, feedback: goal.designError }); }
@@ -810,7 +819,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     }
     delete goal.designDraft; delete goal.designError;
     save();
-    bot.chat(`Design ready: ${goal.design.source.name}, ${goal.design.blocks.length} blocks. I will find a supported site and build it.`);
+    bot.chat(`I've planned ${goal.design.source.name}! I'll find a good spot and start building.`);
     return false;
   }
   const schematic = validateSchematic(goal.design.source, bot.registry);
@@ -1119,6 +1128,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
 
 async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () => {}, decisionClient, survival, recoveryAdviser } = {}) {
   const save = () => store.save(goal);
+  task.opportunityClient = decisionClient;
   survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
   goal.survival = survival.state;
   protectConstruction(bot, goal);
@@ -1135,10 +1145,12 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
     const location = bot.entity.position.clone();
     try {
       let complete = false;
+      const activeWork = goal.kind === 'bundle' ? goal.tasks.find(child => child.status !== 'complete') || goal : goal;
+      const saveWork = () => { if (activeWork !== goal) { goal.step = { action: 'combined_request', item: activeWork.item, detail: activeWork.step }; goal.survivalAction = activeWork.survivalAction; } save(); };
       // A requested, equipped encounter can approach its selected mob. All
       // other survival work keeps the ordinary hostile-avoidance policy.
       const endTask = goal.kind === 'win' && dimension(bot) === 'end';
-      if (!endTask && await huntObserved(bot, task, goal, save, { navigate }, decisionClient)) {
+      if (!endTask && await huntObserved(bot, task, activeWork, saveWork, { navigate }, decisionClient)) {
         goal.failures = 0; goal.stalls = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
       if (goal.recoveryAdvice?.active) {
@@ -1147,7 +1159,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       }
       // End combat owns eating and arena escape. Overworld nighttime shelter
       // choices are invalid in the End, where the dragon can destroy them.
-      if (!endTask && await survival.step(task, goal, save, onStep)) {
+      if (!endTask && await survival.step(task, activeWork, saveWork, () => onStep(goal))) {
         goal.stalls = 0; goal.failures = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
       task.interruptCheck = bot.game.gameMode === 'creative' || endTask ? undefined : () => checkThreats(bot);
@@ -1163,6 +1175,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       if (prepared && goal.kind === 'house') complete = decisionClient ? await houseDecisionStep(bot, task, goal, save, decisionClient, onStep) : await buildHouseStep(bot, task, goal, save);
       if (goal.kind === 'build') complete = await designedBuildStep(bot, task, goal, save, decisionClient, onStep);
       if (['obtain', 'craft'].includes(goal.kind)) complete = await obtainStep(bot, task, goal, save, decisionClient, onStep);
+      if (goal.kind === 'bundle') complete = await bundleStep(bot, task, goal, save,
+        (child, checkpoint) => obtainStep(bot, task, child, checkpoint, decisionClient, () => onStep(goal)));
+      if (goal.kind === 'find') complete = await discoverStep(bot, task, goal, save, { navigate, explore });
       if (['come', 'follow'].includes(goal.kind)) complete = await movementStep(bot, task, goal, save);
       if (prepared && goal.kind === 'concrete') {
         if ((goal.delivered || 0) >= goal.count) complete = true;
@@ -1196,11 +1211,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       if (complete) {
         if (goal.kind === 'house') survival.rememberHouse(goal.blueprint);
         goal.status = 'complete'; goal.completedAt = new Date().toISOString(); save();
-        bot.chat(['obtain', 'craft'].includes(goal.kind) ? (goal.deliver ? `Delivered ${goal.count} ${goal.item.replaceAll('_', ' ')} to ${goal.from}; pickup confirmed.` : `Obtained ${goal.count} ${goal.item.replaceAll('_', ' ')}; inventory verified.`) :
-          goal.kind === 'come' ? `Here with ${goal.target || goal.from}.` : goal.kind === 'concrete' ? `Delivered ${goal.count} purple concrete to ${goal.from}; pickup confirmed.` :
-          goal.kind === 'build' ? `${goal.design.source.name} finished at ${pos(goal.blueprint.origin)}; all schematic blocks and openings verified.` :
-          goal.kind === 'house' ? `House verified at ${pos(goal.blueprint.origin)}: floor, walls, roof and clear doorway.` :
-          goal.kind === 'win' ? 'Dragon defeat and return alive to the Overworld verified.' : 'Nether route verified: I entered the Nether.');
+        bot.chat(completion(goal));
         return { ok: true, goal };
       }
       const unchanged = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 1 &&
@@ -1223,7 +1234,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       }
       if (err.name === 'Blocked' || goal.failures >= 5) {
         goal.status = 'blocked'; save();
-        bot.chat(`Blocked: ${err.message}. Progress saved; say resume to retry.`);
+        bot.chat(`${friendlyProblem(err)} I saved our progress. Say "Jev resume" to try again.`);
         return { ok: false, reason: err.message, goal };
       }
       await sleep(300);
@@ -1231,7 +1242,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
     save(); onStep(goal);
   }
   goal.status = 'blocked'; goal.lastError = 'Action budget reached'; save();
-  bot.chat('Action budget reached. Progress saved; say resume to continue.');
+  bot.chat('This is taking a while. I saved our progress. Say "Jev resume" to keep going.');
   return { ok: false, reason: goal.lastError, goal };
   } finally { stopObserving(); }
 }
