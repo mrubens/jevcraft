@@ -317,6 +317,14 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 - Evidence is in `artifacts/player-timeouts-20260919/`, including before/after CPU profiles, event-loop timings, retained pre-update checkpoint and server logs. Current runtime: PID 37480, runner 92803, `.bot-state/jev-play-peaceful-20260919-search.log`, Observatory 3045. The fresh Normal Nether goal remains incomplete; `mu7wofw0` is explicitly a failed timeout run.
 - `scripts/unreachable-test.js` is a pending real-chat negative-case harness from this work period. It has not been run; its intended bedrock/status/next-request checks are not acceptance evidence.
 
+### Expanded game-completion goal and retained blocker status (2026-09-19, 05:15 UTC)
+
+- The user expanded the active goal to an autonomous fresh Normal-survival run through the Ender Dragon and a living return to the Overworld. `GOAL.md` now includes Nether resources, Eyes of Ender, ordinary-observation stronghold discovery, End entry, dragon combat and return, while retaining every earlier companion acceptance requirement. These later stages are not yet implemented or verified.
+- Controlled real-chat negative trial `unreachable-mu7xjqax` FAILED (runner 81777, exit 1). Jev correctly recognized a one-bedrock request, saved an honest unsupported-acquisition blocker, and stopped retrying. After idle survival resumed, `Jev status` hid the saved failure and reported only idle vitals. The failed transcript and checkpoint are preserved.
+- Status now reports the retained player request and its blocker even while Jev tends survival between requests. Literal `Jev status` reads local state immediately rather than waiting behind an outstanding model interpretation. Paraphrased status requests use the same formatter after Jev routes them. Active player work still takes precedence over older saved requests.
+- New controlled real-chat trial `unreachable-mu7xmmf1` PASSED (runner 91948, exit 0): bounded rejection without false success or automatic retry, status preserving bedrock and its blocker, then a fresh `Jev come here` request completed within 1.57 blocks of the independent witness. Both runs used new empty identities on the Peaceful flat fixture, without setup grants, teleports or injected errors; they are explicitly controlled rather than natural Normal acceptance. The fixture server saved and exited after both runners were terminal.
+- All 214 tests pass, including four status regressions. The updated status behavior is tested in the isolated fixture; the player's Jev remains on the stable search-fix runtime to avoid another unnecessary reconnect. It has gathered a diamond and honestly reported that the offline recipient is unavailable. Its world remains intact.
+
 Still required:
 
 1. Complete and independently verify a fresh natural Normal Nether trial. Fresh natural house/endurance and concrete delivery now pass; Nether has only controlled and interactive Peaceful completion.
@@ -326,5 +334,7 @@ Still required:
 5. Extend the passed controlled chat cancellation, restart/resume and death/disconnect checks to demanding natural-world situations.
 6. Improve recipe alternatives and resource exploration after an unavailable source. Literal and classified operator commands already have live authorization and no-replay checks.
 7. Complete the remaining Normal survival acceptance in `GOAL.md`. Natural eating and tool replacement now also have ongoing fresh-trial evidence, and two full cycles with a useful request passed uninterrupted; the combined acceptance is still incomplete.
+
+8. Implement and independently verify the complete fresh-start route through blaze/pearl acquisition, Eyes of Ender, stronghold discovery, End entry, dragon defeat and a living return. The goal now includes winning the game.
 
 Do not mark the goal complete based on unit tests or the presence of implementation. Live acceptance and recovery evidence are still missing.

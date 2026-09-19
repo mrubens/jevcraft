@@ -2,7 +2,7 @@
 
 A local Mineflayer bot that uses TypeSafe's Jev to interpret Minecraft chat, resolve items through a dynamic catalog hierarchy, and choose ongoing actions. Ordinary code executes and verifies survival tasks. Jev can connect through TypeSafe or OpenRouter. An optional OpenRouter LLM generates custom building schematics and advises on recovery when Jev gets stuck.
 
-The broader target is a survival companion that can obtain food and shelter, maintain tools, avoid hazards, and follow player requests on Normal difficulty. See `GOAL.md` for the acceptance criteria. House construction and two full day/night cycles have passed on Normal difficulty; the complete survival acceptance remains unfinished.
+The target is a survival companion that can autonomously beat Minecraft from an empty start in a fresh natural world on Normal difficulty: progress through the Nether, locate a stronghold, defeat the Ender Dragon and return alive. Food, shelter, equipment, hazard avoidance and player requests remain part of the goal. See `GOAL.md` for the full acceptance criteria. House construction, two full day/night cycles and fresh natural concrete delivery have passed; fresh Normal Nether completion and the later game stages remain unfinished.
 
 Available requests include `Jev come here`, `Jev follow me`, `Jev craft a chest`, `Jev make eight birch stairs`, `Jev get me a pumpkin`, and `Jev build a mansion out of cherry`. Item routing covers the full Minecraft 26.1 catalog. Acquisition expands the selected item's crafting, smelting, tool, and block-drop dependencies; catalog recognition does not mean every item is obtainable yet. Shears are planned for grass plants; intact grass blocks require an existing Silk Touch tool. Enchanting, farming and trading are not implemented.
 
@@ -12,7 +12,7 @@ The original development targets remain:
 - `get me 32 purple concrete`: gather ingredients, craft dye and powder, harden it in water, collect the concrete, and confirm pickup by the requesting player.
 - `find a way to the Nether`: use an existing portal or acquire a frame and ignition materials, build a portal, and verify entry into the Nether.
 
-These workflows are **under live testing**. A house has passed in a natural world. Gathering and delivering 32 concrete blocks, plus constructing and entering a Nether portal, have passed in a prepared resource world. Natural-world concrete and Nether runs remain incomplete. See `PROGRESS.md` for evidence and remaining work.
+These workflows are **under live testing**. The house and 32-block concrete delivery have passed from empty starts in natural Normal worlds. Portal construction and entry have passed controlled tests and interactive Peaceful play, but fresh Normal Nether acceptance remains incomplete. The later game stages are not yet implemented. See `PROGRESS.md` for evidence and remaining work.
 
 ## Join and watch locally
 

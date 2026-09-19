@@ -13,6 +13,7 @@ const { compatibilityPlugin } = require('./compatibility');
 const { requestedCommand, createCommandAccess } = require('./commands');
 const { classifyCommand } = require('./command-classifier');
 const { recordDeath, observeAliveInventory } = require('./recovery');
+const { statusMessage } = require('./status');
 
 function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness } = {}) {
   let ended = false, spawned = false, resolveClosed;
@@ -163,6 +164,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       return;
     }
     if (!ready) { bot.chat('Still loading the world; please repeat the request in a moment. Stop is available now.'); return; }
+    // A literal status request reads local state immediately, even while a
+    // previous natural-language request is waiting for a model response.
+    if (/^status( please)?[.!?]?$/i.test(normalized)) {
+      bot.chat(statusMessage(bot, active, store.read())); return;
+    }
     const revision = generation;
     pendingRequests++;
     pending = pending.then(async () => {
@@ -196,9 +202,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         return;
       }
       if (spec.kind === 'status') {
-        const g = active?.goal || store.read();
-        bot.chat(active?.idle ? `Between requests: ${g.lastError || g.survivalAction?.action || 'watching survival needs'}. Health ${bot.health}, food ${bot.food}.` :
-          g ? `${g.status}: ${g.request}. ${(g.recoveryAdvice?.active ? 'Trying a different approach' : g.lastError) || g.decisions?.at(-1)?.path?.join(' > ') || JSON.stringify(g.step || {})}` : 'No saved task.');
+        bot.chat(statusMessage(bot, active, store.read()));
         return;
       }
       if (spec.kind === 'other') {
