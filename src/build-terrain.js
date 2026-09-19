@@ -64,7 +64,7 @@ function planTerrainSite(bot, schematic, { naturalGround, replaceable }) {
     // whole island one block beyond an ordinary swimming exit.
     for (const p of schematic.blocks.filter(p => p.y === 0)) {
       const q = origin.offset(p.x, p.y, p.z);
-      if (bot.blockAt(q)?.name === 'water') fill.set(key(q), { ...q, material: p.material });
+      if (bot.blockAt(q)?.name === 'water') fill.set(key(q), { ...p, ...q });
     }
     // A short ordinary staircase joins the prepared apron to surrounding land.
     // It is permanent access, not disposable construction scaffolding.
@@ -77,7 +77,7 @@ function planTerrainSite(bot, schematic, { naturalGround, replaceable }) {
       if (top === c.ground || c.water !== undefined && top <= c.water) { reached = true; break; }
     }
     if (!valid || !reached || cuts.size + fill.size > PREP_LIMITS.changes) continue;
-    const blocks = schematic.blocks.map(p => ({ ...origin.offset(p.x, p.y, p.z), material: p.material }));
+    const blocks = schematic.blocks.map(p => ({ ...p, ...origin.offset(p.x, p.y, p.z) }));
     for (const p of fill.values()) if (!shape.has(key(p))) blocks.push(p);
     const emptyMap = new Map(schematic.empty.map(p => origin.offset(p.x, p.y, p.z))
       .filter(p => p.y > (deck.get(`${p.x},${p.z}`) ?? base)).map(p => [key(p), { ...p }]));

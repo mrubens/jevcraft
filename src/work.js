@@ -39,6 +39,7 @@ const { bundleStep } = require('./item-bundle');
 const { batchPlan, remainingOutputs } = require('./batch-plan');
 const { selectBundleBatch, batchOutputs } = require('./bundle-batch');
 const { remainingBuildBatch, materialCounts, createBuildBatch } = require('./build-batch');
+const { matchesBuildBlock, placementGoal } = require('./build-blocks');
 const { chooseConstructionWork, approachConstruction } = require('./construction-access');
 const { opportunisticMining } = require('./opportunistic-mining');
 const { friendlyProblem, completion } = require('./speech');
@@ -133,9 +134,10 @@ async function syncPlacementInventory(bot, task) {
   if (failure) throw failure;
 }
 
-async function place(bot, task, p, material, { face } = {}) {
+async function place(bot, task, p, material, { face, properties } = {}) {
   task.check();
-  if (bot.blockAt(p)?.name === material) return;
+  const cell = { material, properties };
+  if (matchesBuildBlock(bot.blockAt(p), cell)) return;
   if (!air(bot.blockAt(p)) && !['water', 'short_grass', 'tall_grass', 'fern', 'snow'].includes(bot.blockAt(p)?.name)) {
     throw new Error(`Placement obstructed by ${bot.blockAt(p)?.name} at ${p}`);
   }
@@ -145,14 +147,19 @@ async function place(bot, task, p, material, { face } = {}) {
   const item = bot.inventory.items().find(i => i.name === material);
   if (!item) throw new Blocked(`Need more ${material}`);
   await bot.equip(item, 'hand');
+  if (properties) {
+    face = placementGoal(bot, p, cell).getFaceAndRef(bot.entity.position.offset(0, 1.62, 0));
+    if (!face) throw new Error(`Cannot reach the requested ${material} orientation at ${p}`);
+  }
   let placementError = 'no adjacent solid anchor';
   for (const f of face ? [face.face] : faces) {
     const ref = bot.blockAt(p.plus(f));
     if (ref?.boundingBox !== 'block') continue;
     task.check();
     try {
-      await bot.placeBlock(ref, f.scaled(-1));
-      await waitFor(task, () => bot.blockAt(p)?.name === material ||
+      if (face?.to) await bot._placeBlockWithOptions(ref, f.scaled(-1), { delta: face.to.minus(ref.position), swingArm: 'right' });
+      else await bot.placeBlock(ref, f.scaled(-1));
+      await waitFor(task, () => matchesBuildBlock(bot.blockAt(p), cell) ||
         (material.endsWith('_concrete_powder') && bot.blockAt(p)?.name === material.replace('_powder', '')));
       if (bot.game.gameMode !== 'creative') await syncPlacementInventory(bot, task);
       return;
@@ -680,7 +687,7 @@ async function buildHouseStep(bot, task, goal, save) {
     await navigate(bot, task, new goals.GoalNear(home.x, home.y, home.z, 2));
     return false;
   }
-  const missing = blueprint.blocks.filter(p => bot.blockAt(pos(p))?.name !== p.material);
+  const missing = blueprint.blocks.filter(p => !matchesBuildBlock(bot.blockAt(pos(p)), p));
   const required = bot.game.gameMode === 'creative' ? Math.min(1, missing.length) : missing.length;
   if (missing.length && countOf(bot, goal.material) < required) {
     await acquireStep(bot, task, goal.material, required, goal, save);
@@ -924,7 +931,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     await prepareBuildTerrain(bot, task, goal, save); return false;
   }
   if (verifyHouse(bot, blueprint).ok && !schematicScaffolding(bot, goal).length) return true;
-  const missing = blueprint.blocks.filter(p => bot.blockAt(pos(p))?.name !== p.material);
+  const missing = blueprint.blocks.filter(p => !matchesBuildBlock(bot.blockAt(pos(p)), p));
   const obstructions = [...new Map([...blueprint.empty.filter(p => !air(bot.blockAt(pos(p)))), ...schematicScaffolding(bot, goal)]
     .map(p => [`${p.x},${p.y},${p.z}`, p])).values()];
   const changed = [...missing, ...obstructions].find(p => {
@@ -963,10 +970,11 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
   }
   if (!missing.length) goal.buildPhase = 'cleanup';
   const layer = Math.min(...missing.map(p => p.y));
-  const placements = (batch ? remainingBuildBatch(bot, batch) : []).filter(p => p.y === layer && countOf(bot, p.material) &&
+  const availablePlacements = (batch ? remainingBuildBatch(bot, batch) : []).filter(p => countOf(bot, p.material) &&
     (air(bot.blockAt(pos(p))) || bot.blockAt(pos(p))?.diggable) &&
     faces.some(f => bot.blockAt(pos(p).plus(f))?.boundingBox === 'block'))
-    .map(p => ({ position: p, operation: air(bot.blockAt(pos(p))) ? 'place' : 'dig', material: p.material }));
+    .map(p => ({ position: p, operation: air(bot.blockAt(pos(p))) ? 'place' : 'dig', material: p.material, properties: p.properties }));
+  const placements = availablePlacements.filter(p => p.position.y === layer);
   const clearing = obstructions.filter(p => {
     const block = bot.blockAt(pos(p));
     return block?.diggable && (!missing.length || !['dirt', 'cobblestone'].includes(block.name) || goal.buildOwned?.[`${p.x},${p.y},${p.z}`] !== (block.stateId ?? block.name));
@@ -974,6 +982,10 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     priority: !missing.length ? -p.y * 1000 - pos(p).distanceTo(pos(blueprint.entrance)) : 0 }));
   // Clear reachable space before trying a face hidden by vegetation/scaffolds.
   let work = await chooseConstructionWork(bot, task, goal, [...placements, ...clearing]);
+  // Upside-down trim can depend on a beam above it. Prefer low layers, but
+  // finish reachable supports elsewhere in this batch before declaring a
+  // lower piece inaccessible. The work-face check still enforces its state.
+  if (!work) work = await chooseConstructionWork(bot, task, goal, availablePlacements.filter(p => p.position.y !== layer));
   if (!work && missing.length && bot.game.gameMode !== 'creative' && countOf(bot, 'dirt') < 32) {
     await acquireStep(bot, task, 'dirt', 32, goal, save); return false;
   }
@@ -991,7 +1003,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
   if (!work) throw new Blocked('I cannot reach the next part of the building yet; the design and progress are saved');
   const p = pos(work.position);
   goal.step = { action: work.cleanup ? 'clear_schematic' : 'build_schematic', operation: work.operation,
-    position: { ...p }, material: work.material, remainingBlocks: missing.length }; save(); onStep(goal);
+    position: { ...p }, material: work.material, properties: work.properties, remainingBlocks: missing.length }; save(); onStep(goal);
   try { await executeConstructionWork(bot, task, goal, save, work); }
   finally { if (repairedAccess) { goal.buildPhase = 'cleanup'; save(); } }
   return verifyHouse(bot, blueprint).ok && !schematicScaffolding(bot, goal).length;
@@ -1002,7 +1014,7 @@ async function executeConstructionWork(bot, task, goal, save, work) {
   if (work.operation === 'dig' && Object.keys(bot.blockAt(p)?.harvestTools || {}).length && pickaxeTier(bot) < 1 && bot.game.gameMode !== 'creative') {
     await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return;
   }
-  const face = await approachConstruction(bot, task, goal, p, work.operation);
+  const face = await approachConstruction(bot, task, goal, p, work.operation, work);
   if (!canClearSchematicBlock(goal.blueprint, goal.buildOwned, bot.blockAt(p))) throw new Blocked(`Building site changed at ${p}`);
   if (work.operation === 'dig') {
     // dig() first updates the local world optimistically. Keep ownership until
@@ -1017,7 +1029,7 @@ async function executeConstructionWork(bot, task, goal, save, work) {
     } finally { bot._client.removeListener('block_change', changed); }
     delete goal.buildOwned?.[`${p.x},${p.y},${p.z}`];
     // Retain the original name: grass and water can change state naturally.
-  } else await place(bot, task, p, work.material, { face });
+  } else await place(bot, task, p, work.material, { face, properties: work.properties });
   save();
 }
 
@@ -1025,7 +1037,7 @@ async function prepareBuildTerrain(bot, task, goal, save) {
   task.check();
   const { blueprint } = goal, terrain = blueprint.terrain;
   const toClear = terrain.clear.filter(p => !air(bot.blockAt(pos(p))));
-  const toFill = terrain.fill.filter(p => bot.blockAt(pos(p))?.name !== p.material);
+  const toFill = terrain.fill.filter(p => !matchesBuildBlock(bot.blockAt(pos(p)), p));
   for (const p of [...toClear, ...toFill]) if (!canClearSchematicBlock(blueprint, goal.buildOwned, bot.blockAt(pos(p))))
     throw new Blocked(`The building site changed at ${pos(p)}; preserving the unexpected block`);
   if (!toClear.length && !toFill.length) {
@@ -1045,7 +1057,7 @@ async function prepareBuildTerrain(bot, task, goal, save) {
   const fillLayer = Math.min(...toFill.map(p => p.y));
   const filling = [...bottoms.values()].filter(p => p.y === fillLayer && countOf(bot, p.material) &&
     faces.some(f => bot.blockAt(pos(p).plus(f))?.boundingBox === 'block'))
-    .map(p => ({ position: p, material: p.material, operation: air(bot.blockAt(pos(p))) || bot.blockAt(pos(p)).name === 'water' ? 'place' : 'dig' }));
+    .map(p => ({ position: p, material: p.material, properties: p.properties, operation: air(bot.blockAt(pos(p))) || bot.blockAt(pos(p)).name === 'water' ? 'place' : 'dig' }));
   const cutting = [...tops.values()].map(p => ({ position: p, operation: 'dig' }));
   const work = await chooseConstructionWork(bot, task, goal, [...filling, ...cutting]);
   if (!work) {

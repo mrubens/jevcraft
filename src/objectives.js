@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { choice, noul } = require('./typesafe');
 const { Vec3 } = require('vec3');
+const { matchesBuildBlock } = require('./build-blocks');
 const { chatNames, parseAddress } = require('./chat-address');
 const { resolveItem } = require('./catalog');
 const { resolveItemBundle } = require('./item-bundle');
@@ -158,7 +159,7 @@ function houseBlueprint(origin, material = 'oak_planks') {
 
 function verifyHouse(bot, blueprint) {
   if (!blueprint) return { ok: false, reason: 'No building site selected' };
-  const missing = blueprint.blocks.filter(p => bot.blockAt(new Vec3(p.x, p.y, p.z))?.name !== p.material);
+  const missing = blueprint.blocks.filter(p => !matchesBuildBlock(bot.blockAt(new Vec3(p.x, p.y, p.z)), p));
   const obstructed = blueprint.empty.filter(p => {
     const b = bot.blockAt(new Vec3(p.x, p.y, p.z));
     return !b || !['air', 'cave_air', 'void_air'].includes(b.name);

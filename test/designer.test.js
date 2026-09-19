@@ -85,7 +85,17 @@ test('designer submits the requested model, catalog schema and observed world, w
   assert.equal(state.request, 'build cherry');
   assert.equal(state.world.inventory[0].name, 'oak_log');
   assert(state.world.terrain.length > 0);
+  assert(state.world.materials.practicalPalette.some(entry => entry.block === 'oak_stairs'));
+  assert(state.world.materials.practicalPalette.some(entry => entry.block === 'oak_slab'));
   assert(!JSON.stringify(result).includes('test-secret'));
+});
+
+test('the retained advisor pavilion uses stairs and slabs with explicit states', () => {
+  const source = require('./fixtures/oak-stair-pavilion.json');
+  const d = validateSchematic(source, registry);
+  assert.deepEqual(d.materials, { oak_planks: 86, oak_stairs: 40, oak_slab: 9 });
+  assert.equal(d.blocks.filter(p => p.properties).length, 49);
+  assert.deepEqual(d.source, source);
 });
 test('invalid draft is retained for a bounded repair with concrete feedback', async () => {
   const bad = draft(); bad.regions[0].to[0] = 50;

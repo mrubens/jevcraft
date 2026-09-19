@@ -3,6 +3,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, navigate } = require('./skills');
 const { checkAir } = require('./vitals');
+const { placementGoal, matchesBuildBlock } = require('./build-blocks');
 const key = p => `${p.x},${p.y},${p.z}`;
 const vec = p => new Vec3(p.x, p.y, p.z);
 const directions = [new Vec3(0, 1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, -1, 0)];
@@ -10,9 +11,9 @@ const directions = [new Vec3(0, 1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), ne
 // A work destination is a visible face within arm's reach, not an adjacent
 // walkable cell. In particular the worker can clear a high bank from below.
 class ConstructionGoal extends goals.Goal {
-  constructor(bot, point, operation) {
+  constructor(bot, point, operation, cell) {
     super(); this.bot = bot; this.pos = vec(point); this.operation = operation;
-    if (operation === 'place') this.placement = new goals.GoalPlaceBlock(this.pos, bot.world, { range: 4.25 });
+    if (operation === 'place') this.placement = placementGoal(bot, point, cell);
   }
   heuristic(node) { return Math.max(0, node.distanceTo(this.pos) - 3); }
   isEnd(node) {
@@ -21,7 +22,14 @@ class ConstructionGoal extends goals.Goal {
     // movement. Require a small standing area with a visible face, not one
     // mathematically perfect ray through a corner.
     return [[0, 0], [.18, .18], [-.18, -.18], [.18, -.18], [-.18, .18]]
-      .every(([dx, dz]) => this.reachable(center.offset(dx, 0, dz), .2));
+      .every(([dx, dz]) => {
+        const feet = center.offset(dx, 0, dz);
+        // Pathfinder indexes a slab by the air cell above it, while its final
+        // arrival check floors the actual feet inside that slab. Resolve both
+        // to the collision surface before testing eye height and visibility.
+        if (!require('./flight').canFly(this.bot)) feet.y = standingHeight(this.bot, feet);
+        return this.reachable(feet, .2);
+      });
   }
   reachable(feet, margin = 0) {
     const p = this.pos, cell = feet.floored();
@@ -40,11 +48,23 @@ class ConstructionGoal extends goals.Goal {
   }
 }
 
+function standingHeight(bot, point) {
+  const cell = point.floored(), surfaces = [];
+  for (const y of [cell.y - 1, cell.y]) {
+    const block = bot.blockAt(new Vec3(cell.x, y, cell.z));
+    for (const [x0, , z0, x1, y1, z1] of block?.shapes || []) {
+      if (point.x + .3 > cell.x + x0 && point.x - .3 < cell.x + x1 && point.z + .3 > cell.z + z0 && point.z - .3 < cell.z + z1)
+        surfaces.push(y + y1);
+    }
+  }
+  return surfaces.length ? Math.max(...surfaces) : point.y;
+}
+
 function constructionMovement(bot, goal) {
   const m = bot.pathfinder.movements;
   const previous = { canDig: m.canDig, scafoldingBlocks: m.scafoldingBlocks, exclusionAreasPlace: m.exclusionAreasPlace, countScaffoldingItems: m.countScaffoldingItems, getScaffoldingItem: m.getScaffoldingItem };
   const reserved = {};
-  for (const p of goal.blueprint?.blocks || []) if (bot.blockAt(vec(p))?.name !== p.material) reserved[p.material] = (reserved[p.material] || 0) + 1;
+  for (const p of goal.blueprint?.blocks || []) if (!matchesBuildBlock(bot.blockAt(vec(p)), p)) reserved[p.material] = (reserved[p.material] || 0) + 1;
   const spare = name => goal.buildPhase === 'cleanup' ? 0 : Math.max(0, (bot.inventory?.items() || []).filter(i => i.name === name).reduce((n, i) => n + i.count, 0) - (reserved[name] || 0));
   const planned = new Set((goal.blueprint?.blocks || []).map(key));
   // Access must not demolish the building or consume reserved materials. Use
@@ -84,7 +104,7 @@ async function chooseConstructionWork(bot, task, goal, candidates) {
   await steadyConstructionSwim(bot, task);
   const restore = constructionMovement(bot, goal);
   try {
-    const ordered = candidates.map(candidate => ({ ...candidate, destination: new ConstructionGoal(bot, candidate.position, candidate.operation) }))
+    const ordered = candidates.map(candidate => ({ ...candidate, destination: new ConstructionGoal(bot, candidate.position, candidate.operation, candidate) }))
       .sort((a, b) => (a.priority || 0) - (b.priority || 0) || vec(a.position).distanceTo(bot.entity.position) - vec(b.position).distanceTo(bot.entity.position));
     const orderedCleanup = ['cleanup', 'cleanup_access'].includes(goal.buildPhase);
     const ready = !orderedCleanup && ordered.find(c => c.destination.reachable(bot.entity.position));
@@ -101,18 +121,18 @@ async function chooseConstructionWork(bot, task, goal, candidates) {
   } finally { restore(); }
 }
 
-async function approachConstruction(bot, task, goal, point, operation) {
+async function approachConstruction(bot, task, goal, point, operation, cell) {
   await steadyConstructionSwim(bot, task);
   const restore = constructionMovement(bot, goal);
   try {
-    const destination = new ConstructionGoal(bot, point, operation);
+    const destination = new ConstructionGoal(bot, point, operation, cell);
     if (!destination.reachable(bot.entity.position)) await navigate(bot, task, destination, { timeoutMs: 20000, stallMs: 5000 });
     task.check();
     // Pathfinder accepts a small distance from a cell center. At a wall corner
     // those last centimeters can still hide the selected face. Align inside
     // the same standing cell, without starting a new path or altering blocks.
     if (!destination.reachable(bot.entity.position)) {
-      const cell = bot.entity.position.floored(), center = cell.offset(.5, 0, .5), deadline = Date.now() + 1500;
+      const cell = bot.entity.position.floored(), center = new Vec3(cell.x + .5, bot.entity.position.y, cell.z + .5), deadline = Date.now() + 1500;
       try {
         while (!destination.reachable(bot.entity.position) && Date.now() < deadline &&
           bot.entity.position.floored().equals(cell) && bot.entity.position.distanceTo(center) > .04) {

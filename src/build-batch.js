@@ -1,7 +1,9 @@
 'use strict';
 const { Vec3 } = require('vec3');
+const { matchesBuildBlock } = require('./build-blocks');
+const Heap = require('mineflayer-pathfinder/lib/heap');
 function remainingBuildBatch(bot, batch) {
-  return batch.cells.filter(p => bot.blockAt(new Vec3(p.x, p.y, p.z))?.name !== p.material);
+  return batch.cells.filter(p => !matchesBuildBlock(bot.blockAt(new Vec3(p.x, p.y, p.z)), p));
 }
 function materialCounts(cells) {
   return Object.entries(cells.reduce((counts, p) => { counts[p.material] = (counts[p.material] || 0) + 1; return counts; }, {}))
@@ -19,8 +21,49 @@ function planFitsInventory(registry, plan, stock, limit = 30) {
   }
   return true;
 }
-function createBuildBatch(bot, missing, makePlan, stock) {
+function orderBuildCells(bot, missing) {
   const sorted = [...missing].sort((a, b) => a.y - b.y || a.x - b.x || a.z - b.z);
+  if (!sorted.some(p => p.properties) || !bot.blockAt) return sorted;
+  const key = p => `${p.x},${p.y},${p.z}`, pending = new Map(sorted.map(p => [key(p), p])), ordered = [], planned = new Map();
+  const rank = new Map(sorted.map((p, i) => [key(p), i])), ready = new Heap(), queued = new Set();
+  const faces = [new Vec3(0, -1, 0), new Vec3(0, 1, 0), new Vec3(-1, 0, 0), new Vec3(1, 0, 0), new Vec3(0, 0, -1), new Vec3(0, 0, 1)];
+  // Put a usable anchor before its dependent trim even when the anchor is
+  // higher. Otherwise shrinking an inventory batch could exclude the beam
+  // needed to attach its last upside-down slab, leaving a permanent dead end.
+  const enqueue = cell => {
+    const k = key(cell);
+    if (queued.has(k)) return;
+    const half = cell.properties?.half || cell.properties?.type;
+    const supported = faces.some(face => {
+      if (half && face.y && face.y !== (half === 'bottom' ? -1 : 1)) return false;
+      const p = new Vec3(cell.x, cell.y, cell.z).plus(face), refKey = key(p);
+      if (pending.has(refKey)) return false;
+      const proposed = planned.get(refKey), observed = proposed ? null : bot.blockAt(p);
+      if (!proposed && observed?.boundingBox !== 'block') return false;
+      const material = proposed?.material || observed.name, properties = proposed?.properties || observed?.getProperties?.() || {};
+      if (material.endsWith('_slab') && properties.type !== 'double') {
+        if (face.y && material === cell.material) return false;
+        if (!face.y && half && properties.type !== half) return false;
+      }
+      return true;
+    });
+    if (supported) { ready.push({ cell, f: rank.get(k) }); queued.add(k); }
+  };
+  for (const cell of sorted) enqueue(cell);
+  while (!ready.isEmpty()) {
+    const { cell } = ready.pop(), k = key(cell);
+    pending.delete(k); planned.set(k, cell); ordered.push(cell);
+    // Only adjacent dependents can become ready. Repeated full scans can stall
+    // network ticks on a long connected roof whose anchors run in reverse order.
+    for (const face of faces) {
+      const next = pending.get(key(new Vec3(cell.x, cell.y, cell.z).plus(face)));
+      if (next) enqueue(next);
+    }
+  }
+  return [...ordered, ...pending.values()];
+}
+function createBuildBatch(bot, missing, makePlan, stock) {
+  const sorted = orderBuildCells(bot, missing);
   let count = Math.min(512, sorted.length);
   while (count > 0) {
     const cells = sorted.slice(0, count), outputs = materialCounts(cells);
@@ -31,4 +74,4 @@ function createBuildBatch(bot, missing, makePlan, stock) {
   }
   return null;
 }
-module.exports = { remainingBuildBatch, materialCounts, createBuildBatch, planFitsInventory };
+module.exports = { remainingBuildBatch, materialCounts, createBuildBatch, planFitsInventory, orderBuildCells };
