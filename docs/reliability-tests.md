@@ -727,3 +727,11 @@ until dawn, left and crafted its first wooden pickaxe for the retained
 Survival acceptance run. The prior failure remains in
 `mu8yf4yy-before-shelter-supplies`, with exact runtime hashes in the isolated
 world's `shelter-supplies-resume.json`.
+
+That resumed run then mined 17 cobblestone, retaining health 20, but failed the
+delivery at 23:21:42 UTC: no supported handover spot could be reached from its
+underground position near (2,49,23) to the receiver at (-4.5,71,9.5). The advisor's
+bounded retry did not resolve it. Its final goal is `blocked`, with the materials
+retained. The runner exited with FAIL and the isolated server was stopped. Thus
+the shelter regression is fixed, but the complete delivery and natural endurance
+milestones remain unproven; return routing is the next recorded blocker.
