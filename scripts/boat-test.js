@@ -49,6 +49,7 @@ async function ready(b) { await new Promise(resolve => b.once('spawn', resolve))
       'fill 206 78 -6 270 80 6 water', `give ${bot.username} oak_planks 8`, `give ${bot.username} crafting_table 1`,
       'kill @e[type=minecraft:oak_boat,x=200,y=78,z=-8,dx=80,dy=8,dz=16]',
       `tp ${bot.username} 203.5 81 .5`, `tp ${witness.username} 236.5 81 -7.5`];
+    if (process.env.BOAT_PLANTS === '1') commands.push('fill 206 78 -6 270 79 6 kelp_plant', 'fill 206 80 -6 270 80 6 kelp[age=7]');
     fs.writeFileSync(path.join(directory, 'setup.json'), JSON.stringify(commands, null, 2));
     log({ phase: 'setup', directory, username: bot.username, uuid: bot.player?.uuid, commands: path.join(directory, 'setup.json'), ready: path.join(directory, 'ready') });
     await waitFor(task, () => fs.existsSync(path.join(directory, 'ready')), 180000);

@@ -87,3 +87,22 @@ test('flat diagonals cannot skim a lava corner beside a dry destination', () => 
   movement.getMoveDiagonal({ x: 0, y: 70, z: 0, remainingBlocks: 0 }, new Vec3(1, 0, 1), neighbors);
   assert.equal(neighbors.length, 0);
 });
+
+test('aquatic plants support swimming, surface entry and shore exits without building', () => {
+  for (const name of ['kelp', 'kelp_plant', 'seagrass', 'tall_seagrass']) {
+    const bot = botFixture(), Block = require('prismarine-block')(bot.registry);
+    bot.blockAt = p => {
+      p = p.floored();
+      const material = p.y < 67 || p.x === 2 && p.y < 70 ? 'stone' : p.y < 70 ? name : 'air';
+      const b = Block.fromStateId(bot.registry.blocksByName[material].defaultState); b.position = p; return b;
+    };
+    const movement = configureMovements(bot); movement.canDig = false;
+    const node = { x: 0, y: 69, z: 0, remainingBlocks: 0 }, swimming = [], exiting = [];
+    movement.getMoveForward(node, new Vec3(1, 0, 0), swimming);
+    assert.equal(swimming.length, 1, name); assert.deepEqual(swimming[0].toPlace, []);
+    movement.getMoveJumpUp({ ...node, x: 1 }, new Vec3(1, 0, 0), exiting);
+    assert.equal(exiting.length, 1, `${name} shore`); assert.equal(exiting[0].y, 70);
+    const landing = movement.getLandingBlock({ ...node, y: 70 }, new Vec3(1, 0, 0));
+    assert.equal(landing?.position.y, 69, `${name} surface entry`);
+  }
+});

@@ -4,7 +4,7 @@ const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, navigate } = require('./skills');
 const { safeFromHostiles } = require('./danger');
 const { tunnelStep } = require('./tunneling');
-const { dryPassable } = require('./terrain');
+const { dryPassable, swimmableWater } = require('./terrain');
 
 // Inspect loaded columns, ignoring tree canopies but not terrain, roofs or
 // water. Two clear cave blocks are not evidence of a surface destination.
@@ -20,7 +20,7 @@ function surfaceObserver(bot) {
         const block = bot.blockAt(new Vec3(x, y, z));
         if (!block) { top = Infinity; break; }
         if (/_leaves$|_log$|_wood$/.test(block.name)) continue;
-        if (block.boundingBox === 'block' || ['water', 'lava', 'powder_snow'].includes(block.name)) { top = y; break; }
+        if (block.boundingBox === 'block' || swimmableWater(block) || ['lava', 'bubble_column', 'powder_snow'].includes(block.name)) { top = y; break; }
       }
       heights.set(key, top);
     }
@@ -39,7 +39,7 @@ function surfaceMovement(bot) {
   // downhill cave route. Every subsequent surface step remains constrained.
   const surfaceSwimming = p => {
     const feet = new Vec3(p.x, p.y, p.z), head = feet.offset(0, 1, 0);
-    return bot.blockAt(feet)?.name === 'water' && dryPassable(bot.blockAt(head)) && isSurface(head);
+    return swimmableWater(bot.blockAt(feet)) && dryPassable(bot.blockAt(head)) && isSurface(head);
   };
   // A river's upper water cell is a surface route when the head remains in
   // open air. Requiring the feet to be above the water stranded explorers on

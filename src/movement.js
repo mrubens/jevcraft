@@ -4,7 +4,7 @@ const { fixMiningMaterials, fixPathfinderResults } = require('./compatibility');
 const { hostileEntities, safeFromHostiles } = require('./danger');
 const { Vec3 } = require('vec3');
 const Move = require('mineflayer-pathfinder/lib/move');
-const { damagingTerrain } = require('./terrain');
+const { damagingTerrain, swimmingBlocks, swimmableWater } = require('./terrain');
 const { isDoor, doorAt, doorAllowsDirection } = require('./doors');
 
 class SurvivalMovements extends Movements {
@@ -48,14 +48,14 @@ class SurvivalMovements extends Movements {
     // upper water cell and proposes an underwater landing, which our surface
     // policy correctly rejects. Enter the actual surface instead.
     const edge = this.getBlock(node, direction.x, -1, direction.z);
-    if (edge.name === 'water' && edge.safe && this.getBlock(node, direction.x, 0, direction.z).safe &&
+    if (swimmableWater(edge) && edge.safe && this.getBlock(node, direction.x, 0, direction.z).safe &&
       !this.getBlock(node, direction.x, 0, direction.z).liquid) return edge;
     const landing = super.getLandingBlock(node, direction);
     return landing && node.y - landing.position.y <= this.maxDropDown ? landing : null;
   }
 
   getMoveJumpUp(node, direction, neighbors) {
-    if (this.getBlock(node, 0, 0, 0).name !== 'water') return super.getMoveJumpUp(node, direction, neighbors);
+    if (!swimmableWater(this.getBlock(node, 0, 0, 0))) return super.getMoveJumpUp(node, direction, neighbors);
     const bank = this.getBlock(node, direction.x, 0, direction.z);
     const head = this.getBlock(node, 0, 1, 0);
     const above = this.getBlock(node, direction.x, 1, direction.z);
@@ -99,6 +99,7 @@ function configureMovements(bot) {
   fixMiningMaterials(bot.registry);
   fixPathfinderResults();
   const movement = new SurvivalMovements(bot);
+  for (const name of swimmingBlocks) if (bot.registry.blocksByName[name]) movement.liquids.add(bot.registry.blocksByName[name].id);
   for (const block of bot.registry.blocksArray) if (isDoor(block.name)) movement.fences.add(block.id);
   for (const name of damagingTerrain) {
     const block = bot.registry.blocksByName[name];

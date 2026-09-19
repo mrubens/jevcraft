@@ -4,6 +4,7 @@ const { goals } = require('mineflayer-pathfinder');
 const { checkThreats, threats } = require('./danger');
 const { checkAir } = require('./vitals');
 const { surveyRoute } = require('./skills');
+const { swimmableWater } = require('./terrain');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const stock = bot => bot.inventory.items().reduce((out, item) => { out[item.name] = (out[item.name] || 0) + item.count; return out; }, {});
 const pos = p => new Vec3(p.x, p.y, p.z);
@@ -104,7 +105,7 @@ async function recoverItems(bot, task, recovery, save, navigate) {
         new goals.GoalNear(origin.x, origin.y, origin.z, 2);
       const route = await surveyRoute(bot, task, movement, destination, budget);
       const danger = threats(bot, 128);
-      const unsafe = route.path?.some(p => ['water', 'lava', 'fire', 'soul_fire', 'powder_snow'].includes(bot.blockAt(pos(p))?.name) ||
+      const unsafe = route.path?.some(p => swimmableWater(bot.blockAt(pos(p))) || ['bubble_column', 'lava', 'fire', 'soul_fire', 'powder_snow'].includes(bot.blockAt(pos(p))?.name) ||
         danger.some(t => t.entity.position.distanceTo(pos(p)) < 12));
       if (route.status === 'success' && !unsafe) { target = destination; selected = candidate; break; }
     }

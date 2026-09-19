@@ -2,7 +2,7 @@
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { choice } = require('./typesafe');
-const { dryPassable, damagingTerrain } = require('./terrain');
+const { dryPassable, damagingTerrain, swimmableWater, waterLevel } = require('./terrain');
 const { safeFromHostiles, immediateThreat } = require('./danger');
 const { navigate, surveyRoute, countOf } = require('./skills');
 
@@ -23,7 +23,7 @@ function boatWater(bot, position, waterY) {
   for (let x = Math.floor(position.x - .69); x <= Math.floor(position.x + .69); x++) {
     for (let z = Math.floor(position.z - .69); z <= Math.floor(position.z + .69); z++) {
       const water = bot.blockAt(new Vec3(x, waterY, z));
-      if (water?.name !== 'water' || Number(water.getProperties?.().level ?? 0) !== 0 ||
+      if (!swimmableWater(water) || waterLevel(water) !== 0 ||
         !dryPassable(bot.blockAt(new Vec3(x, waterY + 1, z))) || !dryPassable(bot.blockAt(new Vec3(x, waterY + 2, z))) ||
         damagingTerrain.has(bot.blockAt(new Vec3(x, waterY - 1, z))?.name)) return false;
     }
@@ -42,7 +42,7 @@ function dockNear(bot, water, waterY) {
     for (let i = 1; i < distance; i++) {
       const p = water.offset(dx * i, 0, dz * i);
       const b = bot.blockAt(p);
-      if (b?.name !== 'water' || Number(b.getProperties?.().level ?? 0) !== 0 || !dryPassable(bot.blockAt(p.offset(0, 1, 0)))) clear = false;
+      if (!swimmableWater(b) || waterLevel(b) !== 0 || !dryPassable(bot.blockAt(p.offset(0, 1, 0)))) clear = false;
     }
     if (clear) return stand;
   }
@@ -166,7 +166,7 @@ async function floatAfterBoat(bot, task, waterY) {
     while (bot.entity.position.y < waterY + .15) {
       task.check();
       const p = bot.entity.position;
-      if (Date.now() >= deadline || bot.blockAt(new Vec3(p.x, waterY, p.z))?.name !== 'water' ||
+      if (Date.now() >= deadline || !swimmableWater(bot.blockAt(new Vec3(p.x, waterY, p.z))) ||
         !dryPassable(bot.blockAt(new Vec3(p.x, waterY + 1, p.z)))) throw new Error('Cannot swim safely to the surface after leaving the boat');
       bot.setControlState('jump', true); await sleep(50);
     }

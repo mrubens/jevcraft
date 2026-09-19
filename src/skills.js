@@ -93,7 +93,7 @@ async function recoverNavigation(bot, task, deadline, stopWhen) {
   const cell = start.floored();
   const floor = bot.blockAt?.(cell.offset(0, -1, 0));
   const fullFloor = floor?.shapes?.some(s => s.length === 6 && s.every((v, i) => v === [0, 0, 0, 1, 1, 1][i]));
-  const swimming = bot.entity.isInWater && ['water', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant'].includes(bot.blockAt?.(cell)?.name);
+  const swimming = bot.entity.isInWater && require('./terrain').swimmableWater(bot.blockAt?.(cell));
   const clear = p => { const b = bot.blockAt?.(p); return b && b.shapes?.length === 0 &&
     !['lava', 'fire', 'soul_fire', 'powder_snow', 'sweet_berry_bush', 'cobweb'].includes(b.name) && (swimming || b.name !== 'water'); };
   if (bot.entity.isInLava || (!swimming && (start.y - cell.y > 0.05 || !fullFloor ||

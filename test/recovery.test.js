@@ -69,13 +69,14 @@ test('retrieval counts actual pickup and restores ordinary movement capabilities
 });
 
 test('unsafe, unavailable or missing drops replan from actual inventory without a dangerous trip', async () => {
-  for (const kind of ['dimension', 'unloaded', 'missing', 'route', 'hazard', 'expired']) {
+  for (const kind of ['dimension', 'unloaded', 'missing', 'route', 'hazard', 'kelp', 'expired']) {
     const { bot, recovery } = fixture();
     if (kind === 'dimension') bot.game.dimension = 'the_nether';
     if (kind === 'unloaded') bot.blockAt = () => null;
     if (kind === 'missing') bot.entity.position = new Vec3(5.5, 64, 0.5);
     if (kind === 'route') bot.pathfinder.getPathTo = () => ({ status: 'noPath' });
     if (kind === 'hazard') bot.blockAt = () => ({ name: 'lava' });
+    if (kind === 'kelp') bot.blockAt = () => ({ name: 'kelp' });
     if (kind === 'expired') recovery.at = new Date(Date.now() - 301000).toISOString();
     const original = { ...bot.pathfinder.movements };
     await recoverItems(bot, new Task('test', kind), recovery, () => {}, async () => { throw new Error('must not navigate'); });

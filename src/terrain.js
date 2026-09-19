@@ -1,6 +1,12 @@
 'use strict';
 const { Vec3 } = require('vec3');
 
+// These plants contain source water despite having their own block IDs. Keep
+// them distinct from waterlogged solids and bubble columns with vertical flow.
+const swimmingBlocks = Object.freeze(['water', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant']);
+const swimmableWater = block => !!block && swimmingBlocks.includes(block.name);
+const waterLevel = block => block?.name === 'water' ? Number(block.getProperties?.().level ?? block.metadata ?? 0) : 0;
+
 const travelHazards = new Set(['water', 'lava', 'bubble_column', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant',
   'fire', 'soul_fire', 'powder_snow', 'sweet_berry_bush', 'cobweb']);
 const damagingTerrain = new Set(['lava', 'fire', 'soul_fire', 'magma_block', 'cactus', 'campfire', 'soul_campfire',
@@ -31,4 +37,4 @@ function supportCell(point) {
   return new Vec3(Math.floor(point.x), Math.ceil(point.y) - 1, Math.floor(point.z));
 }
 
-module.exports = { dryPassable, dryBodySpace, supportCell, damagingTerrain };
+module.exports = { dryPassable, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

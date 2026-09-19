@@ -1,5 +1,6 @@
 'use strict';
 const { Vec3 } = require('vec3');
+const { swimmableWater, waterLevel } = require('./terrain');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const unsafeFoods = new Set(['pufferfish', 'poisonous_potato', 'spider_eye', 'rotten_flesh', 'chicken', 'suspicious_stew', 'chorus_fruit']);
 
@@ -13,12 +14,11 @@ function headSubmerged(bot) {
   const eye = bot.entity?.position?.offset(0, bot.entity.eyeHeight || 1.62, 0);
   if (!eye) return false;
   const head = eye.floored(), block = bot.blockAt?.(head);
-  const water = b => b && ['water', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant'].includes(b.name);
-  if (!water(block)) return false;
-  const level = Number(block.getProperties?.().level ?? block.metadata ?? 0);
+  if (!swimmableWater(block)) return false;
+  const level = waterLevel(block);
   // Flowing water only fills part of a block. Its name alone cannot establish
   // that the player's eyes are below the fluid surface.
-  const height = water(bot.blockAt(head.offset(0, 1, 0))) ? 1 : (8 - (level >= 8 ? 0 : level)) / 9;
+  const height = swimmableWater(bot.blockAt(head.offset(0, 1, 0))) ? 1 : (8 - (level >= 8 ? 0 : level)) / 9;
   return eye.y < head.y + height;
 }
 
@@ -42,9 +42,9 @@ function airRoute(bot) {
   const start = bot.entity.position.floored();
   const passable = p => {
     const b = bot.blockAt(p);
-    return b && ['water', 'air', 'cave_air', 'void_air', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant'].includes(b.name);
+    return swimmableWater(b) || b && ['air', 'cave_air', 'void_air'].includes(b.name);
   };
-  const water = p => ['water', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant'].includes(bot.blockAt(p)?.name);
+  const water = p => swimmableWater(bot.blockAt(p));
   const queue = [{ p: start, path: [] }];
   const seen = new Set([`${start}`]);
   const directions = [new Vec3(0, 1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];

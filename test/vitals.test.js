@@ -90,6 +90,15 @@ test('breathable space above flowing water is not mistaken for submersion', () =
   assert.equal(headSubmerged(bot), true, 'A falling water column with water above fills the whole eye block');
 });
 
+test('kelp age metadata does not lower the water surface around a submerged head', () => {
+  const registry = require('minecraft-data')('26.1'), Block = require('prismarine-block')(registry);
+  const kelp = Block.fromProperties(registry.blocksByName.kelp.id, { age: 7 }, 0);
+  const bot = { entity: { position: new Vec3(.5, 59.1, .5) }, blockAt: p => p.y === 60 ? kelp : { name: 'air' } };
+  assert(headSubmerged(bot));
+  bot.entity.position.y = 59.3;
+  assert(!headSubmerged(bot), 'eyes above the source-water surface can breathe');
+});
+
 test('carried food restores the regeneration threshold for moderate injuries', async () => {
   let eaten = 0;
   const bot = { food: 17, health: 13.6, entity: {},

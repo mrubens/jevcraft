@@ -57,6 +57,18 @@ test('surface travel permits river swimming with open headroom while rejecting d
   assert(!bot.pathfinder.movements.allowedPosition(new Vec3(21, 63, 0)), 'Retains inherited restrictions');
   policy.restore();
 });
+
+test('kelp and seagrass mark the water surface and never masquerade as dry underwater routes', () => {
+  for (const name of ['kelp', 'kelp_plant', 'seagrass', 'tall_seagrass']) {
+    const { bot } = world();
+    bot.blockAt = p => ({ name: p.y < 61 ? 'stone' : p.y < 64 ? name : 'air', boundingBox: p.y < 61 ? 'block' : 'empty' });
+    const check = surfaceObserver(bot), policy = surfaceMovement(bot);
+    assert(!check(new Vec3(10, 62, 0)), name);
+    assert(policy.allowed(new Vec3(10, 63, 0)), `${name} surface`);
+    assert(!policy.allowed(new Vec3(10, 62, 0)), `${name} submerged`);
+    policy.restore();
+  }
+});
 test('building progress observes placement and clearing with unchanged Creative inventory and position', () => {
   const { bot, blocks } = world();
   const p = new Vec3(1, 64, 1);

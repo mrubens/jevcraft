@@ -106,3 +106,42 @@ On 2026-09-19, `recovery-routes-mu8podjh` passed: Jev bypassed the closer trappe
 finished the bounded attempt with health 20. An independent client observed the
 pickup. The trapped logs remained intact, with no digging or block placement
 and no additional deaths.
+
+## Swimming through aquatic plants
+
+Kelp, kelp stems, seagrass, and tall seagrass contain water even though they have
+different block IDs. Navigation now recognizes that water for swimming costs,
+surface entry, shore exits, and corner clearance. Surface exploration keeps the
+swimmer's head in open air instead of treating a kelp column as dry space above
+the lake bed. Death-drop retrieval still rejects water, including planted water.
+
+The same water checks allow boats to use level source water containing plants,
+while retaining clearance and current restrictions. Waterlogged solid blocks
+and bubble columns are not accepted as ordinary open water. Kelp age metadata
+is no longer mistaken for fluid level when checking whether Jev's head is
+submerged. Routing, collision geometry, and fluid depth stay in code; the
+existing Jev travel classifier still decides whether to use a boat.
+
+`test/movement.test.js`, `test/surface.test.js`, `test/vitals.test.js`,
+`test/boats.test.js`, and `test/recovery.test.js` cover these distinctions.
+For isolated gameplay tests:
+
+```sh
+MC_PORT=<isolated-port> node scripts/planted-water-test.js
+MC_PORT=<isolated-port> BOAT_PLANTS=1 node scripts/boat-test.js
+```
+
+Apply each artifact directory's `setup.json` in the isolated server console,
+then create its `ready` file. Both scripts reject ports 25565 and 25577. The
+swimming fixture crosses a shallow seagrass pool, a two-block-deep tall-seagrass
+pool, and a three-block-deep kelp pool. The boat fixture adds kelp across its
+existing lake, then crafts, launches, paddles, dismounts, retrieves the boat,
+and climbs onto the far bank. Both use an independent observing client.
+
+On 2026-09-19, `planted-water-mu8pz9bq` passed all three swimming crossings with
+health and oxygen at 20, no digging, no deaths, and all 64 carried scaffolding
+blocks unused. `boat-mu8pzqix` passed the planted-lake crossing with 99 independent
+mounted observations, no server movement corrections, health 20, and the boat
+recovered for reuse. Live Jev decisions selected a boat for the lake and honored
+an explicit request to swim. These are controlled mechanics fixtures with
+granted terrain and supplies, not natural Survival acceptance.

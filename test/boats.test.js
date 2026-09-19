@@ -29,6 +29,17 @@ test('survey finds a long crossing with safe shores but rejects a puddle and dam
   assert.equal(await surveyBoatTrip(lake(5), task, new Vec3(48.5, 65, .5)), null);
   bot.health = 8; assert.equal(await surveyBoatTrip(bot, task, new Vec3(48.5, 65, .5)), null);
 });
+
+test('boats cross source water containing aquatic plants but never waterlogged solids', () => {
+  for (const name of ['kelp', 'kelp_plant', 'seagrass', 'tall_seagrass', 'oak_slab']) {
+    const bot = lake(), read = bot.blockAt;
+    bot.blockAt = p => {
+      const block = read(p);
+      return block.name === 'water' ? { ...block, name, metadata: 7, getProperties: () => ({ age: 7, waterlogged: true }) } : block;
+    };
+    assert.equal(boatWater(bot, new Vec3(5.5, 64, .5), 64), name !== 'oak_slab', name);
+  }
+});
 test('water physics accelerates and coasts within ordinary boat speed', () => {
   let s = { x: 0, y: 64.64, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, rotation: 0 };
   for (let i = 0; i < 200; i++) {
