@@ -629,3 +629,37 @@ NOT a successful build; next terrain work must preserve/rebuild access during
 cut/fill and cover uneven sand slopes, not merely the controlled hill/island cases.
 Do not automatically replace or resume the player's request. Winning goal remains
 ACTIVE/incomplete.
+
+## 2026-09-19 14:28 UTC — Resume winning work and recheck moving bow targets
+
+The preceding user-update turn made concrete progress: shared batching/terrain
+work was tested, deployed and pushed as fd3fa71. The live mansion subsequently
+blocked on uneven sand access; that unresolved companion limitation is retained
+above. The interactive bot/world is left unchanged during winning diagnostics.
+
+Reproduced a separate bow defect: a target moving during the final camera turn
+still received a shot aimed at its old position; a new obstacle during the turn
+was likewise never raycast before release. The regression failed against the
+old code. The shooter now resolves a fresh trajectory after both rotation axes
+arrive, refines the aim if needed under one shared two-second deadline, and
+abandons the draw if the path is blocked. Existing cancellation uses a slot
+change before releasing use, so abandoning does not fire. Shot evidence records
+the observed target position/time and number of aim adjustments at release.
+Focused9/9 and full349/349 tests PASS (/tmp/jev-moving-aim-after.log and
+/tmp/jev-moving-aim-full.log). Actual moving-target fight validation is pending.
+
+Controlled End O is RUNNING: end-fight-mu8hanxv, server17669 on25579, runner23418,
+log /tmp/jev-end-o2.log, Observatory3046, frozen runtime
+.test-fixture/dragon-20260919-o/runtime at fd3fa71. It tests the prior transmitted
+pitch guard and dry-landing recovery together; it does NOT contain this turn's
+new aim refinement. At14:27:45UTC health20/nodeaths,14shots,6confirmed crystal
+explosions, dragonhealth190. The result is not terminal and not acceptance.
+Recorded grants, End teleport and disabled natural mob spawning are setup only.
+The first client end-fight-mu8h8rm3 was terminated BEFORE_SETUP because the
+server console had closed stdin; no fight or grants occurred. Its classification
+and server log remain. Server was restarted with a usable PTY; retained world
+and fresh client are explicitly a controlled trial. A mistaken working-directory
+server launch exited at missing EULA before loading a world/listening; its files
+are archived in this fixture's aborted-wrong-cwd directory. No player server was
+restarted. Revalidate runner23418 before deciding it finished or starting another
+heavy test. Full fresh Normal Nether/winning acceptance remains incomplete.

@@ -126,3 +126,37 @@ test('transmitted aim comparison handles circular yaw and sensitivity rounding w
   assert.equal(sentAimMatches({ yaw: -80, pitch: -45 }, solution), false);
   assert.equal(sentAimMatches(undefined, solution), false);
 });
+
+test('bow release rechecks the moving target and clear trajectory after the turn finishes', async () => {
+  for (const change of ['target_moves', 'path_blocked']) {
+    const { bot, target, state } = fixture();
+    target.name = 'ender_dragon';
+    let turns = 0;
+    bot.look = (yaw, pitch) => new Promise(resolve => setTimeout(() => {
+      bot.lastSentRotation = { yaw: (Math.PI - yaw) * 180 / Math.PI, pitch: -pitch * 180 / Math.PI };
+      if (++turns === 1) {
+        if (change === 'target_moves') target.position = target.position.offset(0, 0, 8);
+        else bot.world.raycast = () => ({ position: new Vec3(10, 68, 0) });
+      }
+      resolve();
+    }, 50));
+    const release = bot.deactivateItem;
+    bot.deactivateItem = () => {
+      if (!state().abandoned) {
+        const fresh = aimAtEntity(bot, target);
+        assert(fresh && sentAimMatches(bot.lastSentRotation, fresh), 'Release must use the target and path observed after turning');
+      }
+      release();
+    };
+    const attempt = shootBow(bot, new Task('moving aim'), target, { chargeMs: 0 });
+    if (change === 'path_blocked') {
+      await assert.rejects(attempt, /obstructed/);
+      assert.equal(state().releases, 0);
+      assert.equal(state().abandoned, true);
+    } else {
+      await attempt;
+      assert(turns >= 2);
+      assert.equal(state().releases, 1);
+    }
+  }
+});

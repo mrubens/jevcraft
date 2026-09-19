@@ -107,18 +107,26 @@ async function shootBow(bot, task, target, { guard = () => {}, velocity = new Ve
     const drawUntil = Date.now() + chargeMs;
     while (Date.now() < drawUntil) { check(); await sleep(50); }
     check();
-    const solution = aimAtEntity(bot, target, motion());
-    if (!solution) throw new Error('Arrow trajectory became obstructed while drawing');
     // Neither forced look nor the ordinary yaw-only completion promise
     // proves that the intended pitch was sent. Wait for the actual movement
-    // packet to carry both angles before releasing the arrow.
-    let aimed = false, aimError;
-    bot.look(solution.yaw, solution.pitch, false).then(() => { aimed = true; }, err => { aimError = err; aimed = true; });
+    // packet to carry both angles, then solve again: the target can move
+    // during the turn. All refinements share one bounded aiming deadline.
     const aimDeadline = Date.now() + 2000;
-    while ((!aimed || !sentAimMatches(bot.lastSentRotation, solution)) && !aimError && Date.now() < aimDeadline) { check(); await sleep(25); }
-    check(); if (aimError) throw aimError;
-    if (!aimed || !sentAimMatches(bot.lastSentRotation, solution)) throw new Error('Bow yaw and pitch were not sent before their deadline');
+    let solution, aimAdjustments = 0;
+    while (Date.now() < aimDeadline) {
+      check();
+      const fresh = aimAtEntity(bot, target, motion());
+      if (!fresh) throw new Error('Arrow trajectory became obstructed before release');
+      if (sentAimMatches(bot.lastSentRotation, fresh)) { solution = fresh; break; }
+      let aimed = false, aimError;
+      aimAdjustments++;
+      bot.look(fresh.yaw, fresh.pitch, false).then(() => { aimed = true; }, err => { aimError = err; aimed = true; });
+      while ((!aimed || !sentAimMatches(bot.lastSentRotation, fresh)) && !aimError && Date.now() < aimDeadline) { check(); await sleep(25); }
+      check(); if (aimError) throw aimError;
+    }
+    if (!solution) throw new Error('Bow yaw and pitch did not settle on the current target before their deadline');
     const before = countOf(bot, 'arrow'), sentRotation = { ...bot.lastSentRotation };
+    const targetAtRelease = { position: { ...target.position }, at: Date.now(), aimAdjustments };
     released = true; bot.deactivateItem(); drawing = false;
     const deadline = Date.now() + confirmationMs, expected = bow.enchants?.some(e => e.name === 'infinity') ? 0 : 1;
     while (Date.now() < deadline) {
@@ -128,7 +136,7 @@ async function shootBow(bot, task, target, { guard = () => {}, velocity = new Ve
       if (arrow && before - countOf(bot, 'arrow') === expected) return {
         at: Date.now(), targetId: target.id, target: target.name, arrowId: arrow.id, consumed: expected,
         origin: { ...solution.origin }, aim: { ...solution.target }, ticks: solution.ticks, velocity: { ...arrow.velocity },
-        sentRotation, intendedVelocity: { ...solution.velocity },
+        sentRotation, intendedVelocity: { ...solution.velocity }, targetAtRelease,
       };
       await sleep(50);
     }
