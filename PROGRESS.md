@@ -278,6 +278,12 @@ Food, idle survival, and player world (2026-09-18, 19:29 UTC):
 - Resumed cave diagnostic `mu7oimo4` FAILED again (runner 61068, exit 1), after Fable's surface action climbed twelve safe steps from Y-47 to Y-35 and hit its old uniform twelve-step limit. The next shelter retries could not find a supported room there. This did not validate the deposit approach: shelter preparation interrupted it. Evidence and exact source are preserved in `failed-before-recovery-budgets/` and `source-recovery-budgets/`.
 - Recovery now budgets surface returns for up to 192 inspected steps/ten minutes, acquisition from dependency counts up to 96 steps/two minutes, and full plans for fifteen minutes. Other actions retain twelve steps/two minutes; model-call limits, cancellation, changed-state checks and immediate safety remain. The full suite passed all 192 tests, including deep footing, continued deposit approach, a 114-step ascent across checkpoint serialization, nonterminating-action limits and final supply verification. Runner 15332 is testing the saved natural cave failure with these changes; it remains a resumed diagnostic.
 
+### Food route surveys (2026-09-19, 04:09 UTC)
+
+- Passive-food selection still used the pathfinder's first time slice, treating a partial result as unreachable. It now continues bounded searches for up to eight nearby animals, exposes at most three completed surface routes, and rechecks target presence/hostile proximity. Movement restrictions are restored after errors and cancellation. Regression tests reproduce a partial-to-success path, reject actual noPath and underground routes, and enforce the candidate bound and cancellation. All 194 unit tests pass.
+- This is a code-level candidate omission fix; the ongoing fresh concrete trial has independently reached a food/cooking workflow on its original runtime. That live progress must not be attributed to this undeployed change. Fresh acceptance processes remain uninterrupted.
+- Fresh Normal Nether `mu7sfld6` now has a compact natural-tool-replacement evidence file: the initial iron pickaxe, its disappearance after wear, newly gathered/smelted ingredients, a replacement at 250 durability, and subsequent wear are selected from the original event stream. `natural-tool-replacement-evidence.json` records zero-based event indices and original events. It does not claim final Nether completion.
+
 Still required:
 
 1. Complete and independently verify natural-world concrete and Nether trials. House passed in a natural world; concrete and Nether passed in the controlled fixture.

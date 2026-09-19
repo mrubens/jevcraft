@@ -265,7 +265,7 @@ class Survival {
     };
     if (needsShelter) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.', run: () => this.refugeStep(task, goal, save) };
     if (needsFood && !(night(bot) && needsShelter)) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
-      children: forageChoices(bot, task, goal, save, this.actions, this.state) };
+      children: await forageChoices(bot, task, goal, save, this.actions, this.state) };
     if (!this.client) {
       if (needsShelter) await tree.secure_shelter.run();
       else await Object.values(tree.obtain_food.children)[0].run();

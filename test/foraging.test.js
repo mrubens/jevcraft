@@ -28,7 +28,7 @@ test('raw chicken is carried ingredient evidence, never edible reserve', () => {
 test('carried raw chicken exposes catalog cooking and plans real furnace, tool and fuel dependencies', async () => {
   const bot = fixture([{ name: 'chicken', count: 3 }]);
   let plan;
-  const choices = forageChoices(bot, new Task('test', 'food'), {}, () => {}, {
+  const choices = await forageChoices(bot, new Task('test', 'food'), {}, () => {}, {
     acquireStep: async (b, t, output, quantity) => {
       assert.equal(output, 'cooked_chicken'); assert.equal(quantity, 2);
       plan = planCatalog(registry, output, quantity, { chicken: 3 }, { nearby: ['oak_log', 'stone'] });
@@ -51,7 +51,7 @@ test('chicken hunting requires actual ingredient pickup and does not claim edibl
     const chicken = { id: 1, name: 'chicken', height: 0.7, position: new Vec3(2, 64, 0.5), isValid: true };
     bot.entities[1] = chicken;
     bot.attack = () => { chicken.isValid = false; if (pickedUp) items.push({ name: 'chicken', count: 1 }); };
-    assert(forageChoices(bot, new Task('test', 'choices'), goal, () => {}, {}, {}).hunt_1);
+    assert((await forageChoices(bot, new Task('test', 'choices'), goal, () => {}, {}, {})).hunt_1);
     const attempt = hunt(bot, new Task('test', 'hunt'), chicken, {}, goal, () => {});
     if (pickedUp) {
       await attempt;
@@ -60,4 +60,41 @@ test('chicken hunting requires actual ingredient pickup and does not claim edibl
       assert.equal(goal.survivalAction.foodPointsGained, 0);
     } else await assert.rejects(attempt, /No food ingredient pickup confirmed/);
   }
+});
+
+test('food surveys continue partial paths and keep only completed surface routes', async () => {
+  const bot = fixture(), task = new Task('test', 'survey food');
+  for (let id = 1; id <= 3; id++) bot.entities[id] = { id, name: 'sheep', isValid: true, position: new Vec3(id * 3, 64, 0.5) };
+  let surveyed = 0;
+  bot.pathfinder.getPathTo = () => { throw new Error('First-slice paths must not decide food reachability'); };
+  bot.pathfinder.getPathFromTo = function* () {
+    const n = ++surveyed;
+    yield { result: { status: 'partial', path: [] } };
+    yield { result: n === 1 ? { status: 'noPath', path: [] } :
+      { status: 'success', path: [new Vec3(n * 3, n === 2 ? 64 : 60, 0.5)] } };
+  };
+  const choices = await forageChoices(bot, task, {}, () => {}, {}, {});
+  assert(choices.hunt_2, 'The completed surface route exposes the animal to Jev');
+  assert(!choices.hunt_1, 'A completed noPath result remains unavailable');
+  assert(!choices.hunt_3, 'A route through underground terrain remains unavailable');
+  assert(!choices.search_food);
+  assert.equal(bot.pathfinder.movements.allowedPosition, undefined);
+});
+
+test('food route surveys are bounded and cancellation restores movement policy', async () => {
+  const bot = fixture(), task = new Task('test', 'survey food');
+  for (let id = 1; id <= 10; id++) bot.entities[id] = { id, name: 'cow', isValid: true, position: new Vec3(id * 2, 64, 0.5) };
+  let surveyed = 0;
+  bot.pathfinder.getPathFromTo = function* () { surveyed++; yield { result: { status: 'noPath', path: [] } }; };
+  assert((await forageChoices(bot, task, {}, () => {}, {}, {})).search_food);
+  assert.equal(surveyed, 8);
+
+  const allowed = () => true;
+  bot.pathfinder.movements.allowedPosition = allowed;
+  bot.pathfinder.getPathFromTo = function* () {
+    yield { result: { status: 'partial', path: [] } };
+    task.cancel(); yield { result: { status: 'success', path: [] } };
+  };
+  await assert.rejects(forageChoices(bot, task, {}, () => {}, {}, {}), { name: 'Cancelled' });
+  assert.equal(bot.pathfinder.movements.allowedPosition, allowed);
 });

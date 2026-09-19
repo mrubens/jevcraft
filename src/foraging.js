@@ -4,6 +4,7 @@ const { safeFood, checkAir } = require('./vitals');
 const { threats, checkThreats } = require('./danger');
 const { surfaceMovement } = require('./surface');
 const { knowledge } = require('./knowledge');
+const { surveyRoute } = require('./skills');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Raw chicken is an ingredient, never edible reserve. Its cooking dependency
 // comes from the same server recipe catalog used for requested items.
@@ -14,16 +15,26 @@ function foodSupply(bot) {
     .reduce((sum, i) => sum + i.count * bot.registry.foodsByName[i.name].foodPoints, 0);
 }
 
-function candidates(bot, state) {
+async function candidates(bot, task, state) {
   const surface = surfaceMovement(bot);
   try {
     const danger = threats(bot);
-    return Object.values(bot.entities).filter(e => prey[e.name] && e.isValid !== false &&
+    const observed = Object.values(bot.entities).filter(e => prey[e.name] && e.isValid !== false &&
       surface.isSurface(e.position) &&
       e.position.distanceTo(bot.entity.position) < 32 && !(state.failedPrey?.[e.uuid || e.id] > Date.now() - 120000) &&
       danger.every(t => t.entity.position.distanceTo(e.position) > 20))
-      .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))
-      .filter(e => bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalFollow(e, 2), 150).status === 'success').slice(0, 3);
+      .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
+    const reachable = [];
+    // A partial path is an unfinished search, not an unreachable animal.
+    // Bound the whole survey by checking at most eight nearby candidates.
+    for (const target of observed.slice(0, 8)) {
+      const route = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalFollow(target, 2), 500);
+      if (route.status === 'success' && bot.entities[target.id] === target && target.isValid !== false &&
+        surface.isSurface(target.position) && threats(bot).every(t => t.entity.position.distanceTo(target.position) > 20) &&
+        (route.path || []).every(p => surface.allowed(p))) reachable.push(target);
+      if (reachable.length === 3) break;
+    }
+    return reachable;
   } finally { surface.restore(); }
 }
 
@@ -75,7 +86,7 @@ async function hunt(bot, task, target, actions, goal, save) {
   } finally { surface.restore(); }
 }
 
-function forageChoices(bot, task, goal, save, actions, state) {
+async function forageChoices(bot, task, goal, save, actions, state) {
   const choices = {};
   for (const [output, inputs] of Object.entries(knowledge(bot.registry).smelting)) {
     if (!safeFood(bot, { name: output })) continue;
@@ -93,7 +104,7 @@ function forageChoices(bot, task, goal, save, actions, state) {
       finally { task.interruptCheck = undefined; }
     } };
   }
-  for (const target of candidates(bot, state)) {
+  for (const target of await candidates(bot, task, state)) {
     const observed = target.position.clone();
     choices[`hunt_${target.id}`] = { description: { action: 'hunt a passive animal and verify ingredient pickup; chicken must be cooked before eating',
       animal: target.name, position: { ...target.position.floored() }, distance: Math.round(target.position.distanceTo(bot.entity.position)),
