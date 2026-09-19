@@ -24,15 +24,20 @@ function observedPortal(bot) {
       const center = p.offset(-offset.x, 0, -offset.z), key = `${center}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const frames = frameOffsets.map(o => {
-        const block = bot.blockAt(center.offset(o.x, 0, o.z));
-        return block?.name === 'end_portal_frame' && block.getProperties().facing === o.facing
-          ? { position: { ...block.position }, eye: block.getProperties().eye === true } : null;
-      });
-      if (frames.every(Boolean)) return { center: { ...center }, frames, dimension: 'overworld', source: 'observed_end_portal_frame_ring' };
+      const portal = portalAt(bot, center);
+      if (portal) return portal;
     }
   }
   return null;
+}
+
+function portalAt(bot, center) {
+  const frames = frameOffsets.map(o => {
+    const block = bot.blockAt(center.offset(o.x, 0, o.z));
+    return block?.name === 'end_portal_frame' && block.getProperties().facing === o.facing
+      ? { position: { ...block.position }, eye: block.getProperties().eye === true } : null;
+  });
+  return frames.every(Boolean) ? { center: { ...center }, frames, dimension: 'overworld', source: 'observed_end_portal_frame_ring' } : null;
 }
 
 function travelTarget(search, current) {
@@ -168,4 +173,4 @@ async function findStronghold(bot, task, goal, save, actions, client) {
   await walkBearing(bot, task, goal, save, target, actions, client);
 }
 
-module.exports = { observedPortal, frameOffsets, travelTarget, findStronghold };
+module.exports = { observedPortal, portalAt, frameOffsets, travelTarget, findStronghold };

@@ -77,13 +77,14 @@ function nextGameStage(bot, goal) {
   // Survey throws deliberately spend eyes. Do not send Jev back to the Nether
   // after each throw while it still has a spare and twelve portal eyes. A
   // pending pickup gets a chance before deciding whether supplies are short.
-  if (where === 'overworld' && m.stronghold_located) return { phase: 'enter_end', action: 'enter_end' };
-  if (where === 'overworld' && goal.strongholdSearch && (count(bot, 'ender_eye') >= 13 || goal.strongholdSearch.pendingPickup)) {
+  const portalNeed = m.stronghold_located && goal.endPortal?.neededEyes;
+  if (where === 'overworld' && m.stronghold_located && (!Number.isInteger(portalNeed) || count(bot, 'ender_eye') >= portalNeed)) return { phase: 'enter_end', action: 'enter_end' };
+  if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && (count(bot, 'ender_eye') >= 13 || goal.strongholdSearch.pendingPickup)) {
     return { phase: 'find_stronghold', action: 'find_stronghold' };
   }
   // Carry a reserve for eye throws; execution always replans from inventory,
   // so loss, crafting batches and partial pickups do not advance a fake counter.
-  const target = 16, eyes = count(bot, 'ender_eye');
+  const target = Number.isInteger(portalNeed) ? portalNeed : 16, eyes = count(bot, 'ender_eye');
   const rods = Math.ceil(Math.max(0, target - eyes - count(bot, 'blaze_powder')) / 2);
   if (count(bot, 'blaze_rod') < rods) {
     return where === 'nether' ? { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: rods } :

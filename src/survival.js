@@ -159,7 +159,9 @@ class Survival {
       task.check(); checkAir(bot);
       const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
       if (!material) throw new Error('Shelter material inventory changed before sealing');
-      if (!['air', 'cave_air', 'void_air'].includes(bot.blockAt(p)?.name)) await this.actions.dig(bot, task, p);
+      // Snow/vegetation is being cleared to seal a room, not harvested. A
+      // shovel must not become a prerequisite for emergency shelter.
+      if (!['air', 'cave_air', 'void_air'].includes(bot.blockAt(p)?.name)) await this.actions.dig(bot, task, p, { requireDrops: false });
       try { await this.actions.place(bot, task, p, material); }
       catch (err) {
         task.check();

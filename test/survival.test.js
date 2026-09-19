@@ -156,6 +156,22 @@ test('shelter sealing reselects material when positioning spends the last select
   assert(shelter.sealed(bot, refuge));
 });
 
+test('shelter sealing clears snow without requiring the tool that would harvest its drops', async () => {
+  const origin = new Vec3(0, 64, 0), blocks = new Map([['(1, 64, 0)', 'snow']]);
+  let stock = 32, cleared = 0;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: {},
+    entity: { position: origin.offset(.5, 0, .5) }, inventory: { items: () => [{ name: 'dirt', count: stock }] },
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'),
+      boundingBox: blocks.get(`${p}`) === 'snow' ? 'empty' : blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty' }) });
+  const refuge = { origin: { ...origin }, dimension: 'overworld' };
+  const controller = new Survival(bot, {
+    dig: async (b, t, p, options) => { assert.equal(options.requireDrops, false); cleared++; blocks.delete(`${p}`); },
+    place: async (b, t, p, material) => { assert.notEqual(blocks.get(`${p}`), 'snow'); stock--; blocks.set(`${p}`, material); },
+  }, { state: { shelters: [refuge] } });
+  await controller.refugeStep(new Task('snow shelter'), {}, () => {});
+  assert.equal(cleared, 1); assert(shelter.sealed(bot, refuge));
+});
+
 test('a ledge shelter builds anchored peripheral foundations before walls and retains its exit', async () => {
   const origin = new Vec3(0, 64, 0), blocks = new Map([['(0, 63, 0)', 'stone'], ['(0, 63, -2)', 'stone']]);
   let stock = 40;

@@ -5,10 +5,22 @@ const { threats, checkThreats } = require('./danger');
 const { surfaceMovement } = require('./surface');
 const { knowledge } = require('./knowledge');
 const { surveyRoute } = require('./skills');
+const vanilla = require('../data/vanilla-26.1.json');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Raw chicken is an ingredient, never edible reserve. Its cooking dependency
 // comes from the same server recipe catalog used for requested items.
-const prey = { cow: 'beef', pig: 'porkchop', sheep: 'mutton', chicken: 'chicken' };
+// These land animals share the surface chase handler. Other food-bearing mobs
+// (fish, hostile mobs) need their own mechanics before becoming candidates.
+const landPrey = new Set(['cow', 'mooshroom', 'pig', 'sheep', 'chicken', 'rabbit']);
+function preyFood(bot, entity) {
+  if (!landPrey.has(entity.name)) return undefined;
+  const keys = bot.registry.entitiesByName[entity.name]?.metadataKeys || [];
+  if (entity.metadata?.[keys.indexOf('baby')] === true ||
+    (entity.name === 'rabbit' && entity.metadata?.[keys.indexOf('type')] === 99)) return undefined;
+  return vanilla.entityLoot[entity.name]?.pools?.flatMap(pool => pool.entries || [])
+    .filter(entry => entry.type === 'minecraft:item').map(entry => entry.name.replace('minecraft:', ''))
+    .find(name => bot.registry.foodsByName[name]);
+}
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 function foodSupply(bot) {
   return bot.inventory.items().filter(i => safeFood(bot, i))
@@ -19,7 +31,7 @@ async function candidates(bot, task, state) {
   const surface = surfaceMovement(bot);
   try {
     const danger = threats(bot);
-    const observed = Object.values(bot.entities).filter(e => prey[e.name] && e.isValid !== false &&
+    const observed = Object.values(bot.entities).filter(e => preyFood(bot, e) && e.isValid !== false &&
       surface.isSurface(e.position) &&
       e.position.distanceTo(bot.entity.position) < 32 && !(state.failedPrey?.[e.uuid || e.id] > Date.now() - 120000) &&
       danger.every(t => t.entity.position.distanceTo(e.position) > 20))
@@ -29,7 +41,7 @@ async function candidates(bot, task, state) {
     // Bound the whole survey by checking at most eight nearby candidates.
     for (const target of observed.slice(0, 8)) {
       const route = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalFollow(target, 2), 500);
-      if (route.status === 'success' && bot.entities[target.id] === target && target.isValid !== false &&
+      if (route.status === 'success' && bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) &&
         surface.isSurface(target.position) && threats(bot).every(t => t.entity.position.distanceTo(target.position) > 20) &&
         (route.path || []).every(p => surface.allowed(p))) reachable.push(target);
       if (reachable.length === 3) break;
@@ -41,7 +53,8 @@ async function candidates(bot, task, state) {
 async function hunt(bot, task, target, actions, goal, save) {
   const surface = surfaceMovement(bot);
   try {
-    const item = prey[target.name];
+    const item = preyFood(bot, target);
+    if (!item) throw new Error(`Food target ${target.name} is not an eligible passive adult`);
     const before = count(bot, item), foodBefore = foodSupply(bot);
     const deadline = Date.now() + 45000;
     const weapon = bot.inventory.items().filter(i => /_(sword|axe)$/.test(i.name))
@@ -53,6 +66,7 @@ async function hunt(bot, task, target, actions, goal, save) {
     let attacks = 0;
     while (valid() && Date.now() < deadline) {
       task.check(); checkAir(bot); checkThreats(bot);
+      if (preyFood(bot, target) !== item) throw new Error(`Food target ${target.name} is no longer an eligible passive adult`);
       if (!surface.isSurface(target.position)) throw new Error(`Food target ${target.name} moved away from safe surface terrain`);
       if (bot.entity.position.distanceTo(target.position) > 2.8) {
         try { await actions.navigate(bot, task, new goals.GoalFollow(target, 2), { timeoutMs: 5000, stallMs: 2500, stopWhen: () => !valid() }); }
@@ -65,14 +79,14 @@ async function hunt(bot, task, target, actions, goal, save) {
       const direction = aim.minus(eye);
       const hit = bot.world.raycast(eye, direction.unit(), direction.norm());
       if (hit && eye.distanceTo(hit.intersect || hit.position) < direction.norm() - 0.25) throw new Error(`Food target ${target.name} is behind solid cover`);
-      await bot.lookAt(target.position.offset(0, Math.min(target.height / 2, 1), 0), true);
+      await bot.lookAt(aim, true);
       bot.attack(target); attacks++;
       for (let i = 0; i < 8; i++) { task.check(); checkThreats(bot); await sleep(100); }
     }
     bot.pathfinder.setGoal(null); bot.clearControlStates();
     if (valid()) throw new Error(`Could not finish gathering food from ${target.name} within 45 seconds`);
     await sleep(500);
-    const drops = Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === prey[target.name] && e.position.distanceTo(target.position) < 8);
+    const drops = Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === item && e.position.distanceTo(target.position) < 8);
     for (const drop of drops) {
       if (count(bot, item) > before) break;
       const p = drop.position.floored();
@@ -106,10 +120,11 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   }
   for (const target of await candidates(bot, task, state)) {
     const observed = target.position.clone();
+    const item = preyFood(bot, target);
     choices[`hunt_${target.id}`] = { description: { action: 'hunt a passive animal and verify ingredient pickup; chicken must be cooked before eating',
       animal: target.name, position: { ...target.position.floored() }, distance: Math.round(target.position.distanceTo(bot.entity.position)),
-      availableWeapon: bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name))?.name || 'bare hands', food: prey[target.name], needsCooking: !safeFood(bot, { name: prey[target.name] }) },
-    valid: () => bot.entities[target.id] === target && target.isValid !== false && target.position.distanceTo(observed) < 2,
+      availableWeapon: bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name))?.name || 'bare hands', food: item, needsCooking: !safeFood(bot, { name: item }) },
+    valid: () => bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) === item && target.position.distanceTo(observed) < 2,
     run: async () => {
       goal.survivalAction = { action: 'gather_food', animal: target.name, position: { ...target.position }, at: new Date().toISOString() }; save();
       task.interruptCheck = () => checkThreats(bot);
