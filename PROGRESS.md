@@ -825,3 +825,13 @@ Live deployment package is frozen at
 .bot-state/runtimes/building-20260919-1528 with per-file source hashes. It preserves
 the latest completed come request, shared player state, keys and Observatory3045.
 One graceful bot reconnect is planned; the player server/world/mode are untouched.
+
+Deployment completed15:30UTC:0cca975 committed/pushed to private origin/main.
+Old bot57641 shut down gracefully once; new bot63079, runner34707, frozen
+building-20260919-1528 is connected on25577 with health20/food20, near
+(-410.5,64,1495.48). Log:.bot-state/jev-play-peaceful-20260919-building.log;
+Observatory3045 reports connected and idle companion survival. Latest completed
+come request was preserved; no old build was forced to resume. Per-file hashes
+match the committed source. Isolated server4099 saved/stopped15:29:51UTC after
+all runners finished; no diagnostic server remains on25579. The player server
+and unrelated25565 were not restarted or altered. Winning goal remains paused.
