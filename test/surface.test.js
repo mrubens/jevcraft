@@ -5,6 +5,7 @@ const { Vec3 } = require('vec3');
 const { surfaceObserver, surfaceMovement, returnToSurface, beginSurfaceAscent, surfaceReturnComplete } = require('../src/surface');
 const { constructionObservation, explore } = require('../src/work');
 const { Task } = require('../src/skills');
+const { configureMovements } = require('../src/movement');
 
 function world() {
   const blocks = new Map();
@@ -27,7 +28,40 @@ test('surface search accepts forest canopy but rejects cave floors and roofs', (
   bot.blockAt = () => null;
   assert(!surfaceObserver(bot)(new Vec3(0, 64, 0)), 'Unloaded terrain cannot establish surface safety');
 });
-test('surface routes can bridge but cannot pillar up, dig or descend into a cave, and restore normal mining', () => {
+
+test('surface travel can clear leaf body-space while keeping trunks, terrain and protected foliage intact', () => {
+  const registry = require('prismarine-registry')('26.1'), Block = require('prismarine-block')(registry);
+  const { bot } = world(); Object.assign(bot, { registry, entities: {}, inventory: { items: () => [] } });
+  bot.entity.effects = {};
+  bot.pathfinder.setMovements = m => { bot.pathfinder.movements = m; };
+  bot.pathfinder.bestHarvestTool = () => null;
+  let obstruction = 'spruce_leaves';
+  bot.blockAt = point => {
+    const p = point.floored();
+    const name = p.y < 64 ? 'grass_block' : p.x === 1 && p.z === 0 && p.y <= 65 ? obstruction : 'air';
+    const block = Block.fromStateId(registry.blocksByName[name].defaultState); block.position = p; return block;
+  };
+  const movement = configureMovements(bot), before = { ...movement };
+  const forward = () => { const nodes = []; movement.getMoveForward({ x: 0, y: 64, z: 0, remainingBlocks: 0 }, new Vec3(1, 0, 0), nodes); return nodes; };
+  const policy = surfaceMovement(bot);
+  try {
+    const route = forward(); assert.equal(route.length, 1, 'Leaf cover must not imprison a surface explorer');
+    assert.equal(route[0].toBreak.length, 2);
+    assert(route[0].toBreak.every(p => bot.blockAt(p).name === 'spruce_leaves'));
+    for (obstruction of ['spruce_log', 'dirt', 'stone', 'gravel', 'oak_planks']) assert.equal(forward().length, 0, obstruction);
+    assert.equal(movement.maxDropDown, before.maxDropDown); assert.equal(movement.allow1by1towers, false);
+  } finally { policy.restore(); }
+  assert.equal(movement.exclusionAreasBreak, before.exclusionAreasBreak);
+  obstruction = 'spruce_leaves';
+  for (const inherited of ['no_dig', 'protected']) {
+    movement.canDig = inherited !== 'no_dig';
+    movement.exclusionAreasBreak = inherited === 'protected' ? [b => b.position.x === 1 ? 100 : 0] : [];
+    const restrictions = { ...movement }, guarded = surfaceMovement(bot);
+    assert.equal(forward().length, 0, inherited); guarded.restore();
+    assert.equal(movement.canDig, restrictions.canDig); assert.equal(movement.exclusionAreasBreak, restrictions.exclusionAreasBreak);
+  }
+});
+test('surface routes can bridge and clear foliage but cannot pillar up, excavate terrain or descend into a cave', () => {
   const { bot, blocks } = world();
   blocks.set('(0, 67, 0)', 'oak_planks');
   const before = { ...bot.pathfinder.movements };
@@ -35,7 +69,8 @@ test('surface routes can bridge but cannot pillar up, dig or descend into a cave
   assert(policy.allowed(new Vec3(0, 64, 0)), 'Can leave the starting house');
   assert(!policy.allowed(new Vec3(1, 60, 0)));
   assert(!policy.allowed(new Vec3(20, 24, 0)));
-  assert.equal(bot.pathfinder.movements.canDig, false);
+  assert.equal(bot.pathfinder.movements.canDig, true);
+  assert.equal(bot.pathfinder.movements.exclusionAreasBreak.at(-1)({ name: 'stone' }), 100);
   assert.equal(bot.pathfinder.movements.allow1by1towers, false);
   assert.deepEqual(bot.pathfinder.movements.scafoldingBlocks, [1]);
   policy.restore();

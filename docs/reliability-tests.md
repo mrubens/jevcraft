@@ -571,3 +571,67 @@ The earlier runs remain recorded: `mu8y4szg` stopped at a missing fixture goal
 version; `mu8y6eck` completed the gameplay but failed the crafting-count check
 because its observer hook was installed before compatibility initialization.
 The final fixture sets the saved-goal version and installs its hook after spawn.
+
+## Access through leaf cover
+
+Natural companion run `mu8yf4yy` started empty in a fresh Normal world on
+2026-09-19 and immediately blocked on a spruce canopy while trying to obtain
+16 cobblestone. Surface travel forbade all digging, and acquisition discarded
+logs without an already-clear mining stance. These are geometric access rules,
+so the fix is in execution code rather than another model prompt.
+
+Surface travel may now clear dry leaves while keeping terrain, trunks, buildings,
+inherited no-dig rules, construction protection and existing drop limits intact.
+Acquisition retains nearby covered resources, tries ordinary dry access first,
+then surveys a leaf-only approach within 12 blocks. The surveyed path is limited
+to 16 nodes and eight leaf breaks, with scaffolding, towers and parkour disabled.
+After arrival, up to three observed leaf obstructions on the eye ray may be
+cleared using the existing safe-break checks. A reachable dry leaf above a
+resource on safe solid ground is also cleared so its drop has walkable headroom;
+the collector itself still cannot excavate. Actual dry footing and line of
+sight must still pass before mining the requested block. Waterlogged leaves
+cannot be cleared by this fallback. All temporary movement rules restore on
+success, failure and cancellation.
+
+The regression tests reproduce the discarded covered resource and overhanging
+leaf, and check protected/flooded cover, no-dig inheritance, bounded routes,
+terrain preservation, cancelled work and movement restoration. All 493
+automated tests passed. Real controlled fixtures use independent clients for
+block changes and, for acquisition, pickup packets:
+
+```sh
+MC_PORT=<isolated-port> node scripts/canopy-travel-test.js
+MC_PORT=<isolated-port> node scripts/foliage-mining-test.js
+MC_PORT=<isolated-port> FOLIAGE_TEST_OVERHANG=1 node scripts/foliage-mining-test.js
+```
+
+Apply each artifact's `setup.json` in the isolated server console, then create
+`ready`. Interactive ports 25565 and 25577 are rejected. The fixture terrain and
+starting positions are supplied; the bots begin with empty Survival inventories.
+`canopy-travel-mu8z8sx1` cleared two leaves and descended the supported crown
+from y70 to ground at y64. `foliage-mining-mu8zc9u7` cleared the leaf overhang
+blocking its eye ray and collected one cherry log. The final covered-resource
+fixture `foliage-mining-mu8zh7ye` cleared six approach leaves and one leaf for
+pickup headroom, mined one cherry log, and independently verified its pickup.
+Health remained 20, with
+no deaths or bot commands. These are controlled mechanics checks.
+
+The original natural failure is preserved as `mu8yf4yy-before-canopy-recovery`.
+The leaf-travel-only retry still failed. A subsequent retry occurred at night
+and selected unreachable dirt for shelter; focused acquisition then exposed
+the eye-ray obstruction. The final resumed natural run gathered two spruce logs
+and crafted a table and four remaining planks, but still blocked while seeking
+more wood lower in the tall canopy. The requested cobblestone delivery and
+two-cycle Survival acceptance therefore remain unproven. No setup commands were
+issued in that natural world, and resumed debugging is not fresh acceptance.
+
+Earlier fixture failures are also retained: `foliage-mining-mu8z1x8u` had no
+working console input and was aborted before setup; `canopy-travel-mu8z5dit`
+completed the descent but counted natural grass decay under the fixture trunk
+as bot excavation (the setup now starts that cell as dirt);
+`foliage-mining-mu8zagsq` collected its log but incorrectly required an overhang
+break on a route with an already-clear view. The separate overhang scenario
+now supplies the obstructed stance explicitly.
+`foliage-mining-mu8zc9u9` exposed a real pickup failure when the log fell beyond
+pickup reach under its remaining leaf roof; the access step now opens that
+headroom before mining instead of treating a broken log as collected inventory.

@@ -19,6 +19,9 @@ function dryPassable(block) {
     (block.boundingBox === 'empty' || ['air', 'cave_air', 'void_air'].includes(block.name));
 }
 
+const dryLeaf = block => !!block && /_leaves$/.test(block.name) &&
+  ![true, 'true'].includes(block.getProperties?.().waterlogged);
+
 // Pathfinder returns exact standing heights after smoothing (for example
 // farmland/dirt paths at y + 15/16). Flooring that point tests the supporting
 // block as if it occupied the player's body and rejects valid dry routes.
@@ -37,4 +40,4 @@ function supportCell(point) {
   return new Vec3(Math.floor(point.x), Math.ceil(point.y) - 1, Math.floor(point.z));
 }
 
-module.exports = { dryPassable, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

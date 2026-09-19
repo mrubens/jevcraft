@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
 const { Task } = require('../src/skills');
-const { dryStanding, miningReach, dryMiningPositions, approachDryMining, reachableLocalMine } = require('../src/mining-access');
+const { dryStanding, miningReach, dryMiningPositions, foliageMiningCandidate, approachDryMining, reachableLocalMine } = require('../src/mining-access');
 
 function fixture() {
   const changed = new Map(), target = new Vec3(8, 64, 0);
@@ -128,4 +128,120 @@ test('dry mining accepts exact farmland/path standing heights and rejects body c
   support = 'water'; assert(!dryBodySpace(bot, new Vec3(2.5, 63.9375, 0.5)), 'Must not reinterpret water as partial dry footing');
   support = 'dirt_path'; ceiling = true;
   assert(!dryBodySpace(bot, new Vec3(2.5, 63.9375, 0.5)), 'Check the entire 1.8 block body, including the top cell');
+});
+
+function coveredResource() {
+  const registry = require('prismarine-registry')('26.1'), Block = require('prismarine-block')(registry);
+  const target = new Vec3(4, 64, 0), removed = new Set();
+  const bot = { registry, game: { gameMode: 'survival' }, entity: { position: new Vec3(.5, 64, .5) }, entities: {},
+    blockAt(point) {
+      const p = point.floored();
+      const name = p.equals(target) ? 'spruce_log' : p.y < 64 ? 'grass_block' :
+        !removed.has(`${p}`) && p.x >= 1 && p.x <= 7 && Math.abs(p.z) <= 3 && p.y <= 68 ? 'spruce_leaves' : 'air';
+      const block = Block.fromStateId(registry.blocksByName[name].defaultState); block.position = p; return block;
+    }, canDigBlock: () => true, pathfinder: { movements: { canDig: true, maxDropDown: 3,
+      exclusionAreasBreak: [b => b.position.z === 2 ? 100 : 0], allowedPosition: p => p.x >= 0 } },
+  };
+  bot.world = { raycast: () => removed.size ? { position: target } : { position: new Vec3(1, 65, 0) } };
+  assert.equal(dryMiningPositions(bot, target).length, 0, 'The resource has no already-clear stance');
+  const before = { ...bot.pathfinder.movements }, task = new Task('wood through leaves');
+  const path = [1, 2, 3].map(x => ({ x, y: 64, z: 0, toBreak: [new Vec3(x, 64, 0), new Vec3(x, 65, 0)], toPlace: [] }));
+  return { bot, target, removed, before, task, path };
+}
+
+test('nearby resources surrounded by leaves remain reachable without excavating their support or other terrain', async () => {
+  const { bot, target, removed, before, task, path } = coveredResource();
+  let walks = 0;
+  bot.pathfinder.getPathFromTo = function * (movement) {
+    assert.equal(movement.canDig, true); assert.equal(movement.allow1by1towers, false);
+    assert.deepEqual(movement.scafoldingBlocks, []);
+    assert(!movement.allowedPosition(target.offset(0, 1, 0)), 'Never stand on the requested block to mine it');
+    assert(!movement.allowedPosition(new Vec3(-1, 64, 0)), 'Keep the inherited position restriction');
+    const cost = block => movement.exclusionAreasBreak.reduce((sum, rule) => sum + rule(block), 0);
+    assert(cost(bot.blockAt(target)) >= 100, 'Travel cannot harvest the target');
+    assert(cost(bot.blockAt(new Vec3(3, 63, 0))) >= 100, 'Travel cannot excavate terrain');
+    assert(cost(bot.blockAt(new Vec3(3, 64, 2))) >= 100, 'Preserve protected foliage');
+    yield { result: { status: 'success', path } };
+  };
+  await approachDryMining(bot, task, target, { navigate: async () => {
+    walks++;
+    for (const node of path) for (const p of node.toBreak) removed.add(`${p}`);
+    bot.entity.position = new Vec3(3.5, 64, .5);
+  } });
+  assert.equal(walks, 1); assert(miningReach(bot, bot.entity.position, target));
+  assert(dryStanding(bot, bot.entity.position)); assert.deepEqual(bot.pathfinder.movements, before);
+});
+
+test('foliage access keeps no-dig, protected and flooded leaves out of candidate surveys', async () => {
+  for (const restriction of ['no_dig', 'protected', 'flooded', 'far_away', 'support']) {
+    const { bot, target, task } = coveredResource();
+    if (restriction === 'no_dig') bot.pathfinder.movements.canDig = false;
+    if (restriction === 'protected') bot.pathfinder.movements.exclusionAreasBreak = [() => 100];
+    if (restriction === 'flooded') {
+      const read = bot.blockAt;
+      bot.blockAt = p => { const block = read(p); if (block.name.endsWith('_leaves')) block.getProperties = () => ({ waterlogged: true }); return block; };
+    }
+    if (restriction === 'far_away') bot.entity.position = new Vec3(-20.5, 64, .5);
+    if (restriction === 'support') bot.entity.position = target.offset(.5, 1, .5);
+    const before = { ...bot.pathfinder.movements };
+    bot.pathfinder.getPathFromTo = () => assert.fail('Cannot survey disallowed foliage');
+    assert.equal(foliageMiningCandidate(bot, target), false, restriction);
+    await assert.rejects(approachDryMining(bot, task, target, { navigate: async () => assert.fail('Must not move') }), /No reachable dry/);
+    assert.deepEqual(bot.pathfinder.movements, before);
+  }
+});
+
+test('foliage access rejects unfinished, destructive and excessive routes and restores policy after cancellation', async () => {
+  for (const kind of ['partial', 'terrain', 'placing', 'too_many_leaves', 'cancel']) {
+    const { bot, target, before, task, path } = coveredResource();
+    if (kind === 'terrain') path[0].toBreak.push(new Vec3(1, 63, 0));
+    if (kind === 'placing') path[0].toPlace.push({ x: 1, y: 63, z: 0 });
+    if (kind === 'too_many_leaves') path[0].toBreak.push(...[1, 2, 3].map(x => new Vec3(x, 66, 0)));
+    bot.pathfinder.getPathFromTo = function * () {
+      if (kind === 'cancel') task.cancel();
+      yield { result: { status: kind === 'partial' ? 'partial' : 'success', path } };
+    };
+    await assert.rejects(approachDryMining(bot, task, target, { navigate: async () => assert.fail('Rejected route must not execute') }),
+      kind === 'cancel' ? { name: 'Cancelled' } : /No reachable dry/);
+    assert.deepEqual(bot.pathfinder.movements, before);
+  }
+});
+
+test('leaf access clears a visible overhang after arrival but leaves protected or solid obstructions intact', async () => {
+  for (const obstruction of ['leaf', 'protected', 'stone', 'cancel']) {
+    const { bot, target, removed, before, task, path } = coveredResource();
+    const cover = new Vec3(4, 65, 0);
+    bot.world.raycast = () => ({ position: removed.has(`${cover}`) ? target : cover });
+    if (obstruction === 'stone') { const read = bot.blockAt; bot.blockAt = p => p.equals(cover) ? { ...read(p), name: 'stone' } : read(p); }
+    bot.pathfinder.movements.safeToBreak = () => obstruction !== 'protected';
+    before.safeToBreak = bot.pathfinder.movements.safeToBreak;
+    bot.pathfinder.getPathFromTo = function * () { yield { result: { status: 'success', path } }; };
+    let cleared = 0;
+    const promise = approachDryMining(bot, task, target, { navigate: async () => {
+      for (const node of path) for (const p of node.toBreak) removed.add(`${p}`);
+      bot.entity.position = new Vec3(3.1, 64, .5);
+      if (obstruction === 'cancel') task.cancel();
+    }, dig: async (_bot, _task, p, options) => {
+      assert(p.equals(cover)); assert.equal(options.requireDrops, false); cleared++; removed.add(`${p}`);
+    } });
+    if (obstruction === 'leaf') { await promise; assert.equal(cleared, 1); assert(miningReach(bot, bot.entity.position, target)); }
+    else { await assert.rejects(promise, obstruction === 'cancel' ? { name: 'Cancelled' } : /access changed/); assert.equal(cleared, 0); }
+    assert.deepEqual(bot.pathfinder.movements, before);
+  }
+});
+
+test('covered mining opens safe leaf headroom for the drop even when the resource is already visible', async () => {
+  const { bot, target, removed, before, task, path } = coveredResource(), cover = target.offset(0, 1, 0);
+  bot.world.raycast = (_eye, direction) => ({ position: Math.abs(direction.y) < .5 ? cover : target });
+  bot.pathfinder.movements.safeToBreak = block => block.position.equals(cover);
+  before.safeToBreak = bot.pathfinder.movements.safeToBreak;
+  bot.pathfinder.getPathFromTo = function * () { yield { result: { status: 'success', path } }; };
+  let cleared = 0;
+  await approachDryMining(bot, task, target, { navigate: async () => {
+    for (const node of path) for (const p of node.toBreak) removed.add(`${p}`);
+    bot.entity.position = new Vec3(3.1, 64, .5);
+  }, dig: async (_b, _t, p) => { assert(p.equals(cover)); removed.add(`${p}`); cleared++; } });
+  assert.equal(cleared, 1); assert.equal(bot.blockAt(cover).name, 'air');
+  assert.equal(bot.blockAt(target).name, 'spruce_log', 'Access still leaves resource harvesting to the caller');
+  assert.deepEqual(bot.pathfinder.movements, before);
 });

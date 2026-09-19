@@ -21,7 +21,7 @@ const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives, knownResourceLocations, knownResourceNames, rememberResources, isSurfaceResource } = require('./resource-observation');
 const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('./designer');
 const { designWithJev } = require('./build-templates');
-const { dryMiningPositions, approachDryMining, miningMovement, reachableLocalMine } = require('./mining-access');
+const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine } = require('./mining-access');
 const { dryPassable, supportCell } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
 const { descendPillar } = require('./pillar-recovery');
@@ -326,13 +326,13 @@ async function miningCandidates(bot, task, step, goal) {
   if (step.drops === 'flint') names.push('gravel');
   const ids = names.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
   const options = { matching: ids, maxDistance: 48, count: 32,
-    useExtraInfo: b => faces.some(f => {
-      const neighbor = bot.blockAt(b.position.plus(f));
-      return air(neighbor) || neighbor?.name === 'water';
-    }) && (!step.properties || Object.entries(step.properties).every(([key, value]) => String(b.getProperties()[key]) === String(value))) &&
+    useExtraInfo: b => (!step.properties || Object.entries(step.properties).every(([key, value]) => String(b.getProperties()[key]) === String(value))) &&
       (step.minimumY === undefined || b.position.y >= step.minimumY) && !reservedForConstruction(goal, b.position) &&
       (step.drops !== 'dirt' || (b.position.y >= bot.entity.position.floored().y - 1 && air(bot.blockAt(b.position.offset(0, 1, 0))))) &&
-      dryMiningPositions(bot, b.position, 1).length > 0,
+      (foliageMiningCandidate(bot, b.position) || faces.some(f => {
+        const neighbor = bot.blockAt(b.position.plus(f));
+        return air(neighbor) || neighbor?.name === 'water';
+      }) && dryMiningPositions(bot, b.position, 1).length > 0),
   };
   const candidates = bot.findBlocksAsync
     ? await bot.findBlocksAsync(options, () => { task.check(); checkAir(bot); }) : bot.findBlocks(options);
@@ -389,7 +389,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
     const before = countOf(bot, step.drops);
     let access;
     try {
-      await approachDryMining(bot, task, p, { navigate });
+      await approachDryMining(bot, task, p, { navigate, dig });
       access = miningMovement(bot);
       await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before, requiredTool: step.tool, enchantment: step.enchantment,
         minimumToolDurability: step.minimumToolDurability });

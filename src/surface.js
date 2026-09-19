@@ -4,7 +4,7 @@ const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, navigate } = require('./skills');
 const { safeFromHostiles } = require('./danger');
 const { tunnelStep } = require('./tunneling');
-const { dryPassable, swimmableWater } = require('./terrain');
+const { dryPassable, dryLeaf, swimmableWater } = require('./terrain');
 
 // Inspect loaded columns, ignoring tree canopies but not terrain, roofs or
 // water. Two clear cave blocks are not evidence of a surface destination.
@@ -32,7 +32,7 @@ function surfaceMovement(bot) {
   const movements = bot.pathfinder.movements;
   const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers,
     allowSprinting: movements.allowSprinting, scafoldingBlocks: movements.scafoldingBlocks,
-    allowedPosition: movements.allowedPosition };
+    allowedPosition: movements.allowedPosition, exclusionAreasBreak: movements.exclusionAreasBreak };
   const isSurface = surfaceObserver(bot);
   const start = bot.entity.position.floored();
   // Permit leaving a house or a tree's immediate cover without allowing a
@@ -48,8 +48,11 @@ function surfaceMovement(bot) {
     (Math.abs(p.x - start.x) <= 4 && Math.abs(p.z - start.z) <= 4 && p.y >= start.y);
   // Carried scaffolding can bridge a gap, but searching for trees must not
   // build vertical pillars that strand the bot above the available ground.
-  // Hunting still cannot excavate into a cave.
-  Object.assign(movements, { canDig: false, allowSprinting: false, allow1by1towers: false,
+  // Clear leaf body-space when a canopy blocks an otherwise supported route.
+  // Trunks, terrain and buildings still cannot be excavated by surface travel;
+  // stricter inherited no-dig and construction restrictions remain in force.
+  Object.assign(movements, { canDig: previous.canDig === true, allowSprinting: false, allow1by1towers: false,
+    exclusionAreasBreak: [...(previous.exclusionAreasBreak || []), block => dryLeaf(block) ? 0 : 100],
     allowedPosition: p => allowed(p) && (!previous.allowedPosition || previous.allowedPosition(p)) });
   return { isSurface, allowed, restore: () => Object.assign(movements, previous) };
 }
