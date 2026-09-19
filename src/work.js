@@ -47,6 +47,7 @@ const { chooseConstructionWork, approachConstruction } = require('./construction
 const { approachWorkstation, reachableWorkstation } = require('./workstation-access');
 const { fuelPlanks, ITEMS_PER_PLANK } = require('./fuel');
 const { opportunisticMining } = require('./opportunistic-mining');
+const { collectNearbyDrops } = require('./drop-collection');
 const { friendlyProblem, completion } = require('./speech');
 const { boatTravelStep } = require('./boats');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -392,16 +393,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       access = miningMovement(bot);
       await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before, requiredTool: step.tool, enchantment: step.enchantment,
         minimumToolDurability: step.minimumToolDurability });
-      await sleep(650);
-      if (countOf(bot, step.drops) > before) return;
-      const drop = Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === step.drops)
-        .sort((a, b) => a.position.distanceTo(p) - b.position.distanceTo(p))[0];
-      if (drop) {
-        const d = drop.position.floored();
-        try { await navigate(bot, task, new goals.GoalNear(d.x, d.y, d.z, 1)); } catch (e) { task.check(); if (e.name === 'NeedsAir') throw e; }
-        await sleep(650);
-      }
-      if (countOf(bot, step.drops) > before) return;
+      if (await collectNearbyDrops(bot, task, step.drops, { before, origin: p, radius: 8, waitForSpawnMs: 1000 })) return;
     } catch (e) {
       task.check();
       if (['NeedsAir', 'NeedsSafety'].includes(e.name)) {
@@ -1180,16 +1172,9 @@ async function prepareBundleStep(bot, task, goal, save, client, onStep) {
 async function executePlannedAcquisition(bot, task, goal, save, client, onStep, plan, acquisition) {
   const first = plan[0];
   if (first?.action === 'mine') {
-    const loose = Object.values(bot.entities || {}).filter(entity => entity.isValid !== false &&
-      entity.getDroppedItem?.()?.name === first.drops && entity.position.distanceTo(bot.entity.position) <= 16 && safeFromHostiles(bot, entity.position))
-      .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
-    if (loose) {
-      const before = countOf(bot, first.drops), p = loose.position.floored();
-      goal.step = { action: 'collect', item: first.drops, position: { ...p } }; save();
-      await navigate(bot, task, new goals.GoalBlock(p.x, p.y, p.z), { timeoutMs: 10000, stallMs: 4000 });
-      await waitFor(task, () => countOf(bot, first.drops) > before, 2500);
-      return false;
-    }
+    if (await collectNearbyDrops(bot, task, first.drops, {
+      onTarget: target => { goal.step = { action: 'collect', ...target }; save(); },
+    })) return false;
   }
   // Catalog routing replaced the old named concrete workflow. Preserve its
   // tool/wood/table preparation for any request whose recipe needs a descent,

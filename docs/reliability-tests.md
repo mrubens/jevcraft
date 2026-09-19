@@ -490,3 +490,37 @@ mounted observations, no server movement corrections, health 20, and the boat
 recovered for reuse. Live Jev decisions selected a boat for the lake and honored
 an explicit request to swim. These are controlled mechanics fixtures with
 granted terrain and supplies, not natural Survival acceptance.
+
+## Falling mining drops
+
+Mining and loose-resource pickup now share a bounded collector. It observes
+supported pickup positions again as an item falls or moves, stops navigation
+when inventory increases, and does not count an entity disappearing as receipt.
+Pickup routes disable digging, scaffolding and towers, retain inherited movement
+restrictions, and reject deep drops, hazardous floors and unknown terrain.
+An unreachable stack has a 30-second cooldown at that observed position, so
+ordinary acquisition can continue; moving the stack allows an earlier retry.
+This does not promise retrieval from deep holes or unsafe water.
+
+The original accounting fixture `acquisition-accounting-mu8w7a2f` exposed a
+falling cobblestone at y57 and navigation toward an outdated item position,
+with ten stone blocks broken for eight required drops. That run alone does not
+prove whether every extra block was a replacement or navigation excavation.
+`test/drop-collection.test.js` reproduces the old collection branch navigating
+to an airborne cell with digging enabled, then covers moving/late drops,
+inventory evidence, alternatives, cooldowns, unsafe routes, partial footing,
+cancellation and movement restoration.
+
+```sh
+MC_PORT=<isolated-port> node scripts/drop-collection-test.js
+```
+
+Apply its artifact directory's `setup.json` in the isolated console, then create
+`ready`. Ports 25565 and 25577 are rejected. The controlled ledge and staircase
+fixture uses a second client to observe block changes and pickup packets.
+On 2026-09-19, `drop-collection-mu8xrw7j` passed: the mined cobblestone fell from
+y63.23 to y60, and a tossed raw iron fell from y65.32 to y60. Jev collected both
+with no acquisition errors, exactly one stone broken, no placement, all eight
+carried planks retained, health 20, no deaths, and no bot commands. All 482
+automated tests passed. These are controlled mechanics checks, not fresh
+Survival acceptance.
