@@ -62,3 +62,19 @@ test('natural flow changes in a snapshotted water cell do not cancel foundation 
   assert(canClearSchematicBlock(site, {}, { ...block, stateId: block.stateId + 1 }));
   assert(!canClearSchematicBlock(site, {}, { ...block, name: 'lava', stateId: 88888 }));
 });
+
+test('terrain fill restocks by the cells remaining, not by holding a single block', () => {
+  const { terrainShortage } = require('../src/work');
+  const cells = count => Array.from({ length: count }, (_, i) => ({ x: i, y: 64, z: 0, material: 'cobblestone' }));
+  const carrying = (count, gameMode = 'survival') =>
+    ({ game: { gameMode }, inventory: { items: () => count ? [{ name: 'cobblestone', count }] : [] } });
+  assert.deepEqual(terrainShortage(carrying(0), cells(40)), { item: 'cobblestone', count: 40 });
+  assert.deepEqual(terrainShortage(carrying(1), cells(40)), { item: 'cobblestone', count: 40 },
+    'one block is not a supply for forty cells');
+  assert.equal(terrainShortage(carrying(40), cells(40)), null);
+  assert.deepEqual(terrainShortage(carrying(0), cells(200)), { item: 'cobblestone', count: 64 }, 'capped at a stack');
+  // Creative placement consumes nothing, so a single block really does cover the layer.
+  assert.equal(terrainShortage(carrying(1, 'creative'), cells(40)), null);
+  assert.deepEqual(terrainShortage(carrying(0, 'creative'), cells(40)), { item: 'cobblestone', count: 1 });
+  assert.equal(terrainShortage(carrying(0), []), null, 'nothing left to fill needs nothing');
+});

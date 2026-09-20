@@ -48,7 +48,7 @@ const { approachWorkstation, reachableWorkstation } = require('./workstation-acc
 const { fuelPlanks, ITEMS_PER_PLANK } = require('./fuel');
 const { opportunisticMining } = require('./opportunistic-mining');
 const { collectNearbyDrops } = require('./drop-collection');
-const { friendlyProblem, completion } = require('./speech');
+const { friendlyProblem, recoveryHint, completion } = require('./speech');
 const { boatTravelStep } = require('./boats');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
@@ -1104,13 +1104,25 @@ async function executeConstructionWork(bot, task, goal, save, work) {
   save();
 }
 
+// Which fill material, if any, is short of the remaining cells. A truthiness
+// check here once let a single cobblestone stand in for a whole layer, so the
+// real shortage surfaced later as a misleading 'cannot reach' blocker. Creative
+// placement consumes nothing, so there one block genuinely does cover the layer.
+function terrainShortage(bot, toFill) {
+  const needed = {};
+  for (const p of toFill) needed[p.material] = (needed[p.material] || 0) + 1;
+  const want = count => bot.game.gameMode === 'creative' ? 1 : Math.min(count, 64);
+  const name = Object.keys(needed).find(item => countOf(bot, item) < want(needed[item]));
+  return name ? { item: name, count: want(needed[name]) } : null;
+}
+
 async function prepareBuildTerrain(bot, task, goal, save) {
   task.check();
   const { blueprint } = goal, terrain = blueprint.terrain;
   const toClear = terrain.clear.filter(p => !air(bot.blockAt(pos(p))));
   const toFill = terrain.fill.filter(p => !matchesBuildBlock(bot.blockAt(pos(p)), p));
   for (const p of [...toClear, ...toFill]) if (!canClearSchematicBlock(blueprint, goal.buildOwned, bot.blockAt(pos(p))))
-    throw new Blocked(`The building site changed at ${pos(p)}; preserving the unexpected block`);
+    throw new Blocked(`The building site changed at ${pos(p)}; preserving the unexpected ${bot.blockAt(pos(p))?.name}. Clear it or request a new build`);
   if (!toClear.length && !toFill.length) {
     terrain.prepared = true; terrain.preparedAt = new Date().toISOString(); save(); return;
   }
@@ -1132,8 +1144,8 @@ async function prepareBuildTerrain(bot, task, goal, save) {
   const cutting = [...tops.values()].map(p => ({ position: p, operation: 'dig' }));
   const work = await chooseConstructionWork(bot, task, goal, [...filling, ...cutting]);
   if (!work) {
-    const fill = toFill.find(p => !countOf(bot, p.material));
-    if (fill) { await acquireStep(bot, task, fill.material, Math.min(bot.game.gameMode === 'creative' ? 1 : 64, toFill.filter(p => p.material === fill.material).length), goal, save); return; }
+    const short = terrainShortage(bot, toFill);
+    if (short) { await acquireStep(bot, task, short.item, short.count, goal, save); return; }
     if (countOf(bot, 'dirt') < 32) { await acquireStep(bot, task, 'dirt', 32, goal, save); return; }
     throw new Blocked('I need a safe way to reach the next part of the ground; our building plan is saved');
   }
@@ -1507,7 +1519,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       }
       if (err.name === 'Blocked' || goal.failures >= 5) {
         goal.status = 'blocked'; save();
-        bot.chat(`${friendlyProblem(err)} I saved our progress. Say "Jev resume" to try again.`);
+        bot.chat(`${friendlyProblem(err)} I saved our progress. ${recoveryHint(err)}`);
         return { ok: false, reason: err.message, goal };
       }
       await sleep(300);
@@ -1527,4 +1539,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep };
+module.exports = { terrainShortage, runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep };
