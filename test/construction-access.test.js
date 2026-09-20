@@ -92,3 +92,22 @@ test('cancelling a construction swim releases jump immediately', async () => {
   await assert.rejects(chooseConstructionWork(bot, task, {}, []), { name: 'Cancelled' });
   assert.deepEqual(controls, [['jump', true], ['jump', false]]);
 });
+
+test('creative access keeps its scaffolding budget instead of reserving free blocks', () => {
+  const { bot } = fixture();
+  bot.inventory = { items: () => [{ name: 'dirt', count: 32 }] };
+  // A design needing more material than the bot carries: in Survival every
+  // carried block is spoken for, which is what starves access to zero.
+  const goal = { blueprint: { blocks: Array.from({ length: 40 }, (_, i) => ({ x: i, y: 64, z: 0, material: 'dirt' })) } };
+  let restore = constructionMovement(bot, goal);
+  assert.equal(bot.pathfinder.movements.countScaffoldingItems(), 0, 'survival protects the build reserve');
+  assert.equal(bot.pathfinder.movements.getScaffoldingItem(), null);
+  restore();
+  // Creative placement consumes nothing, so there is no reserve to protect and
+  // holding one back only leaves the worker unable to reach its own worksite.
+  bot.game.gameMode = 'creative';
+  restore = constructionMovement(bot, goal);
+  assert.equal(bot.pathfinder.movements.countScaffoldingItems(), 32);
+  assert.equal(bot.pathfinder.movements.getScaffoldingItem()?.name, 'dirt');
+  restore();
+});

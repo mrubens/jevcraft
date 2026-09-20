@@ -63,8 +63,12 @@ function standingHeight(bot, point) {
 function constructionMovement(bot, goal) {
   const m = bot.pathfinder.movements;
   const previous = { canDig: m.canDig, scafoldingBlocks: m.scafoldingBlocks, exclusionAreasPlace: m.exclusionAreasPlace, countScaffoldingItems: m.countScaffoldingItems, getScaffoldingItem: m.getScaffoldingItem };
+  // Creative placement consumes nothing, so the build has no material reserve to
+  // protect. Holding one back there only starves access scaffolding to zero.
   const reserved = {};
-  for (const p of goal.blueprint?.blocks || []) if (!p.companion && !buildCellComplete(bot, p)) reserved[p.material] = (reserved[p.material] || 0) + 1;
+  if (bot.game?.gameMode !== 'creative') {
+    for (const p of goal.blueprint?.blocks || []) if (!p.companion && !buildCellComplete(bot, p)) reserved[p.material] = (reserved[p.material] || 0) + 1;
+  }
   const spare = name => goal.buildPhase === 'cleanup' ? 0 : Math.max(0, (bot.inventory?.items() || []).filter(i => i.name === name).reduce((n, i) => n + i.count, 0) - (reserved[name] || 0));
   const planned = new Set((goal.blueprint?.blocks || []).map(key));
   // Access must not demolish the building or consume reserved materials. Use
