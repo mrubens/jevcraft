@@ -1001,8 +1001,16 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     // anything the drawing leaves out is cleared instead of left standing.
     const offset = edited && schematic.existingOffset;
     const at = offset ? { x: edited.origin.x - offset[0], y: edited.origin.y - offset[1], z: edited.origin.z - offset[2] } : undefined;
-    goal.blueprint = selectSchematicSite(bot, schematic, { anchor: goal.buildAnchor,
-      owned: registry?.claimed(dimensionName(bot), edited ? undefined : goal.buildId), at });
+    // The design is the only party that saw the ground and the building
+    // together, so its choice of spot is tried first. It is a suggestion, not
+    // an instruction: a player's "here" still wins, and code searches on its
+    // own if the ground does not turn out to hold the building.
+    const owned = registry?.claimed(dimensionName(bot), edited ? undefined : goal.buildId);
+    const here = bot.entity.position.floored();
+    const proposed = !goal.buildAnchor && !at && schematic.site
+      ? { x: here.x + schematic.site[0], y: here.y + schematic.site[1], z: here.z + schematic.site[2] } : null;
+    goal.blueprint = selectSchematicSite(bot, schematic, { anchor: goal.buildAnchor, prefer: proposed, owned, at, baseY: proposed?.y });
+    if (!goal.blueprint && proposed) goal.blueprint = selectSchematicSite(bot, schematic, { owned });
     if (!goal.blueprint) {
       // Wandering off to find ground elsewhere is the wrong answer to a spot
       // the player chose: they asked for it there, so say it will not work.

@@ -89,3 +89,40 @@ test('terrain fill restocks by the cells remaining, not by holding a single bloc
   assert.deepEqual(terrainShortage(carrying(0, 'creative'), cells(40)), { item: 'cobblestone', count: 1 });
   assert.equal(terrainShortage(carrying(0), []), null, 'nothing left to fill needs nothing');
 });
+
+test('a design may be set into a hillside, and only the air it asks for is dug out', () => {
+  // A slope rising steadily to the east, so the west face is open ground and
+  // the east half of any footprint is buried in the hill.
+  const bot = { registry, game: { minY: 0, height: 128 }, entity: { position: new Vec3(.5, 64, .5) },
+    blockAt: point => {
+      const p = point.floored(), ground = 61 + Math.max(0, Math.min(6, p.x));
+      const name = p.y <= ground ? 'stone' : 'air', data = registry.blocksByName[name];
+      return { name, position: p, stateId: data.defaultState, diggable: data.diggable, boundingBox: data.boundingBox, getProperties: () => ({}) };
+    } };
+  // A hall whose interior is carved on purpose, with its floor below the
+  // hilltop, and an inset porch that is merely unmentioned.
+  const hall = { name: 'Hillhall', description: 'A hall cut into a slope', size: [7, 5, 5],
+    palette: ['stone_bricks'], entrance: [1, 1, 0], site: [3, -2, 0], existingOffset: null, regions: [
+      { from: [0, 0, 0], to: [6, 0, 4], block: 'stone_bricks', properties: null },
+      { from: [0, 1, 0], to: [6, 4, 4], block: 'stone_bricks', properties: null },
+      { from: [1, 1, 1], to: [5, 3, 3], block: 'air', properties: null },
+      { from: [1, 1, 0], to: [1, 2, 0], block: 'air', properties: null },
+    ] };
+  const schematic = validateSchematic(hall, registry);
+  assert.deepEqual(schematic.site, [3, -2, 0], 'the design says where and how deep it belongs');
+  const carved = schematic.empty.filter(p => p.carved);
+  assert(carved.length > 0, 'air regions are remembered as rooms, not merely as gaps');
+
+  // Placed with its floor set into the slope, the interior is excavated.
+  const floor = 62;
+  const cut = selectSchematicSite(bot, schematic, { prefer: new Vec3(3, floor, 0), baseY: floor });
+  assert(cut, 'a building set into a hill is a buildable site');
+  assert.equal(cut.origin.y, floor, 'the design keeps the floor height it chose');
+  const dug = cut.empty.filter(p => bot.blockAt(new Vec3(p.x, p.y, p.z)).name === 'stone');
+  assert(dug.length > 0, 'the hillside inside the hall is dug out rather than left solid');
+  for (const p of dug) assert(cut.initialBlocks[`${p.x},${p.y},${p.z}`], 'and every dug cell is snapshotted first');
+
+  // Nothing unmentioned is excavated: the porch keeps its ground.
+  const asked = new Set(carved.map(p => `${p.x + cut.origin.x},${p.y + cut.origin.y},${p.z + cut.origin.z}`));
+  for (const p of dug) assert(asked.has(`${p.x},${p.y},${p.z}`), 'only air the design asked for is dug');
+});

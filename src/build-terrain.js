@@ -8,7 +8,7 @@ const PREP_LIMITS = { cut: 4, fill: 6, changes: 2400 };
 // A surveyed, bounded earthwork plan: cut natural high ground and fill low
 // ground/shallow water. Unknown columns, lava and recognizable builds rule out
 // a site. Every cell is snapshotted before the first shovel or block placement.
-function planTerrainSite(bot, schematic, { naturalGround, replaceable }) {
+function planTerrainSite(bot, schematic, { naturalGround, replaceable, at }) {
   const o = bot.entity.position.floored(), [width, height, depth] = schematic.source.size;
   const isSurface = surfaceObserver(bot), columns = new Map(), candidates = [];
   const entry = new Vec3(...(schematic.access || schematic.source.entrance || [Math.floor(width / 2), 1, 0]));
@@ -33,7 +33,9 @@ function planTerrainSite(bot, schematic, { naturalGround, replaceable }) {
     columns.set(k, found); return found;
   };
   const foundation = new Set(schematic.blocks.filter(p => p.y === 0).map(p => `${p.x},${p.z}`));
-  for (const dx of [5, -width - 5, 12, -width - 12]) for (const dz of [5, -depth - 5, 12, -depth - 12]) {
+  const offsets = at ? [[at.x - o.x, at.z - o.z]]
+    : [5, -width - 5, 12, -width - 12].flatMap(dx => [5, -depth - 5, 12, -depth - 12].map(dz => [dx, dz]));
+  for (const [dx, dz] of offsets) {
     const footprint = [];
     for (let x = -1; x <= width; x++) for (let z = -1; z <= depth; z++) footprint.push(column(o.x + dx + x, o.z + dz + z));
     if (footprint.some(c => !c)) continue;
@@ -79,8 +81,11 @@ function planTerrainSite(bot, schematic, { naturalGround, replaceable }) {
     if (!valid || !reached || cuts.size + fill.size > PREP_LIMITS.changes) continue;
     const blocks = schematic.blocks.map(p => ({ ...p, ...origin.offset(p.x, p.y, p.z) }));
     for (const p of fill.values()) if (!shape.has(key(p))) blocks.push(p);
-    const emptyMap = new Map(schematic.empty.map(p => origin.offset(p.x, p.y, p.z))
-      .filter(p => p.y > (deck.get(`${p.x},${p.z}`) ?? base)).map(p => [key(p), { ...p }]));
+    // offset() returns a bare Vec3, which silently dropped the mark saying a
+    // cell is a room the design asked for. Rooms below the prepared deck are
+    // exactly the ones worth keeping: that is the part cut into the ground.
+    const emptyMap = new Map(schematic.empty.map(p => ({ ...origin.offset(p.x, p.y, p.z), ...(p.carved && { carved: true }) }))
+      .filter(p => p.carved || p.y > (deck.get(`${p.x},${p.z}`) ?? base)).map(p => [key(p), { ...p }]));
     // Reserve standing/head space along all added approach cells.
     for (const [xz, top] of deck) {
       const [x, z] = xz.split(',').map(Number);

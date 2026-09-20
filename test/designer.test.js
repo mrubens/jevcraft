@@ -88,7 +88,7 @@ test('designer submits the requested model, catalog schema and observed world, w
   assert.equal(state.memory.history, undefined);
   assert.equal(state.request, 'build cherry');
   assert.equal(state.world.inventory[0].name, 'oak_log');
-  assert(state.world.terrain.length > 0);
+  assert(state.world.terrain.heights.length > 0);
   assert(state.world.materials.practicalPalette.some(entry => entry.block === 'oak_stairs'));
   assert(state.world.materials.practicalPalette.some(entry => entry.block === 'oak_slab'));
   assert(!JSON.stringify(result).includes('test-secret'));
@@ -337,15 +337,25 @@ test('the quiet stretch before any words arrive is reported too, and counts read
 });
 
 test('the survey sent to the designer carries the ground profile and what already stands here', () => {
-  const { surveyForDesign } = require('../src/designer');
+  const { surveyForDesign, SURVEY, CEILING } = require('../src/designer');
   const { BuildRegistry } = require('../src/builds');
   const bot = world();
   const survey = surveyForDesign(bot);
-  assert(survey.terrain.length > 100, 'a grid of ground heights, not a single sample');
-  for (const cell of survey.terrain) {
-    assert.equal(typeof cell.groundY, 'number');
-    assert(Math.abs(cell.dx) <= 24 && Math.abs(cell.dz) <= 24, 'sampled around the bot');
-  }
+  const { heights, surface, surfacePalette, step, radius } = survey.terrain;
+  const span = (radius * 2) / step + 1;
+  assert.equal(heights.length, span, 'a square heightmap, not a scattering of probes');
+  assert(heights.every(row => row.length === span));
+  assert.equal(step, 1, 'every block, not a sample of them');
+  assert(heights.flat().every(h => h === null || typeof h === 'number'));
+  // Written as rows of numbers, the whole thing is a fraction of what the same
+  // samples would cost as one JSON object each.
+  assert(JSON.stringify(heights).length / heights.flat().length < 6, 'a few characters per sample');
+  // Ground materials change far more slowly than ground height.
+  assert(surface.length < heights.length, 'materials are sampled more coarsely than heights');
+  assert(surfacePalette.includes('grass_block'));
+  // The biggest thing Jev will build has to have somewhere to go inside the
+  // area it can see, or choosing a site is no choice at all.
+  assert(SURVEY.radius * 2 > CEILING.width * 2, 'the view is wider than the largest possible footprint');
   assert.deepEqual(survey.existingStructures, [], 'nothing built yet');
 
   // describe() needs the bot to see how much of each structure still stands;
