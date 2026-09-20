@@ -10,8 +10,10 @@ function suspendPrevious(previous) {
   return tasks.slice(-8);
 }
 
-function resumeSaved(saved) {
-  if (!saved || saved.status !== 'complete') return saved;
+function resumeSaved(saved, { currentOnly = false } = {}) {
+  // Maintenance may unpause an idle companion after a reconnect. It must not
+  // turn a completed request into permission to start older suspended work.
+  if (currentOnly || !saved || saved.status !== 'complete') return saved;
   const tasks = [...(saved.suspendedTasks || [])];
   while (tasks.length) {
     const previous = tasks.pop();

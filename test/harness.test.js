@@ -119,6 +119,20 @@ test('stop remains available while resume is waiting',async t=>{
   const resume=send('resume');const stop=await send('stop');assert.equal(stop.status,200);assert(stopped);assert.equal((await resume).status,200);
 });
 
+test('maintenance resume scope reaches the session while invalid scopes cannot issue controls', async t => {
+  const harness = await startHarness({ port: 0 }); t.after(() => harness.close());
+  const calls = [], b = bot(); harness.attach(b, { controls: { resume: async options => calls.push(options), stop: async () => calls.push('stop') } }); b.emit('spawn');
+  const send = body => fetch(harness.url + '/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jev-Harness': '1' },
+    body: JSON.stringify({ sessionId: 'live', action: 'resume', expectedEpoch: 1, ...body }) });
+  assert.equal((await send({ resumeScope: 'current' })).status, 200);
+  assert.deepEqual(calls, [{ currentOnly: true }]);
+  assert.equal((await send({})).status, 200);
+  assert.deepEqual(calls[1], { currentOnly: false });
+  assert.equal((await send({ resumeScope: 'unknown' })).status, 400);
+  assert.equal((await send({ action: 'stop', resumeScope: 'current' })).status, 400);
+  assert.equal(calls.length, 2);
+});
+
 test('inspector branch IDs include singleton siblings and never invent probabilities',async()=>{
   const source=await fs.readFile(path.join(__dirname,'../public/harness/decisions.js'),'utf8');
   const {branches}=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);

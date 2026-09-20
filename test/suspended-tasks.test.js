@@ -26,6 +26,16 @@ test('resume prioritizes the current unfinished request and never automatically 
   assert.equal(resumeSaved(complete), complete); assert.deepEqual(suspendPrevious(complete), []);
 });
 
+test('maintenance resume keeps a completed current task and preserves older work for an explicit resume', () => {
+  const earlier = { kind: 'build', request: 'an earlier pyramid', status: 'replaced' };
+  const saved = { kind: 'build', request: 'the finished pyramid', status: 'complete', suspendedTasks: [earlier] };
+  assert.equal(resumeSaved(saved, { currentOnly: true }), saved);
+  assert.equal(saved.suspendedTasks[0], earlier);
+  assert.equal(resumeSaved(saved).request, earlier.request, 'Ordinary user resume can still select older work');
+  const interrupted = { ...saved, status: 'cancelled' };
+  assert.equal(resumeSaved(interrupted, { currentOnly: true }), interrupted);
+});
+
 test('repeated interruptions remain flat and resume the most recent unfinished request first', () => {
   let current;
   for (let i = 0; i < 12; i++) current = { kind: 'build', request: `building ${i}`, status: 'replaced', suspendedTasks: suspendPrevious(current) };

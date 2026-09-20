@@ -133,11 +133,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     }).finally(() => { if (active === session) active = null; });
   }
 
-  async function resume(revision = generation) {
+  async function resume(revision = generation, options) {
     if (active?.idle) await stop('interrupted');
     if (revision !== generation || ended) return;
     if (active) { bot.chat('Already working on the saved task.'); return; }
-    const current = store.read(), saved = resumeSaved(current);
+    const current = store.read(), saved = resumeSaved(current, options);
     if (!saved || saved.status === 'complete') {
       survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
       bot.chat("I'm back! I'll look after myself while I wait for your next task."); return;
@@ -151,10 +151,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     getGoal: () => active?.goal || store.read() || {},
     controls: {
       stop: async () => { if (ended) throw new Error('Connection ended'); invalidateRequests(); await stop(); },
-      resume: async () => {
+      resume: async options => {
         if (ended || !ready) throw new Error('The bot is not ready');
         const revision = generation; pendingRequests++;
-        const operation = pending.then(() => resume(revision));
+        const operation = pending.then(() => resume(revision, options));
         pending = operation.catch(() => {}).finally(() => { pendingRequests--; });
         return operation;
       },

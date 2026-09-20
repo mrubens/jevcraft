@@ -1042,3 +1042,42 @@ looked only at the last reported action; the subsequent retreat attempt now
 overwrites that action. The counter now records actual attack calls. Its
 failed artifact remains preserved, and the corrected fixture requires an
 explicit isolated port instead of silently targeting 25574.
+
+Fresh Normal trial `mu93udp8` started empty at (-249.5,80,140.5) on commit
+`f895ac2`, requesting delivery of 16 cobblestone followed by two cycles. It
+crafted a wooden pickaxe and gathered three cobblestone, then failed to reach
+a dry mining stance at (-295,64,174). It ended near (-298.33,64,176.49) with
+health 20 and food 20; the receiver held no items. The terminal failed trace
+is preserved as `mu93udp8-failed-fresh-endurance`, and the isolated 25582 server
+was stopped. Neither delivery nor endurance passed in this run.
+
+## Resume only current work during updates
+
+A normal explicit resume can return to a suspended earlier request when the
+current request is complete. Using that control during a live update revived
+an older pyramid request. Its extra construction was stopped, all 120 changed
+cells were conditionally restored to their recorded initial states (65 air,
+55 sand) and checked against loaded world observations, and the completed
+current task and memory were restored. The original completed pyramid stayed
+intact.
+
+The loopback control API now accepts `resumeScope: "current"` with its existing
+resume action. This wakes an idle companion or resumes the current unfinished
+request while leaving older suspended tasks queued. Ordinary chat and UI
+resume retain their previous behavior. Invalid scopes are rejected, and the
+existing connection epoch, readiness and cancellation checks still apply.
+Maintenance callers should capture the current mode and task, pause before
+reconnecting, restore a mode explicitly requested by the player if the server
+forces its default on reconnect, then resume with this current-only scope.
+No autonomous gameplay action grants Creative mode.
+
+The failed baseline regression selected the old duplicate instead of keeping
+the completed request. All 517 automated tests pass with the fix, including
+scope validation and forwarding. The isolated real-session test
+`maintenance-resume-mu943876` passed: starting paused with a completed request
+and an older unfinished build, it woke into idle companion behavior while
+preserving the entire current checkpoint and its suspended task. Run it with
+`MC_PORT=<isolated-fixture-port> node scripts/maintenance-resume-test.js`, apply
+its generated setup in that fixture console and create `ready`. The initial
+`maintenance-resume-mu942tjw` fixture failed during setup because its saved
+survival record omitted the required version; that artifact is preserved.

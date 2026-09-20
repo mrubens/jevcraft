@@ -79,13 +79,15 @@ async function startHarness({ port = 3040, artifacts, stateDirectory, textureOpt
         for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 1024) return json(res, 413, { error: 'Request too large' }); }
         let command; try { command = JSON.parse(body); } catch { return json(res, 400, { error: 'Invalid JSON' }); }
         if (command.sessionId !== 'live' || !['stop', 'resume'].includes(command.action)) return json(res, 400, { error: 'Only live stop/resume controls are available' });
+        if (command.resumeScope !== undefined && (command.action !== 'resume' || !['current', 'saved'].includes(command.resumeScope))) return json(res, 400, { error: 'Resume scope must be current or saved' });
         const target = observer;
         if (!target?.connected || command.expectedEpoch !== target.epoch || Date.now() - Date.parse(trace.frames.at(-1)?.at || 0) > 6000) return json(res, 409, { error: 'The connection changed or observations are stale. Refresh before controlling Jev.' });
         if (controlBusy && command.action === 'resume') return json(res, 409, { error: 'A resume request is already running' });
         if (typeof target.controls[command.action] !== 'function') return json(res, 409, { error: 'Controls are not attached' });
         if (command.action === 'resume') controlBusy = true;
         try {
-          await target.controls[command.action]();
+          if (command.action === 'resume') await target.controls.resume({ currentOnly: command.resumeScope === 'current' });
+          else await target.controls.stop();
           target.sample('control', { action: command.action });
           return json(res, 200, { ok: true });
         } finally { if (command.action === 'resume') controlBusy = false; }
