@@ -463,6 +463,11 @@ function canClearSchematicBlock(blueprint, owned, block) {
   // changes during earthworks, not newly placed player construction.
   const original = blueprint.initialNames?.[key];
   if (original === 'water' && block.name === 'water' || original === 'grass_block' && block.name === 'dirt') return true;
+  // Leaves decay while Jev works, which rewrites their distance and persistence
+  // and so their state id. Foliage still being the same foliage is the world
+  // carrying on, not the player putting something in the way, and the site
+  // planner counted on clearing it in the first place.
+  if (original === block.name && replaceable(block)) return true;
   return blueprint.initialBlocks?.[key] === state || matchesOwnership(block, owned?.[key]);
 }
 function schematicScaffolding(bot, goal) {

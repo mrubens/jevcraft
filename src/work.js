@@ -1105,7 +1105,13 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     const block = bot.blockAt(pos(p));
     return block?.diggable && (!missing.length || !['dirt', 'cobblestone'].includes(block.name) || goal.buildOwned?.[`${p.x},${p.y},${p.z}`] !== (block.stateId ?? block.name));
   }).sort((a, b) => b.y - a.y).map(p => ({ position: p, operation: 'dig', cleanup: true,
-    priority: !missing.length ? -p.y * 1000 - pos(p).distanceTo(pos(blueprint.entrance)) : 0 }));
+    // Rock is dug from the face inward. A cell walled in on every side cannot
+    // be seen, let alone reached, until its neighbours are gone, so leaving it
+    // among the nearest candidates crowds out the ones that are actually open
+    // and strands an excavation that was only ever going to work layer by layer.
+    buried: !faces.some(f => air(bot.blockAt(pos(p).plus(f)))),
+    priority: !missing.length ? -p.y * 1000 - pos(p).distanceTo(pos(blueprint.entrance)) : 0 }))
+    .map(c => ({ ...c, priority: c.priority + (c.buried ? 1e6 : 0) }));
   // Clear reachable space before trying a face hidden by vegetation/scaffolds.
   let work = await chooseConstructionWork(bot, task, goal, [...placements, ...clearing]);
   // Upside-down trim can depend on a beam above it. Prefer low layers, but

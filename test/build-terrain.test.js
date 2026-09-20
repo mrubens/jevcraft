@@ -126,3 +126,52 @@ test('a design may be set into a hillside, and only the air it asks for is dug o
   const asked = new Set(carved.map(p => `${p.x + cut.origin.x},${p.y + cut.origin.y},${p.z + cut.origin.z}`));
   for (const p of dug) assert(asked.has(`${p.x},${p.y},${p.z}`), 'only air the design asked for is dug');
 });
+
+test('leaves decaying mid-build is the world carrying on, not the site changing', () => {
+  // Leaf state carries a distance and a persistence flag that the server
+  // rewrites as nearby logs come down, so an exact state match condemns any
+  // build with a tree beside it - and the planner counts leaves as clearable.
+  const at = new Vec3(4, 70, 9), key = `${at.x},${at.y},${at.z}`;
+  const leaf = (stateId, name = 'acacia_leaves') => ({ name, position: at, stateId });
+  const blueprint = { initialBlocks: { [key]: 100 }, initialNames: { [key]: 'acacia_leaves' } };
+
+  assert(canClearSchematicBlock(blueprint, {}, leaf(100)), 'unchanged leaves were always fine');
+  assert(canClearSchematicBlock(blueprint, {}, leaf(104)), 'and decayed leaves are still just leaves');
+  assert(!canClearSchematicBlock(blueprint, {}, leaf(200, 'chest')),
+    'something genuinely new in the way still stops the build');
+  assert(!canClearSchematicBlock({ initialBlocks: { [key]: 100 }, initialNames: { [key]: 'stone' } }, {}, leaf(200, 'stone_bricks')),
+    'and so does stone turning into someone else’s wall');
+});
+
+test('an excavation is dug from its open face, not from the middle of the rock', () => {
+  // chooseConstructionWork only weighs the nearest handful of candidates. A
+  // solid chamber's interior cells are nearer than its face, so without this
+  // they crowd out the only cells that can actually be reached and the dig
+  // strands itself before it starts.
+  const { chooseConstructionWork } = require('../src/construction-access');
+  const { Task } = require('../src/skills');
+  const Chunk = require('prismarine-chunk')(registry), World = require('prismarine-world')(registry);
+  const world = new World(() => new Chunk()).sync;
+  for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) world.setColumn(x, z, new Chunk());
+  // Solid stone everywhere below the surface; the bot stands in the open.
+  for (let x = 0; x < 12; x++) for (let z = 0; z < 12; z++) for (let y = 60; y <= 64; y++) {
+    world.setBlockStateId(new Vec3(x, y, z), registry.blocksByName.stone.defaultState);
+  }
+  const bot = { registry, world, blockAt: p => world.getBlock(p), entity: { position: new Vec3(5.5, 65, 5.5) },
+    game: { gameMode: 'creative' }, oxygenLevel: 20, inventory: { items: () => [] },
+    pathfinder: { movements: { canDig: true, scafoldingBlocks: [], exclusionAreasPlace: [] } } };
+
+  // A chamber to hollow out: the top layer is open to the sky, the rest is not.
+  const chamber = [];
+  for (let x = 3; x <= 7; x++) for (let z = 3; z <= 7; z++) for (let y = 61; y <= 64; y++) chamber.push({ x, y, z });
+  const open = chamber.filter(p => p.y === 64);
+  assert(open.length && open.length < chamber.length, 'some of it is exposed and most of it is not');
+
+  const candidates = chamber.map(p => ({ position: p, operation: 'dig', cleanup: true,
+    buried: p.y !== 64, priority: p.y !== 64 ? 1e6 : 0 }));
+  return chooseConstructionWork(bot, new Task('dig'), { blueprint: { blocks: [] }, buildPhase: 'build' }, candidates)
+    .then(work => {
+      assert(work, 'a chamber with an open top is diggable, not a dead end');
+      assert.equal(work.position.y, 64, 'the cell it picks is one that is actually exposed');
+    });
+});
