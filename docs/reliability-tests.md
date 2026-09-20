@@ -902,3 +902,52 @@ shelter centered at (740,63,191), and finished with health 20. The resumed
 runner exited successfully with zero deaths and commands; its source hashes,
 result and isolated server shutdown are recorded in `shore-recovery-resume.json`.
 This confirms recovery of the preserved failure, not fresh endurance acceptance.
+
+
+## Boat progress around bends
+
+The natural endurance failure `mu919whk` included a boat stall near the bend
+before its destination. The controller steered toward several waypoints ahead,
+but advanced its progress pointer only by passing close to every earlier cell
+in order. A simulated right-angle route reproduced the resulting loop: after
+cutting the clear corner, the boat circled near (65,-3) while its target remained
+farther north, then reported no progress. The regression runs the actual
+paddling loop and physics with a simulated clock; it failed before the fix.
+
+Progress now recognizes nearby later waypoints within a bounded lookahead.
+The boat still checks its full footprint in observed water before every move,
+checks obstacles before steering across corners, and stops on server
+corrections, changed water or cancellation. Separate moving-boat regressions
+verify those interruptions send no additional movement packet. All 513
+automated tests passed.
+
+```sh
+MC_PORT=<isolated-port> BOAT_BEND=1 node scripts/boat-test.js
+```
+
+Apply the generated `setup.json` only in the isolated console, then create
+`ready`. The supplied river has a ninety-degree bend. Jev chooses boat travel,
+crafts and boards a boat, follows an 89-block water route, reaches the far bank
+and recovers the boat. The existing natural-language test also verifies that
+an explicit request to swim selects walking/swimming instead.
+
+`boat-mu92ogsf` passed at 00:23:37 UTC on 2026-09-20. An independent client
+recorded 139 samples of the server boat carrying Jev, observed it within 1.2
+blocks of its final water waypoint, then verified the driver's arrival on the
+surveyed shore block (260,81,-39). Health stayed 20, with no deaths or server
+movement corrections. One boat remained in inventory for reuse. The earlier
+`boat-mu92mima` also completed the crossing but failed an incorrect verifier
+comparison: standing at z=-38.5 is inside block z=-39. That failed fixture is
+preserved; the corrected verifier compares the actual floored block and uses
+independent boat and player observations. These supplied river/grant fixtures
+are mechanics evidence, not natural Survival acceptance.
+
+Fresh Normal endurance run `mu92f8zd`, on source `0c2935f`, independently
+delivered 16 cobblestone at 00:18:22 UTC. Subsequent autonomous food gathering
+hunted animals and produced cooked chicken, but shelter preparation later
+blocked near (-638.64,67,-509.49) while searching for dirt below an unbuilt
+shelter at y70. The runner exited with failure after 9,340 of 48,000 required
+ticks, with health 20 and food 20. The fresh trace is preserved in
+`mu92f8zd-failed-fresh-endurance`; delivery and cooking are useful evidence,
+but the uninterrupted two-cycle gate remains unproven. The stalled dirt
+approach is the next concrete recovery case.

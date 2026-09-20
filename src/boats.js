@@ -188,7 +188,13 @@ async function paddle(bot, task, boat, trip, report = () => {}) {
       if (Date.now() > deadline || Date.now() - lastProgress > 8000) throw new Error('Boat route stopped making progress');
       const here = point(state), finish = trip.path.at(-1);
       if (flatDistance(here, finish) < 1.1 && Math.hypot(state.vx, state.vz) < .045) break;
-      while (index < trip.path.length - 1 && flatDistance(here, trip.path[index]) < 1.3) { index++; lastProgress = Date.now(); }
+      // Steering looks several cells ahead and can pass a corner without
+      // touching every earlier cell. Recognize later nearby waypoints too;
+      // otherwise the old waypoint keeps the boat circling behind its route.
+      let reached = index - 1;
+      const end = Math.min(index + 9, trip.path.length - 1);
+      for (let j = index; j < end; j++) if (flatDistance(here, trip.path[j]) < 1.3) reached = j;
+      if (reached >= index) { index = reached + 1; lastProgress = Date.now(); }
       // Look a few cells ahead, but never cut a corner through land.
       let aim = trip.path[index];
       for (let j = index + 1; j < Math.min(index + 5, trip.path.length); j++) {

@@ -57,6 +57,49 @@ test('a stopped paddling task sends no movement and removes its correction liste
   await assert.rejects(paddle(bot, task, boat, { waterY: 64, path: [new Vec3(5.5, 64, .5), new Vec3(30.5, 64, .5)] }), { name: 'Cancelled' });
   assert.equal(writes, 0); assert.equal(bot._client.listenerCount('vehicle_move'), 0);
 });
+
+test('paddling follows a bend without getting stuck on skipped waypoints and reaches the landing', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const bot = lake();
+  bot.blockAt = p => ({ name: p.y === 64 ? 'water' : p.y < 64 ? 'stone' : 'air',
+    boundingBox: p.y < 64 ? 'block' : 'empty', getProperties: () => ({ level: 0 }) });
+  const boat = { position: new Vec3(5.5, 64.64, 5.5), yaw: Math.PI * 1.5 };
+  bot.vehicle = boat; bot._client = new EventEmitter(); bot._client.write = () => {};
+  const path = [];
+  for (let x = 5; x <= 65; x++) path.push(new Vec3(x + .5, 64, 5.5));
+  for (let z = 4; z >= -25; z--) path.push(new Vec3(65.5, 64, z + .5));
+  let done = false, failure;
+  const samples = [];
+  const result = paddle(bot, new Task('bent river'), boat, { waterY: 64, path }, row => samples.push(row)).then(() => { done = true; }, e => { failure = e; done = true; });
+  for (let tick = 0; tick < 1805 && !done; tick++) { t.mock.timers.tick(50); await Promise.resolve(); }
+  await result;
+  assert.equal(failure, undefined, JSON.stringify({ error: failure?.message, position: boat.position, samples: samples.slice(-4) }));
+  assert(Math.hypot(boat.position.x - 65.5, boat.position.z + 24.5) < 1.1);
+  assert.equal(bot._client.listenerCount('vehicle_move'), 0);
+});
+
+test('paddling stops after a server correction, changed water or cancellation during travel', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  for (const kind of ['correction', 'obstacle', 'cancel']) {
+    const bot = lake(), task = new Task(kind), read = bot.blockAt;
+    let changed = false, moves = 0, done = false, failure;
+    bot.blockAt = p => changed && p.y === 64 ? { name: 'stone', boundingBox: 'block' } : read(p);
+    const boat = { position: new Vec3(5.5, 64.64, .5), yaw: Math.PI * 1.5 };
+    bot.vehicle = boat; bot._client = new EventEmitter();
+    bot._client.write = name => {
+      if (name !== 'vehicle_move' || ++moves !== 20) return;
+      if (kind === 'correction') bot._client.emit('vehicle_move', {});
+      if (kind === 'obstacle') changed = true;
+      if (kind === 'cancel') task.cancel();
+    };
+    const path = Array.from({ length: 30 }, (_, i) => new Vec3(5.5 + i, 64, .5));
+    const result = paddle(bot, task, boat, { waterY: 64, path }).then(() => { done = true; }, e => { failure = e; done = true; });
+    for (let tick = 0; tick < 1805 && !done; tick++) { t.mock.timers.tick(50); await Promise.resolve(); }
+    await result;
+    assert.match(failure?.message || '', kind === 'correction' ? /Server corrected/ : kind === 'obstacle' ? /blocked or unsafe/ : /cancelled/);
+    assert.equal(moves, 20, kind); assert.equal(bot._client.listenerCount('vehicle_move'), 0);
+  }
+});
 test('carried boats are reused and crafting chooses wood already in inventory', () => {
   const bot = { registry: require('minecraft-data')('26.1'), inventory: { items: () => [{ name: 'birch_planks', count: 8 }] } };
   assert.equal(preferredBoat(bot), 'birch_boat');
