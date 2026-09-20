@@ -166,6 +166,34 @@ test('canopy landings must still exist after the route survey and after walking'
   }
 });
 
+test('covered lower tree landings can clear leaves, with inherited protection and actual arrival checks', async () => {
+  for (const kind of ['clear', 'no_dig', 'protected', 'wet_leaf', 'uncleared', 'over_budget']) {
+    const { bot, blocks, landing } = canopyFixture(), task = new Task('covered lower landing'), goal = {};
+    blocks.set(`${landing}`, 'spruce_leaves'); blocks.set(`${landing.offset(0, 1, 0)}`, 'spruce_leaves');
+    if (kind === 'no_dig') bot.pathfinder.movements.canDig = false;
+    if (kind === 'protected') bot.pathfinder.movements.exclusionAreasBreak = [b => b.position.equals(landing) ? 100 : 0];
+    if (kind === 'wet_leaf') {
+      const blockAt = bot.blockAt;
+      bot.blockAt = p => { const b = blockAt(p); if (p.equals(landing)) b.getProperties = () => ({ waterlogged: true }); return b; };
+    }
+    const before = { ...bot.pathfinder.movements }, cleared = [landing, landing.offset(0, 1, 0)];
+    if (kind === 'over_budget') for (let i = 2; i < 9; i++) {
+      const p = landing.offset(i, 0, 0); blocks.set(`${p}`, 'spruce_leaves'); cleared.push(p);
+    }
+    bot.pathfinder.getPathTo = () => ({ status: 'success', path: [{ ...landing, toBreak: cleared }] });
+    let moved = false;
+    const run = descendCanopy(bot, task, goal, () => {}, { move: async () => {
+      moved = true; bot.entity.position = landing.offset(.5, 0, .5);
+      if (kind !== 'uncleared') for (const p of cleared) blocks.delete(`${p}`);
+    } });
+    if (kind === 'uncleared') await assert.rejects(run, /inspected landing/);
+    else assert.equal(await run, kind === 'clear', kind);
+    assert.equal(moved, ['clear', 'uncleared'].includes(kind), kind);
+    if (kind === 'clear') assert.deepEqual(goal.step.landed, { ...landing.offset(.5, 0, .5) });
+    for (const [key, value] of Object.entries(before)) assert.deepEqual(bot.pathfinder.movements[key], value, kind);
+  }
+});
+
 test('kelp and seagrass mark the water surface and never masquerade as dry underwater routes', () => {
   for (const name of ['kelp', 'kelp_plant', 'seagrass', 'tall_seagrass']) {
     const { bot } = world();

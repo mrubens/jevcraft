@@ -71,20 +71,28 @@ async function descendCanopy(bot, task, goal, save, { move = navigate } = {}) {
   const allowed = p => p.y >= start.y - 3 && p.y <= start.y + 1 &&
     Math.hypot(p.x - start.x, p.z - start.z) <= 8 && inherited(p);
   Object.assign(movement, { scafoldingBlocks: [], allowParkour: false, allowedPosition: allowed });
-  const landingSafe = p => p.y < start.y - .5 && allowed(p) && tree(bot.blockAt(p.offset(0, -1, 0))) &&
-    dryBodySpace(bot, p) && safeFromHostiles(bot, p.offset(.5, 0, .5));
+  const clearableLeaf = b => dryLeaf(b) && movement.canDig === true && !movement.blocksCantBreak?.has(b.type) &&
+    (movement.exclusionAreasBreak || []).reduce((cost, rule) => cost + rule(b), 0) < 100;
+  const landingSafe = (p, allowClearing = false) => p.y < start.y - .5 && allowed(p) && tree(bot.blockAt(p.offset(0, -1, 0))) &&
+    (dryBodySpace(bot, p) || allowClearing && [p, p.offset(0, 1, 0)].every(q => {
+      const block = bot.blockAt(q); return dryPassable(block) || clearableLeaf(block);
+    })) && safeFromHostiles(bot, p.offset(.5, 0, .5));
   try {
     const ids = bot.registry.blocksArray.filter(b => /_leaves$|_log$/.test(b.name)).map(b => b.id);
     const candidates = bot.findBlocks({ matching: ids, maxDistance: 8, count: 48,
-      useExtraInfo: b => landingSafe(b.position.offset(0, 1, 0)),
+      // A thick crown can hide the only lower trunk behind two leaf blocks.
+      // Survey that clearance; requiring air here discarded it before routing.
+      useExtraInfo: b => landingSafe(b.position.offset(0, 1, 0), true),
     }).map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(start) - b.distanceTo(start));
     for (const p of candidates.slice(0, 8)) {
       task.check();
       const destination = new goals.GoalBlock(p.x, p.y, p.z);
       const route = await surveyRoute(bot, task, movement, destination, 300);
+      const breaks = (route.path || []).flatMap(q => q.toBreak || []);
       if (route.status !== 'success' || (route.path || []).length > 16 ||
+          new Set(breaks.map(b => `${b.x},${b.y},${b.z}`)).size > 8 ||
           !(route.path || []).every(q => allowed(q) && !q.toPlace?.length &&
-            (q.toBreak || []).every(b => dryLeaf(bot.blockAt(new Vec3(b.x, b.y, b.z))))) || !landingSafe(p)) continue;
+            (q.toBreak || []).every(b => clearableLeaf(bot.blockAt(new Vec3(b.x, b.y, b.z))))) || !landingSafe(p, true)) continue;
       task.check();
       goal.step = { action: 'descend_canopy', from: { ...start }, destination: { ...p } }; save();
       await move(bot, task, destination, { timeoutMs: 12000, stallMs: 4000 });

@@ -7,12 +7,16 @@ const { Task } = require('../src/skills'), { explore, waitFor } = require('../sr
 const port = Number(process.env.MC_PORT);
 if (!Number.isInteger(port) || port < 1 || port > 65535 || [25565, 25577].includes(port)) throw new Error('Explicit isolated MC_PORT required');
 const id = Date.now().toString(36), x = Number(process.env.CANOPY_TEST_X || 3520), directory = path.resolve('artifacts', `canopy-descent-${id}`);
+const covered = process.env.CANOPY_TEST_COVERED === '1';
 fs.mkdirSync(directory, { recursive: true });
 const log = event => { const row = JSON.stringify({ at: new Date().toISOString(), ...event }); console.log(row); fs.appendFileSync(path.join(directory, 'events.jsonl'), row + '\n'); };
 const connect = prefix => { const b = mineflayer.createBot({ host: '127.0.0.1', port, username: prefix + id, version: '26.1', auth: 'offline' }); b.loadPlugin(compatibilityPlugin); b.loadPlugin(pathfinder); return b; };
 const bot = connect('Fall'), observer = connect('Watch'), task = new Task('short drops off a tree');
 let active = false, minimumHealth = 20, deaths = 0, commands = 0;
-const changes = [], landings = [], positions = [];
+const changes = [], landings = [], positions = [], serverChanges = [];
+for (const name of ['block_change', 'multi_block_change']) bot._client.on(name, packet => {
+  if (active) serverChanges.push({ name, packet });
+});
 observer.on('blockUpdate', (old, block) => {
   if (active && block && Math.abs(block.position.x - x) < 24 && Math.abs(block.position.z) < 16 && old?.name !== block.name)
     changes.push({ before: old?.name, after: block.name, position: { ...block.position } });
@@ -41,6 +45,8 @@ const timer = setTimeout(() => task.cancel(), 4 * 60000);
       `fill ${x - 12} 62 -12 ${x + 24} 62 12 bedrock`, `fill ${x - 12} 63 -12 ${x + 24} 63 12 grass_block`,
       `setblock ${x + 1} 63 0 dirt`, `fill ${x + 1} 64 0 ${x + 1} 68 0 spruce_log`,
       `setblock ${x} 71 0 spruce_leaves[persistent=true]`,
+      ...(covered ? [`fill ${x + 1} 69 0 ${x + 1} 70 0 spruce_leaves[persistent=true]`,
+        `setblock ${x + 2} 68 0 spruce_leaves[persistent=true]`] : []),
       `gamemode survival ${bot.username}`, `gamemode survival ${observer.username}`,
       `tp ${bot.username} ${x + .5} 72 .5`, `tp ${observer.username} ${x + 8.5} 64 5.5`];
     fs.writeFileSync(path.join(directory, 'setup.json'), JSON.stringify(setup, null, 2)); log({ phase: 'setup', directory });
@@ -53,11 +59,13 @@ const timer = setTimeout(() => task.cancel(), 4 * 60000);
       landings.push({ position: { ...bot.entity.position }, step: structuredClone(goal.step) });
     }
     await waitFor(task, () => bot.entity.onGround && bot.entity.position.y === 64, 5000);
-    assert.equal(landings[0].step.action, 'descend_canopy'); assert.equal(landings[0].position.y, 69, 'Uses the full three-block drop');
+    assert.equal(landings[0].step.action, 'descend_canopy');
+    if (!covered) assert.equal(landings[0].position.y, 69, 'Uses the full three-block drop');
     assert(positions.some(p => Math.abs(p.y - 69) < .05), 'Independent client saw the trunk landing');
-    assert(changes.length > 0 && changes.every(c => c.before === 'spruce_log' && c.after === 'air'), JSON.stringify(changes));
+    assert(changes.length > 0 && changes.every(c => (c.before === 'spruce_log' || covered && c.before === 'spruce_leaves') && c.after === 'air'), JSON.stringify(changes));
+    if (covered) for (const y of [69, 70]) assert(changes.some(c => c.before === 'spruce_leaves' && c.position.x === x + 1 && c.position.y === y && c.position.z === 0), 'Cleared the covered trunk landing');
     assert.equal(minimumHealth, 20); assert.equal(deaths, 0); assert.equal(commands, 0);
-    log({ result: 'PASS', landings, changes, observedPositionPackets: positions.length, minimumHealth, deaths, commands, directory });
-  } catch (error) { log({ result: 'FAIL', error: error.stack, changes, landings, position: bot.entity?.position, directory }); process.exitCode = 1; }
+    log({ result: 'PASS', covered, landings, changes, observedPositionPackets: positions.length, minimumHealth, deaths, commands, directory });
+  } catch (error) { log({ result: 'FAIL', error: error.stack, changes, landings, serverChanges, position: bot.entity?.position, directory }); process.exitCode = 1; }
   finally { clearTimeout(timer); for (const b of [bot, observer]) { b.pathfinder.setGoal(null); b.clearControlStates(); b.quit(); } setTimeout(() => process.exit(process.exitCode || 0), 500); }
 })();

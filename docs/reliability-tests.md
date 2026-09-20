@@ -792,3 +792,58 @@ both confirmed exactly 16 cobblestone. Jev retained two cobblestone and health
 20. The goal is `complete`, the runner exited successfully, and the original
 test server was stopped. This completes the preserved resumed request, not
 fresh-start acceptance or the two-cycle endurance requirement.
+
+
+## Covered canopy landings and batched pillar confirmations
+
+Fresh natural house run `mu91fa8q` started empty in a Normal jungle world and
+failed on its initial canopy at (-506.5,80,-118.5). A read-only inspection found
+a lower trunk landing at (-507,79,-124), with two leaf blocks occupying the
+standing and head cells. The leaf-only pathfinder could reach it with six route
+nodes and two leaf breaks, but the landing filter rejected it before surveying.
+
+Lower canopy candidates may now include dry leaves that the inherited movement
+policy permits breaking. The route remains limited to eight distinct leaf
+breaks, sixteen nodes, no placement, and three blocks of descent. Arrival still
+requires actual cleared body space, intact support and the inspected standing
+position. No-dig, protected and waterlogged leaves remain excluded. The focused
+regression failed before the fix and covers those restrictions, an oversized
+clearance plan and a landing that remains obstructed after movement.
+
+```sh
+MC_PORT=<isolated-port> CANOPY_TEST_COVERED=1 node scripts/canopy-descent-test.js
+```
+
+Apply the generated `setup.json` only in the isolated console and then create
+`ready`. The empty Survival bot must clear two leaves, descend the trunk in
+single-block steps and take a three-block drop to the ground. The first two
+runs (`canopy-descent-mu91n8y5`, `canopy-descent-mu91snjv`) cleared the landing but
+reported failure after a real one-block pillar descent. Packet recording showed
+that breaking the log also changed a neighboring leaf state: the server sent
+`multi_block_change`, while the descent verifier listened only to `block_change`.
+The verifier now accepts either packet format for the exact block and revokes
+confirmation if the server restores a solid block. It still requires a stable,
+supported landing; optimistic client air alone cannot pass. Both confirmation
+regressions failed before this fix.
+
+`canopy-descent-mu91uyy1` passed at 00:00:27 UTC on 2026-09-20. An independent
+client observed the two leaf removals, two trunk removals, intermediate landings
+and 91 movement packets. Jev reached y64 from y72 with health 20, no deaths,
+scaffolding or bot commands. All 508 automated tests passed. This is controlled
+mechanics evidence, not natural Survival acceptance.
+
+The preserved jungle house run was resumed with the canopy clearance fix and
+reached ordinary ground, gathered jungle wood and dirt, constructed a shelter
+and waited inside with health 20. House completion is not yet verified, and this
+retry is explicitly resumed debugging, not a fresh-start pass. Its runtime and
+runner are recorded in `covered-landing-resume.json` in the isolated world.
+
+Separately, fresh Normal endurance run `mu919whk` (source `5b2a447`) completed its
+16-cobblestone request at 23:45:51 UTC on 2026-09-19. The receiving client's
+inventory and pickup packet verified delivery. Subsequent food exploration used
+a boat, failed travel near (740,62,230), and attempted shelter preparation while
+still in water. The runner failed at 9,640 elapsed world ticks, short of 48,000,
+with `No reachable, supported 3 by 3 shelter site observed`. Its fresh trace is
+preserved as `mu919whk-failed-fresh-endurance`, the manifest records failure and
+the isolated server was stopped. It proves fresh delivery, not endurance; shore
+recovery before shelter preparation is a remaining reliability issue.

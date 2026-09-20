@@ -47,7 +47,21 @@ async function descendPillar(bot, task, goal, save, expected) {
   const changed = packet => {
     if (packet.location?.x === p.x && packet.location.y === p.y && packet.location.z === p.z) confirmed = packet.type === 0;
   };
+  const changedMany = packet => {
+    // A log break can also update neighboring leaves in the same tick. The
+    // server then batches both changes instead of sending block_change.
+    const packed = bot.supportFeature('usesMultiblockSingleLong');
+    const section = bot.supportFeature('usesMultiblock3DChunkCoords') ? packet.chunkCoordinates :
+      { x: packet.chunkX, y: 0, z: packet.chunkZ };
+    for (const record of packet.records) {
+      const x = section.x * 16 + (packed ? (record >> 8) & 15 : record.horizontalPos >> 4);
+      const y = section.y * 16 + (packed ? record & 15 : record.y);
+      const z = section.z * 16 + (packed ? (record >> 4) & 15 : record.horizontalPos & 15);
+      if (x === p.x && y === p.y && z === p.z) confirmed = (packed ? Math.floor(record / 4096) : record.blockId) === 0;
+    }
+  };
   bot._client.on('block_change', changed);
+  bot._client.on('multi_block_change', changedMany);
   try {
     await digWithAirGuard(bot, task, bot.blockAt(p));
     const deadline = Date.now() + 6000;
@@ -62,6 +76,9 @@ async function descendPillar(bot, task, goal, save, expected) {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     throw new Error('Pillar descent did not reach its server-confirmed landing');
-  } finally { bot._client.removeListener('block_change', changed); }
+  } finally {
+    bot._client.removeListener('block_change', changed);
+    bot._client.removeListener('multi_block_change', changedMany);
+  }
 }
 module.exports = { pillarDescent, descendPillar };

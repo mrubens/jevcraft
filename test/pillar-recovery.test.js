@@ -106,6 +106,43 @@ test('optimistic client air cannot complete a descent without the server block a
   assert.equal(bot._client.listenerCount('block_change'), 0);
 });
 
+test('a batched server block update confirms a real pillar landing', async () => {
+  const { bot, task, goal, blocks } = fixture();
+  bot.supportFeature = name => ['usesMultiblockSingleLong', 'usesMultiblock3DChunkCoords'].includes(name);
+  bot.dig = async b => {
+    blocks.set(`${b.position}`, 'air'); bot.entity.position.y--;
+    bot._client.emit('multi_block_change', {
+      chunkCoordinates: { x: 0, y: 4, z: 0 }, records: [306 * 4096 + 268, 12],
+    });
+  };
+  const timer = setTimeout(() => task.cancel(), 1000);
+  try { assert(await descendPillar(bot, task, goal, () => {})); }
+  finally { clearTimeout(timer); }
+  assert.equal(goal.step.landed.y, 76);
+  assert.equal(bot._client.listenerCount('block_change'), 0);
+  assert.equal(bot._client.listenerCount('multi_block_change'), 0);
+});
+
+test('unrelated batched air and a later solid correction cannot confirm a pillar landing', async () => {
+  for (const kind of ['different_section', 'different_block', 'solid_correction']) {
+    const { bot, task, goal, blocks } = fixture();
+    bot.supportFeature = () => true;
+    bot.dig = async b => {
+      blocks.set(`${b.position}`, 'air'); bot.entity.position.y--;
+      if (kind === 'solid_correction') bot._client.emit('block_change', { location: b.position, type: 0 });
+      bot._client.emit('multi_block_change', {
+        chunkCoordinates: { x: kind === 'different_section' ? -1 : 0, y: 4, z: 0 },
+        records: [kind === 'different_block' ? 268 : (kind === 'solid_correction' ? 4096 : 0) + 12],
+      });
+    };
+    const timer = setTimeout(() => task.cancel(), 400);
+    try { await assert.rejects(descendPillar(bot, task, goal, () => {}), { name: 'Cancelled' }); }
+    finally { clearTimeout(timer); }
+    assert.equal(goal.step.landed, undefined, kind);
+    assert.equal(bot._client.listenerCount('multi_block_change'), 0);
+  }
+});
+
 test('final construction cleanup can descend its own scaffold onto the finished floor, preserving unowned blocks', () => {
   const { bot, blocks, goal } = fixture();
   goal.blueprint = { blocks: [{ x: 0, y: 75, z: 0, material: 'smooth_sandstone' }], bounds: { min: { x: -2, y: 74, z: -2 }, max: { x: 2, y: 80, z: 2 } } };
