@@ -894,3 +894,11 @@ separately in `idle-shore-debug-mu9297yq`. The patched runtime reached the north
 bank from the saved water position near (740,62,230) and began gathering shelter
 materials with health 20. Completion of that resumed shelter and a fresh
 uninterrupted two-cycle endurance trial remain separate checks.
+
+
+The resumed natural shore test completed at 00:12:45 UTC on 2026-09-20. Jev
+reached dry land near (745.5,63,197.5), gathered dirt, entered and sealed a
+shelter centered at (740,63,191), and finished with health 20. The resumed
+runner exited successfully with zero deaths and commands; its source hashes,
+result and isolated server shutdown are recorded in `shore-recovery-resume.json`.
+This confirms recovery of the preserved failure, not fresh endurance acceptance.
