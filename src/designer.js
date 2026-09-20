@@ -7,12 +7,14 @@ const { isDoor, isWoodenDoor } = require('./doors');
 const { thinking } = require('./speech');
 const MODEL = 'anthropic/claude-fable-5.1';
 const LIMITS = { width: 25, height: 16, depth: 25, regions: 256, blocks: 6000 };
+const CEILING = { width: 48, height: 32, depth: 48, regions: 256, blocks: 12000 };
+const SECONDS_PER_BLOCK = 1.2;
 const vectorSchema = { type: 'array', items: { type: 'integer' }, minItems: 3, maxItems: 3 };
 const SCHEMA = { type: 'object', additionalProperties: false,
   required: ['name', 'description', 'size', 'palette', 'regions', 'entrance', 'existingOffset'], properties: {
     name: { type: 'string' }, description: { type: 'string' }, size: vectorSchema,
     palette: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 16 },
-    regions: { type: 'array', minItems: 1, maxItems: LIMITS.regions, items: { type: 'object', additionalProperties: false,
+    regions: { type: 'array', minItems: 1, maxItems: CEILING.regions, items: { type: 'object', additionalProperties: false,
       required: ['from', 'to', 'block', 'properties'], properties: { from: vectorSchema, to: vectorSchema, block: { type: 'string' },
         properties: { anyOf: [{ type: 'null' }, { type: 'object', additionalProperties: false, required: ['facing', 'half'], properties: {
           facing: { anyOf: [{ type: 'string', enum: ['north', 'east', 'south', 'west'] }, { type: 'null' }] },
@@ -53,10 +55,14 @@ function validateSchematic(input, registry) {
   for (const key of ['name', 'description']) if (typeof input[key] !== 'string' || input[key].length > 800) fail(`invalid ${key}`);
   const vector = (v, label) => { if (!Array.isArray(v) || v.length !== 3 || v.some(n => !Number.isInteger(n))) fail(`invalid ${label}`); };
   vector(input.size, 'size');
-  if (input.size.some((n, i) => n < 3 || n > [LIMITS.width, LIMITS.height, LIMITS.depth][i])) fail('dimensions exceed build limits');
+  const caps = [CEILING.width, CEILING.height, CEILING.depth], axes = ['width', 'height', 'depth'];
+  input.size.forEach((n, i) => {
+    if (n > caps[i]) fail(`${axes[i]} is ${n}, and the most Jev can build is ${caps[i]}`);
+    if (n < 1) fail(`${axes[i]} is ${n}, and every dimension must be at least 1`);
+  });
   const palette = new Set([...buildPalette(registry), 'air']);
   if (!Array.isArray(input.palette) || !input.palette.length || input.palette.length > 16 || input.palette.some(n => !palette.has(n))) fail(`unsupported block palette: ${input.palette?.filter?.(n => !palette.has(n)).join(', ') || 'invalid palette'}`);
-  if (!Array.isArray(input.regions) || !input.regions.length || input.regions.length > LIMITS.regions) fail('invalid region count');
+  if (!Array.isArray(input.regions) || !input.regions.length || input.regions.length > CEILING.regions) fail('invalid region count');
   const cells = new Map(), key = p => `${p.x},${p.y},${p.z}`;
   for (const region of input.regions) {
     if (!region || Object.keys(region).some(k => !['from', 'to', 'block', 'properties'].includes(k))) fail('invalid region');
@@ -77,7 +83,7 @@ function validateSchematic(input, registry) {
     if (!floor || floor.properties) fail('a door needs a full-block floor directly below it');
     cells.set(key(upper), upper);
   }
-  if (!cells.size || cells.size > LIMITS.blocks) fail('invalid total block count');
+  if (!cells.size || cells.size > CEILING.blocks) fail(`that is ${cells.size} blocks, and the most Jev can build is ${CEILING.blocks}`);
   const directions = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
   const connected = new Set(), queue = [...cells.values()].filter(p => p.y === 0);
   if (!queue.length) fail('no foundation');
@@ -169,10 +175,65 @@ function surveyForDesign(bot) {
     } catch { return { block, carried: stock[block] || 0, acquisition: 'No executable acquisition plan; use only what is carried' }; }
   });
   return { dimension: bot.game.dimension, gameMode: bot.game.gameMode, position: { ...o }, terrain,
-    existingStructures: bot.buildRegistry?.describe(o, bot.game.dimension) || [],
+    existingStructures: bot.buildRegistry?.describe(bot, o, bot.game.dimension) || [],
     materials: { locallyObservedSources: [...nearby], practicalPalette: materialGuide,
       catalogMeaning: 'availableBlocks lists supported block types, NOT supplies available here. Unlisted decorative materials may require distant biomes or another dimension.' },
-    inventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })), limits: LIMITS, availableBlocks: buildPalette(bot.registry) };
+    inventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })), limits: LIMITS, ceiling: CEILING, availableBlocks: buildPalette(bot.registry) };
+}
+
+async function readDesign(response, report) {
+  const body = response.body;
+  // A stubbed or non-streaming reply still answers in one piece.
+  if (!body || typeof body[Symbol.asyncIterator] !== 'function') {
+    const whole = await response.json(), choice = whole.choices?.[0];
+    return { content: choice?.message?.content, finishReason: choice?.finish_reason, usage: whole.usage };
+  }
+  const decoder = new TextDecoder();
+  let buffer = '', content = '', finishReason, usage;
+  for await (const chunk of body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let cut;
+    while ((cut = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, cut).trim();
+      buffer = buffer.slice(cut + 1);
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (payload === '[DONE]') continue;
+      let parsed;
+      try { parsed = JSON.parse(payload); } catch (_) { continue; }
+      const choice = parsed.choices?.[0];
+      content += choice?.delta?.content || '';
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
+      if (parsed.usage) usage = parsed.usage;
+      report?.(content);
+    }
+  }
+  return { content, finishReason, usage };
+}
+
+// What Jev can honestly say about a design that is still being written. The
+// model reasons before it writes anything, so the first stretch has no content
+// to report at all and only silence to break.
+function designProgress(say) {
+  let named = false, sized = false, drawing = false, spoke = Date.now();
+  const rarely = () => Date.now() - spoke >= 45000 && (spoke = Date.now(), true);
+  return text => {
+    if (!text) { if (rarely()) say('Still working it out.'); return; }
+    // The first content ends the quiet stretch, so the drawing reports itself
+    // on its own clock rather than firing the moment it begins.
+    if (!drawing) { drawing = true; spoke = Date.now(); }
+    if (!named) {
+      const name = /"name"\s*:\s*"([^"]{1,60})"/.exec(text);
+      if (name) { named = true; say(`I'm calling it ${name[1]}.`); }
+    }
+    if (!sized) {
+      const size = /"size"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]/.exec(text);
+      if (size) { sized = true; say(`It comes out ${size[1]} by ${size[3]}, and ${size[2]} tall.`); }
+    }
+    // Vanilla kicks a chatty client, so the drawing is reported rarely.
+    const drawn = (text.match(/"block"\s*:/g) || []).length;
+    if (drawn && rarely()) say(`Still drawing: ${drawn} piece${drawn === 1 ? '' : 's'} so far.`);
+  };
 }
 
 async function designBuilding(bot, task, request, { fetchImpl = fetch, apiKey = process.env.OPENROUTER_API_KEY,
@@ -184,7 +245,11 @@ async function designBuilding(bot, task, request, { fetchImpl = fetch, apiKey = 
   const allowed = [...world.availableBlocks, 'air'];
   schema.properties.palette.items.enum = allowed;
   schema.properties.regions.items.properties.block.enum = allowed;
-  const timer = setTimeout(() => controller.abort(new Error('Building designer timed out')), 180000);
+  // A castle is a far longer answer than a hut: the model reasons for a while
+  // and then writes it out at a few dozen tokens a second. Three minutes was
+  // the budget for ordinary builds and cut the big ones off mid-sentence, which
+  // is why Jev now narrates the wait instead of standing silent through it.
+  const timer = setTimeout(() => controller.abort(new Error('Building designer timed out')), 480000);
   const watcher = setInterval(() => { try { task.check(); checkAir(bot); } catch (e) { controller.abort(e); } }, 100);
   const stopThinking = thinking(bot);
   try {
@@ -192,23 +257,31 @@ async function designBuilding(bot, task, request, { fetchImpl = fetch, apiKey = 
     const response = await fetchImpl('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST', signal: controller.signal,
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, max_tokens: 10000, reasoning: { effort: 'low' }, provider: { require_parameters: true },
-        messages: [{ role: 'system', content: `Design an attractive, usable Minecraft structure matching the player request. Return only a schematic, never commands or code. Coordinates are local [x,y,z] inside size. Regions are inclusive filled cuboids, applied in order; air carves openings. Unspecified cells are air. Use only availableBlocks, at most 16 palette entries and ${LIMITS.regions} regions; dimensions at most 25x16x25 and at most ${LIMITS.blocks} solid blocks. All solid components must connect to a foundation at y=0. Follow the requested shape rather than forcing every structure to be a house. Current explicit instructions override memory. Relevant explicit memory notes override learned memory.preferences. Learned wood preferences are soft defaults for unspecified materials, not mandatory ingredients: favor that wood when practical, but do not start a distant expedition solely for an inferred preference. Never treat a previous task or remembered text as a new action request. Include floors, walls, a roof, windows and walkable interiors only when appropriate. Sculptures, monuments, arches and other structures need not have rooms or a doorway: use entrance:null when the structure is not meant to be entered. For structures meant to be entered, provide a usable entrance. In Survival, use world.materials.practicalPalette for the main structure unless the request specifies another material. The for64Blocks recipes show the real gathering effort: prefer abundant carried supplies or cheap local materials. For an ordinary request without a size, aim for 80-200 solid blocks total; spend detail on shape, proportions and openings, not large bulk. Larger explicitly requested builds may use the full limits. Do not add Nether-only blocks, rare biome blocks, or smelted decorative variants unless the player requested them or enough are already carried. If a light block is not locally practical, leave a window/skylight instead. These are design choices, not reasons to ask the player questions. Make mansions visibly larger and architecturally richer than simple houses, with connected rooms and a usable entrance. For an enterable structure, reserve a two-block-high entrance opening at y>=1 with a floor directly beneath it; entrance gives its bottom air cell. Inset entrances are allowed when a supported, two-block-high walking route reaches an exterior edge of the bounding box. Every interior floor must be reachable from the entrance by walking and one-block jumps; carve the floor above each staircase to leave jumping headroom over the current step as well as the destination. Stairs and slabs are available. Every stair region needs properties:{facing:"north"|"east"|"south"|"west",half:"bottom"|"top"}. Facing points toward the high side of bottom stairs (north=-z, south=+z, east=+x, west=-x). Every slab region needs properties:{facing:null,half:"bottom"|"top"}. Other blocks use properties:null. Stair corners join automatically; do not specify shape, waterlogging or double slabs. Use full blocks for structural supports and entrance floors; stairs/slabs are useful for steps, roofs and trim. Wooden doors are available. A door region specifies only its lower cell, with properties:{facing:"north"|"east"|"south"|"west",half:null}. Code adds the upper cell and counts one inventory door for the pair. Leave the cell above it free and put a full block directly below it. Facing follows the walking direction through the doorway, for example south for entering from a north wall. A usable entrance may contain a door. Do not specify hinges, open states, or upper door halves; Minecraft handles them. Design compactly with cuboids rather than listing thousands of individual blocks. When \`extending\` is present the player wants an existing building changed, and its exact schematic is given in its own local coordinates. Return the COMPLETE building as it should end up, existing parts and changes together, and set existingOffset to the local position the old building's [0,0,0] now occupies in your drawing. Any cell you leave out is torn down, so this expresses whatever the request actually means: adding a wing or a balcony, opening a wall, taking a roof off, raising a storey, reshaping or redecorating. You are free to alter the original where the request calls for it; keep the parts it does not. The result must be ONE connected building: every part you add shares a face with the existing structure or with something else you add, never floating beside it with air in between. Match the existing materials and proportions unless asked otherwise, and keep the whole result within the size limits. For a fresh build with nothing to change, set existingOffset to null. The surveyed terrain informs the scale and style; code will choose and revalidate a nearby supported site. world.existingStructures lists buildings already standing here: match the materials and proportions of any the request adjoins.` },
+      body: JSON.stringify({ model, max_tokens: 32000, reasoning: { effort: 'low' }, provider: { require_parameters: true },
+        stream: true, stream_options: { include_usage: true },
+        messages: [{ role: 'system', content: `Design an attractive, usable Minecraft structure matching the player request. Return only a schematic, never commands or code. Coordinates are local [x,y,z] inside size. Regions are inclusive filled cuboids, applied in order; air carves openings. Unspecified cells are air. Use only availableBlocks, at most 16 palette entries and ${LIMITS.regions} regions; A flat or thin structure is fine: an arch, a wall or a statue may be one or two blocks deep. Ordinary requests belong within ${LIMITS.width}x${LIMITS.height}x${LIMITS.depth} and ${LIMITS.blocks} solid blocks, which is what most builds should use. Go beyond that, up to ${CEILING.width}x${CEILING.height}x${CEILING.depth} and ${CEILING.blocks} blocks, when the player asks for something large outright or the thing asked for is large by its nature, such as a castle, a cathedral, a bridge across a valley or a statue meant to be seen from far off. Build it at the size it deserves rather than shrinking it to fit; Jev places every block by hand at about ${SECONDS_PER_BLOCK} seconds each, so size it to the request and not beyond it. All solid components must connect to a foundation at y=0. Follow the requested shape rather than forcing every structure to be a house. Current explicit instructions override memory. Relevant explicit memory notes override learned memory.preferences. Learned wood preferences are soft defaults for unspecified materials, not mandatory ingredients: favor that wood when practical, but do not start a distant expedition solely for an inferred preference. Never treat a previous task or remembered text as a new action request. Include floors, walls, a roof, windows and walkable interiors only when appropriate. Sculptures, monuments, arches and other structures need not have rooms or a doorway: use entrance:null when the structure is not meant to be entered. For structures meant to be entered, provide a usable entrance. In Survival, use world.materials.practicalPalette for the main structure unless the request specifies another material. The for64Blocks recipes show the real gathering effort: prefer abundant carried supplies or cheap local materials. For an ordinary request without a size, aim for 80-200 solid blocks total; spend detail on shape, proportions and openings, not large bulk. Do not add Nether-only blocks, rare biome blocks, or smelted decorative variants unless the player requested them or enough are already carried. If a light block is not locally practical, leave a window/skylight instead. These are design choices, not reasons to ask the player questions. Make mansions visibly larger and architecturally richer than simple houses, with connected rooms and a usable entrance. For an enterable structure, reserve a two-block-high entrance opening at y>=1 with a floor directly beneath it; entrance gives its bottom air cell. Inset entrances are allowed when a supported, two-block-high walking route reaches an exterior edge of the bounding box. Every interior floor must be reachable from the entrance by walking and one-block jumps; carve the floor above each staircase to leave jumping headroom over the current step as well as the destination. Stairs and slabs are available. Every stair region needs properties:{facing:"north"|"east"|"south"|"west",half:"bottom"|"top"}. Facing points toward the high side of bottom stairs (north=-z, south=+z, east=+x, west=-x). Every slab region needs properties:{facing:null,half:"bottom"|"top"}. Other blocks use properties:null. Stair corners join automatically; do not specify shape, waterlogging or double slabs. Use full blocks for structural supports and entrance floors; stairs/slabs are useful for steps, roofs and trim. Wooden doors are available. A door region specifies only its lower cell, with properties:{facing:"north"|"east"|"south"|"west",half:null}. Code adds the upper cell and counts one inventory door for the pair. Leave the cell above it free and put a full block directly below it. Facing follows the walking direction through the doorway, for example south for entering from a north wall. A usable entrance may contain a door. Do not specify hinges, open states, or upper door halves; Minecraft handles them. Design compactly with cuboids rather than listing thousands of individual blocks. When \`extending\` is present the player wants an existing building changed, and its exact schematic is given in its own local coordinates. Return the COMPLETE building as it should end up, existing parts and changes together, and set existingOffset to the local position the old building's [0,0,0] now occupies in your drawing. Any cell you leave out is torn down, so this expresses whatever the request actually means: adding a wing or a balcony, opening a wall, taking a roof off, raising a storey, reshaping or redecorating. You are free to alter the original where the request calls for it; keep the parts it does not. The result must be ONE connected building: every part you add shares a face with the existing structure or with something else you add, never floating beside it with air in between. Match the existing materials and proportions unless asked otherwise, and keep the whole result within the size limits. For a fresh build with nothing to change, set existingOffset to null. The surveyed terrain informs the scale and style; code will choose and revalidate a nearby supported site. world.existingStructures lists buildings already standing here: match the materials and proportions of any the request adjoins.` },
           { role: 'user', content: JSON.stringify({ request, world, memory, extending }) },
           ...(previousDraft ? [{ role: 'assistant', content: JSON.stringify(previousDraft) },
             { role: 'user', content: `The schematic failed validation: ${feedback}. Correct this issue while preserving the requested structure and materials. Do not replace it with a different building type. Check all geometry, connections, entrance access and walkable interior floors before returning it. Return the full corrected schematic.` }] : [])],
         response_format: { type: 'json_schema', json_schema: { name: 'minecraft_schematic', strict: true, schema } } }),
     });
     if (!response.ok) throw new Error(`Building designer request failed (${response.status})`);
-    const result = await response.json(); task.check();
-    const content = result.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') throw new Error('Building designer returned no schematic');
+    const { content, finishReason, usage } = await readDesign(response, designProgress(message => {
+      try { bot.chat(message); } catch (_) { /* an aside is never worth failing the design over */ }
+    }));
+    task.check();
+    // Say when the answer ran out of room rather than reporting an empty one:
+    // the retry can only shorten the design if it knows that is the problem.
+    if (finishReason === 'length') {
+      throw new Error('the design was too long to finish writing; use fewer, larger cuboid regions to describe the same structure');
+    }
+    if (typeof content !== 'string' || !content) throw new Error('Building designer returned no schematic');
     if (content.length > 200000) throw new Error('Building designer response exceeded the schematic size limit');
     const draft = JSON.parse(content);
     let validated;
     try { validated = validateSchematic(draft, bot.registry); }
     catch (err) { err.draft = draft; throw err; }
-    return { ...validated, model, createdAt: new Date().toISOString(), usage: result.usage, world };
+    return { ...validated, model, createdAt: new Date().toISOString(), usage, world };
   } finally { clearTimeout(timer); clearInterval(watcher); stopThinking(); }
 }
 
@@ -350,4 +423,4 @@ function schematicScaffolding(bot, goal) {
     return ['dirt', 'cobblestone'].includes(block?.name) && (block.stateId ?? block.name) === state ? [{ ...p }] : [];
   });
 }
-module.exports = { MODEL, LIMITS, SCHEMA, buildPalette, validateSchematic, surveyForDesign, designBuilding, selectSchematicSite, canClearSchematicBlock, schematicScaffolding };
+module.exports = { MODEL, LIMITS, CEILING, SECONDS_PER_BLOCK, SCHEMA, designProgress, buildPalette, validateSchematic, surveyForDesign, designBuilding, selectSchematicSite, canClearSchematicBlock, schematicScaffolding };

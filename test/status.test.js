@@ -1,5 +1,6 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
+const { Vec3 } = require('vec3');
 const { statusMessage } = require('../src/status');
 const { completion, friendlyProblem } = require('../src/speech');
 const bot = { health: 18, food: 16 };
@@ -54,19 +55,41 @@ test('a plan the world outgrew asks for a new build instead of an endless resume
   assert.equal(recoveryHint(undefined), 'Say "Jev resume" to try again.');
 });
 
-test('a long think shows as an arm swing instead of a frozen bot', t => {
+test('a long think is an uneven fidget, not a metronome or a frozen bot', t => {
   const { thinking } = require('../src/speech');
   t.mock.timers.enable({ apis: ['setInterval'] });
-  const swings = [];
-  const stop = thinking({ swingArm: arm => swings.push(arm) }, 1500);
+  const swings = [], looks = [];
+  const bot = { swingArm: arm => swings.push(arm), look: (yaw, pitch) => looks.push([yaw, pitch]),
+    entity: { yaw: 1, pitch: 0, position: new Vec3(0, 64, 0) } };
+  const stop = thinking(bot, 1500);
   assert.deepEqual(swings, ['right'], 'the first swing is immediate, not an interval late');
-  t.mock.timers.tick(1500); t.mock.timers.tick(1500);
-  assert.equal(swings.length, 3);
+
+  // Six beats at half the nominal interval: the arm rests on every third one,
+  // so the rhythm reads as thought rather than as a stuck animation.
+  for (let i = 0; i < 6; i++) t.mock.timers.tick(750);
+  assert.equal(swings.length, 5, 'four of six beats swing, plus the opening one');
+  assert(looks.length >= 5, 'and Jev glances about while it ponders');
+  assert(new Set(looks.map(([yaw]) => yaw)).size > 1, 'the head moves rather than locking to one angle');
+
   stop();
+  assert.deepEqual(looks.at(-1), [1, 0], 'a think hands back the direction it borrowed');
+  const after = swings.length;
   t.mock.timers.tick(9000);
-  assert.equal(swings.length, 3, 'the emote ends with the work it was covering');
-  // An emote must never be a reason for the work it decorates to fail.
+  assert.equal(swings.length, after, 'the emote ends with the work it was covering');
+});
+
+test('the thinking emote never becomes a reason for the work it covers to fail', t => {
+  const { thinking } = require('../src/speech');
+  t.mock.timers.enable({ apis: ['setInterval'] });
   assert.doesNotThrow(() => thinking({ swingArm: () => { throw new Error('socket closed'); } })());
   assert.doesNotThrow(() => thinking({})());
   assert.doesNotThrow(() => thinking(null)());
+  // A bot that is walking keeps its head: the navigator is aiming it.
+  const looks = [];
+  const moving = { swingArm: () => {}, look: (...a) => looks.push(a),
+    entity: { yaw: 0, pitch: 0, position: new Vec3(0, 64, 0) } };
+  const stop = thinking(moving, 1500);
+  for (let i = 0; i < 4; i++) { moving.entity.position = moving.entity.position.offset(1, 0, 0); t.mock.timers.tick(750); }
+  stop();
+  assert.equal(looks.filter(([yaw]) => yaw !== 0).length, 0, 'no glancing about while under way');
 });

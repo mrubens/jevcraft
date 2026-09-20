@@ -272,3 +272,93 @@ test('scaffolding cleanup includes nearby bot dirt but preserves designed, chang
   const buildOwned = { [key(scaffold)]: dirt, [key(changed)]: dirt, [key(planned)]: dirt, '1000,64,1000': dirt };
   assert.deepEqual(schematicScaffolding(bot, { blueprint, buildOwned }), [{ ...scaffold }]);
 });
+
+test('a design that takes minutes reports itself as it is written', async () => {
+  // The name and the footprint arrive in schema order, long before the last
+  // wall is drawn, so Jev can say something true instead of going silent.
+  const chunks = ['{"name":"Highkeep Castle","des', 'cription":"A keep","size":[48,', '32,24],"palette":["stone"]',
+    ',"regions":[{"from":[0,0,0],"to":[47,0,23],"block":"stone","properties":null}]',
+    ',"entrance":null,"existingOffset":null}'];
+  const said = [];
+  const bot = world();
+  bot.chat = message => said.push(message);
+  const body = (async function* () {
+    for (const piece of chunks) {
+      yield Buffer.from(`data: ${JSON.stringify({ choices: [{ delta: { content: piece } }] })}\n\n`);
+    }
+    yield Buffer.from(`data: ${JSON.stringify({ choices: [{ finish_reason: 'stop', delta: {} }], usage: { completion_tokens: 900 } })}\n\n`);
+    yield Buffer.from('data: [DONE]\n\n');
+  })();
+
+  let body_sent;
+  const result = await designBuilding(bot, new Task('design'), 'build a huge castle', {
+    apiKey: 'test', fetchImpl: async (_url, options) => { body_sent = JSON.parse(options.body); return { ok: true, body }; },
+  });
+  assert.equal(body_sent.stream, true, 'the answer is asked for as it is written');
+  assert.equal(result.source.name, 'Highkeep Castle', 'the streamed pieces reassemble into one schematic');
+  assert.equal(result.usage.completion_tokens, 900, 'and the accounting still arrives');
+  assert(said.some(m => m.includes('Highkeep Castle')), 'Jev names it while it is still drawing');
+  assert(said.some(m => /48 by 24, and 32 tall/.test(m)), 'and says how big it is turning out');
+});
+
+test('a design cut off mid-sentence says so, rather than reporting an empty answer', async () => {
+  const body = (async function* () {
+    yield Buffer.from(`data: ${JSON.stringify({ choices: [{ delta: { content: '{"name":"Endless Keep","size":[48,' } }] })}\n\n`);
+    yield Buffer.from(`data: ${JSON.stringify({ choices: [{ finish_reason: 'length', delta: {} }] })}\n\n`);
+  })();
+  await assert.rejects(
+    designBuilding(world(), new Task('design'), 'build a castle', { apiKey: 'test', fetchImpl: async () => ({ ok: true, body }) }),
+    /too long to finish writing/, 'the retry is told to use fewer, larger regions');
+});
+
+test('the quiet stretch before any words arrive is reported too, and counts read naturally', () => {
+  const { designProgress } = require('../src/designer');
+  const said = [];
+  let now = 1000;
+  const realNow = Date.now;
+  Date.now = () => now;
+  try {
+    const report = designProgress(m => said.push(m));
+    report('');                       // the model is still reasoning
+    assert.deepEqual(said, [], 'nothing to say in the first moments');
+    now += 46000; report('');
+    assert.deepEqual(said, ['Still working it out.'], 'silence gets broken, but rarely');
+
+    // The first content restarts the clock, so the drawing does not announce
+    // itself in the same breath as the name.
+    now += 1000; report('{"name":"Highstone Castle","size":[41,30,41],"regions":[{"block":"stone"}');
+    assert.deepEqual(said.slice(1), ["I'm calling it Highstone Castle.", 'It comes out 41 by 41, and 30 tall.']);
+
+    now += 46000; report('{"name":"x","regions":[{"block":"a"}]}');
+    assert.equal(said.at(-1), 'Still drawing: 1 piece so far.', 'one piece, not "1 pieces"');
+    now += 46000; report('[{"block":"a"},{"block":"b"}]');
+    assert.equal(said.at(-1), 'Still drawing: 2 pieces so far.');
+  } finally { Date.now = realNow; }
+});
+
+test('the survey sent to the designer carries the ground profile and what already stands here', () => {
+  const { surveyForDesign } = require('../src/designer');
+  const { BuildRegistry } = require('../src/builds');
+  const bot = world();
+  const survey = surveyForDesign(bot);
+  assert(survey.terrain.length > 100, 'a grid of ground heights, not a single sample');
+  for (const cell of survey.terrain) {
+    assert.equal(typeof cell.groundY, 'number');
+    assert(Math.abs(cell.dx) <= 24 && Math.abs(cell.dz) <= 24, 'sampled around the bot');
+  }
+  assert.deepEqual(survey.existingStructures, [], 'nothing built yet');
+
+  // describe() needs the bot to see how much of each structure still stands;
+  // called without it, every past build silently vanishes from the survey.
+  const store = new BuildRegistry(null);
+  // Cells that really are what Jev left there, so the hut reads as standing.
+  const cells = Array.from({ length: 6 }, (_, i) => ({ x: i, y: 63, z: 0, material: 'grass_block' }));
+  store.remember({ kind: 'build', request: 'build a hut', design: { source: { name: 'Hut' } },
+    blueprint: { origin: { x: 0, y: 63, z: 0 }, entrance: { x: 2, y: 64, z: -1 },
+      bounds: { min: { x: 0, y: 63, z: 0 }, max: { x: 5, y: 63, z: 0 } }, blocks: cells, empty: [] } },
+    { dimension: bot.game.dimension });
+  bot.buildRegistry = store;
+  const withHut = surveyForDesign(bot);
+  assert.equal(withHut.existingStructures.length, 1, 'the designer is told what it is building next to');
+  assert.equal(withHut.existingStructures[0].name, 'Hut');
+});

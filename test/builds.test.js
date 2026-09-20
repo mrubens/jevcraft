@@ -4,7 +4,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
 const { Vec3 } = require('vec3');
 const registry = require('minecraft-data')('26.1');
 const { BuildRegistry, resolveBuildContinuation, MAX_BUILDS } = require('../src/builds');
-const { validateSchematic, selectSchematicSite } = require('../src/designer');
+const { validateSchematic, selectSchematicSite, LIMITS, CEILING } = require('../src/designer');
 
 const source = { name: 'Pavilion', description: 'Open building', size: [5, 5, 5], palette: ['oak_planks'], entrance: [2, 1, 0], regions: [
   { from: [0, 0, 0], to: [4, 0, 4], block: 'oak_planks' },
@@ -262,4 +262,34 @@ test('rebuilding the same place updates that structure instead of listing it twi
 
   store.remember(buildGoal('Shed', { x: 40, y: 62, z: 0 }, cell), { dimension: 'overworld' });
   assert.equal(store.all('overworld').length, 2, 'a different place is still a different structure');
+});
+
+test('a thin structure like an arch is buildable, and an oversized one says which axis', () => {
+  // The size cap is about how long a build takes to place block by block, which
+  // says nothing about a floor under each axis. A rainbow two blocks deep was
+  // rejected as if it were too large, and the retry kept shrinking it.
+  const arch = { name: 'Rainbow Arch', description: 'An arch two blocks deep', size: [15, 8, 2],
+    palette: ['red_wool', 'orange_wool'], entrance: null, regions: [
+      { from: [0, 0, 0], to: [0, 6, 1], block: 'red_wool' },
+      { from: [14, 0, 0], to: [14, 6, 1], block: 'red_wool' },
+      { from: [0, 7, 0], to: [14, 7, 1], block: 'orange_wool' },
+    ] };
+  const built = validateSchematic(arch, registry);
+  assert.equal(built.source.size[2], 2, 'two blocks deep is a shape, not a violation');
+  assert(built.blocks.length > 0);
+
+  // An ordinary request should stay small, but something big by nature is
+  // built at the size it deserves rather than shrunk to fit.
+  const wide = { ...arch, size: [40, 8, 2], regions: [
+    { from: [0, 0, 0], to: [0, 6, 1], block: 'red_wool' },
+    { from: [39, 0, 0], to: [39, 6, 1], block: 'red_wool' },
+    { from: [0, 7, 0], to: [39, 7, 1], block: 'orange_wool' },
+  ] };
+  assert(validateSchematic(wide, registry), 'past the everyday size, still well inside what Jev will attempt');
+  assert(CEILING.width > LIMITS.width && CEILING.blocks > LIMITS.blocks, 'the everyday size is the smaller of the two');
+
+  assert.throws(() => validateSchematic({ ...arch, size: [CEILING.width + 1, 8, 2] }, registry),
+    new RegExp(`width is ${CEILING.width + 1}, and the most Jev can build is ${CEILING.width}`),
+    'the retry is told which axis and by how much, not just that it is too big');
+  assert.throws(() => validateSchematic({ ...arch, size: [15, CEILING.height + 1, 2] }, registry), /^(?!.*width).*height is/s);
 });

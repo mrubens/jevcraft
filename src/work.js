@@ -19,7 +19,7 @@ const { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginS
 const { bootstrapPickaxe } = require('./tool-recovery');
 const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives, knownResourceLocations, knownResourceNames, rememberResources, isSurfaceResource } = require('./resource-observation');
-const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('./designer');
+const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding, LIMITS, SECONDS_PER_BLOCK } = require('./designer');
 const { designWithJev } = require('./build-templates');
 const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine } = require('./mining-access');
 const { dryPassable, supportCell } = require('./terrain');
@@ -917,6 +917,17 @@ async function designedBuildStep(bot, task, goal, save, client, onStep) {
   finally { bot.removeListener('blockPlaced', placed); }
 }
 
+// How long a blueprint will take to place, for the builds big enough that a
+// player deserves to hear it before Jev starts rather than an hour in.
+function buildEffort(blueprint) {
+  const blocks = (blueprint?.blocks || []).filter(cell => !cell.companion).length;
+  if (blocks <= LIMITS.blocks / 4) return null;
+  const minutes = Math.round(blocks * SECONDS_PER_BLOCK / 60);
+  const hours = Math.floor(minutes / 60), rest = minutes % 60;
+  const spoken = hours ? `${hours} hour${hours === 1 ? '' : 's'}${rest ? ` and ${rest} minutes` : ''}` : `${minutes} minutes`;
+  return { blocks, minutes, spoken };
+}
+
 async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = () => {}) {
   if (goal.continueBuild && !goal.blueprint) {
     const entry = bot.buildRegistry?.find(goal.continueBuild.id);
@@ -1009,6 +1020,10 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     }
     save();
     bot.chat(`Building ${goal.design.source.name} near ${pos(goal.blueprint.origin)}.`);
+    // Something castle-sized is hours of placing blocks by hand. Say so at
+    // the start, while stopping it is still a cheap decision for the player.
+    const effort = buildEffort(goal.blueprint);
+    if (effort) bot.chat(`That is a big one: ${effort.blocks} blocks, so give me about ${effort.spoken}. Say "Jev stop" if that is too long.`);
     if (goal.blueprint.preserved?.length) {
       bot.chat(`There are ${goal.blueprint.preserved.length} blocks already there. I'll build around them rather than take them down.`);
     }

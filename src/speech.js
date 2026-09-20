@@ -7,6 +7,9 @@ const list = tasks => tasks.map(t => `${t.count} ${name(t.item)}`).join(', ');
 // Not every blocker can be retried. Once the world no longer matches the saved
 // plan, resume fails the same way every time, so name what does help instead.
 const REPLAN = /building site changed/i;
+// Radians of yaw either side of where Jev was already facing: a glance around
+// while it ponders, never a full spin.
+const SWAY = [-.55, .35, -.15, .7, .1, -.4];
 function recoveryHint(error) {
   return REPLAN.test(String(error?.message || error || ''))
     ? 'Ask me to build it again and I will pick a fresh spot.'
@@ -23,10 +26,35 @@ function recoveryHint(error) {
 function thinking(bot, intervalMs = 1500) {
   if (typeof bot?.swingArm !== 'function') return () => {};
   const swing = () => { try { bot.swingArm('right'); } catch (_) { /* a closed socket is not worth reporting */ } };
-  swing();
-  const timer = setInterval(swing, intervalMs);
+  // Where Jev was facing before it started pondering, to be given back at the
+  // end so a think never leaves it staring off in a new direction.
+  const home = bot.entity && Number.isFinite(bot.entity.yaw) ? { yaw: bot.entity.yaw, pitch: bot.entity.pitch } : null;
+  const canLook = home && typeof bot.look === 'function';
+  const glance = (yaw, pitch) => {
+    try { Promise.resolve(bot.look(yaw, pitch, true)).catch(() => {}); } catch (_) { /* as above */ }
+  };
+  // Looking around is only safe while Jev is standing still. The navigator
+  // aims the head every tick while it flies or walks, and an emote must never
+  // fight it for that; comparing position beat to beat needs no knowledge of
+  // which subsystem is driving.
+  let previous = bot.entity?.position?.clone?.() || null, beat = 0;
+  const tick = () => {
+    const here = bot.entity?.position;
+    const still = here && previous && here.distanceTo(previous) < .05;
+    if (here?.clone) previous = here.clone();
+    // An even beat reads as a stuck animation rather than as thought, so the
+    // arm rests every third one and the head drifts on its own longer cycle.
+    if (beat % 3 !== 2) swing();
+    if (still && canLook) glance(home.yaw + SWAY[beat % SWAY.length], home.pitch + (beat % 4 === 0 ? -.3 : .12));
+    beat++;
+  };
+  swing(); beat = 1;
+  const timer = setInterval(tick, Math.max(200, Math.round(intervalMs / 2)));
   timer.unref?.();
-  return () => clearInterval(timer);
+  return () => {
+    clearInterval(timer);
+    if (canLook) glance(home.yaw, home.pitch);
+  };
 }
 
 function friendlyProblem(error) {
