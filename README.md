@@ -87,7 +87,7 @@ Start a request with **“Jev …”** or the bot’s configured username. These
 | `Jev build a small cherry mansion` | Request a custom building design. |
 | `Jev find a way to the Nether` | Work toward a portal and verify entry; survival progression remains experimental. |
 
-**“For me” requests delivery.** `Jev craft me a chest` brings the chest to you; `Jev craft a chest` keeps it in the bot’s inventory. Stay nearby for handovers: delivery requires observed pickup by the intended player.
+**“For me” requests delivery.** `Jev craft me a chest` brings the chest to you; `Jev craft a chest` keeps it in the bot’s inventory. Stay nearby for handovers. If there is no safe throwing spot, Jev can use a nearby chest or make and place one, verify the stored items, and tell you its coordinates. Ordinary handoffs still require observed pickup by the intended player. Chest deposits are saved separately in the delivery evidence, so Jev tells you where to collect them and avoids repeating a confirmed deposit after a restart.
 
 | Control | Effect |
 | --- | --- |

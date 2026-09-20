@@ -40,6 +40,9 @@ after a throw and the bot still carries spare copies.
 `node --test test/delivery.test.js` covers spare stock, partial pickups, previous
 completed handovers, exact stack splitting, and a recipient moving away.
 
+Chest fallback is covered separately below. Its `method: "chest"` evidence means
+verified storage, not observed pickup by the player.
+
 When all inventory slots are occupied, a partial-stack handover uses ordinary
 single-item hand drops instead of requiring a temporary empty slot. It checks
 the recipient and cancellation before each drop, confirms the inventory change,
@@ -1127,3 +1130,56 @@ claim that every cramped position is solved. The runner exited successfully;
 isolated server was stopped. The original fresh failure remains unchanged.
 This proves recovery and delivery in resumed debugging, not fresh-start
 acceptance or the uninterrupted two-cycle endurance gate.
+
+## Chest fallback for difficult handovers
+
+Fresh natural Normal run `mu94ua4p` (source `e52877d`) gathered all 16 requested
+cobblestone, then failed to find a handover position beside its recipient on a
+canopy. The failed fresh recording is preserved in
+`artifacts/mu94ua4p-failed-fresh-endurance`. Allowing adjacent downhill throws
+worked once in resumed debugging, but repeated isolated tests exposed self-pickup
+and overshooting. That spacing change was withdrawn; the original throwing
+clearance remains intact. Neither that resumed delivery nor these controlled
+fixtures prove fresh Survival endurance.
+
+When no supported throwing position is reachable, Jev now chooses chest delivery.
+He checks for a nearby ordinary chest with a clear lid and a reachable face. If
+needed, he acquires and places one on supported, empty ground near the recipient,
+using existing construction access without excavation or scaffolding. Requested
+outputs, including other items in a combined request, are reserved while making
+the chest. A throw that comes back into Jev's inventory can also switch to chest
+delivery; uncertain lost items cannot authorize a replacement.
+
+Every deposit records a checkpoint before transferring anything. Completion
+requires the chest count to increase by exactly the amount lost from the carried
+inventory. Reopening after interruption reconciles those counts before depositing
+any remainder. Ambiguous counts retain the checkpoint and stop. Existing chest
+contents are preserved, and full chests are skipped. The saved delivery evidence
+identifies chest storage explicitly, with item, count, recipient, dimension and
+coordinates. Chat directs the player to that chest instead of claiming a pickup.
+The existing direct-pickup acceptance harness still requires recipient inventory;
+a chest deposit is not silently counted as that acceptance evidence.
+
+Run the controlled fixture with
+`MC_PORT=<isolated-fixture-port> node scripts/chest-delivery-test.js`; set
+`CHEST_TEST_EXISTING=1` for a pre-existing chest containing other items. Apply only
+the generated setup commands to the isolated server, then create the run's
+`ready` file. Fixture setup supplies a narrow stepped ledge, ingredients and a
+crafting table; actual execution uses ordinary Survival interaction.
+
+- Baseline `chest-delivery-mu95wafj`, loading the committed pre-fix delivery code,
+  failed with no supported handover position and dropped nothing.
+- `chest-delivery-mu964mpp` crafted a chest from eight spare oak planks, placed it,
+  and stored all 16 requested planks. The recipient independently opened the chest
+  and verified its contents. Replaying both a pre-confirmation checkpoint and a
+  completed checkpoint left those contents unchanged.
+- `chest-delivery-mu960hba` added 16 planks to a chest already holding five planks
+  and three diamonds. The independent client observed 21 planks and three diamonds,
+  including after replaying the pre-confirmation checkpoint.
+
+Both passing scenarios retained full health, made no gameplay commands and threw
+no items. Only the newly crafted chest changed terrain in the creation scenario;
+the existing-chest scenario changed no blocks. Automated checks additionally
+cover partial transfers, missing/changed contents after interruption, full chests,
+stop before/during a deposit, preserving combined-request reservations, and
+resuming chest preparation without returning after each ingredient step.

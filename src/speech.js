@@ -9,6 +9,8 @@ function friendlyProblem(error) {
   if (/silk touch/i.test(text)) return 'I need a tool with Silk Touch to pick up that block.';
   if (/That place is in the /i.test(text)) return text;
   if (/No supported survival acquisition|bedrock/i.test(text)) return 'I don\'t know a way to get that in Survival.';
+  if (/Chest handover is unconfirmed/i.test(text)) return text;
+  if (/chest.*(?:lid|open)|free block near you for a chest/i.test(text)) return text;
   if (/handover was interrupted|pickup.*(?:unconfirmed|not confirmed)/i.test(text)) return 'I\'m not sure you got all the items. Please check the ground nearby before asking for more.';
   if (/recipient|player.*(?:visible|loaded)|cannot see|can.t see|pickup.*confirm/i.test(text)) return 'I need you a bit closer so I can give you the items.';
   if (/inventory.*full|inventory space|free.*slot/i.test(text)) return 'My pockets are full. I need to make some room.';
@@ -30,6 +32,7 @@ function activity(step = {}) {
     case 'craft': return `I'm making ${item}.`;
     case 'mine': case 'collect': return `I'm collecting ${item}.`;
     case 'deliver': return `I'm bringing you ${item}.`;
+    case 'store_delivery': return `I'm putting your ${item} in a chest.`;
     case 'collect_nearby_resource': return `I spotted some ${item} nearby. I'll grab it, then get back to your task.`;
     case 'smelt': case 'cook_food': return `I'm cooking ${item === 'items' ? 'food' : item}.`;
     case 'refuel_furnace': return step.item === 'oak_planks' ? "I'm getting more fuel for the furnace." : "I'm getting the missing supplies for the furnace.";
@@ -45,6 +48,11 @@ function activity(step = {}) {
 }
 
 function completion(goal) {
+  const chest = [goal, ...(goal.tasks || [])].flatMap(g => g.deliveryEvidence || []).filter(e => e.method === 'chest');
+  if (chest.length) {
+    const places = [...new Set(chest.map(e => `${e.position.x}, ${e.position.y}, ${e.position.z}`))];
+    return places.length === 1 ? `All done! I left items for you in the chest at ${places[0]}.` : 'All done! I left items in the chests I pointed out.';
+  }
   if (['obtain', 'craft'].includes(goal.kind)) return goal.deliver ? `You got ${goal.count} ${name(goal.item)}!` : `I've got ${goal.count} ${name(goal.item)}.`;
   if (goal.kind === 'bundle') return `All done! ${list(goal.tasks)}. ${goal.tasks.every(t => t.deliver) ? 'You have the whole list.' : 'I kept the items you asked me to keep.'}`;
   if (goal.kind === 'find') {

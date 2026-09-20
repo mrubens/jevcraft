@@ -215,6 +215,18 @@ test('handover can cross a supported one-block step but never a gap or hazardous
   }
 });
 
+test('adjacent throws are rejected so a narrow ledge can use a chest instead', () => {
+  for (const rise of [-1, 0, 1]) {
+    const point = new Vec3(.5, 64, .5), receiver = { position: new Vec3(1.5, 64 + rise, .5) };
+    const floor = x => x < 1 ? 63 : 63 + rise;
+    const bot = { blockAt: p => ({ name: p.z === 0 && p.x >= 0 && p.x <= 1 && p.y <= floor(p.x) ? 'stone' : 'air',
+      boundingBox: p.z === 0 && p.x >= 0 && p.x <= 1 && p.y <= floor(p.x) ? 'block' : 'empty' }) };
+    assert.equal(safeHandoverPosition(bot, point, receiver), false, `${rise} adjacent step`);
+    receiver.position.x = .75;
+    assert(!safeHandoverPosition(bot, point, receiver), 'Do not drop while overlapping the recipient');
+  }
+});
+
 test('a player moving during the return trip is reobserved before any handover', async () => {
   const { bot, goal, task } = setup();
   bot.entity.position = new Vec3(.5, 40, .5); bot.players.Player.entity.position = new Vec3(20.5, 70, .5);
@@ -223,4 +235,31 @@ test('a player moving during the return trip is reobserved before any handover',
   let writes = 0; bot._client.write = () => { writes++; };
   assert.equal(await deliver(bot, task, goal, () => {}), false);
   assert.equal(writes, 0); assert.equal(goal.pendingDelivery, undefined);
+});
+
+test('missing handover space selects chest delivery without dropping the requested items', async () => {
+  const { bot, goal, task } = setup(), chest = require('../src/chest-delivery');
+  const previous = chest.deliverToChest;
+  let calls = 0, drops = 0;
+  bot.blockAt = () => ({ name: 'air', boundingBox: 'empty' });
+  bot._client.write = () => { drops++; };
+  chest.deliverToChest = async (b, t, g) => { calls++; assert.equal(g.deliveryMode, 'chest'); assert(!g.pendingDelivery); return false; };
+  try {
+    assert.equal(await deliver(bot, task, goal, () => {}), false);
+    assert.equal(calls, 1); assert.equal(drops, 0);
+    assert.equal(await deliver(bot, task, goal, () => {}), false);
+    assert.equal(calls, 2, 'The saved choice survives another step without throwing again');
+  } finally { chest.deliverToChest = previous; }
+});
+
+test('a failed throw may switch to a chest only after its inventory is recovered', async () => {
+  const { bot, goal, task } = setup(), chest = require('../src/chest-delivery'), previous = chest.deliverToChest;
+  let count = 32, calls = 0;
+  bot.inventory.items = () => [{ name: 'purple_concrete', count }];
+  bot.toss = async () => { count = 0; setTimeout(() => { count = 32; }, 20); };
+  chest.deliverToChest = async (b, t, g) => { calls++; assert.equal(count, 32); assert(!g.pendingDelivery); assert(!g.delivered); return false; };
+  try {
+    assert.equal(await deliver(bot, task, goal, () => {}, { timeout: 100 }), false);
+    assert.equal(calls, 1); assert.equal(goal.deliveryMode, 'chest');
+  } finally { chest.deliverToChest = previous; }
 });

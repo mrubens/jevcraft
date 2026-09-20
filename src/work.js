@@ -651,10 +651,11 @@ function catalogPlan(bot, item, count, stock, goal = {}) {
     ? makePlan([...new Set([...nearby, ...alternatives])]) : plan;
 }
 
-async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY } = {}) {
+async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY, reserved = {} } = {}) {
   task.check(); checkAir(bot);
   if (goal.smelting) { await smelt(bot, task, goal.smelting, goal, save); return false; }
   const inv = planningInventory(bot);
+  for (const [name, amount] of Object.entries(reserved)) inv[name] = Math.max(0, (inv[name] || 0) - amount);
   if ((inv[item] || 0) >= count) return true;
   const available = await withUsableWorkstations(bot, task, inv, [item]);
   const plan = catalogPlan(bot, item, count, available, goal);
@@ -1144,7 +1145,7 @@ async function obtainStep(bot, task, goal, save, client, onStep) {
   if (goal.smelting) { await smelt(bot, task, goal.smelting, goal, save); return false; }
   if ((goal.delivered || 0) >= goal.count) return true;
   const remaining = (goal.deliver ? Math.min(goal.count, goal.deliveryTarget ?? goal.count) : goal.count) - (goal.delivered || 0);
-  if (goal.pendingDelivery || countOf(bot, goal.item) >= remaining) {
+  if (goal.pendingDelivery || goal.pendingChestDelivery || goal.deliveryMode === 'chest' || countOf(bot, goal.item) >= remaining) {
     if (!goal.deliver) return true;
     goal.step = { action: 'deliver', item: goal.item, count: remaining, recipient: goal.from }; save();
     return deliver(bot, task, goal, save);
@@ -1452,7 +1453,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
         boatTravel: target => boatTravelStep(bot, task, goal, save, target, { acquireStep }) });
       if (prepared && goal.kind === 'concrete') {
         if ((goal.delivered || 0) >= goal.count) complete = true;
-        else if (goal.pendingDelivery || await acquireStep(bot, task, 'purple_concrete', goal.count - (goal.delivered || 0), goal, save)) {
+        else if (goal.pendingDelivery || goal.pendingChestDelivery || goal.deliveryMode === 'chest' || await acquireStep(bot, task, 'purple_concrete', goal.count - (goal.delivered || 0), goal, save)) {
           goal.step = { action: 'deliver', count: goal.count - (goal.delivered || 0), recipient: goal.from }; save();
           complete = await deliver(bot, task, goal, save);
         }

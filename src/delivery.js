@@ -66,7 +66,7 @@ async function approachForHandover(bot, task, receiver) {
     await navigate(bot, task, destination);
     return;
   }
-  throw new Error('Cannot reach a supported handover spot with a clear drop path to you');
+  throw Object.assign(new Error('Cannot reach a supported handover spot with a clear drop path to you'), { code: 'HANDOVER_SPACE' });
 }
 async function waitCount(bot, task, item, predicate, timeout = 4000) {
   const end = Date.now() + timeout;
@@ -123,7 +123,18 @@ async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
   const item = bot.registry?.itemsByName?.[goal.item || 'purple_concrete']?.id;
   // Navigation must not build its return route out of the requested delivery.
   if (previous && item !== undefined) movement.scafoldingBlocks = previous.filter(id => id !== item);
-  try { return await deliverItems(bot, task, goal, save, { timeout }); }
+  try {
+    if (goal.deliveryMode === 'chest' || goal.pendingChestDelivery)
+      return await require('./chest-delivery').deliverToChest(bot, task, goal, save);
+    try { return await deliverItems(bot, task, goal, save, { timeout }); }
+    catch (error) {
+      task.check();
+      if (error.code !== 'HANDOVER_SPACE') throw error;
+      goal.deliveryMode = 'chest'; save();
+      bot.chat?.("It's hard to hand you things here. I'll put them in a chest nearby.");
+      return await require('./chest-delivery').deliverToChest(bot, task, goal, save);
+    }
+  }
   finally { if (movement) movement.scafoldingBlocks = previous; }
 }
 
@@ -155,29 +166,8 @@ async function deliverItems(bot, task, goal, save, { timeout }) {
     delete goal.pendingDelivery;
     save();
   }
-  let receiver = bot.players[goal.from]?.entity;
-  if (!receiver && goal.requesterPosition) {
-    const p = goal.requesterPosition;
-    await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2));
-    receiver = bot.players[goal.from]?.entity;
-  }
-  if (!receiver) throw new Error(`Cannot see ${goal.from} to deliver ${label}`);
-  // Returning from a mine is a trip, not a local drop-position survey. A
-  // visible player can be far above us, and the final corridor may only become
-  // available after approaching through terrain or loading nearby chunks.
-  if (bot.entity.position.distanceTo(receiver.position) > 6) {
-    const target = receiver.position.clone();
-    await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 3), {
-      stopWhen: () => {
-        const current = bot.players[goal.from]?.entity;
-        return !current || current.position.distanceTo(target) > 4;
-      },
-    });
-    task.check();
-    receiver = bot.players[goal.from]?.entity;
-    if (!receiver) throw new Error(`Cannot see ${goal.from} to deliver ${label}`);
-    if (bot.entity.position.distanceTo(receiver.position) > 6) return false;
-  }
+  let receiver = await approachReceiver(bot, task, goal);
+  if (!receiver) return false;
   await approachForHandover(bot, task, receiver);
   task.check();
   receiver = bot.players[goal.from]?.entity;
@@ -222,10 +212,44 @@ async function deliverItems(bot, task, goal, save, { timeout }) {
       await new Promise(r => setTimeout(r, 100));
     }
     if ((goal.delivered || 0) < target) {
+      // Only switch methods after all unconfirmed items are back in our own
+      // inventory. A lost or unobserved pickup must never create a replacement.
+      const confirmed = (goal.delivered || 0) - (goal.pendingDelivery?.deliveredBefore || 0);
+      if (countOf(bot, itemName) >= before - confirmed) {
+        delete goal.pendingDelivery; save();
+        throw Object.assign(new Error('Recovered the throw; use a chest for the remaining items'), { code: 'HANDOVER_SPACE' });
+      }
       const err = new Error(`Dropped ${label} for ${goal.from}, but pickup of all ${remaining} items was not confirmed`);
       err.name = 'Blocked'; throw err;
     }
     return (goal.delivered || 0) >= goal.count;
   } finally { bot._client.removeListener('collect', onCollect); bot.removeListener?.('entityUpdate', onDrop); }
 }
-module.exports = { deliver, dropHeld, safeHandoverPosition };
+
+async function approachReceiver(bot, task, goal) {
+  let receiver = bot.players[goal.from]?.entity;
+  if (!receiver && goal.requesterPosition) {
+    const p = goal.requesterPosition;
+    await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2));
+    receiver = bot.players[goal.from]?.entity;
+  }
+  if (!receiver) throw new Error(`Cannot see ${goal.from} to deliver the items`);
+  // Returning from a mine is a trip, not a local drop-position survey. A
+  // visible player can be far above us, and the final corridor may only become
+  // available after approaching through terrain or loading nearby chunks.
+  if (bot.entity.position.distanceTo(receiver.position) > 6) {
+    const target = receiver.position.clone();
+    await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 3), {
+      stopWhen: () => {
+        const current = bot.players[goal.from]?.entity;
+        return !current || current.position.distanceTo(target) > 4;
+      },
+    });
+    task.check();
+    receiver = bot.players[goal.from]?.entity;
+    if (!receiver) throw new Error(`Cannot see ${goal.from} to deliver the items`);
+    if (bot.entity.position.distanceTo(receiver.position) > 6) return false;
+  }
+  return receiver;
+}
+module.exports = { deliver, dropHeld, safeHandoverPosition, approachReceiver };

@@ -72,7 +72,7 @@ async function bundleStep(bot, task, goal, save, execute, { prepare } = {}) {
   }
   // Reconcile an uncertain handover before planning new stock. Otherwise a
   // reconnect between dropping and pickup could duplicate the player's items.
-  const handingOver = goal.tasks.findIndex(child => child.pendingDelivery);
+  const handingOver = goal.tasks.findIndex(child => child.pendingDelivery || child.pendingChestDelivery);
   if (handingOver < 0 && prepare && !await prepare()) return false;
   const index = handingOver >= 0 ? handingOver : require('./bundle-batch').nextBatchTask(goal);
   if (index < 0) return true;
@@ -81,6 +81,9 @@ async function bundleStep(bot, task, goal, save, execute, { prepare } = {}) {
   child.requesterPosition ||= goal.requesterPosition;
   child.resourceMemory = goal.resourceMemory ||= {};
   child.opportunistic = goal.opportunistic ||= { primarySteps: 0, history: [], skipped: {} };
+  child.deliveryReservations = require('./batch-plan').remainingOutputs(goal).reduce((reserved, output) => {
+    reserved[output.item] = (reserved[output.item] || 0) + output.count; return reserved;
+  }, {});
   goal.activeTask = index;
   const checkpoint = () => {
     goal.step = { action: 'combined_request', task: index + 1, total: goal.tasks.length, item: child.item, count: child.count, detail: child.step };
