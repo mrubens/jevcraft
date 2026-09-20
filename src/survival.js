@@ -61,6 +61,9 @@ class Survival {
 
   async flee(task, goal, save) {
     const bot = this.bot;
+    // A swing can buy room, but it must not consume the escape action. Ending
+    // the turn after every hit trapped an unarmed bot in a losing melee loop.
+    await defendNearby(bot, task, goal, save);
     const danger = threats(bot).filter(t => t.visible);
     if (!danger.length) return;
     this.report(goal, save, { action: 'escape_threat', threats: danger.map(t => ({ name: t.entity.name, distance: t.distance })) });
@@ -76,7 +79,6 @@ class Survival {
         distance(p) >= distance(bot.entity.position) + 4 && !(this.state.failedEscapes?.[`${p}`] > Date.now() - 60000))
         .sort((a, b) => distance(b) - distance(a));
       for (const p of candidates.slice(0, 16)) {
-        if (await defendNearby(bot, task, goal, save)) return;
         const destination = new goals.GoalBlock(p.x, p.y, p.z);
         const route = await surveyRoute(bot, task, movements, destination, 150);
         if (route.status !== 'success') continue;
@@ -253,7 +255,6 @@ class Survival {
     }
     const emergency = immediateThreat(bot);
     if (emergency) {
-      if (await defendNearby(bot, task, goal, save)) { onStep(goal); return true; }
       // Sealing a nearby prepared site is faster than a long retreat. Otherwise
       // get clear first; ordinary digging must never continue under fire.
       if (refuge && pos(refuge.origin).distanceTo(bot.entity.position) < 3 && shelter.materialStock(bot) >= shelter.missingShell(bot, refuge).length) await this.refugeStep(task, goal, save);

@@ -9,11 +9,13 @@ const { compatibilityPlugin } = require('../src/compatibility');
 const { configureMovements } = require('../src/movement');
 const { Task } = require('../src/skills');
 const { createSurvival, waitFor } = require('../src/work');
+const port = Number(process.env.MC_PORT);
+if (!Number.isInteger(port) || port < 1 || port > 65535 || [25565, 25577, 25579, 25580, 25582].includes(port)) throw new Error('Explicit isolated fixture MC_PORT required');
 const id = Date.now().toString(36), username = `Defend${id}`;
 const directory = path.join(__dirname, '..', 'artifacts', `combat-${id}`);
 fs.mkdirSync(directory, { recursive: true });
 const log = data => { const line = JSON.stringify({ at: new Date().toISOString(), ...data }); console.log(line); fs.appendFileSync(path.join(directory, 'events.jsonl'), line + '\n'); };
-const bot = mineflayer.createBot({ host: '127.0.0.1', port: 25574, username, version: '26.1', auth: 'offline' });
+const bot = mineflayer.createBot({ host: '127.0.0.1', port, username, version: '26.1', auth: 'offline' });
 bot.loadPlugin(compatibilityPlugin); bot.loadPlugin(pathfinder);
 const task = new Task('defense', 'survive cave spiders in a constrained arena');
 const timer = setTimeout(() => task.cancel(), 240000);
@@ -26,6 +28,8 @@ bot.on('error', err => log({ error: err.message }));
 bot.once('spawn', async () => {
   try {
     await bot.waitForChunksToLoad(); configureMovements(bot);
+    const attack = bot.attack;
+    bot.attack = function (...args) { strikes++; return attack.apply(this, args); };
     const commands = ['fill 0 70 0 6 74 6 minecraft:glass', 'fill 1 71 1 5 73 5 minecraft:air',
       `tp ${username} 3.5 71 3.5`, `give ${username} minecraft:diamond_pickaxe 1`];
     const ready = path.join(directory, 'setup-ready');
@@ -48,7 +52,6 @@ bot.once('spawn', async () => {
       await survival.step(task, goal, save);
       if (goal.survivalAction !== lastAction) {
         lastAction = goal.survivalAction;
-        if (lastAction?.action === 'defend') strikes++;
         log({ action: lastAction, position: bot.entity.position, health: bot.health });
       }
     }

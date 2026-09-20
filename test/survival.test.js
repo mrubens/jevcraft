@@ -68,6 +68,33 @@ test('a newly observed threat interrupts an in-flight navigation', async () => {
   assert.equal(task.cancelled, false, 'The player task remains resumable after a survival interruption');
 });
 
+test('an in-reach hostile does not make defensive swings preempt an available retreat', async () => {
+  const registry = require('prismarine-registry')('26.1');
+  const zombie = { id: 7, name: 'zombie', position: new Vec3(2.5, 64, .5), height: 1.8, isValid: true };
+  const destination = new Vec3(-8, 64, 0), attacks = [];
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
+    entity: { position: new Vec3(.5, 64, .5) }, entities: { 7: zombie }, health: 8, food: 20, oxygenLevel: 20,
+    time: { timeOfDay: 14000 }, inventory: { items: () => [] }, world: { raycast: () => null },
+    blockAt: p => ({ position: p.floored(), name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }),
+    findBlocks: () => [destination.offset(0, -1, 0)],
+    pathfinder: { movements: { canDig: true, allow1by1towers: true, allowSprinting: false }, setGoal() {},
+      getPathTo: () => ({ status: 'success', path: [{ ...destination, toBreak: [], toPlace: [] }] }) },
+    clearControlStates() {}, lookAt: async () => {}, attack: target => attacks.push(target),
+  });
+  const prior = { ...bot.pathfinder.movements }, task = new Task('retreat'), goal = { kind: 'obtain', item: 'dirt', count: 32 };
+  let navigated = 0;
+  const controller = new Survival(bot, { navigate: async (b, t, g) => {
+    navigated++; assert.equal(attacks.length, 1, 'One knockback swing, then move immediately');
+    assert.equal(b.pathfinder.movements.canDig, false); assert.equal(b.pathfinder.movements.allow1by1towers, false);
+    assert.equal(b.pathfinder.movements.allowSprinting, true);
+    b.entity.position = new Vec3(g.x + .5, g.y, g.z + .5);
+  } });
+  assert(await controller.step(task, goal, () => {}));
+  assert.equal(navigated, 1, 'Close-range defense must not consume the escape action');
+  assert(bot.entity.position.distanceTo(zombie.position) > 8);
+  assert.equal(goal.item, 'dirt'); assert.deepEqual(bot.pathfinder.movements, prior);
+});
+
 test('shelter construction rechecks materials consumed by the approach before sealing exits', async () => {
   let carried = 29;
   let placed = 0;

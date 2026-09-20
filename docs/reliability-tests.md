@@ -1001,3 +1001,44 @@ This demonstrates recovery from the reservation trap, not successful resumed
 shelter completion or endurance. Close-combat retreat with inadequate equipment
 is the next concrete failure to address. A fresh world for the next endurance
 run has been prepared but not started pending that fix.
+
+## Defensive hits must not consume retreat
+
+The resumed natural trace `idle-shelter-approach-debug-mu937z1s` shows an
+unarmed Jev standing in melee range as health fell from 20 to below one.
+`Survival.step` returned after every defensive swing, and `flee` did the same
+inside its route loop. A regression with a visible zombie, low health and an
+available escape reproduced the missing navigation call.
+
+Incidental-threat handling now uses one bounded defensive action followed by
+route selection and movement in the same turn. Nearby ready shelter can still
+be sealed first. When no escape exists, the same bounded defense remains
+available; the change does not remove the intentional, equipped mob-hunting
+workflow. Movement restrictions and the original player request are retained.
+All 515 automated tests passed.
+
+```sh
+MC_PORT=<isolated-fixture-port> node scripts/retreat-test.js
+MC_PORT=<isolated-fixture-port> node scripts/combat-test.js
+```
+
+Apply each generated setup and mob-spawn file only in the isolated fixture
+console, using its ready marker to advance the test. `retreat-mu93p56s` passed
+at 00:52:21 UTC on 2026-09-20: an empty-inventory bot struck the nearby zombie
+once, made four escapes during 15 seconds of pursuit, and retained health 20.
+An independent client confirmed the hit and recorded 169 position updates.
+No bot commands, block changes or deaths occurred after setup. The earlier
+`retreat-mu93nhk0` escaped at full health but failed a broken attack counter:
+the wrapper was installed before Mineflayer finished loading its attack
+method. That failed artifact is preserved; the counter now attaches after
+plugin initialization, alongside the independent hit observation. These arena
+checks are controlled mechanics evidence, not fresh endurance acceptance.
+
+The enclosed two-cave-spider check `combat-mu93pyma` passed at 00:53:09 UTC:
+both deaths were confirmed by server entity-death packets, with six strikes,
+no bot deaths, minimum health 17.83 and final health 18.5. The earlier
+`combat-mu93okjr` also defeated both spiders while alive, but its old counter
+looked only at the last reported action; the subsequent retreat attempt now
+overwrites that action. The counter now records actual attack calls. Its
+failed artifact remains preserved, and the corrected fixture requires an
+explicit isolated port instead of silently targeting 25574.
