@@ -17,6 +17,8 @@ const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
 const shelterNeeded = bot => bot.game.difficulty !== 'peaceful' && bot.game.dimension === 'overworld' &&
   bot.time?.timeOfDay >= 9500 && bot.time.timeOfDay < 23000;
+const emptySite = (bot, refuge) => refuge.kind !== 'house' && !refuge.verifiedAt &&
+  shelter.shell(refuge.origin).every(p => shelter.replaceable(bot.blockAt(p)));
 
 // Minecraft actions are injected to avoid a dependency cycle with the work
 // executor. The state lives on the retained goal and can also be shared by an
@@ -122,6 +124,18 @@ class Survival {
     // small travel reserve, then recheck the actual shell after entering.
     const required = missing.length + (shelter.inside(bot, refuge) ? 0 : 4);
     if (stock < required) {
+      // A site selected above a mining pocket can reserve every block needed
+      // to escape it. Reach that still-empty site before searching for supplies;
+      // approachRefuge relaxes only this reservation and restores it afterwards.
+      if (bot.entity.position.y < refuge.origin.y && emptySite(bot, refuge)) {
+        this.report(goal, save, { action: 'return_to_surface', target: refuge.origin });
+        task.interruptCheck = () => checkThreats(bot);
+        try {
+          const o = refuge.origin;
+          await this.approachRefuge(task, goal, refuge, new goals.GoalBlock(o.x, o.y, o.z));
+        } finally { task.interruptCheck = undefined; }
+        return;
+      }
       if (shelter.inside(bot, refuge)) {
         await this.leave(task, goal, save, refuge);
         if (shelter.inside(bot, refuge)) return;
@@ -191,9 +205,7 @@ class Survival {
     // natural approach beneath it. That reservation used to invalidate the
     // very route which had just selected the site from an underground start.
     // Existing/partial walls and every other construction remain protected.
-    const emptySite = refuge.kind !== 'house' && !refuge.verifiedAt &&
-      shelter.shell(refuge.origin).every(p => shelter.replaceable(bot.blockAt(p)));
-    if (emptySite && movement && bot._constructionProtection) {
+    if (emptySite(bot, refuge) && movement && bot._constructionProtection) {
       const approaching = { ...goal, survival: { ...this.state, shelters: this.state.shelters.filter(s => s !== refuge) } };
       movement.exclusionAreasBreak = (previous || []).filter(rule => rule !== bot._constructionProtection);
       movement.exclusionAreasBreak.push(block => reservedForConstruction(approaching, block.position) ? 100 : 0);

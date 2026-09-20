@@ -111,6 +111,42 @@ test('an empty shelter reservation permits its approach while preserving other s
   assert.equal(bot.pathfinder.movements.exclusionAreasBreak, original);
 });
 
+test('shelter supply gathering first escapes the pit beneath an empty reserved site', async () => {
+  const origin = new Vec3(0, 70, 0), refuge = { origin, dimension: 'overworld' };
+  const state = { shelters: [refuge, { origin: new Vec3(20, 70, 0), dimension: 'overworld' }] };
+  const goal = { kind: 'obtain', item: 'oak_log', count: 16, survival: state };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: {},
+    entity: { position: new Vec3(.5, 67, .5) }, inventory: { items: () => [{ name: 'oak_planks', count: 5 }] },
+    blockAt: p => ({ name: p.y < 70 ? 'stone' : 'air', boundingBox: p.y < 70 ? 'block' : 'empty' }),
+    pathfinder: { movements: { exclusionAreasBreak: [] } },
+  });
+  bot._constructionProtection = block => reservedForConstruction(goal, block.position) ? 100 : 0;
+  const original = bot.pathfinder.movements.exclusionAreasBreak = [bot._constructionProtection];
+  let approached = false, acquired = false;
+  const controller = new Survival(bot, {
+    navigate: async (b, task, target) => {
+      if (!approached) {
+        const cost = p => b.pathfinder.movements.exclusionAreasBreak.reduce((sum, rule) => sum + rule({ position: p }), 0);
+        assert.equal(cost(origin.offset(0, -2, 0)), 0, 'Can excavate the natural approach below this empty site');
+        assert.equal(cost(new Vec3(20, 68, 0)), 100, 'Other work stays protected');
+        assert.equal(target.y, 70); approached = true;
+      }
+      b.entity.position = new Vec3(target.x + .5, target.y, target.z + .5);
+    },
+    dig: async () => {},
+    acquireStep: async (b, task, item, count, retained, save, options) => {
+      assert(approached, 'Do not start the dirt search while imprisoned under the reservation');
+      assert.equal(b.entity.position.y, 70); assert.equal(options.minimumMiningY, 69);
+      assert.equal(retained, goal); assert.equal(item, 'dirt'); acquired = true;
+    },
+  }, { state });
+  await controller.refugeStep(new Task('shelter supplies'), goal, () => {});
+  assert(approached); assert(!acquired, 'Approach is a bounded step before gathering');
+  assert.equal(bot.pathfinder.movements.exclusionAreasBreak, original);
+  await controller.refugeStep(new Task('gather outside'), goal, () => {});
+  assert(acquired); assert.equal(goal.item, 'oak_log');
+});
+
 test('a completed house becomes a persistent refuge with a temporary two-block night closure', async () => {
   const blueprint = houseBlueprint(new Vec3(0, 64, 0));
   const blocks = new Map(blueprint.blocks.map(p => [`${new Vec3(p.x, p.y, p.z)}`, p.material]));

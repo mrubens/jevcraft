@@ -951,3 +951,53 @@ ticks, with health 20 and food 20. The fresh trace is preserved in
 `mu92f8zd-failed-fresh-endurance`; delivery and cooking are useful evidence,
 but the uninterrupted two-cycle gate remains unproven. The stalled dirt
 approach is the next concrete recovery case.
+
+## Escape an empty shelter reservation before gathering
+
+The failed fresh run `mu92f8zd` was standing three blocks below its planned
+shelter. Its reservation made every nearby exit undiggable, but supplies were
+required before the existing approach recovery would run. A read-only route
+comparison in the preserved world confirmed the cause: all surveyed routes
+failed with the reservation; without it, a three-step route clearing two
+natural stone blocks succeeded. The comparison is preserved in
+`artifacts/mu92f8zd-shelter-probe.json`; no gameplay commands were used.
+
+When short of supplies beneath a still-empty shelter, Jev now approaches that
+site before gathering. The existing approach policy temporarily lifts only
+that site's reservation, preserves other construction and inherited rules,
+and restores protection on success or failure. Verified shelters, houses and
+sites with existing walls retain their protections. Gathering then uses the
+new ground height and keeps the player request. The regression failed before
+the change; all 514 automated tests passed afterwards.
+
+```sh
+MC_PORT=<isolated-fixture-port> node scripts/shelter-approach-test.js
+```
+
+Apply the generated `setup.json` only in the isolated fixture console, then
+create `ready`. The fixture supplies a wooden pickaxe, five planks and a
+three-block-deep stone pocket beneath the empty site. It first confirms that
+the reservation blocks the ordinary route, then checks escape, continued
+material gathering and a fully sealed shelter. An independent client observes
+the exit and verifies the completed shell.
+
+`shelter-approach-mu9369ty` passed at 00:38:57 UTC on 2026-09-20. The witness
+recorded 1,478 position updates, the excavated stone exit and the completed
+shelter at (4600,70,0). Health stayed 20, with zero deaths or bot commands
+after setup. These supplied mechanics are not fresh Survival acceptance.
+
+The earlier natural house debugging run `mu91fa8q` reached its 40-minute
+runner deadline at 00:33:59 UTC without completing the house. It was alive
+inside its verified shelter, with nearby hostiles still observed. Its failed
+resumed trace is preserved as `mu91fa8q-covered-resume-timeout`, separately
+from the original fresh failure. House acceptance remains unproven.
+
+The preserved natural run was resumed separately as
+`idle-shelter-approach-debug-mu937z1s`. It escaped the original y67 pocket at
+00:38:11 UTC, clearing the two stone blocks, and gathered 23 dirt. At 00:40:17
+a zombie killed it before the shelter was sealed. The server death record,
+trace and source hashes are preserved; the resumed runner exited with failure.
+This demonstrates recovery from the reservation trap, not successful resumed
+shelter completion or endurance. Close-combat retreat with inadequate equipment
+is the next concrete failure to address. A fresh world for the next endurance
+run has been prepared but not started pending that fix.
