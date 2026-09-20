@@ -50,6 +50,7 @@ const { opportunisticMining } = require('./opportunistic-mining');
 const { collectNearbyDrops } = require('./drop-collection');
 const { friendlyProblem, recoveryHint, completion } = require('./speech');
 const { boatTravelStep } = require('./boats');
+const { dimension: dimensionName } = require('./game-progress');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
@@ -107,9 +108,13 @@ async function waitFor(task, predicate, timeout = 4000) {
 async function stepOff(bot, task, p) {
   const feet = bot.entity.position.floored();
   if (feet.x !== p.x || feet.z !== p.z || Math.abs(feet.y - p.y) > 1) return;
+  // Stepping aside needs somewhere to stand, unless the bot is flying: high on
+  // a tower every neighbouring cell is open air, which is a floor for a
+  // hovering worker and a dead end for a walking one.
+  const flying = require('./flight').canFly(bot);
   const exits = faces.slice(1, 5).flatMap(d => [0, 1, -1].map(dy => feet.plus(d).offset(0, dy, 0)));
   const exit = exits.find(q => air(bot.blockAt(q)) && air(bot.blockAt(q.offset(0, 1, 0))) &&
-    bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block');
+    (flying || bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block'));
   if (!exit) throw new Error('No solid adjacent footing to move out of the work position');
   await navigate(bot, task, new goals.GoalBlock(exit.x, exit.y, exit.z));
 }
@@ -913,6 +918,19 @@ async function designedBuildStep(bot, task, goal, save, client, onStep) {
 }
 
 async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = () => {}) {
+  if (goal.continueBuild && !goal.blueprint) {
+    const entry = bot.buildRegistry?.find(goal.continueBuild.id);
+    if (!entry?.blueprint) throw new Blocked('I cannot find that building in my notes any more. Ask me to build it again.');
+    goal.buildId = entry.id;
+    goal.design = entry.design || goal.design;
+    goal.blueprint = structuredClone(entry.blueprint);
+    goal.buildOwned = { ...bot.buildRegistry.ownership(bot, entry.bounds, dimensionName(bot), entry.id), ...goal.buildOwned };
+    goal.step = { action: goal.continueBuild.mode === 'repair' ? 'repair_building' : 'finish_building', building: entry.name };
+    save(); onStep(goal);
+    bot.chat(goal.continueBuild.mode === 'repair' ? `I'll check ${entry.name} over and put back anything missing.`
+      : `Picking ${entry.name} back up where I left it.`);
+    return false;
+  }
   if (!goal.design) {
     const mode = process.env.BUILD_DESIGNER || 'auto';
     if (!['auto', 'jev', 'openrouter'].includes(mode)) throw new Blocked('BUILD_DESIGNER must be auto, jev or openrouter');
@@ -931,9 +949,20 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
       if (!client) throw new Blocked('The building fallback needs a configured Jev connection');
       goal.designFallbackReason = goal.designError || (mode === 'jev' ? 'Jev templates selected' : 'No OpenRouter designer key configured');
       bot.chat("I'm working out a simpler way to build it.");
-    } else goal.designAttempts = (goal.designAttempts || 0) + 1;
+    } else {
+      goal.designAttempts = (goal.designAttempts || 0) + 1;
+      bot.chat('Let me draw up a plan for that. It takes me a minute.');
+    }
+    // An extension is designed against the building it joins, not in a vacuum:
+    // the designer gets that building's own schematic so the new part can match
+    // its materials, line up with its storeys and meet its wall.
+    const joining = goal.buildContinuation?.mode === 'extend'
+      ? bot.buildRegistry?.find(goal.buildContinuation.target) : null;
+    const extending = joining?.design?.source ? { name: joining.name, size: joining.design.source.size,
+      palette: joining.design.source.palette, regions: joining.design.source.regions,
+      entrance: joining.design.source.entrance } : undefined;
     try { goal.design = fallback ? await designWithJev(bot, task, goal.request, client, goal.memoryContext) :
-      await designBuilding(bot, task, goal.request, { previousDraft: goal.designDraft, feedback: goal.designError, memory: goal.memoryContext }); }
+      await designBuilding(bot, task, goal.request, { previousDraft: goal.designDraft, feedback: goal.designError, memory: goal.memoryContext, extending }); }
     catch (err) {
       if (!fallback && ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) goal.designAttempts--;
       goal.designError = err.message;
@@ -952,14 +981,37 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
   }
   const schematic = validateSchematic(goal.design.source, bot.registry);
   if (!goal.blueprint) {
-    goal.blueprint = selectSchematicSite(bot, schematic);
+    // Anchor the site where the player asked for it, and treat Jev's own past
+    // structures as ground to stand on and material to build into.
+    const registry = bot.buildRegistry;
+    const edited = goal.buildContinuation?.mode === 'extend' ? registry?.find(goal.buildContinuation.target) : null;
+    // When the designer says where the old building sits in its new drawing,
+    // the result goes over the real one: additions land against it, and
+    // anything the drawing leaves out is cleared instead of left standing.
+    const offset = edited && schematic.existingOffset;
+    const at = offset ? { x: edited.origin.x - offset[0], y: edited.origin.y - offset[1], z: edited.origin.z - offset[2] } : undefined;
+    goal.blueprint = selectSchematicSite(bot, schematic, { anchor: goal.buildAnchor,
+      owned: registry?.claimed(dimensionName(bot), edited ? undefined : goal.buildId), at });
     if (!goal.blueprint) {
+      // Wandering off to find ground elsewhere is the wrong answer to a spot
+      // the player chose: they asked for it there, so say it will not work.
+      if (edited) throw new Blocked(`I cannot fit that change onto ${edited.name} where it stands. Ask me again and I will plan it differently.`);
+      if (goal.buildAnchor) throw new Blocked('I cannot fit that building where you asked. Clear some space there, or ask me to build it somewhere else.');
       goal.step = { action: 'find_build_site', dimensions: schematic.source.size }; save();
       await explore(bot, task, goal, save, 'supported building site', { surfaceOnly: true });
       return false;
     }
+    // Past structures inside the new bounds are Jev's own work, not player
+    // property: without this the site-changed guard rejects its own walls.
+    if (registry) {
+      goal.buildOwned = { ...registry.ownership(bot, goal.blueprint.bounds, dimensionName(bot), goal.buildId), ...goal.buildOwned };
+      registry.remember(goal, { dimension: dimensionName(bot) });
+    }
     save();
     bot.chat(`Building ${goal.design.source.name} near ${pos(goal.blueprint.origin)}.`);
+    if (goal.blueprint.preserved?.length) {
+      bot.chat(`There are ${goal.blueprint.preserved.length} blocks already there. I'll build around them rather than take them down.`);
+    }
   }
   const blueprint = goal.blueprint;
   if (!bot.blockAt(pos(blueprint.origin))) {
@@ -1494,6 +1546,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       goal.history = goal.history.slice(-40);
       if (complete) {
         if (goal.kind === 'house') survival.rememberHouse(goal.blueprint);
+        bot.buildRegistry?.remember(goal, { dimension: dimension(bot), status: 'complete' });
         goal.status = 'complete'; goal.completedAt = new Date().toISOString(); save();
         bot.chat(completion(goal));
         return { ok: true, goal };

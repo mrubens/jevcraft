@@ -4,6 +4,7 @@ const { Vec3 } = require('vec3');
 const registry = require('minecraft-data')('26.1');
 const { validateSchematic, selectSchematicSite, canClearSchematicBlock } = require('../src/designer');
 const { PREP_LIMITS } = require('../src/build-terrain');
+const SITE_STEP = 8; // designer.js SITE.step: how far a foundation may step down.
 const source = { name: 'Pavilion', description: 'Open building', size: [5, 5, 5], palette: ['oak_planks'], entrance: [2, 1, 0], regions: [
   { from: [0, 0, 0], to: [4, 0, 4], block: 'oak_planks' },
   { from: [0, 1, 4], to: [4, 4, 4], block: 'oak_planks' },
@@ -19,18 +20,27 @@ function world(kind) {
     } };
 }
 
-test('uneven natural ground becomes a bounded cut/fill plan with a usable approach', () => {
+test('uneven natural ground is built into with a stepped foundation, not levelled', () => {
   const bot = world('hills'), site = selectSchematicSite(bot, validateSchematic(source, registry));
-  assert(site?.terrain); assert.equal(site.terrain.kind, 'level_ground');
-  assert(site.terrain.clear.length); assert(site.terrain.fill.length);
-  assert(site.terrain.changedBlocks <= PREP_LIMITS.changes);
-  const filled = new Map(site.blocks.map(p => [new Vec3(p.x, p.y, p.z).toString(), p]));
-  for (const p of site.terrain.fill) {
-    assert(filled.has(new Vec3(p.x, p.y, p.z).toString()), 'permanent supports are part of final verification');
-    assert(canClearSchematicBlock(site, {}, bot.blockAt(new Vec3(p.x, p.y, p.z))));
+  assert(site, 'a hillside is a buildable site, not a reason to give up');
+  assert(!site.terrain, 'a plinth disturbs the landscape less than hundreds of blocks of earthworks');
+  const filled = new Set(site.blocks.map(p => `${p.x},${p.y},${p.z}`));
+  const columns = new Set(site.blocks.filter(p => p.y === site.origin.y).map(p => `${p.x},${p.z}`));
+  assert(columns.size, 'the structure has a footprint at its origin height');
+  // Every foundation column is carried down to the natural ground it stands on,
+  // so the building rests on the hill instead of floating over the low side.
+  let stepped = 0;
+  for (const column of columns) {
+    const [x, z] = column.split(',').map(Number);
+    for (let y = site.origin.y - 1; y > site.origin.y - SITE_STEP; y--) {
+      if (bot.blockAt(new Vec3(x, y, z)).boundingBox === 'block') break;
+      assert(filled.has(`${x},${y},${z}`), `column ${column} is supported down to the ground at y=${y}`);
+      stepped++;
+    }
   }
+  assert(stepped > 0, 'this hillside really does need a plinth somewhere');
   const entry = new Vec3(site.entrance.x, site.entrance.y, site.entrance.z);
-  assert(filled.has(entry.offset(0, -1, 0).toString()) || bot.blockAt(entry.offset(0, -1, 0)).boundingBox === 'block');
+  assert(filled.has(`${entry.x},${entry.y - 1},${entry.z}`) || bot.blockAt(entry.offset(0, -1, 0)).boundingBox === 'block');
 });
 
 test('shallow source water can support an island foundation but deep water and lava cannot', () => {
@@ -51,8 +61,9 @@ test('earthworks reject recognizable buildings and preserve later changes to a r
   bot.blockAt = p => { const b = original(p); return b.name === 'stone' ? { ...b, name: 'oak_planks' } : b; };
   assert.equal(selectSchematicSite(bot, schematic), null);
   bot.blockAt = original;
-  const site = selectSchematicSite(bot, schematic), p = new Vec3(...Object.values(site.terrain.clear[0]));
-  assert(!canClearSchematicBlock(site, {}, { ...original(p), name: 'chest', stateId: 999999 }));
+  const site = selectSchematicSite(bot, schematic), first = site.blocks[0];
+  const p = new Vec3(first.x, first.y, first.z);
+  assert(!canClearSchematicBlock(site, {}, { position: p, name: 'chest', stateId: 999999 }));
 });
 
 test('natural flow changes in a snapshotted water cell do not cancel foundation work', () => {

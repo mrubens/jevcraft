@@ -53,3 +53,20 @@ test('a plan the world outgrew asks for a new build instead of an endless resume
   assert.match(statusMessage(bot, null, stuck), /Jev resume/);
   assert.equal(recoveryHint(undefined), 'Say "Jev resume" to try again.');
 });
+
+test('a long think shows as an arm swing instead of a frozen bot', t => {
+  const { thinking } = require('../src/speech');
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const swings = [];
+  const stop = thinking({ swingArm: arm => swings.push(arm) }, 1500);
+  assert.deepEqual(swings, ['right'], 'the first swing is immediate, not an interval late');
+  t.mock.timers.tick(1500); t.mock.timers.tick(1500);
+  assert.equal(swings.length, 3);
+  stop();
+  t.mock.timers.tick(9000);
+  assert.equal(swings.length, 3, 'the emote ends with the work it was covering');
+  // An emote must never be a reason for the work it decorates to fail.
+  assert.doesNotThrow(() => thinking({ swingArm: () => { throw new Error('socket closed'); } })());
+  assert.doesNotThrow(() => thinking({})());
+  assert.doesNotThrow(() => thinking(null)());
+});

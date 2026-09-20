@@ -33,17 +33,28 @@ class ConstructionGoal extends goals.Goal {
   }
   reachable(feet, margin = 0) {
     const p = this.pos, cell = feet.floored();
-    if (cell.x === p.x && cell.z === p.z && p.y <= cell.y + 1 && (this.operation === 'dig' || p.y >= cell.y - 1)) return false;
+    // Never dig the block holding you up, and never try to fill the space your
+    // own body occupies. A hovering worker has neither problem: there is no
+    // footing to undermine, and it does not stand in the cell it is filling.
+    // Without this, a hole whose only opening faces the sky can never be closed.
+    if (!require('./flight').canFly(this.bot) &&
+      cell.x === p.x && cell.z === p.z && p.y <= cell.y + 1 && (this.operation === 'dig' || p.y >= cell.y - 1)) return false;
     const eye = feet.offset(0, 1.62, 0);
     if (this.placement) {
       this.placement.options.range = 4.25 - margin;
       try { return !!this.placement.getFaceAndRef(eye); }
       finally { this.placement.options.range = 4.25; }
     }
+    // Grass, a flower or a snow layer has no collision shape, so a ray aimed
+    // at it passes straight through to the dirt behind. Demanding a hit on the
+    // cell itself would call it unreachable from everywhere in the world and
+    // strand the build for good; an unobstructed line to it is the real test.
+    const opaque = (this.bot.blockAt(p)?.shapes || []).length > 0;
     return directions.some(face => {
       const aim = p.offset(.5 + .5 * face.x, .5 + .5 * face.y, .5 + .5 * face.z), ray = aim.minus(eye);
       if (ray.norm() > 4.25 - margin || ray.norm() < .01) return false;
-      return this.bot.world.raycast(eye, ray.unit(), ray.norm() + .05)?.position?.equals(p);
+      const hit = this.bot.world.raycast(eye, ray.unit(), ray.norm() + .05);
+      return hit ? !!hit.position?.equals(p) : !opaque;
     });
   }
 }

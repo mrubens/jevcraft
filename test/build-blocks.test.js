@@ -101,3 +101,30 @@ test('the executor does not silently accept or overwrite a player-rotated stair'
   await assert.rejects(designedBuildStep(bot, new Task('protect changed stair'), { design, blueprint }, () => {}, null), /preserving the unexpected oak_stairs/);
   assert.equal(bot.listenerCount('blockPlaced'), 0);
 });
+
+test('a cell sealed inside the hillside counts as built, an open gap does not', () => {
+  const { buildCellComplete, enclosedCell } = require('../src/build-blocks');
+  const { bot, set } = fixture();
+  const cell = { x: 0, y: 64, z: 0, material: 'stone_bricks' };
+  const faces = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+
+  // An empty cell with open air around it is ordinary outstanding work.
+  assert(!buildCellComplete(bot, cell));
+  assert(!enclosedCell(bot, cell));
+
+  // Wall it in on five sides: still reachable through the last face.
+  for (const [dx, dy, dz] of faces.slice(0, 5)) set(new Vec3(dx, 64 + dy, dz), 'grass_block');
+  assert(!enclosedCell(bot, cell), 'one open face is still a way in');
+  assert(!buildCellComplete(bot, cell));
+
+  // Seal the last face. Nothing can see it and placement needs a visible face,
+  // so leaving it outstanding would block the build for ever.
+  set(new Vec3(0, 64, -1), 'grass_block');
+  assert(enclosedCell(bot, cell));
+  assert(buildCellComplete(bot, cell), 'a buried cell is as done as it can ever be');
+
+  // Being buried never overrides a cell that genuinely holds the right block.
+  const placed = { x: 2, y: 64, z: 0, material: 'stone_bricks' };
+  set(new Vec3(2, 64, 0), 'stone_bricks');
+  assert(buildCellComplete(bot, placed));
+});

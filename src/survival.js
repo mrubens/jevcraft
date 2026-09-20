@@ -12,6 +12,7 @@ const { surveyRoute } = require('./skills');
 const { defendNearby } = require('./combat');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
+const { thinking } = require('./speech');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
@@ -293,10 +294,11 @@ class Survival {
     }
     const controller = new AbortController();
     const watcher = setInterval(() => { try { task.check(); checkAir(bot); checkThreats(bot); } catch (err) { controller.abort(err); } }, 100);
+    const stopThinking = thinking(bot);
     let decision;
     try { decision = await decideTree(this.client, { state, tree, signal: controller.signal,
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) }); }
-    finally { clearInterval(watcher); }
+    finally { clearInterval(watcher); stopThinking(); }
     task.check(); checkAir(bot); checkThreats(bot);
     if (!decision.stale && decision.action.valid && !decision.action.valid()) decision.stale = true;
     goal.decisions ||= [];

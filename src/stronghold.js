@@ -123,11 +123,12 @@ async function walkBearing(bot, task, goal, save, target, actions, client) {
     }
     const origin = bot.entity.position.clone(), dimension = bot.game.dimension, controller = new AbortController();
     const watch = setInterval(() => { try { task.check(); checkAir(bot); checkThreats(bot); } catch (e) { controller.abort(e); } }, 100);
+    const stopThinking = require('./speech').thinking(bot);
     let decision;
     try { decision = await decideTree(client, { tree, state: { request: goal.request, task: 'Follow observed Eyes of Ender', target,
       latestBearing: search.bearings.at(-1), estimatedTargetIsUnverified: true, health: bot.health, food: bot.food }, signal: controller.signal,
     isFresh: () => bot.game.dimension === dimension && bot.entity.position.distanceTo(origin) < 1 }); }
-    finally { clearInterval(watch); }
+    finally { clearInterval(watch); stopThinking(); }
     task.check();
     goal.decisions ||= []; goal.decisions.push({ at: new Date().toISOString(), path: decision.path, judgments: decision.judgments,
       latencyMs: decision.latencyMs, usage: decision.usage, stale: decision.stale, state: { target }, options: JSON.parse(JSON.stringify(tree)) });

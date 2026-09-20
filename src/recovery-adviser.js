@@ -4,6 +4,7 @@ const { MODEL } = require('./designer');
 const { checkAir, needsAir } = require('./vitals');
 const { checkThreats, immediateThreat } = require('./danger');
 const { recoveryOptions, executeRecoveryOption } = require('./recovery-options');
+const { thinking } = require('./speech');
 const LIMITS = { calls: 6, sameFailure: 2, cooldownMs: 60000, requestMs: 45000, planMs: 900000, actionMs: 120000, actionSteps: 12,
   surfaceMs: 600000, surfaceSteps: 192 };
 const emergency = err => ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name);
@@ -44,6 +45,7 @@ async function askFable(bot, task, observation, { apiKey = process.env.OPENROUTE
   };
   const timer = setTimeout(() => controller.abort(new Error('Recovery adviser timed out')), timeoutMs);
   const watcher = setInterval(() => { try { guard(); } catch (err) { controller.abort(err); } }, 100);
+  const stopThinking = thinking(bot);
   try {
     guard();
     const schema = { type: 'object', additionalProperties: false, required: ['diagnosis', 'steps'], properties: {
@@ -69,7 +71,7 @@ async function askFable(bot, task, observation, { apiKey = process.env.OPENROUTE
     catch (err) { err.rejectedAdvice = content; throw err; }
     return { ...validated, model, latencyMs: Date.now() - started,
       usage: result.usage, createdAt: new Date().toISOString() };
-  } finally { clearTimeout(timer); clearInterval(watcher); }
+  } finally { clearTimeout(timer); clearInterval(watcher); stopThinking(); }
 }
 
 class RecoveryAdviser {

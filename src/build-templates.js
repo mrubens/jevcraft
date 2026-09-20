@@ -38,6 +38,7 @@ function templateSchematic({ style, floors, size, material }) {
 async function designWithJev(bot, task, request, client, memory) {
   const controller = new AbortController();
   const watcher = setInterval(() => { try { task.check(); checkAir(bot); } catch (e) { controller.abort(e); } }, 100);
+  const stopThinking = require('./speech').thinking(bot);
   const cancellable = { systemOne: args => { task.check(); return client.systemOne({ ...args, signal: controller.signal }); } };
   try {
     memory = await require('./preferences').resolvedPreferenceContext(cancellable, bot.registry, memory);
@@ -66,6 +67,6 @@ async function designWithJev(bot, task, request, client, memory) {
     return { ...validateSchematic(templateSchematic({ style, floors: Number(floors), size, material }), bot.registry),
       model: client.model || 'jev', backend: 'jev-template', createdAt: new Date().toISOString(), world,
       judgments: answers, usage: response.usage, materialResolution: resolution };
-  } finally { clearInterval(watcher); }
+  } finally { clearInterval(watcher); stopThinking(); }
 }
 module.exports = { templateSchematic, designWithJev };

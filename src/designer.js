@@ -4,11 +4,12 @@ const { surfaceObserver } = require('./surface');
 const { checkAir } = require('./vitals');
 const { regionProperties, buildFootprint, matchesOwnership } = require('./build-blocks');
 const { isDoor, isWoodenDoor } = require('./doors');
+const { thinking } = require('./speech');
 const MODEL = 'anthropic/claude-fable-5.1';
 const LIMITS = { width: 25, height: 16, depth: 25, regions: 256, blocks: 6000 };
 const vectorSchema = { type: 'array', items: { type: 'integer' }, minItems: 3, maxItems: 3 };
 const SCHEMA = { type: 'object', additionalProperties: false,
-  required: ['name', 'description', 'size', 'palette', 'regions', 'entrance'], properties: {
+  required: ['name', 'description', 'size', 'palette', 'regions', 'entrance', 'existingOffset'], properties: {
     name: { type: 'string' }, description: { type: 'string' }, size: vectorSchema,
     palette: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 16 },
     regions: { type: 'array', minItems: 1, maxItems: LIMITS.regions, items: { type: 'object', additionalProperties: false,
@@ -18,6 +19,7 @@ const SCHEMA = { type: 'object', additionalProperties: false,
           half: { anyOf: [{ type: 'string', enum: ['top', 'bottom'] }, { type: 'null' }] },
         } }] } } } },
     entrance: { anyOf: [vectorSchema, { type: 'null' }] },
+    existingOffset: { anyOf: [vectorSchema, { type: 'null' }] },
   } };
 const replaceable = b => b && (['air', 'cave_air', 'void_air', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'leaf_litter', 'snow', 'vine'].includes(b.name) || /_leaves$|_log$/.test(b.name));
 const naturalGround = b => b?.boundingBox === 'block' && /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|stone|deepslate|granite|diorite|andesite|tuff|sand|red_sand|gravel|sandstone|red_sandstone|terracotta)$/.test(b.name);
@@ -34,6 +36,16 @@ function buildPalette(registry) {
         'dirt', 'terracotta', 'sea_lantern', 'glowstone', 'diamond_block', 'iron_block', 'gold_block', 'emerald_block', 'copper_block', 'lapis_block', 'coal_block', 'redstone_block', 'netherite_block'].includes(b.name))).map(b => b.name).sort();
 }
 const vec = a => new Vec3(...a);
+function occupiedByBody(bot, cells) {
+  const bodies = Object.values(bot.entities || {})
+    .filter(e => e !== bot.entity && e.position && e.name !== 'item' && e.isValid !== false);
+  if (!bodies.length) return false;
+  const half = 0.35;
+  return cells.some(p => bodies.some(e =>
+    e.position.x + half > p.x && e.position.x - half < p.x + 1 &&
+    e.position.z + half > p.z && e.position.z - half < p.z + 1 &&
+    e.position.y + (e.height || 1.8) > p.y && e.position.y < p.y + 1));
+}
 function validateSchematic(input, registry) {
   const fail = message => { throw new Error(`Invalid building schematic: ${message}`); };
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('expected an object');
@@ -106,13 +118,23 @@ function validateSchematic(input, registry) {
     if (blockedFloor) notes.push({ kind: 'accessibility', y: Number(blockedFloor[0]), standingCells: blockedFloor[1],
       message: 'Some upper surfaces have no walking route from the entrance. They may be roof or decorative areas; this does not prevent construction.' });
   }
+  // An edit redraws a whole building, so it reports where the existing one
+  // sits inside its new bounds. That is what lets the result be placed over
+  // the real thing instead of beside it, and what makes removal expressible:
+  // anything left out of the new drawing is cleared away.
+  let existingOffset = null;
+  if (input.existingOffset !== null && input.existingOffset !== undefined) {
+    vector(input.existingOffset, 'existingOffset');
+    if (input.existingOffset.some((n, i) => n < 0 || n >= input.size[i])) fail('existingOffset must lie inside the new bounds');
+    existingOffset = [...input.existingOffset];
+  }
   const blocks = [...cells.values()];
   const empty = [];
   for (let x = 0; x < input.size[0]; x++) for (let y = 0; y < input.size[1]; y++) for (let z = 0; z < input.size[2]; z++) {
     if (!cells.has(`${x},${y},${z}`)) empty.push({ x, y, z });
   }
   const materials = blocks.filter(p => !p.companion).reduce((m, p) => { m[p.material] = (m[p.material] || 0) + 1; return m; }, {});
-  return { source: input, blocks, empty, materials, notes, access: access && [access.x, access.y, access.z] };
+  return { source: input, blocks, empty, materials, notes, existingOffset, access: access && [access.x, access.y, access.z] };
 }
 
 function surveyForDesign(bot) {
@@ -147,13 +169,14 @@ function surveyForDesign(bot) {
     } catch { return { block, carried: stock[block] || 0, acquisition: 'No executable acquisition plan; use only what is carried' }; }
   });
   return { dimension: bot.game.dimension, gameMode: bot.game.gameMode, position: { ...o }, terrain,
+    existingStructures: bot.buildRegistry?.describe(o, bot.game.dimension) || [],
     materials: { locallyObservedSources: [...nearby], practicalPalette: materialGuide,
       catalogMeaning: 'availableBlocks lists supported block types, NOT supplies available here. Unlisted decorative materials may require distant biomes or another dimension.' },
     inventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })), limits: LIMITS, availableBlocks: buildPalette(bot.registry) };
 }
 
 async function designBuilding(bot, task, request, { fetchImpl = fetch, apiKey = process.env.OPENROUTER_API_KEY,
-  model = process.env.OPENROUTER_BUILD_MODEL || MODEL, previousDraft, feedback, memory } = {}) {
+  model = process.env.OPENROUTER_BUILD_MODEL || MODEL, previousDraft, feedback, memory, extending } = {}) {
   memory = require('./preferences').preferenceContext(memory);
   if (!apiKey) { const e = new Error('Building designer needs OPENROUTER_API_KEY in the local .env'); e.name = 'Blocked'; throw e; }
   const world = surveyForDesign(bot), controller = new AbortController();
@@ -163,14 +186,15 @@ async function designBuilding(bot, task, request, { fetchImpl = fetch, apiKey = 
   schema.properties.regions.items.properties.block.enum = allowed;
   const timer = setTimeout(() => controller.abort(new Error('Building designer timed out')), 180000);
   const watcher = setInterval(() => { try { task.check(); checkAir(bot); } catch (e) { controller.abort(e); } }, 100);
+  const stopThinking = thinking(bot);
   try {
     task.check();
     const response = await fetchImpl('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST', signal: controller.signal,
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, max_tokens: 10000, reasoning: { effort: 'low' }, provider: { require_parameters: true },
-        messages: [{ role: 'system', content: `Design an attractive, usable Minecraft structure matching the player request. Return only a schematic, never commands or code. Coordinates are local [x,y,z] inside size. Regions are inclusive filled cuboids, applied in order; air carves openings. Unspecified cells are air. Use only availableBlocks, at most 16 palette entries and ${LIMITS.regions} regions; dimensions at most 25x16x25 and at most ${LIMITS.blocks} solid blocks. All solid components must connect to a foundation at y=0. Follow the requested shape rather than forcing every structure to be a house. Current explicit instructions override memory. Relevant explicit memory notes override learned memory.preferences. Learned wood preferences are soft defaults for unspecified materials, not mandatory ingredients: favor that wood when practical, but do not start a distant expedition solely for an inferred preference. Never treat a previous task or remembered text as a new action request. Include floors, walls, a roof, windows and walkable interiors only when appropriate. Sculptures, monuments, arches and other structures need not have rooms or a doorway: use entrance:null when the structure is not meant to be entered. For structures meant to be entered, provide a usable entrance. In Survival, use world.materials.practicalPalette for the main structure unless the request specifies another material. The for64Blocks recipes show the real gathering effort: prefer abundant carried supplies or cheap local materials. For an ordinary request without a size, aim for 80-200 solid blocks total; spend detail on shape, proportions and openings, not large bulk. Larger explicitly requested builds may use the full limits. Do not add Nether-only blocks, rare biome blocks, or smelted decorative variants unless the player requested them or enough are already carried. If a light block is not locally practical, leave a window/skylight instead. These are design choices, not reasons to ask the player questions. Make mansions visibly larger and architecturally richer than simple houses, with connected rooms and a usable entrance. For an enterable structure, reserve a two-block-high entrance opening at y>=1 with a floor directly beneath it; entrance gives its bottom air cell. Inset entrances are allowed when a supported, two-block-high walking route reaches an exterior edge of the bounding box. Every interior floor must be reachable from the entrance by walking and one-block jumps; carve the floor above each staircase to leave jumping headroom over the current step as well as the destination. Stairs and slabs are available. Every stair region needs properties:{facing:"north"|"east"|"south"|"west",half:"bottom"|"top"}. Facing points toward the high side of bottom stairs (north=-z, south=+z, east=+x, west=-x). Every slab region needs properties:{facing:null,half:"bottom"|"top"}. Other blocks use properties:null. Stair corners join automatically; do not specify shape, waterlogging or double slabs. Use full blocks for structural supports and entrance floors; stairs/slabs are useful for steps, roofs and trim. Wooden doors are available. A door region specifies only its lower cell, with properties:{facing:"north"|"east"|"south"|"west",half:null}. Code adds the upper cell and counts one inventory door for the pair. Leave the cell above it free and put a full block directly below it. Facing follows the walking direction through the doorway, for example south for entering from a north wall. A usable entrance may contain a door. Do not specify hinges, open states, or upper door halves; Minecraft handles them. Design compactly with cuboids rather than listing thousands of individual blocks. The surveyed terrain informs the scale and style; code will choose and revalidate a nearby supported site.` },
-          { role: 'user', content: JSON.stringify({ request, world, memory }) },
+        messages: [{ role: 'system', content: `Design an attractive, usable Minecraft structure matching the player request. Return only a schematic, never commands or code. Coordinates are local [x,y,z] inside size. Regions are inclusive filled cuboids, applied in order; air carves openings. Unspecified cells are air. Use only availableBlocks, at most 16 palette entries and ${LIMITS.regions} regions; dimensions at most 25x16x25 and at most ${LIMITS.blocks} solid blocks. All solid components must connect to a foundation at y=0. Follow the requested shape rather than forcing every structure to be a house. Current explicit instructions override memory. Relevant explicit memory notes override learned memory.preferences. Learned wood preferences are soft defaults for unspecified materials, not mandatory ingredients: favor that wood when practical, but do not start a distant expedition solely for an inferred preference. Never treat a previous task or remembered text as a new action request. Include floors, walls, a roof, windows and walkable interiors only when appropriate. Sculptures, monuments, arches and other structures need not have rooms or a doorway: use entrance:null when the structure is not meant to be entered. For structures meant to be entered, provide a usable entrance. In Survival, use world.materials.practicalPalette for the main structure unless the request specifies another material. The for64Blocks recipes show the real gathering effort: prefer abundant carried supplies or cheap local materials. For an ordinary request without a size, aim for 80-200 solid blocks total; spend detail on shape, proportions and openings, not large bulk. Larger explicitly requested builds may use the full limits. Do not add Nether-only blocks, rare biome blocks, or smelted decorative variants unless the player requested them or enough are already carried. If a light block is not locally practical, leave a window/skylight instead. These are design choices, not reasons to ask the player questions. Make mansions visibly larger and architecturally richer than simple houses, with connected rooms and a usable entrance. For an enterable structure, reserve a two-block-high entrance opening at y>=1 with a floor directly beneath it; entrance gives its bottom air cell. Inset entrances are allowed when a supported, two-block-high walking route reaches an exterior edge of the bounding box. Every interior floor must be reachable from the entrance by walking and one-block jumps; carve the floor above each staircase to leave jumping headroom over the current step as well as the destination. Stairs and slabs are available. Every stair region needs properties:{facing:"north"|"east"|"south"|"west",half:"bottom"|"top"}. Facing points toward the high side of bottom stairs (north=-z, south=+z, east=+x, west=-x). Every slab region needs properties:{facing:null,half:"bottom"|"top"}. Other blocks use properties:null. Stair corners join automatically; do not specify shape, waterlogging or double slabs. Use full blocks for structural supports and entrance floors; stairs/slabs are useful for steps, roofs and trim. Wooden doors are available. A door region specifies only its lower cell, with properties:{facing:"north"|"east"|"south"|"west",half:null}. Code adds the upper cell and counts one inventory door for the pair. Leave the cell above it free and put a full block directly below it. Facing follows the walking direction through the doorway, for example south for entering from a north wall. A usable entrance may contain a door. Do not specify hinges, open states, or upper door halves; Minecraft handles them. Design compactly with cuboids rather than listing thousands of individual blocks. When \`extending\` is present the player wants an existing building changed, and its exact schematic is given in its own local coordinates. Return the COMPLETE building as it should end up, existing parts and changes together, and set existingOffset to the local position the old building's [0,0,0] now occupies in your drawing. Any cell you leave out is torn down, so this expresses whatever the request actually means: adding a wing or a balcony, opening a wall, taking a roof off, raising a storey, reshaping or redecorating. You are free to alter the original where the request calls for it; keep the parts it does not. The result must be ONE connected building: every part you add shares a face with the existing structure or with something else you add, never floating beside it with air in between. Match the existing materials and proportions unless asked otherwise, and keep the whole result within the size limits. For a fresh build with nothing to change, set existingOffset to null. The surveyed terrain informs the scale and style; code will choose and revalidate a nearby supported site. world.existingStructures lists buildings already standing here: match the materials and proportions of any the request adjoins.` },
+          { role: 'user', content: JSON.stringify({ request, world, memory, extending }) },
           ...(previousDraft ? [{ role: 'assistant', content: JSON.stringify(previousDraft) },
             { role: 'user', content: `The schematic failed validation: ${feedback}. Correct this issue while preserving the requested structure and materials. Do not replace it with a different building type. Check all geometry, connections, entrance access and walkable interior floors before returning it. Return the full corrected schematic.` }] : [])],
         response_format: { type: 'json_schema', json_schema: { name: 'minecraft_schematic', strict: true, schema } } }),
@@ -185,46 +209,123 @@ async function designBuilding(bot, task, request, { fetchImpl = fetch, apiKey = 
     try { validated = validateSchematic(draft, bot.registry); }
     catch (err) { err.draft = draft; throw err; }
     return { ...validated, model, createdAt: new Date().toISOString(), usage: result.usage, world };
-  } finally { clearTimeout(timer); clearInterval(watcher); }
+  } finally { clearTimeout(timer); clearInterval(watcher); stopThinking(); }
 }
 
-function selectSchematicSite(bot, schematic) {
+// How far the foundation may step down over natural terrain, and how much
+// plinth that is allowed to cost. Beyond this the earthworks planner is a
+// better answer than an increasingly tall pedestal.
+const SITE = { step: 8, plinth: 600, preserved: 0.12, rings: 3, spacing: 3 };
+
+// Where to try putting the structure. Without a requested spot this keeps the
+// original four-by-four spread around the bot; with one it centres the
+// footprint on that spot and widens in rings, so a blocked exact placement
+// still lands beside what the player pointed at rather than across the valley.
+function sitePositions(bot, width, depth, anchor, at) {
+  // An edit is not looking for somewhere to go: it belongs exactly where the
+  // building it redraws already stands.
+  if (at) return [new Vec3(at.x, at.y, at.z)];
+  if (!anchor) {
+    const o = bot.entity.position.floored(), positions = [];
+    for (const dx of [5, -width - 5, 12, -width - 12]) for (const dz of [5, -depth - 5, 12, -depth - 12]) positions.push(o.offset(dx, 0, dz));
+    return positions;
+  }
+  const o = new Vec3(Math.floor(anchor.x), Math.floor(anchor.y), Math.floor(anchor.z));
+  const corner = o.offset(-Math.floor(width / 2), 0, -Math.floor(depth / 2)), positions = [];
+  for (let ring = 0; ring <= SITE.rings; ring++) {
+    for (let dx = -ring; dx <= ring; dx++) for (let dz = -ring; dz <= ring; dz++) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+      positions.push(corner.offset(dx * SITE.spacing, 0, dz * SITE.spacing));
+    }
+  }
+  return positions.slice(0, 24);
+}
+
+/**
+ * Choose where the structure stands.
+ *
+ * `anchor` is a requested spot ("build it here", "next to the barn"). `owned`
+ * is the set of cells earlier Jev structures claim: those count as ground to
+ * stand on and as material to build into, so an extension can attach to what
+ * is already there. Blocks belonging to neither terrain nor Jev are the
+ * player's: a small number of them are preserved and built around rather than
+ * demolished, and too many of them rule the site out.
+ */
+function selectSchematicSite(bot, schematic, { anchor, owned = new Set(), at } = {}) {
   const o = bot.entity.position.floored(), [width, height, depth] = schematic.source.size;
   const isSurface = surfaceObserver(bot);
-  const positions = [];
-  for (const dx of [5, -width - 5, 12, -width - 12]) for (const dz of [5, -depth - 5, 12, -depth - 12]) positions.push(o.offset(dx, 0, dz));
-  for (const candidate of positions) {
+  const key = p => `${p.x},${p.y},${p.z}`;
+  const ours = p => owned.has(key(p));
+  // Jev's own walls are a legitimate floor and a legitimate thing to build into.
+  const standable = p => naturalGround(bot.blockAt(p)) || ours(p);
+  const clearable = p => replaceable(bot.blockAt(p)) || ours(p);
+  const scored = [];
+  for (const candidate of sitePositions(bot, width, depth, anchor, at)) {
     const ground = new Map();
     for (let x = 0; x < width; x++) for (let z = 0; z < depth; z++) {
-      for (let y = o.y + 4; y >= o.y - 4; y--) {
+      for (let y = candidate.y + SITE.step; y >= candidate.y - SITE.step; y--) {
         const p = new Vec3(candidate.x + x, y, candidate.z + z);
-        if (naturalGround(bot.blockAt(p)) && replaceable(bot.blockAt(p.offset(0, 1, 0))) && isSurface(p.offset(0, 1, 0))) { ground.set(`${x},${z}`, y); break; }
+        if (standable(p) && clearable(p.offset(0, 1, 0)) && (ours(p) || isSurface(p.offset(0, 1, 0)))) { ground.set(`${x},${z}`, y); break; }
       }
     }
-    if (ground.size !== width * depth) continue;
-    const baseY = Math.max(...ground.values());
-    if (baseY - Math.min(...ground.values()) > 3) continue;
+    if (!at && ground.size !== width * depth) continue;
+    if (at) { ground.clear(); for (let x = 0; x < width; x++) for (let z = 0; z < depth; z++) ground.set(`${x},${z}`, at.y); }
+    const baseY = at ? at.y : Math.max(...ground.values());
+    // Uneven ground is answered with a stepped foundation rather than by
+    // flattening the landscape, but a cliff must not become a pedestal.
+    if (!at && baseY - Math.min(...ground.values()) > SITE.step) continue;
+    const plinth = schematic.blocks.filter(p => p.y === 0)
+      .reduce((total, p) => total + Math.max(0, baseY - ground.get(`${p.x},${p.z}`) - 1), 0);
+    if (plinth > SITE.plinth) continue;
     const origin = new Vec3(candidate.x, baseY, candidate.z);
-    const blocks = schematic.blocks.map(p => ({ ...p, ...origin.offset(p.x, p.y, p.z) }));
+    let blocks = schematic.blocks.map(p => ({ ...p, ...origin.offset(p.x, p.y, p.z) }));
     // Unspecified foundation cells retain natural terrain rather than leaving
     // a moat around an inset facade. Air above the ground is verified exactly.
-    const empty = schematic.empty.map(p => ({ ...origin.offset(p.x, p.y, p.z) }))
+    let empty = schematic.empty.map(p => ({ ...origin.offset(p.x, p.y, p.z) }))
       .filter(p => p.y > ground.get(`${p.x - origin.x},${p.z - origin.z}`));
-    if ([...blocks, ...empty].some(p => p.y > ground.get(`${p.x - origin.x},${p.z - origin.z}`) && !replaceable(bot.blockAt(new Vec3(p.x, p.y, p.z))))) continue;
+    // Anything above ground that is neither replaceable nor ours belongs to the
+    // player. Build around it: drop those cells from the plan instead of
+    // demolishing them, and walk away from a site that is mostly someone's house.
+    const occupied = p => p.y > ground.get(`${p.x - origin.x},${p.z - origin.z}`) && !clearable(new Vec3(p.x, p.y, p.z));
+    const preserved = [...blocks, ...empty].filter(occupied).map(p => ({ x: p.x, y: p.y, z: p.z }));
+    if (preserved.length > (blocks.length + empty.length) * SITE.preserved) continue;
+    if (preserved.length) {
+      const skip = new Set(preserved.map(key));
+      blocks = blocks.filter(p => !skip.has(key(p)));
+      empty = empty.filter(p => !skip.has(key(p)));
+    }
     for (const p of schematic.blocks.filter(p => p.y === 0)) for (let y = ground.get(`${p.x},${p.z}`) + 1; y < baseY; y++) {
       blocks.push({ x: origin.x + p.x, y, z: origin.z + p.z, material: p.properties ? 'cobblestone' : p.material });
     }
+    // A structure cannot be built through whoever asked for it.
+    if (occupiedByBody(bot, blocks)) continue;
+
     const e = vec(schematic.access || schematic.source.entrance || [Math.floor(width / 2), 1, 0]), direction = e.z === 0 ? new Vec3(0, 0, -1) : e.z === depth - 1 ? new Vec3(0, 0, 1) : e.x === 0 ? new Vec3(-1, 0, 0) : new Vec3(1, 0, 0);
     const entrance = origin.plus(e).plus(direction);
-    if (!replaceable(bot.blockAt(entrance)) || !replaceable(bot.blockAt(entrance.offset(0, 1, 0))) || !naturalGround(bot.blockAt(entrance.offset(0, -1, 0)))) continue;
-    const initialBlocks = {};
+    // A doorway above the ground floor - a balcony, a second storey - is
+    // reached from inside the structure, and validateSchematic has already
+    // checked it has a floor there. Requiring natural ground outside it as well
+    // rejects every elevated entrance, which is precisely what a balcony is.
+    const grounded = e.y <= 1;
+    if (!clearable(entrance) || !clearable(entrance.offset(0, 1, 0)) ||
+      (grounded && !standable(entrance.offset(0, -1, 0)))) continue;
+    const initialBlocks = {}, initialNames = {};
     for (const p of [...blocks, ...empty]) {
       const b = bot.blockAt(new Vec3(p.x, p.y, p.z));
-      if (b && !['air', 'cave_air', 'void_air'].includes(b.name)) initialBlocks[`${p.x},${p.y},${p.z}`] = b.stateId ?? b.name;
+      if (b && !['air', 'cave_air', 'void_air'].includes(b.name)) { initialBlocks[key(p)] = b.stateId ?? b.name; initialNames[key(p)] = b.name; }
     }
-    return { origin: { ...origin }, blocks, empty, entrance: { ...entrance }, initialBlocks,
-      bounds: { min: { x: origin.x, y: baseY - 3, z: origin.z }, max: { x: origin.x + width - 1, y: baseY + height - 1, z: origin.z + depth - 1 } } };
+    const site = { origin: { ...origin }, blocks, empty, entrance: { ...entrance }, initialBlocks, initialNames,
+      ...(preserved.length ? { preserved } : {}),
+      bounds: { min: { x: origin.x, y: baseY - SITE.step, z: origin.z }, max: { x: origin.x + width - 1, y: baseY + height - 1, z: origin.z + depth - 1 } } };
+    // Prefer a site that disturbs least: no preserved player blocks, then the
+    // shallowest foundation, then closest to what the player asked for.
+    // Prefer a site that disturbs least: no preserved player blocks, then the
+    // shallowest foundation, then closest to what the player asked for.
+    scored.push({ site, cost: preserved.length * 100 + plinth + (anchor ? origin.distanceTo(new Vec3(anchor.x, anchor.y, anchor.z)) : 0) });
+    if (!preserved.length && plinth === 0) break;
   }
+  if (scored.length) return scored.sort((a, b) => a.cost - b.cost)[0].site;
+  if (anchor) return null;
   return require('./build-terrain').planTerrainSite(bot, schematic, { naturalGround, replaceable });
 }
 function canClearSchematicBlock(blueprint, owned, block) {

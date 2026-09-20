@@ -111,6 +111,25 @@ async function interpret(client, request, from, username, context = {}) {
     if (![from, ...(context.players || [])].includes(target)) throw new Error('Unknown movement target');
     spec.target = target;
   }
+  if (kind === 'build' && context.continueBuilds) {
+    // Code offers only structures that actually stand nearby; Jev decides
+    // whether this request continues one, and where a new one should go.
+    const continuation = await context.continueBuilds(request, context.builds || []);
+    spec.buildContinuation = { mode: continuation.mode, target: continuation.target?.id, placement: continuation.placement, judgments: continuation.judgments };
+    // Finishing and repairing reuse the saved plan; extending designs something
+    // new and places it against the structure it is extending.
+    if (['finish', 'repair'].includes(continuation.mode)) spec.continueBuild = { id: continuation.target.id, mode: continuation.mode };
+    if (continuation.mode === 'extend') spec.buildId = continuation.target.id;
+    // Attach beside the structure, never on top of its own origin: the origin
+    // is the min corner, so centring a new footprint there buries it inside the
+    // building it is meant to adjoin. The entrance is outside by construction.
+    const beside = target => ({ ...(target.entrance || target.origin) });
+    if (continuation.placement === 'beside_target' && continuation.target) spec.buildAnchor = beside(continuation.target);
+    else if (continuation.mode === 'extend') spec.buildAnchor = beside(continuation.target);
+  }
+  if (kind === 'build' && !spec.buildAnchor && spec.buildContinuation?.placement === 'here' && context.speakerPosition) {
+    spec.buildAnchor = { ...context.speakerPosition };
+  }
   if (kind === 'find') {
     const resolution = await resolveDiscovery(client, context.registry || require('minecraft-data')('26.1'), request);
     if (!resolution.target) return { ...spec, kind: 'clarify', message: 'Which Minecraft biome, creature, or block should I look for?' };

@@ -13,6 +13,22 @@ function recoveryHint(error) {
     : 'Say "Jev resume" to try again.';
 }
 
+// Model calls and long searches leave the body perfectly still, which reads as
+// "it did not hear me" rather than "it is thinking". A bare arm swing is the
+// only safe emote here: it writes one arm_animation packet and touches no
+// physics, controls or rotation. Looking around would fight the flight
+// controller and boat paddling, which rewrite yaw every tick; sneaking would
+// corrupt the deliberate sneak in placement and navigation recovery. Repeated
+// chat is not an option either, because vanilla kicks for spam.
+function thinking(bot, intervalMs = 1500) {
+  if (typeof bot?.swingArm !== 'function') return () => {};
+  const swing = () => { try { bot.swingArm('right'); } catch (_) { /* a closed socket is not worth reporting */ } };
+  swing();
+  const timer = setInterval(swing, intervalMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 function friendlyProblem(error) {
   const text = String(error?.message || error || '');
   if (/silk touch/i.test(text)) return 'I need a tool with Silk Touch to pick up that block.';
@@ -76,4 +92,4 @@ function completion(goal) {
   if (goal.kind === 'concrete') return `You got ${goal.count} purple concrete!`;
   return 'The Nether portal works! I went through to check.';
 }
-module.exports = { name, list, friendlyProblem, recoveryHint, activity, completion };
+module.exports = { name, list, friendlyProblem, recoveryHint, thinking, activity, completion };

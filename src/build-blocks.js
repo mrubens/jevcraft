@@ -39,9 +39,25 @@ function buildFootprint(cell) {
     { ...cell, y: cell.y + 1, companion: true, properties: { ...cell.properties, half: 'upper' } }] : [cell];
 }
 
+// A planned cell with no open face is sealed inside the structure's own mass or
+// the hillside it was cut into. Nothing can see it, and placement needs a
+// visible face, so nothing can ever reach it either. Swapping the block there
+// would change nothing observable, while treating it as outstanding blocks an
+// otherwise finished building for ever.
+function enclosedCell(bot, cell) {
+  if (!bot.blockAt) return false;
+  const p = new Vec3(cell.x, cell.y, cell.z);
+  // A wrongly oriented piece of our own material is a mistake to correct, not
+  // a buried cell to forgive. Burial only excuses a cell that was never built:
+  // air, or the terrain the structure was cut into.
+  if (bot.blockAt(p)?.name === cell.material) return false;
+  return directions.every(face => bot.blockAt(p.plus(face))?.boundingBox === 'block');
+}
+
 function buildCellComplete(bot, cell) {
   const parts = buildFootprint(cell), observed = parts.map(p => bot.blockAt(new Vec3(p.x, p.y, p.z)));
-  return parts.every((p, i) => matchesBuildBlock(observed[i], p)) && (parts.length === 1 || doorPairMatches(...observed));
+  if (parts.every((p, i) => matchesBuildBlock(observed[i], p)) && (parts.length === 1 || doorPairMatches(...observed))) return true;
+  return parts.every(p => enclosedCell(bot, p));
 }
 
 function blockOwnership(block) {
@@ -87,4 +103,4 @@ function placementGoal(bot, point, cell = {}) {
   return goal;
 }
 
-module.exports = { regionProperties, matchesBuildBlock, placementGoal, buildFootprint, buildCellComplete, blockOwnership, matchesOwnership };
+module.exports = { regionProperties, matchesBuildBlock, placementGoal, buildFootprint, buildCellComplete, enclosedCell, blockOwnership, matchesOwnership };

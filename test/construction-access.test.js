@@ -111,3 +111,15 @@ test('creative access keeps its scaffolding budget instead of reserving free blo
   assert.equal(bot.pathfinder.movements.getScaffoldingItem()?.name, 'dirt');
   restore();
 });
+
+test('a cell holding grass can still be reached, though a ray passes straight through it', () => {
+  const { bot, set } = fixture(), p = new Vec3(2, 64, 0);
+  for (let x = 0; x <= 3; x++) for (let z = -1; z <= 1; z++) set(new Vec3(x, 63, z), 'grass_block');
+  set(p, 'short_grass');
+  assert.equal(bot.world.raycast(new Vec3(.5, 65.62, .5), p.offset(.5, .5, .5).minus(new Vec3(.5, 65.62, .5)).unit(), 4)
+    ?.position?.equals(p), false, 'the ray sees the dirt behind the grass, never the grass');
+  assert(new ConstructionGoal(bot, p, 'dig').reachable(bot.entity.position),
+    'clearing grass out of the footprint must not be declared impossible from everywhere');
+  for (let y = 63; y <= 68; y++) for (let z = -2; z <= 2; z++) set(new Vec3(1, y, z), 'stone');
+  assert(!new ConstructionGoal(bot, p, 'dig').reachable(bot.entity.position), 'a wall in the way still hides it');
+});

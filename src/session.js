@@ -19,6 +19,7 @@ const { friendlyProblem, recoveryHint } = require('./speech');
 const { withRequestSignal } = require('./typesafe');
 const { suspendPrevious, resumeSaved } = require('./suspended-tasks');
 const { CompanionMemory, position } = require('./memory');
+const { BuildRegistry, resolveBuildContinuation } = require('./builds');
 
 function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness } = {}) {
   let ended = false, spawned = false, resolveClosed;
@@ -58,6 +59,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   });
   if (needsMemoryId && memorySeed.memoryId) store.save(memorySeed);
   bot.companionMemory = memory;
+  // Structures outlive the goal that built them, so this store is keyed to the
+  // world rather than the request and is shared by every later build.
+  const builds = new BuildRegistry(path.join(stateDirectory, `${memoryIdentity}-builds.json`));
+  bot.buildRegistry = builds;
   const survival = createSurvival(bot, { state: survivalStore.read() || store.read()?.survival, client });
   if (!survivalStore.read() && store.read()?.status === 'cancelled') survival.state.paused = true;
   const saveSurvival = () => { if (!ended) { survival.state.version = 1; survivalStore.save(survival.state); } };
@@ -191,6 +196,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (/^status( please)?[.!?]?$/i.test(normalized)) {
       bot.chat(statusMessage(bot, active, store.read())); return;
     }
+    // Acknowledge instantly. Everything below can wait on the model, and a
+    // motionless bot reads as "it did not hear me" rather than "it is thinking".
+    bot.swingArm?.('right');
     const revision = generation;
     const requestPosition = { speakerPosition: position(bot.players[from]?.entity?.position), botPosition: position(bot.entity?.position), dimension: bot.game.dimension };
     const requestClient = withRequestSignal(client, requestController.signal);
@@ -200,6 +208,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       const spec = literal ? { kind: 'operator_command' } : await interpret(requestClient, request, from, bot.username, {
         registry: bot.registry, players: Object.keys(bot.players),
         ...requestPosition, memory: memory.context(from),
+        builds: builds.describe(bot, bot.entity.position, bot.game.dimension),
+        continueBuilds: (request, candidates) => resolveBuildContinuation(requestClient, request, candidates,
+          { speaker: requestPosition.speakerPosition }),
         inventory: Object.fromEntries(bot.inventory.items().map(item => [item.name, item.count])),
       });
       if (!spec || revision !== generation) return;

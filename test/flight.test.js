@@ -127,3 +127,49 @@ test('a hovering worker verifies its position without a floor beneath it', () =>
   assert(canFly(bot));
   assert(!dryStanding(bot, hovering), 'a blocked body is refused even while flying');
 });
+
+test('a hovering worker can fill a hole that only opens to the sky', () => {
+  const { ConstructionGoal } = require('../src/construction-access');
+  const { bot, set } = fixture();
+  // A one-block pit: every side solid, only the top open. The one way in is
+  // from directly above, which a walking bot must refuse and a flying one need not.
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) set(dx, 64, dz);
+  set(0, 63, 0);
+  const target = { x: 0, y: 64, z: 0, material: 'cobblestone' };
+  const above = new Vec3(.5, 65.05, .5);
+
+  assert(canFly(bot));
+  assert(new ConstructionGoal(bot, target, 'place', target).reachable(above),
+    'hovering over the pit is a legitimate place to work from');
+
+  bot._client.emit('abilities', { flags: 1 });
+  assert(!canFly(bot));
+  assert(!new ConstructionGoal(bot, target, 'place', target).reachable(above),
+    'on foot that cell is beneath your own body, so it stays refused');
+});
+
+test('a hovering worker steps aside into open air, a walking one needs a floor', async () => {
+  const { place } = require('../src/work');
+  const { bot, set } = fixture();
+  // On top of a lone pillar: the bot occupies the cell it must build above, and
+  // every neighbour is open sky. Walking has nowhere to go; flying does.
+  set(0, 63, 0);
+  bot.entity.position = new Vec3(.5, 64.05, .5);
+  const target = new Vec3(0, 64, 0);
+  const reached = [];
+  bot.pathfinder.goto = async goal => { reached.push(goal); bot.entity.position = new Vec3(goal.x + .5, goal.y + .05, goal.z + .5); };
+  bot.inventory = { items: () => [] };
+
+  assert(canFly(bot));
+  // place() gets past stepOff and fails later for want of the block itself,
+  // which is proof enough that stepping aside no longer dead-ends.
+  await assert.rejects(place(bot, new Task('aside'), target, 'cobblestone'), err => {
+    assert.doesNotMatch(err.message, /No solid adjacent footing/, 'flying found somewhere to move');
+    return true;
+  });
+
+  bot._client.emit('abilities', { flags: 1 });
+  bot.entity.position = new Vec3(.5, 64.05, .5);
+  assert(!canFly(bot));
+  await assert.rejects(place(bot, new Task('aside'), target, 'cobblestone'), /No solid adjacent footing/);
+});

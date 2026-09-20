@@ -12,7 +12,8 @@
     "pretest": "node scripts/check-node.js",
     "test": "node --test test/*.test.js",
     "accept": "node scripts/acceptance.js",
-    "harness": "node scripts/harness.js"
+    "harness": "node scripts/harness.js",
+    "build-followup": "node scripts/build-followup-test.js"
   },
   "engines": {
     "node": ">=22"
