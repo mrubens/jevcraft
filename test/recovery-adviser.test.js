@@ -207,3 +207,28 @@ test('pending recovery defers to immediate safety and failed actions do not repl
   assert.equal(goal.recoveryAdvice.active, undefined); assert.equal(goal.item, 'pumpkin'); assert.equal(goal.count, 1);
   assert.match(goal.recoveryAdvice.history[0].outcome, /failed: Route changed/);
 });
+
+test('Jev names each thing it will try once, however many steps say the same', async () => {
+  const { bot, goal, task } = fixture();
+  const said = [];
+  bot.chat = message => said.push(String(message));
+  const relocate = n => ({ id: `option_${n}`, kind: 'relocate', position: { x: n, y: 64, z: 0 }, description: 'Move somewhere else' });
+  const adviser = new RecoveryAdviser(bot, {}, { ...config,
+    observe: async () => ({ context: observation.context, options: [relocate(1), relocate(2)] }),
+    ask: async () => ({ diagnosis: 'Try elsewhere', steps: [relocate(1), relocate(2)], model: 'fable', usage: {} }) });
+  await adviser.suggest(task, goal, () => {});
+  const idea = said.find(m => m.startsWith('I have an idea'));
+  assert(idea, `Jev says what it intends to try: ${JSON.stringify(said)}`);
+  assert.equal(idea, "I have an idea. I'll try a different approach.",
+    'two relocations are one intention, not a stutter');
+
+  // Genuinely different steps are still listed in order.
+  said.length = 0;
+  const mixed = [relocate(1), { id: 'option_3', kind: 'surface', description: 'Head up' }];
+  const second = new RecoveryAdviser(bot, {}, { ...config,
+    observe: async () => ({ context: observation.context, options: mixed }),
+    ask: async () => ({ diagnosis: 'Up and over', steps: mixed, model: 'fable', usage: {} }) });
+  await second.suggest(task, { ...goal, recoveryAdvice: undefined }, () => {});
+  assert.equal(said.find(m => m.startsWith('I have an idea')),
+    "I have an idea. I'll try a different approach, then getting back to the surface.");
+});

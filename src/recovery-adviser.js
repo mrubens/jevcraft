@@ -116,7 +116,11 @@ class RecoveryAdviser {
         const describe = s => s.kind === 'acquire' ? `gathering ${s.count} ${s.item.replaceAll('_', ' ')}` :
           ({ surface: 'getting back to the surface', relocate: 'a different approach', shelter: 'another shelter spot',
             descend_pillar: 'digging down off this pillar' }[s.kind] || 'a different approach');
-        this.bot.chat?.(`I have an idea. I'll try ${advice.steps.map(describe).join(', then ')}.`);
+        // Two relocations in a row are both "a different approach", and saying
+        // so twice reads as a stutter rather than as a plan. Jev says what it
+        // is going to try, once each.
+        const plan = [...new Set(advice.steps.map(describe))];
+        this.bot.chat?.(`I have an idea. I'll try ${plan.join(', then ')}.`);
       }
       save(); this.bot.emit?.('recovery_advice', record);
       return !!state.active;

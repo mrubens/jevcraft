@@ -221,3 +221,53 @@ test('stop received while reconnecting cancels saved work before the world is re
     assert.equal(JSON.parse(fs.readFileSync(path.join(directory, 'test-1-Jev-survival.json'))).paused, true);
   } finally { session?.shutdown(); mineflayer.createBot = original; fs.rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('an operator command runs as an aside, leaving Jev working rather than paused', async () => {
+  // Setting the time or the game mode is "also do this", not "stop doing that".
+  // Jev used to drop the job and pause itself, so the player had to ask again.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const { EventEmitter } = require('node:events');
+  const { Vec3 } = require('vec3');
+  const mineflayer = require('mineflayer');
+  const { createSession } = require('../src/session');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-command-'));
+  const bot = new EventEmitter();
+  Object.assign(bot, {
+    username: 'Jev', version: '26.1', isAlive: true, health: 20, food: 20,
+    registry: require('minecraft-data')('26.1'),
+    entity: { id: 1, position: new Vec3(2, 64, 3), yaw: 0, pitch: 0 }, entities: {},
+    game: { dimension: 'overworld', gameMode: 'survival' },
+    inventory: { items: () => [] }, players: { Caller: { username: 'Caller', uuid: 'player-id' } },
+    blockAt: () => null, loadPlugin: plugin => plugin(bot), waitForChunksToLoad: async () => {},
+    clearControlStates: () => {}, time: { timeOfDay: 1000 },
+    swingArm: () => {}, quit() { bot.emit('end'); },
+    pathfinder: { setMovements: () => {}, setGoal: () => {},
+      movements: { blocksCantBreak: new Set(), blocksToAvoid: new Set(), exclusionAreasStep: [], exclusionAreasPlace: [], exclusionAreasBreak: [] } },
+  });
+  bot._client = new EventEmitter();
+  const said = [], dispatched = [];
+  bot.chat = message => { const text = String(message); (text.startsWith('/') ? dispatched : said).push(text); };
+  const original = mineflayer.createBot, users = process.env.MC_COMMAND_USERS;
+  let session;
+  try {
+    process.env.MC_COMMAND_USERS = 'Caller';
+    mineflayer.createBot = () => bot;
+    session = createSession({ host: 'test', port: 1, username: 'Jev' }, {}, { stateDirectory: directory });
+    bot.emit('spawn');
+    await new Promise(resolve => setTimeout(resolve, 50));
+    bot._client.emit('playerChat', { sender: 'player-id', plainMessage: 'Jev /gamemode creative' });
+    await new Promise(resolve => setTimeout(resolve, 1400));
+
+    assert(said.some(m => /Running your command once: \/gamemode creative/.test(m)),
+      `the command still runs: ${JSON.stringify(said)}`);
+    const survivalFile = path.join(directory, 'test-1-Jev-survival.json');
+    const survival = fs.existsSync(survivalFile) ? JSON.parse(fs.readFileSync(survivalFile, 'utf8')) : {};
+    assert.notEqual(survival.paused, true, 'and Jev is not left paused with nothing to do afterwards');
+  } finally {
+    session?.shutdown(); mineflayer.createBot = original;
+    if (users === undefined) delete process.env.MC_COMMAND_USERS; else process.env.MC_COMMAND_USERS = users;
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

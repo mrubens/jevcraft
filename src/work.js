@@ -723,6 +723,7 @@ function selectSite(bot, material) {
 async function buildHouseStep(bot, task, goal, save) {
   if (!goal.blueprint) {
     goal.blueprint = selectSite(bot, goal.material);
+    if (goal.blueprint) bot.buildRegistry?.remember(goal, { dimension: dimensionName(bot) });
     if (!goal.blueprint) { await explore(bot, task, goal, save, 'flat building site'); return false; }
     save();
   }

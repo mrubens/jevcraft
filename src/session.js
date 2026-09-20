@@ -221,9 +221,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         if (revision !== generation) return;
         const command = commandAccess.accept(data, { resolvedCommand: resolution.command, interpretation: { routing: spec.interpretation, command: resolution.judgments } });
         if (!command) return;
-        await stop('interrupted');
-        if (revision !== generation) return;
-        survival.state.paused = true; saveSurvival();
+        // A command is an aside, not a change of plan. Setting the time or the
+        // game mode used to abandon whatever Jev was building and leave it
+        // waiting to be asked again, which is not what "also do this" means.
+        // Anything the command does to the world - a teleport, a mode change -
+        // the goal already copes with, because the world changes anyway.
         const feedback = [];
         const collect = (message, position, original, sender) => {
           if (position === 'system' && sender == null && feedback.length < 4) feedback.push(message);

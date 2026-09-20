@@ -186,7 +186,10 @@ function houseBlueprint(origin, material = 'oak_planks') {
       else empty.push({ ...pos });
     }
   }
-  return { origin: { ...o }, blocks, empty, entrance: { ...o.offset(0, 0, -3) } };
+  const all = [...blocks, ...empty];
+  const bounds = { min: { x: Math.min(...all.map(p => p.x)), y: Math.min(...all.map(p => p.y)), z: Math.min(...all.map(p => p.z)) },
+    max: { x: Math.max(...all.map(p => p.x)), y: Math.max(...all.map(p => p.y)), z: Math.max(...all.map(p => p.z)) } };
+  return { origin: { ...o }, blocks, empty, bounds, entrance: { ...o.offset(0, 0, -3) } };
 }
 
 function verifyHouse(bot, blueprint) {
