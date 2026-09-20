@@ -15,7 +15,7 @@ const { classifyCommand } = require('./command-classifier');
 const { recordDeath, observeAliveInventory } = require('./recovery');
 const { statusMessage } = require('./status');
 const { bundleSummary } = require('./item-bundle');
-const { friendlyProblem } = require('./speech');
+const { friendlyProblem, recoveryHint } = require('./speech');
 const { withRequestSignal } = require('./typesafe');
 const { suspendPrevious, resumeSaved } = require('./suspended-tasks');
 const { CompanionMemory, position } = require('./memory');
@@ -108,7 +108,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (err.name !== 'Cancelled') {
         goal.status = 'blocked'; goal.lastError = err.message; saveGoal(goal);
         observation?.sample('error', { message: err.message }, goal);
-        console.error(err); bot.chat(`${friendlyProblem(err)} Say "Jev resume" to try again.`);
+        console.error(err); bot.chat(`${friendlyProblem(err)} ${recoveryHint(err)}`);
       }
     }).finally(() => { if (active === session) active = null; });
   }

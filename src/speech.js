@@ -4,10 +4,20 @@
 const name = value => String(value || 'items').replace(/^minecraft:/, '').replaceAll('_', ' ');
 const list = tasks => tasks.map(t => `${t.count} ${name(t.item)}`).join(', ');
 
+// Not every blocker can be retried. Once the world no longer matches the saved
+// plan, resume fails the same way every time, so name what does help instead.
+const REPLAN = /building site changed/i;
+function recoveryHint(error) {
+  return REPLAN.test(String(error?.message || error || ''))
+    ? 'Ask me to build it again and I will pick a fresh spot.'
+    : 'Say "Jev resume" to try again.';
+}
+
 function friendlyProblem(error) {
   const text = String(error?.message || error || '');
   if (/silk touch/i.test(text)) return 'I need a tool with Silk Touch to pick up that block.';
   if (/That place is in the /i.test(text)) return text;
+  if (REPLAN.test(text)) return 'Something new is in the way where I planned to build, so that plan no longer fits.';
   if (/No supported survival acquisition|bedrock/i.test(text)) return 'I don\'t know a way to get that in Survival.';
   if (/Chest handover is unconfirmed/i.test(text)) return text;
   if (/chest.*(?:lid|open)|free block near you for a chest/i.test(text)) return text;
@@ -66,4 +76,4 @@ function completion(goal) {
   if (goal.kind === 'concrete') return `You got ${goal.count} purple concrete!`;
   return 'The Nether portal works! I went through to check.';
 }
-module.exports = { name, list, friendlyProblem, activity, completion };
+module.exports = { name, list, friendlyProblem, recoveryHint, activity, completion };

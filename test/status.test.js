@@ -35,3 +35,21 @@ test('combined progress tells the player how many things are done and what comes
   assert.doesNotMatch(completion({ kind: 'obtain', item: 'diamond_helmet', count: 1, deliver: true }), /verified|inventory|pickup confirmed|_/);
   assert.doesNotMatch(friendlyProblem('TypeSafe 500 backend_error'), /TypeSafe|backend|500/);
 });
+
+test('a plan the world outgrew asks for a new build instead of an endless resume', () => {
+  const { recoveryHint } = require('../src/speech');
+  // Terrain prep, mid-build and per-placement all report this the same way.
+  for (const detail of ['The building site changed at (-36, 67, 8); preserving the unexpected grass_block. Clear it or request a new build',
+    'Building site changed at (2, 64, 0)']) {
+    const saved = { status: 'blocked', request: 'Jev build a barn', lastError: detail };
+    const text = statusMessage(bot, null, saved);
+    assert.match(text, /no longer fits/);
+    assert.match(text, /build it again/);
+    assert.doesNotMatch(text, /Jev resume/, 'resume repeats the same failure forever');
+    assert.doesNotMatch(text, /preserving|\(-?\d/, 'coordinates stay in the saved error');
+  }
+  // Anything retryable keeps the ordinary invitation to resume.
+  const stuck = { status: 'blocked', request: 'Jev get me oak', lastError: 'No reachable surveyed ground while searching for oak_log' };
+  assert.match(statusMessage(bot, null, stuck), /Jev resume/);
+  assert.equal(recoveryHint(undefined), 'Say "Jev resume" to try again.');
+});
