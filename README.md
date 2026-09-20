@@ -234,8 +234,21 @@ Run the local checks without a Minecraft server or API key:
 
 ```sh
 npm test
-npm run plan
 ```
+
+`npm run plan` prints what the planner would do for a request, using the same
+`src/knowledge.js` planner and extracted recipe data the bot executes in game.
+Pass an item, a quantity, a starting inventory, and the blocks the bot can see:
+
+```sh
+npm run plan -- cherry_planks 8
+npm run plan -- iron_pickaxe 1 oak_log=10,cobblestone=30
+npm run plan -- diamond 1 '' spruce_log
+```
+
+Observed blocks are cheaper than speculative ones, so the chosen route shifts
+with the last argument exactly as it does in game. Run it with no arguments for
+a set of built-in cases, including one that is deliberately impossible.
 
 Classifier evaluations make live model calls but do not require a game server:
 
