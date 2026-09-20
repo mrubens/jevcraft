@@ -100,6 +100,39 @@ test('paddling stops after a server correction, changed water or cancellation du
     assert.equal(moves, 20, kind); assert.equal(bot._client.listenerCount('vehicle_move'), 0);
   }
 });
+test('an interrupted crossing is not spent from the boat failure budget', async () => {
+  const { boatTravelStep } = require('../src/boats');
+  const registry = require('minecraft-data')('26.1');
+  const client = { systemOne: async () => ({ answers: { travel: { choice: 'boat' } } }) };
+  const prepared = bot => { bot.registry = registry; bot.inventory = { items: () => [] }; return bot; };
+  const destination = new Vec3(48.5, 65, .5);
+
+  // A stop or an air emergency during the supply trip must leave the route's
+  // reputation intact: neither says the crossing itself is unusable.
+  for (const kind of ['Cancelled', 'NeedsAir']) {
+    const goal = {}, task = new Task('cross');
+    const acquireStep = async () => {
+      if (kind === 'Cancelled') { task.cancel(); task.check(); }
+      throw Object.assign(new Error('drowning'), { name: kind });
+    };
+    await assert.rejects(boatTravelStep(prepared(lake(200)), task, goal, () => {}, destination, { acquireStep }, client), { name: kind });
+    assert.equal(goal.boatTravel.failures, undefined, kind);
+    assert.equal(goal.boatTravel.retryAfter, undefined, kind);
+    assert.match(goal.boatTravel.preparing || '', /_boat$/, kind);
+  }
+
+  // A real preparation failure still spends the budget and retires boats.
+  const goal = {}, task = new Task('cross');
+  const acquireStep = async () => { throw new Error('no wood anywhere'); };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const bot = prepared(lake(200));
+    assert.equal(await boatTravelStep(bot, task, goal, () => {}, destination, { acquireStep }, client), false);
+    delete goal.boatTravel.retryAfter; // Skip the ordinary cooldown for this check.
+  }
+  assert.equal(goal.boatTravel.failures, 2);
+  assert.equal(await boatTravelStep(prepared(lake(200)), task, goal, () => {}, destination, { acquireStep }, client), false);
+});
+
 test('carried boats are reused and crafting chooses wood already in inventory', () => {
   const bot = { registry: require('minecraft-data')('26.1'), inventory: { items: () => [{ name: 'birch_planks', count: 8 }] } };
   assert.equal(preferredBoat(bot), 'birch_boat');

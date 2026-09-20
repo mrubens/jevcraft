@@ -305,13 +305,26 @@ async function boatTravelStep(bot, task, goal, save, destination, actions, clien
     }
     await navigate(bot, task, new goals.GoalBlock(trip.landing.x, trip.landing.y, trip.landing.z), { timeoutMs: 12000, stallMs: 4000 });
     state.completed = { at: new Date().toISOString(), landing: { ...bot.entity.position }, item: itemName, recovered };
-    delete state.preparing; state.attempts = 0; delete state.lastError; save();
+    // A finished crossing is evidence that boats work here. Clear the failure
+    // budget so one bad stretch of water cannot retire them for the whole task.
+    delete state.preparing; delete state.lastError; delete state.retryAfter;
+    state.attempts = 0; state.failures = 0; save();
     return true;
   } catch (error) {
-    state.lastError = error.message; state.failures = (state.failures || 0) + 1; state.retryAfter = Date.now() + 60000; delete state.preparing; save();
+    // Stop, low air and threats interrupt the crossing without saying anything
+    // about the route. Only real boat failures spend the budget that retires
+    // this optional transport, and only they discard the prepared boat choice.
+    const interrupted = ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(error.name);
+    state.lastError = error.message;
+    if (!interrupted) {
+      state.failures = (state.failures || 0) + 1;
+      state.retryAfter = Date.now() + 60000;
+      delete state.preparing;
+    }
+    save();
     if (bot.vehicle) await leaveBoat(bot);
     task.check();
-    if (['NeedsSafety', 'NeedsAir'].includes(error.name)) throw error;
+    if (interrupted) throw error;
     // Optional transport must not replace the user's objective or keep
     // manufacturing boats after a failed placement, boarding or crossing.
     return false;
