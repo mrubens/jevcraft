@@ -345,7 +345,7 @@ test('the survey sent to the designer carries the ground profile and what alread
   const span = (radius * 2) / step + 1;
   assert.equal(heights.length, span, 'a square heightmap, not a scattering of probes');
   assert(heights.every(row => row.length === span));
-  assert.equal(step, 1, 'every block, not a sample of them');
+  assert.equal(step, 2, 'every other block: dense numeric text is the bulk of what Jev says');
   assert(heights.flat().every(h => h === null || typeof h === 'number'));
   // Written as rows of numbers, the whole thing is a fraction of what the same
   // samples would cost as one JSON object each.
