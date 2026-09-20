@@ -847,3 +847,50 @@ with `No reachable, supported 3 by 3 shelter site observed`. Its fresh trace is
 preserved as `mu919whk-failed-fresh-endurance`, the manifest records failure and
 the isolated server was stopped. It proves fresh delivery, not endurance; shore
 recovery before shelter preparation is a remaining reliability issue.
+
+
+## Reach dry land before shelter preparation
+
+The failed fresh endurance run `mu919whk` was still floating after a boat trip
+when evening preparation selected `secure_shelter`. Its twelve-block shelter
+scan could not find dry terrain, and retrying that scan never moved it toward
+the farther bank. A focused regression reproduced this exact ordering failure:
+no nearby shelter site, an observed reachable shore eighteen blocks away, and
+carried blocks that must not be used to bridge or build while swimming.
+
+Shelter preparation now first checks whether Jev is in water. It floats to the
+observed open surface, surveys dry land up to 64 blocks away, and swims to a
+reachable landing before choosing a local shelter site. Routes preserve
+inherited movement restrictions and cannot excavate, place scaffolding or dive
+under cover. Candidate searches and retries are bounded; failed approaches are
+remembered briefly. Landing verification requires actual dry body space,
+nonhazardous support, grounded arrival and the surveyed destination. The player
+request remains intact, and status says “I'm swimming back to dry land.”
+
+The automated regressions cover the original ordering failure, unknown and
+hazardous terrain, covered water, forbidden routes, stale landings, unconfirmed
+arrival, cancellation and restoration of the movement policy. All 511 tests
+passed; after adding the player-facing status and clearing stale recovery
+errors on success, all 22 affected shore, survival and status tests passed.
+
+```sh
+MC_PORT=<isolated-port> node scripts/shore-recovery-test.js
+```
+
+Apply the generated `setup.json` only in the isolated console, then create
+`ready`; ports 25565 and 25577 are rejected. `shore-recovery-mu925lyd` passed at
+00:10:00 UTC on 2026-09-20. An empty Survival bot began in the center of a
+41-block-wide, four-block-deep lake. A separate client observed its roughly
+21-block swim to land with no terrain changes, then independently verified the
+finished shelter after ordinary dirt gathering. The complete test observed
+1,044 movement packets, 29 removals and 32 placements. Health and oxygen stayed
+20, with no deaths or bot commands. The lake is supplied fixture terrain; this
+is mechanics evidence, not natural Survival acceptance.
+
+The original natural endurance world was separately reopened without fixture
+commands and resumed under the same player identity. Its failed fresh trace
+remains unchanged in `mu919whk-failed-fresh-endurance`; debug output is recorded
+separately in `idle-shore-debug-mu9297yq`. The patched runtime reached the north
+bank from the saved water position near (740,62,230) and began gathering shelter
+materials with health 20. Completion of that resumed shelter and a fresh
+uninterrupted two-cycle endurance trial remain separate checks.

@@ -204,6 +204,39 @@ test('shelter foundation planning rejects liquids, unloaded terrain and unsuppor
   assert(!shelter.safeSite({ blockAt: () => ({ name: 'air', boundingBox: 'empty' }) }, origin, {}));
 });
 
+test('shelter preparation swims to observed shore before reserving a site or gathering blocks', async () => {
+  const registry = require('prismarine-registry')('26.1'), Block = require('prismarine-block')(registry);
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld', gameMode: 'survival', minY: 0, height: 100 },
+    entity: { position: new Vec3(.5, 62.2, .5), isInWater: true, onGround: false }, entities: {},
+    inventory: { items: () => [{ name: 'dirt', count: 1 }] }, clearControlStates() {},
+    blockAt(point) {
+      const p = point.floored(), name = p.y < 59 || p.x >= 18 && p.y <= 62 ? 'stone' : p.y <= 62 ? 'water' : 'air';
+      const block = Block.fromStateId(registry.blocksByName[name].defaultState); block.position = p; return block;
+    },
+    findBlocks({ maxDistance, useExtraInfo }) {
+      const block = bot.blockAt(new Vec3(18, 62, 0));
+      return maxDistance >= 18 && (!useExtraInfo || useExtraInfo(block)) ? [block.position] : [];
+    },
+    pathfinder: { movements: { canDig: true, allow1by1towers: true, allowParkour: true, scafoldingBlocks: [1] },
+      getPathTo: () => ({ status: 'success', path: [{ x: 18, y: 63, z: 0, toBreak: [], toPlace: [] }] }), setGoal() {} },
+  });
+  const previous = { ...bot.pathfinder.movements }, goal = { kind: 'survive', request: 'Stay alive between requests' };
+  let moved = false;
+  const controller = new Survival(bot, {
+    navigate: async (b, t, target) => {
+      moved = true; assert.equal(target.x, 18);
+      assert.equal(b.pathfinder.movements.canDig, false); assert.deepEqual(b.pathfinder.movements.scafoldingBlocks, []);
+      b.entity.position = new Vec3(18.5, 63, .5); b.entity.isInWater = false; b.entity.onGround = true;
+    },
+    acquireStep: () => assert.fail('Reach dry land before gathering shelter supplies'),
+    place: () => assert.fail('Cannot build an emergency room in open water'),
+  });
+  await controller.refugeStep(new Task('shelter from water'), goal, () => {});
+  assert(moved); assert.equal(controller.state.shelters.length, 0);
+  assert.equal(goal.request, 'Stay alive between requests'); assert.equal(goal.step.action, 'reach_shore');
+  for (const [key, value] of Object.entries(previous)) assert.deepEqual(bot.pathfinder.movements[key], value, key);
+});
+
 test('unfinished shelter plans stop pulling the bot back uphill after it leaves the area', () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' },
     entity: { position: new Vec3(0.5, 64, 0.5) }, blockAt: () => ({ name: 'air', boundingBox: 'empty' }) });

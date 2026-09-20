@@ -11,6 +11,7 @@ const { recoverItems } = require('./recovery');
 const { surveyRoute } = require('./skills');
 const { defendNearby } = require('./combat');
 const { reservedForConstruction } = require('./build-sites');
+const { reachShore } = require('./shore');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
@@ -103,6 +104,7 @@ class Survival {
 
   async refugeStep(task, goal, save) {
     const bot = this.bot;
+    if (await reachShore(bot, task, goal, save, { move: this.actions.navigate })) return;
     let refuge = this.currentShelter();
     if (!refuge) {
       const sites = shelter.shelterSites(bot, goal);

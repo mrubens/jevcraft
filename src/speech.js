@@ -25,6 +25,7 @@ function activity(step = {}) {
   const item = name(step.item || step.drops || step.resource || step.name || step.block);
   switch (step.action) {
     case 'boat_travel': return "I'm taking a boat across the water.";
+    case 'reach_shore': return "I'm swimming back to dry land.";
     case 'prepare_build_site': return step.operation === 'fill' ? "I'm filling in a solid base for the building." : "I'm making the ground level for the building.";
     case 'craft': return `I'm making ${item}.`;
     case 'mine': case 'collect': return `I'm collecting ${item}.`;
