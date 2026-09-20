@@ -6,7 +6,7 @@ const { reconnect } = require('./src/reconnect');
 
 const config = {
   host: process.env.MC_HOST || 'localhost', port: Number(process.env.MC_PORT || 25565),
-  username: process.env.MC_USERNAME || 'JevBot', auth: process.env.MC_AUTH || 'offline',
+  username: process.env.MC_USERNAME || 'Jev', auth: process.env.MC_AUTH || 'offline',
   version: process.env.MC_VERSION || false,
 };
 const client = new TypeSafe();
