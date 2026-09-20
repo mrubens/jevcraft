@@ -105,3 +105,25 @@ test('revoking permission in midair aborts flight and restores gravity', async (
   finally { clearTimeout(timer); }
   assert.equal(bot.physics.gravity, .08); assert(!bot._creativeFlight.active);
 });
+
+test('a hovering worker verifies its position without a floor beneath it', () => {
+  const { supportCell } = require('../src/terrain');
+  const { dryStanding } = require('../src/mining-access');
+  const { bot, set } = fixture();
+  const hovering = new Vec3(.5, 64.05, .5), standing = new Vec3(.5, 64, .5);
+  // Flight parks the body a fraction above the block it arrived at, which rounds
+  // supportCell up into the air the feet occupy instead of the block below.
+  assert.equal(supportCell(hovering).y, 64, 'hover offset names the feet cell');
+  assert.equal(supportCell(standing).y, 63, 'a standing body names the block below');
+  assert(canFly(bot));
+  assert(dryStanding(bot, hovering), 'flight needs no footing to hold a work position');
+  bot._client.emit('abilities', { flags: 1 });
+  assert(!canFly(bot));
+  assert(!dryStanding(bot, hovering), 'without flight the missing floor still rejects');
+  set(0, 63, 0);
+  assert(dryStanding(bot, standing), 'ordinary walking footing is unchanged');
+  bot._client.emit('abilities', { flags: 13 });
+  set(0, 64, 0);
+  assert(canFly(bot));
+  assert(!dryStanding(bot, hovering), 'a blocked body is refused even while flying');
+});

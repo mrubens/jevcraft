@@ -8,9 +8,14 @@ const { dryPassable: clear, dryLeaf, dryBodySpace, supportCell, damagingTerrain 
 const wet = new Set(['water', 'lava', 'bubble_column', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant']);
 const solid = block => block?.boundingBox === 'block' && !['magma_block', 'cactus'].includes(block.name);
 
+// Creative flight holds a position with no floor beneath it, and parks the body
+// a fraction above the block it arrived at, so supportCell names the air the feet
+// occupy rather than the block below. A hovering worker needs no footing: require
+// a clear body and let flight supply the rest, or this rejects every arrival.
 function dryStanding(bot, point) {
-  const support = supportCell(point);
-  return dryBodySpace(bot, point) && solid(bot.blockAt(support));
+  if (!dryBodySpace(bot, point)) return false;
+  if (require('./flight').canFly(bot)) return true;
+  return solid(bot.blockAt(supportCell(point)));
 }
 
 function miningReach(bot, point, blockPosition) {
