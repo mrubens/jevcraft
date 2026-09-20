@@ -45,7 +45,7 @@ class PickupGoal extends goals.GoalBlock {
 }
 
 async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item), origin = bot.entity.position.clone(),
-  radius = 16, timeoutMs = 6500, waitForSpawnMs = 0, onTarget = () => {}, move = navigate } = {}) {
+  radius = 16, timeoutMs = 6500, waitForSpawnMs = 0, onTarget = () => {}, move = navigate, allowExcavation = false } = {}) {
   task.check(); checkAir(bot);
   const gained = () => countOf(bot, item) > before;
   if (gained()) return true;
@@ -62,7 +62,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
   Object.assign(movement, { allow1by1towers: false, scafoldingBlocks: [], allowParkour: false,
     maxDropDown: Math.min(previous.maxDropDown ?? 2, 2), allowedPosition: allowed });
   const attempted = new Set();
-  let seen = false;
+  let seen = false, passageTried = false;
   try {
     while (Date.now() < deadline && !gained()) {
       task.check(); checkAir(bot);
@@ -94,6 +94,27 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
           if (gained() || changed()) break;
         }
         if (gained()) break;
+      }
+      if (!gained() && allowExcavation && !passageTried) {
+        const targets = drops.flatMap(drop => pickupPositions(bot, drop));
+        if (targets.length) {
+          passageTried = true;
+          const pickupPolicy = { canDig: movement.canDig, allowedPosition: movement.allowedPosition, ...Object.fromEntries(Object.keys(previous).map(k => [k, movement[k]])) };
+          // Remove only this collector's restrictions. The caller's no-dig and
+          // construction boundaries still apply to the fallback survey.
+          policy.restore(); Object.assign(movement, previous);
+          const observed = drops.map(drop => ({ drop, position: drop.position.clone() }));
+          const changed = () => observed.every(({ drop, position }) => bot.entities[drop.id] !== drop ||
+            drop.isValid === false || drop.position.distanceTo(position) > .65);
+          try {
+            await require('./mining-passage').openMiningPassage(bot, task, targets, { navigate: move,
+              stopWhen: () => gained() || changed() });
+            const pickupDeadline = Date.now() + 450;
+            while (!gained() && !changed() && Date.now() < pickupDeadline) { task.check(); checkAir(bot); await sleep(50); }
+          } catch (error) {
+            task.check(); if (['NeedsAir', 'NeedsSafety'].includes(error.name)) throw error;
+          } finally { Object.assign(movement, pickupPolicy); }
+        }
       }
       if (!gained()) await sleep(Math.max(0, Math.min(100, deadline - Date.now())));
     }

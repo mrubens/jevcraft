@@ -1081,3 +1081,49 @@ preserving the entire current checkpoint and its suspended task. Run it with
 its generated setup in that fixture console and create `ready`. The initial
 `maintenance-resume-mu942tjw` fixture failed during setup because its saved
 survival record omitted the required version; that artifact is preserved.
+
+## Open short passages to mined resources
+
+The failed natural run `mu93udp8` left cobblestone behind a grass step under a
+low ceiling. A read-only probe of its preserved world found dry mining and
+pickup positions, but the no-dig approach could not enter them. Ordinary
+navigation found a three-node route that removed just one grass block. The
+recording and probe are retained in `mu93udp8-failed-fresh-endurance` and
+`mu93udp8-mining-probe.json`; the world was backed up before debugging.
+
+Mining approaches and resource pickup now try a short excavation only after
+ordinary walking fails. The complete surveyed route must stay within twelve
+blocks, descend no more than three blocks below its start, contain at most
+sixteen nodes and remove at most four already-permitted blocks. It cannot
+place scaffolds, remove the target resource, excavate the bot's footing or the
+pickup landing, ignore construction boundaries, or enter waterlogged blocks.
+Execution can break only the exact inspected cells, even if navigation replans.
+The normal block, tool, fluid and hostile restrictions remain in force. Generic
+pickup keeps its no-dig default; resource acquisition opts into this fallback.
+
+The old collector fails the new blocked-pickup regression. All 522 automated
+tests pass, including cancellation, inherited protections, hazardous routes,
+and limits on excavation. Reproduce the two gameplay checks with
+`MC_PORT=<isolated-fixture-port> node scripts/mining-passage-test.js`; set
+`MINING_TEST_PICKUP=1` for the loose-item case. Apply the generated `setup.json`
+only in the isolated fixture console, then create its `ready` marker. The
+fixture rejects interactive and preserved natural-trial ports.
+
+Controlled run `mining-passage-mu94lkyt` opened the one-block grass doorway,
+mined the requested stone and collected one cobblestone. In
+`mining-passage-mu94nvsd`, the observer tossed cobblestone behind the obstruction;
+the bot cleared only the doorway and collected that item without mining any
+replacement stone. Independent clients observed each pickup and all block
+changes. Both bots stayed at full health with no deaths or gameplay commands.
+These tests use prepared terrain and supplied tools, not natural acceptance.
+
+The original natural world was then resumed on a separately hashed runtime
+without commands or manual gameplay assistance. Jev recovered the stranded
+drops, finished mining and returned to deliver all sixteen cobblestone; the
+receiving client's inventory independently confirmed the quantity. Health
+remained twenty. Two transient approach failures were retried, so this does not
+claim that every cramped position is solved. The runner exited successfully;
+`mu93udp8-mining-passage-resumed` preserves its recording and output, and the
+isolated server was stopped. The original fresh failure remains unchanged.
+This proves recovery and delivery in resumed debugging, not fresh-start
+acceptance or the uninterrupted two-cycle endurance gate.

@@ -394,7 +394,8 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       access = miningMovement(bot);
       await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before, requiredTool: step.tool, enchantment: step.enchantment,
         minimumToolDurability: step.minimumToolDurability });
-      if (await collectNearbyDrops(bot, task, step.drops, { before, origin: p, radius: 8, waitForSpawnMs: 1000 })) return;
+      access.restore(); access = undefined;
+      if (await collectNearbyDrops(bot, task, step.drops, { before, origin: p, radius: 8, waitForSpawnMs: 1000, allowExcavation: true })) return;
     } catch (e) {
       task.check();
       if (['NeedsAir', 'NeedsSafety'].includes(e.name)) {
@@ -1181,6 +1182,7 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
   const first = plan[0];
   if (first?.action === 'mine') {
     if (await collectNearbyDrops(bot, task, first.drops, {
+      allowExcavation: true,
       onTarget: target => { goal.step = { action: 'collect', ...target }; save(); },
     })) return false;
   }

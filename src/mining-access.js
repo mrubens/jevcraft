@@ -75,6 +75,11 @@ async function approachDryMining(bot, task, p, { navigate, dig }) {
     }
   } finally { policy.restore(); }
   if (await approachFoliageMining(bot, task, p, navigate, dig)) return;
+  if (await require('./mining-passage').openMiningPassage(bot, task, dryMiningPositions(bot, p), { navigate, protect: [p] })) {
+    if (!dryStanding(bot, bot.entity.position) || !miningReach(bot, bot.entity.position, p))
+      throw new Error('Mining passage access changed during the approach');
+    return;
+  }
   throw new Error(`No reachable dry standing position for mining at ${p}`);
 }
 
