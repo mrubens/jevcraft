@@ -1104,6 +1104,9 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
       ? { x: here.x + schematic.site[0], y: here.y + schematic.site[1], z: here.z + schematic.site[2] } : null;
     goal.blueprint = selectSchematicSite(bot, schematic, { anchor: goal.buildAnchor, prefer: proposed, owned, at, baseY: proposed?.y });
     if (!goal.blueprint && proposed) goal.blueprint = selectSchematicSite(bot, schematic, { owned });
+    // A standing goal's anchor is where the village would like the next part,
+    // not where a player pointed. When nothing fits there, anywhere near will do.
+    if (!goal.blueprint && goal.buildAnchor && goal.ambition && !at) { delete goal.buildAnchor; goal.blueprint = selectSchematicSite(bot, schematic, { owned }); }
     if (!goal.blueprint) {
       // Wandering off to find ground elsewhere is the wrong answer to a spot
       // the player chose: they asked for it there, so say it will not work.
