@@ -159,7 +159,7 @@ test('the ladder restocks from the stash ahead of its rungs, only within reach, 
 
 test('before the Nether the valuables go home once, and the ladder moves on with lighter pockets', async () => {
   const gear = [['white_bed', 1], ['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['water_bucket', 1], ['oak_log', 8], ['cobblestone', 64], ['cooked_beef', 4], ['crafting_table', 1], ['furnace', 1],
-    ['iron_helmet', 1], ['iron_chestplate', 1], ['iron_leggings', 1], ['iron_boots', 1], ['golden_boots', 1], ['bow', 1], ['arrow', 16], ['diamond_pickaxe', 1], ['diamond', 3], ['iron_ingot', 12], ['gold_ingot', 2]];
+    ['iron_helmet', 1], ['iron_chestplate', 1], ['iron_leggings', 1], ['iron_boots', 1], ['golden_boots', 1], ['bow', 1], ['arrow', 16], ['diamond_sword', 1], ['diamond_pickaxe', 1], ['diamond', 3], ['iron_ingot', 12], ['gold_ingot', 2]];
   const w = await establishedHome({ items: gear });
   const { bot, goal, save, actions } = w;
   const chest = chestAt(w, []);
@@ -169,7 +169,7 @@ test('before the Nether the valuables go home once, and the ladder moves on with
   assert.equal(await gameStep(bot, new Task('win'), goal, save, handlers), false);
   assert.deepEqual(ran, [], 'the stash trip came before the combat check');
   assert.equal(goal.step.action, 'stash_valuables');
-  assert.deepEqual(chest.stored(), { diamond: 3, iron_ingot: 4, gold_ingot: 2, iron_pickaxe: 1, cooked_beef: 2 }, 'eight ingots stay for a tool; the rest, the diamonds, and the kit spares while there (the iron pickaxe behind the diamond one, two steaks over the reserve) go in');
+  assert.deepEqual(chest.stored(), { diamond: 3, iron_ingot: 4, gold_ingot: 2, iron_pickaxe: 1, iron_sword: 1, cooked_beef: 2 }, 'eight ingots stay for a tool; the rest, the diamonds, and the kit spares while there (the iron pickaxe behind the diamond one, the iron sword behind the diamond one, two steaks over the reserve) go in');
   assert(bot.inventory.items().some(i => i.name === 'diamond_pickaxe'), 'the pickaxe is a tool, not a valuable');
   await gameStep(bot, new Task('win'), goal, save, handlers);
   assert.deepEqual(ran, ['prepare_combat'], 'nothing left to stash, the ladder went on');

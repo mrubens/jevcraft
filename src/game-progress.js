@@ -140,9 +140,24 @@ function preparationRung(bot, goal = {}) {
   // piglins in the Nether, and a bot that could only answer at arm's length.
   // A bow and a quiver before the portal, so a shooter at ten blocks is a
   // target rather than a reason to run. A bow about to break is no bow.
-  if (!sound.includes('bow')) return { phase: 'bow', action: 'acquire', item: 'bow', count: carried.filter(n => n === 'bow').length + 1 };
+  // The bow is a night rung. Its string comes off spiders, which the surface
+  // has after dusk and the day does not: a daylight search for one walked
+  // seven hundred blocks across the map and into the sea. By day, with no
+  // spider in view and no string in hand, the ladder goes on to the sword.
+  const t = bot.time?.timeOfDay, dark = t >= 12000 && t < 23000;
+  const spiderNear = Object.values(bot.entities || {}).some(e => e.name === 'spider' && e.position?.distanceTo?.(bot.entity.position) < 32);
+  const string = bot.inventory.items().filter(i => i.name === 'string').reduce((n, i) => n + (i.count || 1), 0);
   const arrows = bot.inventory.items().filter(i => i.name === 'arrow').reduce((n, i) => n + (i.count || 1), 0);
-  if (arrows < 16) return { phase: 'arrows', action: 'acquire', item: 'arrow', count: 16 };
+  if (dark || spiderNear || string >= 3 || sound.includes('bow')) {
+    if (!sound.includes('bow')) return { phase: 'bow', action: 'acquire', item: 'bow', count: carried.filter(n => n === 'bow').length + 1 };
+    if (arrows < 16) return { phase: 'arrows', action: 'acquire', item: 'arrow', count: 16 };
+  }
+  // Daylight is for the deep: two diamonds make the sword that ends a blaze
+  // or a piglin in two swings, and the caves on the way are where spiders
+  // live by day. The night rungs come round again at dusk.
+  // With the sword in hand and the sun up, the ladder is done for now: the
+  // walk to the portal takes the day, and dusk brings the bow rung back.
+  if (best('sword') < 4) return another('diamond_sword');
   return null;
 }
 

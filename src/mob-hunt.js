@@ -283,7 +283,9 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: handler.passive ? 10 : 18, neededFood: handler.passive ? 6 : 16 }; save();
     await sleep(500); task.check(); return;
   }
-  await actions.explore(bot, task, goal, save, step.entity, { surfaceOnly: dimension(bot) === 'overworld' });
+  // A hunt circles where it started, in rings of twenty-four blocks, rather
+  // than walking the map's frontier: the mob comes to the bot at night.
+  await actions.explore(bot, task, goal, save, step.entity, { surfaceOnly: dimension(bot) === 'overworld', frontier: false });
 }
 
 module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt };

@@ -1,5 +1,6 @@
 'use strict';
 const test = require('node:test');
+const { Vec3 } = require('vec3');
 const assert = require('node:assert/strict');
 const { villageState, villageCandidates, chooseVillagePart, nextDreamRequest, shouldLaunchDream, resolveDream, VILLAGE_LEVELS, COOLDOWN_MS } = require('../src/dream');
 const { preparationStage } = require('../src/game-progress');
@@ -44,7 +45,7 @@ test('beating the game is handed over as the win objective, and the ladder start
   const next = await nextDreamRequest({ systemOne: async () => assert.fail('no question needed') }, { dream: 'beat_the_game', setBy: 'Player' });
   assert.equal(next.kind, 'win'); assert.equal(next.dream, 'beat_the_game');
   const bot = (items, slots = {}) => ({ inventory: { items: () => items.map(name => name === 'arrow' ? { name, count: 16 } : { name }), slots } });
-  const armed = ['bow', 'arrow'];
+  const armed = ['bow', 'arrow', 'diamond_sword'];
   assert.equal(preparationStage(bot(['white_bed', 'diamond_pickaxe', 'iron_sword', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'golden_boots', ...armed], { 45: { name: 'shield' } })), null, 'a shield on the arm counts');
   assert.equal(preparationStage(bot(['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'golden_boots', ...armed], { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' } })), null, 'worn armour counts');
   assert.equal(preparationStage(bot(['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'])).item, 'golden_boots', 'gold on the feet before the Nether keeps piglins neutral');
@@ -67,9 +68,14 @@ test('beating the game is handed over as the win objective, and the ladder start
 
 test('a bow and a quiver of sixteen are the last rungs before the Nether, after the golden boots', () => {
   const registry = require('minecraft-data')('26.1');
-  const kit = ['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'golden_boots'];
-  const bot = items => ({ registry, inventory: { items: () => items.map(item => typeof item === 'string' ? { name: item, count: 1, durabilityUsed: 0 } : item), slots: {} } });
+  const kit = ['white_bed', 'diamond_pickaxe', 'iron_sword', 'diamond_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'golden_boots'];
+  const bot = (items, timeOfDay = 14000) => ({ registry, time: { timeOfDay }, entities: {}, entity: { position: new Vec3(0, 64, 0) }, inventory: { items: () => items.map(item => typeof item === 'string' ? { name: item, count: 1, durabilityUsed: 0 } : item), slots: {} } });
   assert.deepEqual(preparationStage(bot(kit)), { phase: 'bow', action: 'acquire', item: 'bow', count: 1 });
+  assert.equal(preparationStage(bot(kit, 6000)), null, 'by day, with the sword in hand and no spider about, the bow waits for dusk');
+  assert.equal(preparationStage(bot(kit.filter(n => n !== 'diamond_sword'), 6000)).item, 'diamond_sword', 'daylight is for the deep');
+  assert.equal(preparationStage(bot([...kit, { name: 'string', count: 3 }], 6000)).item, 'bow', 'string in hand is a bow to craft, whatever the hour');
+  const spidered = bot(kit, 6000); spidered.entities = { 1: { name: 'spider', position: new Vec3(10, 64, 0) } };
+  assert.equal(preparationStage(spidered).item, 'bow', 'a spider in view is a hunt, whatever the hour');
   assert.equal(preparationStage(bot(kit.filter(n => n !== 'golden_boots'))).item, 'golden_boots', 'gold before the bow');
   assert.deepEqual(preparationStage(bot([...kit, 'bow'])), { phase: 'arrows', action: 'acquire', item: 'arrow', count: 16 });
   assert.equal(preparationStage(bot([...kit, 'bow', { name: 'arrow', count: 9 }, { name: 'arrow', count: 6 }])).item, 'arrow', 'fifteen across two stacks is short');

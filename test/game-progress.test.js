@@ -6,7 +6,7 @@ const { Task } = require('../src/skills');
 const { observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, gameStep } = require('../src/game-progress');
 // These fixtures test the later ladder, so they carry the preparation gear
 // (tools, shield, bucket) that the early rungs would otherwise ask for first.
-const GEAR = ['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'golden_boots', 'bow'].map(name => ({ name, count: 1 })).concat({ name: 'arrow', count: 16 });
+const GEAR = ['white_bed', 'diamond_pickaxe', 'iron_sword', 'diamond_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'golden_boots', 'bow'].map(name => ({ name, count: 1 })).concat({ name: 'arrow', count: 16 });
 function fixture() {
   const items = [...GEAR], bot = Object.assign(new EventEmitter(), { _client: new EventEmitter(),
     game: { dimension: 'overworld', gameMode: 'survival' }, health: 20, isAlive: true,
