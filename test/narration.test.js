@@ -74,6 +74,18 @@ test('an identical survival line is not repeated within the window', () => {
   assert.equal(said.length, 2, 'news again after the window');
 });
 
+test('a silent intermediate step does not make the resource line repeat afterwards', () => {
+  const said = [], bot = { chat: line => said.push(line) };
+  const goal = { kind: 'win', step: { action: 'mine', block: 'iron_ore', drops: 'raw_iron', count: 3 }, decisions: [] };
+  let now = 1000;
+  assert.equal(narrate(bot, goal, { now }), 'Getting 3 raw iron.');
+  goal.step = { action: 'tunnel', target: { x: 1, y: 2, z: 3 } };
+  assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), null);
+  goal.step = { action: 'mine', block: 'iron_ore', drops: 'raw_iron', count: 3 };
+  assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), null, 'same resource, same line, not again');
+  assert.equal(said.length, 1);
+});
+
 test('a combined request narrates its inner step and a delivery says what is coming', () => {
   const said = [], bot = { chat: line => said.push(line) };
   const goal = { kind: 'bundle', step: { action: 'combined_request', task: 2, total: 3, detail: { action: 'smelt', item: 'iron_ingot' } }, decisions: [] };

@@ -124,7 +124,10 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
   const key = stepKey(goal, goal.step, decision);
   if (!key || key === state.step) return null;
   const line = stepLine(goal, goal.step, decision);
-  if (!line || speak(line)) { state.step = key; return line; }
+  // A step with nothing to say (a tunnel segment, a climb) must not reset
+  // the key, or the resource line fires again after every one of them.
+  if (!line) return null;
+  if (speak(line)) { state.step = key; return line; }
   return null;
 }
 
