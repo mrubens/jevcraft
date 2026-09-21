@@ -1641,6 +1641,15 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
 
 async function netherStep(bot, task, goal, save) {
   if (String(bot.game.dimension).includes('nether')) return true;
+  // The portal is often underground and the Nether has no wood: the same
+  // supplies a descent needs, checked before the walk rather than after a
+  // stone pickaxe wears to five on the way.
+  if (bot.game?.gameMode !== 'creative' && !goal.expeditionPrepActive && (goal.preparingExpedition || descentSuppliesLow(bot))) {
+    goal.preparingExpedition = true; delete goal.expeditionReady; goal.expeditionPrepActive = true; save();
+    try { await prepareExpeditionStep(bot, task, goal, save); }
+    finally { delete goal.expeditionPrepActive; }
+    return false;
+  }
   const portal = find(bot, ['nether_portal'], 64, 1)[0];
   if (portal) {
     goal.portal = { ...portal }; rememberPortal(goal, save, portal, 'overworld'); save();
