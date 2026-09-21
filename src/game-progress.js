@@ -70,9 +70,29 @@ function verifyGameCompletion(bot, goal) {
     m.exit_portal_used.at >= m.dragon_defeated.at && m.exit_portal_used.at > lastDeath;
 }
 
+// The early rungs of the ladder, each visible within minutes. "Reach the
+// Nether" as a first stage hid hours of preparation behind one label.
+const TIERS = ['wooden', 'stone', 'iron', 'diamond', 'netherite'];
+const tierOf = name => { const m = /^(\w+)_(pickaxe|sword|axe)$/.exec(name); return m ? TIERS.indexOf(m[1]) + 1 : 0; };
+function preparationStage(bot) {
+  const carried = bot.inventory.items().map(i => i.name);
+  const best = kind => Math.max(0, ...carried.filter(n => n.endsWith(`_${kind}`)).map(tierOf));
+  if (best('pickaxe') < 2) return { phase: 'stone_pickaxe', action: 'acquire', item: 'stone_pickaxe', count: 1 };
+  if (best('sword') < 2) return { phase: 'stone_sword', action: 'acquire', item: 'stone_sword', count: 1 };
+  if (best('pickaxe') < 3) return { phase: 'iron_pickaxe', action: 'acquire', item: 'iron_pickaxe', count: 1 };
+  if (!carried.includes('shield')) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
+  if (best('sword') < 3) return { phase: 'iron_sword', action: 'acquire', item: 'iron_sword', count: 1 };
+  if (!carried.includes('bucket') && !carried.includes('water_bucket')) return { phase: 'bucket', action: 'acquire', item: 'bucket', count: 1 };
+  return null;
+}
+
 function nextGameStage(bot, goal) {
   if (verifyGameCompletion(bot, goal)) return { phase: 'complete' };
   const where = dimension(bot), m = goal.gameProgress?.milestones || {};
+  // Early game only: once any Nether or End supply is in hand, the run has
+  // moved past preparation and the later stages own what to fetch next.
+  const supplies = ['ender_eye', 'blaze_rod', 'blaze_powder', 'ender_pearl'].reduce((n, name) => n + count(bot, name), 0);
+  if (where === 'overworld' && !m.nether_entered && !supplies) { const prep = preparationStage(bot); if (prep) return prep; }
   if (where === 'end') return m.dragon_defeated ? { phase: 'return_alive', action: 'exit_end' } : { phase: 'defeat_dragon', action: 'fight_dragon' };
   // Survey throws deliberately spend eyes. Do not send Jev back to the Nether
   // after each throw while it still has a spare and twelve portal eyes. A
@@ -119,4 +139,4 @@ async function gameStep(bot, task, goal, save, actions) {
   return false;
 }
 
-module.exports = { dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, gameStep };
+module.exports = { dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };

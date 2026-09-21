@@ -4,12 +4,15 @@ const { EventEmitter } = require('node:events');
 const { Vec3 } = require('vec3');
 const { Task } = require('../src/skills');
 const { observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, gameStep } = require('../src/game-progress');
+// These fixtures test the later ladder, so they carry the preparation gear
+// (tools, shield, bucket) that the early rungs would otherwise ask for first.
+const GEAR = [{ name: 'diamond_pickaxe', count: 1 }, { name: 'iron_sword', count: 1 }, { name: 'shield', count: 1 }, { name: 'water_bucket', count: 1 }];
 function fixture() {
-  const items = [], bot = Object.assign(new EventEmitter(), { _client: new EventEmitter(),
+  const items = [...GEAR], bot = Object.assign(new EventEmitter(), { _client: new EventEmitter(),
     game: { dimension: 'overworld', gameMode: 'survival' }, health: 20, isAlive: true,
     entity: { position: new Vec3(.5, 64, .5) }, inventory: { items: () => items } });
   const goal = { version: 1, kind: 'win', request: 'Jev beat Minecraft' }, task = new Task('win');
-  const give = stock => { items.splice(0, items.length, ...Object.entries(stock).map(([name, count]) => ({ name, count }))); };
+  const give = stock => { items.splice(0, items.length, ...GEAR, ...Object.entries(stock).map(([name, count]) => ({ name, count }))); };
   return { bot, goal, task, give };
 }
 const credit = timestamp => ({ progressMapping: [{ key: 'minecraft:end/kill_dragon', value: [

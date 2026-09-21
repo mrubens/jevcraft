@@ -20,6 +20,8 @@ const { withRequestSignal } = require('./typesafe');
 const { suspendPrevious, resumeSaved } = require('./suspended-tasks');
 const { CompanionMemory, position } = require('./memory');
 const { BuildRegistry, resolveBuildContinuation } = require('./builds');
+const { nextAmbitionRequest, shouldLaunchAmbition, AMBITIONS } = require('./ambition');
+const { immediateThreat } = require('./danger');
 
 function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness } = {}) {
   let ended = false, spawned = false, resolveClosed;
@@ -64,6 +66,14 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // world rather than the request and is shared by every later build.
   const builds = new BuildRegistry(path.join(stateDirectory, `${memoryIdentity}-builds.json`));
   bot.buildRegistry = builds;
+  // The standing goal: what the bot works toward when nobody has asked for
+  // anything. Kept per world, beside the builds it produces.
+  const ambitionStore = new GoalStore(path.join(stateDirectory, `${memoryIdentity}-ambition.json`));
+  const saveAmbition = standing => { if (!ended) ambitionStore.save({ version: 1, ...standing }); };
+  const readyForAmbition = () => bot.game?.gameMode === 'creative' ||
+    ((bot.game?.dimension !== 'minecraft:overworld' && bot.game?.dimension !== 'overworld' || (bot.time?.timeOfDay ?? 0) < 9500) &&
+      (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 12 && !immediateThreat(bot));
+  let launchingAmbition = false;
   const survival = createSurvival(bot, { state: survivalStore.read() || store.read()?.survival, client });
   if (!survivalStore.read() && store.read()?.status === 'cancelled') survival.state.paused = true;
   const saveSurvival = () => { if (!ended) { survival.state.version = 1; survivalStore.save(survival.state); } };
@@ -119,10 +129,40 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     }).finally(() => { if (active === session) active = null; });
   }
 
+  // Hand the ambition its next request, as if a player had typed it. Jev
+  // chooses the milestone from what code enumerates; a failure to choose or
+  // an unusable answer falls back to ordinary idling until the cool-down ends.
+  async function launchAmbition(standing) {
+    launchingAmbition = true;
+    try {
+      const structures = builds.describe(bot, bot.entity.position, bot.game.dimension);
+      const next = await nextAmbitionRequest(client, standing, { structures, customDesigns: !!process.env.OPENROUTER_API_KEY && (process.env.BUILD_DESIGNER || 'auto') !== 'jev' });
+      if (ended || active) return;
+      standing.lastAttemptAt = Date.now();
+      if (!next || next.done) {
+        standing.satisfiedAt = new Date().toISOString(); standing.lastScore = next?.villageScore; saveAmbition(standing);
+        bot.chat(`I think the ${AMBITIONS[standing.ambition].title.replace(/^build a /, '')} is done for now. Ask me to keep going if you want more.`);
+        return;
+      }
+      saveAmbition(standing);
+      const goal = { ...next, version: 1, status: 'pending', createdAt: new Date().toISOString(), suspendedTasks: suspendPrevious(store.read()),
+        requesterPosition: null, initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
+      saveGoal(goal);
+      bot.chat(`Nothing needs me, so I'm working on my goal to ${AMBITIONS[standing.ambition].title}${next.villageScore !== undefined && next.villageScore !== null ? ` (village ${Math.round(next.villageScore * 100 / 3)}% there)` : ''}: ${next.request}.`);
+      launch(goal);
+    } catch (err) {
+      console.error('[ambition]', err.message);
+      standing.lastAttemptAt = Date.now(); saveAmbition(standing);
+    } finally { launchingAmbition = false; }
+  }
+
   function launchIdle() {
     const retained = store.read();
+    const standing = ambitionStore.read();
+    if (standing?.ambition && !launchingAmbition && shouldLaunchAmbition(standing, retained, { ready: readyForAmbition() })) { launchAmbition(standing); return; }
     const goal = { ...(idleStore.read() || {}), version: 1, kind: 'survive', request: 'Stay alive and prepare supplies between player requests',
-      retainedRequest: retained?.request, blueprint: retained?.blueprint, portalFrame: retained?.portalFrame, survival: survival.state };
+      retainedRequest: retained?.request, blueprint: retained?.blueprint, portalFrame: retained?.portalFrame, survival: survival.state,
+      ambition: standing?.ambition && !standing.satisfiedAt ? standing.ambition : undefined };
     memory.bind(goal);
     const task = new Task('survival', goal.request);
     const session = { task, goal, idle: true };
@@ -168,7 +208,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   });
 
   const idleTimer = setInterval(() => {
-    if (ready && !active && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
+    if (ready && !active && !launchingAmbition && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
   }, 500);
 
   bot._client.on('playerChat', data => {
@@ -259,6 +299,23 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         bot.chat(memory.handle(spec));
         if (active?.goal.from === from) active.goal.memoryContext = memory.context(from);
         observation?.sample('memory', { operation: spec.memory.operation });
+        return;
+      }
+      if (spec.kind === 'ambition') {
+        const standing = ambitionStore.read() || {};
+        const { operation, key } = spec.ambition;
+        if (operation === 'query') {
+          bot.chat(standing.ambition && !standing.satisfiedAt ? `My standing goal is to ${AMBITIONS[standing.ambition].title}. I work on it whenever nothing else needs me.`
+            : standing.ambition ? `I was working to ${AMBITIONS[standing.ambition].title}; I think it is done for now. Say so if you want more.` : "I don't have a standing goal. You can give me one: beat the game, or build a village.");
+        } else if (operation === 'clear') {
+          saveAmbition({ ambition: null, clearedBy: from, clearedAt: new Date().toISOString() });
+          if (active && !active.idle && active.goal.ambition) await stop('cancelled');
+          bot.chat('Okay, no standing goal. I\'ll just look after myself between requests.');
+        } else {
+          saveAmbition({ ambition: key, setBy: from, setAt: new Date().toISOString() });
+          bot.chat(`Got it. Whenever nothing else needs me, I'll work to ${AMBITIONS[key].title}.`);
+        }
+        observation?.sample('ambition', { operation, key, standing: ambitionStore.read() });
         return;
       }
       if (spec.kind === 'clarify') { bot.chat(spec.message); return; }

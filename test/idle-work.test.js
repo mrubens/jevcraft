@@ -21,7 +21,7 @@ test('spare daylight offers the feasible chores and the long game, and Jev choos
   const options = idleOptions(bot, goal);
   assert.deepEqual(Object.keys(options).sort(), ['cook_food', 'long_game', 'stone_tools']);
   assert.match(options.cook_food.description, /4 raw beef/); assert.equal(options.cook_food.item, 'cooked_beef');
-  assert.match(options.long_game.description, /reach nether/);
+  assert.match(options.long_game.description, /stone pickaxe/, 'the ladder starts with a rung you can see');
   const asked = [], acquired = [];
   const client = { model: 'jev-test', systemOne: async ({ questions, state }) => {
     asked.push(Object.values(questions)[0].criteria); assert.equal(state.foodReserve > 0, true);
@@ -47,9 +47,9 @@ test('choosing the long game runs the next rung of the beat-the-game ladder', as
   const { bot, goal, task } = fixture([['stone_pickaxe', 1], ['stone_axe', 1], ['stone_sword', 1], ['oak_log', 16]]);
   const ran = [];
   const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'long_game', confidence: 0.8, probabilities: { long_game: 0.8, rest: 0.2 } } } }) };
-  const handlers = { acquireStep: async () => {}, prepare_combat: async (_b, _t, g) => { ran.push('prepare_combat'); g.prepared = true; return false; } };
+  const handlers = { acquireStep: async (_b, _t, item, count) => { ran.push([item, count]); } };
   assert.equal(await idleWork(bot, task, goal, () => {}, client, () => {}, { handlers }), true);
-  assert.deepEqual(ran, ['prepare_combat'], 'reaching the Nether starts with combat supplies');
-  assert.equal(goal.gameProgress.phase, 'reach_nether');
-  assert.match(bot.said[0], /long game: reach nether/);
+  assert.deepEqual(ran, [['iron_pickaxe', 1]], 'with stone tools in hand, the next rung is an iron pickaxe');
+  assert.equal(goal.gameProgress.phase, 'iron_pickaxe');
+  assert.match(bot.said[0], /long game: iron pickaxe/);
 });

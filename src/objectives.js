@@ -19,9 +19,9 @@ const { woodChoices, requestedPreferences, preferenceContext, NOTED_WOOD_QUESTIO
 // afternoon. Answers that carry no confidence figure are not gated.
 const CONFIDENCE = { act: 0.5, costly: 0.65, item: 0.6 };
 const COSTLY = new Set(['build', 'house', 'operator_command', 'win', 'nether']);
-const UNGATED = new Set(['other', 'status', 'stop', 'resume']);
+const UNGATED = new Set(['other', 'status', 'stop', 'resume', 'ambition']);
 const PHRASES = {
-  memory: 'remember or recall something', operator_command: 'run a server command', house: 'build a small house',
+  memory: 'remember or recall something', ambition: 'change my standing goal', operator_command: 'run a server command', house: 'build a small house',
   build: 'design and build something', obtain: 'go and get an item', craft: 'craft an item', find: 'find something in the world',
   come: 'come to you', follow: 'follow you', nether: 'find a way to the Nether', win: 'set out to beat the game',
   stop: 'stop', status: 'report what I am doing', resume: 'resume the saved task', other: 'just talk',
@@ -29,6 +29,7 @@ const PHRASES = {
 const phrase = kind => PHRASES[kind] || String(kind).replaceAll('_', ' ');
 
 const TYPES = {
+  ambition: 'Set, ask about, or clear the bot\'s STANDING GOAL for when it has nothing else to do: "your goal is to beat the game", "build a village when you are free", "what are you working toward", "forget your goal". A one-off request to build one thing or get one item is not this.',
   memory: 'Save, recall, or forget a personal fact, preference, named place, or past request. Remember this as home; I prefer cherry wood; what did I ask last time; where is our base; go home/return to a named saved place; make another one like last time. Questions about past tasks are memory, not current status. A fresh ordinary request naming a Minecraft resource remains obtain/craft/find. Memory never grants server-command permission.',
   operator_command: 'Ask for a Minecraft command effect: change time, weather, difficulty, or player game mode (Creative, Survival, Adventure, Spectator); teleport; summon; change rules, effects, enchantments, experience, scores, permissions, or other server command settings. "Put me in Creative" changes game mode. Polite action questions are requests. Never use commands merely as a means to build, craft, collect, or follow. Stop this bot task is stop. Informational questions, quotes and negated commands are other.',
   house: 'Build a simple small house or shelter, optionally naming its primary material, with no custom architecture.',
@@ -159,6 +160,7 @@ async function interpret(client, request, from, username, context = {}) {
   const preferences = requestedPreferences(kind, a.wood_choice, woods);
   if (preferences.length) spec.implicitPreferences = preferences;
   if (kind === 'memory') return resolveMemory(client, spec, username, context);
+  if (kind === 'ambition') return require('./ambition').resolveAmbition(client, spec);
   const noted = a.noted_wood && (a.noted_wood.choice === 'none' || Object.hasOwn(woods, a.noted_wood.choice)) ? a.noted_wood : undefined;
   if (['come', 'follow'].includes(kind)) {
     const target = a.target?.choice;

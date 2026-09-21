@@ -133,6 +133,23 @@ A new request replaces the active task. Put related item requests in one message
 
 If Jev is not sure what you meant, it says so and asks: *"I'm not sure whether you want me to design and build something or build a small house. Could you say it another way?"* or *"Did you mean short grass or grass block?"* Nothing starts until you answer.
 
+## Auto mode: a standing goal
+
+Jev doesn't have to wait to be told what to do. Give it a standing goal and it works toward it whenever nothing else needs it:
+
+```text
+Jev your goal is to beat the game
+Jev build a village when you are free
+Jev what are you working toward?
+Jev forget your goal
+```
+
+With **beat the game**, the idle loop hands Jev the survival ladder: stone tools, a stone sword, an iron pickaxe, a shield, an iron sword, a bucket, then the Nether, blaze rods, Eyes of Ender, the stronghold and the dragon. Each rung is something the planner can already do, and progress is only ever read off the world, never off a counter.
+
+With **build a village**, code lists the parts a village still lacks from the buildings that actually stand (cottages, a mansion, a tower, and with the generative designer a well, a farm and a chapel), and Jev picks the next one and scores how village-like the place already is. Each part is built beside the newest one so the village grows as a cluster. The Observatory shows the standing goal and the village score on every event.
+
+A chat request always takes priority and the goal resumes afterwards. `Jev stop` pauses it, and it waits out a cool-down after a milestone that could not be finished. Between milestones, with shelter and food sufficient, Jev also chooses among small chores: cooking raw food it carries, making stone tools, stocking wood.
+
 ## Memory
 
 Jev keeps a local notebook across reconnects and restarts:

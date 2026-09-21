@@ -34,6 +34,7 @@ function goalView(goal = {}) {
     recoveryAdvice: goal.recoveryAdvice?.history?.at(-1) && (({ model, source, diagnosis, status, steps, outcome, jev }) =>
       ({ model, source, diagnosis, status, steps, outcome, jev }))(goal.recoveryAdvice.history.at(-1)),
     designReview: goal.designReview && { fits: goal.designReview.fits, accepted: goal.designReview.accepted, threshold: goal.designReview.threshold },
+    ambition: goal.ambition, villagePart: goal.villagePart, villageScore: goal.villageScore, gamePhase: goal.gameProgress?.phase,
     dependencies: goal.decisions?.at(-1)?.state?.acquisition?.dependencies,
     blueprint: goal.blueprint && { origin: goal.blueprint.origin, blocks: goal.blueprint.blocks?.slice(0, 6000) },
   });
@@ -60,7 +61,7 @@ function classify(row) {
 function decisionSource(decision, kind) {
   // A chat request is understood by Jev before anything else happens, and a
   // clarifying question is Jev saying it was not sure enough to act.
-  if (['request', 'clarify'].includes(kind)) return 'jev';
+  if (['request', 'clarify', 'ambition'].includes(kind)) return 'jev';
   if (['connection', 'result', 'start', 'chat', 'observation', 'vitals'].includes(kind)) return 'observed';
   if (decision?.stale) return 'stale';
   if (decision?.judgments?.length && ['decision', 'action'].includes(kind)) return 'jev';
