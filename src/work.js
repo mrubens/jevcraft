@@ -24,8 +24,8 @@ const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives, knownResourceLocations, knownResourceNames, rememberResources, isSurfaceResource } = require('./resource-observation');
 const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding, LIMITS, SECONDS_PER_BLOCK } = require('./designer');
 const { designWithJev } = require('./build-templates');
-const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine } = require('./mining-access');
-const { dryPassable, supportCell } = require('./terrain');
+const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine, dryStanding } = require('./mining-access');
+const { dryPassable, supportCell, swimmableWater } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
 const { descendPillar } = require('./pillar-recovery');
 const { gameStep, watchGameProgress, dimension, nextGameStage } = require('./game-progress');
@@ -56,6 +56,7 @@ const { approachWorkstation, reachableWorkstation } = require('./workstation-acc
 const { fuelPlanks, CARRIED_FUELS, isFuel, fuelUnits } = require('./fuel');
 const { opportunisticMining } = require('./opportunistic-mining');
 const { opportunisticPickups } = require('./opportunistic-pickups');
+const { reachShore } = require('./shore');
 const { collectNearbyDrops } = require('./drop-collection');
 const { friendlyProblem, recoveryHint, completion } = require('./speech');
 const { boatTravelStep } = require('./boats');
@@ -2111,6 +2112,13 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
       }
       if (!endTask && await maintainPickaxe(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; }
+      // Work starts on dry ground. A crafting table placed from a pool under
+      // the base failed and failed, the bot bobbing for air in between.
+      const feetBlock = typeof bot.blockAt === 'function' ? bot.blockAt(bot.entity.position.floored()) : null;
+      if (!endTask && feetBlock?.name && swimmableWater(feetBlock)) {
+        try { if (!dryStanding(bot, bot.entity.position) && await reachShore(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; } }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      }
       const needsSupplies = !goal.expeditionReady && (
         (goal.kind === 'concrete' && countOf(bot, 'purple_concrete') + (goal.delivered || 0) < goal.count && !goal.pendingDelivery) ||
         (['nether', 'win'].includes(goal.kind) && dimension(bot) === 'overworld' && !find(bot, ['nether_portal'], 64, 1).length && !goal.portalFrame));
