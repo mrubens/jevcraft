@@ -16,6 +16,8 @@ const { thinking } = require('./speech');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
+// Hostiles that daylight does not remove and that keep following.
+const PERSISTENT_THREATS = new Set(['creeper', 'spider', 'cave_spider', 'enderman', 'witch', 'pillager', 'vindicator', 'husk', 'drowned']);
 const shelterNeeded = bot => bot.game.difficulty !== 'peaceful' && bot.game.dimension === 'overworld' &&
   bot.time?.timeOfDay >= 9500 && bot.time.timeOfDay < 23000;
 const emptySite = (bot, refuge) => refuge.kind !== 'house' && !refuge.verifiedAt &&
@@ -74,10 +76,16 @@ class Survival {
     try {
       const ids = ['grass_block', 'dirt', 'stone', 'sand', 'gravel', 'cobblestone'].map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
       const distance = p => Math.min(...danger.map(t => t.entity.position.distanceTo(p)));
-      const candidates = bot.findBlocks({ matching: ids, maxDistance: 20, count: 256,
+      // A creeper does not burn off at dawn and follows to about sixteen
+      // blocks. A six-block hop from one only buys a minute before it is back
+      // at the same tree; the escape from a mob that persists has to reach
+      // past its follow range, or the same creeper interrupts all morning.
+      const persistent = danger.some(t => PERSISTENT_THREATS.has(t.entity.name));
+      const reach = persistent ? 20 : 6, radius = persistent ? 40 : 20;
+      const candidates = bot.findBlocks({ matching: ids, maxDistance: radius, count: 512,
         useExtraInfo: b => shelter.solid(b) && shelter.replaceable(bot.blockAt(b.position.offset(0, 1, 0))) && shelter.replaceable(bot.blockAt(b.position.offset(0, 2, 0))),
-      }).map(p => p.offset(0, 1, 0)).filter(p => p.distanceTo(bot.entity.position) >= 6 &&
-        distance(p) >= distance(bot.entity.position) + 4 && !(this.state.failedEscapes?.[`${p}`] > Date.now() - 60000))
+      }).map(p => p.offset(0, 1, 0)).filter(p => p.distanceTo(bot.entity.position) >= reach &&
+        distance(p) >= Math.max(distance(bot.entity.position) + 4, persistent ? 20 : 0) && !(this.state.failedEscapes?.[`${p}`] > Date.now() - 60000))
         .sort((a, b) => distance(b) - distance(a));
       for (const p of candidates.slice(0, 16)) {
         const destination = new goals.GoalBlock(p.x, p.y, p.z);
@@ -85,7 +93,7 @@ class Survival {
         if (route.status !== 'success') continue;
         // Do not run through another hostile to escape the closest one.
         if (route.path.some(point => danger.some(t => t.entity.position.distanceTo(pos(point)) < Math.min(4, t.distance - 1)))) continue;
-        try { await this.actions.navigate(bot, task, destination, { timeoutMs: 7000, stallMs: 3000 }); delete this.state.trappedSince; return; }
+        try { await this.actions.navigate(bot, task, destination, { timeoutMs: persistent ? 14000 : 7000, stallMs: 3000 }); delete this.state.trappedSince; return; }
         catch (err) {
           task.check(); if (err.name === 'NeedsAir') throw err;
           this.state.failedEscapes ||= {}; this.state.failedEscapes[`${p}`] = Date.now(); save();

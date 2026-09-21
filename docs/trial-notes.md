@@ -2,6 +2,14 @@
 
 Running observations from acceptance trials on the isolated Normal Survival server (`.test-acceptance`, port 25579), with the opportunities they point at. Newest first. Each trial's full log is under `artifacts/<run>/events.jsonl`.
 
+## muar64lo · 2026-09-21 · "build a house" + 2 cycles · controlled (nights skipped) · in progress
+
+**So far.** First run with the never-give-up loop. A creeper followed the bot from spawn: four escapes in the first thirty steps for four logs.
+
+**Opportunities.**
+
+16. *A short hop does not shake a creeper.* Creepers do not burn in daylight and follow to about sixteen blocks; the flee puts six blocks between them and the bot goes back to the same tree, so the same creeper interrupts again a minute later. Sprint past the follow range, or move the work to a source on the far side of it, before resuming. Whether to relocate the work or just outrun it is a fair question for Jev; the distance is a rule.
+
 ## muaqvemv · 2026-09-21 · "build a house" + 2 cycles · controlled (nights skipped) · FAIL at the house, by a rule that has since been removed
 
 **What happened.** Started at day (the console set it). Narration was live for the first time: "Getting oak log from the oak log 8 blocks away", "Crafting 96 oak planks", "Clearing the site", two creeper escapes. Clearing the site hit stone with no pickaxe; after three failures Jev's recovery pick chose "gather a stone pickaxe" on its own, at 0.6+ confidence, the bot got cobblestone, crafted the pickaxe and went back ("Okay, back to your request"). No generative adviser involved. Then the house tree came up empty: every placement on the lowest layer had failed once in the last two minutes, the two-minute suppression excluded all of them, and `No feasible house action remains` was a terminal Blocked. Run over with 97 planks and two pickaxes in hand.

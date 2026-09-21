@@ -42,7 +42,25 @@ test('survival taking over is announced ahead of the step, and the chat gap is r
   assert.equal(narrate(bot, goal, { now: 1000 + 4 * MIN_GAP_MS }), null, 'quiet actions stay quiet');
   goal.survivalAction = { action: 'leave_shelter', at: '2026-09-21T04:03:00Z' };
   assert.equal(narrate(bot, goal, { now: 1000 + 5 * MIN_GAP_MS }), 'Morning. Back to it.');
+  assert.equal(narrate(bot, goal, { now: 1000 + 6 * MIN_GAP_MS }), 'I think I lost it.', 'once the chase has been quiet for a while');
   assert.equal(narrate({}, goal), null, 'no chat, no crash');
+});
+
+test('the same creeper five times is one story: announced once, then "I think I lost it"', () => {
+  const said = [], bot = { chat: line => said.push(line) };
+  const goal = { kind: 'house', step: { action: 'mine', block: 'oak_log', drops: 'oak_log' }, decisions: [] };
+  let now = 1000;
+  assert.equal(narrate(bot, goal, { now }), 'Getting oak log.');
+  for (let i = 0; i < 5; i++) {
+    goal.survivalAction = { action: 'escape_threat', at: `2026-09-21T04:0${i}:00Z`, threats: [{ name: 'creeper' }] };
+    narrate(bot, goal, { now: now += 8000 });
+  }
+  assert.equal(said.filter(l => /creeper/.test(l)).length, 1, 'one announcement for the same chaser');
+  assert.equal(narrate(bot, goal, { now: now += 5000 }), null, 'not quiet for long enough yet');
+  assert.equal(narrate(bot, goal, { now: now += 8000 }), 'I think I lost it.');
+  assert.equal(narrate(bot, goal, { now: now += 8000 }), null, 'said once');
+  goal.survivalAction = { action: 'escape_threat', at: '2026-09-21T04:30:00Z', threats: [{ name: 'creeper' }] };
+  assert.match(narrate(bot, goal, { now: now += 130000 }), /creeper/, 'a new chase after the window is news again');
 });
 
 test('a combined request narrates its inner step and a delivery says what is coming', () => {

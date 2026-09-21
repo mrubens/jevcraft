@@ -6,6 +6,11 @@
 // for the same phase, and nothing speaks more often than the gap allows,
 // because vanilla kicks a chatty client.
 const MIN_GAP_MS = 4000;
+// The same creeper interrupting five times is one story, not five: an escape
+// from the same kind of mob is announced once within this window, and once
+// the chase has been quiet for a while the bot says it thinks it got away.
+const ESCAPE_REPEAT_MS = 120000;
+const ESCAPE_QUIET_MS = 12000;
 const name = value => String(value || '').replace(/^minecraft:/, '').replaceAll('_', ' ');
 
 const SURVIVAL = {
@@ -87,9 +92,20 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
     return true;
   };
   const action = goal.survivalAction;
+  const escape = state.escape;
+  if (escape && !escape.resolved && now - escape.at >= ESCAPE_QUIET_MS && !(action?.action === 'escape_threat' && action.at !== state.survival)) {
+    if (speak('I think I lost it.')) { escape.resolved = true; return 'I think I lost it.'; }
+    return null;
+  }
   if (action?.at && action.at !== state.survival) {
     const phrase = SURVIVAL[action.action];
-    const line = typeof phrase === 'function' ? phrase(goal, action) : phrase;
+    let line = typeof phrase === 'function' ? phrase(goal, action) : phrase;
+    if (action.action === 'escape_threat') {
+      const names = [...new Set((action.threats || []).map(t => name(t.name || t)))].sort().join(',');
+      const repeat = escape && escape.names === names && now - escape.at < ESCAPE_REPEAT_MS;
+      state.escape = { at: now, names, resolved: false, announced: repeat ? escape.announced : false };
+      if (repeat) { state.survival = action.at; return null; }
+    }
     if (!phrase || speak(line)) { state.survival = action.at; return line || null; }
     return null;
   }
