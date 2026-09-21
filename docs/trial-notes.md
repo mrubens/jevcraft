@@ -2,7 +2,7 @@
 
 Running observations from acceptance trials on the isolated Normal Survival server (`.test-acceptance`, port 25579), with the opportunities they point at. Newest first. Each trial's full log is under `artifacts/<run>/events.jsonl`.
 
-## muapyq2c · 2026-09-21 · "build a house" + 2 cycles · in progress
+## muapyq2c · 2026-09-21 · "build a house" + 2 cycles · house PASS, endurance FAIL at 22,720 of 48,000 ticks
 
 **So far.** Dusk arrived a minute in. Jev chose `secure_shelter` over the house at 0.9+ confidence, crafted twelve planks, gathered dirt and sealed itself in. No errors, no recovery, no OpenRouter call. Then it waited.
 
@@ -14,7 +14,15 @@ Running observations from acceptance trials on the isolated Normal Survival serv
 
 8. *A house needs a bed anyway.* Once (b) and (c) exist, the compact house should get a bed inside it, which makes every later night at home a five-second affair and sets the respawn point at the house.
 
-**Later in the run.** Dawn at 04:13; Jev left the shelter, resumed logs, hit one unreachable tree, set it aside and moved to the next without any adviser (the new escape hatch), reached 25 logs, crafted 96 planks and started placing the house. No deaths, no recovery escalation, no OpenRouter call so far.
+**Later in the run.** Dawn at 04:13; Jev left the shelter, resumed logs, hit one unreachable tree, set it aside and moved to the next without any adviser (the new escape hatch), reached 25 logs, crafted 96 planks, built the house and verified it at tick 5678. Then idle survival wanted a food reserve (Normal asks for twelve points before night, though hunger was full), Jev chose `obtain_food → search_food`, and the bot wandered 75 blocks from the house and 30 blocks down to the shore. There it stood under a two-block gravel lip, which the surface observer reads as underground. No walking route to a "surface" landing was accepted, the staircase excavation demanded a pickaxe, the pickaxe needed wood, and wood is a surface resource: `Cannot excavate a surface exit`. Jev's recovery pick and then the generative adviser both chose "return to the surface", which failed the same way. Five failures, blocked. Never hurt, never hungry.
+
+**Opportunities.**
+
+9. *A hand-diggable overhang needs no pickaxe.* Gravel, dirt and sand come away in the hand; the tool rule should look at what is actually overhead before bootstrapping a pickaxe. Fixed after this run.
+10. *"Underground" is too coarse near cliffs and shores.* A block under a lip on a beach is not a cave. The observer could look for sky within a few blocks sideways before treating the spot as enclosed, and the route search for a landing could allow a short swim.
+11. *Food searches should not walk the bot off a cliff and out of sight of home.* Foraging with a full stomach and no food reserve is reasonable, but the search wandered 75 blocks and 30 down; bounding it to the surface around the house, or making distance part of what Jev weighs, would keep the bot where it can shelter.
+12. *The runner's failure budget hides the good half.* This run completed the useful request cleanly; a single survival dead end ended it. Reporting the house PASS and the endurance FAIL separately, as the runner now logs them, is right; the roadmap should say the same.
+
 
 ## muappqyo · 2026-09-21 · "build a house" + 2 cycles · FAIL after 2.5 minutes
 

@@ -197,4 +197,25 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
   } finally { movements.allowedPosition = previous; Object.assign(movements, ordinary); }
 }
 
-module.exports = { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete };
+// Whether the way up from here can be dug without a tool. A shore under a
+// two-block gravel lip is "underground" to the surface observer, and the
+// second fresh trial died there asking for a pickaxe that needs wood it
+// could not reach. Gravel, dirt and sand come away in the hand.
+const HAND_DIGGABLE = new Set(['dirt', 'coarse_dirt', 'rooted_dirt', 'grass_block', 'podzol', 'mycelium', 'gravel', 'sand', 'red_sand',
+  'clay', 'snow', 'snow_block', 'moss_block', 'mud', 'soul_sand', 'soul_soil', 'leaf_litter']);
+function handDiggableExit(bot, { origin = bot.entity.position.floored(), maxHeight = 12 } = {}) {
+  const x = origin.x, z = origin.z;
+  let solids = 0;
+  for (let y = origin.y + 2; y <= origin.y + 2 + maxHeight; y++) {
+    const block = bot.blockAt(new Vec3(x, y, z));
+    if (!block) return false;
+    if (/_leaves$/.test(block.name) || block.boundingBox !== 'block') continue;
+    if (!HAND_DIGGABLE.has(block.name)) return false;
+    solids++;
+  }
+  // Nothing solid overhead means the observer's "underground" came from
+  // further up than we can see; leave that to the ordinary route search.
+  return solids > 0 && surfaceObserver(bot)(new Vec3(x + .5, origin.y + 2 + maxHeight + 1, z + .5));
+}
+
+module.exports = { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };

@@ -15,9 +15,10 @@ const { Survival } = require('./survival');
 const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
 const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, rememberSource, committedSource } = require('./decision-options');
 const { reviewDesign } = require('./design-review');
+const { narrate } = require('./narration');
 const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
-const { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete } = require('./surface');
+const { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit } = require('./surface');
 const { bootstrapPickaxe } = require('./tool-recovery');
 const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives, knownResourceLocations, knownResourceNames, rememberResources, isSurfaceResource } = require('./resource-observation');
@@ -413,6 +414,8 @@ async function mine(bot, task, step, goal, save, selected) {
 async function surfaceStep(bot, task, goal, save) {
   await returnToSurface(bot, task, goal, save, { dig, navigate, prepareTool: async () => {
     if (pickaxeTier(bot) >= 1) return true;
+    // Gravel, dirt and sand overhead come away by hand; no tool to bootstrap.
+    if (handDiggableExit(bot)) return true;
     if (await bootstrapPickaxe(bot, task, goal, save, { mine: mineAtSource })) return false;
     const plan = catalogPlan(bot, 'stone_pickaxe', 1, planningInventory(bot), goal);
     const step = plan[0];
@@ -1565,7 +1568,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
         if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
       }
       await survival.step(task, goal, save, onStep);
-      failures = 0; delete goal.lastError; save(); onStep(goal);
+      failures = 0; delete goal.lastError; save(); onStep(goal); narrate(bot, goal);
     } catch (err) {
       task.interruptCheck = undefined; task.check();
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) failures++;
@@ -1705,6 +1708,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       await sleep(300);
     } finally { task.interruptCheck = undefined; }
     save(); onStep(goal);
+    if (goal.status === 'running') narrate(bot, goal);
   }
   goal.status = 'blocked'; goal.lastError = 'Action budget reached'; save();
   bot.chat('This is taking a while. I saved our progress. Say "Jev resume" to keep going.');

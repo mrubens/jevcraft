@@ -376,3 +376,18 @@ test('surface ascent yields for replacement-tool preparation and can be cancelle
   await assert.rejects(returnToSurface(bot, task, goal, () => {}, actions), { name: 'Cancelled' });
   assert.equal(preparations, 1);
 });
+
+test('an exit through gravel or dirt overhead needs no pickaxe; stone does', () => {
+  const { handDiggableExit } = require('../src/surface');
+  const world = overhead => ({ game: { minY: -64, height: 384 }, entity: { position: new Vec3(0.5, 66, 0.5) },
+    blockAt: p => {
+      if (p.x !== 0 || p.z !== 0) return { name: 'air', boundingBox: 'empty' };
+      if (p.y < 66) return { name: 'stone', boundingBox: 'block' };
+      const name = overhead[p.y];
+      return name ? { name, boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' };
+    } });
+  assert.equal(handDiggableExit(world({ 68: 'gravel', 69: 'gravel', 70: 'dirt' })), true);
+  assert.equal(handDiggableExit(world({ 68: 'gravel', 69: 'stone' })), false);
+  assert.equal(handDiggableExit(world({})), false, 'nothing overhead is not a dig problem');
+  assert.equal(handDiggableExit(world({ 68: 'oak_leaves', 69: 'sand' })), true, 'leaves are passed through');
+});
