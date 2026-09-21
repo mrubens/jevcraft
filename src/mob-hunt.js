@@ -340,7 +340,7 @@ function fortressLegTarget(state, position) {
 async function findFortressStep(bot, task, goal, save, actions) {
   const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
   const ids = FORTRESS_BLOCKS.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
-  const bricks = bot.findBlocks({ matching: ids, maxDistance: 128, count: 96 });
+  const bricks = bot.findBlocks({ matching: ids, maxDistance: 128, count: 512 });
   if (bricks.length) {
     const here = bot.entity.position;
     const nearest = bricks.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
@@ -364,8 +364,12 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // The nearest fresh stretch beyond twelve blocks, not the farthest: the
     // farthest brick in view is the one across the lava.
     const fresh = walkable.filter(b => !state.visited.some(v => Math.hypot(v.x - b.x, v.z - b.z) < 12));
-    const byDistance = (fresh.length ? fresh : walkable).sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
-    const next = byDistance.find(b => b.distanceTo(here) >= 12) || byDistance[byDistance.length - 1];
+    const byDistance = fresh.sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+    const next = byDistance.find(b => b.distanceTo(here) >= 12);
+    // Every stretch in view walked: this part of the fortress is done, and
+    // the sweep goes on from here to the next one.
+    if (!next) { delete state.target; }
+    else {
     state.visited.push({ x: next.x, y: next.y, z: next.z }); state.visited = state.visited.slice(-32);
     goal.step = { action: 'find_fortress', found: state.found, walking: { x: next.x, y: next.y, z: next.z }, legs: state.legs }; save();
     if (actions.navigate) {
@@ -373,6 +377,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; await actions.tunnel(bot, task, goal, save, next, 'fortress'); }
     } else await actions.tunnel(bot, task, goal, save, next, 'fortress');
     return;
+    }
   }
   const here = bot.entity.position;
   if (!state.target || Math.hypot(state.target.x - here.x, state.target.z - here.z) < 8) {
