@@ -450,12 +450,17 @@ async function workSource(bot, task, step, goal, save, source) {
   if (!p) throw new Error(`The ${source.block} source is no longer there`);
   goal.step = step; rememberSource(goal, source, step); save();
   try {
+    const before = countOf(bot, step.drops);
     await mine(bot, task, step, goal, save, p);
-    // Finish the tree. The planner asks for exactly the logs a step needs,
-    // often one, and the dream run walked to a fresh tree for every smelt's
-    // fuel. The rest of a trunk already reached is a few seconds' work.
-    if (/_log$/.test(source.block) && bot.game?.gameMode !== 'creative') {
-      for (let extra = 0; extra < 3 && countOf(bot, step.drops) < 8; extra++) {
+    // Finish the source. The planner asks for exactly what a step needs,
+    // and the dream run walked to a fresh tree for every smelt's fuel; the
+    // second run climbed a hill for one iron of a vein, went back to its
+    // shaft, and climbed again fourteen times. The rest of a trunk or a
+    // vein already reached is a few seconds' work: keep at it while blocks
+    // remain within six and the step is still short (a trunk: up to eight logs).
+    if (bot.game?.gameMode !== 'creative') {
+      const wanted = () => /_log$/.test(source.block) ? countOf(bot, step.drops) < 8 : countOf(bot, step.drops) < before + (step.count || 1);
+      for (let extra = 0; extra < 12 && wanted(); extra++) {
         const next = nearestRemaining(bot, source);
         if (!next || next.distanceTo(bot.entity.position) > 6) break;
         task.check(); checkAir(bot);
