@@ -2055,6 +2055,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       const unchanged = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 1 &&
         constructionBefore === constructionObservation(bot, goal);
       goal.stalls = unchanged && goal.kind !== 'follow' ? (goal.stalls || 0) + 1 : 0;
+      // Progress ends a struggle: the persistence counter is for one stuck
+      // stretch, not a lifetime tally read out in chat as "attempt 50".
+      if (!unchanged && goal.struggles) { goal.struggles = 0; }
       if (goal.stalls > 30) throw new Blocked(`No measurable progress on ${JSON.stringify(goal.step)}`);
     } catch (err) {
       task.interruptCheck = undefined;
