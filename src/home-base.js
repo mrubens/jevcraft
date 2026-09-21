@@ -301,7 +301,9 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
     // A plot trampled back to dirt, or with shell blocks on it, is a farm
     // that stopped: the second run's base was "finished" with five of nine
     // cells growing. Reopen for the repair; the bed and chest stand.
-    else if (!plotNow.unloaded.length && (plotNow.untilled.length || plotNow.blocked.length)) { delete home.completedAt; }
+    // Blocked cells (shell damage) reopen the base; untilled cells, the
+    // grown column included, are the evening chores' work, not the ladder's.
+    else if (!plotNow.unloaded.length && plotNow.blocked.length) { delete home.completedAt; }
     else return null;
   }
   if (!bed.loaded) return { phase: 'home_bed', action: 'return_home' };

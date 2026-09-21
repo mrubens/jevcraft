@@ -669,7 +669,7 @@ class Survival {
         this.report(goal, save, { action: 'evening_chore', chore: Object.keys(chores).find(k => chores[k] === chore) });
         try { await chore.run(bot, task, goal, save, this.actions); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       } else if (home?.completedAt && !home.plotWide) {
-        home.plotWide = true; delete home.completedAt; save();
+        home.plotWide = true; save();
         this.report(goal, save, { action: 'grow_plot' });
       } else {
         this.report(goal, save, { action: 'wait_for_bedtime', ticks: SLEEP_FROM - bot.time.timeOfDay });
