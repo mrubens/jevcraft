@@ -551,3 +551,25 @@ test('with lava beside it and a mob coming, the bot leaves the lava edge before 
   const { lavaBeside } = require('../src/survival');
   assert.equal(lavaBeside(bot, bot.entity.position.floored()), false, 'and it lands clear of the lava');
 });
+
+test('a mob at arm\'s length is fought swing after swing, with no route search between and no sealing against it', async () => {
+  const { Survival } = require('../src/survival');
+  const feet = new Vec3(0, 10, 0);
+  const zombie = { id: 1, name: 'zombie', type: 'hostile', position: new Vec3(1.5, 10, 0.5), height: 1.95, width: 0.6, isValid: true };
+  const attacks = [], routes = [], sealed = [];
+  const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 }, entity: { position: feet.offset(0.5, 0, 0.5) }, entities: { 1: zombie },
+    health: 20, food: 20, oxygenLevel: 20, time: { timeOfDay: 2000 }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword', count: 1, type: 5 }, { name: 'cobblestone', count: 64 }] }, world: { raycast: () => null },
+    heldItem: null, equip: async item => { bot.heldItem = item; }, unequip: async () => {}, lookAt: async () => {}, attack: t => attacks.push(t.name),
+    clearControlStates() {}, on() {}, removeListener() {},
+    blockAt: p => ({ name: p.y < 10 ? 'stone' : 'air', boundingBox: p.y < 10 ? 'block' : 'empty', position: p }),
+    findBlocks: () => { routes.push('search'); return []; },
+    pathfinder: { movements: {}, setGoal() {}, getPathTo: async () => { routes.push('route'); return { status: 'success', path: [] }; } } };
+  const refuge = { origin: { ...feet }, dimension: 'overworld', createdAt: 'x' };
+  const survival = new Survival(bot, { navigate: async () => {}, place: async (b, t, p) => { sealed.push(`${p}`); }, dig: async () => {} }, { state: { shelters: [refuge] } });
+  bot._defenseAttackAt = 0;
+  await survival.step(new Task('fight'), {}, () => {});
+  assert.deepEqual(attacks, ['zombie']);
+  assert.deepEqual(routes, [], 'no escape search while the mob is in reach');
+  assert.deepEqual(sealed, [], 'no sealing against a mob in the cell');
+});

@@ -9,7 +9,7 @@ const { foodSupply, forageChoices } = require('./foraging');
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute } = require('./skills');
-const { defendNearby } = require('./combat');
+const { defendNearby, defenseWeapon } = require('./combat');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
 const { surfaceObserver } = require('./surface');
@@ -77,9 +77,18 @@ class Survival {
     const bot = this.bot;
     // A swing can buy room, but it must not consume the escape action. Ending
     // the turn after every hit trapped an unarmed bot in a losing melee loop.
-    await defendNearby(bot, task, goal, save);
+    const swung = await defendNearby(bot, task, goal, save);
     const danger = threats(bot).filter(t => t.visible);
     if (!danger.length) return;
+    // A mob at arm's length is fought, swing after swing, while health holds:
+    // a route search between swings is seconds of free hits, and nothing
+    // outruns a zombie in a tunnel anyway. Low health falls through to the
+    // escape search below.
+    const armed = /_(sword|axe)$|^trident$/.test(defenseWeapon(bot)?.name || '');
+    if (swung && armed && bot.health >= 8 && danger.some(t => t.distance <= 2.2)) {
+      this.report(goal, save, { action: 'fight', threats: danger.filter(t => t.distance <= 2.2).map(t => t.entity.name), health: bot.health });
+      return;
+    }
     this.report(goal, save, { action: 'escape_threat', threats: danger.map(t => ({ name: t.entity.name, distance: t.distance })) });
     const movements = bot.pathfinder.movements;
     const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
@@ -362,7 +371,11 @@ class Survival {
     if (emergency) {
       // Sealing a nearby prepared site is faster than a long retreat. Otherwise
       // get clear first; ordinary digging must never continue under fire.
-      if (refuge && pos(refuge.origin).distanceTo(bot.entity.position) < 3 && shelter.materialStock(bot) >= shelter.missingShell(bot, refuge).length) await this.refugeStep(task, goal, save);
+      // With a mob already at arm's length there is no sealing it out: the
+      // third death was six zombies in the shell cells and a bot placing
+      // blocks against them until its health ran out.
+      const adjacent = threats(bot).some(t => t.visible && t.distance <= 2.2);
+      if (!adjacent && refuge && pos(refuge.origin).distanceTo(bot.entity.position) < 3 && shelter.materialStock(bot) >= shelter.missingShell(bot, refuge).length) await this.refugeStep(task, goal, save);
       else await this.flee(task, goal, save);
       onStep(goal); return true;
     }
