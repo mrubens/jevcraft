@@ -275,3 +275,12 @@ test('with no pond and only an empty bucket, the site step fills the bucket inst
   assert.deepEqual(asked, [['water_bucket', 1]]);
   assert.equal(goal.survival.homeSearch, undefined, 'not a failed attempt');
 });
+
+test('the base anchors on the surface above a near portal, and on the bot when the portal is far or deep', () => {
+  const { bot } = world({ ponds: [pond(20, 0)] });
+  const deepNear = goalWith(bot, { portals: [{ x: 10, y: -41, z: 5, dimension: 'overworld' }] });
+  assert.deepEqual(home.baseAnchor(bot, deepNear), { kind: 'portal', x: 10, y: LEVEL, z: 5 }, 'the column above the portal, at ground level');
+  const far = goalWith(bot, { portals: [{ x: 300, y: -41, z: 5, dimension: 'overworld' }] });
+  assert.equal(home.baseAnchor(bot, far).kind, 'here', 'a portal two hundred blocks off is not loaded and not an anchor');
+  assert(home.chooseBaseSite(bot, deepNear), 'a site is found around the surface anchor');
+});

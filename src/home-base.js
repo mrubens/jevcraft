@@ -76,12 +76,31 @@ const inside = (interior, p) => p && p.x >= interior.min.x && p.x < interior.max
 
 // Where the base should be near: the first Overworld portal the bot has
 // used, else the house it built, else where it stands.
+// The surface above a point: the highest solid block with air over it in
+// that column, when the column is loaded. A portal dug beside a lava lake
+// at y=-41 is the right place to come home to and the wrong depth for a plot.
+function surfaceAbove(bot, x, z, from) {
+  for (let y = from; y > from - 128; y--) {
+    const block = bot.blockAt(new Vec3(x, y, z));
+    if (!block) return null;
+    if (block.boundingBox === 'block') return clear(bot.blockAt(new Vec3(x, y + 1, z))) ? y : null;
+  }
+  return null;
+}
+
 function baseAnchor(bot, goal) {
-  const portal = (goal.portals || []).find(p => p.dimension === 'overworld');
-  if (portal) return { kind: 'portal', x: portal.x, y: portal.y, z: portal.z };
+  const here = bot.entity.position.floored();
+  // The nearest remembered portal, if it is close enough for its surroundings
+  // to be loaded: an anchor two hundred blocks off is a search that never
+  // finds anything, and the run's fourth attempt was exactly that.
+  const portal = (goal.portals || []).filter(p => p.dimension === 'overworld')
+    .sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
+  if (portal && Math.hypot(portal.x - here.x, portal.z - here.z) <= SITE_RADIUS) {
+    const top = surfaceAbove(bot, portal.x, portal.z, Math.max(here.y, portal.y) + 48);
+    return { kind: 'portal', x: portal.x, y: top ?? here.y - 1, z: portal.z };
+  }
   const house = (goal.survival?.shelters || []).find(s => s.kind === 'house' && s.dimension === bot.game.dimension);
   if (house) return { kind: 'house', ...plain(house.origin) };
-  const here = bot.entity.position.floored();
   return { kind: 'here', ...plain(here) };
 }
 
