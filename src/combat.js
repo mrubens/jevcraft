@@ -25,13 +25,18 @@ function canStrike(bot, entity) {
   closest.z = Math.max(entity.position.z - halfWidth, Math.min(eye.z, entity.position.z + halfWidth));
   closest.y = Math.max(entity.position.y, Math.min(eye.y, entity.position.y + (entity.height || 1.8)));
   if (eye.distanceTo(closest) > 3) return false;
+  // A mob at arm's length is hittable whatever the ray says: on a staircase
+  // the one a step up or down is hidden behind the stair edge from the eye
+  // to its head, and it lands every hit while the bot waits for a clear
+  // line. That is how the dream run died, in iron armour, without a swing.
+  if (eye.distanceTo(closest) <= 2) return true;
   const aim = entity.position.offset(0, (entity.height || 1.8) / 2, 0), direction = aim.minus(eye);
   const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
   return !hit || eye.distanceTo(hit.intersect || hit.position) >= direction.norm() - 0.1;
 }
 
 function strikeTarget(bot) {
-  return threats(bot, 5).find(({ entity, visible }) => visible && canStrike(bot, entity));
+  return threats(bot, 5).find(({ entity, visible, distance }) => (visible || distance <= 2) && canStrike(bot, entity));
 }
 
 // Immediate self-defense never chases a mob or chooses an unobserved target.

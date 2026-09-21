@@ -29,7 +29,7 @@ test('immediate defense uses a carried tool against a visible hostile in reach w
 test('defense never attacks players, passive animals, covered mobs or targets beyond reach', async () => {
   for (const situation of ['player', 'cow', 'covered', 'distant']) {
     const { bot, spider, attacks } = fixture();
-    if (situation === 'covered') bot.world.raycast = () => ({ intersect: new Vec3(1, 65, 0.5) });
+    if (situation === 'covered') { bot.world.raycast = () => ({ intersect: new Vec3(1, 65, 0.5) }); spider.position.x = 2.8; }
     else if (situation === 'distant') spider.position.x = 8;
     else spider.name = situation;
     assert.equal(strikeTarget(bot), undefined);
@@ -54,4 +54,13 @@ test('defense rechecks the target after equipping and honors cancellation', asyn
   assert.equal(attacks.length, 0);
   const task = new Task('cancelled'); task.cancel();
   await assert.rejects(defendNearby(bot, task, {}, () => {}), { name: 'Cancelled' });
+});
+
+test('a mob at arm\'s length on a staircase is struck even when the stair edge hides its head', async () => {
+  const { bot, spider, attacks } = fixture();
+  spider.position = new Vec3(1.5, 65, 0.5);
+  bot.world.raycast = () => ({ intersect: new Vec3(1, 66, 0.5) });
+  assert.equal(strikeTarget(bot)?.entity, spider);
+  assert(await defendNearby(bot, new Task('defend'), {}, () => {}));
+  assert.deepEqual(attacks, [spider]);
 });
