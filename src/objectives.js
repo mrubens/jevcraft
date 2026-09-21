@@ -115,7 +115,8 @@ async function interpret(client, request, from, username, context = {}) {
     // Code offers only structures that actually stand nearby; Jev decides
     // whether this request continues one, and where a new one should go.
     const continuation = await context.continueBuilds(request, context.builds || []);
-    spec.buildContinuation = { mode: continuation.mode, target: continuation.target?.id, placement: continuation.placement, judgments: continuation.judgments };
+    spec.buildContinuation = { mode: continuation.mode, target: continuation.target?.id, name: continuation.target?.name,
+      placement: continuation.placement, judgments: continuation.judgments };
     // Finishing and repairing reuse the saved plan; extending designs something
     // new and places it against the structure it is extending.
     if (['finish', 'repair'].includes(continuation.mode)) spec.continueBuild = { id: continuation.target.id, mode: continuation.mode };

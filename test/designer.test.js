@@ -372,3 +372,17 @@ test('the survey sent to the designer carries the ground profile and what alread
   assert.equal(withHut.existingStructures.length, 1, 'the designer is told what it is building next to');
   assert.equal(withHut.existingStructures[0].name, 'Hut');
 });
+
+test('mid-edit, Jev describes what the building becomes rather than christening a new one', () => {
+  const { designProgress } = require('../src/designer');
+  const fresh = [], changed = [];
+  const now = Date.now;
+  Date.now = () => 1000;
+  try {
+    designProgress(m => fresh.push(m), false)('{"name":"Stone Watchtower with Balcony","size":[7,14,10]');
+    designProgress(m => changed.push(m), true)('{"name":"Stone Watchtower with Balcony","size":[7,14,10]');
+  } finally { Date.now = now; }
+
+  assert.deepEqual(fresh, ["I'm calling it Stone Watchtower with Balcony.", 'It comes out 7 by 10, and 14 tall.']);
+  assert.deepEqual(changed, ["It'll be Stone Watchtower with Balcony when I'm done.", 'It ends up 7 by 10, and 14 tall.']);
+});

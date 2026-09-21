@@ -264,7 +264,7 @@ async function readDesign(response, report) {
 // What Jev can honestly say about a design that is still being written. The
 // model reasons before it writes anything, so the first stretch has no content
 // to report at all and only silence to break.
-function designProgress(say) {
+function designProgress(say, editing) {
   let named = false, sized = false, drawing = false, spoke = Date.now();
   const rarely = () => Date.now() - spoke >= 45000 && (spoke = Date.now(), true);
   return text => {
@@ -274,11 +274,11 @@ function designProgress(say) {
     if (!drawing) { drawing = true; spoke = Date.now(); }
     if (!named) {
       const name = /"name"\s*:\s*"([^"]{1,60})"/.exec(text);
-      if (name) { named = true; say(`I'm calling it ${name[1]}.`); }
+      if (name) { named = true; say(editing ? `It'll be ${name[1]} when I'm done.` : `I'm calling it ${name[1]}.`); }
     }
     if (!sized) {
       const size = /"size"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]/.exec(text);
-      if (size) { sized = true; say(`It comes out ${size[1]} by ${size[3]}, and ${size[2]} tall.`); }
+      if (size) { sized = true; say(`It ${editing ? 'ends up' : 'comes out'} ${size[1]} by ${size[3]}, and ${size[2]} tall.`); }
     }
     // Vanilla kicks a chatty client, so the drawing is reported rarely.
     const drawn = (text.match(/"block"\s*:/g) || []).length;
@@ -318,7 +318,7 @@ async function designBuilding(bot, task, request, { fetchImpl = fetch, apiKey = 
     if (!response.ok) throw new Error(`Building designer request failed (${response.status})`);
     const { content, finishReason, usage } = await readDesign(response, designProgress(message => {
       try { bot.chat(message); } catch (_) { /* an aside is never worth failing the design over */ }
-    }));
+    }, !!editing));
     task.check();
     // Say when the answer ran out of room rather than reporting an empty one:
     // the retry can only shorten the design if it knows that is the problem.

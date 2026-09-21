@@ -265,7 +265,13 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         requesterPosition: bot.players[from]?.entity ? { ...bot.players[from].entity.position } : null,
         initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);
-      bot.chat(spec.kind === 'build' ? "I'll make a plan, find a good spot, and build it for you." :
+      const changing = spec.kind === 'build' && spec.buildContinuation?.name &&
+        { edit: `I'll work out what to change about ${spec.buildContinuation.name}.`,
+          finish: `I'll carry on with ${spec.buildContinuation.name}.`,
+          repair: `I'll look ${spec.buildContinuation.name} over and put right what is missing.`,
+        }[spec.buildContinuation.mode];
+      bot.chat(changing ? changing :
+        spec.kind === 'build' ? "I'll make a plan, find a good spot, and build it for you." :
         spec.kind === 'bundle' ? `Working on the whole list: ${bundleSummary(spec)}.` :
         spec.kind === 'find' ? `I will look for ${spec.discoveryTarget.name.replaceAll('_', ' ')} and tell you where I find it.` :
         spec.kind === 'house' ? `Building a small ${spec.material} house with a floor, doorway and roof.` :

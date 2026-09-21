@@ -115,7 +115,11 @@ function completion(goal) {
   }
   if (goal.kind === 'come') return `I'm here with ${goal.target || goal.from}!`;
   if (goal.kind === 'visit') return `I'm at ${goal.destination.label}!`;
-  if (goal.kind === 'house' || goal.kind === 'build') return 'The building is done! I checked it for missing blocks.';
+  if (goal.kind === 'house' || goal.kind === 'build') {
+    const changed = goal.buildContinuation?.mode === 'edit' && goal.buildContinuation.name;
+    return changed ? `${changed} is changed, and I checked it over for missing blocks.`
+      : 'The building is done! I checked it for missing blocks.';
+  }
   if (goal.kind === 'win') return 'We beat the dragon! I made it back home alive.';
   if (goal.kind === 'concrete') return `You got ${goal.count} purple concrete!`;
   return 'The Nether portal works! I went through to check.';

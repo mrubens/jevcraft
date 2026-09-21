@@ -988,7 +988,9 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     }
     delete goal.designDraft; delete goal.designError;
     save();
-    bot.chat(`I've planned ${goal.design.source.name}! I'll find a good spot and start building.`);
+    const changing = goal.buildContinuation?.mode === 'edit' && goal.buildContinuation.name;
+    bot.chat(changing ? `I've worked out how to change ${changing}. Starting on it now.`
+      : `I've planned ${goal.design.source.name}! I'll find a good spot and start building.`);
     return false;
   }
   const schematic = validateSchematic(goal.design.source, bot.registry);
@@ -1028,13 +1030,17 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
       registry.remember(goal, { dimension: dimensionName(bot) });
     }
     save();
-    bot.chat(`Building ${goal.design.source.name} near ${pos(goal.blueprint.origin)}.`);
+    const reworking = goal.buildContinuation?.mode === 'edit' && goal.buildContinuation.name;
+    bot.chat(reworking ? `Reworking ${reworking} at ${pos(goal.blueprint.origin)}.`
+      : `Building ${goal.design.source.name} near ${pos(goal.blueprint.origin)}.`);
     // Something castle-sized is hours of placing blocks by hand. Say so at
     // the start, while stopping it is still a cheap decision for the player.
     const effort = buildEffort(goal.blueprint);
     if (effort) bot.chat(`That is a big one: ${effort.blocks} blocks, so give me about ${effort.spoken}. Say "Jev stop" if that is too long.`);
     if (goal.blueprint.preserved?.length) {
-      bot.chat(`There are ${goal.blueprint.preserved.length} blocks already there. I'll build around them rather than take them down.`);
+      bot.chat(reworking
+        ? `${goal.blueprint.preserved.length} blocks in the way there are not mine, so I'll work around them.`
+        : `There are ${goal.blueprint.preserved.length} blocks already there. I'll build around them rather than take them down.`);
     }
   }
   const blueprint = goal.blueprint;

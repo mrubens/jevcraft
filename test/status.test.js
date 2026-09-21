@@ -93,3 +93,13 @@ test('the thinking emote never becomes a reason for the work it covers to fail',
   stop();
   assert.equal(looks.filter(([yaw]) => yaw !== 0).length, 0, 'no glancing about while under way');
 });
+
+test('finishing a change to a standing building is not announced as a new one', () => {
+  const { completion } = require('../src/speech');
+  assert.equal(completion({ kind: 'build' }), 'The building is done! I checked it for missing blocks.');
+  assert.equal(completion({ kind: 'build', buildContinuation: { mode: 'edit', name: 'Stone Watchtower' } }),
+    'Stone Watchtower is changed, and I checked it over for missing blocks.');
+  // Finishing or repairing really does end with a finished building.
+  assert.equal(completion({ kind: 'build', buildContinuation: { mode: 'finish', name: 'Stone Watchtower' } }),
+    'The building is done! I checked it for missing blocks.');
+});
