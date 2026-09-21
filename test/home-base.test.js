@@ -41,6 +41,10 @@ test('the site is the level shore nearest the first remembered portal, never on 
   assert(Math.abs(home.chooseBaseSite(bot, houseGoal).water.x + 40) < 6, 'the far pond is the near one from the house');
   assert.equal(home.chooseBaseSite(bot, goalWith(bot)).anchor.kind, 'here');
   assert.equal(home.chooseBaseSite(world({}).bot, goalWith(bot)), null, 'no water, no site');
+  const dry = world({ items: [['water_bucket', 1]] });
+  const poured = home.chooseBaseSite(dry.bot, goalWith(dry.bot));
+  assert(poured && poured.pourWater, 'a bucket of water is a pond anywhere');
+  assert.equal(dry.bot.blockAt(new Vec3(poured.water.x, poured.water.y, poured.water.z)).name, 'grass_block', 'the water cell is ground to open');
   // A cliff through the footprint disqualifies that shore; the search moves on.
   const cliff = world({ ponds: [near] });
   for (let z = -6; z <= 6; z++) cliff.set(new Vec3(26, LEVEL + 1, z), 'stone');
@@ -241,4 +245,33 @@ test('wheat seeds are kept for the plot, and the new phases each have one line',
     [{ action: 'idle', choice: 'tend_farm' }, /tend the farm/], [{ action: 'idle', choice: 'breed_cows' }, /breed the cows/], [{ action: 'game_progression', phase: 'home_bed' }, /home bed/]]) {
     assert.match(stepLine(goal, step), pattern);
   }
+});
+
+test('a bucket pond is opened and filled before the plot is tilled', async () => {
+  const w = world({ items: [['water_bucket', 1], ['white_bed', 1], ['chest', 1], ['oak_log', 8]] });
+  const { bot, actions } = w, goal = goalWith(bot), task = new Task('home'), save = () => {};
+  const site = home.chooseBaseSite(bot, goal); assert(site.pourWater);
+  const base = home.establishHome(goal, site); assert.equal(base.pourWater, true);
+  const water = new Vec3(base.water.x, base.water.y, base.water.z);
+  let stage;
+  for (let i = 0; i < 12; i++) {
+    stage = home.homeStage(bot, goal);
+    if (!stage || stage.phase === 'home_water') break;
+    await home.homeStep(bot, task, goal, save, stage, actions);
+  }
+  assert.equal(stage.phase, 'home_water'); assert.equal(stage.action, 'pour_water');
+  bot.activateItem = () => { w.set(water, 'water'); bot.inventory.items().find(i => i.name === 'water_bucket').name = 'bucket'; };
+  bot.deactivateItem = () => {}; bot.lookAt = async () => {}; bot.equip = async () => {};
+  await home.homeStep(bot, task, goal, save, stage, actions);
+  assert.equal(bot.blockAt(water).name, 'water'); assert(goal.survival.home.pouredAt);
+  assert.equal(home.homeStage(bot, goal).phase, 'home_plot', 'with the pond in, the plot is next');
+});
+
+test('with no pond and only an empty bucket, the site step fills the bucket instead of giving up', async () => {
+  const w = world({ items: [['bucket', 1]] });
+  const { bot, actions } = w, goal = goalWith(bot);
+  const asked = [];
+  await home.homeStep(bot, new Task('home'), goal, () => {}, { phase: 'home_site', action: 'choose_site' }, { ...actions, acquireStep: async (b, t, item, count) => { asked.push([item, count]); } });
+  assert.deepEqual(asked, [['water_bucket', 1]]);
+  assert.equal(goal.survival.homeSearch, undefined, 'not a failed attempt');
 });

@@ -109,20 +109,33 @@ function chooseBaseSite(bot, goal, { radius = SITE_RADIUS } = {}) {
   const water = (bot.findBlocks({ matching: [waterId], maxDistance: radius, count: 512, point,
     useExtraInfo: b => clear(bot.blockAt(b.position.offset(0, 1, 0))) }) || [])
     .sort((a, b) => a.distanceTo(point) - b.distanceTo(point));
-  for (const w of water) for (const d of DIRECTIONS) {
-    const a = { x: -d.z, z: d.x };
-    for (const shift of [0, -1, 1, -2, 2]) {
-      const origin = w.offset(d.x + a.x * shift, 0, d.z + a.z * shift);
-      const site = { origin: plain(origin), direction: d, water: plain(w) };
-      if (siteFits(bot, goal, site)) return { ...site, anchor };
+  const fit = (cells, extra = {}) => {
+    for (const w of cells) for (const d of DIRECTIONS) {
+      const a = { x: -d.z, z: d.x };
+      for (const shift of [0, -1, 1, -2, 2]) {
+        const origin = w.offset(d.x + a.x * shift, 0, d.z + a.z * shift);
+        const site = { origin: plain(origin), direction: d, water: plain(w), ...extra };
+        if (siteFits(bot, goal, site)) return { ...site, anchor };
+      }
     }
-  }
-  return null;
+    return null;
+  };
+  const natural = fit(water);
+  if (natural) return natural;
+  // No pond within reach, but a bucket of water in the pockets is a pond
+  // anywhere: a one-block hole beside the plot, filled once. The run's
+  // home search failed four times on a mountain top with a full bucket.
+  if (!countOf(bot, 'water_bucket')) return null;
+  const groundIds = [...TILLABLE].map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
+  const ground = (bot.findBlocks({ matching: groundIds, maxDistance: radius, count: 512, point,
+    useExtraInfo: b => clear(bot.blockAt(b.position.offset(0, 1, 0))) && bot.blockAt(b.position.offset(0, -1, 0))?.boundingBox === 'block' }) || [])
+    .sort((a, b) => a.distanceTo(point) - b.distanceTo(point));
+  return fit(ground, { pourWater: true });
 }
 
 function establishHome(goal, site, { now = Date.now() } = {}) {
   goal.survival.home = { version: 1, dimension: 'overworld', origin: site.origin, direction: site.direction, water: site.water,
-    anchor: site.anchor, chosenAt: new Date(now).toISOString(), bed: {}, plot: {}, pen: {} };
+    pourWater: !!site.pourWater, anchor: site.anchor, chosenAt: new Date(now).toISOString(), bed: {}, plot: {}, pen: {} };
   delete goal.survival.homeSearch;
   return goal.survival.home;
 }
@@ -222,6 +235,12 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
     return countOf(bot, 'chest') ? { phase: 'home_stash', action: 'place_chest' } : { phase: 'home_stash', action: 'acquire', item: 'chest', count: 1 };
   }
   if (!home.stash?.position) home.stash = { ...home.stash, position: plain(chest.at), placedAt: new Date(now).toISOString(), contents: home.stash?.contents || {} };
+  // A poured pond comes before the plot: the farmland is hydrated by it.
+  if (home.pourWater) {
+    const w = bot.blockAt(pos(home.water));
+    if (!w) return { phase: 'home_water', action: 'return_home' };
+    if (w.name !== 'water') return countOf(bot, 'water_bucket') ? { phase: 'home_water', action: 'pour_water' } : { phase: 'home_water', action: 'acquire', item: 'water_bucket', count: 1 };
+  }
   const plot = plotStatus(bot, home);
   if (plot.unloaded.length) return { phase: 'home_plot', action: 'return_home' };
   if (plot.untilled.length) return hoeCarried(bot) ? { phase: 'home_plot', action: 'till', cells: plot.untilled.length } : { phase: 'home_plot', action: 'acquire', item: 'wooden_hoe', count: 1 };
@@ -353,6 +372,25 @@ async function placeBed(bot, task, goal, save, home, actions, item) {
   if (isBed(bot.blockAt(pos(bed.foot))) && isBed(bot.blockAt(pos(bed.head)))) return;
   await placeOriented(bot, task, actions, bed.stand, bed.foot, item, () => isBed(bot.blockAt(pos(bed.foot))) && isBed(bot.blockAt(pos(bed.head))));
   home.bed = { ...home.bed, item, placedAt: new Date().toISOString() }; save();
+}
+
+// The bucket pond: the ground block at the water cell comes out, and the
+// bucket is emptied onto the floor of the hole from the cell beside it.
+// A one-block hole with solid sides keeps a source still.
+async function pourWater(bot, task, goal, save, home, actions) {
+  const w = pos(home.water);
+  goal.step = { action: 'pour_water', at: home.water }; save();
+  await actions.navigate(bot, task, new goals.GoalNear(w.x, w.y + 1, w.z, 2), { timeoutMs: 20000, stallMs: 5000 });
+  if (bot.blockAt(w)?.name === 'water') { home.pouredAt = new Date().toISOString(); save(); return; }
+  if (bot.blockAt(w)?.boundingBox === 'block') await actions.dig(bot, task, w, { requireDrops: false });
+  const bucket = bot.inventory.items().find(i => i.name === 'water_bucket');
+  if (!bucket) throw new Error('No water bucket for the home pond');
+  await equip(bot, 'water_bucket'); task.check();
+  await bot.lookAt(w.offset(0.5, 0, 0.5), true); task.check();
+  bot.activateItem();
+  try { await waitFor(task, () => bot.blockAt(w)?.name === 'water', 2500); } finally { bot.deactivateItem?.(); }
+  if (bot.blockAt(w)?.name !== 'water') throw new Error('The water did not land in the hole beside the plot');
+  home.pouredAt = new Date().toISOString(); save();
 }
 
 // Using the bed sets the respawn point whatever the hour: at night the
@@ -509,6 +547,13 @@ async function homeStep(bot, task, goal, save, stage, actions) {
   const survival = goal.survival;
   if (stage.action === 'choose_site') {
     const site = chooseBaseSite(bot, goal);
+    if (!site && countOf(bot, 'bucket') && !countOf(bot, 'water_bucket')) {
+      // No pond here, but an empty bucket: fill it wherever water is and
+      // the next attempt can put the pond beside the plot.
+      goal.step = { action: 'home_site', found: false, fillingBucket: true }; save();
+      await actions.acquireStep(bot, task, 'water_bucket', 1, goal, save);
+      return;
+    }
     if (!site) {
       const search = survival.homeSearch ||= { attempts: 0 };
       search.attempts++;
@@ -527,6 +572,7 @@ async function homeStep(bot, task, goal, save, stage, actions) {
     case 'acquire': await actions.acquireStep(bot, task, stage.item, stage.count, goal, save); return;
     case 'gather_wool': return gatherWool(bot, task, goal, save, home, actions);
     case 'place_bed': return placeBed(bot, task, goal, save, home, actions, stage.item);
+    case 'pour_water': return pourWater(bot, task, goal, save, home, actions);
     case 'claim_bed': return claimBed(bot, task, goal, save, home, actions);
     case 'till': return tillPlot(bot, task, goal, save, home, actions);
     case 'plant': return plantPlot(bot, task, goal, save, home, actions);
