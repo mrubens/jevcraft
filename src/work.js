@@ -39,7 +39,7 @@ const { prepareEndSupplies } = require('./end-supplies');
 const { collectWater } = require('./water');
 const { makeObsidian } = require('./obsidian');
 const { tidyInventory } = require('./inventory-tidy');
-const { homeStep, homeChores } = require('./home-base');
+const { homeStep, homeChores , gatherWool, woolCarried } = require('./home-base');
 const { stashValuables } = require('./home-stash');
 const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
@@ -1954,6 +1954,12 @@ function gameHandlers(bot, decisionClient) {
         prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
         prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
         home: (bot, task, goal, save, stage) => homeStep(bot, task, goal, save, stage, homeActions()),
+        gather_wool: async (bot, task, goal, save) => {
+          const search = goal.bedSearch ||= { since: Date.now(), wool: woolCarried(bot).total };
+          if (woolCarried(bot).total > search.wool) { search.since = Date.now(); search.wool = woolCarried(bot).total; }
+          if (Date.now() - search.since > 10 * 60 * 1000) { goal.bedSearch = { deferredUntil: Date.now() + 20 * 60 * 1000 }; save(); return; }
+          await gatherWool(bot, task, goal, save, null, homeActions());
+        },
         stash_valuables: (bot, task, goal, save) => stashValuables(bot, task, goal, save, homeActions()),
         find_stronghold: (bot, task, goal, save) => findStronghold(bot, task, goal, save, {
           navigate, explore, surfaceStep,

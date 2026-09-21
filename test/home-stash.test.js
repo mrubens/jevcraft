@@ -39,10 +39,11 @@ function chestAt(w, contents = []) {
 }
 
 test('the kit is a pickaxe, a sword, logs, stone, cooked food and workstations, with a water bucket only ever as a spare', () => {
-  assert.deepEqual(stash.SPARE_KIT.map(s => s.slot), ['pickaxe', 'sword', 'logs', 'cobblestone', 'food', 'crafting_table', 'furnace', 'water_bucket']);
-  assert.deepEqual(stash.SPARE_KIT.map(s => s.count), [1, 1, 8, 64, 8, 1, 1, 1]);
+  assert.deepEqual(stash.SPARE_KIT.map(s => s.slot), ['pickaxe', 'sword', 'logs', 'cobblestone', 'food', 'crafting_table', 'furnace', 'bed', 'water_bucket']);
+  assert.deepEqual(stash.SPARE_KIT.map(s => s.count), [1, 1, 8, 64, 8, 1, 1, 1, 1]);
   assert(stash.SPARE_KIT.find(s => s.slot === 'water_bucket').optional);
   const bot = carrying([]), slot = name => stash.SPARE_KIT.find(s => s.slot === name);
+  assert(stash.slotFits(bot, slot('bed'), 'red_bed') && !stash.slotFits(bot, slot('bed'), 'white_wool'), 'a bed of any colour for the road');
   assert(stash.slotFits(bot, slot('pickaxe'), 'stone_pickaxe') && stash.slotFits(bot, slot('pickaxe'), 'iron_pickaxe'), 'stone or iron');
   assert(!stash.slotFits(bot, slot('pickaxe'), 'wooden_pickaxe') && !stash.slotFits(bot, slot('pickaxe'), 'iron_sword'), 'not a wooden one, not a sword');
   assert(stash.slotFits(bot, slot('food'), 'cooked_beef') && stash.slotFits(bot, slot('food'), 'bread') && !stash.slotFits(bot, slot('food'), 'rotten_flesh'));
@@ -129,7 +130,7 @@ test('the chest is opened beside the bed, moves are made against its real conten
 test('the ladder restocks from the stash ahead of its rungs, only within reach, and only while the chest has something to give', async () => {
   const w = await establishedHome({ items: [] });
   const { bot, goal, task, save, actions } = w;
-  const chest = chestAt(w, [['iron_pickaxe', 1], ['stone_sword', 1], ['oak_log', 8], ['cobblestone', 64], ['bread', 4], ['crafting_table', 1], ['furnace', 1]]);
+  const chest = chestAt(w, [['iron_pickaxe', 1], ['stone_sword', 1], ['white_bed', 1], ['oak_log', 8], ['cobblestone', 64], ['bread', 4], ['crafting_table', 1], ['furnace', 1]]);
   assert.equal(preparationStage(bot, goal).phase, 'stone_pickaxe', 'a chest not yet looked in is not counted on');
   goal.survival.home.stash.contents = chest.stored();
   const stage = preparationStage(bot, goal);
@@ -138,7 +139,7 @@ test('the ladder restocks from the stash ahead of its rungs, only within reach, 
   assert.equal(nextGameStage(bot, goal).phase, 'home_restock');
   await gameStep(bot, new Task('win'), goal, save, { home: (b, t, g, s, st) => home.homeStep(b, t, g, s, st, actions) });
   assert.equal(goal.gameProgress.phase, 'home_restock');
-  assert.deepEqual(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])), { iron_pickaxe: 1, stone_sword: 1, oak_log: 8, cobblestone: 64, bread: 3, crafting_table: 1, furnace: 1 });
+  assert.deepEqual(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])), { iron_pickaxe: 1, stone_sword: 1, white_bed: 1, oak_log: 8, cobblestone: 64, bread: 3, crafting_table: 1, furnace: 1 });
   assert.deepEqual(chest.stored(), { bread: 1 });
   assert.equal(preparationStage(bot, goal).phase, 'shield', 'the kit answered the first three rungs; the ladder goes on from the shield');
   // A recent failure at the chest waits ten minutes; beyond reach the chest is not a step at all.
@@ -157,7 +158,7 @@ test('the ladder restocks from the stash ahead of its rungs, only within reach, 
 });
 
 test('before the Nether the valuables go home once, and the ladder moves on with lighter pockets', async () => {
-  const gear = [['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['water_bucket', 1], ['oak_log', 8], ['cobblestone', 64], ['cooked_beef', 4], ['crafting_table', 1], ['furnace', 1],
+  const gear = [['white_bed', 1], ['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['water_bucket', 1], ['oak_log', 8], ['cobblestone', 64], ['cooked_beef', 4], ['crafting_table', 1], ['furnace', 1],
     ['iron_helmet', 1], ['iron_chestplate', 1], ['iron_leggings', 1], ['iron_boots', 1], ['golden_boots', 1], ['bow', 1], ['arrow', 16], ['diamond_pickaxe', 1], ['diamond', 3], ['iron_ingot', 12], ['gold_ingot', 2]];
   const w = await establishedHome({ items: gear });
   const { bot, goal, save, actions } = w;

@@ -6,7 +6,7 @@ const { Task } = require('../src/skills');
 const { observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, gameStep } = require('../src/game-progress');
 // These fixtures test the later ladder, so they carry the preparation gear
 // (tools, shield, bucket) that the early rungs would otherwise ask for first.
-const GEAR = ['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'golden_boots', 'bow'].map(name => ({ name, count: 1 })).concat({ name: 'arrow', count: 16 });
+const GEAR = ['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'golden_boots', 'bow'].map(name => ({ name, count: 1 })).concat({ name: 'arrow', count: 16 });
 function fixture() {
   const items = [...GEAR], bot = Object.assign(new EventEmitter(), { _client: new EventEmitter(),
     game: { dimension: 'overworld', gameMode: 'survival' }, health: 20, isAlive: true,
@@ -25,7 +25,7 @@ test('the ladder runs again after a first Nether entry when the pockets hold no 
   bot.game.dimension = 'overworld';
   assert(goal.gameProgress.milestones.nether_entered);
   bot.inventory.items = () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'iron_sword', count: 1 }];
-  assert.equal(nextGameStage(bot, goal).item, 'iron_pickaxe', 'a death empties the pockets; the climb starts from the ladder, not the portal');
+  assert.equal(nextGameStage(bot, goal).phase, 'bed', 'a death empties the pockets; the climb starts from the ladder, not the portal');
   bot.inventory.items = () => GEAR;
   assert.equal(nextGameStage(bot, goal).action, 'enter_nether', 'with the whole kit the ladder is silent and the portal is next');
   bot.inventory.items = () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'blaze_rod', count: 2 }];

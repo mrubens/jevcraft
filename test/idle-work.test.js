@@ -44,7 +44,7 @@ test('idle work stays off at night, in Creative, when hurt, or when there is not
 });
 
 test('choosing the long game runs the next rung of the beat-the-game ladder', async () => {
-  const { bot, goal, task } = fixture([['stone_pickaxe', 1], ['stone_axe', 1], ['stone_sword', 1], ['oak_log', 16]]);
+  const { bot, goal, task } = fixture([['white_bed', 1], ['stone_pickaxe', 1], ['stone_axe', 1], ['stone_sword', 1], ['oak_log', 16]]);
   const ran = [];
   const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'long_game', confidence: 0.8, probabilities: { long_game: 0.8, rest: 0.2 } } } }) };
   const handlers = { acquireStep: async (_b, _t, item, count) => { ran.push([item, count]); } };

@@ -6,6 +6,8 @@ const shelter = require('./shelter');
 const { decideTree, announceFallback } = require('./decisions');
 const { maintainVitals, chooseFood, checkAir } = require('./vitals');
 const { foodSupply, forageChoices } = require('./foraging');
+const { bedCarried, placeOriented, isBed } = require('./home-base');
+const { readyEquipment } = require('./mob-policy');
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute, countOf } = require('./skills');
@@ -29,6 +31,22 @@ const PERSISTENT_THREATS = new Set(['creeper', 'spider', 'cave_spider', 'enderma
 const RANGED = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze', 'ghast', 'piglin', 'breeze', 'wither_skeleton']);
 const shelterNeeded = bot => bot.game.difficulty !== 'peaceful' && bot.game.dimension === 'overworld' &&
   bot.time?.timeOfDay >= 9500 && bot.time.timeOfDay < 23000;
+// The server lets a player sleep from 12541 until 23458; with the only
+// survival player in bed the night passes in a hundred ticks.
+const SLEEP_FROM = 12541, SLEEP_UNTIL = 23458;
+const sleepable = bot => bot.time?.timeOfDay >= SLEEP_FROM && bot.time.timeOfDay <= SLEEP_UNTIL;
+// Three cells in a line: where the bot stands, the bed's foot, its head.
+// Level floor under both bed cells, air at feet and head height.
+function bedSite(bot) {
+  const feet = bot.entity.position.floored();
+  const floor = p => bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block';
+  const free = p => { const b = bot.blockAt(p); return !!b && b.boundingBox === 'empty' && !/water|lava/.test(b.name); };
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const foot = feet.offset(dx, 0, dz), head = feet.offset(2 * dx, 0, 2 * dz);
+    if ([foot, head].every(p => floor(p) && free(p) && free(p.offset(0, 1, 0)))) return { stand: feet, foot, head };
+  }
+  return null;
+}
 const emptySite = (bot, refuge) => refuge.kind !== 'house' && !refuge.verifiedAt &&
   shelter.shell(refuge.origin).every(p => shelter.replaceable(bot.blockAt(p)));
 
@@ -490,6 +508,33 @@ class Survival {
     return decision;
   }
 
+  // The carried bed goes down where the night caught us and comes back up
+  // at dawn. A sleep the server refuses (a mob within eight blocks, another
+  // survival player awake) hands the night to the shelter path instead.
+  async sleepStep(task, goal, save) {
+    const bot = this.bot, item = bedCarried(bot), site = item && bedSite(bot);
+    if (!site) throw new Error('No level ground beside me for the bed');
+    this.report(goal, save, { action: 'sleep', at: { ...site.foot } });
+    await placeOriented(bot, task, this.actions, site.stand, site.foot, item, () => isBed(bot.blockAt(site.foot)) && isBed(bot.blockAt(site.head)));
+    let slept = false;
+    try {
+      await bot.sleep(bot.blockAt(site.foot));
+      const deadline = Date.now() + 45000;
+      while (Date.now() < deadline && bot.isSleeping && sleepable(bot)) { task.check(); await sleep(250); }
+      slept = !sleepable(bot);
+      if (bot.isSleeping) { try { await bot.wake(); } catch (_) {} }
+    } catch (err) { task.check(); this.state.sleepFailedAt = Date.now(); this.state.lastSleepError = err.message; }
+    finally {
+      for (const p of [site.foot, site.head]) if (isBed(bot.blockAt(p))) { try { await this.actions.dig(bot, task, p, { requireDrops: false }); } catch (_) { task.check(); } }
+      await sleep(800);
+      if (!bedCarried(bot)) { try { await this.actions.navigate(bot, task, new goals.GoalNear(site.foot.x, site.foot.y, site.foot.z, 0.5), { timeoutMs: 4000, stallMs: 2000 }); await sleep(600); } catch (_) { task.check(); } }
+      save();
+    }
+    if (!slept) throw new Error(this.state.lastSleepError || 'The night did not pass in bed');
+    delete this.state.sleepFailedAt; delete this.state.nightPlan;
+    this.report(goal, save, { action: 'leave_shelter', reason: 'Morning. Back to it.' });
+  }
+
   async wait(task, goal, save, reason = 'Waiting for daylight inside the verified shelter') {
     this.report(goal, save, { action: 'wait_in_shelter', reason });
     for (let i = 0; i < 50; i++) { task.check(); await sleep(100); }
@@ -537,7 +582,13 @@ class Survival {
       onStep(goal); return true;
     }
     delete this.state.trappedSince;
-    const needsShelter = shelterNeeded(bot);
+    // A bed in the pockets moves the whole question to bedtime: no site to
+    // reserve at 9500, no blocks to gather, and at 12541 the choice is
+    // sleep, or stay up armed because the dark is what the request needs.
+    const bed = bedCarried(bot);
+    const bedReady = !!bed && bot.game.dimension === 'overworld' && !(this.state.sleepFailedAt > Date.now() - 600000);
+    const stayingUp = this.state.nightPlan?.until > Date.now();
+    const needsShelter = shelterNeeded(bot) && !(bedReady && bot.time.timeOfDay < SLEEP_FROM) && !stayingUp;
     if (!needsShelter && this.state.recovery?.status === 'pending') {
       this.report(goal, save, { action: 'recover_items', origin: this.state.recovery.position });
       if (await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate)) { onStep(goal); return true; }
@@ -573,26 +624,32 @@ class Survival {
       health: bot.health, food: bot.food, safeFoodCarried: !!chooseFood(bot),
       survivalFacts: { difficulty: bot.game.difficulty, hostileMobsSpawnAtNight: true,
         nightStartsAt: 11500, dawnAt: 23000, daylightTicksRemaining: Math.max(0, 11500 - bot.time.timeOfDay),
+        bedCarried: !!bed, sleepPossibleFrom: SLEEP_FROM, armedAndArmoured: readyEquipment(bot),
         shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null },
       recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot),
       foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: desiredFood, hungerMaximum: 20, starvationAt: 0,
         requiredBeforeExpedition: !!expeditionFood } };
-    const tree = (night(bot) && needsShelter) || (expeditionFood && needsFood) ? {} : {
-      continue_request: { description: goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.', run: async () => {} },
+    const armed = readyEquipment(bot);
+    const canStayUp = night(bot) && needsShelter && bedReady && armed;
+    const tree = (night(bot) && needsShelter && !canStayUp) || (expeditionFood && needsFood) ? {} : {
+      continue_request: { description: canStayUp ? 'Stay up tonight, armed and armoured, and keep working the request outside: spiders and the other night mobs are what a hunt for string needs, and the bed is one action away whenever the night has nothing more to give. Two minutes at a time, then this question again.'
+        : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
+        run: async () => { if (canStayUp) { this.state.nightPlan = { until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up' }); } } },
     };
+    if (needsShelter && bedReady && sleepable(bot) && !threats(bot).some(t => t.distance < 10)) tree.sleep_in_bed = { description: 'Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.', run: () => this.sleepStep(task, goal, save) };
     if (needsShelter) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.', run: () => this.refugeStep(task, goal, save) };
     if (needsFood && !(night(bot) && needsShelter)) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
       children: offWorld && this.actions.returnOverworld ? { return_for_food: { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked; nothing here is safe to eat.',
         run: async () => { goal.survivalAction = { action: 'return_for_food', at: new Date().toISOString() }; save(); await this.actions.returnOverworld(bot, task, goal, save); } } }
         : await forageChoices(bot, task, goal, save, this.actions, this.state) };
     if (!this.client) {
-      if (needsShelter) await tree.secure_shelter.run();
+      if (needsShelter) await (tree.sleep_in_bed || tree.secure_shelter).run();
       else await Object.values(tree.obtain_food.children)[0].run();
       onStep(goal); return true;
     }
     // Without Jev, shelter comes before food and food before the request:
     // the order a careful player keeps when nobody is weighing the trade.
-    const fallback = children => ['secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
+    const fallback = children => ['sleep_in_bed', 'secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
     const decision = await this.decide(task, goal, save, { state, tree, fallback, kind: 'survival', interrupt: () => checkThreats(bot),
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);
@@ -602,4 +659,4 @@ class Survival {
   }
 }
 
-module.exports = { Survival, night, shelterNeeded, lavaBeside };
+module.exports = { Survival, night, shelterNeeded, lavaBeside, bedSite, sleepable, SLEEP_FROM };

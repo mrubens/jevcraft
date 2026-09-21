@@ -1,5 +1,5 @@
 'use strict';
-const { homeStage } = require('./home-base');
+const { homeStage, bedCarried, woolCarried } = require('./home-base');
 const { restockStage, rungWants } = require('./home-stash');
 
 const dimension = bot => String(bot.game?.dimension || '').replace(/^minecraft:/, '').replace(/^the_/, '');
@@ -103,6 +103,16 @@ function preparationRung(bot, goal = {}) {
   const another = item => ({ phase: item, action: 'acquire', item, count: carried.filter(n => n === item).length + 1 });
   if (best('pickaxe') < 2) return another('stone_pickaxe');
   if (best('sword') < 2) return another('stone_sword');
+  // A bed before the mine. Walled in and waiting was the largest share of
+  // the run's standing still, and a night slept passes in seconds; the bed
+  // is carried, not left at home, so any dusk anywhere can end that way.
+  // Three wool from a sheep, three planks; a search that finds no sheep
+  // is set aside for twenty minutes rather than wandering all day.
+  if (!carried.some(n => /_bed$/.test(n)) && !(goal.bedSearch?.deferredUntil > Date.now())) {
+    const wool = woolCarried(bot);
+    if (wool.count >= 3) return { phase: 'bed', action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
+    return { phase: 'bed', action: 'gather_wool', count: 3 - wool.count };
+  }
   if (best('pickaxe') < 3) return another('iron_pickaxe');
   if (!carried.includes('shield')) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
   if (best('sword') < 3) return another('iron_sword');
@@ -181,6 +191,10 @@ async function gameStep(bot, task, goal, save, actions) {
     progress.milestones.returned_alive = { at: Date.now(), dimension: 'overworld', position: position(bot) }; save(); return true;
   }
   if (stage.action === 'acquire') await actions.acquireStep(bot, task, stage.item, stage.count, goal, save);
+  else if (stage.action === 'gather_wool') {
+    if (!actions.gather_wool) throw Object.assign(new Error('Game progression is blocked at the bed: the gather wool action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });
+    await actions.gather_wool(bot, task, goal, save, stage);
+  }
   else if (stage.action === 'home') {
     if (!actions.home) throw Object.assign(new Error('Game progression is blocked at the home base: the home action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });
     await actions.home(bot, task, goal, save, stage.home);

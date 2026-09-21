@@ -693,3 +693,41 @@ test('hurt, or with a zombie closing, the bow stays in the pack and the escape r
   assert(await crowded.controller.step(crowded.task, crowded.goal, () => {}));
   assert.deepEqual(crowded.events, ['equip iron_sword', 'attack', 'navigate'], 'a zombie at arm\'s length gets the knockback swing and the retreat, not a draw');
 });
+
+test('a carried bed goes down at bedtime, the night passes, and the bed comes back up', async () => {
+  const { Survival, bedSite } = require('../src/survival');
+  const blocks = new Map(); let items = [{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }];
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000 },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, isSleeping: false, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => items, slots: {} }, heldItem: null,
+    equip: async item => { bot.heldItem = item; }, lookAt: async () => {},
+    placeBlock: async () => { blocks.set(`${new Vec3(1, 64, 0)}`, 'white_bed'); blocks.set(`${new Vec3(2, 64, 0)}`, 'white_bed'); items = items.filter(i => i.name !== 'white_bed'); },
+    sleep: async block => { assert.equal(block.name, 'white_bed'); bot.isSleeping = true; setTimeout(() => { bot.time.timeOfDay = 0; bot.isSleeping = false; }, 50); },
+    wake: async () => { bot.isSleeping = false; },
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
+  assert.deepEqual(bedSite(bot), { stand: new Vec3(0, 64, 0), foot: new Vec3(1, 64, 0), head: new Vec3(2, 64, 0) });
+  const dug = [];
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async (b, t, p) => { dug.push(`${p}`); blocks.delete(`${p}`); items.push({ name: 'white_bed', count: 1 }); } });
+  const goal = {}; const actions = [];
+  survival.report = (g, sv, action) => actions.push(action.action);
+  await survival.sleepStep(new Task('test', 'sleep'), goal, () => {});
+  assert.deepEqual(actions, ['sleep', 'leave_shelter']);
+  assert.equal(bot.time.timeOfDay, 0);
+  assert(dug.length >= 1, 'the bed is picked back up'); assert(items.some(i => i.name === 'white_bed'));
+});
+
+test('at night with a bed and full kit the choices are sleep, shelter, or stay up; without the kit, no staying up', async () => {
+  const { Survival } = require('../src/survival');
+  const seen = [];
+  const client = { systemOne: async () => { throw new Error('offline'); } };
+  const make = items => Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000 },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => items, slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' }, 45: { name: 'shield' } } }, heldItem: { name: 'iron_sword' },
+    blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
+  const bot = make([{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }]);
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client });
+  survival.decide = async (task, goal, save, { tree, fallback }) => { seen.push(Object.keys(tree).sort()); const key = fallback(tree); return { path: [key], action: tree[key], stale: false }; };
+  survival.sleepStep = async () => { seen.push('slept'); };
+  await survival.step(new Task('test', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert.deepEqual(seen, [['continue_request', 'secure_shelter', 'sleep_in_bed'], 'slept']);
+});

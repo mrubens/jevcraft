@@ -181,7 +181,7 @@ test('the bed is claimed on the server saying so, or sleeping, and reopens if it
 });
 
 test('the ladder opens the home rung after the bucket and before the armour, and the idle loop offers the chores', async () => {
-  const gear = [['stone_pickaxe', 1], ['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['bucket', 1], ['oak_log', 16]];
+  const gear = [['white_bed', 1], ['stone_pickaxe', 1], ['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['bucket', 1], ['oak_log', 16]];
   const { bot } = world({ ponds: [pond(20, 0)], items: gear });
   const goal = goalWith(bot);
   assert.equal(nextGameStage(bot, goal).phase, 'home_site');
@@ -194,7 +194,7 @@ test('the ladder opens the home rung after the bucket and before the armour, and
   assert.equal(nextGameStage(bot, goal).phase, 'iron_armour', 'a world with nowhere to build waits out a deferral');
   // With the base standing, the ladder moves on and idle time has farm work in it.
   const w = await establishedHome();
-  w.give('stone_pickaxe', 1); w.give('iron_pickaxe', 1); w.give('iron_sword', 1); w.give('shield', 1); w.give('bucket', 1);
+  w.give('white_bed', 1); w.give('stone_pickaxe', 1); w.give('iron_pickaxe', 1); w.give('iron_sword', 1); w.give('shield', 1); w.give('bucket', 1);
   assert.equal(nextGameStage(w.bot, w.goal).phase, 'iron_armour');
   for (const p of w.layout.plot) w.set(new Vec3(p.x, p.y + 1, p.z), 'wheat', { age: 7 });
   const idle = { ...w.goal, kind: 'survive' };

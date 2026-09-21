@@ -53,6 +53,9 @@ const SPARE_KIT = Object.freeze([
   { slot: 'food', count: 8, food: true, label: 'cooked food' },
   { slot: 'crafting_table', count: 1, keep: 1, low: 0, matches: name => name === 'crafting_table', label: 'a crafting table' },
   { slot: 'furnace', count: 1, keep: 1, low: 0, matches: name => name === 'furnace', label: 'a furnace' },
+  // A bed for the road: the respawn already has one under it, the pockets
+  // want one for the first dusk away from home.
+  { slot: 'bed', count: 1, keep: 1, low: 0, matches: name => /_bed$/.test(name), label: 'a bed' },
   { slot: 'water_bucket', count: 1, bucket: true, optional: true, label: 'a water bucket' },
 ]);
 
