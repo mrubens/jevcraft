@@ -75,7 +75,10 @@ function verifyGameCompletion(bot, goal) {
 const TIERS = ['wooden', 'stone', 'iron', 'diamond', 'netherite'];
 const tierOf = name => { const m = /^(\w+)_(pickaxe|sword|axe)$/.exec(name); return m ? TIERS.indexOf(m[1]) + 1 : 0; };
 function preparationStage(bot) {
-  const carried = bot.inventory.items().map(i => i.name);
+  // Equipped gear lives outside inventory.items(): armour in slots 5 to 8,
+  // the shield in the off-hand at 45. A shield on the arm is not a missing shield.
+  const equipped = [5, 6, 7, 8, 45].map(slot => bot.inventory.slots?.[slot]).filter(Boolean);
+  const carried = [...bot.inventory.items(), ...equipped].map(i => i.name);
   const best = kind => Math.max(0, ...carried.filter(n => n.endsWith(`_${kind}`)).map(tierOf));
   if (best('pickaxe') < 2) return { phase: 'stone_pickaxe', action: 'acquire', item: 'stone_pickaxe', count: 1 };
   if (best('sword') < 2) return { phase: 'stone_sword', action: 'acquire', item: 'stone_sword', count: 1 };
@@ -86,7 +89,7 @@ function preparationStage(bot) {
   // Armour is four rungs, not one label. The Nether trip needs all of it,
   // and each piece is a visible step rather than "reach the Nether" for an
   // hour while twenty-four ingots accumulate.
-  const worn = [...bot.inventory.items(), ...[5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot])].filter(Boolean).map(i => i.name);
+  const worn = carried;
   for (const piece of ['helmet', 'chestplate', 'leggings', 'boots']) {
     if (!worn.some(name => /^(iron|diamond|netherite)_/.test(name) && name.endsWith(`_${piece}`))) return { phase: `iron_${piece}`, action: 'acquire', item: `iron_${piece}`, count: 1 };
   }

@@ -43,7 +43,9 @@ test('Jev picks the next part and scores the village; an unoffered part is refus
 test('beating the game is handed over as the win objective, and the ladder starts with tools you can see', async () => {
   const next = await nextDreamRequest({ systemOne: async () => assert.fail('no question needed') }, { dream: 'beat_the_game', setBy: 'Player' });
   assert.equal(next.kind, 'win'); assert.equal(next.dream, 'beat_the_game');
-  const bot = items => ({ inventory: { items: () => items.map(name => ({ name })) } });
+  const bot = (items, slots = {}) => ({ inventory: { items: () => items.map(name => ({ name })), slots } });
+  assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], { 45: { name: 'shield' } })), null, 'a shield on the arm counts');
+  assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket'], { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' } })), null, 'worn armour counts');
   assert.equal(preparationStage(bot([])).item, 'stone_pickaxe');
   assert.equal(preparationStage(bot(['stone_pickaxe'])).item, 'stone_sword');
   assert.equal(preparationStage(bot(['stone_pickaxe', 'stone_sword'])).item, 'iron_pickaxe');
