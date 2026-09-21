@@ -573,3 +573,22 @@ test('a mob at arm\'s length is fought swing after swing, with no route search b
   assert.deepEqual(routes, [], 'no escape search while the mob is in reach');
   assert.deepEqual(sealed, [], 'no sealing against a mob in the cell');
 });
+
+test('a stock-driven food search is set aside after five minutes of finding nothing, and real hunger still forages', async () => {
+  const { Survival } = require('../src/survival');
+  const forages = [];
+  const make = (food, state) => {
+    const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 },
+      entity: { position: new Vec3(0.5, 70, 0.5) }, entities: {}, health: 20, food, oxygenLevel: 20, time: { timeOfDay: 2000 },
+      inventory: { items: () => [] }, registry: require('minecraft-data')('26.1'),
+      blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }),
+      findBlocks: () => [], pathfinder: { movements: {} }, on() {}, removeListener() {} };
+    return new Survival(bot, { explore: async () => { forages.push(food); }, navigate: async () => {}, acquireStep: async () => {} }, { state });
+  };
+  const state = { shelters: [], foodSearch: { since: Date.now() - 400000 } };
+  assert.equal(await make(20, state).step(new Task('stock'), { kind: 'win', stockFood: true }, () => {}), false, 'five minutes of nothing: the reserve waits');
+  assert(state.foodStockPausedUntil > Date.now());
+  assert.equal(await make(20, state).step(new Task('stock again'), { kind: 'win', stockFood: true }, () => {}), false, 'and stays paused');
+  assert.equal(await make(10, state).step(new Task('hungry'), { kind: 'win', stockFood: true }, () => {}), true, 'real hunger still forages');
+  assert.deepEqual(forages, [10]);
+});
