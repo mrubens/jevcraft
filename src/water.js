@@ -1,4 +1,5 @@
 'use strict';
+const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { countOf, surveyRoute } = require('./skills');
 const { dryMiningPositions, miningReach, miningMovement, dryStanding } = require('./mining-access');
@@ -41,6 +42,17 @@ async function fillWaterBucket(bot, task, position, { timeoutMs = 2500, guard = 
 
 async function collectWater(bot, task, goal, save, { navigate, explore }) {
   task.check(); checkAir(bot); checkThreats(bot);
+  // The base's pond first: it is a known source within reach, and a search
+  // for any water walked the bot a hundred blocks from its bed at dusk.
+  const home = goal.survival?.home;
+  if (home?.water && !bot.findBlocks({ matching: bot.registry.blocksByName.water.id, maxDistance: 16, count: 1, useExtraInfo: sourceWater }).length) {
+    const w = new Vec3(home.water.x, home.water.y, home.water.z);
+    if (w.distanceTo(bot.entity.position) <= 128 && (!bot.blockAt(w) || sourceWater(bot.blockAt(w)))) {
+      goal.step = { action: 'fill_bucket', position: { ...home.water }, item: 'water_bucket', home: true }; save();
+      try { await navigate(bot, task, new goals.GoalNear(w.x, w.y + 1, w.z, 2), { timeoutMs: 60000, stallMs: 8000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+  }
   const sources = bot.findBlocks({ matching: bot.registry.blocksByName.water.id, maxDistance: 48, count: 24, useExtraInfo: sourceWater });
   const movement = miningMovement(bot);
   try {

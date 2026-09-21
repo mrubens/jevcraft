@@ -43,7 +43,7 @@ const sleepable = bot => bot.time?.timeOfDay >= SLEEP_FROM && bot.time.timeOfDay
 // itself in thirty blocks from its bed because the bed was out of view.
 // A bed remembered as claimed counts while its chunk is unloaded; a bed
 // seen to be gone does not.
-const HOME_BED_WALK = 96;
+const HOME_BED_WALK = 160;
 function nearbyHomeBed(bot, goal) {
   const home = homeOf(bot, goal);
   if (!home?.bed?.claimedAt) return null;
@@ -678,7 +678,8 @@ class Survival {
       onStep(goal); return true;
     }
     const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot) && (underground || !routeBlocked);
-    if (homeWalk && (bot.time.timeOfDay >= 11000 || underground) && !(this.state.sleepFailedAt > Date.now() - 600000)) {
+    const walkStart = homeBed && homeBed.foot.distanceTo(bot.entity.position) > 96 ? 10000 : 11000;
+    if (homeWalk && (bot.time.timeOfDay >= walkStart || underground) && !(this.state.sleepFailedAt > Date.now() - 600000)) {
       this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });
       // Out of the shaft by the stairs it dug, then home over the ground:
       // a path search from the bottom of a mine to a bed timed out. A

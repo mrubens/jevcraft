@@ -755,6 +755,7 @@ test('the bed at the base is slept in when it is near, and it stays where it is'
   const goal = { kind: 'win', survival: { home } };
   assert(nearbyHomeBed(bot, goal)?.placed, 'the base bed counts');
   bot.entity.position = new Vec3(80.5, 64, 0.5); assert(nearbyHomeBed(bot, goal), 'eighty blocks is a walk, not a night');
+  bot.entity.position = new Vec3(140.5, 64, 0.5); assert(nearbyHomeBed(bot, goal), 'a hundred and forty is still a walk started early');
   bot.entity.position = new Vec3(200.5, 64, 0.5); assert.equal(nearbyHomeBed(bot, goal), null, 'two hundred is not');
   bot.entity.position = new Vec3(3.5, 64, 3.5);
   const walked = [], dug = [];
