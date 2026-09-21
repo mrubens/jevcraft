@@ -636,7 +636,9 @@ class Survival {
         : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
         run: async () => { if (canStayUp) { this.state.nightPlan = { until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up' }); } } },
     };
-    if (needsShelter && bedReady && sleepable(bot) && !threats(bot).some(t => t.distance < 10)) tree.sleep_in_bed = { description: 'Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.', run: () => this.sleepStep(task, goal, save) };
+    // Sleep is an option where the bed fits: two level cells beside the
+    // feet. In a one-wide shaft it is not, and the shelter path digs in.
+    if (needsShelter && bedReady && sleepable(bot) && bedSite(bot) && !threats(bot).some(t => t.distance < 10)) tree.sleep_in_bed = { description: 'Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.', run: () => this.sleepStep(task, goal, save) };
     if (needsShelter) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.', run: () => this.refugeStep(task, goal, save) };
     if (needsFood && !(night(bot) && needsShelter)) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
       children: offWorld && this.actions.returnOverworld ? { return_for_food: { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked; nothing here is safe to eat.',

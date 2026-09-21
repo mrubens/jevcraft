@@ -730,4 +730,12 @@ test('at night with a bed and full kit the choices are sleep, shelter, or stay u
   survival.sleepStep = async () => { seen.push('slept'); };
   await survival.step(new Task('test', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
   assert.deepEqual(seen, [['continue_request', 'secure_shelter', 'sleep_in_bed'], 'slept']);
+  // In a one-wide shaft the bed does not fit, so sleep is not on the list.
+  const shaft = make([{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }]);
+  shaft.blockAt = p => ({ name: p.y < 64 || (p.x !== 0 || p.z !== 0) ? 'stone' : 'air', boundingBox: p.y < 64 || (p.x !== 0 || p.z !== 0) ? 'block' : 'empty', position: p });
+  const narrow = new Survival(shaft, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client });
+  const offered = [];
+  narrow.decide = async (task, goal, save, { tree }) => { offered.push(Object.keys(tree).sort()); return { path: ['secure_shelter'], action: { run: async () => {} }, stale: false }; };
+  await narrow.step(new Task('test', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert.deepEqual(offered, [['continue_request', 'secure_shelter']]);
 });
