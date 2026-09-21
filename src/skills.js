@@ -126,6 +126,103 @@ async function recoverNavigation(bot, task, deadline, stopWhen) {
   }
 }
 
+// The last resort before a stall is declared: what a person does when a bot
+// looks frozen. It escalates, cheapest and least destructive first, and stops
+// the moment the position actually changes:
+//   1. clear soft natural blocks pressing on the body, then jump and step in
+//      each direction;
+//   2. break any natural block at body height in a direction, stone included,
+//      slow as that is by hand, and step through;
+//   3. dig the block underfoot when there is solid ground a short drop below.
+// What it never does: touch a block that belongs to a build (reserved for
+// construction, or manufactured: planks, glass, doors, chests and the like),
+// open a way toward lava, fire or a long fall, or dig into liquid. Giving up
+// is not on the list; the caller decides that, and it should not either.
+const SOFT = new Set(['short_grass', 'tall_grass', 'fern', 'large_fern', 'dead_bush', 'vine', 'snow', 'leaf_litter', 'seagrass', 'tall_seagrass',
+  'dirt', 'coarse_dirt', 'rooted_dirt', 'grass_block', 'podzol', 'gravel', 'sand', 'red_sand', 'clay', 'moss_block', 'moss_carpet', 'mud']);
+const HAZARD = new Set(['lava', 'fire', 'soul_fire', 'magma_block', 'cactus', 'sweet_berry_bush', 'powder_snow']);
+const LIQUID = new Set(['water', 'lava', 'bubble_column']);
+const MANUFACTURED = /planks|brick|glass|concrete|wool|carpet|door|trapdoor|chest|barrel|furnace|smoker|crafting_table|_bed$|stairs|slab|fence|wall$|torch|lantern|sign|bookshelf|quartz|terracotta|shulker|anvil|hopper|rail|piston|redstone|observer|dispenser|dropper|cauldron|composter|loom|stonecutter|grindstone|smithing|bell|beacon|obsidian/;
+const softOrLeaves = block => !!block && (SOFT.has(block.name) || /_leaves$/.test(block.name));
+const DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+function breakable(bot, block, { natural = false } = {}) {
+  if (!block || block.boundingBox !== 'block' || LIQUID.has(block.name) || HAZARD.has(block.name)) return false;
+  if (block.name === 'bedrock' || block.diggable === false || MANUFACTURED.test(block.name)) return false;
+  if (bot._constructionProtection?.(block) > 0) return false;
+  if (natural && !softOrLeaves(block) && !/^(stone|deepslate|cobblestone|andesite|diorite|granite|tuff|calcite|sandstone|red_sandstone|netherrack|basalt|blackstone|end_stone|ice|packed_ice|.*_ore|.*_log|.*_wood|mushroom_stem|.*_mushroom_block)$/.test(block.name)) return false;
+  // Never open a wall onto liquid.
+  for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]) {
+    const neighbour = bot.blockAt?.(block.position.offset(dx, dy, dz));
+    if (neighbour && LIQUID.has(neighbour.name)) return false;
+  }
+  return bot.canDigBlock?.(block) !== false;
+}
+
+async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs = 700, budgetMs = 25000 } = {}) {
+  const start = bot.entity.position.clone(), cell = start.floored();
+  const at = (dx, dy, dz) => bot.blockAt?.(cell.offset(dx, dy, dz));
+  const moved = () => bot.entity.position.distanceTo(start) >= 1;
+  const cleared = [];
+  const until = Math.min(deadline, Date.now() + budgetMs);
+  const dig = async block => { task.check(); await bot.dig(block); cleared.push(block.name); };
+  const safeToward = (dx, dz) => {
+    const ahead = [at(dx, 0, dz), at(dx, 1, dz)], below = [at(dx, -1, dz), at(dx, -2, dz), at(dx, -3, dz), at(dx, -4, dz)];
+    if ([...ahead, ...below].some(b => b && (HAZARD.has(b.name) || b.name === 'lava'))) return false;
+    return below.some(b => b && b.boundingBox === 'block');
+  };
+  const step = async (dx, dz) => {
+    await bot.lookAt?.(cell.offset(dx + 0.5, 1.62, dz + 0.5), true);
+    bot.setControlState?.('jump', true); bot.setControlState?.('forward', true);
+    const end = Date.now() + settleMs;
+    while (Date.now() < end) { await sleep(50); task.check(); if (moved()) break; }
+    bot.clearControlStates?.();
+    return moved();
+  };
+  let stage = 0;
+  bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.();
+  try {
+    const order = DIRECTIONS.map(d => ({ d, r: random() })).sort((a, b) => a.r - b.r).map(({ d }) => d);
+    // Stage 1: soft blocks on the body, then a jump and a step each way.
+    stage = 1;
+    for (const [dx, dy, dz] of [[0, 1, 0], [0, 0, 0], [0, 2, 0]]) { const b = at(dx, dy, dz); if (softOrLeaves(b) && breakable(bot, b)) await dig(b); }
+    for (const [dx, dz] of order) {
+      if (Date.now() >= until) break;
+      task.check(); checkAir(bot);
+      if (!safeToward(dx, dz)) continue;
+      for (const b of [at(dx, 0, dz), at(dx, 1, dz)]) if (softOrLeaves(b) && breakable(bot, b)) await dig(b);
+      if (await step(dx, dz)) return true;
+    }
+    // Stage 2: any natural block at body height, stone included.
+    stage = 2;
+    for (const [dx, dz] of order) {
+      if (Date.now() >= until) break;
+      task.check(); checkAir(bot);
+      if (!safeToward(dx, dz)) continue;
+      const wall = [at(dx, 0, dz), at(dx, 1, dz)].filter(b => b?.boundingBox === 'block');
+      if (!wall.length || !wall.every(b => breakable(bot, b, { natural: true }))) continue;
+      for (const b of wall) await dig(b);
+      if (await step(dx, dz)) return true;
+    }
+    // Stage 3: down, when there is solid ground a short drop below the floor.
+    stage = 3;
+    const floor = at(0, -1, 0);
+    if (Date.now() < until && breakable(bot, floor, { natural: true })) {
+      const under = [at(0, -2, 0), at(0, -3, 0), at(0, -4, 0)];
+      if (!under.some(b => b && (HAZARD.has(b.name) || LIQUID.has(b.name))) && under.some(b => b?.boundingBox === 'block')) {
+        await dig(floor);
+        const end = Date.now() + 2000;
+        while (Date.now() < end && !moved()) { await sleep(50); task.check(); }
+        if (moved()) return true;
+      }
+    }
+    return false;
+  } finally {
+    bot.clearControlStates?.();
+    bot.emit?.('navigation_recovery', { mode: 'shake_loose', stage, from: start, position: { ...bot.entity.position }, cleared, moved: moved() });
+  }
+}
+
 /** Move somewhere, aborting cleanly if the task is cancelled mid-path. */
 async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen } = {}) {
   task.check();
@@ -265,6 +362,7 @@ module.exports = {
   Task,
   Cancelled,
   navigate,
+  shakeLoose,
   surveyRoute,
   equipBestTool,
   pickaxeTier,

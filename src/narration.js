@@ -42,13 +42,11 @@ function sourceDescription(decision, key) {
 function stepLine(goal, step, decision) {
   if (!step?.action) return null;
   const detail = step.detail && typeof step.detail === 'object' ? step.detail : null;
-  const path = decision?.path || [];
-  const source = path.find(k => String(k).startsWith('source_')), described = sourceDescription(decision, source);
   switch (step.action) {
     case 'combined_request': return detail ? stepLine(goal, detail, decision) : null;
-    case 'mine': return described
-      ? `Getting ${name(step.drops || step.block)} from the ${name(described.block)}${Number.isFinite(described.distance) ? ` ${described.distance} blocks away` : ''}.`
-      : `Getting ${name(step.drops || step.block)} nearby.`;
+    // Once per resource, not once per tree: which trunk Jev picked is in the
+    // Observatory, and a line per tree drowned the lines that mattered.
+    case 'mine': return `Getting ${step.count ? `${step.count} ` : ''}${name(step.drops || step.block)}.`;
     case 'craft': return `Crafting ${step.count ? `${step.count} ` : ''}${name(step.item)}.`;
     case 'smelt': return `Smelting ${name(step.item)}.`;
     case 'harden': return 'Hardening concrete in water.';
@@ -74,10 +72,9 @@ function stepLine(goal, step, decision) {
 function stepKey(goal, step, decision) {
   if (!step?.action) return null;
   const inner = step.action === 'combined_request' && step.detail && typeof step.detail === 'object' ? step.detail : step;
-  const source = (decision?.path || []).find(k => String(k).startsWith('source_')) || '';
   const target = inner.item || inner.drops || inner.block || inner.material || inner.entity || '';
   const action = ['place', 'build', 'build_schematic'].includes(inner.action) ? 'build' : inner.action;
-  return `${action}:${target}:${inner.action === 'mine' ? source : ''}`;
+  return `${action}:${target}`;
 }
 
 function narrate(bot, goal, { now = Date.now() } = {}) {

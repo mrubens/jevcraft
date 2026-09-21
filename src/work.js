@@ -2,7 +2,7 @@
 
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { navigate, surveyRoute, equipBestTool, pickaxeTier, countOf } = require('./skills');
+const { navigate, surveyRoute, equipBestTool, pickaxeTier, countOf, shakeLoose } = require('./skills');
 const { MINEABLE } = require('./plan');
 const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
@@ -913,13 +913,16 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
     if ((stock[goal.material] || 0) > 0 && missing.length) {
       const layer = Math.min(...missing.map(p => p.y));
       const actions = {};
-      for (const p of missing.filter(p => p.y === layer).slice(0, 4)) {
+      const lowest = missing.filter(p => p.y === layer);
+      const fresh = lowest.filter(p => !(goal.decisionFailures?.[`${air(bot.blockAt(pos(p))) ? 'place' : 'clear'}_${p.x}_${p.y}_${p.z}`]?.at > Date.now() - 120000));
+      // Recent failures are a preference, not a veto: when every cell on the
+      // layer failed once, they are all offered again rather than nothing.
+      for (const p of (fresh.length ? fresh : lowest).slice(0, 4)) {
         const q = pos(p);
         const block = bot.blockAt(q);
         const empty = air(block);
         if ((!empty && !block?.diggable) || (empty && !faces.some(f => bot.blockAt(q.plus(f))?.boundingBox === 'block'))) continue;
         const key = `${empty ? 'place' : 'clear'}_${p.x}_${p.y}_${p.z}`;
-        if (goal.decisionFailures?.[key]?.at > Date.now() - 120000) continue;
         actions[key] = leaf(`${empty ? `Place ${p.material}` : `Clear ${block.name} for construction`} at ${q}; build the lowest unfinished layer first.`, async () => {
           goal.step = { action: empty ? 'place' : 'clear', position: { ...q }, material: p.material }; save();
           if (empty) await place(bot, task, q, p.material); else await dig(bot, task, q);
@@ -1540,6 +1543,35 @@ function protectConstruction(bot, goal) {
   movements.exclusionAreasBreak.push(bot._constructionProtection);
 }
 
+// Requests that no amount of trying can satisfy. They are explained once and
+// parked, with the bot surviving meanwhile; everything else keeps going.
+const IMPOSSIBLE = /No supported survival acquisition|does not spawn in Peaceful|must be auto, jev or openrouter|needs OPENROUTER_API_KEY|Unsupported mob source|Take me there, then say resume|Please request at most|spans too many catalog branches|Creative inventory is only available|could not produce a usable plan after four attempts|The Jev fallback supports/;
+
+// The bot does not give up. When ordinary retries, Jev's recovery pick and
+// moving on have all failed, it says so once, shakes itself loose, leaves
+// the resource it was stuck on if there was one, waits a while (longer each
+// time, up to a minute, so an impossible spot costs little per hour) and
+// goes again with a clean slate. Only the player, the game, or a request
+// that is impossible by definition ends a request.
+async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } = {}) {
+  goal.struggles = (goal.struggles || 0) + 1;
+  goal.lastStruggle = { at: new Date().toISOString(), error: err.message };
+  goal.search = {};
+  if (goal.struggles === 1 || goal.struggles % 5 === 0) {
+    bot.chat?.(`${friendlyProblem(err)} I'll keep trying${goal.struggles > 1 ? ` (attempt ${goal.struggles})` : ''}.`);
+  }
+  goal.step = { action: 'persist', attempt: goal.struggles, problem: err.message }; save(); onStep(goal);
+  const survivalOnly = e => { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(e.name)) throw e; };
+  try { await shakeLoose(bot, task, Date.now() + 25000); } catch (e) { survivalOnly(e); }
+  if (goal.lastStruggleStep?.action === 'mine' || goal.step?.action === 'mine') {
+    try { await moveOnFromResource(bot, task, { ...goal, step: goal.lastStruggleStep || goal.step }, save); } catch (e) { survivalOnly(e); }
+  }
+  const pause = Math.min(60000, backoffMs * 2 ** Math.min(goal.struggles - 1, 5));
+  const end = Date.now() + pause;
+  while (Date.now() < end) { task.check(); await sleep(100); }
+  goal.failures = 0; goal.stalls = 0; delete goal.decisionFailures; delete goal.lastError; save(); onStep(goal);
+}
+
 function createRecoveryAdviser(bot, client) {
   return new RecoveryAdviser(bot, { acquireStep, catalogPlan, planningInventory, surfaceStep, navigate, explore, find }, { client });
 }
@@ -1553,7 +1585,7 @@ async function tryRecovery(adviser, task, goal, save) {
   }
 }
 
-async function runIdle(bot, task, goal, store, { survival, decisionClient, recoveryAdviser, onStep = () => {}, until = () => false } = {}) {
+async function runIdle(bot, task, goal, store, { survival, decisionClient, recoveryAdviser, onStep = () => {}, until = () => false, backoffMs = 3000 } = {}) {
   survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
   goal.survival = survival.state;
   const save = () => store.save(goal);
@@ -1575,14 +1607,15 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       goal.lastError = err.message; save(); onStep(goal);
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) recoveryAdviser.recordFailure(goal, err);
       if (failures >= 3 && await tryRecovery(recoveryAdviser, task, goal, save)) { failures = 0; continue; }
-      if (failures >= 5) throw new Blocked(`Survival needs help: ${err.message}`);
+      // Survival never gives up either: shake loose, back off, go again.
+      if (failures >= 5) { await persist(bot, task, goal, save, err, onStep, { backoffMs }); failures = 0; continue; }
     } finally { task.interruptCheck = undefined; }
     for (let n = 0; n < 10; n++) { task.check(); await sleep(100); }
   }
   return { ok: true, goal };
 }
 
-async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () => {}, decisionClient, survival, recoveryAdviser } = {}) {
+async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = () => {}, decisionClient, survival, recoveryAdviser, backoffMs = 3000 } = {}) {
   const save = () => store.save(goal);
   task.opportunityClient = decisionClient;
   if (goal.boatTravel?.placed?.uuid && goal.boatTravel.placed.dimension === bot.game.dimension) (bot._ownedBoats ||= new Set()).add(goal.boatTravel.placed.uuid);
@@ -1703,10 +1736,15 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       if (goal.failures >= 3 && err.name !== 'Blocked' && await moveOnFromResource(bot, task, goal, save)) {
         goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
       }
-      if (err.name === 'Blocked' || goal.failures >= 5) {
+      if (err.name === 'Blocked' && IMPOSSIBLE.test(err.message)) {
         goal.status = 'blocked'; save();
         bot.chat(`${friendlyProblem(err)} I saved our progress. ${recoveryHint(err)}`);
         return { ok: false, reason: err.message, goal };
+      }
+      if (err.name === 'Blocked' || goal.failures >= 5) {
+        goal.lastStruggleStep = goal.step;
+        await persist(bot, task, goal, save, err, onStep, { backoffMs });
+        continue;
       }
       await sleep(300);
     } finally { task.interruptCheck = undefined; }

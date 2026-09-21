@@ -8,29 +8,30 @@ const decision = key => ({ path: ['build_house', 'gather_materials', key], optio
   source_birch_log_30_64_4: { description: { block: 'birch_log', blocksWithinReach: 5, distance: 31, elevationChange: 2 } },
 } } } } } });
 
-test('the bot says what it is starting, once per phase, and names the source Jev chose', () => {
+test('the bot says what it is starting, once per phase, not once per tree', () => {
   const said = [], bot = { chat: line => said.push(line) };
   const goal = { kind: 'house', step: { action: 'mine', block: 'oak_log', drops: 'oak_log' }, decisions: [decision('source_oak_log_3_64_0')] };
   let now = 1000;
-  assert.equal(narrate(bot, goal, { now }), 'Getting oak log from the oak log 6 blocks away.');
+  goal.step.count = 24;
+  assert.equal(narrate(bot, goal, { now }), 'Getting 24 oak log.');
   assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), null, 'the same phase is not repeated');
   goal.decisions.push({ path: ['continue_source', 'source_oak_log_3_64_0'], committed: true, options: {} });
   assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), null, 'continuing the same source is not a new phase');
   goal.decisions.push(decision('source_birch_log_30_64_4'));
-  assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), 'Getting oak log from the birch log 31 blocks away.');
+  assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), null, 'a different tree for the same resource is not announced');
   goal.step = { action: 'craft', item: 'oak_planks', count: 96 };
   assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), 'Crafting 96 oak planks.');
   goal.step = { action: 'place', position: { x: 1, y: 64, z: 2 }, material: 'oak_planks' };
   assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), 'Building the house.');
   goal.step = { action: 'place', position: { x: 2, y: 64, z: 2 }, material: 'oak_planks' };
   assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), null, 'every block of the same build is one phase');
-  assert.equal(said.length, 4);
+  assert.equal(said.length, 3);
 });
 
 test('survival taking over is announced ahead of the step, and the chat gap is respected', () => {
   const said = [], bot = { chat: line => said.push(line) };
   const goal = { kind: 'house', step: { action: 'mine', block: 'oak_log', drops: 'oak_log' }, decisions: [] };
-  assert.equal(narrate(bot, goal, { now: 1000 }), 'Getting oak log nearby.');
+  assert.equal(narrate(bot, goal, { now: 1000 }), 'Getting oak log.');
   goal.survivalAction = { action: 'gather_shelter_materials', at: '2026-09-21T04:00:00Z' };
   assert.equal(narrate(bot, goal, { now: 2000 }), null, 'too soon after the last line');
   assert.match(narrate(bot, goal, { now: 1000 + MIN_GAP_MS }), /^Night's coming/);

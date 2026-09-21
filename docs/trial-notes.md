@@ -2,6 +2,16 @@
 
 Running observations from acceptance trials on the isolated Normal Survival server (`.test-acceptance`, port 25579), with the opportunities they point at. Newest first. Each trial's full log is under `artifacts/<run>/events.jsonl`.
 
+## muaqvemv · 2026-09-21 · "build a house" + 2 cycles · controlled (nights skipped) · FAIL at the house, by a rule that has since been removed
+
+**What happened.** Started at day (the console set it). Narration was live for the first time: "Getting oak log from the oak log 8 blocks away", "Crafting 96 oak planks", "Clearing the site", two creeper escapes. Clearing the site hit stone with no pickaxe; after three failures Jev's recovery pick chose "gather a stone pickaxe" on its own, at 0.6+ confidence, the bot got cobblestone, crafted the pickaxe and went back ("Okay, back to your request"). No generative adviser involved. Then the house tree came up empty: every placement on the lowest layer had failed once in the last two minutes, the two-minute suppression excluded all of them, and `No feasible house action remains` was a terminal Blocked. Run over with 97 planks and two pickaxes in hand.
+
+**Opportunities.**
+
+13. *Suppression is a preference, not a veto.* When every candidate has failed recently, offer them all again rather than nothing. Fixed.
+14. *Nothing should be terminal except the player, the game, or an impossible ask.* The request loop no longer has a failure budget or a step budget: after retries, Jev's recovery pick and moving on, it says so once, shakes itself loose (soft blocks, then natural walls, then the floor onto a safe landing), leaves a failing resource for elsewhere, backs off for a growing pause up to a minute, and goes again. Idle survival does the same. Only definitional impossibilities (bedrock in Survival, a mob that does not spawn in Peaceful) are explained and parked. Done after this run.
+15. *Per-tree narration is noise.* "Getting oak log from the oak log 8 blocks away" repeated for every trunk. A resource is now announced once with its count; the crafting, building and survival lines stay.
+
 ## muapyq2c · 2026-09-21 · "build a house" + 2 cycles · house PASS, endurance FAIL at 22,720 of 48,000 ticks
 
 **So far.** Dusk arrived a minute in. Jev chose `secure_shelter` over the house at 0.9+ confidence, crafted twelve planks, gathered dirt and sealed itself in. No errors, no recovery, no OpenRouter call. Then it waited.
