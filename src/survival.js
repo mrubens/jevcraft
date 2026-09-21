@@ -709,8 +709,8 @@ class Survival {
       this.report(goal, save, { action: 'recover_items', origin: this.state.recovery.position });
       if (await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate)) { onStep(goal); return true; }
     }
-    const expeditionFood = (goal.preparingExpedition || goal.preparingEnd) && bot.game.difficulty !== 'peaceful';
-    const desiredFood = goal.preparingEnd ? 64 : 12;
+    const expeditionFood = (goal.preparingExpedition || goal.preparingEnd || goal.preparingNether) && bot.game.difficulty !== 'peaceful';
+    const desiredFood = goal.preparingEnd ? 64 : goal.preparingNether ? 24 : 12;
     // A missing reserve is worth a hunt while the bot is already on the
     // surface, where the animals are. Underground it is worth the climb only
     // once hunger is real: the dream run was leaving its iron shaft at 18 of

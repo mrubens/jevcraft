@@ -73,7 +73,9 @@ function canBegin(bot, handler = {}) {
   const standing = bot.game.gameMode === 'survival' && bot.game.difficulty !== 'peaceful' &&
     bot.oxygenLevel > 12 && !(bot.entity.metadata?.[0] & 1) && dryStanding(bot, bot.entity.position);
   if (handler.passive) return standing && bot.health >= 10 && bot.food >= 6;
-  return standing && bot.health >= 18 && bot.food >= 16 && readyEquipment(bot);
+  // Fourteen in full armour: eighteen was a bar the Nether could not meet
+  // once the food ran out, and the wait for it never ends without regen.
+  return standing && bot.health >= 14 && bot.food >= 14 && readyEquipment(bot);
 }
 
 // The route exception names one live entity and expires with this action.
@@ -280,7 +282,14 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   if (!handler.passive && !await prepareCombatGear(bot, task, goal, save, actions)) return;
   if (handler.dimension && dimension(bot) !== handler.dimension) { await actions.enterNether(bot, task, goal, save); return; }
   if (!canBegin(bot, handler)) {
-    goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: handler.passive ? 10 : 18, neededFood: handler.passive ? 6 : 16 }; save();
+    // Nothing to eat and hunger under eighteen means no regeneration: the
+    // recovery never comes. Off the Overworld that is a trip back for food.
+    const { chooseFood } = require('./vitals');
+    if (bot.food < 18 && !chooseFood(bot) && dimension(bot) !== 'overworld' && actions.returnOverworld) {
+      goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
+      await actions.returnOverworld(bot, task, goal, save); return;
+    }
+    goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: handler.passive ? 10 : 14, neededFood: handler.passive ? 6 : 14 }; save();
     await sleep(500); task.check(); return;
   }
   // A mob already in view is stalked where it is: the observed-hunt check at

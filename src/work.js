@@ -954,7 +954,7 @@ async function executeAcquisition(bot, task, step, goal, save) {
   else if (step.action === 'harden') await harden(bot, task, goal, save, step.item);
   else if (step.action === 'fill_bucket') await collectWater(bot, task, goal, save, { navigate, explore });
   else if (step.action === 'make_obsidian') await makeObsidian(bot, task, step, goal, save, { navigate, dig, approachDryMining, collectNearbyDrops, resourceTunnelStep, acquireStep });
-  else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep, navigate,
+  else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep, navigate, returnOverworld: returnFromNether,
     tunnel: (b, t, g, sv, target, resource) => resourceTunnelStep(b, t, g, sv, target, resource, { dig, navigate }) });
   else throw new Error(`Unknown action ${step.action}`);
 }
@@ -1995,6 +1995,16 @@ function gameHandlers(bot, decisionClient) {
         fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate }, decisionClient),
         exit_end: (bot, task, goal, save) => exitEnd(bot, task, goal, save, { navigate }),
         prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
+        // Two steaks was the whole larder for the first Nether trip. The
+        // survival layer's stock-driven search fills the reserve; a search
+        // it has set aside as fruitless lets the trip go with what there is.
+        food_reserve: async (bot, task, goal, save) => {
+          const NETHER_FOOD = 24;
+          if (foodSupply(bot) >= NETHER_FOOD || goal.survival?.foodStockPausedUntil > Date.now()) { delete goal.preparingNether; return true; }
+          goal.preparingNether = true; goal.stockFood = true;
+          goal.step = { action: 'stock_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
+          return false;
+        },
         prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
         home: (bot, task, goal, save, stage) => homeStep(bot, task, goal, save, stage, homeActions()),
         // A bed from a remembered village: dug up, it drops itself.
