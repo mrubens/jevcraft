@@ -2,13 +2,17 @@
 
 Running observations from acceptance trials on the isolated Normal Survival server (`.test-acceptance`, port 25579), with the opportunities they point at. Newest first. Each trial's full log is under `artifacts/<run>/events.jsonl`.
 
-## muarczp0 · 2026-09-21 · "build a house" + 2 cycles · controlled (nights skipped) · house PASS, endurance in progress
+## muarczp0 · 2026-09-21 · "build a house" + 2 cycles · controlled (nights skipped) · PASS
+
+**Result.** House built and verified at tick 5678 of the run, then two full day/night cycles survived (48,000 world ticks) with no deaths, no recovery escalation and no generative call. Nights were skipped from the console while the bot was sealed in, so this is a controlled run, not acceptance evidence; the bot's own behaviour was untouched. The first complete run of the evening.
 
 **What happened.** Trials five and six were cut short by the same creeper: it followed the bot from spawn and interrupted it sixteen times in ten minutes, because the escape put six blocks between them and a creeper does not burn off at dawn. The escape from a persistent mob now reaches past its follow range, with the ordinary hop as fallback, and the chat says an escape once and "I think I lost it" after. Trial seven then built and verified the house with no escapes at all, hunted a cow for beef on the way, sealed itself into the house at dusk, and after the night was skipped came back out to... stand there. Shelter and food were sufficient, so the only survival option was to wait.
 
 **Opportunities.**
 
 17. *Idle time is ambition time.* With nothing asked and nothing urgent, code now lists the feasible chores (cook the raw beef, make stone tools, stock wood, torches from carried coal) and the next rung of the beat-the-game ladder, and Jev chooses, with resting always on offer. Done after this run; the first idle rung of the ladder is "reach the Nether", which begins with combat supplies, so the finer rungs (iron pickaxe, shield, a bed) should become their own candidates so the climb is visible on screen within minutes rather than hours.
+19. *The dream is live.* On the Creative play world the bot, given "your dream is to build a village", chose a stone cottage from the schematic shelf (45 validated designs, none generated at run time), sited it beside the standing buildings and built it, announcing the village score as it went. The Survival version ("your dream is to beat the game") climbs the finer ladder; its first rung is a stone pickaxe.
+
 18. *Auto mode is a reframing, not a rewrite.* The `win` objective is already a hill-climber over observed milestones, and the idle loop already runs when nothing is queued. A standing ambition, per world, that the idle loop hands to the request runner as if a player had typed it, with Jev choosing the next milestone from what code enumerates, is the natural next step, and the Creative village is the first demo to build it against since every milestone there is buildable today.
 
 ## muar64lo · 2026-09-21 · "build a house" + 2 cycles · controlled (nights skipped) · in progress
