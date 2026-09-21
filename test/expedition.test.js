@@ -104,3 +104,21 @@ test('a rung that goes deep with no wood carried prepares the expedition on the 
   assert.equal(goal.preparingExpedition, true);
   assert.equal(goal.expeditionPrepActive, undefined, 'the guard is released');
 });
+
+test('a pickaxe under the trip margin gets its spare made on the spot, whatever the step', async () => {
+  const bot = fixture({ stone_pickaxe: 1, cobblestone: 64, stick: 2, crafting_table: 1, oak_log: 8, cooked_beef: 4 });
+  bot.inventory.items()[0].durabilityUsed = registry.itemsByName.stone_pickaxe.maxDurability - 20;
+  const said = []; bot.chat = line => said.push(line);
+  const goal = { kind: 'obtain', item: 'purple_concrete', count: 32, request: 'get 32 purple concrete', expeditionReady: true };
+  await runGoal(bot, new Task('test', goal.request), goal, { save() {} }, { survival, maxSteps: 1 });
+  assert.equal(goal.step.action, 'craft'); assert.equal(goal.step.item, 'stone_pickaxe');
+  assert.match(said.join(' '), /spare/);
+});
+
+test('a sound pickaxe beside the worn one needs no spare', async () => {
+  const bot = fixture({ stone_pickaxe: 1, iron_pickaxe: 1, cobblestone: 64, stick: 2, crafting_table: 1, oak_log: 8, cooked_beef: 4 });
+  bot.inventory.items()[0].durabilityUsed = registry.itemsByName.stone_pickaxe.maxDurability - 20;
+  const goal = { kind: 'obtain', item: 'purple_concrete', count: 32, request: 'get 32 purple concrete', expeditionReady: true };
+  await runGoal(bot, new Task('test', goal.request), goal, { save() {} }, { survival, maxSteps: 1 });
+  assert.notEqual(goal.step.item, 'stone_pickaxe');
+});

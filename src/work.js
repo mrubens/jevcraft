@@ -107,6 +107,25 @@ const logsCarried = bot => bot.inventory.items().filter(i => /_log$/.test(i.name
 // hand; the durability and fuel checks above only caught it some of the time.
 const descentSuppliesLow = bot => woodCarried(bot) < 2;
 
+// A pickaxe wears out in the shaft, not at the crafting table. The stone
+// pickaxe on the ninth climb had seventy-seven uses when the iron tunnel
+// began, the shield rung had just spent the planks, and the bot dug out
+// by hand at seven seconds a block. The tool is checked every step, and
+// the spare is made while the sticks and cobblestone are still in the
+// pockets, whatever the current step is doing.
+const remainingUses = (bot, item) => (bot.registry?.itemsByName?.[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
+const sparePickaxeMaterials = bot => countOf(bot, 'cobblestone') >= 3 &&
+  (countOf(bot, 'stick') >= 2 || bot.inventory.items().some(i => /_planks$/.test(i.name) && i.count >= 2) || logsCarried(bot) >= 1);
+async function maintainPickaxe(bot, task, goal, save) {
+  if (bot.game?.gameMode === 'creative') return false;
+  const pickaxes = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name));
+  if (!pickaxes.length || pickaxes.some(i => remainingUses(bot, i) >= SPARE_PICKAXE_DURABILITY)) return false;
+  if (!sparePickaxeMaterials(bot)) return false;
+  if (!(goal.spareAnnouncedAt > Date.now() - 10 * 60 * 1000)) { goal.spareAnnouncedAt = Date.now(); bot.chat('My pickaxe is nearly done. Making a spare before it goes.'); }
+  await acquireStep(bot, task, 'stone_pickaxe', countOf(bot, 'stone_pickaxe') + 1, goal, save);
+  return true;
+}
+
 async function prepareExpeditionStep(bot, task, goal, save) {
   goal.preparingExpedition = true;
   // The reserve is the survival layer's to gather; once its search has been
@@ -2028,6 +2047,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (!endTask) {
         await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
       }
+      if (!endTask && await maintainPickaxe(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; }
       const needsSupplies = !goal.expeditionReady && (
         (goal.kind === 'concrete' && countOf(bot, 'purple_concrete') + (goal.delivered || 0) < goal.count && !goal.pendingDelivery) ||
         (['nether', 'win'].includes(goal.kind) && dimension(bot) === 'overworld' && !find(bot, ['nether_portal'], 64, 1).length && !goal.portalFrame));
