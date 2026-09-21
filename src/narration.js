@@ -34,6 +34,8 @@ const SURVIVAL = {
   return_for_food: 'Nothing to eat here. Heading back through the portal for food.',
   cook_food: 'Cooking food.',
   go_home_for_food: 'Heading home for something to eat.',
+  village_found: "There's a village here. Worth remembering.",
+  village_food: 'Heading to the village for something to eat.',
   prepare_hunting_weapon: 'Making a weapon so I can hunt.',
   reach_shore: 'Swimming for the shore.',
   surface: 'Coming up for air.',
@@ -82,6 +84,9 @@ function stepLine(goal, step, decision) {
     case 'home_site': return step.origin ? `Picking a spot for a home base beside the water at ${step.origin.x}, ${step.origin.z}.` : 'Looking for level ground beside water for a home base.';
     case 'return_home': return 'Walking back to the base.';
     case 'gather_wool': return 'Getting wool for a bed.';
+    case 'village_bed': return step.village ? `Going to the village at ${step.village.x}, ${step.village.z} for a bed.` : 'Going to the village for a bed.';
+    case 'village_harvest': return `Taking the ripe ${name(step.crop)} from the village farm.`;
+    case 'village_hay': return 'Taking a hay bale for bread.';
     case 'place_bed': return 'Setting up a bed at the base.';
     case 'claim_bed': return 'Using the bed so I respawn at home.';
     case 'till': return 'Tilling the plot.';

@@ -194,7 +194,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const standing = dreamStore.read();
     if (standing?.dream && !launchingDream && shouldLaunchDream(standing, retained, { ready: readyForDream() })) { launchDream(standing); return; }
     const goal = { ...(idleStore.read() || {}), version: 1, kind: 'survive', request: 'Stay alive and prepare supplies between player requests',
-      retainedRequest: retained?.request, blueprint: retained?.blueprint, portalFrame: retained?.portalFrame, portals: retained?.portals, survival: survival.state,
+      retainedRequest: retained?.request, blueprint: retained?.blueprint, portalFrame: retained?.portalFrame, portals: retained?.portals, villages: retained?.villages, survival: survival.state,
       dream: standing?.dream && !standing.satisfiedAt ? standing.dream : undefined,
       ledgerRun: standing?.dream && !standing.satisfiedAt ? standing.ledgerRun : undefined };
     memory.bind(goal);

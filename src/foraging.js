@@ -6,6 +6,7 @@ const { surfaceMovement } = require('./surface');
 const { knowledge } = require('./knowledge');
 const { surveyRoute } = require('./skills');
 const { homeFood, eatFromHome } = require('./home-base');
+const { villageFood, eatFromVillage } = require('./villages');
 const vanilla = require('../data/vanilla-26.1.json');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Raw chicken is an ingredient, never edible reserve. Its cooking dependency
@@ -165,6 +166,21 @@ async function forageChoices(bot, task, goal, save, actions, state) {
       goal.survivalAction = { action: 'go_home_for_food', distance: home.distance, at: new Date().toISOString() }; save();
       task.interruptCheck = () => checkThreats(bot);
       try { await eatFromHome(bot, task, goal, save, actions); }
+      finally { task.interruptCheck = undefined; }
+    },
+  };
+  // A remembered village within reach has wheat already grown and hay
+  // already stacked: ripe crops are taken and replanted, a bale or two is
+  // dug for bread. Read off the world when the village is loaded, off
+  // memory when it is not, and weighed by Jev beside any hunt in view.
+  const village = villageFood(bot, goal);
+  if (village) choices.village_food = {
+    description: { action: 'Walk to the remembered village and take what is ripe from its farms (wheat, carrots, potatoes, putting the seed back) and a hay bale or two, then bake bread from the wheat. The villagers keep their houses and their bell.',
+      distance: village.distance, ripeCrops: village.ripeCrops, hayBales: village.hayBales, villageLoaded: village.loaded },
+    run: async () => {
+      goal.survivalAction = { action: 'village_food', distance: village.distance, at: new Date().toISOString() }; save();
+      task.interruptCheck = () => checkThreats(bot);
+      try { await eatFromVillage(bot, task, goal, save, village.village, actions); }
       finally { task.interruptCheck = undefined; }
     },
   };

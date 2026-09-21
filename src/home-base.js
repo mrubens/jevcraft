@@ -6,6 +6,7 @@ const { checkAir } = require('./vitals');
 const { checkThreats } = require('./danger');
 const { countOf } = require('./skills');
 const stash = require('./home-stash');
+const { knownVillages, BED_REACH } = require('./villages');
 
 // A home base: one spot per world, on level ground beside water, with a
 // wheat plot, a fenced cow pen and a bed the bot has slept in. The dream
@@ -74,8 +75,10 @@ function layout(site) {
 
 const inside = (interior, p) => p && p.x >= interior.min.x && p.x < interior.max.x + 1 && p.z >= interior.min.z && p.z < interior.max.z + 1 && Math.abs(p.y - interior.min.y) <= 1.5;
 
-// Where the base should be near: the first Overworld portal the bot has
-// used, else the house it built, else where it stands.
+// Where the base should be near: a remembered village within reach (its
+// bell or centre, so the bed and the stash end up among the houses), else
+// the surface above the nearest Overworld portal when it is close enough
+// to be loaded, else the house it built, else where it stands.
 // The surface above a point: the highest solid block with air over it in
 // that column, when the column is loaded. A portal dug beside a lava lake
 // at y=-41 is the right place to come home to and the wrong depth for a plot.
@@ -90,6 +93,8 @@ function surfaceAbove(bot, x, z, from) {
 
 function baseAnchor(bot, goal) {
   const here = bot.entity.position.floored();
+  const village = knownVillages(bot, goal, BED_REACH)[0]?.village;
+  if (village) { const centre = village.bell || village; return { kind: 'village', x: centre.x, y: centre.y, z: centre.z }; }
   // The nearest remembered portal, if it is close enough for its surroundings
   // to be loaded: an anchor two hundred blocks off is a search that never
   // finds anything, and the run's fourth attempt was exactly that.
