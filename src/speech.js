@@ -118,6 +118,25 @@ function activity(step = {}) {
     case 'eat': case 'eat_food': return "I'm eating something.";
     case 'return_to_surface': case 'ascend_to_surface': return "I'm finding a way back up.";
     case 'prepare_expedition_food': return "I'm packing some food for the trip.";
+    case 'tunnel': return `I'm digging a staircase${step.target ? ` toward y=${step.target.y}` : ''}.`;
+    case 'return_to_mine': return `I'm heading back to my ${item || 'mine'} shaft.`;
+    case 'persist': return "I got stuck and I'm trying again.";
+    case 'hunt_mob': return `I'm hunting a ${name(step.entity)} for ${item}.`;
+    case 'stalk_mob': return `There's a ${name(step.entity)} near. I'm waiting for my chance.`;
+    case 'recover_before_combat': return "I'm getting my strength back before a fight.";
+    case 'equip_combat': case 'prepare_combat_equipment': return "I'm getting my armour and sword on.";
+    case 'home_site': return "I'm looking for a spot for a base.";
+    case 'level_site': return `I'm levelling the ground for the base: ${step.digs || 0} to dig, ${step.fills || 0} to fill.`;
+    case 'pour_water': return "I'm making a pond beside the plot.";
+    case 'return_home': return "I'm walking back to the base.";
+    case 'place_bed': case 'claim_bed': return "I'm setting up the bed at the base.";
+    case 'place_chest': return "I'm putting the stash chest beside the bed.";
+    case 'till': return "I'm tilling the plot."; case 'plant': return "I'm planting the plot.";
+    case 'build_pen': return "I'm fencing the cow pen."; case 'gather_wool': return "I'm getting wool for a bed.";
+    case 'restock': return "I'm restocking from the chest at the base."; case 'stash_valuables': return "I'm leaving my valuables at the base.";
+    case 'sleep': return "I'm sleeping the night through."; case 'stay_up': return "I'm staying up tonight; there's work the dark is good for.";
+    case 'return_to_portal': case 'enter_nether': return "I'm heading for my Nether portal.";
+    case 'return_overworld': return "I'm heading back through the portal.";
     default: return "I'm working on it.";
   }
 }

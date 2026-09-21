@@ -10,6 +10,13 @@ function statusMessage(bot, active, saved) {
     else if (goal.recoveryAdvice?.active) messages.push("I'm stuck. I need to think for a bit.");
     else if (goal.status === 'blocked') messages.push(`${friendlyProblem(goal.lastError)} ${recoveryHint(goal.lastError)}`);
     else messages.push(activity(goal.step));
+    // The dream has a ladder; say which rung, and where home is.
+    if (goal.kind === 'win') {
+      const rung = goal.gameProgress?.phase;
+      messages.unshift(`Beating the game${rung ? `, on the ${name(rung)} rung` : ''}.`);
+      const home = goal.survival?.home;
+      if (home?.bed?.claimedAt) messages.push(`Base at ${home.origin.x}, ${home.origin.z}.`);
+    }
     if (goal.kind === 'bundle') {
       const done = goal.tasks.filter(t => t.status === 'complete').length, next = goal.tasks.find(t => t.status !== 'complete');
       messages.push(`${done} of ${goal.tasks.length} things done.${next ? ` Next: ${name(next.item)}.` : ''}`);
