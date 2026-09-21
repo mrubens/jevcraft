@@ -147,12 +147,12 @@ class Survival {
       // every open side into a two-block pocket and let it pass. Against a
       // melee mob alone, the single wall toward it is enough.
       const nearest = danger[0];
-      if (danger.some(t => RANGED.has(t.entity.name)) && await this.digIn(task, goal, save, danger)) { delete this.state.trappedSince; return; }
+      if (danger.some(t => RANGED.has(t.entity.name)) && await this.sealHere(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       if (await this.wallOff(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       // No way out and a mob a few blocks off, shooting: standing still is
       // how a crossbow piglin took half the bot's health. Armed and able,
       // close the gap so the fight rule can do its work.
-      if (armed && bot.health >= 8 && nearest.distance > 2.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
+      if (armed && bot.health >= 12 && nearest.distance > 2.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
         this.report(goal, save, { action: 'charge', target: nearest.entity.name, distance: Number(nearest.distance.toFixed(1)) });
         const t = nearest.entity.position;
         try { await this.actions.navigate(bot, task, new goals.GoalNear(t.x, t.y, t.z, 1), { timeoutMs: 4000, stallMs: 2000 }); }
@@ -301,6 +301,31 @@ class Survival {
     }
     try { await this.actions.navigate(bot, task, destination, { timeoutMs: 20000 }); }
     finally { if (movement) movement.exclusionAreasBreak = previous; }
+  }
+
+  // Shot at with no way out: build the whole shell where the bot stands and
+  // register it as tonight's pocket, so the next loop sees a sealed shelter
+  // and waits inside until nothing is watching, instead of digging straight
+  // back out into the arrows. The eighth death was exactly that.
+  async sealHere(task, goal, save, danger) {
+    const bot = this.bot;
+    if (shelter.materialStock(bot) < 12) return this.digIn(task, goal, save, danger);
+    const origin = bot.entity.position.floored();
+    let refuge = this.state.shelters.find(s => s.origin.x === origin.x && s.origin.y === origin.y && s.origin.z === origin.z && s.dimension === bot.game.dimension);
+    if (!refuge) { refuge = { origin: { ...origin }, dimension: bot.game.dimension, createdAt: new Date().toISOString(), emergency: true }; this.state.shelters.push(refuge); save(); }
+    this.report(goal, save, { action: 'dig_in', threats: danger.map(t => t.entity.name), cells: shelter.missingShell(bot, refuge).length });
+    // The nearest cells first: the ones a mob could step into.
+    const material = () => bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
+    const cells = shelter.missingShell(bot, refuge).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    for (const p of cells) {
+      task.check();
+      const name = material(); if (!name) break;
+      if (danger.some(t => t.entity.position.floored().equals(p))) continue;
+      try { await this.actions.place(bot, task, p, name); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+    }
+    if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) { refuge.verifiedAt = new Date().toISOString(); save(); }
+    return true;
   }
 
   async digIn(task, goal, save, danger) {

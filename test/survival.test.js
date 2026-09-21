@@ -630,5 +630,6 @@ test('cornered by a ranged mob with no way out, the bot closes every open side i
     findBlocks: () => [], pathfinder: { movements: {}, getPathTo: async () => ({ status: 'noPath', path: [] }), setGoal() {} } };
   const survival = new Survival(bot, { place: async (b, t, p) => { placed.push(`${p}`); }, navigate: async () => {} }, { state: { shelters: [] } });
   await survival.flee(new Task('shot at'), {}, () => {});
-  assert.equal(placed.length, 9, 'four sides at two heights and the top');
+  assert(placed.length >= 9, `the whole shell goes up, not one wall: ${placed.length} placed`);
+  assert.equal(survival.state.shelters.length, 1, 'and the pocket is registered so the next step waits inside it');
 });
