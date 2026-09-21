@@ -81,13 +81,16 @@ class Survival {
       // at the same tree; the escape from a mob that persists has to reach
       // past its follow range, or the same creeper interrupts all morning.
       const persistent = danger.some(t => PERSISTENT_THREATS.has(t.entity.name));
-      const reach = persistent ? 20 : 6, radius = persistent ? 40 : 20;
-      const candidates = bot.findBlocks({ matching: ids, maxDistance: radius, count: 512,
+      const footing = bot.findBlocks({ matching: ids, maxDistance: persistent ? 40 : 20, count: 512,
         useExtraInfo: b => shelter.solid(b) && shelter.replaceable(bot.blockAt(b.position.offset(0, 1, 0))) && shelter.replaceable(bot.blockAt(b.position.offset(0, 2, 0))),
-      }).map(p => p.offset(0, 1, 0)).filter(p => p.distanceTo(bot.entity.position) >= reach &&
-        distance(p) >= Math.max(distance(bot.entity.position) + 4, persistent ? 20 : 0) && !(this.state.failedEscapes?.[`${p}`] > Date.now() - 60000))
-        .sort((a, b) => distance(b) - distance(a));
-      for (const p of candidates.slice(0, 16)) {
+      }).map(p => p.offset(0, 1, 0)).filter(p => !(this.state.failedEscapes?.[`${p}`] > Date.now() - 60000));
+      const gaining = p => distance(p) >= distance(bot.entity.position) + 4;
+      // The far spots first when the chaser persists; the ordinary hop is the
+      // fallback, because standing still beside a creeper is never the answer.
+      const far = persistent ? footing.filter(p => p.distanceTo(bot.entity.position) >= 20 && distance(p) >= 20).sort((a, b) => distance(b) - distance(a)) : [];
+      const near = footing.filter(p => p.distanceTo(bot.entity.position) >= 6 && gaining(p)).sort((a, b) => distance(b) - distance(a));
+      const candidates = [...far.slice(0, 12), ...near.slice(0, 12)];
+      for (const p of candidates) {
         const destination = new goals.GoalBlock(p.x, p.y, p.z);
         const route = await surveyRoute(bot, task, movements, destination, 150);
         if (route.status !== 'success') continue;
