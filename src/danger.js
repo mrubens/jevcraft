@@ -22,12 +22,17 @@ function provokedEnderman(bot, entity) {
   return bot._provokedMobs?.get(entity.id) === entity || (key >= 0 && !!entity.metadata?.[key]);
 }
 
+const wearingGold = bot => [5, 6, 7, 8].some(slot => /^golden_/.test(bot.inventory?.slots?.[slot]?.name || ''));
+
 function hostileEntities(bot, radius = 24) {
   const position = bot.entity.position;
   const daytime = bot.time?.timeOfDay < 12000 || bot.time?.timeOfDay >= 23000;
   return Object.values(bot.entities || {}).filter(entity => {
     if ((!hostileNames.has(entity.name) && !provokedEnderman(bot, entity)) || !entity.position || entity.isValid === false || observedDead(bot, entity)) return false;
     if (entity.name === 'spider' && daytime && !(bot._recentHurtAt > Date.now() - 10000)) return false;
+    // A piglin leaves a player in gold alone; a brute does not. With the
+    // golden boots on, the bot was digging in from piglins at eight blocks.
+    if (entity.name === 'piglin' && wearingGold(bot) && !(bot._recentHurtAt > Date.now() - 10000)) return false;
     return entity.position.distanceTo(position) <= radius;
   });
 }

@@ -280,3 +280,15 @@ test('a hunt stalks a mob already in view instead of exploring, and sets it asid
   await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, actions);
   assert.deepEqual(explored, ['spider'], 'with the only spider set aside, the hunt explores');
 });
+
+test('a piglin leaves a player in gold alone; a brute does not, and a hit ends the truce', () => {
+  const { hostileEntities } = require('../src/danger');
+  const { Vec3 } = require('vec3');
+  const piglin = { id: 1, name: 'piglin', position: new Vec3(8, 64, 0), isValid: true }, brute = { id: 2, name: 'piglin_brute', position: new Vec3(8, 64, 2), isValid: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 1: piglin, 2: brute }, time: { timeOfDay: 6000 }, inventory: { slots: { 8: { name: 'golden_boots' } } } };
+  assert.deepEqual(hostileEntities(bot).map(e => e.name), ['piglin_brute']);
+  bot.inventory.slots[8] = { name: 'iron_boots' };
+  assert.deepEqual(hostileEntities(bot).map(e => e.name).sort(), ['piglin', 'piglin_brute']);
+  bot.inventory.slots[8] = { name: 'golden_boots' }; bot._recentHurtAt = Date.now();
+  assert.deepEqual(hostileEntities(bot).map(e => e.name).sort(), ['piglin', 'piglin_brute'], 'a hit ends the truce');
+});
