@@ -9,7 +9,7 @@ const { goals } = require('mineflayer-pathfinder');
 const { countOf, surveyRoute } = require('./skills');
 const { dryStanding } = require('./mining-access');
 const { fillWaterBucket } = require('./water');
-const { checkThreats, safeFromHostiles } = require('./danger');
+const { checkThreats, safeFromHostiles, threats } = require('./danger');
 const { checkAir } = require('./vitals');
 
 const SIDES = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
@@ -90,6 +90,8 @@ async function pour(bot, task, spot, { navigate }) {
 async function makeObsidian(bot, task, step, goal, save, actions) {
   const { navigate, dig, approachDryMining, collectNearbyDrops, resourceTunnelStep, acquireStep } = actions;
   task.check(); checkAir(bot); checkThreats(bot);
+  // Nothing at the lava's edge with a mob in view: one knockback is the end.
+  if (threats(bot).some(t => t.visible && t.distance < 16)) { goal.step = { ...step, phase: 'wait_for_quiet' }; save(); await sleep(1000); return; }
   const works = goal.obsidianWorks ||= { pours: 0 };
   const target = countOf(bot, 'obsidian') + step.count;
   const wanted = () => Math.max(0, target - countOf(bot, 'obsidian'));

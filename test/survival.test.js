@@ -533,3 +533,21 @@ test('cornered in a tunnel with stone in hand, the bot walls the cell toward the
   const near = make(1.5);
   assert.equal(await near.survival.wallOff(new Task('wall'), {}, () => {}, near.danger), false, 'the mob is in the cell: fight it');
 });
+
+test('with lava beside it and a mob coming, the bot leaves the lava edge before fleeing or fighting', async () => {
+  const { Survival } = require('../src/survival');
+  const feet = new Vec3(0, 10, 0);
+  const lava = new Set([`${feet.offset(1, -1, 0)}`, `${feet.offset(2, -1, 0)}`, `${feet.offset(1, 0, 0)}`]);
+  const zombie = { name: 'zombie', type: 'hostile', position: new Vec3(-4.5, 10, 0.5), height: 1.95 };
+  const moved = [];
+  const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entity: { position: feet.offset(0.5, 0, 0.5) }, entities: { 1: zombie },
+    registry: require('minecraft-data')('26.1'), inventory: { items: () => [{ name: 'cobblestone', count: 64 }] }, world: { raycast: () => null }, on() {}, removeListener() {}, clearControlStates() {},
+    blockAt: p => lava.has(`${p}`) ? { name: 'lava', boundingBox: 'empty', position: p } : p.y < 10 ? { name: 'stone', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p },
+    findBlocks: ({ maxDistance, count, useExtraInfo }) => { const out = []; for (let x = -8; x <= 8; x++) for (let z = -8; z <= 8; z++) { const p = new Vec3(x, 9, z); const b = bot.blockAt(p); if (b.name === 'stone' && (!useExtraInfo || useExtraInfo({ ...b, position: p }))) out.push(p); } return out.slice(0, count); },
+    pathfinder: { movements: {}, getPathTo: async () => ({ status: 'success', path: [] }), setGoal() {} } };
+  const survival = new Survival(bot, { navigate: async (b, t, goal) => { moved.push([goal.x, goal.z]); bot.entity.position = new Vec3(goal.x + 0.5, goal.y, goal.z + 0.5); } }, { state: { shelters: [] } });
+  await survival.flee(new Task('lava'), {}, () => {});
+  assert.equal(moved.length, 1, 'one move: off the lava edge');
+  const { lavaBeside } = require('../src/survival');
+  assert.equal(lavaBeside(bot, bot.entity.position.floored()), false, 'and it lands clear of the lava');
+});

@@ -17,6 +17,13 @@ const { thinking } = require('./speech');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
+// Lava within two blocks sideways or one below: a knockback lands in it.
+function lavaBeside(bot, p) {
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) for (let dy = -1; dy <= 0; dy++) {
+    if (bot.blockAt(new Vec3(p.x + dx, p.y + dy, p.z + dz))?.name === 'lava') return true;
+  }
+  return false;
+}
 // Hostiles that daylight does not remove and that keep following.
 const PERSISTENT_THREATS = new Set(['creeper', 'spider', 'cave_spider', 'enderman', 'witch', 'pillager', 'vindicator', 'husk', 'drowned']);
 const shelterNeeded = bot => bot.game.difficulty !== 'peaceful' && bot.game.dimension === 'overworld' &&
@@ -87,8 +94,21 @@ class Survival {
       const persistent = danger.some(t => PERSISTENT_THREATS.has(t.entity.name));
       const footing = bot.findBlocks({ matching: ids, maxDistance: persistent ? 40 : 20, count: 512,
         useExtraInfo: b => shelter.solid(b) && shelter.replaceable(bot.blockAt(b.position.offset(0, 1, 0))) && shelter.replaceable(bot.blockAt(b.position.offset(0, 2, 0))),
-      }).map(p => p.offset(0, 1, 0)).filter(p => !(this.state.failedEscapes?.[`${p}`] > Date.now() - 60000));
+      }).map(p => p.offset(0, 1, 0)).filter(p => !(this.state.failedEscapes?.[`${p}`] > Date.now() - 60000) && !lavaBeside(bot, p));
       const gaining = p => distance(p) >= distance(bot.entity.position) + 4;
+      // Beside lava, one knockback is the end: the dream run died that way at
+      // its pouring spot, in full iron, with the diamond pickaxe. Get two
+      // blocks from the lava first, whatever the mob does meanwhile.
+      if (lavaBeside(bot, bot.entity.position.floored())) {
+        const dry = footing.filter(p => p.distanceTo(bot.entity.position) <= 8).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+        for (const p of dry.slice(0, 6)) {
+          const route = await surveyRoute(bot, task, movements, new goals.GoalBlock(p.x, p.y, p.z), 150);
+          if (route.status !== 'success') continue;
+          this.report(goal, save, { action: 'leave_lava_edge', destination: { ...p }, threats: danger.map(t => t.entity.name) });
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(p.x, p.y, p.z), { timeoutMs: 5000, stallMs: 2000 }); } catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
+          return;
+        }
+      }
       // The far spots first when the chaser persists; the ordinary hop is the
       // fallback, because standing still beside a creeper is never the answer.
       const far = persistent ? footing.filter(p => p.distanceTo(bot.entity.position) >= 20 && distance(p) >= 20).sort((a, b) => distance(b) - distance(a)) : [];
@@ -402,4 +422,4 @@ class Survival {
   }
 }
 
-module.exports = { Survival, night, shelterNeeded };
+module.exports = { Survival, night, shelterNeeded, lavaBeside };
