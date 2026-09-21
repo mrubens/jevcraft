@@ -171,7 +171,7 @@ function breakable(bot, block, { natural = false } = {}) {
   return bot.canDigBlock?.(block) !== false;
 }
 
-async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs = 700, budgetMs = 25000 } = {}) {
+async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs = 700, budgetMs = 25000, guard } = {}) {
   const start = bot.entity.position.clone(), cell = start.floored();
   const at = (dx, dy, dz) => bot.blockAt?.(cell.offset(dx, dy, dz));
   const moved = () => bot.entity.position.distanceTo(start) >= 1;
@@ -183,12 +183,12 @@ async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs 
   const submerged = () => [at(0, 0, 0), at(0, 1, 0)].some(b => b && LIQUID.has(b.name));
   if (submerged()) {
     bot.setControlState('jump', true);
-    try { while (Date.now() < until && submerged()) { task.check(); checkAir(bot); await sleep(100); } }
+    try { while (Date.now() < until && submerged()) { task.check(); checkAir(bot); guard?.(); await sleep(100); } }
     finally { bot.setControlState('jump', false); }
     return { stage: 'surface', cleared: [] };
   }
   const dig = async block => {
-    task.check(); checkAir(bot);
+    task.check(); checkAir(bot); guard?.();
     if (submerged()) throw new NeedsAir();
     await digWithAirGuard(bot, task, block); cleared.push(block.name);
   };
@@ -201,7 +201,7 @@ async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs 
     await bot.lookAt?.(cell.offset(dx + 0.5, 1.62, dz + 0.5), true);
     bot.setControlState?.('jump', true); bot.setControlState?.('forward', true);
     const end = Date.now() + settleMs;
-    while (Date.now() < end) { await sleep(50); task.check(); if (moved()) break; }
+    while (Date.now() < end) { await sleep(50); task.check(); guard?.(); if (moved()) break; }
     bot.clearControlStates?.();
     return moved();
   };

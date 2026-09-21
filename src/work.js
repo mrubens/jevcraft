@@ -1757,13 +1757,16 @@ async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } 
   }
   goal.step = { action: 'persist', attempt: goal.struggles, problem: err.message }; save(); onStep(goal);
   const survivalOnly = e => { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(e.name)) throw e; };
-  try { await shakeLoose(bot, task, Date.now() + 25000); } catch (e) { survivalOnly(e); }
+  try { await shakeLoose(bot, task, Date.now() + 25000, { guard: () => checkThreats(bot) }); } catch (e) { survivalOnly(e); }
   if (goal.lastStruggleStep?.action === 'mine' || goal.step?.action === 'mine') {
     try { await moveOnFromResource(bot, task, { ...goal, step: goal.lastStruggleStep || goal.step }, save); } catch (e) { survivalOnly(e); }
   }
   const pause = Math.min(60000, backoffMs * 2 ** Math.min(goal.struggles - 1, 5));
   const end = Date.now() + pause;
-  while (Date.now() < end) { task.check(); await sleep(100); }
+  // The pause watches for threats like any other wait: the sixth death was
+  // a skeleton walking up during a sixty-second back-off. A threat ends the
+  // pause with NeedsSafety, which the loop hands to the survival layer.
+  while (Date.now() < end) { task.check(); checkAir(bot); checkThreats(bot); await sleep(100); }
   goal.failures = 0; goal.stalls = 0; delete goal.decisionFailures; delete goal.lastError; save(); onStep(goal);
 }
 
