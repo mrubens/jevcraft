@@ -1658,7 +1658,8 @@ function createRecoveryAdviser(bot, client) {
 // Full pockets stall quietly: ore mined and never picked up, a crafting
 // grid spilling on the ground. Surplus stone goes before that happens.
 async function keepRoom(bot, task, goal) {
-  const dropped = await tidyInventory(bot, task);
+  const heading = goal.step?.destination || goal.step?.target || goal.tunnel?.target;
+  const dropped = await tidyInventory(bot, task, { away: heading && Number.isFinite(heading.x) ? heading : null });
   if (dropped.length) {
     // Tunnelling refills the stone every few minutes; say so now and then,
     // not at every stack.

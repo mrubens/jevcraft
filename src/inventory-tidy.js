@@ -27,8 +27,16 @@ function crowded(bot) {
 
 // Drop what is over the cap, biggest surplus first, until the pockets have
 // room again. Returns what was dropped so the caller can say so once.
-async function tidyInventory(bot, task, { force = false } = {}) {
+async function tidyInventory(bot, task, { force = false, away = null } = {}) {
   if (!force && !crowded(bot)) return [];
+  // A stack dropped at the feet is picked straight back up. Throw it behind,
+  // away from where the work is heading, so it lands out of reach.
+  if (away && typeof bot.lookAt === 'function') {
+    const here = bot.entity.position;
+    const d = { x: here.x - away.x, z: here.z - away.z };
+    const norm = Math.hypot(d.x, d.z) || 1;
+    try { await bot.lookAt(here.offset(d.x / norm * 4, 2.2, d.z / norm * 4), true); } catch (_) {}
+  }
   const dropped = [];
   for (const { name, count } of surplus(bot).sort((a, b) => b.count - a.count)) {
     task?.check?.();
