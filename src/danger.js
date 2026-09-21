@@ -1,9 +1,12 @@
 'use strict';
 const { handlers, readyEquipment, observedDead } = require('./mob-policy');
 
+// The Nether's own mobs were missing: a magma cube killed the dream run in
+// two seconds while the bot searched for blazes, and nothing fled or swung.
 const hostileNames = new Set(['zombie', 'husk', 'drowned', 'skeleton', 'stray', 'bogged', 'creeper', 'spider',
-  'cave_spider', 'witch', 'pillager', 'vindicator', 'ravager', 'phantom', 'blaze', 'wither_skeleton', 'hoglin', 'zoglin']);
-const ranged = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze']);
+  'cave_spider', 'witch', 'pillager', 'vindicator', 'evoker', 'ravager', 'phantom', 'blaze', 'wither_skeleton', 'hoglin', 'zoglin',
+  'magma_cube', 'slime', 'ghast', 'piglin', 'piglin_brute', 'silverfish', 'endermite', 'warden', 'breeze']);
+const ranged = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze', 'ghast', 'breeze']);
 
 function combatTarget(bot, entity) {
   const encounter = bot._combatEncounter;
