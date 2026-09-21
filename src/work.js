@@ -1660,6 +1660,21 @@ async function tryRecovery(adviser, task, goal, save) {
   }
 }
 
+// A handler that runs inside the loop's catch must not throw past it: an
+// exception there leaves runGoal, and the session marks the request blocked
+// with "say resume". Moving on from a resource ended the dream run that way
+// when its exploration step found no dry route. A failed handler is a
+// failed step, and the loop's own persistence deals with it.
+async function inCatch(task, goal, fn) {
+  try { return await fn(); }
+  catch (err) {
+    task.check();
+    if (['NeedsAir', 'NeedsSafety'].includes(err.name)) return true;
+    goal.lastError = err.message;
+    return false;
+  }
+}
+
 // What to do with spare daylight. Between requests, with shelter and food
 // already sufficient, the bot used to stand still until something changed.
 // A companion with half an hour of light should be cooking the raw beef it
@@ -1763,9 +1778,9 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) failures++;
       goal.lastError = err.message; save(); onStep(goal);
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) recoveryAdviser.recordFailure(goal, err);
-      if (failures >= 3 && await tryRecovery(recoveryAdviser, task, goal, save)) { failures = 0; continue; }
+      if (failures >= 3 && await inCatch(task, goal, () => tryRecovery(recoveryAdviser, task, goal, save))) { failures = 0; continue; }
       // Survival never gives up either: shake loose, back off, go again.
-      if (failures >= 5) { await persist(bot, task, goal, save, err, onStep, { backoffMs }); failures = 0; continue; }
+      if (failures >= 5) { await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { backoffMs })); failures = 0; continue; }
     } finally { task.interruptCheck = undefined; }
     for (let n = 0; n < 10; n++) { task.check(); await sleep(100); }
   }
@@ -1872,12 +1887,12 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       goal.failures = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 2 &&
         constructionBefore === constructionObservation(bot, goal) ? goal.failures + 1 : 0;
       recoveryAdviser.recordFailure(goal, err);
-      if ((err.name === 'Blocked' || goal.failures >= 3) && await tryRecovery(recoveryAdviser, task, goal, save)) {
+      if ((err.name === 'Blocked' || goal.failures >= 3) && await inCatch(task, goal, () => tryRecovery(recoveryAdviser, task, goal, save))) {
         goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
       }
       // No adviser, or none that could help: a resource that keeps failing
       // here is abandoned for elsewhere before the failure budget runs out.
-      if (goal.failures >= 3 && err.name !== 'Blocked' && await moveOnFromResource(bot, task, goal, save)) {
+      if (goal.failures >= 3 && err.name !== 'Blocked' && await inCatch(task, goal, () => moveOnFromResource(bot, task, goal, save))) {
         goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
       }
       if (err.name === 'Blocked' && IMPOSSIBLE.test(err.message)) {
@@ -1887,7 +1902,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       }
       if (err.name === 'Blocked' || goal.failures >= 5) {
         goal.lastStruggleStep = goal.step;
-        await persist(bot, task, goal, save, err, onStep, { backoffMs });
+        await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { backoffMs }));
         continue;
       }
       await sleep(300);

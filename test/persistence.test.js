@@ -76,3 +76,13 @@ test('shake loose will not dig down over lava or step toward it', async () => {
   assert.equal(await shakeLoose(bot, new Task('shake', 'shake'), Date.now() + 3000, { random: () => 0.5, settleMs: 1 }), false);
   assert.deepEqual(bot.dug, [], 'nothing was dug: obsidian is not natural and the floor sits over lava');
 });
+
+test('a handler that fails inside the loop, moving on or recovering, cannot end the request', async () => {
+  const { bot, goal, task } = fixture();
+  goal.step = { action: 'mine', block: 'oak_log', drops: 'oak_log', count: 1 };
+  bot.findBlocks = () => { throw new Error('No existing dry route away from the blocked staircase'); };
+  const survival = { state: goal.survival, step: async () => { throw new Error('Tree out of reach'); } };
+  const result = await runGoal(bot, task, goal, { save() {} }, { survival, maxSteps: 8, backoffMs: 1 });
+  assert.equal(result.ok, false); assert.equal(result.reason, 'Action budget reached', 'the loop ran to its test budget rather than throwing');
+  assert.equal(goal.status, 'blocked'); assert.match(goal.lastError, /budget|dry route|out of reach/);
+});
