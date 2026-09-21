@@ -1,0 +1,592 @@
+'use strict';
+const { Vec3 } = require('vec3');
+const { goals } = require('mineflayer-pathfinder');
+const { reservedForConstruction } = require('./build-sites');
+const { checkAir } = require('./vitals');
+const { checkThreats } = require('./danger');
+const { countOf } = require('./skills');
+
+// A home base: one spot per world, on level ground beside water, with a
+// wheat plot, a fenced cow pen and a bed the bot has slept in. The dream
+// run lost its full kit six times to deaths that then cost a climb from
+// world spawn; a bed moves the respawn home. Food has been the other
+// recurring cost: a hunt is a walk of unknown length, a plot and a pen are
+// a walk of known length. Code owns the layout, the checks and the
+// mechanics; Jev only ever chooses between chores code has found feasible.
+//
+// The base lives in the survival state (goal.survival.home), which every
+// goal shares and which is saved beside each goal, so the win objective,
+// the idle loop and a player request all see the same base.
+const HOME_REACH = 128;
+const PLOT = 3;
+const PEN = 5;
+const BREAD_WHEAT = 3;
+const SITE_RADIUS = 64;
+const SITE_DEFER_MS = 30 * 60 * 1000;
+const BREED_COOLDOWN_TICKS = 6000;
+const TILLABLE = new Set(['grass_block', 'dirt', 'coarse_dirt', 'rooted_dirt', 'dirt_path']);
+const CLEAR = new Set(['air', 'cave_air', 'void_air', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'leaf_litter', 'dandelion', 'poppy']);
+const DIRECTIONS = [{ x: 1, z: 0 }, { x: -1, z: 0 }, { x: 0, z: 1 }, { x: 0, z: -1 }];
+const FACING = { '1,0': 'east', '-1,0': 'west', '0,1': 'south', '0,-1': 'north' };
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const pos = p => new Vec3(p.x, p.y, p.z);
+const plain = p => ({ x: p.x, y: p.y, z: p.z });
+const overworld = bot => /overworld/.test(String(bot.game?.dimension || 'overworld'));
+const clear = block => !!block && CLEAR.has(block.name);
+const liquid = block => !!block && ['water', 'lava'].includes(block.name);
+const isBed = block => /_bed$/.test(block?.name || '');
+const isFence = block => /_fence$/.test(block?.name || '');
+const isGate = block => /_fence_gate$/.test(block?.name || '');
+const cropAge = block => Number(block?.getProperties?.().age ?? 0);
+const isBaby = (bot, entity) => {
+  const keys = bot.registry?.entitiesByName?.[entity.name]?.metadataKeys || [];
+  return entity.metadata?.[keys.indexOf('baby')] === true;
+};
+
+// The layout, in local coordinates: u runs away from the water, v across
+// it. The plot sits against the water so every cell is hydrated; the bed
+// is beside the plot; the pen is a five-by-five ring further back with a
+// gate facing the plot.
+function layout(site) {
+  const o = site.origin, d = site.direction, a = { x: -d.z, z: d.x };
+  const cell = (u, v, dy = 0) => ({ x: o.x + d.x * u + a.x * v, y: o.y + dy, z: o.z + d.z * u + a.z * v });
+  const plot = [], footprint = [], fences = [];
+  for (let u = 0; u < PLOT; u++) for (let v = -1; v <= 1; v++) plot.push(cell(u, v));
+  for (let u = 0; u <= 8; u++) for (let v = -3; v <= 3; v++) footprint.push(cell(u, v));
+  let gate = null;
+  for (let u = 4; u < 4 + PEN; u++) for (let v = -2; v <= 2; v++) {
+    if (u !== 4 && u !== 4 + PEN - 1 && v !== -2 && v !== 2) continue;
+    if (u === 4 && v === 0) gate = cell(u, v, 1); else fences.push(cell(u, v, 1));
+  }
+  const corners = [cell(5, -1, 1), cell(7, 1, 1)];
+  const interior = { min: { x: Math.min(corners[0].x, corners[1].x), y: o.y + 1, z: Math.min(corners[0].z, corners[1].z) },
+    max: { x: Math.max(corners[0].x, corners[1].x), y: o.y + 1, z: Math.max(corners[0].z, corners[1].z) } };
+  // The bed is placed from a standing spot beyond its head, looking back
+  // toward the water, so its facing is the reverse of the site direction.
+  const bed = { foot: cell(1, -3, 1), head: cell(0, -3, 1), stand: cell(3, -3, 1), facing: FACING[`${-d.x},${-d.z}`] };
+  const pen = { fences, gate, gateStand: cell(3, 0, 1), centre: cell(6, 0, 1), interior };
+  return { plot, bed, pen, footprint, water: site.water };
+}
+
+const inside = (interior, p) => p && p.x >= interior.min.x && p.x < interior.max.x + 1 && p.z >= interior.min.z && p.z < interior.max.z + 1 && Math.abs(p.y - interior.min.y) <= 1.5;
+
+// Where the base should be near: the first Overworld portal the bot has
+// used, else the house it built, else where it stands.
+function baseAnchor(bot, goal) {
+  const portal = (goal.portals || []).find(p => p.dimension === 'overworld');
+  if (portal) return { kind: 'portal', x: portal.x, y: portal.y, z: portal.z };
+  const house = (goal.survival?.shelters || []).find(s => s.kind === 'house' && s.dimension === bot.game.dimension);
+  if (house) return { kind: 'house', ...plain(house.origin) };
+  const here = bot.entity.position.floored();
+  return { kind: 'here', ...plain(here) };
+}
+
+function siteFits(bot, goal, site) {
+  const { plot, footprint } = layout(site);
+  for (const p of footprint) {
+    const ground = bot.blockAt(pos(p));
+    if (!ground || ground.boundingBox !== 'block' || liquid(ground)) return false;
+    if (!clear(bot.blockAt(pos(p).offset(0, 1, 0))) || !clear(bot.blockAt(pos(p).offset(0, 2, 0)))) return false;
+    if (reservedForConstruction(goal, pos(p).offset(0, 1, 0))) return false;
+  }
+  if (plot.some(p => !TILLABLE.has(bot.blockAt(pos(p))?.name))) return false;
+  // Never on top of a portal the bot walks back to.
+  return !(goal.portals || []).some(q => q.dimension === 'overworld' && footprint.some(p => Math.abs(p.x - q.x) <= 3 && Math.abs(p.z - q.z) <= 3));
+}
+
+// The nearest level, tillable shore to the anchor that fits the whole
+// layout. Water is scanned around the anchor, not the bot, so a base is
+// chosen once per world and does not drift with where the bot happens to be.
+function chooseBaseSite(bot, goal, { radius = SITE_RADIUS } = {}) {
+  const anchor = baseAnchor(bot, goal);
+  const waterId = bot.registry.blocksByName.water?.id;
+  if (waterId === undefined) return null;
+  const point = new Vec3(anchor.x, anchor.y, anchor.z);
+  const water = (bot.findBlocks({ matching: [waterId], maxDistance: radius, count: 512, point,
+    useExtraInfo: b => clear(bot.blockAt(b.position.offset(0, 1, 0))) }) || [])
+    .sort((a, b) => a.distanceTo(point) - b.distanceTo(point));
+  for (const w of water) for (const d of DIRECTIONS) {
+    const a = { x: -d.z, z: d.x };
+    for (const shift of [0, -1, 1, -2, 2]) {
+      const origin = w.offset(d.x + a.x * shift, 0, d.z + a.z * shift);
+      const site = { origin: plain(origin), direction: d, water: plain(w) };
+      if (siteFits(bot, goal, site)) return { ...site, anchor };
+    }
+  }
+  return null;
+}
+
+function establishHome(goal, site, { now = Date.now() } = {}) {
+  goal.survival.home = { version: 1, dimension: 'overworld', origin: site.origin, direction: site.direction, water: site.water,
+    anchor: site.anchor, chosenAt: new Date(now).toISOString(), bed: {}, plot: {}, pen: {} };
+  delete goal.survival.homeSearch;
+  return goal.survival.home;
+}
+
+function homeOf(bot, goal) {
+  const home = goal?.survival?.home;
+  return home && overworld(bot) ? home : null;
+}
+function homeDistance(bot, home) {
+  const here = bot.entity.position;
+  return Math.hypot(here.x - (home.origin.x + 0.5), here.z - (home.origin.z + 0.5));
+}
+
+function plotStatus(bot, home) {
+  const { plot } = layout(home);
+  const status = { untilled: [], bare: [], growing: [], grown: [], blocked: [], unloaded: [] };
+  for (const p of plot) {
+    const ground = bot.blockAt(pos(p)), crop = bot.blockAt(pos(p).offset(0, 1, 0));
+    if (!ground || !crop) { status.unloaded.push(p); continue; }
+    if (ground.name !== 'farmland') { (TILLABLE.has(ground.name) ? status.untilled : status.blocked).push(p); continue; }
+    if (crop.name === 'wheat') (cropAge(crop) >= 7 ? status.grown : status.growing).push(p);
+    else if (clear(crop)) status.bare.push(p);
+    else status.blocked.push(p);
+  }
+  return status;
+}
+
+function bedStatus(bot, home) {
+  const { bed } = layout(home);
+  const foot = bot.blockAt(pos(bed.foot)), head = bot.blockAt(pos(bed.head));
+  const placed = isBed(foot) && isBed(head);
+  const loaded = !!foot && !!head;
+  return { placed, loaded, claimed: placed && !!home.bed?.claimedAt };
+}
+
+function penStatus(bot, home) {
+  const { pen } = layout(home);
+  const missingFences = pen.fences.filter(p => !isFence(bot.blockAt(pos(p))));
+  const gate = bot.blockAt(pos(pen.gate));
+  const cows = Object.values(bot.entities || {}).filter(e => e.name === 'cow' && e.isValid !== false && inside(pen.interior, e.position));
+  const adults = cows.filter(e => !isBaby(bot, e));
+  const open = gate?.getProperties?.().open;
+  return { fenced: !missingFences.length && isGate(gate), missingFences, gateMissing: !isGate(gate), gateOpen: open === true || open === 'true',
+    cows: cows.length, adults: adults.length, adultCows: adults };
+}
+
+const bedCarried = bot => bot.inventory.items().find(i => /_bed$/.test(i.name))?.name || null;
+const hoeCarried = bot => bot.inventory.items().some(i => /_hoe$/.test(i.name));
+function woolCarried(bot) {
+  const counts = {};
+  for (const i of bot.inventory.items()) if (/_wool$/.test(i.name)) counts[i.name] = (counts[i.name] || 0) + i.count;
+  const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  return best ? { colour: best[0].replace(/_wool$/, ''), count: best[1], total: Object.values(counts).reduce((n, c) => n + c, 0) } : { colour: 'white', count: 0, total: 0 };
+}
+// Fences from the wood already carried, then the trees that were seen.
+function woodSpecies(bot) {
+  const counts = {};
+  for (const i of bot.inventory.items()) { const m = /^(\w+)_(planks|log)$/.exec(i.name); if (m) counts[m[1]] = (counts[m[1]] || 0) + i.count; }
+  const carried = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (carried && bot.registry.itemsByName[`${carried}_fence`]) return carried;
+  const seen = (bot._catalogObservation?.nearby || []).find(name => /_log$/.test(name))?.replace(/_log$/, '');
+  return seen && bot.registry.itemsByName[`${seen}_fence`] ? seen : 'oak';
+}
+
+// The home rung, one bounded step at a time, read off the world: bed
+// first (it is what a death costs), then the plot, then the pen. A base
+// needs a survival layer and the Overworld; anything else has no rung.
+function homeStage(bot, goal, { now = Date.now() } = {}) {
+  const survival = goal.survival;
+  if (!survival || !overworld(bot)) return null;
+  const home = survival.home;
+  if (!home) return survival.homeSearch?.deferredUntil > now ? null : { phase: 'home_site', action: 'choose_site' };
+  const bed = bedStatus(bot, home);
+  // A finished base stays finished until the bed is seen to be gone; an
+  // unloaded base far away is not a reason to walk back.
+  if (home.completedAt) {
+    if (bed.loaded && !bed.placed) { delete home.completedAt; delete home.bed.claimedAt; }
+    else return null;
+  }
+  if (!bed.loaded) return { phase: 'home_bed', action: 'return_home' };
+  if (!bed.claimed) {
+    if (bed.placed) return { phase: 'home_bed', action: 'claim_bed' };
+    const carried = bedCarried(bot);
+    if (carried) return { phase: 'home_bed', action: 'place_bed', item: carried };
+    const wool = woolCarried(bot);
+    if (wool.count >= 3) return { phase: 'home_bed', action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
+    return { phase: 'home_bed', action: 'gather_wool', count: 3 - wool.count };
+  }
+  const plot = plotStatus(bot, home);
+  if (plot.unloaded.length) return { phase: 'home_plot', action: 'return_home' };
+  if (plot.untilled.length) return hoeCarried(bot) ? { phase: 'home_plot', action: 'till', cells: plot.untilled.length } : { phase: 'home_plot', action: 'acquire', item: 'wooden_hoe', count: 1 };
+  if (plot.bare.length) {
+    return countOf(bot, 'wheat_seeds') >= plot.bare.length ? { phase: 'home_plot', action: 'plant', cells: plot.bare.length }
+      : { phase: 'home_plot', action: 'acquire', item: 'wheat_seeds', count: plot.bare.length };
+  }
+  const pen = penStatus(bot, home);
+  if (!pen.fenced) {
+    const species = woodSpecies(bot), fence = `${species}_fence`, gate = `${species}_fence_gate`;
+    if (countOf(bot, fence) < pen.missingFences.length) return { phase: 'home_pen', action: 'acquire', item: fence, count: pen.missingFences.length };
+    if (pen.gateMissing && countOf(bot, gate) < 1) return { phase: 'home_pen', action: 'acquire', item: gate, count: 1 };
+    return { phase: 'home_pen', action: 'build_pen', fences: pen.missingFences.length, gate: pen.gateMissing };
+  }
+  home.completedAt ||= new Date(now).toISOString();
+  return null;
+}
+
+const homeComplete = (bot, goal) => !!homeOf(bot, goal) && homeStage(bot, goal) === null;
+
+async function waitFor(task, predicate, timeout = 3000) {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) { task.check(); if (predicate()) return true; await sleep(50); }
+  return predicate();
+}
+
+async function standAt(bot, task, actions, p, range = 0) {
+  const goal = range ? new goals.GoalNear(p.x, p.y, p.z, range) : new goals.GoalBlock(p.x, p.y, p.z);
+  await actions.navigate(bot, task, goal, { timeoutMs: 30000, stallMs: 8000 });
+}
+
+async function goHome(bot, task, goal, save, home, actions) {
+  goal.step = { action: 'return_home', origin: home.origin, distance: Math.round(homeDistance(bot, home)) }; save();
+  await actions.navigate(bot, task, new goals.GoalNear(home.origin.x, home.origin.y + 1, home.origin.z, 4), { timeoutMs: 120000, stallMs: 15000 });
+}
+
+async function equip(bot, name) {
+  const item = bot.inventory.items().find(i => i.name === name);
+  if (!item) throw Object.assign(new Error(`Need ${name.replaceAll('_', ' ')} at the base`), { name: 'Blocked' });
+  await bot.equip(item, 'hand');
+}
+
+// Tilling: a hoe on grass or dirt with air above. Standing on the cell is
+// allowed; farmland under the feet is how every player tills.
+async function tillPlot(bot, task, goal, save, home, actions) {
+  const hoe = bot.inventory.items().filter(i => /_hoe$/.test(i.name))[0];
+  if (!hoe) throw Object.assign(new Error('Need a hoe to till the plot'), { name: 'Blocked' });
+  let tilled = 0;
+  for (const p of plotStatus(bot, home).untilled) {
+    task.check(); checkAir(bot); checkThreats(bot);
+    goal.step = { action: 'till', cell: p, tilled }; save();
+    await standAt(bot, task, actions, { x: p.x, y: p.y + 1, z: p.z }, 2);
+    await bot.equip(hoe, 'hand');
+    const block = bot.blockAt(pos(p));
+    if (!block || !TILLABLE.has(block.name)) continue;
+    await bot.lookAt(pos(p).offset(0.5, 1, 0.5), true);
+    await bot.activateBlock(block, new Vec3(0, 1, 0));
+    if (await waitFor(task, () => bot.blockAt(pos(p))?.name === 'farmland')) tilled++;
+  }
+  if (!tilled) throw new Error('No plot cell became farmland');
+  home.plot.tilledAt = new Date().toISOString(); save();
+  return tilled;
+}
+
+async function plantPlot(bot, task, goal, save, home, actions) {
+  let planted = 0;
+  for (const p of plotStatus(bot, home).bare) {
+    task.check(); checkAir(bot); checkThreats(bot);
+    if (!countOf(bot, 'wheat_seeds')) break;
+    goal.step = { action: 'plant', cell: p, planted }; save();
+    await standAt(bot, task, actions, { x: p.x, y: p.y + 1, z: p.z }, 2);
+    await equip(bot, 'wheat_seeds');
+    const farmland = bot.blockAt(pos(p));
+    if (farmland?.name !== 'farmland') continue;
+    await bot.lookAt(pos(p).offset(0.5, 1, 0.5), true);
+    try { await bot.placeBlock(farmland, new Vec3(0, 1, 0)); } catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
+    if (await waitFor(task, () => bot.blockAt(pos(p).offset(0, 1, 0))?.name === 'wheat')) planted++;
+  }
+  if (!planted) throw new Error('No wheat seed took on the plot');
+  home.plot.plantedAt = new Date().toISOString(); home.plot.checkedAt = home.plot.plantedAt; save();
+  return planted;
+}
+
+// Ripe wheat is dug; the drops (wheat and seeds) are walked over; the cell
+// is replanted while the seeds are still in hand.
+async function harvestPlot(bot, task, goal, save, home, actions, { replant = true } = {}) {
+  const before = countOf(bot, 'wheat');
+  const cells = plotStatus(bot, home).grown;
+  for (const p of cells) {
+    task.check(); checkAir(bot); checkThreats(bot);
+    goal.step = { action: 'harvest', cell: p, cells: cells.length }; save();
+    const crop = pos(p).offset(0, 1, 0);
+    await actions.dig(bot, task, crop, { requireDrops: false, done: () => bot.blockAt(crop)?.name !== 'wheat' });
+  }
+  if (cells.length) {
+    await sleep(400);
+    const drops = Object.values(bot.entities).filter(e => ['wheat', 'wheat_seeds'].includes(e.getDroppedItem?.()?.name) &&
+      e.position.distanceTo(pos(home.origin)) < 8);
+    for (const drop of drops.slice(0, 12)) {
+      task.check();
+      const d = drop.position.floored();
+      await actions.navigate(bot, task, new goals.GoalNear(d.x, d.y, d.z, 0.5), { timeoutMs: 8000, stallMs: 3000, stopWhen: () => bot.entities[drop.id] !== drop || drop.isValid === false });
+      await sleep(150);
+    }
+    home.plot.lastHarvestAt = new Date().toISOString();
+  }
+  home.plot.checkedAt = new Date().toISOString(); save();
+  if (replant && plotStatus(bot, home).bare.length && countOf(bot, 'wheat_seeds')) await plantPlot(bot, task, goal, save, home, actions);
+  return countOf(bot, 'wheat') - before;
+}
+
+async function placeOriented(bot, task, actions, stand, target, item, verify) {
+  await standAt(bot, task, actions, stand);
+  await equip(bot, item);
+  const ground = bot.blockAt(pos(target).offset(0, -1, 0));
+  if (ground?.boundingBox !== 'block') throw new Error(`No ground under ${item.replaceAll('_', ' ')} at ${pos(target)}`);
+  await bot.lookAt(pos(target).offset(0.5, 0.5, 0.5), true);
+  try { await bot.placeBlock(ground, new Vec3(0, 1, 0)); } catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
+  if (!await waitFor(task, verify)) throw new Error(`${item.replaceAll('_', ' ')} did not go where it was placed`);
+}
+
+async function placeBed(bot, task, goal, save, home, actions, item) {
+  const { bed } = layout(home);
+  goal.step = { action: 'place_bed', item, at: bed.foot }; save();
+  // A bed that landed the wrong way round is picked back up first.
+  for (const p of [bed.foot, bed.head, pos(bed.foot).plus(pos(bed.foot).minus(pos(bed.head)))]) {
+    if (isBed(bot.blockAt(pos(p))) && !(isBed(bot.blockAt(pos(bed.foot))) && isBed(bot.blockAt(pos(bed.head))))) await actions.dig(bot, task, pos(p), { requireDrops: false });
+  }
+  if (isBed(bot.blockAt(pos(bed.foot))) && isBed(bot.blockAt(pos(bed.head)))) return;
+  await placeOriented(bot, task, actions, bed.stand, bed.foot, item, () => isBed(bot.blockAt(pos(bed.foot))) && isBed(bot.blockAt(pos(bed.head))));
+  home.bed = { ...home.bed, item, placedAt: new Date().toISOString() }; save();
+}
+
+// Using the bed sets the respawn point whatever the hour: at night the
+// bot sleeps, by day the server says so and sets the point anyway. Either
+// message is the evidence; three unconfirmed uses are taken as done.
+const SPAWN_MESSAGES = /set_spawn|bed\.no_sleep|bed\.not_safe|respawn point set/i;
+async function claimBed(bot, task, goal, save, home, actions) {
+  const { bed } = layout(home);
+  goal.step = { action: 'claim_bed', at: bed.foot }; save();
+  await standAt(bot, task, actions, bed.stand, 2);
+  const block = bot.blockAt(pos(bed.foot));
+  if (!isBed(block)) throw new Error('The bed is not where it was placed');
+  let evidence = null;
+  const onMessage = message => {
+    const text = typeof message?.toString === 'function' ? message.toString() : String(message || '');
+    const key = message?.json?.translate || message?.translate || '';
+    if (SPAWN_MESSAGES.test(key) || SPAWN_MESSAGES.test(text)) evidence = key || text;
+  };
+  const onSleep = () => { evidence = 'slept'; };
+  bot.on?.('message', onMessage); bot.on?.('sleep', onSleep);
+  try {
+    await bot.lookAt(pos(bed.foot).offset(0.5, 0.5, 0.5), true);
+    await bot.activateBlock(block);
+    await waitFor(task, () => !!evidence || bot.isSleeping, 3000);
+    if (bot.isSleeping) { evidence ||= 'slept'; await sleep(2000); try { await bot.wake(); } catch (_) {} }
+  } finally { bot.removeListener?.('message', onMessage); bot.removeListener?.('sleep', onSleep); }
+  home.bed.attempts = (home.bed.attempts || 0) + 1;
+  if (evidence || home.bed.attempts >= 3) {
+    home.bed = { ...home.bed, claimedAt: new Date().toISOString(), evidence: evidence || 'assumed after three uses' };
+    delete home.bed.attempts;
+  }
+  save();
+  if (!home.bed.claimedAt) throw new Error('The bed did not confirm a respawn point');
+}
+
+async function buildPen(bot, task, goal, save, home, actions) {
+  const { pen } = layout(home);
+  const species = woodSpecies(bot), fence = `${species}_fence`, gate = `${species}_fence_gate`;
+  const status = penStatus(bot, home);
+  goal.step = { action: 'build_pen', fences: status.missingFences.length, gate: status.gateMissing }; save();
+  const carriedFence = bot.inventory.items().find(i => /_fence$/.test(i.name))?.name || fence;
+  for (const p of status.missingFences) { task.check(); checkAir(bot); checkThreats(bot); await actions.place(bot, task, pos(p), carriedFence); }
+  if (status.gateMissing) {
+    const carriedGate = bot.inventory.items().find(i => /_fence_gate$/.test(i.name))?.name || gate;
+    await placeOriented(bot, task, actions, pen.gateStand, pen.gate, carriedGate, () => isGate(bot.blockAt(pos(pen.gate))));
+  }
+  if (penStatus(bot, home).fenced) { home.pen.builtAt = new Date().toISOString(); save(); }
+}
+
+// Wool comes off a sheep the same way mutton does; the foraging hunt does
+// the chase and the wool is picked up beside the meat.
+async function gatherWool(bot, task, goal, save, home, actions) {
+  const before = woolCarried(bot).total;
+  const sheep = Object.values(bot.entities).filter(e => e.name === 'sheep' && e.isValid !== false && !isBaby(bot, e) && e.position.distanceTo(bot.entity.position) < 48)
+    .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
+  goal.step = { action: 'gather_wool', target: sheep ? plain(sheep.position.floored()) : null, carried: before }; save();
+  if (!sheep) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
+  const where = sheep.position.clone();
+  try { await require('./foraging').hunt(bot, task, sheep, actions, goal, save); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  const drops = Object.values(bot.entities).filter(e => /_wool$/.test(e.getDroppedItem?.()?.name || '') && e.position.distanceTo(where) < 10);
+  for (const drop of drops) {
+    task.check();
+    const d = drop.position.floored();
+    await actions.navigate(bot, task, new goals.GoalNear(d.x, d.y, d.z, 0.5), { timeoutMs: 8000, stallMs: 3000, stopWhen: () => woolCarried(bot).total > before });
+    await sleep(200);
+  }
+  if (woolCarried(bot).total <= before) throw new Error('No wool picked up from the sheep');
+}
+
+async function closeGate(bot, task, home) {
+  const { pen } = layout(home);
+  const gate = bot.blockAt(pos(pen.gate));
+  if (!isGate(gate)) return;
+  const open = gate.getProperties?.().open;
+  if (open === true || open === 'true') { await bot.lookAt(pos(pen.gate).offset(0.5, 0.5, 0.5), true); await bot.activateBlock(gate); await sleep(200); task.check(); }
+}
+
+// Cows follow wheat. Walk them to the pen, step in so they follow, put
+// the wheat away, step out and shut the gate. Bounded and re-checked;
+// a cow that wanders out is a lure for another day, not a stuck bot.
+async function lureCows(bot, task, goal, save, home, actions) {
+  const { pen } = layout(home);
+  const outside = Object.values(bot.entities).filter(e => e.name === 'cow' && e.isValid !== false && !isBaby(bot, e) && !inside(pen.interior, e.position) &&
+    e.position.distanceTo(bot.entity.position) < 48).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
+  const need = Math.max(0, 2 - penStatus(bot, home).cows);
+  if (!outside.length || !need) throw new Error('No cows in view to lead to the pen');
+  goal.step = { action: 'lure_cows', cows: outside.length, need }; save();
+  const target = outside[0];
+  await equip(bot, 'wheat');
+  await actions.navigate(bot, task, new goals.GoalFollow(target, 2), { timeoutMs: 30000, stallMs: 8000, stopWhen: () => target.isValid === false });
+  const following = () => outside.filter(e => e.isValid !== false && e.position.distanceTo(bot.entity.position) < 5).length;
+  await waitFor(task, () => following() >= Math.min(need, outside.length), 15000);
+  if (!following()) throw new Error('The cows did not follow the wheat');
+  try {
+    await equip(bot, 'wheat');
+    await actions.navigate(bot, task, new goals.GoalBlock(pen.centre.x, pen.centre.y, pen.centre.z), { timeoutMs: 90000, stallMs: 10000 });
+    await waitFor(task, () => penStatus(bot, home).cows >= Math.min(2, following() + penStatus(bot, home).cows), 30000);
+    if (bot.heldItem?.name === 'wheat') await bot.unequip('hand');
+    await actions.navigate(bot, task, new goals.GoalBlock(pen.gateStand.x, pen.gateStand.y, pen.gateStand.z), { timeoutMs: 30000, stallMs: 8000 });
+  } finally { await closeGate(bot, task, home); }
+  const penned = penStatus(bot, home).cows;
+  home.pen.cows = penned; home.pen.luredAt = new Date().toISOString(); save();
+  if (!penned) throw new Error('No cow stayed in the pen');
+}
+
+// Two adults fed wheat within a few seconds of each other breed once per
+// cooldown; the calf is the proof and the pen count the record.
+async function breedCows(bot, task, goal, save, home, actions) {
+  const { pen } = layout(home);
+  const status = penStatus(bot, home);
+  if (status.adults < 2) throw new Error('Breeding needs two adult cows in the pen');
+  goal.step = { action: 'breed_cows', adults: status.adults, wheat: countOf(bot, 'wheat') }; save();
+  await standAt(bot, task, actions, pen.gateStand, 1);
+  const before = countOf(bot, 'wheat');
+  for (const cow of status.adultCows.slice(0, 2)) {
+    task.check(); checkThreats(bot);
+    await equip(bot, 'wheat');
+    if (cow.position.distanceTo(bot.entity.position) > 4.5) {
+      await actions.navigate(bot, task, new goals.GoalFollow(cow, 3), { timeoutMs: 15000, stallMs: 5000, stopWhen: () => cow.position.distanceTo(bot.entity.position) <= 4 });
+    }
+    await bot.lookAt(cow.position.offset(0, 0.7, 0), true);
+    bot.useOn(cow);
+    await sleep(400);
+  }
+  try { await closeGate(bot, task, home); } catch (_) {}
+  const fed = before - countOf(bot, 'wheat');
+  home.pen.lastBredAt = new Date().toISOString(); home.pen.lastBredAge = bot.time?.age ?? null; home.pen.cows = status.cows; save();
+  if (fed < 2) throw new Error('The cows did not take the wheat');
+}
+
+// Steak from the pen: one cow beyond the breeding pair.
+async function takeSteak(bot, task, goal, save, home, actions) {
+  const status = penStatus(bot, home);
+  if (status.adults < 3) throw new Error('The pen has only its breeding pair');
+  const cow = status.adultCows.sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
+  goal.step = { action: 'take_steak', cows: status.cows }; save();
+  try { await require('./foraging').hunt(bot, task, cow, actions, goal, save); }
+  finally { try { await closeGate(bot, task, home); } catch (_) {} }
+  home.pen.cows = penStatus(bot, home).cows; save();
+}
+
+async function bake(bot, task, goal, save, actions) {
+  const loaves = Math.floor(countOf(bot, 'wheat') / BREAD_WHEAT);
+  if (!loaves) return false;
+  goal.step = { action: 'bake', loaves }; save();
+  await actions.acquireStep(bot, task, 'bread', countOf(bot, 'bread') + loaves, goal, save);
+  return true;
+}
+
+// One step of the home rung.
+async function homeStep(bot, task, goal, save, stage, actions) {
+  task.check(); checkAir(bot);
+  const survival = goal.survival;
+  if (stage.action === 'choose_site') {
+    const site = chooseBaseSite(bot, goal);
+    if (!site) {
+      const search = survival.homeSearch ||= { attempts: 0 };
+      search.attempts++;
+      if (search.attempts >= 3) search.deferredUntil = Date.now() + SITE_DEFER_MS;
+      goal.step = { action: 'home_site', found: false, attempts: search.attempts }; save();
+      throw new Error(`No level ground beside water within ${SITE_RADIUS} blocks for a home base`);
+    }
+    const home = establishHome(goal, site);
+    goal.step = { action: 'home_site', origin: home.origin, anchor: home.anchor.kind, water: home.water }; save();
+    return;
+  }
+  const home = homeOf(bot, goal);
+  if (!home) return;
+  switch (stage.action) {
+    case 'return_home': return goHome(bot, task, goal, save, home, actions);
+    case 'acquire': await actions.acquireStep(bot, task, stage.item, stage.count, goal, save); return;
+    case 'gather_wool': return gatherWool(bot, task, goal, save, home, actions);
+    case 'place_bed': return placeBed(bot, task, goal, save, home, actions, stage.item);
+    case 'claim_bed': return claimBed(bot, task, goal, save, home, actions);
+    case 'till': return tillPlot(bot, task, goal, save, home, actions);
+    case 'plant': return plantPlot(bot, task, goal, save, home, actions);
+    case 'build_pen': return buildPen(bot, task, goal, save, home, actions);
+    default: throw new Error(`Unknown home step ${stage.action}`);
+  }
+}
+
+// What the base can feed the bot right now, if it is within reach: loaves
+// from ripe wheat and carried wheat, steak from cows beyond the pair.
+function homeFood(bot, goal) {
+  const home = homeOf(bot, goal);
+  if (!home) return null;
+  const distance = homeDistance(bot, home);
+  if (distance > HOME_REACH) return null;
+  const plot = plotStatus(bot, home), pen = penStatus(bot, home);
+  const grown = plot.unloaded.length ? (home.plot.lastSeen?.grown || 0) : plot.grown.length;
+  const loaves = Math.floor((grown + countOf(bot, 'wheat')) / BREAD_WHEAT);
+  const steaks = Math.max(0, (plot.unloaded.length ? (home.pen.cows || 0) : pen.adults) - 2);
+  if (!plot.unloaded.length) { home.plot.lastSeen = { grown: plot.grown.length, at: new Date().toISOString() }; home.pen.cows = pen.cows; }
+  if (!loaves && !steaks) return null;
+  return { distance: Math.round(distance), loaves, steaks, unloaded: plot.unloaded.length > 0 };
+}
+
+async function eatFromHome(bot, task, goal, save, actions) {
+  const home = homeOf(bot, goal);
+  if (!home) throw new Error('No home base');
+  if (homeDistance(bot, home) > 6 || plotStatus(bot, home).unloaded.length) await goHome(bot, task, goal, save, home, actions);
+  const plot = plotStatus(bot, home);
+  if (plot.grown.length) await harvestPlot(bot, task, goal, save, home, actions);
+  if (await bake(bot, task, goal, save, actions)) return;
+  if (penStatus(bot, home).adults >= 3) { await takeSteak(bot, task, goal, save, home, actions); return; }
+  throw new Error('Nothing to eat at the base after all');
+}
+
+// The chores Jev chooses between when nothing needs it, each feasible now.
+function homeChores(bot, goal, { now = Date.now() } = {}) {
+  const home = homeOf(bot, goal);
+  if (!home || !(home.completedAt || homeComplete(bot, goal))) return {};
+  const distance = Math.round(homeDistance(bot, home));
+  if (distance > HOME_REACH) return {};
+  const options = {}, plot = plotStatus(bot, home), pen = penStatus(bot, home), wheat = countOf(bot, 'wheat'), seeds = countOf(bot, 'wheat_seeds');
+  const far = plot.unloaded.length > 0;
+  const stale = far && now - Date.parse(home.plot.checkedAt || home.plot.plantedAt || 0) > 20 * 60 * 1000;
+  if (!far && plot.grown.length + wheat >= BREAD_WHEAT) {
+    options.harvest_and_bake = { description: `Harvest the ${plot.grown.length} ripe wheat on the home plot (${distance} blocks away), replant, and bake bread: three wheat a loaf, ${wheat} wheat already carried.`,
+      run: (b, t, g, s, a) => harvestPlot(b, t, g, s, home, a).then(() => bake(b, t, g, s, a)) };
+  } else if ((!far && (plot.grown.length || plot.untilled.length || (plot.bare.length && seeds > 0))) || stale) {
+    options.tend_farm = { description: far ? `Walk back to the home plot (${distance} blocks away) and see how the wheat is doing; it was last checked a while ago.`
+      : `Tend the home plot (${distance} blocks away): ${plot.grown.length} ripe, ${plot.growing.length} growing, ${plot.bare.length} bare, ${plot.untilled.length} untilled.`,
+      run: async (b, t, g, s, a) => {
+        if (homeDistance(b, home) > 6 || plotStatus(b, home).unloaded.length) await goHome(b, t, g, s, home, a);
+        const status = plotStatus(b, home);
+        if (status.untilled.length && hoeCarried(b)) await tillPlot(b, t, g, s, home, a);
+        if (status.grown.length) await harvestPlot(b, t, g, s, home, a);
+        else if (status.bare.length && countOf(b, 'wheat_seeds')) await plantPlot(b, t, g, s, home, a);
+        home.plot.checkedAt = new Date().toISOString(); s();
+      } };
+  }
+  if (!far) {
+    const age = bot.time?.age ?? 0;
+    const cooled = !home.pen.lastBredAt || (Number.isFinite(home.pen.lastBredAge) ? age - home.pen.lastBredAge >= BREED_COOLDOWN_TICKS : now - Date.parse(home.pen.lastBredAt) > 6 * 60 * 1000);
+    if (pen.adults >= 2 && wheat >= 2 && cooled) {
+      options.breed_cows = { description: `Breed the ${pen.adults} adult cows in the home pen with two of the ${wheat} wheat carried; a calf is a steak in a few days.`,
+        run: (b, t, g, s, a) => breedCows(b, t, g, s, home, a) };
+    }
+    const loose = Object.values(bot.entities || {}).filter(e => e.name === 'cow' && e.isValid !== false && !inside(layout(home).pen.interior, e.position) && e.position.distanceTo(bot.entity.position) < 48).length;
+    if (pen.cows < 2 && wheat >= 1 && loose) {
+      options.lure_cows = { description: `Lead ${Math.min(loose, 2 - pen.cows)} of the ${loose} cows in view into the home pen with wheat; the pen holds ${pen.cows} so far and needs two to breed.`,
+        run: (b, t, g, s, a) => lureCows(b, t, g, s, home, a) };
+    }
+  }
+  return options;
+}
+
+module.exports = { HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, plotStatus, bedStatus, penStatus,
+  woolCarried, woodSpecies, homeStage, homeComplete, homeStep, tillPlot, plantPlot, harvestPlot, placeBed, claimBed, buildPen, gatherWool, lureCows, breedCows, takeSteak, bake,
+  homeFood, eatFromHome, homeChores };
