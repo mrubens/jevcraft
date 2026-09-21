@@ -163,3 +163,13 @@ test('carried coal fuels a smelt instead of a trip for planks, and planks return
   const shortCoal = planCatalog(registry, 'iron_ingot', 24, { raw_iron: 24, furnace: 1, coal: 1, oak_planks: 16 });
   assert.equal(shortCoal.find(s => s.action === 'smelt').fuelItem, 'oak_planks');
 });
+
+test('with coal ore in view and no fuel carried, a smelt mines coal rather than climbing for planks', () => {
+  const plan = planCatalog(registry, 'iron_ingot', 8, { raw_iron: 8, furnace: 1, stone_pickaxe: 1 }, { nearby: ['deepslate_coal_ore', 'stone'] });
+  const smelt = plan.find(s => s.action === 'smelt');
+  assert.equal(smelt.fuelItem, 'coal'); assert.equal(smelt.fuel, 1);
+  assert(plan.some(s => s.action === 'mine' && s.drops === 'coal'));
+  assert(!plan.some(s => /_log$/.test(s.block || '')));
+  const planks = planCatalog(registry, 'iron_ingot', 3, { raw_iron: 3, furnace: 1, oak_planks: 4 }, { nearby: ['coal_ore'] });
+  assert.equal(planks.find(s => s.action === 'smelt').fuelItem, 'oak_planks', 'planks already carried are used first');
+});

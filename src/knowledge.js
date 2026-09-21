@@ -209,7 +209,9 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
         }
         // Carried coal covers this batch without a trip for wood; planks stay
         // the species the plan gathers when nothing burnable is in the pockets.
-        const fuelItem = CARRIED_FUELS.find(carried => have(carried) >= fuelUnits(carried, missing)) || selectedFuel;
+        // Coal ore in view beats a climb for planks: one lump smelts eight.
+        const coalInView = observed.has('coal_ore') || observed.has('deepslate_coal_ore');
+        const fuelItem = CARRIED_FUELS.find(carried => have(carried) >= fuelUnits(carried, missing)) || (coalInView && !fuelPlanks.some(f => have(f) >= fuelUnits(f, missing)) ? 'coal' : selectedFuel);
         const fuel = fuelUnits(fuelItem, missing); consume(fuelItem, fuel);
         steps.push({ action: 'smelt', item: name, count: missing, from: input, fuel, fuelItem,
           requires: { furnace: 1 }, consumes: { [input]: missing, [fuelItem]: fuel }, produces: { [name]: missing } }); add(name, missing);
