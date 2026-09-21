@@ -15,12 +15,23 @@ const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').r
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
 const valid = (bot, target) => bot.entities[target.id] === target && target.isValid !== false && !observedDead(bot, target);
 
+// Gold on the feet in the Nether, where it keeps piglins neutral; the
+// better boots everywhere else. Worn iron boots passed the readiness
+// check, so the golden pair stayed in the pockets through the trip.
+function preferredBoots(bot) {
+  const carried = new Set(carriedEquipment(bot).map(i => i.name));
+  if (bot.game?.dimension && dimension(bot) === 'nether') return carried.has('golden_boots') ? 'golden_boots' : null;
+  return ['netherite_boots', 'diamond_boots', 'iron_boots'].find(name => carried.has(name)) || null;
+}
+
 async function prepareCombatGear(bot, task, goal, save, actions) {
   for (const [destination, names] of Object.entries(combatGear)) {
     task.check(); checkAir(bot);
     const current = equipped(bot, destination);
-    if (names.includes(current?.name) && durable(bot.registry, current)) continue;
-    const carried = carriedEquipment(bot).filter(item => names.includes(item.name)).sort((a, b) => names.indexOf(b.name) - names.indexOf(a.name))[0];
+    const preferred = destination === 'feet' ? preferredBoots(bot) : null;
+    if (names.includes(current?.name) && durable(bot.registry, current) && (!preferred || current.name === preferred)) continue;
+    const carried = (preferred && carriedEquipment(bot).find(item => item.name === preferred)) ||
+      carriedEquipment(bot).filter(item => names.includes(item.name)).sort((a, b) => names.indexOf(b.name) - names.indexOf(a.name))[0];
     if (!carried) {
       goal.step = { action: 'prepare_combat_equipment', destination, item: names[0] }; save();
       // Worn equipment is still physically present; require an additional

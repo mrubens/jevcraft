@@ -251,3 +251,15 @@ test('a blaze in view at range is shot with the carried bow, and the sword is ba
   assert.deepEqual(events.slice(0, 4), ['draw', 'release', 'attack with iron_sword', 'raise shield']);
   assert.equal(bot.heldItem.name, 'iron_sword'); assert.equal(bot._combatEncounter, undefined);
 });
+
+test('golden boots go on in the Nether and come off for iron in the Overworld', async () => {
+  const { bot, slots, goal, task } = fixture('blaze');
+  slots[8] = { name: 'iron_boots', slot: 8, count: 1, durabilityUsed: 0 };
+  slots[20] = { name: 'golden_boots', slot: 20, count: 1, durabilityUsed: 0 };
+  const actions = { acquireStep: async () => assert.fail('nothing to acquire') };
+  assert(await prepareCombatGear(bot, task, goal, () => {}, actions));
+  assert.equal(slots[8].name, 'golden_boots', 'gold on the feet where the piglins are');
+  bot.game.dimension = 'overworld';
+  assert(await prepareCombatGear(bot, task, goal, () => {}, actions));
+  assert.equal(slots[8].name, 'iron_boots', 'the better boots back on at home');
+});
