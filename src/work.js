@@ -1597,14 +1597,34 @@ async function enterPortal(bot, task, portal, arrived) {
   finally { bot.setControlState('forward', false); }
 }
 
+// Portals the bot has used, per dimension. A food trip that wanders two
+// hundred blocks must not end in a second portal built from scratch: the
+// one already lit is a walk away.
+function rememberPortal(goal, save, portal, where) {
+  goal.portals ||= [];
+  if (goal.portals.some(p => p.dimension === where && Math.hypot(p.x - portal.x, p.z - portal.z) < 4)) return;
+  goal.portals.push({ x: portal.x, y: portal.y, z: portal.z, dimension: where }); save();
+}
+async function walkToKnownPortal(bot, task, goal, save, where) {
+  const here = bot.entity.position;
+  const known = (goal.portals || []).filter(p => p.dimension === where && Math.hypot(p.x - here.x, p.z - here.z) <= 600)
+    .sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z));
+  if (!known.length) return false;
+  const p = known[0];
+  goal.step = { action: 'return_to_portal', portal: { x: p.x, y: p.y, z: p.z } }; save();
+  await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000 });
+  return true;
+}
+
 async function netherStep(bot, task, goal, save) {
   if (String(bot.game.dimension).includes('nether')) return true;
   const portal = find(bot, ['nether_portal'], 64, 1)[0];
   if (portal) {
-    goal.portal = { ...portal }; save();
+    goal.portal = { ...portal }; rememberPortal(goal, save, portal, 'overworld'); save();
     await enterPortal(bot, task, portal, () => String(bot.game.dimension).includes('nether'));
     return true;
   }
+  if (await walkToKnownPortal(bot, task, goal, save, 'overworld')) return false;
   // A frame with no placed blocks can be relocated when its original ground
   // was excavated. Once construction begins its coordinates stay fixed.
   if (goal.portalFrame && goal.portalFrame.blocks.every(p => bot.blockAt(pos(p)) && bot.blockAt(pos(p)).name !== 'obsidian') &&
@@ -1672,7 +1692,11 @@ function createSurvival(bot, options) {
 async function returnFromNether(bot, task, goal, save) {
   if (dimension(bot) === 'overworld') return;
   const portal = find(bot, ['nether_portal'], 64, 1)[0];
-  if (!portal) throw new Blocked('No loaded return portal observed in the Nether; saved progress retained');
+  if (!portal) {
+    if (await walkToKnownPortal(bot, task, goal, save, 'nether')) return;
+    throw new Blocked('No loaded return portal observed in the Nether; saved progress retained');
+  }
+  rememberPortal(goal, save, portal, 'nether');
   goal.step = { action: 'return_overworld', portal: { ...portal } }; save();
   await enterPortal(bot, task, portal, () => dimension(bot) === 'overworld');
 }

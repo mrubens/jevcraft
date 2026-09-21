@@ -72,6 +72,7 @@ function stepLine(goal, step, decision) {
     case 'prepare_expedition_food': return 'Stocking up on food before the trip.';
     case 'refuel_furnace': return 'Refuelling the furnace.';
     case 'return_overworld': return 'Heading back to the Overworld.';
+    case 'return_to_portal': return 'Walking back to my portal.';
     case 'idle': return {
       cook_food: `Quiet for now, so I'll cook the ${name(step.item).replace(/^(cooked|baked) /, '')}.`,
       stone_tools: `Quiet for now, so I'll make a ${name(step.item)}.`,
