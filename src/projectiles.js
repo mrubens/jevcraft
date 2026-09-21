@@ -80,11 +80,14 @@ function aimAtEntity(bot, target, velocity = new Vec3(0, 0, 0), position = bot.e
   return null;
 }
 
-async function shootBow(bot, task, target, { guard = () => {}, velocity = new Vec3(0, 0, 0), chargeMs = 1200, confirmationMs = 2000 } = {}) {
+// The default threat rule stops a shot when any hostile is in view, which
+// suits the End; survival shooting at a skeleton passes its own rule, since
+// the skeleton is the point.
+async function shootBow(bot, task, target, { guard = () => {}, threatCheck = checkThreats, velocity = new Vec3(0, 0, 0), chargeMs = 1200, confirmationMs = 2000 } = {}) {
   const dimension = bot.game.dimension, start = bot.entity.position.clone();
   const motion = () => typeof velocity === 'function' ? velocity() : velocity;
   const check = () => {
-    task.check(); checkAir(bot); checkThreats(bot); guard();
+    task.check(); checkAir(bot); threatCheck(bot); guard();
     if (bot.game.gameMode !== 'survival' || bot.game.dimension !== dimension || bot.health <= 0 ||
       bot.entities[target.id] !== target || target.isValid === false || bot.entity.position.distanceTo(start) > .3 || !dryStanding(bot, bot.entity.position)) {
       throw new Error('Bow shot interrupted by a changed target, dimension or firing position');

@@ -36,10 +36,12 @@ function observedDead(bot, entity) {
   const health = key >= 0 ? entity.metadata?.[key] : undefined;
   return !!bot._defeatedMobs?.has(entity) || (Number.isFinite(health) && health <= 0);
 }
-function readyEquipment(bot) {
+// `alsoInHand` lets an encounter that switched to the bow still count as
+// equipped: the armour and shield are what the check is for.
+function readyEquipment(bot, alsoInHand = []) {
   return Object.entries(combatGear).every(([destination, names]) => {
     const item = equipped(bot, destination);
-    return names.includes(item?.name) && durable(bot.registry, item);
+    return (names.includes(item?.name) || (destination === 'hand' && alsoInHand.includes(item?.name))) && durable(bot.registry, item);
   });
 }
 function mobSources() {

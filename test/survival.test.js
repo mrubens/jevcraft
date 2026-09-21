@@ -633,3 +633,63 @@ test('cornered by a ranged mob with no way out, the bot closes every open side i
   assert(placed.length >= 9, `the whole shell goes up, not one wall: ${placed.length} placed`);
   assert.equal(survival.state.shelters.length, 1, 'and the pocket is registered so the next step waits inside it');
 });
+
+// A skeleton in view at ten blocks, a bow and arrows in the pack.
+function archerFixture({ health = 20, client } = {}) {
+  const registry = require('prismarine-registry')('26.1');
+  const skeleton = { id: 7, name: 'skeleton', position: new Vec3(10.5, 64, .5), width: .6, height: 1.99, isValid: true };
+  const arrows = { name: 'arrow', count: 8 }, events = [], destination = new Vec3(-8, 64, 0);
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
+    entity: { position: new Vec3(.5, 64, .5) }, entities: { 7: skeleton }, health, food: 20, oxygenLevel: 20, quickBarSlot: 0,
+    time: { timeOfDay: 6000 }, inventory: { items: () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, arrows], slots: { 45: { name: 'shield' } } },
+    world: { raycast: () => null },
+    blockAt: p => ({ position: p.floored(), name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }),
+    findBlocks: () => [destination.offset(0, -1, 0)],
+    pathfinder: { movements: { canDig: true, allow1by1towers: true, allowSprinting: false }, setGoal() {},
+      getPathTo: () => ({ status: 'success', path: [{ ...destination, toBreak: [], toPlace: [] }] }) },
+    clearControlStates() {}, lookAt: async () => {}, attack: () => events.push('attack'), equip: async i => { bot.heldItem = i; events.push(`equip ${i.name}`); },
+    look: async (yaw, pitch) => { bot.lastSentRotation = { yaw: (Math.PI - yaw) * 180 / Math.PI, pitch: -pitch * 180 / Math.PI }; },
+    activateItem: offHand => events.push(offHand ? 'raise shield' : 'draw'), setQuickBarSlot: () => {},
+    deactivateItem: () => {
+      const drawing = events.at(-1) === 'draw';
+      events.push(drawing ? 'release' : 'lower shield');
+      if (drawing) { arrows.count--; bot.emit('entitySpawn', { id: 9, name: 'arrow', position: bot.entity.position.offset(0, 1.52, 0), velocity: new Vec3(3, 0, 0) }); }
+    },
+  });
+  const controller = new Survival(bot, { navigate: async (b, t, g) => { events.push('navigate'); b.entity.position = new Vec3(g.x + .5, g.y, g.z + .5); } }, { client });
+  return { bot, skeleton, arrows, events, controller, task: new Task('archer'), goal: { kind: 'obtain', item: 'dirt', count: 32 } };
+}
+
+test('a skeleton in view at bow range is shot from where the bot stands, then the shield comes up', async () => {
+  const { bot, arrows, events, controller, task, goal } = archerFixture();
+  assert(await controller.step(task, goal, () => {}));
+  assert.deepEqual(events, ['equip bow', 'draw', 'release', 'raise shield'], 'no retreat, no swing: the shooter is the target');
+  assert.equal(arrows.count, 7);
+  assert.equal(goal.survivalAction.action, 'shoot'); assert.equal(goal.survivalAction.target, 'skeleton'); assert(goal.survivalAction.released);
+  assert.equal(goal.decisions.at(-1).path[0], 'shoot_7'); assert.deepEqual(Object.keys(goal.decisions.at(-1).options).sort(), ['retreat', 'shoot_7']);
+  delete bot.entities[7];
+  assert.equal(await controller.step(task, goal, () => {}), false);
+  assert.equal(events.at(-1), 'lower shield', 'a raised shield is sneaking speed; it comes down once nothing is in view');
+});
+
+test('Jev is offered the shot, the retreat and, with blocks in the pack, a pocket; its choice runs', async () => {
+  let asked;
+  const client = { systemOne: async ({ state, questions }) => { asked = { state, questions }; return { answers: { branch_0: { choice: 'retreat' } } }; } };
+  const { bot, events, controller, task, goal } = archerFixture({ client });
+  bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
+  assert(await controller.step(task, goal, () => {}));
+  assert.deepEqual(Object.keys(asked.questions.branch_0.criteria).sort(), ['dig_in', 'retreat', 'shoot_7']);
+  assert.deepEqual(asked.state.threats, [{ name: 'skeleton', distance: 10, shoots: true }]); assert.equal(asked.state.arrowsCarried, 8);
+  assert.deepEqual(events, ['navigate'], 'the retreat ran and nothing was drawn');
+  assert.equal(goal.survivalAction.action, 'escape_threat');
+});
+
+test('hurt, or with a zombie closing, the bow stays in the pack and the escape rules take over', async () => {
+  const hurt = archerFixture({ health: 6 });
+  assert(await hurt.controller.step(hurt.task, hurt.goal, () => {}));
+  assert.deepEqual(hurt.events, ['navigate']); assert.equal(hurt.goal.decisions, undefined, 'no question at six health');
+  const crowded = archerFixture();
+  crowded.bot.entities[8] = { id: 8, name: 'zombie', position: new Vec3(3, 64, .5), width: .6, height: 1.95, isValid: true };
+  assert(await crowded.controller.step(crowded.task, crowded.goal, () => {}));
+  assert.deepEqual(crowded.events, ['equip iron_sword', 'attack', 'navigate'], 'a zombie at arm\'s length gets the knockback swing and the retreat, not a draw');
+});

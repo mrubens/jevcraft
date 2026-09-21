@@ -3,7 +3,8 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, observedDead } = require('./mob-policy');
 const { threats, checkThreats, NeedsSafety } = require('./danger');
-const { canStrike, defenseWeapon } = require('./combat');
+const { canStrike, defenseWeapon, bowReady, shoot } = require('./combat');
+const { aimAtEntity } = require('./projectiles');
 const { dryStanding } = require('./mining-access');
 const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
 const { checkAir } = require('./vitals');
@@ -79,10 +80,11 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
   const before = countOf(bot, state.item), start = bot.entity.position.clone(), deadline = Date.now() + timeoutMs;
   const shieldWear = () => equipped(bot, 'off-hand')?.durabilityUsed || 0;
   const initialShieldWear = shieldWear(), guarded = !handler.passive && equipped(bot, 'off-hand')?.name === 'shield';
-  const ready = () => handler.passive ? bot.health >= 8 && bot.food >= 4 : bot.health >= 12 && bot.food >= 12 && readyEquipment(bot);
+  const ready = () => handler.passive ? bot.health >= 8 && bot.food >= 4 : bot.health >= 12 && bot.food >= 12 && readyEquipment(bot, handler.ranged ? ['bow'] : []);
+  const sword = () => carriedEquipment(bot).find(item => combatGear.hand.includes(item.name));
   const restoreEncounter = encounter(bot, task, target, deadline), movement = combatMovement(bot);
   const previousInterrupt = task.interruptCheck;
-  let dead = false, attacks = 0, shield = false;
+  let dead = false, attacks = 0, shield = false, shots = 0, failedShots = 0;
   const onDeath = entity => {
     if (entity === target) { dead = true; bot._defeatedMobs ||= new WeakSet(); bot._defeatedMobs.add(entity); }
   };
@@ -107,6 +109,20 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
       guard();
       if (!canStrike(bot, target)) {
         lowerShield();
+        // A blaze shoots. Answer from range with the bow while it is in clear
+        // view and an arrow can reach it; close to the sword when none can,
+        // or after three draws that could not be released.
+        const range = target.position.distanceTo(bot.entity.position);
+        if (handler.ranged && failedShots < 3 && range >= 4 && range <= 20 && bowReady(bot) && aimAtEntity(bot, target)) {
+          try {
+            await shoot(bot, task, target, { cover: false }); shots++;
+            goal.step = { action: 'hunt_mob', entity: target.name, entityId: target.id, item: state.item, attacks, shots, health: bot.health }; save();
+          } catch (err) {
+            task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+            failedShots++;
+          }
+          continue;
+        }
         const destination = new goals.GoalFollow(target, 2);
         const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 400);
         if (route.status !== 'success' || !route.path.every(movement.allowed)) throw new Error(`No dry combat route to ${target.name}`);
@@ -115,6 +131,8 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
         continue;
       }
       bot.pathfinder.setGoal(null); bot.clearControlStates();
+      // Back to the sword after the bow.
+      if (shots && !combatGear.hand.includes(bot.heldItem?.name) && sword()) { await bot.equip(sword(), 'hand'); guard(); }
       await bot.lookAt(target.position.offset(0, Math.min((target.height || 1.8) / 2, 1.5), 0), true);
       guard();
       if (!valid(bot, target) || dead || !canStrike(bot, target)) continue;
@@ -172,7 +190,7 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
     } while (countOf(bot, state.item) <= before && Date.now() < pickupDeadline);
     const pickedUp = Math.max(0, countOf(bot, state.item) - before);
     const result = { at: new Date().toISOString(), entity: target.name, entityId: target.id, item: state.item,
-      deathObserved: dead, attacks, pickedUp, shieldWear: Math.max(0, shieldWear() - initialShieldWear),
+      deathObserved: dead, attacks, shots, pickedUp, shieldWear: Math.max(0, shieldWear() - initialShieldWear),
       health: bot.health, outcome: pickedUp ? 'pickup_confirmed' : dead ? 'no_pickup' : 'target_lost' };
     state.history = [...(state.history || []), result].slice(-40);
     state.encountersWithoutPickup = pickedUp ? 0 : (state.encountersWithoutPickup || 0) + 1;
@@ -184,6 +202,8 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
     return result;
   } finally {
     lowerShield(); bot.pathfinder.setGoal(null); bot.clearControlStates();
+    // The next candidate check wants the sword in hand, not the bow.
+    if (shots && !combatGear.hand.includes(bot.heldItem?.name) && sword()) await bot.equip(sword(), 'hand').catch(() => {});
     bot.removeListener('entityDead', onDeath); movement.restore(); restoreEncounter();
     task.interruptCheck = previousInterrupt;
     if (dead) bot._provokedMobs?.delete(target.id);
@@ -208,6 +228,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       if (route.status !== 'success' || !route.path.every(movement.allowed)) continue;
       positions.set(target.id, target.position.clone());
       tree[`hunt_${target.id}`] = { description: { action: handler.passive ? 'Chase this observed animal and strike it with what is carried, then verify item pickup.' :
+        handler.ranged && bowReady(bot) ? 'Fight this observed isolated mob: arrows from range while it is in view, then the sword, shield and armor up close; verify item pickup.' :
         'Fight this observed isolated mob with carried armor, sword and shield, then verify item pickup.',
         entity: target.name, position: { ...target.position }, distance: target.position.distanceTo(bot.entity.position),
         item: state.item, randomDrop: true }, run: () => fightForDrop(bot, task, target, goal, save, actions) };

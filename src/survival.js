@@ -8,8 +8,8 @@ const { maintainVitals, chooseFood, checkAir } = require('./vitals');
 const { foodSupply, forageChoices } = require('./foraging');
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
-const { surveyRoute } = require('./skills');
-const { defendNearby, defenseWeapon } = require('./combat');
+const { surveyRoute, countOf } = require('./skills');
+const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield } = require('./combat');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
 const { surfaceObserver } = require('./surface');
@@ -78,6 +78,7 @@ class Survival {
     const bot = this.bot;
     // A swing can buy room, but it must not consume the escape action. Ending
     // the turn after every hit trapped an unarmed bot in a losing melee loop.
+    lowerShield(bot);
     const swung = await defendNearby(bot, task, goal, save);
     const danger = threats(bot).filter(t => t.visible);
     if (!danger.length) return;
@@ -90,6 +91,57 @@ class Survival {
       this.report(goal, save, { action: 'fight', threats: danger.filter(t => t.distance <= 2.2).map(t => t.entity.name), health: bot.health });
       return;
     }
+    if (await this.rangedChoice(task, goal, save, danger, armed)) return;
+    await this.escape(task, goal, save, danger, armed);
+  }
+
+  // A shooter in view at bow range, and a bow in the pack: running from a
+  // skeleton is how most of the dream run's deaths went, arrows in the back.
+  // Code lists the shots that have a clear arc, the retreat and the pocket;
+  // Jev picks. Without Jev: shoot while health holds and nothing is at arm's
+  // length, otherwise retreat. A melee mob within three blocks is the swing
+  // and escape rules' business, not a moment to draw a bow.
+  async rangedChoice(task, goal, save, danger, armed) {
+    const bot = this.bot;
+    if (bot.health < 8 || danger.some(t => t.distance <= 3 && !shooter(t.entity))) return false;
+    const targets = shotTargets(bot, danger).slice(0, 3);
+    if (!targets.length) return false;
+    const tree = {};
+    for (const t of targets) tree[`shoot_${t.entity.id}`] = { description: { action: 'Shoot this mob with the bow from where the bot stands. It is in clear view at bow range and shoots back; each arrow takes about a second to draw, standing still.',
+      entity: t.entity.name, distance: Math.round(t.distance), arrowsCarried: countOf(bot, 'arrow') }, run: () => this.shootAt(task, goal, save, t) };
+    tree.retreat = { description: 'Run for footing out of its range and out of its sight; the mob keeps shooting while the bot runs.', run: () => this.escape(task, goal, save, danger, armed) };
+    if (shelter.materialStock(bot) >= 12) tree.dig_in = { description: 'Seal a two-block pocket where the bot stands and wait for it to lose interest.', run: () => this.sealHere(task, goal, save, danger) };
+    const state = { health: bot.health, food: bot.food, arrowsCarried: countOf(bot, 'arrow'), recentSurvivalAction: goal.survivalAction,
+      threats: danger.map(t => ({ name: t.entity.name, distance: Math.round(t.distance), shoots: shooter(t.entity) })) };
+    const fallback = children => bot.health >= 12 ? Object.keys(children)[0] : 'retreat';
+    const decision = await this.decide(task, goal, save, { state, tree, fallback, kind: 'survival',
+      isFresh: () => Math.abs(bot.health - state.health) < 4 && targets.some(t => bot.entities[t.entity.id] === t.entity && t.entity.isValid !== false) });
+    if (decision.stale) return true;
+    await decision.action.run();
+    return true;
+  }
+
+  async shootAt(task, goal, save, threat) {
+    const bot = this.bot, target = threat.entity;
+    this.report(goal, save, { action: 'shoot', target: target.name, entityId: target.id, distance: Number(threat.distance.toFixed(1)), arrows: countOf(bot, 'arrow'), health: bot.health });
+    // The target is the point; the draw stops only for a melee mob closing
+    // to arm's length, which the next loop meets with the sword.
+    const threatCheck = b => {
+      if (threats(b, 3).some(t => t.entity !== target && !shooter(t.entity) && (t.visible || t.distance <= 2))) throw Object.assign(new Error('A mob closed to arm\'s length during the draw'), { name: 'ShotInterrupted' });
+    };
+    try {
+      const shot = await shoot(bot, task, target, { threatCheck });
+      goal.survivalAction = { ...goal.survivalAction, released: true, arrowId: shot.arrowId, ticks: Number(shot.ticks.toFixed(1)), at: new Date().toISOString() }; save();
+    } catch (err) {
+      task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err;
+      goal.survivalAction = { ...goal.survivalAction, released: false, reason: err.message, at: new Date().toISOString() }; save();
+    }
+    delete this.state.trappedSince;
+  }
+
+  async escape(task, goal, save, danger, armed) {
+    const bot = this.bot;
+    lowerShield(bot);
     this.report(goal, save, { action: 'escape_threat', threats: danger.map(t => ({ name: t.entity.name, distance: t.distance })) });
     const movements = bot.pathfinder.movements;
     const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
@@ -412,6 +464,32 @@ class Survival {
     if (exit.outside) await this.actions.navigate(bot, task, new goals.GoalBlock(exit.outside.x, exit.outside.y, exit.outside.z), { timeoutMs: 10000 });
   }
 
+  // One Jev decision over a tree the code built, recorded with the state
+  // and the options so the Observatory can show what was asked. Without a
+  // client the fallback rule walks the tree, as it does during an outage.
+  async decide(task, goal, save, { state, tree, fallback, kind, isFresh = () => true, interrupt = () => {} }) {
+    const bot = this.bot;
+    let decision;
+    if (!this.client) {
+      const key = fallback(tree, []);
+      decision = { path: [key], action: tree[key].children ? Object.values(tree[key].children)[0] : tree[key] };
+    } else {
+      const controller = new AbortController();
+      const watcher = setInterval(() => { try { task.check(); checkAir(bot); interrupt(); } catch (err) { controller.abort(err); } }, 100);
+      const stopThinking = thinking(bot);
+      try { decision = await decideTree(this.client, { state, tree, signal: controller.signal, fallback, kind, isFresh }); }
+      finally { clearInterval(watcher); stopThinking(); }
+      task.check(); checkAir(bot); interrupt();
+      announceFallback(bot, goal, decision);
+    }
+    if (!decision.stale && decision.action.valid && !decision.action.valid()) decision.stale = true;
+    goal.decisions ||= [];
+    goal.decisions.push({ at: new Date().toISOString(), path: decision.path, state, options: JSON.parse(JSON.stringify(tree)),
+      latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, stale: decision.stale, fallback: decision.fallback });
+    goal.decisions = goal.decisions.slice(-40); save();
+    return decision;
+  }
+
   async wait(task, goal, save, reason = 'Waiting for daylight inside the verified shelter') {
     this.report(goal, save, { action: 'wait_in_shelter', reason });
     for (let i = 0; i < 50; i++) { task.check(); await sleep(100); }
@@ -421,6 +499,9 @@ class Survival {
     const bot = this.bot;
     goal.survival = this.state;
     task.interruptCheck = undefined;
+    // A shield raised to cover the last shot comes down at the next look:
+    // every branch below may walk, and a raised shield is sneaking speed.
+    lowerShield(bot);
     if (bot.game.gameMode === 'creative') {
       await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate);
       return false;
@@ -509,23 +590,12 @@ class Survival {
       else await Object.values(tree.obtain_food.children)[0].run();
       onStep(goal); return true;
     }
-    const controller = new AbortController();
-    const watcher = setInterval(() => { try { task.check(); checkAir(bot); checkThreats(bot); } catch (err) { controller.abort(err); } }, 100);
-    const stopThinking = thinking(bot);
-    let decision;
     // Without Jev, shelter comes before food and food before the request:
     // the order a careful player keeps when nobody is weighing the trade.
     const fallback = children => ['secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
-    try { decision = await decideTree(this.client, { state, tree, signal: controller.signal, fallback, kind: 'survival',
-      isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) }); }
-    finally { clearInterval(watcher); stopThinking(); }
-    task.check(); checkAir(bot); checkThreats(bot);
-    announceFallback(bot, goal, decision);
-    if (!decision.stale && decision.action.valid && !decision.action.valid()) decision.stale = true;
-    goal.decisions ||= [];
-    goal.decisions.push({ at: new Date().toISOString(), path: decision.path, state, options: JSON.parse(JSON.stringify(tree)),
-      latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, stale: decision.stale, fallback: decision.fallback });
-    goal.decisions = goal.decisions.slice(-40); save(); onStep(goal);
+    const decision = await this.decide(task, goal, save, { state, tree, fallback, kind: 'survival', interrupt: () => checkThreats(bot),
+      isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
+    onStep(goal);
     if (decision.stale) return true;
     await decision.action.run();
     return decision.path[0] !== 'continue_request';

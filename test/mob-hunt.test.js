@@ -230,3 +230,24 @@ test('Jev selects a feasible observed target; stale model decisions cannot start
   assert.equal(modelCalls, 1); assert.equal(attacks, 0); assert(goal.decisions.at(-1).stale);
   assert.equal(bot._combatEncounter, undefined);
 });
+
+test('a blaze in view at range is shot with the carried bow, and the sword is back in hand for the finish', async () => {
+  const { bot, task, target, goal, slots, attacks } = fixture('blaze');
+  target.position = new Vec3(10.5, 64, .5);
+  slots[10] = { name: 'bow', count: 1, slot: 10, durabilityUsed: 0 }; slots[11] = { name: 'arrow', count: 16, slot: 11 };
+  const events = []; bot.quickBarSlot = 0; bot.setQuickBarSlot = () => {};
+  bot.look = async (yaw, pitch) => { bot.lastSentRotation = { yaw: (Math.PI - yaw) * 180 / Math.PI, pitch: -pitch * 180 / Math.PI }; };
+  bot.activateItem = offHand => events.push(offHand ? 'raise shield' : 'draw');
+  bot.deactivateItem = () => {
+    const drawing = events.at(-1) === 'draw';
+    events.push(drawing ? 'release' : 'lower shield');
+    if (!drawing) return;
+    slots[11].count--; bot.emit('entitySpawn', { id: 20, name: 'arrow', position: bot.entity.position.offset(0, 1.52, 0), velocity: new Vec3(3, 0, 0) });
+    target.position = new Vec3(2, 64, .5); // The arrow lands; the blaze closes.
+  };
+  bot.attack = entity => { events.push(`attack with ${bot.heldItem.name}`); attacks.push(entity); bot.emit('entityDead', entity); delete bot.entities[entity.id]; };
+  const result = await fightForDrop(bot, task, target, goal, () => {}, { navigate: async () => assert.fail('the arrow reaches; no walk needed') }, { pickupWaitMs: 1 });
+  assert.equal(result.shots, 1); assert.equal(result.attacks, 1); assert.equal(slots[11].count, 15);
+  assert.deepEqual(events.slice(0, 4), ['draw', 'release', 'attack with iron_sword', 'raise shield']);
+  assert.equal(bot.heldItem.name, 'iron_sword'); assert.equal(bot._combatEncounter, undefined);
+});
