@@ -493,7 +493,7 @@ test('a verified pocket well below is not the current shelter when the bot carri
   const { Survival } = require('../src/survival');
   const deep = { origin: { x: 0, y: 15, z: 0 }, dimension: 'overworld', verifiedAt: 'x', createdAt: 'x' };
   const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 31, 0.5) }, blockAt: () => ({ name: 'stone', boundingBox: 'block' }),
-    inventory: { items: () => [{ name: 'cobblestone', count: 64 }] } };
+    inventory: { items: () => [{ name: 'cobblestone', count: 64 }] }, on() {}, removeListener() {} };
   const survival = new Survival(bot, {}, { state: { shelters: [deep] } });
   assert.equal(survival.currentShelter(), undefined, 'sixteen blocks down is a day of climbing');
   bot.inventory.items = () => [];
