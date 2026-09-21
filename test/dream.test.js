@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { villageState, villageCandidates, chooseVillagePart, nextAmbitionRequest, shouldLaunchAmbition, resolveAmbition, VILLAGE_LEVELS, COOLDOWN_MS } = require('../src/ambition');
+const { villageState, villageCandidates, chooseVillagePart, nextDreamRequest, shouldLaunchDream, resolveDream, VILLAGE_LEVELS, COOLDOWN_MS } = require('../src/dream');
 const { preparationStage } = require('../src/game-progress');
 
 const structure = (name, request, extra = {}) => ({ id: name, name, request, status: 'complete', standing: 100, origin: { x: 0, y: 64, z: 0 }, entrance: { x: 1, y: 64, z: -1 }, distance: 5, builtAt: '2026-09-21T05:00:00Z', ...extra });
@@ -30,19 +30,19 @@ test('Jev picks the next part and scores the village; an unoffered part is refus
   assert.equal(asked.questions.progress.type, 'score'); assert.deepEqual(asked.questions.progress.criteria, VILLAGE_LEVELS);
   assert.equal(asked.state.standing.length, 1);
   assert.equal(chosen.part, 'cottage'); assert.equal(chosen.score, 0.3); assert.equal(chosen.done, false);
-  const next = await nextAmbitionRequest(client, { ambition: 'build_a_village', setBy: 'Player' }, { structures, shelf });
+  const next = await nextDreamRequest(client, { dream: 'build_a_village', setBy: 'Player' }, { structures, shelf });
   assert.equal(next.kind, 'build'); assert.equal(next.request, 'build Birch Cottage (cottage)'); assert.equal(next.from, 'Player');
   assert.equal(next.design.libraryId, 'birch'); assert.equal(next.design.backend, 'schematic-library');
   assert.deepEqual(next.buildAnchor, { x: 1, y: 64, z: -1 }, 'placed beside the newest standing structure');
   assert.equal(next.buildContinuation.placement, 'beside_target');
   await assert.rejects(chooseVillagePart({ systemOne: async () => ({ answers: { part: { choice: 'castle' }, progress: { score: 1 } } }) }, { structures, available: ['cottage'] }), /not offered/);
-  const done = await nextAmbitionRequest({ systemOne: async () => ({ answers: { part: { choice: 'done' }, progress: { score: 3 } } }) }, { ambition: 'build_a_village' }, { structures, shelf });
+  const done = await nextDreamRequest({ systemOne: async () => ({ answers: { part: { choice: 'done' }, progress: { score: 3 } } }) }, { dream: 'build_a_village' }, { structures, shelf });
   assert.equal(done.done, true); assert.equal(done.villageScore, 3);
 });
 
 test('beating the game is handed over as the win objective, and the ladder starts with tools you can see', async () => {
-  const next = await nextAmbitionRequest({ systemOne: async () => assert.fail('no question needed') }, { ambition: 'beat_the_game', setBy: 'Player' });
-  assert.equal(next.kind, 'win'); assert.equal(next.ambition, 'beat_the_game');
+  const next = await nextDreamRequest({ systemOne: async () => assert.fail('no question needed') }, { dream: 'beat_the_game', setBy: 'Player' });
+  assert.equal(next.kind, 'win'); assert.equal(next.dream, 'beat_the_game');
   const bot = items => ({ inventory: { items: () => items.map(name => ({ name })) } });
   assert.equal(preparationStage(bot([])).item, 'stone_pickaxe');
   assert.equal(preparationStage(bot(['stone_pickaxe'])).item, 'stone_sword');
@@ -50,25 +50,27 @@ test('beating the game is handed over as the win objective, and the ladder start
   assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket'])), null);
 });
 
-test('the idle loop launches the ambition only when nothing of the player\'s is pending and outside the cool-down', () => {
-  const standing = { ambition: 'build_a_village' };
-  assert.equal(shouldLaunchAmbition(standing, null), true);
-  assert.equal(shouldLaunchAmbition(standing, { status: 'running', request: 'get me a pumpkin' }), false, 'a player request is saved and unfinished');
-  assert.equal(shouldLaunchAmbition(standing, { status: 'cancelled', request: 'get me a pumpkin' }), false, 'a stopped player request waits for resume');
-  assert.equal(shouldLaunchAmbition(standing, { status: 'complete', request: 'get me a pumpkin' }), true);
-  assert.equal(shouldLaunchAmbition(standing, { status: 'complete', ambition: 'build_a_village' }), true, 'the last part finished, the next may start');
+test('the idle loop launches the dream only when nothing of the player\'s is pending and outside the cool-down', () => {
+  const standing = { dream: 'build_a_village' };
+  assert.equal(shouldLaunchDream(standing, null), true);
+  assert.equal(shouldLaunchDream(standing, { status: 'running', request: 'get me a pumpkin' }), false, 'a player request is saved and unfinished');
+  assert.equal(shouldLaunchDream(standing, { status: 'cancelled', request: 'get me a pumpkin' }), false, 'a stopped player request waits for resume');
+  assert.equal(shouldLaunchDream(standing, { status: 'complete', request: 'get me a pumpkin' }), true);
+  assert.equal(shouldLaunchDream(standing, { status: 'complete', dream: 'build_a_village' }), true, 'the last part finished, the next may start');
   const now = Date.now();
-  assert.equal(shouldLaunchAmbition({ ...standing, lastAttemptAt: now - 1000 }, { status: 'blocked', ambition: 'build_a_village' }, { now }), false, 'a parked part waits out the cool-down');
-  assert.equal(shouldLaunchAmbition({ ...standing, lastAttemptAt: now - COOLDOWN_MS - 1 }, { status: 'blocked', ambition: 'build_a_village' }, { now }), true);
-  assert.equal(shouldLaunchAmbition(standing, null, { ready: false }), false, 'not at night, hurt or hungry');
-  assert.equal(shouldLaunchAmbition({ ...standing, satisfiedAt: 'x' }, null), false);
+  assert.equal(shouldLaunchDream({ ...standing, lastAttemptAt: now - 1000 }, { status: 'blocked', dream: 'build_a_village' }, { now }), false, 'a parked part waits out the cool-down');
+  assert.equal(shouldLaunchDream({ ...standing, lastAttemptAt: now - COOLDOWN_MS - 1 }, { status: 'blocked', dream: 'build_a_village' }, { now }), true);
+  assert.equal(shouldLaunchDream(standing, null, { ready: false }), false, 'not at night, hurt or hungry');
+  assert.equal(shouldLaunchDream({ ...standing, satisfiedAt: 'x' }, null), false);
 });
 
-test('chat sets, asks about and clears the standing goal, and an unclear line asks back', async () => {
-  const ask = async operation => resolveAmbition({ systemOne: async () => ({ answers: { operation: { choice: operation, confidence: 0.9 } } }) }, { request: 'Jev your goal is to build a village', from: 'Player' });
+test('chat sets, asks about and clears the dream, and an unclear line asks back', async () => {
+  const ask = async operation => resolveDream({ systemOne: async () => ({ answers: { operation: { choice: operation, confidence: 0.9 } } }) }, { request: 'Jev your goal is to build a village', from: 'Player' });
   const set = await ask('set_build_a_village');
-  assert.equal(set.kind, 'ambition'); assert.equal(set.ambition.key, 'build_a_village');
-  assert.equal((await ask('clear')).ambition.operation, 'clear');
+  assert.equal(set.kind, 'dream'); assert.equal(set.dream.key, 'build_a_village');
+  assert.equal((await ask('clear')).dream.operation, 'clear');
+  assert.equal((await ask('pause')).dream.operation, 'pause'); assert.equal((await ask('resume')).dream.operation, 'resume');
+  assert.equal(shouldLaunchDream({ dream: 'build_a_village', paused: true }, null), false, 'a dream set aside is not chased');
   assert.equal((await ask('none')).kind, 'clarify');
-  await assert.rejects(ask('invent'), /Invalid ambition/);
+  await assert.rejects(ask('invent'), /Invalid dream/);
 });

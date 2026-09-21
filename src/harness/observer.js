@@ -64,7 +64,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), controls = {}, server = 
       : kind === 'recovery_result' ? detail?.outcome || 'Recovery outcome'
       : kind === 'request' ? `Understood: ${String(detail?.kind || 'request').replaceAll('_', ' ')}`
       : kind === 'clarify' ? `Asked back: ${detail?.message || 'a clarifying question'}`
-      : kind === 'ambition' ? `Standing goal ${detail?.operation === 'clear' ? 'cleared' : detail?.operation === 'query' ? 'asked about' : `set: ${String(detail?.key || '').replaceAll('_', ' ')}`}`
+      : kind === 'dream' ? `Dream ${({ clear: 'taken away', query: 'asked about', pause: 'set aside', resume: 'picked back up' })[detail?.operation] || `given: ${String(detail?.key || '').replaceAll('_', ' ')}`}`
       : kind === 'decision' ? decision.stale ? 'Discarded changed-state decision' : decision.judgments?.length ? (decision.path || []).join(' → ') : decision.committed ? `Kept working ${String(decision.path?.at(-1) || 'the chosen source').replaceAll('_', ' ')}` : `${(decision.path || []).join(' → ')} (only feasible option)` : kind === 'survival' ? String(action.action || 'survival').replaceAll('_', ' ') :
       kind === 'error' ? goal.lastError || 'Action failed' : kind === 'action' ? [goal.step?.action, goal.step?.item || goal.step?.block].filter(Boolean).join(' ').replaceAll('_', ' ') : kind.replaceAll('_', ' ');
     const source = kind === 'recovery_advice' ? (detail?.source === 'jev' ? 'jev' : 'fable')

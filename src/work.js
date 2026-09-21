@@ -1104,9 +1104,9 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
       ? { x: here.x + schematic.site[0], y: here.y + schematic.site[1], z: here.z + schematic.site[2] } : null;
     goal.blueprint = selectSchematicSite(bot, schematic, { anchor: goal.buildAnchor, prefer: proposed, owned, at, baseY: proposed?.y });
     if (!goal.blueprint && proposed) goal.blueprint = selectSchematicSite(bot, schematic, { owned });
-    // A standing goal's anchor is where the village would like the next part,
+    // A dream's anchor is where the village would like the next part,
     // not where a player pointed. When nothing fits there, anywhere near will do.
-    if (!goal.blueprint && goal.buildAnchor && goal.ambition && !at) { delete goal.buildAnchor; goal.blueprint = selectSchematicSite(bot, schematic, { owned }); }
+    if (!goal.blueprint && goal.buildAnchor && goal.dream && !at) { delete goal.buildAnchor; goal.blueprint = selectSchematicSite(bot, schematic, { owned }); }
     if (!goal.blueprint) {
       // Wandering off to find ground elsewhere is the wrong answer to a spot
       // the player chose: they asked for it there, so say it will not work.
@@ -1614,7 +1614,7 @@ function idleOptions(bot, goal) {
     if (species) options.stock_wood = { description: `Stock up to 16 logs from the ${species.replaceAll('_', ' ')} trees nearby (${logs} carried); wood is needed for tools, fuel and repairs.`, item: species, count: 16 - logs };
   }
   if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.`, item: 'torch', count: 4 };
-  // The standing ambition. With nothing asked and nothing urgent, the next
+  // The standing dream. With nothing asked and nothing urgent, the next
   // rung of the beat-the-game ladder is always on offer; it is a long walk
   // from a stone pickaxe to a dragon, and this is how the walk gets taken.
   if (bot.game.gameMode === 'survival') {
@@ -1648,7 +1648,7 @@ async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acqu
 
 
 // The executors the game-completion ladder can call, shared by the win
-// objective and by idle ambition between requests.
+// objective and by idle dream between requests.
 function gameHandlers(bot, decisionClient) {
   return {
         acquireStep, enter_nether: netherStep, return_overworld: returnFromNether,

@@ -137,6 +137,11 @@ function render(updateScene = true) {
   if (decision?.model) $('decision-meta').append(el('span', decision.model));
   if (Number.isFinite(decision?.latencyMs)) $('decision-meta').append(el('span', `${decision.latencyMs} ms`));
   if (tokens(decision?.usage)) $('decision-meta').append(el('span', `${tokens(decision.usage).toLocaleString()} tokens`));
+  if (goal.dream) {
+    const standing = el('span', `Dream: ${human(goal.dream)}${Number.isFinite(goal.villageScore) ? ` · village ${Math.round(goal.villageScore * 100 / 3)}%` : goal.gamePhase ? ` · ${human(goal.gamePhase)}` : ''}`, 'fit');
+    standing.title = 'The dream the player gave Jev, chased whenever nothing else needs it. Jev chose this milestone from what code could build.';
+    $('decision-meta').append(standing);
+  }
   if (goal.designReview) { const fit = el('span', `${goal.designReview.accepted ? 'Design fit' : 'Design rejected'} ${pct(goal.designReview.fits)}`, `fit${goal.designReview.accepted ? '' : ' rejected'}`); fit.title = 'Jev judged whether the generated design answers the request before building it'; $('decision-meta').append(fit); }
   $('clarification').hidden = !request?.clarification && frame?.kind !== 'clarify';
   $('clarification').replaceChildren();

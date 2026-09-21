@@ -20,7 +20,7 @@ const { withRequestSignal } = require('./typesafe');
 const { suspendPrevious, resumeSaved } = require('./suspended-tasks');
 const { CompanionMemory, position } = require('./memory');
 const { BuildRegistry, resolveBuildContinuation } = require('./builds');
-const { nextAmbitionRequest, shouldLaunchAmbition, AMBITIONS } = require('./ambition');
+const { nextDreamRequest, shouldLaunchDream, DREAMS } = require('./dream');
 const { immediateThreat } = require('./danger');
 
 function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness } = {}) {
@@ -66,14 +66,14 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // world rather than the request and is shared by every later build.
   const builds = new BuildRegistry(path.join(stateDirectory, `${memoryIdentity}-builds.json`));
   bot.buildRegistry = builds;
-  // The standing goal: what the bot works toward when nobody has asked for
+  // The dream: what the bot works toward when nobody has asked for
   // anything. Kept per world, beside the builds it produces.
-  const ambitionStore = new GoalStore(path.join(stateDirectory, `${memoryIdentity}-ambition.json`));
-  const saveAmbition = standing => { if (!ended) ambitionStore.save({ version: 1, ...standing }); };
-  const readyForAmbition = () => bot.game?.gameMode === 'creative' ||
+  const dreamStore = new GoalStore(path.join(stateDirectory, `${memoryIdentity}-dream.json`));
+  const saveDream = standing => { if (!ended) dreamStore.save({ version: 1, ...standing }); };
+  const readyForDream = () => bot.game?.gameMode === 'creative' ||
     ((bot.game?.dimension !== 'minecraft:overworld' && bot.game?.dimension !== 'overworld' || (bot.time?.timeOfDay ?? 0) < 9500) &&
       (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 12 && !immediateThreat(bot));
-  let launchingAmbition = false;
+  let launchingDream = false;
   const survival = createSurvival(bot, { state: survivalStore.read() || store.read()?.survival, client });
   if (!survivalStore.read() && store.read()?.status === 'cancelled') survival.state.paused = true;
   const saveSurvival = () => { if (!ended) { survival.state.version = 1; survivalStore.save(survival.state); } };
@@ -129,52 +129,52 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     }).finally(() => { if (active === session) active = null; });
   }
 
-  // Hand the ambition its next request, as if a player had typed it. Jev
+  // Hand the dream its next request, as if a player had typed it. Jev
   // chooses the milestone from what code enumerates; a failure to choose or
   // an unusable answer falls back to ordinary idling until the cool-down ends.
-  async function launchAmbition(standing) {
-    launchingAmbition = true;
+  async function launchDream(standing) {
+    launchingDream = true;
     try {
       const structures = builds.describe(bot, bot.entity.position, bot.game.dimension);
-      const next = await nextAmbitionRequest(client, standing, { structures, shelf: require('./schematic-library').library(bot.registry) });
+      const next = await nextDreamRequest(client, standing, { structures, shelf: require('./schematic-library').library(bot.registry) });
       if (ended || active) return;
       standing.lastAttemptAt = Date.now();
       if (!next || next.done) {
-        standing.satisfiedAt = new Date().toISOString(); standing.lastScore = next?.villageScore; saveAmbition(standing);
-        bot.chat(`I think the ${AMBITIONS[standing.ambition].title.replace(/^build a /, '')} is done for now. Ask me to keep going if you want more.`);
+        standing.satisfiedAt = new Date().toISOString(); standing.lastScore = next?.villageScore; saveDream(standing);
+        bot.chat(`I think my dream to ${DREAMS[standing.dream].title} is done for now. Tell me to chase it again if you want more.`);
         return;
       }
-      saveAmbition(standing);
+      saveDream(standing);
       const goal = { ...next, version: 1, status: 'pending', createdAt: new Date().toISOString(), suspendedTasks: suspendPrevious(store.read()),
         requesterPosition: null, initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);
-      bot.chat(`Nothing needs me, so I'm working on my goal to ${AMBITIONS[standing.ambition].title}${next.villageScore !== undefined && next.villageScore !== null ? ` (village ${Math.round(next.villageScore * 100 / 3)}% there)` : ''}: ${next.request}.`);
+      bot.chat(`Nothing needs me, so I'm chasing my dream to ${DREAMS[standing.dream].title}${next.villageScore !== undefined && next.villageScore !== null ? ` (the village is ${Math.round(next.villageScore * 100 / 3)}% there)` : ''}: ${next.request}.`);
       launch(goal);
     } catch (err) {
-      console.error('[ambition]', err.message);
-      standing.lastAttemptAt = Date.now(); saveAmbition(standing);
-    } finally { launchingAmbition = false; }
+      console.error('[dream]', err.message);
+      standing.lastAttemptAt = Date.now(); saveDream(standing);
+    } finally { launchingDream = false; }
   }
 
   function launchIdle() {
     const retained = store.read();
-    const standing = ambitionStore.read();
-    if (standing?.ambition && !launchingAmbition && shouldLaunchAmbition(standing, retained, { ready: readyForAmbition() })) { launchAmbition(standing); return; }
+    const standing = dreamStore.read();
+    if (standing?.dream && !launchingDream && shouldLaunchDream(standing, retained, { ready: readyForDream() })) { launchDream(standing); return; }
     const goal = { ...(idleStore.read() || {}), version: 1, kind: 'survive', request: 'Stay alive and prepare supplies between player requests',
       retainedRequest: retained?.request, blueprint: retained?.blueprint, portalFrame: retained?.portalFrame, survival: survival.state,
-      ambition: standing?.ambition && !standing.satisfiedAt ? standing.ambition : undefined };
+      dream: standing?.dream && !standing.satisfiedAt ? standing.dream : undefined };
     memory.bind(goal);
     const task = new Task('survival', goal.request);
     const session = { task, goal, idle: true };
     active = session;
-    // The idle loop runs until something else should: a standing goal whose
+    // The idle loop runs until something else should: a dream whose
     // next request can be launched ends it, and the next tick launches that.
     let checkedAt = 0, launchable = false;
     const until = () => {
       if (Date.now() - checkedAt < 3000) return launchable;
       checkedAt = Date.now();
-      const current = ambitionStore.read();
-      launchable = !!current?.ambition && shouldLaunchAmbition(current, store.read(), { ready: readyForAmbition() });
+      const current = dreamStore.read();
+      launchable = !!current?.dream && shouldLaunchDream(current, store.read(), { ready: readyForDream() });
       return launchable;
     };
     session.promise = runIdle(bot, task, goal, { save: g => { if (!ended) { idleStore.save(g); memory.flush(); } saveSurvival(); } }, {
@@ -218,7 +218,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   });
 
   const idleTimer = setInterval(() => {
-    if (ready && !active && !launchingAmbition && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
+    if (ready && !active && !launchingDream && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
   }, 500);
 
   bot._client.on('playerChat', data => {
@@ -311,21 +311,39 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         observation?.sample('memory', { operation: spec.memory.operation });
         return;
       }
-      if (spec.kind === 'ambition') {
-        const standing = ambitionStore.read() || {};
-        const { operation, key } = spec.ambition;
+      if (spec.kind === 'dream') {
+        const standing = dreamStore.read() || {};
+        const { operation, key } = spec.dream;
+        const title = standing.dream ? DREAMS[standing.dream].title : null;
         if (operation === 'query') {
-          bot.chat(standing.ambition && !standing.satisfiedAt ? `My standing goal is to ${AMBITIONS[standing.ambition].title}. I work on it whenever nothing else needs me.`
-            : standing.ambition ? `I was working to ${AMBITIONS[standing.ambition].title}; I think it is done for now. Say so if you want more.` : "I don't have a standing goal. You can give me one: beat the game, or build a village.");
+          bot.chat(!standing.dream ? "I don't have a dream yet. You could give me one: to beat the game, or to build a village."
+            : standing.satisfiedAt ? `My dream was to ${title}, and I think it's done for now. Tell me to chase it again if you want more.`
+            : standing.paused ? `My dream is to ${title}, but I'm keeping it aside until you tell me to chase it.`
+            : `My dream is to ${title}. I chase it whenever nothing else needs me.`);
         } else if (operation === 'clear') {
-          saveAmbition({ ambition: null, clearedBy: from, clearedAt: new Date().toISOString() });
-          if (active && !active.idle && active.goal.ambition) await stop('cancelled');
-          bot.chat('Okay, no standing goal. I\'ll just look after myself between requests.');
+          saveDream({ dream: null, clearedBy: from, clearedAt: new Date().toISOString() });
+          if (active && !active.idle && active.goal.dream) await stop('cancelled');
+          bot.chat('Okay, no dream for now. I\'ll just look after myself between requests.');
+        } else if (operation === 'pause') {
+          if (!standing.dream) bot.chat("I don't have a dream to set aside.");
+          else {
+            saveDream({ ...standing, paused: true, pausedBy: from, pausedAt: new Date().toISOString() });
+            if (active && !active.idle && active.goal.dream) await stop('interrupted');
+            bot.chat(`Okay, I'll set my dream aside for now. Say "chase your dream" when you want me back on it.`);
+          }
+        } else if (operation === 'resume') {
+          if (!standing.dream) bot.chat("I don't have a dream yet. You could give me one: to beat the game, or to build a village.");
+          else {
+            saveDream({ ...standing, paused: false, satisfiedAt: undefined, resumedBy: from, resumedAt: new Date().toISOString() });
+            bot.chat(`Back to my dream: to ${title}.`);
+            const saved = store.read();
+            if (saved?.dream && ['interrupted', 'cancelled', 'blocked'].includes(saved.status) && !active) launch(saved);
+          }
         } else {
-          saveAmbition({ ambition: key, setBy: from, setAt: new Date().toISOString() });
-          bot.chat(`Got it. Whenever nothing else needs me, I'll work to ${AMBITIONS[key].title}.`);
+          saveDream({ dream: key, setBy: from, setAt: new Date().toISOString() });
+          bot.chat(`Got it. My dream is to ${DREAMS[key].title}. I'll chase it whenever nothing else needs me.`);
         }
-        observation?.sample('ambition', { operation, key, standing: ambitionStore.read() });
+        observation?.sample('dream', { operation, key, standing: dreamStore.read() });
         return;
       }
       if (spec.kind === 'clarify') { bot.chat(spec.message); return; }

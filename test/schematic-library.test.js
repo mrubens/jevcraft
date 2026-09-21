@@ -5,7 +5,7 @@ const registry = require('minecraft-data')('26.1');
 const { library, chooseSchematic, PARTS } = require('../src/schematic-library');
 const { generatedEntries } = require('../src/schematic-generators');
 const { validateSchematic } = require('../src/designer');
-const { villageCandidates } = require('../src/ambition');
+const { villageCandidates } = require('../src/dream');
 
 test('every design on the shelf validates, and the shelf covers every village part', () => {
   const shelf = library(registry);
