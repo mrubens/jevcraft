@@ -68,6 +68,14 @@ function stepLine(goal, step, decision) {
     case 'prepare_expedition_food': return 'Stocking up on food before the trip.';
     case 'refuel_furnace': return 'Refuelling the furnace.';
     case 'return_overworld': return 'Heading back to the Overworld.';
+    case 'idle': return {
+      cook_food: `Quiet for now, so I'll cook the ${name(step.item).replace(/^(cooked|baked) /, '')}.`,
+      stone_tools: `Quiet for now, so I'll make a ${name(step.item)}.`,
+      stock_wood: 'Quiet for now, so I\'ll stock up on wood.',
+      torches: 'Quiet for now, so I\'ll make some torches.',
+      long_game: `Nothing needs me right now, so I'll work on the long game: ${name(step.phase)}.`,
+    }[step.choice] || null;
+    case 'game_progression': return `Working toward beating the game: ${name(step.phase)}.`;
     default: return null;
   }
 }
@@ -77,7 +85,7 @@ function stepLine(goal, step, decision) {
 function stepKey(goal, step, decision) {
   if (!step?.action) return null;
   const inner = step.action === 'combined_request' && step.detail && typeof step.detail === 'object' ? step.detail : step;
-  const target = inner.item || inner.drops || inner.block || inner.material || inner.entity || '';
+  const target = inner.item || inner.drops || inner.block || inner.material || inner.entity || inner.choice || inner.phase || '';
   const action = ['place', 'build', 'build_schematic'].includes(inner.action) ? 'build' : inner.action;
   return `${action}:${target}`;
 }

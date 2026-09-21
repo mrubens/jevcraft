@@ -3,7 +3,7 @@
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { navigate, surveyRoute, equipBestTool, pickaxeTier, countOf, shakeLoose } = require('./skills');
-const { MINEABLE } = require('./plan');
+const { MINEABLE, TOOL_TIERS } = require('./plan');
 const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
 const { reservedForConstruction, portalSiteClear, selectPortalSite, portalSupports } = require('./build-sites');
@@ -28,7 +28,7 @@ const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMov
 const { dryPassable, supportCell } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
 const { descendPillar } = require('./pillar-recovery');
-const { gameStep, watchGameProgress, dimension } = require('./game-progress');
+const { gameStep, watchGameProgress, dimension, nextGameStage } = require('./game-progress');
 const { carriedEquipment } = require('./mob-policy');
 const { huntObserved, prepareMobHunt, prepareCombatGear } = require('./mob-hunt');
 const { findStronghold } = require('./stronghold');
@@ -1585,6 +1585,86 @@ async function tryRecovery(adviser, task, goal, save) {
   }
 }
 
+// What to do with spare daylight. Between requests, with shelter and food
+// already sufficient, the bot used to stand still until something changed.
+// A companion with half an hour of light should be cooking the raw beef it
+// is carrying, making stone tools, or stocking wood. Code lists what is
+// feasible and useful right now; Jev picks, with resting always on offer so
+// nothing is forced. Each choice runs one bounded step and is re-judged.
+const RAW_FOOD = { beef: 'cooked_beef', porkchop: 'cooked_porkchop', chicken: 'cooked_chicken', mutton: 'cooked_mutton', cod: 'cooked_cod', salmon: 'cooked_salmon', potato: 'baked_potato', rabbit: 'cooked_rabbit' };
+const STONE_TOOLS = ['stone_pickaxe', 'stone_axe', 'stone_sword'];
+const toolTier = name => Math.max(0, TOOL_TIERS.indexOf(String(name).replace(/_(pickaxe|axe|sword|shovel)$/, '')) + 1);
+function idleOptions(bot, goal) {
+  const options = {}, stock = planningInventory(bot);
+  const raw = Object.entries(RAW_FOOD).filter(([item]) => stock[item] > 0);
+  if (raw.length) {
+    const [item, cooked] = raw.sort((a, b) => stock[b[0]] - stock[a[0]])[0];
+    options.cook_food = { description: `Cook the ${stock[item]} raw ${item.replaceAll('_', ' ')} being carried; cooked food restores far more hunger.`, item: cooked, count: stock[item] };
+  }
+  const carried = bot.inventory.items().map(i => i.name);
+  const missing = STONE_TOOLS.filter(tool => !carried.some(name => name.endsWith(tool.slice(5)) && toolTier(name) >= 2));
+  if (missing.length) options.stone_tools = { description: `Make ${missing.map(t => t.replaceAll('_', ' ')).join(', ')}: faster digging and a real weapon, from cobblestone and sticks.`, item: missing[0], count: 1 };
+  const logs = Object.keys(stock).filter(n => n.endsWith('_log')).reduce((n, k) => n + stock[k], 0);
+  if (logs < 16) {
+    const nearby = find(bot, bot.registry.blocksArray.filter(b => /_log$/.test(b.name)).map(b => b.name), 32, 8);
+    const species = nearby.length ? bot.blockAt(nearby[0])?.name : null;
+    if (species) options.stock_wood = { description: `Stock up to 16 logs from the ${species.replaceAll('_', ' ')} trees nearby (${logs} carried); wood is needed for tools, fuel and repairs.`, item: species, count: 16 - logs };
+  }
+  if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.`, item: 'torch', count: 4 };
+  // The standing ambition. With nothing asked and nothing urgent, the next
+  // rung of the beat-the-game ladder is always on offer; it is a long walk
+  // from a stone pickaxe to a dragon, and this is how the walk gets taken.
+  if (bot.game.gameMode === 'survival') {
+    const stage = nextGameStage(bot, goal);
+    if (stage.phase !== 'complete') options.long_game = { description: `Work toward beating the game. The next stage is ${stage.phase.replaceAll('_', ' ')}${stage.item ? ` (${stage.count} ${stage.item.replaceAll('_', ' ')})` : ''}; it may mean a long trip and a real fight, so choose it with supplies, tools and daylight in hand.`, phase: stage.phase, stage };
+  }
+  return options;
+}
+
+async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acquire = acquireStep, handlers } = {}) {
+  if (!client || bot.game.gameMode === 'creative') return false;
+  if ((bot.health ?? 20) < 14 || (bot.food ?? 20) < 12 || immediateThreat(bot)) return false;
+  if (bot.game.dimension === 'overworld' && bot.time?.timeOfDay >= 9500) return false;
+  const options = idleOptions(bot, goal);
+  if (!Object.keys(options).length) return false;
+  const tree = { rest: { description: 'Wait here quietly. Right when supplies are sufficient, light is short, or the player is likely to ask for something soon.', run: async () => { for (let n = 0; n < 30; n++) { task.check(); await sleep(100); } } } };
+  for (const [key, option] of Object.entries(options)) {
+    tree[key] = { description: option.description, run: async () => {
+      goal.step = { action: 'idle', choice: key, item: option.item, count: option.count, phase: option.phase }; save(); narrate(bot, goal);
+      if (key === 'long_game') await gameStep(bot, task, goal, save, handlers || gameHandlers(bot, client));
+      else await acquire(bot, task, option.item, option.count, goal, save);
+    } };
+  }
+  const state = { situation: 'Between player requests, with shelter and food already sufficient. Choose how to spend spare daylight.',
+    timeOfDay: bot.time?.timeOfDay, daylightTicksRemaining: Math.max(0, 9500 - (bot.time?.timeOfDay || 0)),
+    health: bot.health, food: bot.food, foodReserve: foodSupply(bot), inventory: planningInventory(bot),
+    retainedRequest: goal.retainedRequest || null, home: goal.blueprint ? 'A house is built nearby.' : 'No house yet.' };
+  await decideAction(bot, task, goal, save, client, onStep, tree, state);
+  return true;
+}
+
+
+// The executors the game-completion ladder can call, shared by the win
+// objective and by idle ambition between requests.
+function gameHandlers(bot, decisionClient) {
+  return {
+        acquireStep, enter_nether: netherStep, return_overworld: returnFromNether,
+        enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate }),
+        fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate }, decisionClient),
+        exit_end: (bot, task, goal, save) => exitEnd(bot, task, goal, save, { navigate }),
+        prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
+        prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
+        find_stronghold: (bot, task, goal, save) => findStronghold(bot, task, goal, save, {
+          navigate, explore, surfaceStep,
+          tunnel: async (bot, task, goal, save, target, resource) => {
+            if (pickaxeTier(bot) < 1) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
+            await resourceTunnelStep(bot, task, goal, save, target, resource, { dig, navigate });
+          },
+        }, decisionClient),
+      
+  };
+}
+
 async function runIdle(bot, task, goal, store, { survival, decisionClient, recoveryAdviser, onStep = () => {}, until = () => false, backoffMs = 3000 } = {}) {
   survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
   goal.survival = survival.state;
@@ -1599,7 +1679,8 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
         await maintainVitals(bot, task);
         if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
       }
-      await survival.step(task, goal, save, onStep);
+      const acted = await survival.step(task, goal, save, onStep);
+      if (!acted) await idleWork(bot, task, goal, save, decisionClient, onStep);
       failures = 0; delete goal.lastError; save(); onStep(goal); narrate(bot, goal);
     } catch (err) {
       task.interruptCheck = undefined; task.check();
@@ -1684,21 +1765,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         }
       }
       if (prepared && goal.kind === 'nether') complete = await netherStep(bot, task, goal, save);
-      if (prepared && goal.kind === 'win') complete = await gameStep(bot, task, goal, save, {
-        acquireStep, enter_nether: netherStep, return_overworld: returnFromNether,
-        enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate }),
-        fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate }, decisionClient),
-        exit_end: (bot, task, goal, save) => exitEnd(bot, task, goal, save, { navigate }),
-        prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
-        prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
-        find_stronghold: (bot, task, goal, save) => findStronghold(bot, task, goal, save, {
-          navigate, explore, surfaceStep,
-          tunnel: async (bot, task, goal, save, target, resource) => {
-            if (pickaxeTier(bot) < 1) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
-            await resourceTunnelStep(bot, task, goal, save, target, resource, { dig, navigate });
-          },
-        }, decisionClient),
-      });
+      if (prepared && goal.kind === 'win') complete = await gameStep(bot, task, goal, save, gameHandlers(bot, decisionClient));
       task.check();
       goal.failures = 0;
       delete goal.lastError;
@@ -1763,4 +1830,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { terrainShortage, runGoal, runIdle, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep };
+module.exports = { terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep };
