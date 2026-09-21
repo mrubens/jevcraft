@@ -1625,6 +1625,14 @@ async function netherStep(bot, task, goal, save) {
     return true;
   }
   if (await walkToKnownPortal(bot, task, goal, save, 'overworld')) return false;
+  // A frame whose blocks are not loaded is a portal somewhere else, not ten
+  // missing obsidian: go and look at it before planning another.
+  if (goal.portalFrame && goal.portalFrame.blocks.some(p => !bot.blockAt(pos(p)))) {
+    const o = goal.portalFrame.origin;
+    goal.step = { action: 'return_to_portal', portal: { ...o } }; save();
+    await navigate(bot, task, new goals.GoalNear(o.x, o.y, o.z, 3), { timeoutMs: 60000, stallMs: 8000 });
+    return false;
+  }
   // A frame with no placed blocks can be relocated when its original ground
   // was excavated. Once construction begins its coordinates stay fixed.
   if (goal.portalFrame && goal.portalFrame.blocks.every(p => bot.blockAt(pos(p)) && bot.blockAt(pos(p)).name !== 'obsidian') &&
