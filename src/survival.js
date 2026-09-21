@@ -12,6 +12,7 @@ const { surveyRoute } = require('./skills');
 const { defendNearby } = require('./combat');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
+const { surfaceObserver } = require('./surface');
 const { thinking } = require('./speech');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
@@ -298,7 +299,12 @@ class Survival {
     }
     const expeditionFood = (goal.preparingExpedition || goal.preparingEnd) && bot.game.difficulty !== 'peaceful';
     const desiredFood = goal.preparingEnd ? 64 : 12;
-    const needsFood = foodSupply(bot) < desiredFood && (bot.food <= 18 || goal.stockFood || expeditionFood ||
+    // A missing reserve is worth a hunt while the bot is already on the
+    // surface, where the animals are. Underground it is worth the climb only
+    // once hunger is real: the dream run was leaving its iron shaft at 18 of
+    // 20 to walk the surface for a chicken.
+    const hungerTrigger = surfaceObserver(bot)(bot.entity.position) ? 18 : 12;
+    const needsFood = foodSupply(bot) < desiredFood && (bot.food <= hungerTrigger || goal.stockFood || expeditionFood ||
       (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful'));
     if (!needsShelter && !needsFood) return false;
     const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay,

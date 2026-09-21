@@ -380,3 +380,22 @@ test('a saved shelter with no route to it is set aside so a pocket can be sealed
   const near = { origin: { x: 2, y: 35, z: 0 }, dimension: 'overworld' };
   assert.equal(await survival.reachableRefuge(new Task('night'), goal, () => {}, near), near, 'a reachable one is kept');
 });
+
+test('an empty food reserve pulls the bot off its work at 18 hunger on the surface but only at 12 underground', async () => {
+  const { Survival } = require('../src/survival');
+  const forages = [];
+  const make = (y, food) => {
+    const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 },
+      entity: { position: new Vec3(0.5, y, 0.5) }, entities: {}, health: 20, food, oxygenLevel: 20, time: { timeOfDay: 2000 },
+      inventory: { items: () => [] }, registry: require('minecraft-data')('26.1'),
+      blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }),
+      findBlocks: () => [], pathfinder: { movements: {} }, on() {}, removeListener() {} };
+    const survival = new Survival(bot, { explore: async (b, t, goal) => { forages.push(`${y}:${food}`); },
+      navigate: async () => {}, acquireStep: async () => {} }, { state: { shelters: [] } });
+    return survival;
+  };
+  assert.equal(await make(70, 18).step(new Task('surface'), { kind: 'win' }, () => {}), true, 'on the surface, 18 with no reserve is a hunt');
+  assert.equal(await make(20, 18).step(new Task('deep'), { kind: 'win' }, () => {}), false, 'underground, 18 with no reserve is not worth the climb');
+  assert.equal(await make(20, 12).step(new Task('deep hungry'), { kind: 'win' }, () => {}), true, 'underground, 12 is');
+  assert.deepEqual(forages, ['70:18', '20:12']);
+});
