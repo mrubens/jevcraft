@@ -109,17 +109,50 @@ function baseAnchor(bot, goal) {
   return { kind: 'here', ...plain(here) };
 }
 
-function siteFits(bot, goal, site) {
+// Sixty-three level cells do not occur in a birch forest on a hill, and the
+// second run's site search failed three times in one second on exactly
+// that. A site is level enough when every footprint cell is within a
+// block of the origin and the difference is work the bot can do: blocks
+// to dig where the ground or a tree stands higher, dirt to lay where it
+// dips. The work list is what the level step executes.
+const LEVEL_BUDGET = 48;
+const diggable = block => !!block && block.boundingBox === 'block' && !liquid(block) && !/bedrock|obsidian|_bed$|chest/.test(block.name);
+function siteWork(bot, goal, site) {
   const { plot, footprint } = layout(site);
+  const plotKeys = new Set(plot.map(p => `${p.x},${p.z}`));
+  const digs = [], fills = [];
   for (const p of footprint) {
-    const ground = bot.blockAt(pos(p));
-    if (!ground || ground.boundingBox !== 'block' || liquid(ground)) return false;
-    if (!clear(bot.blockAt(pos(p).offset(0, 1, 0))) || !clear(bot.blockAt(pos(p).offset(0, 2, 0)))) return false;
-    if (reservedForConstruction(goal, pos(p).offset(0, 1, 0))) return false;
+    const at = dy => bot.blockAt(pos(p).offset(0, dy, 0));
+    const ground = at(0), above = at(1), head = at(2), below = at(-1);
+    if (!ground || !above || !head || !below) return null;
+    if ([ground, above, head, below].some(liquid)) return null;
+    if (reservedForConstruction(goal, pos(p).offset(0, 1, 0))) return null;
+    const isPlot = plotKeys.has(`${p.x},${p.z}`);
+    if (ground.boundingBox === 'block') {
+      // Standing higher: whatever is solid in the two cells above comes out.
+      for (const [dy, block] of [[1, above], [2, head]]) {
+        if (clear(block)) continue;
+        if (!diggable(block)) return null;
+        digs.push(pos(p).offset(0, dy, 0));
+      }
+      // A third solid block above is a hill, not a bump.
+      const third = at(3);
+      if (third && third.boundingBox === 'block' && !clear(at(1)) && !clear(at(2))) return null;
+      if (isPlot && !TILLABLE.has(ground.name)) { if (!diggable(ground)) return null; digs.push(pos(p)); fills.push({ ...plain(p), item: 'dirt' }); }
+    } else if (clear(ground) && below.boundingBox === 'block') {
+      // One lower: lay a block; dirt where the plot goes.
+      if (!clear(above) || !clear(head)) return null;
+      fills.push({ ...plain(p), item: isPlot ? 'dirt' : 'any' });
+    } else return null;
   }
-  if (plot.some(p => !TILLABLE.has(bot.blockAt(pos(p))?.name))) return false;
+  if (digs.length + fills.length > LEVEL_BUDGET) return null;
   // Never on top of a portal the bot walks back to.
-  return !(goal.portals || []).some(q => q.dimension === 'overworld' && footprint.some(p => Math.abs(p.x - q.x) <= 3 && Math.abs(p.z - q.z) <= 3));
+  if ((goal.portals || []).some(q => q.dimension === 'overworld' && footprint.some(p => Math.abs(p.x - q.x) <= 3 && Math.abs(p.z - q.z) <= 3))) return null;
+  return { digs, fills };
+}
+function siteFits(bot, goal, site) {
+  const work = siteWork(bot, goal, site);
+  return !!work && work.digs.length + work.fills.length === 0;
 }
 
 // The nearest level, tillable shore to the anchor that fits the whole
@@ -133,16 +166,23 @@ function chooseBaseSite(bot, goal, { radius = SITE_RADIUS } = {}) {
   const water = (bot.findBlocks({ matching: [waterId], maxDistance: radius, count: 512, point,
     useExtraInfo: b => clear(bot.blockAt(b.position.offset(0, 1, 0))) }) || [])
     .sort((a, b) => a.distanceTo(point) - b.distanceTo(point));
+  // The nearest site that needs the least levelling: a flat one is taken as
+  // soon as it is seen, a bumpy one only when nothing flatter is close.
   const fit = (cells, extra = {}) => {
+    let best = null;
     for (const w of cells) for (const d of DIRECTIONS) {
       const a = { x: -d.z, z: d.x };
       for (const shift of [0, -1, 1, -2, 2]) {
         const origin = w.offset(d.x + a.x * shift, 0, d.z + a.z * shift);
         const site = { origin: plain(origin), direction: d, water: plain(w), ...extra };
-        if (siteFits(bot, goal, site)) return { ...site, anchor };
+        const work = siteWork(bot, goal, site);
+        if (!work) continue;
+        const cost = work.digs.length + work.fills.length + w.distanceTo(point) / 16;
+        if (work.digs.length + work.fills.length === 0) return { ...site, work, anchor };
+        if (!best || cost < best.cost) best = { ...site, work, anchor, cost };
       }
     }
-    return null;
+    return best && (({ cost, ...site }) => site)(best);
   };
   const natural = fit(water);
   if (natural) return natural;
@@ -151,15 +191,22 @@ function chooseBaseSite(bot, goal, { radius = SITE_RADIUS } = {}) {
   // home search failed four times on a mountain top with a full bucket.
   if (!countOf(bot, 'water_bucket')) return null;
   const groundIds = [...TILLABLE].map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
-  const ground = (bot.findBlocks({ matching: groundIds, maxDistance: radius, count: 512, point,
-    useExtraInfo: b => clear(bot.blockAt(b.position.offset(0, 1, 0))) && bot.blockAt(b.position.offset(0, -1, 0))?.boundingBox === 'block' }) || [])
-    .sort((a, b) => a.distanceTo(point) - b.distanceTo(point));
+  // One candidate per column, the surface: a thousand-block scan of
+  // grass and dirt finds cave floors and the same slope over and over.
+  const columns = new Map();
+  for (const b of bot.findBlocks({ matching: groundIds, maxDistance: radius, count: 4096, point,
+    useExtraInfo: b => clear(bot.blockAt(b.position.offset(0, 1, 0))) && bot.blockAt(b.position.offset(0, -1, 0))?.boundingBox === 'block' }) || []) {
+    const key = `${b.x},${b.z}`;
+    if (!columns.has(key) || columns.get(key).y < b.y) columns.set(key, b);
+  }
+  const ground = [...columns.values()].sort((a, b) => a.distanceTo(point) - b.distanceTo(point));
   return fit(ground, { pourWater: true });
 }
 
 function establishHome(goal, site, { now = Date.now() } = {}) {
   goal.survival.home = { version: 1, dimension: 'overworld', origin: site.origin, direction: site.direction, water: site.water,
-    pourWater: !!site.pourWater, anchor: site.anchor, chosenAt: new Date(now).toISOString(), bed: {}, plot: {}, pen: {} };
+    pourWater: !!site.pourWater, anchor: site.anchor, chosenAt: new Date(now).toISOString(), bed: {}, plot: {}, pen: {},
+    levelling: (site.work?.digs?.length || 0) + (site.work?.fills?.length || 0) };
   delete goal.survival.homeSearch;
   return goal.survival.home;
 }
@@ -231,7 +278,7 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
   const survival = goal.survival;
   if (!survival || !overworld(bot)) return null;
   const home = survival.home;
-  if (!home) return survival.homeSearch?.deferredUntil > now ? null : { phase: 'home_site', action: 'choose_site' };
+  if (!home) return survival.homeSearch?.deferredUntil > now || survival.homeSearch?.retryAfter > now ? null : { phase: 'home_site', action: 'choose_site' };
   const bed = bedStatus(bot, home);
   // A finished base stays finished until the bed or the chest is seen to
   // be gone; an unloaded base far away is not a reason to walk back.
@@ -242,6 +289,21 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
     else return null;
   }
   if (!bed.loaded) return { phase: 'home_bed', action: 'return_home' };
+  // Levelling first: the bed and the chest want their cells clear and the
+  // plot wants dirt. Read off the world each time, so a restart or a
+  // creeper does not leave a half-done site counted as done.
+  if (home.levelling > 0 && !home.levelledAt) {
+    const work = siteWork(bot, { ...goal, portals: [] }, home);
+    if (!work) return { phase: 'home_level', action: 'return_home' };
+    const remaining = work.digs.length + work.fills.length;
+    if (remaining) {
+      const dirt = work.fills.filter(f => f.item === 'dirt').length, blocks = work.fills.length;
+      if (countOf(bot, 'dirt') < dirt) return { phase: 'home_level', action: 'acquire', item: 'dirt', count: dirt };
+      if (countOf(bot, 'dirt') + countOf(bot, 'cobblestone') < blocks) return { phase: 'home_level', action: 'acquire', item: 'cobblestone', count: blocks - countOf(bot, 'dirt') };
+      return { phase: 'home_level', action: 'level_site', digs: work.digs.length, fills: work.fills.length };
+    }
+    home.levelledAt = new Date(now).toISOString();
+  }
   if (!bed.claimed) {
     if (bed.placed) return { phase: 'home_bed', action: 'claim_bed' };
     const carried = bedCarried(bot);
@@ -396,6 +458,21 @@ async function placeBed(bot, task, goal, save, home, actions, item) {
   if (isBed(bot.blockAt(pos(bed.foot))) && isBed(bot.blockAt(pos(bed.head)))) return;
   await placeOriented(bot, task, actions, bed.stand, bed.foot, item, () => isBed(bot.blockAt(pos(bed.foot))) && isBed(bot.blockAt(pos(bed.head))));
   home.bed = { ...home.bed, item, placedAt: new Date().toISOString() }; save();
+}
+
+// The levelling: bumps and trees on the footprint come out, dips are
+// filled, dirt where the plot goes and anything solid elsewhere.
+async function levelSite(bot, task, goal, save, home, actions) {
+  const work = siteWork(bot, { ...goal, portals: [] }, home);
+  if (!work) throw new Error('The home site changed under the levelling');
+  goal.step = { action: 'level_site', digs: work.digs.length, fills: work.fills.length }; save();
+  for (const p of work.digs.sort((a, b) => b.y - a.y)) { task.check(); checkAir(bot); checkThreats(bot); await actions.dig(bot, task, pos(p), { requireDrops: false }); }
+  for (const f of work.fills) {
+    task.check(); checkAir(bot); checkThreats(bot);
+    const item = f.item === 'dirt' || !countOf(bot, 'cobblestone') ? 'dirt' : 'cobblestone';
+    await actions.place(bot, task, pos(f), item);
+  }
+  save();
 }
 
 // The bucket pond: the ground block at the water cell comes out, and the
@@ -579,8 +656,14 @@ async function homeStep(bot, task, goal, save, stage, actions) {
       return;
     }
     if (!site) {
+      // Three failed looks from three different places, not three ticks in
+      // one spot: an attempt counts once the bot has moved on or a minute
+      // has passed, and between attempts the ladder goes on with its work.
       const search = survival.homeSearch ||= { attempts: 0 };
-      search.attempts++;
+      const here = plain(bot.entity.position.floored());
+      const moved = !search.lastAt || Math.hypot(search.lastAt.x - here.x, search.lastAt.z - here.z) >= 24 || Date.now() - (search.lastTriedAt || 0) > 60000;
+      if (moved) { search.attempts++; search.lastAt = here; search.lastTriedAt = Date.now(); }
+      search.retryAfter = Date.now() + 60000;
       if (search.attempts >= 3) search.deferredUntil = Date.now() + SITE_DEFER_MS;
       goal.step = { action: 'home_site', found: false, attempts: search.attempts }; save();
       throw new Error(`No level ground beside water within ${SITE_RADIUS} blocks for a home base`);
@@ -597,6 +680,7 @@ async function homeStep(bot, task, goal, save, stage, actions) {
     case 'gather_wool': return gatherWool(bot, task, goal, save, home, actions);
     case 'place_bed': return placeBed(bot, task, goal, save, home, actions, stage.item);
     case 'pour_water': return pourWater(bot, task, goal, save, home, actions);
+    case 'level_site': return levelSite(bot, task, goal, save, home, actions);
     case 'claim_bed': return claimBed(bot, task, goal, save, home, actions);
     case 'till': return tillPlot(bot, task, goal, save, home, actions);
     case 'plant': return plantPlot(bot, task, goal, save, home, actions);
@@ -676,6 +760,6 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
   return options;
 }
 
-module.exports = { bedCarried, placeOriented, isBed, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
+module.exports = { bedCarried, placeOriented, isBed, siteWork, levelSite, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
   woolCarried, woodSpecies, homeStage, homeComplete, homeStep, tillPlot, plantPlot, harvestPlot, placeBed, claimBed, buildPen, gatherWool, lureCows, breedCows, takeSteak, bake,
   homeFood, eatFromHome, homeChores };

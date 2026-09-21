@@ -284,3 +284,39 @@ test('the base anchors on the surface above a near portal, and on the bot when t
   assert.equal(home.baseAnchor(bot, far).kind, 'here', 'a portal two hundred blocks off is not loaded and not an anchor');
   assert(home.chooseBaseSite(bot, deepNear), 'a site is found around the surface anchor');
 });
+
+test('a bumpy site is levelled: a tree and a bump come out, a dip is filled with dirt, then the bed goes down', async () => {
+  const w = world({ items: [['water_bucket', 1], ['white_bed', 1], ['chest', 1], ['oak_log', 8], ['dirt', 8]] });
+  const { bot, actions } = w, goal = goalWith(bot), task = new Task('home'), save = () => {};
+  // No pond: a bucket site on flat ground has no work. Put a bump, a tree and a dip on the flat.
+  const flat = home.chooseBaseSite(bot, goal); assert.deepEqual(flat.work, { digs: [], fills: [] });
+  const cells = home.layout(flat).footprint;
+  const bump = cells[10], tree = cells[20], dip = cells[30];
+  w.set(new Vec3(bump.x, bump.y + 1, bump.z), 'dirt');
+  w.set(new Vec3(tree.x, tree.y + 1, tree.z), 'oak_log'); w.set(new Vec3(tree.x, tree.y + 2, tree.z), 'oak_log');
+  w.set(new Vec3(dip.x, dip.y, dip.z), 'air');
+  const work = home.siteWork(bot, goal, flat);
+  assert(work && work.digs.length >= 1 && work.fills.length >= 1, `a site with a little work is still a site: ${JSON.stringify(work)}`);
+  home.establishHome(goal, { ...flat, work });
+  assert.equal(goal.survival.home.levelling, work.digs.length + work.fills.length);
+  let stage = home.homeStage(bot, goal);
+  assert.equal(stage.phase, 'home_level'); assert.equal(stage.action, 'level_site');
+  await home.homeStep(bot, task, goal, save, stage, actions);
+  assert.deepEqual(home.siteWork(bot, goal, goal.survival.home), { digs: [], fills: [] }, 'level after the step');
+  stage = home.homeStage(bot, goal);
+  assert(goal.survival.home.levelledAt); assert.equal(stage.phase, 'home_bed');
+});
+
+test('a failed site search counts once per place, waits a minute between looks, and defers after three places', async () => {
+  const w = world({});
+  const { bot, actions } = w, goal = goalWith(bot);
+  for (let z = -40; z <= 40; z++) for (let x = -40; x <= 40; x++) w.set(new Vec3(x, LEVEL, z), 'stone');
+  const step = () => home.homeStep(bot, new Task('home'), goal, () => {}, { phase: 'home_site', action: 'choose_site' }, actions);
+  await assert.rejects(step(), /No level ground/); await assert.rejects(step(), /No level ground/);
+  assert.equal(goal.survival.homeSearch.attempts, 1, 'the same spot twice is one attempt');
+  assert.equal(home.homeStage(bot, goal), null, 'a minute off before the next look');
+  goal.survival.homeSearch.retryAfter = 0;
+  bot.entity.position = new Vec3(30.5, LEVEL + 1, 0.5); await assert.rejects(step(), /No level ground/);
+  bot.entity.position = new Vec3(30.5, LEVEL + 1, 30.5); await assert.rejects(step(), /No level ground/);
+  assert.equal(goal.survival.homeSearch.attempts, 3); assert(goal.survival.homeSearch.deferredUntil > Date.now());
+});
