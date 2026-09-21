@@ -1,0 +1,85 @@
+{
+ "part": "monument",
+ "origin": "Designed by the generative designer in an earlier run and kept as a ready-made schematic",
+ "source": {
+  "name": "Glass and sandstone sculpture",
+  "description": "An arbitrary two-material sculpture",
+  "size": [
+   3,
+   3,
+   3
+  ],
+  "palette": [
+   "sandstone",
+   "glass"
+  ],
+  "regions": [
+   {
+    "from": [
+     0,
+     0,
+     0
+    ],
+    "to": [
+     2,
+     0,
+     2
+    ],
+    "block": "sandstone"
+   },
+   {
+    "from": [
+     0,
+     1,
+     0
+    ],
+    "to": [
+     0,
+     2,
+     0
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     0,
+     1,
+     2
+    ],
+    "to": [
+     0,
+     2,
+     2
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     2,
+     1,
+     0
+    ],
+    "to": [
+     2,
+     2,
+     0
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     2,
+     1,
+     2
+    ],
+    "to": [
+     2,
+     2,
+     2
+    ],
+    "block": "glass"
+   }
+  ],
+  "entrance": null
+ }
+}

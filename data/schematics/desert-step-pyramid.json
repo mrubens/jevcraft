@@ -1,0 +1,308 @@
+{
+ "part": "monument",
+ "origin": "Designed by the generative designer in an earlier run and kept as a ready-made schematic",
+ "source": {
+  "name": "Desert Step Pyramid",
+  "description": "A 21x21 sandstone step pyramid rising eleven layers to a gold capstone, with a south entrance corridor leading to a glowstone-lit inner chamber holding a diamond pedestal.",
+  "size": [
+   21,
+   11,
+   21
+  ],
+  "palette": [
+   "sandstone",
+   "smooth_sandstone",
+   "gold_block",
+   "glowstone",
+   "diamond_block",
+   "air"
+  ],
+  "regions": [
+   {
+    "from": [
+     0,
+     0,
+     0
+    ],
+    "to": [
+     20,
+     0,
+     20
+    ],
+    "block": "sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     1,
+     1,
+     1
+    ],
+    "to": [
+     19,
+     1,
+     19
+    ],
+    "block": "sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     2,
+     2,
+     2
+    ],
+    "to": [
+     18,
+     2,
+     18
+    ],
+    "block": "sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     3,
+     3,
+     3
+    ],
+    "to": [
+     17,
+     3,
+     17
+    ],
+    "block": "sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     4,
+     4,
+     4
+    ],
+    "to": [
+     16,
+     4,
+     16
+    ],
+    "block": "sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     5,
+     5,
+     5
+    ],
+    "to": [
+     15,
+     5,
+     15
+    ],
+    "block": "sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     6,
+     6,
+     6
+    ],
+    "to": [
+     14,
+     6,
+     14
+    ],
+    "block": "sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     7,
+     7,
+     7
+    ],
+    "to": [
+     13,
+     7,
+     13
+    ],
+    "block": "sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     8,
+     8,
+     8
+    ],
+    "to": [
+     12,
+     8,
+     12
+    ],
+    "block": "smooth_sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     9,
+     9,
+     9
+    ],
+    "to": [
+     11,
+     9,
+     11
+    ],
+    "block": "smooth_sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     10,
+     10,
+     10
+    ],
+    "to": [
+     10,
+     10,
+     10
+    ],
+    "block": "gold_block",
+    "properties": null
+   },
+   {
+    "from": [
+     9,
+     1,
+     19
+    ],
+    "to": [
+     11,
+     2,
+     19
+    ],
+    "block": "smooth_sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     7,
+     1,
+     7
+    ],
+    "to": [
+     13,
+     4,
+     13
+    ],
+    "block": "air",
+    "properties": null
+   },
+   {
+    "from": [
+     10,
+     1,
+     14
+    ],
+    "to": [
+     10,
+     2,
+     19
+    ],
+    "block": "air",
+    "properties": null
+   },
+   {
+    "from": [
+     8,
+     5,
+     8
+    ],
+    "to": [
+     8,
+     5,
+     8
+    ],
+    "block": "glowstone",
+    "properties": null
+   },
+   {
+    "from": [
+     12,
+     5,
+     8
+    ],
+    "to": [
+     12,
+     5,
+     8
+    ],
+    "block": "glowstone",
+    "properties": null
+   },
+   {
+    "from": [
+     8,
+     5,
+     12
+    ],
+    "to": [
+     8,
+     5,
+     12
+    ],
+    "block": "glowstone",
+    "properties": null
+   },
+   {
+    "from": [
+     12,
+     5,
+     12
+    ],
+    "to": [
+     12,
+     5,
+     12
+    ],
+    "block": "glowstone",
+    "properties": null
+   },
+   {
+    "from": [
+     10,
+     1,
+     10
+    ],
+    "to": [
+     10,
+     1,
+     10
+    ],
+    "block": "smooth_sandstone",
+    "properties": null
+   },
+   {
+    "from": [
+     10,
+     2,
+     10
+    ],
+    "to": [
+     10,
+     2,
+     10
+    ],
+    "block": "diamond_block",
+    "properties": null
+   }
+  ],
+  "entrance": [
+   10,
+   1,
+   20
+  ]
+ }
+}

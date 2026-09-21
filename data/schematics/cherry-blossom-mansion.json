@@ -1,0 +1,666 @@
+{
+ "part": "mansion",
+ "origin": "Designed by the generative designer in an earlier run and kept as a ready-made schematic",
+ "source": {
+  "name": "Cherry Blossom Mansion",
+  "description": "A compact two-storey cherry-plank mansion with white concrete corner pillars, tall glass windows on every face, a grand three-wide framed entrance, a stepped pink terracotta roof, a wall-hugging interior staircase and glowstone lighting.",
+  "size": [
+   13,
+   10,
+   13
+  ],
+  "palette": [
+   "stone_bricks",
+   "cherry_planks",
+   "white_concrete",
+   "glass",
+   "pink_terracotta",
+   "glowstone",
+   "air"
+  ],
+  "regions": [
+   {
+    "from": [
+     0,
+     0,
+     0
+    ],
+    "to": [
+     12,
+     0,
+     12
+    ],
+    "block": "stone_bricks"
+   },
+   {
+    "from": [
+     0,
+     1,
+     0
+    ],
+    "to": [
+     12,
+     7,
+     12
+    ],
+    "block": "cherry_planks"
+   },
+   {
+    "from": [
+     0,
+     1,
+     0
+    ],
+    "to": [
+     0,
+     7,
+     0
+    ],
+    "block": "white_concrete"
+   },
+   {
+    "from": [
+     12,
+     1,
+     0
+    ],
+    "to": [
+     12,
+     7,
+     0
+    ],
+    "block": "white_concrete"
+   },
+   {
+    "from": [
+     0,
+     1,
+     12
+    ],
+    "to": [
+     0,
+     7,
+     12
+    ],
+    "block": "white_concrete"
+   },
+   {
+    "from": [
+     12,
+     1,
+     12
+    ],
+    "to": [
+     12,
+     7,
+     12
+    ],
+    "block": "white_concrete"
+   },
+   {
+    "from": [
+     1,
+     1,
+     1
+    ],
+    "to": [
+     11,
+     7,
+     11
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     1,
+     4,
+     1
+    ],
+    "to": [
+     11,
+     4,
+     11
+    ],
+    "block": "cherry_planks"
+   },
+   {
+    "from": [
+     11,
+     4,
+     9
+    ],
+    "to": [
+     11,
+     4,
+     10
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     11,
+     1,
+     8
+    ],
+    "to": [
+     11,
+     1,
+     10
+    ],
+    "block": "cherry_planks"
+   },
+   {
+    "from": [
+     11,
+     2,
+     9
+    ],
+    "to": [
+     11,
+     2,
+     10
+    ],
+    "block": "cherry_planks"
+   },
+   {
+    "from": [
+     11,
+     3,
+     10
+    ],
+    "to": [
+     11,
+     3,
+     10
+    ],
+    "block": "cherry_planks"
+   },
+   {
+    "from": [
+     0,
+     8,
+     0
+    ],
+    "to": [
+     12,
+     8,
+     12
+    ],
+    "block": "pink_terracotta"
+   },
+   {
+    "from": [
+     2,
+     9,
+     2
+    ],
+    "to": [
+     10,
+     9,
+     10
+    ],
+    "block": "pink_terracotta"
+   },
+   {
+    "from": [
+     4,
+     1,
+     0
+    ],
+    "to": [
+     4,
+     3,
+     0
+    ],
+    "block": "white_concrete"
+   },
+   {
+    "from": [
+     8,
+     1,
+     0
+    ],
+    "to": [
+     8,
+     3,
+     0
+    ],
+    "block": "white_concrete"
+   },
+   {
+    "from": [
+     4,
+     4,
+     0
+    ],
+    "to": [
+     8,
+     4,
+     0
+    ],
+    "block": "white_concrete"
+   },
+   {
+    "from": [
+     5,
+     1,
+     0
+    ],
+    "to": [
+     7,
+     3,
+     0
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     1,
+     2,
+     0
+    ],
+    "to": [
+     3,
+     3,
+     0
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     9,
+     2,
+     0
+    ],
+    "to": [
+     11,
+     3,
+     0
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     1,
+     5,
+     0
+    ],
+    "to": [
+     3,
+     6,
+     0
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     5,
+     5,
+     0
+    ],
+    "to": [
+     7,
+     6,
+     0
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     9,
+     5,
+     0
+    ],
+    "to": [
+     11,
+     6,
+     0
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     1,
+     2,
+     12
+    ],
+    "to": [
+     3,
+     3,
+     12
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     5,
+     2,
+     12
+    ],
+    "to": [
+     7,
+     3,
+     12
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     9,
+     2,
+     12
+    ],
+    "to": [
+     11,
+     3,
+     12
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     1,
+     5,
+     12
+    ],
+    "to": [
+     3,
+     6,
+     12
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     5,
+     5,
+     12
+    ],
+    "to": [
+     7,
+     6,
+     12
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     9,
+     5,
+     12
+    ],
+    "to": [
+     11,
+     6,
+     12
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     0,
+     2,
+     1
+    ],
+    "to": [
+     0,
+     3,
+     3
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     0,
+     2,
+     5
+    ],
+    "to": [
+     0,
+     3,
+     7
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     0,
+     2,
+     9
+    ],
+    "to": [
+     0,
+     3,
+     11
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     0,
+     5,
+     1
+    ],
+    "to": [
+     0,
+     6,
+     3
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     0,
+     5,
+     5
+    ],
+    "to": [
+     0,
+     6,
+     7
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     0,
+     5,
+     9
+    ],
+    "to": [
+     0,
+     6,
+     11
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     12,
+     2,
+     1
+    ],
+    "to": [
+     12,
+     3,
+     3
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     12,
+     2,
+     5
+    ],
+    "to": [
+     12,
+     3,
+     7
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     12,
+     2,
+     9
+    ],
+    "to": [
+     12,
+     3,
+     11
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     12,
+     5,
+     1
+    ],
+    "to": [
+     12,
+     6,
+     3
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     12,
+     5,
+     5
+    ],
+    "to": [
+     12,
+     6,
+     7
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     12,
+     5,
+     9
+    ],
+    "to": [
+     12,
+     6,
+     11
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     3,
+     4,
+     3
+    ],
+    "to": [
+     3,
+     4,
+     3
+    ],
+    "block": "glowstone"
+   },
+   {
+    "from": [
+     9,
+     4,
+     3
+    ],
+    "to": [
+     9,
+     4,
+     3
+    ],
+    "block": "glowstone"
+   },
+   {
+    "from": [
+     3,
+     4,
+     9
+    ],
+    "to": [
+     3,
+     4,
+     9
+    ],
+    "block": "glowstone"
+   },
+   {
+    "from": [
+     6,
+     4,
+     6
+    ],
+    "to": [
+     6,
+     4,
+     6
+    ],
+    "block": "glowstone"
+   },
+   {
+    "from": [
+     3,
+     8,
+     3
+    ],
+    "to": [
+     3,
+     8,
+     3
+    ],
+    "block": "glowstone"
+   },
+   {
+    "from": [
+     9,
+     8,
+     3
+    ],
+    "to": [
+     9,
+     8,
+     3
+    ],
+    "block": "glowstone"
+   },
+   {
+    "from": [
+     3,
+     8,
+     9
+    ],
+    "to": [
+     3,
+     8,
+     9
+    ],
+    "block": "glowstone"
+   },
+   {
+    "from": [
+     9,
+     8,
+     9
+    ],
+    "to": [
+     9,
+     8,
+     9
+    ],
+    "block": "glowstone"
+   }
+  ],
+  "entrance": [
+   6,
+   1,
+   0
+  ]
+ }
+}

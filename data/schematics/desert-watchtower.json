@@ -1,0 +1,652 @@
+{
+ "part": "tower",
+ "origin": "Designed by the generative designer in an earlier run and kept as a ready-made schematic",
+ "source": {
+  "name": "Desert Watchtower",
+  "description": "A 9x9 sandstone watchtower with red sandstone bands, two interior floors linked by stepped stairs, glass windows, and a crenellated rooftop deck.",
+  "size": [
+   9,
+   14,
+   9
+  ],
+  "palette": [
+   "sandstone",
+   "smooth_sandstone",
+   "red_sandstone",
+   "glass",
+   "glowstone",
+   "air"
+  ],
+  "regions": [
+   {
+    "from": [
+     0,
+     0,
+     0
+    ],
+    "to": [
+     8,
+     0,
+     8
+    ],
+    "block": "sandstone"
+   },
+   {
+    "from": [
+     0,
+     1,
+     0
+    ],
+    "to": [
+     8,
+     11,
+     8
+    ],
+    "block": "sandstone"
+   },
+   {
+    "from": [
+     1,
+     1,
+     1
+    ],
+    "to": [
+     7,
+     11,
+     7
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     0,
+     6,
+     0
+    ],
+    "to": [
+     8,
+     6,
+     8
+    ],
+    "block": "red_sandstone"
+   },
+   {
+    "from": [
+     0,
+     11,
+     0
+    ],
+    "to": [
+     8,
+     11,
+     8
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     0,
+     0,
+     0
+    ],
+    "to": [
+     0,
+     13,
+     0
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     8,
+     0,
+     0
+    ],
+    "to": [
+     8,
+     13,
+     0
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     0,
+     0,
+     8
+    ],
+    "to": [
+     0,
+     13,
+     8
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     8,
+     0,
+     8
+    ],
+    "to": [
+     8,
+     13,
+     8
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     1,
+     12,
+     0
+    ],
+    "to": [
+     7,
+     13,
+     0
+    ],
+    "block": "sandstone"
+   },
+   {
+    "from": [
+     1,
+     12,
+     8
+    ],
+    "to": [
+     7,
+     13,
+     8
+    ],
+    "block": "sandstone"
+   },
+   {
+    "from": [
+     0,
+     12,
+     1
+    ],
+    "to": [
+     0,
+     13,
+     7
+    ],
+    "block": "sandstone"
+   },
+   {
+    "from": [
+     8,
+     12,
+     1
+    ],
+    "to": [
+     8,
+     13,
+     7
+    ],
+    "block": "sandstone"
+   },
+   {
+    "from": [
+     2,
+     13,
+     0
+    ],
+    "to": [
+     2,
+     13,
+     0
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     4,
+     13,
+     0
+    ],
+    "to": [
+     4,
+     13,
+     0
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     6,
+     13,
+     0
+    ],
+    "to": [
+     6,
+     13,
+     0
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     2,
+     13,
+     8
+    ],
+    "to": [
+     2,
+     13,
+     8
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     4,
+     13,
+     8
+    ],
+    "to": [
+     4,
+     13,
+     8
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     6,
+     13,
+     8
+    ],
+    "to": [
+     6,
+     13,
+     8
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     0,
+     13,
+     2
+    ],
+    "to": [
+     0,
+     13,
+     2
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     0,
+     13,
+     4
+    ],
+    "to": [
+     0,
+     13,
+     4
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     0,
+     13,
+     6
+    ],
+    "to": [
+     0,
+     13,
+     6
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     8,
+     13,
+     2
+    ],
+    "to": [
+     8,
+     13,
+     2
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     8,
+     13,
+     4
+    ],
+    "to": [
+     8,
+     13,
+     4
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     8,
+     13,
+     6
+    ],
+    "to": [
+     8,
+     13,
+     6
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     7,
+     6,
+     3
+    ],
+    "to": [
+     7,
+     6,
+     5
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     1,
+     11,
+     4
+    ],
+    "to": [
+     1,
+     11,
+     6
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     7,
+     1,
+     1
+    ],
+    "to": [
+     7,
+     1,
+     1
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     7,
+     1,
+     2
+    ],
+    "to": [
+     7,
+     2,
+     2
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     7,
+     1,
+     3
+    ],
+    "to": [
+     7,
+     3,
+     3
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     7,
+     1,
+     4
+    ],
+    "to": [
+     7,
+     4,
+     4
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     7,
+     1,
+     5
+    ],
+    "to": [
+     7,
+     5,
+     5
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     1,
+     7,
+     7
+    ],
+    "to": [
+     1,
+     7,
+     7
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     1,
+     7,
+     6
+    ],
+    "to": [
+     1,
+     8,
+     6
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     1,
+     7,
+     5
+    ],
+    "to": [
+     1,
+     9,
+     5
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     1,
+     7,
+     4
+    ],
+    "to": [
+     1,
+     10,
+     4
+    ],
+    "block": "smooth_sandstone"
+   },
+   {
+    "from": [
+     3,
+     1,
+     0
+    ],
+    "to": [
+     5,
+     3,
+     0
+    ],
+    "block": "red_sandstone"
+   },
+   {
+    "from": [
+     4,
+     1,
+     0
+    ],
+    "to": [
+     4,
+     2,
+     0
+    ],
+    "block": "air"
+   },
+   {
+    "from": [
+     0,
+     3,
+     4
+    ],
+    "to": [
+     0,
+     4,
+     4
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     8,
+     3,
+     4
+    ],
+    "to": [
+     8,
+     4,
+     4
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     4,
+     3,
+     8
+    ],
+    "to": [
+     4,
+     4,
+     8
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     0,
+     8,
+     4
+    ],
+    "to": [
+     0,
+     9,
+     4
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     8,
+     8,
+     4
+    ],
+    "to": [
+     8,
+     9,
+     4
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     4,
+     8,
+     8
+    ],
+    "to": [
+     4,
+     9,
+     8
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     4,
+     8,
+     0
+    ],
+    "to": [
+     4,
+     9,
+     0
+    ],
+    "block": "glass"
+   },
+   {
+    "from": [
+     4,
+     0,
+     4
+    ],
+    "to": [
+     4,
+     0,
+     4
+    ],
+    "block": "glowstone"
+   },
+   {
+    "from": [
+     4,
+     6,
+     4
+    ],
+    "to": [
+     4,
+     6,
+     4
+    ],
+    "block": "glowstone"
+   },
+   {
+    "from": [
+     4,
+     11,
+     4
+    ],
+    "to": [
+     4,
+     11,
+     4
+    ],
+    "block": "glowstone"
+   }
+  ],
+  "entrance": [
+   4,
+   1,
+   0
+  ]
+ }
+}

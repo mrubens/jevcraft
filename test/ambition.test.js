@@ -11,28 +11,32 @@ test('the village is read off what stands, and candidates respect limits and the
     structure('Ruin', 'build a small cottage', { standing: 20 }), structure('Tower', 'build a tall watchtower')];
   const state = villageState(structures);
   assert.deepEqual([state.total, state.counts.cottage, state.counts.tower], [3, 2, 1]);
-  const templates = villageCandidates(structures);
-  assert.deepEqual(Object.keys(templates).sort(), ['cottage', 'mansion'], 'the tower is standing; custom parts need the designer');
-  assert(Object.keys(villageCandidates(structures, { customDesigns: true })).includes('well'));
+  const offered = villageCandidates(structures, { available: ['cottage', 'mansion', 'tower', 'well'] });
+  assert.deepEqual(Object.keys(offered).sort(), ['cottage', 'mansion', 'well'], 'the tower is standing; only parts the shelf holds are offered');
 });
 
 test('Jev picks the next part and scores the village; an unoffered part is refused', async () => {
   const structures = [structure('Cottage', 'build a small cottage')];
   let asked;
+  const shelf = [{ id: 'tiny', part: 'cottage', source: { name: 'Tiny Cottage', size: [5, 6, 5] }, summary: { name: 'Tiny Cottage', size: '5x5, 6 tall', blocks: 110, materials: '90 oak planks' } },
+    { id: 'birch', part: 'cottage', source: { name: 'Birch Cottage', size: [11, 10, 9] }, summary: { name: 'Birch Cottage', size: '11x9, 10 tall', blocks: 396, materials: '200 birch planks' } },
+    { id: 'tower', part: 'tower', source: { name: 'Tower' }, summary: { name: 'Tower', size: '9x9, 14 tall', blocks: 600, materials: 'sandstone' } }];
   const client = { systemOne: async ({ questions, state }) => {
+    if (questions.design) return { answers: { design: { choice: 'birch', confidence: 0.8 } } };
     asked = { questions, state };
     return { answers: { part: { choice: 'cottage', confidence: 0.8, probabilities: { cottage: 0.8, mansion: 0.1, done: 0.1 } }, progress: { type: 'score', score: 0.3, confidence: 0.9 } }, usage: { input_tokens: 400 } };
   } };
-  const chosen = await chooseVillagePart(client, { structures });
+  const chosen = await chooseVillagePart(client, { structures, available: ['cottage', 'tower'] });
   assert.equal(asked.questions.progress.type, 'score'); assert.deepEqual(asked.questions.progress.criteria, VILLAGE_LEVELS);
   assert.equal(asked.state.standing.length, 1);
   assert.equal(chosen.part, 'cottage'); assert.equal(chosen.score, 0.3); assert.equal(chosen.done, false);
-  const next = await nextAmbitionRequest(client, { ambition: 'build_a_village', setBy: 'Player' }, { structures });
-  assert.equal(next.kind, 'build'); assert.equal(next.request, 'build a small cottage'); assert.equal(next.from, 'Player');
+  const next = await nextAmbitionRequest(client, { ambition: 'build_a_village', setBy: 'Player' }, { structures, shelf });
+  assert.equal(next.kind, 'build'); assert.equal(next.request, 'build Birch Cottage (cottage)'); assert.equal(next.from, 'Player');
+  assert.equal(next.design.libraryId, 'birch'); assert.equal(next.design.backend, 'schematic-library');
   assert.deepEqual(next.buildAnchor, { x: 1, y: 64, z: -1 }, 'placed beside the newest standing structure');
   assert.equal(next.buildContinuation.placement, 'beside_target');
-  await assert.rejects(chooseVillagePart({ systemOne: async () => ({ answers: { part: { choice: 'castle' }, progress: { score: 1 } } }) }, { structures }), /not offered/);
-  const done = await nextAmbitionRequest({ systemOne: async () => ({ answers: { part: { choice: 'done' }, progress: { score: 3 } } }) }, { ambition: 'build_a_village' }, { structures });
+  await assert.rejects(chooseVillagePart({ systemOne: async () => ({ answers: { part: { choice: 'castle' }, progress: { score: 1 } } }) }, { structures, available: ['cottage'] }), /not offered/);
+  const done = await nextAmbitionRequest({ systemOne: async () => ({ answers: { part: { choice: 'done' }, progress: { score: 3 } } }) }, { ambition: 'build_a_village' }, { structures, shelf });
   assert.equal(done.done, true); assert.equal(done.villageScore, 3);
 });
 

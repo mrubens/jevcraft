@@ -1,0 +1,359 @@
+{
+ "part": "pavilion",
+ "origin": "Designed by the generative designer in an earlier run and kept as a ready-made schematic",
+ "source": {
+  "name": "Stair and slab gallery",
+  "description": "All orientations and an ordinary usable staircase",
+  "size": [
+   11,
+   5,
+   7
+  ],
+  "palette": [
+   "oak_planks",
+   "oak_stairs",
+   "oak_slab"
+  ],
+  "regions": [
+   {
+    "from": [
+     0,
+     0,
+     0
+    ],
+    "to": [
+     10,
+     0,
+     6
+    ],
+    "block": "oak_planks"
+   },
+   {
+    "from": [
+     0,
+     1,
+     2
+    ],
+    "to": [
+     8,
+     1,
+     2
+    ],
+    "block": "oak_planks"
+   },
+   {
+    "from": [
+     1,
+     1,
+     2
+    ],
+    "to": [
+     1,
+     1,
+     2
+    ],
+    "block": "oak_stairs",
+    "properties": {
+     "facing": "north",
+     "half": "top"
+    }
+   },
+   {
+    "from": [
+     1,
+     1,
+     4
+    ],
+    "to": [
+     1,
+     1,
+     4
+    ],
+    "block": "oak_stairs",
+    "properties": {
+     "facing": "north",
+     "half": "bottom"
+    }
+   },
+   {
+    "from": [
+     3,
+     1,
+     2
+    ],
+    "to": [
+     3,
+     1,
+     2
+    ],
+    "block": "oak_stairs",
+    "properties": {
+     "facing": "east",
+     "half": "top"
+    }
+   },
+   {
+    "from": [
+     3,
+     1,
+     4
+    ],
+    "to": [
+     3,
+     1,
+     4
+    ],
+    "block": "oak_stairs",
+    "properties": {
+     "facing": "east",
+     "half": "bottom"
+    }
+   },
+   {
+    "from": [
+     5,
+     1,
+     2
+    ],
+    "to": [
+     5,
+     1,
+     2
+    ],
+    "block": "oak_stairs",
+    "properties": {
+     "facing": "south",
+     "half": "top"
+    }
+   },
+   {
+    "from": [
+     5,
+     1,
+     4
+    ],
+    "to": [
+     5,
+     1,
+     4
+    ],
+    "block": "oak_stairs",
+    "properties": {
+     "facing": "south",
+     "half": "bottom"
+    }
+   },
+   {
+    "from": [
+     7,
+     1,
+     2
+    ],
+    "to": [
+     7,
+     1,
+     2
+    ],
+    "block": "oak_stairs",
+    "properties": {
+     "facing": "west",
+     "half": "top"
+    }
+   },
+   {
+    "from": [
+     7,
+     1,
+     4
+    ],
+    "to": [
+     7,
+     1,
+     4
+    ],
+    "block": "oak_stairs",
+    "properties": {
+     "facing": "west",
+     "half": "bottom"
+    }
+   },
+   {
+    "from": [
+     0,
+     1,
+     5
+    ],
+    "to": [
+     0,
+     1,
+     5
+    ],
+    "block": "oak_planks"
+   },
+   {
+    "from": [
+     1,
+     1,
+     5
+    ],
+    "to": [
+     1,
+     1,
+     5
+    ],
+    "block": "oak_slab",
+    "properties": {
+     "half": "top"
+    }
+   },
+   {
+    "from": [
+     3,
+     1,
+     5
+    ],
+    "to": [
+     4,
+     1,
+     5
+    ],
+    "block": "oak_slab",
+    "properties": {
+     "half": "bottom"
+    }
+   },
+   {
+    "from": [
+     9,
+     1,
+     1
+    ],
+    "to": [
+     9,
+     1,
+     1
+    ],
+    "block": "oak_stairs",
+    "properties": {
+     "facing": "south",
+     "half": "bottom"
+    }
+   },
+   {
+    "from": [
+     9,
+     1,
+     2
+    ],
+    "to": [
+     9,
+     1,
+     3
+    ],
+    "block": "oak_planks"
+   },
+   {
+    "from": [
+     9,
+     2,
+     2
+    ],
+    "to": [
+     9,
+     2,
+     2
+    ],
+    "block": "oak_stairs",
+    "properties": {
+     "facing": "south",
+     "half": "bottom"
+    }
+   },
+   {
+    "from": [
+     8,
+     2,
+     3
+    ],
+    "to": [
+     8,
+     2,
+     3
+    ],
+    "block": "oak_planks"
+   },
+   {
+    "from": [
+     8,
+     1,
+     3
+    ],
+    "to": [
+     8,
+     1,
+     3
+    ],
+    "block": "oak_planks"
+   },
+   {
+    "from": [
+     9,
+     2,
+     3
+    ],
+    "to": [
+     9,
+     2,
+     3
+    ],
+    "block": "oak_slab",
+    "properties": {
+     "half": "top"
+    }
+   },
+   {
+    "from": [
+     0,
+     1,
+     6
+    ],
+    "to": [
+     0,
+     3,
+     6
+    ],
+    "block": "oak_planks"
+   },
+   {
+    "from": [
+     0,
+     3,
+     6
+    ],
+    "to": [
+     3,
+     3,
+     6
+    ],
+    "block": "oak_planks"
+   },
+   {
+    "from": [
+     3,
+     2,
+     6
+    ],
+    "to": [
+     3,
+     2,
+     6
+    ],
+    "block": "oak_slab",
+    "properties": {
+     "half": "top"
+    }
+   }
+  ],
+  "entrance": null
+ }
+}

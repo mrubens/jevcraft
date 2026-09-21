@@ -136,7 +136,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     launchingAmbition = true;
     try {
       const structures = builds.describe(bot, bot.entity.position, bot.game.dimension);
-      const next = await nextAmbitionRequest(client, standing, { structures, customDesigns: !!process.env.OPENROUTER_API_KEY && (process.env.BUILD_DESIGNER || 'auto') !== 'jev' });
+      const next = await nextAmbitionRequest(client, standing, { structures, shelf: require('./schematic-library').library(bot.registry) });
       if (ended || active) return;
       standing.lastAttemptAt = Date.now();
       if (!next || next.done) {

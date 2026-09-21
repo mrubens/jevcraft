@@ -12,18 +12,23 @@ const AMBITIONS = {
   build_a_village: { title: 'build a village', description: 'Build a cluster of usable buildings, arranged together, that reads as a village.' },
 };
 
-// The village vocabulary: what the bot can build today, and how many of each
-// a village wants. Custom parts need the generative designer; without it the
-// templates cover dwellings, a landmark and a centre.
+// The village vocabulary: the parts a village wants and how many of each.
+// A part is on offer only when the schematic shelf holds a design for it,
+// so nothing here ever needs a generative model.
 const VILLAGE_PARTS = {
-  cottage: { request: 'build a small cottage', limit: 4, custom: false, description: 'A small cottage: the basic dwelling. A village wants several, near each other.' },
-  mansion: { request: 'build a two floor mansion', limit: 1, custom: false, description: 'A larger two-floor house for the village centre.' },
-  tower: { request: 'build a tall watchtower', limit: 1, custom: false, description: 'A watchtower that marks the village from a distance.' },
-  well: { request: 'build a small stone well with a little roof', limit: 1, custom: true, description: 'A well at the heart of the village.' },
-  farm: { request: 'build a small fenced farm plot with a water channel', limit: 1, custom: true, description: 'A farm plot beside the houses.' },
-  chapel: { request: 'build a small stone chapel with a steeple', limit: 1, custom: true, description: 'A chapel with a steeple as the second landmark.' },
+  cottage: { limit: 4, description: 'A small cottage: the basic dwelling. A village wants several, near each other.' },
+  mansion: { limit: 1, description: 'A larger house for the village centre.' },
+  tower: { limit: 1, description: 'A watchtower that marks the village from a distance.' },
+  pavilion: { limit: 1, description: 'An open pavilion or gallery: a gathering place between the houses.' },
+  monument: { limit: 1, description: 'A monument or sculpture as a landmark at the heart of the village.' },
+  well: { limit: 1, description: 'A well at the heart of the village.' },
+  farm: { limit: 2, description: 'A farm plot beside the houses.' },
+  chapel: { limit: 1, description: 'A chapel with a steeple as the second landmark.' },
+  barn: { limit: 1, description: 'A barn for the farm side of the village.' },
+  lamp: { limit: 6, description: 'A lamp post for the lanes between the houses; a few of these, spread out, make it feel lived in.' },
+  plaza: { limit: 1, description: 'A paved square that gives the village a middle.' },
 };
-const PART_WORDS = { cottage: /cottage|small house|hut/i, mansion: /mansion/i, tower: /tower/i, well: /\bwell\b/i, farm: /farm/i, chapel: /chapel|church/i };
+const PART_WORDS = { cottage: /cottage|small house|hut/i, mansion: /mansion/i, tower: /tower/i, pavilion: /pavilion|gallery/i, monument: /monument|sculpture|pyramid|statue/i, well: /\bwell\b/i, farm: /farm/i, chapel: /chapel|church/i, barn: /barn/i, lamp: /lamp/i, plaza: /plaza|square/i };
 
 function villageState(structures = []) {
   const standing = structures.filter(s => s.standing >= 50 && s.status === 'complete');
@@ -31,10 +36,10 @@ function villageState(structures = []) {
   return { standing, counts, total: standing.length };
 }
 
-function villageCandidates(structures, { customDesigns = false } = {}) {
+function villageCandidates(structures, { available = Object.keys(VILLAGE_PARTS) } = {}) {
   const { counts } = villageState(structures);
   return Object.fromEntries(Object.entries(VILLAGE_PARTS)
-    .filter(([part, spec]) => counts[part] < spec.limit && (customDesigns || !spec.custom))
+    .filter(([part, spec]) => counts[part] < spec.limit && available.includes(part))
     .map(([part, spec]) => [part, `${spec.description} (${counts[part]} standing, up to ${spec.limit}.)`]));
 }
 
@@ -47,8 +52,8 @@ const VILLAGE_LEVELS = [
 
 // Which part next, and how village-like the place already is. The Score is
 // the hill-climbing signal and the gauge people will watch.
-async function chooseVillagePart(client, { structures, customDesigns = false, signal } = {}) {
-  const state = villageState(structures), candidates = villageCandidates(structures, { customDesigns });
+async function chooseVillagePart(client, { structures, available, signal } = {}) {
+  const state = villageState(structures), candidates = villageCandidates(structures, { available });
   const questions = {
     progress: score('How complete is the village described in `standing`, judged from what stands and how the buildings sit together?', VILLAGE_LEVELS),
     ...(Object.keys(candidates).length ? { part: choice({
@@ -74,15 +79,21 @@ function besideNewest(structures) {
 
 // The next request the ambition wants run, as a goal spec the session can
 // launch. Null means the ambition is satisfied for now.
-async function nextAmbitionRequest(client, standing, { structures = [], customDesigns = false, signal } = {}) {
+async function nextAmbitionRequest(client, standing, { structures = [], shelf = [], signal } = {}) {
   if (!standing?.ambition || !AMBITIONS[standing.ambition]) return null;
   if (standing.ambition === 'beat_the_game') {
     return { kind: 'win', request: 'beat the game', ambition: 'beat_the_game', from: standing.setBy };
   }
-  const chosen = await chooseVillagePart(client, { structures, customDesigns, signal });
+  const available = [...new Set(shelf.map(e => e.part))];
+  const chosen = await chooseVillagePart(client, { structures, available, signal });
   if (chosen.done || !chosen.part) return { done: true, ambition: 'build_a_village', villageScore: chosen.score, judgments: chosen.judgments, usage: chosen.usage };
+  // Then which design from the shelf: a second Jev choice, over real
+  // schematics, that ends with a validated design and no generative call.
+  const design = await require('./schematic-library').chooseSchematic(client, { part: chosen.part, entries: shelf, structures, signal });
+  if (!design) return { done: true, ambition: 'build_a_village', villageScore: chosen.score, judgments: chosen.judgments, usage: chosen.usage };
   const anchor = besideNewest(structures);
-  return { kind: 'build', request: VILLAGE_PARTS[chosen.part].request, ambition: 'build_a_village', villagePart: chosen.part,
+  return { kind: 'build', request: `build ${design.entry.summary.name} (${chosen.part})`, ambition: 'build_a_village', villagePart: chosen.part,
+    design: { source: design.entry.source, backend: 'schematic-library', libraryId: design.entry.id, createdAt: new Date().toISOString(), judgments: design.judgments, usage: design.usage },
     villageScore: chosen.score, villageJudgments: chosen.judgments, usage: chosen.usage, from: standing.setBy,
     ...(anchor ? { buildAnchor: anchor, buildContinuation: { mode: 'fresh', placement: 'beside_target', judgments: chosen.judgments } } : {}) };
 }
