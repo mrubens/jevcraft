@@ -1,5 +1,5 @@
 'use strict';
-const { homeStage, bedCarried, woolCarried } = require('./home-base');
+const { homeStage, bedCarried, woolCarried, homeOf } = require('./home-base');
 const { restockStage, rungWants } = require('./home-stash');
 
 const dimension = bot => String(bot.game?.dimension || '').replace(/^minecraft:/, '').replace(/^the_/, '');
@@ -82,8 +82,11 @@ const tierOf = name => { const m = /^(\w+)_(pickaxe|sword|axe)$/.exec(name); ret
 // in it costs nothing.
 function preparationStage(bot, goal = {}) {
   const rung = preparationRung(bot, goal);
-  const restock = restockStage(bot, goal, rungWants(bot, rung));
-  if (restock) return { ...restock, action: 'home', home: { ...restock, wants: rungWants(bot, rung) } };
+  const home = homeOf(bot, goal);
+  if (!home?.stash?.position) return rung;
+  const wants = rungWants(bot, rung, { home, goal });
+  const restock = restockStage(bot, goal, wants);
+  if (restock) return { ...restock, action: 'home', home: { ...restock, wants } };
   return rung;
 }
 function preparationRung(bot, goal = {}) {

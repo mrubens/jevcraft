@@ -121,6 +121,30 @@ test('the kit comes out when the pockets are short of it, and the rung the chest
   assert.deepEqual(stash.rungWants(stone, null), []);
 });
 
+test('the chest answers the wool for a bed and the ingredients of a plan, reading the plan backwards so a covered product skips the gathering beneath it', () => {
+  // Wool: the carried colour's shortfall when the chest has it, else any whole bed's worth, else nothing.
+  const two = carrying([['black_wool', 2]]);
+  assert.deepEqual(stash.rungWants(two, { action: 'gather_wool', count: 1 }, { home: holding({ black_wool: 5, white_wool: 1 }) }), [{ item: 'black_wool', count: 1 }]);
+  assert.deepEqual(stash.rungWants(two, { action: 'gather_wool', count: 1 }, { home: holding({ white_wool: 4 }) }), [{ item: 'white_wool', count: 3 }]);
+  assert.deepEqual(stash.rungWants(two, { action: 'gather_wool', count: 1 }, { home: holding({ white_wool: 2 }) }), []);
+  assert.deepEqual(stash.rungWants(two, { action: 'gather_wool', count: 1 }), [], 'without the home there is no chest to read');
+  // A sword plan: mine raw iron, smelt it, craft. Ingots in the chest cover the craft, so the smelt and the mine beneath it are skipped and no raw iron is asked for.
+  const plan = [
+    { action: 'mine', drops: 'raw_iron', count: 2, consumes: {}, produces: { raw_iron: 2 } },
+    { action: 'smelt', item: 'iron_ingot', count: 2, consumes: { raw_iron: 2, coal: 1 }, produces: { iron_ingot: 2 } },
+    { action: 'craft', item: 'stick', count: 4, consumes: { oak_planks: 2 }, produces: { stick: 4 } },
+    { action: 'craft', item: 'iron_sword', count: 1, consumes: { iron_ingot: 2, stick: 1 }, produces: { iron_sword: 1 } },
+  ];
+  assert.deepEqual(stash.planIngredients(carrying([]), { iron_ingot: 8, raw_iron: 8, coal: 4, stick: 2 }, plan), [{ item: 'iron_ingot', count: 2 }, { item: 'stick', count: 1 }]);
+  // Without ingots the chest answers the smelt instead: raw iron and the coal to burn.
+  assert.deepEqual(stash.planIngredients(carrying([]), { raw_iron: 8, coal: 4 }, plan), [{ item: 'raw_iron', count: 2 }, { item: 'coal', count: 1 }]);
+  // What the pockets hold is spent first: one ingot carried, one from the chest.
+  assert.deepEqual(stash.planIngredients(carrying([['iron_ingot', 1], ['stick', 4]]), { iron_ingot: 8, stick: 2 }, plan), [{ item: 'iron_ingot', count: 1 }]);
+  // A chest short of the whole amount gives what it has.
+  assert.deepEqual(stash.planIngredients(carrying([]), { iron_ingot: 1 }, plan), [{ item: 'iron_ingot', count: 1 }]);
+  assert.deepEqual(stash.planIngredients(carrying([]), {}, plan), []);
+});
+
 test('the chest is opened beside the bed, moves are made against its real contents by slot or by type, and the contents are remembered', async () => {
   const w = await establishedHome({ items: [['iron_pickaxe', 1, 50], ['stone_pickaxe', 1], ['oak_log', 12], ['cobblestone', 100], ['cooked_beef', 6], ['crafting_table', 2], ['furnace', 1]] });
   const { bot, goal, task, save, actions } = w;
@@ -163,7 +187,8 @@ test('the ladder restocks from the stash ahead of its rungs, only within reach, 
   goal.survival.home.stash.contents = chest.stored();
   const stage = preparationStage(bot, goal);
   assert.equal(stage.phase, 'home_restock'); assert.equal(stage.action, 'home'); assert.equal(stage.home.action, 'restock');
-  assert.deepEqual(stage.home.wants, [{ item: 'stone_pickaxe', count: 1 }]);
+  assert.deepEqual(stage.home.wants[0], { item: 'stone_pickaxe', count: 1 });
+  assert.deepEqual(stage.home.wants.slice(1).map(w => w.item), ['cobblestone', 'oak_log'], 'and the plan for one: the stone and the wood the chest holds, in case the pickaxe is gone by the time the lid opens');
   assert.equal(nextGameStage(bot, goal).phase, 'home_restock');
   await gameStep(bot, new Task('win'), goal, save, { home: (b, t, g, s, st) => home.homeStep(b, t, g, s, st, actions) });
   assert.equal(goal.gameProgress.phase, 'home_restock');

@@ -233,12 +233,60 @@ function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items()
   return moves;
 }
 
-// What the ladder's next rung would go and gather, for the chest to answer.
-function rungWants(bot, rung) {
+// What the ladder's next rung would go and gather, for the chest to answer:
+// the rung's own item, and with the home known, the wool for its bed and
+// the ingredients of its plan that the chest holds, so a keepsake put away
+// last week is a walk to the chest and not a hunt.
+function rungWants(bot, rung, { home = null, goal = null } = {}) {
   if (!rung) return [];
-  if (rung.action === 'acquire') return [{ item: rung.item, count: Math.max(1, (rung.count || 1) - countOf(bot, rung.item)) }];
-  if (rung.action === 'acquire_set') return (rung.items || []).map(item => ({ item, count: 1 }));
-  return [];
+  const wants = [];
+  if (rung.action === 'acquire') wants.push({ item: rung.item, count: Math.max(1, (rung.count || 1) - countOf(bot, rung.item)) });
+  if (rung.action === 'acquire_set') wants.push(...(rung.items || []).map(item => ({ item, count: 1 })));
+  if (rung.action === 'gather_wool' && home) wants.push(...woolWants(bot, home, rung.count || 3));
+  if (['acquire', 'acquire_set'].includes(rung.action) && home) wants.push(...planWants(bot, home, rung, goal));
+  return wants;
+}
+
+// A bed is three wool of one colour: the carried colour's shortfall if the
+// chest has it, else any colour the chest has a whole bed of.
+function woolWants(bot, home, needed) {
+  const stored = contentsOf(home), carried = base().woolCarried(bot);
+  if ((stored[`${carried.colour}_wool`] || 0) >= needed) return [{ item: `${carried.colour}_wool`, count: needed }];
+  const whole = Object.keys(stored).find(name => /_wool$/.test(name) && stored[name] >= 3);
+  return whole ? [{ item: whole, count: 3 }] : [];
+}
+
+// The ingredients of the rung's plan that the chest holds. The plan is read
+// backwards: a step whose product the chest already covers is skipped with
+// everything under it, so a chest of ingots answers the craft and the mine
+// and smelt beneath it are never asked for. What the pockets hold is spent
+// before the chest is.
+function planWants(bot, home, rung, goal) {
+  const stored = contentsOf(home);
+  if (!Object.keys(stored).some(name => stored[name] > 0) || !bot.findBlocks) return [];
+  let plan;
+  try {
+    const { catalogPlan, planningInventory } = require('./work');
+    const outputs = rung.action === 'acquire_set' ? (rung.items || []).map(item => ({ item, count: 1 })) : rung.item;
+    plan = catalogPlan(bot, outputs, rung.count || 1, planningInventory(bot), goal || {});
+  } catch (_) { return []; }
+  return planIngredients(bot, stored, plan);
+}
+
+function planIngredients(bot, stored, plan) {
+  const carried = {};
+  for (const i of bot.inventory.items()) carried[i.name] = (carried[i.name] || 0) + i.count;
+  const wants = {}, covered = {};
+  for (const step of [...plan].reverse()) {
+    const produced = Object.entries(step.produces || {});
+    if (produced.length && produced.every(([name, n]) => (covered[name] || 0) >= n)) { for (const [name, n] of produced) covered[name] -= n; continue; }
+    for (const [name, n] of Object.entries(step.consumes || {})) {
+      const own = Math.min(n, carried[name] || 0); carried[name] = (carried[name] || 0) - own;
+      const take = Math.min(n - own, (stored[name] || 0) - (wants[name] || 0));
+      if (take > 0) { wants[name] = (wants[name] || 0) + take; covered[name] = (covered[name] || 0) + take; }
+    }
+  }
+  return Object.entries(wants).map(([item, count]) => ({ item, count }));
 }
 
 function stashStatus(bot, home) {
@@ -420,5 +468,5 @@ function stashChores(bot, goal) {
     run: (b, t, g, s, a) => stockStash(b, t, g, s, home, a) } };
 }
 
-module.exports = { SPARE_KIT, VALUABLES, KEEPSAKES, KIT_FOOD_POINTS, slotFits, keepsakeOf, isKeepsake, isKitMaterial, stashDeposits, stashWithdrawals, rungWants, stashStatus, forgetChest, rememberContents,
+module.exports = { SPARE_KIT, VALUABLES, KEEPSAKES, KIT_FOOD_POINTS, slotFits, keepsakeOf, isKeepsake, isKitMaterial, stashDeposits, stashWithdrawals, rungWants, planIngredients, stashStatus, forgetChest, rememberContents,
   restockStage, placeStashChest, stockStash, restockFromStash, stashValuables, stashChores, describeContents };
