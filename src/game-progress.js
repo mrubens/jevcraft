@@ -83,6 +83,13 @@ function preparationStage(bot) {
   if (!carried.includes('shield')) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
   if (best('sword') < 3) return { phase: 'iron_sword', action: 'acquire', item: 'iron_sword', count: 1 };
   if (!carried.includes('bucket') && !carried.includes('water_bucket')) return { phase: 'bucket', action: 'acquire', item: 'bucket', count: 1 };
+  // Armour is four rungs, not one label. The Nether trip needs all of it,
+  // and each piece is a visible step rather than "reach the Nether" for an
+  // hour while twenty-four ingots accumulate.
+  const worn = [...bot.inventory.items(), ...[5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot])].filter(Boolean).map(i => i.name);
+  for (const piece of ['helmet', 'chestplate', 'leggings', 'boots']) {
+    if (!worn.some(name => /^(iron|diamond|netherite)_/.test(name) && name.endsWith(`_${piece}`))) return { phase: `iron_${piece}`, action: 'acquire', item: `iron_${piece}`, count: 1 };
+  }
   return null;
 }
 
