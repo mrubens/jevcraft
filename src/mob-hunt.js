@@ -196,7 +196,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   if (client) {
     const controller = new AbortController();
     const watcher = setInterval(() => { if (task.cancelled || !canBegin(bot)) controller.abort(new Error('Combat decision interrupted')); }, 100);
-    try { decision = await decideTree(client, { state: snapshot, tree, signal: controller.signal,
+    try { decision = await decideTree(client, { state: snapshot, tree, signal: controller.signal, kind: 'combat',
       isFresh: () => canBegin(bot) && bot.health === snapshot.health && candidates.every(e => !positions.has(e.id) ||
         valid(bot, e) && e.position.distanceTo(positions.get(e.id)) < 2 && isolated(bot, e)) }); }
     catch (err) { task.check(); if (controller.signal.aborted) return false; throw err; }

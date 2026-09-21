@@ -61,7 +61,7 @@ async function chooseSchematic(client, { part, entries, structures = [], signal 
   if (!candidates.length) return null;
   if (candidates.length === 1 || !client) return { entry: candidates[0], judgments: null, usage: null };
   const options = Object.fromEntries(candidates.map(e => [e.id, `${e.summary.name}: ${e.summary.description || ''} ${e.summary.size}, ${e.summary.blocks} blocks, mostly ${e.summary.materials}.`]));
-  const response = await client.systemOne({ signal, state: {
+  const response = await client.systemOne({ signal, kind: 'design', state: {
     standing: structures.map(s => ({ name: s.name, request: s.request, size: s.size, materials: s.materials, distance: s.distance })),
     part, guidance: 'Pick the design that best fits beside the buildings already standing: matching or complementary materials, a scale in keeping with the rest, and variety across the village rather than the same house repeated. Every option is buildable here.',
   }, questions: { design: choice(`Which ${part} design should the bot build next for this village?`, options) } });

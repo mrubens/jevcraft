@@ -211,6 +211,7 @@ The **Observatory** is a local browser view of the bot's surroundings and reason
 
 - Orbit, behind-the-bot, first-person, and top-down cameras over the loaded terrain, with textures from your local Minecraft installation and route and build overlays.
 - **Inside Jev's head**: a running count of Jev calls, their median latency, tokens, and how often Jev asked the player instead of acting. For each decision, the question that was asked at every branch, the options offered, their probabilities, and how confident the answer was. Single-option steps are labelled as never having reached the model.
+- **This run**: a persistent ledger of the current request or dream, kept by the bot across restarts: elapsed time, restarts, Jev calls and tokens, split by the kind of question asked. Every finished run adds a line to [`docs/run-ledger.md`](docs/run-ledger.md).
 - Each chat request as its own event, with every typed answer from the interpretation call and the catalog walk that named the item; clarifying questions with the confidence that caused them; recovery events that say whether Jev or the generative adviser chose.
 - A timeline, replay, recording export and import, and live stop and resume.
 

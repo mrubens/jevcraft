@@ -21,7 +21,7 @@ function terrain(bot, radius = 12) {
   return { origin: position(origin), radius, minY: -5, maxY: 12, palette, blocks, known };
 }
 
-function observeBot(trace, bot, { getGoal = () => ({}), controls = {}, server = '' } = {}) {
+function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, controls = {}, server = '' } = {}) {
   let alive = true, world = null, worldAt = 0, route = [], previousDecision, previousAction;
   const epoch = ++trace.epoch;
   trace.label = `${bot.username || 'Jev'} · ${server}`;
@@ -89,6 +89,9 @@ function observeBot(trace, bot, { getGoal = () => ({}), controls = {}, server = 
     alive = false; clearInterval(timer); for (const [name, fn] of listeners) bot.removeListener(name, fn);
   }
   on('end', detach);
-  return { epoch, sample, detach, controls, get connected() { return alive && trace.connected && trace.epoch === epoch; } };
+  // The run's cost so far, read fresh on every poll; a ledger that cannot
+  // be read hides the panel rather than the whole view.
+  function ledger() { try { return getLedger() ?? null; } catch { return null; } }
+  return { epoch, sample, detach, controls, ledger, get connected() { return alive && trace.connected && trace.epoch === epoch; } };
 }
 module.exports = { terrain, observeBot };

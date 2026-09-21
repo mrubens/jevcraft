@@ -101,7 +101,7 @@ async function surveyBoatTrip(bot, task, destination) {
 }
 
 async function chooseBoat(client, state) {
-  const response = await client.systemOne({ state, questions: { travel: choice(
+  const response = await client.systemOne({ kind: 'travel', state, questions: { travel: choice(
     'Choose how to travel for this request. Code has verified a level water route, boat clearance and a safe shore at each end. Boats are useful for long river/lake crossings; small puddles are already excluded. Prefer a boat when this makes meaningful progress and saves a long swim. Respect an explicit request to swim, stay on land or avoid crafting. A boat already in inventory costs no crafting. New boats cost five planks plus access to a crafting table. Do not abandon the main task for an unnecessary boat.', {
       boat: 'Use a carried boat, or make a wooden boat, for this water crossing.',
       walk_or_swim: 'Continue ordinary walking/swimming without a boat.',

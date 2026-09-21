@@ -56,7 +56,27 @@ class TypeSafe {
 
   // Ask a batch of questions about one state. Every question is answered
   // independently server-side. Measure latency and token use for each workload.
-  async systemOne({ state, questions, model = this.model, signal }) {
+  // `run` and `kind` never reach the wire: they say which run the ledger
+  // charges the call to and what sort of question it was.
+  async systemOne({ state, questions, model = this.model, signal, run, kind }) {
+    const started = performance.now();
+    try {
+      const response = await this.exchange({ state, questions, model, signal });
+      this.charge({ run, kind, usage: response?.usage, latencyMs: performance.now() - started, ok: true });
+      return response;
+    } catch (err) {
+      // A call abandoned by its own caller cost nothing worth counting.
+      if (!signal?.aborted) this.charge({ run, kind, latencyMs: performance.now() - started, ok: false });
+      throw err;
+    }
+  }
+
+  charge(entry) {
+    if (!this.ledger) return;
+    try { this.ledger.record(entry); } catch (err) { console.error('[ledger]', err.message); }
+  }
+
+  async exchange({ state, questions, model = this.model, signal }) {
     // OpenRouter accepts omitted optional criteria, but rejects explicit null
     // for Noul questions. Preserve the caller's native questions unchanged.
     const wireQuestions = this.provider === 'openrouter' ? Object.fromEntries(Object.entries(questions).map(([id, question]) => {

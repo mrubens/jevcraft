@@ -125,7 +125,7 @@ async function walkBearing(bot, task, goal, save, target, actions, client) {
     const watch = setInterval(() => { try { task.check(); checkAir(bot); checkThreats(bot); } catch (e) { controller.abort(e); } }, 100);
     const stopThinking = require('./speech').thinking(bot);
     let decision;
-    try { decision = await decideTree(client, { tree, state: { request: goal.request, task: 'Follow observed Eyes of Ender', target,
+    try { decision = await decideTree(client, { tree, kind: 'stronghold', state: { request: goal.request, task: 'Follow observed Eyes of Ender', target,
       latestBearing: search.bearings.at(-1), estimatedTargetIsUnverified: true, health: bot.health, food: bot.food }, signal: controller.signal,
     isFresh: () => bot.game.dimension === dimension && bot.entity.position.distanceTo(origin) < 1 }); }
     finally { clearInterval(watch); stopThinking(); }

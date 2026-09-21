@@ -20,7 +20,7 @@ async function resolveItemBundle(client, registry, request, numbers = [], contex
         path: entry.path, description: entry.node.description, item: entry.node.item,
         relevantEntries: suggestions.filter(item => contains(entry.node, item)),
       }]));
-      const response = await client.systemOne({ state: { request, candidates, context }, questions:
+      const response = await client.systemOne({ kind: 'bundle', state: { request, candidates, context }, questions:
         Object.fromEntries(page.map((_, i) => [`candidate_${i}`, noul({
           task: `Does candidates.candidate_${i} contain at least one of the FINAL outputs the player requests? Select every requested output, including members of explicitly requested sets.`,
           rules: 'Full armor means helmet, chestplate, leggings and boots in the named material, not weapons or horse/wolf armor. Exclude ingredients, tools needed to obtain outputs, negated items, and optional suggestions. An unspecified variant means ONE ordinary default, not all variants: white for an uncolored bed/wool; for unspecified wooden objects use relevant explicit context.memory notes, then context.memory.preferences, then oak if neither applies. Honor current explicit colors/species over memory, and choose only one matching variant. A branch can contain a requested output even when its description only shows some examples.',
@@ -49,7 +49,7 @@ async function resolveItemBundle(client, registry, request, numbers = [], contex
       bot: 'Keep it, for yourself, or no recipient specified.',
     });
   }
-  const response = await client.systemOne({ state: { request, selectedOutputs: items, context }, questions });
+  const response = await client.systemOne({ kind: 'bundle', state: { request, selectedOutputs: items, context }, questions });
   judgments.push({ selectedOutputs: items, answers: response.answers, usage: response.usage });
   if (!(response.answers?.covered?.noul >= 0.65)) return { items: [], judgments, incomplete: true };
   const outputs = items.map((item, i) => {

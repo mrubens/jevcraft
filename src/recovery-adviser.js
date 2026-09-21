@@ -45,7 +45,7 @@ const describeOption = o => o.kind === 'acquire' ? `Gather ${o.count} ${String(o
 async function askJev(client, bot, task, observation, { signal, threshold = LIMITS.jevConfidence } = {}) {
   const started = Date.now();
   const options = Object.fromEntries(observation.options.map(o => [o.id, describeOption(o)]));
-  const response = await client.systemOne({ state: observation.context, signal, questions: {
+  const response = await client.systemOne({ state: observation.context, signal, kind: 'recovery', questions: {
     recovery: choice({
       task: 'The bot has failed repeatedly at its current step. Which offered recovery action is most likely to unblock the ORIGINAL player request?',
       guidance: 'Every option is a bounded attempt that code has already checked for safety and feasibility. Use `failure`, `recentFailures`, `previousAdvice`, `terrain`, `inventory` and `tools`. Prefer a concrete change of approach over repeating what just failed. Supplies the request does not need are not progress. Choose none when no offered action addresses the recorded failure.',

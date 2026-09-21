@@ -16,7 +16,7 @@ function designSummary(design) {
 
 async function reviewDesign(client, { request, design, memory, editing, signal }) {
   const state = { request, design: designSummary(design), memory, editing: editing ? { name: editing.name, size: editing.size } : undefined };
-  const response = await client.systemOne({ state, signal, questions: {
+  const response = await client.systemOne({ state, signal, kind: 'design', questions: {
     fits: noul('Does `design` answer what `request` asks for? Judge the kind of structure, its scale relative to the words used (a castle or mansion is far larger than a hut), and its materials where the request or memory names one. A design that is buildable but plainly not the thing asked for is no. Do not judge geometry details, decoration, or whether it is pretty.'),
   } });
   const fits = response.answers?.fits?.noul;

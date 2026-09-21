@@ -116,6 +116,7 @@ function render(updateScene = true) {
   text('glance-latency', stats.medianLatency === null ? '—' : `${stats.medianLatency} ms`);
   text('glance-tokens', stats.tokens ? stats.tokens.toLocaleString() : '—');
   text('glance-clarify', stats.clarifications);
+  renderLedger(data.ledger);
   text('event-time', frame ? `EVENT ${frame.id} · ${time(frame.at)}` : 'NO OBSERVATIONS');
   text('event-label', frame?.label || 'Waiting for observations');
   text('source-badge', frame?.kind === 'clarify' ? 'Asked the player' : sourceNames[frame?.source] || 'Observation'); $('source-badge').className = `pill ${frame?.kind === 'clarify' ? 'clarify' : frame?.source || ''}`;
@@ -191,6 +192,41 @@ function render(updateScene = true) {
   text('mode-label', follow ? 'FOLLOWING LATEST' : 'INSPECTING HISTORY');
   $('latest').className = follow ? 'selected' : '';
   renderTimeline();
+}
+// The run's cost so far, from the bot's own ledger rather than the frames on
+// screen: it reaches back past the window and survives restarts. Recorded
+// traces carry no ledger, so the block simply stays hidden for them.
+const duration = ms => {
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const s = Math.floor(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  return d ? `${d}d ${h % 24}h ${m % 60}m` : h ? `${h}h ${m % 60}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
+};
+const compact = n => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : Number(n || 0).toLocaleString();
+function renderLedger(ledger) {
+  const run = ledger?.current;
+  $('run').hidden = !run;
+  if (!run) return;
+  const idle = run.kind === 'idle';
+  text('run-name', idle ? 'Between requests · no dream' : run.name || human(run.kind));
+  text('run-status', run.status === 'open' ? idle ? 'standing' : 'in progress' : human(run.status));
+  $('run-status').className = `pill${run.status === 'open' && !idle ? ' jev' : ''}`;
+  text('run-elapsed', duration(run.elapsedMs));
+  text('run-started', Number.isFinite(Date.parse(run.startedAt)) ? `since ${new Date(run.startedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '');
+  text('run-restarts', run.restarts ?? 0);
+  text('run-calls', Number(run.calls || 0).toLocaleString());
+  text('run-calls-note', run.failed ? `${run.failed} failed` : run.calls ? `${Math.round(run.latencyMs / run.calls)} ms average` : 'none yet');
+  text('run-tokens', run.tokens ? run.tokens.toLocaleString() : '—');
+  text('run-tokens-note', run.tokens ? `${compact(run.inputTokens)} in · ${compact(run.outputTokens)} out` : 'in + out');
+  $('run-kinds').replaceChildren();
+  const most = Math.max(1, ...(run.byKind || []).map(k => k.tokens));
+  for (const kind of run.byKind || []) {
+    const bar = el('div', undefined, 'bar'), fill = el('b'); fill.style.width = `${Math.max(2, Math.round(kind.tokens * 100 / most))}%`; bar.append(fill);
+    const label = el('i', human(kind.key)); label.title = `${kind.calls} call${kind.calls === 1 ? '' : 's'} · ${kind.inputTokens.toLocaleString()} in, ${kind.outputTokens.toLocaleString()} out · ${kind.latencyMs.toLocaleString()} ms in total`;
+    $('run-kinds').append(label, bar, el('span', `${kind.calls} · ${compact(kind.tokens)}`));
+  }
+  text('run-days', (run.byDay || []).length > 1 ? `By in-game day: ${run.byDay.map(d => `day ${d.key} ${d.calls} calls, ${compact(d.tokens)} tokens`).join(' · ')}` : '');
+  $('run-recent').replaceChildren();
+  for (const past of ledger.recent || []) $('run-recent').append(el('div', `${past.name || human(past.kind)} · ${human(past.status)} · ${duration(past.elapsedMs)} · ${past.restarts ? `${past.restarts} restart${past.restarts === 1 ? '' : 's'} · ` : ''}${past.calls} call${past.calls === 1 ? '' : 's'} · ${compact(past.tokens)} tokens`));
 }
 // The chat request as Jev saw it: every typed answer from the batched call,
 // with how sure it was, then the catalog walk that named the item.

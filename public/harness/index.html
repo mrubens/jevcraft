@@ -31,6 +31,18 @@
           <div><span>Tokens</span><strong id="glance-tokens">—</strong><small>in + out</small></div>
           <div><span>Asked back</span><strong id="glance-clarify">—</strong><small>unsure, so it asked</small></div>
         </div>
+        <div id="run" class="run" hidden>
+          <div class="run-heading"><span class="eyebrow">THIS RUN</span><span id="run-name" title="The request or dream every Jev call is being charged to, from the bot's own ledger">—</span><span id="run-status" class="pill">—</span></div>
+          <div class="glance">
+            <div><span>Elapsed</span><strong id="run-elapsed">—</strong><small id="run-started"></small></div>
+            <div><span>Restarts</span><strong id="run-restarts">—</strong><small>processes since start</small></div>
+            <div><span>Jev calls</span><strong id="run-calls">—</strong><small id="run-calls-note"></small></div>
+            <div><span>Tokens</span><strong id="run-tokens">—</strong><small id="run-tokens-note">in + out</small></div>
+          </div>
+          <div id="run-kinds" class="run-kinds"></div>
+          <div id="run-days" class="muted"></div>
+          <div id="run-recent" class="run-recent"></div>
+        </div>
         <span id="event-time" class="eyebrow">SELECTED OBSERVATION</span><h3 id="event-label">No observation selected</h3><p id="provenance" class="muted"></p>
         <div id="decision-meta" class="decision-meta"></div>
         <div id="clarification" hidden></div>

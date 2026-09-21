@@ -43,7 +43,7 @@ async function designWithJev(bot, task, request, client, memory) {
   try {
     memory = await require('./preferences').resolvedPreferenceContext(cancellable, bot.registry, memory);
     const world = surveyForDesign(bot);
-    const response = await cancellable.systemOne({ state: { request, world, memory, templates: 'Rectangular cottage, mansion or tower, one to three floors, glass windows, stepped roof, open entrance and interior full-block stairs. No custom shapes, bridges or statues.' }, questions: {
+    const response = await cancellable.systemOne({ kind: 'design', state: { request, world, memory, templates: 'Rectangular cottage, mansion or tower, one to three floors, glass windows, stepped roof, open entrance and interior full-block stairs. No custom shapes, bridges or statues.' }, questions: {
       style: choice('Choose the closest supported structure that can fulfill this request. Select unsupported if the requested shape or essential feature cannot be represented by these templates.', {
         cottage: 'Small rectangular house/cottage, optionally multiple floors.', mansion: 'Large rectangular mansion with windows, wide entrance and multiple floors.', tower: 'Tall square tower with interior stairs.', unsupported: 'Requires another structure or custom geometry, such as bridge, castle battlements, statue, circular dome, complex wings or unsupported essential details.',
       }),

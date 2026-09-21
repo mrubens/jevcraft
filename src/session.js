@@ -22,8 +22,10 @@ const { CompanionMemory, position } = require('./memory');
 const { BuildRegistry, resolveBuildContinuation } = require('./builds');
 const { nextDreamRequest, shouldLaunchDream, DREAMS } = require('./dream');
 const { immediateThreat } = require('./danger');
+const { Ledger, withRun, appendSummary } = require('./ledger');
 
-function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness } = {}) {
+function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness,
+  runLedger = path.join(__dirname, '..', 'docs', 'run-ledger.md') } = {}) {
   let ended = false, spawned = false, resolveClosed;
   const connectedAt = Date.now();
   const closed = new Promise(resolve => { resolveClosed = resolve; });
@@ -72,11 +74,30 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // anything. Kept per world, beside the builds it produces.
   const dreamStore = new GoalStore(path.join(stateDirectory, `${memoryIdentity}-dream.json`));
   const saveDream = standing => { if (!ended) dreamStore.save({ version: 1, ...standing }); };
+  // The cost ledger: every Jev call charged to the request or dream it
+  // served, kept per world, and summarized to docs/run-ledger.md when a run
+  // ends. The client feeds it; the session only says which run is paying.
+  const ledger = new Ledger(path.join(stateDirectory, `${memoryIdentity}-ledger.json`), {
+    age: () => bot.time?.age, onClose: run => { if (runLedger) appendSummary(runLedger, run); } });
+  client.ledger = ledger;
+  // Whatever is active pays for the calls made on its behalf; with nothing
+  // active, an idle bot that has a dream is still that dream's cost.
+  const routed = withRun(client, () => active?.goal.ledgerRun ?? dreamStore.read()?.ledgerRun);
+  const dreamName = key => `dream · ${DREAMS[key].title}`;
+  // The dream's run in the ledger. A standing from before the ledger
+  // existed gets one now, dated from when the dream was given.
+  function dreamRun(standing) {
+    if (!standing?.dream || standing.satisfiedAt || ended) return standing?.ledgerRun;
+    const run = ledger.open({ id: standing.ledgerRun, kind: 'dream', name: dreamName(standing.dream), startedAt: standing.setAt });
+    if (standing.ledgerRun !== run.id) { standing.ledgerRun = run.id; saveDream(standing); }
+    return run.id;
+  }
+  dreamRun(dreamStore.read());
   const readyForDream = () => bot.game?.gameMode === 'creative' ||
     ((bot.game?.dimension !== 'minecraft:overworld' && bot.game?.dimension !== 'overworld' || (bot.time?.timeOfDay ?? 0) < 9500) &&
       (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 12 && !immediateThreat(bot));
   let launchingDream = false;
-  const survival = createSurvival(bot, { state: survivalStore.read() || store.read()?.survival, client });
+  const survival = createSurvival(bot, { state: survivalStore.read() || store.read()?.survival, client: routed });
   if (!survivalStore.read() && store.read()?.status === 'cancelled') survival.state.paused = true;
   const saveSurvival = () => { if (!ended) { survival.state.version = 1; survivalStore.save(survival.state); } };
   const saveGoal = goal => { if (!ended) { memory.recordGoal(goal, bot); store.save(goal); } };
@@ -116,11 +137,15 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     memory.bind(goal);
     goal.memoryContext = memory.context(goal.from);
     survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
+    // The goal's calls are charged to its run: the dream's when the dream
+    // launched it, otherwise the request's own, picked back up by id.
+    if (goal.dream) goal.ledgerRun = dreamRun(dreamStore.read()) ?? goal.ledgerRun;
+    else goal.ledgerRun = ledger.open({ id: goal.ledgerRun, kind: 'request', name: goal.request, startedAt: goal.createdAt }).id;
     const task = new Task(goal.kind, goal.request);
     const session = { task, goal };
     active = session;
     session.promise = runGoal(bot, task, goal, workStore, {
-      decisionClient: client, survival,
+      decisionClient: routed, survival,
       onStep: g => { console.log(JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g); },
     }).catch(err => {
       if (err.name !== 'Cancelled') {
@@ -128,7 +153,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         observation?.sample('error', { message: err.message }, goal);
         console.error(err); bot.chat(`${friendlyProblem(err)} ${recoveryHint(err)}`);
       }
-    }).finally(() => { if (active === session) active = null; });
+    }).finally(() => {
+      if (active === session) active = null;
+      if (!goal.dream && ['complete', 'blocked'].includes(goal.status)) ledger.close(goal.ledgerRun, goal.status);
+    });
   }
 
   // Hand the dream its next request, as if a player had typed it. Jev
@@ -138,16 +166,18 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     launchingDream = true;
     try {
       const structures = builds.describe(bot, bot.entity.position, bot.game.dimension);
-      const next = await nextDreamRequest(client, standing, { structures, shelf: require('./schematic-library').library(bot.registry) });
+      const runId = dreamRun(standing);
+      const next = await nextDreamRequest(withRun(client, runId), standing, { structures, shelf: require('./schematic-library').library(bot.registry) });
       if (ended || active) return;
       standing.lastAttemptAt = Date.now();
       if (!next || next.done) {
-        standing.satisfiedAt = new Date().toISOString(); standing.lastScore = next?.villageScore; saveDream(standing);
+        standing.satisfiedAt = new Date().toISOString(); standing.lastScore = next?.villageScore; delete standing.ledgerRun; saveDream(standing);
+        ledger.close(runId, 'satisfied');
         bot.chat(`I think my dream to ${DREAMS[standing.dream].title} is done for now. Tell me to chase it again if you want more.`);
         return;
       }
       saveDream(standing);
-      const goal = { ...next, version: 1, status: 'pending', createdAt: new Date().toISOString(), suspendedTasks: suspendPrevious(store.read()),
+      const goal = { ...next, ledgerRun: runId, version: 1, status: 'pending', createdAt: new Date().toISOString(), suspendedTasks: suspendPrevious(store.read()),
         requesterPosition: null, initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);
       const firstRung = next.kind === 'win' ? require('./game-progress').nextGameStage(bot, goal).phase?.replaceAll('_', ' ') : null;
@@ -165,7 +195,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (standing?.dream && !launchingDream && shouldLaunchDream(standing, retained, { ready: readyForDream() })) { launchDream(standing); return; }
     const goal = { ...(idleStore.read() || {}), version: 1, kind: 'survive', request: 'Stay alive and prepare supplies between player requests',
       retainedRequest: retained?.request, blueprint: retained?.blueprint, portalFrame: retained?.portalFrame, survival: survival.state,
-      dream: standing?.dream && !standing.satisfiedAt ? standing.dream : undefined };
+      dream: standing?.dream && !standing.satisfiedAt ? standing.dream : undefined,
+      ledgerRun: standing?.dream && !standing.satisfiedAt ? standing.ledgerRun : undefined };
     memory.bind(goal);
     const task = new Task('survival', goal.request);
     const session = { task, goal, idle: true };
@@ -181,7 +212,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       return launchable;
     };
     session.promise = runIdle(bot, task, goal, { save: g => { if (!ended) { idleStore.save(g); memory.flush(); } saveSurvival(); } }, {
-      survival, decisionClient: client, until,
+      survival, decisionClient: routed, until,
       onStep: g => { console.log(JSON.stringify({ idle: true, survivalAction: g.survivalAction, decision: g.decisions?.at(-1)?.path, health: bot.health, food: bot.food, position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g); },
     }).catch(err => {
       if (err.name !== 'Cancelled') {
@@ -208,6 +239,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   observation = harness?.attach(bot, {
     server: `${config.host}:${config.port}`,
     getGoal: () => active?.goal || store.read() || {},
+    getLedger: () => ledger.view(active?.goal.ledgerRun ?? dreamStore.read()?.ledgerRun),
     controls: {
       stop: async () => { if (ended) throw new Error('Connection ended'); invalidateRequests(); await stop(); },
       resume: async options => {
@@ -255,7 +287,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     bot.swingArm?.('right');
     const revision = generation;
     const requestPosition = { speakerPosition: position(bot.players[from]?.entity?.position), botPosition: position(bot.entity?.position), dimension: bot.game.dimension };
-    const requestClient = withRequestSignal(client, requestController.signal);
+    // The request pays for its own understanding. One that turns out to
+    // start no work folds that cost into the standing bucket instead.
+    const run = ledger.open({ kind: 'request', name: request });
+    const requestClient = withRun(withRequestSignal(client, requestController.signal), run.id);
+    let launched = false;
     pendingRequests++;
     pending = pending.then(async () => {
       if (revision !== generation || ended) return;
@@ -324,6 +360,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
             : standing.paused ? `My dream is to ${title}, but I'm keeping it aside until you tell me to chase it.`
             : `My dream is to ${title}. I chase it whenever nothing else needs me.`);
         } else if (operation === 'clear') {
+          if (standing.ledgerRun) ledger.close(standing.ledgerRun, 'cleared');
           saveDream({ dream: null, clearedBy: from, clearedAt: new Date().toISOString() });
           if (active && !active.idle && active.goal.dream) await stop('cancelled');
           bot.chat('Okay, no dream for now. I\'ll just look after myself between requests.');
@@ -337,13 +374,16 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         } else if (operation === 'resume') {
           if (!standing.dream) bot.chat("I don't have a dream yet. You could give me one: to beat the game, or to build a village.");
           else {
-            saveDream({ ...standing, paused: false, satisfiedAt: undefined, resumedBy: from, resumedAt: new Date().toISOString() });
+            // Chasing a satisfied dream again is a new run; picking up a paused one is not.
+            saveDream({ ...standing, paused: false, satisfiedAt: undefined, resumedBy: from, resumedAt: new Date().toISOString(),
+              ledgerRun: standing.satisfiedAt || !standing.ledgerRun ? ledger.open({ kind: 'dream', name: dreamName(standing.dream) }).id : standing.ledgerRun });
             bot.chat(`Back to my dream: to ${title}.`);
             const saved = store.read();
             if (saved?.dream && ['interrupted', 'cancelled', 'blocked'].includes(saved.status) && !active) launch(saved);
           }
         } else {
-          saveDream({ dream: key, setBy: from, setAt: new Date().toISOString() });
+          if (standing.ledgerRun && !standing.satisfiedAt) ledger.close(standing.ledgerRun, 'replaced');
+          saveDream({ dream: key, setBy: from, setAt: new Date().toISOString(), ledgerRun: ledger.open({ kind: 'dream', name: dreamName(key) }).id });
           bot.chat(`Got it. My dream is to ${DREAMS[key].title}. I'll chase it whenever nothing else needs me.`);
         }
         observation?.sample('dream', { operation, key, standing: dreamStore.read() });
@@ -356,7 +396,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       }
       await stop('replaced');
       if (revision !== generation || ended) return;
-      const goal = { ...spec, version: 1, status: 'pending', createdAt: new Date().toISOString(),
+      const goal = { ...spec, ledgerRun: run.id, version: 1, status: 'pending', createdAt: new Date().toISOString(),
         suspendedTasks: suspendPrevious(store.read()),
         requesterPosition: bot.players[from]?.entity ? { ...bot.players[from].entity.position } : null,
         initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
@@ -376,8 +416,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         spec.kind === 'come' ? `Coming to ${spec.target}.` : spec.kind === 'follow' ? `Following ${spec.target}; say Jev stop to stop.` :
         spec.kind === 'win' ? "Let's beat the dragon! I'll gather supplies and take it one step at a time." :
         "I'll get a Nether portal working, then go through to check it.");
-      launch(goal);
-    }).catch(err => { console.error(err); if (!ended && revision === generation) bot.chat('I had trouble understanding that. Please try saying it another way.'); }).finally(() => { pendingRequests--; });
+      launch(goal); launched = true;
+    }).catch(err => { console.error(err); if (!ended && revision === generation) bot.chat('I had trouble understanding that. Please try saying it another way.'); }).finally(() => { if (!launched) ledger.fold(run.id); pendingRequests--; });
   });
 
   bot.once('spawn', async () => {

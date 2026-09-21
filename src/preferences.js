@@ -34,7 +34,7 @@ async function resolvedPreferenceContext(client, registry, memory, { noted } = {
   const candidates = woodChoices(registry);
   // Judge explicit notes on their own. Do not make every catalog branch
   // repeatedly arbitrate between a declared preference and a conflicting guess.
-  const response = noted ? { answers: { noted_wood: noted } } : await client.systemOne({ state: { playerNotes: context.notes }, questions: {
+  const response = noted ? { answers: { noted_wood: noted } } : await client.systemOne({ kind: 'preferences', state: { playerNotes: context.notes }, questions: {
     noted_wood: NOTED_WOOD_QUESTION(candidates),
   } });
   const answer = response.answers?.noted_wood;

@@ -51,7 +51,7 @@ async function classifyCommand(client, bot, request, speaker, { signal, tree = b
         Object.fromEntries(Object.entries(groups).map(([key, entries]) => [key, entries.map(([, value]) => value).join('; ')])));
       return choose(instructions, Object.fromEntries(groups[group]));
     }
-    const response = await client.systemOne({ state: state(), questions: {
+    const response = await client.systemOne({ kind: 'command', state: state(), questions: {
       selection: choice(instructions, { ...options, none: 'No option faithfully matches the request; more detail is required.' }),
     }, signal });
     const selected = response.answers?.selection?.choice;
@@ -140,7 +140,7 @@ async function classifyCommand(client, bot, request, speaker, { signal, tree = b
   async function resolveRoles(root) {
     if (!['teleport', 'tp', 'gamemode', 'give', 'clear', 'effect', 'enchant', 'kill', 'spawnpoint'].includes(root)) return;
     const players = Object.fromEntries(Object.keys(bot.players).map(name => [name, name === speaker ? `${name}: the speaker; me or I` : name === bot.username ? `${name}: the bot; you, yourself, Jev; command executor` : name]));
-    const response = await client.systemOne({ state: state(), questions: {
+    const response = await client.systemOne({ kind: 'command', state: state(), questions: {
       subject: choice(`Assuming /${root}, who is the subject to move, change, affect, or give items to? Resolve the grammatical subject, not the destination. "Teleport yourself to me" means the bot is moved. "Teleport me to you" means the speaker is moved. An omitted target normally means the bot executor.`, players),
       ...(root === 'teleport' || root === 'tp' ? { destination: choice('Assuming teleport, what is the destination? "To me" is the speaker; "to you" is the bot. This is separate from who moves.', { ...players, coordinates: 'An explicitly requested coordinate position instead of a player' }) } : {}),
     }, signal });
@@ -186,7 +186,7 @@ async function classifyCommand(client, bot, request, speaker, { signal, tree = b
   }
   const command = '/' + tokens.join(' ');
   if (!nodes[current].flags.has_command || !singleLine(command)) throw new Error('Classifier did not reach an executable command');
-  const checked = await client.systemOne({ state: { ...state(), command }, questions: {
+  const checked = await client.systemOne({ kind: 'command', state: { ...state(), command }, questions: {
     faithful: noul('Does `command` implement the action that `request` asks for, with the correct targets, position, quantity and scope? Compare command semantics. Polite requests such as "can you stop the rain?" ask for action. The speaker is me/I; the bot is you/Jev and the command executor. @s and omitted player targets mean the bot. Use `observedPlayerPositions` to check location arguments. Answer no for negation, hypothetical examples, quoted instructions or purely informational questions.'),
   }, signal });
   judgments.push({ verification: checked.answers, usage: checked.usage });

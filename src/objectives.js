@@ -92,7 +92,7 @@ async function interpret(client, request, from, username, context = {}) {
   const candidates = itemCandidates(registry, address.text, { limit: 24 });
   const candidateChoices = candidates.length ? itemChoices(candidates) : null;
   const started = performance.now();
-  const response = await client.systemOne({
+  const response = await client.systemOne({ kind: 'request',
     state: { request, request_body: address.text, speaker: from, bot_name: username, bot_names: chatNames(username), explicitly_addressed: address.explicit,
       availablePlayers: context.players || [from], memory },
     questions: {

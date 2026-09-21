@@ -31,7 +31,7 @@ const CATEGORY_QUESTION = () => choice('Assuming the player wants to FIND someth
 // The category question can be asked speculatively in the same batch as the
 // request interpretation; a caller that already has that answer passes it.
 async function resolveDiscovery(client, registry, request, { category } = {}) {
-  const root = category ? { answers: { category } } : await client.systemOne({ state: { request }, questions: { category: CATEGORY_QUESTION() } });
+  const root = category ? { answers: { category } } : await client.systemOne({ kind: 'discovery', state: { request }, questions: { category: CATEGORY_QUESTION() } });
   const kind = root.answers?.category?.choice, judgments = [root];
   if (kind === 'none') return { target: null, judgments };
   if (!['biome', 'entity', 'block'].includes(kind)) throw new Error('Invalid discovery category');
@@ -41,7 +41,7 @@ async function resolveDiscovery(client, registry, request, { category } = {}) {
   }
   let children = discoveryCatalog(registry, kind);
   for (let depth = 0; depth < 3; depth++) {
-    const answer = await client.systemOne({ state: { request, targetKind: kind }, questions: { target: choice('Choose the catalog branch or exact target matching the requested biome or creature. Names and members come from this Minecraft version. Cherry biome means cherry_grove. Do not replace the requested species with a nearby alternative.', {
+    const answer = await client.systemOne({ kind: 'discovery', state: { request, targetKind: kind }, questions: { target: choice('Choose the catalog branch or exact target matching the requested biome or creature. Names and members come from this Minecraft version. Cherry biome means cherry_grove. Do not replace the requested species with a nearby alternative.', {
       ...Object.fromEntries(Object.entries(children).map(([key, node]) => [key, node.description])), none: 'No match in this catalog.',
     }) } });
     judgments.push(answer);

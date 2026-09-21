@@ -29,7 +29,7 @@ async function startHarness({ port = 3040, artifacts, stateDirectory, textureOpt
   const json = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
   function live(after = 0) { return { ...trace.view(after), capabilities: { controls: !!observer?.connected &&
     typeof observer.controls.stop === 'function' && typeof observer.controls.resume === 'function', terrain: true },
-    observationError: trace.observationError,
+    observationError: trace.observationError, ledger: observer?.ledger?.() ?? null,
     note: 'Live observations from the attached bot. Only loaded nearby blocks are rendered. Shapes, lighting and biome tints are simplified; textures come from the local Minecraft client when available.' }; }
   async function session(id, after = 0) {
     if (id === 'live') return live(after);

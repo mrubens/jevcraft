@@ -427,7 +427,7 @@ class Survival {
     // Without Jev, shelter comes before food and food before the request:
     // the order a careful player keeps when nobody is weighing the trade.
     const fallback = children => ['secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
-    try { decision = await decideTree(this.client, { state, tree, signal: controller.signal, fallback,
+    try { decision = await decideTree(this.client, { state, tree, signal: controller.signal, fallback, kind: 'survival',
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) }); }
     finally { clearInterval(watcher); stopThinking(); }
     task.check(); checkAir(bot); checkThreats(bot);

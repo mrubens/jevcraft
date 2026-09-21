@@ -268,7 +268,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     if (!client) throw blocked('End action selection needs the configured Jev decision client');
     const controller = new AbortController(), watcher = setInterval(() => { try { check(); } catch (err) { controller.abort(err); } }, 50);
     let decision;
-    try { decision = await decideTree(client, { tree, rootInstructions: endDecisionInstructions,
+    try { decision = await decideTree(client, { tree, rootInstructions: endDecisionInstructions, kind: 'end',
       state: endDecisionState({ request: goal.request, health: bot.health, food: bot.food, arrows: countOf(bot, 'arrow'),
         position: { ...bot.entity.position }, safe, dragon: state.dragon,
         head: head && { position: { ...head.position }, reachable: canStrike(bot, head) }, crystals: state.observedCrystals, combat: state }),

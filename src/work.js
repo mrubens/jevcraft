@@ -1102,7 +1102,7 @@ async function decideAction(bot, task, goal, save, client, onStep, tree, context
   }, 100);
   let decision;
   try {
-    decision = await decideTree(client, { state, tree, signal: controller.signal, isFresh: () => fingerprint() === initial, fallback: firstOption });
+    decision = await decideTree(client, { state, tree, signal: controller.signal, isFresh: () => fingerprint() === initial, fallback: firstOption, kind: 'source' });
   } finally { clearInterval(watcher); }
   task.check(); checkAir(bot);
   announceFallback(bot, goal, decision);

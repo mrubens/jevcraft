@@ -61,7 +61,7 @@ async function chooseVillagePart(client, { structures, available, signal } = {})
       guidance: 'Dwellings first, then a landmark or a centre, then the pieces that make it read as a village. Consider what already stands in `standing` and its counts. Choose done when adding more would not make it more of a village.',
     }, { ...candidates, done: 'The village is complete enough; do not add another building.' }) } : {}),
   };
-  const response = await client.systemOne({ signal, state: { standing: state.standing.map(s => ({ name: s.name, request: s.request, size: s.size, distance: s.distance, standing: s.standing })),
+  const response = await client.systemOne({ signal, kind: 'dream', state: { standing: state.standing.map(s => ({ name: s.name, request: s.request, size: s.size, distance: s.distance, standing: s.standing })),
     counts: state.counts, offered: Object.keys(candidates) }, questions });
   const part = response.answers?.part?.choice, progress = response.answers?.progress;
   if (part !== undefined && part !== 'done' && !Object.hasOwn(candidates, part)) throw new Error('Jev chose a village part that was not offered');
@@ -123,7 +123,7 @@ const OPERATIONS = {
   none: 'None of these; a quoted, hypothetical or negated statement, or a request about something else.',
 };
 async function resolveDream(client, spec) {
-  const response = await client.systemOne({ state: { request: spec.request, speaker: spec.from,
+  const response = await client.systemOne({ kind: 'dream', state: { request: spec.request, speaker: spec.from,
     guidance: 'The dream is what Jev chases when nobody has asked for anything. Giving one does not interrupt a request that is active.' },
   questions: { operation: choice('What does the speaker want to do with Jev\'s dream?', OPERATIONS) } });
   const operation = response.answers?.operation?.choice;
