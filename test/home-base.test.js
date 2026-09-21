@@ -299,6 +299,7 @@ test('a bumpy site is levelled: a tree and a bump come out, a dip is filled with
   assert(work && work.digs.length >= 1 && work.fills.length >= 1, `a site with a little work is still a site: ${JSON.stringify(work)}`);
   home.establishHome(goal, { ...flat, work });
   assert.equal(goal.survival.home.levelling, work.digs.length + work.fills.length);
+  bot.entity.position = new Vec3(flat.origin.x + 0.5, flat.origin.y + 1, flat.origin.z + 0.5);
   let stage = home.homeStage(bot, goal);
   assert.equal(stage.phase, 'home_level'); assert.equal(stage.action, 'level_site');
   await home.homeStep(bot, task, goal, save, stage, actions);

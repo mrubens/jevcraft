@@ -297,6 +297,9 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
     if (!work) return { phase: 'home_level', action: 'return_home' };
     const remaining = work.digs.length + work.fills.length;
     if (remaining) {
+      // Walk home first: levelling from inside the iron mine was one long
+      // path search per block.
+      if (homeDistance(bot, home) > 12) return { phase: 'home_level', action: 'return_home' };
       const dirt = work.fills.filter(f => f.item === 'dirt').length, blocks = work.fills.length;
       if (countOf(bot, 'dirt') < dirt) return { phase: 'home_level', action: 'acquire', item: 'dirt', count: dirt };
       if (countOf(bot, 'dirt') + countOf(bot, 'cobblestone') < blocks) return { phase: 'home_level', action: 'acquire', item: 'cobblestone', count: blocks - countOf(bot, 'dirt') };
@@ -466,7 +469,12 @@ async function levelSite(bot, task, goal, save, home, actions) {
   const work = siteWork(bot, { ...goal, portals: [] }, home);
   if (!work) throw new Error('The home site changed under the levelling');
   goal.step = { action: 'level_site', digs: work.digs.length, fills: work.fills.length }; save();
-  for (const p of work.digs.sort((a, b) => b.y - a.y)) { task.check(); checkAir(bot); checkThreats(bot); await actions.dig(bot, task, pos(p), { requireDrops: false }); }
+  // Trunks before crowns: the leaves of a felled tree decay on their own.
+  for (const p of work.digs.sort((a, b) => a.y - b.y)) {
+    task.check(); checkAir(bot); checkThreats(bot);
+    if (clear(bot.blockAt(pos(p)))) continue;
+    await actions.dig(bot, task, pos(p), { requireDrops: false });
+  }
   for (const f of work.fills) {
     task.check(); checkAir(bot); checkThreats(bot);
     const item = f.item === 'dirt' || !countOf(bot, 'cobblestone') ? 'dirt' : 'cobblestone';
