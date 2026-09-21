@@ -250,7 +250,9 @@ async function place(bot, task, p, material, { face, properties } = {}) {
   const cell = { ...p, material, properties };
   if (buildCellComplete(bot, cell)) return;
   if (isDoor(material) && !air(bot.blockAt(p.offset(0, 1, 0)))) throw new Error(`A door needs room for its top half at ${p}`);
-  if (!air(bot.blockAt(p)) && !['water', 'short_grass', 'tall_grass', 'fern', 'snow'].includes(bot.blockAt(p)?.name)) {
+  // Ground cover is replaced by a placed block, the way the game does it:
+  // leaf litter on the chest cell held up the whole base.
+  if (!air(bot.blockAt(p)) && !['water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'leaf_litter', 'dead_bush', 'seagrass', 'vine'].includes(bot.blockAt(p)?.name)) {
     throw new Error(`Placement obstructed by ${bot.blockAt(p)?.name} at ${p}`);
   }
   await stepOff(bot, task, p);
