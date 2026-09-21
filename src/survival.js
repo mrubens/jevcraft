@@ -46,7 +46,10 @@ class Survival {
       // descent or a gathering trip, choose a new local site instead of hauling
       // supplies back up a tree. Retain old records to protect partial work.
       (s.verifiedAt || s.kind === 'house' || shelter.inside(bot, s) ||
-        (pos(s.origin).distanceTo(bot.entity.position) <= 12 && Math.abs(s.origin.y - bot.entity.position.y) <= 3)))
+        (pos(s.origin).distanceTo(bot.entity.position) <= 12 && Math.abs(s.origin.y - bot.entity.position.y) <= 3)) &&
+      // A pocket well below is not worth the walk back down when a new one
+      // costs five blocks: the by-hand climb lost a day's height each dusk.
+      !(s.kind !== 'house' && !shelter.inside(bot, s) && s.origin.y < bot.entity.position.y - 6 && shelter.materialStock(bot) >= 16))
       .sort((a, b) => pos(a.origin).distanceTo(bot.entity.position) + (a.verifiedAt ? 0 : 32) -
         pos(b.origin).distanceTo(bot.entity.position) - (b.verifiedAt ? 0 : 32))[0];
   }

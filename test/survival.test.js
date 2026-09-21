@@ -488,3 +488,16 @@ test('a hostile behind rock does not make a step toward it unsafe unless it is n
   skeleton.position = new Vec3(5.5, 64, 0.5);
   assert.equal(safeFromHostiles(make(wall), new Vec3(1.5, 64, 0.5), [skeleton]), false, 'at the wall it still counts');
 });
+
+test('a verified pocket well below is not the current shelter when the bot carries blocks for a new one', () => {
+  const { Survival } = require('../src/survival');
+  const deep = { origin: { x: 0, y: 15, z: 0 }, dimension: 'overworld', verifiedAt: 'x', createdAt: 'x' };
+  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 31, 0.5) }, blockAt: () => ({ name: 'stone', boundingBox: 'block' }),
+    inventory: { items: () => [{ name: 'cobblestone', count: 64 }] } };
+  const survival = new Survival(bot, {}, { state: { shelters: [deep] } });
+  assert.equal(survival.currentShelter(), undefined, 'sixteen blocks down is a day of climbing');
+  bot.inventory.items = () => [];
+  assert.equal(survival.currentShelter(), deep, 'with nothing to seal a pocket, the old one is still the shelter');
+  bot.entity.position = new Vec3(0.5, 18, 0.5); bot.inventory.items = () => [{ name: 'cobblestone', count: 64 }];
+  assert.equal(survival.currentShelter(), deep, 'three blocks down is fine');
+});
