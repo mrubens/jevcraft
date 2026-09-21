@@ -382,8 +382,8 @@ class Survival {
     // food is a reason to go back through the portal, and only real hunger.
     const offWorld = !/overworld/.test(String(bot.game.dimension || 'overworld'));
     const hungerTrigger = offWorld ? 8 : surfaceObserver(bot)(bot.entity.position) ? 18 : 12;
-    const needsFood = foodSupply(bot) < desiredFood && (bot.food <= hungerTrigger || goal.stockFood || expeditionFood ||
-      (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful'));
+    const needsFood = foodSupply(bot) < desiredFood && (bot.food <= hungerTrigger || (!offWorld && (goal.stockFood || expeditionFood ||
+      (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful'))));
     if (!needsShelter && !needsFood) return false;
     const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay,
       playerUrgency: goal.urgency ? { level: goal.urgency.level, meaning: 'How much the wording of the request pressed for speed: relaxed, ordinary or pressed. Pressure is a reason to keep working while it is still safe, never a reason to skip shelter once night is close.' } : undefined,

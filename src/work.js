@@ -1584,13 +1584,25 @@ async function preparePortalSupports(bot, task, goal, save, needed) {
   return false;
 }
 
+// Walk into a portal block. The pathfinder will not always end a route
+// inside one, so get beside it and step in with the controls until the
+// dimension changes; the Nether-side return stalled a block short otherwise.
+async function enterPortal(bot, task, portal, arrived) {
+  await navigate(bot, task, new goals.GoalNear(portal.x, portal.y, portal.z, 1), { timeoutMs: 20000 });
+  if (arrived()) return;
+  bot.pathfinder.setGoal(null);
+  await bot.lookAt(pos(portal).offset(0.5, 0.5, 0.5), true);
+  bot.setControlState('forward', true);
+  try { await waitFor(task, arrived, 8000); }
+  finally { bot.setControlState('forward', false); }
+}
+
 async function netherStep(bot, task, goal, save) {
   if (String(bot.game.dimension).includes('nether')) return true;
   const portal = find(bot, ['nether_portal'], 64, 1)[0];
   if (portal) {
     goal.portal = { ...portal }; save();
-    await navigate(bot, task, new goals.GoalBlock(portal.x, portal.y, portal.z));
-    await waitFor(task, () => String(bot.game.dimension).includes('nether'), 12000);
+    await enterPortal(bot, task, portal, () => String(bot.game.dimension).includes('nether'));
     return true;
   }
   // A frame with no placed blocks can be relocated when its original ground
@@ -1662,8 +1674,7 @@ async function returnFromNether(bot, task, goal, save) {
   const portal = find(bot, ['nether_portal'], 64, 1)[0];
   if (!portal) throw new Blocked('No loaded return portal observed in the Nether; saved progress retained');
   goal.step = { action: 'return_overworld', portal: { ...portal } }; save();
-  await navigate(bot, task, new goals.GoalBlock(portal.x, portal.y, portal.z));
-  await waitFor(task, () => dimension(bot) === 'overworld', 12000);
+  await enterPortal(bot, task, portal, () => dimension(bot) === 'overworld');
 }
 
 function protectConstruction(bot, goal) {
