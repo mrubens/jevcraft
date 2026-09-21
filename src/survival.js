@@ -650,18 +650,26 @@ class Survival {
     const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot) && (underground || !routeBlocked);
     if (homeWalk && (bot.time.timeOfDay >= 11000 || underground)) {
       this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });
-      try {
-        // Out of the shaft by the stairs it dug, then home over the ground:
-        // a path search from the bottom of a mine to a bed timed out.
-        if (underground && this.actions.surfaceStep) await this.actions.surfaceStep(bot, task, goal, save);
-        else if (bot.time.timeOfDay < SLEEP_FROM) await this.actions.navigate(bot, task, new goals.GoalNear(homeBed.foot.x, homeBed.foot.y, homeBed.foot.z, 3), { timeoutMs: 60000, stallMs: 8000 });
-        else { /* bedtime on the surface: the tree's sleep option walks the last stretch */ }
-      } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; this.state.bedRouteFailedAt = Date.now(); }
+      // Out of the shaft by the stairs it dug, then home over the ground:
+      // a path search from the bottom of a mine to a bed timed out. A
+      // stumble on the stairs is retried next tick; only the walk itself
+      // failing sets the bed aside, and only for two minutes.
+      if (underground && this.actions.surfaceStep) {
+        try { await this.actions.surfaceStep(bot, task, goal, save); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      } else if (bot.time.timeOfDay < SLEEP_FROM) {
+        try { await this.actions.navigate(bot, task, new goals.GoalNear(homeBed.foot.x, homeBed.foot.y, homeBed.foot.z, 3), { timeoutMs: 60000, stallMs: 8000 }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; this.state.bedRouteFailedAt = Date.now(); }
+      }
       if (underground || bot.time.timeOfDay < SLEEP_FROM) { onStep(goal); return true; }
     }
     const plan = this.state.nightPlan?.until > Date.now() ? this.state.nightPlan : null;
     const stayingUp = plan?.plan === 'stay_up';
-    const needsShelter = shelterNeeded(bot) && !(bedReady && bot.time.timeOfDay < SLEEP_FROM) && !stayingUp;
+    // Before bedtime, a bed anywhere in reach (a walk that just failed
+    // included) means no sealing in yet: the walk is retried in two minutes
+    // and the shelter thirty blocks from the bed was the worse night.
+    const bedInReach = (!!bed || !!homeBed) && bot.game.dimension === 'overworld';
+    const needsShelter = shelterNeeded(bot) && !(bedInReach && bot.time.timeOfDay < SLEEP_FROM) && !stayingUp;
     // A shelter once chosen is a plan, not a question for every tick: the
     // second run climbed its shaft for a shelter, was asked again at the
     // top, went back down to the mine, and was asked again at the bottom.
