@@ -739,3 +739,23 @@ test('at night with a bed and full kit the choices are sleep, shelter, or stay u
   await narrow.step(new Task('test', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
   assert.deepEqual(offered, [['continue_request', 'secure_shelter']]);
 });
+
+test('the bed at the base is slept in when it is near, and it stays where it is', async () => {
+  const { Survival, nearbyHomeBed } = require('../src/survival');
+  const { layout } = require('../src/home-base');
+  const home = { version: 1, dimension: 'overworld', origin: { x: 0, y: 63, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 63, z: 0 }, bed: { placedAt: 'now', claimedAt: 'now' }, plot: {}, pen: {} };
+  const { bed } = layout(home);
+  const blocks = new Map([[`${new Vec3(bed.foot.x, bed.foot.y, bed.foot.z)}`, 'white_bed'], [`${new Vec3(bed.head.x, bed.head.y, bed.head.z)}`, 'white_bed']]);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000 },
+    entity: { position: new Vec3(3.5, 64, 3.5) }, health: 20, food: 20, isSleeping: false, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null,
+    sleep: async block => { assert.equal(block.name, 'white_bed'); bot.isSleeping = true; setTimeout(() => { bot.time.timeOfDay = 0; bot.isSleeping = false; }, 50); },
+    wake: async () => { bot.isSleeping = false; },
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
+  const goal = { kind: 'win', survival: { home } };
+  assert(nearbyHomeBed(bot, goal)?.placed, 'the base bed counts');
+  const walked = [], dug = [];
+  const survival = new Survival(bot, { navigate: async (b, t, g) => walked.push([g.x, g.y, g.z]), dig: async (b, t, p) => dug.push(`${p}`) }, { state: goal.survival });
+  await survival.sleepStep(new Task('test', 'sleep'), goal, () => {});
+  assert.equal(bot.time.timeOfDay, 0); assert.equal(walked.length, 1); assert.deepEqual(dug, [], 'the base bed is not picked up');
+});

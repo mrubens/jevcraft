@@ -321,3 +321,15 @@ test('a failed site search counts once per place, waits a minute between looks, 
   bot.entity.position = new Vec3(30.5, LEVEL + 1, 30.5); await assert.rejects(step(), /No level ground/);
   assert.equal(goal.survival.homeSearch.attempts, 3); assert(goal.survival.homeSearch.deferredUntil > Date.now());
 });
+
+test('tilling clears leaf litter off a plot cell first', async () => {
+  const w = await establishedHome({ items: [['wooden_hoe', 1]] });
+  const { bot, goal, actions } = w;
+  const plot = home.layout(goal.survival.home).plot;
+  for (const p of plot) { w.set(new Vec3(p.x, p.y, p.z), 'grass_block'); w.set(new Vec3(p.x, p.y + 1, p.z), 'air'); }
+  w.set(new Vec3(plot[0].x, plot[0].y + 1, plot[0].z), 'leaf_litter');
+  const dug = [];
+  await home.tillPlot(bot, new Task('till'), goal, () => {}, goal.survival.home, { ...actions, dig: async (b, t, p, o) => { dug.push(`${p}`); w.set(p, 'air'); } });
+  assert.deepEqual(dug, [`${new Vec3(plot[0].x, plot[0].y + 1, plot[0].z)}`]);
+  assert.equal(bot.blockAt(new Vec3(plot[0].x, plot[0].y, plot[0].z)).name, 'farmland');
+});

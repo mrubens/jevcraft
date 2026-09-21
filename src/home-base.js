@@ -390,6 +390,10 @@ async function tillPlot(bot, task, goal, save, home, actions) {
     task.check(); checkAir(bot); checkThreats(bot);
     goal.step = { action: 'till', cell: p, tilled }; save();
     await standAt(bot, task, actions, { x: p.x, y: p.y + 1, z: p.z }, 2);
+    // A hoe only turns ground with nothing above it: leaf litter and grass
+    // on the cell held the plot up for three tries a cell.
+    const cover = bot.blockAt(pos(p).offset(0, 1, 0));
+    if (cover && cover.name !== 'air' && cover.name !== 'cave_air') await actions.dig(bot, task, pos(p).offset(0, 1, 0), { requireDrops: false });
     await bot.equip(hoe, 'hand');
     const block = bot.blockAt(pos(p));
     if (!block || !TILLABLE.has(block.name)) continue;
