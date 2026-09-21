@@ -126,6 +126,36 @@ test('the chest is opened beside the bed, moves are made against its real conten
   assert.equal(goal.survival.home.completedAt, undefined, 'the finished base reopened for the missing chest');
 });
 
+test('the ladder restocks from the stash ahead of its rungs, only within reach, and only while the chest has something to give', async () => {
+  const w = await establishedHome({ items: [] });
+  const { bot, goal, task, save, actions } = w;
+  const chest = chestAt(w, [['iron_pickaxe', 1], ['stone_sword', 1], ['oak_log', 8], ['cobblestone', 64], ['bread', 4], ['crafting_table', 1], ['furnace', 1]]);
+  assert.equal(preparationStage(bot, goal).phase, 'stone_pickaxe', 'a chest not yet looked in is not counted on');
+  goal.survival.home.stash.contents = chest.stored();
+  const stage = preparationStage(bot, goal);
+  assert.equal(stage.phase, 'home_restock'); assert.equal(stage.action, 'home'); assert.equal(stage.home.action, 'restock');
+  assert.deepEqual(stage.home.wants, [{ item: 'stone_pickaxe', count: 1 }]);
+  assert.equal(nextGameStage(bot, goal).phase, 'home_restock');
+  await gameStep(bot, new Task('win'), goal, save, { home: (b, t, g, s, st) => home.homeStep(b, t, g, s, st, actions) });
+  assert.equal(goal.gameProgress.phase, 'home_restock');
+  assert.deepEqual(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])), { iron_pickaxe: 1, stone_sword: 1, oak_log: 8, cobblestone: 64, bread: 3, crafting_table: 1, furnace: 1 });
+  assert.deepEqual(chest.stored(), { bread: 1 });
+  assert.equal(preparationStage(bot, goal).phase, 'shield', 'the kit answered the first three rungs; the ladder goes on from the shield');
+  // A recent failure at the chest waits ten minutes; beyond reach the chest is not a step at all.
+  goal.survival.home.stash.contents = { shield: 1 };
+  assert.equal(preparationStage(bot, goal).phase, 'home_restock', 'the shield rung is answered by the chest');
+  goal.survival.home.stash.failedAt = new Date().toISOString();
+  assert.equal(preparationStage(bot, goal).phase, 'shield');
+  delete goal.survival.home.stash.failedAt;
+  bot.entity.position = new Vec3(400.5, LEVEL + 1, 0.5);
+  assert.equal(preparationStage(bot, goal).phase, 'shield');
+  // A failed open marks the chest for later rather than looping on it.
+  bot.entity.position = new Vec3(20.5, LEVEL + 1, 0.5);
+  bot.openContainer = async () => { throw new Error('lid blocked'); };
+  await assert.rejects(home.homeStep(bot, task, goal, save, preparationStage(bot, goal).home, actions), /lid blocked/);
+  assert(goal.survival.home.stash.failedAt); assert.equal(preparationStage(bot, goal).phase, 'shield');
+});
+
 test('the idle loop offers stocking the stash beside the farm chores, and each stash phase has one line said once', async () => {
   const w = await establishedHome({ items: [['stone_pickaxe', 1], ['stone_pickaxe', 1], ['oak_log', 20]] });
   const options = idleOptions(w.bot, { ...w.goal, kind: 'survive' });

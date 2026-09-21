@@ -1,5 +1,6 @@
 'use strict';
 const { homeStage } = require('./home-base');
+const { restockStage, rungWants } = require('./home-stash');
 
 const dimension = bot => String(bot.game?.dimension || '').replace(/^minecraft:/, '').replace(/^the_/, '');
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
@@ -75,7 +76,17 @@ function verifyGameCompletion(bot, goal) {
 // Nether" as a first stage hid hours of preparation behind one label.
 const TIERS = ['wooden', 'stone', 'iron', 'diamond', 'netherite'];
 const tierOf = name => { const m = /^(\w+)_(pickaxe|sword|axe)$/.exec(name); return m ? TIERS.indexOf(m[1]) + 1 : 0; };
+// The stash first: a respawn at the bed with empty pockets, or a rung the
+// chest beside the bed can answer, is a walk of two blocks rather than an
+// hour of gathering. Read from memory of the chest, so a chest with nothing
+// in it costs nothing.
 function preparationStage(bot, goal = {}) {
+  const rung = preparationRung(bot, goal);
+  const restock = restockStage(bot, goal, rungWants(bot, rung));
+  if (restock) return { ...restock, action: 'home', home: { ...restock, wants: rungWants(bot, rung) } };
+  return rung;
+}
+function preparationRung(bot, goal = {}) {
   // Equipped gear lives outside inventory.items(): armour in slots 5 to 8,
   // the shield in the off-hand at 45. A shield on the arm is not a missing shield.
   const equipped = [5, 6, 7, 8, 45].map(slot => bot.inventory.slots?.[slot]).filter(Boolean);
