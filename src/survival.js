@@ -338,7 +338,11 @@ class Survival {
       await this.actions.dig(bot, task, door.offset(0, 1, 0), { requireDrops: false });
       await this.actions.dig(bot, task, door, { requireDrops: false });
     }
-    if (!exit.outside) { this.state.shelters = this.state.shelters.filter(s => s !== refuge); save(); }
+    // Any dug-in shelter is one night's stop: left behind, it is forgotten,
+    // so its shell no longer stands reserved against the next staircase.
+    // Only a house persists. The bot bounced between the two floor cells of
+    // a pocket it had just left, every other cell around it reserved.
+    if (refuge.kind !== 'house') { this.state.shelters = this.state.shelters.filter(s => s !== refuge); save(); }
     if (exit.outside) await this.actions.navigate(bot, task, new goals.GoalBlock(exit.outside.x, exit.outside.y, exit.outside.z), { timeoutMs: 10000 });
   }
 
