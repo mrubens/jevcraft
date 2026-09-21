@@ -119,6 +119,23 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
       if (!gained()) await sleep(Math.max(0, Math.min(100, deadline - Date.now())));
     }
     task.check();
+    // A drop within arm's reach that no routed pickup spot could claim: walk
+    // straight at it. Pickup is proximity, not a path. Four raw iron lay a
+    // block from the bot while the router turned every spot down.
+    if (!gained() && typeof bot.setControlState === 'function') {
+      for (const drop of nearbyDrops(bot, item, origin, radius).filter(d => d.position.distanceTo(bot.entity.position) <= 3.5).slice(0, 3)) {
+        task.check(); checkAir(bot);
+        const until = Date.now() + 900;
+        try {
+          await bot.lookAt(drop.position.offset(0, 0.2, 0), true);
+          bot.setControlState('forward', true);
+          if (drop.position.y > bot.entity.position.y + 0.6) bot.setControlState('jump', true);
+          while (!gained() && Date.now() < until) { task.check(); await sleep(50); }
+        } catch (_) { task.check(); }
+        finally { bot.setControlState('forward', false); bot.setControlState('jump', false); }
+        if (gained()) break;
+      }
+    }
     if (!gained()) {
       let failed = failures.get(bot);
       if (!failed) failures.set(bot, failed = new Map());

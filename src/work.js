@@ -565,8 +565,18 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
     } else await explore(bot, task, goal, save, step.block);
     return;
   }
-  for (const p of candidates.slice(0, 8)) {
+  // Nearest first, and on through the vein: one block per call sent the
+  // bot off to re-plan and walk after every ore. An ore is worked until the
+  // step is met, or to a stack for ore, as long as the next block is close.
+  const here0 = bot.entity.position.clone();
+  candidates.sort((a, b) => a.distanceTo(here0) - b.distanceTo(here0));
+  const ore = /_ore$/.test(step.block || '') || step.block === 'ancient_debris';
+  const startCount = countOf(bot, step.drops);
+  const satisfied = () => ore ? countOf(bot, step.drops) >= Math.max(startCount + (step.count || 1), 32) || countOf(bot, step.drops) >= 32 : countOf(bot, step.drops) >= startCount + (step.count || 1);
+  let mined = 0;
+  for (const p of candidates.slice(0, 24)) {
     task.check(); checkAir(bot);
+    if (mined && (satisfied() || p.distanceTo(bot.entity.position) > 6)) return;
     const before = countOf(bot, step.drops);
     let access;
     try {
@@ -575,7 +585,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before, requiredTool: step.tool, enchantment: step.enchantment,
         minimumToolDurability: step.minimumToolDurability });
       access.restore(); access = undefined;
-      if (await collectNearbyDrops(bot, task, step.drops, { before, origin: p, radius: 8, waitForSpawnMs: 1000, allowExcavation: true })) return;
+      if (await collectNearbyDrops(bot, task, step.drops, { before, origin: p, radius: 8, waitForSpawnMs: 1000, allowExcavation: true })) { mined++; if (!ore || satisfied()) return; continue; }
     } catch (e) {
       task.check();
       if (['NeedsAir', 'NeedsSafety'].includes(e.name)) {
