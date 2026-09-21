@@ -32,3 +32,11 @@ test('when any tool will do, the fastest still wins, with the lower tier on a ti
   bot = fixture(['stone_pickaxe', 'stone_pickaxe']); bot.inventory.items()[0].durabilityUsed = 100;
   await equipBestTool(bot, stone); assert.equal(bot.equipped.slot, 37, 'the fresher of two equal tools');
 });
+
+test('the pathfinder digs with the same policy: stone with the stone pickaxe, never the iron', async () => {
+  const { installToolPolicy } = require('../src/movement');
+  const bot = fixture(['iron_pickaxe', 'stone_pickaxe']); bot.pathfinder = {};
+  installToolPolicy(bot);
+  assert.equal(bot.pathfinder.bestHarvestTool(stone).name, 'stone_pickaxe');
+  assert.equal(bot.pathfinder.bestHarvestTool(diamondOre).name, 'iron_pickaxe');
+});

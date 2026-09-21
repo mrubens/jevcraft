@@ -349,7 +349,7 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
 // lowest tier that harvests it is used; when any tool will do, speed still
 // decides, with the lower tier winning ties.
 const TOOL_TIER = item => { const m = /^(\w+?)_(pickaxe|axe|shovel|hoe|sword)$/.exec(item?.name || ''); return m ? TOOL_TIERS.indexOf(m[1]) + 1 : 0; };
-async function equipBestTool(bot, block) {
+function cheapestTool(bot, block) {
   let best = null;
   const handTime = block.digTime(null, false, false, false, [], {});
   let bestTime = handTime;
@@ -364,6 +364,10 @@ async function equipBestTool(bot, block) {
         : (time < bestTime || (time === bestTime && (TOOL_TIER(item) < TOOL_TIER(best) || (TOOL_TIER(item) === TOOL_TIER(best) && remaining(item) > remaining(best)))));
     if (better) { bestTime = time; best = item; }
   }
+  return best;
+}
+async function equipBestTool(bot, block) {
+  const best = cheapestTool(bot, block);
   if (best && (!bot.heldItem || bot.heldItem.type !== best.type || bot.heldItem.slot !== best.slot)) {
     await bot.equip(best, 'hand');
   }
@@ -376,6 +380,7 @@ module.exports = {
   shakeLoose,
   surveyRoute,
   equipBestTool,
+  cheapestTool,
   pickaxeTier,
   countOf,
 };

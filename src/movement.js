@@ -102,9 +102,20 @@ class SurvivalMovements extends Movements {
   }
 }
 
+// The pathfinder digs its way through terrain with whatever tool digs
+// fastest, which is the iron pickaxe, on every block of every tunnel. That
+// is how the dream run lost three iron pickaxes to stone. It digs with the
+// cheapest tool that harvests the block, the same policy as the bot's own digs.
+function installToolPolicy(bot) {
+  if (!bot.pathfinder) return;
+  const { cheapestTool } = require('./skills');
+  bot.pathfinder.bestHarvestTool = block => cheapestTool(bot, block);
+}
+
 function configureMovements(bot) {
   fixMiningMaterials(bot.registry);
   fixPathfinderResults();
+  installToolPolicy(bot);
   const movement = new SurvivalMovements(bot);
   for (const name of swimmingBlocks) if (bot.registry.blocksByName[name]) movement.liquids.add(bot.registry.blocksByName[name].id);
   for (const block of bot.registry.blocksArray) if (isDoor(block.name)) movement.fences.add(block.id);
@@ -148,4 +159,4 @@ function updateDigCapabilities(bot) {
     else movement.blocksCantBreak.add(block.id);
   }
 }
-module.exports = { configureMovements, updateDigCapabilities };
+module.exports = { configureMovements, updateDigCapabilities, installToolPolicy };
