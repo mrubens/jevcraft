@@ -592,3 +592,28 @@ test('a stock-driven food search is set aside after five minutes of finding noth
   assert.equal(await make(10, state).step(new Task('hungry'), { kind: 'win', stockFood: true }, () => {}), true, 'real hunger still forages');
   assert.deepEqual(forages, [10]);
 });
+
+test('a mob watching the shelter in daylight keeps the bot in for three minutes, not the whole day', async () => {
+  const { Survival } = require('../src/survival');
+  const origin = new Vec3(0, 20, 0);
+  const shellCells = new Set(shelter.shell(origin).map(p => `${p}`));
+  const skeleton = { name: 'skeleton', type: 'hostile', position: origin.offset(10, 0, 0), height: 1.99 };
+  const make = state => {
+    const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 },
+      entity: { position: origin.offset(0.5, 0, 0.5) }, entities: { 1: skeleton }, health: 20, food: 20, oxygenLevel: 20, time: { timeOfDay: 2000 },
+      inventory: { items: () => [{ name: 'cobblestone', count: 64 }] }, registry: require('minecraft-data')('26.1'),
+      blockAt: p => { const open = p.equals(origin) || p.equals(origin.offset(0, 1, 0)); return { name: open ? 'air' : shellCells.has(`${p}`) ? 'cobblestone' : 'stone', boundingBox: open ? 'empty' : 'block', position: p }; },
+      world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: {} }, on() {}, removeListener() {} };
+    const refuge = { origin: { ...origin }, dimension: 'overworld', verifiedAt: 'x', createdAt: 'x' };
+    const actions = [];
+    const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {} }, { state: { shelters: [refuge], ...state } });
+    survival.leave = async () => { actions.push('leave'); }; survival.wait = async () => { actions.push('wait'); };
+    return { survival, actions };
+  };
+  const fresh = make({});
+  await fresh.survival.step(new Task('watched'), {}, () => {});
+  assert.deepEqual(fresh.actions, ['wait']);
+  const long = make({ watchedSince: Date.now() - 200000 });
+  await long.survival.step(new Task('outwaited'), {}, () => {});
+  assert.deepEqual(long.actions, ['leave']);
+});

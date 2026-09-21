@@ -363,8 +363,14 @@ class Survival {
       // A mob behind twenty blocks of rock is not a reason to stay sealed in
       // past dawn: underground there is always one somewhere. Wait for the
       // ones that can see in, or are at the wall.
-      if (shelterNeeded(bot) || threats(bot).some(t => t.distance < 20 && (t.visible || t.distance < 6))) await this.wait(task, goal, save);
-      else await this.leave(task, goal, save, refuge);
+      // Cave mobs do not burn off at dawn. A mob that can see in keeps the
+      // bot inside for a few minutes, not the whole day: after that it leaves
+      // armed and lets the fight-or-flee rules take over.
+      const watched = !shelterNeeded(bot) && threats(bot).some(t => t.distance < 20 && (t.visible || t.distance < 6));
+      if (watched) this.state.watchedSince ||= Date.now(); else delete this.state.watchedSince;
+      const outwaited = watched && Date.now() - this.state.watchedSince > 180000;
+      if ((shelterNeeded(bot) || watched) && !outwaited) await this.wait(task, goal, save);
+      else { delete this.state.watchedSince; await this.leave(task, goal, save, refuge); }
       onStep(goal); return true;
     }
     const emergency = immediateThreat(bot);
