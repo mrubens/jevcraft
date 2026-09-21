@@ -75,8 +75,12 @@ function catalogTree(registry, { blocksOnly = false } = {}) {
   return Object.fromEntries(Object.entries(categories).map(([key, members]) => [key, { description: descriptions[key], children: subdivide(members) }]));
 }
 
-async function resolveItem(client, registry, request, { blocksOnly = false, context = {} } = {}) {
-  context = { ...context, memory: await resolvedPreferenceContext(client, registry, context.memory) };
+// A leaf pick this unsure, with a real runner-up, is a question for the
+// player rather than a coin toss executed for the next ten minutes.
+const AMBIGUOUS = { confidence: 0.5, runnerUp: 0.25 };
+
+async function resolveItem(client, registry, request, { blocksOnly = false, context = {}, noted } = {}) {
+  context = { ...context, memory: await resolvedPreferenceContext(client, registry, context.memory, { noted }) };
   const suggestions = itemCandidates(registry, request, { blocksOnly }).map(item => ({ item: item.name, category: categoryOf(registry, item) }));
   const path = [];
   const judgments = [];
@@ -104,6 +108,14 @@ async function resolveItem(client, registry, request, { blocksOnly = false, cont
       judgments.push({ path: [...path], options, answer: response.answers?.item, usage: response.usage });
       if (selected === 'none') return { item: null, path, judgments, latencyMs: Math.round(performance.now() - started) };
       if (!Object.hasOwn(children, selected)) throw new Error('Jev selected an item outside the Minecraft catalog hierarchy');
+      const answer = response.answers.item;
+      if (children[selected].item && Number.isFinite(answer.confidence) && answer.confidence < AMBIGUOUS.confidence) {
+        const runnerUp = Object.entries(answer.probabilities || {}).filter(([key]) => key !== selected && children[key]?.item)
+          .sort(([, a], [, b]) => b - a)[0];
+        if (runnerUp && runnerUp[1] >= AMBIGUOUS.runnerUp) {
+          return { item: null, ambiguous: [children[selected].item, children[runnerUp[0]].item], path, judgments, latencyMs: Math.round(performance.now() - started) };
+        }
+      }
     }
     path.push(selected);
     const node = children[selected];
@@ -113,4 +125,4 @@ async function resolveItem(client, registry, request, { blocksOnly = false, cont
   throw new Error('Minecraft catalog classification exceeded its depth limit');
 }
 
-module.exports = { itemCandidates, itemChoices, catalogTree, resolveItem };
+module.exports = { itemCandidates, itemChoices, catalogTree, resolveItem, AMBIGUOUS };

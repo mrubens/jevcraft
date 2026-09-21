@@ -23,15 +23,19 @@ function preferenceContext(memory) {
     meaning: 'Current explicit requests override explicit notes, then learned preferences as soft defaults for unspecified variants. A wood species applies across wooden item kinds, not unrelated items. Only the listed notes and preferences are evidence of preferences. An empty list means no remembered preference; use ordinary defaults. Do not infer player preferences from inventory or bot choices.' };
 }
 
-async function resolvedPreferenceContext(client, registry, memory) {
+const NOTED_WOOD_QUESTION = candidates => choice('Which wood species do the personal notes in `memory.notes` (or `playerNotes`) explicitly prefer? Use the latest clear preference if notes conflict. Exclude quotes, hypotheticals and species the player dislikes. Choose none if the notes do not state a positive wood preference.',
+  { ...candidates, none: 'No explicit positive wood preference in these notes.' });
+
+// The note judgment is independent of the request, so a caller that already
+// asked it in a batch passes `noted` and no second request is made.
+async function resolvedPreferenceContext(client, registry, memory, { noted } = {}) {
   const context = preferenceContext(memory);
   if (!context?.notes.length) return context;
   const candidates = woodChoices(registry);
   // Judge explicit notes on their own. Do not make every catalog branch
   // repeatedly arbitrate between a declared preference and a conflicting guess.
-  const response = await client.systemOne({ state: { playerNotes: context.notes }, questions: {
-    noted_wood: choice('Which wood species do these personal notes explicitly prefer? Use the latest clear preference if notes conflict. Exclude quotes, hypotheticals and species the player dislikes. Choose none if the notes do not state a positive wood preference.',
-      { ...candidates, none: 'No explicit positive wood preference in these notes.' }),
+  const response = noted ? { answers: { noted_wood: noted } } : await client.systemOne({ state: { playerNotes: context.notes }, questions: {
+    noted_wood: NOTED_WOOD_QUESTION(candidates),
   } });
   const answer = response.answers?.noted_wood;
   if (!answer || !(answer.choice === 'none' || Object.hasOwn(candidates, answer.choice))) throw new Error('Invalid explicit wood preference judgment');
@@ -42,4 +46,4 @@ async function resolvedPreferenceContext(client, registry, memory) {
   return context;
 }
 
-module.exports = { woodChoices, requestedPreferences, preferenceContext, resolvedPreferenceContext };
+module.exports = { woodChoices, requestedPreferences, preferenceContext, resolvedPreferenceContext, NOTED_WOOD_QUESTION };

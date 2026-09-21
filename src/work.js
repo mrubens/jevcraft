@@ -12,7 +12,9 @@ const { resourceTunnelStep } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = require('./vitals');
 const { decideTree } = require('./decisions');
 const { Survival } = require('./survival');
-const { checkThreats, safeFromHostiles } = require('./danger');
+const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
+const { resourceSources, nearestRemaining, decisionFingerprint } = require('./decision-options');
+const { reviewDesign } = require('./design-review');
 const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
 const { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete } = require('./surface');
@@ -810,8 +812,8 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
     const step = catalogPlan(bot, goal.material, required, inv, goal)[0];
     const actions = {};
     if (step?.action === 'mine') {
+      const reachable = [];
       for (const p of (await miningCandidates(bot, task, step, goal)).slice(0, 16)) {
-        if (Object.keys(actions).length >= 4) break;
         // Do not ask Jev to choose unsupported targets such as the trunk it
         // stands on or floating remnants with no currently feasible approach.
         if (p.equals(supportCell(bot.entity.position))) continue;
@@ -819,13 +821,15 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
           const route = bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalGetToBlock(p.x, p.y, p.z), 300);
           if (route.status !== 'success') continue;
         }
-        const name = bot.blockAt(p).name;
-        const key = `gather_${p.x}_${p.y}_${p.z}`;
-        actions[key] = leaf({ action: bot.canDigBlock(bot.blockAt(p)) ? 'dig and collect' : 'approach, dig and collect',
-          block: name, position: { ...p }, distance: Math.round(p.distanceTo(bot.entity.position)),
-          elevationChange: p.y - Math.floor(bot.entity.position.y), resourceNeeded: step.drops },
-        async () => { goal.step = step; save(); await mine(bot, task, step, goal, save, p); },
-        () => bot.blockAt(p)?.name === name);
+        reachable.push(p);
+      }
+      for (const source of resourceSources(bot, reachable, { failures: goal.decisionFailures })) {
+        actions[source.key] = leaf({ action: 'approach, dig and collect', ...source.description, resourceNeeded: step.drops },
+          async () => {
+            const p = nearestRemaining(bot, source);
+            if (!p) throw new Error(`The ${source.block} source is no longer there`);
+            goal.step = step; save(); await mine(bot, task, step, goal, save, p);
+          }, () => !!nearestRemaining(bot, source));
       }
       if (!Object.keys(actions).length) actions.explore_resource = leaf(`Search for a reachable source of ${step.drops}.`, () => acquireStep(bot, task, goal.material, required, goal, save));
     } else {
@@ -860,14 +864,12 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
     }
   }
   if (!Object.keys(subtasks).length) throw new Blocked('No feasible house action remains; inspect the saved construction failures');
+  // Eating carried food when hungry is a rule, handled before this step ever
+  // runs, not a choice offered here. Offering it made Jev weigh a two-second
+  // meal against building at food 8, and it chose building often enough to
+  // fail the decision eval. Jev decides what to build with and where to get
+  // it; code decides when to eat.
   const tree = { build_house: { description: 'Continue the retained player request to build a house.', children: subtasks } };
-  if (chooseFood(bot) && (bot.food <= 16 || (bot.health <= 12 && bot.food < 20))) {
-    tree.restore_food = { description: 'Pause house work to restore hunger and allow health regeneration.', children: {
-      eat_carried_food: { description: 'Eat a safe food item already in inventory.', children: {
-        eat: leaf('Eat and verify that hunger increased, retaining the house goal.', () => maintainVitals(bot, task, step => { goal.survivalAction = step; save(); })),
-      } },
-    } };
-  }
   await decideAction(bot, task, goal, save, client, onStep, tree);
   return !!goal.blueprint && verifyHouse(bot, goal.blueprint).ok;
 }
@@ -875,7 +877,8 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
 async function decideAction(bot, task, goal, save, client, onStep, tree, context = {}) {
   const observation = decisionObservation(bot, goal);
   const state = { ...observation, ...context };
-  const fingerprint = JSON.stringify(observation);
+  const fingerprint = () => decisionFingerprint(bot, { inventory: planningInventory, immediateThreat, needsAir });
+  const initial = fingerprint();
   const controller = new AbortController();
   const watcher = setInterval(() => {
     try { task.check(); checkAir(bot); }
@@ -883,13 +886,12 @@ async function decideAction(bot, task, goal, save, client, onStep, tree, context
   }, 100);
   let decision;
   try {
-    decision = await decideTree(client, { state, tree, signal: controller.signal,
-      isFresh: () => JSON.stringify(decisionObservation(bot, goal)) === fingerprint });
+    decision = await decideTree(client, { state, tree, signal: controller.signal, isFresh: () => fingerprint() === initial });
   } finally { clearInterval(watcher); }
   task.check(); checkAir(bot);
   const record = { at: new Date().toISOString(), path: decision.path, latencyMs: decision.latencyMs,
-    state, options: JSON.parse(JSON.stringify(tree)), usage: decision.usage, judgments: decision.judgments,
-    stale: decision.stale || (decision.action.valid ? !decision.action.valid() : false) };
+    state, options: JSON.parse(JSON.stringify(tree)), usage: decision.usage, judgments: decision.judgments, asked: decision.asked,
+    model: client.model, stale: decision.stale || (decision.action?.valid ? !decision.action.valid() : false) };
   goal.decisions ||= []; goal.decisions.push(record); goal.decisions = goal.decisions.slice(-40);
   save(); onStep(goal);
   if (record.stale) return false;
@@ -949,7 +951,9 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     const fallback = mode === 'jev' || mode === 'auto' && !process.env.OPENROUTER_API_KEY;
     // Recheck saved geometry after a validator update, before paying for a
     // replacement or silently reducing the user's request to a house template.
-    if (!fallback && goal.designDraft) {
+    // A draft Jev rejected as not answering the request is valid geometry
+    // too, so it must go back to the designer rather than through here.
+    if (!fallback && goal.designDraft && goal.designReview?.accepted !== false) {
       try {
         goal.design = { ...validateSchematic(goal.designDraft, bot.registry), backend: 'validated-saved-draft', createdAt: new Date().toISOString() };
         delete goal.designDraft; delete goal.designError; delete goal.designFallbackReason; save(); return false;
@@ -985,6 +989,24 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
         if (!fallback && err.draft && goal.designAttempts < 4) err.name = 'DesignRepair';
       }
       save(); throw err;
+    }
+    // Geometry has been validated; whether it is the thing that was asked for
+    // has not. That is a judgment, and a cheap one next to building it.
+    if (!fallback && client) {
+      const review = await reviewDesign(client, { request: goal.request, design: goal.design, memory: goal.memoryContext, editing });
+      task.check();
+      goal.designReview = review;
+      if (!review.accepted) {
+        const summary = review.summary;
+        goal.designError = `the design does not answer the request (Jev put the fit at ${Math.round(review.fits * 100)}%): it drew "${summary.name}", ${summary.size.width}x${summary.size.height}x${summary.size.depth} with ${summary.solidBlocks} blocks; redesign it to match the request in kind, scale and material`;
+        goal.designDraft = goal.design.source; delete goal.design;
+        (goal.designHistory ||= []).push({ at: new Date().toISOString(), attempt: goal.designAttempts, error: goal.designError, draft: goal.designDraft, review });
+        goal.designHistory = goal.designHistory.slice(-4);
+        save();
+        const err = new Error(goal.designError);
+        if (goal.designAttempts < 4) err.name = 'DesignRepair';
+        throw err;
+      }
     }
     delete goal.designDraft; delete goal.designError;
     save();
@@ -1304,15 +1326,21 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
   if (!step) return false;
   const actions = {};
   if (step.action === 'mine') {
+    const reachable = [];
     for (const p of (await miningCandidates(bot, task, step, goal)).slice(0, 12)) {
-      if (Object.keys(actions).length >= 4) break;
       if (p.equals(supportCell(bot.entity.position))) continue;
       if (!bot.canDigBlock(bot.blockAt(p)) && bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalGetToBlock(p.x, p.y, p.z), 200).status !== 'success') continue;
-      const block = bot.blockAt(p).name;
-      actions[`gather_${p.x}_${p.y}_${p.z}`] = { description: { block, position: { ...p },
-        distance: Math.round(p.distanceTo(bot.entity.position)), resource: step.drops, requiredTool: step.tool },
-      valid: () => bot.blockAt(p)?.name === block,
-      run: async () => { goal.step = step; save(); await mine(bot, task, step, goal, save, p); } };
+      reachable.push(p);
+    }
+    // Jev chooses between sources that differ; code picks the block inside one.
+    for (const source of resourceSources(bot, reachable, { failures: goal.decisionFailures })) {
+      actions[source.key] = { description: { ...source.description, resource: step.drops, requiredTool: step.tool },
+        valid: () => !!nearestRemaining(bot, source),
+        run: async () => {
+          const p = nearestRemaining(bot, source);
+          if (!p) throw new Error(`The ${source.block} source is no longer there`);
+          goal.step = step; save(); await mine(bot, task, step, goal, save, p);
+        } };
     }
   }
   if (!Object.keys(actions).length) actions[step.action === 'mine' ? 'find_resource' : 'execute_recipe'] = {
@@ -1451,8 +1479,8 @@ function protectConstruction(bot, goal) {
   movements.exclusionAreasBreak.push(bot._constructionProtection);
 }
 
-function createRecoveryAdviser(bot) {
-  return new RecoveryAdviser(bot, { acquireStep, catalogPlan, planningInventory, surfaceStep, navigate });
+function createRecoveryAdviser(bot, client) {
+  return new RecoveryAdviser(bot, { acquireStep, catalogPlan, planningInventory, surfaceStep, navigate }, { client });
 }
 
 async function tryRecovery(adviser, task, goal, save) {
@@ -1469,7 +1497,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
   goal.survival = survival.state;
   const save = () => store.save(goal);
   protectConstruction(bot, goal);
-  recoveryAdviser ||= createRecoveryAdviser(bot);
+  recoveryAdviser ||= createRecoveryAdviser(bot, decisionClient);
   let failures = 0;
   while (!until()) {
     task.interruptCheck = undefined; task.check(); updateDigCapabilities(bot);
@@ -1500,7 +1528,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
   survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
   goal.survival = survival.state;
   protectConstruction(bot, goal);
-  recoveryAdviser ||= createRecoveryAdviser(bot);
+  recoveryAdviser ||= createRecoveryAdviser(bot, decisionClient);
   goal.status = 'running'; goal.failures = 0; goal.stalls = 0; save();
   const stopObserving = goal.kind === 'win' ? watchGameProgress(bot, goal, save) : () => {};
   try {
@@ -1531,9 +1559,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
         goal.stalls = 0; goal.failures = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
       task.interruptCheck = bot.game.gameMode === 'creative' || endTask ? undefined : () => checkThreats(bot);
-      // Immediate air/critical hunger responses stay in code. For house work,
-      // Jev chooses ordinary eating interruptions alongside task progress.
-      if (!endTask && (!decisionClient || goal.kind !== 'house' || needsAir(bot) || bot.food <= 6 || bot.health <= 6)) {
+      // Air and eating carried food are rules, not judgments: there is no
+      // request that is better served by staying hungry with bread in hand.
+      if (!endTask) {
         await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
       }
       const needsSupplies = !goal.expeditionReady && (

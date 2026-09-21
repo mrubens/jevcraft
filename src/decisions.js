@@ -38,7 +38,10 @@ async function decideTree(client, { state, tree, isFresh = () => true, signal, r
     path.push(key);
     if (keys.length > 1) judgments.push({ branch: id, ...answer });
     const node = children[key];
-    if (!node.children) return { path, action: node, latencyMs, usage: response.usage, judgments, questions: Object.keys(questions).length };
+    // The questions themselves travel with the decision so an inspector can
+    // show what Jev was asked, not only what it answered.
+    if (!node.children) return { path, action: node, latencyMs, usage: response.usage, judgments, questions: Object.keys(questions).length,
+      asked: Object.fromEntries(Object.entries(questions).map(([id, q]) => [id, q.instructions])) };
     children = node.children;
   }
 }

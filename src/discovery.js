@@ -23,11 +23,15 @@ function discoveryCatalog(registry, kind) {
   return tree;
 }
 
-async function resolveDiscovery(client, registry, request) {
-  const root = await client.systemOne({ state: { request }, questions: { category: choice('What does the player want to FIND in the world? A biome is an environment such as a cherry grove; a sheep is a living entity; a cherry log is a block. This locates things through exploration, without commands.', {
-    biome: 'A biome or environment to visit.', entity: 'A living animal, creature or mob to find without attacking it.',
-    block: 'A block or plant to locate, rather than collect.', none: 'No supported biome, living entity or block.',
-  }) } });
+const CATEGORY_QUESTION = () => choice('Assuming the player wants to FIND something in the world, what kind of thing is it? A biome is an environment such as a cherry grove; a sheep is a living entity; a cherry log is a block. This locates things through exploration, without commands.', {
+  biome: 'A biome or environment to visit.', entity: 'A living animal, creature or mob to find without attacking it.',
+  block: 'A block or plant to locate, rather than collect.', none: 'No supported biome, living entity or block.',
+});
+
+// The category question can be asked speculatively in the same batch as the
+// request interpretation; a caller that already has that answer passes it.
+async function resolveDiscovery(client, registry, request, { category } = {}) {
+  const root = category ? { answers: { category } } : await client.systemOne({ state: { request }, questions: { category: CATEGORY_QUESTION() } });
   const kind = root.answers?.category?.choice, judgments = [root];
   if (kind === 'none') return { target: null, judgments };
   if (!['biome', 'entity', 'block'].includes(kind)) throw new Error('Invalid discovery category');
@@ -167,4 +171,4 @@ async function discoverStep(bot, task, goal, save, { navigate, explore, boatTrav
   return false;
 }
 
-module.exports = { discoveryCatalog, resolveDiscovery, biomeAt, biomeLocations, explorationTarget, discoverStep };
+module.exports = { CATEGORY_QUESTION, discoveryCatalog, resolveDiscovery, biomeAt, biomeLocations, explorationTarget, discoverStep };

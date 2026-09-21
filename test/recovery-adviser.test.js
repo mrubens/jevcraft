@@ -232,3 +232,40 @@ test('Jev names each thing it will try once, however many steps say the same', a
   assert.equal(said.find(m => m.startsWith('I have an idea')),
     "I have an idea. I'll try a different approach, then getting back to the surface.");
 });
+
+test('Jev gets the first look at a failure; the generative model is asked only when Jev is unsure or has had its turn', async () => {
+  const { askJev } = require('../src/recovery-adviser');
+  const { bot, goal, task } = fixture();
+  let fableCalls = 0, jevConfidence = 0.9;
+  const client = { model: 'jev-test', systemOne: async ({ questions }) => {
+    assert(questions.recovery.criteria.option_1); assert(questions.recovery.criteria.none);
+    return { answers: { recovery: { choice: 'option_1', confidence: jevConfidence, probabilities: { option_1: jevConfidence, none: 1 - jevConfidence } } }, usage: { input_tokens: 90 } };
+  } };
+  const adviser = new RecoveryAdviser(bot, {}, { ...config, client, ask: async (...args) => { fableCalls++; return advice(...args); }, execute: async () => true });
+  assert(await adviser.suggest(task, goal, () => {}));
+  assert.equal(fableCalls, 0);
+  assert.equal(goal.recoveryAdvice.history[0].source, 'jev');
+  assert.equal(goal.recoveryAdvice.history[0].jev.judgment.choice, 'option_1');
+  assert.match(goal.recoveryAdvice.history[0].diagnosis, /Jev chose/);
+  // The same failure again: Jev had its turn, so the reasoning model looks.
+  goal.recoveryAdvice.lastAskedAt = 0; delete goal.recoveryAdvice.active;
+  assert(await adviser.suggest(task, goal, () => {}));
+  assert.equal(fableCalls, 1);
+  assert.equal(goal.recoveryAdvice.history[1].source, 'fable');
+  // A new failure Jev is unsure about escalates straight away.
+  const unsure = fixture(); jevConfidence = 0.3;
+  const cautious = new RecoveryAdviser(unsure.bot, {}, { ...config, client, ask: async (...args) => { fableCalls++; return advice(...args); }, execute: async () => true });
+  assert(await cautious.suggest(unsure.task, unsure.goal, () => {}));
+  assert.equal(fableCalls, 2);
+  assert.equal(unsure.goal.recoveryAdvice.history[0].source, 'fable');
+  assert.equal(unsure.goal.recoveryAdvice.history[0].jev.judgment.confidence, 0.3);
+  // Jev alone, with no generative key, still recovers; an unsure Jev alone records no plan.
+  const alone = fixture();
+  const solo = new RecoveryAdviser(alone.bot, {}, { ...config, apiKey: '', client, ask: async () => assert.fail('no key'), execute: async () => true });
+  assert.equal(await solo.suggest(alone.task, alone.goal, () => {}), false);
+  assert.equal(alone.goal.recoveryAdvice.history[0].status, 'no_plan');
+  jevConfidence = 0.95;
+  const recovered = fixture();
+  assert(await new RecoveryAdviser(recovered.bot, {}, { ...config, apiKey: '', client, ask: async () => assert.fail('no key'), execute: async () => true }).suggest(recovered.task, recovered.goal, () => {}));
+  await assert.rejects(askJev({ model: 'jev', systemOne: async () => ({ answers: { recovery: { choice: 'invented', confidence: 1 } } }) }, bot, task, observation), /unavailable/);
+});

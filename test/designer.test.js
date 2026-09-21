@@ -202,8 +202,36 @@ test('invalid custom geometry gets another advisor repair instead of falling int
     assert(messages.at(-1).content.includes('region out of bounds'));
     return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(draft()) } }] }) };
   });
-  await designedBuildStep(bot, new Task('repair'), goal, () => {}, { systemOne: () => { throw new Error('Do not substitute a template'); } });
+  // The only Jev question a successful custom design may ask is whether it
+  // answers the request. A template question here would be a substitution.
+  const jev = { systemOne: async ({ questions }) => { if (questions.fits) return { answers: { fits: { noul: 0.9 } } }; throw new Error('Do not substitute a template'); } };
+  await designedBuildStep(bot, new Task('repair'), goal, () => {}, jev);
   assert.equal(calls, 1); assert.equal(goal.designAttempts, 3); assert(goal.design);
+  assert.equal(goal.designReview.accepted, true);
+});
+
+test('a buildable design that does not answer the request goes back to the designer with Jev\'s verdict as feedback', async t => {
+  const previous = process.env.OPENROUTER_API_KEY, previousMode = process.env.BUILD_DESIGNER;
+  process.env.OPENROUTER_API_KEY = 'test'; process.env.BUILD_DESIGNER = 'auto';
+  t.after(() => {
+    if (previous === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = previous;
+    if (previousMode === undefined) delete process.env.BUILD_DESIGNER; else process.env.BUILD_DESIGNER = previousMode;
+  });
+  const goal = { request: 'build a huge castle', designAttempts: 0 }, bot = world(); bot.chat = () => {};
+  const bodies = [];
+  t.mock.method(global, 'fetch', async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(draft()) } }] }) };
+  });
+  let verdict = 0.1;
+  const jev = { systemOne: async ({ questions }) => { assert(questions.fits); return { answers: { fits: { noul: verdict } } }; } };
+  await assert.rejects(designedBuildStep(bot, new Task('review'), goal, () => {}, jev), { name: 'DesignRepair' });
+  assert.equal(goal.design, undefined); assert(goal.designDraft, 'the rejected drawing is kept for the repair round');
+  assert.match(goal.designError, /does not answer the request/); assert.equal(goal.designReview.accepted, false);
+  verdict = 0.9;
+  await designedBuildStep(bot, new Task('review'), goal, () => {}, jev);
+  assert(goal.design); assert.equal(goal.designAttempts, 2);
+  assert(bodies[1].messages.at(-1).content.includes('does not answer the request'), 'the designer is told why');
 });
 
 test('a sealed interior entrance is rejected and a non-enterable sculpture needs no invented door', () => {

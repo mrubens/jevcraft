@@ -9,7 +9,9 @@ const cases = [
   ['Jev put me in Creative', { kind: 'operator_command' }],
   ['Jev summon a cow', { kind: 'operator_command' }],
   ['Jev get me a command block', { kind: 'obtain', item: 'command_block', count: 1 }],
-  ['Jev do not change the time', { kind: 'other' }],
+  // A negated command must never run. Declining it or asking is both right;
+  // the confidence gate turns an unsure operator_command into a question.
+  ['Jev do not change the time', { kind: ['other', 'clarify'] }],
   ['Jev what does teleport do?', { kind: 'other' }],
   ['Jev get me three grass blocks', { kind: 'obtain', item: 'grass_block', count: 3, deliver: true }],
   ['jev get me a pumpkin', { kind: 'obtain', item: 'pumpkin', count: 1, deliver: true }],
@@ -60,7 +62,7 @@ const cases = [
   for (const [request, expected] of cases) {
     const started = performance.now();
     const result = await interpret(client, request, 'TestPlayer', 'JevBot', { players: ['TestPlayer', 'Alex'] });
-    const pass = Object.entries(expected).every(([key, value]) => result?.[key] === value);
+    const pass = Object.entries(expected).every(([key, value]) => Array.isArray(value) ? value.includes(result?.[key]) : result?.[key] === value);
     const record = { request, pass, expected, latencyMs: Math.round(performance.now() - started), result };
     results.push(record); console.log(JSON.stringify({ request, pass, expected, actual: { kind: result?.kind, item: result?.item, count: result?.count, target: result?.target, deliver: result?.deliver }, latencyMs: record.latencyMs }));
   }

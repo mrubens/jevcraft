@@ -5,8 +5,9 @@ const { checkAir, needsAir } = require('./vitals');
 const { checkThreats, immediateThreat } = require('./danger');
 const { recoveryOptions, executeRecoveryOption } = require('./recovery-options');
 const { thinking } = require('./speech');
+const { choice } = require('./typesafe');
 const LIMITS = { calls: 6, sameFailure: 2, cooldownMs: 60000, requestMs: 45000, planMs: 900000, actionMs: 120000, actionSteps: 12,
-  surfaceMs: 600000, surfaceSteps: 192 };
+  surfaceMs: 600000, surfaceSteps: 192, jevConfidence: 0.6 };
 const emergency = err => ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name);
 const identity = goal => JSON.stringify([goal.request, goal.kind, goal.item, goal.count, goal.from]);
 const life = goal => goal.survival?.deaths?.at(-1)?.at || null;
@@ -31,6 +32,33 @@ function validateAdvice(value, options) {
   if (!Array.isArray(value.steps) || value.steps.length > 3 || new Set(value.steps).size !== value.steps.length ||
     value.steps.some(id => typeof id !== 'string' || !options.some(o => o.id === id))) throw new Error('Recovery advice selected an unavailable action');
   return { diagnosis: value.diagnosis, steps: value.steps.map(id => structuredClone(options.find(o => o.id === id))) };
+}
+
+// Recovery is two jobs. Choosing among executable options that code already
+// enumerated is a judgment, and judgments are what Jev is for: it answers in a
+// few hundred milliseconds and says how sure it is. Reasoning about *why* the
+// same thing keeps failing is what the generative model is kept for, so it is
+// asked only when Jev is unsure, picks nothing, or already had its turn on
+// this exact failure.
+const describeOption = o => o.kind === 'acquire' ? `Gather ${o.count} ${String(o.item).replaceAll('_', ' ')}: ${o.description}` : `${o.kind.replaceAll('_', ' ')}: ${o.description}`;
+
+async function askJev(client, bot, task, observation, { signal, threshold = LIMITS.jevConfidence } = {}) {
+  const started = Date.now();
+  const options = Object.fromEntries(observation.options.map(o => [o.id, describeOption(o)]));
+  const response = await client.systemOne({ state: observation.context, signal, questions: {
+    recovery: choice({
+      task: 'The bot has failed repeatedly at its current step. Which offered recovery action is most likely to unblock the ORIGINAL player request?',
+      guidance: 'Every option is a bounded attempt that code has already checked for safety and feasibility. Use `failure`, `recentFailures`, `previousAdvice`, `terrain`, `inventory` and `tools`. Prefer a concrete change of approach over repeating what just failed. Supplies the request does not need are not progress. Choose none when no offered action addresses the recorded failure.',
+    }, { ...options, none: 'None of the offered actions addresses the recorded failure.' }),
+  } });
+  task.check();
+  const answer = response.answers?.recovery;
+  if (!answer || !(answer.choice === 'none' || Object.hasOwn(options, answer.choice))) throw new Error('Jev selected an unavailable recovery option');
+  const confident = answer.choice !== 'none' && answer.confidence >= threshold;
+  const selected = confident ? structuredClone(observation.options.find(o => o.id === answer.choice)) : null;
+  return { source: 'jev', model: client.model || 'jev', judgment: answer, options, confident,
+    diagnosis: selected ? `Jev chose: ${describeOption(selected)}` : answer.choice === 'none' ? 'Jev judged that none of the offered actions addresses this failure' : `Jev was not confident enough to act (${Math.round((answer.confidence || 0) * 100)}%)`,
+    steps: selected ? [selected] : [], latencyMs: Date.now() - started, usage: response.usage, createdAt: new Date().toISOString() };
 }
 
 async function askFable(bot, task, observation, { apiKey = process.env.OPENROUTER_API_KEY,
@@ -69,16 +97,17 @@ async function askFable(bot, task, observation, { apiKey = process.env.OPENROUTE
     let validated;
     try { validated = validateAdvice(JSON.parse(content), observation.options); }
     catch (err) { err.rejectedAdvice = content; throw err; }
-    return { ...validated, model, latencyMs: Date.now() - started,
+    return { ...validated, source: 'fable', model, latencyMs: Date.now() - started,
       usage: result.usage, createdAt: new Date().toISOString() };
   } finally { clearTimeout(timer); clearInterval(watcher); stopThinking(); }
 }
 
 class RecoveryAdviser {
-  constructor(bot, actions, { apiKey = process.env.OPENROUTER_API_KEY, enabled = process.env.RECOVERY_ADVISER !== 'off',
-    observe = recoveryOptions, ask = askFable, execute = executeRecoveryOption, ...requestOptions } = {}) {
-    Object.assign(this, { bot, actions, apiKey, enabled, observe, ask, execute, requestOptions });
+  constructor(bot, actions, { apiKey = process.env.OPENROUTER_API_KEY, enabled = process.env.RECOVERY_ADVISER !== 'off', client = null,
+    observe = recoveryOptions, ask = askFable, judge = askJev, execute = executeRecoveryOption, ...requestOptions } = {}) {
+    Object.assign(this, { bot, actions, apiKey, enabled, client, observe, ask, judge, execute, requestOptions });
   }
+  get configured() { return this.enabled && !!(this.apiKey || this.client); }
   state(goal) { return goal.recoveryAdvice ||= { calls: 0, failures: [], history: [] }; }
   recordFailure(goal, err) {
     const state = this.state(goal);
@@ -86,7 +115,7 @@ class RecoveryAdviser {
     state.failures = state.failures.slice(-12);
   }
   async suggest(task, goal, save) {
-    if (!this.enabled || !this.apiKey || !available(this.bot)) return false;
+    if (!this.configured || !available(this.bot)) return false;
     const state = this.state(goal), now = Date.now();
     const signature = JSON.stringify([goal.lastError, goal.step?.action, goal.step?.item, goal.step?.drops]);
     if (state.active || state.calls >= LIMITS.calls || now - (state.lastAskedAt || 0) < LIMITS.cooldownMs ||
@@ -103,10 +132,23 @@ class RecoveryAdviser {
       const observation = await this.observe(this.bot, task, goal, this.actions);
       record.context = observation.context; record.options = observation.options;
       if (!observation.options.length) { record.status = 'unavailable'; record.outcome = 'No executable recovery options observed'; save(); return false; }
-      record.status = 'asking'; save();
-      this.bot.chat?.("I'm stuck. Let me think for a bit.");
-      const advice = await this.ask(this.bot, task, observation, { ...this.requestOptions, apiKey: this.apiKey });
-      task.check();
+      let advice = null;
+      // Jev gets the first look at a failure. The generative model takes the
+      // second look at the same one, and any failure Jev could not judge.
+      const jevAlreadyTried = state.history.some(h => h !== record && h.signature === signature && h.source === 'jev');
+      if (this.client && !jevAlreadyTried) {
+        record.status = 'judging'; record.source = 'jev'; save();
+        advice = await this.judge(this.client, this.bot, task, observation, this.requestOptions);
+        record.jev = { judgment: advice.judgment, options: advice.options, latencyMs: advice.latencyMs, usage: advice.usage };
+        task.check();
+      }
+      if (!advice?.steps.length && this.apiKey) {
+        record.status = 'asking'; record.source = 'fable'; save();
+        this.bot.chat?.("I'm stuck. Let me think for a bit.");
+        advice = await this.ask(this.bot, task, observation, { ...this.requestOptions, apiKey: this.apiKey });
+        task.check();
+      }
+      if (!advice) { record.status = 'no_plan'; record.outcome = 'No adviser could look at this failure'; save(); return false; }
       if (identity(goal) !== record.objective || life(goal) !== record.life || this.bot.game.dimension !== record.dimension) throw new Error('Recovery advice became stale');
       Object.assign(record, advice, { status: advice.steps.length ? 'planned' : 'no_plan' });
       if (advice.steps.length) {
@@ -120,7 +162,7 @@ class RecoveryAdviser {
         // so twice reads as a stutter rather than as a plan. Jev says what it
         // is going to try, once each.
         const plan = [...new Set(advice.steps.map(describe))];
-        this.bot.chat?.(`I have an idea. I'll try ${plan.join(', then ')}.`);
+        this.bot.chat?.(advice.source === 'jev' ? `That is not working. I'll try ${plan.join(', then ')}.` : `I have an idea. I'll try ${plan.join(', then ')}.`);
       }
       save(); this.bot.emit?.('recovery_advice', record);
       return !!state.active;
@@ -143,7 +185,7 @@ class RecoveryAdviser {
     task.check();
     const active = goal.recoveryAdvice?.active;
     if (!active) return false;
-    if (!this.enabled || !this.apiKey || identity(goal) !== active.objective || life(goal) !== active.life || this.bot.game.dimension !== active.dimension ||
+    if (!this.configured || identity(goal) !== active.objective || life(goal) !== active.life || this.bot.game.dimension !== active.dimension ||
       Date.now() > active.expiresAt || this.bot.entity.position.distanceTo(new Vec3(active.anchor.x, active.anchor.y, active.anchor.z)) > 32) {
       this.finish(goal, save, 'Discarded stale or disabled recovery plan'); return false;
     }
@@ -180,4 +222,4 @@ class RecoveryAdviser {
     }
   }
 }
-module.exports = { RecoveryAdviser, askFable, validateAdvice, LIMITS };
+module.exports = { RecoveryAdviser, askFable, askJev, validateAdvice, LIMITS };

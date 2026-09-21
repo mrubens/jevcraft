@@ -6,11 +6,27 @@ const { choice, noul } = require('./typesafe');
 const { Vec3 } = require('vec3');
 const { buildCellComplete } = require('./build-blocks');
 const { chatNames, parseAddress } = require('./chat-address');
-const { resolveItem } = require('./catalog');
+const { resolveItem, itemCandidates, itemChoices } = require('./catalog');
 const { resolveItemBundle } = require('./item-bundle');
-const { resolveDiscovery } = require('./discovery');
+const { resolveDiscovery, CATEGORY_QUESTION } = require('./discovery');
 const { resolveMemory } = require('./memory-routing');
-const { woodChoices, requestedPreferences, preferenceContext } = require('./preferences');
+const { woodChoices, requestedPreferences, preferenceContext, NOTED_WOOD_QUESTION } = require('./preferences');
+
+// How sure Jev has to be about what was asked before the bot acts on it. Below
+// this the bot asks a one-line question instead of guessing, and the bar is
+// higher for the requests that cost hours or change the world: a misheard
+// "come here" costs a few seconds, a misheard "build a castle" costs an
+// afternoon. Answers that carry no confidence figure are not gated.
+const CONFIDENCE = { act: 0.5, costly: 0.65, item: 0.6 };
+const COSTLY = new Set(['build', 'house', 'operator_command', 'win', 'nether']);
+const UNGATED = new Set(['other', 'status', 'stop', 'resume']);
+const PHRASES = {
+  memory: 'remember or recall something', operator_command: 'run a server command', house: 'build a small house',
+  build: 'design and build something', obtain: 'go and get an item', craft: 'craft an item', find: 'find something in the world',
+  come: 'come to you', follow: 'follow you', nether: 'find a way to the Nether', win: 'set out to beat the game',
+  stop: 'stop', status: 'report what I am doing', resume: 'resume the saved task', other: 'just talk',
+};
+const phrase = kind => PHRASES[kind] || String(kind).replaceAll('_', ' ');
 
 const TYPES = {
   memory: 'Save, recall, or forget a personal fact, preference, named place, or past request. Remember this as home; I prefer cherry wood; what did I ask last time; where is our base; go home/return to a named saved place; make another one like last time. Questions about past tasks are memory, not current status. A fresh ordinary request naming a Minecraft resource remains obtain/craft/find. Memory never grants server-command permission.',
@@ -65,11 +81,26 @@ function quantityCandidates(request) {
 async function interpret(client, request, from, username, context = {}) {
   const address = parseAddress(request, username);
   const numbers = quantityCandidates(address.text);
-  const woods = woodChoices(context.registry || require('minecraft-data')('26.1'));
+  const registry = context.registry || require('minecraft-data')('26.1');
+  const woods = woodChoices(registry);
+  const memory = context.memory && { ...preferenceContext(context.memory), places: context.memory.places || [] };
+  // Everything below is one request. The item, wood-note and discovery
+  // questions are speculative: they cost nothing to answer alongside the
+  // routing questions and save a round trip each when their branch is taken.
+  // A plain "get me a pumpkin" used to be six requests in a row.
+  const candidates = itemCandidates(registry, address.text, { limit: 24 });
+  const candidateChoices = candidates.length ? itemChoices(candidates) : null;
+  const started = performance.now();
   const response = await client.systemOne({
     state: { request, request_body: address.text, speaker: from, bot_name: username, bot_names: chatNames(username), explicitly_addressed: address.explicit,
-      availablePlayers: context.players || [from], memory: context.memory && { ...preferenceContext(context.memory), places: context.memory.places || [] } },
+      availablePlayers: context.players || [from], memory },
     questions: {
+      ...(candidateChoices ? { item: choice({
+        task: 'Assuming an obtain or craft request for ONE type of output, which listed catalog item is the requested output? These candidates were found by word overlap with the request and may include irrelevant items. Select the requested output, not a tool or ingredient needed to obtain it.',
+        guidance: 'Match the requested species, color and item kind exactly. Current explicit choices override memory. For an unspecified wood variant, use relevant explicit memory notes first, then memory.preferences as a soft default, then oak. Bare grass means the grass plant unless grass block/turf is specified. Choose none if the requested item is not listed or the request names several outputs.',
+      }, candidateChoices) } : {}),
+      ...(memory?.notes?.length ? { noted_wood: NOTED_WOOD_QUESTION(woods) } : {}),
+      discovery_category: CATEGORY_QUESTION(),
       addressed: noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.'),
       wood_choice: choice('Which wood species does the speaker explicitly choose for their own requested supplies or construction in THIS message? Use only the current request, never memory, inventory, recipe ingredients, or bot defaults as evidence. A one-time request for cherry logs counts. Exclude quotes, hypotheticals, negated choices, orders for another player or the bot itself, discovery-only requests, and ambiguous/multiple species. For unspecified wood or an inherited preference choose none.', { ...woods, none: 'No single explicit wood choice for this player in the current action request.' }),
       memory_statement: noul('Is the speaker directly sharing a personal preference or personal fact with Jev to remember, rather than asking for a gameplay action? For example "I prefer small houses" or "my favorite wood is cherry". Exclude quoted/hypothetical/negated statements, general Minecraft facts, and instructions to perform a new action.'),
@@ -102,10 +133,21 @@ async function interpret(client, request, from, username, context = {}) {
   // even when the broad action/discussion classifier calls them discussion.
   const kind = a.objective.choice === 'memory' || (a.interaction.choice === 'discussion' && a.memory_statement?.noul >= 0.75)
     ? 'memory' : a.interaction.choice === 'request' ? a.objective.choice : 'other';
-  const spec = { kind, request, from, interpretation: a, usage: response.usage };
+  const spec = { kind, request, from, interpretation: a, usage: response.usage, latencyMs: Math.round(performance.now() - started) };
+  const clarify = (message, clarification) => ({ ...spec, kind: 'clarify', message, clarification });
+  // A confident wrong answer starts ten minutes of the wrong work. An unsure
+  // one is worth a sentence to the player.
+  const confidence = a.objective.confidence;
+  if (!UNGATED.has(kind) && Number.isFinite(confidence) && confidence < (COSTLY.has(kind) ? CONFIDENCE.costly : CONFIDENCE.act)) {
+    const runnerUp = Object.entries(a.objective.probabilities || {}).filter(([key]) => key !== kind && Object.hasOwn(TYPES, key)).sort(([, x], [, y]) => y - x)[0]?.[0];
+    return clarify(runnerUp ? `I'm not sure whether you want me to ${phrase(kind)} or ${phrase(runnerUp)}. Could you say it another way?`
+      : `I'm not sure what you want me to do. Could you say it another way?`,
+    { reason: 'uncertain_objective', question: 'objective', confidence, threshold: COSTLY.has(kind) ? CONFIDENCE.costly : CONFIDENCE.act, options: [kind, runnerUp].filter(Boolean) });
+  }
   const preferences = requestedPreferences(kind, a.wood_choice, woods);
   if (preferences.length) spec.implicitPreferences = preferences;
   if (kind === 'memory') return resolveMemory(client, spec, username, context);
+  const noted = a.noted_wood && (a.noted_wood.choice === 'none' || Object.hasOwn(woods, a.noted_wood.choice)) ? a.noted_wood : undefined;
   if (['come', 'follow'].includes(kind)) {
     const target = a.target?.choice;
     if (![from, ...(context.players || [])].includes(target)) throw new Error('Unknown movement target');
@@ -132,21 +174,32 @@ async function interpret(client, request, from, username, context = {}) {
     spec.buildAnchor = { ...context.speakerPosition };
   }
   if (kind === 'find') {
-    const resolution = await resolveDiscovery(client, context.registry || require('minecraft-data')('26.1'), request);
-    if (!resolution.target) return { ...spec, kind: 'clarify', message: 'Which Minecraft biome, creature, or block should I look for?' };
+    const category = ['biome', 'entity', 'block', 'none'].includes(a.discovery_category?.choice) ? a.discovery_category : undefined;
+    const resolution = await resolveDiscovery(client, registry, request, { category });
+    if (!resolution.target) return clarify('Which Minecraft biome, creature, or block should I look for?', { reason: 'no_discovery_target' });
     spec.discoveryTarget = resolution.target; spec.discoveryResolution = resolution;
   }
   if (['obtain', 'craft'].includes(kind) && a.outputs?.choice === 'multiple') {
-    const resolution = await resolveItemBundle(client, context.registry || require('minecraft-data')('26.1'), request, numbers, { inventory: context.inventory || {}, memory: context.memory });
-    if (!resolution.items.length) return { ...spec, kind: 'clarify', message: 'I could not resolve the whole item list. Please name the items or armor material so I can keep every part of your request.' };
+    const resolution = await resolveItemBundle(client, registry, request, numbers, { inventory: context.inventory || {}, memory: context.memory });
+    if (!resolution.items.length) return clarify('I could not resolve the whole item list. Please name the items or armor material so I can keep every part of your request.', { reason: 'incomplete_bundle' });
     return { ...spec, kind: 'bundle', tasks: resolution.items.map(item => ({ ...item, from, status: 'pending' })), itemResolution: resolution };
   }
   if (['obtain', 'craft'].includes(kind) || (kind === 'house' && (a.material?.choice === 'other' || context.memory?.notes?.length || context.memory?.preferences?.length))) {
-    const registry = context.registry || require('minecraft-data')('26.1');
-    const resolution = await resolveItem(client, registry, request, { blocksOnly: kind === 'house',
-      context: { inventory: context.inventory || {}, nearbyBlocks: context.nearbyBlocks || [], memory: context.memory, ...(kind === 'house' && { purpose: 'Primary structural material for a house. A preferred wood species means its planks, not its log or a decorative item.' }) } });
+    // A confident pick from the word-overlap candidates settles the item in
+    // the request's own round trip. Anything less walks the full catalog.
+    const picked = kind !== 'house' && candidateChoices && a.item;
+    const direct = picked && picked.choice !== 'none' && Object.hasOwn(candidateChoices, picked.choice) && picked.confidence >= CONFIDENCE.item;
+    const resolution = direct
+      ? { item: picked.choice, path: ['request_candidates', picked.choice], direct: true, latencyMs: 0,
+        judgments: [{ path: [], options: candidateChoices, answer: picked, usage: null, direct: true }] }
+      : await resolveItem(client, registry, request, { blocksOnly: kind === 'house', noted,
+        context: { inventory: context.inventory || {}, nearbyBlocks: context.nearbyBlocks || [], memory: context.memory, ...(kind === 'house' && { purpose: 'Primary structural material for a house. A preferred wood species means its planks, not its log or a decorative item.' }) } });
     spec.itemResolution = resolution;
-    if (!resolution.item) return { ...spec, kind: 'clarify', message: 'I could not match the requested item. Use its Minecraft item name so I can work out the recipe.' };
+    if (resolution.ambiguous) {
+      const [first, second] = resolution.ambiguous.map(name => name.replaceAll('_', ' '));
+      return clarify(`Did you mean ${first} or ${second}?`, { reason: 'ambiguous_item', options: resolution.ambiguous });
+    }
+    if (!resolution.item) return clarify('I could not match the requested item. Use its Minecraft item name so I can work out the recipe.', { reason: 'no_item' });
     if (kind === 'house') spec.material = resolution.item;
     else {
       if (![...numbers, 'unspecified'].includes(a.quantity?.choice)) throw new Error('Invalid item quantity');
@@ -203,4 +256,4 @@ function verifyHouse(bot, blueprint) {
   return { ok: !missing.length && !obstructed.length, missing: missing.length, obstructed: obstructed.length };
 }
 
-module.exports = { interpret, quantityCandidates, GoalStore, houseBlueprint, verifyHouse };
+module.exports = { interpret, quantityCandidates, GoalStore, houseBlueprint, verifyHouse, CONFIDENCE, TYPES };
