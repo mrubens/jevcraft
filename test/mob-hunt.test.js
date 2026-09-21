@@ -5,7 +5,7 @@ const { Vec3 } = require('vec3');
 const registry = require('minecraft-data')('26.1');
 const { Task } = require('../src/skills');
 const { planCatalog, knowledge } = require('../src/knowledge');
-const { combatGear, armorSlots, readyEquipment } = require('../src/mob-policy');
+const { combatGear, armorSlots, readyEquipment, handlers } = require('../src/mob-policy');
 const { combatTarget, checkThreats, safeFromHostiles, hostileEntities } = require('../src/danger');
 const { prepareCombatGear, fightForDrop, huntObserved, prepareMobHunt, isolated } = require('../src/mob-hunt');
 
@@ -15,6 +15,7 @@ function fixture(name = 'blaze') {
     width: .6, height: name === 'enderman' ? 2.9 : 1.8, isValid: true };
   const attacks = [], controls = [], movement = { canDig: true, allow1by1towers: true, allowParkour: false, scafoldingBlocks: [1] };
   const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: name === 'blaze' ? 'the_nether' : 'overworld', gameMode: 'survival', difficulty: 'normal' },
+    time: { timeOfDay: 6000 },
     health: 20, food: 20, oxygenLevel: 20, entity: { position: new Vec3(.5, 64, .5) }, entities: { 7: target },
     inventory: { slots, items: () => slots.slice(9, 45).filter(Boolean) },
     world: { raycast: () => null }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }),
@@ -33,8 +34,8 @@ function fixture(name = 'blaze') {
     const slot = destination === 'hand' ? 36 : armorSlots[destination];
     slots[slot] = { name: names[0], count: 1, type: registry.itemsByName[names[0]].id, slot, durabilityUsed: 0 };
   }
-  const goal = { request: `Jev get me ${name === 'blaze' ? 'a blaze rod' : 'an ender pearl'}`,
-    mobHunt: { entity: name, item: name === 'blaze' ? 'blaze_rod' : 'ender_pearl', targetCount: 1 } };
+  const goal = { request: `Jev get me ${handlers[name].item.replaceAll('_', ' ')}`,
+    mobHunt: { entity: name, item: handlers[name].item, targetCount: 1 } };
   return { bot, task, target, goal, slots, attacks, controls, movement };
 }
 
@@ -51,6 +52,45 @@ test('the exact supported vanilla mob loot tables extend the Eyes of Ender recip
   const missing = planCatalog(registry, 'blaze_rod', 1, { iron_ingot: 40, oak_planks: 30, stick: 8, crafting_table: 1 });
   for (const item of equipment) assert(missing.some(s => s.action === 'craft' && s.item === item), item);
   assert.throws(() => planCatalog(registry, 'bedrock', 1), /No supported survival acquisition/);
+});
+
+test('string comes from a spider and feathers from a chicken, so a bow and arrows plan without a cobweb or a tripwire', () => {
+  const sources = knowledge(registry).mobSources;
+  assert.equal(sources.string[0].entity, 'spider'); assert(!sources.string[0].requiresPlayerKill, 'string drops however the spider dies');
+  assert.equal(sources.feather[0].entity, 'chicken'); assert(sources.feather[0].passive);
+  assert(!knowledge(registry).sources.string.some(s => s.block === 'tripwire'), 'tripwire is placed string, never a deposit');
+  const bow = planCatalog(registry, 'bow', 1, { stick: 3, crafting_table: 1 });
+  assert.deepEqual(bow.map(s => [s.action, s.entity || s.item, s.count]).slice(-2), [['hunt_mob', 'spider', 3], ['craft', 'bow', 1]]);
+  assert(bow.some(s => s.action === 'craft' && s.item === 'iron_sword'), 'a spider fights back, so the hunt still wants the kit');
+  const seen = planCatalog(registry, 'bow', 1, { stick: 3, crafting_table: 1 }, { nearby: ['cobweb'] });
+  assert(seen.some(s => s.action === 'mine' && s.block === 'cobweb') && !seen.some(s => s.action === 'hunt_mob'), 'a cobweb in view beats the hunt');
+  const arrows = planCatalog(registry, 'arrow', 16, { stick: 4, crafting_table: 1 });
+  assert.deepEqual(arrows.map(s => [s.action, s.entity || s.block || s.item, s.count]), [['mine', 'gravel', 4], ['hunt_mob', 'chicken', 4], ['craft', 'arrow', 16]]);
+  assert(!arrows.some(s => /sword|helmet|chestplate|leggings|boots|shield/.test(s.item || '')), 'a chicken needs no armour');
+});
+
+test('a chicken is chased with the best carried weapon, no armour, no shield and a flock around it', async () => {
+  const { bot, task, target, goal, slots, controls, attacks } = fixture('chicken');
+  for (const slot of [5, 6, 7, 8, 36, 45]) slots[slot] = null;
+  slots[10] = { name: 'stone_sword', count: 1, slot: 10, durabilityUsed: 0 }; slots[11] = { name: 'wooden_axe', count: 1, slot: 11, durabilityUsed: 0 };
+  bot.entities[8] = { id: 8, name: 'chicken', position: target.position.offset(1, 0, 0), width: .4, height: .7, isValid: true };
+  bot.health = 12; bot.food = 8;
+  assert(!readyEquipment(bot)); assert(isolated(bot, target));
+  const requests = [];
+  await prepareMobHunt(bot, task, { entity: 'chicken', item: 'feather', count: 2 }, goal, () => {}, { acquireStep: async (_b, _t, item) => requests.push(item), explore: async () => {} });
+  assert.deepEqual(requests, [], 'no armour is fetched for a chicken');
+  assert.equal(goal.mobHunt.targetCount, 2);
+  bot.attack = entity => {
+    attacks.push(entity); bot.emit('entityDead', entity); delete bot.entities[entity.id];
+    bot.entities[9] = { id: 9, name: 'item', position: target.position.clone(), getDroppedItem: () => ({ name: 'feather', count: 1 }) };
+  };
+  const result = await fightForDrop(bot, task, target, goal, () => {}, { navigate: async () => { slots[12] = { name: 'feather', count: 1, slot: 12 }; delete bot.entities[9]; } });
+  assert.equal(bot.heldItem.name, 'stone_sword'); assert.deepEqual(attacks, [target]);
+  assert.equal(result.outcome, 'pickup_confirmed'); assert.deepEqual(controls, [], 'no shield to raise');
+  assert.equal(bot._combatEncounter, undefined);
+  const spider = { ...target, id: 13, name: 'spider' }; bot.entities[13] = spider;
+  assert.equal(hostileEntities(bot).length, 0, 'a spider by day is neutral');
+  assert(!isolated(bot, spider), 'a spider still wants the room a sweep needs');
 });
 
 test('combat preparation verifies equipment slots and replaces worn gear instead of counting it as ready', async () => {

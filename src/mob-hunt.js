@@ -3,7 +3,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, observedDead } = require('./mob-policy');
 const { threats, checkThreats, NeedsSafety } = require('./danger');
-const { canStrike } = require('./combat');
+const { canStrike, defenseWeapon } = require('./combat');
 const { dryStanding } = require('./mining-access');
 const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
 const { checkAir } = require('./vitals');
@@ -45,16 +45,23 @@ function combatMovement(bot) {
   return { allowed, restore: () => Object.assign(movements, previous) };
 }
 
-function isolated(bot, target) {
+function isolated(bot, target, handler = handlers[target.name] || {}) {
   if (threats(bot).some(t => t.entity !== target && (t.distance < 20 || t.entity.position.distanceTo(target.position) < 16))) return false;
-  // A sword sweep must not hit a nearby player or provoke another mob.
-  return !Object.values(bot.entities).some(e => e !== target && e !== bot.entity && valid(bot, e) &&
+  // A sword sweep must not hit a nearby player or provoke another mob. A
+  // flock of chickens is not a crowd of mobs: a passive animal only needs
+  // the hostiles kept away.
+  return handler.passive || !Object.values(bot.entities).some(e => e !== target && e !== bot.entity && valid(bot, e) &&
     e.position && bot.registry.entitiesByName[e.name]?.metadataKeys?.includes('health') && e.position.distanceTo(target.position) < 4);
 }
 
-function canBegin(bot) {
-  return bot.game.gameMode === 'survival' && bot.game.difficulty !== 'peaceful' && bot.health >= 18 && bot.food >= 16 &&
-    bot.oxygenLevel > 12 && !(bot.entity.metadata?.[0] & 1) && readyEquipment(bot) && dryStanding(bot, bot.entity.position);
+// A passive animal is a chase with whatever is carried, not an encounter:
+// no armour, no shield and a lower health floor. Mobs that fight back keep
+// the full kit and near-full health.
+function canBegin(bot, handler = {}) {
+  const standing = bot.game.gameMode === 'survival' && bot.game.difficulty !== 'peaceful' &&
+    bot.oxygenLevel > 12 && !(bot.entity.metadata?.[0] & 1) && dryStanding(bot, bot.entity.position);
+  if (handler.passive) return standing && bot.health >= 10 && bot.food >= 6;
+  return standing && bot.health >= 18 && bot.food >= 16 && readyEquipment(bot);
 }
 
 // The route exception names one live entity and expires with this action.
@@ -68,9 +75,11 @@ function encounter(bot, task, target, expiresAt) {
 async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs = 30000, pickupWaitMs = 2500 } = {}) {
   task.check(); checkAir(bot);
   const state = goal.mobHunt, handler = handlers[target.name];
-  if (!handler || handler.item !== state?.item || !valid(bot, target) || !canBegin(bot) || !isolated(bot, target)) throw new Error('Mob encounter is no longer feasible');
+  if (!handler || handler.item !== state?.item || !valid(bot, target) || !canBegin(bot, handler) || !isolated(bot, target, handler)) throw new Error('Mob encounter is no longer feasible');
   const before = countOf(bot, state.item), start = bot.entity.position.clone(), deadline = Date.now() + timeoutMs;
-  const initialShieldWear = equipped(bot, 'off-hand').durabilityUsed || 0;
+  const shieldWear = () => equipped(bot, 'off-hand')?.durabilityUsed || 0;
+  const initialShieldWear = shieldWear(), guarded = !handler.passive && equipped(bot, 'off-hand')?.name === 'shield';
+  const ready = () => handler.passive ? bot.health >= 8 && bot.food >= 4 : bot.health >= 12 && bot.food >= 12 && readyEquipment(bot);
   const restoreEncounter = encounter(bot, task, target, deadline), movement = combatMovement(bot);
   const previousInterrupt = task.interruptCheck;
   let dead = false, attacks = 0, shield = false;
@@ -80,13 +89,20 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
   bot.on('entityDead', onDeath);
   task.interruptCheck = () => {
     previousInterrupt?.(); checkAir(bot); checkThreats(bot);
-    if (bot.health < 12 || bot.food < 12 || !readyEquipment(bot) || !isolated(bot, target)) throw new NeedsSafety({ entity: target, distance: target.position.distanceTo(bot.entity.position) });
+    if (!ready() || !isolated(bot, target, handler)) throw new NeedsSafety({ entity: target, distance: target.position.distanceTo(bot.entity.position) });
     if (Date.now() >= deadline) throw new Error(`Timed out fighting ${target.name} after ${Math.round(timeoutMs / 1000)} seconds`);
     if (bot.entity.position.distanceTo(start) > 48) throw new Error(`${target.name} moved beyond the bounded combat area`);
   };
   const guard = () => task.check();
   const lowerShield = () => { if (shield) { bot.deactivateItem(); shield = false; } };
   try {
+    // The kit's sword is already in hand for a mob that fights back; a
+    // passive animal is struck with the best thing carried, or bare hands.
+    if (handler.passive) {
+      const weapon = defenseWeapon(bot);
+      if (weapon && bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand');
+      guard();
+    }
     while (valid(bot, target) && !dead) {
       guard();
       if (!canStrike(bot, target)) {
@@ -110,7 +126,15 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
       }
       bot.attack(target); attacks++;
       goal.step = { action: 'hunt_mob', entity: target.name, entityId: target.id, item: state.item, attacks, health: bot.health }; save();
-      const shieldWear = equipped(bot, 'off-hand').durabilityUsed || 0, swungAt = Date.now();
+      const wearBefore = shieldWear(), swungAt = Date.now();
+      if (!guarded) {
+        // Nothing to block: wait out the swing cooldown, keep facing the animal.
+        while (Date.now() < Math.min(deadline, swungAt + 600) && valid(bot, target) && !dead) {
+          await sleep(50); guard();
+          await bot.lookAt(target.position.offset(0, Math.min((target.height || 1.8) / 2, 1.5), 0), true);
+        }
+        continue;
+      }
       bot.activateItem(true); shield = true;
       // Raising a shield has a startup delay. Blindly lowering it every 700 ms
       // repeatedly exposed Jev exactly when an Enderman swung. Keep facing the
@@ -119,7 +143,7 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
       const guardUntil = Math.min(deadline, swungAt + 1500);
       while (Date.now() < guardUntil && valid(bot, target) && !dead) {
         await sleep(50); guard();
-        if (Date.now() - swungAt >= 700 && (equipped(bot, 'off-hand').durabilityUsed || 0) > shieldWear) break;
+        if (Date.now() - swungAt >= 700 && shieldWear() > wearBefore) break;
         await bot.lookAt(target.position.offset(0, Math.min((target.height || 1.8) / 2, 1.5), 0), true);
       }
     }
@@ -148,7 +172,7 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
     } while (countOf(bot, state.item) <= before && Date.now() < pickupDeadline);
     const pickedUp = Math.max(0, countOf(bot, state.item) - before);
     const result = { at: new Date().toISOString(), entity: target.name, entityId: target.id, item: state.item,
-      deathObserved: dead, attacks, pickedUp, shieldWear: Math.max(0, (equipped(bot, 'off-hand')?.durabilityUsed || 0) - initialShieldWear),
+      deathObserved: dead, attacks, pickedUp, shieldWear: Math.max(0, shieldWear() - initialShieldWear),
       health: bot.health, outcome: pickedUp ? 'pickup_confirmed' : dead ? 'no_pickup' : 'target_lost' };
     state.history = [...(state.history || []), result].slice(-40);
     state.encountersWithoutPickup = pickedUp ? 0 : (state.encountersWithoutPickup || 0) + 1;
@@ -170,9 +194,10 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   const state = goal.mobHunt;
   if (!state) return false;
   if (countOf(bot, state.item) >= state.targetCount) { delete goal.mobHunt; save(); return false; }
-  if (!canBegin(bot)) return false;
+  const handler = handlers[state.entity] || {};
+  if (!canBegin(bot, handler)) return false;
   const candidates = Object.values(bot.entities).filter(e => e.name === state.entity && valid(bot, e) &&
-    e.position.distanceTo(bot.entity.position) < 24 && isolated(bot, e) &&
+    e.position.distanceTo(bot.entity.position) < 24 && isolated(bot, e, handler) &&
     !(state.avoided?.[e.uuid || e.id] > Date.now() - 120000)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
   const tree = {}, positions = new Map();
   for (const target of candidates.slice(0, 4)) {
@@ -182,7 +207,8 @@ async function huntObserved(bot, task, goal, save, actions, client) {
         await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalFollow(target, 2), 400);
       if (route.status !== 'success' || !route.path.every(movement.allowed)) continue;
       positions.set(target.id, target.position.clone());
-      tree[`hunt_${target.id}`] = { description: { action: 'Fight this observed isolated mob with carried armor, sword and shield, then verify item pickup.',
+      tree[`hunt_${target.id}`] = { description: { action: handler.passive ? 'Chase this observed animal and strike it with what is carried, then verify item pickup.' :
+        'Fight this observed isolated mob with carried armor, sword and shield, then verify item pickup.',
         entity: target.name, position: { ...target.position }, distance: target.position.distanceTo(bot.entity.position),
         item: state.item, randomDrop: true }, run: () => fightForDrop(bot, task, target, goal, save, actions) };
     } finally { movement.restore(); restore(); }
@@ -195,10 +221,10 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   let decision;
   if (client) {
     const controller = new AbortController();
-    const watcher = setInterval(() => { if (task.cancelled || !canBegin(bot)) controller.abort(new Error('Combat decision interrupted')); }, 100);
+    const watcher = setInterval(() => { if (task.cancelled || !canBegin(bot, handler)) controller.abort(new Error('Combat decision interrupted')); }, 100);
     try { decision = await decideTree(client, { state: snapshot, tree, signal: controller.signal, kind: 'combat',
-      isFresh: () => canBegin(bot) && bot.health === snapshot.health && candidates.every(e => !positions.has(e.id) ||
-        valid(bot, e) && e.position.distanceTo(positions.get(e.id)) < 2 && isolated(bot, e)) }); }
+      isFresh: () => canBegin(bot, handler) && bot.health === snapshot.health && candidates.every(e => !positions.has(e.id) ||
+        valid(bot, e) && e.position.distanceTo(positions.get(e.id)) < 2 && isolated(bot, e, handler)) }); }
     catch (err) { task.check(); if (controller.signal.aborted) return false; throw err; }
     finally { clearInterval(watcher); }
   } else decision = { path: [Object.keys(tree)[0]], action: Object.values(tree)[0] };
@@ -219,10 +245,10 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   goal.mobHunt = { ...(previous?.item === step.item ? previous : {}), item: step.item, entity: step.entity,
     targetCount: countOf(bot, step.item) + step.count };
   goal.stockFood = true; save();
-  if (!await prepareCombatGear(bot, task, goal, save, actions)) return;
+  if (!handler.passive && !await prepareCombatGear(bot, task, goal, save, actions)) return;
   if (handler.dimension && dimension(bot) !== handler.dimension) { await actions.enterNether(bot, task, goal, save); return; }
-  if (!canBegin(bot)) {
-    goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: 18, neededFood: 16 }; save();
+  if (!canBegin(bot, handler)) {
+    goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: handler.passive ? 10 : 18, neededFood: handler.passive ? 6 : 16 }; save();
     await sleep(500); task.check(); return;
   }
   await actions.explore(bot, task, goal, save, step.entity, { surfaceOnly: dimension(bot) === 'overworld' });

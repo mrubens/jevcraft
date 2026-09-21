@@ -6,6 +6,9 @@ const { fuelPlanks, CARRIED_FUELS, fuelUnits } = require('./fuel');
 const cached = new WeakMap();
 const ordinarySelf = new Set(vanilla.ordinarySelfDrops);
 const plain = value => value?.replace('minecraft:', '');
+// Blocks that only exist where a player placed them: tripwire is string laid
+// on the ground, never a deposit to mine string from.
+const placedOnly = new Set(['tripwire']);
 const toolOrder = name => ['wooden', 'stone', 'iron', 'diamond', 'netherite', 'copper', 'golden'].indexOf(name.split('_')[0]);
 
 function requirements(condition) {
@@ -30,7 +33,7 @@ function knowledge(registry) {
   if (cached.has(registry)) return cached.get(registry);
   const sources = {};
   for (const block of registry.blocksArray) {
-    if (block.diggable === false || block.hardness < 0 || block.name === 'bedrock') continue;
+    if (block.diggable === false || block.hardness < 0 || block.name === 'bedrock' || placedOnly.has(block.name)) continue;
     const allowedTools = Object.keys(block.harvestTools || {}).map(id => registry.items[id]?.name).filter(Boolean).sort((a, b) => toolOrder(a) - toolOrder(b));
     for (const drop of block.drops || []) {
       const item = registry.items[typeof drop === 'number' ? drop : drop.drop]?.name;
@@ -114,7 +117,7 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
         const cost = (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0);
         costs[item] = Math.min(costs[item] ?? 1000, cost);
       }
-      for (const item of Object.keys(data.mobSources)) costs[item] = Math.min(costs[item] ?? 1000, 80);
+      for (const [item, sources] of Object.entries(data.mobSources)) costs[item] = Math.min(costs[item] ?? 1000, ...sources.map(s => s.cost ?? 80));
       // Six dependency layers are sufficient for this preference heuristic.
       // Exact dependency execution below still detects cycles and checks the
       // full recipe/tool chain, with its separate expansion budget.
@@ -216,13 +219,15 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
         steps.push({ action: 'smelt', item: name, count: missing, from: input, fuel, fuelItem,
           requires: { furnace: 1 }, consumes: { [input]: missing, [fuelItem]: fuel }, produces: { [name]: missing } }); add(name, missing);
       } });
-      for (const source of data.mobSources[name] || []) methods.push({ cost: 80, run: () => {
-        for (const names of Object.values(combatGear)) {
+      for (const source of data.mobSources[name] || []) methods.push({ cost: source.cost ?? 80, run: () => {
+        // A passive animal is struck with whatever is carried; the full kit
+        // is for mobs that fight back.
+        if (!source.passive) for (const names of Object.values(combatGear)) {
           if (!names.some(tool => have(tool) > 0 || equipment.includes(tool))) acquire(names[0], 1);
         }
         // produces expresses the resource target for dependency planning;
         // kills never credit this amount to the real inventory.
-        const requires = Object.fromEntries(Object.values(combatGear).map(names => names.find(tool => have(tool))).filter(Boolean).map(name => [name, 1]));
+        const requires = source.passive ? {} : Object.fromEntries(Object.values(combatGear).map(names => names.find(tool => have(tool))).filter(Boolean).map(name => [name, 1]));
         const remaining = needed - have(name);
         if (remaining > 0) {
           steps.push({ action: 'hunt_mob', ...source, count: remaining, requires, consumes: {}, produces: { [name]: remaining } });
