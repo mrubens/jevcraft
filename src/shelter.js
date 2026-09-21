@@ -63,7 +63,13 @@ function enclosure(shelter) {
   const o = position(shelter.origin);
   return [...shelter.blueprint.blocks.map(position), o.offset(0, 0, -2), o.offset(0, 1, -2)];
 }
-function missingShell(bot, shelter) { return enclosure(shelter).filter(p => !solid(bot.blockAt(p))); }
+// An air cell in the shell with solid blocks on all six sides is as shut as
+// a placed block: nothing can reach it, and the builder will not fill it
+// (a buried cell counts as complete there). Counting it as missing made
+// one shelter fail verification forever after every reachable cell was in.
+const enclosedAir = (bot, p) => replaceable(bot.blockAt(p)) &&
+  [new Vec3(0, 1, 0), new Vec3(0, -1, 0), ...directions].every(d => bot.blockAt(p.plus(d))?.boundingBox === 'block');
+function missingShell(bot, shelter) { return enclosure(shelter).filter(p => !solid(bot.blockAt(p)) && !enclosedAir(bot, p)); }
 function inside(bot, shelter) {
   if (shelter.dimension !== bot.game.dimension) return false;
   const feet = bot.entity.position.floored(), o = position(shelter.origin);

@@ -501,3 +501,15 @@ test('a verified pocket well below is not the current shelter when the bot carri
   bot.entity.position = new Vec3(0.5, 18, 0.5); bot.inventory.items = () => [{ name: 'cobblestone', count: 64 }];
   assert.equal(survival.currentShelter(), deep, 'three blocks down is fine');
 });
+
+test('an air cell in the shell with solid blocks on all six sides counts as sealed', () => {
+  const origin = new Vec3(0, 51, 0);
+  const pocket = origin.offset(1, 0, 1);
+  const bot = { game: { dimension: 'overworld' }, entity: { position: origin.offset(0.5, 0, 0.5) },
+    blockAt: p => { const open = p.equals(origin) || p.equals(origin.offset(0, 1, 0)) || p.equals(pocket); return { name: open ? 'air' : 'stone', boundingBox: open ? 'empty' : 'block' }; } };
+  const refuge = { origin, dimension: 'overworld' };
+  assert.deepEqual(shelter.missingShell(bot, refuge), []);
+  assert.equal(shelter.sealed(bot, refuge), true);
+  const exposed = { ...bot, blockAt: p => { const open = p.equals(origin) || p.equals(origin.offset(0, 1, 0)) || p.equals(pocket) || p.equals(pocket.offset(1, 0, 0)); return { name: open ? 'air' : 'stone', boundingBox: open ? 'empty' : 'block' }; } };
+  assert.equal(shelter.missingShell(exposed, refuge).length, 1, 'a pocket open to the outside is still missing');
+});
