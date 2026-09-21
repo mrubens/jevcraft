@@ -28,6 +28,9 @@ function safeExcavation(bot, p) {
 
 function stairOptions(bot, goal, target) {
   const feet = bot.entity.position.floored();
+  // An exit being dug by hand clears stone without a tool: slowly, and for
+  // the way out rather than the drops. Nothing else digs without one.
+  const byHand = !!goal.surfaceReturn?.byHand;
   const dy = Math.sign(target.y - feet.y);
   const heights = dy ? [dy, 0] : [0];
   const choices = [];
@@ -51,7 +54,7 @@ function stairOptions(bot, goal, target) {
       if (passable(block)) return true;
       if (!natural.test(block.name) || !block.diggable || reservedForConstruction(goal, p)) return false;
       if (!safeExcavation(bot, p)) return false;
-      return !block.harvestTools || bot.inventory.items().some(i => block.harvestTools[i.type]);
+      return byHand || !block.harvestTools || bot.inventory.items().some(i => block.harvestTools[i.type]);
     });
     if (!safe) continue;
     const visits = goal.tunnel?.visited?.[`${destination}`] || 0;

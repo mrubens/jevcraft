@@ -217,3 +217,12 @@ test('unreachable saved shafts record bounded retry failures and restore movemen
   }
   assert(site.rejoinBlockedUntil > Date.now());
 });
+
+test('with no pickaxe, a staircase through stone exists only for an exit being dug by hand', () => {
+  const bot = world(); bot.inventory.items = () => [];
+  const up = bot.entity.position.floored().offset(20, 30, 0);
+  assert.equal(stairOptions(bot, {}, up).length, 0, 'no tool, no stone stair');
+  const byHand = stairOptions(bot, { surfaceReturn: { byHand: true } }, up);
+  assert(byHand.length > 0);
+  assert(byHand.some(c => c.destination.y === bot.entity.position.floored().y + 1), 'and it climbs');
+});
