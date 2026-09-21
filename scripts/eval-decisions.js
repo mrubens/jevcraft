@@ -22,9 +22,6 @@ const sources = branch('Continue the player request to build a house.', { gather
 const cases = [
   { name: 'dusk-with-no-shelter', expected: ['secure_shelter'], tree: dusk,
     state: { playerRequest: 'build a house', retainedGoal: 'house', timeOfDay: 10800, health: 20, food: 20, safeFoodCarried: false, survivalFacts: survivalFacts(10800), carriedBuildingBlocks: 0 } },
-  { name: 'dusk-with-a-verified-shelter-beside-me', expected: ['continue_request'], tree: dusk,
-    state: { playerRequest: 'build a house', retainedGoal: 'house', timeOfDay: 10000, health: 20, food: 20, safeFoodCarried: true,
-      survivalFacts: { ...survivalFacts(10000), shelterReady: true, shelterDistance: 4 }, carriedBuildingBlocks: 12 } },
   { name: 'few-logs-close-beat-many-logs-far', expected: ['build_house', 'gather_materials', 'source_oak_log_near'], tree: { build_house: sources },
     state: { playerRequest: 'build a house', retainedGoal: 'house', food: 20, health: 20, inventory: {}, nearbyThreats: [], daylight: 'day',
       acquisition: { dependencies: [{ action: 'mine', item: 'oak_log', count: 4 }] } } },

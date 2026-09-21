@@ -23,13 +23,20 @@
       <div class="world-toolbar"><span id="texture-status" role="status" title="Loading textures from your local Minecraft installation">Loading textures…</span><label><input type="checkbox" id="textures" checked disabled> Textures</label><label><input type="checkbox" id="blueprint" checked> Build preview</label><label for="layer">Cutaway</label><input id="layer" type="range" min="-4" max="12" value="12" aria-label="Maximum block height relative to Jev"><output id="layer-value">All</output></div>
     </section>
     <aside class="inspector panel">
-      <div class="panel-heading"><h2>Inside the decision</h2><span id="source-badge" class="pill">—</span></div>
+      <div class="panel-heading"><h2>Inside Jev’s head</h2><span id="source-badge" class="pill">—</span></div>
       <div class="inspector-body">
+        <div id="glance" class="glance" aria-label="Jev at a glance">
+          <div><span>Jev calls</span><strong id="glance-calls">—</strong><small id="glance-calls-note"></small></div>
+          <div><span>Median latency</span><strong id="glance-latency">—</strong><small>per call</small></div>
+          <div><span>Tokens</span><strong id="glance-tokens">—</strong><small>in + out</small></div>
+          <div><span>Asked back</span><strong id="glance-clarify">—</strong><small>unsure, so it asked</small></div>
+        </div>
         <span id="event-time" class="eyebrow">SELECTED OBSERVATION</span><h3 id="event-label">No observation selected</h3><p id="provenance" class="muted"></p>
         <div id="decision-meta" class="decision-meta"></div>
+        <div id="clarification" hidden></div>
         <div id="choices"></div>
+        <details id="routing-details"><summary>How the request was understood</summary><div id="routing"></div><details><summary>Raw judgments</summary><pre id="routing-json"></pre></details></details>
         <details id="state-details"><summary>What Jev knew</summary><pre id="state-json"></pre></details>
-        <details id="routing-details"><summary>Request interpretation &amp; catalog choices</summary><pre id="routing-json"></pre></details>
         <details><summary>Recorded event</summary><pre id="event-json"></pre></details>
         <div class="inventory-heading"><h3>Inventory</h3><span id="inventory-count" class="muted"></span></div><div id="inventory" class="inventory"></div>
       </div>

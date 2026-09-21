@@ -56,9 +56,16 @@ function observeBot(trace, bot, { getGoal = () => ({}), controls = {}, server = 
     const freshAction = action?.at && action.at !== previousAction;
     if (kind === 'step') { previousDecision = decision?.at; previousAction = action?.at; }
     if (kind === 'step') kind = freshDecision ? 'decision' : goal.lastError ? 'error' : freshAction ? 'survival' : 'action';
-    const label = kind === 'recovery_advice' ? 'Fable recovery advice' : kind === 'recovery_result' ? detail?.outcome || 'Recovery outcome' : kind === 'decision' ? decision.stale ? 'Discarded changed-state decision' : (decision.path || []).join(' → ') || 'Decision selected' : kind === 'survival' ? String(action.action || 'survival').replaceAll('_', ' ') :
+    const label = kind === 'recovery_advice' ? detail?.source === 'jev' ? 'Jev chose a recovery action' : 'Fable recovery advice'
+      : kind === 'recovery_result' ? detail?.outcome || 'Recovery outcome'
+      : kind === 'request' ? `Understood: ${String(detail?.kind || 'request').replaceAll('_', ' ')}`
+      : kind === 'clarify' ? `Asked back: ${detail?.message || 'a clarifying question'}`
+      : kind === 'decision' ? decision.stale ? 'Discarded changed-state decision' : decision.judgments?.length ? (decision.path || []).join(' → ') : `${(decision.path || []).join(' → ')} (only feasible option)` : kind === 'survival' ? String(action.action || 'survival').replaceAll('_', ' ') :
       kind === 'error' ? goal.lastError || 'Action failed' : kind === 'action' ? [goal.step?.action, goal.step?.item || goal.step?.block].filter(Boolean).join(' ').replaceAll('_', ' ') : kind.replaceAll('_', ' ');
-    trace.append({ kind, label, source: kind === 'recovery_advice' && detail?.model ? 'fable' : decisionSource(freshDecision ? decision : null, kind), snapshot: snapshot(goal), detail });
+    const source = kind === 'recovery_advice' ? (detail?.source === 'jev' ? 'jev' : 'fable')
+      : kind === 'decision' && !decision.stale && !decision.judgments?.length ? 'rules'
+      : decisionSource(freshDecision ? decision : null, kind);
+    trace.append({ kind, label, source, snapshot: snapshot(goal), detail });
     delete trace.observationError;
   }
   on('spawn', () => { trace.connected = true; sample('connection', { connected: true }); });

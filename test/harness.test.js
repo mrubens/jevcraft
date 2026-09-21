@@ -179,3 +179,33 @@ test('live Fable advice remains separate from Jev classifier judgments and recor
   assert.match(trace.frames.at(-1).label, /retrying original objective/);
   observation.detach();
 });
+
+test('chat interpretations, clarifying questions and Jev recovery picks are attributed to Jev, not to rules or Fable', () => {
+  const b = bot(), trace = new Trace(), goal = { request: 'get me a pumpkin', decisions: [] };
+  const observation = observeBot(trace, b, { getGoal: () => goal });
+  b.emit('spawn');
+  observation.sample('request', { request: 'Jev get me a pumpkin', kind: 'obtain', interpretation: { objective: { choice: 'obtain', confidence: 0.97 } }, usage: { input_tokens: 1900, output_tokens: 300 }, latencyMs: 210 });
+  assert.equal(trace.frames.at(-1).source, 'jev'); assert.equal(trace.frames.at(-1).label, 'Understood: obtain');
+  observation.sample('clarify', { request: 'Jev bring me grass', kind: 'clarify', message: 'Did you mean short grass or grass block?', clarification: { reason: 'ambiguous_item' } });
+  assert.equal(trace.frames.at(-1).source, 'jev'); assert.match(trace.frames.at(-1).label, /^Asked back: Did you mean/);
+  b.emit('recovery_advice', { source: 'jev', model: 'jev-latest', diagnosis: 'Jev chose: relocate', steps: [{ kind: 'relocate' }], jev: { judgment: { choice: 'option_2', confidence: 0.81 } } });
+  assert.equal(trace.frames.at(-1).source, 'jev'); assert.equal(trace.frames.at(-1).label, 'Jev chose a recovery action');
+  // A decision with a single feasible option never reached Jev and says so.
+  goal.decisions.push({ at: '2026-09-18T19:00:01Z', path: ['obtain_item', 'mine', 'source_oak_log_3_64_0'], judgments: [] });
+  observation.sample('step');
+  assert.equal(trace.frames.at(-1).source, 'rules'); assert.match(trace.frames.at(-1).label, /only feasible option/);
+  observation.detach();
+});
+
+test('heartbeat frames are evicted before requests and decisions, so a chat request outlives ten minutes of terrain samples', () => {
+  const { MAX_FRAMES } = require('../src/harness/trace');
+  const trace = new Trace();
+  trace.append({ kind: 'request', label: 'Understood: obtain', snapshot: {} });
+  trace.append({ kind: 'decision', label: 'obtain_item → mine', snapshot: {} });
+  for (let i = 0; i < MAX_FRAMES + 50; i++) trace.append({ kind: i % 2 ? 'observation' : 'vitals', snapshot: {} });
+  trace.append({ kind: 'clarify', label: 'Asked back: which one?', snapshot: {} });
+  assert.equal(trace.frames.length, MAX_FRAMES);
+  assert.deepEqual(trace.frames.filter(f => !['observation', 'vitals'].includes(f.kind)).map(f => f.kind), ['request', 'decision', 'clarify']);
+  assert.equal(trace.frames[0].id, 1);
+  assert.equal(trace.view().oldestId, 1);
+});

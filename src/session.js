@@ -31,8 +31,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   for (const event of ['recovery_advice', 'recovery_result']) bot.on(event, data => {
     if (ended) return;
     const record = data.record || data;
-    console.log(JSON.stringify({ [event]: { status: record.status, model: record.model, diagnosis: record.diagnosis,
-      steps: record.steps, outcome: data.outcome || record.outcome, latencyMs: record.latencyMs, usage: record.usage } }));
+    console.log(JSON.stringify({ [event]: { status: record.status, source: record.source, model: record.model, diagnosis: record.diagnosis,
+      jev: record.jev?.judgment, steps: record.steps, outcome: data.outcome || record.outcome, latencyMs: record.latencyMs, usage: record.usage } }));
   });
   bot.loadPlugin(compatibilityPlugin);
   bot.loadPlugin(pathfinder);
@@ -213,6 +213,13 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
           { speaker: requestPosition.speakerPosition }),
         inventory: Object.fromEntries(bot.inventory.items().map(item => [item.name, item.count])),
       });
+      // What Jev made of the request is the first thing worth seeing about
+      // it, whether or not any work follows.
+      if (spec && !literal) {
+        observation?.sample(spec.kind === 'clarify' ? 'clarify' : 'request', { request, from, kind: spec.kind, message: spec.message,
+          clarification: spec.clarification, interpretation: spec.interpretation, itemResolution: spec.itemResolution,
+          discoveryResolution: spec.discoveryResolution, buildContinuation: spec.buildContinuation, usage: spec.usage, latencyMs: spec.latencyMs });
+      }
       if (!spec || revision !== generation) return;
       if (spec.kind === 'operator_command') {
         const allowed = (process.env.MC_COMMAND_USERS || '').split(',').map(name => name.trim().toLowerCase());

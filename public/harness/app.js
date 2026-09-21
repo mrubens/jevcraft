@@ -8,7 +8,31 @@ let viewer;
 try { viewer = new WorldView($('viewport')); }
 catch { $('world-empty').hidden = false; text('world-empty', '3D requires WebGL 2. The decision inspector and recordings still work in this browser.'); }
 let sessions = [], data, frames = [], selectedId, follow = true, playing = null, sessionId = '', fetchRevision = 0, online = false;
-const sourceNames = { fable: 'Fable adviser', jev: 'Jev classifier', rules: 'Execution rule', survival: 'Survival response', observed: 'Observation', stale: 'Discarded decision' };
+const sourceNames = { fable: 'Fable adviser', jev: 'Jev judgment', rules: 'Execution rule', survival: 'Survival response', observed: 'Observation', stale: 'Discarded decision' };
+const pct = value => Number.isFinite(value) ? `${Math.round(value * 100)}%` : '—';
+const questionText = instructions => typeof instructions === 'string' ? instructions : instructions?.task || instructions?.question || JSON.stringify(instructions || '');
+const describe = description => typeof description === 'string' ? description : Object.entries(description || {}).map(([key, value]) => `${human(key)} ${typeof value === 'object' ? JSON.stringify(value) : value}`).join(' · ');
+const tokens = usage => (usage?.input_tokens || usage?.prompt_tokens || 0) + (usage?.output_tokens || usage?.completion_tokens || 0);
+
+// Every Jev call the loaded frames know about: the chat interpretations, the
+// tree decisions that actually asked a question, and recovery picks. Frames
+// repeat the latest decision in their snapshot, so each is counted once.
+function jevStats(frames) {
+  const calls = [], seen = new Set();
+  let clarifications = 0, ruled = 0;
+  for (const frame of frames) {
+    const decision = frame.snapshot?.decision;
+    if (decision?.at && !seen.has(decision.at)) {
+      seen.add(decision.at);
+      if (decision.judgments?.length) calls.push({ latency: decision.latencyMs, usage: decision.usage }); else ruled++;
+    }
+    if (['request', 'clarify'].includes(frame.kind)) { calls.push({ latency: frame.detail?.latencyMs, usage: frame.detail?.usage }); if (frame.kind === 'clarify') clarifications++; }
+    if (frame.kind === 'recovery_advice' && frame.detail?.jev) calls.push({ latency: frame.detail.jev.latencyMs, usage: frame.detail.jev.usage });
+  }
+  const latencies = calls.map(c => c.latency).filter(Number.isFinite).sort((a, b) => a - b);
+  return { calls: calls.length, ruled, clarifications, tokens: calls.reduce((sum, c) => sum + tokens(c.usage), 0),
+    medianLatency: latencies.length ? latencies[Math.floor(latencies.length / 2)] : null };
+}
 let toastTimer;
 function toast(message) { text('toast', message); $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 5000); }
 async function json(url, options) { const response = await fetch(url, options); const value = await response.json(); if (!response.ok) throw new Error(value.error || 'Request failed'); return value; }
@@ -87,14 +111,22 @@ function render(updateScene = true) {
         })) : null);
     }
   }
+  const stats = jevStats(frames);
+  text('glance-calls', stats.calls); text('glance-calls-note', stats.ruled ? `${stats.ruled} step${stats.ruled === 1 ? '' : 's'} needed no question` : 'in this window');
+  text('glance-latency', stats.medianLatency === null ? '—' : `${stats.medianLatency} ms`);
+  text('glance-tokens', stats.tokens ? stats.tokens.toLocaleString() : '—');
+  text('glance-clarify', stats.clarifications);
   text('event-time', frame ? `EVENT ${frame.id} · ${time(frame.at)}` : 'NO OBSERVATIONS');
   text('event-label', frame?.label || 'Waiting for observations');
-  text('source-badge', sourceNames[frame?.source] || 'Observation'); $('source-badge').className = `pill ${frame?.source || ''}`;
-  const advice = frame?.source === 'fable' ? frame.detail : null;
-  const decision = advice ? null : snapshot.decision;
+  text('source-badge', frame?.kind === 'clarify' ? 'Asked the player' : sourceNames[frame?.source] || 'Observation'); $('source-badge').className = `pill ${frame?.kind === 'clarify' ? 'clarify' : frame?.source || ''}`;
+  const advice = frame?.kind === 'recovery_advice' ? frame.detail : null;
+  const request = ['request', 'clarify'].includes(frame?.kind) ? frame.detail : null;
+  const decision = advice || request ? null : snapshot.decision;
   const currentDecision = frame?.source === 'jev' || frame?.kind === 'decision';
   const provenance = data.mode === 'demo' ? 'Illustration only. These choices and probabilities are synthetic.' :
-    advice ? 'Recovery advice from the configured LLM. Code validates and executes selected actions; completion is verified separately.' :
+    advice ? advice.source === 'jev' ? 'Jev chose between recovery actions that code had already checked. The generative adviser is only asked when Jev is unsure or has had its turn.' : 'Recovery advice from the configured LLM, asked because Jev was unsure or had already tried. Code validates and executes selected actions; completion is verified separately.' :
+    frame?.kind === 'clarify' ? 'Jev was not sure enough to act, so the bot asked instead of guessing. Nothing was started.' :
+    frame?.kind === 'request' ? 'One batched Jev call turned the chat message into typed answers. The routing questions and the speculative ones were answered together.' :
     frame?.source === 'jev' ? 'Recorded typed choices from Jev. Probabilities are shown only where the model response included them.' :
     frame?.source === 'stale' ? 'This decision was discarded because the state changed. It was not executed.' :
     frame?.source === 'rules' ? 'This event came from the executor or a rule. Any earlier Jev choice below is context, not a new decision.' :
@@ -102,16 +134,43 @@ function render(updateScene = true) {
   text('provenance', provenance);
   $('decision-meta').replaceChildren();
   if (decision?.at) $('decision-meta').append(el('span', `${currentDecision ? 'Decision' : 'Last decision'} ${time(decision.at)}`));
+  if (decision?.model) $('decision-meta').append(el('span', decision.model));
   if (Number.isFinite(decision?.latencyMs)) $('decision-meta').append(el('span', `${decision.latencyMs} ms`));
+  if (tokens(decision?.usage)) $('decision-meta').append(el('span', `${tokens(decision.usage).toLocaleString()} tokens`));
+  if (goal.designReview) { const fit = el('span', `${goal.designReview.accepted ? 'Design fit' : 'Design rejected'} ${pct(goal.designReview.fits)}`, `fit${goal.designReview.accepted ? '' : ' rejected'}`); fit.title = 'Jev judged whether the generated design answers the request before building it'; $('decision-meta').append(fit); }
+  $('clarification').hidden = !request?.clarification && frame?.kind !== 'clarify';
+  $('clarification').replaceChildren();
+  if (request && frame.kind === 'clarify') {
+    const card = el('div', undefined, 'clarification');
+    const why = request.clarification || {};
+    card.append(el('b', why.reason === 'uncertain_objective' ? `Objective confidence ${pct(why.confidence)} · needed ${pct(why.threshold)}` : why.reason === 'ambiguous_item' ? 'Two catalog items were close' : human(why.reason || 'clarification')));
+    card.append(document.createTextNode(request.message || ''));
+    $('clarification').append(card);
+  }
   renderChoices(decision);
   if (advice) {
-    $('decision-meta').append(el('span', advice.model), el('span', `${advice.latencyMs} ms`));
+    if (advice.model) $('decision-meta').append(el('span', advice.model));
+    if (Number.isFinite(advice.latencyMs)) $('decision-meta').append(el('span', `${advice.latencyMs} ms`));
     $('choices').replaceChildren(el('p', advice.diagnosis));
+    if (advice.jev?.judgment) {
+      const judgment = advice.jev.judgment, section = el('div', undefined, 'decision-branch');
+      const heading = el('div', undefined, 'branch-heading'); heading.append(el('span', 'Recovery options'), el('span', `${pct(judgment.confidence)} confident`, `confidence${judgment.confidence < 0.6 ? ' low' : ''}`)); section.append(heading);
+      for (const [key, probability] of Object.entries(judgment.probabilities || {}).sort(([, a], [, b]) => b - a)) {
+        const chosen = key === judgment.choice, card = el('div', undefined, `candidate${chosen ? ' chosen' : ''}`), row = el('div', undefined, 'row');
+        row.append(el('span', `${chosen ? '↳ ' : ''}${human(key)}`), el('b', pct(probability))); card.append(row, el('p', advice.jev.options?.[key] || ''));
+        const bar = el('div', undefined, 'probability'), fill = el('b'); fill.style.width = `${Math.max(0, Math.min(100, probability * 100))}%`; bar.append(fill); card.append(bar); section.append(card);
+      }
+      $('choices').append(section);
+    }
     for (const step of advice.steps || []) $('choices').append(el('p', `${human(step.kind)}: ${step.description || step.item || ''}`));
   }
+  if (request && frame.kind === 'request') $('choices').replaceChildren(el('p', `“${request.request}” was understood as ${human(request.kind)}. The judgments are below.`, 'muted'));
   text('state-json', JSON.stringify(advice?.context || decision?.state || { message: 'No decision input was recorded for this observation.' }, null, 2));
-  $('routing-details').hidden = !goal.interpretation && !goal.itemResolution;
-  text('routing-json', JSON.stringify({ interpretation: goal.interpretation, itemResolution: goal.itemResolution }, null, 2));
+  const interpretation = request?.interpretation || goal.interpretation, resolution = request?.itemResolution || goal.itemResolution;
+  $('routing-details').hidden = !interpretation && !resolution;
+  $('routing-details').open = !!request;
+  renderInterpretation(interpretation, resolution, request?.discoveryResolution || goal.discoveryResolution);
+  text('routing-json', JSON.stringify({ interpretation, itemResolution: resolution }, null, 2));
   text('event-json', JSON.stringify(frame?.detail || {}, null, 2));
   $('inventory').replaceChildren();
   const inventory = snapshot.inventory;
@@ -127,6 +186,38 @@ function render(updateScene = true) {
   $('latest').className = follow ? 'selected' : '';
   renderTimeline();
 }
+// The chat request as Jev saw it: every typed answer from the batched call,
+// with how sure it was, then the catalog walk that named the item.
+function renderInterpretation(interpretation, resolution, discovery) {
+  $('routing').replaceChildren();
+  if (!interpretation) return;
+  for (const [name, answer] of Object.entries(interpretation)) {
+    if (!answer || typeof answer !== 'object') continue;
+    const card = el('div', undefined, 'judgment'), row = el('div', undefined, 'row');
+    const isNoul = answer.type === 'noul' || (answer.noul !== undefined && answer.choice === undefined);
+    row.append(el('span', human(name)), el('b', isNoul ? `${pct(answer.noul)} yes` : human(answer.choice ?? '—')));
+    card.append(row);
+    if (!isNoul && Number.isFinite(answer.confidence)) {
+      const bar = el('div', undefined, 'probability'), fill = el('b'); fill.style.width = `${Math.max(0, Math.min(100, answer.confidence * 100))}%`; bar.append(fill); card.append(bar);
+      const alternatives = Object.entries(answer.probabilities || {}).filter(([key]) => key !== answer.choice).sort(([, a], [, b]) => b - a).filter(([, p]) => p >= 0.05).slice(0, 3);
+      const note = el('div', `${pct(answer.confidence)} confident${alternatives.length ? ` · also considered ${alternatives.map(([key, p]) => `${human(key)} ${pct(p)}`).join(', ')}` : ''}`, `alternatives${answer.confidence < 0.6 ? ' low' : ''}`);
+      card.append(note);
+    }
+    $('routing').append(card);
+  }
+  if (resolution) {
+    const crumb = el('div', undefined, 'breadcrumb');
+    if (resolution.direct) crumb.append(el('b', 'Item picked directly from the request’s own candidates'), el('i', '·'), document.createTextNode(`${human(resolution.item)} at ${pct(resolution.judgments?.[0]?.answer?.confidence)} confidence, no catalog walk needed`));
+    else if (resolution.ambiguous) crumb.append(el('b', 'Catalog walk ended in a tie'), el('i', '·'), document.createTextNode(`${resolution.ambiguous.map(human).join(' or ')}, so the player was asked`));
+    else {
+      crumb.append(el('b', `Catalog walk${resolution.item ? ` to ${human(resolution.item)}` : ' found nothing'}`), el('i', '·'), document.createTextNode(`${resolution.judgments?.length || 0} hop${resolution.judgments?.length === 1 ? '' : 's'}${Number.isFinite(resolution.latencyMs) ? `, ${resolution.latencyMs} ms` : ''}`));
+      crumb.append(el('br'));
+      (resolution.judgments || []).forEach((hop, index) => { if (index) crumb.append(el('i', '›')); crumb.append(document.createTextNode(`${human(hop.answer?.choice || '?')} ${pct(hop.answer?.confidence)}`)); });
+    }
+    $('routing').append(crumb);
+  }
+  if (discovery?.target) $('routing').append(el('div', `Looking for ${human(discovery.target.kind)}: ${human(discovery.target.name)}`, 'breadcrumb'));
+}
 function renderChoices(decision) {
   $('choices').replaceChildren();
   const tree = branches(decision || {});
@@ -134,13 +225,17 @@ function renderChoices(decision) {
   const renderBranch = branch => {
     const section = el('div', undefined, 'decision-branch');
     const heading = el('div', undefined, 'branch-heading'); heading.append(el('span', branch.path.length ? human(branch.path.at(-1)) : 'Priority'));
-    heading.append(el('span', branch.candidates.length === 1 ? 'Only feasible option' : branch.judgment ? branch.id : 'Response not recorded'));
+    const confidence = branch.judgment?.confidence;
+    heading.append(branch.candidates.length === 1 ? el('span', 'No question needed · one feasible option')
+      : branch.judgment ? el('span', Number.isFinite(confidence) ? `${pct(confidence)} confident` : 'Answered', `confidence${confidence < 0.6 ? ' low' : ''}`) : el('span', 'Response not recorded'));
     section.append(heading);
+    const asked = decision?.asked?.[branch.id];
+    if (asked && branch.candidates.length > 1) { const question = el('p', questionText(asked), 'asked'); question.title = 'The question Jev was asked for this branch'; section.append(question); }
     for (const candidate of branch.candidates) {
       const chosen = candidate.key === branch.chosen, card = el('div', undefined, `candidate${chosen ? ' chosen' : ''}`);
       const row = el('div', undefined, 'row'), probability = candidate.probability;
       row.append(el('span', `${chosen ? '↳ ' : ''}${human(candidate.key)}`), el('b', Number.isFinite(probability) ? `${Math.round(probability * 100)}%` : chosen ? 'Selected' : '—'));
-      card.append(row, el('p', candidate.description));
+      card.append(row, el('p', describe(candidate.description)));
       if (Number.isFinite(probability)) { const bar = el('div', undefined, 'probability'), fill = el('b'); fill.style.width = `${Math.max(0, Math.min(100, probability * 100))}%`; bar.append(fill); card.append(bar); }
       section.append(card);
     }

@@ -31,8 +31,9 @@ function goalView(goal = {}) {
     endReturn: goal.endReturn,
     fallRecoveries: goal.fallRecoveries,
     recoveryAction: goal.recoveryAdvice?.active ? goal.recoveryAction : undefined,
-    recoveryAdvice: goal.recoveryAdvice?.history?.at(-1) && (({ model, diagnosis, status, steps, outcome }) =>
-      ({ model, diagnosis, status, steps, outcome }))(goal.recoveryAdvice.history.at(-1)),
+    recoveryAdvice: goal.recoveryAdvice?.history?.at(-1) && (({ model, source, diagnosis, status, steps, outcome, jev }) =>
+      ({ model, source, diagnosis, status, steps, outcome, jev }))(goal.recoveryAdvice.history.at(-1)),
+    designReview: goal.designReview && { fits: goal.designReview.fits, accepted: goal.designReview.accepted, threshold: goal.designReview.threshold },
     dependencies: goal.decisions?.at(-1)?.state?.acquisition?.dependencies,
     blueprint: goal.blueprint && { origin: goal.blueprint.origin, blocks: goal.blueprint.blocks?.slice(0, 6000) },
   });
@@ -57,6 +58,9 @@ function classify(row) {
   return ['observation', 'World observed'];
 }
 function decisionSource(decision, kind) {
+  // A chat request is understood by Jev before anything else happens, and a
+  // clarifying question is Jev saying it was not sure enough to act.
+  if (['request', 'clarify'].includes(kind)) return 'jev';
   if (['connection', 'result', 'start', 'chat', 'observation', 'vitals'].includes(kind)) return 'observed';
   if (decision?.stale) return 'stale';
   if (decision?.judgments?.length && ['decision', 'action'].includes(kind)) return 'jev';
@@ -99,16 +103,27 @@ function legacyFrames(rows, goal = {}) {
   return frames.slice(-MAX_FRAMES);
 }
 
+// A once-a-second heartbeat fills the window in ten minutes and would carry
+// the interesting frames out with it. Heartbeats are the first to go, so a
+// chat request and the decisions it caused stay inspectable for far longer
+// than the terrain samples around them.
+const HEARTBEAT = new Set(['observation', 'vitals']);
+
 class Trace {
   constructor({ id = 'live', label = 'Jev', mode = 'live', onFrame = () => {} } = {}) {
     this.id = id; this.label = label; this.mode = mode; this.frames = []; this.serial = 0; this.epoch = 0;
     this.connected = false; this.onFrame = onFrame; this.bytes = 0; this.sizes = [];
   }
+  evict() {
+    let index = this.frames.findIndex(f => HEARTBEAT.has(f.kind));
+    if (index < 0 || index === this.frames.length - 1) index = 0;
+    this.frames.splice(index, 1); this.bytes -= this.sizes.splice(index, 1)[0];
+  }
   append(frame) {
     const next = { ...clean(frame), id: ++this.serial, at: frame.at || new Date().toISOString() };
     this.frames.push(next);
     const size = Buffer.byteLength(JSON.stringify(next)); this.bytes += size; this.sizes.push(size);
-    while (this.frames.length > MAX_FRAMES || (this.bytes > MAX_TRACE_BYTES && this.frames.length > 1)) { this.frames.shift(); this.bytes -= this.sizes.shift(); }
+    while (this.frames.length > MAX_FRAMES || (this.bytes > MAX_TRACE_BYTES && this.frames.length > 1)) this.evict();
     this.onFrame(next); return next;
   }
   view(after = 0) { return { id: this.id, label: this.label, mode: this.mode, epoch: this.epoch,

@@ -8,7 +8,7 @@ export function branches(decision) {
     const judgment = decision.judgments?.find(j => j.branch === id);
     const onPath = path.every((key, i) => decision.path?.[i] === key);
     results.push({ id, path, judgment, onPath, chosen: onPath ? decision.path?.[path.length] : null,
-      candidates: entries.map(([key, node]) => ({ key, description: node.description || '', probability: judgment?.probabilities?.[key] })) });
+      candidates: entries.map(([key, node]) => ({ key, description: node.description ?? '', probability: judgment?.probabilities?.[key] })) });
     for (const [key, node] of entries) if (node.children) visit(node.children, [...path, key]);
   }
   visit(decision?.options);
