@@ -158,7 +158,9 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
       // just made, and pours water where there is none. Plain ore mining
       // would leave a crust beside lava for the lava to flow into.
       if (name === 'obsidian') methods.push({ cost: 4, run: () => {
-        acquire('diamond_pickaxe', 1); acquire('water_bucket', 1);
+        // The bucket is filled on the surface, so it comes before the dig
+        // for diamonds rather than after a climb back up.
+        acquire('water_bucket', 1); acquire('diamond_pickaxe', 1);
         const remaining = needed - have(name);
         if (remaining <= 0) return;
         steps.push({ action: 'make_obsidian', item: name, count: remaining, requires: { diamond_pickaxe: 1, water_bucket: 1 }, consumes: {}, produces: { [name]: remaining } });
