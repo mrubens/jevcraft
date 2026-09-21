@@ -148,7 +148,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       const goal = { ...next, version: 1, status: 'pending', createdAt: new Date().toISOString(), suspendedTasks: suspendPrevious(store.read()),
         requesterPosition: null, initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);
-      bot.chat(`Nothing needs me, so I'm chasing my dream to ${DREAMS[standing.dream].title}${next.villageScore !== undefined && next.villageScore !== null ? ` (the village is ${Math.round(next.villageScore * 100 / 3)}% there)` : ''}: ${next.request}.`);
+      const firstRung = next.kind === 'win' ? require('./game-progress').nextGameStage(bot, goal).phase?.replaceAll('_', ' ') : null;
+      bot.chat(`Nothing needs me, so I'm chasing my dream to ${DREAMS[standing.dream].title}${next.villageScore !== undefined && next.villageScore !== null ? ` (the village is ${Math.round(next.villageScore * 100 / 3)}% there)` : ''}${firstRung ? `. First: ${firstRung}.` : `: ${next.request}.`}`);
       launch(goal);
     } catch (err) {
       console.error('[dream]', err.message);
