@@ -19,6 +19,19 @@ const credit = timestamp => ({ progressMapping: [{ key: 'minecraft:end/kill_drag
   { criterionIdentifier: 'killed_dragon', criterionProgress: timestamp },
 ] }] });
 
+test('the ladder runs again after a first Nether entry when the pockets hold no Nether supplies', () => {
+  const { bot, goal } = fixture(); observeProgress(bot, goal);
+  bot.game.dimension = 'minecraft:the_nether'; observeProgress(bot, goal);
+  bot.game.dimension = 'overworld';
+  assert(goal.gameProgress.milestones.nether_entered);
+  bot.inventory.items = () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'iron_sword', count: 1 }];
+  assert.equal(nextGameStage(bot, goal).item, 'iron_pickaxe', 'a death empties the pockets; the climb starts from the ladder, not the portal');
+  bot.inventory.items = () => GEAR;
+  assert.equal(nextGameStage(bot, goal).action, 'enter_nether', 'with the whole kit the ladder is silent and the portal is next');
+  bot.inventory.items = () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'blaze_rod', count: 2 }];
+  assert.equal(nextGameStage(bot, goal).action, 'enter_nether', 'Nether supplies in hand mean the later stages own the shopping');
+});
+
 test('progression resolves real carried eyes, powder, rods and pearls without spending them twice', () => {
   const { bot, goal, give } = fixture(); observeProgress(bot, goal);
   assert.equal(nextGameStage(bot, goal).action, 'enter_nether');

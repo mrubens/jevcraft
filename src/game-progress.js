@@ -134,8 +134,12 @@ function nextGameStage(bot, goal) {
   const where = dimension(bot), m = goal.gameProgress?.milestones || {};
   // Early game only: once any Nether or End supply is in hand, the run has
   // moved past preparation and the later stages own what to fetch next.
+  // The first Nether entry is not that line: a death empties the pockets,
+  // and a climb that skips the ladder because the milestone is set walks
+  // back to the portal with a stone pickaxe, no bucket and no gold, which
+  // is how three Nether trips went in with less than the first one.
   const supplies = ['ender_eye', 'blaze_rod', 'blaze_powder', 'ender_pearl'].reduce((n, name) => n + count(bot, name), 0);
-  if (where === 'overworld' && !m.nether_entered && !supplies) { const prep = preparationStage(bot, goal); if (prep) return prep; }
+  if (where === 'overworld' && !supplies) { const prep = preparationStage(bot, goal); if (prep) return prep; }
   if (where === 'end') return m.dragon_defeated ? { phase: 'return_alive', action: 'exit_end' } : { phase: 'defeat_dragon', action: 'fight_dragon' };
   // Survey throws deliberately spend eyes. Do not send Jev back to the Nether
   // after each throw while it still has a spare and twelve portal eyes. A
