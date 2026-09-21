@@ -361,3 +361,11 @@ test('a finished base reopens when its plot is trampled or built on, and the blo
   stage = home.homeStage(bot, goal);
   assert.equal(stage.action, 'till', 'then the cells are tilled');
 });
+
+test('the plot grows a fourth column when the base is marked wide, and stays within the water\'s reach', () => {
+  const site = { origin: { x: 0, y: 63, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 63, z: 0 } };
+  assert.equal(home.layout(site).plot.length, 9);
+  const wide = home.layout({ ...site, plotWide: true }).plot;
+  assert.equal(wide.length, 12);
+  assert(wide.every(p => Math.abs(p.x - site.water.x) <= 4 && Math.abs(p.z - site.water.z) <= 4), 'every cell within four of the water');
+});

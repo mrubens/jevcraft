@@ -6,7 +6,7 @@ const shelter = require('./shelter');
 const { decideTree, announceFallback } = require('./decisions');
 const { maintainVitals, chooseFood, checkAir } = require('./vitals');
 const { foodSupply, forageChoices } = require('./foraging');
-const { bedCarried, placeOriented, isBed, homeOf, layout } = require('./home-base');
+const { bedCarried, placeOriented, isBed, homeOf, layout, homeChores } = require('./home-base');
 const { readyEquipment } = require('./mob-policy');
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
@@ -536,8 +536,16 @@ class Survival {
     if (placed) {
       // A walk that fails is a route problem, not a bed problem: the shelter
       // path takes this night's next two minutes, and the bed stays in play.
-      try { await this.actions.navigate(bot, task, new goals.GoalNear(site.foot.x, site.foot.y, site.foot.z, 2), { timeoutMs: 90000, stallMs: 8000 }); }
-      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; this.state.bedRouteFailedAt = Date.now(); this.report(goal, save, { action: 'sleep_failed', reason: `no way to the bed: ${err.message}` }); throw err; }
+      // The stand cell first (it is laid out to be reachable), then two and
+      // three blocks from the foot: a single goal failed from twenty blocks.
+      const approaches = [[site.stand, 1], [site.foot, 2], [site.foot, 3]];
+      let reached = false, lastError = null;
+      for (const [p, range] of approaches) {
+        try { await this.actions.navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, range), { timeoutMs: 45000, stallMs: 8000 }); reached = site.foot.distanceTo(bot.entity.position) <= 3.5; }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; lastError = err; }
+        if (reached) break;
+      }
+      if (!reached) { this.state.bedRouteFailedAt = Date.now(); this.report(goal, save, { action: 'sleep_failed', reason: `no way to the bed: ${lastError?.message || 'not close enough'}` }); throw lastError || new Error('No way to the bed'); }
       if (!isBed(bot.blockAt(site.foot))) throw new Error('The bed at the base is not where it was left');
     }
     else await placeOriented(bot, task, this.actions, site.stand, site.foot, item, () => isBed(bot.blockAt(site.foot)) && isBed(bot.blockAt(site.head)));
@@ -652,8 +660,21 @@ class Survival {
     // to the work loop, which dived to the lava site and was climbed out of
     // again every ten seconds until 12541.
     if (homeBed && shelterNeeded(bot) && bot.time.timeOfDay >= 11000 && bot.time.timeOfDay < SLEEP_FROM && homeBed.foot.distanceTo(bot.entity.position) <= 6 && !immediateThreat(bot)) {
-      this.report(goal, save, { action: 'wait_for_bedtime', ticks: SLEEP_FROM - bot.time.timeOfDay });
-      for (let i = 0; i < 10; i++) { task.check(); await sleep(100); }
+      // The minute before bedtime is a chore, not a wait: the stash, the
+      // wheat, the cows; and once, the plot grows a column for the next day.
+      const chores = homeChores(bot, goal);
+      const chore = ['stock_stash', 'harvest_and_bake', 'tend_farm', 'breed_cows'].map(k => chores[k]).find(Boolean) || Object.values(chores)[0];
+      const home = homeOf(bot, goal);
+      if (chore) {
+        this.report(goal, save, { action: 'evening_chore', chore: Object.keys(chores).find(k => chores[k] === chore) });
+        try { await chore.run(bot, task, goal, save, this.actions); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      } else if (home?.completedAt && !home.plotWide) {
+        home.plotWide = true; delete home.completedAt; save();
+        this.report(goal, save, { action: 'grow_plot' });
+      } else {
+        this.report(goal, save, { action: 'wait_for_bedtime', ticks: SLEEP_FROM - bot.time.timeOfDay });
+        for (let i = 0; i < 10; i++) { task.check(); await sleep(100); }
+      }
       onStep(goal); return true;
     }
     const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot) && (underground || !routeBlocked);

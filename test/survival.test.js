@@ -758,9 +758,9 @@ test('the bed at the base is slept in when it is near, and it stays where it is'
   bot.entity.position = new Vec3(200.5, 64, 0.5); assert.equal(nearbyHomeBed(bot, goal), null, 'two hundred is not');
   bot.entity.position = new Vec3(3.5, 64, 3.5);
   const walked = [], dug = [];
-  const survival = new Survival(bot, { navigate: async (b, t, g) => walked.push([g.x, g.y, g.z]), dig: async (b, t, p) => dug.push(`${p}`) }, { state: goal.survival });
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { walked.push([g.x, g.y, g.z]); bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); }, dig: async (b, t, p) => dug.push(`${p}`) }, { state: goal.survival });
   await survival.sleepStep(new Task('test', 'sleep'), goal, () => {});
-  assert.equal(bot.time.timeOfDay, 0); assert.equal(walked.length, 1); assert.deepEqual(dug, [], 'the base bed is not picked up');
+  assert.equal(bot.time.timeOfDay, 0); assert.equal(walked.length, 1, 'the stand cell is reached first time'); assert.deepEqual(dug, [], 'the base bed is not picked up');
 });
 
 test('a shell leaning on the chest does not use the chest as its door', () => {

@@ -53,7 +53,10 @@ function layout(site) {
   const o = site.origin, d = site.direction, a = { x: -d.z, z: d.x };
   const cell = (u, v, dy = 0) => ({ x: o.x + d.x * u + a.x * v, y: o.y + dy, z: o.z + d.z * u + a.z * v });
   const plot = [], footprint = [], fences = [];
-  for (let u = 0; u < PLOT; u++) for (let v = -1; v <= 1; v++) plot.push(cell(u, v));
+  // Three by three to start; a fourth column (v = 2) once the base stands
+  // and there is an evening to spare. The water at u = -1 keeps every cell
+  // within the four blocks that hydrate farmland.
+  for (let u = 0; u < PLOT; u++) for (let v = -1; v <= (site.plotWide ? 2 : 1); v++) plot.push(cell(u, v));
   for (let u = 0; u <= 8; u++) for (let v = -3; v <= 3; v++) footprint.push(cell(u, v));
   let gate = null;
   for (let u = 4; u < 4 + PEN; u++) for (let v = -2; v <= 2; v++) {

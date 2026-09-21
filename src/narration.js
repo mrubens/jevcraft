@@ -28,6 +28,8 @@ const SURVIVAL = {
   sleep: 'Night. Bedding down.',
   go_home_for_night: "Getting dark. Heading home to bed.",
   wait_for_bedtime: "Home before dark. Waiting for bedtime.",
+  evening_chore: (goal, action) => `Home before dark. ${({ stock_stash: 'Stocking the chest', harvest_and_bake: 'Harvesting and baking', tend_farm: 'Tending the plot', breed_cows: 'Breeding the cows' })[action.chore] || 'A chore'} before bed.`,
+  grow_plot: 'Home before dark. The plot can be bigger; one more row tomorrow.',
   sleep_failed: (goal, action) => `Couldn't sleep: ${String(action.reason || '').replace(/^The server refused the sleep: /, '').replaceAll('_', ' ').replace(/^block\.minecraft\./, '')}.`,
   stay_up: "Staying up tonight; there's work the dark is good for.",
   leave_shelter: (goal, action) => action.reason || "Morning. Back to it.",
