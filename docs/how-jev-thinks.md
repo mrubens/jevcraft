@@ -60,6 +60,8 @@ Some things are never a choice. Eating carried food when hungry is a rule. Surfa
 
 If a step fails three times in a row, code enumerates the recovery actions it could take from here: gather footing blocks, return to the surface, move to one of six surveyed standing spots, and so on. Each is something it has already checked it can do. Jev is asked which one is most likely to unblock the original request, or *none*.
 
+If the service itself is unreachable, the tree is walked with a code default instead, shelter before food before the request and otherwise the first option listed, and the decision is recorded as a *code default* so the Observatory shows where a judgment is missing. The bot keeps working through the outage and says once in chat that it is on defaults, and once that Jev is back.
+
 In a recorded run, the bot had a birch log ready but the player had left the area. Jev answered *none* at 0.83: no option would make the player visible. Only then was the optional generative model asked, and it agreed, in fourteen seconds and at about a hundred times the cost. Jev's turn took under a second. The generative model is kept for the case Jev cannot judge; it is not the first resort.
 
 ## Designs get a second opinion

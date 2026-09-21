@@ -64,6 +64,7 @@ function decisionSource(decision, kind) {
   if (['request', 'clarify', 'dream'].includes(kind)) return 'jev';
   if (['connection', 'result', 'start', 'chat', 'observation', 'vitals'].includes(kind)) return 'observed';
   if (decision?.stale) return 'stale';
+  if (decision?.fallback) return 'fallback';
   if (decision?.judgments?.length && ['decision', 'action'].includes(kind)) return 'jev';
   return kind === 'survival' || kind === 'danger' ? 'survival' : 'rules';
 }

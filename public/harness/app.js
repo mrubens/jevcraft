@@ -8,7 +8,7 @@ let viewer;
 try { viewer = new WorldView($('viewport')); }
 catch { $('world-empty').hidden = false; text('world-empty', '3D requires WebGL 2. The decision inspector and recordings still work in this browser.'); }
 let sessions = [], data, frames = [], selectedId, follow = true, playing = null, sessionId = '', fetchRevision = 0, online = false;
-const sourceNames = { fable: 'Fable adviser', jev: 'Jev judgment', rules: 'Execution rule', survival: 'Survival response', observed: 'Observation', stale: 'Discarded decision' };
+const sourceNames = { fable: 'Fable adviser', jev: 'Jev judgment', rules: 'Execution rule', survival: 'Survival response', observed: 'Observation', stale: 'Discarded decision', fallback: 'Code default (Jev unreachable)' };
 const pct = value => Number.isFinite(value) ? `${Math.round(value * 100)}%` : '—';
 const questionText = instructions => typeof instructions === 'string' ? instructions : instructions?.task || instructions?.question || JSON.stringify(instructions || '');
 const describe = description => typeof description === 'string' ? description : Object.entries(description || {}).map(([key, value]) => `${human(key)} ${typeof value === 'object' ? JSON.stringify(value) : value}`).join(' · ');
@@ -129,6 +129,7 @@ function render(updateScene = true) {
     frame?.kind === 'request' ? 'One batched Jev call turned the chat message into typed answers. The routing questions and the speculative ones were answered together.' :
     frame?.source === 'jev' ? 'Recorded typed choices from Jev. Probabilities are shown only where the model response included them.' :
     frame?.source === 'stale' ? 'This decision was discarded because the state changed. It was not executed.' :
+    frame?.source === 'fallback' ? 'Jev could not be reached, so the code walked the same tree with its safe default: shelter before food before the request, and otherwise the first option listed. Nothing was judged.' :
     frame?.source === 'rules' ? 'This event came from the executor or a rule. Any earlier Jev choice below is context, not a new decision.' :
     frame?.source === 'survival' ? 'A survival or emergency response. Earlier choices are context only.' : 'An observed event. No new Jev decision is attributed to it.';
   text('provenance', provenance);

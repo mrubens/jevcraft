@@ -102,6 +102,8 @@ Jev answers three kinds of question: a **Choice** among options code lists, a **
 
 The two places a generative model is used, both optional and both through OpenRouter, are the ones that need generation: drawing a custom schematic from a request and terrain survey, and reasoning about a failure Jev could not judge. Everything else is selection, and selection is what a System One model does well.
 
+If Jev cannot be reached (the service is down, a request times out), the bot does not stop. The same decision tree is walked with a code default, shelter before food before the request and otherwise the first option listed, the decision is recorded as a *code default*, and the bot says so once in chat and once more when Jev is back. The Observatory shows those decisions in their own colour, so an outage is visible rather than silent.
+
 Two design rules run through all of it. **Jev chooses, code enumerates**: the model never sees an option code did not construct and check, so it cannot invent a coordinate, a command or a quantity. **Confidence is a second axis**: the answer says what, the probability says whether to act, and thresholds scale with what a mistake would cost.
 
 ## Talking to Jev

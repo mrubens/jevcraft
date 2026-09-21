@@ -10,7 +10,7 @@ const { reservedForConstruction, portalSiteClear, selectPortalSite, portalSuppor
 const { updateDigCapabilities } = require('./movement');
 const { resourceTunnelStep } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = require('./vitals');
-const { decideTree } = require('./decisions');
+const { decideTree, announceFallback, firstOption } = require('./decisions');
 const { Survival } = require('./survival');
 const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
 const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, rememberSource, committedSource } = require('./decision-options');
@@ -999,12 +999,13 @@ async function decideAction(bot, task, goal, save, client, onStep, tree, context
   }, 100);
   let decision;
   try {
-    decision = await decideTree(client, { state, tree, signal: controller.signal, isFresh: () => fingerprint() === initial });
+    decision = await decideTree(client, { state, tree, signal: controller.signal, isFresh: () => fingerprint() === initial, fallback: firstOption });
   } finally { clearInterval(watcher); }
   task.check(); checkAir(bot);
+  announceFallback(bot, goal, decision);
   const record = { at: new Date().toISOString(), path: decision.path, latencyMs: decision.latencyMs,
     state, options: JSON.parse(JSON.stringify(tree)), usage: decision.usage, judgments: decision.judgments, asked: decision.asked,
-    model: client.model, stale: decision.stale || (decision.action?.valid ? !decision.action.valid() : false) };
+    model: client.model, stale: decision.stale || (decision.action?.valid ? !decision.action.valid() : false), fallback: decision.fallback };
   goal.decisions ||= []; goal.decisions.push(record); goal.decisions = goal.decisions.slice(-40);
   save(); onStep(goal);
   if (record.stale) return false;

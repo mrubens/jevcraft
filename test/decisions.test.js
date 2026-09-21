@@ -56,3 +56,33 @@ test('cancelling an in-flight Jev call aborts fetch without retrying', async () 
     assert.equal(calls, 1);
   } finally { global.fetch = original; }
 });
+
+test('a Jev outage walks the tree with the fallback rule and says so, while cancellations and rejections still throw', async () => {
+  const { TypeSafeError } = require('../src/typesafe');
+  const down = { systemOne: async () => { throw new TypeSafeError('TypeSafe 503: no healthy upstream', { status: 503 }); } };
+  const fallback = (children, path) => path.length ? Object.keys(children)[0] : 'eat';
+  const result = await decideTree(down, { state: {}, tree: tree(), fallback });
+  assert.deepEqual(result.path, ['eat', 'carried', 'consume']);
+  assert.equal(result.fallback.status, 503); assert.deepEqual(result.judgments, []);
+  assert.equal(result.asked.branch_0 !== undefined, true, 'the questions that would have been asked are still recorded');
+  await assert.rejects(decideTree(down, { state: {}, tree: tree() }), /503/, 'no fallback rule, no fallback');
+  const rejected = { systemOne: async () => { throw new TypeSafeError('TypeSafe 400: bad question', { status: 400 }); } };
+  await assert.rejects(decideTree(rejected, { state: {}, tree: tree(), fallback }), /400/, 'a rejected request is a bug, not an outage');
+  const controller = new AbortController(); const cancelled = new Error('Cancelled'); cancelled.name = 'Cancelled';
+  const aborting = { systemOne: async () => { controller.abort(cancelled); throw new Error('aborted'); } };
+  await assert.rejects(decideTree(aborting, { state: {}, tree: tree(), fallback, signal: controller.signal }), { name: 'Cancelled' });
+});
+
+test('the outage is announced once and its end once, and the first listed option is the default unless a node claims it', async () => {
+  const { announceFallback, firstOption } = require('../src/decisions');
+  const said = [], bot = { chat: line => said.push(line) }, goal = {};
+  announceFallback(bot, goal, { fallback: { reason: 'TypeSafe 503' } });
+  announceFallback(bot, goal, { fallback: { reason: 'TypeSafe 503' } });
+  assert.equal(said.length, 1); assert.equal(goal.jevOutage.reason, 'TypeSafe 503');
+  announceFallback(bot, goal, { judgments: [{}] });
+  announceFallback(bot, goal, { judgments: [{}] });
+  assert.deepEqual(said, ["Jev isn't answering right now, so I'm going with the safe default until it is.", 'Jev is back.']);
+  assert.equal(goal.jevOutage, undefined);
+  assert.equal(firstOption({ a: {}, b: {} }), 'a');
+  assert.equal(firstOption({ a: {}, b: { fallback: true } }), 'b');
+});

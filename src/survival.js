@@ -3,7 +3,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { threats, immediateThreat, checkThreats } = require('./danger');
 const shelter = require('./shelter');
-const { decideTree } = require('./decisions');
+const { decideTree, announceFallback } = require('./decisions');
 const { maintainVitals, chooseFood, checkAir } = require('./vitals');
 const { foodSupply, forageChoices } = require('./foraging');
 const { verifyHouse } = require('./objectives');
@@ -331,14 +331,18 @@ class Survival {
     const watcher = setInterval(() => { try { task.check(); checkAir(bot); checkThreats(bot); } catch (err) { controller.abort(err); } }, 100);
     const stopThinking = thinking(bot);
     let decision;
-    try { decision = await decideTree(this.client, { state, tree, signal: controller.signal,
+    // Without Jev, shelter comes before food and food before the request:
+    // the order a careful player keeps when nobody is weighing the trade.
+    const fallback = children => ['secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
+    try { decision = await decideTree(this.client, { state, tree, signal: controller.signal, fallback,
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) }); }
     finally { clearInterval(watcher); stopThinking(); }
     task.check(); checkAir(bot); checkThreats(bot);
+    announceFallback(bot, goal, decision);
     if (!decision.stale && decision.action.valid && !decision.action.valid()) decision.stale = true;
     goal.decisions ||= [];
     goal.decisions.push({ at: new Date().toISOString(), path: decision.path, state, options: JSON.parse(JSON.stringify(tree)),
-      latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, stale: decision.stale });
+      latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, stale: decision.stale, fallback: decision.fallback });
     goal.decisions = goal.decisions.slice(-40); save(); onStep(goal);
     if (decision.stale) return true;
     await decision.action.run();
