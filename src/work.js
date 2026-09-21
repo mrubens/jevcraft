@@ -522,10 +522,10 @@ async function mine(bot, task, step, goal, save, selected) {
   try {
     const before = countOf(bot, step.drops);
     await mineAtSource(bot, task, step, goal, save, selected);
-    if (countOf(bot, step.drops) > before) {
-      await opportunisticMining(bot, task, goal, save, step, { navigate, dig });
-      await opportunisticPickups(bot, task, goal, save, step, { navigate });
-    }
+    if (countOf(bot, step.drops) > before) await opportunisticMining(bot, task, goal, save, step, { navigate, dig });
+    // The pickup pass runs whether or not the dig's own collection worked:
+    // that is exactly when a raw iron is lying a block away uncollected.
+    await opportunisticPickups(bot, task, goal, save, step, { navigate });
   }
   finally { surface?.restore(); }
 }
