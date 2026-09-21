@@ -295,8 +295,17 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   if (near) {
     const key = near.uuid || near.id;
     if (!state.stalking || state.stalking.key !== key) state.stalking = { key, since: Date.now() };
-    goal.step = { action: 'stalk_mob', entity: step.entity, distance: Number(near.position.distanceTo(bot.entity.position).toFixed(1)) }; save();
+    const distance = near.position.distanceTo(bot.entity.position);
+    goal.step = { action: 'stalk_mob', entity: step.entity, distance: Number(distance.toFixed(1)) }; save();
     if (Date.now() - state.stalking.since > 45000) { (state.avoided ||= {})[key] = Date.now(); delete state.stalking; save(); }
+    // A mob seen far off is closed on, not watched: a blaze at twenty-nine
+    // blocks was stood in front of for sixteen persistence rounds while the
+    // observed-hunt check, which looks within twenty-four, never saw it.
+    if (distance > 10 && actions.navigate) {
+      try { await actions.navigate(bot, task, new goals.GoalNear(near.position.x, near.position.y, near.position.z, 8), { timeoutMs: 20000, stallMs: 5000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      return;
+    }
     await sleep(1000); return;
   }
   delete state.stalking;
