@@ -333,12 +333,29 @@ function fortressLegTarget(state, position) {
 async function findFortressStep(bot, task, goal, save, actions) {
   const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
   const ids = FORTRESS_BLOCKS.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
-  const bricks = bot.findBlocks({ matching: ids, maxDistance: 128, count: 4 });
+  const bricks = bot.findBlocks({ matching: ids, maxDistance: 128, count: 96 });
   if (bricks.length) {
-    const target = bricks.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
-    state.found = { x: target.x, y: target.y, z: target.z };
-    goal.step = { action: 'find_fortress', found: state.found, legs: state.legs }; save();
-    if (target.distanceTo(bot.entity.position) > 6) await actions.tunnel(bot, task, goal, save, target, 'fortress');
+    const here = bot.entity.position;
+    const nearest = bricks.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+    state.found = { x: nearest.x, y: nearest.y, z: nearest.z };
+    if (nearest.distanceTo(here) > 6) {
+      goal.step = { action: 'find_fortress', found: state.found, legs: state.legs }; save();
+      await actions.tunnel(bot, task, goal, save, nearest, 'fortress');
+      return;
+    }
+    // Inside: walk the structure. The farthest brick not yet walked to is
+    // the next stretch of corridor; blazes come into view on the way and
+    // the observed hunt takes them. Standing on the first brick found was
+    // twenty rounds of no progress.
+    state.visited ||= [];
+    const fresh = bricks.filter(b => !state.visited.some(v => Math.hypot(v.x - b.x, v.z - b.z) < 12));
+    const next = (fresh.length ? fresh : bricks).sort((a, b) => b.distanceTo(here) - a.distanceTo(here))[0];
+    state.visited.push({ x: next.x, y: next.y, z: next.z }); state.visited = state.visited.slice(-32);
+    goal.step = { action: 'find_fortress', found: state.found, walking: { x: next.x, y: next.y, z: next.z }, legs: state.legs }; save();
+    if (actions.navigate) {
+      try { await actions.navigate(bot, task, new goals.GoalNear(next.x, next.y + 1, next.z, 3), { timeoutMs: 30000, stallMs: 6000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; await actions.tunnel(bot, task, goal, save, next, 'fortress'); }
+    } else await actions.tunnel(bot, task, goal, save, next, 'fortress');
     return;
   }
   const here = bot.entity.position;
