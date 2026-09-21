@@ -99,10 +99,11 @@ const logsCarried = bot => bot.inventory.items().filter(i => /_log$/.test(i.name
 // A pickaxe about to break with no wood in the pockets is a bot sealed in its
 // own shaft: the exit needs a tool and the tool needs sticks. The dream run
 // went down with three pickaxes at six or seven durability and no wood.
-// No fuel at all is the same kind of gap: the first smelt underground sends
-// the bot back up for one log, and the next one again.
-const fuelCarried = bot => bot.inventory.items().filter(i => /^(coal|charcoal|coal_block)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
-const descentSuppliesLow = bot => woodCarried(bot) < 2 && (pickaxeDurability(bot) < SPARE_PICKAXE_DURABILITY || fuelCarried(bot) < 1);
+// Wood is the universal spare underground: sticks for the next pickaxe and
+// fuel for the next smelt. Going down without any is what wore the iron
+// pickaxe to nothing on a climb for gravel and left the bot digging out by
+// hand; the durability and fuel checks above only caught it some of the time.
+const descentSuppliesLow = bot => woodCarried(bot) < 2;
 
 async function prepareExpeditionStep(bot, task, goal, save) {
   goal.preparingExpedition = true;
