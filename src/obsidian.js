@@ -97,18 +97,22 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   const wanted = () => Math.max(0, target - countOf(bot, 'obsidian'));
   if (!wanted()) return;
   const origin = works.lastPour ? at(works.lastPour) : bot.entity.position;
-  const crust = safeCrust(bot, origin, { distance: works.lastPour ? 12 : 32 });
+  // Crust that could not be stood beside is set aside for five minutes, or
+  // the step stands at the shore repeating one error and never pours again.
+  works.unreachable ||= {};
+  const crust = safeCrust(bot, origin, { distance: works.lastPour ? 12 : 32 }).filter(p => !(works.unreachable[`${p}`] > Date.now() - 300000));
   if (crust.length) {
     for (const p of crust.slice(0, 8)) {
       if (!wanted()) return;
       task.check(); checkAir(bot); checkThreats(bot);
       const before = countOf(bot, 'obsidian');
       goal.step = { ...step, phase: 'mine', position: { ...p } }; save();
-      await approachDryMining(bot, task, p, { navigate, dig });
+      try { await approachDryMining(bot, task, p, { navigate, dig }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; works.unreachable[`${p}`] = Date.now(); save(); continue; }
       await dig(bot, task, p, { done: () => countOf(bot, 'obsidian') > before, requiredTool: 'diamond_pickaxe' });
       await collectNearbyDrops(bot, task, 'obsidian', { before, origin: p, radius: 6, waitForSpawnMs: 1000, allowExcavation: true });
     }
-    return;
+    if (crust.some(p => !(works.unreachable[`${p}`] > Date.now() - 300000))) return;
   }
   if (!countOf(bot, 'water_bucket')) { await acquireStep(bot, task, 'water_bucket', 1, goal, save); return; }
   const surface = poolSurface(bot);
