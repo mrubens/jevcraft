@@ -968,13 +968,13 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     // An extension is designed against the building it joins, not in a vacuum:
     // the designer gets that building's own schematic so the new part can match
     // its materials, line up with its storeys and meet its wall.
-    const joining = goal.buildContinuation?.mode === 'extend'
+    const joining = goal.buildContinuation?.mode === 'edit'
       ? bot.buildRegistry?.find(goal.buildContinuation.target) : null;
-    const extending = joining?.design?.source ? { name: joining.name, size: joining.design.source.size,
+    const editing = joining?.design?.source ? { name: joining.name, size: joining.design.source.size,
       palette: joining.design.source.palette, regions: joining.design.source.regions,
       entrance: joining.design.source.entrance } : undefined;
     try { goal.design = fallback ? await designWithJev(bot, task, goal.request, client, goal.memoryContext) :
-      await designBuilding(bot, task, goal.request, { previousDraft: goal.designDraft, feedback: goal.designError, memory: goal.memoryContext, extending }); }
+      await designBuilding(bot, task, goal.request, { previousDraft: goal.designDraft, feedback: goal.designError, memory: goal.memoryContext, editing }); }
     catch (err) {
       if (!fallback && ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) goal.designAttempts--;
       goal.designError = err.message;
@@ -996,7 +996,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     // Anchor the site where the player asked for it, and treat Jev's own past
     // structures as ground to stand on and material to build into.
     const registry = bot.buildRegistry;
-    const edited = goal.buildContinuation?.mode === 'extend' ? registry?.find(goal.buildContinuation.target) : null;
+    const edited = goal.buildContinuation?.mode === 'edit' ? registry?.find(goal.buildContinuation.target) : null;
     // When the designer says where the old building sits in its new drawing,
     // the result goes over the real one: additions land against it, and
     // anything the drawing leaves out is cleared instead of left standing.

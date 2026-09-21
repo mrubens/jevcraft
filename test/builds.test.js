@@ -148,10 +148,10 @@ test('continuing existing work can only name a structure that was offered', asyn
   const builds = [{ id: 'barn-1', name: 'Barn', request: 'build a barn', status: 'complete', origin: { x: 0, y: 62, z: 0 }, distance: 9 }];
   const client = answers => ({ systemOne: async () => ({ answers }) });
 
-  const extend = await resolveBuildContinuation(client({ mode: { choice: 'extend' }, target: { choice: 'barn-1' }, placement: { choice: 'beside_target' } }), 'add a porch', builds);
-  assert.equal(extend.mode, 'extend'); assert.equal(extend.target.id, 'barn-1'); assert.equal(extend.placement, 'beside_target');
+  const extend = await resolveBuildContinuation(client({ mode: { choice: 'edit' }, target: { choice: 'barn-1' }, placement: { choice: 'beside_target' } }), 'add a porch', builds);
+  assert.equal(extend.mode, 'edit'); assert.equal(extend.target.id, 'barn-1'); assert.equal(extend.placement, 'beside_target');
 
-  await assert.rejects(resolveBuildContinuation(client({ mode: { choice: 'extend' }, target: { choice: 'invented' }, placement: { choice: 'anywhere' } }), 'x', builds),
+  await assert.rejects(resolveBuildContinuation(client({ mode: { choice: 'edit' }, target: { choice: 'invented' }, placement: { choice: 'anywhere' } }), 'x', builds),
     /unoffered structure/);
   await assert.rejects(resolveBuildContinuation(client({ mode: { choice: 'demolish' } }), 'x', builds),
     /Invalid build continuation mode/);
@@ -177,9 +177,9 @@ test('an extension attaches outside the structure, not on top of its own origin'
   const target = { id: 'tower-1', name: 'Watchtower', request: 'build a watchtower', status: 'complete',
     origin: { x: -28, y: 71, z: -22 }, entrance: { x: -25, y: 72, z: -15 }, distance: 6 };
   const answered = await resolveBuildContinuation(
-    { systemOne: async () => ({ answers: { mode: { choice: 'extend' }, target: { choice: 'tower-1' }, placement: { choice: 'beside_target' } } }) },
+    { systemOne: async () => ({ answers: { mode: { choice: 'edit' }, target: { choice: 'tower-1' }, placement: { choice: 'beside_target' } } }) },
     'add a balcony to this tower', [target]);
-  assert.equal(answered.mode, 'extend');
+  assert.equal(answered.mode, 'edit');
   assert.deepEqual(answered.target.entrance, { x: -25, y: 72, z: -15 },
     'the entrance travels with the offered structure so routing can attach to it');
 });
@@ -292,4 +292,23 @@ test('a thin structure like an arch is buildable, and an oversized one says whic
     new RegExp(`width is ${CEILING.width + 1}, and the most Jev can build is ${CEILING.width}`),
     'the retry is told which axis and by how much, not just that it is too big');
   assert.throws(() => validateSchematic({ ...arch, size: [15, CEILING.height + 1, 2] }, registry), /^(?!.*width).*height is/s);
+});
+
+test('changing a building is one mode, and restoring it is another', () => {
+  // "Get rid of the bank part on top and just make it a pig" was routed to
+  // repair, whose whole promise is to leave the design alone: Jev looked the
+  // building over, found nothing broken, and considered the job done. The
+  // mode names are the only thing the classifier reads, and "extend" reads as
+  // adding, so taking something away had nowhere else to land.
+  const { MODES } = require('../src/builds');
+  assert(!('extend' in MODES), 'no mode is named for adding alone');
+  assert(MODES.edit, 'there is a mode for changing a building');
+
+  for (const word of ['taking part of it away', 'reshaping', 'redecorating']) {
+    assert(MODES.edit.includes(word), `edit covers ${word}`);
+  }
+  assert(/never for changing the design/i.test(MODES.repair),
+    'repair says outright that it is not for design changes');
+  assert(!/\badd\b/i.test(MODES.repair) && !/remove|reshape/i.test(MODES.repair),
+    'and does not invite them either');
 });

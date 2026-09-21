@@ -119,13 +119,13 @@ async function interpret(client, request, from, username, context = {}) {
     // Finishing and repairing reuse the saved plan; extending designs something
     // new and places it against the structure it is extending.
     if (['finish', 'repair'].includes(continuation.mode)) spec.continueBuild = { id: continuation.target.id, mode: continuation.mode };
-    if (continuation.mode === 'extend') spec.buildId = continuation.target.id;
+    if (continuation.mode === 'edit') spec.buildId = continuation.target.id;
     // Attach beside the structure, never on top of its own origin: the origin
     // is the min corner, so centring a new footprint there buries it inside the
     // building it is meant to adjoin. The entrance is outside by construction.
     const beside = target => ({ ...(target.entrance || target.origin) });
     if (continuation.placement === 'beside_target' && continuation.target) spec.buildAnchor = beside(continuation.target);
-    else if (continuation.mode === 'extend') spec.buildAnchor = beside(continuation.target);
+    else if (continuation.mode === 'edit') spec.buildAnchor = beside(continuation.target);
   }
   if (kind === 'build' && !spec.buildAnchor && spec.buildContinuation?.placement === 'here' && context.speakerPosition) {
     spec.buildAnchor = { ...context.speakerPosition };
