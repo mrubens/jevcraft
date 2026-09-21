@@ -20,6 +20,7 @@ const SURVIVAL = {
   leave_shelter: (goal, action) => action.reason || "Morning. Back to it.",
   escape_threat: (goal, action) => `Something hostile is close${action.threats?.length ? ` (${[...new Set(action.threats.map(t => name(t.name || t)))].join(', ')})` : ''}, moving away.`,
   hold_defensive_position: 'Cornered. Holding here and defending.',
+  wall_off: 'Cornered, so I\'m walling the tunnel shut.',
   return_to_surface: 'Heading back up to the surface.',
   recover_items: "Going back for the things I dropped.",
   gather_food: (goal, action) => `Getting something to eat first${action.item ? `: ${name(action.item)}` : ''}.`,

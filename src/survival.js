@@ -109,6 +109,10 @@ class Survival {
           return;
         }
       }
+      // Cornered with stone in hand: a wall between us and the mob beats a
+      // hold. Only the cell one step toward it, and only while that cell is
+      // still empty; a mob already in it is fought, not walled.
+      if (await this.wallOff(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       // In a narrow tunnel, wait for the next bounded defensive action rather
       // than spending five failed route searches while a mob hits us. The
       // encounter still has a deadline and reports a concrete blocker.
@@ -247,6 +251,37 @@ class Survival {
     }
     try { await this.actions.navigate(bot, task, destination, { timeoutMs: 20000 }); }
     finally { if (movement) movement.exclusionAreasBreak = previous; }
+  }
+
+  async wallOff(task, goal, save, danger) {
+    const bot = this.bot;
+    if (typeof this.actions.place !== 'function') return false;
+    const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 2)?.name;
+    if (!material) return false;
+    const feet = bot.entity.position.floored();
+    const walls = [];
+    for (const t of danger) {
+      if (t.distance > 6) continue;
+      const dx = t.entity.position.x - bot.entity.position.x, dz = t.entity.position.z - bot.entity.position.z;
+      const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
+      if (!step.x && !step.z) continue;
+      const cell = feet.plus(step);
+      if (walls.some(w => w.equals(cell))) continue;
+      // Empty cell, and the mob not standing in it.
+      if (![cell, cell.offset(0, 1, 0)].every(p => shelter.replaceable(bot.blockAt(p)))) continue;
+      if (t.entity.position.floored().equals(cell) || t.entity.position.distanceTo(cell.offset(0.5, 0, 0.5)) < 0.9) continue;
+      walls.push(cell);
+    }
+    if (!walls.length) return false;
+    this.report(goal, save, { action: 'wall_off', threats: danger.map(t => t.entity.name), cells: walls.map(p => ({ ...p })) });
+    for (const cell of walls) {
+      for (const p of [cell, cell.offset(0, 1, 0)]) {
+        task.check();
+        try { await this.actions.place(bot, task, p, material); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; return walls.length > 0 && p !== cell; }
+      }
+    }
+    return true;
   }
 
   async leave(task, goal, save, refuge) {

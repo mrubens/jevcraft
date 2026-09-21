@@ -513,3 +513,23 @@ test('an air cell in the shell with solid blocks on all six sides counts as seal
   const exposed = { ...bot, blockAt: p => { const open = p.equals(origin) || p.equals(origin.offset(0, 1, 0)) || p.equals(pocket) || p.equals(pocket.offset(1, 0, 0)); return { name: open ? 'air' : 'stone', boundingBox: open ? 'empty' : 'block' }; } };
   assert.equal(shelter.missingShell(exposed, refuge).length, 1, 'a pocket open to the outside is still missing');
 });
+
+test('cornered in a tunnel with stone in hand, the bot walls the cell toward the mob shut, unless the mob is already in it', async () => {
+  const { Survival } = require('../src/survival');
+  const feet = new Vec3(0, 10, 0);
+  const make = zombieX => {
+    const zombie = { name: 'zombie', type: 'hostile', position: new Vec3(zombieX, 10, 0.5), height: 1.95 };
+    const placed = [];
+    const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entity: { position: feet.offset(0.5, 0, 0.5) }, entities: { 1: zombie },
+      inventory: { items: () => [{ name: 'cobblestone', count: 64 }] }, world: { raycast: () => null }, on() {}, removeListener() {},
+      blockAt: p => { const open = p.y >= 10 && p.y <= 11 && p.z === 0; return { name: open ? 'air' : 'stone', boundingBox: open ? 'empty' : 'block', position: p }; } };
+    const survival = new Survival(bot, { place: async (b, t, p) => { placed.push(`${p}`); } }, { state: { shelters: [] } });
+    const { threats } = require('../src/danger');
+    return { survival, placed, danger: threats(bot) };
+  };
+  const far = make(2.5);
+  assert.equal(await far.survival.wallOff(new Task('wall'), {}, () => {}, far.danger), true);
+  assert.deepEqual(far.placed, ['(1, 10, 0)', '(1, 11, 0)']);
+  const near = make(1.5);
+  assert.equal(await near.survival.wallOff(new Task('wall'), {}, () => {}, near.danger), false, 'the mob is in the cell: fight it');
+});
