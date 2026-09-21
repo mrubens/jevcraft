@@ -94,3 +94,13 @@ test('a spare pickaxe in the pockets keeps a ready expedition ready', async () =
   assert.equal(goal.expeditionReady, true);
   assert.equal(goal.preparingExpedition, undefined);
 });
+
+test('a rung that goes deep with no wood carried prepares the expedition on the shared acquisition path', async () => {
+  const { acquireStep } = require('../src/work');
+  const bot = fixture({ iron_pickaxe: 1, cobblestone: 64, crafting_table: 1, cooked_beef: 4 }, { game: { gameMode: 'survival', difficulty: 'normal' } });
+  const goal = { kind: 'win', request: 'beat the game' };
+  // The prep goes looking for logs; this fixture has no world to find them in.
+  await acquireStep(bot, new Task('rung', 'diamond'), 'diamond', 3, goal, () => {}).catch(err => assert.match(err.message, /oak_log/));
+  assert.equal(goal.preparingExpedition, true);
+  assert.equal(goal.expeditionPrepActive, undefined, 'the guard is released');
+});

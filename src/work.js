@@ -831,6 +831,17 @@ async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY,
   const available = await withUsableWorkstations(bot, task, inv, [item]);
   const plan = catalogPlan(bot, item, count, available, goal);
   if (await prepareMiningTool(bot, task, goal, save, plan, available, { requestedTool: item.endsWith('_pickaxe'), minimumMiningY })) return false;
+  // Every descent passes through here, the dream's rungs included; the
+  // supply check in the plain request path never saw them, and the bot went
+  // down for diamonds with no wood, no coal and no food twice.
+  if (bot.game?.gameMode !== 'creative' && !goal.expeditionPrepActive &&
+      (goal.preparingExpedition || descentSuppliesLow(bot)) &&
+      plan.some(s => s.action === 'mine' && Number.isFinite(s.depth) && s.depth < bot.entity.position.y - 8)) {
+    goal.preparingExpedition = true; delete goal.expeditionReady; goal.expeditionPrepActive = true; save();
+    try { await prepareExpeditionStep(bot, task, goal, save); }
+    finally { delete goal.expeditionPrepActive; }
+    return false;
+  }
   const step = plan[0];
   if (!step) throw new Error(`No progress step for ${item}`);
   if (minimumMiningY !== undefined && step.action === 'mine') step.minimumY = minimumMiningY;
