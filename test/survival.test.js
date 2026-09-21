@@ -783,9 +783,12 @@ test('at dusk with a bed at home, Jev heads home before bedtime', async () => {
     entity: { position: new Vec3(30.5, 40, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
     inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
     blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
-  const walked = [];
-  const survival = new Survival(bot, { navigate: async (b, t, g) => walked.push([g.x, g.y, g.z]), dig: async () => {}, place: async () => {} }, { state: { home } });
+  const walked = [], climbed = [];
+  const survival = new Survival(bot, { navigate: async (b, t, g) => walked.push([g.x, g.y, g.z]), surfaceStep: async () => climbed.push(1), dig: async () => {}, place: async () => {} }, { state: { home } });
   const goal = { kind: 'win', request: 'beat the game', survival: survival.state };
   assert.equal(await survival.step(new Task('test', 'dusk'), goal, () => {}), true);
-  assert.deepEqual(walked, [[bed.foot.x, bed.foot.y, bed.foot.z]], 'the walk home starts at dusk, from the shaft');
+  assert.deepEqual([walked, climbed], [[], [1]], 'from the bottom of a shaft, the way home starts with the stairs');
+  bot.entity.position = new Vec3(30.5, 64, 0.5);
+  assert.equal(await survival.step(new Task('test', 'dusk'), goal, () => {}), true);
+  assert.deepEqual(walked, [[bed.foot.x, bed.foot.y, bed.foot.z]], 'on the surface, the walk home');
 });

@@ -638,11 +638,18 @@ class Survival {
     // Dusk with a bed at home: head there before bedtime rather than start
     // the walk from the bottom of a shaft at 12541. The second run chose the
     // bed thirty blocks down its mine and the walk failed at once.
-    if (homeBed && !routeBlocked && bot.time?.timeOfDay >= 11000 && bot.time.timeOfDay < SLEEP_FROM && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot)) {
-      this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)) });
-      try { await this.actions.navigate(bot, task, new goals.GoalNear(homeBed.foot.x, homeBed.foot.y, homeBed.foot.z, 3), { timeoutMs: 60000, stallMs: 8000 }); }
-      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; this.state.bedRouteFailedAt = Date.now(); }
-      onStep(goal); return true;
+    const underground = bot.game.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
+    const homeWalk = homeBed && !routeBlocked && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot);
+    if (homeWalk && (bot.time.timeOfDay >= 11000 || underground)) {
+      this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });
+      try {
+        // Out of the shaft by the stairs it dug, then home over the ground:
+        // a path search from the bottom of a mine to a bed timed out.
+        if (underground && this.actions.surfaceStep) await this.actions.surfaceStep(bot, task, goal, save);
+        else if (bot.time.timeOfDay < SLEEP_FROM) await this.actions.navigate(bot, task, new goals.GoalNear(homeBed.foot.x, homeBed.foot.y, homeBed.foot.z, 3), { timeoutMs: 60000, stallMs: 8000 });
+        else { /* bedtime on the surface: the tree's sleep option walks the last stretch */ }
+      } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; this.state.bedRouteFailedAt = Date.now(); }
+      if (underground || bot.time.timeOfDay < SLEEP_FROM) { onStep(goal); return true; }
     }
     const plan = this.state.nightPlan?.until > Date.now() ? this.state.nightPlan : null;
     const stayingUp = plan?.plan === 'stay_up';
@@ -700,7 +707,7 @@ class Survival {
     };
     // Sleep is an option where the bed fits: two level cells beside the
     // feet. In a one-wide shaft it is not, and the shelter path digs in.
-    if (needsShelter && bedReady && sleepable(bot) && (homeBed || bedSite(bot)) && !threats(bot).some(t => t.distance < 10)) tree.sleep_in_bed = { description: 'Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.', run: () => this.sleepStep(task, goal, save) };
+    if (needsShelter && bedReady && sleepable(bot) && ((homeBed && !underground) || bedSite(bot)) && !threats(bot).some(t => t.distance < 10)) tree.sleep_in_bed = { description: 'Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.', run: () => this.sleepStep(task, goal, save) };
     // A bed within reach makes a shelter the worse answer in every case, so
     // it is not offered beside one: the question that remains at night is
     // sleep or stay up, which is the one worth asking.
