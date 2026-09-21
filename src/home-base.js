@@ -5,6 +5,7 @@ const { reservedForConstruction } = require('./build-sites');
 const { checkAir } = require('./vitals');
 const { checkThreats } = require('./danger');
 const { countOf } = require('./skills');
+const stash = require('./home-stash');
 
 // A home base: one spot per world, on level ground beside water, with a
 // wheat plot, a fenced cow pen and a bed the bot has slept in. The dream
@@ -195,10 +196,12 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
   const home = survival.home;
   if (!home) return survival.homeSearch?.deferredUntil > now ? null : { phase: 'home_site', action: 'choose_site' };
   const bed = bedStatus(bot, home);
-  // A finished base stays finished until the bed is seen to be gone; an
-  // unloaded base far away is not a reason to walk back.
+  // A finished base stays finished until the bed or the chest is seen to
+  // be gone; an unloaded base far away is not a reason to walk back.
   if (home.completedAt) {
+    const chest = stash.stashStatus(bot, home);
     if (bed.loaded && !bed.placed) { delete home.completedAt; delete home.bed.claimedAt; }
+    else if (chest.loaded && !chest.placed) { delete home.completedAt; stash.forgetChest(home); }
     else return null;
   }
   if (!bed.loaded) return { phase: 'home_bed', action: 'return_home' };
@@ -210,6 +213,15 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
     if (wool.count >= 3) return { phase: 'home_bed', action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
     return { phase: 'home_bed', action: 'gather_wool', count: 3 - wool.count };
   }
+  // The stash chest beside the bed: the bed is what a death costs, the
+  // chest is what the respawn starts with. Eight planks, placed once.
+  const chest = stash.stashStatus(bot, home);
+  if (!chest.loaded) return { phase: 'home_stash', action: 'return_home' };
+  if (!chest.placed) {
+    if (home.stash?.position) stash.forgetChest(home);
+    return countOf(bot, 'chest') ? { phase: 'home_stash', action: 'place_chest' } : { phase: 'home_stash', action: 'acquire', item: 'chest', count: 1 };
+  }
+  if (!home.stash?.position) home.stash = { ...home.stash, position: plain(chest.at), placedAt: new Date(now).toISOString(), contents: home.stash?.contents || {} };
   const plot = plotStatus(bot, home);
   if (plot.unloaded.length) return { phase: 'home_plot', action: 'return_home' };
   if (plot.untilled.length) return hoeCarried(bot) ? { phase: 'home_plot', action: 'till', cells: plot.untilled.length } : { phase: 'home_plot', action: 'acquire', item: 'wooden_hoe', count: 1 };
@@ -519,6 +531,8 @@ async function homeStep(bot, task, goal, save, stage, actions) {
     case 'till': return tillPlot(bot, task, goal, save, home, actions);
     case 'plant': return plantPlot(bot, task, goal, save, home, actions);
     case 'build_pen': return buildPen(bot, task, goal, save, home, actions);
+    case 'place_chest': return stash.placeStashChest(bot, task, goal, save, home, actions);
+    case 'restock': return stash.restockFromStash(bot, task, goal, save, home, actions, stage.wants || []);
     default: throw new Error(`Unknown home step ${stage.action}`);
   }
 }
@@ -574,6 +588,8 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
         home.plot.checkedAt = new Date().toISOString(); s();
       } };
   }
+  // Spares for the chest beside the bed, whenever the pockets have any.
+  Object.assign(options, stash.stashChores(bot, goal));
   if (!far) {
     const age = bot.time?.age ?? 0;
     const cooled = !home.pen.lastBredAt || (Number.isFinite(home.pen.lastBredAge) ? age - home.pen.lastBredAge >= BREED_COOLDOWN_TICKS : now - Date.parse(home.pen.lastBredAt) > 6 * 60 * 1000);
@@ -590,6 +606,6 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
   return options;
 }
 
-module.exports = { HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, plotStatus, bedStatus, penStatus,
+module.exports = { HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
   woolCarried, woodSpecies, homeStage, homeComplete, homeStep, tillPlot, plantPlot, harvestPlot, placeBed, claimBed, buildPen, gatherWool, lureCows, breedCows, takeSteak, bake,
   homeFood, eatFromHome, homeChores };

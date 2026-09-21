@@ -90,6 +90,10 @@ function stepLine(goal, step, decision) {
     case 'lure_cows': return 'Leading cows into the pen.';
     case 'breed_cows': return 'Breeding the cows.';
     case 'take_steak': return 'Taking a steak from the pen.';
+    case 'place_chest': return 'Putting a chest beside the bed for a spare kit.';
+    case 'stock_stash': return 'Stocking the stash chest with spares.';
+    case 'restock': return 'Taking my spare kit out of the stash chest.';
+    case 'stash_valuables': return 'Leaving my valuables in the stash chest before the Nether.';
     case 'idle': return {
       cook_food: `Quiet for now, so I'll cook the ${name(step.item).replace(/^(cooked|baked) /, '')}.`,
       stone_tools: `Quiet for now, so I'll make a ${name(step.item)}.`,
@@ -100,6 +104,7 @@ function stepLine(goal, step, decision) {
       harvest_and_bake: "Quiet for now, so I'll harvest the wheat and bake some bread.",
       breed_cows: "Quiet for now, so I'll breed the cows.",
       lure_cows: "Quiet for now, so I'll bring some cows into the pen.",
+      stock_stash: "Quiet for now, so I'll stock the stash chest.",
     }[step.choice] || null;
     case 'game_progression': return `Working toward beating the game: ${name(step.phase)}.`;
     default: return null;

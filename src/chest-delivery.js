@@ -163,4 +163,4 @@ async function deliverToChest(bot, task, goal, save, actions = require('./work')
   return (goal.delivered || 0) >= goal.count;
 }
 
-module.exports = { deliverToChest, depositInChest, reconcileChestDeposit, chestSites };
+module.exports = { deliverToChest, depositInChest, reconcileChestDeposit, chestSites, openChest };

@@ -48,7 +48,7 @@ test('the site is the level shore nearest the first remembered portal, never on 
   assert(other && (other.direction.x !== 1), `the shore facing the cliff was passed over: ${JSON.stringify(other?.direction)}`);
 });
 
-test('the home rung runs bed, plot then pen, each step read off the world, and ends when all three stand', async () => {
+test('the home rung runs bed, stash, plot then pen, each step read off the world, and ends when all four stand', async () => {
   const w = world({ ponds: [pond(20, 0)], items: [['oak_log', 8]] });
   const { bot, give, actions } = w, goal = goalWith(bot, { portals: [{ x: 0, y: LEVEL + 1, z: 0, dimension: 'overworld' }] }), task = new Task('home'), save = () => {};
   const stage = () => home.homeStage(bot, goal);
@@ -68,6 +68,12 @@ test('the home rung runs bed, plot then pen, each step read off the world, and e
   assert.equal(stage().action, 'claim_bed');
   await step();
   assert.match(goal.survival.home.bed.evidence, /set_spawn/); assert(goal.survival.home.bed.claimedAt);
+  // Stash: a chest beside the bed, placed once and remembered.
+  assert.deepEqual(stage(), { phase: 'home_stash', action: 'acquire', item: 'chest', count: 1 });
+  give('chest', 1); assert.deepEqual(stage(), { phase: 'home_stash', action: 'place_chest' });
+  await step();
+  assert.equal(bot.blockAt(new Vec3(home.layout(goal.survival.home).chest.x, LEVEL + 1, home.layout(goal.survival.home).chest.z)).name, 'chest');
+  assert.deepEqual(goal.survival.home.stash.position, home.layout(goal.survival.home).chest); assert.deepEqual(goal.survival.home.stash.contents, {});
   // Plot: a hoe, tilling, seeds, planting.
   assert.deepEqual(stage(), { phase: 'home_plot', action: 'acquire', item: 'wooden_hoe', count: 1 });
   give('wooden_hoe', 1); assert.deepEqual(stage(), { phase: 'home_plot', action: 'till', cells: 9 });
@@ -86,7 +92,7 @@ test('the home rung runs bed, plot then pen, each step read off the world, and e
   assert.equal(home.penStatus(bot, goal.survival.home).fenced, true);
   assert.equal(stage(), null, 'the rung is done');
   assert.equal(home.homeComplete(bot, goal), true);
-  assert.equal(actions.calls.filter(c => c[0] === 'place').length, 15, 'fifteen fences were placed; the gate was set facing the plot');
+  assert.equal(actions.calls.filter(c => c[0] === 'place').length, 16, 'fifteen fences and a chest were placed; the gate was set facing the plot');
   w.home = goal.survival.home;
   return w;
 });
@@ -196,7 +202,7 @@ test('the ladder opens the home rung after the bucket and before the armour, and
   assert(options.harvest_and_bake, 'the chore sits beside the ordinary ones');
   assert.match(options.harvest_and_bake.description, /9 ripe wheat/);
   const client = { model: 'jev-test', systemOne: async ({ questions, state }) => {
-    assert.match(state.home, /home base with a plot, a pen and a bed/);
+    assert.match(state.home, /home base with a plot, a pen, a bed and a stash chest/);
     assert(Object.values(questions)[0].criteria.harvest_and_bake);
     return { answers: { branch_0: { choice: 'harvest_and_bake', confidence: 0.9, probabilities: { harvest_and_bake: 0.9, rest: 0.1 } } } };
   } };

@@ -1913,7 +1913,7 @@ async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acqu
   const state = { situation: 'Between player requests, with shelter and food already sufficient. Choose how to spend spare daylight.',
     timeOfDay: bot.time?.timeOfDay, daylightTicksRemaining: Math.max(0, 9500 - (bot.time?.timeOfDay || 0)),
     health: bot.health, food: bot.food, foodReserve: foodSupply(bot), inventory: planningInventory(bot),
-    retainedRequest: goal.retainedRequest || null, home: goal.survival?.home ? `A home base with a plot, a pen and a bed stands at ${goal.survival.home.origin.x}, ${goal.survival.home.origin.z}.` : goal.blueprint ? 'A house is built nearby.' : 'No house yet.' };
+    retainedRequest: goal.retainedRequest || null, home: goal.survival?.home ? `A home base with a plot, a pen${goal.survival.home.stash?.position ? ', a bed and a stash chest' : ' and a bed'} stands at ${goal.survival.home.origin.x}, ${goal.survival.home.origin.z}.` : goal.blueprint ? 'A house is built nearby.' : 'No house yet.' };
   await decideAction(bot, task, goal, save, client, onStep, tree, state);
   return true;
 }
