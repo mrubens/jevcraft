@@ -40,3 +40,19 @@ test('a decision stays fresh while a mob wanders, and goes stale when what it de
   food = 20; threat = true;
   assert.notEqual(decisionFingerprint(bot, facts), before);
 });
+
+test('a failed source stays failed when the same tree reappears under its next-nearest block, and set-aside blocks are dropped', () => {
+  const { setAsideSource } = require('../src/decision-options');
+  const bot = world([[3, 64, 0, 'oak_log'], [3, 65, 0, 'oak_log'], [3, 66, 0, 'oak_log'], [20, 64, 0, 'oak_log']]);
+  const now = Date.now(), all = [new Vec3(3, 64, 0), new Vec3(3, 65, 0), new Vec3(3, 66, 0), new Vec3(20, 64, 0)];
+  const first = resourceSources(bot, all, { now });
+  assert.equal(first[0].key, 'source_oak_log_3_64_0');
+  // The seed block is gone; the tree would come back as source_oak_log_3_65_0.
+  const failures = { [first[0].key]: { at: now } };
+  const again = resourceSources(bot, all.slice(1), { now, failures });
+  assert.deepEqual(again.map(s => s.key), ['source_oak_log_20_64_0']);
+  const goal = {};
+  setAsideSource(goal, first[0], now);
+  assert.deepEqual(Object.keys(goal.unreachable).sort(), ['(3, 64, 0)', '(3, 65, 0)', '(3, 66, 0)']);
+  assert.deepEqual(resourceSources(bot, all, { now, unreachable: goal.unreachable }).map(s => s.key), ['source_oak_log_20_64_0']);
+});

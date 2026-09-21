@@ -157,7 +157,7 @@ class RecoveryAdviser {
           anchor: { ...this.bot.entity.position } };
         const describe = s => s.kind === 'acquire' ? `gathering ${s.count} ${s.item.replaceAll('_', ' ')}` :
           ({ surface: 'getting back to the surface', relocate: 'a different approach', shelter: 'another shelter spot',
-            descend_pillar: 'digging down off this pillar' }[s.kind] || 'a different approach');
+            descend_pillar: 'digging down off this pillar', explore: `looking for ${String(s.resource || '').replaceAll('_', ' ')} somewhere else` }[s.kind] || 'a different approach');
         // Two relocations in a row are both "a different approach", and saying
         // so twice reads as a stutter rather than as a plan. Jev says what it
         // is going to try, once each.

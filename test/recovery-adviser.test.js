@@ -269,3 +269,24 @@ test('Jev gets the first look at a failure; the generative model is asked only w
   assert(await new RecoveryAdviser(recovered.bot, {}, { ...config, apiKey: '', client, ask: async () => assert.fail('no key'), execute: async () => true }).suggest(recovered.task, recovered.goal, () => {}));
   await assert.rejects(askJev({ model: 'jev', systemOne: async () => ({ answers: { recovery: { choice: 'invented', confidence: 1 } } }) }, bot, task, observation), /unavailable/);
 });
+
+test('a failing mining step always offers leaving for another source, and taking it sets the nearby blocks aside', async () => {
+  const { recoveryOptions, executeRecoveryOption } = require('../src/recovery-options');
+  const { catalogPlan, planningInventory } = require('../src/work');
+  const { bot, goal, task } = fixture();
+  goal.step = { action: 'mine', block: 'oak_log', drops: 'oak_log', count: 8 };
+  goal.item = 'oak_log'; goal.count = 8;
+  const logs = [new Vec3(3, 65, 0), new Vec3(3, 66, 0)];
+  bot.blockAt = p => ({ name: p.y < 64 ? 'stone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' });
+  bot.findBlocks = ({ matching }) => (Array.isArray(matching) ? matching : [matching]).includes(registry.blocksByName.oak_log.id) ? logs : [];
+  bot.pathfinder.getPathTo = () => ({ status: 'noPath', path: [] });
+  let explored = null;
+  const actions = { catalogPlan, planningInventory, navigate: async () => {}, find: () => logs,
+    explore: async (_b, _t, g, _s, block) => { explored = block; bot.entity.position.x += 20; } };
+  const observed = await recoveryOptions(bot, task, goal, actions);
+  const leave = observed.options.find(o => o.kind === 'explore');
+  assert(leave, 'leaving is offered'); assert.match(leave.description, /2 oak log blocks within 16 blocks/);
+  assert.equal(await executeRecoveryOption(bot, task, goal, () => {}, leave, actions), true);
+  assert.equal(explored, 'oak_log');
+  assert.deepEqual(Object.keys(goal.unreachable).sort(), ['(3, 65, 0)', '(3, 66, 0)']);
+});

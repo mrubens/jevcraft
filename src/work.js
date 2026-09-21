@@ -13,7 +13,7 @@ const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = requ
 const { decideTree } = require('./decisions');
 const { Survival } = require('./survival');
 const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
-const { resourceSources, nearestRemaining, decisionFingerprint } = require('./decision-options');
+const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource } = require('./decision-options');
 const { reviewDesign } = require('./design-review');
 const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
@@ -350,6 +350,36 @@ async function miningCandidates(bot, task, step, goal) {
     const k = `${p}`;
     return safeFromHostiles(bot, p) && (!goal.unreachable?.[k] || Date.now() - goal.unreachable[k] > 120000);
   });
+}
+
+// Work the nearest block of a source Jev chose. A source that cannot be
+// reached is set aside whole, so the next step looks at a different tree.
+async function workSource(bot, task, step, goal, save, source) {
+  const p = nearestRemaining(bot, source);
+  if (!p) throw new Error(`The ${source.block} source is no longer there`);
+  goal.step = step; save();
+  try { await mine(bot, task, step, goal, save, p); }
+  catch (err) {
+    if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) { setAsideSource(goal, source); save(); }
+    throw err;
+  }
+}
+
+// When the same resource keeps failing where the bot stands, the answer is
+// somewhere else. Everything of that block within sixteen blocks is set
+// aside and the ordinary exploration walks toward the next known or unknown
+// source. A rule rather than a judgment: there is no request that is better
+// served by a sixth attempt at the same tree.
+async function moveOnFromResource(bot, task, goal, save) {
+  const step = goal.step;
+  if (step?.action !== 'mine' || !step.block) return false;
+  const nearby = find(bot, step.sources || [step.block], 16, 64);
+  goal.unreachable ||= {};
+  for (const p of nearby) goal.unreachable[`${p}`] = Date.now();
+  goal.step = { action: 'move_on', resource: step.drops || step.block, setAside: nearby.length }; save();
+  bot.chat?.(`I can't get at the ${String(step.block).replaceAll('_', ' ')} here. I'll look somewhere else.`);
+  await explore(bot, task, goal, save, step.block);
+  return true;
 }
 
 async function mine(bot, task, step, goal, save, selected) {
@@ -827,13 +857,9 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
         }
         reachable.push(p);
       }
-      for (const source of resourceSources(bot, reachable, { failures: goal.decisionFailures })) {
+      for (const source of resourceSources(bot, reachable, { failures: goal.decisionFailures, unreachable: goal.unreachable })) {
         actions[source.key] = leaf({ action: 'approach, dig and collect', ...source.description, resourceNeeded: step.drops },
-          async () => {
-            const p = nearestRemaining(bot, source);
-            if (!p) throw new Error(`The ${source.block} source is no longer there`);
-            goal.step = step; save(); await mine(bot, task, step, goal, save, p);
-          }, () => !!nearestRemaining(bot, source));
+          () => workSource(bot, task, step, goal, save, source), () => !!nearestRemaining(bot, source));
       }
       if (!Object.keys(actions).length) actions.explore_resource = leaf(`Search for a reachable source of ${step.drops}.`, () => acquireStep(bot, task, goal.material, required, goal, save));
     } else {
@@ -1337,14 +1363,9 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
       reachable.push(p);
     }
     // Jev chooses between sources that differ; code picks the block inside one.
-    for (const source of resourceSources(bot, reachable, { failures: goal.decisionFailures })) {
+    for (const source of resourceSources(bot, reachable, { failures: goal.decisionFailures, unreachable: goal.unreachable })) {
       actions[source.key] = { description: { ...source.description, resource: step.drops, requiredTool: step.tool },
-        valid: () => !!nearestRemaining(bot, source),
-        run: async () => {
-          const p = nearestRemaining(bot, source);
-          if (!p) throw new Error(`The ${source.block} source is no longer there`);
-          goal.step = step; save(); await mine(bot, task, step, goal, save, p);
-        } };
+        valid: () => !!nearestRemaining(bot, source), run: () => workSource(bot, task, step, goal, save, source) };
     }
   }
   if (!Object.keys(actions).length) actions[step.action === 'mine' ? 'find_resource' : 'execute_recipe'] = {
@@ -1484,7 +1505,7 @@ function protectConstruction(bot, goal) {
 }
 
 function createRecoveryAdviser(bot, client) {
-  return new RecoveryAdviser(bot, { acquireStep, catalogPlan, planningInventory, surfaceStep, navigate }, { client });
+  return new RecoveryAdviser(bot, { acquireStep, catalogPlan, planningInventory, surfaceStep, navigate, explore, find }, { client });
 }
 
 async function tryRecovery(adviser, task, goal, save) {
@@ -1636,6 +1657,11 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
         constructionBefore === constructionObservation(bot, goal) ? goal.failures + 1 : 0;
       recoveryAdviser.recordFailure(goal, err);
       if ((err.name === 'Blocked' || goal.failures >= 3) && await tryRecovery(recoveryAdviser, task, goal, save)) {
+        goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
+      }
+      // No adviser, or none that could help: a resource that keeps failing
+      // here is abandoned for elsewhere before the failure budget runs out.
+      if (goal.failures >= 3 && err.name !== 'Blocked' && await moveOnFromResource(bot, task, goal, save)) {
         goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
       }
       if (err.name === 'Blocked' || goal.failures >= 5) {

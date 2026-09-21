@@ -45,6 +45,13 @@ async function recoveryOptions(bot, task, goal, actions) {
   if (bot.game.dimension === 'overworld' && !surfaceReturnComplete(bot, goal)) {
     add('Return toward the observed surface using inspected routes or an explicit staircase; pause the current worksite.', { kind: 'surface' });
   }
+  // The option that changes the situation when every footing nearby has
+  // already been tried: stop working this deposit and go find another.
+  if (goal.step?.action === 'mine' && goal.step.block) {
+    const nearby = bot.findBlocks({ matching: (goal.step.sources || [goal.step.block]).map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined), maxDistance: 16, count: 64 }).length;
+    add(`Set aside the ${nearby} ${String(goal.step.block).replaceAll('_', ' ')} blocks within 16 blocks, which keep failing, and walk to find ${String(goal.step.drops || goal.step.block).replaceAll('_', ' ')} somewhere else.`,
+      { kind: 'explore', block: goal.step.block, sources: goal.step.sources, resource: goal.step.drops || goal.step.block });
+  }
 
   // Repositioning is surveyed without breaking or placing anything. A route
   // is evidence for an option, not a guarantee: recheck before execution.
@@ -99,6 +106,15 @@ async function executeRecoveryOption(bot, task, goal, save, action, actions) {
   }
   if (action.kind === 'acquire') return actions.acquireStep(bot, task, action.item, action.count, goal, save);
   if (action.kind === 'surface') { await actions.surfaceStep(bot, task, goal, save); return surfaceReturnComplete(bot, goal); }
+  if (action.kind === 'explore') {
+    const start = bot.entity.position.clone();
+    goal.unreachable ||= {};
+    for (const p of actions.find(bot, action.sources || [action.block], 16, 64)) goal.unreachable[`${p}`] = Date.now();
+    save();
+    await actions.explore(bot, task, goal, save, action.block);
+    // Done once the bot has actually left the failing area.
+    return bot.entity.position.distanceTo(start) > 12;
+  }
   if (!['relocate', 'shelter'].includes(action.kind)) throw new Error('Unknown recovery action');
   const p = pos(action.position);
   if (p.distanceTo(bot.entity.position) > 24 || !dryStanding(bot, p) || !safeFromHostiles(bot, p)) throw new Error('Recovery destination is no longer safe or nearby');

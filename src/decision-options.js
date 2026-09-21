@@ -15,9 +15,22 @@ const pos = p => new Vec3(p.x, p.y, p.z);
 // route that just failed is not offered again as if nothing had happened.
 const FAILURE_TTL_MS = 120000;
 
-function resourceSources(bot, candidates, { radius = 6, limit = 4, failures = {}, now = Date.now() } = {}) {
+// A failed source is remembered by its seed block, embedded in its key. The
+// same tree comes back under a different nearest block once that one is
+// gone, so suppression matches any cluster within `radius` of a failed seed
+// of the same block, not the key string.
+function failedSeeds(failures, now) {
+  return Object.entries(failures).flatMap(([key, failure]) => {
+    const match = /^source_(.+)_(-?\d+)_(-?\d+)_(-?\d+)$/.exec(key);
+    return match && failure?.at > now - FAILURE_TTL_MS ? [{ block: match[1], seed: new Vec3(+match[2], +match[3], +match[4]) }] : [];
+  });
+}
+
+function resourceSources(bot, candidates, { radius = 6, limit = 4, failures = {}, unreachable = {}, now = Date.now() } = {}) {
   const origin = bot.entity.position;
-  const remaining = candidates.map(pos).sort((a, b) => a.distanceTo(origin) - b.distanceTo(origin));
+  const failed = failedSeeds(failures, now);
+  const remaining = candidates.map(pos).filter(p => !(unreachable[`${p}`] > now - FAILURE_TTL_MS))
+    .sort((a, b) => a.distanceTo(origin) - b.distanceTo(origin));
   const sources = [];
   while (remaining.length && sources.length < limit) {
     const seed = remaining.shift(), block = bot.blockAt(seed)?.name;
@@ -28,7 +41,7 @@ function resourceSources(bot, candidates, { radius = 6, limit = 4, failures = {}
       if (bot.blockAt(p)?.name === block && p.distanceTo(seed) <= radius) { blocks.push(p); remaining.splice(i, 1); }
     }
     const key = `source_${block}_${seed.x}_${seed.y}_${seed.z}`;
-    if (failures[key]?.at > now - FAILURE_TTL_MS) continue;
+    if (failed.some(f => f.block === block && blocks.some(p => p.distanceTo(f.seed) <= radius))) continue;
     blocks.sort((a, b) => a.distanceTo(origin) - b.distanceTo(origin));
     sources.push({ key, block, blocks, description: { block, blocksWithinReach: blocks.length,
       distance: Math.round(seed.distanceTo(origin)), elevationChange: seed.y - Math.floor(origin.y) } });
@@ -51,4 +64,13 @@ function decisionFingerprint(bot, { inventory, immediateThreat, needsAir }) {
     dimension: bot.game?.dimension, inventory: inventory(bot) });
 }
 
-module.exports = { resourceSources, nearestRemaining, decisionFingerprint, FAILURE_TTL_MS };
+// When one block of a source cannot be reached, the rest of that tree or
+// vein is not going to be either. Setting the whole source aside is what
+// lets the next step pick a different tree instead of the next log of this
+// one, five times over, until the failure budget ends the request.
+function setAsideSource(goal, source, now = Date.now()) {
+  goal.unreachable ||= {};
+  for (const p of source.blocks) goal.unreachable[`${p}`] = now;
+}
+
+module.exports = { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, failedSeeds, FAILURE_TTL_MS };
