@@ -1639,7 +1639,15 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   if (!known.length) return false;
   const p = known[0];
   goal.step = { action: 'return_to_portal', portal: { x: p.x, y: p.y, z: p.z } }; save();
-  await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000 });
+  // Close enough to route: walk. Otherwise, or when the walk gives out, dig
+  // a staircase toward it the way an ore is reached; a portal at y=-11 is
+  // not on any surface route.
+  const distance = here.distanceTo(pos(p));
+  if (distance <= 48) {
+    try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000 }); return true; }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
+  await resourceTunnelStep(bot, task, goal, save, pos(p), `portal_${where}`, { dig, navigate });
   return true;
 }
 
