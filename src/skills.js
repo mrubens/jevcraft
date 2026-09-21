@@ -1,7 +1,7 @@
 'use strict';
 
 const { TOOL_TIERS } = require('./plan');
-const { checkAir, needsAir, NeedsAir } = require('./vitals');
+const { checkAir, needsAir, NeedsAir, digWithAirGuard } = require('./vitals');
 
 /** Best pickaxe tier carried: 0 bare hands, 1 wooden, 2 stone, 3 iron, ... */
 // Durability left on the best pickaxe carried, for the question a careful
@@ -177,7 +177,21 @@ async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs 
   const moved = () => bot.entity.position.distanceTo(start) >= 1;
   const cleared = [];
   const until = Math.min(deadline, Date.now() + budgetMs);
-  const dig = async block => { task.check(); await bot.dig(block); cleared.push(block.name); };
+  // A dig underwater takes five times as long and the fifth death was a
+  // lake floor dug by hand with no air check inside the dig. Submerged,
+  // there is nothing to dig: swim up. Otherwise every dig watches the air.
+  const submerged = () => [at(0, 0, 0), at(0, 1, 0)].some(b => b && LIQUID.has(b.name));
+  if (submerged()) {
+    bot.setControlState('jump', true);
+    try { while (Date.now() < until && submerged()) { task.check(); checkAir(bot); await sleep(100); } }
+    finally { bot.setControlState('jump', false); }
+    return { stage: 'surface', cleared: [] };
+  }
+  const dig = async block => {
+    task.check(); checkAir(bot);
+    if (submerged()) throw new NeedsAir();
+    await digWithAirGuard(bot, task, block); cleared.push(block.name);
+  };
   const safeToward = (dx, dz) => {
     const ahead = [at(dx, 0, dz), at(dx, 1, dz)], below = [at(dx, -1, dz), at(dx, -2, dz), at(dx, -3, dz), at(dx, -4, dz)];
     if ([...ahead, ...below].some(b => b && (HAZARD.has(b.name) || b.name === 'lava'))) return false;

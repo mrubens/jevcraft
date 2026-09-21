@@ -86,3 +86,16 @@ test('a handler that fails inside the loop, moving on or recovering, cannot end 
   assert.equal(result.ok, false); assert.equal(result.reason, 'Action budget reached', 'the loop ran to its test budget rather than throwing');
   assert.equal(goal.status, 'blocked'); assert.match(goal.lastError, /budget|dry route|out of reach/);
 });
+
+test('shake loose never digs while submerged: it swims up and returns', async () => {
+  const digs = [], controls = [];
+  const bot = { entity: { position: new Vec3(0.5, 50, 0.5) }, oxygenLevel: 15, inventory: { items: () => [] }, registry,
+    blockAt: p => ({ name: p.y <= 61 ? 'water' : 'air', boundingBox: 'empty', position: p, diggable: true }),
+    dig: async b => { digs.push(b); }, setControlState: (name, on) => controls.push([name, on]), clearControlStates() {},
+    pathfinder: { movements: { blocksCantBreak: new Set(), exclusionAreasBreak: [] }, setGoal() {} }, stopDigging() {} };
+  const result = await shakeLoose(bot, new Task('wet'), Date.now() + 400, { budgetMs: 300 });
+  assert.equal(result.stage, 'surface');
+  assert.deepEqual(digs, []);
+  assert(controls.some(([n, on]) => n === 'jump' && on), 'swims up');
+  assert(controls.some(([n, on]) => n === 'jump' && !on), 'and lets go of the key');
+});
