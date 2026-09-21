@@ -123,6 +123,10 @@ function configureMovements(bot) {
     const block = bot.registry.blocksByName[name];
     if (block) movement.blocksToAvoid.add(block.id);
   }
+  // Farmland is walked around, not over: a landing on it turns it back to
+  // dirt, and the base's plot was retilled after every visit. Tilling and
+  // planting stand beside the cell, so nothing needs to step on it.
+  if (bot.registry.blocksByName.farmland) movement.blocksToAvoid.add(bot.registry.blocksByName.farmland.id);
   movement.canDig = true;
   movement.allow1by1towers = true;
   movement.allowParkour = false;
