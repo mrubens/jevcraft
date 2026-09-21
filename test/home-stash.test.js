@@ -158,7 +158,7 @@ test('the ladder restocks from the stash ahead of its rungs, only within reach, 
 
 test('before the Nether the valuables go home once, and the ladder moves on with lighter pockets', async () => {
   const gear = [['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['water_bucket', 1], ['oak_log', 8], ['cobblestone', 64], ['cooked_beef', 4], ['crafting_table', 1], ['furnace', 1],
-    ['iron_helmet', 1], ['iron_chestplate', 1], ['iron_leggings', 1], ['iron_boots', 1], ['golden_boots', 1], ['diamond_pickaxe', 1], ['diamond', 3], ['iron_ingot', 12], ['gold_ingot', 2]];
+    ['iron_helmet', 1], ['iron_chestplate', 1], ['iron_leggings', 1], ['iron_boots', 1], ['golden_boots', 1], ['bow', 1], ['arrow', 16], ['diamond_pickaxe', 1], ['diamond', 3], ['iron_ingot', 12], ['gold_ingot', 2]];
   const w = await establishedHome({ items: gear });
   const { bot, goal, save, actions } = w;
   const chest = chestAt(w, []);

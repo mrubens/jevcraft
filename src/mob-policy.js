@@ -3,7 +3,15 @@ const vanilla = require('../data/vanilla-26.1.json');
 
 // An explicit list of executable encounters. Other loot tables do not become
 // acquisition methods until their mechanics have an action implementation.
-const handlers = { blaze: { item: 'blaze_rod', dimension: 'nether' }, enderman: { item: 'ender_pearl' } };
+// A blaze shoots, so a carried bow is used at range before the sword. A
+// spider gives the string a bow needs; it is neutral by day and common on the
+// surface, and its cost sits below an unobserved cobweb search (20) but above
+// a cobweb in view (13). A chicken gives the feathers arrows need; it is
+// passive, so the hunt needs no armour, shield or isolation.
+const handlers = {
+  blaze: { item: 'blaze_rod', dimension: 'nether', ranged: true }, enderman: { item: 'ender_pearl' },
+  spider: { item: 'string', cost: 16 }, chicken: { item: 'feather', passive: true },
+};
 const armor = suffix => ['iron', 'diamond', 'netherite'].map(material => `${material}_${suffix}`);
 const combatGear = {
   hand: armor('sword'), head: armor('helmet'), torso: armor('chestplate'), legs: armor('leggings'),
@@ -28,10 +36,12 @@ function observedDead(bot, entity) {
   const health = key >= 0 ? entity.metadata?.[key] : undefined;
   return !!bot._defeatedMobs?.has(entity) || (Number.isFinite(health) && health <= 0);
 }
-function readyEquipment(bot) {
+// `alsoInHand` lets an encounter that switched to the bow still count as
+// equipped: the armour and shield are what the check is for.
+function readyEquipment(bot, alsoInHand = []) {
   return Object.entries(combatGear).every(([destination, names]) => {
     const item = equipped(bot, destination);
-    return names.includes(item?.name) && durable(bot.registry, item);
+    return (names.includes(item?.name) || (destination === 'hand' && alsoInHand.includes(item?.name))) && durable(bot.registry, item);
   });
 }
 function mobSources() {

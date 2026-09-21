@@ -1,7 +1,57 @@
 'use strict';
+const { Vec3 } = require('vec3');
 const { threats } = require('./danger');
 const { checkAir } = require('./vitals');
+const { durable } = require('./mob-policy');
+const { countOf } = require('./skills');
+const { bowSolution, aimAtEntity, shootBow } = require('./projectiles');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Mobs that shoot. A piglin counts only with a crossbow in hand; one with a
+// sword is a melee mob and the charge rule's business.
+const SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'ghast', 'breeze', 'blaze']);
+const shooter = entity => SHOOTERS.has(entity.name) || (entity.name === 'piglin' && entity.heldItem?.name === 'crossbow');
+const bowReady = bot => bot.inventory.items().some(i => i.name === 'bow' && durable(bot.registry, i)) && countOf(bot, 'arrow') > 0;
+
+// Where to point the bow at a target this far off, moving this way: the
+// vanilla arc solved from the eye. `drop` is how far the pitch rises above
+// the straight line to cover gravity, `lead` how far ahead of the target the
+// aim point sits to cover its motion. Pure: no bot, no world.
+function aim(origin, target, velocity = new Vec3(0, 0, 0)) {
+  const solution = bowSolution(origin, target, velocity);
+  if (!solution) return null;
+  const straight = target.minus(origin);
+  const level = Math.atan2(straight.y, Math.hypot(straight.x, straight.z));
+  return { yaw: solution.yaw, pitch: solution.pitch, ticks: solution.ticks, distance: straight.norm(),
+    drop: solution.pitch - level, lead: solution.target.minus(target).norm(), aimPoint: solution.target };
+}
+
+// The shooters worth an arrow: in clear view, four to twenty blocks off,
+// with a clear arc from where the bot stands, and a bow and arrows to hand.
+function shotTargets(bot, danger, { minimum = 4, maximum = 20 } = {}) {
+  if (!bowReady(bot)) return [];
+  return danger.filter(t => shooter(t.entity) && t.visible && t.distance >= minimum && t.distance <= maximum && aimAtEntity(bot, t.entity));
+}
+
+// The shield goes up after a shot so the answer lands on it while the bot
+// looks again, and comes down before anything that needs the hands: a swing,
+// the next draw, a walk (a raised shield is sneaking speed).
+function raiseShield(bot) {
+  if (bot._shieldRaised || bot.inventory.slots?.[45]?.name !== 'shield') return false;
+  bot.activateItem(true); bot._shieldRaised = true; return true;
+}
+function lowerShield(bot) {
+  if (!bot._shieldRaised) return;
+  bot.deactivateItem(); bot._shieldRaised = false;
+}
+
+// One arrow: bow in hand, aim with lead and drop, draw about a second,
+// release, then cover behind the shield until the next observation.
+async function shoot(bot, task, target, { guard, threatCheck, chargeMs = 1100, cover = true } = {}) {
+  lowerShield(bot);
+  try { return await shootBow(bot, task, target, { guard, threatCheck, chargeMs }); }
+  finally { if (cover) raiseShield(bot); }
+}
 
 // Prefer carried combat equipment, then a mining tool, then bare hands. These
 // are conservative equipment/cooldown policies, not predicted damage values.
@@ -54,7 +104,7 @@ async function defendNearby(bot, task, goal, save) {
     if (threat.entity.name === 'creeper') return false;
     await sleep(Math.min(remaining, 100)); task.check(); checkAir(bot); return true;
   }
-  bot.pathfinder.setGoal(null); bot.clearControlStates();
+  bot.pathfinder.setGoal(null); bot.clearControlStates(); lowerShield(bot);
   if (weapon) await bot.equip(weapon, 'hand');
   else if (bot.heldItem) await bot.unequip('hand');
   task.check(); checkAir(bot);
@@ -71,4 +121,4 @@ async function defendNearby(bot, task, goal, save) {
   save(); return true;
 }
 
-module.exports = { defenseWeapon, canStrike, strikeTarget, defendNearby };
+module.exports = { defenseWeapon, canStrike, strikeTarget, defendNearby, SHOOTERS, shooter, bowReady, aim, shotTargets, shoot, raiseShield, lowerShield };

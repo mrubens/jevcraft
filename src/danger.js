@@ -13,7 +13,7 @@ function combatTarget(bot, entity) {
   return !!encounter && encounter.target === entity && Object.hasOwn(handlers, entity.name) &&
     bot.entities[entity.id] === entity && entity.isValid !== false && !encounter.task.cancelled &&
     encounter.dimension === bot.game?.dimension && encounter.expiresAt > Date.now() &&
-    bot.health >= 12 && bot.food >= 12 && readyEquipment(bot);
+    bot.health >= 12 && bot.food >= 12 && readyEquipment(bot, ['bow']);
 }
 
 function provokedEnderman(bot, entity) {
