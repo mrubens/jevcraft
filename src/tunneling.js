@@ -109,7 +109,14 @@ async function resourceTunnelStep(bot, task, goal, save, target, resource, actio
   const site = goal.miningSites[key] ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {}, dimension, resource };
   goal.tunnel = site;
   const work = site.workPosition && new Vec3(site.workPosition.x, site.workPosition.y, site.workPosition.z);
-  if (work && work.distanceTo(bot.entity.position) > 6 && !(site.rejoinBlockedUntil > Date.now())) {
+  // A saved worksite well behind the bot is a shaft it has outrun: the bot
+  // walked back thirty blocks to one while twelve from its portal. An
+  // inspected staircase close by is still resumed; only one more than
+  // eight blocks farther from the target than the bot is replaced by here.
+  const sameTarget = site.target && Math.hypot(site.target.x - target.x, site.target.y - target.y, site.target.z - target.z) < 4;
+  if (work && sameTarget && work.distanceTo(target) > bot.entity.position.distanceTo(target) + 8) {
+    site.workPosition = { ...bot.entity.position.floored() }; save();
+  } else if (work && work.distanceTo(bot.entity.position) > 6 && !(site.rejoinBlockedUntil > Date.now())) {
     const movement = bot.pathfinder.movements;
     const previous = { canDig: movement.canDig, allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks };
     Object.assign(movement, { canDig: false, allow1by1towers: false, scafoldingBlocks: [] });
