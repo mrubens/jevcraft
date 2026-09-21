@@ -292,8 +292,13 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
   // be gone; an unloaded base far away is not a reason to walk back.
   if (home.completedAt) {
     const chest = stash.stashStatus(bot, home);
+    const plotNow = plotStatus(bot, home);
     if (bed.loaded && !bed.placed) { delete home.completedAt; delete home.bed.claimedAt; }
     else if (chest.loaded && !chest.placed) { delete home.completedAt; stash.forgetChest(home); }
+    // A plot trampled back to dirt, or with shell blocks on it, is a farm
+    // that stopped: the second run's base was "finished" with five of nine
+    // cells growing. Reopen for the repair; the bed and chest stand.
+    else if (!plotNow.unloaded.length && (plotNow.untilled.length || plotNow.blocked.length)) { delete home.completedAt; }
     else return null;
   }
   if (!bed.loaded) return { phase: 'home_bed', action: 'return_home' };
@@ -340,6 +345,13 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
   }
   const plot = plotStatus(bot, home);
   if (plot.unloaded.length) return { phase: 'home_plot', action: 'return_home' };
+  // Blocked cells first: cobblestone from a night shell where dirt should
+  // be, or a block sitting on the cell. Dirt to lay, then the repair.
+  if (plot.blocked.length) {
+    const needDirt = plot.blocked.filter(p => !TILLABLE.has(bot.blockAt(pos(p))?.name) && bot.blockAt(pos(p))?.name !== 'farmland').length;
+    if (countOf(bot, 'dirt') < needDirt) return { phase: 'home_plot', action: 'acquire', item: 'dirt', count: needDirt };
+    return { phase: 'home_plot', action: 'repair_plot', cells: plot.blocked.length };
+  }
   if (plot.untilled.length) return hoeCarried(bot) ? { phase: 'home_plot', action: 'till', cells: plot.untilled.length } : { phase: 'home_plot', action: 'acquire', item: 'wooden_hoe', count: 1 };
   if (plot.bare.length) {
     return countOf(bot, 'wheat_seeds') >= plot.bare.length ? { phase: 'home_plot', action: 'plant', cells: plot.bare.length }
@@ -378,6 +390,26 @@ async function equip(bot, name) {
   const item = bot.inventory.items().find(i => i.name === name);
   if (!item) throw Object.assign(new Error(`Need ${name.replaceAll('_', ' ')} at the base`), { name: 'Blocked' });
   await bot.equip(item, 'hand');
+}
+
+// The plot repair: whatever sits on a cell comes off, and ground that is
+// not soil (a shell's cobblestone) is dug and replaced with dirt.
+async function repairPlot(bot, task, goal, save, home, actions) {
+  const { blocked } = plotStatus(bot, home);
+  goal.step = { action: 'repair_plot', cells: blocked.length }; save();
+  for (const p of blocked) {
+    task.check(); checkAir(bot); checkThreats(bot);
+    await standAt(bot, task, actions, { x: p.x, y: p.y + 1, z: p.z }, 2);
+    const above = bot.blockAt(pos(p).offset(0, 1, 0));
+    if (above && above.boundingBox === 'block') await actions.dig(bot, task, pos(p).offset(0, 1, 0), { requireDrops: false });
+    else if (above && !['air', 'cave_air'].includes(above.name) && above.name !== 'wheat') await actions.dig(bot, task, pos(p).offset(0, 1, 0), { requireDrops: false });
+    const ground = bot.blockAt(pos(p));
+    if (ground && ground.name !== 'farmland' && !TILLABLE.has(ground.name)) {
+      await actions.dig(bot, task, pos(p), { requireDrops: false });
+      await actions.place(bot, task, pos(p), 'dirt');
+    }
+  }
+  save();
 }
 
 // Tilling: a hoe on grass or dirt with air above. Standing on the cell is
@@ -716,6 +748,7 @@ async function homeStep(bot, task, goal, save, stage, actions) {
     case 'level_site': return levelSite(bot, task, goal, save, home, actions);
     case 'claim_bed': return claimBed(bot, task, goal, save, home, actions);
     case 'till': return tillPlot(bot, task, goal, save, home, actions);
+    case 'repair_plot': return repairPlot(bot, task, goal, save, home, actions);
     case 'plant': return plantPlot(bot, task, goal, save, home, actions);
     case 'build_pen': return buildPen(bot, task, goal, save, home, actions);
     case 'place_chest': return stash.placeStashChest(bot, task, goal, save, home, actions);
@@ -793,6 +826,6 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
   return options;
 }
 
-module.exports = { bedCarried, placeOriented, isBed, siteWork, levelSite, clearStray, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
+module.exports = { bedCarried, placeOriented, isBed, siteWork, levelSite, clearStray, repairPlot, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
   woolCarried, woodSpecies, homeStage, homeComplete, homeStep, tillPlot, plantPlot, harvestPlot, placeBed, claimBed, buildPen, gatherWool, lureCows, breedCows, takeSteak, bake,
   homeFood, eatFromHome, homeChores };

@@ -344,3 +344,20 @@ test('a shell left on the site is cleared off the bed cells before the bed goes 
   assert.equal(dug.length, 2, 'the two stray cobblestone came off');
   assert(home.isBed(bot.blockAt(new Vec3(bed.foot.x, bed.foot.y, bed.foot.z))));
 });
+
+test('a finished base reopens when its plot is trampled or built on, and the blocked cells are repaired', async () => {
+  const w = await establishedHome({ items: [['dirt', 4], ['wooden_hoe', 1], ['wheat_seeds', 9]] });
+  const { bot, goal, actions } = w, home_ = goal.survival.home, { plot } = home.layout(home_);
+  home_.completedAt = 'earlier';
+  assert.equal(home.homeStage(bot, goal), null, 'a finished base is finished');
+  w.set(new Vec3(plot[0].x, plot[0].y, plot[0].z), 'cobblestone'); w.set(new Vec3(plot[0].x, plot[0].y + 1, plot[0].z), 'air');
+  w.set(new Vec3(plot[1].x, plot[1].y + 1, plot[1].z), 'cobblestone');
+  let stage = home.homeStage(bot, goal);
+  assert.equal(home_.completedAt, undefined, 'reopened for the repair');
+  assert.equal(stage.action, 'repair_plot'); assert.equal(stage.cells, 2);
+  await home.homeStep(bot, new Task('home'), goal, () => {}, stage, actions);
+  assert.equal(bot.blockAt(new Vec3(plot[0].x, plot[0].y, plot[0].z)).name, 'dirt', 'cobblestone swapped for dirt');
+  assert.equal(bot.blockAt(new Vec3(plot[1].x, plot[1].y + 1, plot[1].z)).name, 'air', 'the block on the cell came off');
+  stage = home.homeStage(bot, goal);
+  assert.equal(stage.action, 'till', 'then the cells are tilled');
+});
