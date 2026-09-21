@@ -2,6 +2,15 @@
 
 Running observations from acceptance trials on the isolated Normal Survival server (`.test-acceptance`, port 25579), with the opportunities they point at. Newest first. Each trial's full log is under `artifacts/<run>/events.jsonl`.
 
+## dream · 2026-09-21 · "your dream is to beat the game" on the Survival server · in progress
+
+**So far.** Given the dream in chat, the win objective started with its expedition prep: a food reserve first. The bot walked 200 blocks hunting, got mutton, porkchop and chicken, made a wooden pickaxe and a crafting table, cooked once, and then paid a cobblestone trip for every further cook because the furnace stayed where it was placed. The gravel lip that ended trial two was passed on the way with a seven-second "back up to the surface" and no adviser.
+
+**Opportunities.**
+
+20. *Take the furnace with you.* Crafting tables placed by the session are collected on leaving; furnaces are not, so a bot that cooks in three places builds three furnaces. Pick it up when the smelt is done and the bot moves on, or remember where it stands and go back.
+21. *The first rung should be the first line.* "Chasing my dream to beat the game: beat the game" said nothing; it now names the first rung. The win objective's own expedition prep (food reserve, tools) runs before the ladder, so the first visible rung is a food hunt rather than the stone pickaxe the chat promised; the prep and the ladder should be one list.
+
 ## muarczp0 · 2026-09-21 · "build a house" + 2 cycles · controlled (nights skipped) · PASS
 
 **Result.** House built and verified at tick 5678 of the run, then two full day/night cycles survived (48,000 world ticks) with no deaths, no recovery escalation and no generative call. Nights were skipped from the console while the bot was sealed in, so this is a controlled run, not acceptance evidence; the bot's own behaviour was untouched. The first complete run of the evening.

@@ -644,6 +644,16 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   }
   await waitFor(task, () => countOf(bot, step.item) >= before + needed);
   if (goal) { delete goal.smelting; save(); }
+  // A furnace the bot placed goes with it when it is travelling, like a
+  // crafting table does. Leaving one behind at every camp cost the dream run
+  // a cobblestone trip for each meal it cooked.
+  if (block && !goal?.holdWorkstation && (goal?.expeditionReady || goal?.preparingExpedition || goal?.dream) && bot._ownedWorkstations?.has(`furnace:${block.position}`)) {
+    const count = countOf(bot, 'furnace');
+    await dig(bot, task, block.position);
+    await navigate(bot, task, new goals.GoalNear(block.position.x, block.position.y, block.position.z, 1));
+    await waitFor(task, () => countOf(bot, 'furnace') > count);
+    bot._ownedWorkstations.delete(`furnace:${block.position}`);
+  }
 }
 
 async function harden(bot, task, goal, save, item = 'purple_concrete') {

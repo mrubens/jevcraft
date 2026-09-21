@@ -144,3 +144,23 @@ test('selected non-oak fuel survives stop/resume and leaves another wood untouch
   assert.equal(glass, 2); assert.equal(planks, 3); assert.equal(loads, 1); assert(!saved.smelting);
   assert.equal(bot.inventory.items().find(i => i.name === 'oak_planks').count, 12);
 });
+
+test('a furnace the bot placed is picked back up after the batch when it is travelling', { timeout: 3000 }, async () => {
+  let closed = false, available = true, dug = null, furnaceCount = 0;
+  const furnace = { outputItem: () => available ? { name: 'cooked_beef', count: 1 } : null, takeOutput: async () => { available = false; }, close: () => { closed = true; } };
+  const items = () => [...(closed && !available ? [{ name: 'cooked_beef', count: 1 }] : []), ...(furnaceCount ? [{ name: 'furnace', count: furnaceCount }] : []), { name: 'wooden_pickaxe', count: 1 }];
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) }, inventory: { items },
+    registry: { blocksByName: { furnace: { id: 1 } }, itemsByName: { wooden_pickaxe: { maxDurability: 59 } } },
+    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: p => dug && p.equals(dug) ? { name: 'air', type: 0, position: p, boundingBox: 'empty' }
+      : { name: 'furnace', type: 1, position: p, diggable: true, boundingBox: 'block', digTime: () => 20 },
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) }, game: { gameMode: 'survival' }, heldItem: null,
+    pathfinder: { movements: {}, goto: async () => { if (dug) furnaceCount = 1; }, setGoal: () => {} },
+    openFurnace: async () => furnace, dig: async block => { dug = block.position; }, canDigBlock: () => true,
+    equip: async () => {}, _ownedWorkstations: new Set(['furnace:(1, 64, 0)']),
+  };
+  const goal = { preparingExpedition: true };
+  await smelt(bot, new Task('smelt', 'test'), { item: 'cooked_beef', from: 'beef', count: 1 }, goal);
+  assert(dug && dug.equals(new Vec3(1, 64, 0)), 'the placed furnace was dug up');
+  assert.equal(furnaceCount, 1); assert.equal(bot._ownedWorkstations.size, 0);
+});
