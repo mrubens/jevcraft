@@ -1647,8 +1647,16 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
     try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000 }); return true; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   }
-  await resourceTunnelStep(bot, task, goal, save, pos(p), `portal_${where}`, { dig, navigate });
+  await tunnelToward(bot, task, goal, save, pos(p), `portal_${where}`);
   return true;
+}
+
+// A staircase needs a pickaxe; the planner offers no stone stair without
+// one. The bot stood by its broken pickaxe with eight logs and a stack of
+// cobblestone, so make the tool first.
+async function tunnelToward(bot, task, goal, save, target, key) {
+  if (pickaxeTier(bot) < 1 && bot.game?.gameMode !== 'creative') { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
+  await resourceTunnelStep(bot, task, goal, save, target, key, { dig, navigate });
 }
 
 async function netherStep(bot, task, goal, save) {
@@ -1671,7 +1679,7 @@ async function netherStep(bot, task, goal, save) {
     catch (err) {
       task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
       goal.step = { action: 'return_to_portal', portal: { ...portal } }; save();
-      await resourceTunnelStep(bot, task, goal, save, pos(portal), 'portal_overworld', { dig, navigate });
+      await tunnelToward(bot, task, goal, save, pos(portal), 'portal_overworld');
       return false;
     }
   }
@@ -1760,7 +1768,7 @@ async function returnFromNether(bot, task, goal, save) {
   try { await enterPortal(bot, task, portal, () => dimension(bot) === 'overworld'); }
   catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-    await resourceTunnelStep(bot, task, goal, save, pos(portal), 'portal_nether', { dig, navigate });
+    await tunnelToward(bot, task, goal, save, pos(portal), 'portal_nether');
   }
 }
 
