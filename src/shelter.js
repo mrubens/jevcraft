@@ -43,9 +43,15 @@ function safeSite(bot, origin, goal) {
   });
 }
 
-// No sky within reach above the site: a staircase or a cave, not a hollow.
+// Anything solid between the site and the sky: a staircase, a cave, a
+// shaft. Twelve blocks of headroom in a cave at y=14 is not the surface.
 function buried(bot, o) {
-  for (let y = 1; y <= 12; y++) if (solid(bot.blockAt(o.offset(0, y, 0)))) return true;
+  const top = (bot.game?.minY ?? -64) + (bot.game?.height ?? 384);
+  for (let y = o.y + 1; y < top; y++) {
+    const b = bot.blockAt(new Vec3(o.x, y, o.z));
+    if (!b) return false;
+    if (b.boundingBox === 'block' || ['water', 'lava'].includes(b.name)) return true;
+  }
   return false;
 }
 
