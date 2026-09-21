@@ -20,7 +20,11 @@ function dryStanding(bot, point) {
 
 function miningReach(bot, point, blockPosition) {
   const feet = point.floored();
-  if (feet.x === blockPosition.x && feet.z === blockPosition.z && blockPosition.y < point.y) return false;
+  // Underfoot is reachable only as a one-block drop onto something solid.
+  if (feet.x === blockPosition.x && feet.z === blockPosition.z && blockPosition.y < point.y) {
+    const under = bot.blockAt(blockPosition.offset(0, -1, 0));
+    return blockPosition.y === feet.y - 1 && under?.boundingBox === 'block' && !['lava', 'magma_block', 'sand', 'gravel'].includes(under.name);
+  }
   const eye = point.offset(0, 1.62, 0), aim = blockPosition.offset(0.5, 0.5, 0.5), direction = aim.minus(eye);
   if (direction.norm() > 4.5) return false;
   const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());

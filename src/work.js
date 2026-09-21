@@ -132,9 +132,19 @@ async function waitFor(task, predicate, timeout = 4000) {
   throw new Error('Timed out waiting for world/inventory update');
 }
 
+// Digging the block underfoot is a one-block drop when the block beneath it
+// is solid and harmless: the way a player takes an ore they are standing on
+// in a shaft with no side to step to. Anything deeper or molten is not.
+function safeDropBelow(bot, p) {
+  const under = bot.blockAt(p.offset(0, -1, 0));
+  return under?.boundingBox === 'block' && !['lava', 'magma_block', 'cactus', 'fire'].includes(under.name) &&
+    !['sand', 'gravel'].includes(under.name);
+}
+
 async function stepOff(bot, task, p) {
   const feet = bot.entity.position.floored();
   if (feet.x !== p.x || feet.z !== p.z || Math.abs(feet.y - p.y) > 1) return;
+  if (p.y === feet.y - 1 && safeDropBelow(bot, p)) return;
   // Stepping aside needs somewhere to stand, unless the bot is flying: high on
   // a tower every neighbouring cell is open air, which is a floor for a
   // hovering worker and a dead end for a walking one.
@@ -162,7 +172,7 @@ async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops
   // well as before it; move aside before replacing a foundation cell.
   if (p.equals(supportCell(bot.entity.position))) await stepOff(bot, task, p);
   block = bot.blockAt(p);
-  if (p.equals(supportCell(bot.entity.position))) throw new Error('Refusing to dig directly beneath feet');
+  if (p.equals(supportCell(bot.entity.position)) && !safeDropBelow(bot, p)) throw new Error('Refusing to dig directly beneath feet');
   if (requiredTool || enchantment) {
     const remaining = item => (bot.registry.itemsByName[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
     const tool = bot.inventory.items().filter(item => (!requiredTool || item.name === requiredTool) && remaining(item) >= minimumToolDurability &&
