@@ -38,6 +38,7 @@ const { exitEnd } = require('./end-exit');
 const { prepareEndSupplies } = require('./end-supplies');
 const { collectWater } = require('./water');
 const { makeObsidian } = require('./obsidian');
+const { tidyInventory } = require('./inventory-tidy');
 const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
 const { batchPlan, remainingOutputs } = require('./batch-plan');
@@ -559,6 +560,9 @@ async function workstation(bot, task, name, goal) {
 }
 
 async function craft(bot, task, step, goal) {
+  // Diagnostic for the dream run: a seventh furnace was crafted with six in
+  // the pockets, and no planner path reproduces it offline.
+  if (['furnace', 'crafting_table'].includes(step.item) && countOf(bot, step.item) >= 2) console.error(`[diag] crafting ${step.item} with ${countOf(bot, step.item)} carried\n${new Error().stack}`);
   await settleCraftInventory(bot, task);
   const table = step.needs_table ? await workstation(bot, task, 'crafting_table', goal) : null;
   const id = bot.registry.itemsByName[step.item]?.id;
@@ -1651,6 +1655,16 @@ function createRecoveryAdviser(bot, client) {
   return new RecoveryAdviser(bot, { acquireStep, catalogPlan, planningInventory, surfaceStep, navigate, explore, find }, { client });
 }
 
+// Full pockets stall quietly: ore mined and never picked up, a crafting
+// grid spilling on the ground. Surplus stone goes before that happens.
+async function keepRoom(bot, task, goal) {
+  const dropped = await tidyInventory(bot, task);
+  if (dropped.length) {
+    goal.tidied = { at: new Date().toISOString(), dropped };
+    bot.chat?.(`My pockets are full, so I'm leaving ${dropped.map(d => `${d.count} ${d.name.replaceAll('_', ' ')}`).join(', ')} here.`);
+  }
+}
+
 async function tryRecovery(adviser, task, goal, save) {
   try { return await adviser.suggest(task, goal, save); }
   catch (err) {
@@ -1770,6 +1784,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
         await maintainVitals(bot, task);
         if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
       }
+      await keepRoom(bot, task, goal);
       const acted = await survival.step(task, goal, save, onStep);
       if (!acted) await idleWork(bot, task, goal, save, decisionClient, onStep);
       failures = 0; delete goal.lastError; save(); onStep(goal); narrate(bot, goal);
@@ -1825,6 +1840,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       }
       // End combat owns eating and arena escape. Overworld nighttime shelter
       // choices are invalid in the End, where the dragon can destroy them.
+      await keepRoom(bot, task, goal);
       if (!endTask && await survival.step(task, activeWork, saveWork, () => onStep(goal))) {
         goal.stalls = 0; goal.failures = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
