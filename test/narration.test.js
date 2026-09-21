@@ -13,7 +13,7 @@ test('the bot says what it is starting, once per phase, not once per tree', () =
   const goal = { kind: 'house', step: { action: 'mine', block: 'oak_log', drops: 'oak_log' }, decisions: [decision('source_oak_log_3_64_0')] };
   let now = 1000;
   goal.step.count = 24;
-  assert.equal(narrate(bot, goal, { now }), 'Getting 24 oak log.');
+  assert.equal(narrate(bot, goal, { now }), 'Getting 24 oak logs.');
   assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), null, 'the same phase is not repeated');
   goal.decisions.push({ path: ['continue_source', 'source_oak_log_3_64_0'], committed: true, options: {} });
   assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), null, 'continuing the same source is not a new phase');

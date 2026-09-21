@@ -12,6 +12,14 @@ const MIN_GAP_MS = 4000;
 const ESCAPE_REPEAT_MS = 120000;
 const ESCAPE_QUIET_MS = 12000;
 const name = value => String(value || '').replace(/^minecraft:/, '').replaceAll('_', ' ');
+// "Getting 5 oak log" reads badly. Mass nouns stay as they are; the rest
+// take an s, and a torch takes an es.
+const MASS = /(^| )(cobblestone|cobbled deepslate|dirt|sand|red sand|gravel|coal|charcoal|raw iron|raw gold|raw copper|string|wool|wheat|bread|flint|leather|obsidian|iron|gold|copper|redstone|lapis lazuli|glowstone dust|gunpowder|netherrack|stone|granite|andesite|diorite|tuff|deepslate|clay|snow|kelp|paper|sugar|glass|ice|blaze powder|bone meal|water|lava|milk|beef|pork|porkchop|mutton|chicken|cod|salmon|rotten flesh|glow ink sac|ink sac)$/;
+const plural = (count, value) => {
+  const n = name(value);
+  if (!(count > 1) || MASS.test(n) || /(s|planks|seeds|boots|leggings)$/.test(n)) return n;
+  return /(ch|sh|x)$/.test(n) ? `${n}es` : `${n}s`;
+};
 
 const SURVIVAL = {
   gather_shelter_materials: "Night's coming, so I'm gathering blocks to dig in first.",
@@ -63,9 +71,9 @@ function stepLine(goal, step, decision) {
     case 'combined_request': return detail ? stepLine(goal, detail, decision) : null;
     // Once per resource, not once per tree: which trunk Jev picked is in the
     // Observatory, and a line per tree drowned the lines that mattered.
-    case 'mine': return `Getting ${step.count ? `${step.count} ` : ''}${name(step.drops || step.block)}.`;
-    case 'craft': return `Crafting ${step.count ? `${step.count} ` : ''}${name(step.item)}.`;
-    case 'smelt': return `Smelting ${name(step.item)}.`;
+    case 'mine': return `Getting ${step.count ? `${step.count} ` : ''}${plural(step.count, step.drops || step.block)}.`;
+    case 'craft': return `Crafting ${step.count ? `${step.count} ` : ''}${plural(step.count, step.item)}.`;
+    case 'smelt': return `Smelting ${step.count > 1 ? `${step.count} ` : ''}${plural(step.count, step.item)}.`;
     case 'harden': return 'Hardening concrete in water.';
     case 'make_obsidian': return `Making ${step.count ? `${step.count} ` : ''}obsidian: water on lava.`;
     case 'fill_bucket': return 'Fetching water.';
