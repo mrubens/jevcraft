@@ -359,7 +359,20 @@ async function workSource(bot, task, step, goal, save, source) {
   const p = nearestRemaining(bot, source);
   if (!p) throw new Error(`The ${source.block} source is no longer there`);
   goal.step = step; rememberSource(goal, source, step); save();
-  try { await mine(bot, task, step, goal, save, p); }
+  try {
+    await mine(bot, task, step, goal, save, p);
+    // Finish the tree. The planner asks for exactly the logs a step needs,
+    // often one, and the dream run walked to a fresh tree for every smelt's
+    // fuel. The rest of a trunk already reached is a few seconds' work.
+    if (/_log$/.test(source.block) && bot.game?.gameMode !== 'creative') {
+      for (let extra = 0; extra < 3 && countOf(bot, step.drops) < 8; extra++) {
+        const next = nearestRemaining(bot, source);
+        if (!next || next.distanceTo(bot.entity.position) > 6) break;
+        task.check(); checkAir(bot);
+        try { await mine(bot, task, step, goal, save, next); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; break; }
+      }
+    }
+  }
   catch (err) {
     if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) { setAsideSource(goal, source); delete goal.workingSource; save(); }
     throw err;
