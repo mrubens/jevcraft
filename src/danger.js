@@ -48,11 +48,23 @@ function immediateThreat(bot) {
 // Keep a route outside attack range plus a movement margin. If a mob already
 // approached us, allow retreat without forcing a path to start outside the
 // buffer. Cover is intentionally not an invitation to tunnel toward a mob.
+// Whether a mob has a line of sight to the bot. One behind twenty blocks of
+// rock cannot shoot, and underground there is always one somewhere: the
+// dream run could not dig a staircase toward a skeleton in the next cave.
+function seen(bot, entity) {
+  const eye = bot.entity.position.offset(0, 1.5, 0);
+  const target = entity.position.offset(0, Math.min(entity.height || 1.6, 1.6), 0);
+  const direction = target.minus(eye);
+  const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
+  return !hit || eye.distanceTo(hit.intersect || hit.position) >= eye.distanceTo(target) - 0.5;
+}
+
 function safeFromHostiles(bot, point, entities = hostileEntities(bot, 64)) {
   if (bot.game?.gameMode === 'creative' || bot.game?.difficulty === 'peaceful') return true;
   return entities.every(entity => {
     if (combatTarget(bot, entity)) return true;
-    const radius = ranged.has(entity.name) ? 20 : 12;
+    // Out of sight, a mob only matters when it is nearly at the wall.
+    const radius = !seen(bot, entity) ? 6 : ranged.has(entity.name) ? 20 : 12;
     return entity.position.distanceTo(point) >= Math.min(radius, entity.position.distanceTo(bot.entity.position) - 0.25);
   });
 }

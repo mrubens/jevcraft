@@ -477,3 +477,14 @@ test('leaving a pocket opens every closure so the staircase continues both ways'
   await survival.leave(new Task('dawn'), {}, () => {}, refuge);
   assert.equal(dug.length, 4, 'both closures, two blocks each');
 });
+
+test('a hostile behind rock does not make a step toward it unsafe unless it is nearly at the wall', () => {
+  const { safeFromHostiles } = require('../src/danger');
+  const skeleton = { name: 'skeleton', type: 'hostile', position: new Vec3(20.5, 64, 0.5), height: 1.99 };
+  const make = raycast => ({ game: { gameMode: 'survival', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 1: skeleton }, world: { raycast } });
+  const wall = () => ({ position: new Vec3(3, 65, 0), intersect: new Vec3(3, 65.5, 0.5) });
+  assert.equal(safeFromHostiles(make(wall), new Vec3(1.5, 64, 0.5), [skeleton]), true, 'through rock, twenty blocks is nothing');
+  assert.equal(safeFromHostiles(make(() => null), new Vec3(1.5, 64, 0.5), [skeleton]), false, 'in sight, a ranged mob keeps its twenty-block ring');
+  skeleton.position = new Vec3(5.5, 64, 0.5);
+  assert.equal(safeFromHostiles(make(wall), new Vec3(1.5, 64, 0.5), [skeleton]), false, 'at the wall it still counts');
+});
