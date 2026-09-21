@@ -537,12 +537,24 @@ class Survival {
     else await placeOriented(bot, task, this.actions, site.stand, site.foot, item, () => isBed(bot.blockAt(site.foot)) && isBed(bot.blockAt(site.head)));
     let slept = false;
     try {
-      await bot.sleep(bot.blockAt(site.foot));
-      const deadline = Date.now() + 45000;
-      while (Date.now() < deadline && bot.isSleeping && sleepable(bot)) { task.check(); await sleep(250); }
-      slept = !sleepable(bot);
-      if (bot.isSleeping) { try { await bot.wake(); } catch (_) {} }
-    } catch (err) { task.check(); this.state.sleepFailedAt = Date.now(); this.state.lastSleepError = err.message; }
+      // The server confirms the sleep a moment after the click, and refuses
+      // it with a message. The first bedtime read the flag before either
+      // arrived and built a shelter beside the bed.
+      let refused = null;
+      const onMessage = message => { const key = message?.json?.translate || message?.translate || String(message || ''); if (/bed\.(not_safe|too_far_away|obstructed|occupied|no_sleep)/.test(key)) refused = key; };
+      bot.on?.('message', onMessage);
+      try {
+        await bot.sleep(bot.blockAt(site.foot));
+        const started = Date.now();
+        while (Date.now() - started < 4000 && !bot.isSleeping && !refused) { task.check(); await sleep(100); }
+        if (refused) throw new Error(`The server refused the sleep: ${refused}`);
+        if (!bot.isSleeping) throw new Error('The sleep was not confirmed');
+        const deadline = Date.now() + 45000;
+        while (Date.now() < deadline && bot.isSleeping && sleepable(bot)) { task.check(); await sleep(250); }
+        slept = !sleepable(bot);
+        if (bot.isSleeping) { try { await bot.wake(); } catch (_) {} }
+      } finally { bot.removeListener?.('message', onMessage); }
+    } catch (err) { task.check(); this.state.sleepFailedAt = Date.now(); this.state.lastSleepError = err.message; this.report(goal, save, { action: 'sleep_failed', reason: err.message }); }
     finally {
       // The carried bed comes back up; the base's bed stays where it is.
       if (!placed) {
