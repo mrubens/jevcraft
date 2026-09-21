@@ -6,7 +6,11 @@ Running observations from acceptance trials on the isolated Normal Survival serv
 
 **So far.** Given the dream in chat, the win objective started with its expedition prep: a food reserve first. The bot walked 200 blocks hunting, got mutton, porkchop and chicken, made a wooden pickaxe and a crafting table, cooked once, and then paid a cobblestone trip for every further cook because the furnace stayed where it was placed. The gravel lip that ended trial two was passed on the way with a seven-second "back up to the surface" and no adviser.
 
+**The ladder, timed from an empty inventory (nights skipped).** Food hunted and cooked by 10 minutes; wooden pickaxe, crafting table, furnace; stone pickaxe at 12 minutes; stone sword at 13; iron pickaxe at 15; shield at 17; iron sword at 19; bucket at 26. Every rung was announced as it started, Jev chose every source, and no adviser or generative model was involved. The phase is now "reach the Nether", which begins with full iron armour: twenty-four ingots, the first long stretch with no visible rung. Three fixes came out of watching: furnaces travel with the bot, placed workstations survive a restart, and two causes of repeated chat lines are gone (the repeat filter had been overwritten by mineflayer's chat plugin; a silent tunnel step had been resetting the narration key).
+
 **Opportunities.**
+
+22. *Armour is a rung too.* "Reach the Nether" hides twenty-four ingots of work behind one label; a helmet, a chestplate, leggings and boots are four announced rungs, and Jev could be asked whether to go for armour first or scout for a lava lake and obsidian while the iron accumulates.
 
 20. *Take the furnace with you.* Crafting tables placed by the session are collected on leaving; furnaces are not, so a bot that cooks in three places builds three furnaces. Pick it up when the smelt is done and the bot moves on, or remember where it stands and go back.
 21. *The first rung should be the first line.* "Chasing my dream to beat the game: beat the game" said nothing; it now names the first rung. The win objective's own expedition prep (food reserve, tools) runs before the ladder, so the first visible rung is a food hunt rather than the stone pickaxe the chat promised; the prep and the ladder should be one list.
