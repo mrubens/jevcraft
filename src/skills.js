@@ -4,6 +4,18 @@ const { TOOL_TIERS } = require('./plan');
 const { checkAir, needsAir, NeedsAir } = require('./vitals');
 
 /** Best pickaxe tier carried: 0 bare hands, 1 wooden, 2 stone, 3 iron, ... */
+// Durability left on the best pickaxe carried, for the question a careful
+// player asks before going down: will this tool get me back out?
+function pickaxeDurability(bot) {
+  let best = 0;
+  for (const item of bot.inventory.items()) {
+    if (!/_pickaxe$/.test(item.name)) continue;
+    const maximum = bot.registry?.itemsByName?.[item.name]?.maxDurability;
+    best = Math.max(best, maximum ? maximum - (item.durabilityUsed || 0) : Infinity);
+  }
+  return best;
+}
+
 function pickaxeTier(bot) {
   let best = 0;
   for (const item of bot.inventory.items()) {
@@ -373,7 +385,7 @@ async function equipBestTool(bot, block) {
   }
 }
 
-module.exports = {
+module.exports = { pickaxeDurability,
   Task,
   Cancelled,
   navigate,

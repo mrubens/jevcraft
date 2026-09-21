@@ -2,7 +2,7 @@
 
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { navigate, surveyRoute, equipBestTool, pickaxeTier, countOf, shakeLoose } = require('./skills');
+const { navigate, surveyRoute, equipBestTool, pickaxeTier, pickaxeDurability, countOf, shakeLoose } = require('./skills');
 const { MINEABLE, TOOL_TIERS } = require('./plan');
 const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
@@ -89,6 +89,16 @@ async function withUsableWorkstations(bot, task, stock, requested = []) {
   return available;
 }
 
+// The pickaxe that goes down must have enough left to come back up.
+const SPARE_PICKAXE_DURABILITY = 24;
+const WOOD = /_log$|_planks$|^stick$/;
+const woodCarried = bot => bot.inventory.items().filter(i => WOOD.test(i.name)).reduce((n, i) => n + i.count, 0);
+const logsCarried = bot => bot.inventory.items().filter(i => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+// A pickaxe about to break with no wood in the pockets is a bot sealed in its
+// own shaft: the exit needs a tool and the tool needs sticks. The dream run
+// went down with three pickaxes at six or seven durability and no wood.
+const descentSuppliesLow = bot => pickaxeDurability(bot) < SPARE_PICKAXE_DURABILITY && woodCarried(bot) < 2;
+
 async function prepareExpeditionStep(bot, task, goal, save) {
   goal.preparingExpedition = true;
   if (bot.game.difficulty && bot.game.difficulty !== 'peaceful' && foodSupply(bot) < 12) {
@@ -96,10 +106,15 @@ async function prepareExpeditionStep(bot, task, goal, save) {
     save(); return false;
   }
   if (pickaxeTier(bot) < 2) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return false; }
-  if (countOf(bot, 'oak_log') < 4) { await acquireStep(bot, task, 'oak_log', 4, goal, save); return false; }
+  if (pickaxeDurability(bot) < SPARE_PICKAXE_DURABILITY) { await acquireStep(bot, task, 'stone_pickaxe', countOf(bot, 'stone_pickaxe') + 1, goal, save); return false; }
+  if (logsCarried(bot) < 4) {
+    // The trees that were seen here, not oak by name.
+    const species = (bot._catalogObservation?.nearby || []).find(name => /_log$/.test(name)) || 'oak_log';
+    await acquireStep(bot, task, species, countOf(bot, species) + 4 - logsCarried(bot), goal, save); return false;
+  }
   if (!countOf(bot, 'crafting_table')) { await acquireStep(bot, task, 'crafting_table', 1, goal, save); return false; }
   goal.expeditionReady = true; delete goal.preparingExpedition;
-  goal.step = { action: 'prepared_expedition', minimumPickaxeTier: 2, supplies: { oak_log: 4, crafting_table: 1 }, foodPoints: foodSupply(bot) };
+  goal.step = { action: 'prepared_expedition', minimumPickaxeTier: 2, supplies: { logs: 4, crafting_table: 1 }, pickaxeDurability: pickaxeDurability(bot), foodPoints: foodSupply(bot) };
   save(); return true;
 }
 
@@ -426,17 +441,24 @@ async function mine(bot, task, step, goal, save, selected) {
 }
 
 async function surfaceStep(bot, task, goal, save) {
-  await returnToSurface(bot, task, goal, save, { dig, navigate, prepareTool: async () => {
+  // An exit is dug for the way out, not for the drops: a worn pickaxe is
+  // used until it breaks and bare hands finish the climb. Slow beats sealed
+  // in, and sealed in is where the dream run sat with three pickaxes at six
+  // durability and no wood for a fourth.
+  const exitDig = (b, t, p, options = {}) => dig(b, t, p, { ...options, requireDrops: false });
+  await returnToSurface(bot, task, goal, save, { dig: exitDig, navigate, prepareTool: async () => {
     if (pickaxeTier(bot) >= 1) return true;
     // Gravel, dirt and sand overhead come away by hand; no tool to bootstrap.
     if (handDiggableExit(bot)) return true;
     if (await bootstrapPickaxe(bot, task, goal, save, { mine: mineAtSource })) return false;
     const plan = catalogPlan(bot, 'stone_pickaxe', 1, planningInventory(bot), goal);
     const step = plan[0];
-    if (!step) return true;
-    // Craft from carried wood/stone. Recursing into surface log gathering here
-    // would ask the same recovery to provide its own missing prerequisites.
-    if (step.action === 'mine' && isSurfaceResource(step.block)) throw new Blocked(`Cannot excavate a surface exit: need wood for a replacement pickaxe; no usable pickaxe or carried ingredients`);
+    // Craft from carried wood/stone. When the missing ingredient is wood, which
+    // only the surface has, climb with what is in hand rather than wait here.
+    if (!step || (step.action === 'mine' && isSurfaceResource(step.block))) {
+      if (!goal.surfaceReturn?.byHand) { goal.surfaceReturn ||= {}; goal.surfaceReturn.byHand = true; save(); bot.chat?.("No pickaxe worth the name and no wood for one, so I'm digging out by hand."); }
+      return true;
+    }
     await executeAcquisition(bot, task, step, goal, save);
     return false;
   } });
@@ -1430,11 +1452,11 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
   // Catalog routing replaced the old named concrete workflow. Preserve its
   // tool/wood/table preparation for any request whose recipe needs a descent,
   // while leaving nearby surface pickups and Creative inventory immediate.
-  if (!goal.expeditionReady && bot.game.gameMode !== 'creative') {
+  if ((!goal.expeditionReady || descentSuppliesLow(bot)) && bot.game.gameMode !== 'creative') {
     const underground = plan.find(s => s.action === 'mine' && Number.isFinite(s.depth) && s.depth < bot.entity.position.y - 8);
-    const withinReach = underground && await reachableLocalMine(bot, task, await miningCandidates(bot, task, underground, goal));
+    const withinReach = underground && !descentSuppliesLow(bot) && await reachableLocalMine(bot, task, await miningCandidates(bot, task, underground, goal));
     if (goal.preparingExpedition || (underground && !withinReach)) {
-      goal.preparingExpedition = true; save();
+      goal.preparingExpedition = true; delete goal.expeditionReady; save();
       await prepareExpeditionStep(bot, task, goal, save);
       return false;
     }

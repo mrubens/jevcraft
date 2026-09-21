@@ -74,3 +74,23 @@ test('Normal expeditions cannot descend with tools and spare wood but no safe fo
   assert.equal(goal.expeditionReady, true);
   assert.equal(goal.step.foodPoints, 12);
 });
+
+test('a pickaxe about to break with no wood in the pockets reopens expedition prep before the descent', async () => {
+  const bot = fixture({ stone_pickaxe: 1, cobblestone: 64, crafting_table: 1, cooked_beef: 4 });
+  bot.inventory.items()[0].durabilityUsed = registry.itemsByName.stone_pickaxe.maxDurability - 6;
+  const goal = { kind: 'obtain', item: 'purple_concrete', count: 32, request: 'get 32 purple concrete', expeditionReady: true };
+  await runGoal(bot, new Task('test', goal.request), goal, { save() {} }, { survival, maxSteps: 1 });
+  assert.equal(goal.preparingExpedition, true);
+  assert.notEqual(goal.expeditionReady, true);
+  assert.equal(goal.step.drops, 'oak_log', 'a spare pickaxe needs sticks, sticks need wood');
+});
+
+test('a spare pickaxe in the pockets keeps a ready expedition ready', async () => {
+  const { runGoal: run } = require('../src/work');
+  const bot = fixture({ stone_pickaxe: 2, cobblestone: 64, crafting_table: 1, oak_log: 4, cooked_beef: 4 });
+  bot.inventory.items()[0].durabilityUsed = registry.itemsByName.stone_pickaxe.maxDurability - 6;
+  const goal = { kind: 'obtain', item: 'purple_concrete', count: 32, request: 'get 32 purple concrete', expeditionReady: true };
+  await run(bot, new Task('test', goal.request), goal, { save() {} }, { survival, maxSteps: 1 });
+  assert.equal(goal.expeditionReady, true);
+  assert.equal(goal.preparingExpedition, undefined);
+});
