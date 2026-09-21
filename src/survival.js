@@ -544,15 +544,18 @@ class Survival {
       const onMessage = message => { const key = message?.json?.translate || message?.translate || String(message || ''); if (/bed\.(not_safe|too_far_away|obstructed|occupied|no_sleep)/.test(key)) refused = key; };
       bot.on?.('message', onMessage);
       try {
+        const before = bot.time?.timeOfDay;
         await bot.sleep(bot.blockAt(site.foot));
-        const started = Date.now();
-        while (Date.now() - started < 4000 && !bot.isSleeping && !refused) { task.check(); await sleep(100); }
-        if (refused) throw new Error(`The server refused the sleep: ${refused}`);
-        if (!bot.isSleeping) throw new Error('The sleep was not confirmed');
-        const deadline = Date.now() + 45000;
-        while (Date.now() < deadline && bot.isSleeping && sleepable(bot)) { task.check(); await sleep(250); }
-        slept = !sleepable(bot);
+        // The ground truth is the clock: with the only survival player in
+        // bed the server jumps to morning within a hundred ticks. The
+        // sleeping flag is a hint, and a refusal is only final once the
+        // clock has had its chance.
+        const started = Date.now(), jumped = () => !sleepable(bot) || bot.time?.timeOfDay < before;
+        while (Date.now() - started < 15000 && !jumped() && !(refused && Date.now() - started > 6000)) { task.check(); await sleep(200); }
+        slept = jumped();
         if (bot.isSleeping) { try { await bot.wake(); } catch (_) {} }
+        if (!slept && refused) throw new Error(`The server refused the sleep: ${refused}`);
+        if (!slept) throw new Error('The night did not pass in bed');
       } finally { bot.removeListener?.('message', onMessage); }
     } catch (err) { task.check(); this.state.sleepFailedAt = Date.now(); this.state.lastSleepError = err.message; this.report(goal, save, { action: 'sleep_failed', reason: err.message }); }
     finally {
@@ -680,7 +683,10 @@ class Survival {
     // Sleep is an option where the bed fits: two level cells beside the
     // feet. In a one-wide shaft it is not, and the shelter path digs in.
     if (needsShelter && bedReady && sleepable(bot) && (homeBed || bedSite(bot)) && !threats(bot).some(t => t.distance < 10)) tree.sleep_in_bed = { description: 'Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.', run: () => this.sleepStep(task, goal, save) };
-    if (needsShelter) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.', run: () => this.refugeStep(task, goal, save) };
+    // A bed within reach makes a shelter the worse answer in every case, so
+    // it is not offered beside one: the question that remains at night is
+    // sleep or stay up, which is the one worth asking.
+    if (needsShelter && !tree.sleep_in_bed) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.', run: () => this.refugeStep(task, goal, save) };
     if (needsFood && !(night(bot) && needsShelter)) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
       children: offWorld && this.actions.returnOverworld ? { return_for_food: { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked; nothing here is safe to eat.',
         run: async () => { goal.survivalAction = { action: 'return_for_food', at: new Date().toISOString() }; save(); await this.actions.returnOverworld(bot, task, goal, save); } } }
@@ -693,6 +699,7 @@ class Survival {
     // Without Jev, shelter comes before food and food before the request:
     // the order a careful player keeps when nobody is weighing the trade.
     const fallback = children => ['sleep_in_bed', 'secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
+    if (needsShelter && tree.sleep_in_bed && Object.keys(tree).length === 1) { await tree.sleep_in_bed.run(); onStep(goal); return true; }
     const decision = await this.decide(task, goal, save, { state, tree, fallback, kind: 'survival', interrupt: () => checkThreats(bot),
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);
