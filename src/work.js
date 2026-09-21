@@ -573,10 +573,22 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
   const ore = /_ore$/.test(step.block || '') || step.block === 'ancient_debris';
   const startCount = countOf(bot, step.drops);
   const satisfied = () => ore ? countOf(bot, step.drops) >= Math.max(startCount + (step.count || 1), 32) || countOf(bot, step.drops) >= 32 : countOf(bot, step.drops) >= startCount + (step.count || 1);
-  let mined = 0;
-  for (const p of candidates.slice(0, 24)) {
+  // The pool is re-read as the vein opens up: the blocks behind the first
+  // three are not in the list until the first three are gone. Ten blocks
+  // from where the bot stands is the leash; three rescans the budget.
+  let mined = 0, rescans = 0, pool = candidates.slice(0, 24);
+  while (true) {
     task.check(); checkAir(bot);
-    if (mined && (satisfied() || p.distanceTo(bot.entity.position) > 6)) return;
+    if (mined && satisfied()) return;
+    let p = pool.shift();
+    while (p && mined && p.distanceTo(bot.entity.position) > 10) p = pool.shift();
+    if (!p) {
+      if (!ore || !mined || rescans++ >= 3) break;
+      const here = bot.entity.position.clone();
+      pool = (await miningCandidates(bot, task, step, goal)).filter(q => q.distanceTo(here) <= 10).sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+      if (!pool.length) break;
+      continue;
+    }
     const before = countOf(bot, step.drops);
     let access;
     try {
