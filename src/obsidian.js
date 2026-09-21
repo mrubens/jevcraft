@@ -95,7 +95,7 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   const wanted = () => Math.max(0, target - countOf(bot, 'obsidian'));
   if (!wanted()) return;
   const origin = works.lastPour ? at(works.lastPour) : bot.entity.position;
-  const crust = safeCrust(bot, origin);
+  const crust = safeCrust(bot, origin, { distance: works.lastPour ? 12 : 32 });
   if (crust.length) {
     for (const p of crust.slice(0, 8)) {
       if (!wanted()) return;

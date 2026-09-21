@@ -153,10 +153,11 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
         steps.push({ action: 'fill_bucket', item: name, count: missing, consumes: { bucket: missing }, produces: { water_bucket: missing } });
         add(name, missing);
       } });
-      // Between mining an observed deposit (5) and searching for one that is
-      // not (12): a lava pool is far likelier to be at hand than natural
-      // obsidian, and the water bucket is already in the kit.
-      if (name === 'obsidian') methods.push({ cost: 9, run: () => {
+      // Ahead of mining a deposit, observed (5) or not (12): the lava step
+      // mines any obsidian that has nothing molten against it, natural or
+      // just made, and pours water where there is none. Plain ore mining
+      // would leave a crust beside lava for the lava to flow into.
+      if (name === 'obsidian') methods.push({ cost: 4, run: () => {
         acquire('diamond_pickaxe', 1); acquire('water_bucket', 1);
         const remaining = needed - have(name);
         if (remaining <= 0) return;

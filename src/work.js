@@ -354,6 +354,10 @@ async function miningCandidates(bot, task, step, goal) {
     useExtraInfo: b => (!step.properties || Object.entries(step.properties).every(([key, value]) => String(b.getProperties()[key]) === String(value))) &&
       (step.minimumY === undefined || b.position.y >= step.minimumY) && !reservedForConstruction(goal, b.position) &&
       (step.drops !== 'dirt' || (b.position.y >= bot.entity.position.floored().y - 1 && air(bot.blockAt(b.position.offset(0, 1, 0))))) &&
+      // Opening a block with lava against it lets the lava in: the drop
+      // burns and the bot walks into the cell to collect it. Diamonds beside
+      // a lava lake are left for a pour of water first, not dug into.
+      !faces.some(f => bot.blockAt(b.position.plus(f))?.name === 'lava') &&
       (foliageMiningCandidate(bot, b.position) || faces.some(f => {
         const neighbor = bot.blockAt(b.position.plus(f));
         return air(neighbor) || neighbor?.name === 'water';

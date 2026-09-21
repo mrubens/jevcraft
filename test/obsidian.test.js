@@ -108,6 +108,6 @@ test('the plan makes obsidian from lava with a diamond pickaxe and a water bucke
   const last = plan.at(-1);
   assert.equal(last.action, 'make_obsidian'); assert.equal(last.count, 10);
   assert.deepEqual(last.requires, { diamond_pickaxe: 1, water_bucket: 1 });
-  const observed = planCatalog(registry, 'obsidian', 2, { diamond_pickaxe: 1 }, { nearby: ['obsidian'] });
-  assert.equal(observed.at(-1).action, 'mine', 'an observed deposit is still cheaper than pouring');
+  const observed = planCatalog(registry, 'obsidian', 2, { diamond_pickaxe: 1, water_bucket: 1 }, { nearby: ['obsidian'] });
+  assert.equal(observed.at(-1).action, 'make_obsidian', 'an observed deposit goes through the same step, which mines only crust with no lava against it');
 });
