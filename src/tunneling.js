@@ -66,8 +66,12 @@ function stairOptions(bot, goal, target) {
 async function tunnelStep(bot, task, goal, save, target, { dig, navigate }) {
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
+  // A spent budget is a shaft that has wandered, not a reason to stop: the
+  // count outlived seven climbs of the dream run and then refused every
+  // dig. Start a fresh shaft from here with a clean map of visited cells.
   if (tunnel.steps >= 512) {
-    const err = new Error('Underground search budget exhausted after 512 staircase steps'); err.name = 'Blocked'; throw err;
+    Object.assign(tunnel, { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {}, retreats: 0, retreatVisited: {}, rounds: (tunnel.rounds || 0) + 1 });
+    delete tunnel.workPosition; save();
   }
   const choice = stairOptions(bot, goal, target)[0];
   if (!choice) {

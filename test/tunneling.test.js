@@ -253,3 +253,15 @@ test('a body leaning into the target cell is detected, and clear once it stands 
   assert.equal(hitboxIntrudes(bot, new Vec3(-508, 15, 138)), false);
   assert.equal(hitboxIntrudes(bot, new Vec3(-507, 17, 138)), false, 'above head height is clear');
 });
+
+test('a shaft that has spent its staircase budget starts over from here instead of refusing', async () => {
+  const bot = world(); const dug = [];
+  bot.pathfinder = { setGoal() {}, goto: async goal => { bot.entity.position = new Vec3(goal.x + 0.5, goal.y, goal.z + 0.5); } };
+  bot.game = { gameMode: 'survival' };
+  const goal = { tunnel: { entrance: { x: 0, y: 70, z: 0 }, steps: 512, visited: { a: 40 }, workPosition: { x: 9, y: 9, z: 9 } } };
+  const dig = async (b, t, p) => { dug.push(`${p}`); bot.blocks.set(`${p}`, { name: 'air', position: p, boundingBox: 'empty', diggable: false }); };
+  await tunnelStep(bot, new Task('spent'), goal, () => {}, new Vec3(20, 60, 0), { dig, navigate: async (b, t, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } });
+  assert.equal(goal.tunnel.rounds, 1);
+  assert(goal.tunnel.steps >= 1 && goal.tunnel.steps < 10, 'a fresh count');
+  assert.equal(goal.tunnel.workPosition !== undefined, true, 'and a new worksite');
+});
