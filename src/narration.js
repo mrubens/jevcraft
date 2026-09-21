@@ -29,6 +29,7 @@ const SURVIVAL = {
   search_food: 'Looking for food nearby.',
   return_for_food: 'Nothing to eat here. Heading back through the portal for food.',
   cook_food: 'Cooking food.',
+  go_home_for_food: 'Heading home for something to eat.',
   prepare_hunting_weapon: 'Making a weapon so I can hunt.',
   reach_shore: 'Swimming for the shore.',
   surface: 'Coming up for air.',
@@ -74,12 +75,29 @@ function stepLine(goal, step, decision) {
     case 'refuel_furnace': return 'Refuelling the furnace.';
     case 'return_overworld': return 'Heading back to the Overworld.';
     case 'return_to_portal': return 'Walking back to my portal.';
+    case 'home_site': return step.origin ? `Picking a spot for a home base beside the water at ${step.origin.x}, ${step.origin.z}.` : 'Looking for level ground beside water for a home base.';
+    case 'return_home': return 'Walking back to the base.';
+    case 'gather_wool': return 'Getting wool for a bed.';
+    case 'place_bed': return 'Setting up a bed at the base.';
+    case 'claim_bed': return 'Using the bed so I respawn at home.';
+    case 'till': return 'Tilling the plot.';
+    case 'plant': return 'Planting wheat.';
+    case 'harvest': return 'Harvesting the wheat.';
+    case 'bake': return `Baking ${step.loaves ? `${step.loaves} ` : ''}bread.`;
+    case 'build_pen': return 'Fencing the cow pen.';
+    case 'lure_cows': return 'Leading cows into the pen.';
+    case 'breed_cows': return 'Breeding the cows.';
+    case 'take_steak': return 'Taking a steak from the pen.';
     case 'idle': return {
       cook_food: `Quiet for now, so I'll cook the ${name(step.item).replace(/^(cooked|baked) /, '')}.`,
       stone_tools: `Quiet for now, so I'll make a ${name(step.item)}.`,
       stock_wood: 'Quiet for now, so I\'ll stock up on wood.',
       torches: 'Quiet for now, so I\'ll make some torches.',
       long_game: `Nothing needs me right now, so I'll work on the long game: ${name(step.phase)}.`,
+      tend_farm: "Quiet for now, so I'll tend the farm.",
+      harvest_and_bake: "Quiet for now, so I'll harvest the wheat and bake some bread.",
+      breed_cows: "Quiet for now, so I'll breed the cows.",
+      lure_cows: "Quiet for now, so I'll bring some cows into the pen.",
     }[step.choice] || null;
     case 'game_progression': return `Working toward beating the game: ${name(step.phase)}.`;
     default: return null;

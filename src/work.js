@@ -39,6 +39,7 @@ const { prepareEndSupplies } = require('./end-supplies');
 const { collectWater } = require('./water');
 const { makeObsidian } = require('./obsidian');
 const { tidyInventory } = require('./inventory-tidy');
+const { homeStep, homeChores } = require('./home-base');
 const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
 const { batchPlan, remainingOutputs } = require('./batch-plan');
@@ -1837,6 +1838,9 @@ function idleOptions(bot, goal) {
     const species = nearby.length ? bot.blockAt(nearby[0])?.name : null;
     if (species) options.stock_wood = { description: `Stock up to 16 logs from the ${species.replaceAll('_', ' ')} trees nearby (${logs} carried); wood is needed for tools, fuel and repairs.`, item: species, count: 16 - logs };
   }
+  // The base's chores, each one already checked feasible: a plot to tend,
+  // wheat to bake, cows to lead in or breed.
+  Object.assign(options, homeChores(bot, goal));
   if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.`, item: 'torch', count: 4 };
   // The standing dream. With nothing asked and nothing urgent, the next
   // rung of the beat-the-game ladder is always on offer; it is a long walk
@@ -1848,7 +1852,7 @@ function idleOptions(bot, goal) {
   return options;
 }
 
-async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acquire = acquireStep, handlers } = {}) {
+async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acquire = acquireStep, handlers, actions } = {}) {
   if (!client || bot.game.gameMode === 'creative') return false;
   if ((bot.health ?? 20) < 14 || (bot.food ?? 20) < 12 || immediateThreat(bot)) return false;
   if (bot.game.dimension === 'overworld' && bot.time?.timeOfDay >= 9500) return false;
@@ -1859,17 +1863,22 @@ async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acqu
     tree[key] = { description: option.description, run: async () => {
       goal.step = { action: 'idle', choice: key, item: option.item, count: option.count, phase: option.phase }; save(); narrate(bot, goal);
       if (key === 'long_game') await gameStep(bot, task, goal, save, handlers || gameHandlers(bot, client));
+      else if (option.run) await option.run(bot, task, goal, save, actions || homeActions());
       else await acquire(bot, task, option.item, option.count, goal, save);
     } };
   }
   const state = { situation: 'Between player requests, with shelter and food already sufficient. Choose how to spend spare daylight.',
     timeOfDay: bot.time?.timeOfDay, daylightTicksRemaining: Math.max(0, 9500 - (bot.time?.timeOfDay || 0)),
     health: bot.health, food: bot.food, foodReserve: foodSupply(bot), inventory: planningInventory(bot),
-    retainedRequest: goal.retainedRequest || null, home: goal.blueprint ? 'A house is built nearby.' : 'No house yet.' };
+    retainedRequest: goal.retainedRequest || null, home: goal.survival?.home ? `A home base with a plot, a pen and a bed stands at ${goal.survival.home.origin.x}, ${goal.survival.home.origin.z}.` : goal.blueprint ? 'A house is built nearby.' : 'No house yet.' };
   await decideAction(bot, task, goal, save, client, onStep, tree, state);
   return true;
 }
 
+
+// What the home base needs from the executor: travel, placing, digging,
+// the planner for anything craftable, and a search for sheep or cows.
+const homeActions = () => ({ acquireStep, navigate, place, dig, explore });
 
 // The executors the game-completion ladder can call, shared by the win
 // objective and by idle dream between requests.
@@ -1881,6 +1890,7 @@ function gameHandlers(bot, decisionClient) {
         exit_end: (bot, task, goal, save) => exitEnd(bot, task, goal, save, { navigate }),
         prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
         prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
+        home: (bot, task, goal, save, stage) => homeStep(bot, task, goal, save, stage, homeActions()),
         find_stronghold: (bot, task, goal, save) => findStronghold(bot, task, goal, save, {
           navigate, explore, surfaceStep,
           tunnel: async (bot, task, goal, save, target, resource) => {

@@ -1,4 +1,5 @@
 'use strict';
+const { homeStage } = require('./home-base');
 
 const dimension = bot => String(bot.game?.dimension || '').replace(/^minecraft:/, '').replace(/^the_/, '');
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
@@ -74,7 +75,7 @@ function verifyGameCompletion(bot, goal) {
 // Nether" as a first stage hid hours of preparation behind one label.
 const TIERS = ['wooden', 'stone', 'iron', 'diamond', 'netherite'];
 const tierOf = name => { const m = /^(\w+)_(pickaxe|sword|axe)$/.exec(name); return m ? TIERS.indexOf(m[1]) + 1 : 0; };
-function preparationStage(bot) {
+function preparationStage(bot, goal = {}) {
   // Equipped gear lives outside inventory.items(): armour in slots 5 to 8,
   // the shield in the off-hand at 45. A shield on the arm is not a missing shield.
   const equipped = [5, 6, 7, 8, 45].map(slot => bot.inventory.slots?.[slot]).filter(Boolean);
@@ -95,6 +96,12 @@ function preparationStage(bot) {
   if (!carried.includes('shield')) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
   if (best('sword') < 3) return another('iron_sword');
   if (!carried.includes('bucket') && !carried.includes('water_bucket')) return { phase: 'bucket', action: 'acquire', item: 'bucket', count: 1 };
+  // Home before the long descents: a bed so a death costs a walk from the
+  // base rather than from world spawn, a plot and a pen so food is a known
+  // distance away. The walkthrough order every speedrunner keeps: iron
+  // tools, then a base and a bed, then the mine.
+  const home = homeStage(bot, goal);
+  if (home) return { ...home, action: 'home', home };
   // Armour is four rungs, not one label. The Nether trip needs all of it,
   // and each piece is a visible step rather than "reach the Nether" for an
   // hour while twenty-four ingots accumulate.
@@ -114,7 +121,7 @@ function nextGameStage(bot, goal) {
   // Early game only: once any Nether or End supply is in hand, the run has
   // moved past preparation and the later stages own what to fetch next.
   const supplies = ['ender_eye', 'blaze_rod', 'blaze_powder', 'ender_pearl'].reduce((n, name) => n + count(bot, name), 0);
-  if (where === 'overworld' && !m.nether_entered && !supplies) { const prep = preparationStage(bot); if (prep) return prep; }
+  if (where === 'overworld' && !m.nether_entered && !supplies) { const prep = preparationStage(bot, goal); if (prep) return prep; }
   if (where === 'end') return m.dragon_defeated ? { phase: 'return_alive', action: 'exit_end' } : { phase: 'defeat_dragon', action: 'fight_dragon' };
   // Survey throws deliberately spend eyes. Do not send Jev back to the Nether
   // after each throw while it still has a spare and twelve portal eyes. A
@@ -149,6 +156,10 @@ async function gameStep(bot, task, goal, save, actions) {
     progress.milestones.returned_alive = { at: Date.now(), dimension: 'overworld', position: position(bot) }; save(); return true;
   }
   if (stage.action === 'acquire') await actions.acquireStep(bot, task, stage.item, stage.count, goal, save);
+  else if (stage.action === 'home') {
+    if (!actions.home) throw Object.assign(new Error('Game progression is blocked at the home base: the home action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });
+    await actions.home(bot, task, goal, save, stage.home);
+  }
   else if (stage.action === 'acquire_set') await (actions.acquireSetStep || (async (b, t, items, g, sv) => { for (const item of items) if (!await actions.acquireStep(b, t, item, 1, g, sv)) return false; return true; }))(bot, task, stage.items, goal, save);
   else {
     // Gather combat supplies in the Overworld before a first Nether trip;

@@ -5,6 +5,7 @@ const { threats, checkThreats } = require('./danger');
 const { surfaceMovement } = require('./surface');
 const { knowledge } = require('./knowledge');
 const { surveyRoute } = require('./skills');
+const { homeFood, eatFromHome } = require('./home-base');
 const vanilla = require('../data/vanilla-26.1.json');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Raw chicken is an ingredient, never edible reserve. Its cooking dependency
@@ -153,6 +154,20 @@ async function forageChoices(bot, task, goal, save, actions, state) {
       } finally { task.interruptCheck = undefined; }
     } };
   }
+  // Bread and steak at the base are a reserve within reach: when the base
+  // is close enough, walking home replaces the wander for animals, and it
+  // stands beside any hunt that is actually in view for Jev to weigh.
+  const home = homeFood(bot, goal);
+  if (home) choices.go_home_for_food = {
+    description: { action: 'Walk back to the home base and eat from its stores: harvest the ripe wheat and bake bread, or take a steak from the cow pen (the breeding pair is kept).',
+      distance: home.distance, loavesAvailable: home.loaves, steaksAvailable: home.steaks, plotLoaded: !home.unloaded },
+    run: async () => {
+      goal.survivalAction = { action: 'go_home_for_food', distance: home.distance, at: new Date().toISOString() }; save();
+      task.interruptCheck = () => checkThreats(bot);
+      try { await eatFromHome(bot, task, goal, save, actions); }
+      finally { task.interruptCheck = undefined; }
+    },
+  };
   if (!Object.keys(choices).length) choices.search_food = {
     description: 'Walk to another observed dry area to search for passive animals; avoid remembered failed targets.',
     run: async () => {
