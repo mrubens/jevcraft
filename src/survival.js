@@ -378,7 +378,10 @@ class Survival {
     // surface, where the animals are. Underground it is worth the climb only
     // once hunger is real: the dream run was leaving its iron shaft at 18 of
     // 20 to walk the surface for a chicken.
-    const hungerTrigger = surfaceObserver(bot)(bot.entity.position) ? 18 : 12;
+    // Off the Overworld there is nothing to hunt and nowhere to climb to:
+    // food is a reason to go back through the portal, and only real hunger.
+    const offWorld = !/overworld/.test(String(bot.game.dimension || 'overworld'));
+    const hungerTrigger = offWorld ? 8 : surfaceObserver(bot)(bot.entity.position) ? 18 : 12;
     const needsFood = foodSupply(bot) < desiredFood && (bot.food <= hungerTrigger || goal.stockFood || expeditionFood ||
       (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful'));
     if (!needsShelter && !needsFood) return false;
@@ -396,7 +399,9 @@ class Survival {
     };
     if (needsShelter) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.', run: () => this.refugeStep(task, goal, save) };
     if (needsFood && !(night(bot) && needsShelter)) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
-      children: await forageChoices(bot, task, goal, save, this.actions, this.state) };
+      children: offWorld && this.actions.returnOverworld ? { return_for_food: { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked; nothing here is safe to eat.',
+        run: async () => { goal.survivalAction = { action: 'return_for_food', at: new Date().toISOString() }; save(); await this.actions.returnOverworld(bot, task, goal, save); } } }
+        : await forageChoices(bot, task, goal, save, this.actions, this.state) };
     if (!this.client) {
       if (needsShelter) await tree.secure_shelter.run();
       else await Object.values(tree.obtain_food.children)[0].run();

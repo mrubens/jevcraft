@@ -1654,7 +1654,7 @@ async function netherStep(bot, task, goal, save) {
 }
 
 function createSurvival(bot, options) {
-  return new Survival(bot, { acquireStep, dig, place, navigate, explore }, options);
+  return new Survival(bot, { acquireStep, dig, place, navigate, explore, returnOverworld: returnFromNether }, options);
 }
 
 async function returnFromNether(bot, task, goal, save) {

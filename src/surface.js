@@ -122,7 +122,13 @@ function beginSurfaceAscent(bot, goal, candidates) {
   return true;
 }
 
+// The Nether and the End have no surface to return to: a bedrock roof is
+// not sky, and the dream run spent its first Nether minutes digging up
+// toward it for a food search. Off the Overworld, anywhere is the surface.
+const hasSurface = bot => /overworld/.test(String(bot.game?.dimension || 'overworld'));
+
 function surfaceReturnComplete(bot, goal, isSurface = surfaceObserver(bot)) {
+  if (!hasSurface(bot)) return true;
   return isSurface(bot.entity.position) && bot.entity.position.y >= (goal.surfaceReturn?.minimumY ?? -Infinity);
 }
 
@@ -131,6 +137,7 @@ function surfaceReturnComplete(bot, goal, isSurface = surfaceObserver(bot)) {
 // surface landing using ordinary mining/scaffolding capabilities. Keep the
 // lower bound local to prevent this recovery from becoming a deeper cave trip.
 async function returnToSurface(bot, task, goal, save, actions = {}) {
+  if (!hasSurface(bot)) { delete goal.surfaceReturn; save(); return; }
   const isSurface = surfaceObserver(bot), start = bot.entity.position.floored();
   if (surfaceReturnComplete(bot, goal, isSurface)) { if (goal.surfaceReturn) { delete goal.surfaceReturn; save(); } return; }
   const movements = bot.pathfinder.movements, previous = movements.allowedPosition;
@@ -222,4 +229,4 @@ function handDiggableExit(bot, { origin = bot.entity.position.floored(), maxHeig
   return solids > 0 && surfaceObserver(bot)(new Vec3(x + .5, origin.y + 2 + maxHeight + 1, z + .5));
 }
 
-module.exports = { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };
+module.exports = { hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };
