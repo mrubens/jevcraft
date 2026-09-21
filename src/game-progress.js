@@ -115,6 +115,13 @@ function preparationStage(bot, goal = {}) {
     .map(piece => `iron_${piece}`);
   if (missing.length) return { phase: missing.length === 4 ? 'iron_armour' : `iron_${missing[0].replace('iron_', '')}`, action: 'acquire_set', item: missing[0], items: missing, count: missing.length };
   if (!carried.includes('golden_boots')) return { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
+  // Most of the run's deaths were arrows: skeletons in the caves, crossbow
+  // piglins in the Nether, and a bot that could only answer at arm's length.
+  // A bow and a quiver before the portal, so a shooter at ten blocks is a
+  // target rather than a reason to run. A bow about to break is no bow.
+  if (!sound.includes('bow')) return { phase: 'bow', action: 'acquire', item: 'bow', count: carried.filter(n => n === 'bow').length + 1 };
+  const arrows = bot.inventory.items().filter(i => i.name === 'arrow').reduce((n, i) => n + (i.count || 1), 0);
+  if (arrows < 16) return { phase: 'arrows', action: 'acquire', item: 'arrow', count: 16 };
   return null;
 }
 
