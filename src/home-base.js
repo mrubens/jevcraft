@@ -6,6 +6,7 @@ const { checkAir } = require('./vitals');
 const { checkThreats } = require('./danger');
 const { countOf } = require('./skills');
 const stash = require('./home-stash');
+const { knownVillages, BED_REACH } = require('./villages');
 
 // A home base: one spot per world, on level ground beside water, with a
 // wheat plot, a fenced cow pen and a bed the bot has slept in. The dream
@@ -74,9 +75,13 @@ function layout(site) {
 
 const inside = (interior, p) => p && p.x >= interior.min.x && p.x < interior.max.x + 1 && p.z >= interior.min.z && p.z < interior.max.z + 1 && Math.abs(p.y - interior.min.y) <= 1.5;
 
-// Where the base should be near: the first Overworld portal the bot has
-// used, else the house it built, else where it stands.
+// Where the base should be near: a remembered village within reach (its
+// bell or centre, so the bed and the stash end up among the houses), else
+// the first Overworld portal the bot has used, else the house it built,
+// else where it stands.
 function baseAnchor(bot, goal) {
+  const village = knownVillages(bot, goal, BED_REACH)[0]?.village;
+  if (village) { const centre = village.bell || village; return { kind: 'village', x: centre.x, y: centre.y, z: centre.z }; }
   const portal = (goal.portals || []).find(p => p.dimension === 'overworld');
   if (portal) return { kind: 'portal', x: portal.x, y: portal.y, z: portal.z };
   const house = (goal.survival?.shelters || []).find(s => s.kind === 'house' && s.dimension === bot.game.dimension);

@@ -41,6 +41,7 @@ const { makeObsidian } = require('./obsidian');
 const { tidyInventory } = require('./inventory-tidy');
 const { homeStep, homeChores , gatherWool, woolCarried } = require('./home-base');
 const { stashValuables } = require('./home-stash');
+const { noticeVillage, takeVillageBed } = require('./villages');
 const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
 const { batchPlan, remainingOutputs } = require('./batch-plan');
@@ -1954,6 +1955,8 @@ function gameHandlers(bot, decisionClient) {
         prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
         prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
         home: (bot, task, goal, save, stage) => homeStep(bot, task, goal, save, stage, homeActions()),
+        // A bed from a remembered village: dug up, it drops itself.
+        village_bed: (bot, task, goal, save, stage) => takeVillageBed(bot, task, goal, save, stage.village, homeActions()),
         gather_wool: async (bot, task, goal, save) => {
           const search = goal.bedSearch ||= { since: Date.now(), wool: woolCarried(bot).total };
           if (woolCarried(bot).total > search.wool) { search.since = Date.now(); search.wool = woolCarried(bot).total; }
@@ -1988,6 +1991,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
         if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
       }
       await keepRoom(bot, task, goal);
+      noticeVillage(bot, goal, save);
       const acted = await survival.step(task, goal, save, onStep);
       if (!acted) await idleWork(bot, task, goal, save, decisionClient, onStep);
       failures = 0; delete goal.lastError; save(); onStep(goal); narrate(bot, goal);
@@ -2023,6 +2027,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     updateDigCapabilities(bot);
     // Say what the last step started on. Here rather than at the loop's end,
     // because survival and continued work leave the loop body early.
+    noticeVillage(bot, goal, save);
     narrate(bot, goal);
     const before = JSON.stringify(inventory(bot));
     const constructionBefore = constructionObservation(bot, goal);

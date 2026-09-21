@@ -1,6 +1,7 @@
 'use strict';
 const { homeStage, bedCarried, woolCarried } = require('./home-base');
 const { restockStage, rungWants } = require('./home-stash');
+const { villageBedRung } = require('./villages');
 
 const dimension = bot => String(bot.game?.dimension || '').replace(/^minecraft:/, '').replace(/^the_/, '');
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
@@ -111,6 +112,10 @@ function preparationRung(bot, goal = {}) {
   if (!carried.some(n => /_bed$/.test(n)) && !(goal.bedSearch?.deferredUntil > Date.now())) {
     const wool = woolCarried(bot);
     if (wool.count >= 3) return { phase: 'bed', action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
+    // A remembered village with beds is a walk of known length; a sheep
+    // is a search. The village bed comes first when one is within reach.
+    const village = villageBedRung(bot, goal);
+    if (village) return village;
     return { phase: 'bed', action: 'gather_wool', count: 3 - wool.count };
   }
   if (best('pickaxe') < 3) return another('iron_pickaxe');
@@ -176,6 +181,9 @@ function nextGameStage(bot, goal) {
   }
   if (where === 'nether') return { phase: 'return_with_blaze_supplies', action: 'return_overworld' };
   if (where !== 'overworld') return { phase: 'unknown_dimension', action: 'unsupported_dimension' };
+  // TODO: a cleric villager sells ender pearls for emeralds; with a village
+  // remembered (goal.villages), trading would make this rung a walk rather
+  // than an enderman hunt. Trading is not implemented.
   if (count(bot, 'ender_pearl') < target - eyes) return { phase: 'obtain_ender_pearls', action: 'acquire', item: 'ender_pearl', count: target - eyes };
   if (eyes < target) return { phase: 'craft_eyes', action: 'acquire', item: 'ender_eye', count: target };
   if (!m.stronghold_located) return { phase: 'find_stronghold', action: 'find_stronghold' };
@@ -198,6 +206,10 @@ async function gameStep(bot, task, goal, save, actions) {
   else if (stage.action === 'home') {
     if (!actions.home) throw Object.assign(new Error('Game progression is blocked at the home base: the home action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });
     await actions.home(bot, task, goal, save, stage.home);
+  }
+  else if (stage.action === 'village_bed') {
+    if (!actions.village_bed) throw Object.assign(new Error('Game progression is blocked at the bed: the village bed action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });
+    await actions.village_bed(bot, task, goal, save, stage);
   }
   else if (stage.action === 'acquire_set') await (actions.acquireSetStep || (async (b, t, items, g, sv) => { for (const item of items) if (!await actions.acquireStep(b, t, item, 1, g, sv)) return false; return true; }))(bot, task, stage.items, goal, save);
   else {
