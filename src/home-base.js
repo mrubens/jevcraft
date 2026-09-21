@@ -117,37 +117,45 @@ function baseAnchor(bot, goal) {
 // dips. The work list is what the level step executes.
 const LEVEL_BUDGET = 48;
 const diggable = block => !!block && block.boundingBox === 'block' && !liquid(block) && !/bedrock|obsidian|_bed$|chest/.test(block.name);
-function siteWork(bot, goal, site) {
+// Choosing a site is strict: any cell that cannot be made level, a liquid,
+// a reserved cell or too much work rules the site out. The established
+// home is judged loosely: its own footprint is reserved construction by
+// then, a cell that cannot be fixed is left as it is, and only unloaded
+// cells stop the work.
+function siteWork(bot, goal, site, { strict = true } = {}) {
   const { plot, footprint } = layout(site);
   const plotKeys = new Set(plot.map(p => `${p.x},${p.z}`));
   const digs = [], fills = [];
+  const unfit = () => strict ? null : 'skip';
   for (const p of footprint) {
     const at = dy => bot.blockAt(pos(p).offset(0, dy, 0));
     const ground = at(0), above = at(1), head = at(2), below = at(-1);
-    if (!ground || !above || !head || !below) return null;
-    if ([ground, above, head, below].some(liquid)) return null;
-    if (reservedForConstruction(goal, pos(p).offset(0, 1, 0))) return null;
+    if (!ground || !above || !head || !below) return strict ? null : { digs, fills, unloaded: true };
+    if ([ground, above, head, below].some(liquid)) { if (unfit() === null) return null; continue; }
+    if (strict && reservedForConstruction(goal, pos(p).offset(0, 1, 0))) return null;
     const isPlot = plotKeys.has(`${p.x},${p.z}`);
     if (ground.boundingBox === 'block') {
       // Standing higher: whatever is solid in the two cells above comes out.
+      let bad = false;
       for (const [dy, block] of [[1, above], [2, head]]) {
         if (clear(block)) continue;
-        if (!diggable(block)) return null;
+        if (!diggable(block)) { bad = true; break; }
         digs.push(pos(p).offset(0, dy, 0));
       }
+      if (bad) { if (strict) return null; continue; }
       // A third solid block above is a hill, not a bump.
       const third = at(3);
-      if (third && third.boundingBox === 'block' && !clear(at(1)) && !clear(at(2))) return null;
-      if (isPlot && !TILLABLE.has(ground.name)) { if (!diggable(ground)) return null; digs.push(pos(p)); fills.push({ ...plain(p), item: 'dirt' }); }
+      if (strict && third && third.boundingBox === 'block' && !clear(at(1)) && !clear(at(2))) return null;
+      if (isPlot && !TILLABLE.has(ground.name)) { if (!diggable(ground)) { if (strict) return null; continue; } digs.push(pos(p)); fills.push({ ...plain(p), item: 'dirt' }); }
     } else if (clear(ground) && below.boundingBox === 'block') {
       // One lower: lay a block; dirt where the plot goes.
-      if (!clear(above) || !clear(head)) return null;
+      if (!clear(above) || !clear(head)) { if (strict) return null; continue; }
       fills.push({ ...plain(p), item: isPlot ? 'dirt' : 'any' });
-    } else return null;
+    } else if (strict) return null;
   }
-  if (digs.length + fills.length > LEVEL_BUDGET) return null;
+  if (strict && digs.length + fills.length > LEVEL_BUDGET) return null;
   // Never on top of a portal the bot walks back to.
-  if ((goal.portals || []).some(q => q.dimension === 'overworld' && footprint.some(p => Math.abs(p.x - q.x) <= 3 && Math.abs(p.z - q.z) <= 3))) return null;
+  if (strict && (goal.portals || []).some(q => q.dimension === 'overworld' && footprint.some(p => Math.abs(p.x - q.x) <= 3 && Math.abs(p.z - q.z) <= 3))) return null;
   return { digs, fills };
 }
 function siteFits(bot, goal, site) {
@@ -293,8 +301,8 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
   // plot wants dirt. Read off the world each time, so a restart or a
   // creeper does not leave a half-done site counted as done.
   if (home.levelling > 0 && !home.levelledAt) {
-    const work = siteWork(bot, { ...goal, portals: [] }, home);
-    if (!work) return { phase: 'home_level', action: 'return_home' };
+    const work = siteWork(bot, goal, home, { strict: false });
+    if (work.unloaded) return { phase: 'home_level', action: 'return_home' };
     const remaining = work.digs.length + work.fills.length;
     if (remaining) {
       // Walk home first: levelling from inside the iron mine was one long
@@ -466,8 +474,8 @@ async function placeBed(bot, task, goal, save, home, actions, item) {
 // The levelling: bumps and trees on the footprint come out, dips are
 // filled, dirt where the plot goes and anything solid elsewhere.
 async function levelSite(bot, task, goal, save, home, actions) {
-  const work = siteWork(bot, { ...goal, portals: [] }, home);
-  if (!work) throw new Error('The home site changed under the levelling');
+  const work = siteWork(bot, goal, home, { strict: false });
+  if (work.unloaded) throw new Error('The home site is not loaded');
   goal.step = { action: 'level_site', digs: work.digs.length, fills: work.fills.length }; save();
   // Trunks before crowns: the leaves of a felled tree decay on their own.
   for (const p of work.digs.sort((a, b) => a.y - b.y)) {
