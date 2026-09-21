@@ -167,8 +167,18 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const task = new Task('survival', goal.request);
     const session = { task, goal, idle: true };
     active = session;
+    // The idle loop runs until something else should: a standing goal whose
+    // next request can be launched ends it, and the next tick launches that.
+    let checkedAt = 0, launchable = false;
+    const until = () => {
+      if (Date.now() - checkedAt < 3000) return launchable;
+      checkedAt = Date.now();
+      const current = ambitionStore.read();
+      launchable = !!current?.ambition && shouldLaunchAmbition(current, store.read(), { ready: readyForAmbition() });
+      return launchable;
+    };
     session.promise = runIdle(bot, task, goal, { save: g => { if (!ended) { idleStore.save(g); memory.flush(); } saveSurvival(); } }, {
-      survival, decisionClient: client,
+      survival, decisionClient: client, until,
       onStep: g => { console.log(JSON.stringify({ idle: true, survivalAction: g.survivalAction, decision: g.decisions?.at(-1)?.path, health: bot.health, food: bot.food, position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g); },
     }).catch(err => {
       if (err.name !== 'Cancelled') {
