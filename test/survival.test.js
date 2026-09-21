@@ -754,6 +754,9 @@ test('the bed at the base is slept in when it is near, and it stays where it is'
     blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
   const goal = { kind: 'win', survival: { home } };
   assert(nearbyHomeBed(bot, goal)?.placed, 'the base bed counts');
+  bot.entity.position = new Vec3(80.5, 64, 0.5); assert(nearbyHomeBed(bot, goal), 'eighty blocks is a walk, not a night');
+  bot.entity.position = new Vec3(200.5, 64, 0.5); assert.equal(nearbyHomeBed(bot, goal), null, 'two hundred is not');
+  bot.entity.position = new Vec3(3.5, 64, 3.5);
   const walked = [], dug = [];
   const survival = new Survival(bot, { navigate: async (b, t, g) => walked.push([g.x, g.y, g.z]), dig: async (b, t, p) => dug.push(`${p}`) }, { state: goal.survival });
   await survival.sleepStep(new Task('test', 'sleep'), goal, () => {});

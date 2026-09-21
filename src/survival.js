@@ -39,12 +39,17 @@ const sleepable = bot => bot.time?.timeOfDay >= SLEEP_FROM && bot.time.timeOfDay
 // Level floor under both bed cells, air at feet and head height.
 // The bed at the base, when it stands and is within a short walk: the
 // first night of run two was spent walled in two blocks from it.
+// Within a short walk means within a hundred blocks: the second run walled
+// itself in thirty blocks from its bed because the bed was out of view.
+// A bed remembered as claimed counts while its chunk is unloaded; a bed
+// seen to be gone does not.
+const HOME_BED_WALK = 96;
 function nearbyHomeBed(bot, goal) {
   const home = homeOf(bot, goal);
-  if (!home?.bed?.placedAt) return null;
+  if (!home?.bed?.claimedAt) return null;
   const { bed } = layout(home);
-  const foot = pos(bed.foot);
-  if (foot.distanceTo(bot.entity.position) > 32 || !isBed(bot.blockAt(foot))) return null;
+  const foot = pos(bed.foot), block = bot.blockAt(foot);
+  if (foot.distanceTo(bot.entity.position) > HOME_BED_WALK || (block && !isBed(block))) return null;
   return { foot, head: pos(bed.head), stand: pos(bed.stand), placed: true };
 }
 function bedSite(bot) {
@@ -525,7 +530,10 @@ class Survival {
     const bot = this.bot, item = bedCarried(bot), placed = nearbyHomeBed(bot, goal), site = placed || (item && bedSite(bot));
     if (!site) throw new Error('No level ground beside me for the bed');
     this.report(goal, save, { action: 'sleep', at: { ...site.foot }, home: !!placed });
-    if (placed) await this.actions.navigate(bot, task, new goals.GoalNear(site.foot.x, site.foot.y, site.foot.z, 2), { timeoutMs: 30000, stallMs: 5000 });
+    if (placed) {
+      await this.actions.navigate(bot, task, new goals.GoalNear(site.foot.x, site.foot.y, site.foot.z, 2), { timeoutMs: 90000, stallMs: 8000 });
+      if (!isBed(bot.blockAt(site.foot))) throw new Error('The bed at the base is not where it was left');
+    }
     else await placeOriented(bot, task, this.actions, site.stand, site.foot, item, () => isBed(bot.blockAt(site.foot)) && isBed(bot.blockAt(site.head)));
     let slept = false;
     try {
@@ -579,7 +587,14 @@ class Survival {
       const watched = !shelterNeeded(bot) && threats(bot).some(t => t.distance < 20 && (t.visible || t.distance < 6));
       if (watched) this.state.watchedSince ||= Date.now(); else delete this.state.watchedSince;
       const outwaited = watched && Date.now() - this.state.watchedSince > 180000;
-      if ((shelterNeeded(bot) || watched) && !outwaited) await this.wait(task, goal, save);
+      // A sealed pocket within a walk of the base's bed is left for it: the
+      // night passes in the bed, not behind the wall.
+      const homeBed = sleepable(bot) && !watched && !(this.state.sleepFailedAt > Date.now() - 600000) && nearbyHomeBed(bot, goal);
+      if (homeBed) {
+        delete this.state.watchedSince; await this.leave(task, goal, save, refuge);
+        try { await this.sleepStep(task, goal, save); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      }
+      else if ((shelterNeeded(bot) || watched) && !outwaited) await this.wait(task, goal, save);
       else { delete this.state.watchedSince; await this.leave(task, goal, save, refuge); }
       onStep(goal); return true;
     }
