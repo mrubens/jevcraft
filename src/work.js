@@ -108,7 +108,11 @@ const descentSuppliesLow = bot => woodCarried(bot) < 2;
 
 async function prepareExpeditionStep(bot, task, goal, save) {
   goal.preparingExpedition = true;
-  if (bot.game.difficulty && bot.game.difficulty !== 'peaceful' && foodSupply(bot) < 12) {
+  // The reserve is the survival layer's to gather; once its search has been
+  // set aside as fruitless, the prep goes on with what is carried rather
+  // than waiting on a hunt nobody is making.
+  const reservePaused = goal.survival?.foodStockPausedUntil > Date.now();
+  if (bot.game.difficulty && bot.game.difficulty !== 'peaceful' && foodSupply(bot) < 12 && !reservePaused) {
     goal.step = { action: 'prepare_expedition_food', carriedFoodPoints: foodSupply(bot), requiredFoodPoints: 12 };
     save(); return false;
   }
