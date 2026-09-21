@@ -9,6 +9,7 @@ const { dryStanding } = require('./mining-access');
 const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
 const { checkAir } = require('./vitals');
 const { surveyRoute, countOf } = require('./skills');
+const { surfaceObserver } = require('./surface');
 const { decideTree } = require('./decisions');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
@@ -283,9 +284,28 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: handler.passive ? 10 : 18, neededFood: handler.passive ? 6 : 16 }; save();
     await sleep(500); task.check(); return;
   }
+  // A mob already in view is stalked where it is: the observed-hunt check at
+  // the top of the loop takes it the moment the route and the odds allow.
+  // Exploring for it instead climbed to the surface every time a cave spider
+  // showed, and the diamond shaft was dug and left three times in a row.
+  // A mob that stays out of reach for a minute is set aside for two.
+  const state = goal.mobHunt;
+  const near = Object.values(bot.entities || {}).filter(e => e.name === step.entity && e.isValid !== false &&
+    !(state?.avoided?.[e.uuid || e.id] > Date.now() - 120000) && e.position.distanceTo(bot.entity.position) < 32)
+    .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
+  if (near) {
+    const key = near.uuid || near.id;
+    if (!state.stalking || state.stalking.key !== key) state.stalking = { key, since: Date.now() };
+    goal.step = { action: 'stalk_mob', entity: step.entity, distance: Number(near.position.distanceTo(bot.entity.position).toFixed(1)) }; save();
+    if (Date.now() - state.stalking.since > 45000) { (state.avoided ||= {})[key] = Date.now(); delete state.stalking; save(); }
+    await sleep(1000); return;
+  }
+  delete state.stalking;
   // A hunt circles where it started, in rings of twenty-four blocks, rather
-  // than walking the map's frontier: the mob comes to the bot at night.
-  await actions.explore(bot, task, goal, save, step.entity, { surfaceOnly: dimension(bot) === 'overworld', frontier: false });
+  // than walking the map's frontier: the mob comes to the bot at night. By
+  // day underground the caves are the hunting ground, not the surface.
+  const underground = dimension(bot) === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
+  await actions.explore(bot, task, goal, save, step.entity, { surfaceOnly: dimension(bot) === 'overworld' && !underground, frontier: false });
 }
 
 module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt };

@@ -153,7 +153,8 @@ function preparationRung(bot, goal = {}) {
   // seven hundred blocks across the map and into the sea. By day, with no
   // spider in view and no string in hand, the ladder goes on to the sword.
   const t = bot.time?.timeOfDay, dark = t >= 12000 && t < 23000;
-  const spiderNear = Object.values(bot.entities || {}).some(e => e.name === 'spider' && e.position?.distanceTo?.(bot.entity.position) < 32);
+  const spiderNear = Object.values(bot.entities || {}).some(e => e.name === 'spider' && e.position?.distanceTo?.(bot.entity.position) < 32 &&
+    !(goal.mobHunt?.avoided?.[e.uuid || e.id] > Date.now() - 120000));
   const string = bot.inventory.items().filter(i => i.name === 'string').reduce((n, i) => n + (i.count || 1), 0);
   const arrows = bot.inventory.items().filter(i => i.name === 'arrow').reduce((n, i) => n + (i.count || 1), 0);
   if (dark || spiderNear || string >= 3 || sound.includes('bow')) {

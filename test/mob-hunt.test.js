@@ -263,3 +263,20 @@ test('golden boots go on in the Nether and come off for iron in the Overworld', 
   assert(await prepareCombatGear(bot, task, goal, () => {}, actions));
   assert.equal(slots[8].name, 'iron_boots', 'the better boots back on at home');
 });
+
+test('a hunt stalks a mob already in view instead of exploring, and sets it aside after a minute out of reach', async () => {
+  const { bot, goal, task } = fixture('spider');
+  bot.game.dimension = 'overworld'; bot.game.minY = 0; bot.game.height = 256;
+  bot.inventory.slots[36] = { name: 'iron_sword', slot: 36, count: 1, durabilityUsed: 0 };
+  for (const [slot, name] of [[5, 'iron_helmet'], [6, 'iron_chestplate'], [7, 'iron_leggings'], [8, 'iron_boots'], [45, 'shield']]) bot.inventory.slots[slot] = { name, slot, count: 1, durabilityUsed: 0 };
+  const explored = [];
+  const actions = { acquireStep: async () => {}, explore: async (_b, _t, _g, _s, entity) => explored.push(entity) };
+  await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, actions);
+  assert.deepEqual(explored, [], 'a spider two blocks away is stalked, not searched for');
+  assert.equal(goal.step.action, 'stalk_mob'); assert(goal.mobHunt.stalking);
+  goal.mobHunt.stalking.since = Date.now() - 46000;
+  await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, actions);
+  assert(goal.mobHunt.avoided['original-target'], 'a minute out of reach and it is set aside');
+  await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, actions);
+  assert.deepEqual(explored, ['spider'], 'with the only spider set aside, the hunt explores');
+});
