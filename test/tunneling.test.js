@@ -244,3 +244,12 @@ test('the block underfoot can be dug as a one-block drop onto solid ground, neve
   await assert.rejects(dig(make('air'), new Task('hole'), ore, { requireDrops: false }), /beneath feet|footing/);
   await assert.rejects(dig(make('lava'), new Task('lava'), ore, { requireDrops: false }), /beneath feet|footing/);
 });
+
+test('a body leaning into the target cell is detected, and clear once it stands centred', () => {
+  const { hitboxIntrudes } = require('../src/work');
+  const bot = { entity: { position: new Vec3(-506.81, 15, 138.43) } };
+  assert.equal(hitboxIntrudes(bot, new Vec3(-508, 15, 138)), true, 'eleven centimetres over the line');
+  bot.entity.position = new Vec3(-506.5, 15, 138.5);
+  assert.equal(hitboxIntrudes(bot, new Vec3(-508, 15, 138)), false);
+  assert.equal(hitboxIntrudes(bot, new Vec3(-507, 17, 138)), false, 'above head height is clear');
+});

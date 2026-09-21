@@ -196,6 +196,28 @@ async function syncPlacementInventory(bot, task) {
   if (failure) throw failure;
 }
 
+// The bot's own body, 0.6 wide, can lean into the cell it wants to fill:
+// standing at x=-506.81 it overlaps the cell at x=-508 by eleven
+// centimetres, and the server refuses the block every time. Back out of
+// the cell along the line away from it before placing.
+function hitboxIntrudes(bot, p, margin = 0.02) {
+  const b = bot.entity.position, half = 0.3, height = 1.8;
+  return b.x + half > p.x + margin && b.x - half < p.x + 1 - margin &&
+    b.z + half > p.z + margin && b.z - half < p.z + 1 - margin &&
+    b.y + height > p.y + margin && b.y < p.y + 1 - margin;
+}
+
+async function nudgeClear(bot, task, p) {
+  if (!hitboxIntrudes(bot, p) || typeof bot.setControlState !== 'function') return;
+  // Face the cell and step backward until the body is clear of it.
+  await bot.lookAt(p.offset(0.5, 1, 0.5), true);
+  bot.setControlState('back', true);
+  try {
+    const deadline = Date.now() + 700;
+    while (Date.now() < deadline && hitboxIntrudes(bot, p)) { task.check(); await sleep(50); }
+  } finally { bot.setControlState('back', false); }
+}
+
 async function place(bot, task, p, material, { face, properties } = {}) {
   task.check();
   const cell = { ...p, material, properties };
@@ -205,6 +227,7 @@ async function place(bot, task, p, material, { face, properties } = {}) {
     throw new Error(`Placement obstructed by ${bot.blockAt(p)?.name} at ${p}`);
   }
   await stepOff(bot, task, p);
+  await nudgeClear(bot, task, p);
   const eye = bot.entity.position.offset(0, 1.62, 0);
   if (!face && eye.distanceTo(p.offset(0.5, 0.5, 0.5)) > 4.5) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 4));
   const item = bot.inventory.items().find(i => i.name === material);
@@ -1959,4 +1982,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep };
+module.exports = { hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep };
