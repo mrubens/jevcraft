@@ -279,3 +279,12 @@ test('with mobs in the cave around the shaft, the stairs go on in the direction 
   choices = stairOptions(bot, {}, new Vec3(0, 60, 0));
   assert(choices.length >= 1, 'the shaft does not freeze with mobs on every side');
 });
+
+test('a dug-in pocket at the bot\'s feet does not reserve the stairs out of it', () => {
+  const bot = world();
+  bot.game = { gameMode: 'survival', difficulty: 'normal' }; bot.registry = require('minecraft-data')('26.1'); bot.entities = {}; bot.world = { raycast: () => null };
+  const goal = { survival: { shelters: [{ origin: { x: 0, y: 70, z: 0 }, dimension: 'overworld', emergency: true }] } };
+  assert(stairOptions(bot, goal, new Vec3(0, 60, 0)).length >= 1, 'an emergency pocket is not construction');
+  goal.survival.shelters[0].emergency = false;
+  assert.equal(stairOptions(bot, goal, new Vec3(0, 60, 0)).length, 0, 'a planned shelter still is');
+});

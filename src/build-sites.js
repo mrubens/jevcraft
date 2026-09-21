@@ -3,7 +3,10 @@ const { Vec3 } = require('vec3');
 const air = block => block && ['air', 'cave_air', 'void_air'].includes(block.name);
 
 function reservedForConstruction(goal, p) {
-  if (goal.survival?.shelters?.some(s => Math.abs(p.x - s.origin.x) <= 2 && Math.abs(p.z - s.origin.z) <= 2 && p.y >= s.origin.y - 2 && p.y <= s.origin.y + 2)) return true;
+  // A dug-in pocket is one night's stop, not construction: reserving its
+  // cells froze the tunnel at the pocket against a fortress wall, thirty-eight
+  // rounds of "no route away from the blocked staircase".
+  if (goal.survival?.shelters?.some(s => !s.emergency && Math.abs(p.x - s.origin.x) <= 2 && Math.abs(p.z - s.origin.z) <= 2 && p.y >= s.origin.y - 2 && p.y <= s.origin.y + 2)) return true;
   const bounds = goal.blueprint?.bounds;
   if (bounds && p.x >= bounds.min.x - 2 && p.x <= bounds.max.x + 2 && p.z >= bounds.min.z - 2 && p.z <= bounds.max.z + 2 && p.y >= bounds.min.y - 1) return true;
   const house = goal.blueprint?.origin;
