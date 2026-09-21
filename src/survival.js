@@ -142,6 +142,18 @@ class Survival {
       // hold. Only the cell one step toward it, and only while that cell is
       // still empty; a mob already in it is fought, not walled.
       if (await this.wallOff(task, goal, save, danger)) { delete this.state.trappedSince; return; }
+      // No way out and a mob a few blocks off, shooting: standing still is
+      // how a crossbow piglin took half the bot's health. Armed and able,
+      // close the gap so the fight rule can do its work.
+      const nearest = danger[0];
+      if (armed && bot.health >= 8 && nearest.distance > 2.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
+        this.report(goal, save, { action: 'charge', target: nearest.entity.name, distance: Number(nearest.distance.toFixed(1)) });
+        const t = nearest.entity.position;
+        try { await this.actions.navigate(bot, task, new goals.GoalNear(t.x, t.y, t.z, 1), { timeoutMs: 4000, stallMs: 2000 }); }
+        catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
+        await defendNearby(bot, task, goal, save);
+        delete this.state.trappedSince; return;
+      }
       // In a narrow tunnel, wait for the next bounded defensive action rather
       // than spending five failed route searches while a mob hits us. The
       // encounter still has a deadline and reports a concrete blocker.
