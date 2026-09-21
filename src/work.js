@@ -13,7 +13,7 @@ const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = requ
 const { decideTree } = require('./decisions');
 const { Survival } = require('./survival');
 const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
-const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource } = require('./decision-options');
+const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, rememberSource, committedSource } = require('./decision-options');
 const { reviewDesign } = require('./design-review');
 const { planCatalog, sourceBlocks } = require('./knowledge');
 const { takeCreativeItem } = require('./creative');
@@ -357,12 +357,26 @@ async function miningCandidates(bot, task, step, goal) {
 async function workSource(bot, task, step, goal, save, source) {
   const p = nearestRemaining(bot, source);
   if (!p) throw new Error(`The ${source.block} source is no longer there`);
-  goal.step = step; save();
+  goal.step = step; rememberSource(goal, source, step); save();
   try { await mine(bot, task, step, goal, save, p); }
   catch (err) {
-    if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) { setAsideSource(goal, source); save(); }
+    if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) { setAsideSource(goal, source); delete goal.workingSource; save(); }
     throw err;
   }
+}
+
+// Keep working the source Jev already chose. Recorded as a decision so the
+// trail and the Observatory show the step, marked as needing no question.
+async function continueSource(bot, task, step, goal, save, onStep) {
+  const source = committedSource(bot, goal, step);
+  if (!source) return false;
+  goal.decisions ||= [];
+  goal.decisions.push({ at: new Date().toISOString(), path: ['continue_source', source.key], latencyMs: 0, committed: true, judgments: [],
+    options: { continue_source: { description: `Keep working the ${source.block} source chosen earlier; ${source.blocks.length} blocks remain within reach.`, children: { [source.key]: { description: source.description || { block: source.block } } } } } });
+  goal.decisions = goal.decisions.slice(-40);
+  save(); onStep?.(goal);
+  await workSource(bot, task, step, goal, save, source);
+  return true;
 }
 
 // When the same resource keeps failing where the bot stands, the answer is
@@ -845,6 +859,7 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
     const inv = await withUsableWorkstations(bot, task, stock, [goal.material]);
     const step = catalogPlan(bot, goal.material, required, inv, goal)[0];
     const actions = {};
+    if (step?.action === 'mine' && await continueSource(bot, task, step, goal, save, onStep)) return false;
     if (step?.action === 'mine') {
       const reachable = [];
       for (const p of (await miningCandidates(bot, task, step, goal)).slice(0, 16)) {
@@ -1354,6 +1369,7 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
   }
   const step = plan[0];
   if (!step) return false;
+  if (step.action === 'mine' && await continueSource(bot, task, step, goal, save, onStep)) return false;
   const actions = {};
   if (step.action === 'mine') {
     const reachable = [];

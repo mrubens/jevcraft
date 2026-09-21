@@ -56,3 +56,16 @@ test('a failed source stays failed when the same tree reappears under its next-n
   assert.deepEqual(Object.keys(goal.unreachable).sort(), ['(3, 64, 0)', '(3, 65, 0)', '(3, 66, 0)']);
   assert.deepEqual(resourceSources(bot, all, { now, unreachable: goal.unreachable }).map(s => s.key), ['source_oak_log_20_64_0']);
 });
+
+test('a chosen source is kept until it is exhausted, set aside, or the resource changes', () => {
+  const { rememberSource, committedSource } = require('../src/decision-options');
+  const bot = world([[3, 64, 0, 'oak_log'], [3, 65, 0, 'oak_log']]);
+  const [source] = resourceSources(bot, [new Vec3(3, 64, 0), new Vec3(3, 65, 0)]);
+  const goal = {}, step = { action: 'mine', drops: 'oak_log' };
+  rememberSource(goal, source, step);
+  const revived = committedSource(JSON.parse(JSON.stringify({ bot: null })) && bot, JSON.parse(JSON.stringify(goal)), step);
+  assert.equal(revived.key, source.key); assert.equal(revived.blocks.length, 2);
+  assert.equal(committedSource(bot, goal, { action: 'mine', drops: 'birch_log' }), null, 'a different resource is a new choice');
+  goal.unreachable = { '(3, 64, 0)': Date.now(), '(3, 65, 0)': Date.now() };
+  assert.equal(committedSource(bot, goal, step), null); assert.equal(goal.workingSource, undefined, 'an exhausted source is forgotten');
+});

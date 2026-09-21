@@ -64,6 +64,24 @@ function decisionFingerprint(bot, { inventory, immediateThreat, needsAir }) {
     dimension: bot.game?.dimension, inventory: inventory(bot) });
 }
 
+// Once Jev has chosen a source, the bot keeps working it until it is
+// exhausted, fails, or the resource being gathered changes. Re-asking after
+// every log made the model's job "which tree" seven times per tree, at a
+// few hundred milliseconds each, when the answer had not changed. The
+// choice is remembered on the goal so it survives a restart.
+function rememberSource(goal, source, step) {
+  goal.workingSource = { key: source.key, block: source.block, drops: step.drops,
+    blocks: source.blocks.map(p => ({ x: p.x, y: p.y, z: p.z })), chosenAt: new Date().toISOString() };
+}
+
+function committedSource(bot, goal, step, { now = Date.now() } = {}) {
+  const saved = goal.workingSource;
+  if (!saved || saved.drops !== step.drops) return null;
+  const source = { ...saved, blocks: saved.blocks.map(pos).filter(p => !(goal.unreachable?.[`${p}`] > now - FAILURE_TTL_MS)) };
+  if (!nearestRemaining(bot, source)) { delete goal.workingSource; return null; }
+  return source;
+}
+
 // When one block of a source cannot be reached, the rest of that tree or
 // vein is not going to be either. Setting the whole source aside is what
 // lets the next step pick a different tree instead of the next log of this
@@ -73,4 +91,4 @@ function setAsideSource(goal, source, now = Date.now()) {
   for (const p of source.blocks) goal.unreachable[`${p}`] = now;
 }
 
-module.exports = { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, failedSeeds, FAILURE_TTL_MS };
+module.exports = { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, failedSeeds, rememberSource, committedSource, FAILURE_TTL_MS };
