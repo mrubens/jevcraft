@@ -61,6 +61,7 @@ test('beating the game is handed over as the win objective, and the ladder start
   assert.equal(preparationStage(bot(['stone_pickaxe', 'stone_sword'])).phase, 'bed', 'a bed before the mine: nights slept, not walled in');
   assert.equal(preparationStage({ inventory: { items: () => [{ name: 'stone_pickaxe' }, { name: 'stone_sword' }, { name: 'white_wool', count: 3 }], slots: {} } }).item, 'white_bed', 'three wool of a colour is a bed to craft');
   assert.equal(preparationStage(bot(['stone_pickaxe', 'stone_sword', 'white_bed'])).item, 'iron_pickaxe');
+  assert.equal(preparationStage(bot(['stone_pickaxe', 'stone_sword']), { survival: { home: { bed: { claimedAt: 'now' } } } }).item, 'iron_pickaxe', 'the claimed bed at the base meets the rung');
   assert.equal(preparationStage(bot(['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket'])).item, 'iron_helmet', 'armour is four rungs of its own');
   assert.equal(preparationStage(bot(['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings'])).item, 'iron_boots');
   assert.equal(preparationStage(bot(['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'diamond_boots', 'golden_boots', ...armed])), null);

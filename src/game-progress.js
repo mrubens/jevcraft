@@ -112,7 +112,10 @@ function preparationRung(bot, goal = {}) {
   // is carried, not left at home, so any dusk anywhere can end that way.
   // Three wool from a sheep, three planks; a search that finds no sheep
   // is set aside for twenty minutes rather than wandering all day.
-  if (!carried.some(n => /_bed$/.test(n)) && !(goal.bedSearch?.deferredUntil > Date.now())) {
+  // Once the base's bed is claimed the rung is met: the carried one became
+  // that bed, and a second sheep hunt before the plot and the pen is a
+  // delay for a bed that far trips seldom get to use.
+  if (!carried.some(n => /_bed$/.test(n)) && !goal.survival?.home?.bed?.claimedAt && !(goal.bedSearch?.deferredUntil > Date.now())) {
     const wool = woolCarried(bot);
     if (wool.count >= 3) return { phase: 'bed', action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
     // A remembered village with beds is a walk of known length; a sheep
