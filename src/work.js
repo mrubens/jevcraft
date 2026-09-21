@@ -459,9 +459,17 @@ async function workSource(bot, task, step, goal, save, source) {
     // vein already reached is a few seconds' work: keep at it while blocks
     // remain within six and the step is still short (a trunk: up to eight logs).
     if (bot.game?.gameMode !== 'creative') {
-      const wanted = () => /_log$/.test(source.block) ? countOf(bot, step.drops) < 8 : countOf(bot, step.drops) < before + (step.count || 1);
-      for (let extra = 0; extra < 12 && wanted(); extra++) {
-        const next = nearestRemaining(bot, source);
+      // An ore vein is taken whole, up to a stack: the step asked for two
+      // iron and eleven stood in the wall, eight of them behind the three
+      // in view when the source was chosen. The stash keeps the surplus.
+      const ore = /_ore$/.test(source.block) || source.block === 'ancient_debris';
+      const wanted = () => /_log$/.test(source.block) ? countOf(bot, step.drops) < 8 : ore ? countOf(bot, step.drops) < 32 : countOf(bot, step.drops) < before + (step.count || 1);
+      for (let extra = 0; extra < 24 && wanted(); extra++) {
+        let next = nearestRemaining(bot, source);
+        if ((!next || next.distanceTo(bot.entity.position) > 6) && ore) {
+          const here = bot.entity.position;
+          next = (await miningCandidates(bot, task, step, goal)).filter(p => p.distanceTo(here) <= 6).sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0] || null;
+        }
         if (!next || next.distanceTo(bot.entity.position) > 6) break;
         task.check(); checkAir(bot);
         try { await mine(bot, task, step, goal, save, next); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; break; }
