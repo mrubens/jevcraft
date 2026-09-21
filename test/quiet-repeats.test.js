@@ -27,3 +27,13 @@ test('a reply to a player who just spoke is never dropped, and the filter instal
   bot.chat("I'm building a house.");
   assert.equal(said.length, 2, 'asked again, answered again');
 });
+
+test('the filter survives a chat function installed after it was armed, when installed on spawn', () => {
+  const { EventEmitter } = require('node:events');
+  const bot = new EventEmitter(); bot._client = new EventEmitter(); const said = [];
+  bot.once('spawn', () => quietRepeats(bot));
+  bot.chat = line => said.push(line);   // the plugin's chat arrives before spawn
+  bot.emit('spawn');
+  bot.chat('Getting 3 raw iron.'); bot.chat('Getting 3 raw iron.');
+  assert.deepEqual(said, ['Getting 3 raw iron.']);
+});

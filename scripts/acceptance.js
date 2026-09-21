@@ -45,7 +45,7 @@ const bot = mineflayer.createBot({
 });
 bot.loadPlugin(compatibilityPlugin);
 bot.loadPlugin(pathfinder);
-require('../src/speech').quietRepeats(bot);
+bot.once('spawn', () => require('../src/speech').quietRepeats(bot));
 observation = harness?.attach(bot, { getGoal: () => currentGoal, server: `${process.env.MC_HOST || 'localhost'}:${process.env.MC_PORT || 25565} · acceptance ${id}` });
 const toolState = () => bot.inventory.items().filter(i => bot.registry.itemsByName[i.name]?.maxDurability)
   .map(i => ({ name: i.name, slot: i.slot, durabilityUsed: i.durabilityUsed || 0,
