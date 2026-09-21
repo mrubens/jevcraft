@@ -633,8 +633,11 @@ async function harden(bot, task, goal, save, item = 'purple_concrete') {
 
 function catalogPlan(bot, item, count, stock, goal = {}) {
   const outputs = Array.isArray(item) ? item : [{ item, count }];
+  // A Creative step is sized as the shortfall against `stock`, which has had
+  // any delivery reservation taken out of it, so the step count is what to
+  // take on top of what is carried.
   if (bot.game?.gameMode === 'creative') return outputs.filter(output => (stock[output.item] || 0) < output.count)
-    .map(({ item, count }) => ({ action: 'creative_inventory', item, count, consumes: {}, produces: { [item]: count - (stock[item] || 0) } }));
+    .map(({ item, count }) => ({ action: 'creative_inventory', item, count: count - (stock[item] || 0), consumes: {}, produces: { [item]: count - (stock[item] || 0) } }));
   if (!bot._catalogObservation || Date.now() - bot._catalogObservation.at > 5000 || bot.entity.position.distanceTo(pos(bot._catalogObservation.position)) > 8) {
     const ids = bot.registry.blocksArray.filter(b => /(_log|_wood|_ore)$|^(stone|sand|gravel|dirt|poppy|cornflower)$/.test(b.name)).map(b => b.id);
     const positions = bot.findBlocks({ matching: ids, maxDistance: 32, count: 48,
@@ -775,6 +778,7 @@ function decisionObservation(bot, goal) {
   const hostiles = new Set(['zombie', 'husk', 'drowned', 'skeleton', 'stray', 'creeper', 'spider', 'cave_spider', 'witch', 'pillager', 'phantom']);
   return {
     playerRequest: goal.request, retainedGoal: goal.kind,
+    playerUrgency: goal.urgency?.level,
     inventory: planningInventory(bot), health: bot.health, food: bot.food, oxygen: bot.oxygenLevel,
     survivalFacts: { healthMaximum: 20, hungerMaximum: 20, hungerNeedsAttention: bot.food <= 16,
       injured: bot.health < 20, hungerAllowsNaturalHealing: bot.food >= 18, safeFoodCarried: !!chooseFood(bot) },

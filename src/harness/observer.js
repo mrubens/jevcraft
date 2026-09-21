@@ -56,6 +56,10 @@ function observeBot(trace, bot, { getGoal = () => ({}), controls = {}, server = 
     const freshAction = action?.at && action.at !== previousAction;
     if (kind === 'step') { previousDecision = decision?.at; previousAction = action?.at; }
     if (kind === 'step') kind = freshDecision ? 'decision' : goal.lastError ? 'error' : freshAction ? 'survival' : 'action';
+    // An idle step with nothing to name is a heartbeat, not an activity. The
+    // idle loop reports one every second, and hundreds of blank "action"
+    // cards buried the requests and decisions between them.
+    if (kind === 'action' && !goal.step?.action) kind = 'observation';
     const label = kind === 'recovery_advice' ? detail?.source === 'jev' ? 'Jev chose a recovery action' : 'Fable recovery advice'
       : kind === 'recovery_result' ? detail?.outcome || 'Recovery outcome'
       : kind === 'request' ? `Understood: ${String(detail?.kind || 'request').replaceAll('_', ' ')}`

@@ -86,7 +86,7 @@ Jev answers three kinds of question: a **Choice** among options code lists, a **
 
 | Moment | What Jev is asked | Primitive | What code does with the answer |
 | --- | --- | --- | --- |
-| A chat message arrives | Whether it is addressed to the bot, whether it asks for action or is just talk, which of fifteen objectives it is, the quantity, the recipient, a target player, the wood species chosen, and speculatively: which word-overlap catalog item is meant, what kind of thing to find, and what a note says about wood | Noul + Choices, one batched call | Routes to a handler. Below a confidence bar the bot asks a one-line question instead; the bar is higher for builds, commands and long journeys |
+| A chat message arrives | Whether it is addressed to the bot, whether it asks for action or is just talk, which of fifteen objectives it is, the quantity, the recipient, a target player, the wood species chosen, how much the wording presses for speed, and speculatively: which word-overlap catalog item is meant, what kind of thing to find, and what a note says about wood | Noul + Choices + a Score, one batched call | Routes to a handler. Below a confidence bar the bot asks a one-line question instead; the bar is higher for builds, commands and long journeys. Urgency travels with the task into later trade-offs |
 | The item is not settled | Which branch of the real item catalog holds it, one level at a time | Choice per hop | Copies the catalog name. An unsure leaf with a close runner-up becomes "did you mean X or Y?" |
 | Several outputs are named | For each catalog branch, whether it holds one of the requested outputs; then coverage, quantity and recipient per item | Nouls, then Choices | Builds the combined plan; incomplete coverage asks the player |
 | A memory request | What operation it is, which saved entry it means, which verbatim span is the place name, which observed position is "here" | Choices over spans | Saves, recalls, forgets, or walks. Jev cannot invent a name or a coordinate |
@@ -97,6 +97,8 @@ Jev answers three kinds of question: a **Choice** among options code lists, a **
 | Something keeps failing | Which code-checked recovery action is most likely to unblock the original request | Choice | Executes it under a budget. An unsure Jev, or a repeat of the same failure, escalates to the optional generative adviser |
 | A boat, an ore, a mob, a stronghold, the dragon | Whether a surveyed crossing is worth a boat; whether a nearby ore is worth a detour; the next bounded combat or search action | Choices | Bounded, verified execution with safety reflexes in code |
 | An operator command | Each branch of the server's own command tree, the argument roles, then whether the result faithfully implements the request | Choices + Noul | Runs the command once, only from allowed players, only above a faithfulness bar |
+
+[How Jev thinks](docs/how-jev-thinks.md) walks through one recorded request with the real answers, confidences, latency and token counts, and ships the trace so you can open it in the Observatory.
 
 The two places a generative model is used, both optional and both through OpenRouter, are the ones that need generation: drawing a custom schematic from a request and terrain survey, and reasoning about a failure Jev could not judge. Everything else is selection, and selection is what a System One model does well.
 
@@ -251,7 +253,9 @@ MC_HOST=127.0.0.1 MC_PORT=25579 MC_VERSION=26.1 npm run accept -- build a house
 
 The acceptance runner requires an explicit isolated port, a separate bot identity, and writes evidence under `artifacts/`. A controlled fixture passing is not proof that the same task works from an empty inventory in a natural world.
 
-Contributions are most useful when they turn a concrete gameplay failure into a small reproducible test and an improvement to a general capability. Include a reproducible request, expected behaviour, configuration, and what you tested. Review Observatory recordings before sharing them: they can contain chat, player names, and world coordinates.
+Contributions are most useful when they turn a concrete gameplay failure into a small reproducible test and an improvement to a general capability. See [CONTRIBUTING.md](CONTRIBUTING.md) for the two design rules, what to include with each kind of change, and how the evals fit in. Review Observatory recordings before sharing them: they can contain chat, player names, and world coordinates. Unit tests run on every push and pull request; the live Jev evals run on `main` when the repository has a TypeSafe key configured.
+
+JevBot is released under the [MIT License](LICENSE).
 
 ## Current limitations
 

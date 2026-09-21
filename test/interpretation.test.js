@@ -85,3 +85,14 @@ test('an unsure leaf pick with a real runner-up becomes a question for the playe
     : client.systemOne({ questions }) }, 'Jev bring me grass', 'Player', 'Jev', { registry: small });
   assert.equal(spec.kind, 'clarify'); assert.equal(spec.message, 'Did you mean short grass or grass block?');
 });
+
+test('urgency is a Score carried on the goal as a level, and a missing score changes nothing', async () => {
+  const ask = async urgency => interpret({ systemOne: async ({ questions }) => {
+    assert.equal(questions.urgency.type, 'score'); assert.equal(questions.urgency.criteria.length, 3);
+    return { answers: { ...base, objective: { choice: 'come', confidence: 0.99 }, ...(urgency && { urgency }) } };
+  } }, 'Jev come here now', 'Player', 'Jev', { registry });
+  assert.equal((await ask({ type: 'score', score: 1.83, confidence: 0.8 })).urgency.level, 'pressed');
+  assert.equal((await ask({ type: 'score', score: 0.2, confidence: 0.9 })).urgency.level, 'relaxed');
+  assert.equal((await ask({ type: 'score', score: 1.0, confidence: 0.9 })).urgency.level, 'ordinary');
+  assert.equal((await ask(undefined)).urgency, undefined);
+});

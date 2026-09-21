@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { choice, noul } = require('./typesafe');
+const { choice, noul, score } = require('./typesafe');
 const { Vec3 } = require('vec3');
 const { buildCellComplete } = require('./build-blocks');
 const { chatNames, parseAddress } = require('./chat-address');
@@ -101,6 +101,14 @@ async function interpret(client, request, from, username, context = {}) {
       }, candidateChoices) } : {}),
       ...(memory?.notes?.length ? { noted_wood: NOTED_WOOD_QUESTION(woods) } : {}),
       discovery_category: CATEGORY_QUESTION(),
+      // A Score, so the survival trade-offs later can weigh how much the
+      // player minds waiting. "Quick, before dark" and "whenever you get a
+      // chance" are the same objective with different tolerances.
+      urgency: score('How much time pressure does the speaker put on this request, judging only the wording of `request_body`? Politeness is not urgency; a plain imperative is ordinary.', [
+        'No time pressure, or explicitly relaxed: whenever you can, no rush, when you get a chance.',
+        'Ordinary: a plain request with no timing words either way.',
+        'Pressed: quickly, hurry, now, right away, before dark, as fast as you can, or a stated deadline.',
+      ]),
       addressed: noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.'),
       wood_choice: choice('Which wood species does the speaker explicitly choose for their own requested supplies or construction in THIS message? Use only the current request, never memory, inventory, recipe ingredients, or bot defaults as evidence. A one-time request for cherry logs counts. Exclude quotes, hypotheticals, negated choices, orders for another player or the bot itself, discovery-only requests, and ambiguous/multiple species. For unspecified wood or an inherited preference choose none.', { ...woods, none: 'No single explicit wood choice for this player in the current action request.' }),
       memory_statement: noul('Is the speaker directly sharing a personal preference or personal fact with Jev to remember, rather than asking for a gameplay action? For example "I prefer small houses" or "my favorite wood is cherry". Exclude quoted/hypothetical/negated statements, general Minecraft facts, and instructions to perform a new action.'),
@@ -134,6 +142,10 @@ async function interpret(client, request, from, username, context = {}) {
   const kind = a.objective.choice === 'memory' || (a.interaction.choice === 'discussion' && a.memory_statement?.noul >= 0.75)
     ? 'memory' : a.interaction.choice === 'request' ? a.objective.choice : 'other';
   const spec = { kind, request, from, interpretation: a, usage: response.usage, latencyMs: Math.round(performance.now() - started) };
+  // Kept as a plain number on the goal so decision state can carry it
+  // without dragging the whole interpretation along.
+  if (Number.isFinite(a.urgency?.score)) spec.urgency = { score: Number(a.urgency.score.toFixed(2)), confidence: a.urgency.confidence,
+    level: a.urgency.score >= 1.5 ? 'pressed' : a.urgency.score >= 0.5 ? 'ordinary' : 'relaxed' };
   const clarify = (message, clarification) => ({ ...spec, kind: 'clarify', message, clarification });
   // A confident wrong answer starts ten minutes of the wrong work. An unsure
   // one is worth a sentence to the player.

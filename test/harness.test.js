@@ -209,3 +209,15 @@ test('heartbeat frames are evicted before requests and decisions, so a chat requ
   assert.equal(trace.frames[0].id, 1);
   assert.equal(trace.view().oldestId, 1);
 });
+
+test('an idle step with no action to name is recorded as a heartbeat rather than a blank activity', () => {
+  const b = bot(), trace = new Trace(), goal = { request: 'Stay alive and prepare supplies between player requests', kind: 'survive', decisions: [] };
+  const observation = observeBot(trace, b, { getGoal: () => goal });
+  b.emit('spawn');
+  observation.sample('step');
+  assert.equal(trace.frames.at(-1).kind, 'observation'); assert.equal(trace.frames.at(-1).source, 'observed');
+  goal.step = { action: 'collect', item: 'oak_log' };
+  observation.sample('step');
+  assert.equal(trace.frames.at(-1).kind, 'action'); assert.equal(trace.frames.at(-1).label, 'collect oak log');
+  observation.detach();
+});

@@ -195,12 +195,16 @@ function renderInterpretation(interpretation, resolution, discovery) {
     if (!answer || typeof answer !== 'object') continue;
     const card = el('div', undefined, 'judgment'), row = el('div', undefined, 'row');
     const isNoul = answer.type === 'noul' || (answer.noul !== undefined && answer.choice === undefined);
-    row.append(el('span', human(name)), el('b', isNoul ? `${pct(answer.noul)} yes` : human(answer.choice ?? '—')));
+    const isScore = answer.type === 'score' || Number.isFinite(answer.score);
+    const levels = isScore ? Object.keys(answer.probabilities || answer.legend || {}).length : 0;
+    row.append(el('span', human(name)), el('b', isNoul ? `${pct(answer.noul)} yes` : isScore ? `${Number(answer.score).toFixed(2)} of ${Math.max(0, levels - 1)}${answer.legend ? ` · ${answer.legend[String(Math.round(answer.score))] || ''}` : ''}` : human(answer.choice ?? '—')));
     card.append(row);
     if (!isNoul && Number.isFinite(answer.confidence)) {
       const bar = el('div', undefined, 'probability'), fill = el('b'); fill.style.width = `${Math.max(0, Math.min(100, answer.confidence * 100))}%`; bar.append(fill); card.append(bar);
-      const alternatives = Object.entries(answer.probabilities || {}).filter(([key]) => key !== answer.choice).sort(([, a], [, b]) => b - a).filter(([, p]) => p >= 0.05).slice(0, 3);
-      const note = el('div', `${pct(answer.confidence)} confident${alternatives.length ? ` · also considered ${alternatives.map(([key, p]) => `${human(key)} ${pct(p)}`).join(', ')}` : ''}`, `alternatives${answer.confidence < 0.6 ? ' low' : ''}`);
+      const chosenKey = isScore ? String(Math.round(answer.score)) : answer.choice;
+      const label = key => isScore ? `level ${key}` : human(key);
+      const alternatives = Object.entries(answer.probabilities || {}).filter(([key]) => key !== chosenKey).sort(([, a], [, b]) => b - a).filter(([, p]) => p >= 0.05).slice(0, 3);
+      const note = el('div', `${pct(answer.confidence)} confident${alternatives.length ? ` · also considered ${alternatives.map(([key, p]) => `${label(key)} ${pct(p)}`).join(', ')}` : ''}`, `alternatives${answer.confidence < 0.6 ? ' low' : ''}`);
       card.append(note);
     }
     $('routing').append(card);

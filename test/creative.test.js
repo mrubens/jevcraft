@@ -30,3 +30,15 @@ test('Creative access stops without replacing inventory when no slots remain', a
   bot.inventory.firstEmptyInventorySlot = () => null;
   await assert.rejects(takeCreativeItem(bot, task, 'diamond', 1), /Inventory is full/);
 });
+test('a Creative step takes its count on top of carried stock, so a chest reserved for delivery can be joined by a chest to store it in', async () => {
+  const { bot, slots, task } = setup();
+  slots.set(37, { name: 'chest', count: 1 });
+  const { catalogPlan } = require('../src/work');
+  const creative = { ...bot, entity: { position: { distanceTo: () => 0 } } };
+  // One chest is carried but reserved for the player; the plan sees none.
+  const plan = catalogPlan(creative, 'chest', 1, { chest: 0 });
+  assert.equal(plan.length, 1); assert.equal(plan[0].action, 'creative_inventory'); assert.equal(plan[0].count, 1);
+  await takeCreativeItem(bot, task, plan[0].item, plan[0].count);
+  assert.equal(bot.inventory.items().filter(i => i.name === 'chest').reduce((n, i) => n + i.count, 0), 2);
+  assert.deepEqual(catalogPlan(creative, 'chest', 1, { chest: 1 }), [], 'enough carried means no step');
+});
