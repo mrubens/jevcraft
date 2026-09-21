@@ -34,11 +34,19 @@ function safeSite(bot, origin, goal) {
   // outward from that anchor; water, falling blocks and unloaded cells cannot.
   if (!solid(bot.blockAt(o.offset(0, -1, 0)))) return false;
   if (foundation(o).some(p => { const b = bot.blockAt(p); return !solid(b) && !air(b); })) return false;
-  if (!exits(bot, { origin }).length) return false;
+  // A pocket in a one-wide staircase has no two-block exit and never will;
+  // buried, the way out in the morning is dug, so the exit is not required.
+  if (!exits(bot, { origin }).length && !buried(bot, o)) return false;
   return shell(o).every(p => {
     const b = bot.blockAt(p);
     return replaceable(b) || solid(b);
   });
+}
+
+// No sky within reach above the site: a staircase or a cave, not a hollow.
+function buried(bot, o) {
+  for (let y = 1; y <= 12; y++) if (solid(bot.blockAt(o.offset(0, y, 0)))) return true;
+  return false;
 }
 
 function shelterSites(bot, goal, maxDistance = 12) {

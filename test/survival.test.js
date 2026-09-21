@@ -399,3 +399,19 @@ test('an empty food reserve pulls the bot off its work at 18 hunger on the surfa
   assert.equal(await make(20, 12).step(new Task('deep hungry'), { kind: 'win' }, () => {}), true, 'underground, 12 is');
   assert.deepEqual(forages, ['70:18', '20:12']);
 });
+
+test('a pocket in a one-wide staircase is a shelter site underground even without a two-block exit', () => {
+  const origin = new Vec3(0, 20, 0);
+  // Solid stone everywhere except the staircase: the bot's cell and two
+  // cells of headroom, one cell behind a step lower, one ahead a step higher.
+  const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`, `${origin.offset(-1, -1, 0)}`, `${origin.offset(-1, 0, 0)}`, `${origin.offset(-1, 1, 0)}`,
+    `${origin.offset(1, 1, 0)}`, `${origin.offset(1, 2, 0)}`]);
+  const bot = { game: { dimension: 'overworld' }, entity: { position: origin.offset(0.5, 0, 0.5) },
+    blockAt: p => ({ name: open.has(`${p}`) ? 'air' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : 'block' }) };
+  assert.equal(shelter.exits(bot, { origin }).length, 0, 'no two-block exit in a staircase');
+  assert.equal(shelter.safeSite(bot, origin, {}), true, 'but buried, the pocket is a site');
+  const missing = shelter.missingShell(bot, { origin, dimension: 'overworld' });
+  assert.equal(missing.length, 5, 'only the staircase openings, the step below and the headroom above need sealing');
+  const surface = { ...bot, blockAt: p => ({ name: open.has(`${p}`) || p.y > 20 ? 'air' : 'stone', boundingBox: open.has(`${p}`) || p.y > 20 ? 'empty' : 'block' }) };
+  assert.equal(shelter.safeSite(surface, origin, {}), false, 'under open sky the exit rule still holds');
+});
