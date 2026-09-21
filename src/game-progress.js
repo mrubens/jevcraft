@@ -108,10 +108,13 @@ function preparationStage(bot, goal = {}) {
   // One rung for the whole set, planned together: twenty-four ingots in one
   // smelt with one fuel allowance, instead of four mine-smelt-craft trips.
   const worn = carried;
+  // Golden boots count for the feet: one piece of gold keeps piglins
+  // neutral, which is the whole encounter class that shot the run dead.
   const missing = ['helmet', 'chestplate', 'leggings', 'boots']
-    .filter(piece => !worn.some(name => /^(iron|diamond|netherite)_/.test(name) && name.endsWith(`_${piece}`)))
+    .filter(piece => !worn.some(name => (/^(iron|diamond|netherite)_/.test(name) || (piece === 'boots' && name === 'golden_boots')) && name.endsWith(`_${piece}`)))
     .map(piece => `iron_${piece}`);
   if (missing.length) return { phase: missing.length === 4 ? 'iron_armour' : `iron_${missing[0].replace('iron_', '')}`, action: 'acquire_set', item: missing[0], items: missing, count: missing.length };
+  if (!carried.includes('golden_boots')) return { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   return null;
 }
 

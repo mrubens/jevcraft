@@ -7,7 +7,9 @@ const handlers = { blaze: { item: 'blaze_rod', dimension: 'nether' }, enderman: 
 const armor = suffix => ['iron', 'diamond', 'netherite'].map(material => `${material}_${suffix}`);
 const combatGear = {
   hand: armor('sword'), head: armor('helmet'), torso: armor('chestplate'), legs: armor('leggings'),
-  feet: armor('boots'), 'off-hand': ['shield'],
+  // Golden boots last, so they are preferred when carried: piglins leave a
+  // player wearing any gold alone, and one armour point is a cheap trade.
+  feet: [...armor('boots'), 'golden_boots'], 'off-hand': ['shield'],
 };
 const armorSlots = { head: 5, torso: 6, legs: 7, feet: 8, 'off-hand': 45 };
 function durable(registry, item) {

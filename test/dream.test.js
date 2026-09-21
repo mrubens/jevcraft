@@ -44,8 +44,10 @@ test('beating the game is handed over as the win objective, and the ladder start
   const next = await nextDreamRequest({ systemOne: async () => assert.fail('no question needed') }, { dream: 'beat_the_game', setBy: 'Player' });
   assert.equal(next.kind, 'win'); assert.equal(next.dream, 'beat_the_game');
   const bot = (items, slots = {}) => ({ inventory: { items: () => items.map(name => ({ name })), slots } });
-  assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], { 45: { name: 'shield' } })), null, 'a shield on the arm counts');
-  assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket'], { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' } })), null, 'worn armour counts');
+  assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'golden_boots'], { 45: { name: 'shield' } })), null, 'a shield on the arm counts');
+  assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'golden_boots'], { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' } })), null, 'worn armour counts');
+  assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'])).item, 'golden_boots', 'gold on the feet before the Nether keeps piglins neutral');
+  assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings'], { 8: { name: 'golden_boots' } })), null, 'golden boots worn count as the boots');
   const registry = require('minecraft-data')('26.1');
   const worn = { registry, inventory: { items: () => [{ name: 'iron_pickaxe', durabilityUsed: 240 }, { name: 'stone_pickaxe', durabilityUsed: 0 }, { name: 'iron_sword' }, { name: 'shield' }, { name: 'water_bucket' }], slots: {} } };
   assert.equal(preparationStage(worn).item, 'iron_pickaxe', 'a pickaxe with ten uses left is a rung to redo before it breaks');
@@ -57,7 +59,7 @@ test('beating the game is handed over as the win objective, and the ladder start
   assert.equal(preparationStage(bot(['stone_pickaxe', 'stone_sword'])).item, 'iron_pickaxe');
   assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket'])).item, 'iron_helmet', 'armour is four rungs of its own');
   assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings'])).item, 'iron_boots');
-  assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'diamond_boots'])), null);
+  assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'diamond_boots', 'golden_boots'])), null);
 });
 
 test('the idle loop launches the dream only when nothing of the player\'s is pending and outside the cool-down', () => {
