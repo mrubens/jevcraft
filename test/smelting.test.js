@@ -164,3 +164,24 @@ test('a furnace the bot placed is picked back up after the batch when it is trav
   assert(dug && dug.equals(new Vec3(1, 64, 0)), 'the placed furnace was dug up');
   assert.equal(furnaceCount, 1); assert.equal(bot._ownedWorkstations.size, 0);
 });
+
+test('a furnace batch planned on planks burns carried coal when no planks are left', async () => {
+  const registry = require('minecraft-data')('26.1');
+  let coal = 2, output = 0, ingots = 0; const fuelled = [];
+  const furnace = {
+    fuel: 0, inputItem: () => output ? null : { name: 'raw_iron', count: 3 }, fuelItem: () => null,
+    outputItem: () => output ? { name: 'iron_ingot', count: output } : null,
+    putFuel: async (type, metadata, count) => { fuelled.push([type, count]); coal -= count; output = 3; },
+    takeOutput: async () => { ingots += output; output = 0; }, close: () => {},
+  };
+  const bot = {
+    registry, entity: { position: new Vec3(0, 64, 0) },
+    inventory: { items: () => [{ name: 'coal', count: coal }, { name: 'iron_ingot', count: ingots }] },
+    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: p => ({ name: 'furnace', position: p }),
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+    pathfinder: { movements: {}, goto: async () => {}, setGoal: () => {} }, openFurnace: async () => furnace,
+  };
+  await smelt(bot, new Task('coal fuel'), { item: 'iron_ingot', from: 'raw_iron', count: 3, fuelItem: 'oak_planks' }, {});
+  assert.deepEqual(fuelled, [[registry.itemsByName.coal.id, 1]], 'one coal covers three ingots');
+  assert.equal(ingots, 3); assert.equal(coal, 1);
+});

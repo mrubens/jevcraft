@@ -2,7 +2,7 @@
 const vanilla = require('../data/vanilla-26.1.json');
 const { ORE_DEPTH, TOOL_TIERS, PlanError } = require('./plan');
 const { mobSources, combatGear } = require('./mob-policy');
-const { fuelPlanks, ITEMS_PER_PLANK } = require('./fuel');
+const { fuelPlanks, CARRIED_FUELS, fuelUnits } = require('./fuel');
 const cached = new WeakMap();
 const ordinarySelf = new Set(vanilla.ordinarySelfDrops);
 const plain = value => value?.replace('minecraft:', '');
@@ -194,9 +194,12 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
           const mostCarried = Math.max(...fuelPlanks.map(have));
           selectedFuel = chooseIngredient(mostCarried > 0 ? fuelPlanks.filter(fuel => have(fuel) === mostCarried) : fuelPlanks, {});
         }
-        const fuel = Math.ceil(missing / ITEMS_PER_PLANK); consume(selectedFuel, fuel);
-        steps.push({ action: 'smelt', item: name, count: missing, from: input, fuel, fuelItem: selectedFuel,
-          requires: { furnace: 1 }, consumes: { [input]: missing, [selectedFuel]: fuel }, produces: { [name]: missing } }); add(name, missing);
+        // Carried coal covers this batch without a trip for wood; planks stay
+        // the species the plan gathers when nothing burnable is in the pockets.
+        const fuelItem = CARRIED_FUELS.find(carried => have(carried) >= fuelUnits(carried, missing)) || selectedFuel;
+        const fuel = fuelUnits(fuelItem, missing); consume(fuelItem, fuel);
+        steps.push({ action: 'smelt', item: name, count: missing, from: input, fuel, fuelItem,
+          requires: { furnace: 1 }, consumes: { [input]: missing, [fuelItem]: fuel }, produces: { [name]: missing } }); add(name, missing);
       } });
       for (const source of data.mobSources[name] || []) methods.push({ cost: 80, run: () => {
         for (const names of Object.values(combatGear)) {

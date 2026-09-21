@@ -48,7 +48,7 @@ const { isDoor, doorPairMatches } = require('./doors');
 const interactableBlocks = new Set(require('mineflayer-pathfinder/lib/interactable.json'));
 const { chooseConstructionWork, approachConstruction } = require('./construction-access');
 const { approachWorkstation, reachableWorkstation } = require('./workstation-access');
-const { fuelPlanks, ITEMS_PER_PLANK } = require('./fuel');
+const { fuelPlanks, CARRIED_FUELS, isFuel, fuelUnits } = require('./fuel');
 const { opportunisticMining } = require('./opportunistic-mining');
 const { collectNearbyDrops } = require('./drop-collection');
 const { friendlyProblem, recoveryHint, completion } = require('./speech');
@@ -582,8 +582,8 @@ class SmeltingSuppliesNeeded extends Error {
 async function smelt(bot, task, step, goal, save = () => {}) {
   task.check();
   const pending = goal?.smelting;
-  const fuelItem = pending?.fuelItem || step.fuelItem || 'oak_planks';
-  if (!fuelPlanks.includes(fuelItem)) throw new Blocked(`I can't use ${fuelItem.replaceAll('_', ' ')} as furnace fuel`);
+  const plannedFuel = pending?.fuelItem || step.fuelItem || 'oak_planks';
+  if (!isFuel(plannedFuel)) throw new Blocked(`I can't use ${plannedFuel.replaceAll('_', ' ')} as furnace fuel`);
   if (pending && (pending.item !== step.item || pending.from !== step.from)) throw new Blocked('Finish the saved furnace batch before starting a different one');
   if (pending && countOf(bot, step.item) >= pending.targetInventory) { delete goal.smelting; save(); return; }
   let block;
@@ -600,7 +600,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   const before = countOf(bot, step.item);
   const needed = Math.min(pending ? pending.targetInventory - before : step.count, 64);
   if (goal && !pending) {
-    goal.smelting = { item: step.item, from: step.from, fuelItem, position: { ...block.position }, targetInventory: before + needed, count: needed };
+    goal.smelting = { item: step.item, from: step.from, fuelItem: plannedFuel, position: { ...block.position }, targetInventory: before + needed, count: needed };
     save();
   }
   const furnace = await bot.openFurnace(block);
@@ -636,7 +636,11 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         const burning = () => furnace.fuelSeconds > 0 || furnace.fuel > 0;
         if (!input || current || burning()) return;
         if (furnace.fuel === null) { await sleep(100); task.check(); if (furnace.fuelItem() || burning()) return; }
-        const wanted = Math.ceil(Math.min(input.count, needed - taken) / ITEMS_PER_PLANK);
+        // The planned fuel first, then anything burnable in the pockets: a
+        // batch saved before coal was found should not wait on planks.
+        const items = Math.min(input.count, needed - taken);
+        const fuelItem = [plannedFuel, ...CARRIED_FUELS, ...fuelPlanks].find(name => carried(name) > 0) || plannedFuel;
+        const wanted = fuelUnits(fuelItem, items);
         const extra = Math.min(wanted, carried(fuelItem));
         if (extra) await furnace.putFuel(bot.registry.itemsByName[fuelItem].id, null, extra);
         else if (!current && !burning()) throw new SmeltingSuppliesNeeded(fuelItem, wanted);

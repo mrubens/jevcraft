@@ -1,7 +1,7 @@
 'use strict';
 const { planOutputs } = require('./knowledge');
 const { PlanError } = require('./plan');
-const { ITEMS_PER_PLANK } = require('./fuel');
+const { fuelUnits } = require('./fuel');
 
 // Exact recipes determine amounts. Dependencies retain both consumable lots and
 // reusable tools/stations; joining two jobs must never introduce a tool cycle.
@@ -49,7 +49,7 @@ function batchPlan(registry, outputs, inventory = {}, context = {}) {
     for (const field of ['consumes', 'produces']) for (const [name, count] of Object.entries(node.step[field]))
       kept.step[field][name] = (kept.step[field][name] || 0) + count;
     if (kept.step.action === 'smelt') {
-      kept.step.fuel = Math.ceil(kept.step.count / ITEMS_PER_PLANK);
+      kept.step.fuel = fuelUnits(kept.step.fuelItem || 'oak_planks', kept.step.count);
       kept.step.consumes[kept.step.fuelItem || 'oak_planks'] = kept.step.fuel;
     }
     for (const dependency of node.dependencies) kept.dependencies.add(dependency);
@@ -97,7 +97,7 @@ function trimSurplus(steps, { available, totals, reserved }) {
       step.count = keptBatches * unit;
       for (const field of ['consumes', 'produces']) for (const name of Object.keys(step[field])) step[field][name] = step[field][name] / batches * keptBatches;
       if (step.action === 'smelt') {
-        step.fuel = Math.ceil(step.count / ITEMS_PER_PLANK);
+        step.fuel = fuelUnits(step.fuelItem || 'oak_planks', step.count);
         step.consumes[step.fuelItem || 'oak_planks'] = step.fuel;
       }
     }

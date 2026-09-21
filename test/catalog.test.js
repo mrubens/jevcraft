@@ -154,3 +154,12 @@ test('nested wool and bed recipes finish within the connection heartbeat budget'
     assert(plan.some(s => s.item === 'white_wool' && s.count === 6));
   } finally { clearTimeout(timer); await worker.terminate(); }
 });
+
+test('carried coal fuels a smelt instead of a trip for planks, and planks return when the coal runs short', () => {
+  const withCoal = planCatalog(registry, 'iron_ingot', 3, { raw_iron: 3, furnace: 1, coal: 2 });
+  const smelt = withCoal.find(s => s.action === 'smelt');
+  assert.equal(smelt.fuelItem, 'coal'); assert.equal(smelt.fuel, 1); assert.equal(smelt.consumes.coal, 1);
+  assert(!withCoal.some(s => s.action === 'mine' && /_log$/.test(s.block)), 'no wood gathering with coal in the pockets');
+  const shortCoal = planCatalog(registry, 'iron_ingot', 24, { raw_iron: 24, furnace: 1, coal: 1, oak_planks: 16 });
+  assert.equal(shortCoal.find(s => s.action === 'smelt').fuelItem, 'oak_planks');
+});
