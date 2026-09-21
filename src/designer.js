@@ -400,7 +400,10 @@ function selectSchematicSite(bot, schematic, { anchor, prefer, owned = new Set()
     const baseY = at ? at.y : Number.isFinite(floor) ? floor : Math.max(...ground.values());
     // Uneven ground is answered with a stepped foundation rather than by
     // flattening the landscape, but a cliff must not become a pedestal.
-    if (!at && !Number.isFinite(floor) && baseY - Math.min(...ground.values()) > SITE.step) continue;
+    // Setting into a slope lowers the floor, which this never restricted. A
+    // floor towering over the low side is the pedestal the guard is for, and
+    // letting a chosen one skip it put a watchtower across a nine-block drop.
+    if (!at && baseY - Math.min(...ground.values()) > SITE.step) continue;
     const plinth = schematic.blocks.filter(p => p.y === 0)
       .reduce((total, p) => total + Math.max(0, baseY - ground.get(`${p.x},${p.z}`) - 1), 0);
     if (plinth > SITE.plinth) continue;

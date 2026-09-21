@@ -175,3 +175,20 @@ test('an excavation is dug from its open face, not from the middle of the rock',
       assert.equal(work.position.y, 64, 'the cell it picks is one that is actually exposed');
     });
 });
+
+test('a floor the design chose still may not become a pedestal', () => {
+  // Cutting into a slope lowers the floor, and nothing stops that. A floor set
+  // high over the low side is the pedestal the step guard exists for, and
+  // exempting a chosen one put a tower across a nine-block drop it could not
+  // reach the bottom of.
+  const bot = world('hills');
+  const schematic = validateSchematic(source, registry);
+  const lowest = Math.min(63, 67);
+  const perched = selectSchematicSite(bot, schematic, { prefer: new Vec3(0, 63, 0), baseY: lowest + SITE_STEP + 4 });
+  assert(!perched || perched.origin.y <= lowest + SITE_STEP,
+    'a floor far above the low ground is refused, however it was chosen');
+
+  // A floor at ground level is still perfectly acceptable.
+  const level = selectSchematicSite(bot, schematic, { prefer: new Vec3(0, 63, 0), baseY: 67 });
+  assert(level, 'choosing a sensible floor still works');
+});
