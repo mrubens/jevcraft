@@ -40,6 +40,7 @@ const { collectWater } = require('./water');
 const { makeObsidian } = require('./obsidian');
 const { tidyInventory } = require('./inventory-tidy');
 const { homeStep, homeChores } = require('./home-base');
+const { stashValuables } = require('./home-stash');
 const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
 const { batchPlan, remainingOutputs } = require('./batch-plan');
@@ -1934,6 +1935,7 @@ function gameHandlers(bot, decisionClient) {
         prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
         prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
         home: (bot, task, goal, save, stage) => homeStep(bot, task, goal, save, stage, homeActions()),
+        stash_valuables: (bot, task, goal, save) => stashValuables(bot, task, goal, save, homeActions()),
         find_stronghold: (bot, task, goal, save) => findStronghold(bot, task, goal, save, {
           navigate, explore, surfaceStep,
           tunnel: async (bot, task, goal, save, target, resource) => {

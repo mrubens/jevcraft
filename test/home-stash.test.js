@@ -156,6 +156,30 @@ test('the ladder restocks from the stash ahead of its rungs, only within reach, 
   assert(goal.survival.home.stash.failedAt); assert.equal(preparationStage(bot, goal).phase, 'shield');
 });
 
+test('before the Nether the valuables go home once, and the ladder moves on with lighter pockets', async () => {
+  const gear = [['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['water_bucket', 1], ['oak_log', 8], ['cobblestone', 64], ['cooked_beef', 4], ['crafting_table', 1], ['furnace', 1],
+    ['iron_helmet', 1], ['iron_chestplate', 1], ['iron_leggings', 1], ['iron_boots', 1], ['golden_boots', 1], ['diamond_pickaxe', 1], ['diamond', 3], ['iron_ingot', 12], ['gold_ingot', 2]];
+  const w = await establishedHome({ items: gear });
+  const { bot, goal, save, actions } = w;
+  const chest = chestAt(w, []);
+  assert.equal(nextGameStage(bot, goal).action, 'enter_nether');
+  const ran = [];
+  const handlers = { stash_valuables: (b, t, g, s) => stash.stashValuables(b, t, g, s, actions), prepare_combat: async () => { ran.push('prepare_combat'); return false; }, enter_nether: async () => { ran.push('enter_nether'); } };
+  assert.equal(await gameStep(bot, new Task('win'), goal, save, handlers), false);
+  assert.deepEqual(ran, [], 'the stash trip came before the combat check');
+  assert.equal(goal.step.action, 'stash_valuables');
+  assert.deepEqual(chest.stored(), { diamond: 3, iron_ingot: 4, gold_ingot: 2, iron_pickaxe: 1, cooked_beef: 2 }, 'eight ingots stay for a tool; the rest, the diamonds, and the kit spares while there (the iron pickaxe behind the diamond one, two steaks over the reserve) go in');
+  assert(bot.inventory.items().some(i => i.name === 'diamond_pickaxe'), 'the pickaxe is a tool, not a valuable');
+  await gameStep(bot, new Task('win'), goal, save, handlers);
+  assert.deepEqual(ran, ['prepare_combat'], 'nothing left to stash, the ladder went on');
+  assert.equal(chest.window.opened, 1);
+  // With no chest, or the base out of reach, the crossing is not delayed.
+  bot.entity.position = new Vec3(400.5, LEVEL + 1, 0.5); w.give('diamond', 2);
+  assert.equal(await stash.stashValuables(bot, new Task('win'), goal, save, actions), true);
+  bot.entity.position = new Vec3(20.5, LEVEL + 1, 0.5);
+  assert.equal(await stash.stashValuables(bot, new Task('win'), { ...goal, survival: { home: null } }, save, actions), true);
+});
+
 test('the idle loop offers stocking the stash beside the farm chores, and each stash phase has one line said once', async () => {
   const w = await establishedHome({ items: [['stone_pickaxe', 1], ['stone_pickaxe', 1], ['oak_log', 20]] });
   const options = idleOptions(w.bot, { ...w.goal, kind: 'survive' });
