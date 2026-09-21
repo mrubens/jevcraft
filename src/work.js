@@ -92,6 +92,7 @@ async function withUsableWorkstations(bot, task, stock, requested = []) {
 
 // The pickaxe that goes down must have enough left to come back up.
 const SPARE_PICKAXE_DURABILITY = 24;
+const EXPEDITION_LOGS = 8;
 const WOOD = /_log$|_planks$|^stick$/;
 const woodCarried = bot => bot.inventory.items().filter(i => WOOD.test(i.name)).reduce((n, i) => n + i.count, 0);
 const logsCarried = bot => bot.inventory.items().filter(i => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0);
@@ -108,14 +109,16 @@ async function prepareExpeditionStep(bot, task, goal, save) {
   }
   if (pickaxeTier(bot) < 2) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return false; }
   if (pickaxeDurability(bot) < SPARE_PICKAXE_DURABILITY) { await acquireStep(bot, task, 'stone_pickaxe', countOf(bot, 'stone_pickaxe') + 1, goal, save); return false; }
-  if (logsCarried(bot) < 4) {
+  // Eight logs: sticks for two tools and fuel for a dozen smelts once the
+  // coal is gone. Four sent the bot up for one log after every other rung.
+  if (logsCarried(bot) < EXPEDITION_LOGS) {
     // The trees that were seen here, not oak by name.
     const species = (bot._catalogObservation?.nearby || []).find(name => /_log$/.test(name)) || 'oak_log';
-    await acquireStep(bot, task, species, countOf(bot, species) + 4 - logsCarried(bot), goal, save); return false;
+    await acquireStep(bot, task, species, countOf(bot, species) + EXPEDITION_LOGS - logsCarried(bot), goal, save); return false;
   }
   if (!countOf(bot, 'crafting_table')) { await acquireStep(bot, task, 'crafting_table', 1, goal, save); return false; }
   goal.expeditionReady = true; delete goal.preparingExpedition;
-  goal.step = { action: 'prepared_expedition', minimumPickaxeTier: 2, supplies: { logs: 4, crafting_table: 1 }, pickaxeDurability: pickaxeDurability(bot), foodPoints: foodSupply(bot) };
+  goal.step = { action: 'prepared_expedition', minimumPickaxeTier: 2, supplies: { logs: EXPEDITION_LOGS, crafting_table: 1 }, pickaxeDurability: pickaxeDurability(bot), foodPoints: foodSupply(bot) };
   save(); return true;
 }
 

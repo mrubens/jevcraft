@@ -41,7 +41,7 @@ test('deep catalog requests acquire missing supplies before attempting the ore',
   assert.equal(goal.preparingExpedition, true);
   assert.notEqual(goal.expeditionReady, true);
   assert.equal(goal.step.drops, 'oak_log');
-  assert.equal(goal.step.count, 1);
+  assert.equal(goal.step.count, 5, 'up to the eight-log expedition supply');
 });
 
 test('an already acquired ordinary item finishes without preparing an expedition', async () => {
@@ -51,14 +51,14 @@ test('an already acquired ordinary item finishes without preparing an expedition
   assert(result.ok); assert.equal(goal.expeditionReady, undefined);
 });
 
-test('an iron pickaxe request uses six carried logs without demanding two more', async () => {
-  const bot = fixture({ stone_pickaxe: 1, wooden_pickaxe: 1, oak_log: 6, crafting_table: 1 },
+test('an iron pickaxe request uses eight carried logs without demanding more', async () => {
+  const bot = fixture({ stone_pickaxe: 1, wooden_pickaxe: 1, oak_log: 8, crafting_table: 1 },
     { game: { gameMode: 'survival', difficulty: 'peaceful' } });
   const goal = { kind: 'obtain', item: 'iron_pickaxe', count: 1, request: 'get me an iron pickaxe' };
   await runGoal(bot, new Task('test', goal.request), goal, { save() {} }, { survival, maxSteps: 1 });
   assert.equal(goal.expeditionReady, true);
   assert.equal(goal.history[0].step.action, 'prepared_expedition');
-  assert.equal(goal.history[0].inventory.oak_log, 6);
+  assert.equal(goal.history[0].inventory.oak_log, 8);
 });
 
 test('Normal expeditions cannot descend with tools and spare wood but no safe food reserve', async () => {
