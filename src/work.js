@@ -1660,8 +1660,11 @@ function createRecoveryAdviser(bot, client) {
 async function keepRoom(bot, task, goal) {
   const dropped = await tidyInventory(bot, task);
   if (dropped.length) {
+    // Tunnelling refills the stone every few minutes; say so now and then,
+    // not at every stack.
+    const quiet = goal.tidied && Date.now() - Date.parse(goal.tidied.at) < 600000;
     goal.tidied = { at: new Date().toISOString(), dropped };
-    bot.chat?.(`My pockets are full, so I'm leaving ${dropped.map(d => `${d.count} ${d.name.replaceAll('_', ' ')}`).join(', ')} here.`);
+    if (!quiet) bot.chat?.(`My pockets are full, so I'm leaving ${dropped.map(d => `${d.count} ${d.name.replaceAll('_', ' ')}`).join(', ')} here.`);
   }
 }
 
