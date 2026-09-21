@@ -302,8 +302,15 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // blocks was stood in front of for sixteen persistence rounds while the
     // observed-hunt check, which looks within twenty-four, never saw it.
     if (distance > 10 && actions.navigate) {
+      const from = bot.entity.position.clone();
       try { await actions.navigate(bot, task, new goals.GoalNear(near.position.x, near.position.y, near.position.z, 8), { timeoutMs: 20000, stallMs: 5000 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      // No way to it (a blaze on a wall across the lava): set it aside and
+      // walk the fortress; the walk brings another into reach.
+      if (bot.entity.position.distanceTo(from) < 1.5) {
+        (state.avoided ||= {})[key] = Date.now(); delete state.stalking; save();
+        if (handler.dimension === 'nether' && actions.tunnel) { await findFortressStep(bot, task, goal, save, actions); }
+      }
       return;
     }
     await sleep(1000); return;
