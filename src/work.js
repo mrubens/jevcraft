@@ -1665,8 +1665,15 @@ async function netherStep(bot, task, goal, save) {
   const portal = find(bot, ['nether_portal'], 64, 1)[0];
   if (portal) {
     goal.portal = { ...portal }; rememberPortal(goal, save, portal, 'overworld'); save();
-    await enterPortal(bot, task, portal, () => String(bot.game.dimension).includes('nether'));
-    return true;
+    // Loaded is not routable: forty-two blocks away through solid ground the
+    // walk ended short forty-seven times. When it fails, dig toward it.
+    try { await enterPortal(bot, task, portal, () => String(bot.game.dimension).includes('nether')); return true; }
+    catch (err) {
+      task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+      goal.step = { action: 'return_to_portal', portal: { ...portal } }; save();
+      await resourceTunnelStep(bot, task, goal, save, pos(portal), 'portal_overworld', { dig, navigate });
+      return false;
+    }
   }
   if (await walkToKnownPortal(bot, task, goal, save, 'overworld')) return false;
   // A frame whose blocks are not loaded is a portal somewhere else, not ten
@@ -1750,7 +1757,11 @@ async function returnFromNether(bot, task, goal, save) {
   }
   rememberPortal(goal, save, portal, 'nether');
   goal.step = { action: 'return_overworld', portal: { ...portal } }; save();
-  await enterPortal(bot, task, portal, () => dimension(bot) === 'overworld');
+  try { await enterPortal(bot, task, portal, () => dimension(bot) === 'overworld'); }
+  catch (err) {
+    task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+    await resourceTunnelStep(bot, task, goal, save, pos(portal), 'portal_nether', { dig, navigate });
+  }
 }
 
 function protectConstruction(bot, goal) {
