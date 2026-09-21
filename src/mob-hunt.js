@@ -9,7 +9,6 @@ const { dryStanding } = require('./mining-access');
 const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
 const { checkAir } = require('./vitals');
 const { surveyRoute, countOf } = require('./skills');
-const { surfaceObserver } = require('./surface');
 const { decideTree } = require('./decisions');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
@@ -304,6 +303,8 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // A hunt circles where it started, in rings of twenty-four blocks, rather
   // than walking the map's frontier: the mob comes to the bot at night. By
   // day underground the caves are the hunting ground, not the surface.
+  // Required here, not at the top: surface.js reaches this module through work.js.
+  const { surfaceObserver } = require('./surface');
   const underground = dimension(bot) === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
   await actions.explore(bot, task, goal, save, step.entity, { surfaceOnly: dimension(bot) === 'overworld' && !underground, frontier: false });
 }
