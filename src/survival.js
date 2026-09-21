@@ -118,10 +118,27 @@ class Survival {
     } finally { Object.assign(movements, previous); bot.clearControlStates(); }
   }
 
+  // A saved shelter is only useful if there is a way to it. Forty blocks up
+  // a shaft at dusk, the surface shelter from last night is not a shelter,
+  // and the dream run spent a whole night failing to path to it. One that
+  // cannot be reached is set aside for a while so a pocket can be sealed
+  // where the bot stands.
+  async reachableRefuge(task, goal, save, refuge) {
+    const bot = this.bot;
+    if (!refuge || shelter.inside(bot, refuge)) return refuge;
+    const o = pos(refuge.origin);
+    if (o.distanceTo(bot.entity.position) <= 6 || !bot.pathfinder?.movements) return refuge;
+    const route = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalNear(o.x, o.y, o.z, 2), 400);
+    if (route.status === 'success') return refuge;
+    refuge.avoidUntil = Date.now() + 600000;
+    this.report(goal, save, { action: 'shelter_unreachable', origin: refuge.origin, reason: route.status });
+    return null;
+  }
+
   async refugeStep(task, goal, save) {
     const bot = this.bot;
     if (await reachShore(bot, task, goal, save, { move: this.actions.navigate })) return;
-    let refuge = this.currentShelter();
+    let refuge = await this.reachableRefuge(task, goal, save, this.currentShelter());
     if (!refuge) {
       const sites = shelter.shelterSites(bot, goal);
       let site;

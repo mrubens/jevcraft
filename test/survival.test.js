@@ -364,3 +364,19 @@ test('mixed wood variants never make shelter crafting ask for new logs', () => {
   stock.spruce_log = 8;
   assert.deepEqual(shelter.supplyTarget(bot, 1), { item: 'spruce_planks', count: 17 }, 'Only fill the shortage, allowing the recipe to round up');
 });
+
+test('a saved shelter with no route to it is set aside so a pocket can be sealed where the bot stands', async () => {
+  const { Survival } = require('../src/survival');
+  const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 35, 0.5) },
+    pathfinder: { movements: {}, getPathTo: () => ({ status: 'noPath', path: [] }) }, blockAt: () => ({ name: 'stone', boundingBox: 'block' }), on() {} };
+  const survival = new Survival(bot, {}, { state: { shelters: [{ origin: { x: 0, y: 75, z: 0 }, dimension: 'overworld', verifiedAt: 'x', createdAt: 'x' }] } });
+  const goal = {}, saved = [];
+  const refuge = survival.currentShelter();
+  assert(refuge, 'the surface shelter is the current one');
+  assert.equal(await survival.reachableRefuge(new Task('night'), goal, () => saved.push(1), refuge), null);
+  assert(refuge.avoidUntil > Date.now()); assert.equal(goal.survivalAction.action, 'shelter_unreachable');
+  assert.equal(survival.currentShelter(), undefined, 'set aside, so a new local site will be chosen');
+  bot.pathfinder.getPathTo = () => ({ status: 'success', path: [] });
+  const near = { origin: { x: 2, y: 35, z: 0 }, dimension: 'overworld' };
+  assert.equal(await survival.reachableRefuge(new Task('night'), goal, () => {}, near), near, 'a reachable one is kept');
+});
