@@ -55,10 +55,11 @@ test('stocking puts in the spare of each tool, wood and stone beyond what the po
   const bot = carrying([['iron_pickaxe', 1], ['stone_pickaxe', 1], ['iron_sword', 1], ['oak_log', 12], ['cobblestone', 100], ['cooked_beef', 4], ['bread', 2],
     ['crafting_table', 2], ['furnace', 1], ['water_bucket', 1], ['bucket', 1], ['diamond', 3], ['iron_ingot', 10]]);
   const moves = stash.stashDeposits(bot, holding({}));
-  assert.deepEqual(byItem(moves), { stone_pickaxe: 1, oak_log: 4, cobblestone: 36, cooked_beef: 3, bread: 1, crafting_table: 1, water_bucket: 1 });
-  assert(moves.every(m => m.slot), 'every move names its kit slot');
+  assert.deepEqual(byItem(moves), { stone_pickaxe: 1, oak_log: 4, cobblestone: 36, cooked_beef: 3, bread: 1, crafting_table: 1, water_bucket: 1, iron_ingot: 2 });
+  assert(moves.every(m => m.slot || m.keepsake), 'every move names its kit slot or its keepsake');
+  assert.deepEqual(moves.find(m => m.item === 'iron_ingot'), { item: 'iron_ingot', count: 2, keepsake: 'iron' }, 'two ingots over the eight a tool needs are a keepsake');
   // Forty-two food points carried: three steaks and a loaf leave the twelve-point reserve; the iron pickaxe, the only sword and the only furnace stay.
-  assert(!moves.some(m => ['iron_pickaxe', 'iron_sword', 'furnace', 'diamond', 'iron_ingot'].includes(m.item)));
+  assert(!moves.some(m => ['iron_pickaxe', 'iron_sword', 'furnace', 'diamond'].includes(m.item)));
   // A chest that already holds a pickaxe wants no second one; a worn tool is not a spare.
   assert(!stash.stashDeposits(bot, holding({ stone_pickaxe: 1 })).some(m => m.item === 'stone_pickaxe'));
   const worn = carrying([['iron_pickaxe', 1, 240], ['stone_pickaxe', 1]]);
@@ -70,7 +71,34 @@ test('stocking puts in the spare of each tool, wood and stone beyond what the po
   assert.deepEqual(byItem(before.filter(m => m.valuable)), { iron_ingot: 2 });
   const withPickaxe = carrying([['diamond_pickaxe', 1], ['diamond', 3], ['gold_ingot', 2], ['iron_ingot', 4]]);
   assert.deepEqual(byItem(stash.stashDeposits(withPickaxe, holding({}), { valuables: true }).filter(m => m.valuable)), { diamond: 3, gold_ingot: 2 });
-  assert.deepEqual(stash.stashDeposits(withPickaxe, holding({})).filter(m => m.valuable), [], 'the idle chore leaves the valuables in the pockets');
+  assert.deepEqual(byItem(stash.stashDeposits(withPickaxe, holding({}))), { diamond: 3 }, 'the idle chore puts the diamonds away as a keepsake; the two ingots of gold stay for the boots');
+  assert.deepEqual(stash.stashDeposits(withPickaxe, holding({})).filter(m => m.valuable), [], 'the idle chore marks no valuables trip');
+});
+
+test('keepsakes go in over what the pockets keep, never twice, and the surplus tidy leaves them alone', () => {
+  const { SURPLUS } = require('../src/inventory-tidy');
+  const bot = carrying([['white_wool', 5], ['black_wool', 2], ['string', 4], ['feather', 6], ['bone', 3], ['bone_meal', 2], ['gunpowder', 1], ['arrow', 40], ['leather', 2], ['flint', 10],
+    ['iron_ingot', 8], ['raw_iron', 12], ['gold_ingot', 1], ['raw_gold', 5], ['diamond', 2], ['ender_pearl', 20], ['blaze_rod', 9], ['blaze_powder', 4], ['obsidian', 3],
+    ['oak_log', 20], ['birch_log', 4], ['coal', 20], ['charcoal', 4], ['wheat_seeds', 70], ['wheat', 64], ['carrot', 65], ['potato', 10], ['cobblestone', 64], ['stone_pickaxe', 1]]);
+  const moves = stash.stashDeposits(bot, holding({ oak_log: 8, cobblestone: 64, stone_pickaxe: 1, cooked_beef: 8 }));
+  assert.deepEqual(byItem(moves), { white_wool: 4, string: 4, feather: 6, bone: 3, bone_meal: 2, gunpowder: 1, arrow: 8, leather: 2, flint: 2, raw_iron: 4, raw_gold: 2,
+    ender_pearl: 4, blaze_rod: 1, obsidian: 3, oak_log: 16, coal: 8, wheat_seeds: 6, carrot: 1 });
+  assert(moves.every(m => m.keepsake), 'the kit is full, so every move is a keepsake');
+  // Wool and logs are families: seven wool carried, three kept, the biggest pile spent first; twenty-four logs, eight kept, all from the oak pile.
+  // Gold keeps what the boots need: one ingot plus three raw. Diamonds stay without the diamond pickaxe.
+  assert(!moves.some(m => ['black_wool', 'gold_ingot', 'diamond', 'iron_ingot', 'blaze_powder', 'wheat', 'potato'].includes(m.item)));
+  // With the chest short of logs, the kit takes its eight and the keepsake rule takes the rest over eight, once.
+  const logs = stash.stashDeposits(carrying([['oak_log', 20]]), holding({}));
+  assert.deepEqual(logs, [{ item: 'oak_log', count: 8, slot: 'logs' }, { item: 'oak_log', count: 4, keepsake: 'logs' }]);
+  // Golden boots on: the gold has done its job.
+  assert.deepEqual(byItem(stash.stashDeposits(carrying([['golden_boots', 1], ['gold_ingot', 3], ['raw_gold', 1]]), holding({}))), { gold_ingot: 3, raw_gold: 1 });
+  // The valuables trip counts a keepsake of the same metal once, as both, and takes the rest the way it always did.
+  const both = stash.stashDeposits(carrying([['raw_iron', 12], ['emerald', 2]]), holding({}), { valuables: true });
+  assert.deepEqual(both, [{ item: 'raw_iron', count: 4, keepsake: 'raw iron', valuable: true }, { item: 'emerald', count: 2, valuable: true }, { item: 'raw_iron', count: 8, valuable: true }]);
+  for (const name of ['white_wool', 'string', 'feather', 'bone', 'leather', 'iron_ingot', 'ender_pearl', 'oak_log', 'coal']) assert(!(name in SURPLUS), `${name} is never tossed as surplus`);
+  assert(stash.isKeepsake('red_wool') && stash.isKeepsake('string') && !stash.isKeepsake('cobblestone') && !stash.isKeepsake('dirt'));
+  assert(stash.isKitMaterial(bot, 'cobblestone') && stash.isKitMaterial(bot, 'spruce_log') && stash.isKitMaterial(bot, 'iron_sword') && stash.isKitMaterial(bot, 'cooked_beef'));
+  assert(!stash.isKitMaterial(bot, 'wooden_pickaxe') && !stash.isKitMaterial(bot, 'dirt') && !stash.isKitMaterial(bot, 'rotten_flesh'));
 });
 
 test('the kit comes out when the pockets are short of it, and the rung the chest can answer comes out with it', () => {
@@ -91,6 +119,30 @@ test('the kit comes out when the pockets are short of it, and the rung the chest
   assert.deepEqual(stash.rungWants(stone, { action: 'acquire', item: 'stone_pickaxe', count: 2 }), [{ item: 'stone_pickaxe', count: 1 }]);
   assert.deepEqual(stash.rungWants(stone, { action: 'acquire_set', items: ['iron_helmet', 'iron_boots'] }), [{ item: 'iron_helmet', count: 1 }, { item: 'iron_boots', count: 1 }]);
   assert.deepEqual(stash.rungWants(stone, null), []);
+});
+
+test('the chest answers the wool for a bed and the ingredients of a plan, reading the plan backwards so a covered product skips the gathering beneath it', () => {
+  // Wool: the carried colour's shortfall when the chest has it, else any whole bed's worth, else nothing.
+  const two = carrying([['black_wool', 2]]);
+  assert.deepEqual(stash.rungWants(two, { action: 'gather_wool', count: 1 }, { home: holding({ black_wool: 5, white_wool: 1 }) }), [{ item: 'black_wool', count: 1 }]);
+  assert.deepEqual(stash.rungWants(two, { action: 'gather_wool', count: 1 }, { home: holding({ white_wool: 4 }) }), [{ item: 'white_wool', count: 3 }]);
+  assert.deepEqual(stash.rungWants(two, { action: 'gather_wool', count: 1 }, { home: holding({ white_wool: 2 }) }), []);
+  assert.deepEqual(stash.rungWants(two, { action: 'gather_wool', count: 1 }), [], 'without the home there is no chest to read');
+  // A sword plan: mine raw iron, smelt it, craft. Ingots in the chest cover the craft, so the smelt and the mine beneath it are skipped and no raw iron is asked for.
+  const plan = [
+    { action: 'mine', drops: 'raw_iron', count: 2, consumes: {}, produces: { raw_iron: 2 } },
+    { action: 'smelt', item: 'iron_ingot', count: 2, consumes: { raw_iron: 2, coal: 1 }, produces: { iron_ingot: 2 } },
+    { action: 'craft', item: 'stick', count: 4, consumes: { oak_planks: 2 }, produces: { stick: 4 } },
+    { action: 'craft', item: 'iron_sword', count: 1, consumes: { iron_ingot: 2, stick: 1 }, produces: { iron_sword: 1 } },
+  ];
+  assert.deepEqual(stash.planIngredients(carrying([]), { iron_ingot: 8, raw_iron: 8, coal: 4, stick: 2 }, plan), [{ item: 'iron_ingot', count: 2 }, { item: 'stick', count: 1 }]);
+  // Without ingots the chest answers the smelt instead: raw iron and the coal to burn.
+  assert.deepEqual(stash.planIngredients(carrying([]), { raw_iron: 8, coal: 4 }, plan), [{ item: 'raw_iron', count: 2 }, { item: 'coal', count: 1 }]);
+  // What the pockets hold is spent first: one ingot carried, one from the chest.
+  assert.deepEqual(stash.planIngredients(carrying([['iron_ingot', 1], ['stick', 4]]), { iron_ingot: 8, stick: 2 }, plan), [{ item: 'iron_ingot', count: 1 }]);
+  // A chest short of the whole amount gives what it has.
+  assert.deepEqual(stash.planIngredients(carrying([]), { iron_ingot: 1 }, plan), [{ item: 'iron_ingot', count: 1 }]);
+  assert.deepEqual(stash.planIngredients(carrying([]), {}, plan), []);
 });
 
 test('the chest is opened beside the bed, moves are made against its real contents by slot or by type, and the contents are remembered', async () => {
@@ -135,7 +187,8 @@ test('the ladder restocks from the stash ahead of its rungs, only within reach, 
   goal.survival.home.stash.contents = chest.stored();
   const stage = preparationStage(bot, goal);
   assert.equal(stage.phase, 'home_restock'); assert.equal(stage.action, 'home'); assert.equal(stage.home.action, 'restock');
-  assert.deepEqual(stage.home.wants, [{ item: 'stone_pickaxe', count: 1 }]);
+  assert.deepEqual(stage.home.wants[0], { item: 'stone_pickaxe', count: 1 });
+  assert.deepEqual(stage.home.wants.slice(1).map(w => w.item), ['cobblestone', 'oak_log'], 'and the plan for one: the stone and the wood the chest holds, in case the pickaxe is gone by the time the lid opens');
   assert.equal(nextGameStage(bot, goal).phase, 'home_restock');
   await gameStep(bot, new Task('win'), goal, save, { home: (b, t, g, s, st) => home.homeStep(b, t, g, s, st, actions) });
   assert.equal(goal.gameProgress.phase, 'home_restock');
@@ -184,7 +237,7 @@ test('before the Nether the valuables go home once, and the ladder moves on with
 test('the idle loop offers stocking the stash beside the farm chores, and each stash phase has one line said once', async () => {
   const w = await establishedHome({ items: [['stone_pickaxe', 1], ['stone_pickaxe', 1], ['oak_log', 20]] });
   const options = idleOptions(w.bot, { ...w.goal, kind: 'survive' });
-  assert.match(options.stock_stash.description, /1 stone pickaxe, 8 oak log/, 'the chest holds eight logs, whatever the pockets can spare');
+  assert.match(options.stock_stash.description, /kit: 1 stone pickaxe, 8 oak log, and to keep for later: 4 oak log/, 'the chest holds eight kit logs and the four over eight as a keepsake');
   for (const [step, pattern] of [[{ action: 'place_chest' }, /chest beside the bed/], [{ action: 'stock_stash' }, /Stocking the stash chest/], [{ action: 'restock' }, /spare kit out of the stash/],
     [{ action: 'stash_valuables' }, /valuables in the stash chest before the Nether/], [{ action: 'idle', choice: 'stock_stash' }, /stock the stash chest/], [{ action: 'game_progression', phase: 'home_restock' }, /home restock/]]) {
     assert.match(stepLine({}, step), pattern);

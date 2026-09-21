@@ -143,6 +143,75 @@ test('coal within reach with no fuel in the pockets is taken by rule, without as
   assert.equal(await opportunisticMining(bot, new Task('iron'), goal, () => {}, { drops: 'raw_iron' }, { dig: async () => assert.fail('dug'), navigate: async () => {} }, null), false, 'with fuel in hand and no client, no detour');
 });
 
+test('a keepsake or kit item lying within eight blocks is picked up by rule, what the tidy would toss is not, and the main step is kept', async () => {
+  const { dropCandidates, opportunisticPickups } = require('../src/opportunistic-pickups');
+  const { bot, stock } = oreWorld();
+  const drop = (id, name, count, x) => ({ id, name: 'item', isValid: true, position: new Vec3(x, 70, .5), getDroppedItem: () => ({ name, count }) });
+  bot.entities = { 1: drop(1, 'string', 2, 3.5), 2: drop(2, 'dirt', 5, 2.5), 3: drop(3, 'oak_log', 1, 5.5), 4: drop(4, 'feather', 1, 20.5), 5: drop(5, 'cobblestone', 8, 4.5) };
+  bot.inventory.items = () => [{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }, { name: 'cobblestone', count: 200 }];
+  assert.deepEqual(dropCandidates(bot, {}).map(c => c.item), ['string', 'oak_log'], 'dirt is not kept, the feather is out of reach, and cobblestone over the tidy cap would be tossed again');
+  bot.inventory.items = () => [{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }, { name: 'cobblestone', count: 20 }];
+  assert.deepEqual(dropCandidates(bot, {}).map(c => c.item), ['string', 'cobblestone', 'oak_log'], 'nearest first, and cobblestone under the cap is kit material');
+  bot.inventory.emptySlotCount = () => 2; assert.equal(dropCandidates(bot, {}).length, 0, 'crowded pockets pick nothing up'); bot.inventory.emptySlotCount = () => 12;
+  // The pickup is a rule: no client, no question, the collector is called for each and the step is restored.
+  let items = [{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }];
+  bot.inventory.items = () => items;
+  const collected = [], steps = [];
+  const goal = { kind: 'win', step: { action: 'mine', drops: 'raw_iron' }, opportunistic: { primarySteps: 0, history: [], skipped: {} } };
+  const result = await opportunisticPickups(bot, new Task('iron'), goal, () => steps.push(goal.step.action), { drops: 'raw_iron' }, {
+    navigate: async () => {}, collectDrops: async (b, t, item) => { collected.push(item); if (item !== 'oak_log') items = [...items, { name: item, count: 2 }]; return item !== 'oak_log'; },
+  }, null);
+  assert.equal(result, true);
+  assert.deepEqual(collected, ['string', 'cobblestone', 'oak_log']);
+  assert(steps.includes('collect_nearby_resource') && goal.step.action === 'mine', 'the detour had its own step and gave the mine step back');
+  assert.deepEqual(goal.opportunistic.history.at(-1).pickedUp, [{ item: 'string', count: 2 }, { item: 'cobblestone', count: 2 }]);
+  assert.equal(goal.opportunistic.lastDecision.answer.rule, 'keepsake');
+  assert(goal.opportunistic.skipped['drop:oak_log'], 'a log that could not be reached is left alone for a while');
+  assert.deepEqual(dropCandidates(bot, goal).map(c => c.item), ['string', 'cobblestone']);
+  stock([]);
+});
+
+test('an isolated sheep or chicken in view with its drop short is offered to Jev every third step, and the chase is bounded and returns to the step', async () => {
+  const { animalCandidates, opportunisticPickups } = require('../src/opportunistic-pickups');
+  const { bot } = oreWorld();
+  Object.assign(bot.game, { difficulty: 'normal', dimension: 'minecraft:overworld' }); bot.oxygenLevel = 20;
+  const sheep = { id: 9, name: 'sheep', isValid: true, position: new Vec3(6.5, 70, .5), metadata: [] };
+  const chicken = { id: 10, name: 'chicken', isValid: true, position: new Vec3(4.5, 70, 2.5), metadata: [] };
+  const lamb = { id: 11, name: 'sheep', isValid: true, position: new Vec3(2.5, 70, .5), metadata: [] };
+  lamb.metadata[registry.entitiesByName.sheep.metadataKeys.indexOf('baby')] = true;
+  bot.entities = { 9: sheep, 10: chicken, 11: lamb };
+  assert.deepEqual(animalCandidates(bot, {}).map(c => [c.animal, c.label, c.carried, c.wanted]), [['sheep', 'wool', 0, 3], ['chicken', 'feathers', 0, 4]], 'the lamb is not a candidate');
+  assert.equal(animalCandidates(bot, {})[0].entity, sheep);
+  bot.inventory.items = () => [{ name: 'white_wool', count: 3 }, { name: 'feather', count: 1 }];
+  assert.deepEqual(animalCandidates(bot, {}).map(c => c.animal), ['chicken'], 'three wool is enough for a bed');
+  bot.inventory.items = () => [];
+  bot.health = 8; assert.equal(animalCandidates(bot, {}).length, 0); bot.health = 20;
+  // Not every step is a question: the first two pass, the third asks, and continue is remembered for those animals.
+  const asked = [], hunted = [], observed = [];
+  const goal = { kind: 'win', request: 'beat the game', step: { action: 'mine', drops: 'oak_log' }, opportunistic: { primarySteps: 0, history: [], skipped: {} } };
+  const actions = { navigate: async () => {}, collectDrops: async () => false,
+    hunt: async (b, t, target) => { hunted.push(target.name); bot.inventory.items = () => [{ name: 'white_wool', count: 2 }]; },
+    huntObserved: async (b, t, g) => { observed.push({ ...g.mobHunt }); bot.inventory.items = () => [{ name: 'feather', count: 1 }]; return true; } };
+  const client = { systemOne: async ({ questions }) => { asked.push(Object.keys(questions.opportunity.criteria)); return { answers: { opportunity: { choice: asked.length === 1 ? 'continue' : 'animal_0' } } }; } };
+  for (let i = 0; i < 2; i++) assert.equal(await opportunisticPickups(bot, new Task('logs'), goal, () => {}, goal.step, actions, client), false);
+  assert.equal(asked.length, 0);
+  assert.equal(await opportunisticPickups(bot, new Task('logs'), goal, () => {}, goal.step, actions, client), false, 'Jev chose to continue');
+  assert.deepEqual(asked, [['animal_0', 'animal_1', 'continue']]); assert.deepEqual(hunted, []);
+  assert(goal.opportunistic.skipped['mob:9'] && goal.opportunistic.skipped['mob:10'], 'the animals Jev passed on are not asked about again for a while');
+  goal.opportunistic.skipped = {}; goal.opportunistic.pickupSteps = 2;
+  assert.equal(await opportunisticPickups(bot, new Task('logs'), goal, () => {}, goal.step, actions, client), true, 'the sheep chase gathered wool');
+  assert.deepEqual(hunted, ['sheep']); assert.equal(goal.step.action, 'mine', 'the mine step came back');
+  assert.deepEqual(goal.opportunistic.history.at(-1), { ...goal.opportunistic.history.at(-1), kind: 'animal', animal: 'sheep', resource: 'wool', pickedUp: 2 });
+  // With wool in hand the chicken is next, through the mob hunt with a feather target, and the hunt state is cleaned up after.
+  goal.opportunistic.pickupSteps = 2; bot.entities = { 10: chicken };
+  assert.equal(await opportunisticPickups(bot, new Task('logs'), goal, () => {}, goal.step, actions, client), true);
+  assert.deepEqual(observed, [{ item: 'feather', entity: 'chicken', targetCount: 4 }]); assert.equal(goal.mobHunt, undefined);
+  // No client: no question, no chase.
+  goal.opportunistic.pickupSteps = 2; bot.inventory.items = () => [];
+  assert.equal(await opportunisticPickups(bot, new Task('logs'), goal, () => {}, goal.step, actions, null), false);
+  assert.deepEqual(hunted, ['sheep']);
+});
+
 test('long or excavating detour routes never reach the model or executor', async () => {
   const { opportunisticMining } = require('../src/opportunistic-mining');
   const { bot } = oreWorld();

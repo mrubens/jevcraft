@@ -69,6 +69,50 @@ const VALUABLES = Object.freeze({
   iron_ingot: 8, copper_ingot: 0, lapis_lazuli: 0, amethyst_shard: 0, netherite_ingot: 0, netherite_scrap: 0,
 });
 
+// Keepsakes: useless now, precious later. String and feathers are a bow
+// and arrows, wool is the next bed, leather is a book, bones are bone meal
+// for the plot, gunpowder is a TNT charge, flint is a fire, and a stack of
+// seeds replants the plot after a creeper. None of it is worth carrying
+// through a death, all of it is worth a walk to the chest later. `keep` is
+// what stays in the pockets; everything over it goes in whenever the bot
+// is at home stocking the chest, and comes out again when a rung or a plan
+// step consumes it. Nether and End supplies keep what the eyes need (the
+// ladder counts them in the pockets; a chest full of pearls would send the
+// bot back through the portal for more), gold keeps what golden boots
+// need until the boots exist, iron keeps a tool's worth, and diamonds stay
+// out until the diamond pickaxe is made.
+const STACK = 64;
+const bootsCarried = items => items.some(i => i.name === 'golden_boots');
+const KEEPSAKES = Object.freeze([
+  { label: 'wool', matches: name => /_wool$/.test(name), keep: 3 },
+  { label: 'string', matches: name => name === 'string', keep: 0 },
+  { label: 'feathers', matches: name => name === 'feather', keep: 0 },
+  { label: 'bones', matches: name => name === 'bone' || name === 'bone_meal', keep: 0 },
+  { label: 'gunpowder', matches: name => name === 'gunpowder', keep: 0 },
+  { label: 'arrows', matches: name => name === 'arrow', keep: 32 },
+  { label: 'leather', matches: name => name === 'leather', keep: 0 },
+  { label: 'flint', matches: name => name === 'flint', keep: 8 },
+  { label: 'iron', matches: name => name === 'iron_ingot', keep: 8 },
+  { label: 'raw iron', matches: name => name === 'raw_iron', keep: 8 },
+  { label: 'gold', matches: name => name === 'gold_ingot', keep: (bot, items) => bootsCarried(items) ? 0 : 4 },
+  { label: 'raw gold', matches: name => name === 'raw_gold', keep: (bot, items) => bootsCarried(items) ? 0 : Math.max(0, 4 - totalOf(items, n => n === 'gold_ingot')) },
+  { label: 'diamonds', matches: name => name === 'diamond', keep: (bot, items) => items.some(i => i.name === 'diamond_pickaxe') ? 0 : Infinity },
+  { label: 'ender pearls', matches: name => name === 'ender_pearl', keep: 16 },
+  { label: 'blaze rods', matches: name => name === 'blaze_rod', keep: 8 },
+  { label: 'blaze powder', matches: name => name === 'blaze_powder', keep: 16 },
+  { label: 'obsidian', matches: name => name === 'obsidian', keep: 0 },
+  { label: 'logs', matches: name => /_log$/.test(name), keep: 8 },
+  { label: 'coal', matches: name => name === 'coal' || name === 'charcoal', keep: 16 },
+  { label: 'seeds', matches: name => /_seeds$/.test(name), keep: STACK },
+  { label: 'wheat', matches: name => name === 'wheat', keep: STACK },
+  { label: 'carrots', matches: name => name === 'carrot', keep: STACK },
+  { label: 'potatoes', matches: name => name === 'potato', keep: STACK },
+]);
+const keepsakeOf = name => KEEPSAKES.find(k => k.matches(name)) || null;
+const isKeepsake = name => !!keepsakeOf(name);
+// Anything the kit has a slot for: what a respawn needs is worth picking up.
+const isKitMaterial = (bot, name) => SPARE_KIT.some(slot => !slot.tool && slotFits(bot, slot, name)) || (toolKind(name) !== null && toolTier(name) >= 2);
+
 function slotFits(bot, slot, name) {
   if (slot.tool) return toolKind(name) === slot.tool && toolTier(name) >= 2;
   if (slot.food) return safeFood(bot, { name });
@@ -101,32 +145,50 @@ function spares(bot, slot, items) {
     const n = Math.min(totalOf(items, n => n === 'water_bucket'), totalOf(items, isBucket) - 1);
     return n > 0 ? [{ item: 'water_bucket', count: n }] : [];
   }
-  let spare = totalOf(items, slot.matches) - slot.keep;
+  return spareByType(items, slot.matches, slot.keep);
+}
+
+// What the pockets can spare of one family of stackables, by type, biggest
+// pile first, after `moved` (what earlier rules already put in the chest).
+function spareByType(items, matches, keep, moved = {}) {
+  const counts = {};
+  for (const i of items) if (matches(i.name)) counts[i.name] = (counts[i.name] || 0) + i.count;
+  for (const name of Object.keys(counts)) counts[name] = Math.max(0, counts[name] - (moved[name] || 0));
+  let spare = Object.values(counts).reduce((n, c) => n + c, 0) - keep;
   const out = [];
-  for (const i of [...items].filter(i => slot.matches(i.name)).sort((a, b) => b.count - a.count)) {
+  for (const [name, count] of Object.entries(counts).sort((a, b) => b[1] - a[1])) {
     if (spare <= 0) break;
-    const n = Math.min(i.count, spare); out.push({ item: i.name, count: n }); spare -= n;
+    const n = Math.min(count, spare); if (n > 0) out.push({ item: name, count: n }); spare -= n;
   }
   return out;
 }
 
 // The moves from pockets to chest: kit slots the chest is short of, filled
-// from what the pockets can spare, and before the Nether the valuables.
+// from what the pockets can spare, then the keepsakes over what the pockets
+// keep, and before the Nether the valuables. Each rule sees what the ones
+// before it already moved, so a log is a kit log or a keepsake, never both.
 function stashDeposits(bot, home, { valuables = false, items = bot.inventory.items() } = {}) {
-  const moves = [];
+  const moves = [], moved = {};
+  const record = move => { moves.push(move); moved[move.item] = (moved[move.item] || 0) + move.count; };
   for (const slot of SPARE_KIT) {
     let need = slot.count - storedIn(bot, home, slot);
     for (const spare of spares(bot, slot, items)) {
       if (need <= 0) break;
       const count = Math.min(spare.count, need);
-      moves.push({ item: spare.item, count, slot: slot.slot }); need -= count;
+      record({ item: spare.item, count, slot: slot.slot }); need -= count;
     }
+  }
+  for (const keepsake of KEEPSAKES) {
+    const keep = typeof keepsake.keep === 'function' ? keepsake.keep(bot, items) : keepsake.keep;
+    for (const spare of spareByType(items, keepsake.matches, keep, moved)) record({ ...spare, keepsake: keepsake.label });
   }
   if (valuables) {
     for (const [name, keep] of Object.entries(VALUABLES)) {
       const limit = typeof keep === 'function' ? keep(bot) : keep;
-      const count = totalOf(items, n => n === name) - limit;
-      if (count > 0) moves.push({ item: name, count, valuable: true });
+      // A keepsake move of the same valuable is the valuables trip's too.
+      for (const move of moves) if (move.item === name && move.keepsake) move.valuable = true;
+      const count = totalOf(items, n => n === name) - limit - (moved[name] || 0);
+      if (count > 0) record({ item: name, count, valuable: true });
     }
   }
   return moves;
@@ -171,12 +233,60 @@ function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items()
   return moves;
 }
 
-// What the ladder's next rung would go and gather, for the chest to answer.
-function rungWants(bot, rung) {
+// What the ladder's next rung would go and gather, for the chest to answer:
+// the rung's own item, and with the home known, the wool for its bed and
+// the ingredients of its plan that the chest holds, so a keepsake put away
+// last week is a walk to the chest and not a hunt.
+function rungWants(bot, rung, { home = null, goal = null } = {}) {
   if (!rung) return [];
-  if (rung.action === 'acquire') return [{ item: rung.item, count: Math.max(1, (rung.count || 1) - countOf(bot, rung.item)) }];
-  if (rung.action === 'acquire_set') return (rung.items || []).map(item => ({ item, count: 1 }));
-  return [];
+  const wants = [];
+  if (rung.action === 'acquire') wants.push({ item: rung.item, count: Math.max(1, (rung.count || 1) - countOf(bot, rung.item)) });
+  if (rung.action === 'acquire_set') wants.push(...(rung.items || []).map(item => ({ item, count: 1 })));
+  if (rung.action === 'gather_wool' && home) wants.push(...woolWants(bot, home, rung.count || 3));
+  if (['acquire', 'acquire_set'].includes(rung.action) && home) wants.push(...planWants(bot, home, rung, goal));
+  return wants;
+}
+
+// A bed is three wool of one colour: the carried colour's shortfall if the
+// chest has it, else any colour the chest has a whole bed of.
+function woolWants(bot, home, needed) {
+  const stored = contentsOf(home), carried = base().woolCarried(bot);
+  if ((stored[`${carried.colour}_wool`] || 0) >= needed) return [{ item: `${carried.colour}_wool`, count: needed }];
+  const whole = Object.keys(stored).find(name => /_wool$/.test(name) && stored[name] >= 3);
+  return whole ? [{ item: whole, count: 3 }] : [];
+}
+
+// The ingredients of the rung's plan that the chest holds. The plan is read
+// backwards: a step whose product the chest already covers is skipped with
+// everything under it, so a chest of ingots answers the craft and the mine
+// and smelt beneath it are never asked for. What the pockets hold is spent
+// before the chest is.
+function planWants(bot, home, rung, goal) {
+  const stored = contentsOf(home);
+  if (!Object.keys(stored).some(name => stored[name] > 0) || !bot.findBlocks) return [];
+  let plan;
+  try {
+    const { catalogPlan, planningInventory } = require('./work');
+    const outputs = rung.action === 'acquire_set' ? (rung.items || []).map(item => ({ item, count: 1 })) : rung.item;
+    plan = catalogPlan(bot, outputs, rung.count || 1, planningInventory(bot), goal || {});
+  } catch (_) { return []; }
+  return planIngredients(bot, stored, plan);
+}
+
+function planIngredients(bot, stored, plan) {
+  const carried = {};
+  for (const i of bot.inventory.items()) carried[i.name] = (carried[i.name] || 0) + i.count;
+  const wants = {}, covered = {};
+  for (const step of [...plan].reverse()) {
+    const produced = Object.entries(step.produces || {});
+    if (produced.length && produced.every(([name, n]) => (covered[name] || 0) >= n)) { for (const [name, n] of produced) covered[name] -= n; continue; }
+    for (const [name, n] of Object.entries(step.consumes || {})) {
+      const own = Math.min(n, carried[name] || 0); carried[name] = (carried[name] || 0) - own;
+      const take = Math.min(n - own, (stored[name] || 0) - (wants[name] || 0));
+      if (take > 0) { wants[name] = (wants[name] || 0) + take; covered[name] = (covered[name] || 0) + take; }
+    }
+  }
+  return Object.entries(wants).map(([item, count]) => ({ item, count }));
 }
 
 function stashStatus(bot, home) {
@@ -198,7 +308,11 @@ function rememberContents(home, window) {
 }
 
 const describeContents = contents => Object.entries(contents).map(([name, count]) => `${count} ${words(name)}`).join(', ');
-const describeMoves = moves => moves.map(m => `${m.count} ${words(m.item)}`).join(', ');
+const describeMoves = moves => {
+  const counts = {};
+  for (const m of moves) counts[m.item] = (counts[m.item] || 0) + m.count;
+  return Object.entries(counts).map(([name, count]) => `${count} ${words(name)}`).join(', ');
+};
 
 // The restock rung: at the base (or within reach of it) with the chest
 // holding something the pockets are short of or the ladder is about to go
@@ -348,9 +462,11 @@ function stashChores(bot, goal) {
   const moves = stashDeposits(bot, home);
   if (!moves.length) return {};
   const holds = describeContents(contentsOf(home));
-  return { stock_stash: { description: `Put spares in the stash chest beside the bed (${distance} blocks away) so a respawn starts with a kit: ${describeMoves(moves)}. The chest holds ${holds || 'nothing yet'}.`,
+  const kit = describeMoves(moves.filter(m => m.slot)), keepsakes = describeMoves(moves.filter(m => m.keepsake));
+  const what = [kit && `so a respawn starts with a kit: ${kit}`, keepsakes && `to keep for later: ${keepsakes}`].filter(Boolean).join(', and ');
+  return { stock_stash: { description: `Put spares in the stash chest beside the bed (${distance} blocks away) ${what}. The chest holds ${holds || 'nothing yet'}.`,
     run: (b, t, g, s, a) => stockStash(b, t, g, s, home, a) } };
 }
 
-module.exports = { SPARE_KIT, VALUABLES, KIT_FOOD_POINTS, slotFits, stashDeposits, stashWithdrawals, rungWants, stashStatus, forgetChest, rememberContents,
+module.exports = { SPARE_KIT, VALUABLES, KEEPSAKES, KIT_FOOD_POINTS, slotFits, keepsakeOf, isKeepsake, isKitMaterial, stashDeposits, stashWithdrawals, rungWants, planIngredients, stashStatus, forgetChest, rememberContents,
   restockStage, placeStashChest, stockStash, restockFromStash, stashValuables, stashChores, describeContents };
