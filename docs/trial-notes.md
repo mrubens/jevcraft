@@ -10,6 +10,7 @@ Running observations from acceptance trials on the isolated Normal Survival serv
 
 **Opportunities.**
 
+78. *Retilled after every visit.* Walking and jumping across the plot turned its farmland back to dirt, and each return to the base began with the hoe. Farmland is a block the pathfinder walks around now; tilling and planting stand beside the cell anyway.
 77. *Three ores, then the smelt.* With the vein rule in, three iron went into the pockets in five seconds and the rest of the vein sat at seven blocks: a six-block leash and a candidate list made before the first dig. The pool is re-read up to three times as the vein opens, on a ten-block leash from where the bot stands.
 76. *One ore, then a walk.* The mine step returned after its first block and the plan re-ran, so a vein of eleven iron was taken one block per trip, and four raw iron lay a block from the bot while the router turned every pickup spot down. The step now works the nearest candidates on through the vein (ore to a stack; the stash keeps the surplus), a chosen source is followed as its neighbours come into view, and a drop within arm's reach is walked at directly: pickup is proximity, not a path.
 75. *A finished base with five of nine cells.* Two plot cells had been trampled back to dirt and two sat under the first night's shell, and a completed base was never revisited. A base reopens when its plot is trampled or built on; blocked cells have their cover dug and shell cobblestone swapped for dirt, then are tilled and planted.
