@@ -142,7 +142,10 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   // liquid it would expose and backs out to try another approach.
   const here = bot.entity.position;
   const nearest = surface.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
-  const dest = spots[0]?.feet || (nearest ? nearest.plus(UP) : here.floored().offset(24, LAVA_DEPTH - here.floored().y, 0));
+  // The lake already found comes before a new shaft: chased off by a
+  // creeper, the bot stood at its base sixty blocks from its own crust.
+  const remembered = works.lastPour && at(works.lastPour);
+  const dest = spots[0]?.feet || (nearest ? nearest.plus(UP) : remembered || here.floored().offset(24, LAVA_DEPTH - here.floored().y, 0));
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
   await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate });
 }
