@@ -15,7 +15,7 @@ const { classifyCommand } = require('./command-classifier');
 const { recordDeath, observeAliveInventory } = require('./recovery');
 const { statusMessage } = require('./status');
 const { bundleSummary } = require('./item-bundle');
-const { friendlyProblem, recoveryHint } = require('./speech');
+const { friendlyProblem, recoveryHint, quietRepeats } = require('./speech');
 const { withRequestSignal } = require('./typesafe');
 const { suspendPrevious, resumeSaved } = require('./suspended-tasks');
 const { CompanionMemory, position } = require('./memory');
@@ -36,6 +36,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   });
   bot.loadPlugin(compatibilityPlugin);
   bot.loadPlugin(pathfinder);
+  quietRepeats(bot);
   const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');
   const commandLog = path.join(stateDirectory, `${identity}-commands.jsonl`);
   bot._client.on('declare_commands', tree => {

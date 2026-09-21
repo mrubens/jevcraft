@@ -57,6 +57,26 @@ function thinking(bot, intervalMs = 1500) {
   };
 }
 
+// One rule for everything the bot says: the same line twice in short
+// succession is a stuck bot, not news. Installed once on the bot, it drops an
+// exact repeat within the window, except when a player spoke a moment ago,
+// because "Jev status" asked twice deserves the same answer twice.
+function quietRepeats(bot, { windowMs = 120000, replyMs = 15000 } = {}) {
+  if (typeof bot?.chat !== 'function' || bot._quietRepeats) return bot;
+  const original = bot.chat.bind(bot), said = new Map();
+  bot._quietRepeats = { dropped: 0 };
+  bot._client?.on?.('playerChat', () => { bot._lastPlayerChatAt = Date.now(); });
+  bot.chat = message => {
+    const text = String(message), now = Date.now();
+    const answering = now - (bot._lastPlayerChatAt || 0) < replyMs;
+    if (!answering && said.has(text) && now - said.get(text) < windowMs) { bot._quietRepeats.dropped++; return; }
+    said.set(text, now);
+    if (said.size > 64) said.delete(said.keys().next().value);
+    return original(message);
+  };
+  return bot;
+}
+
 function friendlyProblem(error) {
   const text = String(error?.message || error || '');
   if (/silk touch/i.test(text)) return 'I need a tool with Silk Touch to pick up that block.';
@@ -124,4 +144,4 @@ function completion(goal) {
   if (goal.kind === 'concrete') return `You got ${goal.count} purple concrete!`;
   return 'The Nether portal works! I went through to check.';
 }
-module.exports = { name, list, friendlyProblem, recoveryHint, thinking, activity, completion };
+module.exports = { quietRepeats, name, list, friendlyProblem, recoveryHint, thinking, activity, completion };
