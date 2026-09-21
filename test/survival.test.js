@@ -415,3 +415,30 @@ test('a pocket in a one-wide staircase is a shelter site underground even withou
   const surface = { ...bot, blockAt: p => ({ name: open.has(`${p}`) || p.y > 20 ? 'air' : 'stone', boundingBox: open.has(`${p}`) || p.y > 20 ? 'empty' : 'block' }) };
   assert.equal(shelter.safeSite(surface, origin, {}), false, 'under open sky the exit rule still holds');
 });
+
+test('a sealed-in bot leaves at dawn despite mobs behind rock, and stays for one that can see in', async () => {
+  const { Survival } = require('../src/survival');
+  const origin = new Vec3(0, 20, 0);
+  const shellCells = new Set(shelter.shell(origin).map(p => `${p}`));
+  const make = (skeletonAt, seeThrough) => {
+    const skeleton = { name: 'skeleton', type: 'hostile', position: skeletonAt, height: 1.99 };
+    const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 },
+      entity: { position: origin.offset(0.5, 0, 0.5) }, entities: { 1: skeleton }, health: 20, food: 20, oxygenLevel: 20, time: { timeOfDay: 2000 },
+      inventory: { items: () => [{ name: 'cobblestone', count: 64 }] }, registry: require('minecraft-data')('26.1'),
+      blockAt: p => { const open = p.equals(origin) || p.equals(origin.offset(0, 1, 0)); return { name: open ? 'air' : shellCells.has(`${p}`) ? 'cobblestone' : 'stone', boundingBox: open ? 'empty' : 'block', position: p }; },
+      world: { raycast: () => seeThrough ? null : { position: origin.offset(1, 0, 0), intersect: origin.offset(1, 0.5, 0.5) } },
+      findBlocks: () => [], pathfinder: { movements: {} }, on() {}, removeListener() {} };
+    const refuge = { origin: { ...origin }, dimension: 'overworld', verifiedAt: 'x', createdAt: 'x' };
+    const actions = [];
+    const survival = new Survival(bot, { navigate: async () => {}, dig: async () => { actions.push('dig'); } }, { state: { shelters: [refuge] } });
+    survival.leave = async () => { actions.push('leave'); };
+    survival.wait = async () => { actions.push('wait'); };
+    return { survival, actions };
+  };
+  const rock = make(origin.offset(15, 0, 0), false);
+  await rock.survival.step(new Task('dawn'), {}, () => {});
+  assert.deepEqual(rock.actions, ['leave'], 'a skeleton fifteen blocks away through rock does not keep the bot in');
+  const watching = make(origin.offset(15, 0, 0), true);
+  await watching.survival.step(new Task('dawn'), {}, () => {});
+  assert.deepEqual(watching.actions, ['wait'], 'one with a line of sight does');
+});
