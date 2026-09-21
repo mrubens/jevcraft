@@ -25,7 +25,10 @@ function portalSiteClear(bot, origin) {
 
 function selectPortalSite(bot) {
   const feet = bot.entity.position.floored();
-  const ids = ['grass_block', 'dirt', 'stone', 'sand'].map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
+  // A portal can stand on deepslate beside the lava lake the obsidian came
+  // from; climbing sixty blocks to find grass is a wasted hour.
+  const ids = ['grass_block', 'dirt', 'stone', 'sand', 'deepslate', 'tuff', 'cobbled_deepslate', 'cobblestone', 'andesite', 'diorite', 'granite', 'netherrack']
+    .map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
   const surfaces = bot.findBlocks({ matching: ids, maxDistance: 24, count: 128,
     useExtraInfo: b => air(bot.blockAt(b.position.offset(0, 1, 0))) && air(bot.blockAt(b.position.offset(0, 2, 0))),
   }).map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet));

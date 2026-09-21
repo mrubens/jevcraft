@@ -168,7 +168,10 @@ class Survival {
     if (await reachShore(bot, task, goal, save, { move: this.actions.navigate })) return;
     let refuge = await this.reachableRefuge(task, goal, save, this.currentShelter());
     if (!refuge) {
-      const sites = shelter.shelterSites(bot, goal);
+      // Beside a lava lake nothing within twelve blocks has a safe shell;
+      // look further before giving the night up as unsafe.
+      let sites = shelter.shelterSites(bot, goal);
+      if (!sites.length) sites = shelter.shelterSites(bot, goal, 32);
       let site;
       for (const p of sites) {
         if ((await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalBlock(p.x, p.y, p.z), 150)).status === 'success') { site = p; break; }
