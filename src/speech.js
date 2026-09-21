@@ -109,6 +109,7 @@ function activity(step = {}) {
     case 'store_delivery': return `I'm putting your ${item} in a chest.`;
     case 'collect_nearby_resource': return `I spotted some ${item} nearby. I'll grab it, then get back to your task.`;
     case 'smelt': case 'cook_food': return `I'm cooking ${item === 'items' ? 'food' : item}.`;
+    case 'make_obsidian': return { pour: "I'm pouring water on lava to make obsidian.", mine: "I'm mining the obsidian I made.", reach_lava: "I'm digging toward lava to make obsidian." }[step.phase] || "I'm making obsidian from lava.";
     case 'refuel_furnace': return step.item === 'oak_planks' ? "I'm getting more fuel for the furnace." : "I'm getting the missing supplies for the furnace.";
     case 'explore': case 'approach_discovery': case 'approach_found_creature': return `I'm looking for ${name(step.name || step.entity || step.resource)}.`;
     case 'come': return "I'm coming to you.";

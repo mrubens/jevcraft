@@ -153,6 +153,16 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
         steps.push({ action: 'fill_bucket', item: name, count: missing, consumes: { bucket: missing }, produces: { water_bucket: missing } });
         add(name, missing);
       } });
+      // Between mining an observed deposit (5) and searching for one that is
+      // not (12): a lava pool is far likelier to be at hand than natural
+      // obsidian, and the water bucket is already in the kit.
+      if (name === 'obsidian') methods.push({ cost: 9, run: () => {
+        acquire('diamond_pickaxe', 1); acquire('water_bucket', 1);
+        const remaining = needed - have(name);
+        if (remaining <= 0) return;
+        steps.push({ action: 'make_obsidian', item: name, count: remaining, requires: { diamond_pickaxe: 1, water_bucket: 1 }, consumes: {}, produces: { [name]: remaining } });
+        add(name, remaining);
+      } });
       if (name.endsWith('_concrete')) methods.push({ cost: 1, run: () => {
         ensurePickaxe(); const powder = `${name}_powder`; consume(powder, missing);
         const tool = Object.keys(stock).find(n => n.endsWith('_pickaxe') && have(n));

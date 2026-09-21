@@ -55,6 +55,7 @@ function stepLine(goal, step, decision) {
     case 'craft': return `Crafting ${step.count ? `${step.count} ` : ''}${name(step.item)}.`;
     case 'smelt': return `Smelting ${name(step.item)}.`;
     case 'harden': return 'Hardening concrete in water.';
+    case 'make_obsidian': return `Making ${step.count ? `${step.count} ` : ''}obsidian: water on lava.`;
     case 'fill_bucket': return 'Fetching water.';
     case 'hunt_mob': return `Going after a ${name(step.entity)} for ${name(step.item)}.`;
     case 'collect': return `Picking up ${name(step.item || step.drops)}.`;

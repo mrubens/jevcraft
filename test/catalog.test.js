@@ -105,14 +105,14 @@ test('concrete crafts requested color and hardens the powder', () => {
   assert.equal(plan[1].item, 'red_concrete');
 });
 
-test('natural obsidian progression requires diamonds rather than searching for unobserved ender chests', () => {
+test('obsidian progression requires diamonds and makes the obsidian from lava rather than searching for ender chests', () => {
   const plan = planCatalog(registry, 'obsidian', 10, { stone_pickaxe: 1, oak_log: 8, crafting_table: 1 });
   assert(plan.some(s => s.item === 'iron_pickaxe'));
   assert(plan.some(s => s.drops === 'diamond'));
   assert(plan.some(s => s.item === 'diamond_pickaxe'));
-  assert.equal(plan.at(-1).tool, 'diamond_pickaxe');
-  assert.equal(plan.at(-1).block, 'obsidian');
-  assert(!plan.at(-1).sources.includes('ender_chest'));
+  assert.equal(plan.at(-1).action, 'make_obsidian');
+  assert.equal(plan.at(-1).requires.diamond_pickaxe, 1);
+  assert(!plan.some(s => s.sources?.includes('ender_chest')));
 });
 
 test('a mining action cannot combine sources needing stronger harvest tools', () => {

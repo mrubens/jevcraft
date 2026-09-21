@@ -95,7 +95,7 @@ test('recipe yields and shared stock leave all requested ingredients and outputs
 
 test('diamond-tool progression cannot be merged into a circular dependency', () => {
   const plan = verify([{ item: 'obsidian', count: 4 }, ...armor('diamond')]);
-  assert(plan.findIndex(s => s.item === 'diamond_pickaxe') < plan.findIndex(s => s.drops === 'obsidian'));
+  assert(plan.findIndex(s => s.item === 'diamond_pickaxe') < plan.findIndex(s => s.produces?.obsidian));
 });
 
 test('armor and a bed share supplies but retain every output', () => {
