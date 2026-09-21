@@ -156,6 +156,13 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       save();
       throw new Error(`Could not return to the surface after 192 recovery steps; starting round ${goal.surfaceReturn.rounds + 1} of the search`);
     }
+    const lid = actions.dig ? lidExit(bot) : [];
+    if (lid.length) {
+      goal.survivalAction = { action: 'return_to_surface', from: { ...start }, lid: lid.map(p => ({ ...p })), at: new Date().toISOString() }; save();
+      for (const p of lid) { task.check(); await actions.dig(bot, task, p, { requireDrops: false }); }
+      if (surfaceReturnComplete(bot, goal, surfaceObserver(bot))) { delete goal.surfaceReturn; save(); }
+      return;
+    }
     const clear = p => dryPassable(bot.blockAt(p));
     const candidates = bot.findBlocks({ matching: ['grass_block', 'dirt', 'stone', 'sand', 'gravel', 'deepslate'].map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined),
       maxDistance: 48, count: 128, useExtraInfo: block => {
@@ -229,4 +236,25 @@ function handDiggableExit(bot, { origin = bot.entity.position.floored(), maxHeig
   return solids > 0 && surfaceObserver(bot)(new Vec3(x + .5, origin.y + 2 + maxHeight + 1, z + .5));
 }
 
-module.exports = { hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };
+// A night lid. The bot seals itself in at the surface with a few blocks of
+// cobblestone, and a lid left behind (or one whose closures were lost with
+// a restart) reads as terrain to the surface observer: the bot stands on
+// grass, "underground", and searches for a route up that no stair choice
+// can dig because cobblestone is not natural stone. The dream run sat
+// under one for twenty minutes saying it could not reach a safe spot. A
+// thin lid of shelter material with open sky above it is dug straight up.
+const LID = new Set(['cobblestone', 'cobbled_deepslate', 'netherrack', 'blackstone', 'dirt', 'oak_planks', 'spruce_planks', 'birch_planks', 'acacia_planks', 'dark_oak_planks', 'jungle_planks', 'mangrove_planks', 'cherry_planks']);
+function lidExit(bot, { origin = bot.entity.position.floored(), maxHeight = 3 } = {}) {
+  const x = origin.x, z = origin.z, lid = [];
+  for (let y = origin.y + 2; y <= origin.y + 2 + maxHeight; y++) {
+    const block = bot.blockAt(new Vec3(x, y, z));
+    if (!block) return [];
+    if (/_leaves$/.test(block.name) || block.boundingBox !== 'block') continue;
+    if (!LID.has(block.name)) return [];
+    lid.push(new Vec3(x, y, z));
+  }
+  if (!lid.length || !surfaceObserver(bot)(new Vec3(x + .5, origin.y + 2 + maxHeight + 1, z + .5))) return [];
+  return lid;
+}
+
+module.exports = { lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };

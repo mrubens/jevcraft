@@ -391,3 +391,23 @@ test('an exit through gravel or dirt overhead needs no pickaxe; stone does', () 
   assert.equal(handDiggableExit(world({})), false, 'nothing overhead is not a dig problem');
   assert.equal(handDiggableExit(world({ 68: 'oak_leaves', 69: 'sand' })), true, 'leaves are passed through');
 });
+
+test('a thin cobblestone lid with sky above it is dug straight up, not searched around', async () => {
+  const { lidExit, returnToSurface } = require('../src/surface');
+  const blocks = { 67: 'cobblestone', 68: 'cobblestone', 71: 'oak_leaves' };
+  const bot = { game: { minY: -64, height: 384, dimension: 'overworld' }, entity: { position: new Vec3(0.5, 65, 0.5) },
+    pathfinder: { movements: {} }, findBlocks: () => [], registry: { blocksByName: {} },
+    blockAt: p => {
+      if (p.x !== 0 || p.z !== 0) return { name: 'air', boundingBox: 'empty' };
+      if (p.y < 65) return { name: 'grass_block', boundingBox: 'block' };
+      const name = blocks[p.y];
+      return name ? { name, boundingBox: name.endsWith('_leaves') ? 'block' : 'block' } : { name: 'air', boundingBox: 'empty' };
+    } };
+  assert.deepEqual(lidExit(bot).map(p => p.y), [67, 68]);
+  assert.deepEqual(lidExit({ ...bot, blockAt: p => p.y === 67 && p.x === 0 && p.z === 0 ? { name: 'stone', boundingBox: 'block' } : bot.blockAt(p) }), [], 'stone overhead is terrain, not a lid');
+  const dug = [];
+  const goal = {}; const task = { check() {} };
+  await returnToSurface(bot, task, goal, () => {}, { dig: async (b, t, p) => { dug.push(p.y); delete blocks[p.y]; } });
+  assert.deepEqual(dug, [67, 68]);
+  assert.equal(goal.surfaceReturn, undefined, 'standing on grass under open sky is the surface');
+});
