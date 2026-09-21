@@ -150,9 +150,20 @@ Jev forget your dream
 
 With **build a village**, code lists the parts a village still lacks from the buildings that actually stand, and Jev picks the next one and scores how village-like the place already is. The part is then chosen from a shelf of forty-five ready-made, validated designs (cottages, a mansion, a tower, wells, farm plots, chapels, barns, lamp posts, plazas) with Jev picking the design that suits what already stands, so no generative model is ever called. Each part goes beside the newest one so the village grows as a cluster, and the Observatory shows the dream and the village score on every event.
 
-With **beat the game**, the idle loop hands Jev the survival ladder: stone tools, a stone sword, an iron pickaxe, a shield, an iron sword, a bucket, then the Nether, blaze rods, Eyes of Ender, the stronghold and the dragon. Each rung is something the planner can already do, and progress is only ever read off the world, never off a counter.
+With **beat the game**, the idle loop hands Jev the survival ladder: stone tools, a stone sword, an iron pickaxe, a shield, an iron sword, a bucket, a home base, iron armour, then the Nether, blaze rods, Eyes of Ender, the stronghold and the dragon. Each rung is something the planner can already do, and progress is only ever read off the world, never off a counter.
 
-A chat request always takes priority and the dream resumes afterwards. Setting it aside stops the current milestone and holds it; chasing it again picks the partly built milestone back up. A milestone that could not be finished waits out a cool-down. Between milestones, with shelter and food sufficient, Jev also chooses among small chores: cooking raw food it carries, making stone tools, stocking wood.
+A chat request always takes priority and the dream resumes afterwards. Setting it aside stops the current milestone and holds it; chasing it again picks the partly built milestone back up. A milestone that could not be finished waits out a cool-down. Between milestones, with shelter and food sufficient, Jev also chooses among small chores: cooking raw food it carries, making stone tools, stocking wood, and once the base stands, tending the farm, baking bread and breeding the cows.
+
+### Home base
+
+Deaths and food have been the recurring cost of the beat-the-game run: six times the full kit was lost to a death that then cost a climb from world spawn, and every food reserve was a hunt of unknown length. So the ladder has a **home** rung, taken after the bucket and before the long descents, the order any survival walkthrough keeps: iron tools, then a base and a bed, then the mine.
+
+- **One site per world.** Code looks for level, tillable ground beside water near the first Overworld portal the bot has used, else the house it built, else where it stands, and keeps it in the shared survival state so every later request and restart sees the same base.
+- **A bed first.** Wool from sheep (the same chase that gets mutton), a bed crafted through the ordinary recipe path, placed and used once so the respawn point moves home. A missing bed reopens the rung.
+- **A wheat plot.** A wooden hoe, nine cells of farmland against the water, seeds from clearing grass (kept in the pockets now rather than tossed), planted and left to grow. Growth takes in-game time, so the plot is tended on return visits rather than watched.
+- **A cow pen.** A fenced five-by-five ring with a gate, two cows led in with wheat and bred for steak, cooked through the existing furnace path.
+
+The idle chores then include tending the farm, harvesting and baking, leading cows in and breeding them, and Jev chooses between them like the rest. The food rules treat bread and steak at the base as a reserve within reach: when the base is within about a hundred and thirty blocks and has something to eat, walking home replaces the wander for animals, and it stands beside any hunt that is actually in view for Jev to weigh. Everything is read off the world: farmland, crop age, fence blocks, cows inside the ring, the bed's two halves.
 
 ## Memory
 
@@ -281,7 +292,7 @@ JevBot is released under the [MIT License](LICENSE).
 
 ## Current limitations
 
-- Recognizing an item does not guarantee a working Survival acquisition path. Farming, trading, and enchanting are not implemented; some blocks need an already enchanted tool.
+- Recognizing an item does not guarantee a working Survival acquisition path. Farming is limited to the home plot's wheat; trading and enchanting are not implemented; some blocks need an already enchanted tool.
 - Rare resources, complex terrain, large builds, and long expeditions can still get stuck. Recovery can only use actions the bot knows how to execute.
 - Boat travel requires loaded, level water and observed shores within its survey range; open-ocean exploration and flying follow are not supported.
 - Building preparation does not clear arbitrary player structures or handle deep-water and lava foundations.
