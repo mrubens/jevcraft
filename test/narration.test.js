@@ -63,6 +63,17 @@ test('the same creeper five times is one story: announced once, then "I think I 
   assert.match(narrate(bot, goal, { now: now += 130000 }), /creeper/, 'a new chase after the window is news again');
 });
 
+test('an identical survival line is not repeated within the window', () => {
+  const said = [], bot = { chat: line => said.push(line) };
+  const goal = { kind: 'survive', decisions: [] };
+  let now = 1000;
+  for (let i = 0; i < 4; i++) { goal.survivalAction = { action: 'search_food', at: `2026-09-21T05:0${i}:00Z` }; narrate(bot, goal, { now: now += 9000 }); }
+  assert.deepEqual(said, ['Looking for food nearby.']);
+  goal.survivalAction = { action: 'search_food', at: '2026-09-21T05:30:00Z' };
+  narrate(bot, goal, { now: now += 130000 });
+  assert.equal(said.length, 2, 'news again after the window');
+});
+
 test('a combined request narrates its inner step and a delivery says what is coming', () => {
   const said = [], bot = { chat: line => said.push(line) };
   const goal = { kind: 'bundle', step: { action: 'combined_request', task: 2, total: 3, detail: { action: 'smelt', item: 'iron_ingot' } }, decisions: [] };

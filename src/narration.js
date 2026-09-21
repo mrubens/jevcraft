@@ -106,7 +106,10 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
       state.escape = { at: now, names, resolved: false, announced: repeat ? escape.announced : false };
       if (repeat) { state.survival = action.at; return null; }
     }
-    if (!phrase || speak(line)) { state.survival = action.at; return line || null; }
+    // Any survival line repeated word for word inside the window is the same
+    // news again: five food searches in a row read as a stuck bot.
+    if (line && state.lastSurvivalLine?.line === line && now - state.lastSurvivalLine.at < ESCAPE_REPEAT_MS) { state.survival = action.at; return null; }
+    if (!phrase || speak(line)) { state.survival = action.at; if (line) state.lastSurvivalLine = { line, at: now }; return line || null; }
     return null;
   }
   const decision = goal.decisions?.at(-1);
