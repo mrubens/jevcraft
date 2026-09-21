@@ -64,8 +64,11 @@ function layout(site) {
   // The bed is placed from a standing spot beyond its head, looking back
   // toward the water, so its facing is the reverse of the site direction.
   const bed = { foot: cell(1, -3, 1), head: cell(0, -3, 1), stand: cell(3, -3, 1), facing: FACING[`${-d.x},${-d.z}`] };
+  // The stash chest sits against the foot of the bed, between it and the
+  // plot, off the line the bed is placed along so its lid never blocks the ray.
+  const chest = cell(1, -2, 1);
   const pen = { fences, gate, gateStand: cell(3, 0, 1), centre: cell(6, 0, 1), interior };
-  return { plot, bed, pen, footprint, water: site.water };
+  return { plot, bed, chest, pen, footprint, water: site.water };
 }
 
 const inside = (interior, p) => p && p.x >= interior.min.x && p.x < interior.max.x + 1 && p.z >= interior.min.z && p.z < interior.max.z + 1 && Math.abs(p.y - interior.min.y) <= 1.5;
