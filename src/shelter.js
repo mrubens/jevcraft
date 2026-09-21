@@ -108,4 +108,23 @@ function exits(bot, shelter) {
     .filter(exit => replaceable(bot.blockAt(exit.outside)) && replaceable(bot.blockAt(exit.outside.offset(0, 1, 0))) && solid(bot.blockAt(exit.outside.offset(0, -1, 0))));
 }
 
-module.exports = { foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, exits, buildingMaterials, solid, replaceable };
+// Side cells of a sealed pocket that the bot closed with its own blocks:
+// the doors of a shelter that has no two-block exit. Nearest a passable
+// cell beyond first, so the door opens back onto the staircase.
+function closures(bot, shelter) {
+  const o = position(shelter.origin);
+  const doors = directions.map(d => o.plus(d))
+    .filter(door => buildingMaterials.has(bot.blockAt(door)?.name) && buildingMaterials.has(bot.blockAt(door.offset(0, 1, 0))?.name))
+    .sort((a, b) => beyond(bot, o, b) - beyond(bot, o, a));
+  // Natural stone is a building material too; a door with nothing open
+  // behind it is a wall. Only when no side opens onto anything is any wall
+  // worth digging through.
+  const onto = doors.filter(door => beyond(bot, o, door) > 0);
+  return onto.length ? onto : doors;
+}
+function beyond(bot, o, door) {
+  const d = door.minus(o);
+  return [-1, 0, 1].filter(dy => replaceable(bot.blockAt(door.plus(d).offset(0, dy, 0)))).length;
+}
+
+module.exports = { foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, exits, closures, buildingMaterials, solid, replaceable };

@@ -442,3 +442,22 @@ test('a sealed-in bot leaves at dawn despite mobs behind rock, and stays for one
   await watching.survival.step(new Task('dawn'), {}, () => {});
   assert.deepEqual(watching.actions, ['wait'], 'one with a line of sight does');
 });
+
+test('a pocket sealed in a staircase is left through the closure the bot placed', async () => {
+  const { Survival } = require('../src/survival');
+  const origin = new Vec3(0, 20, 0);
+  const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`, `${origin.offset(-2, -1, 0)}`, `${origin.offset(-2, 0, 0)}`, `${origin.offset(-2, 1, 0)}`]);
+  const placed = new Set([`${origin.offset(-1, 0, 0)}`, `${origin.offset(-1, 1, 0)}`, `${origin.offset(1, 0, 0)}`, `${origin.offset(1, 1, 0)}`]);
+  const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 },
+    entity: { position: origin.offset(0.5, 0, 0.5) }, entities: {}, health: 20, food: 20, oxygenLevel: 20, time: { timeOfDay: 2000 },
+    inventory: { items: () => [{ name: 'cobblestone', count: 60 }] }, registry: require('minecraft-data')('26.1'),
+    blockAt: p => ({ name: open.has(`${p}`) ? 'air' : placed.has(`${p}`) ? 'cobblestone' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : 'block', position: p }),
+    world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: {} }, on() {}, removeListener() {} };
+  const refuge = { origin: { ...origin }, dimension: 'overworld', verifiedAt: 'x', createdAt: 'x' };
+  const dug = [];
+  const survival = new Survival(bot, { navigate: async () => { throw new Error('no outside cell to walk to'); }, dig: async (b, t, p) => { dug.push(`${p}`); } }, { state: { shelters: [refuge] } });
+  assert.equal(shelter.exits(bot, refuge).length, 0);
+  assert.deepEqual(shelter.closures(bot, refuge).map(String), [`${origin.offset(-1, 0, 0)}`], 'only the door onto the open staircase');
+  await survival.leave(new Task('dawn'), {}, () => {}, refuge);
+  assert.deepEqual(dug, [`${origin.offset(-1, 1, 0)}`, `${origin.offset(-1, 0, 0)}`]);
+});

@@ -248,17 +248,21 @@ class Survival {
 
   async leave(task, goal, save, refuge) {
     const bot = this.bot;
-    const danger = threats(bot);
-    const exits = shelter.exits(bot, refuge).filter(exit => danger.every(t => t.entity.position.distanceTo(exit.outside) > 20));
-    if (!exits.length) { await this.wait(task, goal, save, 'Nearby threats still block the shelter exits'); return; }
-    const exit = exits[0];
+    // Mobs that can see in, or are at the wall; the rest are behind rock.
+    const danger = threats(bot).filter(t => t.visible || t.distance < 6);
+    const formal = shelter.exits(bot, refuge).filter(exit => danger.every(t => t.entity.position.distanceTo(exit.outside) > 20));
+    // A pocket sealed in a staircase has no two-block exit: its door is the
+    // closure the bot placed, and the way on is dug from there.
+    const pocket = !formal.length && shelter.closures(bot, refuge).filter(door => danger.every(t => t.entity.position.distanceTo(door) > 20));
+    const exit = formal[0] || (pocket.length ? { door: pocket[0], outside: null } : null);
+    if (!exit) { await this.wait(task, goal, save, 'Nearby threats still block the shelter exits'); return; }
     this.report(goal, save, { action: 'leave_shelter', origin: refuge.origin });
     // Opening our temporary closure is necessary even if the last pick broke.
     // Bare-handed stone clearing loses its drop but must not imprison the bot
     // inside a one-cell shelter with no room to place a crafting table.
     await this.actions.dig(bot, task, exit.door.offset(0, 1, 0), { requireDrops: false });
     await this.actions.dig(bot, task, exit.door, { requireDrops: false });
-    await this.actions.navigate(bot, task, new goals.GoalBlock(exit.outside.x, exit.outside.y, exit.outside.z), { timeoutMs: 10000 });
+    if (exit.outside) await this.actions.navigate(bot, task, new goals.GoalBlock(exit.outside.x, exit.outside.y, exit.outside.z), { timeoutMs: 10000 });
   }
 
   async wait(task, goal, save, reason = 'Waiting for daylight inside the verified shelter') {
