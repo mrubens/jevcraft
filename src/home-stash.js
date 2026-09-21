@@ -100,7 +100,9 @@ const KEEPSAKES = Object.freeze([
   { label: 'ender pearls', matches: name => name === 'ender_pearl', keep: 16 },
   { label: 'blaze rods', matches: name => name === 'blaze_rod', keep: 8 },
   { label: 'blaze powder', matches: name => name === 'blaze_powder', keep: 16 },
-  { label: 'obsidian', matches: name => name === 'obsidian', keep: 0 },
+  // A portal's worth stays in the pockets: it builds the frame, and in the
+  // Nether it rebuilds one a ghast has broken.
+  { label: 'obsidian', matches: name => name === 'obsidian', keep: 10 },
   { label: 'logs', matches: name => /_log$/.test(name), keep: 8 },
   { label: 'coal', matches: name => name === 'coal' || name === 'charcoal', keep: 16 },
   { label: 'seeds', matches: name => /_seeds$/.test(name), keep: STACK },
