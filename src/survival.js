@@ -631,8 +631,13 @@ class Survival {
     // sleep, or stay up armed because the dark is what the request needs.
     const bed = bedCarried(bot), homeBed = nearbyHomeBed(bot, goal);
     const bedReady = (!!bed || !!homeBed) && bot.game.dimension === 'overworld' && !(this.state.sleepFailedAt > Date.now() - 600000);
-    const stayingUp = this.state.nightPlan?.until > Date.now();
+    const plan = this.state.nightPlan?.until > Date.now() ? this.state.nightPlan : null;
+    const stayingUp = plan?.plan === 'stay_up';
     const needsShelter = shelterNeeded(bot) && !(bedReady && bot.time.timeOfDay < SLEEP_FROM) && !stayingUp;
+    // A shelter once chosen is a plan, not a question for every tick: the
+    // second run climbed its shaft for a shelter, was asked again at the
+    // top, went back down to the mine, and was asked again at the bottom.
+    if (needsShelter && plan?.plan === 'shelter' && !(bedReady && sleepable(bot))) { await this.refugeStep(task, goal, save); onStep(goal); return true; }
     if (!needsShelter && this.state.recovery?.status === 'pending') {
       this.report(goal, save, { action: 'recover_items', origin: this.state.recovery.position });
       if (await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate)) { onStep(goal); return true; }
@@ -678,7 +683,7 @@ class Survival {
     const tree = (night(bot) && needsShelter && !canStayUp) || (expeditionFood && needsFood) ? {} : {
       continue_request: { description: canStayUp ? 'Stay up tonight, armed and armoured, and keep working the request outside: spiders and the other night mobs are what a hunt for string needs, and the bed is one action away whenever the night has nothing more to give. Two minutes at a time, then this question again.'
         : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
-        run: async () => { if (canStayUp) { this.state.nightPlan = { until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up' }); } } },
+        run: async () => { if (canStayUp) { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up' }); } } },
     };
     // Sleep is an option where the bed fits: two level cells beside the
     // feet. In a one-wide shaft it is not, and the shelter path digs in.
@@ -686,7 +691,8 @@ class Survival {
     // A bed within reach makes a shelter the worse answer in every case, so
     // it is not offered beside one: the question that remains at night is
     // sleep or stay up, which is the one worth asking.
-    if (needsShelter && !tree.sleep_in_bed) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.', run: () => this.refugeStep(task, goal, save) };
+    if (needsShelter && !tree.sleep_in_bed) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.',
+      run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
     if (needsFood && !(night(bot) && needsShelter)) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
       children: offWorld && this.actions.returnOverworld ? { return_for_food: { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked; nothing here is safe to eat.',
         run: async () => { goal.survivalAction = { action: 'return_for_food', at: new Date().toISOString() }; save(); await this.actions.returnOverworld(bot, task, goal, save); } } }
