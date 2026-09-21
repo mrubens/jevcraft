@@ -355,8 +355,11 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // the observed hunt takes them. Standing on the first brick found was
     // twenty rounds of no progress.
     state.visited ||= [];
+    // The nearest fresh stretch beyond twelve blocks, not the farthest: the
+    // farthest brick in view is the one across the lava.
     const fresh = bricks.filter(b => !state.visited.some(v => Math.hypot(v.x - b.x, v.z - b.z) < 12));
-    const next = (fresh.length ? fresh : bricks).sort((a, b) => b.distanceTo(here) - a.distanceTo(here))[0];
+    const byDistance = (fresh.length ? fresh : bricks).sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+    const next = byDistance.find(b => b.distanceTo(here) >= 12) || byDistance[byDistance.length - 1];
     state.visited.push({ x: next.x, y: next.y, z: next.z }); state.visited = state.visited.slice(-32);
     goal.step = { action: 'find_fortress', found: state.found, walking: { x: next.x, y: next.y, z: next.z }, legs: state.legs }; save();
     if (actions.navigate) {

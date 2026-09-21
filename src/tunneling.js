@@ -14,7 +14,7 @@ const faces = [...directions, new Vec3(0, 1, 0), new Vec3(0, -1, 0)];
 // Natural terrain, plus the blocks the bot lays itself: a dig-in's
 // cobblestone across the stairs is not a wall to retreat from, it is
 // yesterday's shelter. Registered builds stay protected by reservation.
-const natural = /^(stone|deepslate|granite|diorite|andesite|tuff|dirt|grass_block|gravel|sand|cobblestone|cobbled_deepslate|netherrack)$|_ore$/;
+const natural = /^(stone|deepslate|granite|diorite|andesite|tuff|dirt|grass_block|gravel|sand|cobblestone|cobbled_deepslate|netherrack|soul_sand|soul_soil|basalt|blackstone|nether_bricks|nether_brick_fence|nether_brick_stairs|nether_brick_slab|nether_brick_wall|end_stone)$|_ore$/;
 const dangerous = block => !block || ['lava', 'water', 'fire', 'magma_block', 'powder_snow'].includes(block.name);
 const falling = block => block && (['sand', 'red_sand', 'gravel'].includes(block.name) || block.name.endsWith('_concrete_powder'));
 
