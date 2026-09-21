@@ -300,6 +300,10 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     await sleep(1000); return;
   }
   delete state.stalking;
+  // Blazes live in fortresses, and a fortress is found by sweeping, not by
+  // rings around the portal: fortress strips run north to south, so a walk
+  // east or west crosses one. Nether bricks in view end the sweep.
+  if (handler.dimension === 'nether' && actions.tunnel) { await findFortressStep(bot, task, goal, save, actions); return; }
   // A hunt circles where it started, in rings of twenty-four blocks, rather
   // than walking the map's frontier: the mob comes to the bot at night. By
   // day underground the caves are the hunting ground, not the surface.
@@ -309,4 +313,31 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   await actions.explore(bot, task, goal, save, step.entity, { surfaceOnly: dimension(bot) === 'overworld' && !underground, frontier: false });
 }
 
-module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt };
+const FORTRESS_BLOCKS = ['nether_bricks', 'nether_brick_fence', 'nether_brick_stairs', 'nether_brick_slab', 'nether_wart'];
+const FORTRESS_LEG = 96;
+// The next leg of the sweep: ninety-six blocks along x, one way, at a
+// height between the lava sea and the ceiling.
+function fortressLegTarget(state, position) {
+  const y = Math.max(40, Math.min(80, Math.round(position.y)));
+  return new Vec3(Math.round(position.x + FORTRESS_LEG * state.axis), y, Math.round(position.z));
+}
+async function findFortressStep(bot, task, goal, save, actions) {
+  const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
+  const ids = FORTRESS_BLOCKS.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
+  const bricks = bot.findBlocks({ matching: ids, maxDistance: 128, count: 4 });
+  if (bricks.length) {
+    const target = bricks.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
+    state.found = { x: target.x, y: target.y, z: target.z };
+    goal.step = { action: 'find_fortress', found: state.found, legs: state.legs }; save();
+    if (target.distanceTo(bot.entity.position) > 6) await actions.tunnel(bot, task, goal, save, target, 'fortress');
+    return;
+  }
+  const here = bot.entity.position;
+  if (!state.target || Math.hypot(state.target.x - here.x, state.target.z - here.z) < 8) {
+    const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++;
+  }
+  goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();
+  await actions.tunnel(bot, task, goal, save, new Vec3(state.target.x, state.target.y, state.target.z), 'fortress');
+}
+
+module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, FORTRESS_LEG };

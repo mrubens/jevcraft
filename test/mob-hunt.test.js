@@ -292,3 +292,18 @@ test('a piglin leaves a player in gold alone; a brute does not, and a hit ends t
   bot.inventory.slots[8] = { name: 'golden_boots' }; bot._recentHurtAt = Date.now();
   assert.deepEqual(hostileEntities(bot).map(e => e.name).sort(), ['piglin', 'piglin_brute'], 'a hit ends the truce');
 });
+
+test('the fortress sweep runs in ninety-six-block legs along x at a safe height, and turns for bricks in view', async () => {
+  const { fortressLegTarget, findFortressStep, FORTRESS_LEG } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const leg = fortressLegTarget({ axis: -1 }, new Vec3(10.5, 31, 5.5));
+  assert.deepEqual([leg.x, leg.y, leg.z], [Math.round(10.5 - FORTRESS_LEG), 40, 6]);
+  const tunnels = [];
+  const bot = { registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 64, 0.5) }, findBlocks: () => [] };
+  const goal = {};
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target, resource) => tunnels.push([target.x, target.z, resource]) });
+  assert.equal(goal.fortressSearch.legs, 1); assert(Math.abs(tunnels[0][0]) >= FORTRESS_LEG - 1, 'a full leg along x'); assert.equal(tunnels[0][2], 'fortress');
+  bot.findBlocks = () => [new Vec3(30, 64, 12)];
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target) => tunnels.push([target.x, target.z, 'bricks']) });
+  assert.deepEqual(tunnels[1], [30, 12, 'bricks']); assert.deepEqual(goal.fortressSearch.found, { x: 30, y: 64, z: 12 });
+});

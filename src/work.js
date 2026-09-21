@@ -954,7 +954,8 @@ async function executeAcquisition(bot, task, step, goal, save) {
   else if (step.action === 'harden') await harden(bot, task, goal, save, step.item);
   else if (step.action === 'fill_bucket') await collectWater(bot, task, goal, save, { navigate, explore });
   else if (step.action === 'make_obsidian') await makeObsidian(bot, task, step, goal, save, { navigate, dig, approachDryMining, collectNearbyDrops, resourceTunnelStep, acquireStep });
-  else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep });
+  else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep, navigate,
+    tunnel: (b, t, g, sv, target, resource) => resourceTunnelStep(b, t, g, sv, target, resource, { dig, navigate }) });
   else throw new Error(`Unknown action ${step.action}`);
 }
 

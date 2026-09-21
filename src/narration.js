@@ -82,6 +82,7 @@ function stepLine(goal, step, decision) {
     case 'make_obsidian': return `Making ${step.count ? `${step.count} ` : ''}obsidian: water on lava.`;
     case 'fill_bucket': return 'Fetching water.';
     case 'hunt_mob': return `Going after a ${name(step.entity)} for ${name(step.item)}.`;
+    case 'find_fortress': return step.found ? 'A fortress. Heading for it.' : `Sweeping for a fortress, leg ${step.legs || 1}.`;
     case 'collect': return `Picking up ${name(step.item || step.drops)}.`;
     case 'place': case 'build': case 'build_schematic':
       return `Building${goal.kind === 'house' ? ' the house' : goal.design?.source?.name ? ` ${goal.design.source.name}` : ''}.`;

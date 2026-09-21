@@ -123,6 +123,7 @@ function activity(step = {}) {
     case 'persist': return "I got stuck and I'm trying again.";
     case 'hunt_mob': return `I'm hunting a ${name(step.entity)} for ${item}.`;
     case 'stalk_mob': return `There's a ${name(step.entity)} near. I'm waiting for my chance.`;
+    case 'find_fortress': return step.found ? "I can see a fortress. Heading for it." : `I'm sweeping for a fortress, leg ${step.legs || 1}.`;
     case 'recover_before_combat': return "I'm getting my strength back before a fight.";
     case 'equip_combat': case 'prepare_combat_equipment': return "I'm getting my armour and sword on.";
     case 'home_site': return "I'm looking for a spot for a base.";
