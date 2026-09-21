@@ -1802,7 +1802,10 @@ async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } 
   if (goal.lastStruggleStep?.action === 'mine' || goal.step?.action === 'mine') {
     try { await moveOnFromResource(bot, task, { ...goal, step: goal.lastStruggleStep || goal.step }, save); } catch (e) { survivalOnly(e); }
   }
-  const pause = Math.min(60000, backoffMs * 2 ** Math.min(goal.struggles - 1, 5));
+  // Fifteen seconds at most: a bot standing still for a minute reads as
+  // frozen to anyone watching, and the pause is guarded against threats
+  // anyway.
+  const pause = Math.min(15000, backoffMs * 2 ** Math.min(goal.struggles - 1, 5));
   const end = Date.now() + pause;
   // The pause watches for threats like any other wait: the sixth death was
   // a skeleton walking up during a sixty-second back-off. A threat ends the
