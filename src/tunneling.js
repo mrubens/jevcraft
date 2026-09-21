@@ -4,7 +4,7 @@ const { opportunisticMining } = require('./opportunistic-mining');
 const { opportunisticPickups } = require('./opportunistic-pickups');
 const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
-const { safeFromHostiles } = require('./danger');
+const { safeFromHostiles, hostileEntities } = require('./danger');
 const { surveyRoute } = require('./skills');
 const { dryPassable: passable, dryBodySpace } = require('./terrain');
 const { descendPillar } = require('./pillar-recovery');
@@ -32,6 +32,23 @@ function safeExcavation(bot, p) {
 }
 
 function stairOptions(bot, goal, target) {
+  const first = stairChoices(bot, goal, target, { hostiles: true });
+  if (first.length) return first;
+  // Mobs in the cave around a shaft can rule out every direction as
+  // unsafe, and the shaft freezes for as long as they stay: the second
+  // run stood in its pocket for ten attempts with five mobs around it.
+  // Rock is a wall to them too. Dig on, in the direction that gains the
+  // most ground from the nearest of them.
+  const hostiles = hostileEntities(bot, 24);
+  if (!hostiles.length) return first;
+  // Surrounded, every direction loses a little ground; the one that loses
+  // least is still the way on, and going deeper is ground gained too.
+  const nearest = p => Math.min(...hostiles.map(h => h.position.distanceTo(p.offset(0.5, 0, 0.5))));
+  return stairChoices(bot, goal, target, { hostiles: false })
+    .sort((a, b) => nearest(b.destination) - nearest(a.destination) || a.score - b.score);
+}
+
+function stairChoices(bot, goal, target, { hostiles }) {
   const feet = bot.entity.position.floored();
   // An exit being dug by hand clears stone without a tool: slowly, and for
   // the way out rather than the drops. Nothing else digs without one.
@@ -41,7 +58,7 @@ function stairOptions(bot, goal, target) {
   const choices = [];
   for (const d of directions) for (const height of heights) {
     const destination = feet.plus(d).offset(0, height, 0);
-    if (!safeFromHostiles(bot, destination.offset(0.5, 0, 0.5))) continue;
+    if (hostiles && !safeFromHostiles(bot, destination.offset(0.5, 0, 0.5))) continue;
     const floor = bot.blockAt(destination.offset(0, -1, 0));
     if (dangerous(floor) || falling(floor) || floor.boundingBox !== 'block') continue;
     if (bot.pathfinder?.movements?.allowedPosition && !bot.pathfinder.movements.allowedPosition(destination)) continue;

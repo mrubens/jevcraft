@@ -265,3 +265,17 @@ test('a shaft that has spent its staircase budget starts over from here instead 
   assert(goal.tunnel.steps >= 1 && goal.tunnel.steps < 10, 'a fresh count');
   assert.equal(goal.tunnel.workPosition !== undefined, true, 'and a new worksite');
 });
+
+test('with mobs in the cave around the shaft, the stairs go on in the direction that gains ground from them', () => {
+  const bot = world();
+  bot.game = { gameMode: 'survival', difficulty: 'normal' }; bot.registry = require('minecraft-data')('26.1');
+  bot.world = { raycast: () => null };
+  bot.entities = { 1: { name: 'zombie', position: new Vec3(3.5, 70, 0.5), isValid: true, width: 0.6, height: 1.95 } };
+  let choices = stairOptions(bot, {}, new Vec3(0, 60, 0));
+  assert(choices.length >= 1, 'one zombie to the east leaves other ways');
+  assert(choices.every(c => c.destination.x <= 0), `no choice leads toward the zombie: ${choices.map(c => `${c.destination}`)}`);
+  // Surrounded: every direction is unsafe by the first rule, and the shaft goes on anyway.
+  bot.entities = Object.fromEntries([[3.5, 0.5], [-2.5, 0.5], [0.5, 3.5], [0.5, -2.5]].map(([x, z], i) => [i, { name: 'zombie', position: new Vec3(x, 70, z), isValid: true, width: 0.6, height: 1.95 }]));
+  choices = stairOptions(bot, {}, new Vec3(0, 60, 0));
+  assert(choices.length >= 1, 'the shaft does not freeze with mobs on every side');
+});
