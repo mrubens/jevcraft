@@ -46,6 +46,11 @@ test('beating the game is handed over as the win objective, and the ladder start
   const bot = (items, slots = {}) => ({ inventory: { items: () => items.map(name => ({ name })), slots } });
   assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], { 45: { name: 'shield' } })), null, 'a shield on the arm counts');
   assert.equal(preparationStage(bot(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket'], { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' } })), null, 'worn armour counts');
+  const registry = require('minecraft-data')('26.1');
+  const worn = { registry, inventory: { items: () => [{ name: 'iron_pickaxe', durabilityUsed: 240 }, { name: 'stone_pickaxe', durabilityUsed: 0 }, { name: 'iron_sword' }, { name: 'shield' }, { name: 'water_bucket' }], slots: {} } };
+  assert.equal(preparationStage(worn).item, 'iron_pickaxe', 'a pickaxe with ten uses left is a rung to redo before it breaks');
+  worn.inventory.items = () => [{ name: 'iron_pickaxe', durabilityUsed: 100 }, { name: 'iron_sword' }, { name: 'shield' }, { name: 'water_bucket' }];
+  assert.equal(preparationStage(worn).item, 'iron_helmet', 'a sound pickaxe counts');
   assert.equal(preparationStage(bot([])).item, 'stone_pickaxe');
   assert.equal(preparationStage(bot(['stone_pickaxe'])).item, 'stone_sword');
   assert.equal(preparationStage(bot(['stone_pickaxe', 'stone_sword'])).item, 'iron_pickaxe');

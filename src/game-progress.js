@@ -79,7 +79,13 @@ function preparationStage(bot) {
   // the shield in the off-hand at 45. A shield on the arm is not a missing shield.
   const equipped = [5, 6, 7, 8, 45].map(slot => bot.inventory.slots?.[slot]).filter(Boolean);
   const carried = [...bot.inventory.items(), ...equipped].map(i => i.name);
-  const best = kind => Math.max(0, ...carried.filter(n => n.endsWith(`_${kind}`)).map(tierOf));
+  // A tool about to break does not count as a tool: the rung fires again
+  // while the old one still works, so the spare is made above ground and
+  // not after the shaft goes dark. Twenty percent of durability is enough
+  // to finish a trip and get back to a crafting table.
+  const usable = item => { const max = bot.registry?.itemsByName?.[item.name]?.maxDurability; return !max || max - (item.durabilityUsed || 0) >= max * 0.2; };
+  const sound = [...bot.inventory.items(), ...equipped].filter(usable).map(i => i.name);
+  const best = kind => Math.max(0, ...sound.filter(n => n.endsWith(`_${kind}`)).map(tierOf));
   if (best('pickaxe') < 2) return { phase: 'stone_pickaxe', action: 'acquire', item: 'stone_pickaxe', count: 1 };
   if (best('sword') < 2) return { phase: 'stone_sword', action: 'acquire', item: 'stone_sword', count: 1 };
   if (best('pickaxe') < 3) return { phase: 'iron_pickaxe', action: 'acquire', item: 'iron_pickaxe', count: 1 };
