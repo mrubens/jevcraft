@@ -478,7 +478,23 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
   await explore(bot, task, goal, save, step.block);
 }
 
-async function workstation(bot, task, name) {
+// Which workstations this bot placed, so it can take them along later. Kept
+// on the goal as well as in memory: a restart must not turn a furnace the
+// bot placed a minute ago into somebody else's furnace.
+function rememberWorkstation(bot, goal, name, p) {
+  const key = `${name}:${p}`;
+  (bot._ownedWorkstations ||= new Set()).add(key);
+  if (goal) { goal.placedWorkstations = [...new Set([...(goal.placedWorkstations || []), key])].slice(-16); }
+}
+function forgetWorkstation(bot, goal, key) {
+  bot._ownedWorkstations?.delete(key);
+  if (goal?.placedWorkstations) goal.placedWorkstations = goal.placedWorkstations.filter(k => k !== key);
+}
+function recallWorkstations(bot, goal) {
+  for (const key of goal?.placedWorkstations || []) (bot._ownedWorkstations ||= new Set()).add(key);
+}
+
+async function workstation(bot, task, name, goal) {
   // Use a carried table nearby instead of spending ingredients/scaffolding
   // walking back to a distant bench. Existing nearby player tables may still
   // be reused, but only tables placed by this session are collected afterward.
@@ -493,7 +509,7 @@ async function workstation(bot, task, name) {
     const q = o.offset(dx, dy, dz);
     if (air(bot.blockAt(q)) && bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block') {
       await place(bot, task, q, name); p = q;
-      bot._ownedWorkstations ||= new Set(); bot._ownedWorkstations.add(`${name}:${q}`);
+      rememberWorkstation(bot, goal, name, q);
     }
   }
   if (!p) throw new Error(`No place for ${name}`);
@@ -504,7 +520,7 @@ async function workstation(bot, task, name) {
 
 async function craft(bot, task, step, goal) {
   await settleCraftInventory(bot, task);
-  const table = step.needs_table ? await workstation(bot, task, 'crafting_table') : null;
+  const table = step.needs_table ? await workstation(bot, task, 'crafting_table', goal) : null;
   const id = bot.registry.itemsByName[step.item]?.id;
   const recipe = step.recipe ? new (require('prismarine-recipe')(bot.registry).Recipe)({ result: { id, count: step.recipe.count },
     ...(step.recipe.shape ? { inShape: step.recipe.shape.map(row => row.map(name => name ? bot.registry.itemsByName[name].id : null)) } :
@@ -527,7 +543,7 @@ async function craft(bot, task, step, goal) {
     await dig(bot, task, table.position);
     await navigate(bot, task, new goals.GoalNear(table.position.x, table.position.y, table.position.z, 1));
     await waitFor(task, () => countOf(bot, 'crafting_table') > count);
-    bot._ownedWorkstations.delete(`crafting_table:${table.position}`);
+    forgetWorkstation(bot, goal, `crafting_table:${table.position}`);
   }
 }
 
@@ -567,7 +583,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     // Never switch furnaces while the saved ingredients/output belong to this one.
     block = await approachWorkstation(bot, task, 'furnace', [p]);
     if (!block) throw new Blocked("I can't reach the furnace holding our saved batch");
-  } else block = await workstation(bot, task, 'furnace');
+  } else block = await workstation(bot, task, 'furnace', goal);
   const before = countOf(bot, step.item);
   const needed = Math.min(pending ? pending.targetInventory - before : step.count, 64);
   if (goal && !pending) {
@@ -652,7 +668,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     await dig(bot, task, block.position);
     await navigate(bot, task, new goals.GoalNear(block.position.x, block.position.y, block.position.z, 1));
     await waitFor(task, () => countOf(bot, 'furnace') > count);
-    bot._ownedWorkstations.delete(`furnace:${block.position}`);
+    forgetWorkstation(bot, goal, `furnace:${block.position}`);
   }
 }
 
@@ -1683,6 +1699,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
   goal.survival = survival.state;
   const save = () => store.save(goal);
   protectConstruction(bot, goal);
+  recallWorkstations(bot, goal);
   recoveryAdviser ||= createRecoveryAdviser(bot, decisionClient);
   let failures = 0;
   while (!until()) {
@@ -1716,6 +1733,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
   survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
   goal.survival = survival.state;
   protectConstruction(bot, goal);
+  recallWorkstations(bot, goal);
   recoveryAdviser ||= createRecoveryAdviser(bot, decisionClient);
   goal.status = 'running'; goal.failures = 0; goal.stalls = 0; save();
   const stopObserving = goal.kind === 'win' ? watchGameProgress(bot, goal, save) : () => {};
