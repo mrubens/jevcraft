@@ -117,7 +117,11 @@ function exits(bot, shelter) {
   const o = position(shelter.origin);
   return (shelter.kind === 'house' ? [{ door: o.offset(0, 0, -2), outside: o.offset(0, 0, -3) }] :
     directions.map(d => ({ door: o.plus(d), outside: o.plus(d.scaled(2)) })))
-    .filter(exit => replaceable(bot.blockAt(exit.outside)) && replaceable(bot.blockAt(exit.outside.offset(0, 1, 0))) && solid(bot.blockAt(exit.outside.offset(0, -1, 0))));
+    .filter(exit => replaceable(bot.blockAt(exit.outside)) && replaceable(bot.blockAt(exit.outside.offset(0, 1, 0))) && solid(bot.blockAt(exit.outside.offset(0, -1, 0))))
+    // A door is dug through, so it must be shell or rock, never the bed or
+    // the chest the shell happened to lean on: the second run's base lost
+    // both that way in one night.
+    .filter(exit => shelter.kind === 'house' || [exit.door, exit.door.offset(0, 1, 0)].every(p => { const b = bot.blockAt(p); return replaceable(b) || buildingMaterials.has(b?.name); }));
 }
 
 // Side cells of a sealed pocket that the bot closed with its own blocks:

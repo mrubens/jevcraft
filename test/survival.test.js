@@ -762,3 +762,13 @@ test('the bed at the base is slept in when it is near, and it stays where it is'
   await survival.sleepStep(new Task('test', 'sleep'), goal, () => {});
   assert.equal(bot.time.timeOfDay, 0); assert.equal(walked.length, 1); assert.deepEqual(dug, [], 'the base bed is not picked up');
 });
+
+test('a shell leaning on the chest does not use the chest as its door', () => {
+  const shelter = require('../src/shelter');
+  const o = new Vec3(0, 64, 0), blocks = new Map();
+  for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const dy of [0, 1]) blocks.set(`${o.offset(d[0], dy, d[1])}`, 'cobblestone');
+  blocks.set(`${o.offset(1, 0, 0)}`, 'chest');
+  const bot = { blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty' }) };
+  const exits = shelter.exits(bot, { origin: { x: 0, y: 64, z: 0 } });
+  assert(exits.length >= 1); assert(exits.every(e => !(e.door.x === 1 && e.door.z === 0)), 'the chest side is not a door');
+});

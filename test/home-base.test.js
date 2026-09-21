@@ -333,3 +333,14 @@ test('tilling clears leaf litter off a plot cell first', async () => {
   assert.deepEqual(dug, [`${new Vec3(plot[0].x, plot[0].y + 1, plot[0].z)}`]);
   assert.equal(bot.blockAt(new Vec3(plot[0].x, plot[0].y, plot[0].z)).name, 'farmland');
 });
+
+test('a shell left on the site is cleared off the bed cells before the bed goes down', async () => {
+  const w = await establishedHome({ items: [['white_bed', 1]] });
+  const { bot, goal, actions } = w, home_ = goal.survival.home, { bed } = home.layout(home_);
+  for (const p of [bed.foot, bed.head]) w.set(new Vec3(p.x, p.y, p.z), 'air');
+  w.set(new Vec3(bed.stand.x, bed.stand.y + 1, bed.stand.z), 'cobblestone'); w.set(new Vec3(bed.head.x, bed.head.y + 1, bed.head.z), 'cobblestone');
+  const dug = [];
+  await home.placeBed(bot, new Task('bed'), goal, () => {}, home_, { ...actions, dig: async (b, t, p) => { dug.push(`${p}`); w.set(p, 'air'); } }, 'white_bed');
+  assert.equal(dug.length, 2, 'the two stray cobblestone came off');
+  assert(home.isBed(bot.blockAt(new Vec3(bed.foot.x, bed.foot.y, bed.foot.z))));
+});

@@ -332,7 +332,10 @@ async function placeStashChest(bot, task, goal, save, home, actions) {
   const { chest } = base().layout(home);
   goal.step = { action: 'place_chest', at: chest }; save();
   task.check(); checkAir(bot); checkThreats(bot);
-  if (!isChest(bot.blockAt(pos(chest)))) await actions.place(bot, task, pos(chest), 'chest');
+  if (!isChest(bot.blockAt(pos(chest)))) {
+    await base().clearStray(bot, task, actions, [chest, { x: chest.x, y: chest.y + 1, z: chest.z }]);
+    await actions.place(bot, task, pos(chest), 'chest');
+  }
   if (!isChest(bot.blockAt(pos(chest)))) throw new Error('The chest did not go beside the bed');
   home.stash = { ...home.stash, position: plain(chest), placedAt: new Date().toISOString(), contents: home.stash?.contents || {} };
   delete home.stash.lostAt; save();

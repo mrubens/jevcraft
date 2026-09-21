@@ -463,9 +463,22 @@ async function placeOriented(bot, task, actions, stand, target, item, verify) {
   if (!await waitFor(task, verify)) throw new Error(`${item.replaceAll('_', ' ')} did not go where it was placed`);
 }
 
+// A night shell left on the site: its cobblestone comes off the cells the
+// bed, the chest and the placing stand need before anything is placed.
+const STRAY = new Set(['cobblestone', 'cobbled_deepslate', 'dirt', 'netherrack', 'andesite', 'diorite', 'granite', 'stone', 'oak_planks', 'birch_planks', 'spruce_planks']);
+async function clearStray(bot, task, actions, cells) {
+  for (const p of cells) {
+    task.check();
+    const block = bot.blockAt(pos(p));
+    if (block && block.boundingBox === 'block' && STRAY.has(block.name)) await actions.dig(bot, task, pos(p), { requireDrops: false });
+  }
+}
+
 async function placeBed(bot, task, goal, save, home, actions, item) {
   const { bed } = layout(home);
   goal.step = { action: 'place_bed', item, at: bed.foot }; save();
+  const up = (p, dy) => ({ x: p.x, y: p.y + dy, z: p.z });
+  await clearStray(bot, task, actions, [bed.foot, bed.head, up(bed.foot, 1), up(bed.head, 1), bed.stand, up(bed.stand, 1), up(bed.stand, 2), up(bed.stand, -1) === undefined ? bed.stand : { x: bed.stand.x, y: bed.stand.y + 1, z: bed.stand.z }]);
   // A bed that landed the wrong way round is picked back up first.
   for (const p of [bed.foot, bed.head, pos(bed.foot).plus(pos(bed.foot).minus(pos(bed.head)))]) {
     if (isBed(bot.blockAt(pos(p))) && !(isBed(bot.blockAt(pos(bed.foot))) && isBed(bot.blockAt(pos(bed.head))))) await actions.dig(bot, task, pos(p), { requireDrops: false });
@@ -780,6 +793,6 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
   return options;
 }
 
-module.exports = { bedCarried, placeOriented, isBed, siteWork, levelSite, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
+module.exports = { bedCarried, placeOriented, isBed, siteWork, levelSite, clearStray, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
   woolCarried, woodSpecies, homeStage, homeComplete, homeStep, tillPlot, plantPlot, harvestPlot, placeBed, claimBed, buildPen, gatherWool, lureCows, breedCows, takeSteak, bake,
   homeFood, eatFromHome, homeChores };
