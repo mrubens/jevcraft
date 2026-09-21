@@ -772,3 +772,20 @@ test('a shell leaning on the chest does not use the chest as its door', () => {
   const exits = shelter.exits(bot, { origin: { x: 0, y: 64, z: 0 } });
   assert(exits.length >= 1); assert(exits.every(e => !(e.door.x === 1 && e.door.z === 0)), 'the chest side is not a door');
 });
+
+test('at dusk with a bed at home, Jev heads home before bedtime', async () => {
+  const { Survival } = require('../src/survival');
+  const { layout } = require('../src/home-base');
+  const home = { version: 1, dimension: 'overworld', origin: { x: 0, y: 63, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 63, z: 0 }, bed: { placedAt: 'now', claimedAt: 'now' }, plot: {}, pen: {} };
+  const { bed } = layout(home);
+  const blocks = new Map([[`${new Vec3(bed.foot.x, bed.foot.y, bed.foot.z)}`, 'white_bed'], [`${new Vec3(bed.head.x, bed.head.y, bed.head.z)}`, 'white_bed']]);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 11600 },
+    entity: { position: new Vec3(30.5, 40, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
+  const walked = [];
+  const survival = new Survival(bot, { navigate: async (b, t, g) => walked.push([g.x, g.y, g.z]), dig: async () => {}, place: async () => {} }, { state: { home } });
+  const goal = { kind: 'win', request: 'beat the game', survival: survival.state };
+  assert.equal(await survival.step(new Task('test', 'dusk'), goal, () => {}), true);
+  assert.deepEqual(walked, [[bed.foot.x, bed.foot.y, bed.foot.z]], 'the walk home starts at dusk, from the shaft');
+});

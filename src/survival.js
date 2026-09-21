@@ -531,7 +531,10 @@ class Survival {
     if (!site) throw new Error('No level ground beside me for the bed');
     this.report(goal, save, { action: 'sleep', at: { ...site.foot }, home: !!placed });
     if (placed) {
-      await this.actions.navigate(bot, task, new goals.GoalNear(site.foot.x, site.foot.y, site.foot.z, 2), { timeoutMs: 90000, stallMs: 8000 });
+      // A walk that fails is a route problem, not a bed problem: the shelter
+      // path takes this night's next two minutes, and the bed stays in play.
+      try { await this.actions.navigate(bot, task, new goals.GoalNear(site.foot.x, site.foot.y, site.foot.z, 2), { timeoutMs: 90000, stallMs: 8000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; this.state.bedRouteFailedAt = Date.now(); this.report(goal, save, { action: 'sleep_failed', reason: `no way to the bed: ${err.message}` }); throw err; }
       if (!isBed(bot.blockAt(site.foot))) throw new Error('The bed at the base is not where it was left');
     }
     else await placeOriented(bot, task, this.actions, site.stand, site.foot, item, () => isBed(bot.blockAt(site.foot)) && isBed(bot.blockAt(site.head)));
@@ -630,7 +633,17 @@ class Survival {
     // reserve at 9500, no blocks to gather, and at 12541 the choice is
     // sleep, or stay up armed because the dark is what the request needs.
     const bed = bedCarried(bot), homeBed = nearbyHomeBed(bot, goal);
-    const bedReady = (!!bed || !!homeBed) && bot.game.dimension === 'overworld' && !(this.state.sleepFailedAt > Date.now() - 600000);
+    const routeBlocked = this.state.bedRouteFailedAt > Date.now() - 120000;
+    const bedReady = (!!bed || (!!homeBed && !routeBlocked)) && bot.game.dimension === 'overworld' && !(this.state.sleepFailedAt > Date.now() - 600000);
+    // Dusk with a bed at home: head there before bedtime rather than start
+    // the walk from the bottom of a shaft at 12541. The second run chose the
+    // bed thirty blocks down its mine and the walk failed at once.
+    if (homeBed && !routeBlocked && bot.time?.timeOfDay >= 11000 && bot.time.timeOfDay < SLEEP_FROM && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot)) {
+      this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)) });
+      try { await this.actions.navigate(bot, task, new goals.GoalNear(homeBed.foot.x, homeBed.foot.y, homeBed.foot.z, 3), { timeoutMs: 60000, stallMs: 8000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; this.state.bedRouteFailedAt = Date.now(); }
+      onStep(goal); return true;
+    }
     const plan = this.state.nightPlan?.until > Date.now() ? this.state.nightPlan : null;
     const stayingUp = plan?.plan === 'stay_up';
     const needsShelter = shelterNeeded(bot) && !(bedReady && bot.time.timeOfDay < SLEEP_FROM) && !stayingUp;

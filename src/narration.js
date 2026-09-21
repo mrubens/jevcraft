@@ -26,6 +26,7 @@ const SURVIVAL = {
   seal_shelter: 'Sealing myself in for the night.',
   sheltered: "I'm safe inside. I'll wait for morning.",
   sleep: 'Night. Bedding down.',
+  go_home_for_night: "Getting dark. Heading home to bed.",
   sleep_failed: (goal, action) => `Couldn't sleep: ${String(action.reason || '').replace(/^The server refused the sleep: /, '').replaceAll('_', ' ').replace(/^block\.minecraft\./, '')}.`,
   stay_up: "Staying up tonight; there's work the dark is good for.",
   leave_shelter: (goal, action) => action.reason || "Morning. Back to it.",
