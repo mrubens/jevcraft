@@ -1597,6 +1597,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
     task.interruptCheck = undefined;
     task.check();
     updateDigCapabilities(bot);
+    // Say what the last step started on. Here rather than at the loop's end,
+    // because survival and continued work leave the loop body early.
+    narrate(bot, goal);
     const before = JSON.stringify(inventory(bot));
     const constructionBefore = constructionObservation(bot, goal);
     const location = bot.entity.position.clone();
@@ -1708,7 +1711,6 @@ async function runGoal(bot, task, goal, store, { maxSteps = 2000, onStep = () =>
       await sleep(300);
     } finally { task.interruptCheck = undefined; }
     save(); onStep(goal);
-    if (goal.status === 'running') narrate(bot, goal);
   }
   goal.status = 'blocked'; goal.lastError = 'Action budget reached'; save();
   bot.chat('This is taking a while. I saved our progress. Say "Jev resume" to keep going.');
