@@ -11,8 +11,17 @@ const { supportCell } = require('./terrain');
 const LIMITS = Object.freeze({ radius: 6, routeSteps: 10, durationMs: 12000, primarySteps: 3 });
 const pos = p => new Vec3(p.x, p.y, p.z);
 
+// Fuel is a rule, not a judgment. Every smelt on the ladder burns
+// something, and underground the something is the planks that the next
+// pickaxe needs. The dream run walked past coal ore with no fuel in the
+// pockets while Jev, asked about "surplus", chose to continue; coal within
+// reach while the fuel is short is taken without asking.
+const FUEL_UNITS_WANTED = 8;
+const fuelCarried = bot => bot.inventory.items().reduce((n, i) => n + (i.name === 'coal' || i.name === 'charcoal' ? i.count : i.name === 'coal_block' ? i.count * 9 : 0), 0);
+const neededByRule = (bot, candidate) => candidate.resource === 'coal' && fuelCarried(bot) < FUEL_UNITS_WANTED;
+
 function opportunityCandidates(bot, goal, primary) {
-  if (bot.health < 16 || bot.food < 14 || bot.game.gameMode === 'creative' || !dryStanding(bot, bot.entity.position) || immediateThreat(bot)) return [];
+  if (!bot.registry?.blocksArray || !bot.findBlocks || bot.health < 16 || bot.food < 14 || bot.game?.gameMode === 'creative' || !dryStanding(bot, bot.entity.position) || immediateThreat(bot)) return [];
   const ores = bot.registry.blocksArray.filter(block => /_ore$|^ancient_debris$/.test(block.name));
   const candidates = bot.findBlocks({ matching: ores.map(block => block.id), maxDistance: LIMITS.radius, count: 16,
     useExtraInfo: block => (!bot.canSeeBlock || bot.canSeeBlock(block)) && !reservedForConstruction(goal, block.position) &&
@@ -37,10 +46,12 @@ function opportunityCandidates(bot, goal, primary) {
 }
 
 async function opportunisticMining(bot, task, goal, save, primary, { navigate, dig }, client = task.opportunityClient) {
-  if (!client || goal.kind === 'find') return false;
+  if (goal.kind === 'find') return false;
   const state = goal.opportunistic ||= { primarySteps: 0, history: [], skipped: {} };
-  if (++state.primarySteps % LIMITS.primarySteps !== 0) return false;
-  const candidates = opportunityCandidates(bot, goal, primary);
+  const asking = ++state.primarySteps % LIMITS.primarySteps === 0 && !!client;
+  const all = opportunityCandidates(bot, goal, primary);
+  const needed = all.filter(c => neededByRule(bot, c));
+  const candidates = needed.length ? needed : asking ? all : [];
   if (!candidates.length) return false;
   const start = bot.entity.position.clone();
   const movement = bot.pathfinder.movements, previous = { canDig: movement.canDig, scafoldingBlocks: movement.scafoldingBlocks,
@@ -59,7 +70,7 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
       }
     }
     if (!choices.length) return false;
-    const response = await client.systemOne({ kind: 'mining', state: { request: goal.request, primary, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
+    const response = needed.length ? { answers: { opportunity: { choice: 'ore_0', rule: 'fuel' } } } : await client.systemOne({ kind: 'mining', state: { request: goal.request, primary, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
       limits: LIMITS, candidates: choices.map(({ standing, ...c }) => ({ ...c, distance: c.position.distanceTo(start) })) },
     questions: { opportunity: choice('Standing instruction: collect useful ores noticed along the way, even when they are not ingredients for the current request. These candidates already pass strict checks for tools, safe access, inventory room, a six-block radius and a twelve-second detour. Prefer picking up a scarce valuable resource such as diamonds, emeralds or needed iron; return to the main request immediately afterward. Choose continue for low-value surplus or if the player explicitly said no detours/only the requested item. Asking for coal alone does NOT forbid grabbing a nearby diamond.', {
       ...Object.fromEntries(choices.map((c, i) => [`ore_${i}`, `${c.block}: yields ${c.resource}; already carrying ${c.carried}; ${c.routeSteps} walking steps away.`])),
@@ -100,4 +111,4 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
   } finally { Object.assign(movement, previous); }
 }
 
-module.exports = { LIMITS, opportunityCandidates, opportunisticMining };
+module.exports = { LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };

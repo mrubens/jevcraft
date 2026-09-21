@@ -126,6 +126,23 @@ test('cancelled optional mining restores movement and retains the main request',
   assert.equal(goal.request, 'get coal'); assert.equal(goal.step.drops, 'coal'); assert.equal(goal.opportunistic.active, undefined);
 });
 
+test('coal within reach with no fuel in the pockets is taken by rule, without asking', async () => {
+  const { opportunisticMining } = require('../src/opportunistic-mining');
+  const { bot, ore } = oreWorld();
+  const Block = require('prismarine-block')(registry);
+  bot.blockAt = p => { const point = p.floored(); const block = Block.fromStateId(registry.blocksByName[point.equals(ore) ? 'coal_ore' : point.y < 70 ? 'stone' : 'air'].defaultState); block.position = point; return block; };
+  const dug = [];
+  const goal = { kind: 'win', opportunistic: { primarySteps: 0, history: [], skipped: {} }, step: { action: 'tunnel' } };
+  assert.equal(await opportunisticMining(bot, new Task('iron'), goal, () => {}, { drops: 'raw_iron' }, {
+    dig: async (b, t, p) => { dug.push(p); }, navigate: async () => {},
+  }, { systemOne: async () => assert.fail('a rule needs no question') }), true);
+  assert.deepEqual(dug, [ore]);
+  assert.equal(goal.opportunistic.lastDecision.answer.rule, 'fuel');
+  bot.inventory.items = () => [{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }, { name: 'coal', count: 12 }];
+  goal.opportunistic.skipped = {};
+  assert.equal(await opportunisticMining(bot, new Task('iron'), goal, () => {}, { drops: 'raw_iron' }, { dig: async () => assert.fail('dug'), navigate: async () => {} }, null), false, 'with fuel in hand and no client, no detour');
+});
+
 test('long or excavating detour routes never reach the model or executor', async () => {
   const { opportunisticMining } = require('../src/opportunistic-mining');
   const { bot } = oreWorld();

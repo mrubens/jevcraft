@@ -1,5 +1,6 @@
 'use strict';
 const { Vec3 } = require('vec3');
+const { opportunisticMining } = require('./opportunistic-mining');
 const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
 const { safeFromHostiles } = require('./danger');
@@ -98,6 +99,11 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate }) {
   tunnel.workPosition = { ...bot.entity.position.floored() };
   tunnel.dimension = bot.game?.dimension;
   save();
+  // The shaft walls are where most ore is seen, and the mine step's own
+  // check never ran here: coal for the next smelt went by unmined.
+  const step = goal.step;
+  await opportunisticMining(bot, task, goal, save, { drops: tunnel.resource || null }, { navigate, dig });
+  goal.step = step;
 }
 
 // Resource work survives food, tool and shelter interruptions. Each resource
