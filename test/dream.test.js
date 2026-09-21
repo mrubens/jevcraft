@@ -74,3 +74,13 @@ test('chat sets, asks about and clears the dream, and an unclear line asks back'
   assert.equal((await ask('none')).kind, 'clarify');
   await assert.rejects(ask('invent'), /Invalid dream/);
 });
+
+test('a question about the dream reaches the dream handler even when phrased as discussion', async () => {
+  const { interpret } = require('../src/objectives');
+  const registry = require('minecraft-data')('26.1');
+  const client = { systemOne: async ({ questions }) => questions.addressed
+    ? { answers: { addressed: { noul: 1 }, interaction: { choice: 'discussion' }, objective: { choice: 'dream', confidence: 0.9 } } }
+    : { answers: { operation: { choice: 'query', confidence: 0.9 } } } };
+  const spec = await interpret(client, "Jev what's your dream?", 'Player', 'Jev', { registry });
+  assert.equal(spec.kind, 'dream'); assert.equal(spec.dream.operation, 'query');
+});

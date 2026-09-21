@@ -140,8 +140,10 @@ async function interpret(client, request, from, username, context = {}) {
   // The memory classifier separately distinguishes a personal statement from
   // quoted, hypothetical or negated instructions. Such statements are useful
   // even when the broad action/discussion classifier calls them discussion.
+  // Asking about the dream or a memory is a question to the bot, not a
+  // discussion about one, however it is phrased.
   const kind = a.objective.choice === 'memory' || (a.interaction.choice === 'discussion' && a.memory_statement?.noul >= 0.75)
-    ? 'memory' : a.interaction.choice === 'request' ? a.objective.choice : 'other';
+    ? 'memory' : a.objective.choice === 'dream' ? 'dream' : a.interaction.choice === 'request' ? a.objective.choice : 'other';
   const spec = { kind, request, from, interpretation: a, usage: response.usage, latencyMs: Math.round(performance.now() - started) };
   // Kept as a plain number on the goal so decision state can carry it
   // without dragging the whole interpretation along.
