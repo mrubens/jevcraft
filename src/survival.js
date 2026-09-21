@@ -648,6 +648,14 @@ class Survival {
     // bed thirty blocks down its mine and the walk failed at once.
     // A failed direct walk pauses the walk, not the climb: the stairs out
     // of a shaft are a different route from a path search to the bed.
+    // Home before bedtime: wait by the bed rather than hand the minute back
+    // to the work loop, which dived to the lava site and was climbed out of
+    // again every ten seconds until 12541.
+    if (homeBed && shelterNeeded(bot) && bot.time.timeOfDay >= 11000 && bot.time.timeOfDay < SLEEP_FROM && homeBed.foot.distanceTo(bot.entity.position) <= 6 && !immediateThreat(bot)) {
+      this.report(goal, save, { action: 'wait_for_bedtime', ticks: SLEEP_FROM - bot.time.timeOfDay });
+      for (let i = 0; i < 10; i++) { task.check(); await sleep(100); }
+      onStep(goal); return true;
+    }
     const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot) && (underground || !routeBlocked);
     if (homeWalk && (bot.time.timeOfDay >= 11000 || underground) && !(this.state.sleepFailedAt > Date.now() - 600000)) {
       this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });

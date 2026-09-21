@@ -791,4 +791,8 @@ test('at dusk with a bed at home, Jev heads home before bedtime', async () => {
   bot.entity.position = new Vec3(30.5, 64, 0.5);
   assert.equal(await survival.step(new Task('test', 'dusk'), goal, () => {}), true);
   assert.deepEqual(walked, [[bed.foot.x, bed.foot.y, bed.foot.z]], 'on the surface, the walk home');
+  bot.entity.position = new Vec3(bed.foot.x + 2.5, 64, bed.foot.z + 0.5);
+  const reported = []; survival.report = (g, sv, a) => reported.push(a.action);
+  assert.equal(await survival.step(new Task('test', 'dusk'), goal, () => {}), true, 'home before bedtime: the survival layer keeps the turn');
+  assert.deepEqual(reported, ['wait_for_bedtime']); assert.equal(walked.length, 1, 'no second walk, no dive back to work');
 });
