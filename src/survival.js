@@ -467,8 +467,11 @@ class Survival {
     return true;
   }
 
-  async leave(task, goal, save, refuge) {
+  async leave(task, goal, save, refuge, reason) {
     const bot = this.bot;
+    // "Morning. Back to it." only when it is morning; a shelter left at
+    // night for the bed, or with mobs outwaited, says so.
+    reason ||= shelterNeeded(bot) ? 'Moving on.' : undefined;
     // Mobs that can see in, or are at the wall; the rest are behind rock.
     const danger = threats(bot).filter(t => t.visible || t.distance < 6);
     const formal = shelter.exits(bot, refuge).filter(exit => danger.every(t => t.entity.position.distanceTo(exit.outside) > 20));
@@ -477,7 +480,7 @@ class Survival {
     const pocket = !formal.length && shelter.closures(bot, refuge).filter(door => danger.every(t => t.entity.position.distanceTo(door) > 20));
     const exit = formal[0] || (pocket.length ? { door: pocket[0], outside: null } : null);
     if (!exit) { await this.wait(task, goal, save, 'Nearby threats still block the shelter exits'); return; }
-    this.report(goal, save, { action: 'leave_shelter', origin: refuge.origin });
+    this.report(goal, save, { action: 'leave_shelter', origin: refuge.origin, reason });
     // Opening our temporary closure is necessary even if the last pick broke.
     // Bare-handed stone clearing loses its drop but must not imprison the bot
     // inside a one-cell shelter with no room to place a crafting table.
@@ -607,9 +610,12 @@ class Survival {
       const outwaited = watched && Date.now() - this.state.watchedSince > 180000;
       // A sealed pocket within a walk of the base's bed is left for it: the
       // night passes in the bed, not behind the wall.
-      const homeBed = sleepable(bot) && !watched && !(this.state.sleepFailedAt > Date.now() - 600000) && nearbyHomeBed(bot, goal);
+      // Only from a pocket on the surface: a walk to the bed from a pocket
+      // down a shaft fails, and the night is better spent behind the wall.
+      const homeBed = sleepable(bot) && !watched && !(this.state.sleepFailedAt > Date.now() - 600000) && !(this.state.bedRouteFailedAt > Date.now() - 120000) &&
+        surfaceObserver(bot)(bot.entity.position) && nearbyHomeBed(bot, goal);
       if (homeBed) {
-        delete this.state.watchedSince; await this.leave(task, goal, save, refuge);
+        delete this.state.watchedSince; await this.leave(task, goal, save, refuge, 'Off to bed.');
         try { await this.sleepStep(task, goal, save); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       }
       else if ((shelterNeeded(bot) || watched) && !outwaited) await this.wait(task, goal, save);
@@ -634,12 +640,14 @@ class Survival {
     // sleep, or stay up armed because the dark is what the request needs.
     const bed = bedCarried(bot), homeBed = nearbyHomeBed(bot, goal);
     const routeBlocked = this.state.bedRouteFailedAt > Date.now() - 120000;
+    const underground = bot.game.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
     const bedReady = (!!bed || (!!homeBed && !routeBlocked)) && bot.game.dimension === 'overworld' && !(this.state.sleepFailedAt > Date.now() - 600000);
     // Dusk with a bed at home: head there before bedtime rather than start
     // the walk from the bottom of a shaft at 12541. The second run chose the
     // bed thirty blocks down its mine and the walk failed at once.
-    const underground = bot.game.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
-    const homeWalk = homeBed && !routeBlocked && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot);
+    // A failed direct walk pauses the walk, not the climb: the stairs out
+    // of a shaft are a different route from a path search to the bed.
+    const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot) && (underground || !routeBlocked);
     if (homeWalk && (bot.time.timeOfDay >= 11000 || underground)) {
       this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });
       try {
