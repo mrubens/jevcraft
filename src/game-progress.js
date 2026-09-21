@@ -86,11 +86,14 @@ function preparationStage(bot) {
   const usable = item => { const max = bot.registry?.itemsByName?.[item.name]?.maxDurability; return !max || max - (item.durabilityUsed || 0) >= max * 0.2; };
   const sound = [...bot.inventory.items(), ...equipped].filter(usable).map(i => i.name);
   const best = kind => Math.max(0, ...sound.filter(n => n.endsWith(`_${kind}`)).map(tierOf));
-  if (best('pickaxe') < 2) return { phase: 'stone_pickaxe', action: 'acquire', item: 'stone_pickaxe', count: 1 };
-  if (best('sword') < 2) return { phase: 'stone_sword', action: 'acquire', item: 'stone_sword', count: 1 };
-  if (best('pickaxe') < 3) return { phase: 'iron_pickaxe', action: 'acquire', item: 'iron_pickaxe', count: 1 };
+  // A worn tool is still in the inventory, so the replacement is one more
+  // than what is carried; asking for one would be satisfied by the worn one.
+  const another = item => ({ phase: item, action: 'acquire', item, count: carried.filter(n => n === item).length + 1 });
+  if (best('pickaxe') < 2) return another('stone_pickaxe');
+  if (best('sword') < 2) return another('stone_sword');
+  if (best('pickaxe') < 3) return another('iron_pickaxe');
   if (!carried.includes('shield')) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
-  if (best('sword') < 3) return { phase: 'iron_sword', action: 'acquire', item: 'iron_sword', count: 1 };
+  if (best('sword') < 3) return another('iron_sword');
   if (!carried.includes('bucket') && !carried.includes('water_bucket')) return { phase: 'bucket', action: 'acquire', item: 'bucket', count: 1 };
   // Armour is four rungs, not one label. The Nether trip needs all of it,
   // and each piece is a visible step rather than "reach the Nether" for an

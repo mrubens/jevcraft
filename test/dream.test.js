@@ -49,6 +49,7 @@ test('beating the game is handed over as the win objective, and the ladder start
   const registry = require('minecraft-data')('26.1');
   const worn = { registry, inventory: { items: () => [{ name: 'iron_pickaxe', durabilityUsed: 240 }, { name: 'stone_pickaxe', durabilityUsed: 0 }, { name: 'iron_sword' }, { name: 'shield' }, { name: 'water_bucket' }], slots: {} } };
   assert.equal(preparationStage(worn).item, 'iron_pickaxe', 'a pickaxe with ten uses left is a rung to redo before it breaks');
+  assert.equal(preparationStage(worn).count, 2, 'the worn one is still carried, so the rung asks for one more');
   worn.inventory.items = () => [{ name: 'iron_pickaxe', durabilityUsed: 100 }, { name: 'iron_sword' }, { name: 'shield' }, { name: 'water_bucket' }];
   assert.equal(preparationStage(worn).item, 'iron_helmet', 'a sound pickaxe counts');
   assert.equal(preparationStage(bot([])).item, 'stone_pickaxe');
