@@ -26,6 +26,7 @@ function lavaBeside(bot, p) {
 }
 // Hostiles that daylight does not remove and that keep following.
 const PERSISTENT_THREATS = new Set(['creeper', 'spider', 'cave_spider', 'enderman', 'witch', 'pillager', 'vindicator', 'husk', 'drowned']);
+const RANGED = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze', 'ghast', 'piglin', 'breeze', 'wither_skeleton']);
 const shelterNeeded = bot => bot.game.difficulty !== 'peaceful' && bot.game.dimension === 'overworld' &&
   bot.time?.timeOfDay >= 9500 && bot.time.timeOfDay < 23000;
 const emptySite = (bot, refuge) => refuge.kind !== 'house' && !refuge.verifiedAt &&
@@ -141,11 +142,16 @@ class Survival {
       // Cornered with stone in hand: a wall between us and the mob beats a
       // hold. Only the cell one step toward it, and only while that cell is
       // still empty; a mob already in it is fought, not walled.
+      // A wall on one side is not cover: a skeleton shot the bot while it
+      // hid from a piglin. With a ranged mob in view and no way out, close
+      // every open side into a two-block pocket and let it pass. Against a
+      // melee mob alone, the single wall toward it is enough.
+      const nearest = danger[0];
+      if (danger.some(t => RANGED.has(t.entity.name)) && await this.digIn(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       if (await this.wallOff(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       // No way out and a mob a few blocks off, shooting: standing still is
       // how a crossbow piglin took half the bot's health. Armed and able,
       // close the gap so the fight rule can do its work.
-      const nearest = danger[0];
       if (armed && bot.health >= 8 && nearest.distance > 2.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
         this.report(goal, save, { action: 'charge', target: nearest.entity.name, distance: Number(nearest.distance.toFixed(1)) });
         const t = nearest.entity.position;
@@ -295,6 +301,29 @@ class Survival {
     }
     try { await this.actions.navigate(bot, task, destination, { timeoutMs: 20000 }); }
     finally { if (movement) movement.exclusionAreasBreak = previous; }
+  }
+
+  async digIn(task, goal, save, danger) {
+    const bot = this.bot;
+    if (typeof this.actions.place !== 'function') return false;
+    const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 4)?.name;
+    if (!material) return false;
+    const feet = bot.entity.position.floored();
+    const cells = [];
+    for (const d of [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)]) for (const dy of [0, 1]) {
+      const p = feet.plus(d).offset(0, dy, 0);
+      if (shelter.replaceable(bot.blockAt(p)) && !danger.some(t => t.entity.position.floored().equals(p))) cells.push(p);
+    }
+    if (shelter.replaceable(bot.blockAt(feet.offset(0, 2, 0)))) cells.push(feet.offset(0, 2, 0));
+    if (!cells.length) return false;
+    this.report(goal, save, { action: 'dig_in', threats: danger.map(t => t.entity.name), cells: cells.length });
+    let placed = 0;
+    for (const p of cells) {
+      task.check();
+      try { await this.actions.place(bot, task, p, material); placed++; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+    }
+    return placed > 0;
   }
 
   async wallOff(task, goal, save, danger) {

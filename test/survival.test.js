@@ -617,3 +617,18 @@ test('a mob watching the shelter in daylight keeps the bot in for three minutes,
   await long.survival.step(new Task('outwaited'), {}, () => {});
   assert.deepEqual(long.actions, ['leave']);
 });
+
+test('cornered by a ranged mob with no way out, the bot closes every open side into a pocket', async () => {
+  const { Survival } = require('../src/survival');
+  const feet = new Vec3(0, 10, 0);
+  const skeleton = { name: 'skeleton', type: 'hostile', position: new Vec3(5.5, 10, 0.5), height: 1.99 };
+  const placed = [];
+  const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entity: { position: feet.offset(0.5, 0, 0.5) }, entities: { 1: skeleton },
+    inventory: { items: () => [{ name: 'cobblestone', count: 64 }, { name: 'iron_sword', count: 1 }] }, world: { raycast: () => null }, on() {}, removeListener() {}, clearControlStates() {},
+    registry: require('minecraft-data')('26.1'),
+    blockAt: p => ({ name: p.y >= 10 && p.y <= 12 ? 'air' : 'stone', boundingBox: p.y >= 10 && p.y <= 12 ? 'empty' : 'block', position: p }),
+    findBlocks: () => [], pathfinder: { movements: {}, getPathTo: async () => ({ status: 'noPath', path: [] }), setGoal() {} } };
+  const survival = new Survival(bot, { place: async (b, t, p) => { placed.push(`${p}`); }, navigate: async () => {} }, { state: { shelters: [] } });
+  await survival.flee(new Task('shot at'), {}, () => {});
+  assert.equal(placed.length, 9, 'four sides at two heights and the top');
+});

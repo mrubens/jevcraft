@@ -22,6 +22,7 @@ const SURVIVAL = {
   hold_defensive_position: 'Cornered. Holding here and defending.',
   fight: (goal, action) => `Fighting ${[...new Set((action.threats || []).map(name))].join(' and ')}.`,
   charge: (goal, action) => `No way out, so I'm going for the ${name(action.target)}.`,
+  dig_in: 'Something is shooting at me, so I\'m digging in until it passes.',
   wall_off: 'Cornered, so I\'m walling the tunnel shut.',
   leave_lava_edge: 'Getting away from the lava before anything else.',
   return_to_surface: 'Heading back up to the surface.',
