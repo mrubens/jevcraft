@@ -94,3 +94,13 @@ test('a question about the dream reaches the dream handler even when phrased as 
   const spec = await interpret(client, "Jev what's your dream?", 'Player', 'Jev', { registry });
   assert.equal(spec.kind, 'dream'); assert.equal(spec.dream.operation, 'query');
 });
+
+test('armour is one rung planned as a set, and the set shrinks to the pieces still missing', () => {
+  const registry = require('minecraft-data')('26.1');
+  const bot = (names, slots = {}) => ({ registry, inventory: { items: () => names.map(name => ({ name, durabilityUsed: 0 })), slots } });
+  const bare = preparationStage(bot(['iron_pickaxe', 'iron_sword', 'shield', 'water_bucket']));
+  assert.equal(bare.action, 'acquire_set'); assert.equal(bare.phase, 'iron_armour');
+  assert.deepEqual(bare.items, ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots']);
+  const partly = preparationStage(bot(['iron_pickaxe', 'iron_sword', 'shield', 'water_bucket'], { 5: { name: 'iron_helmet' } }));
+  assert.deepEqual(partly.items, ['iron_chestplate', 'iron_leggings', 'iron_boots']); assert.equal(partly.phase, 'iron_chestplate');
+});

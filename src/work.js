@@ -822,6 +822,25 @@ function catalogPlan(bot, item, count, stock, goal = {}) {
     ? makePlan([...new Set([...nearby, ...alternatives])]) : plan;
 }
 
+// Several outputs planned as one: the batch planner merges their smelts
+// and shares one fuel allowance, so a set of armour is one dig, one
+// furnace batch and four crafts rather than four of everything.
+async function acquireSetStep(bot, task, items, goal, save) {
+  task.check(); checkAir(bot);
+  if (goal.smelting) { await smelt(bot, task, goal.smelting, goal, save); return false; }
+  const inv = planningInventory(bot);
+  const outputs = items.map(item => ({ item, count: 1 })).filter(o => (inv[o.item] || 0) < o.count);
+  if (!outputs.length) return true;
+  const available = await withUsableWorkstations(bot, task, inv, outputs.map(o => o.item));
+  const plan = catalogPlan(bot, outputs, undefined, available, goal);
+  if (await prepareMiningTool(bot, task, goal, save, plan, available)) return false;
+  if (await ensureDescentSupplies(bot, task, goal, save, plan)) return false;
+  const step = plan[0];
+  if (!step) throw new Error(`No progress step for ${outputs.map(o => o.item).join(', ')}`);
+  await executeAcquisition(bot, task, step, goal, save);
+  return false;
+}
+
 async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY, reserved = {} } = {}) {
   task.check(); checkAir(bot);
   if (goal.smelting) { await smelt(bot, task, goal.smelting, goal, save); return false; }
@@ -831,22 +850,25 @@ async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY,
   const available = await withUsableWorkstations(bot, task, inv, [item]);
   const plan = catalogPlan(bot, item, count, available, goal);
   if (await prepareMiningTool(bot, task, goal, save, plan, available, { requestedTool: item.endsWith('_pickaxe'), minimumMiningY })) return false;
-  // Every descent passes through here, the dream's rungs included; the
-  // supply check in the plain request path never saw them, and the bot went
-  // down for diamonds with no wood, no coal and no food twice.
-  if (bot.game?.gameMode !== 'creative' && !goal.expeditionPrepActive &&
-      (goal.preparingExpedition || descentSuppliesLow(bot)) &&
-      plan.some(s => s.action === 'mine' && Number.isFinite(s.depth) && s.depth < bot.entity.position.y - 8)) {
-    goal.preparingExpedition = true; delete goal.expeditionReady; goal.expeditionPrepActive = true; save();
-    try { await prepareExpeditionStep(bot, task, goal, save); }
-    finally { delete goal.expeditionPrepActive; }
-    return false;
-  }
+  if (await ensureDescentSupplies(bot, task, goal, save, plan)) return false;
   const step = plan[0];
   if (!step) throw new Error(`No progress step for ${item}`);
   if (minimumMiningY !== undefined && step.action === 'mine') step.minimumY = minimumMiningY;
   await executeAcquisition(bot, task, step, goal, save);
   return false;
+}
+
+// Every descent passes through here, the dream's rungs included; the
+// supply check in the plain request path never saw them, and the bot went
+// down for diamonds with no wood, no coal and no food twice.
+async function ensureDescentSupplies(bot, task, goal, save, plan) {
+  if (bot.game?.gameMode === 'creative' || goal.expeditionPrepActive) return false;
+  if (!(goal.preparingExpedition || descentSuppliesLow(bot))) return false;
+  if (!plan.some(s => s.action === 'mine' && Number.isFinite(s.depth) && s.depth < bot.entity.position.y - 8)) return false;
+  goal.preparingExpedition = true; delete goal.expeditionReady; goal.expeditionPrepActive = true; save();
+  try { await prepareExpeditionStep(bot, task, goal, save); }
+  finally { delete goal.expeditionPrepActive; }
+  return true;
 }
 
 async function prepareMiningTool(bot, task, goal, save, plan, available, { requestedTool = false, minimumMiningY } = {}) {
@@ -1850,7 +1872,7 @@ async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acqu
 // objective and by idle dream between requests.
 function gameHandlers(bot, decisionClient) {
   return {
-        acquireStep, enter_nether: netherStep, return_overworld: returnFromNether,
+        acquireStep, acquireSetStep, enter_nether: netherStep, return_overworld: returnFromNether,
         enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate }),
         fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate }, decisionClient),
         exit_end: (bot, task, goal, save) => exitEnd(bot, task, goal, save, { navigate }),

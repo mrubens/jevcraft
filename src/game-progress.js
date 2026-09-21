@@ -98,10 +98,13 @@ function preparationStage(bot) {
   // Armour is four rungs, not one label. The Nether trip needs all of it,
   // and each piece is a visible step rather than "reach the Nether" for an
   // hour while twenty-four ingots accumulate.
+  // One rung for the whole set, planned together: twenty-four ingots in one
+  // smelt with one fuel allowance, instead of four mine-smelt-craft trips.
   const worn = carried;
-  for (const piece of ['helmet', 'chestplate', 'leggings', 'boots']) {
-    if (!worn.some(name => /^(iron|diamond|netherite)_/.test(name) && name.endsWith(`_${piece}`))) return { phase: `iron_${piece}`, action: 'acquire', item: `iron_${piece}`, count: 1 };
-  }
+  const missing = ['helmet', 'chestplate', 'leggings', 'boots']
+    .filter(piece => !worn.some(name => /^(iron|diamond|netherite)_/.test(name) && name.endsWith(`_${piece}`)))
+    .map(piece => `iron_${piece}`);
+  if (missing.length) return { phase: missing.length === 4 ? 'iron_armour' : `iron_${missing[0].replace('iron_', '')}`, action: 'acquire_set', item: missing[0], items: missing, count: missing.length };
   return null;
 }
 
@@ -146,6 +149,7 @@ async function gameStep(bot, task, goal, save, actions) {
     progress.milestones.returned_alive = { at: Date.now(), dimension: 'overworld', position: position(bot) }; save(); return true;
   }
   if (stage.action === 'acquire') await actions.acquireStep(bot, task, stage.item, stage.count, goal, save);
+  else if (stage.action === 'acquire_set') await (actions.acquireSetStep || (async (b, t, items, g, sv) => { for (const item of items) if (!await actions.acquireStep(b, t, item, 1, g, sv)) return false; return true; }))(bot, task, stage.items, goal, save);
   else {
     // Gather combat supplies in the Overworld before a first Nether trip;
     // iron ore is not available to repair this dependency once inside.
