@@ -142,8 +142,12 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
   const state = goal.surfaceReturn ||= { attempts: 0, visited: {} };
   try {
     task.check();
+    // A spent budget is a reason to start the search over with a clean map
+    // of visited cells, not a reason to stop: the bot is still underground.
     if (++state.attempts > 192) {
-      const error = new Error('Could not return to the surface after 192 recovery steps'); error.name = 'Blocked'; throw error;
+      goal.surfaceReturn = { attempts: 0, visited: {}, byHand: state.byHand, rounds: (state.rounds || 0) + 1 };
+      save();
+      throw new Error(`Could not return to the surface after 192 recovery steps; starting round ${goal.surfaceReturn.rounds + 1} of the search`);
     }
     const clear = p => dryPassable(bot.blockAt(p));
     const candidates = bot.findBlocks({ matching: ['grass_block', 'dirt', 'stone', 'sand', 'gravel', 'deepslate'].map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined),
