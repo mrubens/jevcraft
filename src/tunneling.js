@@ -1,6 +1,7 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { opportunisticMining } = require('./opportunistic-mining');
+const { opportunisticPickups } = require('./opportunistic-pickups');
 const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
 const { safeFromHostiles } = require('./danger');
@@ -103,6 +104,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate }) {
   // check never ran here: coal for the next smelt went by unmined.
   const step = goal.step;
   await opportunisticMining(bot, task, goal, save, { drops: tunnel.resource || null }, { navigate, dig });
+  await opportunisticPickups(bot, task, goal, save, { drops: tunnel.resource || null }, { navigate });
   goal.step = step;
 }
 

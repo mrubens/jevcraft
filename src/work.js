@@ -54,6 +54,7 @@ const { chooseConstructionWork, approachConstruction } = require('./construction
 const { approachWorkstation, reachableWorkstation } = require('./workstation-access');
 const { fuelPlanks, CARRIED_FUELS, isFuel, fuelUnits } = require('./fuel');
 const { opportunisticMining } = require('./opportunistic-mining');
+const { opportunisticPickups } = require('./opportunistic-pickups');
 const { collectNearbyDrops } = require('./drop-collection');
 const { friendlyProblem, recoveryHint, completion } = require('./speech');
 const { boatTravelStep } = require('./boats');
@@ -505,7 +506,10 @@ async function mine(bot, task, step, goal, save, selected) {
   try {
     const before = countOf(bot, step.drops);
     await mineAtSource(bot, task, step, goal, save, selected);
-    if (countOf(bot, step.drops) > before) await opportunisticMining(bot, task, goal, save, step, { navigate, dig });
+    if (countOf(bot, step.drops) > before) {
+      await opportunisticMining(bot, task, goal, save, step, { navigate, dig });
+      await opportunisticPickups(bot, task, goal, save, step, { navigate });
+    }
   }
   finally { surface?.restore(); }
 }
