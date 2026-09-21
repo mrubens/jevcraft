@@ -10,6 +10,8 @@ Running observations from acceptance trials on the isolated Normal Survival serv
 
 **Opportunities.**
 
+23. *Spend the cheap tool.* The iron pickaxe broke after twenty minutes because every block, including two hundred cobblestone, was dug with the best tool carried. A stone pickaxe harvests stone and iron ore; iron is only needed from diamonds up. The bot now digs with the lowest tier that harvests the block and keeps the iron for what needs it. Fixed after this run; the ladder had already healed itself by mining and smelting more iron for a replacement.
+
 22. *Armour is a rung too.* "Reach the Nether" hides twenty-four ingots of work behind one label; a helmet, a chestplate, leggings and boots are four announced rungs, and Jev could be asked whether to go for armour first or scout for a lava lake and obsidian while the iron accumulates.
 
 20. *Take the furnace with you.* Crafting tables placed by the session are collected on leaving; furnaces are not, so a bot that cooks in three places builds three furnaces. Pick it up when the smelt is done and the bot moves on, or remember where it stands and go back.

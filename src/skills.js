@@ -342,16 +342,27 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
 }
 
 /** Equip whichever carried item mines this block fastest. */
+// The cheapest tool that does the job, not the best one carried. The dream
+// run wore its iron pickaxe out on two hundred cobblestone that a stone
+// pickaxe digs perfectly well, then had to mine and smelt more iron to
+// replace it. When the block needs a particular tier to drop anything, the
+// lowest tier that harvests it is used; when any tool will do, speed still
+// decides, with the lower tier winning ties.
+const TOOL_TIER = item => { const m = /^(\w+?)_(pickaxe|axe|shovel|hoe|sword)$/.exec(item?.name || ''); return m ? TOOL_TIERS.indexOf(m[1]) + 1 : 0; };
 async function equipBestTool(bot, block) {
   let best = null;
-  let bestTime = block.digTime(null, false, false, false, [], {});
+  const handTime = block.digTime(null, false, false, false, [], {});
+  let bestTime = handTime;
   const remaining = item => (bot.registry?.itemsByName?.[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
+  const needsTool = !!block.harvestTools;
+  const harvests = item => !needsTool || (typeof block.canHarvest === 'function' ? block.canHarvest(item.type) : !!block.harvestTools[item.type]);
   for (const item of bot.inventory.items()) {
     const time = block.digTime(item.type, false, false, false, [], {});
-    if (time < bestTime || (best && time === bestTime && remaining(item) > remaining(best))) {
-      bestTime = time;
-      best = item;
-    }
+    if (time >= handTime || !harvests(item)) continue;
+    const better = !best ? true
+      : needsTool ? (TOOL_TIER(item) < TOOL_TIER(best) || (TOOL_TIER(item) === TOOL_TIER(best) && remaining(item) > remaining(best)))
+        : (time < bestTime || (time === bestTime && (TOOL_TIER(item) < TOOL_TIER(best) || (TOOL_TIER(item) === TOOL_TIER(best) && remaining(item) > remaining(best)))));
+    if (better) { bestTime = time; best = item; }
   }
   if (best && (!bot.heldItem || bot.heldItem.type !== best.type || bot.heldItem.slot !== best.slot)) {
     await bot.equip(best, 'hand');
