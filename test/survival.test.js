@@ -460,4 +460,20 @@ test('a pocket sealed in a staircase is left through the closure the bot placed'
   assert.deepEqual(shelter.closures(bot, refuge).map(String), [`${origin.offset(-1, 0, 0)}`], 'only the door onto the open staircase');
   await survival.leave(new Task('dawn'), {}, () => {}, refuge);
   assert.deepEqual(dug, [`${origin.offset(-1, 1, 0)}`, `${origin.offset(-1, 0, 0)}`]);
+  assert.deepEqual(survival.state.shelters, [], 'a pocket is forgotten once left, so its shell is not reserved against the climb');
+});
+
+test('leaving a pocket opens every closure so the staircase continues both ways', async () => {
+  const { Survival } = require('../src/survival');
+  const origin = new Vec3(0, 20, 0);
+  const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`, `${origin.offset(-2, -1, 0)}`, `${origin.offset(-2, 0, 0)}`, `${origin.offset(2, 1, 0)}`, `${origin.offset(2, 2, 0)}`]);
+  const placed = new Set([`${origin.offset(-1, 0, 0)}`, `${origin.offset(-1, 1, 0)}`, `${origin.offset(1, 0, 0)}`, `${origin.offset(1, 1, 0)}`]);
+  const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entity: { position: origin.offset(0.5, 0, 0.5) }, entities: {},
+    blockAt: p => ({ name: open.has(`${p}`) ? 'air' : placed.has(`${p}`) ? 'cobblestone' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : 'block', position: p }),
+    world: { raycast: () => null }, on() {}, removeListener() {} };
+  const refuge = { origin: { ...origin }, dimension: 'overworld', verifiedAt: 'x', createdAt: 'x' };
+  const dug = [];
+  const survival = new Survival(bot, { dig: async (b, t, p) => { dug.push(`${p}`); } }, { state: { shelters: [refuge] } });
+  await survival.leave(new Task('dawn'), {}, () => {}, refuge);
+  assert.equal(dug.length, 4, 'both closures, two blocks each');
 });

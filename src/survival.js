@@ -260,8 +260,15 @@ class Survival {
     // Opening our temporary closure is necessary even if the last pick broke.
     // Bare-handed stone clearing loses its drop but must not imprison the bot
     // inside a one-cell shelter with no room to place a crafting table.
-    await this.actions.dig(bot, task, exit.door.offset(0, 1, 0), { requireDrops: false });
-    await this.actions.dig(bot, task, exit.door, { requireDrops: false });
+    // A pocket is one night's stop, not a home: every closure comes down so
+    // the staircase continues in both directions, and the pocket is
+    // forgotten so its shell no longer stands reserved against the climb.
+    const doors = exit.outside ? [exit.door] : pocket;
+    for (const door of doors) {
+      await this.actions.dig(bot, task, door.offset(0, 1, 0), { requireDrops: false });
+      await this.actions.dig(bot, task, door, { requireDrops: false });
+    }
+    if (!exit.outside) { this.state.shelters = this.state.shelters.filter(s => s !== refuge); save(); }
     if (exit.outside) await this.actions.navigate(bot, task, new goals.GoalBlock(exit.outside.x, exit.outside.y, exit.outside.z), { timeoutMs: 10000 });
   }
 
