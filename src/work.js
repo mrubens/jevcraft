@@ -740,7 +740,24 @@ async function executeAcquisition(bot, task, step, goal, save) {
   else throw new Error(`Unknown action ${step.action}`);
 }
 
-function selectSite(bot, material) {
+// A standing tree within a block of the footprint is a tree the bot will
+// want to fell for planks while its site reservation excludes every
+// approach to it. The first fresh trial ended exactly there. Level ground
+// with no tree beside it is preferred; a treeless site is not required.
+function treeBesideFootprint(bot, blueprint) {
+  const { min, max } = blueprint.bounds;
+  for (let x = min.x - 1; x <= max.x + 1; x++) for (let z = min.z - 1; z <= max.z + 1; z++) for (let y = min.y; y <= max.y + 2; y++) {
+    if (/_log$/.test(bot.blockAt(new Vec3(x, y, z))?.name || '')) return true;
+  }
+  return false;
+}
+
+function selectSite(bot, material, { avoidTrees = true } = {}) {
+  const site = findSite(bot, material, avoidTrees);
+  return site || (avoidTrees ? findSite(bot, material, false) : null);
+}
+
+function findSite(bot, material, avoidTrees) {
   const o = bot.entity.position.floored();
   for (let radius = 0; radius <= 12; radius++) {
     for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) {
@@ -763,7 +780,7 @@ function selectSite(bot, material) {
       const clear = [...blueprint.blocks, ...blueprint.empty].filter(p => p.y >= origin.y).every(p => {
         const b = bot.blockAt(pos(p)); return air(b) || ['short_grass', 'tall_grass', 'fern', 'snow'].includes(b?.name);
       });
-      if (clear) return blueprint;
+      if (clear && !(avoidTrees && treeBesideFootprint(bot, blueprint))) return blueprint;
     }
   }
   return null;
