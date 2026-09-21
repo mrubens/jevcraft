@@ -612,12 +612,13 @@ class Survival {
       // night passes in the bed, not behind the wall.
       // Only from a pocket on the surface: a walk to the bed from a pocket
       // down a shaft fails, and the night is better spent behind the wall.
-      const homeBed = sleepable(bot) && !watched && !(this.state.sleepFailedAt > Date.now() - 600000) && !(this.state.bedRouteFailedAt > Date.now() - 120000) &&
-        surfaceObserver(bot)(bot.entity.position) && nearbyHomeBed(bot, goal);
-      if (homeBed) {
-        delete this.state.watchedSince; await this.leave(task, goal, save, refuge, 'Off to bed.');
-        try { await this.sleepStep(task, goal, save); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-      }
+      // From the surface, or from a pocket within ten blocks of the bed's
+      // level (the stairs' last stretch): open the pocket and let the
+      // go-home rule climb and walk. From deep down, the night is better
+      // spent behind the wall.
+      const homeBed = sleepable(bot) && !watched && !(this.state.sleepFailedAt > Date.now() - 600000) && !(this.state.bedRouteFailedAt > Date.now() - 120000) && nearbyHomeBed(bot, goal);
+      const shallow = homeBed && (surfaceObserver(bot)(bot.entity.position) || Math.abs(homeBed.foot.y - bot.entity.position.y) <= 10);
+      if (shallow) { delete this.state.watchedSince; await this.leave(task, goal, save, refuge, 'Off to bed.'); }
       else if ((shelterNeeded(bot) || watched) && !outwaited) await this.wait(task, goal, save);
       else { delete this.state.watchedSince; await this.leave(task, goal, save, refuge); }
       onStep(goal); return true;
@@ -648,7 +649,7 @@ class Survival {
     // A failed direct walk pauses the walk, not the climb: the stairs out
     // of a shaft are a different route from a path search to the bed.
     const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot) && (underground || !routeBlocked);
-    if (homeWalk && (bot.time.timeOfDay >= 11000 || underground)) {
+    if (homeWalk && (bot.time.timeOfDay >= 11000 || underground) && !(this.state.sleepFailedAt > Date.now() - 600000)) {
       this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });
       // Out of the shaft by the stairs it dug, then home over the ground:
       // a path search from the bottom of a mine to a bed timed out. A
