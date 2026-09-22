@@ -10,13 +10,13 @@ A player types:
 Jev get me a pumpkin
 ```
 
-Code does the cheap things first. It strips the bot's name, pulls out any numbers ("a" means one), and finds the catalog items whose names overlap the words in the message: pumpkin, carved pumpkin, pumpkin pie, pumpkin seeds. Then it sends **one** request to Jev with that state and eleven typed questions. Some are the routing questions every message needs. Others are speculative: they only matter if the message turns out to be a certain kind of request, but they cost nothing extra to ask in the same batch and save a round trip when their branch is taken.
+Code does the cheap things first. It strips the bot's name, pulls out any numbers ("a" means one), and finds the catalog items whose names overlap the words in the message: pumpkin, carved pumpkin, pumpkin pie, pumpkin seeds. Then it sends **one** request to Jev with that state and up to fourteen typed questions. Some are the routing questions every message needs. Others are speculative: they only matter if the message turns out to be a certain kind of request, but they cost nothing extra to ask in the same batch and save a round trip when their branch is taken.
 
 | Question | Primitive | Answer | Confidence |
 | --- | --- | --- | --- |
 | Is this addressed to the bot? | Noul | yes | 0.97 |
 | Instruction to act, or discussion? | Choice | request | 1.00 |
-| Which of fifteen objectives? | Choice | obtain | 1.00 |
+| Which of sixteen objectives? | Choice | obtain | 1.00 |
 | Which listed catalog item is meant? *(speculative)* | Choice | pumpkin | 1.00 |
 | How many? | Choice over numbers found in the text | 1 | 1.00 |
 | One output or several? | Choice | single | 1.00 |
@@ -28,7 +28,7 @@ Code does the cheap things first. It strips the bot's name, pulls out any number
 
 That call took 443 ms and used 3,486 input and 606 output tokens. The item question came back confident, so the catalog walk that would otherwise follow, three to five more calls, never ran. The bot said "I'll get 1 pumpkin for TestPlayer" and started.
 
-Every answer is checked before it is used. An objective that is not one of the fifteen offered, a quantity that was not in the message, a recipient outside the three offered: each throws rather than acting. Jev cannot name something code did not offer.
+Every answer is checked before it is used. An objective that is not one of the sixteen offered, a quantity that was not in the message, a recipient outside the three offered: each throws rather than acting. Jev cannot name something code did not offer.
 
 ## When the answer is not sure enough
 
@@ -44,7 +44,7 @@ And when the objective itself is unsure, the bot names the two readings it is to
 
 > I'm not sure whether you want me to design and build something or build a small house. Could you say it another way?
 
-The threshold depends on what a mistake would cost. A misheard "come here" wastes a few seconds, so it acts above 0.5. A misheard "build a castle" wastes an afternoon, so builds, server commands and long journeys need 0.65.
+The threshold depends on what a mistake would cost. A misheard "come here" wastes a few seconds, so it acts above 0.5. A misheard "build a castle" wastes an afternoon, so builds, server commands, the trip to the Nether and beating the game need 0.65. What cannot be undone asks for more: forgetting needs 0.75, and forgetting everything also needs the player to have said so; taking the dream away needs 0.75; an unsure edit of a standing building is built fresh beside it instead.
 
 ## Deciding what to do next
 
