@@ -28,7 +28,12 @@ function lavaBeside(bot, p) {
 }
 // Hostiles that daylight does not remove and that keep following.
 const PERSISTENT_THREATS = new Set(['creeper', 'spider', 'cave_spider', 'enderman', 'witch', 'pillager', 'vindicator', 'husk', 'drowned']);
-const RANGED = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze', 'ghast', 'piglin', 'breeze', 'wither_skeleton']);
+// Mobs worth hiding from rather than meeting. A wither skeleton carries a
+// sword: the arena's first drill had the bot wall itself in against one and
+// take fourteen damage through the doorway instead of four swings and done.
+// A piglin only shoots when it is holding a crossbow, which `shooter` knows.
+const RANGED = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze', 'ghast', 'breeze']);
+const shoots = threat => RANGED.has(threat.entity.name) || shooter(threat.entity);
 const shelterNeeded = bot => bot.game.difficulty !== 'peaceful' && bot.game.dimension === 'overworld' &&
   bot.time?.timeOfDay >= 9500 && bot.time.timeOfDay < 23000;
 // The server lets a player sleep from 12541 until 23458; with the only
@@ -241,7 +246,7 @@ class Survival {
       // leaves the other four, and the bot held a "defensive position" at
       // five health in the middle of seven of them.
       const crowd = danger.filter(t => t.distance <= 8).length >= 2;
-      if ((crowd || danger.some(t => RANGED.has(t.entity.name))) && await this.sealHere(task, goal, save, danger)) { delete this.state.trappedSince; return; }
+      if ((crowd || danger.some(shoots)) && await this.sealHere(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       if (await this.wallOff(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       // No way out and a mob a few blocks off, shooting: standing still is
       // how a crossbow piglin took half the bot's health. Armed and able,

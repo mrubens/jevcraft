@@ -1,0 +1,199 @@
+'use strict';
+// The combat arena: drills, the console commands that stage them, and the
+// scoring that turns a handful of noisy runs into one comparable row.
+//
+// Seven deaths in the fortress on the night of 2026-09-21 were all combat,
+// and each lesson cost a ten-minute restock. A drill costs a minute. The
+// arena is carved in the Nether of the fixture server so the blocks, the
+// mobs and the gear are the ones that actually killed the bot.
+
+// Two shapes. A room, because a spawner room is open and mobs come from
+// every side; a corridor, because a fortress walkway is three wide and a
+// wither skeleton meets the bot head on.
+const ARENAS = Object.freeze({
+  room: {
+    shell: [1996, 72, 1996, 2024, 90, 2024],
+    hollow: [2001, 77, 2001, 2019, 85, 2019],
+    // In the middle, nine blocks from any wall: nothing to dig into.
+    open: [2010.5, 77, 2010.5],
+    // Three from the west wall: a bunker is one step away.
+    wall: [2003.5, 77, 2010.5],
+  },
+  corridor: {
+    shell: [2036, 72, 1996, 2064, 84, 2010],
+    hollow: [2041, 77, 2002, 2059, 79, 2004],
+    open: [2042.5, 77, 2003.5],
+    wall: [2042.5, 77, 2003.5],
+  },
+  // Somewhere to wait while an arena is rebuilt. Filling a shell around the
+  // bot would bury it for as long as the next command takes.
+  holding: {
+    shell: [2096, 72, 2096, 2108, 84, 2108],
+    hollow: [2101, 77, 2101, 2103, 79, 2103],
+    open: [2102.5, 77, 2102.5],
+    wall: [2102.5, 77, 2102.5],
+  },
+});
+const HOLDING = [2102.5, 77, 2102.5];
+
+// The fortress loadout: the iron set with golden boots for the piglin
+// truce, a diamond sword, a shield, blocks to wall with and food to heal on.
+const KIT = Object.freeze({
+  armor: { head: 'iron_helmet', chest: 'iron_chestplate', legs: 'iron_leggings', feet: 'golden_boots' },
+  offhand: 'shield',
+  items: [['diamond_sword', 1], ['diamond_pickaxe', 1], ['netherrack', 64], ['cooked_beef', 8]],
+});
+
+// `defend` runs the survival layer, the code that answers a mob that came to
+// the bot. `hunt` runs the mob hunt, the code that goes after one on purpose
+// and has to come back with the drop.
+const DRILLS = Object.freeze([
+  { name: 'zombie_single', mode: 'defend', entity: 'zombie', count: 1, arena: 'corridor', stand: 'open',
+    at: [[2047.5, 77, 2003.5]], seconds: 45, expect: { deaths: 0, cleared: true, damage: 6 },
+    why: 'The baseline. A lone melee mob in a corridor must cost almost nothing.' },
+  { name: 'wither_skeleton_single', mode: 'defend', entity: 'wither_skeleton', count: 1, arena: 'corridor', stand: 'open',
+    at: [[2047.5, 77, 2003.5]], seconds: 45, expect: { deaths: 0, cleared: true, damage: 10 },
+    why: 'Deaths two, four and seven. It hits from three blocks, further than a zombie.' },
+  { name: 'wither_skeleton_pair', mode: 'defend', entity: 'wither_skeleton', count: 2, arena: 'corridor', stand: 'open',
+    at: [[2047.5, 77, 2003.5], [2049.5, 77, 2003.5]], seconds: 60, expect: { deaths: 0, cleared: true, damage: 16 },
+    why: 'Two in a corridor: the second arrives while the first is still swinging.' },
+  { name: 'hoglin_single', mode: 'defend', entity: 'hoglin', count: 1, arena: 'room', stand: 'open',
+    at: [[2016.5, 77, 2010.5]], seconds: 45, expect: { deaths: 0, cleared: true, damage: 10 },
+    why: 'Death six. A hoglin charges and knocks back.' },
+  { name: 'hoglin_herd', mode: 'defend', entity: 'hoglin', count: 4, arena: 'room', stand: 'wall',
+    at: [[2014.5, 77, 2008.5], [2015.5, 77, 2010.5], [2014.5, 77, 2012.5], [2016.5, 77, 2010.5]],
+    seconds: 75, expect: { deaths: 0, damage: 14 },
+    why: 'The hilltop. Four at once must be sealed out, not charged; clearing them is a bonus.' },
+  { name: 'blaze_single', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 1, arena: 'room', stand: 'open',
+    at: [[2016.5, 80, 2010.5]], seconds: 60, expect: { deaths: 0, drops: 1, damage: 10 },
+    why: 'One blaze, fought on purpose, and the rod has to end up in the pockets.' },
+  { name: 'blaze_pair', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 2, arena: 'room', stand: 'open',
+    at: [[2016.5, 80, 2010.5], [2016.5, 80, 2013.5]], seconds: 75, expect: { deaths: 0, drops: 1, damage: 14 },
+    why: 'Two in view: the crowd rule must still allow a fight.' },
+  { name: 'blaze_swarm_wall', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 4, arena: 'room', stand: 'wall',
+    at: [[2009.5, 80, 2010.5], [2010.5, 80, 2008.5], [2010.5, 80, 2012.5], [2011.5, 80, 2010.5]],
+    seconds: 90, expect: { deaths: 0, drops: 1 },
+    why: 'Death five, with a wall three blocks away: this is the bunker fight.' },
+  { name: 'blaze_swarm_open', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 4, arena: 'room', stand: 'open',
+    at: [[2016.5, 80, 2010.5], [2016.5, 80, 2008.5], [2016.5, 80, 2012.5], [2017.5, 80, 2010.5]],
+    seconds: 90, expect: { deaths: 0 },
+    why: 'The same swarm in the open: the bot has to reach a wall before it can dig in.' },
+]);
+
+const drill = name => DRILLS.find(d => d.name === name);
+
+// Gamerules first: the arena is only the mobs that were summoned, at noon,
+// in fixed weather, with the shell safe from a creeper or a ghast.
+function sessionSetup() {
+  return ['difficulty normal', 'gamerule doMobSpawning false', 'gamerule doDaylightCycle false',
+    'gamerule doWeatherCycle false', 'gamerule doFireTick false', 'gamerule mobGriefing false',
+    'gamerule keepInventory true', 'gamerule doImmediateRespawn true', 'time set noon'];
+}
+
+const box = ([x1, y1, z1, x2, y2, z2], block) => `fill ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} minecraft:${block}`;
+
+// A solid block of netherrack with the room cut out of it: whatever the
+// Nether generated here, the arena is the same every time.
+//
+// The force-load comes first and is not optional. No player had ever stood
+// in this corner of the Nether, so the first `fill` answered "that position
+// is not loaded", the shell was never built, and the bot was teleported
+// into solid rock and smothered in twelve seconds with a perfect score of
+// nothing. A silent stage failure looks exactly like a combat failure.
+function arenaBuild(name, { dimension = 'minecraft:the_nether' } = {}) {
+  const arena = ARENAS[name];
+  if (!arena) throw new Error(`Unknown arena ${name}`);
+  const [x1, y1, z1, x2, y2, z2] = arena.shell;
+  return [...[`forceload add ${x1 - 16} ${z1 - 16} ${x2 + 16} ${z2 + 16}`,
+    box([x1, y1, z1, x2, y2, z2], 'netherrack'), box(arena.hollow, 'air')]
+    .map(command => `execute in ${dimension} run ${command}`), sweep(name, { dimension })];
+}
+
+// Where the bot stands for a drill, and the cells that have to be clear
+// before a mob is summoned into the room with it.
+function standingCell(d) {
+  const stand = ARENAS[d.arena][d.stand || 'open'];
+  return { x: Math.floor(stand[0]), y: stand[1], z: Math.floor(stand[2]) };
+}
+
+const place = ([x, y, z]) => `${x} ${y} ${z}`;
+
+// Everything alive inside the arena that is not a player. Carving a room
+// out of the Nether does not evict the Nether: the first baseline had the
+// bot slain by a zombified piglin and an enderman that were standing in the
+// volume when the walls went up, and every number in that table was noise.
+function sweep(name, { dimension = 'minecraft:the_nether' } = {}) {
+  const [x1, y1, z1, x2, y2, z2] = ARENAS[name].shell;
+  return `execute in ${dimension} run kill @e[type=!minecraft:player,x=${x1},y=${y1},z=${z1},dx=${x2 - x1},dy=${y2 - y1},dz=${z2 - z1}]`;
+}
+
+// Between drills: the mobs and their drops go, the pockets are emptied and
+// refilled from the kit, health and hunger are full, and the bot is back on
+// its mark. Nothing carries over except what the code learned.
+function resetCommands(user, d, { dimension = 'minecraft:the_nether' } = {}) {
+  const arena = ARENAS[d.arena];
+  const stand = arena[d.stand || 'open'];
+  // The arena is rebuilt, not just swept. The bot walls itself in when it is
+  // cornered, and those walls outlived the drill that built them: a later
+  // run found the bot behind its own netherrack with no line of sight to the
+  // mob, so nothing was a threat and nothing happened. Three drills scored
+  // zero damage and zero swings and meant nothing at all.
+  const commands = [`execute in ${dimension} run tp ${user} ${place(HOLDING)}`,
+    ...arenaBuild(d.arena, { dimension }),
+    `kill @e[type=minecraft:item]`, `clear ${user}`, `effect clear ${user}`,
+    `execute in ${dimension} run tp ${user} ${place(stand)} ${d.arena === 'corridor' ? 0 : 90} 0`];
+  for (const [slot, item] of Object.entries(KIT.armor)) commands.push(`item replace entity ${user} armor.${slot} with minecraft:${item}`);
+  commands.push(`item replace entity ${user} weapon.offhand with minecraft:${KIT.offhand}`);
+  for (const [item, n] of KIT.items) commands.push(`give ${user} minecraft:${item} ${n}`);
+  commands.push(`effect give ${user} minecraft:instant_health 1 20 true`, `effect give ${user} minecraft:saturation 1 20 true`);
+  return commands;
+}
+
+// Every mob is tagged and persistent: a blaze that wandered off would end
+// the drill early and a despawn would look like a kill.
+function spawnCommands(d, { dimension = 'minecraft:the_nether' } = {}) {
+  return d.at.slice(0, d.count).map(at =>
+    `execute in ${dimension} run summon minecraft:${d.entity} ${place(at)} {PersistenceRequired:1b,Tags:["arena"]}`);
+}
+
+function median(values) {
+  const sorted = values.filter(Number.isFinite).slice().sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) * 10 / 2) / 10;
+}
+
+// One row per drill. A death anywhere fails it; the damage and clear-time
+// medians are what a rule change has to beat, not a single lucky run.
+function summarise(d, runs) {
+  const expect = d.expect || {};
+  const deaths = runs.reduce((n, r) => n + (r.deaths || 0), 0);
+  const cleared = runs.filter(r => r.cleared).length;
+  const drops = runs.reduce((n, r) => n + (r.drops || 0), 0);
+  const damage = median(runs.map(r => r.damageTaken));
+  const seconds = median(runs.filter(r => r.cleared).map(r => Math.round(r.clearedMs / 100) / 10));
+  const failures = [];
+  if (deaths > (expect.deaths ?? 0)) failures.push(`${deaths} death${deaths === 1 ? '' : 's'}`);
+  if (expect.cleared && cleared < runs.length) failures.push(`cleared ${cleared}/${runs.length}`);
+  if (expect.drops !== undefined && drops < expect.drops * runs.length) failures.push(`${drops} drops, wanted ${expect.drops * runs.length}`);
+  if (expect.damage !== undefined && damage !== null && damage > expect.damage) failures.push(`${damage} damage over ${expect.damage}`);
+  const actions = [...new Set(runs.flatMap(r => r.actions || []))].sort();
+  return { drill: d.name, mode: d.mode, runs: runs.length, deaths, cleared, drops, damage, seconds,
+    strikes: median(runs.map(r => r.strikes)), shieldRaises: median(runs.map(r => r.shieldRaises)),
+    actions, verdict: failures.length ? 'FAIL' : 'PASS', failures };
+}
+
+// A table, because the point of the arena is comparing today's column with
+// yesterday's.
+function table(rows) {
+  const header = ['drill', 'runs', 'verdict', 'deaths', 'cleared', 'drops', 'dmg', 'secs', 'hits', 'shield', 'notes'];
+  const body = rows.map(r => [r.drill, String(r.runs), r.verdict, String(r.deaths), `${r.cleared}/${r.runs}`,
+    String(r.drops), r.damage === null ? '-' : String(r.damage), r.seconds === null ? '-' : String(r.seconds),
+    r.strikes === null ? '-' : String(r.strikes), r.shieldRaises === null ? '-' : String(r.shieldRaises),
+    r.failures.join('; ') || r.actions.slice(0, 4).join(' ')]);
+  const widths = header.map((h, i) => Math.max(h.length, ...body.map(row => row[i].length)));
+  const line = row => `| ${row.map((cell, i) => cell.padEnd(widths[i])).join(' | ')} |`;
+  return [line(header), `|${widths.map(w => '-'.repeat(w + 2)).join('|')}|`, ...body.map(line)].join('\n');
+}
+
+module.exports = { ARENAS, DRILLS, KIT, HOLDING, drill, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, spawnCommands, median, summarise, table };
