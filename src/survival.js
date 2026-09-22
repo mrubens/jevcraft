@@ -20,7 +20,8 @@ const { surfaceObserver } = require('./surface');
 const { thinking } = require('./speech');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
-const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
+const { DAY, night } = require('./day');
+const { NETHER_FOOD_POINTS, KIT_FOOD_POINTS } = require('./home-stash');
 // Lava within two blocks sideways or one below: a knockback lands in it.
 // A cell the bot can step into without falling or burning: solid under it,
 // room for its body, and no lava beside.
@@ -51,10 +52,10 @@ const ESCAPE_FOOTING = ['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'stone',
   'netherrack', 'soul_sand', 'soul_soil', 'basalt', 'smooth_basalt', 'blackstone', 'nether_bricks', 'crimson_nylium', 'warped_nylium',
   'end_stone', 'obsidian'];
 const shelterNeeded = bot => bot.game.difficulty !== 'peaceful' && bot.game.dimension === 'overworld' &&
-  bot.time?.timeOfDay >= 9500 && bot.time.timeOfDay < 23000;
+  bot.time?.timeOfDay >= DAY.DUSK && bot.time.timeOfDay < DAY.DAWN;
 // The server lets a player sleep from 12541 until 23458; with the only
 // survival player in bed the night passes in a hundred ticks.
-const SLEEP_FROM = 12541, SLEEP_UNTIL = 23458;
+const { SLEEP_FROM, SLEEP_UNTIL } = DAY;
 const sleepable = bot => bot.time?.timeOfDay >= SLEEP_FROM && bot.time.timeOfDay <= SLEEP_UNTIL;
 // Three cells in a line: where the bot stands, the bed's foot, its head.
 // Level floor under both bed cells, air at feet and head height.
@@ -776,7 +777,7 @@ class Survival {
     // Home before bedtime: wait by the bed rather than hand the minute back
     // to the work loop, which dived to the lava site and was climbed out of
     // again every ten seconds until 12541.
-    if (homeBed && shelterNeeded(bot) && bot.time.timeOfDay >= 11000 && bot.time.timeOfDay < SLEEP_FROM && homeBed.foot.distanceTo(bot.entity.position) <= 6 && !immediateThreat(bot)) {
+    if (homeBed && shelterNeeded(bot) && bot.time.timeOfDay >= DAY.WALK_HOME && bot.time.timeOfDay < SLEEP_FROM && homeBed.foot.distanceTo(bot.entity.position) <= 6 && !immediateThreat(bot)) {
       // The minute before bedtime is a chore, not a wait: the stash, the
       // wheat, the cows; and once, the plot grows a column for the next day.
       const chores = homeChores(bot, goal);
@@ -795,7 +796,7 @@ class Survival {
       onStep(goal); return true;
     }
     const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot) && (underground || !routeBlocked);
-    const walkStart = homeBed && homeBed.foot.distanceTo(bot.entity.position) > 96 ? 10000 : 11000;
+    const walkStart = homeBed && homeBed.foot.distanceTo(bot.entity.position) > 96 ? DAY.WALK_HOME_FAR : DAY.WALK_HOME;
     if (homeWalk && (bot.time.timeOfDay >= walkStart || underground) && !(this.state.sleepFailedAt > Date.now() - 600000)) {
       this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });
       // Out of the shaft by the stairs it dug, then home over the ground:
@@ -833,7 +834,9 @@ class Survival {
       if (await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate)) { onStep(goal); return true; }
     }
     const expeditionFood = (goal.preparingExpedition || goal.preparingEnd || goal.preparingNether) && bot.game.difficulty !== 'peaceful';
-    const desiredFood = goal.preparingEnd ? 64 : goal.preparingNether ? 24 : 12;
+    // One reserve for the crossing, kept with the stash that fills it: it was
+    // written out here, in the Nether gate and in the stash, three times.
+    const desiredFood = goal.preparingEnd ? 64 : goal.preparingNether ? NETHER_FOOD_POINTS : KIT_FOOD_POINTS;
     // A missing reserve is worth a hunt while the bot is already on the
     // surface, where the animals are. Underground it is worth the climb only
     // once hunger is real: the dream run was leaving its iron shaft at 18 of
@@ -864,7 +867,7 @@ class Survival {
       playerUrgency: goal.urgency ? { level: goal.urgency.level, meaning: 'How much the wording of the request pressed for speed: relaxed, ordinary or pressed. Pressure is a reason to keep working while it is still safe, never a reason to skip shelter once night is close.' } : undefined,
       health: bot.health, food: bot.food, safeFoodCarried: !!chooseFood(bot),
       survivalFacts: { difficulty: bot.game.difficulty, hostileMobsSpawnAtNight: true,
-        nightStartsAt: 11500, dawnAt: 23000, daylightTicksRemaining: Math.max(0, 11500 - bot.time.timeOfDay),
+        nightStartsAt: DAY.NIGHT, dawnAt: DAY.DAWN, daylightTicksRemaining: Math.max(0, DAY.NIGHT - bot.time.timeOfDay),
         bedCarried: !!bed, homeBedNearby: !!homeBed, sleepPossibleFrom: SLEEP_FROM, armedAndArmoured: kitReady(bot),
         shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null },
       recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot),

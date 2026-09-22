@@ -7,6 +7,7 @@ const { pathfinder } = require('mineflayer-pathfinder');
 const { configureMovements } = require('./movement');
 const { interpret, GoalStore } = require('./objectives');
 const { WorldKnowledge } = require('./world-knowledge');
+const { DAY } = require('./day');
 const { planCatalog } = require('./knowledge');
 const { runGoal, runIdle, createSurvival } = require('./work');
 const { Task } = require('./skills');
@@ -120,7 +121,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   }
   dreamRun(dreamStore.read());
   const readyForDream = () => bot.game?.gameMode === 'creative' ||
-    ((bot.game?.dimension !== 'minecraft:overworld' && bot.game?.dimension !== 'overworld' || (bot.time?.timeOfDay ?? 0) < 9500) &&
+    ((bot.game?.dimension !== 'minecraft:overworld' && bot.game?.dimension !== 'overworld' || (bot.time?.timeOfDay ?? 0) < DAY.DUSK) &&
       (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 12 && !immediateThreat(bot));
   let launchingDream = false;
   // The old goal's copy only where it can be this world's: with a world id

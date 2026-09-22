@@ -1,4 +1,5 @@
 'use strict';
+const { DAY } = require('./day');
 const { homeStage, bedCarried, woolCarried, homeOf } = require('./home-base');
 const { restockStage, rungWants } = require('./home-stash');
 const { villageBedRung } = require('./villages');
@@ -173,7 +174,7 @@ function ladderRung(bot, goal, waiting) {
   // has after dusk and the day does not: a daylight search for one walked
   // seven hundred blocks across the map and into the sea. By day, with no
   // spider in view and no string in hand, the ladder goes on to the sword.
-  const t = bot.time?.timeOfDay, dark = t >= 12000 && t < 23000;
+  const t = bot.time?.timeOfDay, dark = t >= DAY.DARK && t < DAY.DAWN;
   const spiderNear = Object.values(bot.entities || {}).some(e => e.name === 'spider' && e.position?.distanceTo?.(bot.entity.position) < 32 &&
     !(goal.mobHunt?.avoided?.[e.uuid || e.id] > Date.now() - 120000));
   const string = bot.inventory.items().filter(i => i.name === 'string').reduce((n, i) => n + (i.count || 1), 0);

@@ -1,4 +1,5 @@
 'use strict';
+const { DAY } = require('./day');
 
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
@@ -40,7 +41,7 @@ const { collectWater } = require('./water');
 const { makeObsidian } = require('./obsidian');
 const { tidyInventory } = require('./inventory-tidy');
 const { homeStep, homeChores , gatherWool, woolCarried } = require('./home-base');
-const { stashValuables, restockFromStash } = require('./home-stash');
+const { stashValuables, restockFromStash, NETHER_FOOD_POINTS } = require('./home-stash');
 const { noticeVillage, takeVillageBed } = require('./villages');
 const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
@@ -1163,7 +1164,7 @@ function decisionObservation(bot, goal) {
     survivalFacts: { healthMaximum: 20, hungerMaximum: 20, hungerNeedsAttention: bot.food <= 16,
       injured: bot.health < 20, hungerAllowsNaturalHealing: bot.food >= 18, safeFoodCarried: !!chooseFood(bot) },
     dimension: bot.game.dimension, position: { ...bot.entity.position.floored() },
-    daylight: bot.time?.timeOfDay < 12000 ? 'day' : bot.time?.timeOfDay < 23000 ? 'night' : 'dawn',
+    daylight: bot.time?.timeOfDay < DAY.DARK ? 'day' : bot.time?.timeOfDay < DAY.DAWN ? 'night' : 'dawn',
     nearbyThreats: Object.values(bot.entities || {}).filter(e => hostiles.has(e.name) && e.position.distanceTo(bot.entity.position) < 24)
       .map(e => ({ id: e.id, name: e.name, distance: Math.round(e.position.distanceTo(bot.entity.position)) })),
     recentFailures: goal.decisionFailures || {},
@@ -2126,7 +2127,7 @@ function idleOptions(bot, goal) {
 async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acquire = acquireStep, handlers, actions } = {}) {
   if (!client || bot.game.gameMode === 'creative') return false;
   if ((bot.health ?? 20) < 14 || (bot.food ?? 20) < 12 || immediateThreat(bot)) return false;
-  if (bot.game.dimension === 'overworld' && bot.time?.timeOfDay >= 9500) return false;
+  if (bot.game.dimension === 'overworld' && bot.time?.timeOfDay >= DAY.DUSK) return false;
   const options = idleOptions(bot, goal);
   if (!Object.keys(options).length) return false;
   const tree = { rest: { description: 'Wait here quietly. Right when supplies are sufficient, light is short, or the player is likely to ask for something soon.', run: async () => { for (let n = 0; n < 30; n++) { task.check(); await sleep(100); } } } };
@@ -2139,7 +2140,7 @@ async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acqu
     } };
   }
   const state = { situation: 'Between player requests, with shelter and food already sufficient. Choose how to spend spare daylight.',
-    timeOfDay: bot.time?.timeOfDay, daylightTicksRemaining: Math.max(0, 9500 - (bot.time?.timeOfDay || 0)),
+    timeOfDay: bot.time?.timeOfDay, daylightTicksRemaining: Math.max(0, DAY.DUSK - (bot.time?.timeOfDay || 0)),
     health: bot.health, food: bot.food, foodReserve: foodSupply(bot), inventory: planningInventory(bot),
     retainedRequest: goal.retainedRequest || null, home: goal.survival?.home ? `A home base with a plot, a pen${goal.survival.home.stash?.position ? ', a bed and a stash chest' : ' and a bed'} stands at ${goal.survival.home.origin.x}, ${goal.survival.home.origin.z}.` : goal.blueprint ? 'A house is built nearby.' : 'No house yet.' };
   await decideAction(bot, task, goal, save, client, onStep, tree, state);
@@ -2164,7 +2165,7 @@ function gameHandlers(bot, decisionClient) {
         // survival layer's stock-driven search fills the reserve; a search
         // it has set aside as fruitless lets the trip go with what there is.
         food_reserve: async (bot, task, goal, save) => {
-          const NETHER_FOOD = 24;
+          const NETHER_FOOD = NETHER_FOOD_POINTS;
           if (foodSupply(bot) >= NETHER_FOOD) { delete goal.preparingNether; return true; }
           // A failed animal search is not permission to go hungry while the
           // chest at home has food in it: take that first.

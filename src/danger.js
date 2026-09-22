@@ -1,4 +1,5 @@
 'use strict';
+const { DAY } = require('./day');
 const { handlers, kitReady, observedDead, shooter, FIGHT_FLOOR } = require('./mob-policy');
 
 // The Nether's own mobs were missing: a magma cube killed the dream run in
@@ -35,7 +36,7 @@ const wearingGold = bot => [5, 6, 7, 8].some(slot => /^golden_/.test(bot.invento
 
 function hostileEntities(bot, radius = 24) {
   const position = bot.entity.position;
-  const daytime = bot.time?.timeOfDay < 12000 || bot.time?.timeOfDay >= 23000;
+  const daytime = bot.time?.timeOfDay < DAY.DARK || bot.time?.timeOfDay >= DAY.DAWN;
   return Object.values(bot.entities || {}).filter(entity => {
     if ((!hostileNames.has(entity.name) && !provoked(bot, entity)) || !entity.position || entity.isValid === false || observedDead(bot, entity)) return false;
     if (entity.name === 'spider' && daytime && !(bot._recentHurtAt > Date.now() - 10000)) return false;
