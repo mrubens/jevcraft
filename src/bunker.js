@@ -239,4 +239,31 @@ async function bunkerFight(bot, task, goal, save, actions, { item = 'blaze_rod',
   return gained;
 }
 
-module.exports = { bunkerFight, digBunker, cornerCell, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, WALK_TO_WALL, SWARM };
+// A wall where the bot stands, when there is no wall to walk to. Two blocks
+// one step toward the shooters and the line is broken: the same doorway the
+// bunker digs, built rather than found. The pair drill spent its health
+// standing in the open waiting for health to come back, which it cannot do
+// while the thing that took it is still looking.
+const COVER = new Set(['netherrack', 'cobblestone', 'cobbled_deepslate', 'stone', 'dirt', 'andesite', 'diorite', 'granite', 'blackstone', 'basalt', 'nether_bricks']);
+async function raiseCover(bot, task, from) {
+  const material = bot.inventory.items().find(item => COVER.has(item.name));
+  if (!material || !from) return false;
+  const here = bot.entity.position.floored();
+  const dx = from.x - here.x, dz = from.z - here.z;
+  const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx) || 1, 0, 0) : new Vec3(0, 0, Math.sign(dz) || 1);
+  const cell = here.plus(step), floor = bot.blockAt(cell.offset(0, -1, 0));
+  if (!solid(floor) || !passable(bot.blockAt(cell)) || !passable(bot.blockAt(cell.offset(0, 1, 0)))) return false;
+  await bot.equip(material, 'hand');
+  task.check();
+  await bot.lookAt(cell.offset(0.5, 0.5, 0.5), true);
+  await bot.placeBlock(floor, new Vec3(0, 1, 0));
+  const lower = bot.blockAt(cell);
+  if (solid(lower)) {
+    task.check();
+    await bot.lookAt(cell.offset(0.5, 1.5, 0.5), true);
+    await bot.placeBlock(lower, new Vec3(0, 1, 0));
+  }
+  return solid(bot.blockAt(cell));
+}
+
+module.exports = { bunkerFight, digBunker, cornerCell, raiseCover, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, WALK_TO_WALL, SWARM };

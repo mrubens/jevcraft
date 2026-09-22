@@ -14,7 +14,7 @@ const { collectNearbyDrops } = require('./drop-collection');
 const { decideTree } = require('./decisions');
 const { descendTo } = require('./descent');
 const { bridgeTo } = require('./bridging');
-const { bunkerFight, digBunker, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
+const { bunkerFight, digBunker, raiseCover, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
@@ -366,9 +366,18 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // Not in the open, if something out there shoots. Health comes back at
     // the same rate behind a wall and the wall is free.
     const shooters = threats(bot, 24).filter(t => t.visible && SHOOTERS.has(t.entity.name));
-    if (shooters.length && bot.health < 18 && nearWall(bot, bunkerCentroid(shooters))) {
+    if (shooters.length && bot.health < 18) {
+      const from = bunkerCentroid(shooters);
+      // No wall within walking distance: build one. Two blocks placed where
+      // the bot already stands beat nine blocks walked under fire.
+      if (!nearWall(bot, from)) {
+        goal.step = { action: 'take_cover', shooters: shooters.length, health: bot.health }; save();
+        try { if (await raiseCover(bot, task, from)) { await sleep(400); return; } }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; state.lastCoverError = err.message; }
+        await sleep(500); task.check(); return;
+      }
       goal.step = { action: 'dig_in_to_recover', shooters: shooters.length, health: bot.health }; save();
-      try { await digBunker(bot, task, goal, save, { from: bunkerCentroid(shooters), navigate: actions.navigate }); return; }
+      try { await digBunker(bot, task, goal, save, { from, navigate: actions.navigate }); return; }
       // Why it could not dig in matters as much as that it did not: a
       // swallowed failure here reads, from outside, as a bot that simply
       // chose to stand in the open and be shot.
