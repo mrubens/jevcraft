@@ -93,6 +93,15 @@ test('a chicken is chased with the best carried weapon, no armour, no shield and
   assert(!isolated(bot, spider), 'a spider still wants the room a sweep needs');
 });
 
+test('two blazes off one spawner are each a fight: the crowd rule counts kin, the sweep rule counts other kinds', () => {
+  const { bot, target } = fixture('blaze');
+  bot.health = 20;
+  bot.entities[21] = { id: 21, name: 'blaze', position: target.position.offset(1.5, 0.5, 0), width: .6, height: 1.8, isValid: true };
+  assert(isolated(bot, target), 'another blaze beside it does not make it unfightable');
+  bot.entities[22] = { id: 22, name: 'wither_skeleton', position: target.position.offset(-1, 0, 1), width: .7, height: 2.4, isValid: true };
+  assert(!isolated(bot, target), 'a mob of another kind beside it still does');
+});
+
 test('combat preparation verifies equipment slots and replaces worn gear instead of counting it as ready', async () => {
   const { bot, slots, goal, task } = fixture();
   slots[6].durabilityUsed = registry.itemsByName.iron_chestplate.maxDurability - 1;
@@ -294,7 +303,49 @@ test('a piglin leaves a player in gold alone; a brute does not, and a hit ends t
   bot.inventory.slots[8] = { name: 'iron_boots' };
   assert.deepEqual(hostileEntities(bot).map(e => e.name).sort(), ['piglin', 'piglin_brute']);
   bot.inventory.slots[8] = { name: 'golden_boots' }; bot._recentHurtAt = Date.now();
+  assert.deepEqual(hostileEntities(bot).map(e => e.name), ['piglin_brute'], 'a blaze\'s fire is not a piglin\'s hit');
+  bot._hurtBy = { piglin: Date.now() };
   assert.deepEqual(hostileEntities(bot).map(e => e.name).sort(), ['piglin', 'piglin_brute'], 'a hit ends the truce');
+});
+
+test('a zombified piglin is left alone until one of them hurts the bot, and then the whole group is a threat', () => {
+  const { hostileEntities } = require('../src/danger');
+  const { Vec3 } = require('vec3');
+  const a = { id: 1, name: 'zombified_piglin', position: new Vec3(6, 64, 0), isValid: true }, b = { id: 2, name: 'zombified_piglin', position: new Vec3(9, 64, 3), isValid: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 1: a, 2: b }, time: { timeOfDay: 6000 }, inventory: { slots: {} } };
+  assert.deepEqual(hostileEntities(bot), []);
+  bot._hurtBy = { zombified_piglin: Date.now() };
+  assert.equal(hostileEntities(bot).length, 2, 'one hit angers every one in range');
+  bot._hurtBy = { zombified_piglin: Date.now() - 60000 };
+  assert.deepEqual(hostileEntities(bot), [], 'and the anger wears off');
+});
+
+test('the shooter list is one list: a crossbow piglin and a witch both shoot, a wither skeleton does not', () => {
+  const { shooter } = require('../src/mob-policy');
+  const combat = require('../src/combat');
+  assert(shooter({ name: 'witch' }) && shooter({ name: 'blaze' }));
+  assert(shooter({ name: 'piglin', heldItem: { name: 'crossbow' } }) && !shooter({ name: 'piglin', heldItem: { name: 'golden_sword' } }));
+  assert(!shooter({ name: 'wither_skeleton' }));
+  assert.equal(combat.shooter, shooter, 'combat hands out the same rule');
+});
+
+test('a drop to a fight is only as deep as the bot can take and still arrive fit to fight', () => {
+  const { allowedDrop } = require('../src/descent');
+  assert.equal(allowedDrop({ health: 20 }), 9);
+  assert.equal(allowedDrop({ health: 20 }, 14), 9, 'whole, nine blocks costs six and lands at fourteen');
+  assert.equal(allowedDrop({ health: 16 }, 14), 5, 'at sixteen, a nine-block drop would land at ten');
+  assert.equal(allowedDrop({ health: 14 }, 14), 3, 'at the floor, only a drop that costs nothing');
+});
+
+test('a drop never lands beside lava', () => {
+  const { landing } = require('../src/descent');
+  const { Vec3 } = require('vec3');
+  const lavaAt = new Vec3(1, 60, 0);
+  const bot = { health: 20, blockAt: p => p.y === 59 ? { name: 'netherrack', boundingBox: 'block', position: p } :
+    p.equals(lavaAt) ? { name: 'lava', boundingBox: 'empty', position: p } : { name: 'air', boundingBox: 'empty', position: p } };
+  assert.equal(landing(bot, new Vec3(0, 64, 0)), null, 'lava beside the landing cell');
+  lavaAt.x = 40;
+  assert.equal(landing(bot, new Vec3(0, 64, 0)).fall, 4);
 });
 
 test('the fortress sweep runs in ninety-six-block legs along x at a safe height, and turns for bricks in view', async () => {

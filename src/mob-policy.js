@@ -57,6 +57,17 @@ function kitReady(bot) {
   });
 }
 
+// Everything that hurts from range, in one place. There were three lists
+// and they disagreed: one had the witch and not the crossbow piglin, one the
+// reverse, so a piglin with a crossbow counted as a threat at eight blocks
+// in one module and at sixteen in another.
+// Health and hunger a deliberate fight starts from, and a hunt's claim on
+// its quarry holds at. The hunt, the danger layer and the drop down to a
+// fight all read this one number.
+const FIGHT_FLOOR = 14;
+const SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze', 'ghast', 'breeze']);
+const shooter = entity => SHOOTERS.has(entity?.name) || (entity?.name === 'piglin' && entity.heldItem?.name === 'crossbow');
+
 function mobSources() {
   const sources = {};
   for (const [entity, handler] of Object.entries(handlers)) {
@@ -68,4 +79,4 @@ function mobSources() {
   }
   return sources;
 }
-module.exports = { handlers, combatGear, armorSlots, durable, carriedEquipment, equipped, readyEquipment, kitReady, mobSources, observedDead };
+module.exports = { handlers, combatGear, armorSlots, durable, carriedEquipment, equipped, readyEquipment, kitReady, mobSources, observedDead, SHOOTERS, shooter, FIGHT_FLOOR };

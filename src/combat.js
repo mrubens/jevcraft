@@ -2,15 +2,13 @@
 const { Vec3 } = require('vec3');
 const { threats } = require('./danger');
 const { checkAir } = require('./vitals');
-const { durable } = require('./mob-policy');
+const { durable, SHOOTERS, shooter } = require('./mob-policy');
 const { countOf } = require('./skills');
 const { bowSolution, aimAtEntity, shootBow } = require('./projectiles');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Mobs that shoot. A piglin counts only with a crossbow in hand; one with a
 // sword is a melee mob and the charge rule's business.
-const SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'ghast', 'breeze', 'blaze']);
-const shooter = entity => SHOOTERS.has(entity.name) || (entity.name === 'piglin' && entity.heldItem?.name === 'crossbow');
 const bowReady = bot => bot.inventory.items().some(i => i.name === 'bow' && durable(bot.registry, i)) && countOf(bot, 'arrow') > 0;
 
 // Where to point the bow at a target this far off, moving this way: the

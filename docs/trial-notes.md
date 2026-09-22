@@ -129,6 +129,33 @@ Live, the same code has dug Jev down from the roof at y=83 to y=79, four blocks 
 45. *Death nine: a fight that could only go one way.* It left the pocket at fifteen health and seventeen hunger, no food, and took on the spawner; with regeneration off every point spent was gone. A hostile fight now starts only if the health spent can come back: hunger eighteen or food in the pack. Otherwise the fight is the walk home.
 46. *The kit-restore aid had been blind to worn armour since the first scratch.* A damaged item carries a nested `components` block and the parser stopped at its first closing brace, so after the armour took damage the aid saw only the shield, and this death lost the iron set. Fixed and verified against the server's real output; the set was put back by console, labelled here as a controlled-run intervention.
 
+**After the workflows audit (2026-09-22 18:30 UTC), eleven drills, three runs each, thirty-three runs.** A read-only audit from another session traced the combat rules against each other rather than against one scenario each; these are the fixes that held up when checked against the code. No deaths anywhere.
+
+| drill | deaths | cleared | rods | damage | before |
+|---|---|---|---|---|---|
+| zombie_single | 0 | 3/3 | - | 0 | 1.5 |
+| wither_skeleton_single | 0 | 3/3 | - | 0 | 1.9 |
+| wither_skeleton_pair | 0 | 3/3 | - | 0 | 0 |
+| hoglin_single | 0 | 3/3 | - | 10.3 (FAIL, bar 10) | 8.8 / 5.6 / 13.0 |
+| hoglin_herd | 0 | survives | - | 0 | 0 |
+| blaze_single | 0 | 3/3 | 2 | 5.7 | 1.0 |
+| blaze_pair | 0 | 2/3 | 3 | **6.7 (PASS)** | 16 to 32 |
+| blaze_pair_bow | 0 | 3/3 | 1 | 0 | - |
+| blaze_spawner | 0 | 0/3 | 3 | 13.8 | 9.4, 1 rod |
+| blaze_swarm_wall | 0 | 1/3 | 2 | 9.2 | 0, no rods ever |
+| blaze_swarm_open | 0 | 0/3 | 2 | 17.4 | 14.1, 3 rods |
+
+The pair passes for the first time, and the wall swarm brings rods home for the first time. `hoglin_single` is the noisy drill of note 9, not a regression aimed at; `blaze_single` moved from 1.0 to 5.7 on three runs, which is under the five-point noise line but worth watching.
+
+47. *Burning made every hunt decision stale.* Fresh meant health exactly equal to the snapshot, and a bot on fire loses health every second: every answer came back stale and the bot stood in the open asking again. A few points lost while Jev answers is still the same fight. With Jev unreachable, the nearest checked candidate is fought instead of throwing.
+48. *Another blaze beside a blaze made it unfightable.* The sweep rule (no other mob within four blocks of the target) counted kin, so no blaze at a spawner ever qualified, whatever the crowd rule above it said. Kin are the crowd rule's business; other kinds still need the room.
+49. *One shooter list, not three.* They disagreed about the witch and the crossbow piglin. Also one fight floor (fourteen) read by the hunt, the danger layer and the drop down to a fight.
+50. *Zombified piglins were never a threat, and fire ended the piglin truce.* The damage packet names who hit the bot. A zombified piglin or piglin that hits it turns that whole group hostile for thirty seconds; a blaze's fire no longer ends the gold truce and starts a second fight.
+51. *No footing to flee to in the Nether.* The escape searched only overworld ground, so every retreat and the step back from a lava edge found nothing and fell through to sealing in.
+52. *A drop to a fight arrived too hurt to fight.* Nine blocks from sixteen health landed at ten, under the floor, and the claim on the quarry lapsed on landing. The drop now keeps the fight floor, and never lands beside lava.
+53. *Cover and door took turns on the same cell.* Cover the hunt raised is kept for a minute, and a bunker hold that ends with nothing is not re-entered for two.
+54. *A lone mob just outside the sword was walled off.* Between reach (3.0) and the charge's minimum (3.2) nothing swung and nothing charged. A single mob that does not shoot is now charged before any wall, and the step toward a hovering blaze is taken only onto solid, lava-free ground.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

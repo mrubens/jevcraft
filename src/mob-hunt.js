@@ -1,9 +1,9 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead } = require('./mob-policy');
+const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead, shooter, FIGHT_FLOOR: HUNT_FLOOR } = require('./mob-policy');
 const { threats, checkThreats, NeedsSafety } = require('./danger');
-const { canStrike, defenseWeapon, bowReady, shoot, SHOOTERS } = require('./combat');
+const { canStrike, defenseWeapon, bowReady, shoot } = require('./combat');
 const { deflect } = require('./projectile-guard');
 const { aimAtEntity } = require('./projectiles');
 const { dryStanding } = require('./mining-access');
@@ -11,7 +11,7 @@ const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
 const { checkAir } = require('./vitals');
 const { surveyRoute, countOf } = require('./skills');
 const { collectNearbyDrops } = require('./drop-collection');
-const { decideTree } = require('./decisions');
+const { decideTree, announceFallback, firstOption } = require('./decisions');
 const { descendTo } = require('./descent');
 const { bridgeTo } = require('./bridging');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
@@ -84,12 +84,15 @@ function isolated(bot, target, handler = handlers[target.name] || {}) {
   // fight only once the bot is already hurt; whole, the nearest one is a
   // fight like any other.
   const crowd = (kinInView >= 3 && (bot.health ?? 20) < 16) || others.some(t => t.entity.name !== target.name &&
-    (t.distance < (SHOOTERS.has(t.entity.name) ? 16 : 8) || t.entity.position.distanceTo(target.position) < 6));
+    (t.distance < (shooter(t.entity) ? 16 : 8) || t.entity.position.distanceTo(target.position) < 6));
   if (crowd) return false;
   // A sword sweep must not hit a nearby player or provoke another mob. A
   // flock of chickens is not a crowd of mobs: a passive animal only needs
   // the hostiles kept away.
-  return handler.passive || !Object.values(bot.entities).some(e => e !== target && e !== bot.entity && valid(bot, e) &&
+  // Another of the same kind is the crowd rule's business above: counted
+  // here as well, every blaze beside another at a spawner was "not
+  // isolated", and there is no other kind of blaze at a spawner.
+  return handler.passive || !Object.values(bot.entities).some(e => e !== target && e !== bot.entity && e.name !== target.name && valid(bot, e) &&
     e.position && bot.registry.entitiesByName[e.name]?.metadataKeys?.includes('health') && e.position.distanceTo(target.position) < 4);
 }
 
@@ -124,7 +127,7 @@ function canBegin(bot, handler = {}) {
   // is a half-second doze in the open. Two blazes shot it through five
   // rounds of that: thirty-four damage, one death, and the bow it was
   // holding was the reason it would not swing.
-  return standing && bot.health >= 14 && bot.food >= 14 && kitReady(bot);
+  return standing && bot.health >= HUNT_FLOOR && bot.food >= HUNT_FLOOR && kitReady(bot);
 }
 
 // A blaze hovers, so there is no standing room within two blocks of it: the
@@ -345,20 +348,42 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   if (client) {
     const controller = new AbortController();
     const watcher = setInterval(() => { if (task.cancelled || !canBegin(bot, handler)) controller.abort(new Error('Combat decision interrupted')); }, 100);
-    try { decision = await decideTree(client, { state: snapshot, tree, signal: controller.signal, kind: 'combat',
-      isFresh: () => canBegin(bot, handler) && bot.health === snapshot.health && candidates.every(e => !positions.has(e.id) ||
+    // Fresh means the fight is still the one Jev was shown. Health equal to
+    // the snapshot was the test, and a bot on fire loses health every second:
+    // alight in a fortress, every answer came back stale and the bot stood
+    // in the open asking again. A few points lost in flight still leaves the
+    // same fight, and canBegin holds the floor.
+    // With Jev unreachable the nearest candidate is fought: it passed the
+    // same checks, and standing in a blaze's sight waiting for an answer is
+    // the worse choice.
+    try { decision = await decideTree(client, { state: snapshot, tree, signal: controller.signal, kind: 'combat', fallback: firstOption,
+      isFresh: () => canBegin(bot, handler) && bot.health >= snapshot.health - 4 && candidates.every(e => !positions.has(e.id) ||
         valid(bot, e) && e.position.distanceTo(positions.get(e.id)) < 2 && isolated(bot, e, handler)) }); }
     catch (err) { task.check(); if (controller.signal.aborted) return false; throw err; }
     finally { clearInterval(watcher); }
   } else decision = { path: [Object.keys(tree)[0]], action: Object.values(tree)[0] };
   task.check(); checkAir(bot);
+  if (client && !decision.stale) announceFallback(bot, goal, decision);
   goal.decisions ||= []; goal.decisions.push({ at: new Date().toISOString(), state: snapshot, path: decision.path,
-    options: JSON.parse(JSON.stringify(tree)), latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, stale: decision.stale });
+    options: JSON.parse(JSON.stringify(tree)), latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, stale: decision.stale, fallback: decision.fallback });
   goal.decisions = goal.decisions.slice(-40); save();
   if (decision.stale) return false;
   await decision.action.run();
   return decision.path[0] !== 'defer';
 }
+
+// Cover the hunt raised stays up for a minute: the door rule is kept off
+// it, or the two dig and build the same cell in turn.
+const COVER_KEPT_MS = 60000;
+function keepCover(state, cell) {
+  if (!cell) return false;
+  if (cell.offset) {
+    const now = Date.now();
+    state.cover = [...(state.cover || []).filter(c => c.until > now), ...[cell, cell.offset(0, 1, 0)].map(p => ({ key: `${p}`, until: now + COVER_KEPT_MS }))].slice(-8);
+  }
+  return true;
+}
+const coverKept = state => (state.cover || []).filter(c => c.until > Date.now()).map(c => c.key);
 
 async function prepareMobHunt(bot, task, step, goal, save, actions) {
   const handler = handlers[step.entity];
@@ -385,7 +410,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     e.position && e.position.distanceTo(bot.entity.position) < 24 && e.position.y < bot.entity.position.y - 2);
   if (below) {
     goal.step = { action: 'down_for_the_drop', item: step.item, drop: Math.round(bot.entity.position.y - below.position.y) }; save();
-    try { if (await descendTo(bot, task, below.position) >= 1) return; }
+    try { if (await descendTo(bot, task, below.position, { arriveWith: HUNT_FLOOR }) >= 1) return; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; goal.mobHunt.lastDescentError = err.message; }
   }
   if (!handler.passive && !await prepareCombatGear(bot, task, goal, save, actions)) return;
@@ -401,7 +426,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: handler.passive ? 10 : 14, neededFood: handler.passive ? 6 : 14 }; save();
     // Not in the open, if something out there shoots. Health comes back at
     // the same rate behind a wall and the wall is free.
-    const shooters = threats(bot, 24).filter(t => t.visible && SHOOTERS.has(t.entity.name));
+    const shooters = threats(bot, 24).filter(t => t.visible && shooter(t.entity));
     if (shooters.length && bot.health < 18) {
       const from = bunkerCentroid(shooters);
       // No wall within walking distance: build one. Two blocks placed where
@@ -463,13 +488,20 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     if (cornered && !nearWall(bot, near.position) && !(state.coverFailedAt > Date.now() - 60000) &&
         !(state.stairsTo && state.stairsTo.until > Date.now())) {
       goal.step = { action: 'break_their_line', entity: step.entity, inView, health: bot.health }; save();
-      try { if (await raiseCover(bot, task, near.position)) { await sleep(300); return; } }
+      try { if (keepCover(state, await raiseCover(bot, task, near.position))) { await sleep(300); return; } }
       catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; state.lastCoverError = err.message; }
       state.coverFailedAt = Date.now(); save();
     }
     if (cornered && nearWall(bot, near.position) && !(state.bunkerFailedAt > Date.now() - 120000)) {
       goal.step = { action: 'take_the_door', entity: step.entity, inView, health: bot.health }; save();
-      try { await bunkerFight(bot, task, goal, save, actions, { item: step.item, want: countOf(bot, step.item) + 1 }); return; }
+      // A hold that ends quietly with nothing gained is a failure too: the
+      // arena measured the door at zero rods, and without a cooldown the
+      // bot walked straight back into the same bunker for another two
+      // minutes.
+      try {
+        if (!await bunkerFight(bot, task, goal, save, actions, { item: step.item, want: countOf(bot, step.item) + 1 })) { state.bunkerFailedAt = Date.now(); save(); }
+        return;
+      }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.bunkerFailedAt = Date.now(); state.lastBunkerError = err.message; save(); }
     }
     const key = near.uuid || near.id;
@@ -545,7 +577,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
         const feet = bot.entity.position.floored();
         const column = [-1, -2, -3, -4].map(d => bot.blockAt(feet.offset(0, d, 0))?.name || '?');
         try {
-          const dropped = await descendTo(bot, task, near.position);
+          const dropped = await descendTo(bot, task, near.position, { arriveWith: HUNT_FLOOR });
           state.lastDescent = { at: Date.now(), dropped, from: { ...feet }, column, health: bot.health }; save();
           if (dropped >= 1) return;
         }
@@ -571,10 +603,10 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       const digging = state.stairsTo && state.stairsTo.until > Date.now();
       if (Math.abs(dy) <= 1.5 && !digging) {
         goal.step = { action: 'open_a_door', entity: step.entity }; save();
-        try { if (await openToward(bot, task, near.position)) { await sleep(300); return; } }
+        try { if (await openToward(bot, task, near.position, { spare: coverKept(state) })) { await sleep(300); return; } }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
         goal.step = { action: 'break_their_line', entity: step.entity, watched: state.watchFails }; save();
-        try { if (await raiseCover(bot, task, near.position)) { await sleep(300); return; } }
+        try { if (keepCover(state, await raiseCover(bot, task, near.position))) { await sleep(300); return; } }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
       }
       if (state.watchFails >= 3) {

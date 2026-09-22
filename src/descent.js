@@ -11,7 +11,15 @@ const SIDES = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec
 // Fall damage starts at four blocks: a nine-block drop costs three hearts,
 // which full health can spare; hurt, the allowance shrinks.
 const MAX_DROP = 9;
-const allowedDrop = bot => (bot.health ?? 20) >= 16 ? 9 : (bot.health ?? 20) >= 10 ? 6 : 4;
+// `arriveWith` is the health the bot needs at the bottom. A hunt drops to
+// its quarry, and nine blocks from sixteen health landed it at ten, under
+// the fight floor of fourteen: the hunt's claim lapsed on landing and the
+// blazes it had come for became an emergency at thirty-two blocks.
+const allowedDrop = (bot, arriveWith = 0) => {
+  const health = bot.health ?? 20;
+  const tier = health >= 16 ? 9 : health >= 10 ? 6 : 4;
+  return Math.min(tier, Math.max(3, 3 + Math.floor(health - arriveWith)));
+};
 const passable = b => !b || b.boundingBox === 'empty';
 const molten = b => b && ['lava', 'water', 'fire', 'magma_block', 'powder_snow'].includes(b.name);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -22,13 +30,21 @@ function landing(bot, feet, limit = allowedDrop(bot)) {
   for (let k = 2; k <= limit + 2; k++) {
     const block = bot.blockAt(feet.offset(0, -k, 0));
     if (!block || molten(block)) return null;
-    if (!passable(block)) return k - 1 <= limit ? { block, fall: k - 1 } : null;
+    if (!passable(block)) {
+      if (k - 1 > limit) return null;
+      // Lava beside the landing is a knockback from death; the column
+      // itself was all this looked at.
+      const stand = block.position.offset(0, 1, 0);
+      if ([0, 1].some(dy => SIDES.some(side => molten(bot.blockAt(stand.plus(side).offset(0, dy, 0)))))) return null;
+      return { block, fall: k - 1 };
+    }
   }
   return null;
 }
 
-async function descendTo(bot, task, target, { hpFloor = 12, maxSteps = 24 } = {}) {
+async function descendTo(bot, task, target, { hpFloor = 12, maxSteps = 24, arriveWith = 0 } = {}) {
   let steps = 0;
+  const land = cell => landing(bot, cell, allowedDrop(bot, arriveWith));
   const start = bot.entity.position.y;
   while (bot.entity.position.y > target.y + 1.5) {
     task.check();
@@ -43,10 +59,10 @@ async function descendTo(bot, task, target, { hpFloor = 12, maxSteps = 24 } = {}
     // gap the target sits under) is stepped into rather than dug beside: the
     // drop from the bot's own column was a void and the face was given up.
     const hole = SIDES.map(side => feet.plus(side)).find(cell => passable(bot.blockAt(cell)) && passable(bot.blockAt(cell.offset(0, 1, 0))) &&
-      passable(bot.blockAt(cell.offset(0, -1, 0))) && landing(bot, cell) && Math.hypot(cell.x + 0.5 - target.x - 0.5, cell.z + 0.5 - target.z - 0.5) <
+      passable(bot.blockAt(cell.offset(0, -1, 0))) && land(cell) && Math.hypot(cell.x + 0.5 - target.x - 0.5, cell.z + 0.5 - target.z - 0.5) <
       Math.hypot(feet.x - target.x, feet.z - target.z) + 0.01);
-    if (hole && !landing(bot, feet)) {
-      const below = landing(bot, hole);
+    if (hole && !land(feet)) {
+      const below = land(hole);
       await bot.lookAt(hole.offset(0.5, 1.6, 0.5), true);
       bot.setControlState('forward', true);
       const started = Date.now();
@@ -55,7 +71,7 @@ async function descendTo(bot, task, target, { hpFloor = 12, maxSteps = 24 } = {}
       continue;
     }
     if (molten(block) || !block.diggable) throw new Error(`Cannot dig down through ${block.name}`);
-    const below = landing(bot, feet);
+    const below = land(feet);
     if (!below) throw new Error('The drop below is too deep or ends in lava');
     await equipBestTool(bot, block);
     task.check();

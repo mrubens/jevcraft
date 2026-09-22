@@ -7,7 +7,7 @@ const { decideTree, announceFallback } = require('./decisions');
 const { maintainVitals, chooseFood, checkAir } = require('./vitals');
 const { foodSupply, forageChoices } = require('./foraging');
 const { bedCarried, placeOriented, isBed, homeOf, layout, homeChores } = require('./home-base');
-const { readyEquipment } = require('./mob-policy');
+const { kitReady } = require('./mob-policy');
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute, countOf } = require('./skills');
@@ -22,6 +22,13 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
 const night = bot => bot.time?.timeOfDay >= 11500 && bot.time.timeOfDay < 23000;
 // Lava within two blocks sideways or one below: a knockback lands in it.
+// A cell the bot can step into without falling or burning: solid under it,
+// room for its body, and no lava beside.
+function firmStep(bot, p) {
+  if (!p) return false;
+  const floor = bot.blockAt(p.offset(0, -1, 0)), body = [bot.blockAt(p), bot.blockAt(p.offset(0, 1, 0))];
+  return floor?.boundingBox === 'block' && !/lava|magma|fire/.test(floor.name) && body.every(b => b && b.boundingBox === 'empty' && !/lava|fire/.test(b.name)) && !lavaBeside(bot, p);
+}
 function lavaBeside(bot, p) {
   for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) for (let dy = -1; dy <= 0; dy++) {
     if (bot.blockAt(new Vec3(p.x + dx, p.y + dy, p.z + dz))?.name === 'lava') return true;
@@ -34,8 +41,15 @@ const PERSISTENT_THREATS = new Set(['creeper', 'spider', 'cave_spider', 'enderma
 // sword: the arena's first drill had the bot wall itself in against one and
 // take fourteen damage through the doorway instead of four swings and done.
 // A piglin only shoots when it is holding a crossbow, which `shooter` knows.
-const RANGED = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze', 'ghast', 'breeze']);
-const shoots = threat => RANGED.has(threat.entity.name) || shooter(threat.entity);
+const shoots = threat => shooter(threat.entity);
+// Ground to run to. It was the overworld's surface only, so in the Nether
+// no retreat and no step back from a lava edge could find anywhere to
+// stand, and every flee there fell straight through to sealing in. Magma is
+// left out: it burns whoever stands on it.
+const ESCAPE_FOOTING = ['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'stone', 'deepslate', 'tuff', 'andesite', 'diorite', 'granite',
+  'sand', 'red_sand', 'gravel', 'cobblestone', 'cobbled_deepslate', 'sandstone', 'terracotta',
+  'netherrack', 'soul_sand', 'soul_soil', 'basalt', 'smooth_basalt', 'blackstone', 'nether_bricks', 'crimson_nylium', 'warped_nylium',
+  'end_stone', 'obsidian'];
 const shelterNeeded = bot => bot.game.difficulty !== 'peaceful' && bot.game.dimension === 'overworld' &&
   bot.time?.timeOfDay >= 9500 && bot.time.timeOfDay < 23000;
 // The server lets a player sleep from 12541 until 23458; with the only
@@ -81,7 +95,12 @@ class Survival {
     this.state = state || { shelters: [] };
     this.state.shelters ||= [];
     if (!bot._survivalHurtListener) {
-      bot._survivalHurtListener = entity => { if (entity === bot.entity) bot._recentHurtAt = Date.now(); };
+      bot._survivalHurtListener = (entity, source) => {
+        if (entity !== bot.entity) return;
+        bot._recentHurtAt = Date.now();
+        // Who did it, by kind: a neutral mob that hits the bot has turned.
+        if (source?.name) (bot._hurtBy ||= {})[source.name] = Date.now();
+      };
       bot.on('entityHurt', bot._survivalHurtListener);
     }
   }
@@ -143,7 +162,10 @@ class Survival {
       // the gap. The arena's weak spawner run took twelve health in thirty
       // seconds of "fight" with three swings landed, all four blazes at 3.0.
       const hover = danger.find(t => shooter(t.entity) && t.distance > 2.4 && t.distance <= 3.6 && !canStrike(bot, t.entity));
-      if (hover) {
+      // Only onto ground: the step is taken blind, and a fortress bridge
+      // has lava on both sides of it.
+      const ahead = hover && bot.entity.position.plus(hover.entity.position.minus(bot.entity.position).scaled(1 / Math.max(hover.distance, 1))).floored();
+      if (hover && firmStep(bot, ahead)) {
         lowerShield(bot);
         await bot.lookAt(hover.entity.position.offset(0, 1, 0), true);
         bot.setControlState('forward', true);
@@ -210,7 +232,7 @@ class Survival {
     const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
     Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
     try {
-      const ids = ['grass_block', 'dirt', 'stone', 'sand', 'gravel', 'cobblestone'].map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
+      const ids = ESCAPE_FOOTING.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
       const distance = p => Math.min(...danger.map(t => t.entity.position.distanceTo(p)));
       // A creeper does not burn off at dawn and follows to about sixteen
       // blocks. A six-block hop from one only buys a minute before it is back
@@ -293,19 +315,16 @@ class Survival {
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
       }
       if ((crowd || danger.some(shoots)) && await this.sealHere(task, goal, save, danger)) { delete this.state.trappedSince; return; }
+      // A lone mob that does not shoot is met, not walled: the wall came
+      // first, and a wither skeleton standing between the sword's reach
+      // and the charge's minimum was walled off every time.
+      if (armed && danger.length === 1 && !shoots(nearest) && await this.charge(task, goal, save, nearest, pack)) { delete this.state.trappedSince; return; }
       if (await this.wallOff(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       // No way out and a mob a few blocks off, shooting: standing still is
       // how a crossbow piglin took half the bot's health. Armed and able,
       // close the gap so the fight rule can do its work.
       // One mob is charged; a herd is not.
-      if (armed && !pack && bot.health >= 12 && nearest.distance > 3.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
-        this.report(goal, save, { action: 'charge', target: nearest.entity.name, distance: Number(nearest.distance.toFixed(1)) });
-        const t = nearest.entity.position;
-        try { await this.actions.navigate(bot, task, new goals.GoalNear(t.x, t.y, t.z, 1), { timeoutMs: 4000, stallMs: 2000 }); }
-        catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
-        await defendNearby(bot, task, goal, save);
-        delete this.state.trappedSince; return;
-      }
+      if (armed && await this.charge(task, goal, save, nearest, pack)) { delete this.state.trappedSince; return; }
       // In a narrow tunnel, wait for the next bounded defensive action rather
       // than spending five failed route searches while a mob hits us. The
       // encounter still has a deadline and reports a concrete blocker.
@@ -495,6 +514,20 @@ class Survival {
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
     }
     return placed > 0;
+  }
+
+  // One mob, closed on so the fight rule can swing. Out of the sword's reach
+  // is the test, not "beyond 3.2": between the two the bot neither swung
+  // nor charged.
+  async charge(task, goal, save, nearest, pack) {
+    const bot = this.bot;
+    if (pack || bot.health < 12 || nearest.distance > 8 || canStrike(bot, nearest.entity) || lavaBeside(bot, nearest.entity.position.floored())) return false;
+    this.report(goal, save, { action: 'charge', target: nearest.entity.name, distance: Number(nearest.distance.toFixed(1)) });
+    const t = nearest.entity.position;
+    try { await this.actions.navigate(bot, task, new goals.GoalNear(t.x, t.y, t.z, 1), { timeoutMs: 4000, stallMs: 2000 }); }
+    catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
+    await defendNearby(bot, task, goal, save);
+    return true;
   }
 
   async wallOff(task, goal, save, danger) {
@@ -693,8 +726,15 @@ class Survival {
       // level (the stairs' last stretch): open the pocket and let the
       // go-home rule climb and walk. From deep down, the night is better
       // spent behind the wall.
-      const homeBed = sleepable(bot) && !watched && !(this.state.sleepFailedAt > Date.now() - 600000) && !(this.state.bedRouteFailedAt > Date.now() - 120000) && nearbyHomeBed(bot, goal);
-      const shallow = homeBed && (surfaceObserver(bot)(bot.entity.position) || Math.abs(homeBed.foot.y - bot.entity.position.y) <= 10);
+      // Leaving a pocket for a bed the bot just failed to reach is the start
+      // of a loop: out, a two-minute walk in the dark, a new pocket, and two
+      // minutes later out again, all night. From a pocket, a failed route
+      // waits ten minutes like a failed sleep does.
+      const homeBed = sleepable(bot) && !watched && !(this.state.sleepFailedAt > Date.now() - 600000) && !(this.state.bedRouteFailedAt > Date.now() - 600000) && nearbyHomeBed(bot, goal);
+      const shallow = homeBed && (surfaceObserver(bot)(bot.entity.position) || Math.abs(homeBed.foot.y - bot.entity.position.y) <= 10) ||
+        // A bed in the pack is a bed too. A fight pocket dug at dusk held the
+        // bot until dawn, eleven minutes behind a wall, with a bed on its back.
+        (!homeBed && bot.game?.dimension === 'overworld' && sleepable(bot) && !watched && !(this.state.sleepFailedAt > Date.now() - 600000) && bedCarried(bot) && surfaceObserver(bot)(bot.entity.position));
       if (shallow) { delete this.state.watchedSince; await this.leave(task, goal, save, refuge, 'Off to bed.'); }
       else if ((shelterNeeded(bot) || watched) && !outwaited) {
         // Say who is keeping the bot in, and whether the hunt had claimed it:
@@ -781,7 +821,13 @@ class Survival {
     // A shelter once chosen is a plan, not a question for every tick: the
     // second run climbed its shaft for a shelter, was asked again at the
     // top, went back down to the mine, and was asked again at the bottom.
-    if (needsShelter && plan?.plan === 'shelter' && !(bedReady && sleepable(bot))) { await this.refugeStep(task, goal, save); onStep(goal); return true; }
+    // Renewed while it is being carried out: a plan that lapsed after two
+    // minutes of gathering blocks put the question again, and "carry on"
+    // left the half-built shell standing in the dark.
+    if (needsShelter && plan?.plan === 'shelter' && !(bedReady && sleepable(bot))) {
+      plan.until = Date.now() + 120000;
+      await this.refugeStep(task, goal, save); onStep(goal); return true;
+    }
     if (!needsShelter && this.state.recovery?.status === 'pending') {
       this.report(goal, save, { action: 'recover_items', origin: this.state.recovery.position });
       if (await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate)) { onStep(goal); return true; }
@@ -803,7 +849,9 @@ class Survival {
     const hungry = bot.food <= hungerTrigger;
     const stockDriven = !offWorld && (goal.stockFood || expeditionFood || (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful'));
     const now = Date.now();
-    if (foodSupply(bot) >= desiredFood) delete this.state.foodSearch;
+    // Stocked is stocked: the flag that asked for a reserve was never taken
+    // down, so the stock-driven search ran for the rest of the goal.
+    if (foodSupply(bot) >= desiredFood) { delete this.state.foodSearch; delete goal.stockFood; }
     if (!hungry && stockDriven && foodSupply(bot) < desiredFood) {
       const search = this.state.foodSearch ||= { since: now };
       if (this.state.foodStockPausedUntil > now) { /* paused */ }
@@ -817,12 +865,12 @@ class Survival {
       health: bot.health, food: bot.food, safeFoodCarried: !!chooseFood(bot),
       survivalFacts: { difficulty: bot.game.difficulty, hostileMobsSpawnAtNight: true,
         nightStartsAt: 11500, dawnAt: 23000, daylightTicksRemaining: Math.max(0, 11500 - bot.time.timeOfDay),
-        bedCarried: !!bed, homeBedNearby: !!homeBed, sleepPossibleFrom: SLEEP_FROM, armedAndArmoured: readyEquipment(bot),
+        bedCarried: !!bed, homeBedNearby: !!homeBed, sleepPossibleFrom: SLEEP_FROM, armedAndArmoured: kitReady(bot),
         shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null },
       recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot),
       foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: desiredFood, hungerMaximum: 20, starvationAt: 0,
         requiredBeforeExpedition: !!expeditionFood } };
-    const armed = readyEquipment(bot);
+    const armed = kitReady(bot);
     const canStayUp = night(bot) && needsShelter && bedReady && armed;
     const tree = (night(bot) && needsShelter && !canStayUp) || (expeditionFood && needsFood) ? {} : {
       continue_request: { description: canStayUp ? 'Stay up tonight, armed and armoured, and keep working the request outside: spiders and the other night mobs are what a hunt for string needs, and the bed is one action away whenever the night has nothing more to give. Two minutes at a time, then this question again.'
@@ -849,7 +897,9 @@ class Survival {
     // Without Jev, shelter comes before food and food before the request:
     // the order a careful player keeps when nobody is weighing the trade.
     const fallback = children => ['sleep_in_bed', 'secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
-    if (needsShelter && tree.sleep_in_bed && Object.keys(tree).length === 1) { await tree.sleep_in_bed.run(); onStep(goal); return true; }
+    // One option is not a question. Jev was asked to pick the only shelter
+    // on offer every night the bot could not stay up.
+    if (Object.keys(tree).length === 1 && !Object.values(tree)[0].children) { await Object.values(tree)[0].run(); onStep(goal); return true; }
     const decision = await this.decide(task, goal, save, { state, tree, fallback, kind: 'survival', interrupt: () => checkThreats(bot),
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);

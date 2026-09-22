@@ -1,26 +1,35 @@
 'use strict';
-const { handlers, readyEquipment, kitReady, observedDead } = require('./mob-policy');
+const { handlers, kitReady, observedDead, shooter, FIGHT_FLOOR } = require('./mob-policy');
 
 // The Nether's own mobs were missing: a magma cube killed the dream run in
 // two seconds while the bot searched for blazes, and nothing fled or swung.
 const hostileNames = new Set(['zombie', 'husk', 'drowned', 'skeleton', 'stray', 'bogged', 'creeper', 'spider',
   'cave_spider', 'witch', 'pillager', 'vindicator', 'evoker', 'ravager', 'phantom', 'blaze', 'wither_skeleton', 'hoglin', 'zoglin',
   'magma_cube', 'slime', 'ghast', 'piglin', 'piglin_brute', 'silverfish', 'endermite', 'warden', 'breeze']);
-const ranged = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze', 'ghast', 'breeze']);
 
 function combatTarget(bot, entity) {
   const encounter = bot._combatEncounter;
   return !!encounter && encounter.target === entity && Object.hasOwn(handlers, entity.name) &&
     bot.entities[entity.id] === entity && entity.isValid !== false && !encounter.task.cancelled &&
     encounter.dimension === bot.game?.dimension && encounter.expiresAt > Date.now() &&
-    bot.health >= 12 && bot.food >= 12 && readyEquipment(bot, ['bow']);
+    bot.health >= 12 && bot.food >= 12 && kitReady(bot);
 }
 
-function provokedEnderman(bot, entity) {
-  if (entity.name !== 'enderman') return false;
-  const key = bot.registry?.entitiesByName?.enderman?.metadataKeys?.indexOf('creepy');
-  return bot._provokedMobs?.get(entity.id) === entity || (key >= 0 && !!entity.metadata?.[key]);
+// A neutral mob that has turned. An enderman that was looked at, anything
+// the bot struck, and a piglin or zombified piglin after one of them hurt
+// the bot: in the game one angry zombified piglin brings every one in range,
+// and none of them was ever a threat here, so a horde could beat the bot
+// down while it went on digging.
+const GROUP_ANGER = { zombified_piglin: 30000, piglin: 30000 };
+function provoked(bot, entity) {
+  if (bot._provokedMobs?.get(entity.id) === entity) return true;
+  if (entity.name === 'enderman') {
+    const key = bot.registry?.entitiesByName?.enderman?.metadataKeys?.indexOf('creepy');
+    return key >= 0 && !!entity.metadata?.[key];
+  }
+  return Object.hasOwn(GROUP_ANGER, entity.name) && bot._hurtBy?.[entity.name] > Date.now() - GROUP_ANGER[entity.name];
 }
+const provokedEnderman = (bot, entity) => entity.name === 'enderman' && provoked(bot, entity);
 
 const wearingGold = bot => [5, 6, 7, 8].some(slot => /^golden_/.test(bot.inventory?.slots?.[slot]?.name || ''));
 
@@ -28,11 +37,14 @@ function hostileEntities(bot, radius = 24) {
   const position = bot.entity.position;
   const daytime = bot.time?.timeOfDay < 12000 || bot.time?.timeOfDay >= 23000;
   return Object.values(bot.entities || {}).filter(entity => {
-    if ((!hostileNames.has(entity.name) && !provokedEnderman(bot, entity)) || !entity.position || entity.isValid === false || observedDead(bot, entity)) return false;
+    if ((!hostileNames.has(entity.name) && !provoked(bot, entity)) || !entity.position || entity.isValid === false || observedDead(bot, entity)) return false;
     if (entity.name === 'spider' && daytime && !(bot._recentHurtAt > Date.now() - 10000)) return false;
     // A piglin leaves a player in gold alone; a brute does not. With the
     // golden boots on, the bot was digging in from piglins at eight blocks.
-    if (entity.name === 'piglin' && wearingGold(bot) && !(bot._recentHurtAt > Date.now() - 10000)) return false;
+    // The truce ends when a piglin strikes, not when anything does: a
+    // blaze's fire ended it too, and the swing reflex then started a second
+    // fight with a whole group of them.
+    if (entity.name === 'piglin' && wearingGold(bot) && !provoked(bot, entity)) return false;
     return entity.position.distanceTo(position) <= radius;
   });
 }
@@ -71,7 +83,7 @@ function inEncounter(bot) {
 function claimed(bot, entity) {
   const hunt = bot._huntingEntity;
   return !!hunt && hunt.name === entity.name && hunt.until > Date.now() &&
-    (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 14 && kitReady(bot);
+    (bot.health ?? 20) >= FIGHT_FLOOR && (bot.food ?? 20) >= FIGHT_FLOOR && kitReady(bot);
 }
 
 function hunted(bot, entity) {
@@ -84,7 +96,7 @@ function hunted(bot, entity) {
   // damage, no swing thrown.
   if (entity.position && entity.position.distanceTo(bot.entity.position) <= 3.5) return false;
   return !!hunt && hunt.name === entity.name && hunt.until > Date.now() &&
-    (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 14 && kitReady(bot);
+    (bot.health ?? 20) >= FIGHT_FLOOR && (bot.food ?? 20) >= FIGHT_FLOOR && kitReady(bot);
 }
 
 function immediateThreat(bot) {
@@ -93,7 +105,7 @@ function immediateThreat(bot) {
   // crowd rule decides how many blazes are too many.
   const kin = t => fighting && t.entity.name === bot._combatEncounter.target?.name;
   return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible && !kin(t) && !hunted(bot, t.entity) &&
-    t.distance <= (ranged.has(t.entity.name) ? (fighting ? 8 : hurt ? 32 : 16) : (fighting ? 5 : 8)));
+    t.distance <= (shooter(t.entity) ? (fighting ? 8 : hurt ? 32 : 16) : (fighting ? 5 : 8)));
 }
 
 // Keep a route outside attack range plus a movement margin. If a mob already
@@ -122,7 +134,7 @@ function safeFromHostiles(bot, point, entities = hostileEntities(bot, 64)) {
     // takes over as before.
     if (combatTarget(bot, entity) || hunted(bot, entity)) return true;
     // Out of sight, a mob only matters when it is nearly at the wall.
-    const radius = !seen(bot, entity) ? 6 : ranged.has(entity.name) ? 20 : 12;
+    const radius = !seen(bot, entity) ? 6 : shooter(entity) ? 20 : 12;
     return entity.position.distanceTo(point) >= Math.min(radius, entity.position.distanceTo(bot.entity.position) - 0.25);
   });
 }
@@ -136,4 +148,4 @@ function checkThreats(bot) {
   if (threat) throw new NeedsSafety(threat);
 }
 
-module.exports = { hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provokedEnderman, hunted, claimed };
+module.exports = { hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };

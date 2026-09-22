@@ -52,7 +52,11 @@ function bunkerSide(bot, feet, from) {
 // seconds it built more cover on its own side of the fence. A door, not a
 // wall.
 const DOORWAY = /nether_brick|fence|netherrack|blackstone|basalt/;
-async function openToward(bot, task, from) {
+// `spare` is cover the bot itself raised, which a door must not dig out:
+// both rules pick the same cell, one step toward the mob, so a wall went up,
+// the blazes dropped out of sight, and fifteen seconds later the door rule
+// dug it out and put them back in view.
+async function openToward(bot, task, from, { spare = [] } = {}) {
   if (!from) return false;
   const here = bot.entity.position.floored();
   const dx = from.x - here.x, dz = from.z - here.z;
@@ -61,7 +65,7 @@ async function openToward(bot, task, from) {
   let opened = false;
   for (const p of [cell.offset(0, 1, 0), cell]) {
     const block = bot.blockAt(p);
-    if (!block || passable(block) || !block.diggable || !DOORWAY.test(block.name)) continue;
+    if (!block || passable(block) || !block.diggable || !DOORWAY.test(block.name) || spare.includes(`${p}`)) continue;
     task.check();
     await digCell(bot, task, p); opened = true;
   }
@@ -288,7 +292,8 @@ async function raiseCover(bot, task, from) {
     await bot.lookAt(cell.offset(0.5, 1.5, 0.5), true);
     await bot.placeBlock(lower, new Vec3(0, 1, 0));
   }
-  return solid(bot.blockAt(cell));
+  // The cell raised, so the caller can keep its own door rule off it.
+  return solid(bot.blockAt(cell)) ? cell : false;
 }
 
 module.exports = { bunkerFight, digBunker, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, WALK_TO_WALL, SWARM };
