@@ -3,13 +3,32 @@
 const MAX_FRAMES = 600;
 const MAX_TRACE_BYTES = 12 * 1024 * 1024;
 const secret = /(^authorization$|(?:^|[_-])api[_-]?key$|secret|(?:^|[_-])(?:access|refresh)[_-]?token$|password)/i;
-function clean(value, depth = 0) {
+// A depth limit alone is not a size limit: an object graph with shared
+// references fans out combinatorially, and the bot's main thread spun for
+// five minutes serialising one frame, three evenings running. Every call
+// has a node budget and a cycle guard, and the first path that trips the
+// budget is logged so the offending object can be named.
+const NODE_BUDGET = 40000;
+let lastTripLog = 0;
+function clean(value, depth = 0, budget = { left: NODE_BUDGET, seen: new WeakSet(), path: [] }) {
   if (depth > 13) return '[depth limit]';
+  if (--budget.left < 0) {
+    if (budget.left === -1 && Date.now() - lastTripLog > 60000) { lastTripLog = Date.now(); console.log(`[trace] clean budget exhausted at ${budget.path.join('.')}`); }
+    return '[truncated]';
+  }
   if (typeof value === 'string') return value.slice(0, 12000);
   if (typeof value === 'bigint') return String(value);
-  if (Array.isArray(value)) return value.slice(0, 20000).map(v => clean(v, depth + 1));
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).slice(0, 256)
-    .filter(([, v]) => typeof v !== 'function').map(([k, v]) => [k, secret.test(k) ? '[redacted]' : clean(v, depth + 1)]));
+  if (Array.isArray(value)) {
+    if (budget.seen.has(value)) return '[cycle]'; budget.seen.add(value);
+    const out = value.slice(0, 2000).map((v, i) => { budget.path.push(i); const r = clean(v, depth + 1, budget); budget.path.pop(); return r; });
+    budget.seen.delete(value); return out;
+  }
+  if (value && typeof value === 'object') {
+    if (budget.seen.has(value)) return '[cycle]'; budget.seen.add(value);
+    const out = Object.fromEntries(Object.entries(value).slice(0, 256)
+      .filter(([, v]) => typeof v !== 'function').map(([k, v]) => { budget.path.push(k); const r = [k, secret.test(k) ? '[redacted]' : clean(v, depth + 1, budget)]; budget.path.pop(); return r; }));
+    budget.seen.delete(value); return out;
+  }
   return value;
 }
 function position(p) { return p && [p.x, p.y, p.z].every(Number.isFinite) ? { x: p.x, y: p.y, z: p.z } : null; }
