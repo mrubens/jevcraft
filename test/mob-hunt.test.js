@@ -449,3 +449,29 @@ test('the bunker turns a corner at its end, because a straight shaft is a shooti
   const hollow = { blockAt: p => ({ ...air, position: p }) };
   assert.equal(cornerCell(hollow, end, side), null);
 });
+
+test('the wall search looks for walls, not for the floor it is standing on', () => {
+  const { wallStands } = require('../src/bunker');
+  const { Vec3 } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  const rock = registry.blocksByName.netherrack;
+  // A room: floor at y 76, walls at x = 6, air between. The floor is nearer
+  // to the bot than any wall and would swamp an unfiltered search.
+  const solidAt = p => p.y === 76 || p.x >= 6;
+  const bot = {
+    registry, entity: { position: new Vec3(0.5, 77, 0.5) },
+    blockAt: p => ({ name: solidAt(p) ? 'netherrack' : 'air', boundingBox: solidAt(p) ? 'block' : 'empty', diggable: true, position: p }),
+    findBlocks: ({ maxDistance }) => {
+      const found = [];
+      for (let x = -2; x <= 8; x++) for (let y = 74; y <= 80; y++) for (let z = -2; z <= 2; z++) {
+        const p = new Vec3(x, y, z);
+        if (solidAt(p) && p.distanceTo(bot.entity.position) <= maxDistance) found.push(p);
+      }
+      return found.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    },
+  };
+  const stands = wallStands(bot, new Vec3(-8, 77, 0));
+  assert(stands.length, 'a wall is found');
+  for (const cell of stands) assert.equal(cell.y, 77, 'every stand is at the bot\'s own level, not on the floor blocks');
+  assert.equal(stands[0].x, 5, 'and it is the cell beside the wall');
+});

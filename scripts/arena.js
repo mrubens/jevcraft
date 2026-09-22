@@ -223,6 +223,7 @@ async function runDrill(d, attempt) {
   const result = { drill: d.name, attempt, spawned, cleared, clearedMs: cleared ? Date.now() - started : null, killer, nudged: !!run.nudged,
     deaths: run.deaths, damageTaken: Math.round(run.damageTaken * 10) / 10, minHealth: Math.round(run.minHealth * 10) / 10,
     kills: run.kills, drops: d.item ? countOf(bot, d.item) - before : 0, strikes: run.strikes,
+    bunkerError: goal.mobHunt?.lastBunkerError || null,
     shieldRaises: run.shieldRaises, actions: [...run.actions], errors: [...new Set(run.errors)].slice(0, 6) };
   run = null;
   log({ result });

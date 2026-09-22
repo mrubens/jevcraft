@@ -352,8 +352,12 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // the same rate behind a wall and the wall is free.
     const shooters = threats(bot, 24).filter(t => t.visible && SHOOTERS.has(t.entity.name));
     if (shooters.length && bot.health < 18) {
+      goal.step = { action: 'dig_in_to_recover', shooters: shooters.length, health: bot.health }; save();
       try { await digBunker(bot, task, goal, save, { from: bunkerCentroid(shooters), navigate: actions.navigate }); return; }
-      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+      // Why it could not dig in matters as much as that it did not: a
+      // swallowed failure here reads, from outside, as a bot that simply
+      // chose to stand in the open and be shot.
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; state.lastBunkerError = err.message; save(); }
     }
     await sleep(500); task.check(); return;
   }
@@ -382,6 +386,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     const inView = threats(bot, 24).filter(t => t.entity.name === step.entity && t.visible).length;
     const cornered = handler.ranged && (inView >= 2 || (swarm(bot) && bot.health < 16));
     if (cornered && !(state.bunkerFailedAt > Date.now() - 120000)) {
+      goal.step = { action: 'take_the_door', entity: step.entity, inView, health: bot.health }; save();
       try { await bunkerFight(bot, task, goal, save, actions, { item: step.item, want: countOf(bot, step.item) + 1 }); return; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.bunkerFailedAt = Date.now(); state.lastBunkerError = err.message; save(); }
     }

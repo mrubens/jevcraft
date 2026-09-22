@@ -94,12 +94,18 @@ function centroid(threats) {
 // the threats as the search allows. In the middle of a room `bunkerSide`
 // finds nothing adjacent, so the branch never fired and the herd drill
 // stayed in the open and died.
-function wallStands(bot, from, { distance = 14, count = 128 } = {}) {
+function wallStands(bot, from, { distance = 16, count = 512 } = {}) {
   const ids = (bot.registry?.blocksArray || []).filter(b => NATURAL.test(b.name)).map(b => b.id);
   if (!ids.length) return [];
-  const here = bot.entity.position;
+  const here = bot.entity.position, feet = here.floored();
   const stands = new Map();
   for (const p of bot.findBlocks({ matching: ids, maxDistance: distance, count })) {
+    // A wall, not the floor. Every block in the room's floor is natural
+    // rock and every one of them is nearer than the walls, so an unfiltered
+    // search returned five hundred floor tiles and no wall: the bot stood
+    // in the open being shot and reported that there was no rock to dig
+    // into, in a room made of rock.
+    if (p.y !== feet.y) continue;
     for (const side of SIDES) {
       const cell = p.plus(side);
       if (!passable(bot.blockAt(cell)) || !passable(bot.blockAt(cell.offset(0, 1, 0))) || !solid(bot.blockAt(cell.offset(0, -1, 0)))) continue;
