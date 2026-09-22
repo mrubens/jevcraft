@@ -397,6 +397,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   if (near) {
     if (goal.fortressSearch) goal.fortressSearch.patrols = 0;
     rememberSighting(state, bot, near);
+    if (countOf(bot, step.item) > (state.watchedWith ?? -1)) { delete state.watchingSince; state.watchedWith = countOf(bot, step.item); }
     // A spawner's worth of blazes is fought from a bunker, not in the open:
     // dig in beside them and take them at the door.
     // Hurt, not merely outnumbered. Held at the door the bot took nine
@@ -411,9 +412,21 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // A wall at hand, not a wall somewhere. Sent to find one nine blocks
     // off, the bot took forty-one damage crossing the room and arrived with
     // nothing; fighting where it stood cost twenty-six.
-    const cornered = handler.ranged && (inView >= 2 || (swarm(bot) && bot.health < 16)) &&
-      nearWall(bot, near.position);
-    if (cornered && !(state.bunkerFailedAt > Date.now() - 120000)) {
+    const cornered = handler.ranged && (inView >= 2 || (swarm(bot) && bot.health < 16));
+    // A spawner keeps three or more in the air, and three of a kind in view
+    // means none of them is isolated enough to fight: the live run stood
+    // eight blocks from a fortress spawner watching blazes, one second at a
+    // time, and took nothing home. With no wall to back into, build one.
+    // Behind it most of them are out of sight, the rest have to come round,
+    // and a fight the bot can actually start is worth more than a tidy
+    // reason not to.
+    if (cornered && !nearWall(bot, near.position) && !(state.coverFailedAt > Date.now() - 60000)) {
+      goal.step = { action: 'break_their_line', entity: step.entity, inView, health: bot.health }; save();
+      try { if (await raiseCover(bot, task, near.position)) { await sleep(300); return; } }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; state.lastCoverError = err.message; }
+      state.coverFailedAt = Date.now(); save();
+    }
+    if (cornered && nearWall(bot, near.position) && !(state.bunkerFailedAt > Date.now() - 120000)) {
       goal.step = { action: 'take_the_door', entity: step.entity, inView, health: bot.health }; save();
       try { await bunkerFight(bot, task, goal, save, actions, { item: step.item, want: countOf(bot, step.item) + 1 }); return; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.bunkerFailedAt = Date.now(); state.lastBunkerError = err.message; save(); }
@@ -441,6 +454,16 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
         (state.avoided ||= {})[key] = Date.now(); delete state.stalking; save();
         if (handler.dimension === 'nether' && actions.tunnel) { await findFortressStep(bot, task, goal, save, actions); }
       }
+      return;
+    }
+    // Watching, not fighting. The observed hunt takes a target the moment it
+    // is allowed to; a stalk that has watched the same mob for fifteen
+    // seconds is not waiting for an opening, it is stuck.
+    state.watchingSince ||= Date.now();
+    if (Date.now() - state.watchingSince > 15000) {
+      state.watchingSince = Date.now();
+      (state.avoided ||= {})[key] = Date.now(); delete state.stalking; save();
+      bot.chat?.(`Watching ${step.entity.replaceAll('_', ' ')}s and getting nowhere. Trying another angle.`);
       return;
     }
     await sleep(1000); return;
