@@ -586,3 +586,18 @@ test('fit in every way but its footing, the hunt moves on rather than waiting to
   await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, { acquireStep: async () => {}, explore: async () => {} });
   assert.equal(goal.step.action, 'recover_before_combat', 'hurt is still a reason to recover');
 });
+
+test('fit to fight is one test: the claim on a quarry and the hunt agree, and rotten flesh counts as something to eat', () => {
+  const { fitToFight } = require('../src/mob-policy');
+  const { claimed } = require('../src/danger');
+  const registry = require('minecraft-data')('26.1');
+  const kit = { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'golden_boots' }, 45: { name: 'shield' } };
+  let items = [{ name: 'diamond_sword', count: 1 }];
+  const bot = { registry, health: 15, food: 17, inventory: { slots: kit, items: () => items }, _huntingEntity: { name: 'blaze', until: Date.now() + 5000 } };
+  const blaze = { name: 'blaze' };
+  assert.equal(fitToFight(bot), false, 'seventeen hunger and nothing to eat: no regeneration, no fight');
+  assert.equal(claimed(bot, blaze), false, 'and no claim that would take it out of its pocket');
+  items = [...items, { name: 'rotten_flesh', count: 2 }];
+  assert.equal(fitToFight(bot), true, 'rotten flesh is something to eat');
+  assert.equal(claimed(bot, blaze), true);
+});

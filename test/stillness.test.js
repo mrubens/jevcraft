@@ -83,6 +83,11 @@ test('the Nether food gate never waits: a rested search is taken up again, and t
   assert.equal(goal.step.action, 'hunt_food_for_nether');
   assert(goal.stockFood && goal.preparingNether);
   goal.foodGate.activeMs = 20 * 60000;
-  assert.equal(await gate(bot, new Task('gate'), goal, () => {}), true, 'after twenty working minutes the crossing goes with what there is');
+  await gate(bot, new Task('gate'), goal, () => {}).catch(() => {});
+  assert.equal(goal.step.action, 'hunt_food_for_nether', 'with nothing at all to eat, twenty minutes is not a reason to cross');
+  const bread = [{ name: 'bread', count: 2, type: registry.itemsByName.bread.id }];
+  bot.inventory.items = () => bread;
+  goal.foodGate.activeMs = 20 * 60000;
+  assert.equal(await gate(bot, new Task('gate'), goal, () => {}), true, 'with something, the crossing goes with what there is');
   assert.equal(goal.foodGate, undefined);
 });

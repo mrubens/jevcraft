@@ -65,6 +65,20 @@ function kitReady(bot) {
 // its quarry holds at. The hunt, the danger layer and the drop down to a
 // fight all read this one number.
 const FIGHT_FLOOR = 14;
+// Something to eat, counting what the vitals will eat when there is
+// nothing better: the hunt judged food by the ordinary list only, and with
+// rotten flesh in the pack walked home through the portal instead of eating.
+function hasFood(bot) {
+  const { chooseFood, lastResortFood } = require('./vitals');
+  return !!(chooseFood(bot) || lastResortFood(bot));
+}
+// Fit to start a fight, and to keep a claim on the quarry: one test for the
+// hunt, the danger layer and the pocket. They disagreed: the hunt refused
+// at seventeen hunger with nothing to eat, the claim did not, so the bot
+// left its pocket for claimed blazes, could not begin, and sealed in again.
+function fitToFight(bot) {
+  return (bot.health ?? 20) >= FIGHT_FLOOR && (bot.food ?? 20) >= FIGHT_FLOOR && kitReady(bot) && ((bot.food ?? 20) >= 18 || hasFood(bot));
+}
 const SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze', 'ghast', 'breeze']);
 const shooter = entity => SHOOTERS.has(entity?.name) || (entity?.name === 'piglin' && entity.heldItem?.name === 'crossbow');
 
@@ -79,4 +93,4 @@ function mobSources() {
   }
   return sources;
 }
-module.exports = { handlers, combatGear, armorSlots, durable, carriedEquipment, equipped, readyEquipment, kitReady, mobSources, observedDead, SHOOTERS, shooter, FIGHT_FLOOR };
+module.exports = { handlers, combatGear, armorSlots, durable, carriedEquipment, equipped, readyEquipment, kitReady, mobSources, observedDead, SHOOTERS, shooter, FIGHT_FLOOR, fitToFight, hasFood };

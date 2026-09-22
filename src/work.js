@@ -2285,7 +2285,10 @@ function gameHandlers(bot, decisionClient) {
           if (foodSupply(bot) >= NETHER_FOOD) { delete goal.preparingNether; delete goal.foodGate; return true; }
           const gate = goal.foodGate ||= { activeMs: 0, lastAt: now };
           gate.activeMs += Math.min(30000, Math.max(0, now - gate.lastAt)); gate.lastAt = now;
-          if (gate.activeMs >= 20 * 60000) {
+          // Twenty minutes lets the crossing go with what there is, but not
+          // with nothing: with nothing the hunt sends it straight home, and
+          // a fresh budget begins, a round trip for every twenty minutes.
+          if (gate.activeMs >= 20 * 60000 && foodSupply(bot) > 0) {
             bot.chat?.(`I've spent twenty minutes getting food together. Going with what I have (${foodSupply(bot)} points).`);
             delete goal.preparingNether; delete goal.foodGate; return true;
           }

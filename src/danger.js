@@ -1,6 +1,6 @@
 'use strict';
 const { DAY } = require('./day');
-const { handlers, kitReady, observedDead, shooter, FIGHT_FLOOR } = require('./mob-policy');
+const { handlers, kitReady, observedDead, shooter, fitToFight } = require('./mob-policy');
 
 // The Nether's own mobs were missing: a magma cube killed the dream run in
 // two seconds while the bot searched for blazes, and nothing fled or swung.
@@ -83,8 +83,7 @@ function inEncounter(bot) {
 // best reason to come out, not a reason to stay in.
 function claimed(bot, entity) {
   const hunt = bot._huntingEntity;
-  return !!hunt && hunt.name === entity.name && hunt.until > Date.now() &&
-    (bot.health ?? 20) >= FIGHT_FLOOR && (bot.food ?? 20) >= FIGHT_FLOOR && kitReady(bot);
+  return !!hunt && hunt.name === entity.name && hunt.until > Date.now() && fitToFight(bot);
 }
 
 function hunted(bot, entity) {
@@ -96,8 +95,7 @@ function hunted(bot, entity) {
   // candidate and the reactive one had been told to look away: forty-three
   // damage, no swing thrown.
   if (entity.position && entity.position.distanceTo(bot.entity.position) <= 3.5) return false;
-  return !!hunt && hunt.name === entity.name && hunt.until > Date.now() &&
-    (bot.health ?? 20) >= FIGHT_FLOOR && (bot.food ?? 20) >= FIGHT_FLOOR && kitReady(bot);
+  return !!hunt && hunt.name === entity.name && hunt.until > Date.now() && fitToFight(bot);
 }
 
 function immediateThreat(bot) {

@@ -1,7 +1,7 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead, shooter, FIGHT_FLOOR: HUNT_FLOOR } = require('./mob-policy');
+const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead, shooter, hasFood, FIGHT_FLOOR: HUNT_FLOOR } = require('./mob-policy');
 const { threats, checkThreats, NeedsSafety } = require('./danger');
 const { canStrike, defenseWeapon, bowReady, shoot } = require('./combat');
 const { deflect } = require('./projectile-guard');
@@ -116,8 +116,7 @@ function canBegin(bot, handler = {}) {
   // bot left its pocket at fifteen health and seventeen hunger, took on a
   // spawner, and every point it lost was gone for good. Without food the
   // right fight is the walk home for some.
-  const { chooseFood } = require('./vitals');
-  if (bot.food < 18 && !chooseFood(bot)) return false;
+  if (bot.food < 18 && !hasFood(bot)) return false;
   // Fourteen in full armour: eighteen was a bar the Nether could not meet
   // once the food ran out, and the wait for it never ends without regen.
   //
@@ -421,12 +420,11 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // fortress roof. The stalk below moves it; a fight begins wherever that
   // lands on dry ground.
   const fitButFooting = !handler.passive && !canBegin(bot, handler) && bot.health >= HUNT_FLOOR && bot.food >= HUNT_FLOOR && kitReady(bot) &&
-    !(bot.entity.metadata?.[0] & 1 && bot.health < 10) && !(bot.food < 18 && !require('./vitals').chooseFood(bot));
+    !(bot.entity.metadata?.[0] & 1 && bot.health < 10) && !(bot.food < 18 && !hasFood(bot));
   if (!canBegin(bot, handler) && !fitButFooting) {
     // Nothing to eat and hunger under eighteen means no regeneration: the
     // recovery never comes. Off the Overworld that is a trip back for food.
-    const { chooseFood } = require('./vitals');
-    if (bot.food < 18 && !chooseFood(bot) && dimension(bot) !== 'overworld' && actions.returnOverworld) {
+    if (bot.food < 18 && !hasFood(bot) && dimension(bot) !== 'overworld' && actions.returnOverworld) {
       goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
       await actions.returnOverworld(bot, task, goal, save); return;
     }
