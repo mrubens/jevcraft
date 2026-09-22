@@ -163,3 +163,28 @@ test('a source whose route search is unfinished is still offered; only no path a
   const found = await reachableBlocks(bot, new Task('reach'), [1, 2, 3, 4].map(x => new Vec3(x, 64, 5)));
   assert.deepEqual(found.map(p => p.x), [1, 2, 3]);
 });
+
+test('entering a portal stops inside it and stands still, instead of walking through and off the far side', async () => {
+  const { enterPortal } = require('../src/work');
+  const controls = {}, used = new Set();
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, game: { dimension: 'the_nether' },
+    pathfinder: { setGoal() {}, movements: {}, goto: async () => {}, isMoving: () => false }, lookAt: async () => {},
+    setControlState: (key, on) => { controls[key] = on; if (on) used.add(key); }, clearControlStates() {},
+    blockAt: p => ({ name: p.x === 0 && p.z === -1 && (p.y === 64 || p.y === 65) ? 'nether_portal' : p.y < 64 ? 'netherrack' : 'air', position: p }) };
+  // The world: forward walks toward -z, slower when sneaking; the portal
+  // takes a player who has stood in it for a while.
+  let inside = 0;
+  const tick = setInterval(() => {
+    if (controls.forward) bot.entity.position = bot.entity.position.offset(0, 0, controls.sneak ? -0.07 : -0.22);
+    inside = bot.blockAt(bot.entity.position.floored()).name === 'nether_portal' && !controls.forward ? inside + 1 : 0;
+    if (inside >= 6) bot.game.dimension = 'overworld';
+  }, 50);
+  try {
+    // One block short of the sheet: the walk there is already done.
+    await enterPortal(bot, new Task('portal'), new Vec3(0, 64, -1), () => bot.game.dimension === 'overworld');
+  } finally { clearInterval(tick); }
+  assert(used.has('sneak'), 'it steps in sneaking');
+  assert.equal(bot.entity.position.floored().z, -1, 'and it is standing in the portal, not past it');
+  assert.equal(bot.game.dimension, 'overworld');
+  assert.equal(controls.forward, false);
+});

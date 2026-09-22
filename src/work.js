@@ -1814,14 +1814,29 @@ function lowestPortalBlock(bot) {
   const nearest = blocks[0];
   return blocks.filter(b => Math.hypot(b.x - nearest.x, b.z - nearest.z) <= 3).sort((a, b) => a.y - b.y)[0];
 }
+// A portal takes a player who stands in it for four seconds. This used to
+// face the portal and hold forward for eight: at walking speed the bot
+// crossed the one-block sheet in a fraction of a second and kept going,
+// thirty blocks in a straight line, and death ten was the edge of the
+// Nether portal's platform thirteen blocks past it. Step in sneaking (a
+// sneaking player does not walk off an edge), stop the moment the feet are
+// in the portal, and stand there.
+const inPortal = bot => [0, 1].some(dy => bot.blockAt?.(bot.entity.position.offset(0, dy, 0).floored())?.name === 'nether_portal');
 async function enterPortal(bot, task, portal, arrived) {
   await navigate(bot, task, new goals.GoalNear(portal.x, portal.y, portal.z, 1), { timeoutMs: 20000 });
   if (arrived()) return;
   bot.pathfinder.setGoal(null);
-  await bot.lookAt(pos(portal).offset(0.5, 0.5, 0.5), true);
-  bot.setControlState('forward', true);
-  try { await waitFor(task, arrived, 8000); }
-  finally { bot.setControlState('forward', false); }
+  if (!inPortal(bot)) {
+    await bot.lookAt(pos(portal).offset(0.5, 0.5, 0.5), true);
+    bot.setControlState('sneak', true);
+    bot.setControlState('forward', true);
+    try { await waitFor(task, () => inPortal(bot) || arrived(), 4000); }
+    finally { bot.setControlState('forward', false); bot.setControlState('sneak', false); }
+  }
+  if (arrived()) return;
+  if (!inPortal(bot)) throw new Error('Could not step into the portal');
+  // Standing in the sheet: the teleport comes after about four seconds.
+  await waitFor(task, arrived, 10000);
 }
 
 // Any portal in sight is remembered on the side the bot is standing on.
@@ -2522,4 +2537,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
+module.exports = { enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
