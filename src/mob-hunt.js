@@ -116,14 +116,21 @@ function canBegin(bot, handler = {}) {
 // beneath and swinging up is the second thing to try.
 function approaches(bot, target) {
   const t = target.position, y = Math.round(bot.entity.position.y);
-  const ground = new goals.GoalNear(Math.floor(t.x), y, Math.floor(t.z), 1);
+  const under = new goals.GoalNear(Math.floor(t.x), y, Math.floor(t.z), 1);
+  const level = new goals.GoalNear(Math.floor(t.x), Math.round(t.y), Math.floor(t.z), 2);
   // Following a thing that is flying means towering up to it, and a tower
-  // is a place to fall off. The one death in the last forty-five arena runs
-  // was not a mob at all: the bot killed its blaze from the top of a pillar
-  // and then dropped twenty health's worth of blocks. Something overhead is
-  // reached by standing under it.
-  if (t.y > bot.entity.position.y + 1.5) return [ground];
-  return [new goals.GoalFollow(target, 2), ground];
+  // is a place to fall off. The one death in forty-five arena runs was not
+  // a mob at all: the bot killed its blaze from the top of a pillar and
+  // dropped twenty health's worth of blocks. Something overhead is reached
+  // by standing under it.
+  if (t.y > bot.entity.position.y + 1.5) return [under];
+  // Something below is reached by going down to it. Standing on a fortress
+  // roof, the only goal offered was a point at the bot's own height, which
+  // it was already standing on: the route "succeeded" without moving, so
+  // the fight never started and the live run watched blazes through the
+  // floor for an hour.
+  if (t.y < bot.entity.position.y - 1.5) return [level, under];
+  return [new goals.GoalFollow(target, 2), under];
 }
 // `movement` is the combat movement policy, whose `allowed` vets each step;
 // the survey itself runs on the pathfinder's own movements. Passing one for

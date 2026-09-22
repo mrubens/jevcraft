@@ -485,6 +485,11 @@ test('something overhead is reached by standing under it, never by towering up t
   assert.equal(overhead[0].y, 77, 'the goal keeps the bot at its own level');
   const level = approaches(bot, { position: new Vec3(6.5, 77, 0.5) });
   assert.equal(level.length, 2, 'a target on the ground is followed as usual, with the ground goal as fallback');
+  // Standing on a fortress roof, a goal at the bot's own height is a goal it
+  // is already standing on: the route succeeds without moving and the fight
+  // never starts.
+  const below = approaches(bot, { position: new Vec3(6.5, 70, 0.5) });
+  assert.equal(below[0].y, 70, 'something below is reached by going down to it');
 });
 
 test('a burning bot still fights the blaze that lit it, until the fire is the thing killing it', () => {
