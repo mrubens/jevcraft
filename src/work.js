@@ -119,6 +119,57 @@ const descentSuppliesLow = bot => woodCarried(bot) < 2;
 const remainingUses = (bot, item) => (bot.registry?.itemsByName?.[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
 const sparePickaxeMaterials = bot => countOf(bot, 'cobblestone') >= 3 &&
   (countOf(bot, 'stick') >= 2 || bot.inventory.items().some(i => /_planks$/.test(i.name) && i.count >= 2) || logsCarried(bot) >= 1);
+// The stall counter fires when the bot stands still; an hour shuffling
+// along a ledge looked like progress to it. This watches the net: five
+// minutes with under eight blocks of movement, the same phase and the same
+// pockets is stuck, whatever the steps say. Once: the current shaft, search
+// and hunt marks are dropped and the bot says so. Twice: strike out
+// twenty-four blocks in a fresh direction. Three times: go home.
+const WATCH_MS = 5 * 60 * 1000, WATCH_BLOCKS = 8;
+function progressKey(bot, goal) {
+  const phase = goal.gameProgress?.phase || goal.step?.action || '';
+  const items = bot.inventory.items().map(i => `${i.name}:${i.count}`).sort().join(',');
+  return `${phase}|${items}`;
+}
+async function progressWatchdog(bot, task, goal, save) {
+  if (bot.game?.gameMode === 'creative') return false;
+  const now = Date.now(), here = bot.entity.position.clone();
+  const watch = goal.progressWatch ||= { at: now, position: { ...here }, key: progressKey(bot, goal), strikes: 0 };
+  const key = progressKey(bot, goal), moved = here.distanceTo(new Vec3(watch.position.x, watch.position.y, watch.position.z));
+  if (key !== watch.key || moved >= WATCH_BLOCKS) { Object.assign(watch, { at: now, position: { ...here }, key, strikes: 0 }); return false; }
+  if (now - watch.at < WATCH_MS) return false;
+  watch.strikes++; watch.at = now; watch.position = { ...here };
+  const resource = goal.step?.block || goal.step?.resource || goal.step?.drops || goal.step?.entity || 'that';
+  delete goal.tunnel; delete goal.search; delete goal.surfaceReturn;
+  if (goal.miningSites) for (const site of Object.values(goal.miningSites)) { delete site.workPosition; site.rejoinBlockedUntil = now + 600000; }
+  if (goal.mobHunt) { goal.mobHunt.avoided = {}; delete goal.mobHunt.stalking; }
+  if (goal.fortressSearch) delete goal.fortressSearch.target;
+  goal.lastStallAt = now; save();
+  bot.chat?.(watch.strikes === 1 ? `I've been stuck around here for five minutes on ${String(resource).replaceAll('_', ' ')}. Trying something different.`
+    : watch.strikes === 2 ? "Still stuck. Striking out somewhere new." : "Still stuck. Heading home to reset.");
+  try {
+    if (watch.strikes === 2) {
+      const angle = Math.random() * Math.PI * 2;
+      const target = here.floored().offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
+      goal.step = { action: 'strike_out', target: { ...target } }; save();
+      await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 });
+    } else if (watch.strikes >= 3) {
+      const home = goal.survival?.home;
+      if (home?.origin && dimension(bot) === 'overworld') {
+        goal.step = { action: 'return_home', origin: home.origin, distance: Math.round(here.distanceTo(new Vec3(home.origin.x, home.origin.y, home.origin.z))) }; save();
+        await navigate(bot, task, new goals.GoalNear(home.origin.x, home.origin.y + 1, home.origin.z, 4), { timeoutMs: 120000, stallMs: 15000 });
+      } else {
+        const angle = Math.random() * Math.PI * 2;
+        const target = here.floored().offset(Math.round(Math.cos(angle) * 48), 0, Math.round(Math.sin(angle) * 48));
+        goal.step = { action: 'strike_out', target: { ...target } }; save();
+        await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 60000, stallMs: 8000 });
+      }
+      watch.strikes = 0;
+    }
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  return true;
+}
+
 async function maintainPickaxe(bot, task, goal, save) {
   if (bot.game?.gameMode === 'creative') return false;
   const pickaxes = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name));
@@ -2114,6 +2165,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (!endTask && await maintainPickaxe(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; }
       // Work starts on dry ground. A crafting table placed from a pool under
       // the base failed and failed, the bot bobbing for air in between.
+      if (!endTask && await progressWatchdog(bot, task, goal, save)) { onStep(goal); continue; }
       const feetBlock = typeof bot.blockAt === 'function' ? bot.blockAt(bot.entity.position.floored()) : null;
       if (!endTask && feetBlock?.name && swimmableWater(feetBlock)) {
         try { if (!dryStanding(bot, bot.entity.position) && await reachShore(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; } }
@@ -2210,4 +2262,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep };
+module.exports = { hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };

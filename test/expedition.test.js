@@ -122,3 +122,18 @@ test('a sound pickaxe beside the worn one needs no spare', async () => {
   await runGoal(bot, new Task('test', goal.request), goal, { save() {} }, { survival, maxSteps: 1 });
   assert.notEqual(goal.step.item, 'stone_pickaxe');
 });
+
+test('the progress watchdog counts five quiet minutes as stuck, whatever the steps say, and drops the shaft', async () => {
+  const { progressWatchdog } = require('../src/work');
+  const bot = fixture({ stone_pickaxe: 1 }); const said = []; bot.chat = line => said.push(line);
+  const goal = { kind: 'win', step: { action: 'tunnel', resource: 'fortress' }, tunnel: { steps: 400 }, miningSites: { 'nether:fortress': { workPosition: { x: 1, y: 2, z: 3 } } } };
+  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), false, 'the first look only starts the clock');
+  goal.progressWatch.at -= 6 * 60 * 1000;
+  bot.entity.position = new Vec3(3.5, 64, 3.5);
+  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), true, 'five minutes and four blocks is stuck');
+  assert.equal(goal.tunnel, undefined); assert.equal(goal.miningSites['nether:fortress'].workPosition, undefined);
+  assert.match(said[0], /stuck around here for five minutes/);
+  bot.entity.position = new Vec3(30.5, 64, 3.5);
+  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), false, 'moving on resets the clock');
+  assert.equal(goal.progressWatch.strikes, 0);
+});

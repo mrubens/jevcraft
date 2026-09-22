@@ -82,6 +82,7 @@ function stepLine(goal, step, decision) {
     case 'make_obsidian': return `Making ${step.count ? `${step.count} ` : ''}obsidian: water on lava.`;
     case 'fill_bucket': return 'Fetching water.';
     case 'hunt_mob': return `Going after a ${name(step.entity)} for ${name(step.item)}.`;
+    case 'strike_out': return 'Striking out somewhere new.';
     case 'stock_food_for_nether': return 'Stocking up on food before the Nether.';
     case 'return_for_food': return 'Out of food. Heading back through the portal to eat.';
     case 'find_fortress': return step.walking ? 'In the fortress. Looking for blazes.' : step.found ? 'A fortress. Heading for it.' : `Sweeping for a fortress, leg ${step.legs || 1}.`;
