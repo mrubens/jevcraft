@@ -63,6 +63,24 @@ A single blaze now costs nothing at all: three swings, no damage, five runs out 
 21. *A straight shaft is a shooting gallery.* The bunker digs a turn at its end where the rock allows, so nothing outside has a line to the back. Implemented and unit-tested, but not yet demonstrated in play: the corner was never reached in a measured run, because the runs that got that far were the ones already going badly.
 22. *A swallowed failure reads as a bad decision.* `digBunker` threw "no rock here" into an empty catch for two whole rounds of measurement, so from outside the bot merely looked like it was choosing to stand in the open. Every bunker failure is now recorded on the hunt and reported by the arena.
 
+**Full set (2026-09-22 09:10 UTC), ten drills, five runs each, forty-five runs.** One death, against three in twenty-seven baseline runs, and it was not a mob.
+
+| drill | verdict | deaths | damage | secs |
+|---|---|---|---|---|
+| zombie_single | PASS -> PASS | 0 -> 0 | 1.5 -> 1.5 | 7.5 -> 7.5 |
+| wither_skeleton_single | PASS -> PASS | 0 -> 0 | 1.9 -> 1.9 | 5.4 -> 5.5 |
+| wither_skeleton_pair | PASS -> PASS | 0 -> 0 | 15.4 -> 0 | 18.1 -> 33.8 |
+| hoglin_single | PASS -> FAIL | 0 -> 0 | 8.8 -> 11.2 | 8.6 -> 9.4 |
+| hoglin_herd | FAIL -> PASS | 3 -> 0 | 34.8 -> 0 | survives, does not clear |
+| blaze_single | FAIL -> PASS | 0 -> 0 | never fought -> 1.0 | 7.2, 5/5 killed, 3 rods |
+| blaze_pair | FAIL -> FAIL | 0 -> 0 | never fought -> 32.2 | 77.9, 1/5 |
+| blaze_swarm_wall | FAIL -> FAIL | 0 -> 0 | never fought -> 0 | survives, no rods |
+
+The baseline zeros mean "never fought", not "took no damage": those drills ended without a swing.
+
+23. *The only death in forty-five runs was a fall.* `fell from a high place`, twenty damage, immediately after killing its blaze. Following a flying thing means towering up to it and a tower is a place to fall off. Something overhead is now reached by standing under it, and the drill went from 6.7 damage with a death to **1.0 damage, five kills in five runs, three rods, seven seconds** — the single largest step of the whole exercise, from a fix aimed at something else.
+24. *A mob that will not engage makes a drill measure nothing.* Two runs in five of each single-mob drill had the mob wander instead of attacking; the nudge that brings it to three blocks fired once and then gave up. It now repeats every eight seconds, and the singles went from three clears in five to five and four.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
