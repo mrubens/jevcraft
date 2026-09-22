@@ -108,6 +108,13 @@ function canBegin(bot, handler = {}) {
   const burning = !!(bot.entity.metadata?.[0] & 1);
   if (handler.passive) return standing && !burning && bot.health >= 10 && bot.food >= 6;
   if (burning && bot.health < 10) return false;
+  // A fight is only worth starting if the health spent in it can come back.
+  // Below eighteen hunger with nothing to eat, regeneration is off: the
+  // bot left its pocket at fifteen health and seventeen hunger, took on a
+  // spawner, and every point it lost was gone for good. Without food the
+  // right fight is the walk home for some.
+  const { chooseFood } = require('./vitals');
+  if (bot.food < 18 && !chooseFood(bot)) return false;
   // Fourteen in full armour: eighteen was a bar the Nether could not meet
   // once the food ran out, and the wait for it never ends without regen.
   //
