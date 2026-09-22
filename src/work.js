@@ -8,7 +8,7 @@ const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
 const { reservedForConstruction, portalSiteClear, selectPortalSite, portalSupports } = require('./build-sites');
 const { updateDigCapabilities } = require('./movement');
-const { resourceTunnelStep } = require('./tunneling');
+const { resourceTunnelStep, tunnelStep } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = require('./vitals');
 const { decideTree, announceFallback, firstOption } = require('./decisions');
 const { Survival } = require('./survival');
@@ -1015,7 +1015,9 @@ async function executeAcquisition(bot, task, step, goal, save) {
   else if (step.action === 'fill_bucket') await collectWater(bot, task, goal, save, { navigate, explore });
   else if (step.action === 'make_obsidian') await makeObsidian(bot, task, step, goal, save, { navigate, dig, approachDryMining, collectNearbyDrops, resourceTunnelStep, acquireStep });
   else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep, navigate, returnOverworld: returnFromNether,
-    tunnel: (b, t, g, sv, target, resource) => resourceTunnelStep(b, t, g, sv, target, resource, { dig, navigate }) });
+    // The fortress sweep keeps no worksite: the rejoin walked the bot back
+    // to the ledge it had just left, every other tick.
+    tunnel: (b, t, g, sv, target, resource) => resource === 'fortress' ? tunnelStep(b, t, g, sv, target, { dig, navigate }) : resourceTunnelStep(b, t, g, sv, target, resource, { dig, navigate }) });
   else throw new Error(`Unknown action ${step.action}`);
 }
 
