@@ -64,10 +64,18 @@ async function descendTo(bot, task, target, { hpFloor = 12, maxSteps = 24, arriv
     if (hole && !land(feet)) {
       const below = land(hole);
       await bot.lookAt(hole.offset(0.5, 1.6, 0.5), true);
+      // Forward only until over the hole: held for the full two and a half
+      // seconds, a step that missed a one-wide hole became a walk of ten
+      // blocks in a straight line, off whatever edge came next.
+      const over = () => Math.hypot(bot.entity.position.x - hole.x - 0.5, bot.entity.position.z - hole.z - 0.5) < 0.25;
+      const falling = () => bot.entity.position.y <= below.block.position.y + 1.05;
       bot.setControlState('forward', true);
       const started = Date.now();
-      try { while (Date.now() - started < 2500 && bot.entity.position.y > below.block.position.y + 1.05) { task.check(); await sleep(50); } }
+      try { while (Date.now() - started < 1500 && !falling() && !over()) { task.check(); await sleep(25); } }
       finally { bot.setControlState('forward', false); }
+      const settle = Date.now();
+      while (Date.now() - settle < 1200 && !falling()) { task.check(); await sleep(50); }
+      if (!falling()) throw new Error('Stepped for the hole and did not drop into it');
       continue;
     }
     if (molten(block) || !block.diggable) throw new Error(`Cannot dig down through ${block.name}`);

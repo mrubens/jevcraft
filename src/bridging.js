@@ -15,7 +15,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const material = bot => MATERIALS.map(n => bot.inventory.items().find(i => i.name === n)).find(Boolean);
 
 // Sneak to the middle of the next cell: a walk at full speed overshoots a
-// one-block span.
+// one-block span. The sneak itself is held by bridgeTo for the whole span.
 async function creepTo(bot, task, cell, ms = 2500) {
   const centre = cell.offset(0.5, 0, 0.5);
   await bot.lookAt(centre.offset(0, 1.6, 0), true);
@@ -29,7 +29,7 @@ async function creepTo(bot, task, cell, ms = 2500) {
       await sleep(40);
     }
     return false;
-  } finally { bot.setControlState('forward', false); bot.setControlState('sneak', false); }
+  } finally { bot.setControlState('forward', false); }
 }
 
 async function clear(bot, task, p) {
@@ -42,10 +42,29 @@ async function clear(bot, task, p) {
 
 // Lay a level span toward `target` from where the bot stands, until beside
 // or above it, out of blocks, or `maxBlocks` placed. Returns the blocks laid.
+// The span is one block wide over whatever is below it, and the bot fell
+// off one: it sneaked only while stepping onto each new block and stood
+// upright at the end of the span while it dug ahead, turned and placed.
+// Now it crouches from the first block to the last, and a sneaking player
+// cannot walk off an edge. Nor is a span laid under fire: with a shooter
+// that can see it, the bot stops rather than stand in the open on one
+// block, and the approach finds another way.
+const SHOOTER_RANGE = 24;
+function underFire(bot) {
+  const { threats } = require('./danger'), { shooter } = require('./mob-policy');
+  return threats(bot, SHOOTER_RANGE).find(t => t.visible && shooter(t.entity));
+}
 async function bridgeTo(bot, task, target, { maxBlocks = 64 } = {}) {
+  bot.setControlState('sneak', true);
+  try { return await span(bot, task, target, maxBlocks); }
+  finally { bot.setControlState('forward', false); bot.setControlState('sneak', false); }
+}
+async function span(bot, task, target, maxBlocks) {
   let placed = 0;
   for (let steps = 0; steps < maxBlocks * 2; steps++) {
     task.check();
+    const fire = underFire(bot);
+    if (fire) throw new Error(`Not bridging with a ${fire.entity.name} ${Math.round(fire.distance)} blocks off able to see me`);
     const here = bot.entity.position.floored();
     const dx = target.x - here.x, dz = target.z - here.z;
     if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1) return placed;
@@ -74,4 +93,4 @@ async function bridgeTo(bot, task, target, { maxBlocks = 64 } = {}) {
   return placed;
 }
 
-module.exports = { bridgeTo, MATERIALS };
+module.exports = { bridgeTo, underFire, MATERIALS };

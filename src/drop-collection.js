@@ -125,14 +125,19 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
     if (!gained() && typeof bot.setControlState === 'function') {
       for (const drop of nearbyDrops(bot, item, origin, radius).filter(d => d.position.distanceTo(bot.entity.position) <= 3.5).slice(0, 3)) {
         task.check(); checkAir(bot);
-        const until = Date.now() + 900;
+        // Crouched: a drop lying past an edge (a rod off a fortress roof) is
+        // not worth the fall the walk straight at it would be. A sneaking
+        // player cannot walk off an edge, so the walk is slower and longer.
+        const up = drop.position.y > bot.entity.position.y + 0.6;
+        const until = Date.now() + (up ? 900 : 2500);
         try {
           await bot.lookAt(drop.position.offset(0, 0.2, 0), true);
+          if (!up) bot.setControlState('sneak', true);
           bot.setControlState('forward', true);
-          if (drop.position.y > bot.entity.position.y + 0.6) bot.setControlState('jump', true);
+          if (up) bot.setControlState('jump', true);
           while (!gained() && Date.now() < until) { task.check(); await sleep(50); }
         } catch (_) { task.check(); }
-        finally { bot.setControlState('forward', false); bot.setControlState('jump', false); }
+        finally { bot.setControlState('forward', false); bot.setControlState('jump', false); bot.setControlState('sneak', false); }
         if (gained()) break;
       }
     }

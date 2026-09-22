@@ -414,13 +414,20 @@ test('a span is laid one block ahead at a time toward a fortress across open air
     entity: { position: new Vec3(0.5, 65, 0.5) }, health: 20,
     inventory: { items: () => [{ name: 'netherrack', count: 20, type: 1 }] },
     blockAt: at, equip: async () => {}, lookAt: async p => { look = p; },
-    placeBlock: async (ref, face) => { const p = ref.position.plus(face); blocks.set(`${p}`, 'netherrack'); placed.push([p.x, p.y, p.z]); },
-    setControlState: (name, on) => { if (name === 'forward' && on && look) bot.entity.position = new Vec3(Math.floor(look.x) + 0.5, 65, Math.floor(look.z) + 0.5); },
+    placeBlock: async (ref, face) => { assert(controls.sneak, 'crouched while placing at the end of the span'); const p = ref.position.plus(face); blocks.set(`${p}`, 'netherrack'); placed.push([p.x, p.y, p.z]); },
+    setControlState: (name, on) => { controls[name] = on; if (name === 'forward' && on && look) bot.entity.position = new Vec3(Math.floor(look.x) + 0.5, 65, Math.floor(look.z) + 0.5); },
     dig: async () => {},
   };
+  const controls = {};
   const laid = await bridgeTo(bot, new Task('hunt'), new Vec3(6, 64, 0));
   assert.equal(laid, 5); assert.deepEqual(placed, [[1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0], [5, 64, 0]]);
   assert.equal(bot.entity.position.x, 5.5, 'standing on the last span block, beside the brick');
+  assert.equal(controls.sneak, false, 'and standing up again once the span is done');
+  // A blaze that can see the bot: no span is laid in the open under fire.
+  bot.entities = { 9: { id: 9, name: 'blaze', position: new Vec3(12.5, 68, 0.5), isValid: true, height: 1.8 } };
+  bot.world = { raycast: () => null };
+  await assert.rejects(bridgeTo(bot, new Task('hunt'), new Vec3(12, 64, 0)), /Not bridging with a blaze/);
+  assert.equal(placed.length, 5, 'not one more block');
 });
 
 test('a fortress whose every stretch in view was walked is patrolled again, not left for the sweep', async () => {
