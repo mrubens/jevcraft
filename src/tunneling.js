@@ -39,7 +39,7 @@ function stairOptions(bot, goal, target, { approach = false } = {}) {
   // shoves it back the other, and it paces between two blocks forever.
   // That is what the live run did for an hour, six blocks from its blazes.
   if (approach) {
-    const toward = stairChoices(bot, goal, target, { hostiles: false });
+    const toward = stairChoices(bot, goal, target, { hostiles: false, approach: true });
     if (toward.length) return toward;
   }
   const first = stairChoices(bot, goal, target, { hostiles: true });
@@ -58,7 +58,7 @@ function stairOptions(bot, goal, target, { approach = false } = {}) {
     .sort((a, b) => nearest(b.destination) - nearest(a.destination) || a.score - b.score);
 }
 
-function stairChoices(bot, goal, target, { hostiles }) {
+function stairChoices(bot, goal, target, { hostiles, approach = false }) {
   const feet = bot.entity.position.floored();
   // An exit being dug by hand clears stone without a tool: slowly, and for
   // the way out rather than the drops. Nothing else digs without one.
@@ -90,7 +90,15 @@ function stairChoices(bot, goal, target, { hostiles }) {
     });
     if (!safe) continue;
     const visits = goal.tunnel?.visited?.[`${destination}`] || 0;
-    choices.push({ destination, clear, score: destination.distanceTo(target) + visits * 16 + (dy > 0 && height === 0 ? 4 : 0) });
+    // A travelling shaft is penalised for going back over its own cells, or
+    // it loops. A shaft dug straight at a fixed target is not: after a few
+    // hundred steps in one pocket every cell there carried forty visits, the
+    // least-visited one won whatever its distance, and the bot walked
+    // 19, 20, 21, 19, 20, 21 for an hour six blocks from its blazes. Closer
+    // is the only score that means anything for an approach.
+    const score = approach ? destination.distanceTo(target) + (dy > 0 && height === 0 ? 0.5 : 0)
+      : destination.distanceTo(target) + visits * 16 + (dy > 0 && height === 0 ? 4 : 0);
+    choices.push({ destination, clear, score });
   }
   return choices.sort((a, b) => a.score - b.score);
 }

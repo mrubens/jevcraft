@@ -316,3 +316,26 @@ test('a shaft dug at a mob goes toward it, where a travelling shaft would be tur
       'a travelling shaft never gets closer than one dug on purpose');
   }
 });
+
+test('an approach shaft is not turned back by its own footprints', () => {
+  const { stairOptions } = require('../src/tunneling');
+  const { Vec3 } = require('vec3');
+  const rock = { name: 'netherrack', boundingBox: 'block', diggable: true };
+  const air = { name: 'air', boundingBox: 'empty' };
+  const bot = {
+    entity: { position: new Vec3(21.5, 77, 75.5), height: 1.8 },
+    game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' },
+    registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'diamond_pickaxe', type: 1 }] },
+    world: { raycast: () => null }, time: { timeOfDay: 6000 }, entities: {}, pathfinder: { movements: {} },
+    // A dug pocket from x 19 to 22, rock beyond.
+    blockAt: p => ({ ...(p.y < 77 || p.x > 22 || p.x < 19 ? rock : air), position: p }),
+  };
+  // The pocket's cells all heavily visited, the one toward the target most of all.
+  const goal = { tunnel: { visited: { '(22, 77, 75)': 60, '(20, 77, 75)': 10, '(21, 77, 74)': 20, '(21, 77, 76)': 20 } } };
+  const target = new Vec3(27, 77, 75);
+  const travelling = stairOptions(bot, goal, target);
+  const closing = stairOptions(bot, goal, target, { approach: true });
+  assert.equal(closing[0].destination.x, 22, 'the approach steps toward the target whatever the footprints say');
+  assert.notEqual(travelling[0].destination.x, 22, 'a travelling shaft still avoids the well-trodden cell');
+});
