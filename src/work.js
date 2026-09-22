@@ -1381,15 +1381,18 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     // replacement or silently reducing the user's request to a house template.
     // A draft Jev rejected as not answering the request is valid geometry
     // too, so it must go back to the designer rather than through here.
+    // A saved draft is validated again and then reviewed like any other. It
+    // went straight in unreviewed whenever no review was on record, which is
+    // exactly what an interrupted review left behind.
+    let savedDraft = null;
     if (!fallback && goal.designDraft && goal.designReview?.accepted !== false) {
-      try {
-        goal.design = { ...validateSchematic(goal.designDraft, bot.registry), backend: 'validated-saved-draft', createdAt: new Date().toISOString() };
-        delete goal.designDraft; delete goal.designError; delete goal.designFallbackReason; save(); return false;
-      } catch (error) { goal.designError = error.message; }
+      try { savedDraft = { ...validateSchematic(goal.designDraft, bot.registry), backend: 'validated-saved-draft', createdAt: new Date().toISOString() }; delete goal.designFallbackReason; }
+      catch (error) { goal.designError = error.message; }
     }
-    if (!fallback && (goal.designAttempts || 0) >= 4) throw new Blocked(`Building designer could not produce a usable plan after four attempts: ${goal.designError || 'request failed'}`);
+    if (!savedDraft && !fallback && (goal.designAttempts || 0) >= 4) throw new Blocked(`Building designer could not produce a usable plan after four attempts: ${goal.designError || 'request failed'}`);
     goal.step = { action: 'design_building' }; save(); onStep(goal);
-    if (fallback) {
+    if (savedDraft) { /* reviewed below, no new drawing */ }
+    else if (fallback) {
       if (!client) throw Object.assign(new Blocked('The building fallback needs a configured Jev connection'), { needsPlayer: true });
       goal.designFallbackReason = goal.designError || (mode === 'jev' ? 'Jev templates selected' : 'No OpenRouter designer key configured');
       bot.chat("I'm working out a simpler way to build it.");
@@ -1408,8 +1411,8 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     // Held here until the review passes. On the goal straight away, a review
     // cut short (a stop, a mob, a dropped connection) left a design the next
     // step took as settled, and it was built unreviewed.
-    let design;
-    try { design = fallback ? await designWithJev(bot, task, goal.request, client, goal.memoryContext) :
+    let design = savedDraft;
+    if (!design) try { design = fallback ? await designWithJev(bot, task, goal.request, client, goal.memoryContext) :
       await designBuilding(bot, task, goal.request, { previousDraft: goal.designDraft, feedback: goal.designError, memory: goal.memoryContext, editing }); }
     catch (err) {
       if (!fallback && ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) goal.designAttempts--;
@@ -1425,7 +1428,12 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     // Geometry has been validated; whether it is the thing that was asked for
     // has not. That is a judgment, and a cheap one next to building it.
     if (!fallback && client) {
-      const review = await reviewDesign(client, { request: goal.request, design, memory: goal.memoryContext, editing });
+      // Kept as the draft while it is judged: a review cut short (a stop, a
+      // mob) used to throw a paid design away, and cost an attempt too.
+      delete goal.designReview; goal.designDraft = design.source; save();
+      let review;
+      try { review = await reviewDesign(client, { request: goal.request, design, memory: goal.memoryContext, editing }); }
+      catch (err) { if (!savedDraft && ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) goal.designAttempts--; save(); throw err; }
       task.check();
       goal.designReview = review;
       if (!review.accepted) {

@@ -180,10 +180,16 @@ test('a saved custom plan is revalidated without changing its shape or calling a
   const source = draft(); source.entrance = [2, 1, 1];
   const goal = { request: 'build my unusual structure', designDraft: source, designAttempts: 2, designError: 'entrance must be on an exterior edge' };
   t.mock.method(global, 'fetch', () => { throw new Error('Valid saved geometry needs no new model call'); });
-  await designedBuildStep(world(), new Task('recheck'), goal, () => {}, { systemOne: () => { throw new Error('Do not substitute a template'); } });
+  const asked = [], bot = world(); bot.chat = () => {};
+  await designedBuildStep(bot, new Task('recheck'), goal, () => {}, { systemOne: async ({ questions }) => {
+    asked.push(...Object.keys(questions));
+    if (!questions.fits) throw new Error('Do not substitute a template');
+    return { answers: { fits: { noul: 0.9 } } };
+  } });
   assert.deepEqual(goal.design.source, source);
   assert.equal(goal.designDraft, undefined);
   assert.equal(goal.design.backend, 'validated-saved-draft');
+  assert.deepEqual(asked, ['fits'], 'a saved draft is reviewed like any other design, and nothing else is asked');
 });
 
 test('invalid custom geometry gets another advisor repair instead of falling into fixed templates', async t => {
@@ -454,4 +460,21 @@ test('a new building is sited around Jev\'s other buildings, not on or through t
   assert(site, 'there is room nearby');
   const overlaps = [...site.blocks, ...(site.empty || [])].filter(p => cottage.has(`${p.x},${p.y},${p.z}`));
   assert.equal(overlaps.length, 0, 'nothing of the cottage is built over or cleared');
+});
+
+test('a review cut short keeps the design as the draft and costs no attempt', async t => {
+  const previous = process.env.OPENROUTER_API_KEY, previousMode = process.env.BUILD_DESIGNER;
+  process.env.OPENROUTER_API_KEY = 'test'; process.env.BUILD_DESIGNER = 'auto';
+  t.after(() => {
+    if (previous === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = previous;
+    if (previousMode === undefined) delete process.env.BUILD_DESIGNER; else process.env.BUILD_DESIGNER = previousMode;
+  });
+  t.mock.method(global, 'fetch', () => { throw new Error('No new drawing is paid for'); });
+  const source = draft();
+  const goal = { request: 'build a pavilion', designDraft: source, designAttempts: 2 };
+  const bot = world(); bot.chat = () => {};
+  await assert.rejects(designedBuildStep(bot, new Task('review'), goal, () => {}, { systemOne: async () => { throw Object.assign(new Error('stopped'), { name: 'Cancelled' }); } }), { name: 'Cancelled' });
+  assert.deepEqual(goal.designDraft, source, 'the design is still there to review');
+  assert.equal(goal.design, undefined, 'and nothing unreviewed was taken as settled');
+  assert.equal(goal.designAttempts, 2, 'no attempt spent');
 });
