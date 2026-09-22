@@ -1,4 +1,5 @@
 'use strict';
+const { move } = require('./motion');
 // A straight span over open ground. Fortresses stand over the lava sea and
 // the pathfinder bridged toward one a block a minute, its search lost in
 // the open air, while the bot stood on the span under blaze fire. This
@@ -18,18 +19,8 @@ const material = bot => MATERIALS.map(n => bot.inventory.items().find(i => i.nam
 // one-block span. The sneak itself is held by bridgeTo for the whole span.
 async function creepTo(bot, task, cell, ms = 2500) {
   const centre = cell.offset(0.5, 0, 0.5);
-  await bot.lookAt(centre.offset(0, 1.6, 0), true);
-  bot.setControlState('sneak', true); bot.setControlState('forward', true);
-  const started = Date.now();
-  try {
-    while (Date.now() - started < ms) {
-      task.check();
-      const p = bot.entity.position;
-      if (Math.hypot(p.x - centre.x, p.z - centre.z) < 0.35 && p.y < cell.y + 0.6 && p.y > cell.y - 0.6) return true;
-      await sleep(40);
-    }
-    return false;
-  } finally { bot.setControlState('forward', false); }
+  return move(bot, task, { label: 'bridge_step', keys: ['forward'], sneak: true, look: centre.offset(0, 1.6, 0), maxMs: ms, tick: 40,
+    until: () => { const p = bot.entity.position; return Math.hypot(p.x - centre.x, p.z - centre.z) < 0.35 && p.y < cell.y + 0.6 && p.y > cell.y - 0.6; } });
 }
 
 async function clear(bot, task, p) {

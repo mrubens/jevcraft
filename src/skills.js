@@ -1,4 +1,5 @@
 'use strict';
+const { move } = require('./motion');
 
 const { TOOL_TIERS } = require('./plan');
 const { checkAir, needsAir, NeedsAir, digWithAirGuard } = require('./vitals');
@@ -182,9 +183,8 @@ async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs 
   // there is nothing to dig: swim up. Otherwise every dig watches the air.
   const submerged = () => [at(0, 0, 0), at(0, 1, 0)].some(b => b && LIQUID.has(b.name));
   if (submerged()) {
-    bot.setControlState('jump', true);
-    try { while (Date.now() < until && submerged()) { task.check(); checkAir(bot); guard?.(); await sleep(100); } }
-    finally { bot.setControlState('jump', false); }
+    await move(bot, task, { label: 'swim_up', keys: ['jump'], sneak: false, maxMs: Math.max(0, until - Date.now()), tick: 100,
+      guard: () => { checkAir(bot); guard?.(); }, until: () => !submerged() });
     return { stage: 'surface', cleared: [] };
   }
   const dig = async block => {

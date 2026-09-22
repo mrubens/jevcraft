@@ -1,4 +1,5 @@
 'use strict';
+const { move } = require('./motion');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, navigate } = require('./skills');
@@ -105,14 +106,8 @@ async function steadyConstructionSwim(bot, task) {
   // Filling a shallow pool changes submerged steps under the swimmer. Stay at
   // its surface before evaluating walking nodes, rather than sinking into a
   // one-cell pocket and treating that momentary footing as a missing resource.
-  const deadline = Date.now() + 2500;
-  try {
-    bot.setControlState('jump', true);
-    while (bot.entity.position.y < surface + .1 && Date.now() < deadline) {
-      task.check(); checkAir(bot);
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-  } finally { bot.setControlState('jump', false); }
+  await move(bot, task, { label: 'swim_to_surface', keys: ['jump'], sneak: false, maxMs: 2500, tick: 50,
+    guard: () => checkAir(bot), until: () => bot.entity.position.y >= surface + .1 });
 }
 
 async function chooseConstructionWork(bot, task, goal, candidates) {
@@ -148,15 +143,9 @@ async function approachConstruction(bot, task, goal, point, operation, cell) {
     // the same standing cell, without starting a new path or altering blocks.
     if (!destination.reachable(bot.entity.position)) {
       const cell = bot.entity.position.floored(), center = new Vec3(cell.x + .5, bot.entity.position.y, cell.z + .5), deadline = Date.now() + 1500;
-      try {
-        while (!destination.reachable(bot.entity.position) && Date.now() < deadline &&
-          bot.entity.position.floored().equals(cell) && bot.entity.position.distanceTo(center) > .04) {
-          task.check();
-          await bot.lookAt(center.offset(0, 1.62, 0), true);
-          bot.setControlState('sneak', true); bot.setControlState('forward', true);
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
-      } finally { bot.clearControlStates(); }
+      await move(bot, task, { label: 'center_for_placement', keys: ['forward'], sneak: true, look: center.offset(0, 1.62, 0),
+        maxMs: Math.max(0, deadline - Date.now()), tick: 50,
+        until: () => destination.reachable(bot.entity.position) || !bot.entity.position.floored().equals(cell) || bot.entity.position.distanceTo(center) <= .04 });
     }
     if (!destination.reachable(bot.entity.position)) throw new Error(`Cannot reach a clear ${operation} face at ${vec(point)} from ${bot.entity.position}; centered=${destination.isEnd(bot.entity.position.floored())}`);
     return destination.placement?.getFaceAndRef(bot.entity.position.offset(0, 1.62, 0));

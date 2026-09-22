@@ -1,4 +1,5 @@
 'use strict';
+const { move } = require('./motion');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, navigate } = require('./skills');
@@ -149,15 +150,13 @@ async function evadeDragon(bot, task, goal, save, { allowed, timeoutMs = 1600 } 
     // use normal movement packets, never position edits
     await bot.look(Math.atan2(-route.direction.x, -route.direction.z), 0, true); check();
     goal.step = { action: 'evade_dragon', hazard: dragon.name, from: { ...start }, destination: { ...route.destination } }; save();
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline && bot.entity.position.distanceTo(start) < route.distance - .7) {
-      check();
-      if (fallDanger(bot)) { await recoverFall(bot, task, goal, save); break; }
-      const next = bot.entity.position.plus(route.direction.scaled(.8));
-      if (allowed && !allowed(next) || ![-.3, .3].every(x => [-.3, .3].every(z => dryStanding(bot, next.offset(x, 0, z))))) break;
-      bot.setControlState('forward', true); bot.setControlState('sprint', true);
-      await sleep(25);
-    }
+    // Each step ahead is checked before it is taken; the run stops at the
+    // first cell that is not dry, allowed ground, or at any sign of a fall.
+    const stepOk = () => { const next = bot.entity.position.plus(route.direction.scaled(.8));
+      return !(allowed && !allowed(next)) && [-.3, .3].every(x => [-.3, .3].every(z => dryStanding(bot, next.offset(x, 0, z)))); };
+    await move(bot, { check }, { label: 'evade_dragon', keys: ['forward', 'sprint'], sneak: false, why: 'sprinting from the dragon along a checked route',
+      maxMs: timeoutMs, until: () => bot.entity.position.distanceTo(start) >= route.distance - .7 || fallDanger(bot) || !stepOk() });
+    if (fallDanger(bot)) await recoverFall(bot, task, goal, save);
     check();
     if (bot.entity.position.distanceTo(start) < .2) {
       bot.clearControlStates();

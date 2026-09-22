@@ -1,4 +1,5 @@
 'use strict';
+const { move } = require('./motion');
 // A blaze spawner keeps six in the air at once, and walking into that room
 // burned the bot to a crisp twice. Players fight a spawner from a doorway:
 // a one-wide tunnel dug into the rock, the shield up, and every blaze that
@@ -97,18 +98,8 @@ async function digCell(bot, task, p) {
 
 async function stepTo(bot, task, cell) {
   const centre = cell.offset(0.5, 0, 0.5);
-  await bot.lookAt(centre.offset(0, 1.6, 0), true);
-  bot.setControlState('forward', true);
-  const started = Date.now();
-  try {
-    while (Date.now() - started < 2000) {
-      task.check();
-      const p = bot.entity.position;
-      if (Math.hypot(p.x - centre.x, p.z - centre.z) < 0.35) return true;
-      await sleep(40);
-    }
-    return false;
-  } finally { bot.setControlState('forward', false); }
+  return move(bot, task, { label: 'bunker_step', keys: ['forward'], sneak: false, why: 'into a cell just dug in rock: no edge, and a fight is on', look: centre.offset(0, 1.6, 0), maxMs: 2000, tick: 40,
+    until: () => Math.hypot(bot.entity.position.x - centre.x, bot.entity.position.z - centre.z) < 0.35 });
 }
 
 // Dig DEPTH cells into the wall and stand at the far end facing out.

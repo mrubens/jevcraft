@@ -416,6 +416,7 @@ test('a span is laid one block ahead at a time toward a fortress across open air
     blockAt: at, equip: async () => {}, lookAt: async p => { look = p; },
     placeBlock: async (ref, face) => { assert(controls.sneak, 'crouched while placing at the end of the span'); const p = ref.position.plus(face); blocks.set(`${p}`, 'netherrack'); placed.push([p.x, p.y, p.z]); },
     setControlState: (name, on) => { controls[name] = on; if (name === 'forward' && on && look) bot.entity.position = new Vec3(Math.floor(look.x) + 0.5, 65, Math.floor(look.z) + 0.5); },
+    getControlState: name => !!controls[name],
     dig: async () => {},
   };
   const controls = {};

@@ -1,4 +1,5 @@
 'use strict';
+const { move } = require('./motion');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { navigate, surveyRoute, countOf } = require('./skills');
@@ -129,15 +130,11 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         // not worth the fall the walk straight at it would be. A sneaking
         // player cannot walk off an edge, so the walk is slower and longer.
         const up = drop.position.y > bot.entity.position.y + 0.6;
-        const until = Date.now() + (up ? 900 : 2500);
         try {
-          await bot.lookAt(drop.position.offset(0, 0.2, 0), true);
-          if (!up) bot.setControlState('sneak', true);
-          bot.setControlState('forward', true);
-          if (up) bot.setControlState('jump', true);
-          while (!gained() && Date.now() < until) { task.check(); await sleep(50); }
+          await move(bot, task, { label: 'walk_to_drop', keys: up ? ['forward', 'jump'] : ['forward'], sneak: !up,
+            why: up ? 'jumping up to a drop above: a step up, not over an edge' : undefined,
+            look: drop.position.offset(0, 0.2, 0), maxMs: up ? 900 : 2500, tick: 50, until: gained });
         } catch (_) { task.check(); }
-        finally { bot.setControlState('forward', false); bot.setControlState('jump', false); bot.setControlState('sneak', false); }
         if (gained()) break;
       }
     }

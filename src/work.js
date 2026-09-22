@@ -1,4 +1,5 @@
 'use strict';
+const { move } = require('./motion');
 const { DAY } = require('./day');
 const { STILL_MS, watchActivity, markActivity, stillFor, permittedWait, stillReason, recordStill } = require('./stillness');
 
@@ -326,12 +327,8 @@ function hitboxIntrudes(bot, p, margin = 0.02) {
 async function nudgeClear(bot, task, p) {
   if (!hitboxIntrudes(bot, p) || typeof bot.setControlState !== 'function') return;
   // Face the cell and step backward until the body is clear of it.
-  await bot.lookAt(p.offset(0.5, 1, 0.5), true);
-  bot.setControlState('back', true);
-  try {
-    const deadline = Date.now() + 700;
-    while (Date.now() < deadline && hitboxIntrudes(bot, p)) { task.check(); await sleep(50); }
-  } finally { bot.setControlState('back', false); }
+  await move(bot, task, { label: 'step_back', keys: ['back'], sneak: true, look: p.offset(0.5, 1, 0.5), maxMs: 700, tick: 50,
+    until: () => !hitboxIntrudes(bot, p) });
 }
 
 async function place(bot, task, p, material, { face, properties } = {}) {
@@ -1854,11 +1851,8 @@ async function enterPortal(bot, task, portal, arrived) {
   if (arrived()) return;
   bot.pathfinder.setGoal(null);
   if (!inPortal(bot)) {
-    await bot.lookAt(pos(portal).offset(0.5, 0.5, 0.5), true);
-    bot.setControlState('sneak', true);
-    bot.setControlState('forward', true);
-    try { await waitFor(task, () => inPortal(bot) || arrived(), 4000); }
-    finally { bot.setControlState('forward', false); bot.setControlState('sneak', false); }
+    await move(bot, task, { label: 'enter_portal', keys: ['forward'], sneak: true, look: pos(portal).offset(0.5, 0.5, 0.5), maxMs: 4000, tick: 50,
+      until: () => inPortal(bot) || arrived() });
   }
   if (arrived()) return;
   if (!inPortal(bot)) throw new Error('Could not step into the portal');

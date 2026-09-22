@@ -1,4 +1,5 @@
 'use strict';
+const { move } = require('./motion');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { threats, immediateThreat, checkThreats, hunted, claimed } = require('./danger');
@@ -205,10 +206,8 @@ class Survival {
       const ahead = hover && bot.entity.position.plus(hover.entity.position.minus(bot.entity.position).scaled(1 / Math.max(hover.distance, 1))).floored();
       if (hover && firmStep(bot, ahead)) {
         lowerShield(bot);
-        await bot.lookAt(hover.entity.position.offset(0, 1, 0), true);
-        bot.setControlState('forward', true);
-        try { for (let i = 0; i < 6; i++) { task.check(); if (canStrike(bot, hover.entity)) break; await sleep(60); } }
-        finally { bot.setControlState('forward', false); }
+        await move(bot, task, { label: 'close_on_shooter', keys: ['forward'], sneak: false, why: 'a step onto ground checked firm and dry, in a fight',
+          look: hover.entity.position.offset(0, 1, 0), maxMs: 360, tick: 60, until: () => canStrike(bot, hover.entity) });
       }
       return;
     }

@@ -1,4 +1,5 @@
 'use strict';
+const { move } = require('./motion');
 // Straight down to something below. A fortress roof lay under a netherrack
 // shelf with a cave between: no staircase could step off the ledge and the
 // pathfinder found no route, so every tick tried the same drop. Digging the
@@ -71,10 +72,8 @@ async function descendTo(bot, task, target, { hpFloor = 12, maxSteps = 24, arriv
       // blocks in a straight line, off whatever edge came next.
       const over = () => Math.hypot(bot.entity.position.x - hole.x - 0.5, bot.entity.position.z - hole.z - 0.5) < 0.25;
       const falling = () => bot.entity.position.y <= below.block.position.y + 1.05;
-      bot.setControlState('forward', true);
-      const started = Date.now();
-      try { while (Date.now() - started < 1500 && !falling() && !over()) { task.check(); await sleep(25); } }
-      finally { bot.setControlState('forward', false); }
+      await move(bot, task, { label: 'step_into_hole', keys: ['forward'], sneak: false, why: 'dropping into a hole with a checked landing',
+        maxMs: 1500, until: () => falling() || over() });
       const settle = Date.now();
       while (Date.now() - settle < 1200 && !falling()) { task.check(); await sleep(50); }
       if (!falling()) throw new Error('Stepped for the hole and did not drop into it');
