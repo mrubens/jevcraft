@@ -234,11 +234,17 @@ function nextGameStage(bot, goal) {
 // Working time on the current rung: gaps between steps (a night in a
 // shelter, a stop) count at most half a minute, so only time spent on it
 // runs the budget down.
+// One clock per rung, kept while other steps come and go: a single clock
+// reset on every change of phase, and a stash-restock step alternating
+// with the rung restarted it each time, so twenty minutes never ran out.
 function timeRung(bot, goal, phase, now = Date.now()) {
-  const rung = goal.rungTime && goal.rungTime.phase === phase ? goal.rungTime : (goal.rungTime = { phase, activeMs: 0, lastAt: now });
-  rung.activeMs += Math.min(30000, Math.max(0, now - rung.lastAt)); rung.lastAt = now;
+  const clocks = goal.rungClocks ||= {};
+  const rung = clocks[phase] ||= { activeMs: 0, lastAt: now };
+  const previous = goal.rungTime?.phase === phase ? rung.lastAt : now;
+  rung.activeMs += Math.min(30000, Math.max(0, now - previous)); rung.lastAt = now;
+  goal.rungTime = { phase, ...rung };
   if (!DEFERRABLE.has(phase) || rung.activeMs < RUNG_BUDGET_MS) return false;
-  (goal.rungDeferred ||= {})[phase] = now + RUNG_WAIT_MS; delete goal.rungTime;
+  (goal.rungDeferred ||= {})[phase] = now + RUNG_WAIT_MS; delete clocks[phase]; delete goal.rungTime;
   bot.chat?.(`The ${phase.replaceAll('_', ' ')} is taking too long. I'll come back to it and get on with the rest first.`);
   return true;
 }

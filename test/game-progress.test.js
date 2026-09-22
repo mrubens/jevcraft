@@ -160,3 +160,15 @@ test('a night in a shelter or a stop does not run a rung\'s budget down', () => 
   timeRung(bot, goal, 'bucket', start + 60 * 60 * 1000 + 1000);
   assert.equal(goal.rungTime.phase, 'bucket'); assert.equal(goal.rungTime.activeMs, 0, 'a new rung starts a new clock');
 });
+
+test('a rung\'s clock keeps its time when another step comes between', () => {
+  const { timeRung } = require('../src/game-progress');
+  const goal = {}, bot = {};
+  let now = Date.now();
+  for (let i = 0; i < 10; i++) {
+    timeRung(bot, goal, 'shield', now); now += 20000;
+    timeRung(bot, goal, 'shield', now); now += 1000;
+    timeRung(bot, goal, 'home_restock', now); now += 1000;
+  }
+  assert(goal.rungClocks.shield.activeMs >= 10 * 20000, 'the shield has had its twenty seconds ten times over');
+});

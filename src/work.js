@@ -2087,7 +2087,10 @@ function createRecoveryAdviser(bot, client) {
 // grid spilling on the ground. Surplus stone goes before that happens.
 async function keepRoom(bot, task, goal) {
   const heading = goal.step?.destination || goal.step?.target || goal.tunnel?.target;
-  const wanted = [goal.item, goal.step?.item, goal.step?.from, goal.step?.block, goal.smelting?.from,
+  // What the step makes, what it digs for, and what it will use: sand on
+  // its way to glass or concrete powder is an ingredient, not surplus.
+  const wanted = [goal.item, goal.step?.item, goal.step?.from, goal.step?.block, goal.step?.drops, goal.smelting?.from,
+    ...Object.keys(goal.step?.consumes || {}), ...Object.keys(goal.step?.requires || {}),
     ...(goal.tasks || []).map(t => t.item), ...(goal.blueprint?.blocks || []).map(b => b.material)].filter(Boolean);
   const dropped = await tidyInventory(bot, task, { away: heading && Number.isFinite(heading.x) ? heading : null, keep: new Set(wanted) });
   if (dropped.length) {
@@ -2542,7 +2545,10 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       goal.failures = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 2 &&
         constructionBefore === constructionObservation(bot, goal) ? goal.failures + 1 : 0;
       recoveryAdviser.recordFailure(goal, err);
-      if ((err.name === 'Blocked' || goal.failures >= 3) && await inCatch(task, goal, () => tryRecovery(recoveryAdviser, task, goal, save))) {
+      // A state only the player can settle is parked before any recovery:
+      // no recovery option changes whether a handover was picked up.
+      const parked = err.name === 'Blocked' && (err.needsPlayer || IMPOSSIBLE.test(err.message));
+      if (!parked && (err.name === 'Blocked' || goal.failures >= 3) && await inCatch(task, goal, () => tryRecovery(recoveryAdviser, task, goal, save))) {
         goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
       }
       // No adviser, or none that could help: a resource that keeps failing

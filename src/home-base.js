@@ -125,6 +125,17 @@ const diggable = block => !!block && block.boundingBox === 'block' && !liquid(bl
 // home is judged loosely: its own footprint is reserved construction by
 // then, a cell that cannot be fixed is left as it is, and only unloaded
 // cells stop the work.
+// The registry's cells, built once and kept for a few seconds: a base-site
+// search calls siteWork thousands of times, and rebuilding the set from a
+// forty-eight building registry each time could hold the event loop.
+function claimedCells(bot, now = Date.now()) {
+  const where = String(bot.game?.dimension || 'overworld').replace(/^minecraft:/, '').replace(/^the_/, '');
+  const cache = bot._claimedCells;
+  if (cache && cache.where === where && cache.registry === bot.buildRegistry && now - cache.at < 5000) return cache.cells;
+  const cells = bot.buildRegistry?.claimed?.(where) || new Set();
+  bot._claimedCells = { where, registry: bot.buildRegistry, at: now, cells };
+  return cells;
+}
 function siteWork(bot, goal, site, { strict = true } = {}) {
   const { plot, footprint } = layout(site);
   const plotKeys = new Set(plot.map(p => `${p.x},${p.z}`));
@@ -133,7 +144,7 @@ function siteWork(bot, goal, site, { strict = true } = {}) {
   // Jev's own buildings are not ground to level. Only this goal's blueprint
   // was reserved, so a base laid out beside the village dug into the walls
   // of an older cottage.
-  const built = bot.buildRegistry?.claimed?.(String(bot.game?.dimension || 'overworld').replace(/^minecraft:/, '').replace(/^the_/, '')) || new Set();
+  const built = claimedCells(bot);
   for (const p of footprint) {
     const at = dy => bot.blockAt(pos(p).offset(0, dy, 0));
     const ground = at(0), above = at(1), head = at(2), below = at(-1);
