@@ -31,6 +31,27 @@ function safeExcavation(bot, p) {
   return false;
 }
 
+// A shaft that gains no ground is a shaft that has found a ledge or a wall
+// it cannot pass: an hour went by shuffling along one. Forty-eight steps
+// without a new best starts over (see tunnelStep).
+//
+// The best is the closest the shaft has been. It used to be reset to any
+// distance within half a block of it, so it crept outward and a bot pacing
+// 19, 20, 21, 20, 19 reset the count on every return.
+//
+// A different destination is a different race: the fortress sweep and the
+// approach shaft share this record, and a best of three blocks from an
+// approach made every step of the next ninety-six-block leg "not gaining".
+// A mob that moves a few blocks is still the same target.
+function noteProgress(tunnel, target, gap) {
+  if (tunnel.target && Math.hypot(tunnel.target.x - target.x, tunnel.target.y - target.y, tunnel.target.z - target.z) > 8) {
+    delete tunnel.best; tunnel.sinceBest = 0;
+  }
+  tunnel.target = { x: target.x, y: target.y, z: target.z };
+  if (!Number.isFinite(tunnel.best) || gap < tunnel.best - 0.5) { tunnel.best = gap; tunnel.sinceBest = 0; } else tunnel.sinceBest = (tunnel.sinceBest || 0) + 1;
+  return tunnel.sinceBest;
+}
+
 function stairOptions(bot, goal, target, { approach = false } = {}) {
   // Closing on a mob on purpose. The hostile *is* the destination, so the
   // filter that keeps a travelling shaft clear of mobs rules out every
@@ -118,14 +139,10 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
     await retreatForTunnel(bot, task, goal, save, { navigate });
     return;
   }
-  tunnel.target = { ...target };
+  noteProgress(tunnel, target, bot.entity.position.distanceTo(target));
   tunnel.visited[`${choice.destination}`] = (tunnel.visited[`${choice.destination}`] || 0) + 1;
   tunnel.steps++;
-  // A shaft that gains no ground is a shaft that has found a ledge or a
-  // wall it cannot pass: an hour went by shuffling along one. Forty-eight
-  // steps without closing four blocks starts over from here and says so.
   const gap = bot.entity.position.distanceTo(target);
-  if (!(tunnel.best < gap - 0.5)) { tunnel.best = gap; tunnel.sinceBest = 0; } else tunnel.sinceBest = (tunnel.sinceBest || 0) + 1;
   if (tunnel.sinceBest >= 48) {
     Object.assign(tunnel, { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {}, retreats: 0, retreatVisited: {}, rounds: (tunnel.rounds || 0) + 1, best: gap, sinceBest: 0 });
     delete tunnel.workPosition; save();
@@ -243,4 +260,4 @@ async function retreatForTunnel(bot, task, goal, save, { navigate }) {
   } finally { Object.assign(movement, previous); }
 }
 
-module.exports = { stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };

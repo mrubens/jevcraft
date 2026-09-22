@@ -140,3 +140,17 @@ test('the progress watchdog counts five quiet minutes as stuck, whatever the ste
   assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), false, 'covering forty blocks in the window is progress');
   assert.equal(goal.progressWatch.strikes, 0);
 });
+
+test('the watchdog does not count time it did not see, and dug rock or a retry step is not progress', async () => {
+  const { progressWatchdog } = require('../src/work');
+  const bot = fixture({ stone_pickaxe: 1 }); bot.chat = () => {};
+  const goal = { kind: 'obtain', step: { action: 'tunnel', resource: 'diamond_ore' } };
+  await progressWatchdog(bot, new Task('watch'), goal, () => {});
+  goal.progressWatch.at -= 6 * 60 * 1000; goal.progressWatch.seenAt -= 6 * 60 * 1000;
+  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), false, 'back from a night in a shelter: the window starts again');
+  const started = goal.progressWatch.at;
+  bot.inventory.items().push({ name: 'cobblestone', count: 12 });
+  goal.step = { action: 'persist', attempt: 1 };
+  await progressWatchdog(bot, new Task('watch'), goal, () => {});
+  assert.equal(goal.progressWatch.at, started, 'cobblestone from the shaft and a persist step keep the same window');
+});

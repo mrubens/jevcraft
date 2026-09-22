@@ -40,7 +40,7 @@ function reconcileChestDeposit(goal, window, save) {
   if (added === 0 && removed === 0) { delete goal.pendingChestDelivery; save(); return 0; }
   if (!Number.isInteger(added) || added <= 0 || added > pending.count || removed !== added ||
       (goal.delivered || 0) !== pending.deliveredBefore)
-    throw blocked(`Chest handover is unconfirmed at ${vec(pending.position)}. Check that chest before asking for replacements.`);
+    throw Object.assign(blocked(`Chest handover is unconfirmed at ${vec(pending.position)}. Check that chest before asking for replacements.`), { needsPlayer: true });
   goal.delivered = pending.deliveredBefore + added;
   (goal.deliveryEvidence ||= []).push({ method: 'chest', recipient: goal.from, item: pending.item,
     count: added, position: pending.position, dimension: pending.dimension, at: new Date().toISOString() });
@@ -113,9 +113,9 @@ async function deliverToChest(bot, task, goal, save, actions = require('./work')
   if ((goal.delivered || 0) >= target && !goal.pendingChestDelivery) return (goal.delivered || 0) >= goal.count;
   const pending = goal.pendingChestDelivery;
   if (pending) {
-    if (pending.dimension !== bot.game.dimension) throw blocked('The chest handover is waiting in another dimension.');
+    if (pending.dimension !== bot.game.dimension) throw Object.assign(blocked('The chest handover is waiting in another dimension.'), { needsPlayer: true });
     const block = await approachWorkstation(bot, task, 'chest', [vec(pending.position)]);
-    if (!block) throw blocked(`Chest handover is unconfirmed at ${vec(pending.position)}. Check that chest before asking for replacements.`);
+    if (!block) throw Object.assign(blocked(`Chest handover is unconfirmed at ${vec(pending.position)}. Check that chest before asking for replacements.`), { needsPlayer: true });
     await depositInChest(bot, task, goal, save, block, target);
     return (goal.delivered || 0) >= goal.count;
   }

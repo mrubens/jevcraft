@@ -339,3 +339,17 @@ test('an approach shaft is not turned back by its own footprints', () => {
   assert.equal(closing[0].destination.x, 22, 'the approach steps toward the target whatever the footprints say');
   assert.notEqual(travelling[0].destination.x, 22, 'a travelling shaft still avoids the well-trodden cell');
 });
+
+test('a shaft pacing back and forth is not gaining, and a new destination starts a new count', () => {
+  const { noteProgress } = require('../src/tunneling');
+  const tunnel = {}, target = new Vec3(0, 40, 0);
+  for (const gap of [19, 20, 21, 20, 19, 20, 21, 20, 19]) noteProgress(tunnel, target, gap);
+  assert.equal(tunnel.best, 19);
+  assert.equal(tunnel.sinceBest, 8, 'coming back to the old best is not a new best');
+  noteProgress(tunnel, target, 18);
+  assert.equal(tunnel.sinceBest, 0, 'a block closer is');
+  noteProgress(tunnel, new Vec3(3, 40, 2), 17.9);
+  assert.equal(tunnel.sinceBest, 1, 'a mob that moved a few blocks is still the same race');
+  noteProgress(tunnel, new Vec3(96, 40, 0), 96);
+  assert.equal(tunnel.best, 96); assert.equal(tunnel.sinceBest, 0, 'a new leg is a new race');
+});

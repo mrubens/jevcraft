@@ -160,7 +160,7 @@ async function deliverItems(bot, task, goal, save, { timeout }) {
       }
       if (countOf(bot, itemName) < expected) {
         const err = new Error(`${label} handover was interrupted; receiver pickup is unconfirmed. Check the dropped items before requesting a replacement.`);
-        err.name = 'Blocked'; throw err;
+        err.name = 'Blocked'; err.needsPlayer = true; throw err;
       }
     }
     delete goal.pendingDelivery;
@@ -220,7 +220,7 @@ async function deliverItems(bot, task, goal, save, { timeout }) {
         throw Object.assign(new Error('Recovered the throw; use a chest for the remaining items'), { code: 'HANDOVER_SPACE' });
       }
       const err = new Error(`Dropped ${label} for ${goal.from}, but pickup of all ${remaining} items was not confirmed`);
-      err.name = 'Blocked'; throw err;
+      err.name = 'Blocked'; err.needsPlayer = true; throw err;
     }
     return (goal.delivered || 0) >= goal.count;
   } finally { bot._client.removeListener('collect', onCollect); bot.removeListener?.('entityUpdate', onDrop); }

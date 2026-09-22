@@ -32,3 +32,10 @@ test('force drops everything over the cap regardless of room', async () => {
   const dropped = await tidyInventory(b, null, { force: true });
   assert.deepEqual(dropped.map(d => d.name).sort(), ['cobblestone', 'diorite']);
 });
+
+test('what the work in hand is for is never surplus', async () => {
+  const b = bot({ sand: 40, cobblestone: 300, granite: 10 }, 1);
+  const dropped = await tidyInventory(b, null, { keep: new Set(['sand']) });
+  assert(!dropped.some(d => d.name === 'sand'), 'get me sand keeps the sand');
+  assert(dropped.some(d => d.name === 'cobblestone'));
+});

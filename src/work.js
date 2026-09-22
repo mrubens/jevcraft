@@ -126,9 +126,18 @@ const sparePickaxeMaterials = bot => countOf(bot, 'cobblestone') >= 3 &&
 // and hunt marks are dropped and the bot says so. Twice: strike out
 // twenty-four blocks in a fresh direction. Three times: go home.
 const WATCH_MS = 5 * 60 * 1000, WATCH_BLOCKS = 8;
-function progressKey(bot, goal) {
-  const phase = goal.gameProgress?.phase || goal.step?.action || '';
-  const items = bot.inventory.items().map(i => `${i.name}:${i.count}`).sort().join(',');
+// What counts as a change. Rock dug on the way is not: a tunnel adds
+// cobblestone every step, so a shaft pacing along one ledge looked like
+// progress for as long as it paced. The retry steps are not a new phase
+// either: persist and the tunnel retreat changed the step's name, and every
+// change restarted the five minutes.
+const FILLER = /^(cobblestone|cobbled_deepslate|netherrack|dirt|coarse_dirt|gravel|stone|deepslate|andesite|diorite|granite|tuff|calcite|basalt|blackstone|sand|red_sand|soul_sand|soul_soil|end_stone)$/;
+const RETRY_STEPS = new Set(['persist', 'retreat_from_tunnel', 'shake_loose', 'strike_out', 'return_home']);
+function progressKey(bot, goal, previous) {
+  const step = goal.step || {};
+  const phase = goal.gameProgress?.phase || (RETRY_STEPS.has(step.action) && previous !== undefined ? previous.split('|')[0] :
+    [step.item, step.resource, step.block, step.entity, step.action].find(Boolean) || '');
+  const items = bot.inventory.items().filter(i => !FILLER.test(i.name)).map(i => `${i.name}:${i.count}`).sort().join(',');
   return `${phase}|${items}`;
 }
 async function progressWatchdog(bot, task, goal, save) {
@@ -137,10 +146,16 @@ async function progressWatchdog(bot, task, goal, save) {
   // fourteen blocks back and forth along a ledge resets a displacement
   // check every pass and never looks stuck.
   const now = Date.now(), here = bot.entity.position.clone();
-  const fresh = () => ({ at: now, key: progressKey(bot, goal), box: { minX: here.x, maxX: here.x, minY: here.y, maxY: here.y, minZ: here.z, maxZ: here.z } });
+  const key = progressKey(bot, goal, goal.progressWatch?.key);
+  const fresh = () => ({ at: now, seenAt: now, key, box: { minX: here.x, maxX: here.x, minY: here.y, maxY: here.y, minZ: here.z, maxZ: here.z } });
   const watch = goal.progressWatch ||= { ...fresh(), strikes: 0 };
-  const key = progressKey(bot, goal);
   if (key !== watch.key) { Object.assign(watch, fresh(), { strikes: 0 }); return false; }
+  // Time the watchdog did not see is not time spent stuck: a night sealed
+  // in a shelter, a fight, or a stop and resume an hour later all came
+  // back to a window already five minutes old, and the first tick of work
+  // wiped the shaft and the search.
+  if (!(now - (watch.seenAt ?? now) < 30000)) { Object.assign(watch, fresh(), { strikes: watch.strikes }); return false; }
+  watch.seenAt = now;
   const b = watch.box ||= fresh().box;
   b.minX = Math.min(b.minX, here.x); b.maxX = Math.max(b.maxX, here.x); b.minY = Math.min(b.minY, here.y); b.maxY = Math.max(b.maxY, here.y); b.minZ = Math.min(b.minZ, here.z); b.maxZ = Math.max(b.maxZ, here.z);
   if (now - watch.at < WATCH_MS) return false;
@@ -666,9 +681,11 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       if (await collectNearbyDrops(bot, task, step.drops, { before, origin: p, radius: 8, waitForSpawnMs: 1000, allowExcavation: true })) { mined++; if (!ore || satisfied()) return; continue; }
     } catch (e) {
       task.check();
-      if (['NeedsAir', 'NeedsSafety'].includes(e.name)) {
-        goal.unreachable ||= {}; goal.unreachable[`${p}`] = Date.now(); save(); throw e;
-      }
+      // Running out of air at a block says something about the block. A
+      // zombie walking up says nothing about it, and set the block aside
+      // for two minutes all the same.
+      if (e.name === 'NeedsAir') { goal.unreachable ||= {}; goal.unreachable[`${p}`] = Date.now(); save(); throw e; }
+      if (e.name === 'NeedsSafety') throw e;
       goal.lastMiningError = e.message;
     } finally {
       access?.restore();
@@ -796,7 +813,14 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     // Return to the recorded area before deciding that an unloaded furnace
     // disappeared. Once observed, the same visible-face checks apply.
     if (!bot.blockAt(p)) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3));
-    if (bot.blockAt(p)?.name !== 'furnace') throw new Blocked('The furnace holding our saved batch is missing');
+    // Gone (a creeper, a player): the batch went with it. Retrying cannot
+    // bring a furnace back, and with the record kept every later step
+    // tried this one first and the bot shook itself loose every forty
+    // seconds for good. Let the record go and plan the smelt again.
+    if (bot.blockAt(p)?.name !== 'furnace') {
+      goal.lostSmelting = { ...pending, at: new Date().toISOString() }; delete goal.smelting; save();
+      throw new Error('The furnace holding our saved batch is gone; starting the batch again');
+    }
     // Never switch furnaces while the saved ingredients/output belong to this one.
     block = await approachWorkstation(bot, task, 'furnace', [p]);
     if (!block) throw new Blocked("I can't reach the furnace holding our saved batch");
@@ -1954,7 +1978,11 @@ const IMPOSSIBLE = /No supported survival acquisition|does not spawn in Peaceful
 async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } = {}) {
   goal.struggles = (goal.struggles || 0) + 1;
   goal.lastStruggle = { at: new Date().toISOString(), error: err.message };
-  goal.search = {};
+  // A clean search, but not the heading that just failed: an empty search
+  // re-derives its heading from the resource's name, which pointed the bot
+  // straight back along the route it had turned away from.
+  const heading = goal.search?.frontier?.heading;
+  goal.search = Number.isInteger(heading) ? { frontier: { heading: (heading + 1) % 8, legs: 0 } } : {};
   if (goal.struggles === 1 || goal.struggles % 5 === 0) {
     bot.chat?.(`${friendlyProblem(err)} I'll keep trying${goal.struggles > 1 ? ` (attempt ${goal.struggles})` : ''}.`);
   }
@@ -1962,7 +1990,11 @@ async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } 
   const survivalOnly = e => { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(e.name)) throw e; };
   try { await shakeLoose(bot, task, Date.now() + 25000, { guard: () => checkThreats(bot) }); } catch (e) { survivalOnly(e); }
   if (goal.lastStruggleStep?.action === 'mine' || goal.step?.action === 'mine') {
-    try { await moveOnFromResource(bot, task, { ...goal, step: goal.lastStruggleStep || goal.step }, save); } catch (e) { survivalOnly(e); }
+    // On the goal itself: on a copy, set-asides written to a list the copy
+    // had just created were lost with it.
+    const step = goal.step;
+    goal.step = goal.lastStruggleStep || goal.step;
+    try { await moveOnFromResource(bot, task, goal, save); } catch (e) { survivalOnly(e); } finally { goal.step = step; }
   }
   // Fifteen seconds at most: a bot standing still for a minute reads as
   // frozen to anyone watching, and the pause is guarded against threats
@@ -1984,7 +2016,9 @@ function createRecoveryAdviser(bot, client) {
 // grid spilling on the ground. Surplus stone goes before that happens.
 async function keepRoom(bot, task, goal) {
   const heading = goal.step?.destination || goal.step?.target || goal.tunnel?.target;
-  const dropped = await tidyInventory(bot, task, { away: heading && Number.isFinite(heading.x) ? heading : null });
+  const wanted = [goal.item, goal.step?.item, goal.step?.from, goal.step?.block, goal.smelting?.from,
+    ...(goal.tasks || []).map(t => t.item), ...(goal.blueprint?.blocks || []).map(b => b.material)].filter(Boolean);
+  const dropped = await tidyInventory(bot, task, { away: heading && Number.isFinite(heading.x) ? heading : null, keep: new Set(wanted) });
   if (dropped.length) {
     // Tunnelling refills the stone every few minutes; say so now and then,
     // not at every stack.
@@ -2319,7 +2353,11 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (goal.failures >= 3 && err.name !== 'Blocked' && await inCatch(task, goal, () => moveOnFromResource(bot, task, goal, save))) {
         goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
       }
-      if (err.name === 'Blocked' && IMPOSSIBLE.test(err.message)) {
+      // Parked, not retried: a request no survival route can serve, or a
+      // state only the player can settle (items dropped for them whose
+      // pickup nobody saw). The regex is the old list; `needsPlayer` is
+      // how a new case says so without adding to it.
+      if (err.name === 'Blocked' && (err.needsPlayer || IMPOSSIBLE.test(err.message))) {
         goal.status = 'blocked'; save();
         bot.chat(`${friendlyProblem(err)} I saved our progress. ${recoveryHint(err)}`);
         return { ok: false, reason: err.message, goal };
