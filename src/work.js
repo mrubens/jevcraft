@@ -2098,9 +2098,11 @@ function idleOptions(bot, goal) {
   Object.assign(options, homeChores(bot, goal));
   if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.`, item: 'torch', count: 4 };
   // The standing dream. With nothing asked and nothing urgent, the next
-  // rung of the beat-the-game ladder is always on offer; it is a long walk
-  // from a stone pickaxe to a dragon, and this is how the walk gets taken.
-  if (bot.game.gameMode === 'survival') {
+  // rung of the beat-the-game ladder is on offer; it is a long walk from a
+  // stone pickaxe to a dragon, and this is how the walk gets taken. Only
+  // when that is the dream: a dream is something a player gives Jev, and
+  // without one the ladder was still offered every idle minute.
+  if (bot.game.gameMode === 'survival' && goal.dream === 'beat_the_game') {
     const stage = nextGameStage(bot, goal);
     if (stage.phase !== 'complete') options.long_game = { description: `Work toward beating the game. The next stage is ${stage.phase.replaceAll('_', ' ')}${stage.item ? ` (${stage.count} ${stage.item.replaceAll('_', ' ')})` : ''}; it may mean a long trip and a real fight, so choose it with supplies, tools and daylight in hand.`, phase: stage.phase, stage };
   }

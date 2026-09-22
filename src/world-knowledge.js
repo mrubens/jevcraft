@@ -17,7 +17,9 @@ const WORLD_FIELDS = ['portals', 'portalFrame', 'villages', 'endPortal', 'strong
 // in this world is the same run: the milestones are observations of this
 // bot in this world.
 const RUN_FIELDS = ['gameProgress'];
-const fieldsFor = goal => goal?.kind === 'win' ? [...WORLD_FIELDS, ...RUN_FIELDS] : WORLD_FIELDS;
+// The idle loop climbs the same ladder when beating the game is the dream,
+// so it shares the run's progress rather than keeping a second copy.
+const fieldsFor = goal => goal?.kind === 'win' || goal?.dream === 'beat_the_game' ? [...WORLD_FIELDS, ...RUN_FIELDS] : WORLD_FIELDS;
 
 // The store is the authority at launch: a field it does not have is taken
 // off the goal too, or a resumed goal's old portal plan, long since built

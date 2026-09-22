@@ -12,7 +12,7 @@ function fixture(items, { timeOfDay = 3000 } = {}) {
     entity: { id: 1, position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, entities: {}, time: { timeOfDay },
     findBlocks: () => [], blockAt: () => ({ name: 'air', boundingBox: 'empty' }), pathfinder: { movements: {}, setGoal() {} },
     clearControlStates() {}, chat(line) { this.said.push(line); }, said: [], emit() {} };
-  const goal = { kind: 'survive', request: 'Stay alive between player requests', survival: {} };
+  const goal = { kind: 'survive', request: 'Stay alive between player requests', survival: {}, dream: 'beat_the_game' };
   return { bot, goal, task: new Task('idle', 'idle') };
 }
 
@@ -22,6 +22,8 @@ test('spare daylight offers the feasible chores and the long game, and Jev choos
   assert.deepEqual(Object.keys(options).sort(), ['cook_food', 'long_game', 'stone_tools']);
   assert.match(options.cook_food.description, /4 raw beef/); assert.equal(options.cook_food.item, 'cooked_beef');
   assert.match(options.long_game.description, /stone pickaxe/, 'the ladder starts with a rung you can see');
+  assert.equal(idleOptions(bot, { ...goal, dream: undefined }).long_game, undefined, 'no dream, no ladder');
+  assert.equal(idleOptions(bot, { ...goal, dream: 'build_a_village' }).long_game, undefined);
   const asked = [], acquired = [];
   const client = { model: 'jev-test', systemOne: async ({ questions, state }) => {
     asked.push(Object.values(questions)[0].criteria); assert.equal(state.foodReserve > 0, true);
