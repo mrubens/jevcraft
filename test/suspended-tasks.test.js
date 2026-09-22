@@ -59,3 +59,14 @@ test('the dream never stands between a player and their stopped work', () => {
   const lone = { kind: 'win', dream: 'beat_the_game', status: 'replaced' };
   assert.equal(resumeSaved(lone), lone, 'with no player work saved, the dream itself resumes');
 });
+
+test('a request no survival route can serve is refused before it replaces any work', () => {
+  const { unworkable } = require('../src/session');
+  const registry = require('minecraft-data')('26.1');
+  const bot = mode => ({ registry, game: { gameMode: mode }, inventory: { items: () => [] } });
+  assert.match(unworkable(bot('survival'), { kind: 'obtain', item: 'bedrock', count: 1 }).message, /No supported survival acquisition/);
+  assert.equal(unworkable(bot('survival'), { kind: 'obtain', item: 'oak_planks', count: 4 }), null);
+  assert(unworkable(bot('survival'), { kind: 'bundle', tasks: [{ item: 'oak_planks', count: 4 }, { item: 'spawner', count: 1 }] }), 'one impossible item in a list');
+  assert.equal(unworkable(bot('creative'), { kind: 'obtain', item: 'bedrock', count: 1 }), null, 'Creative has its own inventory');
+  assert.equal(unworkable(bot('survival'), { kind: 'build', request: 'a tower' }), null);
+});

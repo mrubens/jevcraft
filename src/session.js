@@ -7,6 +7,7 @@ const { pathfinder } = require('mineflayer-pathfinder');
 const { configureMovements } = require('./movement');
 const { interpret, GoalStore } = require('./objectives');
 const { WorldKnowledge } = require('./world-knowledge');
+const { planCatalog } = require('./knowledge');
 const { runGoal, runIdle, createSurvival } = require('./work');
 const { Task } = require('./skills');
 const { parseAddress, clarificationReply, CLARIFY_MS } = require('./chat-address');
@@ -24,6 +25,23 @@ const { BuildRegistry, resolveBuildContinuation } = require('./builds');
 const { nextDreamRequest, shouldLaunchDream, DREAMS } = require('./dream');
 const { immediateThreat } = require('./danger');
 const { Ledger, withRun, appendSummary } = require('./ledger');
+
+// The planner's verdict on a request, before any work starts: an error
+// when no survival method exists for something asked for, otherwise null.
+// Only that verdict: a plan that fails for want of a tool or a place is
+// work, and runGoal finds its way round those.
+function unworkable(bot, spec) {
+  if (bot.game?.gameMode !== 'survival' || !['obtain', 'craft', 'bundle'].includes(spec.kind)) return null;
+  const wanted = spec.kind === 'bundle' ? (spec.tasks || []).map(t => [t.item, t.count]) : [[spec.item, spec.count]];
+  const stock = {};
+  for (const item of bot.inventory.items()) stock[item.name] = (stock[item.name] || 0) + item.count;
+  for (const [item, count] of wanted) {
+    if (!item) continue;
+    try { planCatalog(bot.registry, item, count || 1, stock); }
+    catch (err) { if (err.name === 'PlanError' && /No supported survival acquisition/.test(err.message)) return err; }
+  }
+  return null;
+}
 
 function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness,
   runLedger = path.join(__dirname, '..', 'docs', 'run-ledger.md') } = {}) {
@@ -443,6 +461,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (spec.kind === 'resume') {
         await resume(revision); return;
       }
+      // Work no survival route can do is refused here, before it replaces
+      // work that can be done. "Get me bedrock" stopped a build, then was
+      // parked as impossible, and the build had to be dug out with resume.
+      const impossible = unworkable(bot, spec);
+      if (impossible) { bot.chat(`${friendlyProblem(impossible)}${active && !active.idle ? " I'll carry on with what I was doing." : ''}`); return; }
       await stop('replaced');
       if (revision !== generation || ended) return;
       const goal = { ...spec, ledgerRun: run.id, version: 1, status: 'pending', createdAt: new Date().toISOString(),
@@ -522,4 +545,4 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   return { bot, closed, shutdown() { close('shutdown'); bot.quit('Shutting down'); } };
 }
 
-module.exports = { createSession };
+module.exports = { unworkable, createSession };
