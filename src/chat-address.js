@@ -9,20 +9,26 @@ function parseAddress(request, username) {
   return { explicit: Boolean(match), text: (match ? match[1] : request).trim() };
 }
 
-// The reply to a question Jev asked, read with the request it answers.
-// Unaddressed, it counts only while the question is open and only if it is
-// short enough to be an answer rather than talk to someone else; addressed,
-// only if it names one of the options offered, since "Jev <anything>" is
-// otherwise a new request.
+// The reply to a question Jev asked, read with the request it answers,
+// while the question is open. Only what can only be an answer counts: one
+// of the options offered, a yes to a yes-or-no question, or the exact name
+// of a Minecraft thing when the question was which one. Any short message
+// counted before, so "brb" or "lol no" became a request and replaced the
+// work in hand. Addressed, only a named option counts, since "Jev
+// <anything>" is otherwise a new request.
 const CLARIFY_MS = 90000;
-function clarificationReply(asked, address, now = Date.now()) {
+const YES = /^(yes|yeah|yep|yup|sure|ok|okay|please|do it|go ahead|go for it|yes please)$/i;
+function clarificationReply(asked, address, { now = Date.now(), known = () => false } = {}) {
   if (!asked || !(asked.until > now)) return null;
   const text = address.text.replace(/[.!?]+$/, '').trim();
   if (!text) return null;
   const names = (asked.options || []).map(option => String(option).replaceAll('_', ' ').toLowerCase());
   const named = names.includes(text.toLowerCase());
-  if (address.explicit ? !named : text.split(/\s+/).length > 6) return null;
-  return `${asked.request} (${text})`;
+  if (named) return `${asked.request} (${text})`;
+  if (address.explicit) return null;
+  if (asked.confirm && YES.test(text)) return `${asked.request} (yes, now)`;
+  if (asked.which && known(text)) return `${asked.request} (${text})`;
+  return null;
 }
 
 module.exports = { chatNames, parseAddress, clarificationReply, CLARIFY_MS };

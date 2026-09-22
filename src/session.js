@@ -321,7 +321,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // gate dropped it; "Jev grass block" started a new request that had lost
     // the count and the recipient. The reply is read together with the
     // request it answers.
-    const answer = !literal && !control.test(address.text) && clarificationReply(clarifying.get(from), address);
+    const known = text => { const name = text.toLowerCase().replace(/\s+/g, '_'); return !!(bot.registry?.itemsByName?.[name] || bot.registry?.blocksByName?.[name] || bot.registry?.entitiesByName?.[name]); };
+    const answer = !literal && !control.test(address.text) && clarificationReply(clarifying.get(from), address, { known });
     // A new addressed message moves on from the question either way.
     if (answer || address.explicit) clarifying.delete(from);
     if (answer) {
@@ -463,7 +464,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         return;
       }
       if (spec.kind === 'clarify') {
-        clarifying.set(from, { request: address.text, options: spec.clarification?.options, until: Date.now() + CLARIFY_MS });
+        const reason = spec.clarification?.reason;
+        clarifying.set(from, { request: address.text, options: spec.clarification?.options, until: Date.now() + CLARIFY_MS,
+          confirm: ['uncertain_interaction', 'dream_unsure'].includes(reason), which: ['no_item', 'no_discovery_target', 'ambiguous_item', 'incomplete_bundle'].includes(reason) });
         bot.chat(spec.message); return;
       }
       if (spec.kind === 'stop') { invalidateRequests(); await stop(); bot.chat('Stopped.'); return; }
