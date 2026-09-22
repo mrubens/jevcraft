@@ -430,3 +430,25 @@ test('a staircase stepping between two cells ends its round within a few steps, 
   await assert.rejects(tunnelStep(bot, new Task('pace'), goal, () => {}, target, { dig, navigate }), /not gaining on it/);
   assert.equal(goal.tunnel.staleRounds, 1);
 });
+
+test('pinned below two skeletons at full health, the staircase claims them and climbs toward them; hurt, it does not', () => {
+  const bot = world();
+  bot.game = { gameMode: 'survival', difficulty: 'normal', dimension: 'overworld' }; bot.registry = require('minecraft-data')('26.1');
+  bot.world = { raycast: () => null }; bot.health = 20; bot.food = 20;
+  bot.inventory = { items: () => [{ type: 1, name: 'diamond_sword' }, { type: 1, name: 'diamond_pickaxe' }, { name: 'cooked_beef', count: 8 }], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' }, 45: { name: 'shield' } } };
+  bot.heldItem = null;
+  bot.entities = {
+    1: { id: 1, name: 'skeleton', position: new Vec3(-8.5, 70, 2.5), isValid: true, width: 0.6, height: 1.99 },
+    2: { id: 2, name: 'skeleton', position: new Vec3(-8.5, 70, -1.5), isValid: true, width: 0.6, height: 1.99 },
+  };
+  // The way on is straight past them: every step that gains is a step closer to a shooter.
+  const surface = new Vec3(-20, 70, 0);
+  assert(require('../src/mob-policy').kitReady(bot), 'armed and armoured');
+  const choices = stairOptions(bot, {}, surface);
+  assert(choices[0].destination.distanceTo(surface) < bot.entity.position.floored().distanceTo(surface), 'a step that gains on the surface');
+  assert.equal(bot._huntingEntity?.name, 'skeleton');
+  delete bot._huntingEntity; bot.health = 8;
+  const hurt = stairOptions(bot, {}, surface);
+  assert(!hurt.length || hurt[0].destination.distanceTo(surface) >= bot.entity.position.floored().distanceTo(surface) - 0.1 || !bot._huntingEntity, 'hurt, no claim');
+  assert.equal(bot._huntingEntity, undefined);
+});

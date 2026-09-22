@@ -5,6 +5,7 @@ const { opportunisticPickups } = require('./opportunistic-pickups');
 const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
 const { safeFromHostiles, hostileEntities } = require('./danger');
+const { fitToFight } = require('./mob-policy');
 const { advance, attemptsFor, setAside, isSetAside } = require('./progress');
 const { surveyRoute } = require('./skills');
 const { dryPassable: passable, dryBodySpace } = require('./terrain');
@@ -58,6 +59,15 @@ function noteProgress(tunnel, target, gap) {
   return tunnel.sinceBest;
 }
 
+function claimBlockers(bot) {
+  if (!fitToFight(bot)) return false;
+  const near = hostileEntities(bot, 24);
+  const kinds = [...new Set(near.map(e => e.name))];
+  if (!near.length || near.length > 2 || kinds.length !== 1 || kinds[0] === 'creeper') return false;
+  bot._huntingEntity = { name: kinds[0], until: Date.now() + 5000, clearingWay: true };
+  return true;
+}
+
 function stairOptions(bot, goal, target, { approach = false } = {}) {
   // Closing on a mob on purpose. The hostile *is* the destination, so the
   // filter that keeps a travelling shaft clear of mobs rules out every
@@ -78,6 +88,17 @@ function stairOptions(bot, goal, target, { approach = false } = {}) {
     if (toward.length) return toward;
   }
   const first = stairChoices(bot, goal, target, { hostiles: true });
+  // Pinned by a mob it can beat: two skeletons standing nine blocks up the
+  // slope in the shade held the way to the surface for ten minutes, every
+  // cell toward it "closer to a shooter", at full health in diamond. A pair
+  // at most, of one kind and no creeper, and only while fit: they are
+  // claimed as the hunt claims its quarry, the steps toward them are open,
+  // and the defence layer swings when one is in reach.
+  const here = bot.entity.position.floored().distanceTo(target), gains = list => list.some(c => c.destination.distanceTo(target) < here - 0.1);
+  if (!gains(first) && first.blocked?.['a hostile'] && claimBlockers(bot)) {
+    const through = stairChoices(bot, goal, target, { hostiles: true });
+    if (gains(through)) return through;
+  }
   if (first.length) return first;
   // Mobs in the cave around a shaft can rule out every direction as
   // unsafe, and the shaft freezes for as long as they stay: the second
