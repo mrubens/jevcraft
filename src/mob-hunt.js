@@ -10,6 +10,7 @@ const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
 const { checkAir } = require('./vitals');
 const { surveyRoute, countOf } = require('./skills');
 const { decideTree } = require('./decisions');
+const { descendTo } = require('./descent');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
@@ -342,9 +343,19 @@ const FORTRESS_BLOCKS = ['nether_bricks', 'nether_brick_fence', 'nether_brick_st
 const FORTRESS_LEG = 96;
 // The next leg of the sweep: ninety-six blocks along x, one way, at a
 // height between the lava sea and the ceiling.
+// Legs run along x until a direction will not give; then the sweep turns.
+const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 function fortressLegTarget(state, position) {
   const y = Math.max(40, Math.min(80, Math.round(position.y)));
-  return new Vec3(Math.round(position.x + FORTRESS_LEG * state.axis), y, Math.round(position.z));
+  const [dx, dz] = Number.isInteger(state.heading) ? HEADINGS[state.heading % 4] : [state.axis, 0];
+  return new Vec3(Math.round(position.x + FORTRESS_LEG * dx), y, Math.round(position.z + FORTRESS_LEG * dz));
+}
+// A direction the sweep cannot make ground in for several ticks is given
+// up for the next one round the compass: a leg toward an open cavern had
+// the staircase shuffling along one ledge.
+function turnSweep(state) {
+  const current = Number.isInteger(state.heading) ? state.heading : (state.axis === -1 ? 2 : 0);
+  state.heading = (current + 1) % 4; state.legFails = 0; delete state.target;
 }
 async function findFortressStep(bot, task, goal, save, actions) {
   const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
@@ -375,6 +386,14 @@ async function findFortressStep(bot, task, goal, save, actions) {
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
           if (nearest.distanceTo(bot.entity.position) < nearest.distanceTo(from) - 1.5) { state.approachFails = 0; return; }
         }
+      }
+      // Above the structure with a gap between: straight down through the
+      // shelf, when the landing is solid and close.
+      const above = bot.entity.position;
+      if (Math.hypot(nearest.x + 0.5 - above.x, nearest.z + 0.5 - above.z) <= 4 && nearest.y < above.y - 2) {
+        goal.step = { action: 'find_fortress', found: state.found, descending: true, legs: state.legs }; save();
+        try { if (await descendTo(bot, task, nearest) >= 1) { state.approachFails = 0; return; } }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastDescentError = err.message; }
       }
       const gapBefore = nearest.distanceTo(bot.entity.position);
       try { await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); }
@@ -422,7 +441,20 @@ async function findFortressStep(bot, task, goal, save, actions) {
     const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++;
   }
   goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();
-  await actions.tunnel(bot, task, goal, save, new Vec3(state.target.x, state.target.y, state.target.z), 'fortress');
+  const leg = new Vec3(state.target.x, state.target.y, state.target.z);
+  const flat = p => Math.hypot(leg.x - p.x, leg.z - p.z);
+  const before = flat(here);
+  // The pathfinder first: it walks open ground, bridges and climbs where a
+  // staircase can only dig. The tunnel takes over where it finds no way.
+  if (actions.navigate) {
+    try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 6), { timeoutMs: 30000, stallMs: 8000 }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    if (flat(bot.entity.position) < before - 6) { state.legFails = 0; return; }
+  }
+  try { await actions.tunnel(bot, task, goal, save, leg, 'fortress'); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastLegError = err.message; }
+  if (flat(bot.entity.position) < before - 1.5) { state.legFails = 0; return; }
+  if (++state.legFails >= 4) { turnSweep(state); save(); bot.chat?.('No way on in this direction. Turning the search.'); }
 }
 
-module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, FORTRESS_LEG };
+module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, FORTRESS_LEG };

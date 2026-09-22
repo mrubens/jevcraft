@@ -307,3 +307,40 @@ test('the fortress sweep runs in ninety-six-block legs along x at a safe height,
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target) => tunnels.push([target.x, target.z, 'bricks']) });
   assert.deepEqual(tunnels[1], [30, 12, 'bricks']); assert.deepEqual(goal.fortressSearch.found, { x: 30, y: 64, z: 12 });
 });
+
+test('the sweep turns a quarter round the compass when a direction gives no ground', () => {
+  const { fortressLegTarget, turnSweep, FORTRESS_LEG } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const state = { axis: 1, legFails: 4, target: { x: 1 } };
+  turnSweep(state);
+  assert.equal(state.legFails, 0); assert.equal(state.target, undefined);
+  const leg = fortressLegTarget(state, new Vec3(0, 64, 0));
+  assert.deepEqual([leg.x, leg.z], [0, FORTRESS_LEG], 'east was blocked: the next leg runs south');
+  turnSweep(state); turnSweep(state);
+  assert.deepEqual([fortressLegTarget(state, new Vec3(0, 64, 0)).x, fortressLegTarget(state, new Vec3(0, 64, 0)).z], [0, -FORTRESS_LEG]);
+});
+
+test('a fortress roof under a shelf is reached by digging straight down, never over lava or a long drop', async () => {
+  const { descendTo } = require('../src/descent');
+  const { Vec3 } = require('vec3');
+  const solid = name => ({ name, boundingBox: 'block', diggable: true, digTime: () => 1000 });
+  const air = { name: 'air', boundingBox: 'empty' };
+  const column = {};
+  // Shelf at 64 (feet 65), cave 61-63, fortress roof at 60.
+  for (let y = 40; y <= 70; y++) column[y] = y === 64 ? solid('netherrack') : y === 60 ? solid('nether_bricks') : air;
+  const bot = {
+    health: 20, entity: { position: new Vec3(0.5, 65, 0.5) },
+    blockAt: p => column[p.y] ? { ...column[p.y], position: p } : null,
+    inventory: { items: () => [] },
+    dig: async block => { column[block.position.y] = air; let y = block.position.y - 1; while (column[y] && column[y].boundingBox === 'empty') y--; bot.entity.position = new Vec3(0.5, y + 1, 0.5); },
+  };
+  const dropped = await descendTo(bot, new Task('hunt'), new Vec3(0, 60, 0));
+  assert.equal(bot.entity.position.y, 61); assert.equal(dropped, 4);
+  // Lava under the shelf: refused.
+  column[64] = solid('netherrack'); column[62] = { name: 'lava', boundingBox: 'empty', diggable: false }; bot.entity.position = new Vec3(0.5, 65, 0.5);
+  await assert.rejects(descendTo(bot, new Task('hunt'), new Vec3(0, 50, 0)), /too deep or ends in lava/);
+  assert.equal(column[64].name, 'netherrack', 'the shelf stays whole');
+  // A ten-block drop: refused too.
+  for (let y = 50; y <= 63; y++) column[y] = air;
+  await assert.rejects(descendTo(bot, new Task('hunt'), new Vec3(0, 40, 0)), /too deep/);
+});
