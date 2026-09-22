@@ -909,3 +909,22 @@ test('the night mine does not choose an ore in the wall of a flooded cave', asyn
   await survival.nightMine(new Task('night', 'mine'), { kind: 'win' }, () => {});
   assert.deepEqual(chosen[0], { x: dry.x, y: dry.y, z: dry.z }, 'the dry ore, though it is farther');
 });
+
+test('a bed in view is a bed to sleep in: its foot, a cell to stand in, never a head, an occupied one or one outside the Overworld', () => {
+  const { observedBed } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const beds = new Map([
+    ['4,64,0', { name: 'red_bed', props: { part: 'foot', facing: 'east', occupied: false } }],
+    ['5,64,0', { name: 'red_bed', props: { part: 'head', facing: 'east', occupied: false } }],
+    ['1,64,5', { name: 'white_bed', props: { part: 'foot', facing: 'north', occupied: true } }],
+  ]);
+  const bot = { registry, game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) },
+    findBlocks: () => [new Vec3(5, 64, 0), new Vec3(1, 64, 5), new Vec3(4, 64, 0)],
+    blockAt: p => { const b = beds.get(`${p.x},${p.y},${p.z}`); if (b) return { name: b.name, boundingBox: 'block', getProperties: () => b.props };
+      return p.y < 64 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }; } };
+  const bed = observedBed(bot);
+  assert.deepEqual([bed.foot.x, bed.foot.z, bed.head.x, bed.head.z], [4, 0, 5, 0]);
+  assert(!bed.stand.equals(bed.head) && bed.stand.distanceTo(bed.foot) === 1);
+  bot.game.dimension = 'the_nether';
+  assert.equal(observedBed(bot), null, 'a bed in the Nether explodes');
+});

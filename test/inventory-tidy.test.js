@@ -39,3 +39,28 @@ test('what the work in hand is for is never surplus', async () => {
   assert(!dropped.some(d => d.name === 'sand'), 'get me sand keeps the sand');
   assert(dropped.some(d => d.name === 'cobblestone'));
 });
+
+test('crowded with nothing over the caps, spare gear goes: the best tool stays, armour no better than what is worn goes', async () => {
+  const stacks = [
+    { name: 'diamond_sword', count: 1 }, { name: 'iron_sword', count: 1 }, { name: 'diamond_pickaxe', count: 1 }, { name: 'diamond_pickaxe', count: 1 },
+    { name: 'iron_pickaxe', count: 1 }, { name: 'shield', count: 1 }, { name: 'shield', count: 1 }, { name: 'iron_helmet', count: 1 },
+    { name: 'diamond_boots', count: 1 }, { name: 'flint_and_steel', count: 1 }, { name: 'flint_and_steel', count: 1 }, { name: 'bucket', count: 2 },
+  ];
+  let free = 0; const tossed = [];
+  const b = { registry, inventory: { items: () => stacks, emptySlotCount: () => free, slots: { 5: { name: 'iron_helmet' }, 8: { name: 'iron_boots' } } },
+    tossStack: async item => { tossed.push(item.name); stacks.splice(stacks.indexOf(item), 1); free++; } };
+  const { spares } = require('../src/inventory-tidy');
+  assert.deepEqual(spares(b).map(i => i.name).sort(), ['flint_and_steel', 'iron_helmet', 'iron_pickaxe', 'iron_sword', 'shield'].sort());
+  await tidyInventory(b, null);
+  assert(!tossed.includes('diamond_sword') && !tossed.includes('diamond_boots') && !tossed.includes('bucket'));
+  assert.equal(free >= 4, true, 'until there is room');
+});
+
+test('room for one more is a free slot or a stack with space', () => {
+  const { roomFor } = require('../src/inventory-tidy');
+  const b = bot({ chicken: 3, cobblestone: 64 }, 0);
+  assert.equal(roomFor(b, 'chicken'), true);
+  assert.equal(roomFor(b, 'beef'), false);
+  b.inventory.emptySlotCount = () => 1;
+  assert.equal(roomFor(b, 'beef'), true);
+});

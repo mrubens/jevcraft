@@ -15,6 +15,43 @@ const SURPLUS = Object.freeze({
 });
 const FREE_SLOTS = 4;
 
+// Spare gear, when stone alone does not make room: pockets holding two
+// swords, two diamond pickaxes, three shields and a second helmet, leggings
+// and boots had no slot for raw chicken, and chicken after chicken was
+// killed and left lying at the bot's feet. The best of each tool is kept (and
+// one spare pickaxe, the tool a long dig wears out); armour no better than
+// what is worn goes, and so does a second of the rest.
+const TIERS = ['wooden', 'leather', 'golden', 'stone', 'chainmail', 'iron', 'diamond', 'netherite'];
+const tier = name => TIERS.findIndex(t => name.startsWith(`${t}_`));
+const TOOL = /_(sword|pickaxe|axe|shovel|hoe)$/, ARMOUR = /_(helmet|chestplate|leggings|boots)$/;
+const SINGLES = new Set(['flint_and_steel', 'shears', 'fishing_rod', 'shield', 'bow', 'crossbow']);
+const WORN = { helmet: 5, chestplate: 6, leggings: 7, boots: 8 };
+function spares(bot, keep = new Set()) {
+  const items = bot.inventory.items().filter(i => !keep.has(i.name));
+  const out = [];
+  const byKind = {};
+  for (const item of items) {
+    const kind = TOOL.test(item.name) ? item.name.match(TOOL)[1] : ARMOUR.test(item.name) ? item.name.match(ARMOUR)[1] : SINGLES.has(item.name) ? item.name : null;
+    if (kind) (byKind[kind] ||= []).push(item);
+  }
+  for (const [kind, list] of Object.entries(byKind)) {
+    list.sort((a, b) => tier(b.name) - tier(a.name));
+    if (kind in WORN) {
+      const worn = bot.inventory.slots?.[WORN[kind]];
+      const keepOne = worn ? list.filter(i => tier(i.name) > tier(worn.name)).slice(0, 1) : list.slice(0, 1);
+      out.push(...list.filter(i => !keepOne.includes(i)));
+    } else out.push(...list.slice(kind === 'pickaxe' ? 2 : 1));
+  }
+  // The weakest first.
+  return out.sort((a, b) => tier(a.name) - tier(b.name));
+}
+
+// Room for one more of `name`: a free slot or a stack with space in it.
+function roomFor(bot, name) {
+  if ((bot.inventory.emptySlotCount?.() ?? 1) > 0) return true;
+  return bot.inventory.items().some(i => i.name === name && i.count < (i.stackSize || 64));
+}
+
 // `keep` is what the work in hand is for: "get me 64 sand" with full
 // pockets mined the sand, dropped it as surplus, and mined it again.
 function surplus(bot, keep = new Set()) {
@@ -50,7 +87,13 @@ async function tidyInventory(bot, task, { force = false, away = null, keep } = {
     catch (err) { task?.check?.(); break; }
     if (!force && !crowded(bot)) break;
   }
+  if (crowded(bot)) for (const item of spares(bot, keep)) {
+    task?.check?.();
+    try { await (bot.tossStack ? bot.tossStack(item) : bot.toss(item.type, null, item.count)); dropped.push({ name: item.name, count: item.count }); }
+    catch (err) { task?.check?.(); break; }
+    if (!crowded(bot)) break;
+  }
   return dropped;
 }
 
-module.exports = { tidyInventory, surplus, crowded, SURPLUS, FREE_SLOTS };
+module.exports = { tidyInventory, surplus, spares, roomFor, crowded, SURPLUS, FREE_SLOTS };

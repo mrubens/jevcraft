@@ -7,6 +7,7 @@ const { knowledge } = require('./knowledge');
 const { surveyRoute } = require('./skills');
 const { homeFood, eatFromHome } = require('./home-base');
 const { villageFood, eatFromVillage } = require('./villages');
+const { tidyInventory, roomFor } = require('./inventory-tidy');
 const vanilla = require('../data/vanilla-26.1.json');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Raw chicken is an ingredient, never edible reserve. Its cooking dependency
@@ -57,6 +58,10 @@ async function hunt(bot, task, target, actions, goal, save) {
   try {
     const item = preyFood(bot, target);
     if (!item) throw new Error(`Food target ${target.name} is not an eligible passive adult`);
+    // No slot for the meat is no reason to kill: make room first, and if
+    // there is none to make, say so rather than leave another carcass.
+    if (!roomFor(bot, item)) await tidyInventory(bot, task, { force: true, away: target.position });
+    if (!roomFor(bot, item)) throw new Error(`No room in my pockets for ${item.replaceAll('_', ' ')}`);
     const before = count(bot, item), foodBefore = foodSupply(bot);
     const deadline = Date.now() + 45000;
     const weapon = bot.inventory.items().filter(i => /_(sword|axe)$/.test(i.name))
