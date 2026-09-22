@@ -199,11 +199,11 @@ Jev build a small sandstone watchtower
 Jev build a cobblestone sculpture
 ```
 
-With an OpenRouter key, the designer receives the request, a terrain heightmap, inventory, game mode, and the supported palette, and returns a schematic. Code validates its geometry; Jev judges whether it answers the request; then the bot gathers materials through ordinary recipes (or the Creative inventory) and builds it. Jev prefers level ground but can cut terrain, fill gaps, and set a foundation in shallow water, within bounded earthworks that protect existing builds.
+With an OpenRouter key, the designer receives the request, a terrain heightmap, inventory, game mode, and the supported palette, and returns a schematic. Code validates its geometry; Jev judges whether it answers the request; then the bot gathers materials through ordinary recipes (or the Creative inventory) and builds it. Jev prefers level ground but can cut terrain, fill gaps, and set a foundation in shallow water, within bounded earthworks that only move natural ground. Jev's own earlier buildings and anything a player built are built around, never over.
 
 The executor supports structures up to **25 × 16 × 25 blocks** in the ordinary case and larger ones when a request calls for it, with at most **16 materials**. Stairs, slabs and wooden doors carry their orientation; fluids, gravity blocks and redstone are not supported schematic elements.
 
-Without an OpenRouter key, Jev selects and configures cottage, mansion, or tower templates. A plain `Jev build a house` uses the compact shelter workflow. Ask to extend, finish, or change a building Jev already built and it works out which one you mean.
+Without an OpenRouter key, Jev selects and configures cottage, mansion, or tower templates, or picks a ready-made design from the shelf of forty-five in `data/schematics` and the generators (chapels, wells, farms, barns, pavilions, monuments and more). These designs are built as they are, with no separate fit review. A plain `Jev build a house` uses the compact shelter workflow. Ask to extend, finish, or change a building Jev already built and it works out which one you mean; without the custom designer a change is built beside the original instead, since a template cannot be drawn against it.
 
 ## Model configuration
 

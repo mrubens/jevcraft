@@ -61,8 +61,10 @@ const sleepable = bot => bot.time?.timeOfDay >= SLEEP_FROM && bot.time.timeOfDay
 // Level floor under both bed cells, air at feet and head height.
 // The bed at the base, when it stands and is within a short walk: the
 // first night of run two was spent walled in two blocks from it.
-// Within a short walk means within a hundred blocks: the second run walled
-// itself in thirty blocks from its bed because the bed was out of view.
+// Within a short walk means within a hundred and sixty blocks: the second
+// run walled itself in thirty blocks from its bed because the bed was out of
+// view. (A hundred at first; the base's pond and plot pulled the working
+// radius out to a hundred and sixty.)
 // A bed remembered as claimed counts while its chunk is unloaded; a bed
 // seen to be gone does not.
 const HOME_BED_WALK = 160;
