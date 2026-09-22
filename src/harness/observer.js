@@ -39,6 +39,11 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       tools: items.filter(i => bot.registry?.itemsByName?.[i.name]?.maxDurability).map(i => ({ name: i.name,
         remaining: bot.registry.itemsByName[i.name].maxDurability - (i.durabilityUsed || 0) })),
       goal: goalView(goal), decision: goal.decisions?.at(-1), world, route,
+      // Who is moving the bot, and how: the step on the goal went stale
+      // while other code held the keys, and a fall had to be reconstructed.
+      controller: bot._controller ? { ...bot._controller } : null,
+      held: Object.entries(bot.controlState || {}).filter(([, on]) => on).map(([key]) => key),
+      pathing: !!bot.pathfinder?.isMoving?.(),
       memory: bot.companionMemory ? { places: bot.companionMemory.state.places.length,
         notes: bot.companionMemory.state.notes.length, preferences: bot.companionMemory.state.preferences.length, tasks: bot.companionMemory.state.history.length } : undefined,
       entities: Object.values(bot.entities || {}).filter(e => e !== bot.entity && e.position?.distanceTo(bot.entity.position) < 24)
@@ -83,10 +88,17 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
   on('chat', (from, message) => sample('chat', { from, message }));
   const timer = setInterval(() => { if (trace.connected) sample(); }, 1000);
   timer.unref();
+  // While keys are held outside the pathfinder, four looks a second: a fall
+  // off an edge takes two, and one look a second saw its start and its end.
+  const motion = setInterval(() => {
+    if (!trace.connected || bot.pathfinder?.isMoving?.()) return;
+    if (Object.values(bot.controlState || {}).some(Boolean)) sample('motion');
+  }, 250);
+  motion.unref();
   function detach(reason = 'disconnected') {
     if (!alive) return;
     if (trace.epoch === epoch) { trace.connected = false; sample('connection', { connected: false, reason }); }
-    alive = false; clearInterval(timer); for (const [name, fn] of listeners) bot.removeListener(name, fn);
+    alive = false; clearInterval(timer); clearInterval(motion); for (const [name, fn] of listeners) bot.removeListener(name, fn);
   }
   on('end', detach);
   // The run's cost so far, read fresh on every poll; a ledger that cannot

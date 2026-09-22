@@ -17,7 +17,8 @@ async function main() {
   if (process.env.JEV_DASHBOARD_PORT) {
     const path = require('node:path');
     harness = await require('./src/harness/server').startHarness({ port: Number(process.env.JEV_DASHBOARD_PORT),
-      artifacts: path.join(__dirname, 'artifacts'), stateDirectory: path.join(__dirname, '.bot-state') });
+      artifacts: path.join(__dirname, 'artifacts'), stateDirectory: path.join(__dirname, '.bot-state'),
+      flightDirectory: path.join(__dirname, '.bot-state', 'flight'), flightLabel: `${config.host}-${config.port}-${config.username}` });
     console.log(`[dashboard] ${harness.url}`);
   }
   try {

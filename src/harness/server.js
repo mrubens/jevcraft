@@ -9,10 +9,11 @@ const { demo } = require('./demo');
 const { createTextures } = require('./textures');
 const publicDir = path.join(__dirname, '../../public/harness');
 
-async function startHarness({ port = 3040, artifacts, stateDirectory, textureOptions } = {}) {
+async function startHarness({ port = 3040, artifacts, stateDirectory, textureOptions, flightDirectory, flightLabel } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid dashboard port');
   const archive = new Archive({ artifacts, stateDirectory });
-  const trace = new Trace();
+  const flight = flightDirectory ? require('./flight').flightRecorder(flightDirectory, flightLabel || `port-${port}`) : null;
+  const trace = new Trace({ onFrame: frame => flight?.record(frame) });
   const sample = demo();
   const textures = createTextures(textureOptions);
   let observer, controlBusy = false;

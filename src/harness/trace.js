@@ -128,7 +128,7 @@ function legacyFrames(rows, goal = {}) {
 // the interesting frames out with it. Heartbeats are the first to go, so a
 // chat request and the decisions it caused stay inspectable for far longer
 // than the terrain samples around them.
-const HEARTBEAT = new Set(['observation', 'vitals']);
+const HEARTBEAT = new Set(['observation', 'vitals', 'motion']);
 
 class Trace {
   constructor({ id = 'live', label = 'Jev', mode = 'live', onFrame = () => {} } = {}) {
