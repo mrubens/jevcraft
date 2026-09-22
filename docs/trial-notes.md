@@ -101,6 +101,20 @@ The baseline zeros mean "never fought", not "took no damage": those drills ended
 30. *My own watchdog was the third blocker.* The fifteen-second "watching and getting nowhere" rule set the mob aside, and in a room with twelve blazes it set one aside every fifteen seconds until it had avoided all of them and had nothing left to hunt. It now changes the situation instead, building cover so they must come round it, and only gives up on a target after three tries. A stall-breaker that removes the work is not a stall-breaker.
 31. *The spawner room is a drill now* (`blaze_spawner`, arena `tower`): four blazes in a sealed chamber under the floor the bot stands on. It reproduces the live wall exactly, and the hunt now digs down through the roof to reach them. Three runs: one death, one run where nothing happened, and one where all four died for **zero damage** through cover and a tunnel. Inconsistent, which is what a drill is for; the rods still went uncollected in the chamber below, which is the next thing.
 
+**The spawner room, second pass (2026-09-22 12:15 UTC), three runs each.** Both drills pass, and the arena now counts only kills the bot caused.
+
+| drill | deaths | bot kills | rods | damage |
+|---|---|---|---|---|
+| blaze_spawner | 1 -> 0 | 0 -> 2 | 0 -> 1 | 10.7 -> 9.4 |
+| blaze_swarm_open | 0 -> 0 | 0 -> 5 | 0 -> 3 | - -> 14.1 |
+
+32. *A crash on every hurt tick.* The recovery branch referenced `state` two hundred lines before `const state` was declared: a temporal-dead-zone error, thrown out of the hunt on every tick the bot was below eighteen health with a shooter in view. It read, from outside, as a bot that simply did nothing when hurt.
+33. *The exemption had a hole in it.* The hunt's claim on its quarry stopped the survival layer sealing against distant blazes, and also stopped it swinging at near ones: four blazes sat at two blocks while the deliberate fight found no candidate and the reactive one had been told to look away. Forty-three damage, no swing thrown. A mob within a sword's reach is never exempt; the emergency answer to a blaze in the face is the swing, whatever the hunt intended.
+34. *Three of a kind in view is not "too many" for a bot at full health.* The isolation rule refused every candidate at a spawner, where three in the air is the floor, and in the arena the same swarm fought at full health came home with rods while watched it came home with nothing. The crowd stops a fight only once the bot is already hurt. The bunker also digs fortress brick now, which is the only rock a fortress has.
+35. *Blazes die on their own in a sealed room* (one of three in the spawner drill), against the walls. Counting those as kills sent a rod-collection fix down a blind alley; the arena now credits a kill only if the bot struck that mob within six seconds.
+
+Live, the same code has dug Jev down from the roof at y=83 to y=79, four blocks from the blazes' level, and it is still stalking; no rod yet.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
