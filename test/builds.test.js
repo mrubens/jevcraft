@@ -73,6 +73,19 @@ test('only the most recent structures are kept whole', () => {
   assert(names.includes(`Hut ${MAX_BUILDS + 2}`)); assert(!names.includes('Hut 0'));
 });
 
+test('a village of twenty parts fits, and an unfinished one is let go before a standing one', () => {
+  assert(MAX_BUILDS >= 20, 'every part of a village stays known');
+  const registry = new BuildRegistry(null);
+  registry.remember(buildGoal('Cottage 0', { x: 0, y: 62, z: 0 }, [{ x: 0, y: 62, z: 0, material: 'oak_planks' }]), { dimension: 'overworld', status: 'complete' });
+  registry.remember(buildGoal('Half a well', { x: 8, y: 62, z: 0 }, [{ x: 8, y: 62, z: 0, material: 'oak_planks' }]), { dimension: 'overworld', status: 'unfinished' });
+  for (let i = 1; i < MAX_BUILDS; i++) {
+    registry.remember(buildGoal(`Cottage ${i}`, { x: 16 + i * 8, y: 62, z: 0 }, [{ x: 16 + i * 8, y: 62, z: 0, material: 'oak_planks' }]), { dimension: 'overworld', status: 'complete' });
+  }
+  const names = registry.all('overworld').map(e => e.name);
+  assert(names.includes('Cottage 0'), 'the oldest standing cottage is still known');
+  assert(!names.includes('Half a well'), 'the unfinished part went first');
+});
+
 test('past work is claimed as Jev\'s own only while the blocks still match', () => {
   const store = new BuildRegistry(null);
   const goal = buildGoal('Barn', { x: 0, y: 62, z: 0 },

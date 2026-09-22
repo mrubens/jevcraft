@@ -103,3 +103,12 @@ test('finishing a change to a standing building is not announced as a new one', 
   assert.equal(completion({ kind: 'build', buildContinuation: { mode: 'finish', name: 'Stone Watchtower' } }),
     'The building is done! I checked it for missing blocks.');
 });
+
+test('a request that fails at intake says why, and an outage is not a request to rephrase', () => {
+  const { intakeProblem } = require('../src/speech');
+  const clarify = Object.assign(new Error('I need a more specific target for that command.'), { name: 'CommandClarification' });
+  assert.equal(intakeProblem(clarify), clarify.message);
+  assert.match(intakeProblem(new Error('Please request at most 16 different items')), /at most 16/);
+  assert.match(intakeProblem(Object.assign(new Error('503 Service Unavailable'), { name: 'TypeSafeError' })), /trouble thinking/);
+  assert.match(intakeProblem(new Error('Jev selected an unavailable option')), /another way/);
+});

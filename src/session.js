@@ -16,7 +16,7 @@ const { classifyCommand } = require('./command-classifier');
 const { recordDeath, observeAliveInventory } = require('./recovery');
 const { statusMessage } = require('./status');
 const { bundleSummary } = require('./item-bundle');
-const { friendlyProblem, recoveryHint, quietRepeats } = require('./speech');
+const { friendlyProblem, intakeProblem, recoveryHint, quietRepeats } = require('./speech');
 const { withRequestSignal } = require('./typesafe');
 const { suspendPrevious, resumeSaved } = require('./suspended-tasks');
 const { CompanionMemory, position } = require('./memory');
@@ -446,7 +446,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         spec.kind === 'win' ? "Let's beat the dragon! I'll gather supplies and take it one step at a time." :
         "I'll get a Nether portal working, then go through to check it.");
       launch(goal); launched = true;
-    }).catch(err => { console.error(err); if (!ended && revision === generation) bot.chat('I had trouble understanding that. Please try saying it another way.'); }).finally(() => { if (!launched) ledger.fold(run.id); pendingRequests--; });
+    }).catch(err => { console.error(err); if (!ended && revision === generation) bot.chat(intakeProblem(err)); }).finally(() => { if (!launched) ledger.fold(run.id); pendingRequests--; });
   });
 
   bot.once('spawn', async () => {

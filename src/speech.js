@@ -77,6 +77,24 @@ function quietRepeats(bot, { windowMs = 120000, replyMs = 15000 } = {}) {
   return bot;
 }
 
+// What to say when a request could not be understood. "Say it another
+// way" was the answer to everything, including a Jev outage (rephrasing
+// cannot fix that), a command that needed one more detail, and a list of
+// twenty items, each of which had its own useful message that was thrown
+// away.
+const SAY_AS_IS = /Please request at most|spans too many catalog branches|Unknown movement target|Invalid item quantity/;
+function intakeProblem(error) {
+  const text = String(error?.message || error || '');
+  if (error?.name === 'CommandClarification' || SAY_AS_IS.test(text)) {
+    return /movement target/.test(text) ? "I don't know who you want me to go to. Name a player who's online." :
+      /item quantity/.test(text) ? "I couldn't work out how many you want. Give me a number." : text;
+  }
+  if (error?.name === 'TypeSafeError' || /API|TypeSafe|fetch|network|timeout|timed out|ECONN|socket/i.test(text)) {
+    return 'I\'m having trouble thinking right now. Please try again in a moment; "Jev stop" and "Jev status" still work.';
+  }
+  return 'I had trouble understanding that. Please try saying it another way.';
+}
+
 function friendlyProblem(error) {
   const text = String(error?.message || error || '');
   if (/silk touch/i.test(text)) return 'I need a tool with Silk Touch to pick up that block.';
@@ -165,4 +183,4 @@ function completion(goal) {
   if (goal.kind === 'concrete') return `You got ${goal.count} purple concrete!`;
   return 'The Nether portal works! I went through to check.';
 }
-module.exports = { quietRepeats, name, list, friendlyProblem, recoveryHint, thinking, activity, completion };
+module.exports = { intakeProblem, quietRepeats, name, list, friendlyProblem, recoveryHint, thinking, activity, completion };

@@ -1358,7 +1358,11 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     const editing = joining?.design?.source ? { name: joining.name, size: joining.design.source.size,
       palette: joining.design.source.palette, regions: joining.design.source.regions,
       entrance: joining.design.source.entrance } : undefined;
-    try { goal.design = fallback ? await designWithJev(bot, task, goal.request, client, goal.memoryContext) :
+    // Held here until the review passes. On the goal straight away, a review
+    // cut short (a stop, a mob, a dropped connection) left a design the next
+    // step took as settled, and it was built unreviewed.
+    let design;
+    try { design = fallback ? await designWithJev(bot, task, goal.request, client, goal.memoryContext) :
       await designBuilding(bot, task, goal.request, { previousDraft: goal.designDraft, feedback: goal.designError, memory: goal.memoryContext, editing }); }
     catch (err) {
       if (!fallback && ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) goal.designAttempts--;
@@ -1374,13 +1378,13 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     // Geometry has been validated; whether it is the thing that was asked for
     // has not. That is a judgment, and a cheap one next to building it.
     if (!fallback && client) {
-      const review = await reviewDesign(client, { request: goal.request, design: goal.design, memory: goal.memoryContext, editing });
+      const review = await reviewDesign(client, { request: goal.request, design, memory: goal.memoryContext, editing });
       task.check();
       goal.designReview = review;
       if (!review.accepted) {
         const summary = review.summary;
         goal.designError = `the design does not answer the request (Jev put the fit at ${Math.round(review.fits * 100)}%): it drew "${summary.name}", ${summary.size.width}x${summary.size.height}x${summary.size.depth} with ${summary.solidBlocks} blocks; redesign it to match the request in kind, scale and material`;
-        goal.designDraft = goal.design.source; delete goal.design;
+        goal.designDraft = design.source;
         (goal.designHistory ||= []).push({ at: new Date().toISOString(), attempt: goal.designAttempts, error: goal.designError, draft: goal.designDraft, review });
         goal.designHistory = goal.designHistory.slice(-4);
         save();
@@ -1389,6 +1393,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
         throw err;
       }
     }
+    goal.design = design;
     delete goal.designDraft; delete goal.designError;
     save();
     const changing = goal.buildContinuation?.mode === 'edit' && goal.buildContinuation.name;
