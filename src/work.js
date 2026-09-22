@@ -1330,6 +1330,15 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     const mode = process.env.BUILD_DESIGNER || 'auto';
     if (!['auto', 'jev', 'openrouter'].includes(mode)) throw new Blocked('BUILD_DESIGNER must be auto, jev or openrouter');
     const fallback = mode === 'jev' || mode === 'auto' && !process.env.OPENROUTER_API_KEY;
+    // A template cannot be drawn against an existing building, so an edit
+    // without the custom designer came out as a separate building that then
+    // took over the original's record. Say so and build it beside instead.
+    if (fallback && goal.buildContinuation?.mode === 'edit') {
+      const name = goal.buildContinuation.name || 'that building';
+      goal.buildContinuation = { ...goal.buildContinuation, mode: 'fresh', placement: 'beside_target', editUnsupported: true };
+      delete goal.buildId; save();
+      bot.chat(`I can't change ${name} without the custom designer, so I'll build this beside it instead.`);
+    }
     // Recheck saved geometry after a validator update, before paying for a
     // replacement or silently reducing the user's request to a house template.
     // A draft Jev rejected as not answering the request is valid geometry

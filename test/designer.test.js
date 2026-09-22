@@ -414,3 +414,29 @@ test('mid-edit, Jev describes what the building becomes rather than christening 
   assert.deepEqual(fresh, ["I'm calling it Stone Watchtower with Balcony.", 'It comes out 7 by 10, and 14 tall.']);
   assert.deepEqual(changed, ["It'll be Stone Watchtower with Balcony when I'm done.", 'It ends up 7 by 10, and 14 tall.']);
 });
+
+test('without the custom designer, a chapel comes off the shelf instead of being refused', async () => {
+  const asked = [];
+  const client = { model: 'jev-test', systemOne: async ({ questions, state }) => {
+    asked.push(Object.keys(questions));
+    if (questions.design) return { answers: { design: { choice: Object.keys(questions.design.criteria)[0] } } };
+    return { answers: { style: { choice: 'unsupported' }, floors: { choice: 'unsupported' }, size: { choice: 'normal' }, material: { choice: 'default' }, shelf_part: { choice: 'chapel' } } };
+  } };
+  const design = await designWithJev(world(), new Task('shelf'), 'build a chapel', client);
+  assert.equal(design.backend, 'schematic-library');
+  assert(design.libraryId, 'the design is named from the shelf');
+  assert(asked[0].includes('shelf_part'), 'the shelf is asked about in the same batch');
+});
+
+test('an edit without the custom designer is built beside the original and leaves its record alone', async t => {
+  const previous = process.env.BUILD_DESIGNER;
+  process.env.BUILD_DESIGNER = 'jev';
+  t.after(() => { if (previous === undefined) delete process.env.BUILD_DESIGNER; else process.env.BUILD_DESIGNER = previous; });
+  const bot = world(), messages = []; bot.chat = m => messages.push(m);
+  const goal = { request: 'add a floor to the cottage', buildId: 'cottage-1', buildContinuation: { mode: 'edit', target: 'cottage-1', name: 'the cottage' } };
+  await designedBuildStep(bot, new Task('edit'), goal, () => {}, {
+    systemOne: async () => ({ answers: { style: { choice: 'cottage' }, floors: { choice: '2' }, size: { choice: 'normal' }, material: { choice: 'default' } } }),
+  });
+  assert.equal(goal.buildContinuation.mode, 'fresh'); assert.equal(goal.buildId, undefined);
+  assert(messages.some(m => /beside it/.test(m)));
+});

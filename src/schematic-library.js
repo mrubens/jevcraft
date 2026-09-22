@@ -56,15 +56,17 @@ const stripPart = source => { const { part: _part, ...rest } = source; return re
 
 // Which design from the shelf suits this village. Jev sees what stands, in
 // what materials and at what scale, and every candidate's summary.
-async function chooseSchematic(client, { part, entries, structures = [], signal } = {}) {
+async function chooseSchematic(client, { part, entries, structures = [], signal, request } = {}) {
   const candidates = entries.filter(e => e.part === part);
   if (!candidates.length) return null;
   if (candidates.length === 1 || !client) return { entry: candidates[0], judgments: null, usage: null };
   const options = Object.fromEntries(candidates.map(e => [e.id, `${e.summary.name}: ${e.summary.description || ''} ${e.summary.size}, ${e.summary.blocks} blocks, mostly ${e.summary.materials}.`]));
   const response = await client.systemOne({ signal, kind: 'design', state: {
     standing: structures.map(s => ({ name: s.name, request: s.request, size: s.size, materials: s.materials, distance: s.distance })),
-    part, guidance: 'Pick the design that best fits beside the buildings already standing: matching or complementary materials, a scale in keeping with the rest, and variety across the village rather than the same house repeated. Every option is buildable here.',
-  }, questions: { design: choice(`Which ${part} design should the bot build next for this village?`, options) } });
+    part, ...(request ? { request } : {}),
+    guidance: request ? 'Pick the design that best answers the player\'s request: its words about size, material and style first, then what stands nearby. Every option is buildable here.'
+      : 'Pick the design that best fits beside the buildings already standing: matching or complementary materials, a scale in keeping with the rest, and variety across the village rather than the same house repeated. Every option is buildable here.',
+  }, questions: { design: choice(request ? `Which ${part} design best answers the request?` : `Which ${part} design should the bot build next for this village?`, options) } });
   const answer = response.answers?.design;
   if (!answer || !Object.hasOwn(options, answer.choice)) throw new Error('Jev chose a design that is not on the shelf');
   return { entry: candidates.find(e => e.id === answer.choice), judgments: answer, usage: response.usage };

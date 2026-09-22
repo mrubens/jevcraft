@@ -35,6 +35,12 @@ function templateSchematic({ style, floors, size, material }) {
     size: [width, height, depth], palette: [...new Set([material, 'glass'])], regions, entrance: [middle, 1, 0] };
 }
 
+const SHELF_PART_DESCRIPTIONS = {
+  well: 'A well: a small stone or wooden well, a village well.', farm: 'A farm plot or field with crops.', chapel: 'A chapel, church or small temple.',
+  pavilion: 'A pavilion, gazebo or open-sided shelter.', monument: 'A monument, statue, obelisk or memorial.', barn: 'A barn or large farm building.',
+  lamp: 'A lamp post, street light or lantern post.', plaza: 'A plaza, square or paved centre.',
+};
+
 async function designWithJev(bot, task, request, client, memory) {
   const controller = new AbortController();
   const watcher = setInterval(() => { try { task.check(); checkAir(bot); } catch (e) { controller.abort(e); } }, 100);
@@ -43,17 +49,32 @@ async function designWithJev(bot, task, request, client, memory) {
   try {
     memory = await require('./preferences').resolvedPreferenceContext(cancellable, bot.registry, memory);
     const world = surveyForDesign(bot);
+    // Required here: the shelf itself builds its template entries from this file.
+    const { library, chooseSchematic } = require('./schematic-library');
+    const shelf = library(bot.registry), shelfParts = [...new Set(shelf.map(e => e.part))].filter(p => !['cottage', 'mansion', 'tower'].includes(p));
     const response = await cancellable.systemOne({ kind: 'design', state: { request, world, memory, templates: 'Rectangular cottage, mansion or tower, one to three floors, glass windows, stepped roof, open entrance and interior full-block stairs. No custom shapes, bridges or statues.' }, questions: {
       style: choice('Choose the closest supported structure that can fulfill this request. Select unsupported if the requested shape or essential feature cannot be represented by these templates.', {
         cottage: 'Small rectangular house/cottage, optionally multiple floors.', mansion: 'Large rectangular mansion with windows, wide entrance and multiple floors.', tower: 'Tall square tower with interior stairs.', unsupported: 'Requires another structure or custom geometry, such as bridge, castle battlements, statue, circular dome, complex wings or unsupported essential details.',
       }),
       floors: choice('Assuming a supported template, select its requested number of floors. Default to two for a mansion, three for a tower, one for a cottage. Select unsupported if more than three floors are essential.', { 1: 'One floor', 2: 'Two floors', 3: 'Three floors', unsupported: 'Requires more than three floors' }),
       size: choice('Select the overall requested size for a supported template.', { normal: 'Ordinary or compact size; default', large: 'Explicitly large, grand or spacious size' }),
+      // Asked in the same batch, for when no template fits: the shelf has
+      // chapels, wells, farms and more, and "build a chapel" was refused as
+      // needing the generative designer with four chapels on it.
+      ...(shelfParts.length ? { shelf_part: choice('Assuming the request does not fit a rectangular cottage, mansion or tower, which kind of ready-made building on the shelf does it ask for?',
+        { ...Object.fromEntries(shelfParts.map(part => [part, SHELF_PART_DESCRIPTIONS[part] || part])), none: 'None of these: the request needs something the shelf does not have.' }) } : {}),
       material: choice('Can a primary building material be resolved from this request or relevant memory? Current explicit instructions override explicit memory notes, which override learned memory.preferences. Use a remembered wood species as planks for an unspecified building.', { specified: 'A primary material, color or wood species is requested or preferred in relevant memory.', default: 'No requested or remembered preferred material; use oak planks.' }),
     } });
     const answers = response.answers, style = answers?.style?.choice, floors = answers?.floors?.choice, size = answers?.size?.choice;
+    const part = answers?.shelf_part?.choice;
+    if (style === 'unsupported' && shelfParts.includes(part)) {
+      const picked = await chooseSchematic(cancellable, { part, entries: shelf, request });
+      task.check();
+      return { ...validateSchematic(picked.entry.source, bot.registry), model: client.model || 'jev', backend: 'schematic-library', libraryId: picked.entry.id,
+        createdAt: new Date().toISOString(), world, judgments: { ...answers, design: picked.judgments }, usage: response.usage };
+    }
     if (!['cottage', 'mansion', 'tower'].includes(style) || !['1', '2', '3'].includes(floors) || !['normal', 'large'].includes(size)) {
-      const err = new Error('The Jev fallback supports rectangular cottages, mansions and towers with up to three floors. This request needs the custom OpenRouter designer'); err.name = 'Blocked'; throw err;
+      const err = new Error(`Without the custom designer I can build rectangular cottages, mansions and towers of up to three floors, or a ${shelfParts.filter(p => !['cottage', 'mansion', 'tower'].includes(p)).join(', ')} from my designs. The Jev fallback supports nothing else for this request`); err.name = 'Blocked'; throw err;
     }
     let material = 'oak_planks', resolution;
     if (answers.material?.choice === 'specified') {
