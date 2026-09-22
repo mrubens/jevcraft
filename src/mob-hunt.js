@@ -363,6 +363,17 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   if (await collectNearbyDrops(bot, task, step.item, { radius: 12, timeoutMs: 5000, move: actions.navigate })) {
     goal.step = { action: 'collect_drop', item: step.item, carried: countOf(bot, step.item) }; save(); return;
   }
+  // A rod on a floor the bot is standing on top of cannot be walked to. The
+  // spawner drill killed all four blazes for no damage and came home with
+  // nothing, because the drops were in the chamber and the bot was on its
+  // roof. Where the walk fails and the drop is below, go down after it.
+  const below = Object.values(bot.entities || {}).find(e => e.getDroppedItem?.()?.name === step.item &&
+    e.position && e.position.distanceTo(bot.entity.position) < 24 && e.position.y < bot.entity.position.y - 2);
+  if (below) {
+    goal.step = { action: 'down_for_the_drop', item: step.item, drop: Math.round(bot.entity.position.y - below.position.y) }; save();
+    try { if (await descendTo(bot, task, below.position) >= 1) return; }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; goal.mobHunt.lastDescentError = err.message; }
+  }
   if (!handler.passive && !await prepareCombatGear(bot, task, goal, save, actions)) return;
   if (handler.dimension && dimension(bot) !== handler.dimension) { await actions.enterNether(bot, task, goal, save); return; }
   if (!canBegin(bot, handler)) {
