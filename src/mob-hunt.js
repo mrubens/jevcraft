@@ -374,7 +374,14 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // Hurt, not merely outnumbered. Held at the door the bot took nine
     // damage and got no rods in two runs, because blazes hover out of reach
     // of a doorway; fought in the open at full health it got two.
-    if (step.entity === 'blaze' && swarm(bot) && bot.health < 16 && !(state.bunkerFailedAt > Date.now() - 120000)) {
+    // Two shooters at different angles cannot both be kept inside one
+    // shield arc, and the arena charged twenty-six health a pair to prove
+    // it. They are met at a tunnel mouth instead, where they have to arrive
+    // one at a time. A single one is still fought in the open, which now
+    // costs nothing at all.
+    const inView = threats(bot, 24).filter(t => t.entity.name === step.entity && t.visible).length;
+    const cornered = handler.ranged && (inView >= 2 || (swarm(bot) && bot.health < 16));
+    if (cornered && !(state.bunkerFailedAt > Date.now() - 120000)) {
       try { await bunkerFight(bot, task, goal, save, actions, { item: step.item, want: countOf(bot, step.item) + 1 }); return; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.bunkerFailedAt = Date.now(); state.lastBunkerError = err.message; save(); }
     }

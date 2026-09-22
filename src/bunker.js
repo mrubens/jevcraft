@@ -43,6 +43,22 @@ function bunkerSide(bot, feet, from) {
   return null;
 }
 
+// One step to the side at the end of the tunnel. A straight shaft is a
+// shooting gallery along its own axis: anything lined up with it can see
+// all the way to the back, which is how the first bunker took fireballs at
+// the far end and brought no rods home. Around a corner there is no line
+// from outside at all, so a blaze that wants to see the bot has to come in
+// and turn it, arriving inside a sword's reach.
+function cornerCell(bot, inside, side) {
+  const turns = SIDES.filter(s => s.x * side.x + s.z * side.z === 0);
+  for (const turn of turns) {
+    const cell = inside.plus(turn);
+    const diggable = p => { const b = bot.blockAt(p); return solid(b) && NATURAL.test(b.name) && b.diggable; };
+    if (diggable(cell) && diggable(cell.offset(0, 1, 0)) && solid(bot.blockAt(cell.offset(0, -1, 0)))) return cell;
+  }
+  return null;
+}
+
 async function digCell(bot, task, p) {
   const block = bot.blockAt(p);
   if (passable(block)) return;
@@ -123,8 +139,19 @@ async function digBunker(bot, task, goal, save, { from = null, navigate = null }
     await digCell(bot, task, cell.offset(0, 1, 0)); await digCell(bot, task, cell);
     if (!await stepTo(bot, task, cell)) throw new Error('Could not step into the bunker');
   }
-  const mouth = feet.plus(side);
-  return { mouth, inside: feet.plus(side.scaled(DEPTH)), side };
+  const mouth = feet.plus(side), end = feet.plus(side.scaled(DEPTH));
+  // The turn, when the rock allows one. Without it the bunker is a corridor
+  // with the bot at one end and the shooters at the other.
+  const corner = cornerCell(bot, end, side);
+  if (corner) {
+    task.check(); checkAir(bot);
+    await digCell(bot, task, corner.offset(0, 1, 0)); await digCell(bot, task, corner);
+    if (await stepTo(bot, task, corner)) {
+      goal.step = { action: 'dig_bunker', side: { x: side.x, z: side.z }, depth: DEPTH, turned: true }; save();
+      return { mouth, inside: corner, watch: end, side, turned: true };
+    }
+  }
+  return { mouth, inside: end, watch: mouth, side, turned: false };
 }
 
 // Hold the bunker: shield up, strike whatever comes within reach, until
@@ -136,7 +163,8 @@ async function holdBunker(bot, task, goal, save, bunker, { item = 'blaze_rod', w
   const sword = defenseWeapon(bot);
   try {
     if (sword && bot.heldItem?.name !== sword.name) await bot.equip(sword, 'hand');
-    await bot.lookAt(bunker.mouth.offset(0.5, 1.2, 0.5), true);
+    const watch = bunker.watch || bunker.mouth;
+    await bot.lookAt(watch.offset(0.5, 1.2, 0.5), true);
     raiseShield(bot);
     while (Date.now() - started < HOLD_MS) {
       task.check(); checkAir(bot);
@@ -151,7 +179,7 @@ async function holdBunker(bot, task, goal, save, bunker, { item = 'blaze_rod', w
         // Back in place and facing the door between swings.
         const p = bot.entity.position, c = bunker.inside.offset(0.5, 0, 0.5);
         if (Math.hypot(p.x - c.x, p.z - c.z) > 0.6) { lowerShield(bot); await stepTo(bot, task, bunker.inside); }
-        await bot.lookAt(bunker.mouth.offset(0.5, 1.2, 0.5), true);
+        await bot.lookAt((bunker.watch || bunker.mouth).offset(0.5, 1.2, 0.5), true);
         raiseShield(bot);
         await sleep(150);
       }
@@ -194,4 +222,4 @@ async function bunkerFight(bot, task, goal, save, actions, { item = 'blaze_rod',
   return gained;
 }
 
-module.exports = { bunkerFight, digBunker, reachWall, wallStands, swarm, blazes, bunkerSide, centroid, SWARM };
+module.exports = { bunkerFight, digBunker, cornerCell, reachWall, wallStands, swarm, blazes, bunkerSide, centroid, SWARM };

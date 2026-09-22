@@ -431,3 +431,21 @@ test('a hole beside the bot with a safe landing is stepped into instead of diggi
   const dropped = await descendTo(bot, new Task('hunt'), new Vec3(-39, 57, -13));
   assert.equal(dropped, 7); assert.equal(bot.entity.position.x, -38.5);
 });
+
+test('the bunker turns a corner at its end, because a straight shaft is a shooting gallery', () => {
+  const { cornerCell } = require('../src/bunker');
+  const { Vec3 } = require('vec3');
+  const rock = { name: 'netherrack', boundingBox: 'block', diggable: true };
+  const air = { name: 'air', boundingBox: 'empty' };
+  // Solid rock everywhere except the shaft already dug west along x.
+  const dug = new Set(['-1,77,0', '-2,77,0', '-3,77,0', '-1,78,0', '-2,78,0', '-3,78,0']);
+  const bot = { blockAt: p => ({ ...(dug.has(`${p.x},${p.y},${p.z}`) ? air : rock), position: p }) };
+  const side = new Vec3(-1, 0, 0), end = new Vec3(-3, 77, 0);
+  const corner = cornerCell(bot, end, side);
+  assert(corner, 'a corner is found');
+  assert.equal(corner.x, -3, 'the turn is perpendicular to the shaft, not further along it');
+  assert.equal(Math.abs(corner.z), 1);
+  // With nothing but air around the end there is nothing to turn into.
+  const hollow = { blockAt: p => ({ ...air, position: p }) };
+  assert.equal(cornerCell(hollow, end, side), null);
+});
