@@ -104,7 +104,14 @@ function seen(bot, entity) {
 function safeFromHostiles(bot, point, entities = hostileEntities(bot, 64)) {
   if (bot.game?.gameMode === 'creative' || bot.game?.difficulty === 'peaceful') return true;
   return entities.every(entity => {
-    if (combatTarget(bot, entity)) return true;
+    // The mob the hunt has claimed is not avoided by the pathfinder either.
+    // Every step toward a blaze makes a cell closer to it, and "closer to a
+    // shooter" was the definition of unsafe: the approach shaft dug through
+    // to within three blocks of the spawner room and the walk into each
+    // freshly dug cell was refused, an hour and a half in one spot. The
+    // claim still lapses under fourteen health, and the survival layer
+    // takes over as before.
+    if (combatTarget(bot, entity) || hunted(bot, entity)) return true;
     // Out of sight, a mob only matters when it is nearly at the wall.
     const radius = !seen(bot, entity) ? 6 : ranged.has(entity.name) ? 20 : 12;
     return entity.position.distanceTo(point) >= Math.min(radius, entity.position.distanceTo(bot.entity.position) - 0.25);
