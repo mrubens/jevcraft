@@ -213,3 +213,15 @@ test('rock that was asked for is progress: a cobblestone request is not judged s
   await progressWatchdog(bot, new Task('watch'), goal, () => {});
   assert.notEqual(goal.progressWatch.key, before, 'the pile growing is a change, and starts a new window');
 });
+
+test('a furnace batch saved in the Overworld is parked in the Nether, not a wall every step runs into, and comes back at home', () => {
+  const { localBatch } = require('../src/work');
+  const bot = { game: { dimension: 'the_nether' } };
+  const batch = { item: 'iron_ingot', from: 'raw_iron', dimension: 'overworld', position: { x: 1, y: 64, z: 1 }, targetInventory: 8, count: 8 };
+  const goal = { smelting: batch };
+  assert.equal(localBatch(bot, goal), null, 'nothing to finish here');
+  assert.equal(goal.smelting, undefined); assert.deepEqual(goal.smeltingElsewhere.overworld, batch, 'kept, not dropped');
+  bot.game.dimension = 'overworld';
+  assert.deepEqual(localBatch(bot, goal), batch, 'home again, the batch is picked up where it was left');
+  assert.equal(goal.smeltingElsewhere.overworld, undefined);
+});

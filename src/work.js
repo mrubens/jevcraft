@@ -806,9 +806,23 @@ class SmeltingSuppliesNeeded extends Error {
   constructor(item, count) { super(`The saved furnace batch needs ${count} ${item}`); this.item = item; this.count = count; }
 }
 
+// A saved furnace batch belongs to the dimension its furnace is in. One in
+// another dimension is parked and brought back when the bot is there again:
+// throwing on it made every acquire step in the Nether fail, because each
+// one finishes the saved batch first.
+function localBatch(bot, goal, save = () => {}) {
+  if (!goal) return null;
+  const here = dimension(bot);
+  if (goal.smelting?.dimension && goal.smelting.dimension !== here) {
+    (goal.smeltingElsewhere ||= {})[goal.smelting.dimension] = goal.smelting; delete goal.smelting; save();
+  }
+  if (!goal.smelting && goal.smeltingElsewhere?.[here]) { goal.smelting = goal.smeltingElsewhere[here]; delete goal.smeltingElsewhere[here]; save(); }
+  return goal.smelting || null;
+}
+
 async function smelt(bot, task, step, goal, save = () => {}) {
   task.check();
-  const pending = goal?.smelting;
+  const pending = localBatch(bot, goal, save);
   const plannedFuel = pending?.fuelItem || step.fuelItem || 'oak_planks';
   if (!isFuel(plannedFuel)) throw new Blocked(`I can't use ${plannedFuel.replaceAll('_', ' ')} as furnace fuel`);
   // A different batch already in a furnace is finished first, not refused:
@@ -820,10 +834,6 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   }
   if (pending && countOf(bot, step.item) >= pending.targetInventory) { delete goal.smelting; save(); return; }
   let block;
-  // A batch left in a furnace in another dimension is not missing: it is
-  // there when the bot is. Seen from the Nether, it was declared gone and
-  // the Overworld batch dropped.
-  if (pending?.dimension && pending.dimension !== dimension(bot)) throw new Error(`The saved furnace batch is in the ${pending.dimension}`);
   if (pending) {
     const p = pos(pending.position);
     // Return to the recorded area before deciding that an unloaded furnace
@@ -1000,7 +1010,7 @@ function catalogPlan(bot, item, count, stock, goal = {}) {
 // furnace batch and four crafts rather than four of everything.
 async function acquireSetStep(bot, task, items, goal, save) {
   task.check(); checkAir(bot);
-  if (goal.smelting) { await smelt(bot, task, goal.smelting, goal, save); return false; }
+  if (localBatch(bot, goal, save)) { await smelt(bot, task, goal.smelting, goal, save); return false; }
   const inv = planningInventory(bot);
   const outputs = items.map(item => ({ item, count: 1 })).filter(o => (inv[o.item] || 0) < o.count);
   if (!outputs.length) return true;
@@ -1016,7 +1026,7 @@ async function acquireSetStep(bot, task, items, goal, save) {
 
 async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY, reserved = {} } = {}) {
   task.check(); checkAir(bot);
-  if (goal.smelting) { await smelt(bot, task, goal.smelting, goal, save); return false; }
+  if (localBatch(bot, goal, save)) { await smelt(bot, task, goal.smelting, goal, save); return false; }
   const inv = planningInventory(bot);
   for (const [name, amount] of Object.entries(reserved)) inv[name] = Math.max(0, (inv[name] || 0) - amount);
   if ((inv[item] || 0) >= count) return true;
@@ -1548,7 +1558,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     }
   }
   const batch = goal.buildBatch;
-  if (goal.smelting) { await smelt(bot, task, goal.smelting, goal, save); return false; }
+  if (localBatch(bot, goal, save)) { await smelt(bot, task, goal.smelting, goal, save); return false; }
   if (batch) {
     const cells = remainingBuildBatch(bot, batch), outputs = materialCounts(cells);
     if (bot.game.gameMode === 'creative') for (const output of outputs) output.count = 1;
@@ -1706,7 +1716,7 @@ async function prepareBuildTerrain(bot, task, goal, save) {
 }
 
 async function obtainStep(bot, task, goal, save, client, onStep) {
-  if (goal.smelting) { await smelt(bot, task, goal.smelting, goal, save); return false; }
+  if (localBatch(bot, goal, save)) { await smelt(bot, task, goal.smelting, goal, save); return false; }
   if ((goal.delivered || 0) >= goal.count) return true;
   const remaining = (goal.deliver ? Math.min(goal.count, goal.deliveryTarget ?? goal.count) : goal.count) - (goal.delivered || 0);
   if (goal.pendingDelivery || goal.pendingChestDelivery || goal.deliveryMode === 'chest' || countOf(bot, goal.item) >= remaining) {
@@ -2602,4 +2612,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { turnSearch, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
+module.exports = { localBatch, smelt, turnSearch, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
