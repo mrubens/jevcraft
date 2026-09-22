@@ -49,8 +49,20 @@ function threats(bot, radius = 24) {
   }).sort((a, b) => a.distance - b.distance);
 }
 
+// Mid-encounter, a second mob interrupts only when it is nearly on the
+// bot: every blaze in a fortress has another in view, and the fight was
+// abandoned for a flight each time one showed.
+function inEncounter(bot) {
+  const e = bot._combatEncounter;
+  return !!e && e.expiresAt > Date.now() && !e.task?.cancelled && e.dimension === bot.game?.dimension;
+}
+// A blaze shoots from forty blocks; the bot was hit on a ledge from
+// beyond sixteen and stood there recovering health it was losing. Hurt in
+// the last few seconds, a shooter in view counts at twice the range.
 function immediateThreat(bot) {
-  return threats(bot).find(t => !combatTarget(bot, t.entity) && t.visible && t.distance <= (ranged.has(t.entity.name) ? 16 : 8));
+  const fighting = inEncounter(bot), hurt = bot._recentHurtAt > Date.now() - 4000;
+  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible &&
+    t.distance <= (ranged.has(t.entity.name) ? (fighting ? 8 : hurt ? 32 : 16) : (fighting ? 5 : 8)));
 }
 
 // Keep a route outside attack range plus a movement margin. If a mob already

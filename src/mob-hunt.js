@@ -3,7 +3,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, observedDead } = require('./mob-policy');
 const { threats, checkThreats, NeedsSafety } = require('./danger');
-const { canStrike, defenseWeapon, bowReady, shoot } = require('./combat');
+const { canStrike, defenseWeapon, bowReady, shoot, SHOOTERS } = require('./combat');
 const { aimAtEntity } = require('./projectiles');
 const { dryStanding } = require('./mining-access');
 const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
@@ -59,7 +59,14 @@ function combatMovement(bot) {
 }
 
 function isolated(bot, target, handler = handlers[target.name] || {}) {
-  if (threats(bot).some(t => t.entity !== target && (t.distance < 20 || t.entity.position.distanceTo(target.position) < 16))) return false;
+  // Blazes come off a spawner two and three at a time: another of the
+  // hunted kind blocks the fight only when it is close to the bot itself,
+  // or no blaze in a fortress would ever be fought. A mob of another kind
+  // is given more room, a shooter most of all.
+  const crowd = threats(bot).some(t => t.entity !== target && (t.entity.name === target.name
+    ? t.distance < 8
+    : t.distance < (SHOOTERS.has(t.entity.name) ? 16 : 12) || t.entity.position.distanceTo(target.position) < 8));
+  if (crowd) return false;
   // A sword sweep must not hit a nearby player or provoke another mob. A
   // flock of chickens is not a crowd of mobs: a passive animal only needs
   // the hostiles kept away.
@@ -313,8 +320,13 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // observed-hunt check, which looks within twenty-four, never saw it.
     if (distance > 10 && actions.navigate) {
       const from = bot.entity.position.clone();
+      // The mob being closed on is the encounter for the walk: without
+      // that, the threat check saw the blaze at sixteen blocks and the bot
+      // fled the thing it was hunting.
+      const restore = encounter(bot, task, near, Date.now() + 20000);
       try { await actions.navigate(bot, task, new goals.GoalNear(near.position.x, near.position.y, near.position.z, 8), { timeoutMs: 20000, stallMs: 5000 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      finally { restore(); }
       // No way to it (a blaze on a wall across the lava): set it aside and
       // walk the fortress; the walk brings another into reach.
       if (bot.entity.position.distanceTo(from) < 1.5) {
@@ -390,7 +402,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
       // Above the structure with a gap between: straight down through the
       // shelf, when the landing is solid and close.
       const above = bot.entity.position;
-      if (Math.hypot(nearest.x + 0.5 - above.x, nearest.z + 0.5 - above.z) <= 4 && nearest.y < above.y - 2) {
+      if (Math.hypot(nearest.x + 0.5 - above.x, nearest.z + 0.5 - above.z) <= 12 && nearest.y < above.y - 2) {
         goal.step = { action: 'find_fortress', found: state.found, descending: true, legs: state.legs }; save();
         try { if (await descendTo(bot, task, nearest) >= 1) { state.approachFails = 0; return; } }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastDescentError = err.message; }
@@ -438,7 +450,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
   }
   const here = bot.entity.position;
   if (!state.target || Math.hypot(state.target.x - here.x, state.target.z - here.z) < 8) {
-    const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++;
+    const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++; state.legSince = Date.now();
   }
   goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();
   const leg = new Vec3(state.target.x, state.target.y, state.target.z);
@@ -454,7 +466,12 @@ async function findFortressStep(bot, task, goal, save, actions) {
   try { await actions.tunnel(bot, task, goal, save, leg, 'fortress'); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastLegError = err.message; }
   if (flat(bot.entity.position) < before - 1.5) { state.legFails = 0; return; }
-  if (++state.legFails >= 4) { turnSweep(state); save(); bot.chat?.('No way on in this direction. Turning the search.'); }
+  // Four failures and twenty seconds: a leg whose every attempt fails at
+  // once turned the compass four times in half a minute.
+  if (++state.legFails >= 4 && Date.now() - (state.legSince || 0) >= 20000) {
+    turnSweep(state); save();
+    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.('No way on in this direction. Turning the search.'); }
+  }
 }
 
 module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, FORTRESS_LEG };

@@ -16,6 +16,7 @@ async function startHarness({ port = 3040, artifacts, stateDirectory, textureOpt
   const sample = demo();
   const textures = createTextures(textureOptions);
   let observer, controlBusy = false;
+  let liveBot = null;
   const threeDir = path.dirname(path.dirname(require.resolve('three')));
   const assets = new Map([
     ['/', [path.join(publicDir, 'index.html'), 'text/html']],
@@ -61,6 +62,23 @@ async function startHarness({ port = 3040, artifacts, stateDirectory, textureOpt
         if (pathname === '/vendor/OrbitControls.js') body = body.toString().replace("from 'three'", "from '/vendor/three.js'");
         res.writeHead(200, { 'Content-Type': `${type}; charset=utf-8` }); return res.end(body);
       }
+      // The loaded blocks around a point, for reading the terrain the bot
+      // is stuck in from the outside: a column-major sparse list of what
+      // is not air within a small radius.
+      if (req.method === 'GET' && pathname === '/api/blocks') {
+        if (!liveBot?.entity) return json(res, 409, { error: 'No live bot' });
+        const p = liveBot.entity.position;
+        const cx = Math.floor(Number(url.searchParams.get('x') ?? p.x)), cy = Math.floor(Number(url.searchParams.get('y') ?? p.y)), cz = Math.floor(Number(url.searchParams.get('z') ?? p.z));
+        const r = Math.min(12, Math.max(1, Number(url.searchParams.get('r')) || 6));
+        const blocks = [];
+        for (let x = cx - r; x <= cx + r; x++) for (let z = cz - r; z <= cz + r; z++) for (let y = cy - r; y <= cy + r; y++) {
+          const b = liveBot.blockAt(new (require('vec3').Vec3)(x, y, z));
+          if (b && b.name !== 'air' && b.name !== 'cave_air') blocks.push([x, y, z, b.name]);
+        }
+        const entities = Object.values(liveBot.entities || {}).filter(e => e !== liveBot.entity && e.position && e.position.distanceTo(p) < 32)
+          .map(e => ({ name: e.name, x: Math.round(e.position.x), y: Math.round(e.position.y), z: Math.round(e.position.z) }));
+        return json(res, 200, { center: [cx, cy, cz], position: { x: p.x, y: p.y, z: p.z }, blocks, entities });
+      }
       if (req.method === 'GET' && pathname === '/api/sessions') return json(res, 200, [
         ...(observer || trace.serial ? [{ id: 'live', label: trace.label, mode: 'live' }] : []),
         { id: 'demo', label: sample.label, mode: 'demo' }, ...await archive.list(),
@@ -98,7 +116,7 @@ async function startHarness({ port = 3040, artifacts, stateDirectory, textureOpt
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   return {
     url: `http://127.0.0.1:${server.address().port}`, trace,
-    attach(bot, options) { observer?.detach('replaced'); observer = observeBot(trace, bot, options); return observer; },
+    attach(bot, options) { observer?.detach('replaced'); observer = observeBot(trace, bot, options); liveBot = bot; return observer; },
     async close() { observer?.detach('dashboard closed'); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); },
   };
 }

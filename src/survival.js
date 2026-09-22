@@ -11,7 +11,7 @@ const { readyEquipment } = require('./mob-policy');
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute, countOf } = require('./skills');
-const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield } = require('./combat');
+const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield, canStrike } = require('./combat');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
 const { surfaceObserver } = require('./surface');
@@ -120,8 +120,12 @@ class Survival {
     // outruns a zombie in a tunnel anyway. Low health falls through to the
     // escape search below.
     const armed = /_(sword|axe)$|^trident$/.test(defenseWeapon(bot)?.name || '');
-    if (swung && armed && bot.health >= 8 && danger.some(t => t.distance <= 2.2)) {
-      this.report(goal, save, { action: 'fight', threats: danger.filter(t => t.distance <= 2.2).map(t => t.entity.name), health: bot.health });
+    // Within a sword's reach, not an arm's: a wither skeleton hits from
+    // three blocks, and at two and a half the bot was searching for a
+    // route instead of swinging.
+    const inReach = t => t.distance <= 3.2 || canStrike(bot, t.entity);
+    if (swung && armed && bot.health >= 8 && danger.some(inReach)) {
+      this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health });
       return;
     }
     if (await this.rangedChoice(task, goal, save, danger, armed)) return;
@@ -237,7 +241,7 @@ class Survival {
       // No way out and a mob a few blocks off, shooting: standing still is
       // how a crossbow piglin took half the bot's health. Armed and able,
       // close the gap so the fight rule can do its work.
-      if (armed && bot.health >= 12 && nearest.distance > 2.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
+      if (armed && bot.health >= 12 && nearest.distance > 3.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
         this.report(goal, save, { action: 'charge', target: nearest.entity.name, distance: Number(nearest.distance.toFixed(1)) });
         const t = nearest.entity.position;
         try { await this.actions.navigate(bot, task, new goals.GoalNear(t.x, t.y, t.z, 1), { timeoutMs: 4000, stallMs: 2000 }); }
