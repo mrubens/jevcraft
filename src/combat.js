@@ -115,6 +115,10 @@ async function defendNearby(bot, task, goal, save) {
   task.check(); checkAir(bot);
   if (bot.entities[target.id] !== target || target.isValid === false || strikeTarget(bot)?.entity !== target) return false;
   bot.attack(target); bot._defenseAttackAt = Date.now();
+  // The shield comes up for the cooldown between swings: a wither skeleton
+  // took twenty health in six seconds of unguarded swordplay. Not against
+  // a creeper, which is struck and backed away from.
+  if (target.name !== 'creeper' && bot.inventory.slots?.[45]?.name === 'shield') raiseShield(bot);
   goal.survivalAction = { action: 'defend', target: target.name, entityId: target.id,
     distance: Number(threat.distance.toFixed(2)), weapon: weapon?.name || 'bare hands', health: bot.health,
     at: new Date().toISOString() };

@@ -691,7 +691,7 @@ test('hurt, or with a zombie closing, the bow stays in the pack and the escape r
   const crowded = archerFixture();
   crowded.bot.entities[8] = { id: 8, name: 'zombie', position: new Vec3(3, 64, .5), width: .6, height: 1.95, isValid: true };
   assert(await crowded.controller.step(crowded.task, crowded.goal, () => {}));
-  assert.deepEqual(crowded.events, ['equip iron_sword', 'attack'], 'a zombie within a sword\'s reach is fought, swing after swing, not drawn on or run from');
+  assert.deepEqual(crowded.events, ['equip iron_sword', 'attack', 'raise shield'], 'a zombie within a sword\'s reach is fought, the shield up between swings, not drawn on or run from');
 });
 
 test('a carried bed goes down at bedtime, the night passes, and the bed comes back up', async () => {

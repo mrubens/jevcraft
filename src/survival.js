@@ -111,10 +111,9 @@ class Survival {
     const bot = this.bot;
     // A swing can buy room, but it must not consume the escape action. Ending
     // the turn after every hit trapped an unarmed bot in a losing melee loop.
-    lowerShield(bot);
     const swung = await defendNearby(bot, task, goal, save);
     const danger = threats(bot).filter(t => t.visible);
-    if (!danger.length) return;
+    if (!danger.length) { lowerShield(bot); return; }
     // A mob at arm's length is fought, swing after swing, while health holds:
     // a route search between swings is seconds of free hits, and nothing
     // outruns a zombie in a tunnel anyway. Low health falls through to the
@@ -128,6 +127,8 @@ class Survival {
       this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health });
       return;
     }
+    // Moving on: a raised shield is a crawl.
+    lowerShield(bot);
     if (await this.rangedChoice(task, goal, save, danger, armed)) return;
     await this.escape(task, goal, save, danger, armed);
   }
