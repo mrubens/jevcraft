@@ -134,3 +134,29 @@ test('death and reload preserve kill credit but cannot turn respawn into victory
   assert.equal(reloaded.gameProgress.startedAt, 1000); assert.equal(verifyGameCompletion(bot, reloaded), false);
   assert(reloaded.gameProgress.milestones.dragon_defeated); detachAgain();
 });
+
+test('a rung that can wait is set aside after twenty working minutes, and comes back before the Nether', () => {
+  const { timeRung, RUNG_BUDGET_MS } = require('../src/game-progress');
+  const { bot, goal } = fixture(); observeProgress(bot, goal);
+  bot.inventory.items = () => GEAR.filter(i => !['golden_boots', 'diamond_sword'].includes(i.name));
+  assert.equal(nextGameStage(bot, goal).phase, 'golden_boots');
+  const said = []; bot.chat = line => said.push(line);
+  let now = Date.now();
+  for (let t = 0; t <= RUNG_BUDGET_MS / 30000; t++) { now += 30000; if (timeRung(bot, goal, 'golden_boots', now)) break; }
+  assert(goal.rungDeferred.golden_boots > Date.now(), 'twenty minutes of work on it sets it aside');
+  assert.match(said[0], /golden boots is taking too long/);
+  assert.equal(nextGameStage(bot, goal).phase, 'diamond_sword', 'the ladder gets on with the next rung');
+  bot.inventory.items = () => GEAR.filter(i => i.name !== 'golden_boots');
+  assert.equal(nextGameStage(bot, goal).phase, 'golden_boots', 'with nothing else left, the waiting rung comes back instead of the portal');
+});
+
+test('a night in a shelter or a stop does not run a rung\'s budget down', () => {
+  const { timeRung } = require('../src/game-progress');
+  const goal = {}, bot = {};
+  const start = Date.now();
+  timeRung(bot, goal, 'shield', start);
+  timeRung(bot, goal, 'shield', start + 60 * 60 * 1000);
+  assert.equal(goal.rungTime.activeMs, 30000, 'an hour away counts as half a minute');
+  timeRung(bot, goal, 'bucket', start + 60 * 60 * 1000 + 1000);
+  assert.equal(goal.rungTime.phase, 'bucket'); assert.equal(goal.rungTime.activeMs, 0, 'a new rung starts a new clock');
+});

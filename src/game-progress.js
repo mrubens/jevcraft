@@ -90,7 +90,25 @@ function preparationStage(bot, goal = {}) {
   if (restock) return { ...restock, action: 'home', home: { ...restock, wants } };
   return rung;
 }
-function preparationRung(bot, goal = {}) {
+// Rungs that may wait their turn. Twenty minutes of work on one without
+// finishing sets it aside for half an hour and the ladder goes on to the
+// next: "a rung every couple of minutes", not a day on a shield. The wait
+// only reorders the ladder. A set-aside rung comes back as soon as nothing
+// else is left, so nothing on this list is ever skipped on the way to the
+// Nether. Pickaxes and armour are not on it: nothing after them works
+// without them.
+const DEFERRABLE = new Set(['shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword']);
+const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
+function preparationRung(bot, goal = {}, now = Date.now()) {
+  const waiting = new Set(Object.entries(goal.rungDeferred || {}).filter(([, until]) => until > now).map(([phase]) => phase));
+  if (waiting.size) {
+    const open = ladderRung(bot, goal, waiting);
+    if (open) return open;
+  }
+  return ladderRung(bot, goal, new Set());
+}
+function ladderRung(bot, goal, waiting) {
+  const ready = rung => rung && !waiting.has(rung.phase) ? rung : null;
   // Equipped gear lives outside inventory.items(): armour in slots 5 to 8,
   // the shield in the off-hand at 45. A shield on the arm is not a missing shield.
   const equipped = [5, 6, 7, 8, 45].map(slot => bot.inventory.slots?.[slot]).filter(Boolean);
@@ -125,9 +143,9 @@ function preparationRung(bot, goal = {}) {
     return { phase: 'bed', action: 'gather_wool', count: 3 - wool.count };
   }
   if (best('pickaxe') < 3) return another('iron_pickaxe');
-  if (!carried.includes('shield')) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
-  if (best('sword') < 3) return another('iron_sword');
-  if (!carried.includes('bucket') && !carried.includes('water_bucket')) return { phase: 'bucket', action: 'acquire', item: 'bucket', count: 1 };
+  if (!carried.includes('shield') && ready({ phase: 'shield' })) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
+  if (best('sword') < 3 && ready({ phase: 'iron_sword' })) return another('iron_sword');
+  if (!carried.includes('bucket') && !carried.includes('water_bucket') && ready({ phase: 'bucket' })) return { phase: 'bucket', action: 'acquire', item: 'bucket', count: 1 };
   // Home before the long descents: a bed so a death costs a walk from the
   // base rather than from world spawn, a plot and a pen so food is a known
   // distance away. The walkthrough order every speedrunner keeps: iron
@@ -146,7 +164,7 @@ function preparationRung(bot, goal = {}) {
     .filter(piece => !worn.some(name => (/^(iron|diamond|netherite)_/.test(name) || (piece === 'boots' && name === 'golden_boots')) && name.endsWith(`_${piece}`)))
     .map(piece => `iron_${piece}`);
   if (missing.length) return { phase: missing.length === 4 ? 'iron_armour' : `iron_${missing[0].replace('iron_', '')}`, action: 'acquire_set', item: missing[0], items: missing, count: missing.length };
-  if (!carried.includes('golden_boots')) return { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
+  if (!carried.includes('golden_boots') && ready({ phase: 'golden_boots' })) return { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   // Most of the run's deaths were arrows: skeletons in the caves, crossbow
   // piglins in the Nether, and a bot that could only answer at arm's length.
   // A bow and a quiver before the portal, so a shooter at ten blocks is a
@@ -161,15 +179,15 @@ function preparationRung(bot, goal = {}) {
   const string = bot.inventory.items().filter(i => i.name === 'string').reduce((n, i) => n + (i.count || 1), 0);
   const arrows = bot.inventory.items().filter(i => i.name === 'arrow').reduce((n, i) => n + (i.count || 1), 0);
   if (dark || spiderNear || string >= 3 || sound.includes('bow')) {
-    if (!sound.includes('bow')) return { phase: 'bow', action: 'acquire', item: 'bow', count: carried.filter(n => n === 'bow').length + 1 };
-    if (arrows < 16) return { phase: 'arrows', action: 'acquire', item: 'arrow', count: 16 };
+    if (!sound.includes('bow') && ready({ phase: 'bow' })) return { phase: 'bow', action: 'acquire', item: 'bow', count: carried.filter(n => n === 'bow').length + 1 };
+    if (sound.includes('bow') && arrows < 16 && ready({ phase: 'arrows' })) return { phase: 'arrows', action: 'acquire', item: 'arrow', count: 16 };
   }
   // Daylight is for the deep: two diamonds make the sword that ends a blaze
   // or a piglin in two swings, and the caves on the way are where spiders
   // live by day. The night rungs come round again at dusk.
   // With the sword in hand and the sun up, the ladder is done for now: the
   // walk to the portal takes the day, and dusk brings the bow rung back.
-  if (best('sword') < 4) return another('diamond_sword');
+  if (best('sword') < 4 && ready({ phase: 'diamond_sword' })) return another('diamond_sword');
   return null;
 }
 
@@ -212,11 +230,25 @@ function nextGameStage(bot, goal) {
   return { phase: 'enter_end', action: 'enter_end' };
 }
 
+// Working time on the current rung: gaps between steps (a night in a
+// shelter, a stop) count at most half a minute, so only time spent on it
+// runs the budget down.
+function timeRung(bot, goal, phase, now = Date.now()) {
+  const rung = goal.rungTime && goal.rungTime.phase === phase ? goal.rungTime : (goal.rungTime = { phase, activeMs: 0, lastAt: now });
+  rung.activeMs += Math.min(30000, Math.max(0, now - rung.lastAt)); rung.lastAt = now;
+  if (!DEFERRABLE.has(phase) || rung.activeMs < RUNG_BUDGET_MS) return false;
+  (goal.rungDeferred ||= {})[phase] = now + RUNG_WAIT_MS; delete goal.rungTime;
+  bot.chat?.(`The ${phase.replaceAll('_', ' ')} is taking too long. I'll come back to it and get on with the rest first.`);
+  return true;
+}
+
 async function gameStep(bot, task, goal, save, actions) {
   task.check();
   if (bot.game.gameMode !== 'survival') throw Object.assign(new Error('The game-completion task requires Survival mode'), { name: 'Blocked' });
   const progress = observeProgress(bot, goal), stage = nextGameStage(bot, goal);
-  progress.phase = stage.phase; goal.step = { action: 'game_progression', ...stage }; save();
+  progress.phase = stage.phase; goal.step = { action: 'game_progression', ...stage };
+  timeRung(bot, goal, stage.phase);
+  save();
   if (stage.phase === 'complete') {
     progress.milestones.returned_alive = { at: Date.now(), dimension: 'overworld', position: position(bot) }; save(); return true;
   }
@@ -250,4 +282,4 @@ async function gameStep(bot, task, goal, save, actions) {
   return false;
 }
 
-module.exports = { dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };
+module.exports = { timeRung, preparationRung, DEFERRABLE, RUNG_BUDGET_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };
