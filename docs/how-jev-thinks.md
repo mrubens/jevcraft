@@ -14,7 +14,6 @@ Code does the cheap things first. It strips the bot's name, pulls out any number
 
 | Question | Primitive | Answer | Confidence |
 | --- | --- | --- | --- |
-| Is this addressed to the bot? | Noul | yes | 0.97 |
 | Instruction to act, or discussion? | Choice | request | 1.00 |
 | Which of sixteen objectives? | Choice | obtain | 1.00 |
 | Which listed catalog item is meant? *(speculative)* | Choice | pumpkin | 1.00 |
@@ -25,6 +24,8 @@ Code does the cheap things first. It strips the bot's name, pulls out any number
 | Wood species chosen in this message? *(speculative)* | Choice | none | 1.00 |
 | What kind of thing, if this were a find request? *(speculative)* | Choice | block | 0.87 |
 | Is this a personal fact to remember? | Noul | no (0.02) | |
+
+When the message does not start with Jev's name, one more question rides in the same batch: is it addressed to the bot at all (a Noul)? With the name in front, that is already settled and is not asked.
 
 That call took 443 ms and used 3,486 input and 606 output tokens. The item question came back confident, so the catalog walk that would otherwise follow, three to five more calls, never ran. The bot said "I'll get 1 pumpkin for TestPlayer" and started.
 
