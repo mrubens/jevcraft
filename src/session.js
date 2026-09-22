@@ -17,7 +17,7 @@ const { classifyCommand } = require('./command-classifier');
 const { recordDeath, observeAliveInventory } = require('./recovery');
 const { statusMessage } = require('./status');
 const { bundleSummary } = require('./item-bundle');
-const { friendlyProblem, intakeProblem, recoveryHint, quietRepeats } = require('./speech');
+const { friendlyProblem, intakeProblem, recoveryHint, quietRepeats, thinking } = require('./speech');
 const { withRequestSignal } = require('./typesafe');
 const { suspendPrevious, resumeSaved } = require('./suspended-tasks');
 const { CompanionMemory, position } = require('./memory');
@@ -359,6 +359,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     pendingRequests++;
     pending = pending.then(async () => {
       if (revision !== generation || ended) return;
+      // A catalog or list walk is several calls: look like it is thinking,
+      // not like it did not hear. Not over work in hand: the glance turns the
+      // head, and a dig in progress needs it where it is.
+      const stopThinking = literal || (active && !active.idle) ? () => {} : thinking(bot);
       const spec = literal ? { kind: 'operator_command' } : await interpret(requestClient, request, from, bot.username, {
         registry: bot.registry, players: Object.keys(bot.players),
         ...requestPosition, memory: memory.context(from),
@@ -366,7 +370,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         continueBuilds: (request, candidates) => resolveBuildContinuation(requestClient, request, candidates,
           { speaker: requestPosition.speakerPosition }),
         inventory: Object.fromEntries(bot.inventory.items().map(item => [item.name, item.count])),
-      });
+      }).finally(stopThinking);
       // What Jev made of the request is the first thing worth seeing about
       // it, whether or not any work follows.
       if (spec && !literal) {
