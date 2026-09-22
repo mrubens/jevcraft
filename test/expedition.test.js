@@ -154,3 +154,12 @@ test('the watchdog does not count time it did not see, and dug rock or a retry s
   await progressWatchdog(bot, new Task('watch'), goal, () => {});
   assert.equal(goal.progressWatch.at, started, 'cobblestone from the shaft and a persist step keep the same window');
 });
+
+test('a source whose route search is unfinished is still offered; only no path at all rules it out', async () => {
+  const { reachableBlocks } = require('../src/work');
+  const statuses = { 1: 'success', 2: 'partial', 3: 'timeout', 4: 'noPath' };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, canDigBlock: () => false, blockAt: p => ({ name: 'oak_log', position: p }),
+    pathfinder: { movements: {}, getPathTo: (_m, goal) => ({ status: statuses[goal.x] }) } };
+  const found = await reachableBlocks(bot, new Task('reach'), [1, 2, 3, 4].map(x => new Vec3(x, 64, 5)));
+  assert.deepEqual(found.map(p => p.x), [1, 2, 3]);
+});

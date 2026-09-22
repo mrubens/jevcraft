@@ -558,7 +558,11 @@ async function workSource(bot, task, step, goal, save, source) {
     }
   }
   catch (err) {
-    if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) { setAsideSource(goal, source); delete goal.workingSource; save(); }
+    // A missing or worn-out tool is the bot's problem, not the vein's: the
+    // tree or the ore is still there once a tool is in hand, and setting it
+    // aside sent the bot looking for another after the pickaxe was made.
+    const toolProblem = /Missing harvest tool|Need .*tool|requires? a .*(pickaxe|axe|shovel|tool)|durability/i.test(err.message);
+    if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) && !toolProblem) { setAsideSource(goal, source); delete goal.workingSource; save(); }
     throw err;
   }
 }
@@ -1193,17 +1197,9 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
     const actions = {};
     if (step?.action === 'mine' && await continueSource(bot, task, step, goal, save, onStep)) return false;
     if (step?.action === 'mine') {
-      const reachable = [];
-      for (const p of (await miningCandidates(bot, task, step, goal)).slice(0, 16)) {
-        // Do not ask Jev to choose unsupported targets such as the trunk it
-        // stands on or floating remnants with no currently feasible approach.
-        if (p.equals(supportCell(bot.entity.position))) continue;
-        if (!bot.canDigBlock(bot.blockAt(p))) {
-          const route = bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalGetToBlock(p.x, p.y, p.z), 300);
-          if (route.status !== 'success') continue;
-        }
-        reachable.push(p);
-      }
+      // Do not ask Jev to choose unsupported targets such as the trunk it
+      // stands on or floating remnants with no currently feasible approach.
+      const reachable = await reachableBlocks(bot, task, await miningCandidates(bot, task, step, goal), { limit: 16 });
       for (const source of resourceSources(bot, reachable, { failures: goal.decisionFailures, unreachable: goal.unreachable })) {
         actions[source.key] = leaf({ action: 'approach, dig and collect', ...source.description, resourceNeeded: step.drops },
           () => workSource(bot, task, step, goal, save, source), () => !!nearestRemaining(bot, source));
@@ -1312,10 +1308,33 @@ function buildEffort(blueprint) {
   return { blocks, minutes, spoken };
 }
 
+// The candidate blocks a route reaches, for options Jev will be offered.
+// The single-slice path search answered in forty milliseconds and "partial"
+// was read as "no route", so distant sources that could be reached were
+// left off and the step fell back to exploring. A partial or timed-out
+// search is unfinished, not a refusal: only "noPath" rules a block out.
+// One budget for the whole survey; a block not checked in it is left off.
+// The two call sites had drifted apart (sixteen at 300 ms, twelve at 200).
+async function reachableBlocks(bot, task, candidates, { limit = 16, budgetMs = 1500, eachMs = 300 } = {}) {
+  const reachable = [], deadline = Date.now() + budgetMs;
+  for (const p of candidates.slice(0, limit)) {
+    if (p.equals(supportCell(bot.entity.position))) continue;
+    if (!bot.canDigBlock(bot.blockAt(p))) {
+      if (Date.now() >= deadline) continue;
+      const route = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalGetToBlock(p.x, p.y, p.z), Math.min(eachMs, deadline - Date.now()));
+      if (!['success', 'partial', 'timeout'].includes(route.status)) continue;
+    }
+    reachable.push(p);
+  }
+  return reachable;
+}
+
 async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = () => {}) {
   if (goal.continueBuild && !goal.blueprint) {
     const entry = bot.buildRegistry?.find(goal.continueBuild.id);
-    if (!entry?.blueprint) throw new Blocked('I cannot find that building in my notes any more. Ask me to build it again.');
+    // Only the player can say what to do about a building the notes no
+    // longer hold: parked, not retried every forty seconds for good.
+    if (!entry?.blueprint) throw Object.assign(new Blocked('I cannot find that building in my notes any more. Ask me to build it again.'), { needsPlayer: true });
     goal.buildId = entry.id;
     goal.design = entry.design || goal.design;
     goal.blueprint = structuredClone(entry.blueprint);
@@ -1727,12 +1746,7 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
   if (step.action === 'mine' && await continueSource(bot, task, step, goal, save, onStep)) return false;
   const actions = {};
   if (step.action === 'mine') {
-    const reachable = [];
-    for (const p of (await miningCandidates(bot, task, step, goal)).slice(0, 12)) {
-      if (p.equals(supportCell(bot.entity.position))) continue;
-      if (!bot.canDigBlock(bot.blockAt(p)) && bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalGetToBlock(p.x, p.y, p.z), 200).status !== 'success') continue;
-      reachable.push(p);
-    }
+    const reachable = await reachableBlocks(bot, task, await miningCandidates(bot, task, step, goal), { limit: 16 });
     // Jev chooses between sources that differ; code picks the block inside one.
     for (const source of resourceSources(bot, reachable, { failures: goal.decisionFailures, unreachable: goal.unreachable })) {
       actions[source.key] = { description: { ...source.description, resource: step.drops, requiredTool: step.tool },
@@ -2402,4 +2416,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
+module.exports = { reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
