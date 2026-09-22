@@ -782,6 +782,27 @@ test('the bed at the base is slept in when it is near, and it stays where it is'
   assert.equal(bot.time.timeOfDay, 0); assert.equal(walked.length, 1, 'the stand cell is reached first time'); assert.deepEqual(dug, [], 'the base bed is not picked up');
 });
 
+test('a block left on top of the base bed is dug off before sleeping, not taken as a refusal for the night', async () => {
+  const { Survival } = require('../src/survival');
+  const { layout } = require('../src/home-base');
+  const home = { version: 1, dimension: 'overworld', origin: { x: 0, y: 63, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 63, z: 0 }, bed: { placedAt: 'now', claimedAt: 'now' }, plot: {}, pen: {} };
+  const { bed } = layout(home);
+  const foot = new Vec3(bed.foot.x, bed.foot.y, bed.foot.z), head = new Vec3(bed.head.x, bed.head.y, bed.head.z);
+  const blocks = new Map([[`${foot}`, 'white_bed'], [`${head}`, 'white_bed'], [`${foot.offset(0, 1, 0)}`, 'netherrack']]);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000 },
+    entity: { position: new Vec3(3.5, 64, 3.5) }, health: 20, food: 20, isSleeping: false, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null,
+    // The server refuses while anything sits on the bed.
+    sleep: async () => { if (blocks.has(`${foot.offset(0, 1, 0)}`)) throw new Error('obstructed'); setTimeout(() => { bot.time.timeOfDay = 0; }, 50); },
+    wake: async () => {},
+    blockAt: p => { const name = blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'); return { name, diggable: name === 'netherrack', boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }; } });
+  const goal = { kind: 'win', survival: { home } }, dug = [];
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); }, dig: async (b, t, p) => { dug.push(`${p}`); blocks.delete(`${p}`); } }, { state: goal.survival });
+  await survival.sleepStep(new Task('test', 'sleep'), goal, () => {});
+  assert.deepEqual(dug, [`${foot.offset(0, 1, 0)}`], 'only the block on the bed comes off');
+  assert.equal(bot.time.timeOfDay, 0, 'and the night passes');
+});
+
 test('a shell leaning on the chest does not use the chest as its door', () => {
   const shelter = require('../src/shelter');
   const o = new Vec3(0, 64, 0), blocks = new Map();

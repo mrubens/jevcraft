@@ -30,6 +30,14 @@ function firmStep(bot, p) {
   const floor = bot.blockAt(p.offset(0, -1, 0)), body = [bot.blockAt(p), bot.blockAt(p.offset(0, 1, 0))];
   return floor?.boundingBox === 'block' && !/lava|magma|fire/.test(floor.name) && body.every(b => b && b.boundingBox === 'empty' && !/lava|fire/.test(b.name)) && !lavaBeside(bot, p);
 }
+async function clearAboveBed(bot, task, actions, site) {
+  for (const cell of [site.foot, site.head].filter(Boolean).map(p => p.offset(0, 1, 0))) {
+    const block = bot.blockAt(cell);
+    if (!block || block.boundingBox !== 'block' || !block.diggable || /bed$|chest|furnace|crafting_table/.test(block.name)) continue;
+    task.check();
+    try { await actions.dig(bot, task, cell, { requireDrops: false }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
+}
 function lavaBeside(bot, p) {
   for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) for (let dy = -1; dy <= 0; dy++) {
     if (bot.blockAt(new Vec3(p.x + dx, p.y + dy, p.z + dz))?.name === 'lava') return true;
@@ -650,6 +658,11 @@ class Survival {
       }
       if (!reached) { this.state.bedRouteFailedAt = Date.now(); this.report(goal, save, { action: 'sleep_failed', reason: `no way to the bed: ${lastError?.message || 'not close enough'}` }); throw lastError || new Error('No way to the bed'); }
       if (!isBed(bot.blockAt(site.foot))) throw new Error('The bed at the base is not where it was left');
+      // A bed needs air above it. A night shelter built around the bed put
+      // a block on top of it, and every sleep after that was refused as
+      // obstructed while the bot waited in the dark beside it. The cell
+      // above each half is cleared first; a roof one higher still covers.
+      await clearAboveBed(bot, task, this.actions, site);
     }
     else await placeOriented(bot, task, this.actions, site.stand, site.foot, item, () => isBed(bot.blockAt(site.foot)) && isBed(bot.blockAt(site.head)));
     let slept = false;
