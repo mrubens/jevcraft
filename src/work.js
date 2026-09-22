@@ -133,12 +133,20 @@ function progressKey(bot, goal) {
 }
 async function progressWatchdog(bot, task, goal, save) {
   if (bot.game?.gameMode === 'creative') return false;
+  // The area covered over the window, not the displacement: a shuffle
+  // fourteen blocks back and forth along a ledge resets a displacement
+  // check every pass and never looks stuck.
   const now = Date.now(), here = bot.entity.position.clone();
-  const watch = goal.progressWatch ||= { at: now, position: { ...here }, key: progressKey(bot, goal), strikes: 0 };
-  const key = progressKey(bot, goal), moved = here.distanceTo(new Vec3(watch.position.x, watch.position.y, watch.position.z));
-  if (key !== watch.key || moved >= WATCH_BLOCKS) { Object.assign(watch, { at: now, position: { ...here }, key, strikes: 0 }); return false; }
+  const fresh = () => ({ at: now, key: progressKey(bot, goal), box: { minX: here.x, maxX: here.x, minY: here.y, maxY: here.y, minZ: here.z, maxZ: here.z } });
+  const watch = goal.progressWatch ||= { ...fresh(), strikes: 0 };
+  const key = progressKey(bot, goal);
+  if (key !== watch.key) { Object.assign(watch, fresh(), { strikes: 0 }); return false; }
+  const b = watch.box ||= fresh().box;
+  b.minX = Math.min(b.minX, here.x); b.maxX = Math.max(b.maxX, here.x); b.minY = Math.min(b.minY, here.y); b.maxY = Math.max(b.maxY, here.y); b.minZ = Math.min(b.minZ, here.z); b.maxZ = Math.max(b.maxZ, here.z);
   if (now - watch.at < WATCH_MS) return false;
-  watch.strikes++; watch.at = now; watch.position = { ...here };
+  const extent = Math.max(b.maxX - b.minX, b.maxZ - b.minZ, (b.maxY - b.minY) / 2);
+  if (extent >= WATCH_BLOCKS * 2) { Object.assign(watch, fresh(), { strikes: 0 }); return false; }
+  watch.strikes++; Object.assign(watch, fresh(), { strikes: watch.strikes });
   const resource = goal.step?.block || goal.step?.resource || goal.step?.drops || goal.step?.entity || 'that';
   delete goal.tunnel; delete goal.search; delete goal.surfaceReturn;
   if (goal.miningSites) for (const site of Object.values(goal.miningSites)) { delete site.workPosition; site.rejoinBlockedUntil = now + 600000; }
