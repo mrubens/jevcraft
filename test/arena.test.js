@@ -147,3 +147,12 @@ test('the sweep covers the whole shell and spares the players in it', () => {
     assert(line.includes(`dx=${x2 - x1},dy=${y2 - y1},dz=${z2 - z1}`), `${name} spans its whole shell`);
   }
 });
+
+test('a drill can add to the kit, so what a tool is worth can be measured', () => {
+  const withBow = resetCommands('ArenaX', drill('blaze_pair_bow')).join('\n');
+  assert(withBow.includes('give ArenaX minecraft:bow 1'));
+  assert(withBow.includes('give ArenaX minecraft:arrow 32'));
+  const without = resetCommands('ArenaX', drill('blaze_pair')).join('\n');
+  assert(!without.includes('minecraft:bow'), 'the plain drill keeps the loadout the dream run actually carried');
+  for (const text of [withBow, without]) assert(text.includes('give ArenaX minecraft:diamond_sword 1'), 'the standard kit is still given');
+});

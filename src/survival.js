@@ -13,6 +13,7 @@ const { recoverItems } = require('./recovery');
 const { surveyRoute, countOf } = require('./skills');
 const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield, canStrike } = require('./combat');
 const { digBunker, bunkerSide, wallStands, centroid } = require('./bunker');
+const { deflect } = require('./projectile-guard');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
 const { surfaceObserver } = require('./surface');
@@ -120,6 +121,12 @@ class Survival {
     const swung = await defendNearby(bot, task, goal, save);
     const danger = threats(bot).filter(t => t.visible);
     if (!danger.length) { lowerShield(bot); return; }
+    // Something already in the air is answered before anything is decided:
+    // the decision takes longer than the flight.
+    if (!swung && await deflect(bot, task)) {
+      this.report(goal, save, { action: 'block_shot', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
+      return;
+    }
     // A mob at arm's length is fought, swing after swing, while health holds:
     // a route search between swings is seconds of free hits, and nothing
     // outruns a zombie in a tunnel anyway. Low health falls through to the

@@ -4,6 +4,7 @@ const { goals } = require('mineflayer-pathfinder');
 const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, observedDead } = require('./mob-policy');
 const { threats, checkThreats, NeedsSafety } = require('./danger');
 const { canStrike, defenseWeapon, bowReady, shoot, SHOOTERS } = require('./combat');
+const { deflect } = require('./projectile-guard');
 const { aimAtEntity } = require('./projectiles');
 const { dryStanding } = require('./mining-access');
 const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
@@ -155,6 +156,8 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
     }
     while (valid(bot, target) && !dead) {
       guard();
+      // A fireball in the air outranks everything else for half a second.
+      if (!canStrike(bot, target) && await deflect(bot, task)) continue;
       if (!canStrike(bot, target)) {
         lowerShield();
         // A blaze shoots. Answer from range with the bow while it is in clear

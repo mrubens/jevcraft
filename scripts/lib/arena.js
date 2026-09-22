@@ -70,6 +70,12 @@ const DRILLS = Object.freeze([
   { name: 'blaze_pair', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 2, arena: 'room', stand: 'open',
     at: [[2016.5, 80, 2010.5], [2016.5, 80, 2013.5]], seconds: 75, expect: { deaths: 0, drops: 1, damage: 14 },
     why: 'Two in view: the crowd rule must still allow a fight.' },
+  // The same fight with the tool the dream run never carried. A blaze is
+  // what a bow is for, and the ladder only reaches for one at night.
+  { name: 'blaze_pair_bow', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 2, arena: 'room', stand: 'open',
+    kit: [['bow', 1], ['arrow', 32]],
+    at: [[2016.5, 80, 2010.5], [2016.5, 80, 2013.5]], seconds: 75, expect: { deaths: 0, drops: 1, damage: 14 },
+    why: 'Two blazes, with a bow. What the bow is worth, in health and seconds.' },
   { name: 'blaze_swarm_wall', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 4, arena: 'room', stand: 'wall',
     at: [[2009.5, 80, 2010.5], [2010.5, 80, 2008.5], [2010.5, 80, 2012.5], [2011.5, 80, 2010.5]],
     seconds: 90, expect: { deaths: 0, drops: 1 },
@@ -144,7 +150,7 @@ function resetCommands(user, d, { dimension = 'minecraft:the_nether' } = {}) {
     `execute in ${dimension} run tp ${user} ${place(stand)} ${d.arena === 'corridor' ? 0 : 90} 0`];
   for (const [slot, item] of Object.entries(KIT.armor)) commands.push(`item replace entity ${user} armor.${slot} with minecraft:${item}`);
   commands.push(`item replace entity ${user} weapon.offhand with minecraft:${KIT.offhand}`);
-  for (const [item, n] of KIT.items) commands.push(`give ${user} minecraft:${item} ${n}`);
+  for (const [item, n] of [...KIT.items, ...(d.kit || [])]) commands.push(`give ${user} minecraft:${item} ${n}`);
   commands.push(`effect give ${user} minecraft:instant_health 1 20 true`, `effect give ${user} minecraft:saturation 1 20 true`);
   return commands;
 }
