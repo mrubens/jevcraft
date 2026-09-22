@@ -1,4 +1,5 @@
 'use strict';
+const { setAside, isSetAside } = require('./progress');
 // Obsidian without a lucky find. Natural obsidian is rare in the Overworld,
 // but a bucket of water emptied on the shore of a lava pool turns every lava
 // source the flow reaches into obsidian. Code finds the pool, the dry block to
@@ -99,8 +100,7 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   const origin = works.lastPour ? at(works.lastPour) : bot.entity.position;
   // Crust that could not be stood beside is set aside for five minutes, or
   // the step stands at the shore repeating one error and never pours again.
-  works.unreachable ||= {};
-  const crust = safeCrust(bot, origin, { distance: works.lastPour ? 12 : 32 }).filter(p => !(works.unreachable[`${p}`] > Date.now() - 300000));
+  const crust = safeCrust(bot, origin, { distance: works.lastPour ? 12 : 32 }).filter(p => !isSetAside(goal, 'crust', p));
   if (crust.length) {
     for (const p of crust.slice(0, 8)) {
       if (!wanted()) return;
@@ -108,11 +108,11 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
       const before = countOf(bot, 'obsidian');
       goal.step = { ...step, phase: 'mine', position: { ...p } }; save();
       try { await approachDryMining(bot, task, p, { navigate, dig }); }
-      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; works.unreachable[`${p}`] = Date.now(); save(); continue; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'crust', p, err, 300000); save(); continue; }
       await dig(bot, task, p, { done: () => countOf(bot, 'obsidian') > before, requiredTool: 'diamond_pickaxe' });
       await collectNearbyDrops(bot, task, 'obsidian', { before, origin: p, radius: 6, waitForSpawnMs: 1000, allowExcavation: true });
     }
-    if (crust.some(p => !(works.unreachable[`${p}`] > Date.now() - 300000))) return;
+    if (crust.some(p => !isSetAside(goal, 'crust', p))) return;
   }
   if (!countOf(bot, 'water_bucket')) { await acquireStep(bot, task, 'water_bucket', 1, goal, save); return; }
   const surface = poolSurface(bot);

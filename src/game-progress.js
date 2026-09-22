@@ -1,5 +1,6 @@
 'use strict';
 const { DAY } = require('./day');
+const { isSetAside } = require('./progress');
 const { homeStage, bedCarried, woolCarried, homeOf } = require('./home-base');
 const { restockStage, rungWants } = require('./home-stash');
 const { villageBedRung } = require('./villages');
@@ -176,7 +177,7 @@ function ladderRung(bot, goal, waiting) {
   // spider in view and no string in hand, the ladder goes on to the sword.
   const t = bot.time?.timeOfDay, dark = t >= DAY.DARK && t < DAY.DAWN;
   const spiderNear = Object.values(bot.entities || {}).some(e => e.name === 'spider' && e.position?.distanceTo?.(bot.entity.position) < 32 &&
-    !(goal.mobHunt?.avoided?.[e.uuid || e.id] > Date.now() - 120000));
+    !isSetAside(goal, 'hunt_target', e.uuid || e.id));
   const string = bot.inventory.items().filter(i => i.name === 'string').reduce((n, i) => n + (i.count || 1), 0);
   const arrows = bot.inventory.items().filter(i => i.name === 'arrow').reduce((n, i) => n + (i.count || 1), 0);
   if (dark || spiderNear || string >= 3 || sound.includes('bow')) {

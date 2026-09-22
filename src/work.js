@@ -175,7 +175,7 @@ async function progressWatchdog(bot, task, goal, save) {
   const resource = goal.step?.block || goal.step?.resource || goal.step?.drops || goal.step?.entity || 'that';
   delete goal.tunnel; delete goal.search; delete goal.surfaceReturn;
   if (goal.miningSites) for (const site of Object.values(goal.miningSites)) { delete site.workPosition; site.rejoinBlockedUntil = now + 600000; }
-  if (goal.mobHunt) { goal.mobHunt.avoided = {}; delete goal.mobHunt.stalking; }
+  if (goal.mobHunt) { attemptsFor(goal).clearAction('hunt_target'); delete goal.mobHunt.stalking; }
   if (goal.fortressSearch) {
     delete goal.fortressSearch.target;
     // Stuck at a fortress face: that face is shunned, the sweep meets the

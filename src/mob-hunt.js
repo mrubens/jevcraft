@@ -13,6 +13,7 @@ const { surveyRoute, countOf } = require('./skills');
 const { collectNearbyDrops } = require('./drop-collection');
 const { decideTree, announceFallback, firstOption } = require('./decisions');
 const { descendTo } = require('./descent');
+const { setAside, isSetAside, watch, unwatch } = require('./progress');
 const { bridgeTo } = require('./bridging');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -294,7 +295,7 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
       health: bot.health, outcome: pickedUp ? 'pickup_confirmed' : dead ? 'no_pickup' : 'target_lost' };
     state.history = [...(state.history || []), result].slice(-40);
     state.encountersWithoutPickup = pickedUp ? 0 : (state.encountersWithoutPickup || 0) + 1;
-    state.avoided ||= {}; state.avoided[target.uuid || target.id] = Date.now();
+    setAside(goal, 'hunt_target', target.uuid || target.id, result.outcome, 120000);
     if (pickedUp && goal.search?.[target.name]) goal.search[target.name] = { attempts: 0, origin: { ...bot.entity.position.floored() } };
     bot.emit('mob_hunt', result); save();
     if (!dead && !pickedUp) throw new Error(`${target.name} disappeared without a confirmed drop`);
@@ -324,7 +325,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   if (!canBegin(bot, handler)) return false;
   const candidates = Object.values(bot.entities).filter(e => e.name === state.entity && valid(bot, e) &&
     e.position.distanceTo(bot.entity.position) < 24 && isolated(bot, e, handler) &&
-    !(state.avoided?.[e.uuid || e.id] > Date.now() - 120000)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
+    !isSetAside(goal, 'hunt_target', e.uuid || e.id)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
   const tree = {}, positions = new Map();
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
@@ -340,7 +341,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   }
   if (!Object.keys(tree).length) return false;
   tree.defer = { description: 'Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.', run: async () => {
-    state.avoided ||= {}; for (const target of candidates) state.avoided[target.uuid || target.id] = Date.now(); save();
+    for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000); save();
   } };
   const snapshot = { request: goal.request, resource: state.item, need: state.targetCount - countOf(bot, state.item), health: bot.health, food: bot.food, dimension: dimension(bot) };
   let decision;
@@ -462,7 +463,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // was, thrown out of the recovery branch on every tick the bot was hurt.
   const state = goal.mobHunt;
   const near = Object.values(bot.entities || {}).filter(e => e.name === step.entity && e.isValid !== false &&
-    !(state?.avoided?.[e.uuid || e.id] > Date.now() - 120000) && e.position.distanceTo(bot.entity.position) < 32)
+    !isSetAside(goal, 'hunt_target', e.uuid || e.id) && e.position.distanceTo(bot.entity.position) < 32)
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
   if (near) {
     if (goal.fortressSearch) goal.fortressSearch.patrols = 0;
@@ -490,30 +491,32 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // Behind it most of them are out of sight, the rest have to come round,
     // and a fight the bot can actually start is worth more than a tidy
     // reason not to.
-    if (cornered && !nearWall(bot, near.position) && !(state.coverFailedAt > Date.now() - 60000) &&
+    if (cornered && !nearWall(bot, near.position) && !isSetAside(goal, 'hunt_cover', step.entity) &&
         !(state.stairsTo && state.stairsTo.until > Date.now())) {
       goal.step = { action: 'break_their_line', entity: step.entity, inView, health: bot.health }; save();
       try { if (keepCover(state, await raiseCover(bot, task, near.position))) { await sleep(300); return; } }
       catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; state.lastCoverError = err.message; }
-      state.coverFailedAt = Date.now(); save();
+      setAside(goal, 'hunt_cover', step.entity, state.lastCoverError || 'no cover could be raised', 60000); save();
     }
-    if (cornered && nearWall(bot, near.position) && !(state.bunkerFailedAt > Date.now() - 120000)) {
+    if (cornered && nearWall(bot, near.position) && !isSetAside(goal, 'hunt_bunker', step.entity)) {
       goal.step = { action: 'take_the_door', entity: step.entity, inView, health: bot.health }; save();
       // A hold that ends quietly with nothing gained is a failure too: the
       // arena measured the door at zero rods, and without a cooldown the
       // bot walked straight back into the same bunker for another two
       // minutes.
       try {
-        if (!await bunkerFight(bot, task, goal, save, actions, { item: step.item, want: countOf(bot, step.item) + 1 })) { state.bunkerFailedAt = Date.now(); save(); }
+        if (!await bunkerFight(bot, task, goal, save, actions, { item: step.item, want: countOf(bot, step.item) + 1 })) { setAside(goal, 'hunt_bunker', step.entity, 'held the door and gained nothing', 120000); save(); }
         return;
       }
-      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.bunkerFailedAt = Date.now(); state.lastBunkerError = err.message; save(); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'hunt_bunker', step.entity, err, 120000); state.lastBunkerError = err.message; save(); }
     }
     const key = near.uuid || near.id;
     if (!state.stalking || state.stalking.key !== key) state.stalking = { key, since: Date.now() };
     const distance = near.position.distanceTo(bot.entity.position);
     goal.step = { action: 'stalk_mob', entity: step.entity, distance: Number(distance.toFixed(1)) }; save();
-    if (Date.now() - state.stalking.since > 45000) { (state.avoided ||= {})[key] = Date.now(); delete state.stalking; save(); }
+    // The supervisor: three quarters of a minute without getting any closer
+    // sets the mob aside. A fixed timer set aside mobs the bot was closing on.
+    if (watch(goal, 'hunt_target', key, distance, { stallMs: 45000, restMs: 120000, why: 'no closer in three quarters of a minute' }).stalled) { delete state.stalking; save(); }
     // A mob seen far off is closed on, not watched: a blaze at twenty-nine
     // blocks was stood in front of for sixteen persistence rounds while the
     // observed-hunt check, which looks within twenty-four, never saw it.
@@ -529,7 +532,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       // No way to it (a blaze on a wall across the lava): set it aside and
       // walk the fortress; the walk brings another into reach.
       if (bot.entity.position.distanceTo(from) < 1.5) {
-        (state.avoided ||= {})[key] = Date.now(); delete state.stalking; save();
+        setAside(goal, 'hunt_target', key, 'no way to it', 120000); unwatch(goal, 'hunt_target', key); delete state.stalking; save();
         if (handler.dimension === 'nether' && actions.tunnel) { await findFortressStep(bot, task, goal, save, actions); }
       }
       return;
@@ -615,7 +618,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
       }
       if (state.watchFails >= 3) {
-        (state.avoided ||= {})[key] = Date.now(); delete state.stalking; state.watchFails = 0; save();
+        setAside(goal, 'hunt_target', key, 'watched three times without getting anywhere', 120000); unwatch(goal, 'hunt_target', key); delete state.stalking; state.watchFails = 0; save();
         bot.chat?.(`Watching ${step.entity.replaceAll('_', ' ')}s and getting nowhere. Trying another angle.`);
       }
       return;

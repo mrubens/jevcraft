@@ -287,9 +287,13 @@ test('a hunt stalks a mob already in view instead of exploring, and sets it asid
   await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, actions);
   assert.deepEqual(explored, [], 'a spider two blocks away is stalked, not searched for');
   assert.equal(goal.step.action, 'stalk_mob'); assert(goal.mobHunt.stalking);
-  goal.mobHunt.stalking.since = Date.now() - 46000;
+  // Three quarters of a minute with no step closer, as the supervisor keeps it.
+  const holder = goal.survival || goal;
+  holder.progress['hunt_target:original-target'].bestAt -= 46000;
   await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, actions);
-  assert(goal.mobHunt.avoided['original-target'], 'a minute out of reach and it is set aside');
+  const { isSetAside, attemptsFor } = require('../src/progress');
+  assert(isSetAside(goal, 'hunt_target', 'original-target'), 'no closer in three quarters of a minute and it is set aside');
+  assert.match(attemptsFor(goal).why('hunt_target', 'original-target'), /no closer/);
   await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, actions);
   assert.deepEqual(explored, ['spider'], 'with the only spider set aside, the hunt explores');
 });
