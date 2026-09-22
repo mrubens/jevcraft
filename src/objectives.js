@@ -110,7 +110,9 @@ async function interpret(client, request, from, username, context = {}) {
         'Ordinary: a plain request with no timing words either way.',
         'Pressed: quickly, hurry, now, right away, before dark, as fast as you can, or a stated deadline.',
       ]),
-      addressed: noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.'),
+      // Only worth asking when the name is missing: with it, the answer was
+      // never read, and a missing answer still failed the whole request.
+      ...(!address.explicit ? { addressed: noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.') } : {}),
       wood_choice: choice('Which wood species does the speaker explicitly choose for their own requested supplies or construction in THIS message? Use only the current request, never memory, inventory, recipe ingredients, or bot defaults as evidence. A one-time request for cherry logs counts. Exclude quotes, hypotheticals, negated choices, orders for another player or the bot itself, discovery-only requests, and ambiguous/multiple species. For unspecified wood or an inherited preference choose none.', { ...woods, none: 'No single explicit wood choice for this player in the current action request.' }),
       memory_statement: noul('Is the speaker directly sharing a personal preference or personal fact with Jev to remember, rather than asking for a gameplay action? For example "I prefer small houses" or "my favorite wood is cherry". Exclude quoted/hypothetical/negated statements, general Minecraft facts, and instructions to perform a new action.'),
       interaction: choice('Classify the speaker intent in `request_body`, with the bot name prefix removed. The speaker is talking to a Minecraft bot. Is this an instruction to perform an action/report its current activity, or a discussion without an instruction to act? Judge intent, not feasibility or the topic.', INTERACTIONS),
@@ -133,7 +135,7 @@ async function interpret(client, request, from, username, context = {}) {
     },
   });
   const a = response.answers;
-  if (!a || !Object.hasOwn(TYPES, a.objective?.choice) || !Object.hasOwn(INTERACTIONS, a.interaction?.choice) || !Number.isFinite(a.addressed?.noul)) {
+  if (!a || !Object.hasOwn(TYPES, a.objective?.choice) || !Object.hasOwn(INTERACTIONS, a.interaction?.choice) || (!address.explicit && !Number.isFinite(a.addressed?.noul))) {
     throw new Error('Invalid Jev interpretation response');
   }
   if (!address.explicit && a.addressed.noul < 0.5) return null;
@@ -158,6 +160,15 @@ async function interpret(client, request, from, username, context = {}) {
     return clarify(runnerUp ? `I'm not sure whether you want me to ${phrase(kind)} or ${phrase(runnerUp)}. Could you say it another way?`
       : `I'm not sure what you want me to do. Could you say it another way?`,
     { reason: 'uncertain_objective', question: 'objective', confidence, threshold: COSTLY.has(kind) ? CONFIDENCE.costly : CONFIDENCE.act, options: [kind, runnerUp].filter(Boolean) });
+  }
+  // Whether anything should happen at all is a judgment too. A bare
+  // majority for "request" beside a sure "build" started an afternoon's
+  // work on what may have been talk about building. The costly kinds need
+  // the same surer answer on this question as on the objective.
+  const asked = a.interaction.confidence;
+  if (kind === a.objective.choice && !UNGATED.has(kind) && COSTLY.has(kind) && Number.isFinite(asked) && asked < CONFIDENCE.costly) {
+    return clarify(`Do you want me to ${phrase(kind)} now, or were we just talking about it?`,
+      { reason: 'uncertain_interaction', question: 'interaction', confidence: asked, threshold: CONFIDENCE.costly, options: [kind] });
   }
   const preferences = requestedPreferences(kind, a.wood_choice, woods);
   if (preferences.length) spec.implicitPreferences = preferences;

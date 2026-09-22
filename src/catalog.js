@@ -77,7 +77,9 @@ function catalogTree(registry, { blocksOnly = false } = {}) {
 
 // A leaf pick this unsure, with a real runner-up, is a question for the
 // player rather than a coin toss executed for the next ten minutes.
-const AMBIGUOUS = { confidence: 0.5, runnerUp: 0.25 };
+// Below `floor` the pick is a question whatever the runner-up holds: a
+// 0.3 answer spread thin over six items was executed as if it were sure.
+const AMBIGUOUS = { confidence: 0.5, runnerUp: 0.25, floor: 0.35 };
 
 async function resolveItem(client, registry, request, { blocksOnly = false, context = {}, noted } = {}) {
   context = { ...context, memory: await resolvedPreferenceContext(client, registry, context.memory, { noted }) };
@@ -112,9 +114,10 @@ async function resolveItem(client, registry, request, { blocksOnly = false, cont
       if (children[selected].item && Number.isFinite(answer.confidence) && answer.confidence < AMBIGUOUS.confidence) {
         const runnerUp = Object.entries(answer.probabilities || {}).filter(([key]) => key !== selected && children[key]?.item)
           .sort(([, a], [, b]) => b - a)[0];
-        if (runnerUp && runnerUp[1] >= AMBIGUOUS.runnerUp) {
+        if (runnerUp && (runnerUp[1] >= AMBIGUOUS.runnerUp || answer.confidence < AMBIGUOUS.floor)) {
           return { item: null, ambiguous: [children[selected].item, children[runnerUp[0]].item], path, judgments, latencyMs: Math.round(performance.now() - started) };
         }
+        if (answer.confidence < AMBIGUOUS.floor) return { item: null, path, judgments, latencyMs: Math.round(performance.now() - started) };
       }
     }
     path.push(selected);

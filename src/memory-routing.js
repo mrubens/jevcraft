@@ -17,7 +17,8 @@ function coordinateCandidates(body) {
   return [...body.matchAll(/(?:\bx\s*[:=]\s*)?(-?\d+(?:\.\d+)?)\s*[, ]+\s*(?:y\s*[:=]\s*)?(-?\d+(?:\.\d+)?)\s*[, ]+\s*(?:z\s*[:=]\s*)?(-?\d+(?:\.\d+)?)/gi)]
     .map(m => position({ x: Number(m[1]), y: Number(m[2]), z: Number(m[3]) })).filter(Boolean).slice(0, 8);
 }
-const FORGET_CONFIDENCE = 0.75;
+const FORGET_CONFIDENCE = 0.75, REPEAT_CONFIDENCE = 0.65;
+const REPEAT_COSTLY = new Set(['build', 'house', 'operator_command', 'win', 'nether']);
 async function select(client, state, entries, instructions, specials = { none: 'No saved entry matches; do not guess.' }, seen = {}) {
   if (entries.length > 24) {
     const groups = [];
@@ -94,6 +95,12 @@ async function resolveMemory(client, spec, username, context) {
     return clarify(selected === 'all' ? 'To wipe everything I remember about you, say "Jev forget everything".' : 'Which memory should I forget? Name it, like "Jev forget the old base".');
   }
   if (operation === 'visit') return { ...spec, kind: 'visit', destination: { id: selected.id, label: selected.label, position: selected.position, dimension: selected.dimension } };
+  // A repeated build, trip or dragon hunt is as costly as asking for it
+  // fresh, and was let through at the memory bar of one in two.
+  if (operation === 'repeat' && REPEAT_COSTLY.has(selected.intent?.kind) &&
+      [response.answers.operation, seen].some(answer => Number.isFinite(answer?.confidence) && answer.confidence < REPEAT_CONFIDENCE)) {
+    return clarify(`Do you want me to do "${selected.request}" again? Ask me for it directly and I'll start.`);
+  }
   if (operation === 'repeat') return { ...structuredClone(selected.intent), from: spec.from, askedAs: spec.request, repeatedMemoryId: selected.id, interpretation: spec.interpretation };
   return { ...spec, memory: { operation, targetId: selected === 'all' ? 'all' : selected.id } };
 }

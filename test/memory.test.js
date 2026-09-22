@@ -86,7 +86,7 @@ test('verified discoveries become saved places, while blocked discoveries do not
 test('personal statements reach memory without turning ordinary discussion into gameplay', async () => {
   let statement = .95;
   const client = { async systemOne({ questions }) {
-    if (questions.addressed) return { answers: { addressed: { noul: 1 }, objective: { choice: 'house' },
+    if (questions.objective) return { answers: { addressed: { noul: 1 }, objective: { choice: 'house' },
       interaction: { choice: 'discussion' }, memory_statement: { noul: statement } } };
     assert(questions.operation); return { answers: { operation: { choice: 'remember_note' } } };
   } };
@@ -158,4 +158,14 @@ test('forgetting everything needs the words and a sure answer; a coin-flip forge
   assert.equal(unsure.kind, 'clarify', 'an unsure forget is asked back');
   const one = await resolveMemory(sure('forget', () => 'entry_0'), spec('Jev forget the old base'), 'Jev', context);
   assert.equal(one.memory.targetId, 'p1');
+});
+
+test('repeating a past build needs the same sure answer as asking for one', async () => {
+  const history = [{ id: 'h1', request: 'Jev build a castle', status: 'complete', at: 'x', intent: { kind: 'build', request: 'Jev build a castle' } }];
+  const ask = confidence => resolveMemory({ async systemOne({ questions }) {
+    if (questions.operation) return { answers: { operation: { choice: 'repeat', confidence } } };
+    return { answers: { entry: { choice: 'entry_0', confidence: 0.9 } } };
+  } }, spec('Jev do that again'), 'Jev', { memory: { places: [], notes: [], history } });
+  assert.equal((await ask(0.55)).kind, 'clarify');
+  assert.equal((await ask(0.9)).kind, 'build');
 });

@@ -26,7 +26,7 @@ test('an unsure item pick, or none, walks the full catalog instead of guessing',
     const seen = [];
     const client = { systemOne: async ({ questions }) => {
       seen.push(Object.keys(questions));
-      if (questions.addressed) return { answers: { ...base, objective: { choice: 'obtain', confidence: 0.97 }, item } };
+      if (questions.objective) return { answers: { ...base, objective: { choice: 'obtain', confidence: 0.97 }, item } };
       const key = Object.keys(questions.item.criteria).find(k => k === 'items' || k === 'pumpkin' || /^families_|pumpkin/.test(k)) || 'none';
       return { answers: { item: { choice: key, confidence: 0.9 } } };
     } };
@@ -58,7 +58,7 @@ test('the wood note judgment rides along with the request and the catalog does n
   const asked = [];
   const client = { systemOne: async ({ questions }) => {
     asked.push(Object.keys(questions));
-    if (questions.addressed) {
+    if (questions.objective) {
       assert(questions.noted_wood);
       return { answers: { ...base, quantity: { choice: 'unspecified' }, objective: { choice: 'craft', confidence: 0.99 }, item: { choice: 'none', confidence: 1 }, noted_wood: { choice: 'cherry', confidence: 0.95 } } };
     }
@@ -67,7 +67,7 @@ test('the wood note judgment rides along with the request and the catalog does n
     return { answers: { item: { choice: key, confidence: 1 } } };
   } };
   await interpret(client, 'Jev craft some planks', 'Player', 'Jev', { registry, memory: { notes: [{ note: 'I like cherry wood' }], preferences: [], places: [] } });
-  assert(!asked.some(keys => keys.includes('noted_wood') && !keys.includes('addressed')));
+  assert(!asked.some(keys => keys.includes('noted_wood') && !keys.includes('objective')));
 });
 
 test('an unsure leaf pick with a real runner-up becomes a question for the player', async () => {
@@ -80,7 +80,7 @@ test('an unsure leaf pick with a real runner-up becomes a question for the playe
   const resolution = await resolveItem(client, small, 'bring me grass');
   assert.equal(resolution.item, null);
   assert.deepEqual(resolution.ambiguous, ['short_grass', 'grass_block']);
-  const spec = await interpret({ systemOne: async ({ questions }) => questions.addressed
+  const spec = await interpret({ systemOne: async ({ questions }) => questions.objective
     ? { answers: { ...base, objective: { choice: 'obtain', confidence: 0.9 }, item: { choice: 'none', confidence: 1 } } }
     : client.systemOne({ questions }) }, 'Jev bring me grass', 'Player', 'Jev', { registry: small });
   assert.equal(spec.kind, 'clarify'); assert.equal(spec.message, 'Did you mean short grass or grass block?');
@@ -95,4 +95,40 @@ test('urgency is a Score carried on the goal as a level, and a missing score cha
   assert.equal((await ask({ type: 'score', score: 0.2, confidence: 0.9 })).urgency.level, 'relaxed');
   assert.equal((await ask({ type: 'score', score: 1.0, confidence: 0.9 })).urgency.level, 'ordinary');
   assert.equal((await ask(undefined)).urgency, undefined);
+});
+
+test('a costly request needs a sure "this is a request", not only a sure objective', async () => {
+  const ask = interaction => interpret({ systemOne: async () => ({ answers: { ...base, interaction, objective: { choice: 'win', confidence: 0.95 } } }) },
+    'Jev we could beat the game at some point', 'Player', 'Jev', { registry });
+  const unsure = await ask({ choice: 'request', confidence: 0.52 });
+  assert.equal(unsure.kind, 'clarify'); assert.equal(unsure.clarification.reason, 'uncertain_interaction');
+  assert.match(unsure.message, /just talking/);
+  assert.equal((await ask({ choice: 'request', confidence: 0.9 })).kind, 'win');
+  const cheap = await interpret({ systemOne: async () => ({ answers: { ...base, interaction: { choice: 'request', confidence: 0.52 }, objective: { choice: 'come', confidence: 0.95 } } }) },
+    'Jev come here', 'Player', 'Jev', { registry });
+  assert.equal(cheap.kind, 'come', 'a cheap request is not held back');
+});
+
+test('a leaf pick spread thin over many items is a question, not a coin toss', async () => {
+  const names = ['short_grass', 'grass_block', 'tall_grass', 'fern', 'large_fern', 'dead_bush'];
+  const small = { itemsArray: names.map(name => ({ name, displayName: name.replaceAll('_', ' ') })), blocksByName: Object.fromEntries(names.map(n => [n, {}])), foodsByName: {} };
+  const spread = Object.fromEntries(names.map((n, i) => [n, i ? 0.14 : 0.3]));
+  const client = { systemOne: async ({ questions }) => {
+    const keys = Object.keys(questions.item.criteria);
+    if (!keys.some(k => names.includes(k))) return { answers: { item: { choice: keys.find(k => k !== 'none'), confidence: 1 } } };
+    return { answers: { item: { choice: 'short_grass', confidence: 0.3, probabilities: spread } } };
+  } };
+  const resolution = await resolveItem(client, small, 'bring me some green stuff');
+  assert.equal(resolution.item, null, 'no runner-up reaches a quarter, and still it is not taken');
+  assert.equal(resolution.ambiguous[0], 'short_grass');
+});
+
+test('a message with the name in front is not asked whether it is addressed', async () => {
+  const asked = [];
+  const answers = { ...base, objective: { choice: 'come', confidence: 0.99 } };
+  delete answers.addressed;
+  const spec = await interpret({ systemOne: async ({ questions }) => { asked.push(...Object.keys(questions)); return { answers }; } },
+    'Jev come here', 'Player', 'Jev', { registry });
+  assert.equal(spec.kind, 'come', 'no addressed answer is needed');
+  assert(!asked.includes('addressed'));
 });
