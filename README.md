@@ -216,7 +216,7 @@ Without an OpenRouter key, Jev selects and configures cottage, mansion, or tower
 | `OPENROUTER_JEV_MODEL` | OpenRouter decision model; default `typesafe/jev-1.13`. |
 | `BUILD_DESIGNER` | `auto` uses OpenRouter when configured, otherwise templates; `jev` always uses templates; `openrouter` requires generated designs. |
 | `OPENROUTER_BUILD_MODEL` | Generative building model. |
-| `RECOVERY_ADVISER` | `auto` lets Jev, then the generative model, advise on repeated failures; `off` disables both. |
+| `RECOVERY_ADVISER` | `auto` lets Jev, then the generative model, advise on repeated failures; `jev` uses Jev only, with no generative calls; `off` disables both. |
 | `OPENROUTER_RECOVERY_MODEL` | Generative recovery model. |
 
 Both generative settings default to `anthropic/claude-fable-5.1`. Recovery advice, from either model, can only select implemented actions and has call, time, and execution limits. See [`.env.example`](.env.example) for connection and viewer settings. Keep credentials in `.env`, which is excluded from Git.

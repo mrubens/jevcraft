@@ -6,7 +6,7 @@ const { checkThreats, immediateThreat } = require('./danger');
 const { recoveryOptions, executeRecoveryOption } = require('./recovery-options');
 const { thinking } = require('./speech');
 const { choice } = require('./typesafe');
-const LIMITS = { calls: 6, sameFailure: 2, cooldownMs: 60000, requestMs: 45000, planMs: 900000, actionMs: 120000, actionSteps: 12,
+const LIMITS = { calls: 6, windowMs: 3600000, sameFailure: 2, cooldownMs: 60000, requestMs: 45000, planMs: 900000, actionMs: 120000, actionSteps: 12,
   surfaceMs: 600000, surfaceSteps: 192, jevConfidence: 0.6 };
 const emergency = err => ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name);
 const identity = goal => JSON.stringify([goal.request, goal.kind, goal.item, goal.count, goal.from]);
@@ -103,7 +103,11 @@ async function askFable(bot, task, observation, { apiKey = process.env.OPENROUTE
 }
 
 class RecoveryAdviser {
-  constructor(bot, actions, { apiKey = process.env.OPENROUTER_API_KEY, enabled = process.env.RECOVERY_ADVISER !== 'off', client = null,
+  // `jev` is Jev's pick of a code-checked option and never the generative
+  // model: `off` turned both off, so a run kept off paid calls lost the one
+  // recovery judgment that costs nothing extra.
+  constructor(bot, actions, { mode = process.env.RECOVERY_ADVISER || 'auto', apiKey = mode === 'jev' ? undefined : process.env.OPENROUTER_API_KEY,
+    enabled = mode !== 'off', client = null,
     observe = recoveryOptions, ask = askFable, judge = askJev, execute = executeRecoveryOption, ...requestOptions } = {}) {
     Object.assign(this, { bot, actions, apiKey, enabled, client, observe, ask, judge, execute, requestOptions });
   }
@@ -118,7 +122,10 @@ class RecoveryAdviser {
     if (!this.configured || !available(this.bot)) return false;
     const state = this.state(goal), now = Date.now();
     const signature = JSON.stringify([goal.lastError, goal.step?.action, goal.step?.item, goal.step?.drops]);
-    if (state.active || state.calls >= LIMITS.calls || now - (state.lastAskedAt || 0) < LIMITS.cooldownMs ||
+    // Six an hour, not six a life: a long goal like beating the game had
+    // used its six by the first evening and never had advice again.
+    const recent = state.history.filter(h => now - h.at < LIMITS.windowMs).length;
+    if (state.active || recent >= LIMITS.calls || now - (state.lastAskedAt || 0) < LIMITS.cooldownMs ||
       state.history.filter(h => h.signature === signature).length >= LIMITS.sameFailure) return false;
     // Reserve the call before observation/network work so a restart or failed
     // service cannot bypass the persistent cost and repetition limits.

@@ -106,8 +106,11 @@ test('no key/off retain normal behavior; failed service calls and repeated failu
   goal.recoveryAdvice.lastAskedAt = 0;
   await adviser.suggest(task, goal, () => {});
   assert.equal(calls, 2); // same-failure limit
-  goal.recoveryAdvice.calls = LIMITS.calls; goal.lastError = 'Different failure';
-  await adviser.suggest(task, goal, () => {}); assert.equal(calls, 2);
+  goal.recoveryAdvice.history = Array.from({ length: LIMITS.calls }, (_, i) => ({ signature: `old ${i}`, at: Date.now() - 1000 }));
+  goal.recoveryAdvice.lastAskedAt = 0; goal.lastError = 'Different failure';
+  await adviser.suggest(task, goal, () => {}); assert.equal(calls, 2, 'six in the last hour is the budget');
+  goal.recoveryAdvice.history.forEach(h => { h.at -= LIMITS.windowMs; });
+  await adviser.suggest(task, goal, () => {}); assert.equal(calls, 3, 'an hour later there is advice again');
 });
 
 test('a recovery action that never completes is bounded and records its failure', async () => {
@@ -289,4 +292,15 @@ test('a failing mining step always offers leaving for another source, and taking
   assert.equal(await executeRecoveryOption(bot, task, goal, () => {}, leave, actions), true);
   assert.equal(explored, 'oak_log');
   assert.deepEqual(Object.keys(goal.unreachable).sort(), ['(3, 65, 0)', '(3, 66, 0)']);
+});
+
+test('jev mode asks Jev and never the generative model, whatever key is set', () => {
+  const { bot } = fixture();
+  const saved = process.env.OPENROUTER_API_KEY; process.env.OPENROUTER_API_KEY = 'would-spend';
+  try {
+    const jev = new RecoveryAdviser(bot, {}, { mode: 'jev', client: {} });
+    assert.equal(jev.apiKey, undefined); assert(jev.configured, 'Jev alone is enough');
+    assert(!new RecoveryAdviser(bot, {}, { mode: 'off', client: {} }).configured);
+    assert.equal(new RecoveryAdviser(bot, {}, { mode: 'auto', client: {} }).apiKey, 'would-spend');
+  } finally { if (saved === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = saved; }
 });
