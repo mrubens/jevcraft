@@ -127,6 +127,14 @@ function configureMovements(bot) {
   // dirt, and the base's plot was retilled after every visit. Tilling and
   // planting stand beside the cell, so nothing needs to step on it.
   if (bot.registry.blocksByName.farmland) movement.blocksToAvoid.add(bot.registry.blocksByName.farmland.id);
+  // The pathfinder pillars and bridges with dirt and cobblestone only. In
+  // the Nether the pockets hold netherrack, and with the cobblestone spent
+  // on one span the bot could neither climb to the fortress nor cross to
+  // it. Any plain stone the bot carries will do for scaffolding.
+  for (const name of ['netherrack', 'cobbled_deepslate', 'stone', 'andesite', 'diorite', 'granite', 'tuff', 'blackstone', 'basalt', 'deepslate', 'end_stone']) {
+    const id = bot.registry.itemsByName[name]?.id;
+    if (id !== undefined && !movement.scafoldingBlocks.includes(id)) movement.scafoldingBlocks.push(id);
+  }
   movement.canDig = true;
   movement.allow1by1towers = true;
   movement.allowParkour = false;

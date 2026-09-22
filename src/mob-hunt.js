@@ -311,6 +311,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     !(state?.avoided?.[e.uuid || e.id] > Date.now() - 120000) && e.position.distanceTo(bot.entity.position) < 32)
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
   if (near) {
+    if (goal.fortressSearch) goal.fortressSearch.patrols = 0;
     const key = near.uuid || near.id;
     if (!state.stalking || state.stalking.key !== key) state.stalking = { key, since: Date.now() };
     const distance = near.position.distanceTo(bot.entity.position);
@@ -446,9 +447,19 @@ async function findFortressStep(bot, task, goal, save, actions) {
     const fresh = walkable.filter(b => !state.visited.some(v => Math.hypot(v.x - b.x, v.z - b.z) < 12));
     const byDistance = fresh.sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
     const next = byDistance.find(b => b.distanceTo(here) >= 12);
-    // Every stretch in view walked: this part of the fortress is done, and
-    // the sweep goes on from here to the next one.
-    if (!next) { delete state.target; }
+    // Every stretch in view walked: patrol it again, blazes spawn as time
+    // passes and the walk brings them into view; the sweep left the
+    // structure for the lava shore after one pass. Six empty patrols and
+    // the sweep goes on along the fortress's own axis to the next section.
+    if (!next) {
+      state.patrols = (state.patrols || 0) + 1;
+      if (state.patrols <= 6) {
+        state.visited = state.visited.slice(-2);
+        if (!(state.patrolSaidAt > Date.now() - 120000)) { state.patrolSaidAt = Date.now(); bot.chat?.('Walked this stretch. Patrolling the fortress for blazes.'); }
+        return;
+      }
+      state.patrols = 0; delete state.target; state.heading = 1; state.visited = [];
+    }
     else {
     state.visited.push({ x: next.x, y: next.y, z: next.z }); state.visited = state.visited.slice(-32);
     goal.step = { action: 'find_fortress', found: state.found, walking: { x: next.x, y: next.y, z: next.z }, legs: state.legs }; save();

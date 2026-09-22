@@ -367,3 +367,17 @@ test('a span is laid one block ahead at a time toward a fortress across open air
   assert.equal(laid, 5); assert.deepEqual(placed, [[1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0], [5, 64, 0]]);
   assert.equal(bot.entity.position.x, 5.5, 'standing on the last span block, beside the brick');
 });
+
+test('a fortress whose every stretch in view was walked is patrolled again, not left for the sweep', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const clear = { boundingBox: 'empty' };
+  const bot = { registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 65, 0.5) }, chat() {},
+    blockAt: () => clear, findBlocks: () => [new Vec3(2, 64, 0), new Vec3(20, 64, 0)] };
+  const goal = { fortressSearch: { axis: 1, legs: 3, visited: [{ x: 20, y: 64, z: 0 }, { x: 40, y: 64, z: 0 }], target: { x: 96, y: 65, z: 0 } } };
+  const tunnels = [];
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target) => tunnels.push([target.x, target.z]) });
+  assert.equal(tunnels.length, 0, 'no sweep leg while the fortress is in view');
+  assert.equal(goal.fortressSearch.patrols, 1); assert.deepEqual(goal.fortressSearch.target, { x: 96, y: 65, z: 0 }, 'the leg target is kept for later');
+  assert.equal(goal.fortressSearch.visited.length, 2);
+});
