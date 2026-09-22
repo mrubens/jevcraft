@@ -1,4 +1,5 @@
 'use strict';
+const { isSetAside } = require('./progress');
 const { Vec3 } = require('vec3');
 const { knowledge } = require('./knowledge');
 const faces = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 1, 0), new Vec3(0, -1, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
@@ -26,7 +27,7 @@ function knownResourceLocations(bot, goal, names) {
     if (entry.dimension !== dimension) continue;
     const p = new Vec3(entry.position.x, entry.position.y, entry.position.z), actual = bot.blockAt(p);
     if (Date.now() - entry.seenAt > 1800000 || actual && actual.name !== entry.name) { delete goal.resourceMemory[key]; continue; }
-    if (!names.includes(entry.name) || p.distanceTo(bot.entity.position) > 512 || goal.unreachable?.[`${p}`] > Date.now() - 120000) continue;
+    if (!names.includes(entry.name) || p.distanceTo(bot.entity.position) > 512 || isSetAside(goal, 'reach', p)) continue;
     result.push(p);
   }
   return result.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));

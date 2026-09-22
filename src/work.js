@@ -1,6 +1,6 @@
 'use strict';
 const { move } = require('./motion');
-const { attemptsFor } = require('./progress');
+const { attemptsFor, setAside, isSetAside } = require('./progress');
 const { DAY } = require('./day');
 const { STILL_MS, watchActivity, markActivity, stillFor, permittedWait, stillReason, recordStill } = require('./stillness');
 
@@ -400,7 +400,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       ...(bot.registry.blocksByName[resource] ? [resource] : []), ...sourceBlocks(bot.registry, resource)])];
     const observed = [...new Map([...find(bot, resourceNames, 128, 8), ...knownResourceLocations(bot, goal, resourceNames)]
       .map(p => [`${p}`, p])).values()].filter(p => !reservedForConstruction(goal, p) && safeFromHostiles(bot, p) &&
-      !(goal.unreachable?.[`${p}`] > Date.now() - 120000) && (!surface || !bot.blockAt(p) || surface.isSurface(p)))
+      !isSetAside(goal, 'reach', p) && (!surface || !bot.blockAt(p) || surface.isSurface(p)))
       .sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
     if (observed.length) {
       target = observed[0];
@@ -525,8 +525,7 @@ async function miningCandidates(bot, task, step, goal) {
   task.check(); checkAir(bot);
   rememberResources(bot, goal, candidates);
   return candidates.filter(p => {
-    const k = `${p}`;
-    return safeFromHostiles(bot, p) && (!goal.unreachable?.[k] || Date.now() - goal.unreachable[k] > 120000);
+    return safeFromHostiles(bot, p) && !isSetAside(goal, 'reach', p);
   });
 }
 
@@ -596,8 +595,7 @@ async function moveOnFromResource(bot, task, goal, save) {
   const step = goal.step;
   if (step?.action !== 'mine' || !step.block) return false;
   const nearby = find(bot, step.sources || [step.block], 16, 64);
-  goal.unreachable ||= {};
-  for (const p of nearby) goal.unreachable[`${p}`] = Date.now();
+  for (const p of nearby) setAside(goal, 'reach', p, 'set aside with the rest of this area', 120000);
   goal.step = { action: 'move_on', resource: step.drops || step.block, setAside: nearby.length }; save();
   bot.chat?.(`I can't get at the ${String(step.block).replaceAll('_', ' ')} here. I'll look somewhere else.`);
   await explore(bot, task, goal, save, step.block);
@@ -694,7 +692,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       // Running out of air at a block says something about the block. A
       // zombie walking up says nothing about it, and set the block aside
       // for two minutes all the same.
-      if (e.name === 'NeedsAir') { goal.unreachable ||= {}; goal.unreachable[`${p}`] = Date.now(); save(); throw e; }
+      if (e.name === 'NeedsAir') { setAside(goal, 'reach', p, 'ran out of air there', 120000); save(); throw e; }
       if (e.name === 'NeedsSafety') throw e;
       goal.lastMiningError = e.message;
     } finally {
@@ -711,8 +709,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       }
     }
     if (countOf(bot, step.drops) > before) return;
-    goal.unreachable ||= {};
-    goal.unreachable[`${p}`] = Date.now();
+    setAside(goal, 'reach', p, goal.lastMiningError || 'dug nothing there', 120000);
   }
   save();
   if (selected) throw new Error(goal.lastMiningError || `No ${step.drops} collected at ${selected}`);
@@ -1181,7 +1178,7 @@ function decisionObservation(bot, goal) {
     daylight: bot.time?.timeOfDay < DAY.DARK ? 'day' : bot.time?.timeOfDay < DAY.DAWN ? 'night' : 'dawn',
     nearbyThreats: Object.values(bot.entities || {}).filter(e => hostiles.has(e.name) && e.position.distanceTo(bot.entity.position) < 24)
       .map(e => ({ id: e.id, name: e.name, distance: Math.round(e.position.distanceTo(bot.entity.position)) })),
-    recentFailures: goal.decisionFailures || {},
+    recentFailures: attemptsFor(goal).of('option'),
   };
 }
 
@@ -1215,7 +1212,7 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
       // Do not ask Jev to choose unsupported targets such as the trunk it
       // stands on or floating remnants with no currently feasible approach.
       const reachable = await reachableBlocks(bot, task, await miningCandidates(bot, task, step, goal), { limit: 16 });
-      for (const source of resourceSources(bot, reachable, { failures: goal.decisionFailures, unreachable: goal.unreachable })) {
+      for (const source of resourceSources(bot, reachable, { failures: attemptsFor(goal).of('option'), resting: p => isSetAside(goal, 'reach', p) })) {
         actions[source.key] = leaf({ action: 'approach, dig and collect', ...source.description, resourceNeeded: step.drops },
           () => workSource(bot, task, step, goal, save, source), () => !!nearestRemaining(bot, source));
       }
@@ -1237,7 +1234,7 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
       const layer = Math.min(...missing.map(p => p.y));
       const actions = {};
       const lowest = missing.filter(p => p.y === layer);
-      const fresh = lowest.filter(p => !(goal.decisionFailures?.[`${air(bot.blockAt(pos(p))) ? 'place' : 'clear'}_${p.x}_${p.y}_${p.z}`]?.at > Date.now() - 120000));
+      const fresh = lowest.filter(p => !isSetAside(goal, 'option', `${air(bot.blockAt(pos(p))) ? 'place' : 'clear'}_${p.x}_${p.y}_${p.z}`));
       // Recent failures are a preference, not a veto: when every cell on the
       // layer failed once, they are all offered again rather than nothing.
       for (const p of (fresh.length ? fresh : lowest).slice(0, 4)) {
@@ -1290,8 +1287,7 @@ async function decideAction(bot, task, goal, save, client, onStep, tree, context
   try { await decision.action.run(); }
   catch (err) {
     task.check(); if (err.name === 'NeedsAir') throw err;
-    goal.decisionFailures ||= {};
-    goal.decisionFailures[decision.path.at(-1)] = { at: Date.now(), reason: err.message };
+    setAside(goal, 'option', decision.path.at(-1), err, 120000);
     throw err;
   }
   return true;
@@ -1775,7 +1771,7 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
   if (step.action === 'mine') {
     const reachable = await reachableBlocks(bot, task, await miningCandidates(bot, task, step, goal), { limit: 16 });
     // Jev chooses between sources that differ; code picks the block inside one.
-    for (const source of resourceSources(bot, reachable, { failures: goal.decisionFailures, unreachable: goal.unreachable })) {
+    for (const source of resourceSources(bot, reachable, { failures: attemptsFor(goal).of('option'), resting: p => isSetAside(goal, 'reach', p) })) {
       actions[source.key] = { description: { ...source.description, resource: step.drops, requiredTool: step.tool },
         valid: () => !!nearestRemaining(bot, source), run: () => workSource(bot, task, step, goal, save, source) };
     }
@@ -2079,7 +2075,7 @@ async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } 
   // a skeleton walking up during a sixty-second back-off. A threat ends the
   // pause with NeedsSafety, which the loop hands to the survival layer.
   while (Date.now() < end) { task.check(); checkAir(bot); checkThreats(bot); await sleep(100); }
-  goal.failures = 0; goal.stalls = 0; delete goal.decisionFailures; delete goal.lastError; save(); onStep(goal);
+  goal.failures = 0; goal.stalls = 0; attemptsFor(goal).clearAction('option'); delete goal.lastError; save(); onStep(goal);
 }
 
 function createRecoveryAdviser(bot, client) {

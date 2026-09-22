@@ -1,4 +1,5 @@
 'use strict';
+const { setAside } = require('./progress');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, countOf } = require('./skills');
@@ -108,8 +109,7 @@ async function executeRecoveryOption(bot, task, goal, save, action, actions) {
   if (action.kind === 'surface') { await actions.surfaceStep(bot, task, goal, save); return surfaceReturnComplete(bot, goal); }
   if (action.kind === 'explore') {
     const start = bot.entity.position.clone();
-    goal.unreachable ||= {};
-    for (const p of actions.find(bot, action.sources || [action.block], 16, 64)) goal.unreachable[`${p}`] = Date.now();
+    for (const p of actions.find(bot, action.sources || [action.block], 16, 64)) setAside(goal, 'reach', p, 'recovery chose to look elsewhere', 120000);
     save();
     await actions.explore(bot, task, goal, save, action.block);
     // Done once the bot has actually left the failing area.

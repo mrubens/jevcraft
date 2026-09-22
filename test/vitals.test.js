@@ -24,7 +24,7 @@ test('low air aborts the current mining attempt without trying other blocks', as
   const goal = {};
   await assert.rejects(acquireStep(bot, new Task('test', 'sand'), 'sand', 1, goal, () => {}), { name: 'NeedsAir' });
   assert.equal(digging, 1);
-  assert(goal.unreachable['(1, 63, 0)'] > Date.now() - 1000, 'Do not retry the same interrupted dive immediately');
+  assert(require('../src/progress').isSetAside(goal, 'reach', { x: 1, y: 63, z: 0 }), 'Do not retry the same interrupted dive immediately');
 });
 
 function waterWorld() {

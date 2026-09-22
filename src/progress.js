@@ -14,10 +14,10 @@
 
 // A new best is an improvement by more than `epsilon`; `looks` counts the
 // looks since the last one.
-function advance(record, value, { better = 'lower', epsilon = 0.5 } = {}) {
+function advance(record, value, { better = 'lower', epsilon = 0.5, now = Date.now() } = {}) {
   const improved = !Number.isFinite(record.best) ||
     (better === 'lower' ? value < record.best - epsilon : value > record.best + epsilon);
-  if (improved) { record.best = value; record.looks = 0; record.bestAt = Date.now(); }
+  if (improved) { record.best = value; record.looks = 0; record.bestAt = now; }
   else record.looks = (record.looks || 0) + 1;
   return !improved;
 }
@@ -42,10 +42,39 @@ class Attempts {
   resting(action, target, now = Date.now()) { return this.entries[keyOf(action, target)]?.until > now; }
   why(action, target) { return this.entries[keyOf(action, target)]?.why; }
   clear(action, target) { delete this.entries[keyOf(action, target)]; }
+  clearAction(action) { for (const [key, entry] of Object.entries(this.entries)) if (entry.action === action) delete this.entries[key]; }
+  // The resting targets of one action, as { target: { at, until, why } }.
+  of(action, now = Date.now()) {
+    return Object.fromEntries(Object.values(this.entries).filter(e => e.action === action && e.until > now).map(e => [String(e.target), { at: e.at, until: e.until, why: e.why }]));
+  }
 }
 
 // The shared memory lives with the survival state, which every goal of the
 // world carries and which is saved per world.
-const attemptsFor = holder => new Attempts(holder?.survival || holder?.state || holder || {});
+const home = holder => holder?.survival || holder?.state || holder || {};
+const attemptsFor = holder => new Attempts(home(holder));
+const setAside = (holder, action, target, why, restMs) => attemptsFor(holder).fail(action, target, why, { restMs });
+const isSetAside = (holder, action, target, now) => attemptsFor(holder).resting(action, target, now);
 
-module.exports = { advance, Attempts, attemptsFor, keyOf };
+// The supervisor. An activity says each tick what it is after and how far
+// off it is; this keeps the best, and when there has been no new best for
+// `stallLooks` looks or `stallMs` of time, the attempt is recorded as failed
+// with the reason and the record cleared, and the activity is told to give
+// the target up. It is the one place a pace-in-place is noticed, whatever
+// the activity: before this, each noticed it in its own way or not at all.
+function watch(holder, action, target, value, { better = 'lower', epsilon = 0.5, stallLooks = Infinity, stallMs = Infinity, restMs = 600000, why, now = Date.now() } = {}) {
+  const state = home(holder), key = keyOf(action, target);
+  const records = state.progress ||= {};
+  const record = records[key] ||= { startedAt: now };
+  advance(record, value, { better, epsilon, now });
+  const looked = record.looks >= stallLooks, waited = now - record.bestAt >= stallMs;
+  if (!looked && !waited) return { stalled: false, record };
+  const reason = why || (looked ? `no progress in ${record.looks} steps (best ${Math.round(record.best * 10) / 10})`
+    : `no progress in ${Math.round((now - record.bestAt) / 60000)} minutes (best ${Math.round(record.best * 10) / 10})`);
+  delete records[key];
+  attemptsFor(holder).fail(action, target, reason, { restMs, now });
+  return { stalled: true, reason, record };
+}
+const unwatch = (holder, action, target) => { delete home(holder).progress?.[keyOf(action, target)]; };
+
+module.exports = { advance, Attempts, attemptsFor, keyOf, setAside, isSetAside, watch, unwatch };

@@ -1,4 +1,5 @@
 'use strict';
+const { setAside, isSetAside } = require('./progress');
 const { Vec3 } = require('vec3');
 const pos = p => new Vec3(p.x, p.y, p.z);
 
@@ -26,10 +27,10 @@ function failedSeeds(failures, now) {
   });
 }
 
-function resourceSources(bot, candidates, { radius = 6, limit = 4, failures = {}, unreachable = {}, now = Date.now() } = {}) {
+function resourceSources(bot, candidates, { radius = 6, limit = 4, failures = {}, resting = () => false, now = Date.now() } = {}) {
   const origin = bot.entity.position;
   const failed = failedSeeds(failures, now);
-  const remaining = candidates.map(pos).filter(p => !(unreachable[`${p}`] > now - FAILURE_TTL_MS))
+  const remaining = candidates.map(pos).filter(p => !resting(p))
     .sort((a, b) => a.distanceTo(origin) - b.distanceTo(origin));
   const sources = [];
   while (remaining.length && sources.length < limit) {
@@ -77,7 +78,7 @@ function rememberSource(goal, source, step) {
 function committedSource(bot, goal, step, { now = Date.now() } = {}) {
   const saved = goal.workingSource;
   if (!saved || saved.drops !== step.drops) return null;
-  const source = { ...saved, blocks: saved.blocks.map(pos).filter(p => !(goal.unreachable?.[`${p}`] > now - FAILURE_TTL_MS)) };
+  const source = { ...saved, blocks: saved.blocks.map(pos).filter(p => !isSetAside(goal, 'reach', p, now)) };
   if (!nearestRemaining(bot, source)) { delete goal.workingSource; return null; }
   return source;
 }
@@ -86,9 +87,8 @@ function committedSource(bot, goal, step, { now = Date.now() } = {}) {
 // vein is not going to be either. Setting the whole source aside is what
 // lets the next step pick a different tree instead of the next log of this
 // one, five times over, until the failure budget ends the request.
-function setAsideSource(goal, source, now = Date.now()) {
-  goal.unreachable ||= {};
-  for (const p of source.blocks) goal.unreachable[`${p}`] = now;
+function setAsideSource(goal, source, why = 'the source could not be worked') {
+  for (const p of source.blocks) setAside(goal, 'reach', p, why, FAILURE_TTL_MS);
 }
 
 module.exports = { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, failedSeeds, rememberSource, committedSource, FAILURE_TTL_MS };

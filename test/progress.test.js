@@ -43,3 +43,18 @@ test('a strict dig with only water between it and its target says so, instead of
     err => err instanceof NoSafeWay && /water/.test(err.message));
   assert(mine.tunnel.lastBlocked, 'and what blocked it is kept on the tunnel');
 });
+
+test('the supervisor gives a target up after no new best, in steps or in time, and remembers why', () => {
+  const { watch } = require('../src/progress');
+  const goal = { survival: {} }, ore = new Vec3(8, 55, 0);
+  let result;
+  for (const gap of [12, 11, 11.2, 11, 11.1, 11]) result = watch(goal, 'night_mine', ore, gap, { stallLooks: 4 });
+  assert.equal(result.stalled, true);
+  assert.match(result.reason, /no progress in 4 steps/);
+  assert(goal.survival.attempts['night_mine:8,55,0'], 'set aside in the shared memory');
+  assert.equal(goal.survival.progress['night_mine:8,55,0'], undefined, 'and the record cleared for a fresh start later');
+  const start = Date.now();
+  assert.equal(watch(goal, 'food_gate', 'nether', 4, { better: 'higher', stallMs: 60000, now: start }).stalled, false);
+  assert.equal(watch(goal, 'food_gate', 'nether', 12, { better: 'higher', stallMs: 60000, now: start + 50000 }).stalled, false, 'more food is progress');
+  assert.equal(watch(goal, 'food_gate', 'nether', 12, { better: 'higher', stallMs: 60000, now: start + 115000 }).stalled, true, 'a minute of none is a stall');
+});

@@ -291,7 +291,7 @@ test('a failing mining step always offers leaving for another source, and taking
   assert(leave, 'leaving is offered'); assert.match(leave.description, /2 oak log blocks within 16 blocks/);
   assert.equal(await executeRecoveryOption(bot, task, goal, () => {}, leave, actions), true);
   assert.equal(explored, 'oak_log');
-  assert.deepEqual(Object.keys(goal.unreachable).sort(), ['(3, 65, 0)', '(3, 66, 0)']);
+  assert.deepEqual(Object.keys(goal.survival?.attempts || goal.attempts).filter(k => k.startsWith('reach:')).sort(), ['reach:3,65,0', 'reach:3,66,0']);
 });
 
 test('jev mode asks Jev and never the generative model, whatever key is set', () => {

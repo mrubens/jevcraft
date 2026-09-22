@@ -52,9 +52,10 @@ test('a failed source stays failed when the same tree reappears under its next-n
   const again = resourceSources(bot, all.slice(1), { now, failures });
   assert.deepEqual(again.map(s => s.key), ['source_oak_log_20_64_0']);
   const goal = {};
-  setAsideSource(goal, first[0], now);
-  assert.deepEqual(Object.keys(goal.unreachable).sort(), ['(3, 64, 0)', '(3, 65, 0)', '(3, 66, 0)']);
-  assert.deepEqual(resourceSources(bot, all, { now, unreachable: goal.unreachable }).map(s => s.key), ['source_oak_log_20_64_0']);
+  const { isSetAside } = require('../src/progress');
+  setAsideSource(goal, first[0]);
+  assert.deepEqual(Object.keys(goal.attempts).sort(), ['reach:3,64,0', 'reach:3,65,0', 'reach:3,66,0'], 'in the shared memory of failed attempts');
+  assert.deepEqual(resourceSources(bot, all, { now, resting: p => isSetAside(goal, 'reach', p) }).map(s => s.key), ['source_oak_log_20_64_0']);
 });
 
 test('a chosen source is kept until it is exhausted, set aside, or the resource changes', () => {
@@ -66,6 +67,7 @@ test('a chosen source is kept until it is exhausted, set aside, or the resource 
   const revived = committedSource(JSON.parse(JSON.stringify({ bot: null })) && bot, JSON.parse(JSON.stringify(goal)), step);
   assert.equal(revived.key, source.key); assert.equal(revived.blocks.length, 2);
   assert.equal(committedSource(bot, goal, { action: 'mine', drops: 'birch_log' }), null, 'a different resource is a new choice');
-  goal.unreachable = { '(3, 64, 0)': Date.now(), '(3, 65, 0)': Date.now() };
+  const { setAside } = require('../src/progress');
+  for (const p of [new Vec3(3, 64, 0), new Vec3(3, 65, 0)]) setAside(goal, 'reach', p, 'unreachable', 120000);
   assert.equal(committedSource(bot, goal, step), null); assert.equal(goal.workingSource, undefined, 'an exhausted source is forgotten');
 });
