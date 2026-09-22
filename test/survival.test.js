@@ -585,9 +585,10 @@ test('a stock-driven food search is set aside after five minutes of finding noth
       findBlocks: () => [], pathfinder: { movements: {} }, on() {}, removeListener() {} };
     return new Survival(bot, { explore: async () => { forages.push(food); }, navigate: async () => {}, acquireStep: async () => {} }, { state });
   };
-  const state = { shelters: [], foodSearch: { since: Date.now() - 400000 } };
+  // Five and more minutes of searching, as the supervisor keeps it, with no food found.
+  const state = { shelters: [], progress: { 'food_search:stock': { best: 0, looks: 40, bestAt: Date.now() - 400000 } } };
   assert.equal(await make(20, state).step(new Task('stock'), { kind: 'win', stockFood: true }, () => {}), false, 'five minutes of nothing: the reserve waits');
-  assert(state.foodStockPausedUntil > Date.now());
+  assert(require('../src/progress').isSetAside({ state }, 'food_search', 'stock'), 'set aside in the shared memory, with the reason');
   assert.equal(await make(20, state).step(new Task('stock again'), { kind: 'win', stockFood: true }, () => {}), false, 'and stays paused');
   assert.equal(await make(10, state).step(new Task('hungry'), { kind: 'win', stockFood: true }, () => {}), true, 'real hunger still forages');
   assert.deepEqual(forages, [10]);

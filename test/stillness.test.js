@@ -77,9 +77,11 @@ test('the Nether food gate never waits: a rested search is taken up again, and t
     entity: { id: 1, position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, entities: {}, time: { timeOfDay: 3000 },
     findBlocks: () => [], blockAt: () => ({ name: 'air', boundingBox: 'empty' }), pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, chat() {} });
   const gate = gameHandlers(bot, null).food_reserve;
-  const goal = { kind: 'win', survival: { foodStockPausedUntil: Date.now() + 600000, foodSearch: { since: 1 } } };
+  const goal = { kind: 'win', survival: {} };
+  const { setAside, isSetAside } = require('../src/progress');
+  setAside(goal, 'food_search', 'stock', 'five minutes of searching brought no food', 600000);
   await gate(bot, new Task('gate'), goal, () => {}).catch(() => {});
-  assert.equal(goal.survival.foodStockPausedUntil, undefined, 'the animal search is not left resting');
+  assert.equal(isSetAside(goal, 'food_search', 'stock'), false, 'the animal search is not left resting');
   assert.equal(goal.step.action, 'hunt_food_for_nether');
   assert(goal.stockFood && goal.preparingNether);
   goal.foodGate.activeMs = 20 * 60000;

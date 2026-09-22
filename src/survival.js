@@ -1,6 +1,6 @@
 'use strict';
 const { move } = require('./motion');
-const { attemptsFor } = require('./progress');
+const { attemptsFor, setAside, isSetAside, failedWithin, watch, unwatch } = require('./progress');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { threats, immediateThreat, checkThreats, hunted, claimed } = require('./danger');
@@ -92,7 +92,7 @@ const shelterNeeded = bot => bot.game.difficulty !== 'peaceful' && bot.game.dime
 const { SLEEP_FROM, SLEEP_UNTIL } = DAY;
 // Whether a failed sleep is still being waited out. Older saved state has
 // only the time of the failure, which waits the full ten minutes.
-const sleepWaiting = state => (state.sleepRetryAt ?? ((state.sleepFailedAt || 0) + 600000)) > Date.now();
+const sleepWaiting = holder => isSetAside(holder, 'sleep', 'bed');
 const sleepable = bot => bot.time?.timeOfDay >= SLEEP_FROM && bot.time.timeOfDay <= SLEEP_UNTIL;
 // Three cells in a line: where the bot stands, the bed's foot, its head.
 // Level floor under both bed cells, air at feet and head height.
@@ -279,7 +279,7 @@ class Survival {
       const persistent = danger.some(t => PERSISTENT_THREATS.has(t.entity.name));
       const footing = bot.findBlocks({ matching: ids, maxDistance: persistent ? 40 : 20, count: 512,
         useExtraInfo: b => shelter.solid(b) && shelter.replaceable(bot.blockAt(b.position.offset(0, 1, 0))) && shelter.replaceable(bot.blockAt(b.position.offset(0, 2, 0))),
-      }).map(p => p.offset(0, 1, 0)).filter(p => !(this.state.failedEscapes?.[`${p}`] > Date.now() - 60000) && !lavaBeside(bot, p));
+      }).map(p => p.offset(0, 1, 0)).filter(p => !isSetAside(this, 'escape', p) && !lavaBeside(bot, p));
       const gaining = p => distance(p) >= distance(bot.entity.position) + 4;
       // Beside lava, one knockback is the end: the dream run died that way at
       // its pouring spot, in full iron, with the diamond pickaxe. Get two
@@ -308,7 +308,7 @@ class Survival {
         try { await this.actions.navigate(bot, task, destination, { timeoutMs: persistent ? 14000 : 7000, stallMs: 3000 }); delete this.state.trappedSince; return; }
         catch (err) {
           task.check(); if (err.name === 'NeedsAir') throw err;
-          this.state.failedEscapes ||= {}; this.state.failedEscapes[`${p}`] = Date.now(); save();
+          setAside(this, 'escape', p, err, 60000); save();
           // Reobserve positions after a partial escape instead of running the
           // next stale route against the old mob positions.
           return;
@@ -691,7 +691,7 @@ class Survival {
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; lastError = err; }
         if (reached) break;
       }
-      if (!reached) { this.state.bedRouteFailedAt = Date.now(); this.report(goal, save, { action: 'sleep_failed', reason: `no way to the bed: ${lastError?.message || 'not close enough'}` }); throw lastError || new Error('No way to the bed'); }
+      if (!reached) { setAside(this, 'bed_route', 'home', lastError || 'not close enough', 120000); this.report(goal, save, { action: 'sleep_failed', reason: `no way to the bed: ${lastError?.message || 'not close enough'}` }); throw lastError || new Error('No way to the bed'); }
       if (!isBed(bot.blockAt(site.foot))) throw new Error('The bed at the base is not where it was left');
       // A bed needs air above it. A night shelter built around the bed put
       // a block on top of it, and every sleep after that was refused as
@@ -732,7 +732,7 @@ class Survival {
       task.check();
       // A refusal the server named (monsters near, not safe) waits out ten
       // minutes; a sleep that simply did not take is tried again in two.
-      this.state.sleepFailedAt = Date.now(); this.state.sleepRetryAt = Date.now() + (/refused|monsters|not night|can only sleep/i.test(err.message) ? 600000 : 120000);
+      setAside(this, 'sleep', 'bed', err, /refused|monsters|not night|can only sleep/i.test(err.message) ? 600000 : 120000);
       this.state.lastSleepError = err.message; this.report(goal, save, { action: 'sleep_failed', reason: err.message });
     }
     finally {
@@ -745,7 +745,7 @@ class Survival {
       save();
     }
     if (!slept) throw new Error(this.state.lastSleepError || 'The night did not pass in bed');
-    delete this.state.sleepFailedAt; delete this.state.sleepRetryAt; delete this.state.nightPlan;
+    attemptsFor(this).clear('sleep', 'bed'); delete this.state.nightPlan;
     this.report(goal, save, { action: 'leave_shelter', reason: 'Morning. Back to it.' });
   }
 
@@ -763,7 +763,7 @@ class Survival {
     // Not with anything watching: the same test the pocket uses to stay shut.
     if (threats(bot).some(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity))) return false;
     if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) return false;
-    if (sleepable(bot) && !sleepWaiting(this.state) && (bedCarried(bot) || nearbyHomeBed(bot, goal))) return false;
+    if (sleepable(bot) && !sleepWaiting(this) && (bedCarried(bot) || nearbyHomeBed(bot, goal))) return false;
     return true;
   }
 
@@ -875,11 +875,11 @@ class Survival {
       // of a loop: out, a two-minute walk in the dark, a new pocket, and two
       // minutes later out again, all night. From a pocket, a failed route
       // waits ten minutes like a failed sleep does.
-      const homeBed = sleepable(bot) && !watched && !sleepWaiting(this.state) && !(this.state.bedRouteFailedAt > Date.now() - 600000) && nearbyHomeBed(bot, goal);
+      const homeBed = sleepable(bot) && !watched && !sleepWaiting(this) && !failedWithin(this, 'bed_route', 'home', 600000) && nearbyHomeBed(bot, goal);
       const shallow = homeBed && (surfaceObserver(bot)(bot.entity.position) || Math.abs(homeBed.foot.y - bot.entity.position.y) <= 10) ||
         // A bed in the pack is a bed too. A fight pocket dug at dusk held the
         // bot until dawn, eleven minutes behind a wall, with a bed on its back.
-        (!homeBed && bot.game?.dimension === 'overworld' && sleepable(bot) && !watched && !sleepWaiting(this.state) && bedCarried(bot) && surfaceObserver(bot)(bot.entity.position));
+        (!homeBed && bot.game?.dimension === 'overworld' && sleepable(bot) && !watched && !sleepWaiting(this) && bedCarried(bot) && surfaceObserver(bot)(bot.entity.position));
       if (shallow) { delete this.state.watchedSince; await this.leave(task, goal, save, refuge, 'Off to bed.'); }
       else if ((shelterNeeded(bot) || watched) && !outwaited) {
         // Say who is keeping the bot in, and whether the hunt had claimed it:
@@ -917,9 +917,9 @@ class Survival {
     // reserve at 9500, no blocks to gather, and at 12541 the choice is
     // sleep, or stay up armed because the dark is what the request needs.
     const bed = bedCarried(bot), homeBed = nearbyHomeBed(bot, goal);
-    const routeBlocked = this.state.bedRouteFailedAt > Date.now() - 120000;
+    const routeBlocked = failedWithin(this, 'bed_route', 'home', 120000);
     const underground = bot.game.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
-    const bedReady = (!!bed || (!!homeBed && !routeBlocked)) && bot.game.dimension === 'overworld' && !sleepWaiting(this.state);
+    const bedReady = (!!bed || (!!homeBed && !routeBlocked)) && bot.game.dimension === 'overworld' && !sleepWaiting(this);
     // Dusk with a bed at home: head there before bedtime rather than start
     // the walk from the bottom of a shaft at 12541. The second run chose the
     // bed thirty blocks down its mine and the walk failed at once.
@@ -965,7 +965,7 @@ class Survival {
     }
     const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot) && (underground || !routeBlocked);
     const walkStart = homeBed && homeBed.foot.distanceTo(bot.entity.position) > 96 ? DAY.WALK_HOME_FAR : DAY.WALK_HOME;
-    if (homeWalk && (bot.time.timeOfDay >= walkStart || underground) && !sleepWaiting(this.state)) {
+    if (homeWalk && (bot.time.timeOfDay >= walkStart || underground) && !sleepWaiting(this)) {
       this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });
       // Out of the shaft by the stairs it dug, then home over the ground:
       // a path search from the bottom of a mine to a bed timed out. A
@@ -976,7 +976,7 @@ class Survival {
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       } else if (bot.time.timeOfDay < SLEEP_FROM) {
         try { await this.actions.navigate(bot, task, new goals.GoalNear(homeBed.foot.x, homeBed.foot.y, homeBed.foot.z, 3), { timeoutMs: 60000, stallMs: 8000 }); }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; this.state.bedRouteFailedAt = Date.now(); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'bed_route', 'home', err, 120000); }
       }
       if (underground || bot.time.timeOfDay < SLEEP_FROM) { onStep(goal); return true; }
     }
@@ -1022,13 +1022,13 @@ class Survival {
     const now = Date.now();
     // Stocked is stocked: the flag that asked for a reserve was never taken
     // down, so the stock-driven search ran for the rest of the goal.
-    if (foodSupply(bot) >= desiredFood) { delete this.state.foodSearch; delete goal.stockFood; }
-    if (!hungry && stockDriven && foodSupply(bot) < desiredFood) {
-      const search = this.state.foodSearch ||= { since: now };
-      if (this.state.foodStockPausedUntil > now) { /* paused */ }
-      else if (now - search.since > 300000) { this.state.foodStockPausedUntil = now + 1200000; delete this.state.foodSearch; save(); }
-    }
-    const stockPaused = this.state.foodStockPausedUntil > now;
+    if (foodSupply(bot) >= desiredFood) { unwatch(this, 'food_search', 'stock'); delete goal.stockFood; }
+    // The supervisor: five minutes of searching with no more food carried
+    // sets the search aside for twenty. The clock used to run from the
+    // first look whatever was found meanwhile.
+    if (!hungry && stockDriven && foodSupply(bot) < desiredFood && !isSetAside(this, 'food_search', 'stock', now) &&
+        watch(this, 'food_search', 'stock', foodSupply(bot), { better: 'higher', epsilon: 0.5, stallMs: 300000, restMs: 1200000, why: 'five minutes of searching brought no food', now }).stalled) save();
+    const stockPaused = isSetAside(this, 'food_search', 'stock', now);
     const needsFood = foodSupply(bot) < desiredFood && (hungry || (stockDriven && !stockPaused));
     if (!needsShelter && !needsFood) return false;
     const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay,

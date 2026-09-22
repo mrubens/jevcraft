@@ -40,6 +40,9 @@ class Attempts {
     return entry;
   }
   resting(action, target, now = Date.now()) { return this.entries[keyOf(action, target)]?.until > now; }
+  // Failed within the last `ms`, whatever rest it was given: the bed route
+  // is tried again in two minutes from the open but in ten from a pocket.
+  failedWithin(action, target, ms, now = Date.now()) { const entry = this.entries[keyOf(action, target)]; return !!entry && now - entry.at < ms; }
   why(action, target) { return this.entries[keyOf(action, target)]?.why; }
   clear(action, target) { delete this.entries[keyOf(action, target)]; }
   clearAction(action) { for (const [key, entry] of Object.entries(this.entries)) if (entry.action === action) delete this.entries[key]; }
@@ -55,6 +58,7 @@ const home = holder => holder?.survival || holder?.state || holder || {};
 const attemptsFor = holder => new Attempts(home(holder));
 const setAside = (holder, action, target, why, restMs) => attemptsFor(holder).fail(action, target, why, { restMs });
 const isSetAside = (holder, action, target, now) => attemptsFor(holder).resting(action, target, now);
+const failedWithin = (holder, action, target, ms, now) => attemptsFor(holder).failedWithin(action, target, ms, now);
 
 // The supervisor. An activity says each tick what it is after and how far
 // off it is; this keeps the best, and when there has been no new best for
@@ -77,4 +81,4 @@ function watch(holder, action, target, value, { better = 'lower', epsilon = 0.5,
 }
 const unwatch = (holder, action, target) => { delete home(holder).progress?.[keyOf(action, target)]; };
 
-module.exports = { advance, Attempts, attemptsFor, keyOf, setAside, isSetAside, watch, unwatch };
+module.exports = { advance, Attempts, attemptsFor, keyOf, setAside, isSetAside, failedWithin, watch, unwatch };

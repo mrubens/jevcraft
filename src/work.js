@@ -1,6 +1,6 @@
 'use strict';
 const { move } = require('./motion');
-const { attemptsFor, setAside, isSetAside } = require('./progress');
+const { attemptsFor, setAside, isSetAside, unwatch } = require('./progress');
 const { DAY } = require('./day');
 const { STILL_MS, watchActivity, markActivity, stillFor, permittedWait, stillReason, recordStill } = require('./stillness');
 
@@ -224,7 +224,7 @@ async function prepareExpeditionStep(bot, task, goal, save) {
   // The reserve is the survival layer's to gather; once its search has been
   // set aside as fruitless, the prep goes on with what is carried rather
   // than waiting on a hunt nobody is making.
-  const reservePaused = goal.survival?.foodStockPausedUntil > Date.now();
+  const reservePaused = isSetAside(goal, 'food_search', 'stock');
   if (bot.game.difficulty && bot.game.difficulty !== 'peaceful' && foodSupply(bot) < 12 && !reservePaused) {
     goal.step = { action: 'prepare_expedition_food', carriedFoodPoints: foodSupply(bot), requiredFoodPoints: 12 };
     save(); return false;
@@ -2350,7 +2350,7 @@ function gameHandlers(bot, decisionClient) {
           }
           // Then the hunt. A search set aside as fruitless is taken up again:
           // the gate is the reason to look, and resting it was the stall.
-          if (survivalState.foodStockPausedUntil > now) { delete survivalState.foodStockPausedUntil; delete survivalState.foodSearch; }
+          if (attempts.resting('food_search', 'stock', now)) { attempts.clear('food_search', 'stock'); unwatch(goal, 'food_search', 'stock'); }
           goal.step = { action: 'hunt_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD, minutes: Math.round(gate.activeMs / 60000) }; save();
           await explore(bot, task, goal, save, 'animals', { surfaceOnly: true });
           return false;
