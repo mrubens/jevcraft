@@ -76,7 +76,14 @@ function isolated(bot, target, handler = handlers[target.name] || {}) {
   // crimson forest above a fortress is full of them, and at twelve blocks
   // every blaze in the spawner room was "not isolated" and none was ever
   // fought. Something that shoots still gets a wide berth.
-  const crowd = kinInView >= 3 || others.some(t => t.entity.name !== target.name &&
+  // Three of the hunted kind in view was "too many" whatever the bot's
+  // condition, and a spawner keeps eleven in the air: the live run stood
+  // level with them at full health for half an hour and never opened a
+  // fight. In the arena a swarm fought in the open at full health came
+  // home with rods; watched, it came home with nothing. The crowd stops a
+  // fight only once the bot is already hurt; whole, the nearest one is a
+  // fight like any other.
+  const crowd = (kinInView >= 3 && (bot.health ?? 20) < 16) || others.some(t => t.entity.name !== target.name &&
     (t.distance < (SHOOTERS.has(t.entity.name) ? 16 : 8) || t.entity.position.distanceTo(target.position) < 6));
   if (crowd) return false;
   // A sword sweep must not hit a nearby player or provoke another mob. A

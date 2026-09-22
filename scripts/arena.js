@@ -66,7 +66,7 @@ let currentGoal = { request: 'arena', status: 'starting' };
 // Everything a run is scored on, gathered by listener rather than by asking
 // the bot afterwards: health has been restored by then and the mobs are gone.
 let run = null;
-const startRun = () => { run = { deaths: 0, damageTaken: 0, minHealth: 20, kills: 0, strikes: 0, shieldRaises: 0, actions: new Set(), errors: [] }; };
+const startRun = () => { run = { deaths: 0, damageTaken: 0, minHealth: 20, kills: 0, strikes: 0, shieldRaises: 0, actions: new Set(), errors: [], struck: new Map() }; };
 let previousHealth = 20;
 bot.on('health', () => {
   if (!run) { previousHealth = bot.health; return; }
@@ -75,7 +75,10 @@ bot.on('health', () => {
   previousHealth = bot.health;
 });
 bot.on('death', () => { if (run) { run.deaths++; run.died = true; } previousHealth = 20; });
-bot.on('entityDead', entity => { if (run && entity?.name === run.entity) run.kills++; });
+bot.on('entityDead', entity => {
+  if (!run || entity?.name !== run.entity) return;
+  if (Date.now() - (run.struck.get(entity.id) || 0) < 6000) run.kills++; else run.diedOnTheirOwn = (run.diedOnTheirOwn || 0) + 1;
+});
 bot.on('error', err => { if (run) run.errors.push(err.message); log({ error: err.message }); });
 bot.on('kicked', reason => log({ kicked: String(reason) }));
 bot.on('end', reason => { if (!finished) { log({ arena: 'FAIL', reason: `connection ended: ${reason}` }); process.exit(1); } });
@@ -223,7 +226,7 @@ async function runDrill(d, attempt) {
   const result = { drill: d.name, attempt, spawned, cleared, clearedMs: cleared ? Date.now() - started : null, killer, nudged: !!run.nudged,
     deaths: run.deaths, damageTaken: Math.round(run.damageTaken * 10) / 10, minHealth: Math.round(run.minHealth * 10) / 10,
     kills: run.kills, drops: d.item ? countOf(bot, d.item) - before : 0, strikes: run.strikes,
-    bunkerError: goal.mobHunt?.lastBunkerError || null,
+    bunkerError: goal.mobHunt?.lastBunkerError || null, diedOnTheirOwn: run.diedOnTheirOwn || 0,
     shieldRaises: run.shieldRaises, actions: [...run.actions], errors: [...new Set(run.errors)].slice(0, 6) };
   run = null;
   log({ result });
@@ -255,7 +258,11 @@ bot.once('spawn', async () => {
     // Count the swings and the shield from the inside: the arena scores what
     // the fighting code did, not what it meant to do.
     const attack = bot.attack.bind(bot);
-    bot.attack = (...args) => { if (run) run.strikes++; return attack(...args); };
+    // A kill counts only if the bot struck that mob in the last few seconds.
+    // Four blazes once died against a chamber wall with no swing thrown and
+    // the drill called it a clean sweep, which sent a whole fix down a blind
+    // alley looking for rods that had never dropped.
+    bot.attack = (target, ...rest) => { if (run) { run.strikes++; if (target?.id !== undefined) run.struck.set(target.id, Date.now()); } return attack(target, ...rest); };
     const activate = bot.activateItem.bind(bot);
     bot.activateItem = (offHand, ...rest) => { if (run && offHand) run.shieldRaises++; return activate(offHand, ...rest); };
 

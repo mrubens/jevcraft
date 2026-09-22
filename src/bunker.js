@@ -16,7 +16,10 @@ const SWARM = 3;
 const DEPTH = 3;
 const HOLD_MS = 120000;
 const QUIET_MS = 20000;
-const NATURAL = /^(netherrack|soul_sand|soul_soil|basalt|blackstone|nether_wart_block|warped_wart_block|crimson_nylium|warped_nylium|magma_block|nether_quartz_ore|nether_gold_ore|gravel|stone|dirt|deepslate|andesite|diorite|granite|tuff)$/;
+// Fortress brick counts: the live run stood inside a fortress and reported
+// "no rock to dig a bunker into", because the only rock around was the
+// fortress itself.
+const NATURAL = /^(netherrack|soul_sand|soul_soil|basalt|blackstone|nether_wart_block|warped_wart_block|crimson_nylium|warped_nylium|magma_block|nether_quartz_ore|nether_gold_ore|gravel|stone|dirt|deepslate|andesite|diorite|granite|tuff|nether_bricks|red_nether_bricks|nether_brick_stairs|nether_brick_slab)$/;
 const solid = b => b?.boundingBox === 'block';
 const passable = b => !b || b.boundingBox === 'empty';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
