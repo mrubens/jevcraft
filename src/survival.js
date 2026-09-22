@@ -237,12 +237,17 @@ class Survival {
       // every open side into a two-block pocket and let it pass. Against a
       // melee mob alone, the single wall toward it is enough.
       const nearest = danger[0];
-      if (danger.some(t => RANGED.has(t.entity.name)) && await this.sealHere(task, goal, save, danger)) { delete this.state.trappedSince; return; }
+      // A herd is sealed out like a shooter: one wall toward one hoglin
+      // leaves the other four, and the bot held a "defensive position" at
+      // five health in the middle of seven of them.
+      const crowd = danger.filter(t => t.distance <= 8).length >= 2;
+      if ((crowd || danger.some(t => RANGED.has(t.entity.name))) && await this.sealHere(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       if (await this.wallOff(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       // No way out and a mob a few blocks off, shooting: standing still is
       // how a crossbow piglin took half the bot's health. Armed and able,
       // close the gap so the fight rule can do its work.
-      if (armed && bot.health >= 12 && nearest.distance > 3.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
+      // One mob is charged; a herd is not.
+      if (armed && !crowd && bot.health >= 12 && nearest.distance > 3.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
         this.report(goal, save, { action: 'charge', target: nearest.entity.name, distance: Number(nearest.distance.toFixed(1)) });
         const t = nearest.entity.position;
         try { await this.actions.navigate(bot, task, new goals.GoalNear(t.x, t.y, t.z, 1), { timeoutMs: 4000, stallMs: 2000 }); }
