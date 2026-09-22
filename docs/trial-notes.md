@@ -49,6 +49,20 @@ A single blaze now costs nothing at all: three swings, no damage, five runs out 
 16. *Recovering in the open is not recovering.* With a shooter in view and health under eighteen, the hunt now digs in rather than dozing where it stands.
 17. *The harness scored killed mobs as uncleared.* A hunt drill stops the moment the drop is picked up and the corpse can linger a tick in the entity list, so five runs that each killed their blaze read "cleared 1/5". Fixed to count confirmed kills.
 
+**The tunnel mouth, tried and measured (2026-09-22 07:40 UTC), five runs each.** The idea was sound and the result was not: two shooters at different angles cannot both sit inside one shield arc, so meet them at a doorway where they have to arrive one at a time.
+
+| blaze_pair, same fight, three policies | deaths | drops | damage |
+|---|---|---|---|
+| fight in the open | 0 | 3/5 | 25.9 |
+| always go and find a wall | 1 | 1/5 | 40.7 |
+| use a wall only when one is at hand | 1 | 2/5 | 28.5 |
+
+18. *A doorway is worth having, not worth travelling for.* Sent to find a wall nine blocks off, the bot took forty-one damage crossing the room under fire and arrived with nothing; fighting where it stood cost twenty-six. The bunker now needs a wall within five blocks (`nearWall`), which is the difference between using cover and going shopping for it.
+19. *The bunker is safety, not a harvest.* With a wall three blocks away the swarm drill takes **zero** damage and collects **zero** rods, five runs out of five: blazes hover outside the mouth and will not come to the sword. The rods come from single blazes, which now cost nothing at all, so the policy is to survive the crowd and farm the stragglers.
+20. *The wall search was finding the floor.* Every block of a netherrack floor is natural rock and every one is nearer than any wall, so an unfiltered search returned hundreds of floor tiles and no wall: the bot stood in the open being shot and reported that there was no rock to dig into, in a room made of rock. Candidates are now taken at the bot's own level.
+21. *A straight shaft is a shooting gallery.* The bunker digs a turn at its end where the rock allows, so nothing outside has a line to the back. Implemented and unit-tested, but not yet demonstrated in play: the corner was never reached in a measured run, because the runs that got that far were the ones already going badly.
+22. *A swallowed failure reads as a bad decision.* `digBunker` threw "no rock here" into an empty catch for two whole rounds of measurement, so from outside the bot merely looked like it was choosing to stand in the open. Every bunker failure is now recorded on the hunt and reported by the arena.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
