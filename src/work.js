@@ -1745,6 +1745,15 @@ async function preparePortalSupports(bot, task, goal, save, needed) {
 // Walk into a portal block. The pathfinder will not always end a route
 // inside one, so get beside it and step in with the controls until the
 // dimension changes; the Nether-side return stalled a block short otherwise.
+// The bottom block of the nearest portal: aimed at the top one, the bot
+// pillared up beside the frame and stood with its head under the lintel,
+// walking into obsidian.
+function lowestPortalBlock(bot) {
+  const blocks = find(bot, ['nether_portal'], 64, 32);
+  if (!blocks.length) return null;
+  const nearest = blocks[0];
+  return blocks.filter(b => Math.hypot(b.x - nearest.x, b.z - nearest.z) <= 3).sort((a, b) => a.y - b.y)[0];
+}
 async function enterPortal(bot, task, portal, arrived) {
   await navigate(bot, task, new goals.GoalNear(portal.x, portal.y, portal.z, 1), { timeoutMs: 20000 });
   if (arrived()) return;
@@ -1801,7 +1810,7 @@ async function netherStep(bot, task, goal, save) {
     finally { delete goal.expeditionPrepActive; }
     return false;
   }
-  const portal = find(bot, ['nether_portal'], 64, 1)[0];
+  const portal = lowestPortalBlock(bot);
   if (portal) {
     goal.portal = { ...portal }; rememberPortal(goal, save, portal, 'overworld'); save();
     // Loaded is not routable: forty-two blocks away through solid ground the
@@ -1889,7 +1898,7 @@ function createSurvival(bot, options) {
 
 async function returnFromNether(bot, task, goal, save) {
   if (dimension(bot) === 'overworld') return;
-  const portal = find(bot, ['nether_portal'], 64, 1)[0];
+  const portal = lowestPortalBlock(bot);
   if (!portal) {
     if (await walkToKnownPortal(bot, task, goal, save, 'nether')) return;
     throw new Blocked('No loaded return portal observed in the Nether; saved progress retained');
