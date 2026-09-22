@@ -93,6 +93,17 @@ async function surfaceForAir(bot, task, onAction = () => {}) {
 
 function safeFood(bot, item) { return !!bot.registry.foodsByName?.[item.name] && !unsafeFoods.has(item.name); }
 
+// Food with a Hunger side effect and nothing worse. The effect costs well
+// under one hunger point over its thirty seconds; the item gives several.
+// With nothing else in the pockets it is the only way back to the eighteen
+// that regeneration needs: the dream run sat sealed in a pocket beside a
+// blaze spawner at ten health and seventeen hunger for ten minutes, two
+// rotten flesh in its pack, healing nothing, because it would not eat them.
+const lastResortFoods = new Set(['rotten_flesh', 'chicken']);
+function lastResortFood(bot) {
+  return bot.inventory.items().find(item => lastResortFoods.has(item.name) && bot.registry.foodsByName?.[item.name]);
+}
+
 function chooseFood(bot) {
   return bot.inventory.items().filter(item => safeFood(bot, item))
     .sort((a, b) => {
@@ -117,7 +128,9 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   // Natural regeneration needs at least 18 hunger points. A sheltered injured
   // player at 17 must not wait all night with carried food and no healing.
   if (!(bot.food <= 16 || (bot.health < 20 && bot.food < 18) || (bot.health <= 12 && bot.food < 20))) return false;
-  const food = chooseFood(bot);
+  // Last resort only when it unlocks regeneration or holds off starvation;
+  // a bot at full health does not eat rotten flesh for the fun of it.
+  const food = chooseFood(bot) || ((bot.food < 18 && bot.health < 20) || bot.food <= 6 ? lastResortFood(bot) : null);
   if (!food) return false; // The higher-level survival planner must forage.
   onAction({ action: 'eat', item: food.name, food: bot.food, health: bot.health });
   await bot.equip(food, 'hand');
@@ -138,4 +151,4 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   return true;
 }
 
-module.exports = { chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
+module.exports = { lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };

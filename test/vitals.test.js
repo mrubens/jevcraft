@@ -171,3 +171,13 @@ test('a worn pickaxe does not satisfy acquisition and the replacement is equippe
   await equipBestTool(bot, { digTime: type => type === 1 ? 100 : 1000 });
   assert.equal(bot.heldItem.slot, fresh.slot);
 });
+
+test('with nothing else to eat, rotten flesh is eaten when it is the way back to regeneration', () => {
+  const { lastResortFood, chooseFood } = require('../src/vitals');
+  const registry = require('minecraft-data')('26.1');
+  const bot = { registry, inventory: { items: () => [{ name: 'rotten_flesh', count: 2 }, { name: 'spider_eye', count: 1 }] } };
+  assert.equal(chooseFood(bot), undefined, 'neither counts as ordinary food');
+  assert.equal(lastResortFood(bot).name, 'rotten_flesh', 'rotten flesh is the last resort');
+  const poison = { registry, inventory: { items: () => [{ name: 'spider_eye', count: 3 }, { name: 'pufferfish', count: 1 }] } };
+  assert.equal(lastResortFood(poison), undefined, 'poison is never a last resort');
+});
