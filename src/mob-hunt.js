@@ -87,8 +87,16 @@ function isolated(bot, target, handler = handlers[target.name] || {}) {
 // the full kit and near-full health.
 function canBegin(bot, handler = {}) {
   const standing = bot.game.gameMode === 'survival' && bot.game.difficulty !== 'peaceful' &&
-    bot.oxygenLevel > 12 && !(bot.entity.metadata?.[0] & 1) && dryStanding(bot, bot.entity.position);
-  if (handler.passive) return standing && bot.health >= 10 && bot.food >= 6;
+    bot.oxygenLevel > 12 && dryStanding(bot, bot.entity.position);
+  // Burning is the normal state of a blaze fight: the fireball that lights
+  // the bot is thrown by the thing it came to kill, and there is no water
+  // in the Nether to put it out. Refusing to fight while alight meant
+  // standing in the open on fire being shot by the blaze, over and over,
+  // which is the whole reason two blazes cost thirty health where one costs
+  // a single point. Fire ends a fight only when the fight is already lost.
+  const burning = !!(bot.entity.metadata?.[0] & 1);
+  if (handler.passive) return standing && !burning && bot.health >= 10 && bot.food >= 6;
+  if (burning && bot.health < 10) return false;
   // Fourteen in full armour: eighteen was a bar the Nether could not meet
   // once the food ran out, and the wait for it never ends without regen.
   //
@@ -143,7 +151,7 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
   const before = countOf(bot, state.item), start = bot.entity.position.clone(), deadline = Date.now() + timeoutMs;
   const shieldWear = () => equipped(bot, 'off-hand')?.durabilityUsed || 0;
   const initialShieldWear = shieldWear(), guarded = !handler.passive && equipped(bot, 'off-hand')?.name === 'shield';
-  const ready = () => handler.passive ? bot.health >= 8 && bot.food >= 4 : bot.health >= 12 && bot.food >= 12 && readyEquipment(bot, handler.ranged ? ['bow'] : []);
+  const ready = () => handler.passive ? bot.health >= 8 && bot.food >= 4 : bot.health >= 12 && bot.food >= 12 && kitReady(bot);
   const sword = () => carriedEquipment(bot).find(item => combatGear.hand.includes(item.name));
   const restoreEncounter = encounter(bot, task, target, deadline), movement = combatMovement(bot);
   const previousInterrupt = task.interruptCheck;

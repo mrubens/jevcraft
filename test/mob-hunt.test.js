@@ -486,3 +486,23 @@ test('something overhead is reached by standing under it, never by towering up t
   const level = approaches(bot, { position: new Vec3(6.5, 77, 0.5) });
   assert.equal(level.length, 2, 'a target on the ground is followed as usual, with the ground goal as fallback');
 });
+
+test('a burning bot still fights the blaze that lit it, until the fire is the thing killing it', () => {
+  const { canBegin } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const kit = { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'golden_boots' }, 45: { name: 'shield' } };
+  const make = (health, onFire) => ({
+    game: { gameMode: 'survival', difficulty: 'normal' }, health, food: 20, oxygenLevel: 20,
+    entity: { position: new Vec3(0.5, 77, 0.5), metadata: { 0: onFire ? 1 : 0 } },
+    registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'diamond_sword' }], slots: kit },
+    blockAt: p => ({ name: p.y < 77 ? 'netherrack' : 'air', boundingBox: p.y < 77 ? 'block' : 'empty', position: p }),
+  });
+  const blaze = { item: 'blaze_rod', dimension: 'nether', ranged: true };
+  assert(canBegin(make(18, false), blaze), 'unhurt and unlit: fight');
+  assert(canBegin(make(18, true), blaze), 'alight at eighteen health: still fight, the fire came from the target');
+  assert(!canBegin(make(9, true), blaze), 'alight and nearly out: the fire is what is killing it now');
+  assert(!canBegin(make(9, false), blaze), 'the ordinary health floor still applies');
+  // A passive chase has no armour behind it, so fire still calls it off.
+  assert(!canBegin(make(18, true), { item: 'feather', passive: true }), 'a chase in shirtsleeves stops for fire');
+});
