@@ -562,3 +562,20 @@ test('a burning bot still fights the blaze that lit it, until the fire is the th
   // A passive chase has no armour behind it, so fire still calls it off.
   assert(!canBegin(make(18, true), { item: 'feather', passive: true }), 'a chase in shirtsleeves stops for fire');
 });
+
+test('fit in every way but its footing, the hunt moves on rather than waiting to recover', async () => {
+  const { bot, goal, task } = fixture('spider');
+  bot.game.dimension = 'overworld'; bot.game.minY = 0; bot.game.height = 256;
+  bot.inventory.slots[36] = { name: 'iron_sword', slot: 36, count: 1, durabilityUsed: 0 };
+  for (const [slot, name] of [[5, 'iron_helmet'], [6, 'iron_chestplate'], [7, 'iron_leggings'], [8, 'iron_boots'], [45, 'shield']]) bot.inventory.slots[slot] = { name, slot, count: 1, durabilityUsed: 0 };
+  bot.health = 20; bot.food = 20;
+  // Nothing solid underfoot: a fence top, a slab edge, a gap in a roof.
+  const ground = bot.blockAt;
+  bot.blockAt = p => p.x === 0 && p.y === 63 && p.z === 0 ? { name: 'air', boundingBox: 'empty' } : ground(p);
+  await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, { acquireStep: async () => {}, explore: async () => {} });
+  assert.notEqual(goal.step.action, 'recover_before_combat', 'waiting does not change where it stands');
+  assert.equal(goal.step.action, 'stalk_mob');
+  bot.blockAt = ground; bot.health = 9;
+  await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, { acquireStep: async () => {}, explore: async () => {} });
+  assert.equal(goal.step.action, 'recover_before_combat', 'hurt is still a reason to recover');
+});

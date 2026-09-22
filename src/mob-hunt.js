@@ -415,7 +415,14 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   }
   if (!handler.passive && !await prepareCombatGear(bot, task, goal, save, actions)) return;
   if (handler.dimension && dimension(bot) !== handler.dimension) { await actions.enterNether(bot, task, goal, save); return; }
-  if (!canBegin(bot, handler)) {
+  // Fit in every way but where it stands (a slab, a fence top, a ceiling at
+  // the head): waiting was the answer to all of canBegin, and waiting does
+  // not change the footing. It stood recovering at full health on a
+  // fortress roof. The stalk below moves it; a fight begins wherever that
+  // lands on dry ground.
+  const fitButFooting = !handler.passive && !canBegin(bot, handler) && bot.health >= HUNT_FLOOR && bot.food >= HUNT_FLOOR && kitReady(bot) &&
+    !(bot.entity.metadata?.[0] & 1 && bot.health < 10) && !(bot.food < 18 && !require('./vitals').chooseFood(bot));
+  if (!canBegin(bot, handler) && !fitButFooting) {
     // Nothing to eat and hunger under eighteen means no regeneration: the
     // recovery never comes. Off the Overworld that is a trip back for food.
     const { chooseFood } = require('./vitals');
