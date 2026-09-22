@@ -356,6 +356,15 @@ async function findFortressStep(bot, task, goal, save, actions) {
     state.found = { x: nearest.x, y: nearest.y, z: nearest.z };
     if (nearest.distanceTo(here) > 6) {
       goal.step = { action: 'find_fortress', found: state.found, legs: state.legs }; save();
+      // The pathfinder first: it pillars and scaffolds, and the brick was
+      // nine blocks below a ledge the staircase could not step off. The
+      // tunnel is the fallback.
+      if (actions.navigate) {
+        const from = bot.entity.position.clone();
+        try { await actions.navigate(bot, task, new goals.GoalNear(nearest.x, nearest.y + 1, nearest.z, 3), { timeoutMs: 60000, stallMs: 8000 }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        if (bot.entity.position.distanceTo(from) > 2) return;
+      }
       await actions.tunnel(bot, task, goal, save, nearest, 'fortress');
       return;
     }

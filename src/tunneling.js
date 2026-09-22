@@ -103,6 +103,16 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate }) {
   tunnel.target = { ...target };
   tunnel.visited[`${choice.destination}`] = (tunnel.visited[`${choice.destination}`] || 0) + 1;
   tunnel.steps++;
+  // A shaft that gains no ground is a shaft that has found a ledge or a
+  // wall it cannot pass: an hour went by shuffling along one. Forty-eight
+  // steps without closing four blocks starts over from here and says so.
+  const gap = bot.entity.position.distanceTo(target);
+  if (!(tunnel.best < gap - 0.5)) { tunnel.best = gap; tunnel.sinceBest = 0; } else tunnel.sinceBest = (tunnel.sinceBest || 0) + 1;
+  if (tunnel.sinceBest >= 48) {
+    Object.assign(tunnel, { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {}, retreats: 0, retreatVisited: {}, rounds: (tunnel.rounds || 0) + 1, best: gap, sinceBest: 0 });
+    delete tunnel.workPosition; save();
+    throw new Error(`The staircase toward ${target} is not gaining on it; starting round ${tunnel.rounds + 1}`);
+  }
   goal.step = { action: 'tunnel', target: { ...target }, destination: { ...choice.destination }, steps: tunnel.steps };
   save();
   for (const p of choice.clear) {
