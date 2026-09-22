@@ -416,3 +416,18 @@ test('a swarm of blazes is fought from a bunker dug into natural rock away from 
   const side = bunkerSide(bot, new Vec3(0, 65, 0), new Vec3(10, 66, 0));
   assert.deepEqual([side.x, side.z], [-1, 0], 'the bunker goes into the rock away from the blazes');
 });
+
+test('a hole beside the bot with a safe landing is stepped into instead of digging beside it', async () => {
+  const { descendTo } = require('../src/descent');
+  const { Vec3 } = require('vec3');
+  const solid = name => ({ name, boundingBox: 'block', diggable: true, digTime: () => 500 });
+  const air = { name: 'air', boundingBox: 'empty' };
+  // Bot on netherrack at x=-40 over a void; the shaft at x=-39 drops seven onto bricks.
+  const at = p => { const b = (p.x === -40 && p.y === 64) ? solid('netherrack') : (p.x === -39 && p.y === 57) ? solid('nether_bricks') : air; return { ...b, position: p }; };
+  let look = null;
+  const bot = { health: 20, entity: { position: new Vec3(-39.5, 65, -12.5) }, blockAt: at, inventory: { items: () => [] }, lookAt: async p => { look = p; },
+    setControlState: (name, on) => { if (name === 'forward' && on) bot.entity.position = new Vec3(Math.floor(look.x) + 0.5, 58, Math.floor(look.z) + 0.5); },
+    dig: async () => { throw new Error('should not dig'); } };
+  const dropped = await descendTo(bot, new Task('hunt'), new Vec3(-39, 57, -13));
+  assert.equal(dropped, 7); assert.equal(bot.entity.position.x, -38.5);
+});
