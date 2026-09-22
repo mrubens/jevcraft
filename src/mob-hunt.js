@@ -489,14 +489,22 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       }
       return;
     }
-    // Stairs in progress: a step a tick toward the room's floor, not a
-    // fifteen-second wait between steps.
+    // Digging toward them, a step a tick, until they are within a sword.
+    //
+    // Not only downward, and not once every fifteen seconds. Level with the
+    // blazes at last, the live bot sat in the one-block-high hole its own
+    // descent had left: the ceiling of that hole blocked every line of
+    // sight, so nothing was visible, nothing was a candidate, and it opened
+    // one door a quarter of a minute and never moved. The staircase cuts a
+    // passage the bot's own height and keeps cutting.
     const stairs = state.stairsTo;
-    if (stairs && stairs.until > Date.now() && actions.tunnel && bot.entity.position.y > stairs.y + 1.5) {
-      goal.step = { action: 'stairs_down_to_them', entity: step.entity, to: { x: stairs.x, y: stairs.y, z: stairs.z }, height: Math.round(bot.entity.position.y - stairs.y) }; save();
-      try { await actions.tunnel(bot, task, goal, save, new Vec3(stairs.x, stairs.y, stairs.z), 'fortress'); return; }
+    const target = stairs && new Vec3(stairs.x, stairs.y, stairs.z);
+    if (stairs && stairs.until > Date.now() && actions.tunnel && target.distanceTo(bot.entity.position) > 3.5) {
+      goal.step = { action: 'dig_toward_them', entity: step.entity, to: { x: stairs.x, y: stairs.y, z: stairs.z },
+        away: Math.round(target.distanceTo(bot.entity.position)) }; save();
+      try { await actions.tunnel(bot, task, goal, save, target, 'fortress'); return; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastStairsError = err.message; save(); }
-    } else if (stairs && (stairs.until <= Date.now() || bot.entity.position.y <= stairs.y + 1.5)) { delete state.stairsTo; save(); }
+    } else if (stairs && (stairs.until <= Date.now() || target.distanceTo(bot.entity.position) <= 3.5)) { delete state.stairsTo; save(); }
     // Watching, not fighting. The observed hunt takes a target the moment it
     // is allowed to; a stalk that has watched the same mob for fifteen
     // seconds is not waiting for an opening, it is stuck.
@@ -512,6 +520,12 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       // Below and behind rock: go through the floor. A fortress roof is two
       // blocks of nether brick with the spawner room under it, and no amount
       // of walking round the outside ever reaches that.
+      // Out of reach and watched too long: dig to it, whatever the reason
+      // the walk did not work. Set here so the passage is cut a step a tick
+      // by the branch above rather than a step every fifteen seconds.
+      if (near.position.distanceTo(bot.entity.position) > 3.5) {
+        state.stairsTo = { x: Math.floor(near.position.x), y: Math.floor(near.position.y), z: Math.floor(near.position.z), until: Date.now() + 90000 }; save();
+      }
       const dy = near.position.y - bot.entity.position.y;
       // Two below counts: at exactly two the old test was one block short,
       // and the bot sat four blocks from the blazes' level building cover
