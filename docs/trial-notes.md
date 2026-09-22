@@ -2,6 +2,37 @@
 
 Running observations from acceptance trials on the isolated Normal Survival server (`.test-acceptance`, port 25579), with the opportunities they point at. Newest first. Each trial's full log is under `artifacts/<run>/events.jsonl`.
 
+## arena · 2026-09-22 · combat practice on the fixture server · in progress
+
+Seven of the dream run's deaths in one night were combat, and every lesson cost a ten-minute restock. `scripts/arena.js` turns a lesson into a minute: nine drills carved into the Nether of `.test-combat` (port 25574), each staging one encounter that actually killed the bot, running the real survival and mob-hunt code against it, and scoring what it cost. Three runs a drill; a death anywhere fails it; the medians are what the next change has to beat. `sh .test-combat/start.sh &` then `MC_PORT=25574 node scripts/arena.js`. A watching player is opped, put in spectator and snapped onto the bot at every drill.
+
+**First baseline (2026-09-22 03:35 UTC), three runs each.**
+
+| drill | verdict | deaths | cleared | dmg | secs |
+|---|---|---|---|---|---|
+| zombie_single | PASS | 0 | 3/3 | 1.5 | 7.5 |
+| wither_skeleton_single | PASS | 0 | 3/3 | 1.9 | 5.4 |
+| wither_skeleton_pair | PASS | 0 | 3/3 | 15.4 | 18.1 |
+| hoglin_single | PASS | 0 | 3/3 | 8.8 | 8.6 |
+| hoglin_herd | FAIL | 3 | 0/3 | 34.8 | - |
+| blaze_single | FAIL | 0 | 0/3 | 0 | - |
+| blaze_pair | FAIL | 0 | 0/3 | 0 | - |
+| blaze_swarm_wall | FAIL | 0 | 0/3 | 0 | - |
+
+**Opportunities.**
+
+1. *The blaze drill reproduced the fortress stall exactly.* Three runs, the same error each time ("no dry combat route to blaze"), then `dig_in`: no swing, no damage taken, no rod. A blaze hovers, so there is no standing room within two blocks of it, the route check refuses the fight, and the survival layer's shooter rule wins and walls the bot in. This is why the dream run spent an hour in a fortress with nothing to show. Now the approach falls back to the ground under the target, which a sword reaches from three blocks.
+2. *A pack eleven blocks off was not a crowd.* The herd drill charged the nearest hoglin and met four at three blocks, three times out of three. Crowds are now counted at twelve blocks for sealing and sixteen for vetoing a charge, so a herd seen coming is treated as one while there is still time to place blocks.
+3. *A lone wither skeleton was hidden from rather than fought.* The survival layer listed them as ranged, so it sealed itself into a pocket and took hits through the doorway: 14.4 damage before the fix, 1.9 after. They carry a sword. Piglins now count as shooters only when they hold a crossbow.
+4. *A drop on the floor is a drop not carried.* A cleared blaze scored nothing because the rod lay where it fell; the fight's own pickup only runs when the fight's own code did the killing. The hunt now collects its item before anything else.
+5. *Two wither skeletons cost 15.4 damage where one costs 1.9.* Clearing them takes eighteen seconds. Worth a look after the failures: a doorway or a backstep between swings would change the arithmetic.
+
+**Three ways the harness lied before it told the truth**, each of which would have been read as a combat failure:
+
+6. *A fill into unloaded chunks builds nothing.* No player had ever stood in that corner of the Nether, so the first shell was never built, the bot was teleported into solid rock and smothered in twelve seconds. The region is force-loaded first and the bot now checks the floor and headroom before a mob is summoned.
+7. *Carving a room out of the Nether does not evict the Nether.* Zombified piglins and an enderman were standing in the volume when the walls went up and did the killing; the server's own death line is what gave it away, so every run records it. The arena is swept of non-player entities at build and before each drill.
+8. *The bot bricked itself in and the walls outlived the drill.* Cornered, it walls off the tunnel; later drills then started with it behind its own netherrack, with no line of sight, so nothing counted as a threat and it stood still while a mob wandered the far side. Three drills scored zero damage and zero swings and meant nothing. `scripts/threat-probe.js` found it: the same mob at the same distance was `visible: true` in an open room and `visible: false` in the corridor. Every drill now rebuilds its arena from a holding cell.
+
 ## dream · 2026-09-21 · "your dream is to beat the game" on the Survival server · in progress
 
 **So far.** Given the dream in chat, the win objective started with its expedition prep: a food reserve first. The bot walked 200 blocks hunting, got mutton, porkchop and chicken, made a wooden pickaxe and a crafting table, cooked once, and then paid a cobblestone trip for every further cook because the furnace stayed where it was placed. The gravel lip that ended trial two was passed on the way with a seven-second "back up to the surface" and no adviser.
