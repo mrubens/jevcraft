@@ -349,7 +349,12 @@ function fortressLegTarget(state, position) {
 async function findFortressStep(bot, task, goal, save, actions) {
   const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
   const ids = FORTRESS_BLOCKS.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
-  const bricks = bot.findBlocks({ matching: ids, maxDistance: 128, count: 512 });
+  // Bricks near a face that would not be approached are ignored for ten
+  // minutes: the fortress was straight below a shelf with a cave between,
+  // and every tick tried the same drop. The sweep meets it elsewhere.
+  state.shunned = (state.shunned || []).filter(sh => sh.until > Date.now());
+  const shunned = b => state.shunned.some(sh => Math.hypot(sh.x - b.x, sh.z - b.z) <= 16);
+  const bricks = bot.findBlocks({ matching: ids, maxDistance: 128, count: 512 }).filter(b => !shunned(b));
   if (bricks.length) {
     const here = bot.entity.position;
     const nearest = bricks.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
@@ -368,10 +373,18 @@ async function findFortressStep(bot, task, goal, save, actions) {
         for (const g of goalsToTry) {
           try { await actions.navigate(bot, task, g, { timeoutMs: 45000, stallMs: 8000 }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-          if (bot.entity.position.distanceTo(from) > 2) return;
+          if (bot.entity.position.distanceTo(from) > 2) { state.approachFails = 0; return; }
         }
       }
-      await actions.tunnel(bot, task, goal, save, nearest, 'fortress');
+      const before = bot.entity.position.clone();
+      try { await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      if (bot.entity.position.distanceTo(before) > 1.5) { state.approachFails = 0; return; }
+      state.approachFails = (state.approachFails || 0) + 1;
+      if (state.approachFails >= 3) {
+        state.shunned.push({ x: nearest.x, z: nearest.z, until: Date.now() + 600000 }); state.approachFails = 0; delete state.target; save();
+        bot.chat?.("No way down to the fortress here. Following it along to find a way in.");
+      }
       return;
     }
     // Inside: walk the structure. The farthest brick not yet walked to is
