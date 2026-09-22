@@ -188,6 +188,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 | portal_platform | 2 | 2 | 0 | 0 |
 | chest_lid | 2 | 2 | 0 | 0 |
 
+68. *Step three finished: every set-aside in one memory, every stall on one supervisor.* All the private "try again later" state moved into the per-world Attempts memory, each entry with its action, target, reason and rest: blocks set aside as unreachable, failed options, obsidian crust, hunt targets, the cover and bunker cooldowns, the bed route, the sleep retry, failed escape spots, the paused food search, deferred rungs, the wool-bed, village-bed and home-site searches, the stash chest, the boat crossing (now rested half an hour after two failures rather than retired for the goal) and the dream's failed launch. `watch()` is the one supervisor: an activity reports what it is after and how far off it is, and after no new best in a number of steps or a span of time the target is given up with the reason. The night mine's target, the hunt's stalking, the stock food search, the wool search and the Nether food gate all report to it; each used to keep its own clock, and several ran from the first look whatever progress came after.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

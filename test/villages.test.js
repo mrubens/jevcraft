@@ -86,7 +86,8 @@ test('the bed rung prefers a remembered village with beds within two hundred blo
   assert.equal(preparationStage(bot, goalWith(bot, { villages: [{ ...near, beds: 0 }] })).action, 'gather_wool', 'a village with no beds left is no rung');
   assert.equal(preparationStage(bot, goalWith(bot, { villages: [{ ...near, x: 300 }] })).action, 'gather_wool', 'three hundred blocks is a sheep, not a walk');
   assert.equal(preparationStage(bot, goalWith(bot, { villages: [{ ...near, dimension: 'nether' }] })).action, 'gather_wool');
-  assert.equal(preparationStage(bot, goalWith(bot, { villages: [near], villageBed: { deferredUntil: Date.now() + 60000 } })).action, 'gather_wool', 'an unreachable village waits out its cool-down');
+  const cooling = goalWith(bot, { villages: [near] }); require('../src/progress').setAside(cooling, 'village_bed', 'any', 'not reached', 60000);
+  assert.equal(preparationStage(bot, cooling).action, 'gather_wool', 'an unreachable village waits out its cool-down');
   const woolly = world({ items: [['stone_pickaxe', 1], ['stone_sword', 1], ['white_wool', 3]] }).bot;
   assert.equal(preparationStage(woolly, goalWith(woolly, { villages: [near] })).item, 'white_bed', 'three wool in the pockets is a bed to craft, not a walk');
   const bedded = world({ items: [['stone_pickaxe', 1], ['stone_sword', 1], ['white_bed', 1]] }).bot;
@@ -128,7 +129,7 @@ test('the village bed is walked to, dug up, picked up and remembered as taken; a
   bot.entity.position = new Vec3(0.5, LEVEL + 1, 0.5);
   for (let n = 0; n < 3; n++) await assert.rejects(gameStep(bot, task, goal, save, handlers), /no route/);
   await assert.rejects(gameStep(bot, task, goal, save, handlers), /three tries/);
-  assert(goal.villageBed.deferredUntil > Date.now());
+  assert(require('../src/progress').isSetAside(goal, 'village_bed', 'any'));
   assert.equal(preparationStage(bot, goal).action, 'gather_wool');
 });
 

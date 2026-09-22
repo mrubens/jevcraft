@@ -1,4 +1,5 @@
 'use strict';
+const { setAside, isSetAside } = require('./progress');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { countOf } = require('./skills');
@@ -331,7 +332,7 @@ function restockStage(bot, goal, wants = [], { now = Date.now() } = {}) {
   const { homeOf, homeDistance, HOME_REACH } = base();
   const home = homeOf(bot, goal);
   if (!home?.stash?.position || homeDistance(bot, home) > HOME_REACH) return null;
-  if (home.stash.failedAt && now - Date.parse(home.stash.failedAt) < RETRY_MS) return null;
+  if (isSetAside(goal, 'stash', 'chest', now)) return null;
   const moves = stashWithdrawals(bot, home, wants, { foodPoints: foodTarget(goal) });
   if (!moves.length) return null;
   return { phase: 'home_restock', action: 'restock', items: moves };
@@ -449,7 +450,7 @@ async function restockFromStash(bot, task, goal, save, home, actions, wants = []
       return taken;
     });
   } catch (err) {
-    if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) && home.stash) { home.stash.failedAt = new Date().toISOString(); save(); }
+    if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) && home.stash) { setAside(goal, 'stash', 'chest', err, RETRY_MS); save(); }
     throw err;
   }
 }
@@ -461,12 +462,12 @@ async function stashValuables(bot, task, goal, save, actions, { now = Date.now()
   const { homeOf, homeDistance, HOME_REACH } = base();
   const home = homeOf(bot, goal);
   if (!home?.stash?.position || homeDistance(bot, home) > HOME_REACH) return true;
-  if (home.stash.failedAt && now - Date.parse(home.stash.failedAt) < RETRY_MS) return true;
+  if (isSetAside(goal, 'stash', 'chest', now)) return true;
   if (!stashDeposits(bot, home, { valuables: true }).some(m => m.valuable)) return true;
   try { await stockStash(bot, task, goal, save, home, actions, { valuables: true }); }
   catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-    if (home.stash) { home.stash.failedAt = new Date(now).toISOString(); save(); }
+    if (home.stash) { setAside(goal, 'stash', 'chest', err, RETRY_MS); save(); }
   }
   return false;
 }

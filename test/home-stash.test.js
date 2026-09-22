@@ -198,16 +198,16 @@ test('the ladder restocks from the stash ahead of its rungs, only within reach, 
   // A recent failure at the chest waits ten minutes; beyond reach the chest is not a step at all.
   goal.survival.home.stash.contents = { shield: 1 };
   assert.equal(preparationStage(bot, goal).phase, 'home_restock', 'the shield rung is answered by the chest');
-  goal.survival.home.stash.failedAt = new Date().toISOString();
+  require('../src/progress').setAside(goal, 'stash', 'chest', 'lid blocked', 600000);
   assert.equal(preparationStage(bot, goal).phase, 'shield');
-  delete goal.survival.home.stash.failedAt;
+  require('../src/progress').attemptsFor(goal).clear('stash', 'chest');
   bot.entity.position = new Vec3(400.5, LEVEL + 1, 0.5);
   assert.equal(preparationStage(bot, goal).phase, 'shield');
   // A failed open marks the chest for later rather than looping on it.
   bot.entity.position = new Vec3(20.5, LEVEL + 1, 0.5);
   bot.openContainer = async () => { throw new Error('lid blocked'); };
   await assert.rejects(home.homeStep(bot, task, goal, save, preparationStage(bot, goal).home, actions), /lid blocked/);
-  assert(goal.survival.home.stash.failedAt); assert.equal(preparationStage(bot, goal).phase, 'shield');
+  assert(require('../src/progress').isSetAside(goal, 'stash', 'chest')); assert.equal(preparationStage(bot, goal).phase, 'shield');
 });
 
 test('before the Nether the valuables go home once, and the ladder moves on with lighter pockets', async () => {

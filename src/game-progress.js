@@ -1,6 +1,6 @@
 'use strict';
 const { DAY } = require('./day');
-const { isSetAside } = require('./progress');
+const { isSetAside, setAside, attemptsFor } = require('./progress');
 const { homeStage, bedCarried, woolCarried, homeOf } = require('./home-base');
 const { restockStage, rungWants } = require('./home-stash');
 const { villageBedRung } = require('./villages');
@@ -102,7 +102,7 @@ function preparationStage(bot, goal = {}) {
 const DEFERRABLE = new Set(['shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword']);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
-  const waiting = new Set(Object.entries(goal.rungDeferred || {}).filter(([, until]) => until > now).map(([phase]) => phase));
+  const waiting = new Set(Object.keys(attemptsFor(goal).of('rung', now)));
   if (waiting.size) {
     const open = ladderRung(bot, goal, waiting);
     if (open) return open;
@@ -135,7 +135,7 @@ function ladderRung(bot, goal, waiting) {
   // Once the base's bed is claimed the rung is met: the carried one became
   // that bed, and a second sheep hunt before the plot and the pen is a
   // delay for a bed that far trips seldom get to use.
-  if (!carried.some(n => /_bed$/.test(n)) && !goal.survival?.home?.bed?.claimedAt && !(goal.bedSearch?.deferredUntil > Date.now())) {
+  if (!carried.some(n => /_bed$/.test(n)) && !goal.survival?.home?.bed?.claimedAt && !isSetAside(goal, 'bed_search', 'wool')) {
     const wool = woolCarried(bot);
     if (wool.count >= 3) return { phase: 'bed', action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
     // A remembered village with beds is a walk of known length; a sheep
@@ -245,7 +245,7 @@ function timeRung(bot, goal, phase, now = Date.now()) {
   rung.activeMs += Math.min(30000, Math.max(0, now - previous)); rung.lastAt = now;
   goal.rungTime = { phase, ...rung };
   if (!DEFERRABLE.has(phase) || rung.activeMs < RUNG_BUDGET_MS) return false;
-  (goal.rungDeferred ||= {})[phase] = now + RUNG_WAIT_MS; delete clocks[phase]; delete goal.rungTime;
+  setAside(goal, 'rung', phase, `twenty working minutes without finishing the ${phase.replaceAll('_', ' ')}`, RUNG_WAIT_MS); delete clocks[phase]; delete goal.rungTime;
   bot.chat?.(`The ${phase.replaceAll('_', ' ')} is taking too long. I'll come back to it and get on with the rest first.`);
   return true;
 }

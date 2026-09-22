@@ -1,4 +1,5 @@
 'use strict';
+const { setAside, isSetAside } = require('./progress');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
@@ -305,7 +306,7 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
   const survival = goal.survival;
   if (!survival || !overworld(bot)) return null;
   const home = survival.home;
-  if (!home) return survival.homeSearch?.deferredUntil > now || survival.homeSearch?.retryAfter > now ? null : { phase: 'home_site', action: 'choose_site' };
+  if (!home) return isSetAside(goal, 'home_site', 'search', now) ? null : { phase: 'home_site', action: 'choose_site' };
   const bed = bedStatus(bot, home);
   // A finished base stays finished until the bed or the chest is seen to
   // be gone; an unloaded base far away is not a reason to walk back.
@@ -749,8 +750,7 @@ async function homeStep(bot, task, goal, save, stage, actions) {
       const here = plain(bot.entity.position.floored());
       const moved = !search.lastAt || Math.hypot(search.lastAt.x - here.x, search.lastAt.z - here.z) >= 24 || Date.now() - (search.lastTriedAt || 0) > 60000;
       if (moved) { search.attempts++; search.lastAt = here; search.lastTriedAt = Date.now(); }
-      search.retryAfter = Date.now() + 60000;
-      if (search.attempts >= 3) search.deferredUntil = Date.now() + SITE_DEFER_MS;
+      setAside(goal, 'home_site', 'search', `no level ground beside water within ${SITE_RADIUS} blocks (look ${search.attempts})`, search.attempts >= 3 ? SITE_DEFER_MS : 60000);
       goal.step = { action: 'home_site', found: false, attempts: search.attempts }; save();
       throw new Error(`No level ground beside water within ${SITE_RADIUS} blocks for a home base`);
     }

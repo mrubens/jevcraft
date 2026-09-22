@@ -806,7 +806,8 @@ class Survival {
         // Steps that succeed without getting closer are a failure too: the
         // mine paced four blocks back and forth under a copper it could not
         // reach, every step a success, and never set it aside.
-        if ((mine.tunnel?.sinceBest || 0) >= 12) this.abandonTarget(mine, 'twelve steps without getting closer');
+        const toward = watch(this, 'night_mine', target, bot.entity.position.distanceTo(target), { stallLooks: 12, restMs: 600000, why: 'twelve steps without getting closer' });
+        if (toward.stalled) this.abandonTarget(mine, toward.reason, { recorded: true });
       }
     } catch (err) {
       task.check();
@@ -822,8 +823,9 @@ class Survival {
   // Set an ore aside for ten minutes and turn. Forgetting the target alone
   // chose the same nearest ore again, and the mine turned eighty times in
   // one place.
-  abandonTarget(mine, why) {
-    if (NIGHT_ORES.has(mine.targetOre) && mine.target) attemptsFor(this).fail('night_mine', mine.target, why, { restMs: 600000 });
+  abandonTarget(mine, why, { recorded = false } = {}) {
+    if (NIGHT_ORES.has(mine.targetOre) && mine.target && !recorded) attemptsFor(this).fail('night_mine', mine.target, why, { restMs: 600000 });
+    if (mine.target) unwatch(this, 'night_mine', mine.target);
     mine.lastAbandoned = { target: mine.target, why, at: new Date().toISOString() };
     mine.heading++; delete mine.target; delete mine.tunnel; mine.failures = 0;
   }

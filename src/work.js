@@ -1,6 +1,6 @@
 'use strict';
 const { move } = require('./motion');
-const { attemptsFor, setAside, isSetAside, unwatch } = require('./progress');
+const { attemptsFor, setAside, isSetAside, watch, unwatch } = require('./progress');
 const { DAY } = require('./day');
 const { STILL_MS, watchActivity, markActivity, stillFor, permittedWait, stillReason, recordStill } = require('./stillness');
 
@@ -2210,7 +2210,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     const stalls = goal.rungStalls ||= {};
     stalls[rung] = [...(stalls[rung] || []).filter(t => now - t < 600000), now];
     if (stalls[rung].length >= 3) {
-      (goal.rungDeferred ||= {})[rung] = now + RUNG_WAIT_MS; delete stalls[rung]; delete goal.rungTime;
+      setAside(goal, 'rung', rung, 'stalled three times in ten minutes', RUNG_WAIT_MS); delete stalls[rung]; delete goal.rungTime;
       bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
     }
   }
@@ -2311,15 +2311,16 @@ function gameHandlers(bot, decisionClient) {
           // would not open and the animal search was resting, and the loop
           // spun on it at twenty passes a second.
           const NETHER_FOOD = NETHER_FOOD_POINTS, now = Date.now();
-          if (foodSupply(bot) >= NETHER_FOOD) { delete goal.preparingNether; delete goal.foodGate; return true; }
-          const gate = goal.foodGate ||= { activeMs: 0, lastAt: now };
-          gate.activeMs += Math.min(30000, Math.max(0, now - gate.lastAt)); gate.lastAt = now;
-          // Twenty minutes lets the crossing go with what there is, but not
-          // with nothing: with nothing the hunt sends it straight home, and
-          // a fresh budget begins, a round trip for every twenty minutes.
-          if (gate.activeMs >= 20 * 60000 && foodSupply(bot) > 0) {
+          if (foodSupply(bot) >= NETHER_FOOD) { delete goal.preparingNether; unwatch(goal, 'food_gate', 'nether'); return true; }
+          // The supervisor: twenty minutes with no more food carried lets the
+          // crossing go with what there is, but not with nothing: with
+          // nothing the hunt sends it straight home, a round trip for every
+          // twenty minutes. Finding some food restarts the clock.
+          const gate = watch(goal, 'food_gate', 'nether', foodSupply(bot), { better: 'higher', stallMs: 20 * 60000, restMs: 60000,
+            why: 'twenty minutes without any more food', now });
+          if (gate.stalled && foodSupply(bot) > 0) {
             bot.chat?.(`I've spent twenty minutes getting food together. Going with what I have (${foodSupply(bot)} points).`);
-            delete goal.preparingNether; delete goal.foodGate; return true;
+            delete goal.preparingNether; return true;
           }
           goal.preparingNether = true; goal.stockFood = true;
           const survivalState = goal.survival || {};
@@ -2351,7 +2352,7 @@ function gameHandlers(bot, decisionClient) {
           // Then the hunt. A search set aside as fruitless is taken up again:
           // the gate is the reason to look, and resting it was the stall.
           if (attempts.resting('food_search', 'stock', now)) { attempts.clear('food_search', 'stock'); unwatch(goal, 'food_search', 'stock'); }
-          goal.step = { action: 'hunt_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD, minutes: Math.round(gate.activeMs / 60000) }; save();
+          goal.step = { action: 'hunt_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD, minutes: Math.round((now - (gate.record?.startedAt || now)) / 60000) }; save();
           await explore(bot, task, goal, save, 'animals', { surfaceOnly: true });
           return false;
         },
@@ -2360,9 +2361,10 @@ function gameHandlers(bot, decisionClient) {
         // A bed from a remembered village: dug up, it drops itself.
         village_bed: (bot, task, goal, save, stage) => takeVillageBed(bot, task, goal, save, stage.village, homeActions()),
         gather_wool: async (bot, task, goal, save) => {
-          const search = goal.bedSearch ||= { since: Date.now(), wool: woolCarried(bot).total };
-          if (woolCarried(bot).total > search.wool) { search.since = Date.now(); search.wool = woolCarried(bot).total; }
-          if (Date.now() - search.since > 10 * 60 * 1000) { goal.bedSearch = { deferredUntil: Date.now() + 20 * 60 * 1000 }; save(); return; }
+          // The supervisor: ten minutes with no new wool sets the search
+          // aside for twenty, and the ladder goes on without a bed for now.
+          if (watch(goal, 'bed_search', 'wool', woolCarried(bot).total, { better: 'higher', stallMs: 10 * 60 * 1000, restMs: 20 * 60 * 1000,
+            why: 'ten minutes without finding a sheep' }).stalled) { save(); return; }
           await gatherWool(bot, task, goal, save, null, homeActions());
         },
         stash_valuables: (bot, task, goal, save) => stashValuables(bot, task, goal, save, homeActions()),

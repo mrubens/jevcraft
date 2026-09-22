@@ -1,4 +1,5 @@
 'use strict';
+const { setAside, isSetAside } = require('./progress');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { checkAir } = require('./vitals');
@@ -111,7 +112,7 @@ function knownVillages(bot, goal, reach = Infinity) {
 // blocks is a walk, a sheep is a search. Offered ahead of the wool hunt;
 // a village that could not be reached three times waits twenty minutes.
 function villageBedRung(bot, goal, { now = Date.now() } = {}) {
-  if (goal.villageBed?.deferredUntil > now) return null;
+  if (isSetAside(goal, 'village_bed', 'any', now)) return null;
   const near = knownVillages(bot, goal, BED_REACH).find(({ village }) => village.beds > 0);
   return near ? { phase: 'bed', action: 'village_bed', village: near.village, distance: near.distance } : null;
 }
@@ -141,7 +142,7 @@ async function takeVillageBed(bot, task, goal, save, village, actions) {
   task.check(); checkAir(bot);
   const attempt = goal.villageBed ||= { attempts: 0 };
   attempt.attempts++;
-  if (attempt.attempts > 3) { goal.villageBed = { deferredUntil: Date.now() + RETRY_MS }; save(); throw new Error('The village bed was not reached in three tries; back to the sheep for now'); }
+  if (attempt.attempts > 3) { delete goal.villageBed; setAside(goal, 'village_bed', 'any', 'not reached in three tries', RETRY_MS); save(); throw new Error('The village bed was not reached in three tries; back to the sheep for now'); }
   const before = bedsCarried(bot);
   goal.step = { action: 'village_bed', village: { x: village.x, z: village.z }, beds: village.beds }; save();
   await walkToVillage(bot, task, village, actions);

@@ -1,4 +1,5 @@
 'use strict';
+const { setAside, isSetAside, attemptsFor } = require('./progress');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { choice } = require('./typesafe');
@@ -240,7 +241,10 @@ function preferredBoat(bot) {
 async function boatTravelStep(bot, task, goal, save, destination, actions, client = task.opportunityClient) {
   if (!client || task.preparingBoat || !bot.inventory || bot.game.gameMode === 'creative') return false;
   const state = goal.boatTravel ||= { attempts: 0 };
-  if (state.retryAfter > Date.now() || state.failures >= 2) return false;
+  if (isSetAside(goal, 'boat', 'crossing')) return false;
+  // Two failures rested boats for half an hour; once that rest is over,
+  // they get a fresh budget rather than staying retired for the whole goal.
+  if (state.failures >= 2) state.failures = 0;
   const trip = await surveyBoatTrip(bot, task, destination);
   if (!trip) return false;
   const area = `${Math.floor(trip.entry.x / 8)},${Math.floor(trip.entry.z / 8)}`;
@@ -307,7 +311,7 @@ async function boatTravelStep(bot, task, goal, save, destination, actions, clien
     state.completed = { at: new Date().toISOString(), landing: { ...bot.entity.position }, item: itemName, recovered };
     // A finished crossing is evidence that boats work here. Clear the failure
     // budget so one bad stretch of water cannot retire them for the whole task.
-    delete state.preparing; delete state.lastError; delete state.retryAfter;
+    delete state.preparing; delete state.lastError; attemptsFor(goal).clear('boat', 'crossing');
     state.attempts = 0; state.failures = 0; save();
     return true;
   } catch (error) {
@@ -318,7 +322,7 @@ async function boatTravelStep(bot, task, goal, save, destination, actions, clien
     state.lastError = error.message;
     if (!interrupted) {
       state.failures = (state.failures || 0) + 1;
-      state.retryAfter = Date.now() + 60000;
+      setAside(goal, 'boat', 'crossing', error, state.failures >= 2 ? 30 * 60000 : 60000);
       delete state.preparing;
     }
     save();

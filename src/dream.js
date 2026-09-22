@@ -110,9 +110,11 @@ const COOLDOWN_MS = 10 * 60 * 1000;
 // was not a dream: a hot loop of failing calls that also kept the idle
 // loop, and with it foraging and shelter, from ever running.
 const FAILED_LAUNCH_MS = 2 * 60 * 1000;
-function shouldLaunchDream(standing, lastGoal, { now = Date.now(), ready = true } = {}) {
+// `resting` is the shared memory's word on a launch that failed recently
+// (session.js sets it aside for FAILED_LAUNCH_MS).
+function shouldLaunchDream(standing, lastGoal, { now = Date.now(), ready = true, resting = false } = {}) {
   if (!standing?.dream || standing.satisfiedAt || standing.paused || !ready) return false;
-  if (standing.failedAt && now - standing.failedAt < FAILED_LAUNCH_MS) return false;
+  if (resting) return false;
   if (lastGoal && !lastGoal.dream && ['pending', 'running', 'recovering', 'cancelled'].includes(lastGoal.status)) return false;
   if (lastGoal?.dream && ['pending', 'running', 'recovering'].includes(lastGoal.status)) return false;
   if (standing.lastAttemptAt && now - standing.lastAttemptAt < COOLDOWN_MS && lastGoal?.dream && lastGoal.status !== 'complete') return false;

@@ -132,10 +132,14 @@ test('armour is one rung planned as a set, and the set shrinks to the pieces sti
 
 test('a dream launch that failed waits two minutes, whatever the last goal was', () => {
   const { FAILED_LAUNCH_MS } = require('../src/dream');
-  const now = Date.now(), standing = { dream: 'build_a_village', failedAt: now - 1000 };
-  assert.equal(shouldLaunchDream(standing, { status: 'complete', request: 'get me a pumpkin' }, { now }), false);
-  assert.equal(shouldLaunchDream(standing, null, { now }), false, 'a fresh state is no excuse to retry at once');
-  assert.equal(shouldLaunchDream({ ...standing, failedAt: now - FAILED_LAUNCH_MS - 1 }, null, { now }), true);
+  const { setAside, isSetAside } = require('../src/progress');
+  const now = Date.now(), standing = { dream: 'build_a_village' }, survival = { state: {} };
+  setAside(survival, 'dream_launch', standing.dream, 'Jev unreachable', FAILED_LAUNCH_MS);
+  const resting = () => isSetAside(survival, 'dream_launch', standing.dream);
+  assert.equal(shouldLaunchDream(standing, { status: 'complete', request: 'get me a pumpkin' }, { now, resting: resting() }), false);
+  assert.equal(shouldLaunchDream(standing, null, { now, resting: resting() }), false, 'a fresh state is no excuse to retry at once');
+  assert.equal(isSetAside(survival, 'dream_launch', standing.dream, now + FAILED_LAUNCH_MS + 1), false, 'the rest is two minutes');
+  assert.equal(shouldLaunchDream(standing, null, { now, resting: false }), true);
 });
 
 test('no answer to the village question is a failure, not a finished village', async () => {

@@ -117,7 +117,7 @@ test('an interrupted crossing is not spent from the boat failure budget', async 
     };
     await assert.rejects(boatTravelStep(prepared(lake(200)), task, goal, () => {}, destination, { acquireStep }, client), { name: kind });
     assert.equal(goal.boatTravel.failures, undefined, kind);
-    assert.equal(goal.boatTravel.retryAfter, undefined, kind);
+    assert.equal(require('../src/progress').isSetAside(goal, 'boat', 'crossing'), false, kind);
     assert.match(goal.boatTravel.preparing || '', /_boat$/, kind);
   }
 
@@ -127,9 +127,10 @@ test('an interrupted crossing is not spent from the boat failure budget', async 
   for (let attempt = 0; attempt < 2; attempt++) {
     const bot = prepared(lake(200));
     assert.equal(await boatTravelStep(bot, task, goal, () => {}, destination, { acquireStep }, client), false);
-    delete goal.boatTravel.retryAfter; // Skip the ordinary cooldown for this check.
+    if (attempt === 0) require('../src/progress').attemptsFor(goal).clear('boat', 'crossing'); // Skip the ordinary cooldown for this check.
   }
   assert.equal(goal.boatTravel.failures, 2);
+  assert(require('../src/progress').attemptsFor(goal).entries['boat:crossing'].until > Date.now() + 20 * 60000, 'two failures rest boats for half an hour');
   assert.equal(await boatTravelStep(prepared(lake(200)), task, goal, () => {}, destination, { acquireStep }, client), false);
 });
 

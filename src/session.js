@@ -8,6 +8,7 @@ const { configureMovements } = require('./movement');
 const { interpret, GoalStore } = require('./objectives');
 const { WorldKnowledge } = require('./world-knowledge');
 const { DAY } = require('./day');
+const { setAside, isSetAside, attemptsFor } = require('./progress');
 const { planCatalog } = require('./knowledge');
 const { runGoal, runIdle, createSurvival } = require('./work');
 const { Task } = require('./skills');
@@ -23,7 +24,7 @@ const { withRequestSignal } = require('./typesafe');
 const { suspendPrevious, resumeSaved } = require('./suspended-tasks');
 const { CompanionMemory, position } = require('./memory');
 const { BuildRegistry, resolveBuildContinuation } = require('./builds');
-const { nextDreamRequest, shouldLaunchDream, DREAMS } = require('./dream');
+const { nextDreamRequest, shouldLaunchDream, DREAMS, FAILED_LAUNCH_MS } = require('./dream');
 const { immediateThreat } = require('./danger');
 const { Ledger, withRun, appendSummary } = require('./ledger');
 
@@ -209,7 +210,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         bot.chat(`I think my dream to ${DREAMS[standing.dream].title} is done for now. Tell me to chase it again if you want more.`);
         return;
       }
-      delete standing.failedAt; delete standing.lastFailure; saveDream(standing);
+      attemptsFor(survival).clear('dream_launch', standing.dream); saveDream(standing);
       const goal = { ...next, ledgerRun: runId, version: 1, status: 'pending', createdAt: new Date().toISOString(), suspendedTasks: suspendPrevious(store.read()),
         requesterPosition: null, initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);
@@ -218,14 +219,15 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       launch(goal);
     } catch (err) {
       console.error('[dream]', err.message);
-      standing.lastAttemptAt = standing.failedAt = Date.now(); standing.lastFailure = err.message; saveDream(standing);
+      standing.lastAttemptAt = Date.now(); saveDream(standing);
+      setAside(survival, 'dream_launch', standing.dream, err, FAILED_LAUNCH_MS); saveSurvival();
     } finally { launchingDream = false; }
   }
 
   function launchIdle() {
     const retained = store.read();
     const standing = dreamStore.read();
-    if (standing?.dream && !launchingDream && shouldLaunchDream(standing, retained, { ready: readyForDream() })) { launchDream(standing); return; }
+    if (standing?.dream && !launchingDream && shouldLaunchDream(standing, retained, { ready: readyForDream(), resting: isSetAside(survival, 'dream_launch', standing.dream) })) { launchDream(standing); return; }
     const goal = { ...(idleStore.read() || {}), version: 1, kind: 'survive', request: 'Stay alive and prepare supplies between player requests',
       retainedRequest: retained?.request, blueprint: retained?.blueprint, survival: survival.state,
       // A dream set aside is not chased by the idle loop either.
@@ -243,7 +245,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (Date.now() - checkedAt < 3000) return launchable;
       checkedAt = Date.now();
       const current = dreamStore.read();
-      launchable = !!current?.dream && shouldLaunchDream(current, store.read(), { ready: readyForDream() });
+      launchable = !!current?.dream && shouldLaunchDream(current, store.read(), { ready: readyForDream(), resting: isSetAside(survival, 'dream_launch', current.dream) });
       return launchable;
     };
     session.promise = runIdle(bot, task, goal, { save: g => { if (!ended) { world.harvest(g); idleStore.save(g); memory.flush(); } saveSurvival(); } }, {

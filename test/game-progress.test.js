@@ -143,7 +143,7 @@ test('a rung that can wait is set aside after twenty working minutes, and comes 
   const said = []; bot.chat = line => said.push(line);
   let now = Date.now();
   for (let t = 0; t <= RUNG_BUDGET_MS / 30000; t++) { now += 30000; if (timeRung(bot, goal, 'golden_boots', now)) break; }
-  assert(goal.rungDeferred.golden_boots > Date.now(), 'twenty minutes of work on it sets it aside');
+  assert(require('../src/progress').isSetAside(goal, 'rung', 'golden_boots'), 'twenty minutes of work on it sets it aside');
   assert.match(said[0], /golden boots is taking too long/);
   assert.equal(nextGameStage(bot, goal).phase, 'diamond_sword', 'the ladder gets on with the next rung');
   bot.inventory.items = () => GEAR.filter(i => i.name !== 'golden_boots');

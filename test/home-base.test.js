@@ -194,7 +194,7 @@ test('the ladder opens the home rung after the bucket and before the armour, and
   await gameStep(bot, new Task('win'), goal, () => {}, { home: async (b, t, g, s, stage) => { ran.push(stage.action); } });
   assert.deepEqual(ran, ['choose_site']); assert.equal(goal.gameProgress.phase, 'home_site');
   assert.equal(nextGameStage(bot, { kind: 'win' }).phase, 'iron_armour', 'no survival layer, no base');
-  goal.survival.homeSearch = { attempts: 3, deferredUntil: Date.now() + 60000 };
+  goal.survival.homeSearch = { attempts: 3 }; require('../src/progress').setAside(goal, 'home_site', 'search', 'three places looked at', 60000);
   assert.equal(nextGameStage(bot, goal).phase, 'iron_armour', 'a world with nowhere to build waits out a deferral');
   // With the base standing, the ladder moves on and idle time has farm work in it.
   const w = await establishedHome();
@@ -316,10 +316,11 @@ test('a failed site search counts once per place, waits a minute between looks, 
   await assert.rejects(step(), /No level ground/); await assert.rejects(step(), /No level ground/);
   assert.equal(goal.survival.homeSearch.attempts, 1, 'the same spot twice is one attempt');
   assert.equal(home.homeStage(bot, goal), null, 'a minute off before the next look');
-  goal.survival.homeSearch.retryAfter = 0;
+  require('../src/progress').attemptsFor(goal).clear('home_site', 'search');
   bot.entity.position = new Vec3(30.5, LEVEL + 1, 0.5); await assert.rejects(step(), /No level ground/);
   bot.entity.position = new Vec3(30.5, LEVEL + 1, 30.5); await assert.rejects(step(), /No level ground/);
-  assert.equal(goal.survival.homeSearch.attempts, 3); assert(goal.survival.homeSearch.deferredUntil > Date.now());
+  assert.equal(goal.survival.homeSearch.attempts, 3);
+  assert(require('../src/progress').attemptsFor(goal).entries['home_site:search'].until > Date.now() + 60000, 'deferred for longer than the minute between looks');
 });
 
 test('tilling clears leaf litter off a plot cell first', async () => {
