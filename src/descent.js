@@ -35,7 +35,9 @@ function landing(bot, feet, limit = allowedDrop(bot)) {
       // Lava beside the landing is a knockback from death; the column
       // itself was all this looked at.
       const stand = block.position.offset(0, 1, 0);
-      if ([0, 1].some(dy => SIDES.some(side => molten(bot.blockAt(stand.plus(side).offset(0, dy, 0)))))) return null;
+      // Burning things only: water beside a landing is harmless, and
+      // counting it ruled out every drop beside a stream.
+      if ([0, 1].some(dy => SIDES.some(side => /^(lava|fire|soul_fire|magma_block)$/.test(bot.blockAt(stand.plus(side).offset(0, dy, 0))?.name || '')))) return null;
       return { block, fall: k - 1 };
     }
   }

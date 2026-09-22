@@ -569,7 +569,7 @@ async function workSource(bot, task, step, goal, save, source) {
     // A missing or worn-out tool is the bot's problem, not the vein's: the
     // tree or the ore is still there once a tool is in hand, and setting it
     // aside sent the bot looking for another after the pickaxe was made.
-    const toolProblem = /Missing harvest tool|Need .*tool|requires? a .*(pickaxe|axe|shovel|tool)|durability/i.test(err.message);
+    const toolProblem = /Missing harvest tool|^Need .* to collect|Need .*tool|requires? a .*(pickaxe|axe|shovel|tool)|durability/i.test(err.message);
     if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) && !toolProblem) { setAsideSource(goal, source); delete goal.workingSource; save(); }
     throw err;
   }
@@ -764,7 +764,6 @@ async function workstation(bot, task, name, goal) {
 async function craft(bot, task, step, goal) {
   // Diagnostic for the dream run: a seventh furnace was crafted with six in
   // the pockets, and no planner path reproduces it offline.
-  if (['furnace', 'crafting_table'].includes(step.item) && countOf(bot, step.item) >= 2) console.error(`[diag] crafting ${step.item} with ${countOf(bot, step.item)} carried\n${new Error().stack}`);
   await settleCraftInventory(bot, task);
   const table = step.needs_table ? await workstation(bot, task, 'crafting_table', goal) : null;
   const id = bot.registry.itemsByName[step.item]?.id;
@@ -817,9 +816,19 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   const pending = goal?.smelting;
   const plannedFuel = pending?.fuelItem || step.fuelItem || 'oak_planks';
   if (!isFuel(plannedFuel)) throw new Blocked(`I can't use ${plannedFuel.replaceAll('_', ' ')} as furnace fuel`);
-  if (pending && (pending.item !== step.item || pending.from !== step.from)) throw new Blocked('Finish the saved furnace batch before starting a different one');
+  // A different batch already in a furnace is finished first, not refused:
+  // "finish the saved batch" as a Blocked error had no way to be resolved
+  // but to retry into the same refusal.
+  if (pending && (pending.item !== step.item || pending.from !== step.from)) {
+    await smelt(bot, task, { item: pending.item, from: pending.from, fuelItem: pending.fuelItem, count: pending.count }, goal, save);
+    return;
+  }
   if (pending && countOf(bot, step.item) >= pending.targetInventory) { delete goal.smelting; save(); return; }
   let block;
+  // A batch left in a furnace in another dimension is not missing: it is
+  // there when the bot is. Seen from the Nether, it was declared gone and
+  // the Overworld batch dropped.
+  if (pending?.dimension && pending.dimension !== dimension(bot)) throw new Error(`The saved furnace batch is in the ${pending.dimension}`);
   if (pending) {
     const p = pos(pending.position);
     // Return to the recorded area before deciding that an unloaded furnace
@@ -840,7 +849,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   const before = countOf(bot, step.item);
   const needed = Math.min(pending ? pending.targetInventory - before : step.count, 64);
   if (goal && !pending) {
-    goal.smelting = { item: step.item, from: step.from, fuelItem: plannedFuel, position: { ...block.position }, targetInventory: before + needed, count: needed };
+    goal.smelting = { item: step.item, from: step.from, fuelItem: plannedFuel, position: { ...block.position }, dimension: dimension(bot), targetInventory: before + needed, count: needed };
     save();
   }
   const furnace = await bot.openFurnace(block);
@@ -1381,7 +1390,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     if (!fallback && (goal.designAttempts || 0) >= 4) throw new Blocked(`Building designer could not produce a usable plan after four attempts: ${goal.designError || 'request failed'}`);
     goal.step = { action: 'design_building' }; save(); onStep(goal);
     if (fallback) {
-      if (!client) throw new Blocked('The building fallback needs a configured Jev connection');
+      if (!client) throw Object.assign(new Blocked('The building fallback needs a configured Jev connection'), { needsPlayer: true });
       goal.designFallbackReason = goal.designError || (mode === 'jev' ? 'Jev templates selected' : 'No OpenRouter designer key configured');
       bot.chat("I'm working out a simpler way to build it.");
     } else {
@@ -2029,7 +2038,7 @@ const IMPOSSIBLE = /No supported survival acquisition|does not spawn in Peaceful
 // The bot does not give up. When ordinary retries, Jev's recovery pick and
 // moving on have all failed, it says so once, shakes itself loose, leaves
 // the resource it was stuck on if there was one, waits a while (longer each
-// time, up to a minute, so an impossible spot costs little per hour) and
+// time, up to fifteen seconds, so an impossible spot costs little per hour) and
 // goes again with a clean slate. Only the player, the game, or a request
 // that is impossible by definition ends a request.
 const turnSearch = search => Object.fromEntries(Object.entries(search || {})

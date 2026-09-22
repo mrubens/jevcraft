@@ -74,7 +74,8 @@ async function designWithJev(bot, task, request, client, memory) {
         createdAt: new Date().toISOString(), world, judgments: { ...answers, design: picked.judgments }, usage: response.usage };
     }
     if (!['cottage', 'mansion', 'tower'].includes(style) || !['1', '2', '3'].includes(floors) || !['normal', 'large'].includes(size)) {
-      const err = new Error(`Without the custom designer I can build rectangular cottages, mansions and towers of up to three floors, or a ${shelfParts.filter(p => !['cottage', 'mansion', 'tower'].includes(p)).join(', ')} from my designs. The Jev fallback supports nothing else for this request`); err.name = 'Blocked'; throw err;
+      const others = shelfParts.filter(p => !['cottage', 'mansion', 'tower'].includes(p));
+      const err = new Error(`Without the custom designer I can build rectangular cottages, mansions and towers of up to three floors${others.length ? `, or a ${others.join(', ')} from my designs` : ''}. The Jev fallback supports nothing else for this request`); err.name = 'Blocked'; throw err;
     }
     let material = 'oak_planks', resolution;
     if (answers.material?.choice === 'specified') {

@@ -339,7 +339,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // middle of other people's conversations.
     const owner = (active?.goal || store.read())?.from;
     const company = Object.values(bot.players).filter(p => p.username !== bot.username && p.username !== from).length;
-    if (stopping && !address.explicit && owner !== from && company > 0) return;
+    // "Stop Jev", with the name last, is as addressed as "Jev stop".
+    const named = new RegExp(`\\b${me}\\b`, 'i').test(address.text);
+    if (stopping && !address.explicit && !named && owner !== from && company > 0) return;
     if (stopping) {
       invalidateRequests();
       stop().catch(console.error);
@@ -368,7 +370,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       // A catalog or list walk is several calls: look like it is thinking,
       // not like it did not hear. Not over work in hand: the glance turns the
       // head, and a dig in progress needs it where it is.
-      const stopThinking = literal || (active && !active.idle) ? () => {} : thinking(bot);
+      const stopThinking = literal || active ? () => {} : thinking(bot);
       const spec = literal ? { kind: 'operator_command' } : await interpret(requestClient, request, from, bot.username, {
         registry: bot.registry, players: Object.keys(bot.players),
         ...requestPosition, memory: memory.context(from),
@@ -451,6 +453,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
             // Chasing a satisfied dream again is a new run; picking up a paused one is not.
             saveDream({ ...standing, paused: false, satisfiedAt: undefined, resumedBy: from, resumedAt: new Date().toISOString(),
               ledgerRun: standing.satisfiedAt || !standing.ledgerRun ? ledger.open({ kind: 'dream', name: dreamName(standing.dream) }).id : standing.ledgerRun });
+            // A stop paused the survival loop with everything else; taking the
+            // dream up again takes that up too, or nothing would run it.
+            survival.state.paused = false; saveSurvival();
             bot.chat(`Back to my dream: to ${title}.`);
             const saved = store.read();
             if (saved?.dream && ['interrupted', 'cancelled', 'blocked'].includes(saved.status) && !active) launch(saved);

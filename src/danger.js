@@ -39,7 +39,9 @@ function hostileEntities(bot, radius = 24) {
   const daytime = bot.time?.timeOfDay < DAY.DARK || bot.time?.timeOfDay >= DAY.DAWN;
   return Object.values(bot.entities || {}).filter(entity => {
     if ((!hostileNames.has(entity.name) && !provoked(bot, entity)) || !entity.position || entity.isValid === false || observedDead(bot, entity)) return false;
-    if (entity.name === 'spider' && daytime && !(bot._recentHurtAt > Date.now() - 10000)) return false;
+    // A spider turns by day when a spider hits the bot, not when anything
+    // does: a fall or a fire set every spider in view back on it.
+    if (entity.name === 'spider' && daytime && !(bot._hurtBy?.spider > Date.now() - 10000)) return false;
     // A piglin leaves a player in gold alone; a brute does not. With the
     // golden boots on, the bot was digging in from piglins at eight blocks.
     // The truce ends when a piglin strikes, not when anything does: a
