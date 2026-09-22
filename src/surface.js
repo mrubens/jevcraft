@@ -3,7 +3,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, navigate } = require('./skills');
 const { safeFromHostiles } = require('./danger');
-const { tunnelStep } = require('./tunneling');
+const { tunnelStep, staircaseResting } = require('./tunneling');
 const { dryPassable, dryLeaf, dryBodySpace, supportCell, swimmableWater } = require('./terrain');
 
 // Inspect loaded columns, ignoring tree canopies but not terrain, roofs or
@@ -193,10 +193,18 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
     if (actions.dig) {
       Object.assign(movements, ordinary);
       if (actions.prepareTool && !await actions.prepareTool()) { save(); return; }
-      const target = candidates[0]?.clone() || (state.target ? new Vec3(state.target.x, state.target.y, state.target.z) : start.offset(24, 32, 0));
+      // A landing whose staircase has been given up is not tried again for a
+      // while; with none left, a heading of its own, turned at each give-up.
+      const open = candidates.filter(c => !staircaseResting(goal, c.offset(0, Math.max(0, start.y + 1 - c.y), 0)));
+      const heading = (state.heading || 0) * Math.PI / 4;
+      const target = open[0]?.clone() || (state.target ? new Vec3(state.target.x, state.target.y, state.target.z)
+        : start.offset(Math.round(24 * Math.cos(heading)), 32, Math.round(24 * Math.sin(heading))));
       target.y = Math.max(target.y, start.y + 1);
       state.ascent ||= { entrance: { ...start }, steps: 0, visited: {} };
       // Keep the exit staircase separate from the suspended mining worksite.
+      // The copy shares the goal's memory of failed attempts, or a
+      // staircase given up is forgotten with the copy.
+      goal.attempts ||= {};
       const ascentGoal = { ...goal, tunnel: state.ascent };
       const record = () => {
         goal.step = { ...ascentGoal.step, action: 'ascend_to_surface' };
@@ -206,7 +214,11 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       // Stair choices already rise or stay level. Keep the three-block local
       // retreat allowance so an obstructed step can back out along the stairs
       // we just excavated, rather than forbidding its only dry escape.
-      await tunnelStep(bot, task, ascentGoal, record, target, { dig: actions.dig, navigate: actions.navigate || navigate });
+      try { await tunnelStep(bot, task, ascentGoal, record, target, { dig: actions.dig, navigate: actions.navigate || navigate }); }
+      catch (err) {
+        if (err.name === 'StaircaseStalled') { state.heading = ((state.heading || 0) + 1) % 8; delete state.target; state.ascent = { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} }; save(); }
+        throw err;
+      }
       if (surfaceReturnComplete(bot, goal)) { delete goal.surfaceReturn; save(); }
       return;
     }

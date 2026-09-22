@@ -202,6 +202,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 74. *Four hundred refused hunts.* The refusal worked and was its own loop: with the spares gone the pockets filled with things all under their caps (190 cobblestone, 104 coal, 67 netherrack, nether bricks, quartz), the tidy had nothing to drop, and 432 hunts in half an hour ended "No room in my pockets for mutton". Room for something wanted is now made from an expendable list (dirt, gravel, saplings, fence, netherrack down to 32, cobblestone down to 64, soul sand, nether bricks, seeds down to 8), the smallest stack first, one stack at a time, for the hunt, the mine step and the night mine.
 
+75. *Two cells on the way up.* The climb out of a shallow pocket at (-1050, 66, 312) stepped between two cells for minutes, its climbing step blocked; the stillness rule fired three times and its detours did not move it. The three-round give-up (note 70) would have needed a hundred and forty-four steps, and could never have held: the way-up target is the nearest landing and moves a block with each step, while the give-up was keyed by the exact cell, and it was written on a copy of the goal that the ascent throws away. Now a round ends as soon as the step taken has been walked four times with no new best, give-ups are keyed by the eight-block area, the ascent shares the goal's memory, and a given-up ascent turns to another landing or, with none, a heading of its own that turns at each give-up.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

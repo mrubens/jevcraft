@@ -163,10 +163,13 @@ const STALE_ROUNDS = 3, STAIRCASE_REST_MS = 10 * 60000;
 class StaircaseStalled extends Error {
   constructor(target, why) { super(`The staircase toward ${target} is set aside (${why}); trying another way`); this.name = 'StaircaseStalled'; }
 }
-const staircaseResting = (goal, target) => isSetAside(goal, 'staircase', target);
+// By the eight-block area: the way-up target is the nearest landing, and it
+// moves a block or two with every step taken toward it.
+const area = t => ({ x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 });
+const staircaseResting = (goal, target) => isSetAside(goal, 'staircase', area(target));
 
 async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false }) {
-  if (staircaseResting(goal, target)) throw new StaircaseStalled(target, attemptsFor(goal).why('staircase', target));
+  if (staircaseResting(goal, target)) throw new StaircaseStalled(target, attemptsFor(goal).why('staircase', area(target)));
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
   // A spent budget is a shaft that has wandered, not a reason to stop: the
@@ -197,14 +200,19 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
   // ninety-six blocks from its portal, for eighty-eight rounds. Three rounds
   // with no new best and the staircase to this target is set aside, so the
   // caller tries another way.
-  if (tunnel.sinceBest >= 48) {
+  // Two cells in turn is a round that has already failed: a way up whose
+  // climbing step was blocked went (-1050, 312), (-1051, 312) and back for
+  // as long as the forty-eight steps lasted, and three rounds of that is
+  // a hundred and forty-four.
+  const pacing = tunnel.sinceBest >= 8 && tunnel.visited[`${choice.destination}`] >= 4;
+  if (tunnel.sinceBest >= 48 || pacing) {
     tunnel.staleRounds = (tunnel.staleRounds || 0) + 1;
     Object.assign(tunnel, { entrance: { ...bot.entity.position.floored() }, steps: 0, retreats: 0, retreatVisited: {}, rounds: (tunnel.rounds || 0) + 1, sinceBest: 0 });
     delete tunnel.workPosition;
     if (tunnel.staleRounds >= STALE_ROUNDS) {
       const why = `${STALE_ROUNDS} rounds without getting closer than ${Math.round(tunnel.best)} blocks`;
       Object.assign(tunnel, { staleRounds: 0, visited: {} }); delete tunnel.best;
-      setAside(goal, 'staircase', target, why, STAIRCASE_REST_MS);
+      setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
       save();
       throw new StaircaseStalled(target, why);
     }

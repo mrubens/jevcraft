@@ -405,7 +405,8 @@ test('a staircase that gains nothing keeps its best and its walked cells, and af
   goal.tunnel.sinceBest = 47;
   await assert.rejects(tunnelStep(bot, new Task('round'), goal, () => {}, target, { dig, navigate }), e => e.name === 'StaircaseStalled' && /closer than 10 blocks/.test(e.message));
   await assert.rejects(tunnelStep(bot, new Task('again'), goal, () => {}, target, { dig, navigate }), { name: 'StaircaseStalled' }, 'set aside, not walked again');
-  assert.equal(goal.attempts['staircase:90,70,0'].action, 'staircase');
+  assert.equal(goal.attempts['staircase:88,64,0'].action, 'staircase', 'by the area, so a target a block off is covered too');
+  await assert.rejects(tunnelStep(bot, new Task('moved'), goal, () => {}, new Vec3(91, 70, 2), { dig, navigate }), { name: 'StaircaseStalled' });
 });
 
 test('a new best clears the count of rounds that gained nothing', () => {
@@ -415,4 +416,17 @@ test('a new best clears the count of rounds that gained nothing', () => {
   assert.equal(tunnel.staleRounds, 2);
   noteProgress(tunnel, target, 38);
   assert.equal(tunnel.staleRounds, 0);
+});
+
+test('a staircase stepping between two cells ends its round within a few steps, not forty-eight', async () => {
+  const bot = world();
+  bot.pathfinder = { setGoal() {}, goto: async () => {} }; bot.game = { gameMode: 'survival' };
+  const dig = async (b, t, p) => { bot.blocks.set(`${p}`, { name: 'air', position: p, boundingBox: 'empty', diggable: false }); };
+  const navigate = async (b, t, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); };
+  const target = new Vec3(90, 70, 0);
+  const goal = { tunnel: { entrance: { x: 0, y: 70, z: 0 }, steps: 20, target: { x: 90, y: 70, z: 0 }, best: 10, sinceBest: 9, visited: {} } };
+  // Every way on already walked four times: the pacing is seen now.
+  for (const x of [-1, 0, 1]) for (const z of [-1, 0, 1]) for (const y of [69, 70]) goal.tunnel.visited[`(${x}, ${y}, ${z})`] = 4;
+  await assert.rejects(tunnelStep(bot, new Task('pace'), goal, () => {}, target, { dig, navigate }), /not gaining on it/);
+  assert.equal(goal.tunnel.staleRounds, 1);
 });
