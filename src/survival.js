@@ -782,12 +782,29 @@ class Survival {
     if (homeBed && shelterNeeded(bot) && bot.time.timeOfDay >= DAY.WALK_HOME && bot.time.timeOfDay < SLEEP_FROM && homeBed.foot.distanceTo(bot.entity.position) <= 6 && !immediateThreat(bot)) {
       // The minute before bedtime is a chore, not a wait: the stash, the
       // wheat, the cows; and once, the plot grows a column for the next day.
-      const chores = homeChores(bot, goal);
+      // A chore that failed waits two minutes. Its error was swallowed and
+      // the next tick ran it again: a harvest failing at one cell ran
+      // twenty times a second through a whole evening, and nobody could
+      // see why.
+      const failed = this.state.choreFailures ||= {};
+      const chores = Object.fromEntries(Object.entries(homeChores(bot, goal)).filter(([key]) => !(failed[key]?.at > Date.now() - 120000)));
       const chore = ['stock_stash', 'harvest_and_bake', 'tend_farm', 'breed_cows'].map(k => chores[k]).find(Boolean) || Object.values(chores)[0];
       const home = homeOf(bot, goal);
       if (chore) {
-        this.report(goal, save, { action: 'evening_chore', chore: Object.keys(chores).find(k => chores[k] === chore) });
-        try { await chore.run(bot, task, goal, save, this.actions); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        const key = Object.keys(chores).find(k => chores[k] === chore);
+        this.report(goal, save, { action: 'evening_chore', chore: key });
+        const started = Date.now();
+        try {
+          await chore.run(bot, task, goal, save, this.actions);
+          // Back in a blink with nothing done is the same loop without an error.
+          if (Date.now() - started < 300) throw new Error('The chore returned at once without doing anything');
+          delete failed[key];
+        }
+        catch (err) {
+          task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+          failed[key] = { at: Date.now(), error: err.message }; save();
+          console.log(`[chore] ${key} failed: ${err.message}`);
+        }
       } else if (home?.completedAt && !home.plotWide) {
         home.plotWide = true; save();
         this.report(goal, save, { action: 'grow_plot' });
