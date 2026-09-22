@@ -28,7 +28,14 @@ test('asleep, in a fight or holding a door is a wait worth making; standing in a
   assert.equal(permittedWait({ isSleeping: true }, {}, now), 'asleep');
   assert.equal(permittedWait({ _combatEncounter: { expiresAt: now + 5000, task: {} } }, {}, now), 'in a fight');
   assert.equal(permittedWait({}, { step: { action: 'hold_bunker' } }, now), 'hold_bunker');
-  assert.equal(permittedWait({}, { survivalAction: { action: 'wait_in_shelter', at } }, now), null);
+  assert.equal(permittedWait({}, { survivalAction: { action: 'hold_defensive_position', at } }, now), 'hold_defensive_position', 'the name survival really reports');
+  assert.equal(permittedWait({}, { survivalAction: { action: 'wait_in_shelter', at } }, now), 'wait_in_shelter', 'held in by something watching');
+  assert.equal(permittedWait({}, { kind: 'follow', step: { action: 'follow' } }, now), 'with the player', 'a player standing still is not a stall to follow');
+  assert.equal(permittedWait({ health: 15, food: 20 }, { step: { action: 'recover_before_combat' } }, now), 'recovering');
+  assert.equal(permittedWait({ health: 15, food: 12 }, { step: { action: 'recover_before_combat' } }, now), null, 'no regeneration at twelve hunger: that wait goes nowhere');
+  const watched = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 1: { id: 1, name: 'zombie', position: new Vec3(4.5, 64, 0.5), isValid: true, height: 1.9 } },
+    world: { raycast: () => null }, time: { timeOfDay: 18000 }, inventory: { slots: {} } };
+  assert.equal(permittedWait(watched, { step: { action: 'mine' } }, now), 'a hostile in view', 'the survival layer\'s moment, not an idle one');
   assert.equal(permittedWait({}, { step: { action: 'stock_food_for_nether' } }, now), null);
   assert.equal(stillReason({ survivalAction: { action: 'wait_in_shelter', at }, step: { action: 'mine' } }, now), 'survival:wait_in_shelter');
   assert.equal(stillReason({ step: { action: 'stock_food_for_nether' } }, now), 'step:stock_food_for_nether');

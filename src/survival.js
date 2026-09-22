@@ -753,6 +753,8 @@ class Survival {
     const bot = this.bot;
     if (bot.game?.dimension !== 'overworld' || !shelterNeeded(bot) || bot.game.difficulty === 'peaceful') return false;
     if ((bot.health ?? 20) < 10 || immediateThreat(bot)) return false;
+    // Not with anything watching: the same test the pocket uses to stay shut.
+    if (threats(bot).some(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity))) return false;
     if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) return false;
     if (sleepable(bot) && !sleepWaiting(this.state) && (bedCarried(bot) || nearbyHomeBed(bot, goal))) return false;
     return true;

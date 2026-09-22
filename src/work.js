@@ -2198,7 +2198,15 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   }
   const deadline = now + DETOUR_MS;
   const bounded = Object.create(task);
-  bounded.check = () => { task.check(); if (Date.now() >= deadline) throw Object.assign(new Error('The detour has had its time'), { name: 'DetourBudget' }); };
+  // A detour answers to threats like any work: one that shows ends it and
+  // hands the tick to the survival layer.
+  bounded.check = () => { task.check(); checkThreats(bot); if (Date.now() >= deadline) throw Object.assign(new Error('The detour has had its time'), { name: 'DetourBudget' }); };
+  // Its own goal. Run on the player's, a cook cut off at three minutes left
+  // a saved furnace batch that the request then had to finish, and search
+  // and source state leaked the same way. It shares the world's knowledge
+  // and the survival state, and nothing else.
+  const scratch = { kind: 'survive', request: `Something useful while ${reason.replace(/^\w+:/, '').replaceAll('_', ' ')} is stuck`, survival: goal.survival,
+    portals: goal.portals, villages: goal.villages, blueprint: goal.blueprint };
   const rested = goal.detourFailures ||= {};
   const tree = {};
   const offer = (key, description, run) => {
@@ -2217,14 +2225,19 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   const dark = overworld && bot.time?.timeOfDay >= DAY.DUSK;
   if (survival?.canNightMine?.(goal)) offer('night_mine', 'Dig a mine from here for the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter.',
     async () => { while (await survival.nightMine(bounded, goal, save)) bounded.check(); });
-  if (!dark) for (const [key, option] of Object.entries(idleOptions(bot, goal))) {
+  if (!dark && overworld) for (const [key, option] of Object.entries(idleOptions(bot, scratch))) {
     if (key === 'long_game') continue;
-    offer(key, option.description, () => option.run ? option.run(bot, bounded, goal, save, homeActions()) : acquireStep(bot, bounded, option.item, option.count, goal, save));
+    offer(key, option.description, () => option.run ? option.run(bot, bounded, scratch, save, homeActions()) : acquireStep(bot, bounded, option.item, option.count, scratch, save));
   }
-  const ore = find(bot, USEFUL_ORES, 16, 8).map(p => ({ p, name: bot.blockAt(p)?.name })).filter(o => o.name)[0];
+  // Ore only where nothing flows beside it: in the Nether the quartz is in
+  // the walls of the lava sea.
+  const ore = find(bot, USEFUL_ORES, 16, 8).map(p => ({ p, name: bot.blockAt(p)?.name }))
+    .filter(o => o.name && ![[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]].some(([x, y, z]) => /lava/.test(bot.blockAt(o.p.offset(x, y, z))?.name || '')))[0];
   if (ore) offer('mine_nearby', `Dig the ${ore.name.replaceAll('_', ' ')} ${Math.round(ore.p.distanceTo(bot.entity.position))} blocks away.`,
     () => dig(bot, bounded, ore.p, {}));
-  if (!dark) {
+  // A walk to see what is there is an Overworld thing by day; in the Nether
+  // twenty-four blocks in a straight line is a walk to the lava sea.
+  if (!dark && overworld) {
     const heading = ((goal.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; goal.detourHeading = heading;
     const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
     const target = here.offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));

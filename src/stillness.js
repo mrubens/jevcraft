@@ -31,6 +31,9 @@ function watchActivity(bot) {
   bot.on?.('entityHurt', (entity, source) => { if (source === bot.entity) mark('fight'); });
   bot.on?.('sleep', () => mark('sleep'));
   bot.inventory?.on?.('updateSlot', () => mark('inventory'));
+  // Health coming back is the point of a recovery wait: it counts.
+  let health = bot.health;
+  bot.on?.('health', () => { if (bot.health > health) mark('heal'); health = bot.health; });
   return activity;
 }
 
@@ -46,16 +49,32 @@ function stillFor(bot, now = Date.now()) {
 }
 
 // The waits that are the right thing to be doing. Each is bounded where it
-// is chosen; this only keeps the stall rule from interrupting it.
-const HOLDS = new Set(['hold_bunker', 'hold', 'fight', 'block_shot', 'end_combat']);
+// is chosen; this only keeps the stall rule from interrupting it. The names
+// are the ones survival and the hunt actually report: the list had "hold"
+// where survival says "hold_defensive_position", and a bot dug in beside a
+// spawner at eleven health was sent off to mine quartz.
+const HOLDS = new Set(['hold_bunker', 'hold_defensive_position', 'fight', 'block_shot', 'end_combat', 'dig_in', 'dig_in_bunker',
+  'seal_shelter', 'wall_off', 'take_cover', 'dig_in_to_recover', 'break_their_line', 'take_the_door',
+  // A shelter held because something outside is watching, and the minute
+  // by the bed before it can be slept in.
+  'wait_in_shelter', 'wait_for_bedtime']);
+// Goals whose whole point is to be near a player who may be standing still.
+const COMPANY = new Set(['follow', 'come']);
 function permittedWait(bot, goal, now = Date.now()) {
   if (bot.isSleeping) return 'asleep';
+  if (COMPANY.has(goal?.kind)) return 'with the player';
+  // Something hostile in view is the survival layer's moment, not an idle
+  // one: a detour then walks away from whatever is holding the bot.
+  try { if (require('./danger').threats(bot, 16).some(t => t.visible || t.distance < 6)) return 'a hostile in view'; } catch (_) {}
   const encounter = bot._combatEncounter;
   if (encounter && encounter.expiresAt > now && !encounter.task?.cancelled) return 'in a fight';
   if (HOLDS.has(goal?.step?.action)) return goal.step.action;
   const recent = goal?.survivalAction;
   if (recent && HOLDS.has(recent.action) && now - Date.parse(recent.at || 0) < STILL_MS) return recent.action;
   if (recent?.action === 'sleep' && now - Date.parse(recent.at || 0) < STILL_MS) return 'going to sleep';
+  // Waiting for health, hurt: fine while it is coming back (healing counts
+  // as activity above); stalled at the same number, it is a stall.
+  if (HOLDS.has(goal?.step?.action) || goal?.step?.action === 'recover_before_combat' && (bot.health ?? 20) < 20 && (bot.food ?? 20) >= 18) return 'recovering';
   return null;
 }
 
