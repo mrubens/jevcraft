@@ -44,6 +44,19 @@ function readyEquipment(bot, alsoInHand = []) {
     return (names.includes(item?.name) || (destination === 'hand' && alsoInHand.includes(item?.name))) && durable(bot.registry, item);
   });
 }
+// The kit is worn and a weapon is carried, whatever happens to be in hand
+// this instant. Judging readiness by the hand made the hunt's claim on its
+// quarry lapse the moment the bot placed a block, because it was then
+// holding netherrack: it sealed itself in, which cost it the claim, which
+// made it seal itself in again. Two blazes, thirteen runs, no rods.
+function kitReady(bot) {
+  return Object.entries(combatGear).every(([destination, names]) => {
+    if (destination === 'hand') return carriedEquipment(bot).some(item => names.includes(item.name));
+    const item = equipped(bot, destination);
+    return names.includes(item?.name) && durable(bot.registry, item);
+  });
+}
+
 function mobSources() {
   const sources = {};
   for (const [entity, handler] of Object.entries(handlers)) {
@@ -55,4 +68,4 @@ function mobSources() {
   }
   return sources;
 }
-module.exports = { handlers, combatGear, armorSlots, durable, carriedEquipment, equipped, readyEquipment, mobSources, observedDead };
+module.exports = { handlers, combatGear, armorSlots, durable, carriedEquipment, equipped, readyEquipment, kitReady, mobSources, observedDead };

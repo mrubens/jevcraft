@@ -113,9 +113,10 @@ test('a hunt drill fails when the drop never reaches the pockets, even with no d
   const d = drill('blaze_single');
   const empty = { deaths: 0, cleared: true, damageTaken: 2, clearedMs: 12000, drops: 0, actions: ['hunt_mob'] };
   assert.equal(summarise(d, [empty, empty]).verdict, 'FAIL');
-  assert.match(summarise(d, [empty, empty]).failures.join(' '), /0 drops, wanted 2/);
-  const picked = { ...empty, drops: 1 };
-  assert.equal(summarise(d, [picked, picked]).verdict, 'PASS');
+  assert.match(summarise(d, [empty, empty]).failures.join(' '), /0 drops in 2 runs, wanted 1/);
+  // A blaze drops a rod half the time, so the bar is a rod across the set,
+  // not a rod every run.
+  assert.equal(summarise(d, [empty, { ...empty, drops: 1 }]).verdict, 'PASS');
 });
 
 test('the scoreboard is a table with one aligned row per drill', () => {

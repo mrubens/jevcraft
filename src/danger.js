@@ -1,5 +1,5 @@
 'use strict';
-const { handlers, readyEquipment, observedDead } = require('./mob-policy');
+const { handlers, readyEquipment, kitReady, observedDead } = require('./mob-policy');
 
 // The Nether's own mobs were missing: a magma cube killed the dream run in
 // two seconds while the bot searched for blazes, and nothing fled or swung.
@@ -59,12 +59,24 @@ function inEncounter(bot) {
 // A blaze shoots from forty blocks; the bot was hit on a ledge from
 // beyond sixteen and stood there recovering health it was losing. Hurt in
 // the last few seconds, a shooter in view counts at twice the range.
+// The mob the bot came for is not an emergency. The arena's blaze drills
+// sealed it in against the very blazes it was hunting: the crowd rule fired
+// first, the hunt never got its turn, and three runs ended with no swing and
+// no rod. While a hunt for this kind is live and the bot is whole and
+// armoured, the hunt owns them; below the fight floor the survival layer
+// takes them back.
+function hunted(bot, entity) {
+  const hunt = bot._huntingEntity;
+  return !!hunt && hunt.name === entity.name && hunt.until > Date.now() &&
+    (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 14 && kitReady(bot);
+}
+
 function immediateThreat(bot) {
   const fighting = inEncounter(bot), hurt = bot._recentHurtAt > Date.now() - 4000;
   // Another of the kind being fought never ends the fight: the hunt's own
   // crowd rule decides how many blazes are too many.
   const kin = t => fighting && t.entity.name === bot._combatEncounter.target?.name;
-  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible && !kin(t) &&
+  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible && !kin(t) && !hunted(bot, t.entity) &&
     t.distance <= (ranged.has(t.entity.name) ? (fighting ? 8 : hurt ? 32 : 16) : (fighting ? 5 : 8)));
 }
 
@@ -101,4 +113,4 @@ function checkThreats(bot) {
   if (threat) throw new NeedsSafety(threat);
 }
 
-module.exports = { hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provokedEnderman };
+module.exports = { hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provokedEnderman, hunted };

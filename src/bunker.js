@@ -74,9 +74,47 @@ function centroid(threats) {
   return threats.reduce((total, t) => total.plus(t.entity.position), new Vec3(0, 0, 0)).scaled(1 / threats.length);
 }
 
-async function digBunker(bot, task, goal, save, { from = null } = {}) {
+// The rock face to back into: a stand cell beside natural rock, as far from
+// the threats as the search allows. In the middle of a room `bunkerSide`
+// finds nothing adjacent, so the branch never fired and the herd drill
+// stayed in the open and died.
+function wallStands(bot, from, { distance = 14, count = 128 } = {}) {
+  const ids = (bot.registry?.blocksArray || []).filter(b => NATURAL.test(b.name)).map(b => b.id);
+  if (!ids.length) return [];
+  const here = bot.entity.position;
+  const stands = new Map();
+  for (const p of bot.findBlocks({ matching: ids, maxDistance: distance, count })) {
+    for (const side of SIDES) {
+      const cell = p.plus(side);
+      if (!passable(bot.blockAt(cell)) || !passable(bot.blockAt(cell.offset(0, 1, 0))) || !solid(bot.blockAt(cell.offset(0, -1, 0)))) continue;
+      const key = `${cell}`;
+      if (stands.has(key)) continue;
+      // Facing into the rock, and the rock between the bot and the threats.
+      const into = cell.minus(p);
+      const away = from ? (cell.x - from.x) * into.x + (cell.z - from.z) * into.z : 1;
+      stands.set(key, { cell, score: cell.distanceTo(here) + (away > 0 ? 0 : 8) });
+    }
+  }
+  return [...stands.values()].sort((a, b) => a.score - b.score).map(s => s.cell);
+}
+
+async function reachWall(bot, task, from, navigate) {
+  if (bunkerSide(bot, bot.entity.position.floored(), from)) return true;
+  if (!navigate) return false;
+  for (const cell of wallStands(bot, from).slice(0, 4)) {
+    task.check();
+    try { await navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2500 }); }
+    catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; continue; }
+    if (bunkerSide(bot, bot.entity.position.floored(), from)) return true;
+  }
+  return false;
+}
+
+async function digBunker(bot, task, goal, save, { from = null, navigate = null } = {}) {
+  const centre = from || centroid(blazes(bot));
+  await reachWall(bot, task, centre, navigate);
   const feet = bot.entity.position.floored();
-  const side = bunkerSide(bot, feet, from || centroid(blazes(bot)));
+  const side = bunkerSide(bot, feet, centre);
   if (!side) throw new Error('No rock to dig a bunker into here');
   goal.step = { action: 'dig_bunker', side: { x: side.x, z: side.z }, depth: DEPTH }; save();
   for (let d = 1; d <= DEPTH; d++) {
@@ -146,7 +184,7 @@ async function collectRods(bot, task, goal, save, bunker, actions, item = 'blaze
 async function bunkerFight(bot, task, goal, save, actions, { item = 'blaze_rod', want = 1 } = {}) {
   const before = countOf(bot, item);
   const state = goal.mobHunt ||= {};
-  const bunker = await digBunker(bot, task, goal, save);
+  const bunker = await digBunker(bot, task, goal, save, { navigate: actions.navigate });
   state.bunker = { mouth: { ...bunker.mouth }, inside: { ...bunker.inside }, at: Date.now() }; save();
   bot.chat?.('Too many blazes to face in the open. Digging in beside them and taking them at the door.');
   const kills = await holdBunker(bot, task, goal, save, bunker, { item, want });
@@ -156,4 +194,4 @@ async function bunkerFight(bot, task, goal, save, actions, { item = 'blaze_rod',
   return gained;
 }
 
-module.exports = { bunkerFight, digBunker, swarm, blazes, bunkerSide, centroid, SWARM };
+module.exports = { bunkerFight, digBunker, reachWall, wallStands, swarm, blazes, bunkerSide, centroid, SWARM };

@@ -263,6 +263,12 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   if (!state) return false;
   if (countOf(bot, state.item) >= state.targetCount) { delete goal.mobHunt; save(); return false; }
   const handler = handlers[state.entity] || {};
+  // The hunt's claim on this kind of mob, renewed on every tick it is live.
+  // It has to be staked here, first in the loop: staking it where the fight
+  // runs was useless, because the survival layer sealed the bot in before
+  // that code was ever reached, so the claim was never made and the blazes
+  // stayed an emergency. Chicken, egg.
+  bot._huntingEntity = { name: state.entity, until: Date.now() + 5000 };
   if (!canBegin(bot, handler)) return false;
   const candidates = Object.values(bot.entities).filter(e => e.name === state.entity && valid(bot, e) &&
     e.position.distanceTo(bot.entity.position) < 24 && isolated(bot, e, handler) &&
@@ -312,6 +318,9 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   goal.mobHunt = { ...(previous?.item === step.item ? previous : {}), item: step.item, entity: step.entity,
     targetCount: countOf(bot, step.item) + step.count };
   goal.stockFood = true; save();
+  // While this runs, mobs of this kind are the hunt's business and not the
+  // survival layer's emergency. Refreshed every tick; it lapses in seconds.
+  bot._huntingEntity = { name: step.entity, until: Date.now() + 5000 };
   // A drop on the floor is a drop not carried. The arena killed a blaze and
   // scored nothing three times over because the rod lay where it fell: the
   // fight's own pickup only runs when the fight's own code did the killing.
@@ -345,7 +354,10 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     rememberSighting(state, bot, near);
     // A spawner's worth of blazes is fought from a bunker, not in the open:
     // dig in beside them and take them at the door.
-    if (step.entity === 'blaze' && swarm(bot) && !(state.bunkerFailedAt > Date.now() - 120000)) {
+    // Hurt, not merely outnumbered. Held at the door the bot took nine
+    // damage and got no rods in two runs, because blazes hover out of reach
+    // of a doorway; fought in the open at full health it got two.
+    if (step.entity === 'blaze' && swarm(bot) && bot.health < 16 && !(state.bunkerFailedAt > Date.now() - 120000)) {
       try { await bunkerFight(bot, task, goal, save, actions, { item: step.item, want: countOf(bot, step.item) + 1 }); return; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.bunkerFailedAt = Date.now(); state.lastBunkerError = err.message; save(); }
     }
