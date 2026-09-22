@@ -254,3 +254,15 @@ test('the idle loop offers stocking the stash beside the farm chores, and each s
   assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), null);
   assert.equal(said.length, 2);
 });
+
+test('before the Nether a restock tops food up to the crossing reserve, not a day of work', () => {
+  const { stashWithdrawals, KIT_FOOD_POINTS, NETHER_FOOD_POINTS } = require('../src/home-stash');
+  const registry = require('minecraft-data')('26.1');
+  const bot = { registry, inventory: { items: () => [] } };
+  const home = { stash: { position: { x: 0, y: 64, z: 0 }, contents: { cooked_beef: 8 } } };
+  const beef = moves => moves.filter(m => m.item === 'cooked_beef').reduce((n, m) => n + m.count, 0);
+  const day = beef(stashWithdrawals(bot, home, [], { foodPoints: KIT_FOOD_POINTS }));
+  const nether = beef(stashWithdrawals(bot, home, [], { foodPoints: NETHER_FOOD_POINTS }));
+  assert.equal(day, 2, 'a day: two steaks, sixteen points');
+  assert.equal(nether, 3, 'the Nether: three steaks, twenty-four points');
+});

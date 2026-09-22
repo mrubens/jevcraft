@@ -198,7 +198,14 @@ function stashDeposits(bot, home, { valuables = false, items = bot.inventory.ite
 
 // The moves from chest to pockets: kit slots the pockets have run low on,
 // and whatever the ladder's next rung is about to go and gather.
-function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items() } = {}) {
+// The food a restock tops the pockets up to. Twelve points is a day's work;
+// the Nether needs twenty-four, and a restock that stopped at twelve sent
+// the bot hunting for cows that were not there, gave up, and walked into
+// the Nether with nothing, eight cooked beef left behind in the chest.
+const NETHER_FOOD_POINTS = 24;
+const foodTarget = goal => goal?.preparingNether ? NETHER_FOOD_POINTS : KIT_FOOD_POINTS;
+
+function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items(), foodPoints: target = KIT_FOOD_POINTS } = {}) {
   const stored = { ...contentsOf(home) }, moves = [];
   const take = (name, count, why) => {
     const n = Math.min(count, stored[name] || 0);
@@ -216,7 +223,7 @@ function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items()
       let points = pointsOf(bot, items), pieces = 0;
       const foods = Object.keys(stored).filter(name => safeFood(bot, { name })).sort((a, b) => foodPoints(bot, b) - foodPoints(bot, a));
       for (const name of foods) {
-        while (points < KIT_FOOD_POINTS && pieces < slot.count && take(name, 1, { slot: slot.slot })) { points += foodPoints(bot, name); pieces++; }
+        while (points < target && pieces < slot.count && take(name, 1, { slot: slot.slot })) { points += foodPoints(bot, name); pieces++; }
       }
     } else if (slot.bucket) {
       if (!items.some(i => isBucket(i.name))) take('water_bucket', 1, { slot: slot.slot });
@@ -325,7 +332,7 @@ function restockStage(bot, goal, wants = [], { now = Date.now() } = {}) {
   const home = homeOf(bot, goal);
   if (!home?.stash?.position || homeDistance(bot, home) > HOME_REACH) return null;
   if (home.stash.failedAt && now - Date.parse(home.stash.failedAt) < RETRY_MS) return null;
-  const moves = stashWithdrawals(bot, home, wants);
+  const moves = stashWithdrawals(bot, home, wants, { foodPoints: foodTarget(goal) });
   if (!moves.length) return null;
   return { phase: 'home_restock', action: 'restock', items: moves };
 }
@@ -420,13 +427,13 @@ async function stockStash(bot, task, goal, save, home, actions, { valuables = fa
 
 // Take the kit out: what the pockets are short of and what the ladder wants.
 async function restockFromStash(bot, task, goal, save, home, actions, wants = []) {
-  const step = () => { goal.step = { action: 'restock', items: stashWithdrawals(bot, home, wants) }; save(); };
+  const step = () => { goal.step = { action: 'restock', items: stashWithdrawals(bot, home, wants, { foodPoints: foodTarget(goal) }) }; save(); };
   step();
   try {
     return await withChest(bot, task, goal, save, home, actions, async window => {
       step();
       const taken = [];
-      for (const move of stashWithdrawals(bot, home, wants, { items: window.items() })) {
+      for (const move of stashWithdrawals(bot, home, wants, { items: window.items(), foodPoints: foodTarget(goal) })) {
         task.check();
         try { await moveOut(bot, window, move); taken.push(move); }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; break; }
@@ -473,5 +480,5 @@ function stashChores(bot, goal) {
     run: (b, t, g, s, a) => stockStash(b, t, g, s, home, a) } };
 }
 
-module.exports = { SPARE_KIT, VALUABLES, KEEPSAKES, KIT_FOOD_POINTS, slotFits, keepsakeOf, isKeepsake, isKitMaterial, stashDeposits, stashWithdrawals, rungWants, planIngredients, stashStatus, forgetChest, rememberContents,
+module.exports = { SPARE_KIT, VALUABLES, KEEPSAKES, KIT_FOOD_POINTS, NETHER_FOOD_POINTS, slotFits, keepsakeOf, isKeepsake, isKitMaterial, stashDeposits, stashWithdrawals, rungWants, planIngredients, stashStatus, forgetChest, rememberContents,
   restockStage, placeStashChest, stockStash, restockFromStash, stashValuables, stashChores, describeContents };

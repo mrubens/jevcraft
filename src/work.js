@@ -9,7 +9,7 @@ const { deliver } = require('./delivery');
 const { reservedForConstruction, portalSiteClear, selectPortalSite, portalSupports } = require('./build-sites');
 const { updateDigCapabilities } = require('./movement');
 const { resourceTunnelStep, tunnelStep } = require('./tunneling');
-const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard } = require('./vitals');
+const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard, safeFood } = require('./vitals');
 const { decideTree, announceFallback, firstOption } = require('./decisions');
 const { Survival } = require('./survival');
 const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
@@ -2099,7 +2099,12 @@ function gameHandlers(bot, decisionClient) {
         // it has set aside as fruitless lets the trip go with what there is.
         food_reserve: async (bot, task, goal, save) => {
           const NETHER_FOOD = 24;
-          if (foodSupply(bot) >= NETHER_FOOD || goal.survival?.foodStockPausedUntil > Date.now()) { delete goal.preparingNether; return true; }
+          if (foodSupply(bot) >= NETHER_FOOD) { delete goal.preparingNether; return true; }
+          // A failed animal search is not permission to go hungry while the
+          // chest at home has food in it: take that first.
+          const stashFood = Object.entries(goal.survival?.home?.stash?.contents || {})
+            .reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
+          if (goal.survival?.foodStockPausedUntil > Date.now() && stashFood < 1) { delete goal.preparingNether; return true; }
           goal.preparingNether = true; goal.stockFood = true;
           goal.step = { action: 'stock_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
           return false;
