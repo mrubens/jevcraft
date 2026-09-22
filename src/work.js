@@ -40,7 +40,7 @@ const { collectWater } = require('./water');
 const { makeObsidian } = require('./obsidian');
 const { tidyInventory } = require('./inventory-tidy');
 const { homeStep, homeChores , gatherWool, woolCarried } = require('./home-base');
-const { stashValuables } = require('./home-stash');
+const { stashValuables, restockFromStash } = require('./home-stash');
 const { noticeVillage, takeVillageBed } = require('./villages');
 const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
@@ -2105,6 +2105,21 @@ function gameHandlers(bot, decisionClient) {
           const stashFood = Object.entries(goal.survival?.home?.stash?.contents || {})
             .reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
           if (goal.survival?.foodStockPausedUntil > Date.now() && stashFood < 1) { delete goal.preparingNether; return true; }
+          // The chest has food: go and get it, from wherever the bot is. The
+          // stash restock only offered itself within reach of the base, so a
+          // bot twenty-two blocks out waited on a paused animal search for
+          // ever with forty points of steak in the chest.
+          const home = require('./home-base').homeOf(bot, goal);
+          if (stashFood > 0 && home?.stash?.position && !(goal.survival?.foodFetchFailedAt > Date.now() - 120000)) {
+            goal.preparingNether = true;
+            goal.step = { action: 'fetch_food_from_stash', foodPoints: foodSupply(bot), required: NETHER_FOOD, inChest: stashFood }; save();
+            try { await restockFromStash(bot, task, goal, save, home, homeActions(), []); }
+            catch (err) {
+              task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+              if (goal.survival) goal.survival.foodFetchFailedAt = Date.now(); save();
+            }
+            return false;
+          }
           goal.preparingNether = true; goal.stockFood = true;
           goal.step = { action: 'stock_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
           return false;
