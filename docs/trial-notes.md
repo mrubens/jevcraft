@@ -81,6 +81,19 @@ The baseline zeros mean "never fought", not "took no damage": those drills ended
 23. *The only death in forty-five runs was a fall.* `fell from a high place`, twenty damage, immediately after killing its blaze. Following a flying thing means towering up to it and a tower is a place to fall off. Something overhead is now reached by standing under it, and the drill went from 6.7 damage with a death to **1.0 damage, five kills in five runs, three rods, seven seconds** — the single largest step of the whole exercise, from a fix aimed at something else.
 24. *A mob that will not engage makes a drill measure nothing.* Two runs in five of each single-mob drill had the mob wander instead of attacking; the nudge that brings it to three blocks fired once and then gave up. It now repeats every eight seconds, and the singles went from three clears in five to five and four.
 
+**The blaze pair, worked on directly (2026-09-22 10:30 UTC), five runs a step.**
+
+| blaze_pair | deaths | rods | damage |
+|---|---|---|---|
+| baseline: sealed itself in, never fought | 0 | 0 | never fought |
+| fighting, before this round | 0 | 0 | 32.2 |
+| after the fire rule | 0 | 3 | 22.8 |
+| after building cover | 0 | 4 | 16.1 |
+
+25. *The bot would not fight while it was on fire.* `canBegin` refused any fight while the on-fire metadata bit was set, which against a blaze is the normal state of the fight: the fireball that lights the bot is thrown by the thing it came to kill, and there is no water in the Nether to put it out. So the first hit ended the fight, and the bot stood in the open, burning, being shot by the blaze it had just declined to attack. One blaze never lit it in seven seconds and cost a single point of damage; two lit it immediately and cost thirty. Fire now ends a fight only under ten health, where the fire really is what is killing it. This one rule took the pair from 32.2 damage and no rods to 22.8 and three.
+26. *Build the doorway where you stand.* Below the fight floor with shooters in view and no wall within five blocks, the bot now places two blocks one step toward them and breaks the line, instead of waiting in the open for health that cannot come back while it is being shot. Two blocks placed beat nine blocks walked: 22.8 damage to 16.1, and four rods in five runs. The best two runs cost 6.7 and 9.4.
+27. *Read the trace before changing anything.* Every wrong guess this session (the bow, the tunnel mouth for an open-room pair) came from reasoning about the fight; both real fixes came from printing the bot's own health and action, second by second, and noticing it quit at eighteen health with full food and full kit. The number that mattered was the one that should not have been there.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
