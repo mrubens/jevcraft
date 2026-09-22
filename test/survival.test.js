@@ -870,10 +870,12 @@ test('an ore the night mine cannot reach is set aside, not chosen again as the n
     entity: { position: new Vec3(0.5, 62, 0.5) }, health: 20, food: 20, registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }], slots: {} },
     findBlocks: () => [near, far], blockAt: p => ({ name: p.equals(near) || p.equals(far) ? 'iron_ore' : 'stone', boundingBox: 'block', position: p }), world: { raycast: () => null } });
   const survival = new Survival(bot, { dig: async () => {}, navigate: async () => { throw new Error('No existing dry route away from the blocked staircase'); } });
-  survival.report = () => {};
+  const chosen = []; survival.report = (g, sv, action) => chosen.push(`${action.target.x},${action.target.z}`);
   for (let i = 0; i < 4; i++) await survival.nightMine(new Task('night', 'mine'), { kind: 'win' }, () => {});
-  assert(survival.state.nightMine.skip?.[`${near}`], 'the unreachable ore rests');
-  assert.deepEqual(survival.state.nightMine.target, { x: far.x, y: far.y, z: far.z }, 'and the mine goes for the next one');
+  assert(survival.state.attempts?.[`night_mine:${near.x},${near.y},${near.z}`], 'the unreachable ore rests in the shared memory of failed attempts');
+  assert.equal(chosen[0], `${near.x},${near.z}`);
+  assert.equal(chosen[1], `${far.x},${far.z}`, 'and the mine goes for the next one, not the nearest again');
+  assert(survival.state.attempts[`night_mine:${near.x},${near.y},${near.z}`].why, 'with the reason kept');
 });
 
 test('a night-mine target the steps never get closer to is set aside, even when every step succeeds', async () => {
@@ -890,7 +892,7 @@ test('a night-mine target the steps never get closer to is set aside, even when 
   survival.report = () => {};
   for (let i = 0; i < 20 && !survival.state.nightMine?.lastAbandoned; i++) await survival.nightMine(new Task('night', 'mine'), { kind: 'win' }, () => {});
   assert(survival.state.nightMine.lastAbandoned, 'the pacing is noticed');
-  assert(survival.state.nightMine.skip[`${ore}`], 'and the ore rests');
+  assert(survival.state.attempts[`night_mine:${ore.x},${ore.y},${ore.z}`], 'and the ore rests');
 });
 
 test('the night mine does not choose an ore in the wall of a flooded cave', async () => {
@@ -902,7 +904,7 @@ test('the night mine does not choose an ore in the wall of a flooded cave', asyn
     findBlocks: () => [wet, dry], world: { raycast: () => null },
     blockAt: p => ({ name: p.equals(wet) || p.equals(dry) ? 'copper_ore' : p.equals(wet.offset(0, 1, 0)) ? 'water' : 'stone', boundingBox: 'block', position: p }) });
   const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {} });
-  survival.report = () => {};
+  const chosen = []; survival.report = (g, sv, action) => chosen.push(action.target);
   await survival.nightMine(new Task('night', 'mine'), { kind: 'win' }, () => {});
-  assert.deepEqual(survival.state.nightMine.target, { x: dry.x, y: dry.y, z: dry.z }, 'the dry ore, though it is farther');
+  assert.deepEqual(chosen[0], { x: dry.x, y: dry.y, z: dry.z }, 'the dry ore, though it is farther');
 });

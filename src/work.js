@@ -1,5 +1,6 @@
 'use strict';
 const { move } = require('./motion');
+const { attemptsFor } = require('./progress');
 const { DAY } = require('./day');
 const { STILL_MS, watchActivity, markActivity, stillFor, permittedWait, stillReason, recordStill } = require('./stillness');
 
@@ -1068,7 +1069,7 @@ async function executeAcquisition(bot, task, step, goal, save) {
     // 'approach' is a shaft dug at a mob rather than past one, so the
     // hostile-avoidance that a travelling shaft needs is off for it.
     tunnel: (b, t, g, sv, target, resource) => ['fortress', 'approach'].includes(resource)
-      ? tunnelStep(b, t, g, sv, target, { dig, navigate, approach: resource === 'approach' })
+      ? tunnelStep(b, t, g, sv, target, { dig, navigate, approach: resource === 'approach', strict: resource === 'approach' })
       : resourceTunnelStep(b, t, g, sv, target, resource, { dig, navigate }) });
   else throw new Error(`Unknown action ${step.action}`);
 }
@@ -2228,17 +2229,17 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // and the survival state, and nothing else.
   const scratch = { kind: 'survive', request: `Something useful while ${reason.replace(/^\w+:/, '').replaceAll('_', ' ')} is stuck`, survival: goal.survival,
     portals: goal.portals, villages: goal.villages, blueprint: goal.blueprint };
-  const rested = goal.detourFailures ||= {};
+  const attempts = attemptsFor(goal);
   const tree = {};
   const offer = (key, description, run) => {
-    if (rested[key] > now - DETOUR_REST_MS) return;
+    if (attempts.resting('detour', key, now)) return;
     tree[key] = { description, run: async () => {
       goal.step = { action: 'detour', choice: key, from: reason }; save(); narrate(bot, goal);
       try { await run(); }
       catch (err) {
         if (err.name === 'DetourBudget') return;
         task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err;
-        rested[key] = Date.now(); throw err;
+        attempts.fail('detour', key, err, { restMs: DETOUR_REST_MS }); throw err;
       }
     } };
   };
@@ -2330,23 +2331,24 @@ function gameHandlers(bot, decisionClient) {
           const stashFood = Object.entries(survivalState.home?.stash?.contents || {})
             .reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
           const home = require('./home-base').homeOf(bot, goal);
-          if (stashFood > 0 && home?.stash?.position && !(survivalState.foodFetchFailedAt > now - 120000)) {
+          const attempts = attemptsFor(goal);
+          if (stashFood > 0 && home?.stash?.position && !attempts.resting('fetch_food', 'stash', now)) {
             goal.step = { action: 'fetch_food_from_stash', foodPoints: foodSupply(bot), required: NETHER_FOOD, inChest: stashFood }; save();
             try { await restockFromStash(bot, task, goal, save, home, homeActions(), []); }
             catch (err) {
               task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-              survivalState.foodFetchFailedAt = Date.now(); survivalState.foodFetchError = err.message; save();
+              attempts.fail('fetch_food', 'stash', err, { restMs: 120000 }); save();
             }
             return false;
           }
           // Then the plot: wheat into bread.
           const chore = require('./home-base').homeChores(bot, goal).harvest_and_bake;
-          if (chore && !(survivalState.choreFailures?.harvest_and_bake?.at > now - 120000)) {
+          if (chore && !attempts.resting('chore', 'harvest_and_bake', now)) {
             goal.step = { action: 'harvest_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
             try { await chore.run(bot, task, goal, save, homeActions()); }
             catch (err) {
               task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-              (survivalState.choreFailures ||= {}).harvest_and_bake = { at: Date.now(), error: err.message }; save();
+              attempts.fail('chore', 'harvest_and_bake', err, { restMs: 120000 }); save();
             }
             return false;
           }

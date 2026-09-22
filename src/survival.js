@@ -1,5 +1,6 @@
 'use strict';
 const { move } = require('./motion');
+const { attemptsFor } = require('./progress');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { threats, immediateThreat, checkThreats, hunted, claimed } = require('./danger');
@@ -36,7 +37,7 @@ function firmStep(bot, p) {
 // it: a tunnel up toward an ore in the roof is a tunnel toward the surface.
 const NIGHT_ORES = new Set(['coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
   'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_copper_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore', 'deepslate_emerald_ore']);
-function nightOre(bot, feet, skip = {}) {
+function nightOre(bot, feet, attempts) {
   const ids = [...NIGHT_ORES].map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
   const found = bot.findBlocks?.({ matching: ids, maxDistance: 24, count: 32 }) || [];
   // Not ore touching water or lava. The staircase will not open a cell onto
@@ -45,7 +46,7 @@ function nightOre(bot, feet, skip = {}) {
   // flooded cave, the same cave it had drowned in.
   const wet = q => [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]]
     .some(([x, y, z]) => /water|lava|bubble_column|kelp|seagrass/.test(bot.blockAt(q.offset(x, y, z))?.name || ''));
-  const p = found.filter(q => q.y <= feet.y + 1 && q.y >= -48 && !(skip[`${q}`] > Date.now()) && !wet(q))
+  const p = found.filter(q => q.y <= feet.y + 1 && q.y >= -48 && !attempts?.resting('night_mine', q) && !wet(q))
     .sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))[0];
   return p ? { position: p, name: bot.blockAt(p)?.name } : null;
 }
@@ -775,7 +776,7 @@ class Survival {
     if (target && NIGHT_ORES.has(mine.targetOre) && bot.blockAt(target)?.name !== mine.targetOre) { target = null; delete mine.target; }
     if (target && !NIGHT_ORES.has(mine.targetOre) && target.distanceTo(bot.entity.position) < 2.5) target = null;
     if (!target) {
-      const ore = nightOre(bot, feet, mine.skip);
+      const ore = nightOre(bot, feet, attemptsFor(this));
       if (ore) { target = ore.position; mine.targetOre = ore.name; }
       else {
         // No ore in reach of the eye: a branch, down to a working depth
@@ -800,7 +801,7 @@ class Survival {
           if (drop) { try { await this.actions.navigate(bot, task, new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 0.5), { timeoutMs: 3000, stallMs: 1500 }); } catch (_) { task.check(); } }
         }
       } else {
-        await tunnelStep(bot, task, mine, save, target, { dig: this.actions.dig, navigate: this.actions.navigate });
+        await tunnelStep(bot, task, mine, save, target, { dig: this.actions.dig, navigate: this.actions.navigate, strict: true });
         mine.failures = 0;
         // Steps that succeed without getting closer are a failure too: the
         // mine paced four blocks back and forth under a copper it could not
@@ -811,7 +812,8 @@ class Survival {
       task.check();
       if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
       mine.failures++; mine.lastError = err.message;
-      if (mine.failures >= 3 || /not gaining/.test(err.message)) this.abandonTarget(mine, err.message);
+      // A filter that rules out every step toward the ore says so at once.
+      if (err.name === 'NoSafeWay' || mine.failures >= 3 || /not gaining/.test(err.message)) this.abandonTarget(mine, err.message);
     }
     save();
     return true;
@@ -821,10 +823,7 @@ class Survival {
   // chose the same nearest ore again, and the mine turned eighty times in
   // one place.
   abandonTarget(mine, why) {
-    if (NIGHT_ORES.has(mine.targetOre) && mine.target) {
-      mine.skip = Object.fromEntries(Object.entries(mine.skip || {}).filter(([, until]) => until > Date.now()));
-      mine.skip[`${pos(mine.target)}`] = Date.now() + 600000;
-    }
+    if (NIGHT_ORES.has(mine.targetOre) && mine.target) attemptsFor(this).fail('night_mine', mine.target, why, { restMs: 600000 });
     mine.lastAbandoned = { target: mine.target, why, at: new Date().toISOString() };
     mine.heading++; delete mine.target; delete mine.tunnel; mine.failures = 0;
   }
@@ -936,8 +935,8 @@ class Survival {
       // the next tick ran it again: a harvest failing at one cell ran
       // twenty times a second through a whole evening, and nobody could
       // see why.
-      const failed = this.state.choreFailures ||= {};
-      const chores = Object.fromEntries(Object.entries(homeChores(bot, goal)).filter(([key]) => !(failed[key]?.at > Date.now() - 120000)));
+      const attempts = attemptsFor(this);
+      const chores = Object.fromEntries(Object.entries(homeChores(bot, goal)).filter(([key]) => !attempts.resting('chore', key)));
       const chore = ['stock_stash', 'harvest_and_bake', 'tend_farm', 'breed_cows'].map(k => chores[k]).find(Boolean) || Object.values(chores)[0];
       const home = homeOf(bot, goal);
       if (chore) {
@@ -948,11 +947,11 @@ class Survival {
           await chore.run(bot, task, goal, save, this.actions);
           // Back in a blink with nothing done is the same loop without an error.
           if (Date.now() - started < 300) throw new Error('The chore returned at once without doing anything');
-          delete failed[key];
+          attempts.clear('chore', key);
         }
         catch (err) {
           task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-          failed[key] = { at: Date.now(), error: err.message }; save();
+          attempts.fail('chore', key, err, { restMs: 120000 }); save();
           console.log(`[chore] ${key} failed: ${err.message}`);
         }
       } else if (home?.completedAt && !home.plotWide) {

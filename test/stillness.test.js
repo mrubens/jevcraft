@@ -64,7 +64,7 @@ test('a stall is broken with something useful from here, and the stalled step is
   // In this bare world it fails, which the loop's catch would take; it has
   // still been tried, and set to rest.
   await breakStillness(bot, new Task('still'), goal, () => {}, { survival }).catch(() => {});
-  assert(goal.detourFailures.stone_tools, 'the detour ran, failed here, and rests for a while');
+  assert(goal.survival.attempts['detour:stone_tools'], 'the detour ran, failed here, and rests for a while');
   assert.equal(goal.step.action, 'stock_food_for_nether', 'the stalled step is back when the detour ends');
   const hour = Object.values(goal.survival.stillness.hours)[0];
   assert.equal(hour.stalls, 1); assert(hour.byReason['step:stock_food_for_nether'] >= 20);

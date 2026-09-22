@@ -5,6 +5,7 @@ const { opportunisticPickups } = require('./opportunistic-pickups');
 const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
 const { safeFromHostiles, hostileEntities } = require('./danger');
+const { advance } = require('./progress');
 const { surveyRoute } = require('./skills');
 const { dryPassable: passable, dryBodySpace } = require('./terrain');
 const { descendPillar } = require('./pillar-recovery');
@@ -51,8 +52,9 @@ function noteProgress(tunnel, target, gap) {
   // Ground gained also clears the retreat count. It was counted over the
   // shaft's whole life, so once twenty-four had piled up over hours every
   // dead end was final, however much ground had been made in between.
-  if (!Number.isFinite(tunnel.best) || gap < tunnel.best - 0.5) { tunnel.best = gap; tunnel.sinceBest = 0; tunnel.retreats = 0; }
-  else tunnel.sinceBest = (tunnel.sinceBest || 0) + 1;
+  const progress = { best: tunnel.best, looks: tunnel.sinceBest };
+  if (!advance(progress, gap)) tunnel.retreats = 0;
+  tunnel.best = progress.best; tunnel.sinceBest = progress.looks;
   return tunnel.sinceBest;
 }
 
@@ -99,12 +101,17 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
   const dy = Math.sign(target.y - feet.y);
   const heights = dy ? [dy, 0] : [0];
   const choices = [];
+  // What a filter took out, for the cells that would have got closer: a
+  // filter that removes every step toward the target should say so, not
+  // leave the least-bad sideways step to pass for progress.
+  const here = feet.distanceTo(target), blocked = {};
+  const block = (destination, why) => { if (destination.distanceTo(target) < here - 0.1) blocked[why] = (blocked[why] || 0) + 1; };
   for (const d of directions) for (const height of heights) {
     const destination = feet.plus(d).offset(0, height, 0);
-    if (hostiles && !safeFromHostiles(bot, destination.offset(0.5, 0, 0.5), Array.isArray(hostiles) ? hostiles : undefined)) continue;
+    if (hostiles && !safeFromHostiles(bot, destination.offset(0.5, 0, 0.5), Array.isArray(hostiles) ? hostiles : undefined)) { block(destination, 'a hostile'); continue; }
     const floor = bot.blockAt(destination.offset(0, -1, 0));
-    if (dangerous(floor) || falling(floor) || floor.boundingBox !== 'block') continue;
-    if (bot.pathfinder?.movements?.allowedPosition && !bot.pathfinder.movements.allowedPosition(destination)) continue;
+    if (dangerous(floor) || falling(floor) || floor.boundingBox !== 'block') { block(destination, dangerous(floor) ? 'lava or water underfoot' : 'no floor'); continue; }
+    if (bot.pathfinder?.movements?.allowedPosition && !bot.pathfinder.movements.allowedPosition(destination)) { block(destination, 'a forbidden cell'); continue; }
     const clear = [];
     // A jump needs three blocks of headroom in the cell we leave. Inspect and
     // clear that ceiling first, but never drop sand/gravel onto our own head.
@@ -113,15 +120,18 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
       clear.push(feet.offset(0, 2, 0));
     }
     for (let y = Math.max(feet.y + 1, destination.y + 1); y >= destination.y; y--) clear.push(new Vec3(destination.x, y, destination.z));
+    let why = null;
     const safe = clear.every(p => {
-      const block = bot.blockAt(p);
-      if (dangerous(block)) return false;
-      if (passable(block)) return true;
-      if (!natural.test(block.name) || !block.diggable || reservedForConstruction(goal, p)) return false;
-      if (!safeExcavation(bot, p)) return false;
-      return byHand || !block.harvestTools || bot.inventory.items().some(i => block.harvestTools[i.type]);
+      const cell = bot.blockAt(p);
+      if (dangerous(cell)) { why = 'lava or water in the way'; return false; }
+      if (passable(cell)) return true;
+      if (!natural.test(cell.name) || !cell.diggable) { why = `${cell.name.replaceAll('_', ' ')} in the way`; return false; }
+      if (reservedForConstruction(goal, p)) { why = 'a building in the way'; return false; }
+      if (!safeExcavation(bot, p)) { why = 'water or lava behind the rock'; return false; }
+      if (byHand || !cell.harvestTools || bot.inventory.items().some(i => cell.harvestTools[i.type])) return true;
+      why = `no tool for ${cell.name.replaceAll('_', ' ')}`; return false;
     });
-    if (!safe) continue;
+    if (!safe) { block(destination, why); continue; }
     const visits = goal.tunnel?.visited?.[`${destination}`] || 0;
     // A travelling shaft is penalised for going back over its own cells, or
     // it loops. A shaft dug straight at a fixed target is not: after a few
@@ -133,10 +143,23 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
       : destination.distanceTo(target) + visits * 16 + (dy > 0 && height === 0 ? 4 : 0);
     choices.push({ destination, clear, score });
   }
-  return choices.sort((a, b) => a.score - b.score);
+  const sorted = choices.sort((a, b) => a.score - b.score);
+  sorted.blocked = blocked;
+  return sorted;
 }
 
-async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false }) {
+// Every step toward the target was filtered out, and what is left only goes
+// sideways or back: for a dig at a fixed target that is not progress, and
+// taking it is how the night mine paced under an ore behind water.
+class NoSafeWay extends Error {
+  constructor(target, blocked) {
+    const reasons = Object.keys(blocked);
+    super(`No safe way toward ${target}: ${reasons.join(', ') || 'nothing closer can be dug'}`);
+    this.name = 'NoSafeWay'; this.blockedBy = reasons;
+  }
+}
+
+async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false }) {
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
   // A spent budget is a shaft that has wandered, not a reason to stop: the
@@ -146,7 +169,13 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
     Object.assign(tunnel, { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {}, retreats: 0, retreatVisited: {}, rounds: (tunnel.rounds || 0) + 1 });
     delete tunnel.workPosition; save();
   }
-  const choice = stairOptions(bot, goal, target, { approach })[0];
+  const options = stairOptions(bot, goal, target, { approach });
+  const choice = options[0];
+  goal.tunnel.lastBlocked = options.blocked && Object.keys(options.blocked).length ? options.blocked : undefined;
+  // A dig at a fixed target (strict) stops here when nothing it can take gets
+  // closer and a filter is why; a travelling shaft still goes round.
+  const closer = choice && choice.destination.distanceTo(target) < bot.entity.position.floored().distanceTo(target) - 0.1;
+  if (strict && !closer && options.blocked && Object.keys(options.blocked).length) throw new NoSafeWay(target, options.blocked);
   if (!choice) {
     await retreatForTunnel(bot, task, goal, save, { navigate });
     return;
@@ -272,4 +301,4 @@ async function retreatForTunnel(bot, task, goal, save, { navigate }) {
   } finally { Object.assign(movement, previous); }
 }
 
-module.exports = { noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { NoSafeWay, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
