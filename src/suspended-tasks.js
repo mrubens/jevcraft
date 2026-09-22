@@ -13,8 +13,11 @@ function suspendPrevious(previous) {
 const unfinished = goal => goal.status !== 'complete' && goal.kind !== 'survive';
 // A player's own work that a resume can pick up. Not the dream, which is
 // the bot's idle time and relaunches itself, and not a request parked as
-// impossible, which a retry cannot change.
-const playerWork = goal => unfinished(goal) && !goal.dream && goal.status !== 'blocked';
+// impossible, which a retry cannot change. Other blocked goals (a death, a
+// handover waiting on the player, a launch that failed) told the player to
+// say resume, and resume must reach them: passing over every blocked goal
+// discarded them from the stack.
+const playerWork = goal => unfinished(goal) && !goal.dream && !goal.impossible;
 
 function resumeSaved(saved, { currentOnly = false } = {}) {
   // Maintenance may unpause an idle companion after a reconnect. It must not

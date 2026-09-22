@@ -2543,7 +2543,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // pickup nobody saw). The regex is the old list; `needsPlayer` is
       // how a new case says so without adding to it.
       if (err.name === 'Blocked' && (err.needsPlayer || IMPOSSIBLE.test(err.message))) {
-        goal.status = 'blocked'; save();
+        // Impossible is final and resume passes over it; waiting on the
+        // player is not, and "Jev resume" takes it up again.
+        goal.status = 'blocked'; if (!err.needsPlayer) goal.impossible = true; save();
         bot.chat(`${friendlyProblem(err)} I saved our progress. ${recoveryHint(err)}`);
         return { ok: false, reason: err.message, goal };
       }

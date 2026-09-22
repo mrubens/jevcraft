@@ -46,9 +46,9 @@ test('repeated interruptions remain flat and resume the most recent unfinished r
 
 test('a request parked as impossible does not hide the build it replaced', () => {
   const build = { kind: 'build', request: 'build a tower', status: 'replaced' };
-  const bedrock = { kind: 'obtain', request: 'get me bedrock', status: 'blocked', suspendedTasks: suspendPrevious(build) };
+  const bedrock = { kind: 'obtain', request: 'get me bedrock', status: 'blocked', impossible: true, suspendedTasks: suspendPrevious(build) };
   assert.equal(resumeSaved(bedrock).request, 'build a tower');
-  const alone = { kind: 'obtain', request: 'get me bedrock', status: 'blocked' };
+  const alone = { kind: 'obtain', request: 'get me bedrock', status: 'blocked', impossible: true };
   assert.equal(resumeSaved(alone), alone, 'with nothing under it, resume retries it as before');
 });
 
@@ -69,4 +69,10 @@ test('a request no survival route can serve is refused before it replaces any wo
   assert(unworkable(bot('survival'), { kind: 'bundle', tasks: [{ item: 'oak_planks', count: 4 }, { item: 'spawner', count: 1 }] }), 'one impossible item in a list');
   assert.equal(unworkable(bot('creative'), { kind: 'obtain', item: 'bedrock', count: 1 }), null, 'Creative has its own inventory');
   assert.equal(unworkable(bot('survival'), { kind: 'build', request: 'a tower' }), null);
+});
+
+test('a goal blocked on the player (a death, an unconfirmed handover) is what resume takes up, not skipped', () => {
+  const build = { kind: 'build', request: 'build a tower', status: 'replaced' };
+  const handover = { kind: 'obtain', request: 'get me 20 iron', status: 'blocked', suspendedTasks: suspendPrevious(build) };
+  assert.equal(resumeSaved(handover).request, 'get me 20 iron');
 });

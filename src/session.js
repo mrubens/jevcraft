@@ -99,8 +99,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   const saveDream = standing => { if (!ended) dreamStore.save({ version: 1, ...standing }); };
   // Portals, villages, the End portal and the run's progress: kept per
   // world and handed to every goal, not left on the goal that found them.
+  // Seeded from the old per-server goal stores only where they can be this
+  // world's: with a world id they may be another world's, and a new world
+  // began with the old one's portals and game progress.
   const world = new WorldKnowledge(new GoalStore(path.join(stateDirectory, `${memoryIdentity}-world.json`)),
-    { seedFrom: [store.read(), idleStore.read()] });
+    { seedFrom: memoryIdentity === identity ? [store.read(), idleStore.read()] : [] });
   // The cost ledger: every Jev call charged to the request or dream it
   // served, kept per world, and summarized to docs/run-ledger.md when a run
   // ends. The client feeds it; the session only says which run is paying.
@@ -225,7 +228,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (standing?.dream && !launchingDream && shouldLaunchDream(standing, retained, { ready: readyForDream() })) { launchDream(standing); return; }
     const goal = { ...(idleStore.read() || {}), version: 1, kind: 'survive', request: 'Stay alive and prepare supplies between player requests',
       retainedRequest: retained?.request, blueprint: retained?.blueprint, survival: survival.state,
-      dream: standing?.dream && !standing.satisfiedAt ? standing.dream : undefined,
+      // A dream set aside is not chased by the idle loop either.
+      dream: standing?.dream && !standing.satisfiedAt && !standing.paused ? standing.dream : undefined,
       ledgerRun: standing?.dream && !standing.satisfiedAt ? standing.ledgerRun : undefined };
     world.hydrate(goal);
     memory.bind(goal);
