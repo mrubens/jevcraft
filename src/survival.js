@@ -797,24 +797,31 @@ class Survival {
       } else {
         await tunnelStep(bot, task, mine, save, target, { dig: this.actions.dig, navigate: this.actions.navigate });
         mine.failures = 0;
+        // Steps that succeed without getting closer are a failure too: the
+        // mine paced four blocks back and forth under a copper it could not
+        // reach, every step a success, and never set it aside.
+        if ((mine.tunnel?.sinceBest || 0) >= 12) this.abandonTarget(mine, 'twelve steps without getting closer');
       }
     } catch (err) {
       task.check();
       if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
       mine.failures++; mine.lastError = err.message;
-      // Three failed steps toward one target: set that ore aside for ten
-      // minutes and turn. Forgetting the target alone chose the same
-      // nearest ore again, and the mine turned eighty times in one place.
-      if (mine.failures >= 3) {
-        if (NIGHT_ORES.has(mine.targetOre) && mine.target) {
-          mine.skip = Object.fromEntries(Object.entries(mine.skip || {}).filter(([, until]) => until > Date.now()));
-          mine.skip[`${pos(mine.target)}`] = Date.now() + 600000;
-        }
-        mine.heading++; delete mine.target; delete mine.tunnel; mine.failures = 0;
-      }
+      if (mine.failures >= 3 || /not gaining/.test(err.message)) this.abandonTarget(mine, err.message);
     }
     save();
     return true;
+  }
+
+  // Set an ore aside for ten minutes and turn. Forgetting the target alone
+  // chose the same nearest ore again, and the mine turned eighty times in
+  // one place.
+  abandonTarget(mine, why) {
+    if (NIGHT_ORES.has(mine.targetOre) && mine.target) {
+      mine.skip = Object.fromEntries(Object.entries(mine.skip || {}).filter(([, until]) => until > Date.now()));
+      mine.skip[`${pos(mine.target)}`] = Date.now() + 600000;
+    }
+    mine.lastAbandoned = { target: mine.target, why, at: new Date().toISOString() };
+    mine.heading++; delete mine.target; delete mine.tunnel; mine.failures = 0;
   }
 
   async wait(task, goal, save, reason = 'Waiting for daylight inside the verified shelter') {

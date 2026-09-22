@@ -875,3 +875,20 @@ test('an ore the night mine cannot reach is set aside, not chosen again as the n
   assert(survival.state.nightMine.skip?.[`${near}`], 'the unreachable ore rests');
   assert.deepEqual(survival.state.nightMine.target, { x: far.x, y: far.y, z: far.z }, 'and the mine goes for the next one');
 });
+
+test('a night-mine target the steps never get closer to is set aside, even when every step succeeds', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const ore = new Vec3(8, 55, 0);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 15000 },
+    entity: { position: new Vec3(0.5, 55, 0.5) }, health: 20, food: 20, registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }], slots: {} },
+    findBlocks: () => [ore], blockAt: p => ({ name: p.equals(ore) ? 'iron_ore' : p.y < 55 ? 'stone' : 'air', boundingBox: p.y < 55 || p.equals(ore) ? 'block' : 'empty', position: p }),
+    world: { raycast: () => null }, pathfinder: { movements: {} } });
+  // Every step "succeeds" by pacing along z, never closer in x.
+  let z = 0;
+  const survival = new Survival(bot, { dig: async () => {}, navigate: async (b, t, goal) => { z = z ? 0 : 1; bot.entity.position = new Vec3(0.5, 55, z + 0.5); } });
+  survival.report = () => {};
+  for (let i = 0; i < 20 && !survival.state.nightMine?.lastAbandoned; i++) await survival.nightMine(new Task('night', 'mine'), { kind: 'win' }, () => {});
+  assert(survival.state.nightMine.lastAbandoned, 'the pacing is noticed');
+  assert(survival.state.nightMine.skip[`${ore}`], 'and the ore rests');
+});
