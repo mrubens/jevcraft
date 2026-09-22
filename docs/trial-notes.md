@@ -173,6 +173,21 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 63. *Death twelve: drowned in its own night mine, with the process frozen.* The night mine had taken twenty ores when it met a copper it could not reach ("no dry route away from the blocked staircase"). Two faults compounded. The mine forgot a failed target but not why, so the nearest ore was the same one and it turned eighty times in place; and the detour that runs the mine looped `while (await nightMine())` with no pause, while a failed step returned at once. A loop of promises that never waits on anything starves the event loop: the dashboard stopped answering, physics and the air check stopped, and the bot drowned where it stood. The loop now yields between steps and gives up after six failed ones, and an ore that fails three times is set aside for ten minutes. The same run also brought home its first three live blaze rods.
 
+**Loops, structurally (2026-09-22 21:10 UTC).** Every loop of the day had one shape: steps that each succeeded while the goal got no closer, a safety filter that quietly removed the only useful step, a chooser with no memory of what had failed, a hand-held key with its own edge rule, or a loop of promises that never waited. Four pieces answer the shape rather than the cases.
+
+64. *A flight recorder.* Every live frame is written to `.bot-state/flight`, with the keys held, whether the pathfinder is moving, and the name of the code holding the keys, sampled four times a second while keys are held outside the pathfinder. `node scripts/flight.js --deaths` prints each death with the ten seconds before it; three deaths today were reconstructed by inference because this did not exist.
+65. *One way to hold keys.* `src/motion.js` `move()`: crouched by default, upright only with a stated reason, a stop condition every tick, five seconds at most, every key given back, the move named for the recorder. Ten hand-written loops now go through it, and tests fail on a movement key held anywhere else or an await loop that never sleeps.
+66. *One progress measure and one memory of failure.* `src/progress.js`: progress is a new best, not a step that worked; failed attempts are remembered by action and target with a reason and a rest, per world. Four private "set aside" maps now use it. The staircase records why it ruled each closer cell out, and a dig at a fixed target (the night mine, the approach shaft) fails with that reason instead of stepping sideways.
+67. *Terrain drills.* `scripts/terrain.js` stages the places behind the day's failures on the arena server and runs the real code: an ore in the wall of a flooded cave, a bridge over a drop, the same bridge under a blaze's eye, a portal on a platform over a drop, a stash chest with a block on its lid. All five pass twice; the flooded ore run against the code from before its fix fails, as it should.
+
+| drill | runs | passed | deaths | falls |
+|---|---|---|---|---|
+| flooded_ore | 2 | 2 | 0 | 0 |
+| bridge_over_drop | 2 | 2 | 0 | 0 |
+| bridge_under_fire | 2 | 2 | 0 | 0 |
+| portal_platform | 2 | 2 | 0 | 0 |
+| chest_lid | 2 | 2 | 0 | 0 |
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
