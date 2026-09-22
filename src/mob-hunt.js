@@ -360,10 +360,16 @@ async function findFortressStep(bot, task, goal, save, actions) {
       // nine blocks below a ledge the staircase could not step off. The
       // tunnel is the fallback.
       if (actions.navigate) {
+        // A point level with the bot above the fortress first: the
+        // pathfinder bridges a gap with blocks and digs down into the
+        // structure, where a slanted goal from a ledge found no path.
         const from = bot.entity.position.clone();
-        try { await actions.navigate(bot, task, new goals.GoalNear(nearest.x, nearest.y + 1, nearest.z, 3), { timeoutMs: 60000, stallMs: 8000 }); }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-        if (bot.entity.position.distanceTo(from) > 2) return;
+        const goalsToTry = [new goals.GoalNear(nearest.x, Math.round(here.y), nearest.z, 4), new goals.GoalNear(nearest.x, nearest.y + 1, nearest.z, 3)];
+        for (const g of goalsToTry) {
+          try { await actions.navigate(bot, task, g, { timeoutMs: 45000, stallMs: 8000 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+          if (bot.entity.position.distanceTo(from) > 2) return;
+        }
       }
       await actions.tunnel(bot, task, goal, save, nearest, 'fortress');
       return;
