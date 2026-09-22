@@ -5,15 +5,22 @@
 //   node scripts/flight.js                       # the last minute of the newest run
 //   node scripts/flight.js 20:04:10 20:04:16     # a window
 //   node scripts/flight.js --deaths              # every death with the ten seconds before it
+//   node scripts/flight.js --label localhost-25570-Jev   # another bot (default: the dream run)
 const fs = require('fs');
 const path = require('path');
 
 const directory = path.join(__dirname, '..', '.bot-state', 'flight');
 const args = process.argv.slice(2);
-const files = fs.existsSync(directory) ? fs.readdirSync(directory).filter(f => f.endsWith('.jsonl')).sort() : [];
+// Newest by time, not by name: two bots share the directory, and the name
+// that sorts last is the last label, not the latest run. --label narrows it.
+const labelAt = args.indexOf('--label'), label = labelAt >= 0 ? args[labelAt + 1] : '127_0_0_1-25579-Jev';
+const files = fs.existsSync(directory) ? fs.readdirSync(directory).filter(f => f.endsWith('.jsonl') && f.startsWith(`${label}-`))
+  .sort((a, b) => fs.statSync(path.join(directory, a)).mtimeMs - fs.statSync(path.join(directory, b)).mtimeMs) : [];
 if (!files.length) { console.log('No flight records yet.'); process.exit(0); }
 const read = file => fs.readFileSync(path.join(directory, file), 'utf8').split('\n').filter(Boolean).map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
-const frames = (args.includes('--all') ? files : files.slice(-1)).flatMap(read);
+// A run may span parts: take every part of the newest run.
+const newest = files.at(-1)?.replace(/-part\d+\.jsonl$/, '').replace(/\.jsonl$/, '');
+const frames = (args.includes('--all') ? files : files.filter(f => f.startsWith(newest))).flatMap(read);
 const time = f => f.at.slice(11, 23);
 const round = p => p ? `${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)}` : '-';
 function line(f) {
