@@ -138,6 +138,18 @@ class Survival {
     const inReach = t => t.distance <= 3.2 || canStrike(bot, t.entity);
     if (swung && armed && bot.health >= 8 && danger.some(inReach)) {
       this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health });
+      // A blaze hovers a half block outside the sword and shoots from there;
+      // holding ground at three blocks is standing still to be shot. Close
+      // the gap. The arena's weak spawner run took twelve health in thirty
+      // seconds of "fight" with three swings landed, all four blazes at 3.0.
+      const hover = danger.find(t => shooter(t.entity) && t.distance > 2.4 && t.distance <= 3.6 && !canStrike(bot, t.entity));
+      if (hover) {
+        lowerShield(bot);
+        await bot.lookAt(hover.entity.position.offset(0, 1, 0), true);
+        bot.setControlState('forward', true);
+        try { for (let i = 0; i < 6; i++) { task.check(); if (canStrike(bot, hover.entity)) break; await sleep(60); } }
+        finally { bot.setControlState('forward', false); }
+      }
       return;
     }
     // Moving on: a raised shield is a crawl.
@@ -261,6 +273,10 @@ class Survival {
       // time to place the blocks, and never charge into one.
       const crowd = danger.filter(t => t.distance <= 12).length >= 2;
       const pack = danger.filter(t => t.distance <= 16).length >= 2;
+      // Hoglins charge; blazes hover and shoot. A pack of the first is held
+      // off or sealed against; a pack of the second is closed on, because
+      // standing at eight blocks from four shooters is the worst place there is.
+      const chargers = danger.filter(t => t.distance <= 16 && !shooter(t.entity)).length >= 2;
       // A pack in the open is met at a door, not in the middle of it. One
       // block into the rock and only one of them can reach at a time; the
       // ordinary fight rule then takes them one by one. The herd drill died
@@ -282,7 +298,7 @@ class Survival {
       // how a crossbow piglin took half the bot's health. Armed and able,
       // close the gap so the fight rule can do its work.
       // One mob is charged; a herd is not.
-      if (armed && !pack && bot.health >= 12 && nearest.distance > 3.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
+      if (armed && !chargers && bot.health >= 12 && nearest.distance > 3.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
         this.report(goal, save, { action: 'charge', target: nearest.entity.name, distance: Number(nearest.distance.toFixed(1)) });
         const t = nearest.entity.position;
         try { await this.actions.navigate(bot, task, new goals.GoalNear(t.x, t.y, t.z, 1), { timeoutMs: 4000, stallMs: 2000 }); }

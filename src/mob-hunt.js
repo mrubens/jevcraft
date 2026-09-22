@@ -14,7 +14,7 @@ const { collectNearbyDrops } = require('./drop-collection');
 const { decideTree } = require('./decisions');
 const { descendTo } = require('./descent');
 const { bridgeTo } = require('./bridging');
-const { bunkerFight, digBunker, raiseCover, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
+const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
@@ -504,14 +504,26 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       // Below and behind rock: go through the floor. A fortress roof is two
       // blocks of nether brick with the spawner room under it, and no amount
       // of walking round the outside ever reaches that.
-      if (near.position.y < bot.entity.position.y - 2) {
-        goal.step = { action: 'dig_down_to_them', entity: step.entity, drop: Math.round(bot.entity.position.y - near.position.y) }; save();
+      const dy = near.position.y - bot.entity.position.y;
+      // Two below counts: at exactly two the old test was one block short,
+      // and the bot sat four blocks from the blazes' level building cover
+      // on its own floor, which does nothing about a mob beneath it.
+      if (dy <= -1.5) {
+        goal.step = { action: 'dig_down_to_them', entity: step.entity, drop: Math.round(-dy) }; save();
         try { if (await descendTo(bot, task, near.position) >= 1) return; }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastDescentError = err.message; }
       }
-      goal.step = { action: 'break_their_line', entity: step.entity, watched: state.watchFails }; save();
-      try { if (await raiseCover(bot, task, near.position)) { await sleep(300); return; } }
-      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+      // Level with them and something between: a door toward them, before
+      // any wall. Cover is for a target that can see the bot, not one it
+      // has already fenced itself off from.
+      if (Math.abs(dy) <= 1.5) {
+        goal.step = { action: 'open_a_door', entity: step.entity }; save();
+        try { if (await openToward(bot, task, near.position)) { await sleep(300); return; } }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+        goal.step = { action: 'break_their_line', entity: step.entity, watched: state.watchFails }; save();
+        try { if (await raiseCover(bot, task, near.position)) { await sleep(300); return; } }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+      }
       if (state.watchFails >= 3) {
         (state.avoided ||= {})[key] = Date.now(); delete state.stalking; state.watchFails = 0; save();
         bot.chat?.(`Watching ${step.entity.replaceAll('_', ' ')}s and getting nowhere. Trying another angle.`);

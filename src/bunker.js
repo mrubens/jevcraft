@@ -46,6 +46,28 @@ function bunkerSide(bot, feet, from) {
   return null;
 }
 
+// Open the adjacent cell toward `from` when something diggable stands in
+// it. Live, the bot sat in a pocket it had dug beside a fortress corridor
+// with a nether brick fence between it and the blazes, and every fifteen
+// seconds it built more cover on its own side of the fence. A door, not a
+// wall.
+const DOORWAY = /nether_brick|fence|netherrack|blackstone|basalt/;
+async function openToward(bot, task, from) {
+  if (!from) return false;
+  const here = bot.entity.position.floored();
+  const dx = from.x - here.x, dz = from.z - here.z;
+  const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx) || 1, 0, 0) : new Vec3(0, 0, Math.sign(dz) || 1);
+  const cell = here.plus(step);
+  let opened = false;
+  for (const p of [cell.offset(0, 1, 0), cell]) {
+    const block = bot.blockAt(p);
+    if (!block || passable(block) || !block.diggable || !DOORWAY.test(block.name)) continue;
+    task.check();
+    await digCell(bot, task, p); opened = true;
+  }
+  return opened;
+}
+
 // One step to the side at the end of the tunnel. A straight shaft is a
 // shooting gallery along its own axis: anything lined up with it can see
 // all the way to the back, which is how the first bunker took fireballs at
@@ -269,4 +291,4 @@ async function raiseCover(bot, task, from) {
   return solid(bot.blockAt(cell));
 }
 
-module.exports = { bunkerFight, digBunker, cornerCell, raiseCover, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, WALK_TO_WALL, SWARM };
+module.exports = { bunkerFight, digBunker, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, WALK_TO_WALL, SWARM };
