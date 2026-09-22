@@ -1023,7 +1023,11 @@ async function executeAcquisition(bot, task, step, goal, save) {
   else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep, navigate, returnOverworld: returnFromNether,
     // The fortress sweep keeps no worksite: the rejoin walked the bot back
     // to the ledge it had just left, every other tick.
-    tunnel: (b, t, g, sv, target, resource) => resource === 'fortress' ? tunnelStep(b, t, g, sv, target, { dig, navigate }) : resourceTunnelStep(b, t, g, sv, target, resource, { dig, navigate }) });
+    // 'approach' is a shaft dug at a mob rather than past one, so the
+    // hostile-avoidance that a travelling shaft needs is off for it.
+    tunnel: (b, t, g, sv, target, resource) => ['fortress', 'approach'].includes(resource)
+      ? tunnelStep(b, t, g, sv, target, { dig, navigate, approach: resource === 'approach' })
+      : resourceTunnelStep(b, t, g, sv, target, resource, { dig, navigate }) });
   else throw new Error(`Unknown action ${step.action}`);
 }
 

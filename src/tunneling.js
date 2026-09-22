@@ -31,7 +31,17 @@ function safeExcavation(bot, p) {
   return false;
 }
 
-function stairOptions(bot, goal, target) {
+function stairOptions(bot, goal, target, { approach = false } = {}) {
+  // Closing on a mob on purpose. The hostile *is* the destination, so the
+  // filter that keeps a travelling shaft clear of mobs rules out every
+  // forward cell, and the fallback below then picks whichever direction is
+  // furthest from them: the target pulls the bot one way, the safety rule
+  // shoves it back the other, and it paces between two blocks forever.
+  // That is what the live run did for an hour, six blocks from its blazes.
+  if (approach) {
+    const toward = stairChoices(bot, goal, target, { hostiles: false });
+    if (toward.length) return toward;
+  }
   const first = stairChoices(bot, goal, target, { hostiles: true });
   if (first.length) return first;
   // Mobs in the cave around a shaft can rule out every direction as
@@ -85,7 +95,7 @@ function stairChoices(bot, goal, target, { hostiles }) {
   return choices.sort((a, b) => a.score - b.score);
 }
 
-async function tunnelStep(bot, task, goal, save, target, { dig, navigate }) {
+async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false }) {
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
   // A spent budget is a shaft that has wandered, not a reason to stop: the
@@ -95,7 +105,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate }) {
     Object.assign(tunnel, { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {}, retreats: 0, retreatVisited: {}, rounds: (tunnel.rounds || 0) + 1 });
     delete tunnel.workPosition; save();
   }
-  const choice = stairOptions(bot, goal, target)[0];
+  const choice = stairOptions(bot, goal, target, { approach })[0];
   if (!choice) {
     await retreatForTunnel(bot, task, goal, save, { navigate });
     return;

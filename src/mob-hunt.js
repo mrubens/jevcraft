@@ -502,7 +502,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     if (stairs && stairs.until > Date.now() && actions.tunnel && target.distanceTo(bot.entity.position) > 3.5) {
       goal.step = { action: 'dig_toward_them', entity: step.entity, to: { x: stairs.x, y: stairs.y, z: stairs.z },
         away: Math.round(target.distanceTo(bot.entity.position)) }; save();
-      try { await actions.tunnel(bot, task, goal, save, target, 'fortress'); return; }
+      try { await actions.tunnel(bot, task, goal, save, target, 'approach'); return; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastStairsError = err.message; save(); }
     } else if (stairs && (stairs.until <= Date.now() || target.distanceTo(bot.entity.position) <= 3.5)) { delete state.stairsTo; save(); }
     // Watching, not fighting. The observed hunt takes a target the moment it

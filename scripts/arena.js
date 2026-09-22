@@ -106,8 +106,8 @@ const huntActions = {
   explore: async () => { await sleep(200); },
   enterNether: async () => { await sleep(200); },
   returnOverworld: async () => { await sleep(200); },
-  tunnel: (b, t, g, save, target, resource) => resource === 'fortress'
-    ? tunnelStep(b, t, g, save, target, { dig, navigate })
+  tunnel: (b, t, g, save, target, resource) => ['fortress', 'approach'].includes(resource)
+    ? tunnelStep(b, t, g, save, target, { dig, navigate, approach: resource === 'approach' })
     : resourceTunnelStep(b, t, g, save, target, resource, { dig, navigate }),
 };
 

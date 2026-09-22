@@ -288,3 +288,31 @@ test('a dug-in pocket at the bot\'s feet does not reserve the stairs out of it',
   goal.survival.shelters[0].emergency = false;
   assert.equal(stairOptions(bot, goal, new Vec3(0, 60, 0)).length, 0, 'a planned shelter still is');
 });
+
+test('a shaft dug at a mob goes toward it, where a travelling shaft would be turned away', () => {
+  const { stairOptions } = require('../src/tunneling');
+  const { Vec3 } = require('vec3');
+  const rock = { name: 'netherrack', boundingBox: 'block', diggable: true, harvestTools: undefined };
+  const air = { name: 'air', boundingBox: 'empty' };
+  const bot = {
+    entity: { position: new Vec3(0.5, 77, 0.5), height: 1.8 },
+    game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' },
+    registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'diamond_pickaxe', type: 1 }] },
+    world: { raycast: () => null },
+    time: { timeOfDay: 6000 },
+    blockAt: p => ({ ...(p.y < 77 ? rock : (p.x >= 1 ? rock : air)), position: p }),
+    // One blaze sits east, which is also the way to the target.
+    entities: { 1: { id: 1, name: 'blaze', position: new Vec3(6.5, 77, 0.5), isValid: true, height: 1.8, width: 0.6 } },
+    pathfinder: { movements: {} },
+  };
+  const target = new Vec3(6, 77, 0);
+  const travelling = stairOptions(bot, {}, target);
+  const closing = stairOptions(bot, {}, target, { approach: true });
+  assert(closing.length, 'closing on the mob always has somewhere to dig');
+  assert.equal(closing[0].destination.x, 1, 'and it is the cell toward the target');
+  if (travelling.length) {
+    assert(closing[0].destination.distanceTo(target) <= travelling[0].destination.distanceTo(target),
+      'a travelling shaft never gets closer than one dug on purpose');
+  }
+});
