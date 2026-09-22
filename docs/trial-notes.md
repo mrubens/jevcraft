@@ -115,6 +115,20 @@ The baseline zeros mean "never fought", not "took no damage": those drills ended
 
 Live, the same code has dug Jev down from the roof at y=83 to y=79, four blocks from the blazes' level, and it is still stalking; no rod yet.
 
+**Into the spawner room, live (2026-09-22 17:00 UTC).** Twelve blockers between Jev on the fortress roof and a blaze in reach, found one at a time by reading the live trace, each fixed and tested. The first live blaze fight at the spawner happened at 17:01.
+
+36. *A one-block hole is not a fight.* The descent left the bot level with the blazes in a hole one block high; the ceiling blocked every line of sight, so nothing was a candidate. A shaft is now cut toward them a step a tick, two high.
+37. *The shaft's own safety rule pushed it backwards.* A travelling shaft may not step toward a mob, and its fallback picks whichever way is furthest from one: the target pulled forward, the rule shoved back. A shaft dug *at* a mob (`approach`) ignores that rule.
+38. *The anti-loop penalty walked it in circles.* Sixteen blocks per revisit, meant to stop a travelling shaft looping; after a few hundred steps in one pocket the least-visited cell won whatever its distance, and the bot paced 19, 20, 21, 19 for an hour. An approach is scored by distance alone.
+39. *It built cover in its own tunnel.* The fifteen-second "break their line" placed two blocks one step toward the blazes, which was the next cell the shaft meant to dig. No cover while a shaft is being dug at them.
+40. *The pathfinder refused every step toward a blaze.* Every neighbour is filtered through "safe from hostiles", and closer to a shooter is unsafe by definition, so the walk into each freshly dug cell failed without an error. The mob the hunt has claimed is not avoided by the pathfinder while the bot is fit. This is the change that got it into the room.
+41. *A crash on every hurt tick* (`state` used before its declaration) and *an exemption hole* (four blazes at two blocks, nobody swinging): a mob within a sword's reach is never exempt from the emergency swing.
+42. *Rotten flesh is a last resort.* Sealed in at ten health and seventeen hunger with two rotten flesh in the pack, it healed nothing for ten minutes because the flesh was on the unsafe list. Its Hunger effect costs under a point; it gives four. Spider eyes and pufferfish stay banned.
+43. *A fit bot does not hide from its quarry, and the quarry does not block the door.* Beside a spawner the watchers never leave and no exit is ever twenty blocks from a blaze, so the pocket held it for twenty minutes, first waiting and then, once it decided to leave, refusing every door. Both checks now ignore the claimed mob. The wait also says who is watching now: the reason the second check was found in one look after an hour of guessing.
+44. *The Nether end of a portal was never remembered.* Only the side it was standing beside when leaving got recorded, so a hungry bot 120 blocks away did not know where the way out was. Any portal in sight is now remembered on the side the bot is on.
+45. *Death nine: a fight that could only go one way.* It left the pocket at fifteen health and seventeen hunger, no food, and took on the spawner; with regeneration off every point spent was gone. A hostile fight now starts only if the health spent can come back: hunger eighteen or food in the pack. Otherwise the fight is the walk home.
+46. *The kit-restore aid had been blind to worn armour since the first scratch.* A damaged item carries a nested `components` block and the parser stopped at its first closing brace, so after the armour took damage the aid saw only the shield, and this death lost the iron set. Fixed and verified against the server's real output; the set was put back by console, labelled here as a controlled-run intervention.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
