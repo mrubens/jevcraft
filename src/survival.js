@@ -693,7 +693,15 @@ class Survival {
       const homeBed = sleepable(bot) && !watched && !(this.state.sleepFailedAt > Date.now() - 600000) && !(this.state.bedRouteFailedAt > Date.now() - 120000) && nearbyHomeBed(bot, goal);
       const shallow = homeBed && (surfaceObserver(bot)(bot.entity.position) || Math.abs(homeBed.foot.y - bot.entity.position.y) <= 10);
       if (shallow) { delete this.state.watchedSince; await this.leave(task, goal, save, refuge, 'Off to bed.'); }
-      else if ((shelterNeeded(bot) || watched) && !outwaited) await this.wait(task, goal, save);
+      else if ((shelterNeeded(bot) || watched) && !outwaited) {
+        // Say who is keeping the bot in, and whether the hunt had claimed it:
+        // a wait with no named reason cost an hour of guessing.
+        const watcher = threats(bot).find(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity));
+        const hunt = bot._huntingEntity;
+        await this.wait(task, goal, save, watcher
+          ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
+          : 'Waiting for daylight inside the verified shelter');
+      }
       else { delete this.state.watchedSince; await this.leave(task, goal, save, refuge); }
       onStep(goal); return true;
     }
