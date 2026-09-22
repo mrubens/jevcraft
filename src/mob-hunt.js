@@ -373,15 +373,16 @@ async function findFortressStep(bot, task, goal, save, actions) {
         for (const g of goalsToTry) {
           try { await actions.navigate(bot, task, g, { timeoutMs: 45000, stallMs: 8000 }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-          if (bot.entity.position.distanceTo(from) > 2) { state.approachFails = 0; return; }
+          if (nearest.distanceTo(bot.entity.position) < nearest.distanceTo(from) - 1.5) { state.approachFails = 0; return; }
         }
       }
-      const before = bot.entity.position.clone();
+      const gapBefore = nearest.distanceTo(bot.entity.position);
       try { await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-      if (bot.entity.position.distanceTo(before) > 1.5) { state.approachFails = 0; return; }
+      // Closer counts; a shuffle along the shelf does not.
+      if (nearest.distanceTo(bot.entity.position) < gapBefore - 1.5) { state.approachFails = 0; return; }
       state.approachFails = (state.approachFails || 0) + 1;
-      if (state.approachFails >= 3) {
+      if (state.approachFails >= 6) {
         state.shunned.push({ x: nearest.x, z: nearest.z, until: Date.now() + 600000 }); state.approachFails = 0; delete state.target; save();
         bot.chat?.("No way down to the fortress here. Following it along to find a way in.");
       }

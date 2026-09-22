@@ -151,7 +151,13 @@ async function progressWatchdog(bot, task, goal, save) {
   delete goal.tunnel; delete goal.search; delete goal.surfaceReturn;
   if (goal.miningSites) for (const site of Object.values(goal.miningSites)) { delete site.workPosition; site.rejoinBlockedUntil = now + 600000; }
   if (goal.mobHunt) { goal.mobHunt.avoided = {}; delete goal.mobHunt.stalking; }
-  if (goal.fortressSearch) delete goal.fortressSearch.target;
+  if (goal.fortressSearch) {
+    delete goal.fortressSearch.target;
+    // Stuck at a fortress face: that face is shunned, the sweep meets the
+    // structure somewhere else.
+    const found = goal.fortressSearch.found;
+    if (found) { (goal.fortressSearch.shunned ||= []).push({ x: found.x, z: found.z, until: now + 600000 }); delete goal.fortressSearch.found; }
+  }
   goal.lastStallAt = now; save();
   bot.chat?.(watch.strikes === 1 ? `I've been stuck around here for five minutes on ${String(resource).replaceAll('_', ' ')}. Trying something different.`
     : watch.strikes === 2 ? "Still stuck. Striking out somewhere new." : "Still stuck. Heading home to reset.");
