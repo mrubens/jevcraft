@@ -353,3 +353,27 @@ test('a shaft pacing back and forth is not gaining, and a new destination starts
   noteProgress(tunnel, new Vec3(96, 40, 0), 96);
   assert.equal(tunnel.best, 96); assert.equal(tunnel.sinceBest, 0, 'a new leg is a new race');
 });
+
+test('an approach shaft lets off only its quarry: it does not dig into a wither skeleton on the way to a blaze', () => {
+  const { stairOptions } = require('../src/tunneling');
+  const rock = { name: 'netherrack', boundingBox: 'block', diggable: true };
+  const air = { name: 'air', boundingBox: 'empty' };
+  const bot = {
+    entity: { position: new Vec3(0.5, 77, 0.5), height: 1.8 },
+    game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' },
+    registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'diamond_pickaxe', type: 1 }] },
+    world: { raycast: () => null }, time: { timeOfDay: 6000 }, pathfinder: { movements: {} },
+    blockAt: p => ({ ...(p.y < 77 ? rock : air), position: p }),
+    _huntingEntity: { name: 'blaze', until: Date.now() + 5000 },
+    entities: {
+      1: { id: 1, name: 'blaze', position: new Vec3(8.5, 77, 0.5), isValid: true, height: 1.8, width: 0.6 },
+      2: { id: 2, name: 'wither_skeleton', position: new Vec3(2.5, 77, 0.5), isValid: true, height: 2.4, width: 0.7 },
+    },
+  };
+  const closing = stairOptions(bot, {}, new Vec3(8, 77, 0), { approach: true });
+  assert(closing.length);
+  assert.notEqual(closing[0].destination.x, 1, 'the cell next to the skeleton is not the way to the blaze');
+  delete bot.entities[2];
+  assert.equal(stairOptions(bot, {}, new Vec3(8, 77, 0), { approach: true })[0].destination.x, 1, 'with it gone, straight on');
+});

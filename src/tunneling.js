@@ -59,7 +59,15 @@ function stairOptions(bot, goal, target, { approach = false } = {}) {
   // furthest from them: the target pulls the bot one way, the safety rule
   // shoves it back the other, and it paces between two blocks forever.
   // That is what the live run did for an hour, six blocks from its blazes.
+  // Only the quarry is let off, though: every other mob still counts, or
+  // the shaft dug straight into a wither skeleton on its way to a blaze.
+  // Hemmed in by those others on every forward cell, it digs on regardless
+  // rather than be pushed back.
   if (approach) {
+    const quarry = bot._huntingEntity?.name;
+    const others = hostileEntities(bot, 64).filter(e => e.name !== quarry && e.position.distanceTo(target) > 2);
+    const clear = stairChoices(bot, goal, target, { hostiles: others, approach: true });
+    if (clear.length) return clear;
     const toward = stairChoices(bot, goal, target, { hostiles: false, approach: true });
     if (toward.length) return toward;
   }
@@ -89,7 +97,7 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
   const choices = [];
   for (const d of directions) for (const height of heights) {
     const destination = feet.plus(d).offset(0, height, 0);
-    if (hostiles && !safeFromHostiles(bot, destination.offset(0.5, 0, 0.5))) continue;
+    if (hostiles && !safeFromHostiles(bot, destination.offset(0.5, 0, 0.5), Array.isArray(hostiles) ? hostiles : undefined)) continue;
     const floor = bot.blockAt(destination.offset(0, -1, 0));
     if (dangerous(floor) || falling(floor) || floor.boundingBox !== 'block') continue;
     if (bot.pathfinder?.movements?.allowedPosition && !bot.pathfinder.movements.allowedPosition(destination)) continue;
