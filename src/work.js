@@ -142,6 +142,15 @@ function progressKey(bot, goal, previous) {
   const items = bot.inventory.items().filter(i => !FILLER.test(i.name)).map(i => `${i.name}:${i.count}`).sort().join(',');
   return `${phase}|${items}`;
 }
+// Time the watchdog should not count, because something else had the bot: a
+// night sealed in a shelter, a fight, a detour. The window is moved on by
+// that much rather than restarted on any gap, which also restarted it
+// across every forty-second persist, so an error, a persist and the same
+// error again was never seen at all. A new run of the goal (a resume)
+// starts a fresh window.
+function excuseWatch(goal, ms) { if (goal.progressWatch && ms > 0) goal.progressWatch.at += ms; }
+function freshWatch(goal) { if (goal.progressWatch) { delete goal.progressWatch.key; } }
+
 async function progressWatchdog(bot, task, goal, save) {
   if (bot.game?.gameMode === 'creative') return false;
   // The area covered over the window, not the displacement: a shuffle
@@ -149,15 +158,9 @@ async function progressWatchdog(bot, task, goal, save) {
   // check every pass and never looks stuck.
   const now = Date.now(), here = bot.entity.position.clone();
   const key = progressKey(bot, goal, goal.progressWatch?.key);
-  const fresh = () => ({ at: now, seenAt: now, key, box: { minX: here.x, maxX: here.x, minY: here.y, maxY: here.y, minZ: here.z, maxZ: here.z } });
+  const fresh = () => ({ at: now, key, box: { minX: here.x, maxX: here.x, minY: here.y, maxY: here.y, minZ: here.z, maxZ: here.z } });
   const watch = goal.progressWatch ||= { ...fresh(), strikes: 0 };
   if (key !== watch.key) { Object.assign(watch, fresh(), { strikes: 0 }); return false; }
-  // Time the watchdog did not see is not time spent stuck: a night sealed
-  // in a shelter, a fight, or a stop and resume an hour later all came
-  // back to a window already five minutes old, and the first tick of work
-  // wiped the shaft and the search.
-  if (!(now - (watch.seenAt ?? now) < 30000)) { Object.assign(watch, fresh(), { strikes: watch.strikes }); return false; }
-  watch.seenAt = now;
   const b = watch.box ||= fresh().box;
   b.minX = Math.min(b.minX, here.x); b.maxX = Math.max(b.maxX, here.x); b.minY = Math.min(b.minY, here.y); b.maxY = Math.max(b.maxY, here.y); b.minZ = Math.min(b.minZ, here.z); b.maxZ = Math.max(b.maxZ, here.z);
   if (now - watch.at < WATCH_MS) return false;
@@ -2022,14 +2025,19 @@ const IMPOSSIBLE = /No supported survival acquisition|does not spawn in Peaceful
 // time, up to a minute, so an impossible spot costs little per hour) and
 // goes again with a clean slate. Only the player, the game, or a request
 // that is impossible by definition ends a request.
+const turnSearch = search => Object.fromEntries(Object.entries(search || {})
+  .filter(([, entry]) => Number.isInteger(entry?.frontier?.heading))
+  .map(([resource, entry]) => [resource, { attempts: 0, frontier: { heading: (entry.frontier.heading + 1) % 8, legs: 0 } }]));
 async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } = {}) {
   goal.struggles = (goal.struggles || 0) + 1;
   goal.lastStruggle = { at: new Date().toISOString(), error: err.message };
   // A clean search, but not the heading that just failed: an empty search
   // re-derives its heading from the resource's name, which pointed the bot
   // straight back along the route it had turned away from.
-  const heading = goal.search?.frontier?.heading;
-  goal.search = Number.isInteger(heading) ? { frontier: { heading: (heading + 1) % 8, legs: 0 } } : {};
+  // Headings live per resource (goal.search[resource].frontier); reading
+  // one off goal.search itself found nothing, and every persist reset the
+  // search to the heading derived from the resource's name.
+  goal.search = turnSearch(goal.search);
   if (goal.struggles === 1 || goal.struggles % 5 === 0) {
     bot.chat?.(`${friendlyProblem(err)} I'll keep trying${goal.struggles > 1 ? ` (attempt ${goal.struggles})` : ''}.`);
   }
@@ -2373,7 +2381,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
   recoveryAdviser ||= createRecoveryAdviser(bot, decisionClient);
   goal.status = 'running'; goal.failures = 0; goal.stalls = 0; save();
   const stopObserving = goal.kind === 'win' ? watchGameProgress(bot, goal, save) : () => {};
-  watchActivity(bot); markActivity(bot, 'start');
+  watchActivity(bot); markActivity(bot, 'start'); freshWatch(goal);
   try {
   // The loop yields to the event loop every pass and never spins: a step
   // that returns without waiting on anything real (a synchronous throw
@@ -2411,7 +2419,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // other survival work keeps the ordinary hostile-avoidance policy.
       const endTask = goal.kind === 'win' && dimension(bot) === 'end';
       if (!endTask && stillFor(bot) >= STILL_MS && !permittedWait(bot, goal)) {
+        const detourFrom = Date.now();
         await inCatch(task, goal, () => breakStillness(bot, task, goal, save, { client: decisionClient, survival, onStep }));
+        excuseWatch(goal, Date.now() - detourFrom);
         onStep(goal); continue;
       }
       if (!endTask && await huntObserved(bot, task, activeWork, saveWork, { navigate }, decisionClient)) {
@@ -2424,7 +2434,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // End combat owns eating and arena escape. Overworld nighttime shelter
       // choices are invalid in the End, where the dragon can destroy them.
       await keepRoom(bot, task, goal);
+      const survivalFrom = Date.now();
       if (!endTask && await survival.step(task, activeWork, saveWork, () => onStep(goal))) {
+        excuseWatch(goal, Date.now() - survivalFrom);
         goal.stalls = 0; goal.failures = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
       task.interruptCheck = bot.game.gameMode === 'creative' || endTask ? undefined : () => checkThreats(bot);
@@ -2537,4 +2549,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
+module.exports = { turnSearch, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };

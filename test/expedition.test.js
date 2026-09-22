@@ -141,18 +141,32 @@ test('the progress watchdog counts five quiet minutes as stuck, whatever the ste
   assert.equal(goal.progressWatch.strikes, 0);
 });
 
-test('the watchdog does not count time it did not see, and dug rock or a retry step is not progress', async () => {
-  const { progressWatchdog } = require('../src/work');
+test('the watchdog excuses time survival had the bot, sees persist loops, and dug rock or a retry step is not progress', async () => {
+  const { progressWatchdog, excuseWatch, freshWatch } = require('../src/work');
   const bot = fixture({ stone_pickaxe: 1 }); bot.chat = () => {};
   const goal = { kind: 'obtain', step: { action: 'tunnel', resource: 'diamond_ore' } };
   await progressWatchdog(bot, new Task('watch'), goal, () => {});
-  goal.progressWatch.at -= 6 * 60 * 1000; goal.progressWatch.seenAt -= 6 * 60 * 1000;
-  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), false, 'back from a night in a shelter: the window starts again');
   const started = goal.progressWatch.at;
   bot.inventory.items().push({ name: 'cobblestone', count: 12 });
   goal.step = { action: 'persist', attempt: 1 };
   await progressWatchdog(bot, new Task('watch'), goal, () => {});
   assert.equal(goal.progressWatch.at, started, 'cobblestone from the shaft and a persist step keep the same window');
+  // A night in a shelter: survival had the bot, and that time is excused.
+  goal.progressWatch.at -= 6 * 60 * 1000; excuseWatch(goal, 6 * 60 * 1000);
+  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), false, 'a night sheltered is not a stall');
+  // A persist loop: forty seconds between looks, and five minutes of it strikes.
+  goal.progressWatch.at -= 6 * 60 * 1000;
+  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), true, 'an error, a persist and the same error again is seen');
+  // A resume starts a fresh window.
+  goal.progressWatch.at -= 6 * 60 * 1000; freshWatch(goal);
+  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), false);
+});
+
+test('persist turns each resource\'s search heading instead of resetting it to the name-hash one', () => {
+  const { turnSearch } = require('../src/work');
+  const turned = turnSearch({ oak_log: { attempts: 40, frontier: { heading: 7, legs: 5, target: { x: 1 } } }, animals: { attempts: 3 } });
+  assert.deepEqual(turned, { oak_log: { attempts: 0, frontier: { heading: 0, legs: 0 } } }, 'a new heading, a clean search, no stale target');
+  assert.deepEqual(turnSearch(undefined), {});
 });
 
 test('a source whose route search is unfinished is still offered; only no path at all rules it out', async () => {
