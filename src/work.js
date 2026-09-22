@@ -2255,12 +2255,17 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     // A step a pass, yielding between: a failed step returns at once, and
     // this loop without a pause spun the event loop until the bot, unable
     // to move or surface for air, drowned in its own mine.
+    // Stuck is six passes that neither moved the bot nor mined anything.
+    // Counting failed steps missed it: every third failure turned the mine
+    // and reset the count, so only the three-minute cap ever ended a detour.
     async () => {
-      let failed = 0;
-      while (await survival.nightMine(bounded, goal, save)) {
+      let idle = 0, at = bot.entity.position.clone(), mined = survival.state.nightMine?.mined || 0;
+      while (await survival.nightMine(bounded, scratch, save)) {
         bounded.check();
-        failed = survival.state.nightMine?.failures ? failed + 1 : 0;
-        if (failed >= 6) throw new Error(`The night mine is not getting anywhere: ${survival.state.nightMine?.lastError || 'no progress'}`);
+        const moved = bot.entity.position.distanceTo(at) > 0.5, dug = (survival.state.nightMine?.mined || 0) > mined;
+        idle = moved || dug ? 0 : idle + 1;
+        at = bot.entity.position.clone(); mined = survival.state.nightMine?.mined || 0;
+        if (idle >= 6) throw new Error(`The night mine is not getting anywhere: ${survival.state.nightMine?.lastError || 'no progress'}`);
         await new Promise(resolve => setTimeout(resolve, 50));
       }
     });
@@ -2277,7 +2282,9 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // A walk to see what is there is an Overworld thing by day; in the Nether
   // twenty-four blocks in a straight line is a walk to the lava sea.
   if (!dark && overworld) {
-    const heading = ((goal.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; goal.detourHeading = heading;
+    // Kept with the world's survival state, not written onto the player's goal.
+    const turn = goal.survival || scratch;
+    const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; turn.detourHeading = heading;
     const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
     const target = here.offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
     offer('look_around', 'Walk about twenty-four blocks in a direction not tried lately and see what is there: animals, trees, ore in a cliff, a better way on.',

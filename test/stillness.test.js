@@ -36,6 +36,8 @@ test('asleep, in a fight or holding a door is a wait worth making; standing in a
   const watched = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 1: { id: 1, name: 'zombie', position: new Vec3(4.5, 64, 0.5), isValid: true, height: 1.9 } },
     world: { raycast: () => null }, time: { timeOfDay: 18000 }, inventory: { slots: {} } };
   assert.equal(permittedWait(watched, { step: { action: 'mine' } }, now), 'a hostile in view', 'the survival layer\'s moment, not an idle one');
+  watchActivity(watched).at = now - 61000;
+  assert.equal(permittedWait(watched, { step: { action: 'mine' } }, now), null, 'for a minute: a skeleton across a ravine does not hold the bot still for good');
   assert.equal(permittedWait({}, { step: { action: 'stock_food_for_nether' } }, now), null);
   assert.equal(stillReason({ survivalAction: { action: 'wait_in_shelter', at }, step: { action: 'mine' } }, now), 'survival:wait_in_shelter');
   assert.equal(stillReason({ step: { action: 'stock_food_for_nether' } }, now), 'step:stock_food_for_nether');

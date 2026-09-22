@@ -13,7 +13,7 @@
 // right thing to be doing (asleep, a fight, holding a door). A stall is
 // recorded with what the bot was on, and the loop then hands it something
 // productive to do instead.
-const STILL_MS = 20000;
+const STILL_MS = 20000, HOSTILE_WAIT_MS = 60000;
 const MOVE_BLOCKS = 1;
 
 function watchActivity(bot) {
@@ -64,8 +64,14 @@ function permittedWait(bot, goal, now = Date.now()) {
   if (bot.isSleeping) return 'asleep';
   if (COMPANY.has(goal?.kind)) return 'with the player';
   // Something hostile in view is the survival layer's moment, not an idle
-  // one: a detour then walks away from whatever is holding the bot.
-  try { if (require('./danger').threats(bot, 16).some(t => t.visible || t.distance < 6)) return 'a hostile in view'; } catch (_) {}
+  // one: a detour then walks away from whatever is holding the bot. For a
+  // minute, and not the hunt's own quarry: a blaze watched through the
+  // floor or a skeleton across a ravine held the bot still for as long as
+  // they stayed, which is the stall this rule exists to break.
+  try {
+    const { threats, claimed } = require('./danger');
+    if (now - watchActivity(bot).at < HOSTILE_WAIT_MS && threats(bot, 16).some(t => (t.visible || t.distance < 6) && !claimed(bot, t.entity))) return 'a hostile in view';
+  } catch (_) {}
   const encounter = bot._combatEncounter;
   if (encounter && encounter.expiresAt > now && !encounter.task?.cancelled) return 'in a fight';
   if (HOLDS.has(goal?.step?.action)) return goal.step.action;
