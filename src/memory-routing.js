@@ -17,16 +17,18 @@ function coordinateCandidates(body) {
   return [...body.matchAll(/(?:\bx\s*[:=]\s*)?(-?\d+(?:\.\d+)?)\s*[, ]+\s*(?:y\s*[:=]\s*)?(-?\d+(?:\.\d+)?)\s*[, ]+\s*(?:z\s*[:=]\s*)?(-?\d+(?:\.\d+)?)/gi)]
     .map(m => position({ x: Number(m[1]), y: Number(m[2]), z: Number(m[3]) })).filter(Boolean).slice(0, 8);
 }
-async function select(client, state, entries, instructions, specials = { none: 'No saved entry matches; do not guess.' }) {
+const FORGET_CONFIDENCE = 0.75;
+async function select(client, state, entries, instructions, specials = { none: 'No saved entry matches; do not guess.' }, seen = {}) {
   if (entries.length > 24) {
     const groups = [];
     for (let i = 0; i < entries.length; i += 24) groups.push({ description: entries.slice(i, i + 24).map(e => e.description).join(' | '), entries: entries.slice(i, i + 24) });
     const selected = await select(client, state, groups, `Choose the group containing the matching entry. ${instructions}`, specials);
-    return typeof selected === 'string' ? selected : select(client, state, selected.entries, instructions, specials);
+    return typeof selected === 'string' ? selected : select(client, state, selected.entries, instructions, specials, seen);
   }
   const criteria = { ...Object.fromEntries(entries.map((entry, i) => [`entry_${i}`, entry.description])), ...specials };
   const response = await client.systemOne({ kind: 'memory', state, questions: { entry: choice(instructions, criteria) } });
   const answer = response.answers?.entry?.choice;
+  seen.confidence = response.answers?.entry?.confidence;
   if (!Object.hasOwn(criteria, answer)) throw new Error('Memory selection outside the offered entries');
   return Object.hasOwn(specials, answer) ? answer : entries[Number(answer.slice(6))];
 }
@@ -46,6 +48,10 @@ async function resolveMemory(client, spec, username, context) {
   }) } });
   const operation = response.answers?.operation?.choice;
   const clarify = message => ({ ...spec, kind: 'clarify', message });
+  // Forgetting cannot be undone, so it needs a surer answer than recalling.
+  // Confidence scales with cost: a coin-flip "forget" is a question back.
+  const sure = answer => !Number.isFinite(answer?.confidence) || answer.confidence >= FORGET_CONFIDENCE;
+  if (operation === 'forget' && !sure(response.answers.operation)) return clarify('Do you want me to forget something? Say exactly what, like "Jev forget the old base".');
   if (operation === 'none') return clarify('You can ask me to remember a place or a note, recall it, or forget it.');
   if (!['remember_place', 'remember_note', 'recall', 'forget', 'visit', 'repeat'].includes(operation)) throw new Error('Invalid memory operation');
   if (operation === 'remember_place') {
@@ -77,10 +83,16 @@ async function resolveMemory(client, spec, username, context) {
   const preferences = (memory.preferences || []).map(e => ({ ...e, description: `LEARNED PREFERENCE ${e.category}: ${e.value}, inferred from the player's request ${e.request}, at ${e.at}. A soft default, not an explicit favorite.` }));
   const history = (memory.history || []).map(e => ({ ...e, description: `PAST TASK (${e.status}) ${e.request}, at ${e.at}` }));
   const entries = operation === 'visit' ? places : operation === 'repeat' ? history.filter(e => e.intent) : [...places, ...notes, ...preferences, ...history];
+  const seen = {};
   const selected = await select(client, state, entries,
     `Select the saved entry matching the current ${operation} request. For last/previous choose the latest matching timestamp. Choose none if ambiguous or missing. Names may be paraphrased.`,
-    { none: 'No unambiguous saved entry matches.', ...(['recall', 'forget'].includes(operation) && { all: operation === 'forget' ? 'The speaker explicitly wants to forget ALL of their saved memories.' : 'The speaker asks generally what is remembered, without a particular subject.' }) });
+    { none: 'No unambiguous saved entry matches.', ...(['recall', 'forget'].includes(operation) && { all: operation === 'forget' ? 'The speaker explicitly wants to forget ALL of their saved memories.' : 'The speaker asks generally what is remembered, without a particular subject.' }) }, seen);
   if (selected === 'none') return clarify("I don't remember that yet. You can tell me a place or a note to save.");
+  // Wiping every memory needs the player to have said so in as many words,
+  // and Jev to be sure of it: a vague "forget it" is not "forget everything".
+  if (operation === 'forget' && (!sure(seen) || (selected === 'all' && !/\b(everything|all)\b/i.test(body)))) {
+    return clarify(selected === 'all' ? 'To wipe everything I remember about you, say "Jev forget everything".' : 'Which memory should I forget? Name it, like "Jev forget the old base".');
+  }
   if (operation === 'visit') return { ...spec, kind: 'visit', destination: { id: selected.id, label: selected.label, position: selected.position, dimension: selected.dimension } };
   if (operation === 'repeat') return { ...structuredClone(selected.intent), from: spec.from, askedAs: spec.request, repeatedMemoryId: selected.id, interpretation: spec.interpretation };
   return { ...spec, memory: { operation, targetId: selected === 'all' ? 'all' : selected.id } };

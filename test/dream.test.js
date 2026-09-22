@@ -142,3 +142,11 @@ test('no answer to the village question is a failure, not a finished village', a
   const client = { systemOne: async () => ({ answers: { progress: { score: 1 } }, usage: null }) };
   await assert.rejects(chooseVillagePart(client, { structures: [], available: ['cottage'] }), /no village part/);
 });
+
+test('an unsure answer never takes the dream away or swaps it; pausing is not held back', async () => {
+  const ask = (operation, confidence) => resolveDream({ systemOne: async () => ({ answers: { operation: { choice: operation, confidence } } }) }, { request: 'Jev maybe drop the village thing', from: 'Player' });
+  assert.equal((await ask('clear', 0.6)).kind, 'clarify');
+  assert.equal((await ask('clear', 0.9)).dream.operation, 'clear');
+  assert.equal((await ask('set_beat_the_game', 0.55)).kind, 'clarify');
+  assert.equal((await ask('pause', 0.51)).dream.operation, 'pause');
+});

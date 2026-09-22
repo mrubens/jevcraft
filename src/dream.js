@@ -137,6 +137,17 @@ async function resolveDream(client, spec) {
   questions: { operation: choice('What does the speaker want to do with Jev\'s dream?', OPERATIONS) } });
   const operation = response.answers?.operation?.choice;
   if (!Object.hasOwn(OPERATIONS, operation)) throw new Error('Invalid dream operation');
+  // Taking the dream away closes its run and cannot be undone, and giving a
+  // new one replaces the old: both need a surer answer than a question
+  // about it does. Pausing is reversible and is not held back.
+  const needed = operation === 'clear' ? 0.75 : operation.startsWith('set_') ? 0.65 : 0;
+  const confidence = response.answers.operation?.confidence;
+  if (Number.isFinite(confidence) && confidence < needed) {
+    return { ...spec, kind: 'clarify', message: operation === 'clear'
+      ? 'Do you want me to give up my dream for good? Say "Jev forget your dream" to be sure, or "Jev pause your dream" to set it aside.'
+      : `Should my dream be to ${DREAMS[operation.slice(4)].title}? Say "Jev your dream is to ${DREAMS[operation.slice(4)].title}" to be sure.`,
+    clarification: { reason: 'dream_unsure', operation, confidence, threshold: needed } };
+  }
   if (operation === 'none') return { ...spec, kind: 'clarify', message: 'You can give me a dream ("Jev your dream is to build a village", "your dream is to beat the game"), ask what it is, tell me to chase it or set it aside, or tell me to forget it.', clarification: { reason: 'dream_unclear' } };
   return { ...spec, kind: 'dream', dream: { operation, key: operation.startsWith('set_') ? operation.slice(4) : undefined, judgment: response.answers.operation }, usage: response.usage };
 }

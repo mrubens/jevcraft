@@ -143,3 +143,19 @@ test('returning to a remembered place verifies arrival, respects dimension, and 
   await assert.rejects(visitPlace(bot, task, goal, () => {}, { navigate: async () => assert.fail() }), /That place is in the overworld/);
   task.cancel(); await assert.rejects(visitPlace(bot, task, goal, () => {}, {}), { name: 'Cancelled' });
 });
+
+test('forgetting everything needs the words and a sure answer; a coin-flip forget is a question back', async () => {
+  const sure = (operation, choice, confidence = 0.95) => ({ async systemOne({ questions }) {
+    if (questions.operation) return { answers: { operation: { choice: operation, confidence } } };
+    return { answers: { entry: { choice: choice(questions.entry.criteria), confidence } } };
+  } });
+  const context = { memory: { places: [{ id: 'p1', label: 'old base', dimension: 'overworld', position: { x: 1, y: 2, z: 3 }, at: 'x' }], notes: [], history: [] } };
+  const all = await resolveMemory(sure('forget', () => 'all'), spec('Jev forget everything'), 'Jev', context);
+  assert.equal(all.memory.targetId, 'all');
+  const vague = await resolveMemory(sure('forget', () => 'all'), spec('Jev forget it'), 'Jev', context);
+  assert.equal(vague.kind, 'clarify', 'no "all" or "everything" in the message, no wipe');
+  const unsure = await resolveMemory(sure('forget', () => 'entry_0', 0.55), spec('Jev forget the old base'), 'Jev', context);
+  assert.equal(unsure.kind, 'clarify', 'an unsure forget is asked back');
+  const one = await resolveMemory(sure('forget', () => 'entry_0'), spec('Jev forget the old base'), 'Jev', context);
+  assert.equal(one.memory.targetId, 'p1');
+});

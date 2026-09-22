@@ -163,6 +163,10 @@ test('continuing existing work can only name a structure that was offered', asyn
 
   const extend = await resolveBuildContinuation(client({ mode: { choice: 'edit' }, target: { choice: 'barn-1' }, placement: { choice: 'beside_target' } }), 'add a porch', builds);
   assert.equal(extend.mode, 'edit'); assert.equal(extend.target.id, 'barn-1'); assert.equal(extend.placement, 'beside_target');
+  // An edit tears out what the new drawing leaves out: an unsure one is
+  // built fresh beside the structure instead.
+  const unsure = await resolveBuildContinuation(client({ mode: { choice: 'edit', confidence: 0.55 }, target: { choice: 'barn-1', confidence: 0.9 }, placement: { choice: 'anywhere' } }), 'do something with the barn', builds);
+  assert.equal(unsure.mode, 'fresh'); assert.equal(unsure.placement, 'beside_target'); assert(unsure.unsureEdit);
 
   await assert.rejects(resolveBuildContinuation(client({ mode: { choice: 'edit' }, target: { choice: 'invented' }, placement: { choice: 'anywhere' } }), 'x', builds),
     /unoffered structure/);
