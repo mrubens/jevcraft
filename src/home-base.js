@@ -130,10 +130,15 @@ function siteWork(bot, goal, site, { strict = true } = {}) {
   const plotKeys = new Set(plot.map(p => `${p.x},${p.z}`));
   const digs = [], fills = [];
   const unfit = () => strict ? null : 'skip';
+  // Jev's own buildings are not ground to level. Only this goal's blueprint
+  // was reserved, so a base laid out beside the village dug into the walls
+  // of an older cottage.
+  const built = bot.buildRegistry?.claimed?.(String(bot.game?.dimension || 'overworld').replace(/^minecraft:/, '').replace(/^the_/, '')) || new Set();
   for (const p of footprint) {
     const at = dy => bot.blockAt(pos(p).offset(0, dy, 0));
     const ground = at(0), above = at(1), head = at(2), below = at(-1);
     if (!ground || !above || !head || !below) return strict ? null : { digs, fills, unloaded: true };
+    if ([-1, 0, 1, 2, 3].some(dy => built.has(`${p.x},${p.y + dy},${p.z}`))) { if (unfit() === null) return null; continue; }
     if ([ground, above, head, below].some(liquid)) { if (unfit() === null) return null; continue; }
     if (strict && reservedForConstruction(goal, pos(p).offset(0, 1, 0))) return null;
     const isPlot = plotKeys.has(`${p.x},${p.z}`);

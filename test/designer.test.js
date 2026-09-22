@@ -440,3 +440,18 @@ test('an edit without the custom designer is built beside the original and leave
   assert.equal(goal.buildContinuation.mode, 'fresh'); assert.equal(goal.buildId, undefined);
   assert(messages.some(m => /beside it/.test(m)));
 });
+
+test('a new building is sited around Jev\'s other buildings, not on or through them', () => {
+  const bot = world();
+  // An older cottage right where the bot stands: planks from y 64 to 66.
+  const cottage = new Set();
+  for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) for (let y = 64; y <= 66; y++) cottage.add(`${x},${y},${z}`);
+  const ground = bot.blockAt;
+  bot.blockAt = p => cottage.has(`${p.x},${p.y},${p.z}`)
+    ? { name: 'oak_planks', position: p, boundingBox: 'block', stateId: registry.blocksByName.oak_planks.defaultState, diggable: true } : ground(p);
+  const d = validateSchematic(draft(), registry);
+  const site = selectSchematicSite(bot, d, { anchor: { x: 0, y: 64, z: 0 }, owned: cottage, protect: cottage });
+  assert(site, 'there is room nearby');
+  const overlaps = [...site.blocks, ...(site.empty || [])].filter(p => cottage.has(`${p.x},${p.y},${p.z}`));
+  assert.equal(overlaps.length, 0, 'nothing of the cottage is built over or cleared');
+});

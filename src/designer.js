@@ -374,12 +374,16 @@ function sitePositions(bot, width, depth, anchor, at) {
  * player's: a small number of them are preserved and built around rather than
  * demolished, and too many of them rule the site out.
  */
-function selectSchematicSite(bot, schematic, { anchor, prefer, owned = new Set(), at, baseY: floor } = {}) {
+function selectSchematicSite(bot, schematic, { anchor, prefer, owned = new Set(), protect = new Set(), at, baseY: floor } = {}) {
   anchor = anchor || prefer;
   const o = bot.entity.position.floored(), [width, height, depth] = schematic.source.size;
   const isSurface = surfaceObserver(bot);
   const key = p => `${p.x},${p.y},${p.z}`;
-  const ours = p => owned.has(key(p));
+  // Jev's other buildings are not material for this one. Counted as "ours",
+  // a new village part could stand on an old cottage's roof or clear its
+  // walls; protected, they are built around like anything a player made,
+  // and a site that would mostly overlap one is passed over.
+  const ours = p => owned.has(key(p)) && !protect.has(key(p));
   // Jev's own walls are a legitimate floor and a legitimate thing to build into.
   const standable = p => naturalGround(bot.blockAt(p)) || ours(p);
   const clearable = p => replaceable(bot.blockAt(p)) || ours(p);

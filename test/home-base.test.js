@@ -369,3 +369,16 @@ test('the plot grows a fourth column when the base is marked wide, and stays wit
   assert.equal(wide.length, 12);
   assert(wide.every(p => Math.abs(p.x - site.water.x) <= 4 && Math.abs(p.z - site.water.z) <= 4), 'every cell within four of the water');
 });
+
+test('levelling a base never digs into a building Jev put up', () => {
+  const w = world({ items: [['water_bucket', 1], ['white_bed', 1], ['chest', 1], ['oak_log', 8], ['dirt', 8]] });
+  const { bot } = w, goal = goalWith(bot);
+  const flat = home.chooseBaseSite(bot, goal);
+  const wall = home.layout(flat).footprint[10];
+  w.set(new Vec3(wall.x, wall.y + 1, wall.z), 'oak_planks');
+  assert(home.siteWork(bot, goal, flat).digs.length >= 1, 'an unknown block is dug out as before');
+  bot.buildRegistry = { claimed: () => new Set([`${wall.x},${wall.y + 1},${wall.z}`]) };
+  assert.equal(home.siteWork(bot, goal, flat), null, 'strict: the site is not taken');
+  const loose = home.siteWork(bot, goal, flat, { strict: false });
+  assert(!loose.digs.some(p => p.x === wall.x && p.z === wall.z), 'loose: that cell is left as it is');
+});
