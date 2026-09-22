@@ -489,6 +489,14 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       }
       return;
     }
+    // Stairs in progress: a step a tick toward the room's floor, not a
+    // fifteen-second wait between steps.
+    const stairs = state.stairsTo;
+    if (stairs && stairs.until > Date.now() && actions.tunnel && bot.entity.position.y > stairs.y + 1.5) {
+      goal.step = { action: 'stairs_down_to_them', entity: step.entity, to: { x: stairs.x, y: stairs.y, z: stairs.z }, height: Math.round(bot.entity.position.y - stairs.y) }; save();
+      try { await actions.tunnel(bot, task, goal, save, new Vec3(stairs.x, stairs.y, stairs.z), 'fortress'); return; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastStairsError = err.message; save(); }
+    } else if (stairs && (stairs.until <= Date.now() || bot.entity.position.y <= stairs.y + 1.5)) { delete state.stairsTo; save(); }
     // Watching, not fighting. The observed hunt takes a target the moment it
     // is allowed to; a stalk that has watched the same mob for fifteen
     // seconds is not waiting for an opening, it is stuck.
@@ -519,7 +527,17 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
           state.lastDescent = { at: Date.now(), dropped, from: { ...feet }, column, health: bot.health }; save();
           if (dropped >= 1) return;
         }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastDescentError = err.message; state.lastDescent = { at: Date.now(), error: err.message, from: { ...feet }, column }; save(); }
+        catch (err) {
+          task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+          state.lastDescentError = err.message; state.lastDescent = { at: Date.now(), error: err.message, from: { ...feet }, column }; save();
+          // A one-block roof over a room too deep to drop into: the live bot
+          // stood on [netherrack, air, air, air] refusing the fall for an
+          // hour. The staircase digs down through the rock beside the room
+          // and comes in at floor level, a step a tick, until level with them.
+          if (/too deep|lava/.test(err.message) && actions.tunnel) {
+            state.stairsTo = { x: Math.floor(near.position.x), y: Math.floor(near.position.y), z: Math.floor(near.position.z), until: Date.now() + 60000 }; save();
+          }
+        }
       }
       // Level with them and something between: a door toward them, before
       // any wall. Cover is for a target that can see the bot, not one it
