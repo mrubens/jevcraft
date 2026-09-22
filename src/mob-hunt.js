@@ -510,8 +510,16 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       // on its own floor, which does nothing about a mob beneath it.
       if (dy <= -1.5) {
         goal.step = { action: 'dig_down_to_them', entity: step.entity, drop: Math.round(-dy) }; save();
-        try { if (await descendTo(bot, task, near.position) >= 1) return; }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastDescentError = err.message; }
+        // What the descent saw and did, kept on the hunt: eight attempts
+        // live and the bot's height never changed, and nothing recorded why.
+        const feet = bot.entity.position.floored();
+        const column = [-1, -2, -3, -4].map(d => bot.blockAt(feet.offset(0, d, 0))?.name || '?');
+        try {
+          const dropped = await descendTo(bot, task, near.position);
+          state.lastDescent = { at: Date.now(), dropped, from: { ...feet }, column, health: bot.health }; save();
+          if (dropped >= 1) return;
+        }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastDescentError = err.message; state.lastDescent = { at: Date.now(), error: err.message, from: { ...feet }, column }; save(); }
       }
       // Level with them and something between: a door toward them, before
       // any wall. Cover is for a target that can see the bot, not one it
