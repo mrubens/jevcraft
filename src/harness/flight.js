@@ -29,7 +29,7 @@ const KEEP_WORLD = new Set(['danger', 'connection']);
 const HEARTBEAT = new Set(['observation', 'vitals', 'motion', 'action']);
 const FULL_GOAL = new Set(['danger', 'connection']), FULL_GOAL_EVERY_MS = 60000;
 const compact = goal => goal && { request: goal.request, kind: goal.kind, status: goal.status, step: goal.step,
-  survivalAction: goal.survivalAction, lastError: goal.lastError };
+  survivalAction: goal.survivalAction, lastError: goal.lastError, lastErrorAt: goal.lastErrorAt };
 
 function slim(frame) {
   const s = frame.snapshot || {};

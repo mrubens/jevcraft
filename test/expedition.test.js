@@ -225,3 +225,26 @@ test('a furnace batch saved in the Overworld is parked in the Nether, not a wall
   assert.deepEqual(localBatch(bot, goal), batch, 'home again, the batch is picked up where it was left');
   assert.equal(goal.smeltingElsewhere.overworld, undefined);
 });
+
+test('a turned search gets an origin back when it is next used', () => {
+  const { turnSearch, searchFor } = require('../src/work');
+  const goal = { search: turnSearch({ 'food animals': { attempts: 9, origin: { x: 1, y: 2, z: 3 }, frontier: { heading: 3, legs: 2 } } }) };
+  assert.equal(goal.search['food animals'].origin, undefined);
+  const search = searchFor(goal, 'food animals', { x: 40, y: 64, z: -6 });
+  assert.deepEqual(search.origin, { x: 40, y: 64, z: -6 });
+  assert.equal(search.frontier.heading, 4, 'and keeps its turned heading');
+  assert.deepEqual(searchFor({}, 'oak_log', { x: 1, y: 2, z: 3 }).origin, { x: 1, y: 2, z: 3 });
+});
+
+test('a bug in the code is recorded with where it happened; a failure in the world is not', () => {
+  const { noteError, searchFor } = require('../src/work');
+  const goal = {};
+  let bug; try { searchFor(null, 'food animals', { x: 0, y: 0, z: 0 }); } catch (err) { bug = err; }
+  const logged = []; const error = console.error; console.error = (...a) => logged.push(a.join(' '));
+  try { noteError(goal, bug); noteError(goal, bug); } finally { console.error = error; }
+  assert.match(goal.lastErrorAt, /^searchFor \(src\/work\.js:\d+:\d+\)/);
+  assert.equal(logged.length, 1, 'logged once per message');
+  noteError(goal, new Error('No wheat seed took on the plot'));
+  assert.equal(goal.lastErrorAt, undefined);
+  assert.equal(goal.lastError, 'No wheat seed took on the plot');
+});

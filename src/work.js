@@ -70,6 +70,19 @@ const pos = p => new Vec3(p.x, p.y, p.z);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
 const faces = [new Vec3(0, -1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, 1, 0)];
 
+// A TypeError is a bug, not the world: it goes to the log with where it
+// happened, once per message, and the goal carries the top frame so the
+// flight recorder has it. The missing search origin threw for an hour as
+// "Cannot read properties of undefined (reading 'x')" and nothing said where.
+const reportedBugs = new Set();
+function noteError(goal, err) {
+  goal.lastError = err.message;
+  if (!(err instanceof TypeError || err instanceof ReferenceError || err instanceof RangeError)) { delete goal.lastErrorAt; return; }
+  const frames = String(err.stack || '').split('\n').filter(line => /\/src\//.test(line)).map(line => line.trim().replace(/^at /, '').replace(/\(?\/.*\/src\//, '(src/'));
+  goal.lastErrorAt = frames.slice(0, 3).join(' < ');
+  if (!reportedBugs.has(err.message)) { reportedBugs.add(err.message); console.error('[bug]', err.stack); }
+}
+
 class Blocked extends Error { constructor(message) { super(message); this.name = 'Blocked'; } }
 
 function inventory(bot) {
@@ -379,6 +392,16 @@ function find(bot, names, distance = 48, count = 32) {
   return ids.length ? bot.findBlocks({ matching: ids, maxDistance: distance, count }) : [];
 }
 
+// A turned search (see persist) keeps only its heading, so the origin is
+// filled in here whenever it is missing: without one, every search for food
+// after a persist threw on it, and the persist that followed turned it again.
+function searchFor(goal, resource, here) {
+  goal.search ||= {};
+  const search = goal.search[resource] ||= { attempts: 0 };
+  search.origin ||= { x: here.x, y: here.y, z: here.z };
+  return search;
+}
+
 async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfaceResource(resource), frontier = surfaceOnly } = {}) {
   if (surfaceOnly && !surfaceReturnComplete(bot, goal)) {
     await surfaceStep(bot, task, goal, save);
@@ -386,8 +409,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
   }
   const surface = surfaceOnly ? surfaceMovement(bot) : null;
   try {
-    goal.search ||= {};
-    const search = goal.search[resource] ||= { attempts: 0, origin: { ...bot.entity.position.floored() } };
+    const search = searchFor(goal, resource, bot.entity.position.floored());
     const stalledSurface = search.walksWithoutProgress >= 3;
     if (search.attempts >= 128) throw new Blocked(`Could not find reachable ${resource} after 128 exploration steps without collecting it`);
     search.attempts++;
@@ -2114,7 +2136,7 @@ async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } 
   // a skeleton walking up during a sixty-second back-off. A threat ends the
   // pause with NeedsSafety, which the loop hands to the survival layer.
   while (Date.now() < end) { task.check(); checkAir(bot); checkThreats(bot); await sleep(100); }
-  goal.failures = 0; goal.stalls = 0; attemptsFor(goal).clearAction('option'); delete goal.lastError; save(); onStep(goal);
+  goal.failures = 0; goal.stalls = 0; attemptsFor(goal).clearAction('option'); delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal);
 }
 
 function createRecoveryAdviser(bot, client) {
@@ -2159,7 +2181,7 @@ async function inCatch(task, goal, fn) {
   catch (err) {
     task.check();
     if (['NeedsAir', 'NeedsSafety'].includes(err.name)) return true;
-    goal.lastError = err.message;
+    noteError(goal, err);
     return false;
   }
 }
@@ -2449,11 +2471,11 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       }
       const acted = await survival.step(task, goal, save, onStep);
       if (!acted) await idleWork(bot, task, goal, save, decisionClient, onStep);
-      failures = 0; delete goal.lastError; save(); onStep(goal); narrate(bot, goal);
+      failures = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); narrate(bot, goal);
     } catch (err) {
       task.interruptCheck = undefined; task.check();
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) failures++;
-      goal.lastError = err.message; save(); onStep(goal);
+      noteError(goal, err); save(); onStep(goal);
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) recoveryAdviser.recordFailure(goal, err);
       if (failures >= 3 && await inCatch(task, goal, () => tryRecovery(recoveryAdviser, task, goal, save))) { failures = 0; continue; }
       // Survival never gives up either: shake loose, back off, go again.
@@ -2522,7 +2544,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (!endTask && await huntObserved(bot, task, activeWork, saveWork, { navigate }, decisionClient)) {
         // A fight is not being stuck: its time is excused like survival's.
         excuseWatch(goal, Date.now() - huntFrom);
-        goal.failures = 0; goal.stalls = 0; delete goal.lastError; save(); onStep(goal); continue;
+        goal.failures = 0; goal.stalls = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); continue;
       }
       if (goal.recoveryAdvice?.active) {
         await maintainVitals(bot, task);
@@ -2534,7 +2556,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       const survivalFrom = Date.now();
       if (!endTask && await survival.step(task, activeWork, saveWork, () => onStep(goal))) {
         excuseWatch(goal, Date.now() - survivalFrom);
-        goal.stalls = 0; goal.failures = 0; delete goal.lastError; save(); onStep(goal); continue;
+        goal.stalls = 0; goal.failures = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); continue;
       }
       task.interruptCheck = bot.game.gameMode === 'creative' || endTask ? undefined : () => checkThreats(bot);
       // Air and eating carried food are rules, not judgments: there is no
@@ -2577,7 +2599,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (prepared && goal.kind === 'win') complete = await gameStep(bot, task, goal, save, gameHandlers(bot, decisionClient));
       task.check();
       goal.failures = 0;
-      delete goal.lastError;
+      delete goal.lastError; delete goal.lastErrorAt;
       goal.history ||= [];
       goal.history.push({ time: new Date().toISOString(), step: goal.step, inventory: inventory(bot), position: { ...bot.entity.position }, dimension: bot.game.dimension });
       goal.history = goal.history.slice(-40);
@@ -2598,7 +2620,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     } catch (err) {
       task.interruptCheck = undefined;
       task.check();
-      goal.lastError = err.message;
+      noteError(goal, err);
       if (err.name === 'DesignRepair') { save(); onStep(goal); continue; }
       if (err.name === 'NeedsAir' || err.name === 'NeedsSafety') { save(); onStep(goal); continue; }
       // A partial craft/build can change inventory before its promise fails.
@@ -2651,4 +2673,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { localBatch, smelt, turnSearch, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
+module.exports = { noteError, localBatch, smelt, turnSearch, searchFor, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
