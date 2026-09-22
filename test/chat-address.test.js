@@ -39,3 +39,13 @@ test('a missing or unoffered interaction judgment never dispatches a gameplay ac
     await assert.rejects(interpret(client, 'Jev beat Minecraft', 'Player', 'JevBot'), /Invalid Jev interpretation/);
   }
 });
+
+test('a reply to Jev\'s question is read with the request it answers', () => {
+  const { clarificationReply, parseAddress } = require('../src/chat-address');
+  const asked = { request: 'get me 10 grass', options: ['short_grass', 'grass_block'], until: Date.now() + 60000 };
+  assert.equal(clarificationReply(asked, parseAddress('grass block', 'Jev')), 'get me 10 grass (grass block)');
+  assert.equal(clarificationReply(asked, parseAddress('Jev grass block.', 'Jev')), 'get me 10 grass (grass block)', 'addressed, naming an option');
+  assert.equal(clarificationReply(asked, parseAddress('Jev build me a tower', 'Jev')), null, 'addressed and not an option is a new request');
+  assert.equal(clarificationReply(asked, parseAddress('did you see the sunset over the mountains earlier today', 'Jev')), null, 'long talk is not an answer');
+  assert.equal(clarificationReply({ ...asked, until: Date.now() - 1 }, parseAddress('grass block', 'Jev')), null, 'the question has closed');
+});

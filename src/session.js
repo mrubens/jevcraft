@@ -9,7 +9,7 @@ const { interpret, GoalStore } = require('./objectives');
 const { WorldKnowledge } = require('./world-knowledge');
 const { runGoal, runIdle, createSurvival } = require('./work');
 const { Task } = require('./skills');
-const { parseAddress } = require('./chat-address');
+const { parseAddress, clarificationReply, CLARIFY_MS } = require('./chat-address');
 const { compatibilityPlugin } = require('./compatibility');
 const { requestedCommand, createCommandAccess } = require('./commands');
 const { classifyCommand } = require('./command-classifier');
@@ -271,6 +271,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     },
   });
 
+  // One open question per player, answered within a minute and a half or
+  // not at all.
+  const clarifying = new Map();
+
   const idleTimer = setInterval(() => {
     if (ready && !active && !launchingDream && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
   }, 500);
@@ -279,15 +283,28 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (ended) return;
     const player = Object.values(bot.players).find(p => p.uuid === data.sender);
     if (!player || player.username === bot.username || typeof data.plainMessage !== 'string') return;
-    const from = player.username, request = data.plainMessage;
+    const from = player.username;
+    let request = data.plainMessage;
     let literal;
     try { literal = requestedCommand(request, bot.username); }
     catch (err) { console.error(err); bot.chat('I could not use that command. Please check what you asked me to do.'); return; }
-    const address = parseAddress(request, bot.username);
+    let address = parseAddress(request, bot.username);
     // Acknowledgements from other bots must never start new work. New goals
     // require an explicit name; short controls remain convenient when unprefixed.
     const me = String(bot.username || config.username || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const control = new RegExp(`^(stop|cancel|resume|status)(,? (now|please|${me}))*[.!?]?$`, 'i');
+    // The answer to a question Jev just asked. "Did you mean short grass or
+    // grass block?" got "grass block" back, with no name in front, and the
+    // gate dropped it; "Jev grass block" started a new request that had lost
+    // the count and the recipient. The reply is read together with the
+    // request it answers.
+    const answer = !literal && !control.test(address.text) && clarificationReply(clarifying.get(from), address);
+    // A new addressed message moves on from the question either way.
+    if (answer || address.explicit) clarifying.delete(from);
+    if (answer) {
+      request = `${bot.username} ${answer}`;
+      address = parseAddress(request, bot.username);
+    }
     if (!address.explicit && !control.test(address.text)) return;
     // Stop has a synchronous fast path, even while a network request is pending.
     const normalized = address.text;
@@ -418,7 +435,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         observation?.sample('dream', { operation, key, standing: dreamStore.read() });
         return;
       }
-      if (spec.kind === 'clarify') { bot.chat(spec.message); return; }
+      if (spec.kind === 'clarify') {
+        clarifying.set(from, { request: address.text, options: spec.clarification?.options, until: Date.now() + CLARIFY_MS });
+        bot.chat(spec.message); return;
+      }
       if (spec.kind === 'stop') { invalidateRequests(); await stop(); bot.chat('Stopped.'); return; }
       if (spec.kind === 'resume') {
         await resume(revision); return;
