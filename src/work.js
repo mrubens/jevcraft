@@ -2150,7 +2150,20 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
   goal.status = 'running'; goal.failures = 0; goal.stalls = 0; save();
   const stopObserving = goal.kind === 'win' ? watchGameProgress(bot, goal, save) : () => {};
   try {
+  // The loop yields to the event loop every pass and never spins: a step
+  // that returns without waiting on anything real (a synchronous throw
+  // swallowed by a handler) ran thousands of passes a second, the server
+  // timed the player out and the process sat at 110% CPU four evenings
+  // running. Every pass lets I/O run; more than twenty passes a second
+  // is a spin, logged with the step so it can be found, and slowed.
+  let passes = [];
   for (let n = 0; n < (goal.kind === 'follow' ? Infinity : goal.kind === 'build' ? Math.max(maxSteps, 30000) : maxSteps); n++) {
+    await new Promise(resolve => setImmediate(resolve));
+    const now = Date.now(); passes = passes.filter(t => now - t < 1000); passes.push(now);
+    if (passes.length > 20) {
+      if (passes.length === 21 || passes.length % 200 === 0) console.log(`[loop] spinning: ${passes.length} passes in a second at ${JSON.stringify(goal.step).slice(0, 200)} survival=${JSON.stringify(goal.survivalAction).slice(0, 160)} error=${goal.lastError || ''}`);
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
     task.interruptCheck = undefined;
     task.check();
     updateDigCapabilities(bot);
