@@ -6,6 +6,7 @@ const mineflayer = require('mineflayer');
 const { pathfinder } = require('mineflayer-pathfinder');
 const { configureMovements } = require('./movement');
 const { interpret, GoalStore } = require('./objectives');
+const { WorldKnowledge } = require('./world-knowledge');
 const { runGoal, runIdle, createSurvival } = require('./work');
 const { Task } = require('./skills');
 const { parseAddress } = require('./chat-address');
@@ -57,9 +58,12 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     audit: event => { fs.mkdirSync(path.dirname(commandLog), { recursive: true }); fs.appendFileSync(commandLog, JSON.stringify(event) + '\n'); },
   }); });
   const store = new GoalStore(path.join(stateDirectory, `${identity}.json`));
-  const survivalStore = new GoalStore(path.join(stateDirectory, `${identity}-survival.json`));
-  const idleStore = new GoalStore(path.join(stateDirectory, `${identity}-idle.json`));
   const memoryIdentity = process.env.MC_WORLD_ID ? `${identity}-${process.env.MC_WORLD_ID.replace(/[^a-zA-Z0-9_-]/g, '_')}` : identity;
+  // The base, its bed and the shelters are places in one world. Kept per
+  // server, a new world on the same port inherited them, and the bot walked
+  // home at dusk to a bed that was never there.
+  const survivalStore = new GoalStore(path.join(stateDirectory, `${memoryIdentity}-survival.json`));
+  const idleStore = new GoalStore(path.join(stateDirectory, `${identity}-idle.json`));
   const memorySeed = store.read(), needsMemoryId = memorySeed && !memorySeed.memoryId;
   const memory = new CompanionMemory(path.join(stateDirectory, `${memoryIdentity}-memory.json`), {
     seedGoal: memorySeed, seedResources: { ...idleStore.read()?.resourceMemory, ...memorySeed?.resourceMemory },
@@ -74,6 +78,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // anything. Kept per world, beside the builds it produces.
   const dreamStore = new GoalStore(path.join(stateDirectory, `${memoryIdentity}-dream.json`));
   const saveDream = standing => { if (!ended) dreamStore.save({ version: 1, ...standing }); };
+  // Portals, villages, the End portal and the run's progress: kept per
+  // world and handed to every goal, not left on the goal that found them.
+  const world = new WorldKnowledge(new GoalStore(path.join(stateDirectory, `${memoryIdentity}-world.json`)),
+    { seedFrom: [store.read(), idleStore.read()] });
   // The cost ledger: every Jev call charged to the request or dream it
   // served, kept per world, and summarized to docs/run-ledger.md when a run
   // ends. The client feeds it; the session only says which run is paying.
@@ -97,10 +105,12 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     ((bot.game?.dimension !== 'minecraft:overworld' && bot.game?.dimension !== 'overworld' || (bot.time?.timeOfDay ?? 0) < 9500) &&
       (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 12 && !immediateThreat(bot));
   let launchingDream = false;
-  const survival = createSurvival(bot, { state: survivalStore.read() || store.read()?.survival, client: routed });
+  // The old goal's copy only where it can be this world's: with a world id
+  // the goal store is still per server.
+  const survival = createSurvival(bot, { state: survivalStore.read() || (memoryIdentity === identity ? store.read()?.survival : undefined), client: routed });
   if (!survivalStore.read() && store.read()?.status === 'cancelled') survival.state.paused = true;
   const saveSurvival = () => { if (!ended) { survival.state.version = 1; survivalStore.save(survival.state); } };
-  const saveGoal = goal => { if (!ended) { memory.recordGoal(goal, bot); store.save(goal); } };
+  const saveGoal = goal => { if (!ended) { memory.recordGoal(goal, bot); world.harvest(goal); store.save(goal); } };
   const workStore = { save: goal => { saveGoal(goal); saveSurvival(); } };
   let active = null;
   let pending = Promise.resolve();
@@ -134,6 +144,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   }
 
   function launch(goal) {
+    world.hydrate(goal);
     memory.bind(goal);
     goal.memoryContext = memory.context(goal.from);
     survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
@@ -176,7 +187,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         bot.chat(`I think my dream to ${DREAMS[standing.dream].title} is done for now. Tell me to chase it again if you want more.`);
         return;
       }
-      saveDream(standing);
+      delete standing.failedAt; delete standing.lastFailure; saveDream(standing);
       const goal = { ...next, ledgerRun: runId, version: 1, status: 'pending', createdAt: new Date().toISOString(), suspendedTasks: suspendPrevious(store.read()),
         requesterPosition: null, initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);
@@ -185,7 +196,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       launch(goal);
     } catch (err) {
       console.error('[dream]', err.message);
-      standing.lastAttemptAt = Date.now(); saveDream(standing);
+      standing.lastAttemptAt = standing.failedAt = Date.now(); standing.lastFailure = err.message; saveDream(standing);
     } finally { launchingDream = false; }
   }
 
@@ -194,9 +205,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const standing = dreamStore.read();
     if (standing?.dream && !launchingDream && shouldLaunchDream(standing, retained, { ready: readyForDream() })) { launchDream(standing); return; }
     const goal = { ...(idleStore.read() || {}), version: 1, kind: 'survive', request: 'Stay alive and prepare supplies between player requests',
-      retainedRequest: retained?.request, blueprint: retained?.blueprint, portalFrame: retained?.portalFrame, portals: retained?.portals, villages: retained?.villages, survival: survival.state,
+      retainedRequest: retained?.request, blueprint: retained?.blueprint, survival: survival.state,
       dream: standing?.dream && !standing.satisfiedAt ? standing.dream : undefined,
       ledgerRun: standing?.dream && !standing.satisfiedAt ? standing.ledgerRun : undefined };
+    world.hydrate(goal);
     memory.bind(goal);
     const task = new Task('survival', goal.request);
     const session = { task, goal, idle: true };
@@ -211,7 +223,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       launchable = !!current?.dream && shouldLaunchDream(current, store.read(), { ready: readyForDream() });
       return launchable;
     };
-    session.promise = runIdle(bot, task, goal, { save: g => { if (!ended) { idleStore.save(g); memory.flush(); } saveSurvival(); } }, {
+    session.promise = runIdle(bot, task, goal, { save: g => { if (!ended) { world.harvest(g); idleStore.save(g); memory.flush(); } saveSurvival(); } }, {
       survival, decisionClient: routed, until,
       onStep: g => { console.log(JSON.stringify({ idle: true, survivalAction: g.survivalAction, decision: g.decisions?.at(-1)?.path, health: bot.health, food: bot.food, position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g); },
     }).catch(err => {
@@ -225,6 +237,13 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
 
   async function resume(revision = generation, options) {
     if (active?.idle) await stop('interrupted');
+    // The dream is what the bot does with nobody's work waiting. A player's
+    // stopped or replaced request under it comes first; the dream picks up
+    // again, knowing what it knew, once that is done.
+    if (active?.goal.dream && !options?.currentOnly) {
+      const waiting = resumeSaved({ ...active.goal, status: 'replaced' });
+      if (waiting && !waiting.dream) await stop('replaced');
+    }
     if (revision !== generation || ended) return;
     if (active) { bot.chat('Already working on the saved task.'); return; }
     const current = store.read(), saved = resumeSaved(current, options);
@@ -267,10 +286,20 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const address = parseAddress(request, bot.username);
     // Acknowledgements from other bots must never start new work. New goals
     // require an explicit name; short controls remain convenient when unprefixed.
-    if (!address.explicit && !/^(stop|cancel|resume|status)( please)?[.!?]?$/i.test(address.text)) return;
+    const me = String(bot.username || config.username || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const control = new RegExp(`^(stop|cancel|resume|status)(,? (now|please|${me}))*[.!?]?$`, 'i');
+    if (!address.explicit && !control.test(address.text)) return;
     // Stop has a synchronous fast path, even while a network request is pending.
     const normalized = address.text;
-    if (/^(stop|cancel)( please)?[.!]?$/i.test(normalized)) {
+    const stopping = new RegExp(`^(stop|cancel)(,? (now|please|${me}))*[.!?]?$`, 'i').test(normalized);
+    // "Stop!" between two players is not addressed to the bot. Unprefixed,
+    // it counts from whoever gave the work in hand, or when nobody else is
+    // here to be talking to; it froze the bot, self-care included, in the
+    // middle of other people's conversations.
+    const owner = (active?.goal || store.read())?.from;
+    const company = Object.values(bot.players).filter(p => p.username !== bot.username && p.username !== from).length;
+    if (stopping && !address.explicit && owner !== from && company > 0) return;
+    if (stopping) {
       invalidateRequests();
       stop().catch(console.error);
       bot.chat('Stopped. I saved our progress. Say "Jev resume" to keep going.');

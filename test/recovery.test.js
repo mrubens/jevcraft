@@ -222,6 +222,37 @@ test('stop received while reconnecting cancels saved work before the world is re
   } finally { session?.shutdown(); mineflayer.createBot = original; fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('a bare "stop" between other players is not for Jev; from the one who gave the work, or addressed, it is', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const { EventEmitter } = require('node:events');
+  const mineflayer = require('mineflayer');
+  const { createSession } = require('../src/session');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-stop-'));
+  const config = { host: 'test', port: 1, username: 'Jev' };
+  const file = path.join(directory, 'test-1-Jev.json');
+  const running = () => fs.writeFileSync(file, JSON.stringify({ version: 1, status: 'running', kind: 'follow', from: 'Owner', createdAt: 'original' }));
+  running();
+  const bot = new EventEmitter();
+  bot._client = new EventEmitter();
+  bot.players = { Owner: { username: 'Owner', uuid: 'owner' }, Other: { username: 'Other', uuid: 'other' }, Jev: { username: 'Jev', uuid: 'jev' } };
+  bot.loadPlugin = () => {}; bot.chat = () => {}; bot.quit = () => bot.emit('end');
+  const original = mineflayer.createBot;
+  let session;
+  try {
+    mineflayer.createBot = () => bot;
+    session = createSession(config, {}, { stateDirectory: directory });
+    bot._client.emit('playerChat', { sender: 'other', plainMessage: 'stop!' });
+    assert.equal(JSON.parse(fs.readFileSync(file)).status, 'running', 'someone else\'s "stop!" is their conversation');
+    bot._client.emit('playerChat', { sender: 'other', plainMessage: 'Jev stop' });
+    assert.equal(JSON.parse(fs.readFileSync(file)).status, 'cancelled', 'addressed, anyone can stop it');
+    running();
+    bot._client.emit('playerChat', { sender: 'owner', plainMessage: 'stop now' });
+    assert.equal(JSON.parse(fs.readFileSync(file)).status, 'cancelled', 'the one who gave the work need not say the name');
+  } finally { session?.shutdown(); mineflayer.createBot = original; fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('an operator command runs as an aside, leaving Jev working rather than paused', async () => {
   // Setting the time or the game mode is "also do this", not "stop doing that".
   // Jev used to drop the job and pause itself, so the player had to ask again.

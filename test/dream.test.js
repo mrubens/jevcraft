@@ -129,3 +129,16 @@ test('armour is one rung planned as a set, and the set shrinks to the pieces sti
   const partly = preparationStage(bot(['white_bed', 'iron_pickaxe', 'iron_sword', 'shield', 'water_bucket'], { 5: { name: 'iron_helmet' } }));
   assert.deepEqual(partly.items, ['iron_chestplate', 'iron_leggings', 'iron_boots']); assert.equal(partly.phase, 'iron_chestplate');
 });
+
+test('a dream launch that failed waits two minutes, whatever the last goal was', () => {
+  const { FAILED_LAUNCH_MS } = require('../src/dream');
+  const now = Date.now(), standing = { dream: 'build_a_village', failedAt: now - 1000 };
+  assert.equal(shouldLaunchDream(standing, { status: 'complete', request: 'get me a pumpkin' }, { now }), false);
+  assert.equal(shouldLaunchDream(standing, null, { now }), false, 'a fresh state is no excuse to retry at once');
+  assert.equal(shouldLaunchDream({ ...standing, failedAt: now - FAILED_LAUNCH_MS - 1 }, null, { now }), true);
+});
+
+test('no answer to the village question is a failure, not a finished village', async () => {
+  const client = { systemOne: async () => ({ answers: { progress: { score: 1 } }, usage: null }) };
+  await assert.rejects(chooseVillagePart(client, { structures: [], available: ['cottage'] }), /no village part/);
+});

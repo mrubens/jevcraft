@@ -43,3 +43,19 @@ test('repeated interruptions remain flat and resume the most recent unfinished r
   const restored = resumeSaved({ ...current, status: 'complete' });
   assert.equal(restored.request, 'building 10'); assert.equal(restored.suspendedTasks.length, 7);
 });
+
+test('a request parked as impossible does not hide the build it replaced', () => {
+  const build = { kind: 'build', request: 'build a tower', status: 'replaced' };
+  const bedrock = { kind: 'obtain', request: 'get me bedrock', status: 'blocked', suspendedTasks: suspendPrevious(build) };
+  assert.equal(resumeSaved(bedrock).request, 'build a tower');
+  const alone = { kind: 'obtain', request: 'get me bedrock', status: 'blocked' };
+  assert.equal(resumeSaved(alone), alone, 'with nothing under it, resume retries it as before');
+});
+
+test('the dream never stands between a player and their stopped work', () => {
+  const build = { kind: 'build', request: 'build a tower', status: 'cancelled' };
+  const dream = { kind: 'win', request: 'beat the game', dream: 'beat_the_game', status: 'replaced', suspendedTasks: suspendPrevious(build) };
+  assert.equal(resumeSaved(dream).request, 'build a tower');
+  const lone = { kind: 'win', dream: 'beat_the_game', status: 'replaced' };
+  assert.equal(resumeSaved(lone), lone, 'with no player work saved, the dream itself resumes');
+});

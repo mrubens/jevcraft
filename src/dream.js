@@ -65,6 +65,9 @@ async function chooseVillagePart(client, { structures, available, signal } = {})
     counts: state.counts, offered: Object.keys(candidates) }, questions });
   const part = response.answers?.part?.choice, progress = response.answers?.progress;
   if (part !== undefined && part !== 'done' && !Object.hasOwn(candidates, part)) throw new Error('Jev chose a village part that was not offered');
+  // No answer to a question that was asked is a failed call, not "done":
+  // treated as done, one bad response closed the dream for good.
+  if (part === undefined && Object.keys(candidates).length) throw new Error('Jev gave no village part');
   return { part: part === 'done' || part === undefined ? null : part, done: part === 'done' || !Object.keys(candidates).length,
     score: Number.isFinite(progress?.score) ? progress.score : null, confidence: progress?.confidence, levels: VILLAGE_LEVELS,
     judgments: response.answers, usage: response.usage, state };
@@ -90,7 +93,7 @@ async function nextDreamRequest(client, standing, { structures = [], shelf = [],
   // Then which design from the shelf: a second Jev choice, over real
   // schematics, that ends with a validated design and no generative call.
   const design = await require('./schematic-library').chooseSchematic(client, { part: chosen.part, entries: shelf, structures, signal });
-  if (!design) return { done: true, dream: 'build_a_village', villageScore: chosen.score, judgments: chosen.judgments, usage: chosen.usage };
+  if (!design) throw new Error(`No design on the shelf could be chosen for the ${chosen.part}`);
   const anchor = besideNewest(structures);
   return { kind: 'build', request: `build ${design.entry.summary.name} (${chosen.part})`, dream: 'build_a_village', villagePart: chosen.part,
     design: { source: design.entry.source, backend: 'schematic-library', libraryId: design.entry.id, createdAt: new Date().toISOString(), judgments: design.judgments, usage: design.usage },
@@ -102,8 +105,14 @@ async function nextDreamRequest(client, standing, { structures = [], shelf = [],
 // Never while a player's own request is saved and unfinished, never twice
 // in a row on a request that was parked, and never inside the cool-down.
 const COOLDOWN_MS = 10 * 60 * 1000;
+// A launch that failed outright (Jev unreachable, an unusable answer) is
+// not retried on the next half-second tick. It was, whenever the last goal
+// was not a dream: a hot loop of failing calls that also kept the idle
+// loop, and with it foraging and shelter, from ever running.
+const FAILED_LAUNCH_MS = 2 * 60 * 1000;
 function shouldLaunchDream(standing, lastGoal, { now = Date.now(), ready = true } = {}) {
   if (!standing?.dream || standing.satisfiedAt || standing.paused || !ready) return false;
+  if (standing.failedAt && now - standing.failedAt < FAILED_LAUNCH_MS) return false;
   if (lastGoal && !lastGoal.dream && ['pending', 'running', 'recovering', 'cancelled'].includes(lastGoal.status)) return false;
   if (lastGoal?.dream && ['pending', 'running', 'recovering'].includes(lastGoal.status)) return false;
   if (standing.lastAttemptAt && now - standing.lastAttemptAt < COOLDOWN_MS && lastGoal?.dream && lastGoal.status !== 'complete') return false;
@@ -132,4 +141,4 @@ async function resolveDream(client, spec) {
   return { ...spec, kind: 'dream', dream: { operation, key: operation.startsWith('set_') ? operation.slice(4) : undefined, judgment: response.answers.operation }, usage: response.usage };
 }
 
-module.exports = { DREAMS, VILLAGE_PARTS, VILLAGE_LEVELS, villageState, villageCandidates, chooseVillagePart, besideNewest, nextDreamRequest, shouldLaunchDream, resolveDream, COOLDOWN_MS };
+module.exports = { FAILED_LAUNCH_MS, DREAMS, VILLAGE_PARTS, VILLAGE_LEVELS, villageState, villageCandidates, chooseVillagePart, besideNewest, nextDreamRequest, shouldLaunchDream, resolveDream, COOLDOWN_MS };
