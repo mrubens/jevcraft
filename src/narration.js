@@ -35,6 +35,7 @@ const SURVIVAL = {
   leave_shelter: (goal, action) => action.reason || "Morning. Back to it.",
   escape_threat: (goal, action) => `Something hostile is close${action.threats?.length ? ` (${[...new Set(action.threats.map(t => name(t.name || t)))].join(', ')})` : ''}, moving away.`,
   hold_defensive_position: 'Cornered. Holding here and defending.',
+  dig_in_bunker: (goal, action) => `Too many of them out here (${[...new Set(action.threats || [])].join(', ')}). Digging into the rock to meet them one at a time.`,
   fight: (goal, action) => `Fighting ${[...new Set((action.threats || []).map(name))].join(' and ')}.`,
   charge: (goal, action) => `No way out, so I'm going for the ${name(action.target)}.`,
   dig_in: 'Something is shooting at me, so I\'m digging in until it passes.',

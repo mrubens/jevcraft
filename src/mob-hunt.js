@@ -9,6 +9,7 @@ const { dryStanding } = require('./mining-access');
 const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
 const { checkAir } = require('./vitals');
 const { surveyRoute, countOf } = require('./skills');
+const { collectNearbyDrops } = require('./drop-collection');
 const { decideTree } = require('./decisions');
 const { descendTo } = require('./descent');
 const { bridgeTo } = require('./bridging');
@@ -92,6 +93,26 @@ function canBegin(bot, handler = {}) {
   return standing && bot.health >= 14 && bot.food >= 14 && readyEquipment(bot);
 }
 
+// A blaze hovers, so there is no standing room within two blocks of it: the
+// route check refused every fight, the survival layer sealed the bot in
+// instead, and three arena runs ended with no swing and no rod. The ground
+// under it is reachable and a sword reaches three blocks, so standing
+// beneath and swinging up is the second thing to try.
+function approaches(bot, target) {
+  const t = target.position, y = Math.round(bot.entity.position.y);
+  return [new goals.GoalFollow(target, 2), new goals.GoalNear(Math.floor(t.x), y, Math.floor(t.z), 1)];
+}
+// `movement` is the combat movement policy, whose `allowed` vets each step;
+// the survey itself runs on the pathfinder's own movements. Passing one for
+// the other threw "undefined is not a function" in the middle of a fight.
+async function combatRoute(bot, task, target, movement, timeoutMs = 400) {
+  for (const destination of approaches(bot, target)) {
+    const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, timeoutMs);
+    if (route.status === 'success' && route.path.every(movement.allowed)) return { route, destination };
+  }
+  return null;
+}
+
 // The route exception names one live entity and expires with this action.
 // Other mobs, liquid, cliffs, cancellations and low health still interrupt it.
 function encounter(bot, task, target, expiresAt) {
@@ -150,9 +171,9 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
           }
           continue;
         }
-        const destination = new goals.GoalFollow(target, 2);
-        const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 400);
-        if (route.status !== 'success' || !route.path.every(movement.allowed)) throw new Error(`No dry combat route to ${target.name}`);
+        const approach = await combatRoute(bot, task, target, movement);
+        if (!approach) throw new Error(`No dry combat route to ${target.name}`);
+        const destination = approach.destination;
         await actions.navigate(bot, task, destination, { timeoutMs: Math.min(4000, deadline - Date.now()), stallMs: 1500,
           stopWhen: () => dead || !valid(bot, target) || canStrike(bot, target) });
         continue;
@@ -250,9 +271,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
     try {
-      const route = canStrike(bot, target) ? { status: 'success', path: [] } :
-        await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalFollow(target, 2), 400);
-      if (route.status !== 'success' || !route.path.every(movement.allowed)) continue;
+      if (!canStrike(bot, target) && !await combatRoute(bot, task, target, movement)) continue;
       positions.set(target.id, target.position.clone());
       tree[`hunt_${target.id}`] = { description: { action: handler.passive ? 'Chase this observed animal and strike it with what is carried, then verify item pickup.' :
         handler.ranged && bowReady(bot) ? 'Fight this observed isolated mob: arrows from range while it is in view, then the sword, shield and armor up close; verify item pickup.' :
@@ -293,6 +312,12 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   goal.mobHunt = { ...(previous?.item === step.item ? previous : {}), item: step.item, entity: step.entity,
     targetCount: countOf(bot, step.item) + step.count };
   goal.stockFood = true; save();
+  // A drop on the floor is a drop not carried. The arena killed a blaze and
+  // scored nothing three times over because the rod lay where it fell: the
+  // fight's own pickup only runs when the fight's own code did the killing.
+  if (await collectNearbyDrops(bot, task, step.item, { radius: 12, timeoutMs: 5000, move: actions.navigate })) {
+    goal.step = { action: 'collect_drop', item: step.item, carried: countOf(bot, step.item) }; save(); return;
+  }
   if (!handler.passive && !await prepareCombatGear(bot, task, goal, save, actions)) return;
   if (handler.dimension && dimension(bot) !== handler.dimension) { await actions.enterNether(bot, task, goal, save); return; }
   if (!canBegin(bot, handler)) {
@@ -543,4 +568,4 @@ async function findFortressStep(bot, task, goal, save, actions) {
   }
 }
 
-module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, rememberSighting, rememberedSpot, FORTRESS_LEG };
+module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };

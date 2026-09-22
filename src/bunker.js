@@ -67,11 +67,16 @@ async function stepTo(bot, task, cell) {
 }
 
 // Dig DEPTH cells into the wall and stand at the far end facing out.
-async function digBunker(bot, task, goal, save) {
+// The middle of a group, so the bunker is dug away from all of it rather
+// than away from whichever one happens to be nearest.
+function centroid(threats) {
+  if (!threats.length) return null;
+  return threats.reduce((total, t) => total.plus(t.entity.position), new Vec3(0, 0, 0)).scaled(1 / threats.length);
+}
+
+async function digBunker(bot, task, goal, save, { from = null } = {}) {
   const feet = bot.entity.position.floored();
-  const near = blazes(bot);
-  const centroid = near.length ? near.reduce((a, t) => a.plus(t.entity.position), new Vec3(0, 0, 0)).scaled(1 / near.length) : null;
-  const side = bunkerSide(bot, feet, centroid);
+  const side = bunkerSide(bot, feet, from || centroid(blazes(bot)));
   if (!side) throw new Error('No rock to dig a bunker into here');
   goal.step = { action: 'dig_bunker', side: { x: side.x, z: side.z }, depth: DEPTH }; save();
   for (let d = 1; d <= DEPTH; d++) {
@@ -151,4 +156,4 @@ async function bunkerFight(bot, task, goal, save, actions, { item = 'blaze_rod',
   return gained;
 }
 
-module.exports = { bunkerFight, swarm, blazes, bunkerSide, SWARM };
+module.exports = { bunkerFight, digBunker, swarm, blazes, bunkerSide, centroid, SWARM };

@@ -12,6 +12,7 @@ const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute, countOf } = require('./skills');
 const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield, canStrike } = require('./combat');
+const { digBunker, bunkerSide, centroid } = require('./bunker');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
 const { surfaceObserver } = require('./surface');
@@ -245,14 +246,30 @@ class Survival {
       // A herd is sealed out like a shooter: one wall toward one hoglin
       // leaves the other four, and the bot held a "defensive position" at
       // five health in the middle of seven of them.
-      const crowd = danger.filter(t => t.distance <= 8).length >= 2;
+      //
+      // Counted at two ranges, because the arena's herd drill died three
+      // times out of three: the nearest hoglin was eleven blocks off, so
+      // nothing was a crowd, the bot charged it, and met four at three
+      // blocks. A pack seen coming is a pack. Seal while there is still
+      // time to place the blocks, and never charge into one.
+      const crowd = danger.filter(t => t.distance <= 12).length >= 2;
+      const pack = danger.filter(t => t.distance <= 16).length >= 2;
+      // A pack in the open is met at a door, not in the middle of it. One
+      // block into the rock and only one of them can reach at a time; the
+      // ordinary fight rule then takes them one by one. The herd drill died
+      // two runs in three standing in the room with four hoglins.
+      if (pack && bot.health >= 10 && bunkerSide(bot, bot.entity.position.floored(), centroid(danger))) {
+        this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health });
+        try { await digBunker(bot, task, goal, save, { from: centroid(danger) }); delete this.state.trappedSince; return; }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+      }
       if ((crowd || danger.some(shoots)) && await this.sealHere(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       if (await this.wallOff(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       // No way out and a mob a few blocks off, shooting: standing still is
       // how a crossbow piglin took half the bot's health. Armed and able,
       // close the gap so the fight rule can do its work.
       // One mob is charged; a herd is not.
-      if (armed && !crowd && bot.health >= 12 && nearest.distance > 3.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
+      if (armed && !pack && bot.health >= 12 && nearest.distance > 3.2 && nearest.distance <= 8 && !lavaBeside(bot, nearest.entity.position.floored())) {
         this.report(goal, save, { action: 'charge', target: nearest.entity.name, distance: Number(nearest.distance.toFixed(1)) });
         const t = nearest.entity.position;
         try { await this.actions.navigate(bot, task, new goals.GoalNear(t.x, t.y, t.z, 1), { timeoutMs: 4000, stallMs: 2000 }); }
