@@ -1,7 +1,7 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, observedDead } = require('./mob-policy');
+const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead } = require('./mob-policy');
 const { threats, checkThreats, NeedsSafety } = require('./danger');
 const { canStrike, defenseWeapon, bowReady, shoot, SHOOTERS } = require('./combat');
 const { deflect } = require('./projectile-guard');
@@ -14,7 +14,7 @@ const { collectNearbyDrops } = require('./drop-collection');
 const { decideTree } = require('./decisions');
 const { descendTo } = require('./descent');
 const { bridgeTo } = require('./bridging');
-const { bunkerFight, swarm } = require('./bunker');
+const { bunkerFight, digBunker, swarm, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
@@ -91,7 +91,14 @@ function canBegin(bot, handler = {}) {
   if (handler.passive) return standing && bot.health >= 10 && bot.food >= 6;
   // Fourteen in full armour: eighteen was a bar the Nether could not meet
   // once the food ran out, and the wait for it never ends without regen.
-  return standing && bot.health >= 14 && bot.food >= 14 && readyEquipment(bot);
+  //
+  // The armour is what has to be on; the hand is whatever the last action
+  // needed. Requiring a sword in hand here meant that drawing the bow, or
+  // placing one block, made the bot unfit to fight, and "unfit to fight"
+  // is a half-second doze in the open. Two blazes shot it through five
+  // rounds of that: thirty-four damage, one death, and the bow it was
+  // holding was the reason it would not swing.
+  return standing && bot.health >= 14 && bot.food >= 14 && kitReady(bot);
 }
 
 // A blaze hovers, so there is no standing room within two blocks of it: the
@@ -341,6 +348,13 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       await actions.returnOverworld(bot, task, goal, save); return;
     }
     goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: handler.passive ? 10 : 14, neededFood: handler.passive ? 6 : 14 }; save();
+    // Not in the open, if something out there shoots. Health comes back at
+    // the same rate behind a wall and the wall is free.
+    const shooters = threats(bot, 24).filter(t => t.visible && SHOOTERS.has(t.entity.name));
+    if (shooters.length && bot.health < 18) {
+      try { await digBunker(bot, task, goal, save, { from: bunkerCentroid(shooters), navigate: actions.navigate }); return; }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+    }
     await sleep(500); task.check(); return;
   }
   // A mob already in view is stalked where it is: the observed-hunt check at
