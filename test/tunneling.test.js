@@ -377,3 +377,14 @@ test('an approach shaft lets off only its quarry: it does not dig into a wither 
   delete bot.entities[2];
   assert.equal(stairOptions(bot, {}, new Vec3(8, 77, 0), { approach: true })[0].destination.x, 1, 'with it gone, straight on');
 });
+
+test('the retreat budget is spent between gains, not over the shaft\'s whole life', () => {
+  const { noteProgress } = require('../src/tunneling');
+  const tunnel = { retreats: 23 }, target = new Vec3(0, 40, 0);
+  noteProgress(tunnel, target, 30);
+  assert.equal(tunnel.retreats, 0, 'a first best is ground gained');
+  tunnel.retreats = 20; noteProgress(tunnel, target, 30);
+  assert.equal(tunnel.retreats, 20, 'no gain, the count stands');
+  noteProgress(tunnel, target, 28);
+  assert.equal(tunnel.retreats, 0);
+});

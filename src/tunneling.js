@@ -48,7 +48,11 @@ function noteProgress(tunnel, target, gap) {
     delete tunnel.best; tunnel.sinceBest = 0;
   }
   tunnel.target = { x: target.x, y: target.y, z: target.z };
-  if (!Number.isFinite(tunnel.best) || gap < tunnel.best - 0.5) { tunnel.best = gap; tunnel.sinceBest = 0; } else tunnel.sinceBest = (tunnel.sinceBest || 0) + 1;
+  // Ground gained also clears the retreat count. It was counted over the
+  // shaft's whole life, so once twenty-four had piled up over hours every
+  // dead end was final, however much ground had been made in between.
+  if (!Number.isFinite(tunnel.best) || gap < tunnel.best - 0.5) { tunnel.best = gap; tunnel.sinceBest = 0; tunnel.retreats = 0; }
+  else tunnel.sinceBest = (tunnel.sinceBest || 0) + 1;
   return tunnel.sinceBest;
 }
 
