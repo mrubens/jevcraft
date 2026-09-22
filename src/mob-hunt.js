@@ -453,7 +453,8 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // Behind it most of them are out of sight, the rest have to come round,
     // and a fight the bot can actually start is worth more than a tidy
     // reason not to.
-    if (cornered && !nearWall(bot, near.position) && !(state.coverFailedAt > Date.now() - 60000)) {
+    if (cornered && !nearWall(bot, near.position) && !(state.coverFailedAt > Date.now() - 60000) &&
+        !(state.stairsTo && state.stairsTo.until > Date.now())) {
       goal.step = { action: 'break_their_line', entity: step.entity, inView, health: bot.health }; save();
       try { if (await raiseCover(bot, task, near.position)) { await sleep(300); return; } }
       catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; state.lastCoverError = err.message; }
@@ -556,7 +557,12 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       // Level with them and something between: a door toward them, before
       // any wall. Cover is for a target that can see the bot, not one it
       // has already fenced itself off from.
-      if (Math.abs(dy) <= 1.5) {
+      // Cover and doors are for a mob already in reach. While a shaft is
+      // being dug at them, cover placed "one step toward them" goes into the
+      // very cell the shaft is about to dig: the live bot got to within four
+      // blocks, walled its own tunnel shut, dug it open, walled it again.
+      const digging = state.stairsTo && state.stairsTo.until > Date.now();
+      if (Math.abs(dy) <= 1.5 && !digging) {
         goal.step = { action: 'open_a_door', entity: step.entity }; save();
         try { if (await openToward(bot, task, near.position)) { await sleep(300); return; } }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
