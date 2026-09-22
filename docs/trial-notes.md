@@ -34,6 +34,21 @@ Seven of the dream run's deaths in one night were combat, and every lesson cost 
 
 The fixes, in the order the drills forced them: stand under a hovering target; the mob the bot came for is not the survival layer's emergency; judge combat readiness by the kit carried rather than what is in hand; meet a pack at a bunker door, bounded to forty-five seconds; fight a swarm in the open until hurt, because blazes hover out of reach of a doorway.
 
+**Round two (2026-09-22 06:20 UTC), five runs each on the blaze drills.** Five runs, not three, because the three-run medians had been hiding a death.
+
+| drill | deaths | drops | damage | strikes |
+|---|---|---|---|---|
+| blaze_single | 0 -> 0 | 3/5 -> 4/5 | 5.7 -> 0 | 3 -> 3 |
+| blaze_pair | 1 -> 0 | 2/5 -> 3/5 | 34.1 -> 25.9 | 2 -> 6 |
+
+A single blaze now costs nothing at all: three swings, no damage, five runs out of five. The pair stopped killing the bot.
+
+13. *Fitness to fight was judged by the hand, twice over.* `canBegin` demanded a sword in hand, so drawing the bow or placing one block made the bot unfit, and unfit means a half-second doze in the open. Two blazes shot it through five rounds of that. The check now asks whether the armour is on and a weapon is carried, which is the same mistake already fixed once in the hunt's claim on its quarry: the lesson is that "in hand" is a property of the last action, not of readiness.
+14. *A bow is not the answer to a blaze, at least not in a room.* Measured head to head with the same fight: 34.7 damage with a bow and 32 arrows against 34.1 without. The ladder should not spend night rungs on a bow for the Nether's sake. The drill `blaze_pair_bow` keeps the comparison runnable.
+15. *A shield now answers anything in the air* (`src/projectile-guard.js`): face the nearest incoming projectile and block while it crosses. Principled and cheap, but it made no measurable difference to the blaze pair on its own, because two shooters at different angles cannot both be inside one shield arc. Unmeasured against skeletons, which is where it should pay.
+16. *Recovering in the open is not recovering.* With a shooter in view and health under eighteen, the hunt now digs in rather than dozing where it stands.
+17. *The harness scored killed mobs as uncleared.* A hunt drill stops the moment the drop is picked up and the corpse can linger a tick in the entity list, so five runs that each killed their blaze read "cleared 1/5". Fixed to count confirmed kills.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

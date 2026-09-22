@@ -215,7 +215,10 @@ async function runDrill(d, attempt) {
     if (action && action !== lastAction) { lastAction = action; log({ drill: d.name, attempt, action, health: bot.health, alive: alive(d.entity).length }); }
   }
 
-  const cleared = !alive(d.entity).length && !run.died;
+  // Killed, not merely absent. A hunt drill stops the moment the drop is in
+  // the pockets, and the corpse can still be in the entity list for a tick:
+  // five runs that each killed their blaze scored "cleared 1/5".
+  const cleared = (run.kills >= spawned || !alive(d.entity).length) && !run.died;
   const killer = run.deaths ? deathCause() : null;
   const result = { drill: d.name, attempt, spawned, cleared, clearedMs: cleared ? Date.now() - started : null, killer, nudged: !!run.nudged,
     deaths: run.deaths, damageTaken: Math.round(run.damageTaken * 10) / 10, minHealth: Math.round(run.minHealth * 10) / 10,
