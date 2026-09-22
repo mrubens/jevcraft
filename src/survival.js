@@ -56,6 +56,9 @@ const shelterNeeded = bot => bot.game.difficulty !== 'peaceful' && bot.game.dime
 // The server lets a player sleep from 12541 until 23458; with the only
 // survival player in bed the night passes in a hundred ticks.
 const { SLEEP_FROM, SLEEP_UNTIL } = DAY;
+// Whether a failed sleep is still being waited out. Older saved state has
+// only the time of the failure, which waits the full ten minutes.
+const sleepWaiting = state => (state.sleepRetryAt ?? ((state.sleepFailedAt || 0) + 600000)) > Date.now();
 const sleepable = bot => bot.time?.timeOfDay >= SLEEP_FROM && bot.time.timeOfDay <= SLEEP_UNTIL;
 // Three cells in a line: where the bot stands, the bed's foot, its head.
 // Level floor under both bed cells, air at feet and head height.
@@ -659,7 +662,13 @@ class Survival {
       bot.on?.('message', onMessage);
       try {
         const before = bot.time?.timeOfDay;
-        await bot.sleep(bot.blockAt(site.foot));
+        // Mineflayer gives up after three seconds without its sleep event and
+        // throws "bot is not sleeping". That threw past the clock check below
+        // and past any refusal the server sent, so a night was written off as
+        // a failed sleep, unexplained, and the bot stood by its bed until
+        // dawn. Its own checks (not night, monsters near) are real refusals.
+        try { await bot.sleep(bot.blockAt(site.foot)); }
+        catch (err) { if (!/not sleeping/.test(err.message)) throw err; }
         // The ground truth is the clock: with the only survival player in
         // bed the server jumps to morning within a hundred ticks. The
         // sleeping flag is a hint, and a refusal is only final once the
@@ -671,7 +680,13 @@ class Survival {
         if (!slept && refused) throw new Error(`The server refused the sleep: ${refused}`);
         if (!slept) throw new Error('The night did not pass in bed');
       } finally { bot.removeListener?.('message', onMessage); }
-    } catch (err) { task.check(); this.state.sleepFailedAt = Date.now(); this.state.lastSleepError = err.message; this.report(goal, save, { action: 'sleep_failed', reason: err.message }); }
+    } catch (err) {
+      task.check();
+      // A refusal the server named (monsters near, not safe) waits out ten
+      // minutes; a sleep that simply did not take is tried again in two.
+      this.state.sleepFailedAt = Date.now(); this.state.sleepRetryAt = Date.now() + (/refused|monsters|not night|can only sleep/i.test(err.message) ? 600000 : 120000);
+      this.state.lastSleepError = err.message; this.report(goal, save, { action: 'sleep_failed', reason: err.message });
+    }
     finally {
       // The carried bed comes back up; the base's bed stays where it is.
       if (!placed) {
@@ -682,7 +697,7 @@ class Survival {
       save();
     }
     if (!slept) throw new Error(this.state.lastSleepError || 'The night did not pass in bed');
-    delete this.state.sleepFailedAt; delete this.state.nightPlan;
+    delete this.state.sleepFailedAt; delete this.state.sleepRetryAt; delete this.state.nightPlan;
     this.report(goal, save, { action: 'leave_shelter', reason: 'Morning. Back to it.' });
   }
 
@@ -733,11 +748,11 @@ class Survival {
       // of a loop: out, a two-minute walk in the dark, a new pocket, and two
       // minutes later out again, all night. From a pocket, a failed route
       // waits ten minutes like a failed sleep does.
-      const homeBed = sleepable(bot) && !watched && !(this.state.sleepFailedAt > Date.now() - 600000) && !(this.state.bedRouteFailedAt > Date.now() - 600000) && nearbyHomeBed(bot, goal);
+      const homeBed = sleepable(bot) && !watched && !sleepWaiting(this.state) && !(this.state.bedRouteFailedAt > Date.now() - 600000) && nearbyHomeBed(bot, goal);
       const shallow = homeBed && (surfaceObserver(bot)(bot.entity.position) || Math.abs(homeBed.foot.y - bot.entity.position.y) <= 10) ||
         // A bed in the pack is a bed too. A fight pocket dug at dusk held the
         // bot until dawn, eleven minutes behind a wall, with a bed on its back.
-        (!homeBed && bot.game?.dimension === 'overworld' && sleepable(bot) && !watched && !(this.state.sleepFailedAt > Date.now() - 600000) && bedCarried(bot) && surfaceObserver(bot)(bot.entity.position));
+        (!homeBed && bot.game?.dimension === 'overworld' && sleepable(bot) && !watched && !sleepWaiting(this.state) && bedCarried(bot) && surfaceObserver(bot)(bot.entity.position));
       if (shallow) { delete this.state.watchedSince; await this.leave(task, goal, save, refuge, 'Off to bed.'); }
       else if ((shelterNeeded(bot) || watched) && !outwaited) {
         // Say who is keeping the bot in, and whether the hunt had claimed it:
@@ -770,7 +785,7 @@ class Survival {
     const bed = bedCarried(bot), homeBed = nearbyHomeBed(bot, goal);
     const routeBlocked = this.state.bedRouteFailedAt > Date.now() - 120000;
     const underground = bot.game.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
-    const bedReady = (!!bed || (!!homeBed && !routeBlocked)) && bot.game.dimension === 'overworld' && !(this.state.sleepFailedAt > Date.now() - 600000);
+    const bedReady = (!!bed || (!!homeBed && !routeBlocked)) && bot.game.dimension === 'overworld' && !sleepWaiting(this.state);
     // Dusk with a bed at home: head there before bedtime rather than start
     // the walk from the bottom of a shaft at 12541. The second run chose the
     // bed thirty blocks down its mine and the walk failed at once.
@@ -816,7 +831,7 @@ class Survival {
     }
     const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot) && (underground || !routeBlocked);
     const walkStart = homeBed && homeBed.foot.distanceTo(bot.entity.position) > 96 ? DAY.WALK_HOME_FAR : DAY.WALK_HOME;
-    if (homeWalk && (bot.time.timeOfDay >= walkStart || underground) && !(this.state.sleepFailedAt > Date.now() - 600000)) {
+    if (homeWalk && (bot.time.timeOfDay >= walkStart || underground) && !sleepWaiting(this.state)) {
       this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });
       // Out of the shaft by the stairs it dug, then home over the ground:
       // a path search from the bottom of a mine to a bed timed out. A

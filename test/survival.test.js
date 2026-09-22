@@ -716,6 +716,24 @@ test('a carried bed goes down at bedtime, the night passes, and the bed comes ba
   assert(dug.length >= 1, 'the bed is picked back up'); assert(items.some(i => i.name === 'white_bed'));
 });
 
+test('a sleep the server confirms late still counts: the clock decides, not mineflayer\'s three-second timeout', async () => {
+  const { Survival } = require('../src/survival');
+  const blocks = new Map(); let items = [{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }];
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000 },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, isSleeping: false, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => items, slots: {} }, heldItem: null, equip: async item => { bot.heldItem = item; }, lookAt: async () => {},
+    placeBlock: async () => { blocks.set(`${new Vec3(1, 64, 0)}`, 'white_bed'); blocks.set(`${new Vec3(2, 64, 0)}`, 'white_bed'); items = items.filter(i => i.name !== 'white_bed'); },
+    // The server puts the bot to bed, but mineflayer's event never comes.
+    sleep: async () => { setTimeout(() => { bot.time.timeOfDay = 0; }, 50); throw new Error('bot is not sleeping'); },
+    wake: async () => {},
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async (b, t, p) => { blocks.delete(`${p}`); items.push({ name: 'white_bed', count: 1 }); } });
+  const actions = []; survival.report = (g, sv, action) => actions.push(action.action);
+  await survival.sleepStep(new Task('test', 'sleep'), {}, () => {});
+  assert(!actions.includes('sleep_failed'), 'the night passed, so it is a sleep');
+  assert.equal(survival.state.sleepFailedAt, undefined);
+});
+
 test('at night with a bed and full kit the choices are sleep, shelter, or stay up; without the kit, no staying up', async () => {
   const { Survival } = require('../src/survival');
   const seen = [];
