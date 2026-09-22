@@ -35,10 +35,11 @@ function firmStep(bot, p) {
 // it: a tunnel up toward an ore in the roof is a tunnel toward the surface.
 const NIGHT_ORES = new Set(['coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
   'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_copper_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore', 'deepslate_emerald_ore']);
-function nightOre(bot, feet) {
+function nightOre(bot, feet, skip = {}) {
   const ids = [...NIGHT_ORES].map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
   const found = bot.findBlocks?.({ matching: ids, maxDistance: 24, count: 32 }) || [];
-  const p = found.filter(q => q.y <= feet.y + 1 && q.y >= -48).sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))[0];
+  const p = found.filter(q => q.y <= feet.y + 1 && q.y >= -48 && !(skip[`${q}`] > Date.now()))
+    .sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))[0];
   return p ? { position: p, name: bot.blockAt(p)?.name } : null;
 }
 
@@ -769,7 +770,7 @@ class Survival {
     if (target && NIGHT_ORES.has(mine.targetOre) && bot.blockAt(target)?.name !== mine.targetOre) { target = null; delete mine.target; }
     if (target && !NIGHT_ORES.has(mine.targetOre) && target.distanceTo(bot.entity.position) < 2.5) target = null;
     if (!target) {
-      const ore = nightOre(bot, feet);
+      const ore = nightOre(bot, feet, mine.skip);
       if (ore) { target = ore.position; mine.targetOre = ore.name; }
       else {
         // No ore in reach of the eye: a branch, down to a working depth
@@ -801,8 +802,16 @@ class Survival {
       task.check();
       if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
       mine.failures++; mine.lastError = err.message;
-      // Three failed steps toward one target: turn and try another way.
-      if (mine.failures >= 3) { mine.heading++; delete mine.target; delete mine.tunnel; mine.failures = 0; }
+      // Three failed steps toward one target: set that ore aside for ten
+      // minutes and turn. Forgetting the target alone chose the same
+      // nearest ore again, and the mine turned eighty times in one place.
+      if (mine.failures >= 3) {
+        if (NIGHT_ORES.has(mine.targetOre) && mine.target) {
+          mine.skip = Object.fromEntries(Object.entries(mine.skip || {}).filter(([, until]) => until > Date.now()));
+          mine.skip[`${pos(mine.target)}`] = Date.now() + 600000;
+        }
+        mine.heading++; delete mine.target; delete mine.tunnel; mine.failures = 0;
+      }
     }
     save();
     return true;

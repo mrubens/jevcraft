@@ -861,3 +861,17 @@ test('a night in a pocket is spent mining: ore in reach is dug, and a bed that c
   bot.time.timeOfDay = 3000; items = items.filter(i => i.name !== 'white_bed');
   assert.equal(survival.canNightMine(goal), false, 'by day there is no night to fill');
 });
+
+test('an ore the night mine cannot reach is set aside, not chosen again as the nearest', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const near = new Vec3(8, 55, 0), far = new Vec3(-10, 55, 0);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 15000 },
+    entity: { position: new Vec3(0.5, 62, 0.5) }, health: 20, food: 20, registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }], slots: {} },
+    findBlocks: () => [near, far], blockAt: p => ({ name: p.equals(near) || p.equals(far) ? 'iron_ore' : 'stone', boundingBox: 'block', position: p }), world: { raycast: () => null } });
+  const survival = new Survival(bot, { dig: async () => {}, navigate: async () => { throw new Error('No existing dry route away from the blocked staircase'); } });
+  survival.report = () => {};
+  for (let i = 0; i < 4; i++) await survival.nightMine(new Task('night', 'mine'), { kind: 'win' }, () => {});
+  assert(survival.state.nightMine.skip?.[`${near}`], 'the unreachable ore rests');
+  assert.deepEqual(survival.state.nightMine.target, { x: far.x, y: far.y, z: far.z }, 'and the mine goes for the next one');
+});

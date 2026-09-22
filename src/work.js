@@ -2251,7 +2251,18 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   const overworld = dimension(bot) === 'overworld';
   const dark = overworld && bot.time?.timeOfDay >= DAY.DUSK;
   if (survival?.canNightMine?.(goal)) offer('night_mine', 'Dig a mine from here for the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter.',
-    async () => { while (await survival.nightMine(bounded, goal, save)) bounded.check(); });
+    // A step a pass, yielding between: a failed step returns at once, and
+    // this loop without a pause spun the event loop until the bot, unable
+    // to move or surface for air, drowned in its own mine.
+    async () => {
+      let failed = 0;
+      while (await survival.nightMine(bounded, goal, save)) {
+        bounded.check();
+        failed = survival.state.nightMine?.failures ? failed + 1 : 0;
+        if (failed >= 6) throw new Error(`The night mine is not getting anywhere: ${survival.state.nightMine?.lastError || 'no progress'}`);
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    });
   if (!dark && overworld) for (const [key, option] of Object.entries(idleOptions(bot, scratch))) {
     if (key === 'long_game') continue;
     offer(key, option.description, () => option.run ? option.run(bot, bounded, scratch, save, homeActions()) : acquireStep(bot, bounded, option.item, option.count, scratch, save));
