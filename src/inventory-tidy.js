@@ -96,4 +96,31 @@ async function tidyInventory(bot, task, { force = false, away = null, keep } = {
   return dropped;
 }
 
-module.exports = { tidyInventory, surplus, spares, roomFor, crowded, SURPLUS, FREE_SLOTS };
+// Room for something wanted, now. Everything under its cap is still
+// cheaper than food or ore: with 190 cobblestone, 104 coal and 67
+// netherrack, all under their caps, the tidy found nothing to drop and four
+// hundred hunts in a row were refused for want of one slot. Stacks go in
+// this order, the smallest first, down to the floor each keeps.
+const EXPENDABLE = [
+  ['dirt', 0], ['gravel', 0], [/_sapling$/, 0], ['nether_brick_fence', 0], ['leaf_litter', 0], ['short_grass', 0],
+  ['netherrack', 32], ['cobbled_deepslate', 0], ['cobblestone', 64], ['soul_sand', 0], ['nether_bricks', 0], ['wheat_seeds', 8],
+];
+async function makeRoom(bot, task, name, { keep = new Set(), away = null } = {}) {
+  if (roomFor(bot, name)) return true;
+  await tidyInventory(bot, task, { force: true, keep: new Set([...keep, name]), away });
+  for (const [match, floor] of EXPENDABLE) {
+    if (roomFor(bot, name)) return true;
+    const test = typeof match === 'string' ? n => n === match : n => match.test(n);
+    const stacks = bot.inventory.items().filter(i => test(i.name) && i.name !== name && !keep.has(i.name)).sort((a, b) => a.count - b.count);
+    let total = stacks.reduce((n, i) => n + i.count, 0);
+    for (const stack of stacks) {
+      if (roomFor(bot, name) || total - stack.count < floor) break;
+      task?.check?.();
+      try { await (bot.tossStack ? bot.tossStack(stack) : bot.toss(stack.type, null, stack.count)); total -= stack.count; }
+      catch (err) { task?.check?.(); break; }
+    }
+  }
+  return roomFor(bot, name);
+}
+
+module.exports = { makeRoom, tidyInventory, surplus, spares, roomFor, crowded, SURPLUS, FREE_SLOTS };

@@ -1,6 +1,6 @@
 'use strict';
 const { move } = require('./motion');
-const { tidyInventory } = require('./inventory-tidy');
+const { makeRoom } = require('./inventory-tidy');
 const { attemptsFor, setAside, isSetAside, failedWithin, watch, unwatch } = require('./progress');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
@@ -800,10 +800,7 @@ class Survival {
     const bot = this.bot;
     if (!this.canNightMine(goal)) return false;
     // Ore dug with no free slot stays on the floor of the tunnel.
-    if (bot.game?.gameMode !== 'creative' && !((bot.inventory.emptySlotCount?.() ?? 1) > 0)) {
-      await tidyInventory(bot, task, { force: true });
-      if (!((bot.inventory.emptySlotCount?.() ?? 1) > 0)) return false;
-    }
+    if (bot.game?.gameMode !== 'creative' && !((bot.inventory.emptySlotCount?.() ?? 1) > 0) && !await makeRoom(bot, task, 'raw_iron')) return false;
     const feet = bot.entity.position.floored();
     const mine = this.state.nightMine ||= { startedAt: Date.now(), origin: { ...feet }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };
     let target = mine.target && pos(mine.target);

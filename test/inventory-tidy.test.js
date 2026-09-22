@@ -64,3 +64,19 @@ test('room for one more is a free slot or a stack with space', () => {
   b.inventory.emptySlotCount = () => 1;
   assert.equal(roomFor(b, 'beef'), true);
 });
+
+test('with every stack under its cap, room for food is made from the cheapest stack, smallest first, down to its floor', async () => {
+  const { makeRoom } = require('../src/inventory-tidy');
+  const stacks = [{ name: 'cobblestone', count: 64 }, { name: 'cobblestone', count: 62 }, { name: 'coal', count: 64 }, { name: 'netherrack', count: 3 },
+    { name: 'netherrack', count: 64 }, { name: 'raw_iron', count: 12 }, { name: 'diamond_sword', count: 1 }];
+  let free = 0; const tossed = [];
+  const b = { registry, inventory: { items: () => stacks, emptySlotCount: () => free, slots: {} },
+    toss: async () => { throw new Error('whole stacks only'); },
+    tossStack: async item => { tossed.push(`${item.count} ${item.name}`); stacks.splice(stacks.indexOf(item), 1); free++; } };
+  assert.equal(await makeRoom(b, null, 'mutton'), true);
+  assert.deepEqual(tossed, ['3 netherrack'], 'one small stack of the cheapest thing, nothing more');
+  free = 0;
+  assert.equal(await makeRoom(b, null, 'mutton'), true);
+  assert.deepEqual(tossed, ['3 netherrack', '62 cobblestone'], 'netherrack is at its floor, so the smaller cobblestone goes next');
+  assert(stacks.some(s => s.name === 'coal') && stacks.some(s => s.name === 'raw_iron'));
+});

@@ -200,6 +200,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 73. *A pocket built and dug out of, with a bed in sight.* The only beds Jev knew were one carried (lost at the death; the kit had none) and its home bed four hundred blocks away, so at nightfall the choice was a sealed pocket, and the night mine then dug out of it, reseal and dig, four times in twenty seconds. A bed in view (Overworld, within 48 blocks, foot half, not occupied, a cell to stand in) is now a bed to sleep in, by the same walk, clear-above and sleep as the home bed. The reseal-and-dig churn itself is still open.
 
+74. *Four hundred refused hunts.* The refusal worked and was its own loop: with the spares gone the pockets filled with things all under their caps (190 cobblestone, 104 coal, 67 netherrack, nether bricks, quartz), the tidy had nothing to drop, and 432 hunts in half an hour ended "No room in my pockets for mutton". Room for something wanted is now made from an expendable list (dirt, gravel, saplings, fence, netherrack down to 32, cobblestone down to 64, soul sand, nether bricks, seeds down to 8), the smallest stack first, one stack at a time, for the hunt, the mine step and the night mine.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

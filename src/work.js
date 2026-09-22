@@ -42,7 +42,7 @@ const { exitEnd } = require('./end-exit');
 const { prepareEndSupplies } = require('./end-supplies');
 const { collectWater } = require('./water');
 const { makeObsidian } = require('./obsidian');
-const { tidyInventory, roomFor } = require('./inventory-tidy');
+const { tidyInventory, roomFor, makeRoom } = require('./inventory-tidy');
 const { homeStep, homeChores , gatherWool, woolCarried } = require('./home-base');
 const { stashValuables, restockFromStash, NETHER_FOOD_POINTS } = require('./home-stash');
 const { noticeVillage, takeVillageBed } = require('./villages');
@@ -631,8 +631,7 @@ async function mine(bot, task, step, goal, save, selected) {
   }
   // Mining with no slot for the drop digs ore for the ground to keep.
   if (step.drops && bot.game?.gameMode !== 'creative' && !roomFor(bot, step.drops)) {
-    await tidyInventory(bot, task, { force: true, keep: new Set([step.drops]) });
-    if (!roomFor(bot, step.drops)) throw new Error(`No room in my pockets for ${step.drops.replaceAll('_', ' ')}`);
+    if (!await makeRoom(bot, task, step.drops, { keep: new Set([goal.item, step.item].filter(Boolean)) })) throw new Error(`No room in my pockets for ${step.drops.replaceAll('_', ' ')}`);
   }
   const surface = surfaceOnly ? surfaceMovement(bot) : null;
   try {
