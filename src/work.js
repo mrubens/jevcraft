@@ -1768,6 +1768,24 @@ async function enterPortal(bot, task, portal, arrived) {
   finally { bot.setControlState('forward', false); }
 }
 
+// Any portal in sight is remembered on the side the bot is standing on.
+// Only the Overworld end of the dream run's portal was ever recorded: the
+// Nether end was noted only when the bot already stood beside it on the way
+// out. Hurt and hungry 120 blocks away, it went to leave for food and did
+// not know where the door was.
+function noticePortal(bot, goal, save) {
+  if (goal._portalCheckedAt > Date.now() - 5000) return;
+  goal._portalCheckedAt = Date.now();
+  if (typeof bot.findBlocks !== 'function') return;
+  const where = dimension(bot);
+  if (!['nether', 'overworld'].includes(where)) return;
+  // An observer never breaks the loop it watches.
+  try {
+    const portal = find(bot, ['nether_portal'], 16, 1)[0];
+    if (portal) rememberPortal(goal, save, portal, where);
+  } catch (_) {}
+}
+
 // Portals the bot has used, per dimension. A food trip that wanders two
 // hundred blocks must not end in a second portal built from scratch: the
 // one already lit is a walk away.
@@ -2177,6 +2195,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     // Say what the last step started on. Here rather than at the loop's end,
     // because survival and continued work leave the loop body early.
     noticeVillage(bot, goal, save);
+    noticePortal(bot, goal, save);
     narrate(bot, goal);
     const before = JSON.stringify(inventory(bot));
     const constructionBefore = constructionObservation(bot, goal);
