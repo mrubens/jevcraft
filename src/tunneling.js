@@ -5,7 +5,7 @@ const { opportunisticPickups } = require('./opportunistic-pickups');
 const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
 const { safeFromHostiles, hostileEntities } = require('./danger');
-const { advance } = require('./progress');
+const { advance, attemptsFor, setAside, isSetAside } = require('./progress');
 const { surveyRoute } = require('./skills');
 const { dryPassable: passable, dryBodySpace } = require('./terrain');
 const { descendPillar } = require('./pillar-recovery');
@@ -53,7 +53,7 @@ function noteProgress(tunnel, target, gap) {
   // shaft's whole life, so once twenty-four had piled up over hours every
   // dead end was final, however much ground had been made in between.
   const progress = { best: tunnel.best, looks: tunnel.sinceBest };
-  if (!advance(progress, gap)) tunnel.retreats = 0;
+  if (!advance(progress, gap)) { tunnel.retreats = 0; tunnel.staleRounds = 0; }
   tunnel.best = progress.best; tunnel.sinceBest = progress.looks;
   return tunnel.sinceBest;
 }
@@ -159,7 +159,14 @@ class NoSafeWay extends Error {
   }
 }
 
+const STALE_ROUNDS = 3, STAIRCASE_REST_MS = 10 * 60000;
+class StaircaseStalled extends Error {
+  constructor(target, why) { super(`The staircase toward ${target} is set aside (${why}); trying another way`); this.name = 'StaircaseStalled'; }
+}
+const staircaseResting = (goal, target) => isSetAside(goal, 'staircase', target);
+
 async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false }) {
+  if (staircaseResting(goal, target)) throw new StaircaseStalled(target, attemptsFor(goal).why('staircase', target));
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
   // A spent budget is a shaft that has wandered, not a reason to stop: the
@@ -183,10 +190,25 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
   noteProgress(tunnel, target, bot.entity.position.distanceTo(target));
   tunnel.visited[`${choice.destination}`] = (tunnel.visited[`${choice.destination}`] || 0) + 1;
   tunnel.steps++;
-  const gap = bot.entity.position.distanceTo(target);
+  // A round that gains nothing starts again, but keeps its best and the map
+  // of cells it has walked. Both used to be reset: each round measured
+  // itself from wherever it began and walked the same cells as new, and the
+  // dream run went up and down one twenty-five-block fortress corridor,
+  // ninety-six blocks from its portal, for eighty-eight rounds. Three rounds
+  // with no new best and the staircase to this target is set aside, so the
+  // caller tries another way.
   if (tunnel.sinceBest >= 48) {
-    Object.assign(tunnel, { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {}, retreats: 0, retreatVisited: {}, rounds: (tunnel.rounds || 0) + 1, best: gap, sinceBest: 0 });
-    delete tunnel.workPosition; save();
+    tunnel.staleRounds = (tunnel.staleRounds || 0) + 1;
+    Object.assign(tunnel, { entrance: { ...bot.entity.position.floored() }, steps: 0, retreats: 0, retreatVisited: {}, rounds: (tunnel.rounds || 0) + 1, sinceBest: 0 });
+    delete tunnel.workPosition;
+    if (tunnel.staleRounds >= STALE_ROUNDS) {
+      const why = `${STALE_ROUNDS} rounds without getting closer than ${Math.round(tunnel.best)} blocks`;
+      Object.assign(tunnel, { staleRounds: 0, visited: {} }); delete tunnel.best;
+      setAside(goal, 'staircase', target, why, STAIRCASE_REST_MS);
+      save();
+      throw new StaircaseStalled(target, why);
+    }
+    save();
     throw new Error(`The staircase toward ${target} is not gaining on it; starting round ${tunnel.rounds + 1}`);
   }
   goal.step = { action: 'tunnel', target: { ...target }, destination: { ...choice.destination }, steps: tunnel.steps };
@@ -301,4 +323,4 @@ async function retreatForTunnel(bot, task, goal, save, { navigate }) {
   } finally { Object.assign(movement, previous); }
 }
 
-module.exports = { NoSafeWay, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { NoSafeWay, StaircaseStalled, staircaseResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };

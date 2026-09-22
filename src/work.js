@@ -12,7 +12,7 @@ const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
 const { reservedForConstruction, portalSiteClear, selectPortalSite, portalSupports } = require('./build-sites');
 const { updateDigCapabilities } = require('./movement');
-const { resourceTunnelStep, tunnelStep } = require('./tunneling');
+const { resourceTunnelStep, tunnelStep, staircaseResting } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard, safeFood } = require('./vitals');
 const { decideTree, announceFallback, firstOption } = require('./decisions');
 const { Survival } = require('./survival');
@@ -1915,9 +1915,30 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   if (distance <= 48) {
     try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000 }); return true; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  } else if (!isSetAside(goal, 'portal_leg', pos(p))) {
+    if (await portalLeg(bot, task, p)) return true;
+    setAside(goal, 'portal_leg', pos(p), 'a walk toward it made no ground', 120000); save();
+  }
+  // Farther off, a leg of the way on foot first: ninety-six blocks from
+  // the portal the staircase was the only thing tried, and it went up and
+  // down one fortress corridor for eighty-eight rounds.
+  if (staircaseResting(goal, pos(p))) {
+    const err = new Error(`No way back to the ${where} portal at ${p.x}, ${p.y}, ${p.z}: ${attemptsFor(goal).why('staircase', pos(p))}, and the walk made no ground`);
+    err.name = 'Blocked'; throw err;
   }
   await tunnelToward(bot, task, goal, save, pos(p), `portal_${where}`);
   return true;
+}
+
+// Thirty-two blocks of the way by the pathfinder, which bridges and climbs
+// where a staircase can only dig. Six blocks gained is a leg that worked.
+async function portalLeg(bot, task, p) {
+  const here = bot.entity.position, flat = at => Math.hypot(p.x - at.x, p.z - at.z), before = flat(here);
+  const step = Math.min(32, before - 8) / before;
+  const leg = { x: here.x + (p.x - here.x) * step, z: here.z + (p.z - here.z) * step };
+  try { await navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 4), { timeoutMs: 30000, stallMs: 8000 }); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  return flat(bot.entity.position) < before - 6;
 }
 
 // A staircase needs a pickaxe; the planner offers no stone stair without

@@ -388,3 +388,31 @@ test('the retreat budget is spent between gains, not over the shaft\'s whole lif
   noteProgress(tunnel, target, 28);
   assert.equal(tunnel.retreats, 0);
 });
+
+test('a staircase that gains nothing keeps its best and its walked cells, and after three such rounds is set aside', async () => {
+  const bot = world();
+  bot.pathfinder = { setGoal() {}, goto: async () => {} }; bot.game = { gameMode: 'survival' };
+  const dig = async (b, t, p) => { bot.blocks.set(`${p}`, { name: 'air', position: p, boundingBox: 'empty', diggable: false }); };
+  const navigate = async (b, t, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); };
+  // A target ninety blocks off, and a best of ten already made: every step here is a step that gains nothing.
+  const target = new Vec3(90, 70, 0);
+  const goal = { tunnel: { entrance: { x: 0, y: 70, z: 0 }, steps: 3, visited: { walked: 4 }, target: { x: 90, y: 70, z: 0 }, best: 10, sinceBest: 47 } };
+  await assert.rejects(tunnelStep(bot, new Task('round'), goal, () => {}, target, { dig, navigate }), /not gaining on it; starting round 2/);
+  assert.equal(goal.tunnel.best, 10, 'the best is kept across rounds');
+  assert.equal(goal.tunnel.visited.walked, 4, 'and the cells it has walked');
+  goal.tunnel.sinceBest = 47;
+  await assert.rejects(tunnelStep(bot, new Task('round'), goal, () => {}, target, { dig, navigate }), /starting round 3/);
+  goal.tunnel.sinceBest = 47;
+  await assert.rejects(tunnelStep(bot, new Task('round'), goal, () => {}, target, { dig, navigate }), e => e.name === 'StaircaseStalled' && /closer than 10 blocks/.test(e.message));
+  await assert.rejects(tunnelStep(bot, new Task('again'), goal, () => {}, target, { dig, navigate }), { name: 'StaircaseStalled' }, 'set aside, not walked again');
+  assert.equal(goal.attempts['staircase:90,70,0'].action, 'staircase');
+});
+
+test('a new best clears the count of rounds that gained nothing', () => {
+  const { noteProgress } = require('../src/tunneling');
+  const tunnel = { best: 40, sinceBest: 0, staleRounds: 2 }, target = new Vec3(0, 40, 0);
+  noteProgress(tunnel, target, 41);
+  assert.equal(tunnel.staleRounds, 2);
+  noteProgress(tunnel, target, 38);
+  assert.equal(tunnel.staleRounds, 0);
+});
