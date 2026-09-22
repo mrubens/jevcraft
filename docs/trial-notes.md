@@ -164,6 +164,11 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 58. *The base is not a place to leave a pocket standing.* A pocket at the base comes down when it is left in the morning; a block on the stash chest's lid or on the bed is dug off before opening or sleeping; a sleep is judged by the clock even when mineflayer times out waiting for its event, and a refusal the server names is logged.
 59. *Measured.* Seconds still, per hour and per reason, are kept with the survival state; `node scripts/stillness-report.js` prints the table.
 
+**First hour on the stillness rule (2026-09-22 19:35 to 19:55 UTC).** Two stalls in twenty minutes, 40 seconds still in all, each answered within the second: waiting for bedtime became a night mine that took six coal from under the base, and a hunt standing "recovering" at full health on the fortress roof became a look around. The bed slept on the first try after the block on it was dug off.
+
+60. *Recovery was the answer to every failed fight check, including footing.* At 20 health and 18 food on a fortress roof the hunt stood "recovering": the check it failed was dry standing ground, and waiting never changes that. Recovery is now for health and hunger only; bad footing falls through to the stalk, which moves.
+61. *Death ten: fell from a high place* in the Nether at 15:50 local, tunnelling back toward the portal on the way home for food. The log does not show the fall itself; recorded, cause not found. The kit-restore aid put the kit back (controlled-run intervention, not acceptance evidence).
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
