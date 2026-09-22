@@ -534,7 +534,10 @@ class Survival {
     // night for the bed, or with mobs outwaited, says so.
     reason ||= shelterNeeded(bot) ? 'Moving on.' : undefined;
     // Mobs that can see in, or are at the wall; the rest are behind rock.
-    const danger = threats(bot).filter(t => t.visible || t.distance < 6);
+    // Not the quarry, for a bot fit to fight it: the exit had to be twenty
+    // blocks from every blaze, beside a spawner that is never true, so the
+    // bot decided to leave and then refused every door for twenty minutes.
+    const danger = threats(bot).filter(t => (t.visible || t.distance < 6) && !claimed(bot, t.entity));
     const formal = shelter.exits(bot, refuge).filter(exit => danger.every(t => t.entity.position.distanceTo(exit.outside) > 20));
     // A pocket sealed in a staircase has no two-block exit: its door is the
     // closure the bot placed, and the way on is dug from there.
