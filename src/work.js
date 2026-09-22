@@ -2137,6 +2137,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     task.interruptCheck = undefined;
     task.check();
     updateDigCapabilities(bot);
+    // Every tick starts with the configured movement policy: leaked
+    // restrictions from a step that threw are not carried into the next.
+    if (bot._movementDefaults && bot.pathfinder?.movements) Object.assign(bot.pathfinder.movements, bot._movementDefaults, { scafoldingBlocks: [...bot._movementDefaults.scafoldingBlocks] });
     // Say what the last step started on. Here rather than at the loop's end,
     // because survival and continued work leave the loop body early.
     noticeVillage(bot, goal, save);

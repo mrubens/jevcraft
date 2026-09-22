@@ -132,6 +132,11 @@ function configureMovements(bot) {
   movement.allowParkour = false;
   movement.allowSprinting = false;
   movement.maxDropDown = 3;
+  // The defaults, kept for the main loop to restore each tick: a policy a
+  // step applies and never restores on an error path otherwise cripples
+  // every later path search with someone else's restrictions.
+  bot._movementDefaults = { canDig: true, allow1by1towers: true, allowParkour: false, allowSprinting: false, maxDropDown: 3,
+    scafoldingBlocks: [...movement.scafoldingBlocks], allowedPosition: undefined };
   // Pathfinder otherwise treats water as a safe landing at ANY depth,
   // even when a cliff has ledges between the bot and that water.
   movement.infiniteLiquidDropdownDistance = false;
