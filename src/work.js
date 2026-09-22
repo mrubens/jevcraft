@@ -139,7 +139,10 @@ function progressKey(bot, goal, previous) {
   const step = goal.step || {};
   const phase = goal.gameProgress?.phase || (RETRY_STEPS.has(step.action) && previous !== undefined ? previous.split('|')[0] :
     [step.item, step.resource, step.block, step.entity, step.action].find(Boolean) || '');
-  const items = bot.inventory.items().filter(i => !FILLER.test(i.name)).map(i => `${i.name}:${i.count}`).sort().join(',');
+  // Unless it is what was asked for: "get me 256 cobblestone" is nothing
+  // but dug rock, and was judged stuck after five minutes of it.
+  const wanted = new Set([goal.item, step.item, step.drops, ...(goal.tasks || []).map(t => t.item)].filter(Boolean));
+  const items = bot.inventory.items().filter(i => wanted.has(i.name) || !FILLER.test(i.name)).map(i => `${i.name}:${i.count}`).sort().join(',');
   return `${phase}|${items}`;
 }
 // Time the watchdog should not count, because something else had the bot: a
@@ -1314,20 +1317,21 @@ function buildEffort(blueprint) {
 }
 
 // The candidate blocks a route reaches, for options Jev will be offered.
-// The single-slice path search answered in forty milliseconds and "partial"
-// was read as "no route", so distant sources that could be reached were
-// left off and the step fell back to exploring. A partial or timed-out
-// search is unfinished, not a refusal: only "noPath" rules a block out.
-// One budget for the whole survey; a block not checked in it is left off.
-// The two call sites had drifted apart (sixteen at 300 ms, twelve at 200).
-async function reachableBlocks(bot, task, candidates, { limit = 16, budgetMs = 1500, eachMs = 300 } = {}) {
+// The single-slice path search answered in forty milliseconds, so distant
+// sources that could be reached came back "partial" and were left off. The
+// search now runs in slices to its own time limit and a route must be
+// found: accepting an unfinished search as well offered walled-off ore to
+// Jev again. One budget for the survey, nearest first; a block not checked
+// in it is left off. The two call sites had drifted apart (sixteen at 300
+// ms, twelve at 200).
+async function reachableBlocks(bot, task, candidates, { limit = 16, budgetMs = 3000, eachMs = 500 } = {}) {
   const reachable = [], deadline = Date.now() + budgetMs;
   for (const p of candidates.slice(0, limit)) {
     if (p.equals(supportCell(bot.entity.position))) continue;
     if (!bot.canDigBlock(bot.blockAt(p))) {
       if (Date.now() >= deadline) continue;
       const route = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalGetToBlock(p.x, p.y, p.z), Math.min(eachMs, deadline - Date.now()));
-      if (!['success', 'partial', 'timeout'].includes(route.status)) continue;
+      if (route.status !== 'success') continue;
     }
     reachable.push(p);
   }

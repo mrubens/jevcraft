@@ -169,13 +169,13 @@ test('persist turns each resource\'s search heading instead of resetting it to t
   assert.deepEqual(turnSearch(undefined), {});
 });
 
-test('a source whose route search is unfinished is still offered; only no path at all rules it out', async () => {
+test('a source is offered only when a route to it is found, searched in slices rather than one forty-millisecond look', async () => {
   const { reachableBlocks } = require('../src/work');
   const statuses = { 1: 'success', 2: 'partial', 3: 'timeout', 4: 'noPath' };
   const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, canDigBlock: () => false, blockAt: p => ({ name: 'oak_log', position: p }),
     pathfinder: { movements: {}, getPathTo: (_m, goal) => ({ status: statuses[goal.x] }) } };
   const found = await reachableBlocks(bot, new Task('reach'), [1, 2, 3, 4].map(x => new Vec3(x, 64, 5)));
-  assert.deepEqual(found.map(p => p.x), [1, 2, 3]);
+  assert.deepEqual(found.map(p => p.x), [1], 'an unfinished search is not a route');
 });
 
 test('entering a portal stops inside it and stands still, instead of walking through and off the far side', async () => {
@@ -201,4 +201,15 @@ test('entering a portal stops inside it and stands still, instead of walking thr
   assert.equal(bot.entity.position.floored().z, -1, 'and it is standing in the portal, not past it');
   assert.equal(bot.game.dimension, 'overworld');
   assert.equal(controls.forward, false);
+});
+
+test('rock that was asked for is progress: a cobblestone request is not judged stuck for digging cobblestone', async () => {
+  const { progressWatchdog } = require('../src/work');
+  const bot = fixture({ stone_pickaxe: 1 }); bot.chat = () => {};
+  const goal = { kind: 'obtain', item: 'cobblestone', count: 256, step: { action: 'mine', drops: 'cobblestone' } };
+  await progressWatchdog(bot, new Task('watch'), goal, () => {});
+  const before = goal.progressWatch.key;
+  bot.inventory.items().push({ name: 'cobblestone', count: 12 });
+  await progressWatchdog(bot, new Task('watch'), goal, () => {});
+  assert.notEqual(goal.progressWatch.key, before, 'the pile growing is a change, and starts a new window');
 });
