@@ -31,7 +31,7 @@ test('spare daylight offers the feasible chores and the long game, and Jev choos
   } };
   assert.equal(await idleWork(bot, task, goal, () => {}, client, () => {}, { acquire: async (_b, _t, item, count) => { acquired.push([item, count]); } }), true);
   assert.deepEqual(acquired, [['cooked_beef', 4]]);
-  assert(asked[0].rest, 'resting is always on offer');
+  assert(!asked[0].rest, 'standing still is never on offer');
   assert.match(bot.said[0], /cook the beef/);
   assert.equal(goal.decisions.at(-1).path[0], 'cook_food');
 });

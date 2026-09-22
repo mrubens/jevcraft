@@ -17,6 +17,7 @@ const { deflect } = require('./projectile-guard');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
 const { surfaceObserver } = require('./surface');
+const { tunnelStep } = require('./tunneling');
 const { thinking } = require('./speech');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pos = p => new Vec3(p.x, p.y, p.z);
@@ -30,6 +31,22 @@ function firmStep(bot, p) {
   const floor = bot.blockAt(p.offset(0, -1, 0)), body = [bot.blockAt(p), bot.blockAt(p.offset(0, 1, 0))];
   return floor?.boundingBox === 'block' && !/lava|magma|fire/.test(floor.name) && body.every(b => b && b.boundingBox === 'empty' && !/lava|fire/.test(b.name)) && !lavaBeside(bot, p);
 }
+// Ore worth a night's digging, nearest first, below the bot or level with
+// it: a tunnel up toward an ore in the roof is a tunnel toward the surface.
+const NIGHT_ORES = new Set(['coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
+  'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_copper_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore', 'deepslate_emerald_ore']);
+function nightOre(bot, feet) {
+  const ids = [...NIGHT_ORES].map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
+  const found = bot.findBlocks?.({ matching: ids, maxDistance: 24, count: 32 }) || [];
+  const p = found.filter(q => q.y <= feet.y + 1 && q.y >= -48).sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))[0];
+  return p ? { position: p, name: bot.blockAt(p)?.name } : null;
+}
+
+// What a pocket is built of: what the bot carries to wall itself in with.
+// Natural ground in the shell was never placed and stays where it is.
+const POCKET_BLOCKS = new Set(['cobblestone', 'cobbled_deepslate', 'netherrack', 'dirt', 'andesite', 'diorite', 'granite', 'tuff', 'blackstone', 'basalt',
+  'oak_planks', 'birch_planks', 'spruce_planks', 'jungle_planks', 'acacia_planks', 'dark_oak_planks', 'mangrove_planks', 'cherry_planks']);
+
 async function clearAboveBed(bot, task, actions, site) {
   for (const cell of [site.foot, site.head].filter(Boolean).map(p => p.offset(0, 1, 0))) {
     const block = bot.blockAt(cell);
@@ -608,6 +625,17 @@ class Survival {
     // Only a house persists. The bot bounced between the two floor cells of
     // a pocket it had just left, every other cell around it reserved.
     if (refuge.kind !== 'house') { this.state.shelters = this.state.shelters.filter(s => s !== refuge); save(); }
+    // At the base, the whole pocket comes down in the morning. One left
+    // standing beside the bed put a block on the bed and one on the stash
+    // chest and walled the path to the wheat: no sleep, no food from the
+    // chest, no harvest, and a bot with nothing left to try.
+    const home = homeOf(bot, goal);
+    if (refuge.kind !== 'house' && !shelterNeeded(bot) && home?.origin && home.dimension === bot.game.dimension &&
+        pos(refuge.origin).distanceTo(pos(home.origin)) <= 12) {
+      const placed = shelter.shell(refuge.origin).filter(p => POCKET_BLOCKS.has(bot.blockAt(p)?.name));
+      if (placed.length) this.report(goal, save, { action: 'clear_pocket_at_base', cells: placed.length });
+      for (const p of placed) { try { await this.actions.dig(bot, task, p, { requireDrops: false }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; } }
+    }
     if (exit.outside) await this.actions.navigate(bot, task, new goals.GoalBlock(exit.outside.x, exit.outside.y, exit.outside.z), { timeoutMs: 10000 });
   }
 
@@ -714,6 +742,70 @@ class Survival {
     this.report(goal, save, { action: 'leave_shelter', reason: 'Morning. Back to it.' });
   }
 
+  // A night in a pocket was a night standing still: eleven minutes behind a
+  // wall, every night nothing better was on offer. It is spent the way a
+  // player spends it, digging a mine out of the shelter: toward ore in
+  // view of the rock, or down and along a branch, one staircase step a
+  // tick. Rock around a tunnel is the shelter's wall. A bed that can be
+  // slept in comes first, a mob that shows is the survival layer's as
+  // ever, and at dawn the mine is left for the day's work.
+  canNightMine(goal) {
+    const bot = this.bot;
+    if (bot.game?.dimension !== 'overworld' || !shelterNeeded(bot) || bot.game.difficulty === 'peaceful') return false;
+    if ((bot.health ?? 20) < 10 || immediateThreat(bot)) return false;
+    if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) return false;
+    if (sleepable(bot) && !sleepWaiting(this.state) && (bedCarried(bot) || nearbyHomeBed(bot, goal))) return false;
+    return true;
+  }
+
+  async nightMine(task, goal, save) {
+    const bot = this.bot;
+    if (!this.canNightMine(goal)) return false;
+    const feet = bot.entity.position.floored();
+    const mine = this.state.nightMine ||= { startedAt: Date.now(), origin: { ...feet }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };
+    let target = mine.target && pos(mine.target);
+    if (target && NIGHT_ORES.has(mine.targetOre) && bot.blockAt(target)?.name !== mine.targetOre) { target = null; delete mine.target; }
+    if (target && !NIGHT_ORES.has(mine.targetOre) && target.distanceTo(bot.entity.position) < 2.5) target = null;
+    if (!target) {
+      const ore = nightOre(bot, feet);
+      if (ore) { target = ore.position; mine.targetOre = ore.name; }
+      else {
+        // No ore in reach of the eye: a branch, down to a working depth
+        // and then along, in the mine's heading.
+        const [dx, dz] = [[1, 0], [0, 1], [-1, 0], [0, -1]][mine.heading % 4];
+        target = feet.offset(dx * 24, Math.max(-10, 16 - feet.y), dz * 24);
+        if (target.y < feet.y - 10) target.y = feet.y - 10;
+        mine.targetOre = 'branch';
+      }
+      mine.target = { x: target.x, y: target.y, z: target.z };
+    }
+    this.report(goal, save, { action: 'night_mine', target: { ...mine.target }, ore: mine.targetOre, mined: mine.mined });
+    try {
+      if (NIGHT_ORES.has(mine.targetOre) && target.distanceTo(bot.entity.position.offset(0, 1.6, 0)) <= 4.5) {
+        const before = bot.inventory.items().length;
+        await this.actions.dig(bot, task, target, { requireDrops: false });
+        mine.mined++; delete mine.target; mine.failures = 0;
+        // What fell is picked up on the next step into the cell.
+        await sleep(300);
+        if (bot.inventory.items().length === before) {
+          const drop = Object.values(bot.entities).find(e => e.getDroppedItem?.() && e.position.distanceTo(target) < 2.5);
+          if (drop) { try { await this.actions.navigate(bot, task, new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 0.5), { timeoutMs: 3000, stallMs: 1500 }); } catch (_) { task.check(); } }
+        }
+      } else {
+        await tunnelStep(bot, task, mine, save, target, { dig: this.actions.dig, navigate: this.actions.navigate });
+        mine.failures = 0;
+      }
+    } catch (err) {
+      task.check();
+      if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+      mine.failures++; mine.lastError = err.message;
+      // Three failed steps toward one target: turn and try another way.
+      if (mine.failures >= 3) { mine.heading++; delete mine.target; delete mine.tunnel; mine.failures = 0; }
+    }
+    save();
+    return true;
+  }
+
   async wait(task, goal, save, reason = 'Waiting for daylight inside the verified shelter') {
     this.report(goal, save, { action: 'wait_in_shelter', reason });
     for (let i = 0; i < 50; i++) { task.check(); await sleep(100); }
@@ -772,6 +864,10 @@ class Survival {
         // a wait with no named reason cost an hour of guessing.
         const watcher = threats(bot).find(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity));
         const hunt = bot._huntingEntity;
+        // Nothing watching: the night is spent working, not waiting. The
+        // pocket is the mouth of a mine, and a tunnel in rock is as closed
+        // as the pocket was.
+        if (!watcher && !watched && await this.nightMine(task, goal, save)) { onStep(goal); return true; }
         await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter');
@@ -779,6 +875,9 @@ class Survival {
       else { delete this.state.watchedSince; await this.leave(task, goal, save, refuge); }
       onStep(goal); return true;
     }
+    if (!shelterNeeded(bot)) delete this.state.nightMine;
+    else if (this.state.nightMine && !immediateThreat(bot) && !surfaceObserver(bot)(bot.entity.position.offset(0, 1, 0)) &&
+        await this.nightMine(task, goal, save)) { onStep(goal); return true; }
     const emergency = immediateThreat(bot);
     if (emergency) {
       // Sealing a nearby prepared site is faster than a long retreat. Otherwise

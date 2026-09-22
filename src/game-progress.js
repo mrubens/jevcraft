@@ -283,4 +283,4 @@ async function gameStep(bot, task, goal, save, actions) {
   return false;
 }
 
-module.exports = { timeRung, preparationRung, DEFERRABLE, RUNG_BUDGET_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };
+module.exports = { timeRung, preparationRung, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };

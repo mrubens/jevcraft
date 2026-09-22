@@ -836,3 +836,28 @@ test('at dusk with a bed at home, Jev heads home before bedtime', async () => {
   assert.equal(await survival.step(new Task('test', 'dusk'), goal, () => {}), true, 'home before bedtime: the survival layer keeps the turn');
   assert.deepEqual(reported, ['wait_for_bedtime']); assert.equal(walked.length, 1, 'no second walk, no dive back to work');
 });
+
+test('a night in a pocket is spent mining: ore in reach is dug, and a bed that can be slept in comes first', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const ore = new Vec3(2, 62, 0);
+  const blocks = new Map([[`${ore}`, 'iron_ore']]);
+  let items = [{ name: 'iron_pickaxe', count: 1 }, { name: 'iron_sword', count: 1 }];
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 15000 },
+    entity: { position: new Vec3(0.5, 62, 0.5) }, health: 20, food: 20, registry, inventory: { items: () => items, slots: {} },
+    findBlocks: ({ matching }) => blocks.has(`${ore}`) && matching.includes(registry.blocksByName.iron_ore.id) ? [ore] : [],
+    blockAt: p => ({ name: blocks.get(`${p}`) || 'stone', boundingBox: 'block', position: p }), world: { raycast: () => null } });
+  const dug = [];
+  const survival = new Survival(bot, { dig: async (b, t, p) => { dug.push(`${p}`); blocks.delete(`${p}`); items = [...items, { name: 'raw_iron', count: 1 }]; }, navigate: async () => {} });
+  const goal = { kind: 'win' }, actions = [];
+  survival.report = (g, sv, action) => actions.push(action);
+  assert(survival.canNightMine(goal));
+  assert.equal(await survival.nightMine(new Task('night', 'mine'), goal, () => {}), true);
+  assert.deepEqual(dug, [`${ore}`], 'the iron in reach is dug');
+  assert.equal(actions[0].action, 'night_mine'); assert.equal(actions[0].ore, 'iron_ore');
+  assert.equal(survival.state.nightMine.mined, 1);
+  items = [...items, { name: 'white_bed', count: 1 }];
+  assert.equal(survival.canNightMine(goal), false, 'with a bed to sleep in, the night is slept');
+  bot.time.timeOfDay = 3000; items = items.filter(i => i.name !== 'white_bed');
+  assert.equal(survival.canNightMine(goal), false, 'by day there is no night to fill');
+});

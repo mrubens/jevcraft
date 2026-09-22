@@ -1,5 +1,6 @@
 'use strict';
 const { DAY } = require('./day');
+const { STILL_MS, watchActivity, markActivity, stillFor, permittedWait, stillReason, recordStill } = require('./stillness');
 
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
@@ -29,7 +30,7 @@ const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMov
 const { dryPassable, supportCell, swimmableWater } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
 const { descendPillar } = require('./pillar-recovery');
-const { gameStep, watchGameProgress, dimension, nextGameStage } = require('./game-progress');
+const { gameStep, watchGameProgress, dimension, nextGameStage, DEFERRABLE, RUNG_WAIT_MS } = require('./game-progress');
 const { carriedEquipment } = require('./mob-policy');
 const { huntObserved, prepareMobHunt, prepareCombatGear } = require('./mob-hunt');
 const { findStronghold } = require('./stronghold');
@@ -2130,7 +2131,9 @@ async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acqu
   if (bot.game.dimension === 'overworld' && bot.time?.timeOfDay >= DAY.DUSK) return false;
   const options = idleOptions(bot, goal);
   if (!Object.keys(options).length) return false;
-  const tree = { rest: { description: 'Wait here quietly. Right when supplies are sufficient, light is short, or the player is likely to ask for something soon.', run: async () => { for (let n = 0; n < 30; n++) { task.check(); await sleep(100); } } } };
+  // No "rest" option: waiting here quietly was the answer Jev could always
+  // pick, and standing still is the one thing the bot should never do.
+  const tree = {};
   for (const [key, option] of Object.entries(options)) {
     tree[key] = { description: option.description, run: async () => {
       goal.step = { action: 'idle', choice: key, item: option.item, count: option.count, phase: option.phase }; save(); narrate(bot, goal);
@@ -2147,6 +2150,77 @@ async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acqu
   return true;
 }
 
+
+// Standing still is a bug (see stillness.js). What to do instead: work that
+// can be done from here, Jev's pick, each bounded to three minutes, after
+// which the stalled work gets its turn again. A detour that fails rests
+// for five minutes, and a rung that keeps stalling is set aside like one
+// that ran over its budget.
+const DETOUR_MS = 180000, DETOUR_REST_MS = 300000;
+const USEFUL_ORES = ['coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
+  'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_copper_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore',
+  'nether_quartz_ore', 'nether_gold_ore', 'ancient_debris'];
+async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, now = Date.now() } = {}) {
+  const ms = stillFor(bot, now), reason = stillReason(goal, now);
+  // The next twenty seconds belong to the detour, whatever it turns out to be.
+  markActivity(bot, 'detour');
+  const rung = goal.rungTime?.phase;
+  if (rung && DEFERRABLE.has(rung)) {
+    const stalls = goal.rungStalls ||= {};
+    stalls[rung] = [...(stalls[rung] || []).filter(t => now - t < 600000), now];
+    if (stalls[rung].length >= 3) {
+      (goal.rungDeferred ||= {})[rung] = now + RUNG_WAIT_MS; delete stalls[rung]; delete goal.rungTime;
+      bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
+    }
+  }
+  const deadline = now + DETOUR_MS;
+  const bounded = Object.create(task);
+  bounded.check = () => { task.check(); if (Date.now() >= deadline) throw Object.assign(new Error('The detour has had its time'), { name: 'DetourBudget' }); };
+  const rested = goal.detourFailures ||= {};
+  const tree = {};
+  const offer = (key, description, run) => {
+    if (rested[key] > now - DETOUR_REST_MS) return;
+    tree[key] = { description, run: async () => {
+      goal.step = { action: 'detour', choice: key, from: reason }; save(); narrate(bot, goal);
+      try { await run(); }
+      catch (err) {
+        if (err.name === 'DetourBudget') return;
+        task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err;
+        rested[key] = Date.now(); throw err;
+      }
+    } };
+  };
+  const overworld = dimension(bot) === 'overworld';
+  const dark = overworld && bot.time?.timeOfDay >= DAY.DUSK;
+  if (survival?.canNightMine?.(goal)) offer('night_mine', 'Dig a mine from here for the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter.',
+    async () => { while (await survival.nightMine(bounded, goal, save)) bounded.check(); });
+  if (!dark) for (const [key, option] of Object.entries(idleOptions(bot, goal))) {
+    if (key === 'long_game') continue;
+    offer(key, option.description, () => option.run ? option.run(bot, bounded, goal, save, homeActions()) : acquireStep(bot, bounded, option.item, option.count, goal, save));
+  }
+  const ore = find(bot, USEFUL_ORES, 16, 8).map(p => ({ p, name: bot.blockAt(p)?.name })).filter(o => o.name)[0];
+  if (ore) offer('mine_nearby', `Dig the ${ore.name.replaceAll('_', ' ')} ${Math.round(ore.p.distanceTo(bot.entity.position))} blocks away.`,
+    () => dig(bot, bounded, ore.p, {}));
+  if (!dark) {
+    const heading = ((goal.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; goal.detourHeading = heading;
+    const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
+    const target = here.offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
+    offer('look_around', 'Walk about twenty-four blocks in a direction not tried lately and see what is there: animals, trees, ore in a cliff, a better way on.',
+      () => navigate(bot, bounded, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 }));
+  }
+  const options = Object.keys(tree);
+  const stats = survival?.state || goal.survival || goal;
+  recordStill(stats, reason, ms, { now, detour: options.join(',') || 'none' });
+  console.log(`[still] ${Math.round(ms / 1000)}s on ${reason}; detours: ${options.join(', ') || 'none'}`);
+  save();
+  if (!options.length) return false;
+  const step = goal.step;
+  try {
+    if (!client || options.length === 1) await tree[options[0]].run();
+    else await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `Standing still for ${Math.round(ms / 1000)} seconds on ${reason.replace(/^\w+:/, '').replaceAll('_', ' ')}. Choose something useful to do from here for a few minutes; the stalled work gets its turn again afterwards.` });
+  } finally { goal.step = step; markActivity(bot, 'detour'); save(); }
+  return true;
+}
 
 // What the home base needs from the executor: travel, placing, digging,
 // the planner for anything craftable, and a search for sheep or cows.
@@ -2165,30 +2239,51 @@ function gameHandlers(bot, decisionClient) {
         // survival layer's stock-driven search fills the reserve; a search
         // it has set aside as fruitless lets the trip go with what there is.
         food_reserve: async (bot, task, goal, save) => {
-          const NETHER_FOOD = NETHER_FOOD_POINTS;
-          if (foodSupply(bot) >= NETHER_FOOD) { delete goal.preparingNether; return true; }
-          // A failed animal search is not permission to go hungry while the
-          // chest at home has food in it: take that first.
-          const stashFood = Object.entries(goal.survival?.home?.stash?.contents || {})
+          // The gate never waits. It takes food from the chest, harvests the
+          // plot, or sends the survival layer hunting, and after twenty
+          // working minutes of that it lets the crossing go with what there
+          // is. It used to return having done nothing whenever the chest
+          // would not open and the animal search was resting, and the loop
+          // spun on it at twenty passes a second.
+          const NETHER_FOOD = NETHER_FOOD_POINTS, now = Date.now();
+          if (foodSupply(bot) >= NETHER_FOOD) { delete goal.preparingNether; delete goal.foodGate; return true; }
+          const gate = goal.foodGate ||= { activeMs: 0, lastAt: now };
+          gate.activeMs += Math.min(30000, Math.max(0, now - gate.lastAt)); gate.lastAt = now;
+          if (gate.activeMs >= 20 * 60000) {
+            bot.chat?.(`I've spent twenty minutes getting food together. Going with what I have (${foodSupply(bot)} points).`);
+            delete goal.preparingNether; delete goal.foodGate; return true;
+          }
+          goal.preparingNether = true; goal.stockFood = true;
+          const survivalState = goal.survival || {};
+          // The chest first, from wherever the bot is.
+          const stashFood = Object.entries(survivalState.home?.stash?.contents || {})
             .reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
-          if (goal.survival?.foodStockPausedUntil > Date.now() && stashFood < 1) { delete goal.preparingNether; return true; }
-          // The chest has food: go and get it, from wherever the bot is. The
-          // stash restock only offered itself within reach of the base, so a
-          // bot twenty-two blocks out waited on a paused animal search for
-          // ever with forty points of steak in the chest.
           const home = require('./home-base').homeOf(bot, goal);
-          if (stashFood > 0 && home?.stash?.position && !(goal.survival?.foodFetchFailedAt > Date.now() - 120000)) {
-            goal.preparingNether = true;
+          if (stashFood > 0 && home?.stash?.position && !(survivalState.foodFetchFailedAt > now - 120000)) {
             goal.step = { action: 'fetch_food_from_stash', foodPoints: foodSupply(bot), required: NETHER_FOOD, inChest: stashFood }; save();
             try { await restockFromStash(bot, task, goal, save, home, homeActions(), []); }
             catch (err) {
               task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-              if (goal.survival) goal.survival.foodFetchFailedAt = Date.now(); save();
+              survivalState.foodFetchFailedAt = Date.now(); survivalState.foodFetchError = err.message; save();
             }
             return false;
           }
-          goal.preparingNether = true; goal.stockFood = true;
-          goal.step = { action: 'stock_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
+          // Then the plot: wheat into bread.
+          const chore = require('./home-base').homeChores(bot, goal).harvest_and_bake;
+          if (chore && !(survivalState.choreFailures?.harvest_and_bake?.at > now - 120000)) {
+            goal.step = { action: 'harvest_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
+            try { await chore.run(bot, task, goal, save, homeActions()); }
+            catch (err) {
+              task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+              (survivalState.choreFailures ||= {}).harvest_and_bake = { at: Date.now(), error: err.message }; save();
+            }
+            return false;
+          }
+          // Then the hunt. A search set aside as fruitless is taken up again:
+          // the gate is the reason to look, and resting it was the stall.
+          if (survivalState.foodStockPausedUntil > now) { delete survivalState.foodStockPausedUntil; delete survivalState.foodSearch; }
+          goal.step = { action: 'hunt_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD, minutes: Math.round(gate.activeMs / 60000) }; save();
+          await explore(bot, task, goal, save, 'animals', { surfaceOnly: true });
           return false;
         },
         prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
@@ -2221,6 +2316,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
   recallWorkstations(bot, goal);
   recoveryAdviser ||= createRecoveryAdviser(bot, decisionClient);
   let failures = 0;
+  watchActivity(bot); markActivity(bot, 'start');
   while (!until()) {
     task.interruptCheck = undefined; task.check(); updateDigCapabilities(bot);
     try {
@@ -2230,6 +2326,10 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       }
       await keepRoom(bot, task, goal);
       noticeVillage(bot, goal, save);
+      if (stillFor(bot) >= STILL_MS && !permittedWait(bot, goal)) {
+        await breakStillness(bot, task, goal, save, { client: decisionClient, survival, onStep });
+        failures = 0; save(); onStep(goal); continue;
+      }
       const acted = await survival.step(task, goal, save, onStep);
       if (!acted) await idleWork(bot, task, goal, save, decisionClient, onStep);
       failures = 0; delete goal.lastError; save(); onStep(goal); narrate(bot, goal);
@@ -2258,6 +2358,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
   recoveryAdviser ||= createRecoveryAdviser(bot, decisionClient);
   goal.status = 'running'; goal.failures = 0; goal.stalls = 0; save();
   const stopObserving = goal.kind === 'win' ? watchGameProgress(bot, goal, save) : () => {};
+  watchActivity(bot); markActivity(bot, 'start');
   try {
   // The loop yields to the event loop every pass and never spins: a step
   // that returns without waiting on anything real (a synchronous throw
@@ -2294,6 +2395,10 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // A requested, equipped encounter can approach its selected mob. All
       // other survival work keeps the ordinary hostile-avoidance policy.
       const endTask = goal.kind === 'win' && dimension(bot) === 'end';
+      if (!endTask && stillFor(bot) >= STILL_MS && !permittedWait(bot, goal)) {
+        await inCatch(task, goal, () => breakStillness(bot, task, goal, save, { client: decisionClient, survival, onStep }));
+        onStep(goal); continue;
+      }
       if (!endTask && await huntObserved(bot, task, activeWork, saveWork, { navigate }, decisionClient)) {
         goal.failures = 0; goal.stalls = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
@@ -2417,4 +2522,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
+module.exports = { gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };

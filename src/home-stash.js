@@ -358,6 +358,13 @@ async function approachChest(bot, task, goal, save, home, actions) {
   await actions.navigate(bot, task, new goals.GoalNear(at.x, at.y, at.z, 2), { timeoutMs: 30000, stallMs: 8000 });
   const block = bot.blockAt(pos(at));
   if (!isChest(block)) { forgetChest(home); save(); throw new Error('The stash chest is not where it was placed'); }
+  // A chest will not open under a solid block. A night shelter built at the
+  // base put one on the lid, and every fetch of the food inside failed.
+  const lid = bot.blockAt(pos(at).offset(0, 1, 0));
+  if (lid && lid.boundingBox === 'block' && lid.diggable && !/chest|bed$|furnace|crafting_table/.test(lid.name)) {
+    task.check();
+    await actions.dig(bot, task, lid.position || pos(at).offset(0, 1, 0), { requireDrops: false });
+  }
   return block;
 }
 
