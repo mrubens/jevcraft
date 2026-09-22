@@ -76,3 +76,9 @@ test('a goal blocked on the player (a death, an unconfirmed handover) is what re
   const handover = { kind: 'obtain', request: 'get me 20 iron', status: 'blocked', suspendedTasks: suspendPrevious(build) };
   assert.equal(resumeSaved(handover).request, 'get me 20 iron');
 });
+
+test('a request parked as impossible before the mark existed is known by its error', () => {
+  const build = { kind: 'build', request: 'build a tower', status: 'replaced' };
+  const bedrock = { kind: 'obtain', request: 'get me bedrock', status: 'blocked', lastError: 'No supported survival acquisition method for bedrock', suspendedTasks: suspendPrevious(build) };
+  assert.equal(resumeSaved(bedrock).request, 'build a tower');
+});

@@ -80,7 +80,9 @@ function permittedWait(bot, goal, now = Date.now()) {
   if (recent?.action === 'sleep' && now - Date.parse(recent.at || 0) < STILL_MS) return 'going to sleep';
   // Waiting for health, hurt: fine while it is coming back (healing counts
   // as activity above); stalled at the same number, it is a stall.
-  if (HOLDS.has(goal?.step?.action) || goal?.step?.action === 'recover_before_combat' && (bot.health ?? 20) < 20 && (bot.food ?? 20) >= 18) return 'recovering';
+  // A bundle's step is its child's, wrapped.
+  const action = goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action;
+  if (HOLDS.has(action) || action === 'recover_before_combat' && (bot.health ?? 20) < 20 && (bot.food ?? 20) >= 18) return 'recovering';
   return null;
 }
 

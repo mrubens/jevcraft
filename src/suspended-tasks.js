@@ -17,7 +17,10 @@ const unfinished = goal => goal.status !== 'complete' && goal.kind !== 'survive'
 // handover waiting on the player, a launch that failed) told the player to
 // say resume, and resume must reach them: passing over every blocked goal
 // discarded them from the stack.
-const playerWork = goal => unfinished(goal) && !goal.dream && !goal.impossible;
+// A goal parked as impossible before the mark existed is known by its error.
+const IMPOSSIBLE_ERROR = /No supported survival acquisition|does not spawn in Peaceful|Unsupported mob source|Please request at most|spans too many catalog branches/;
+const impossible = goal => goal.impossible || (goal.status === 'blocked' && IMPOSSIBLE_ERROR.test(goal.lastError || ''));
+const playerWork = goal => unfinished(goal) && !goal.dream && !impossible(goal);
 
 function resumeSaved(saved, { currentOnly = false } = {}) {
   // Maintenance may unpause an idle companion after a reconnect. It must not

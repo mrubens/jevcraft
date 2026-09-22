@@ -155,8 +155,10 @@ test('a night in a shelter or a stop does not run a rung\'s budget down', () => 
   const goal = {}, bot = {};
   const start = Date.now();
   timeRung(bot, goal, 'shield', start);
+  timeRung(bot, goal, 'shield', start + 10 * 60 * 1000);
+  assert.equal(goal.rungTime.activeMs, 30000, 'a night away counts as half a minute');
   timeRung(bot, goal, 'shield', start + 60 * 60 * 1000);
-  assert.equal(goal.rungTime.activeMs, 30000, 'an hour away counts as half a minute');
+  assert.equal(goal.rungTime.activeMs, 0, 'a clock untouched for half an hour and more is a rung come round again: it starts from nothing');
   timeRung(bot, goal, 'bucket', start + 60 * 60 * 1000 + 1000);
   assert.equal(goal.rungTime.phase, 'bucket'); assert.equal(goal.rungTime.activeMs, 0, 'a new rung starts a new clock');
 });

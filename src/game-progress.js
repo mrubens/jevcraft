@@ -240,6 +240,9 @@ function nextGameStage(bot, goal) {
 // with the rung restarted it each time, so twenty minutes never ran out.
 function timeRung(bot, goal, phase, now = Date.now()) {
   const clocks = goal.rungClocks ||= {};
+  // A clock untouched for half an hour belongs to a rung that was finished
+  // and has come round again (a lost shield): it starts from nothing.
+  if (clocks[phase] && now - clocks[phase].lastAt > 30 * 60000) delete clocks[phase];
   const rung = clocks[phase] ||= { activeMs: 0, lastAt: now };
   const previous = goal.rungTime?.phase === phase ? rung.lastAt : now;
   rung.activeMs += Math.min(30000, Math.max(0, now - previous)); rung.lastAt = now;

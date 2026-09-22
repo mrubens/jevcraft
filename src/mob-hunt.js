@@ -421,6 +421,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // fortress roof. The stalk below moves it; a fight begins wherever that
   // lands on dry ground.
   const fitButFooting = !handler.passive && !canBegin(bot, handler) && bot.health >= HUNT_FLOOR && bot.food >= HUNT_FLOOR && kitReady(bot) &&
+    bot.oxygenLevel > 12 && bot.game.gameMode === 'survival' && bot.game.difficulty !== 'peaceful' &&
     !(bot.entity.metadata?.[0] & 1 && bot.health < 10) && !(bot.food < 18 && !hasFood(bot));
   if (!canBegin(bot, handler) && !fitButFooting) {
     // Nothing to eat and hunger under eighteen means no regeneration: the

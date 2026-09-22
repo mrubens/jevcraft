@@ -143,7 +143,7 @@ function progressKey(bot, goal, previous) {
     [step.item, step.resource, step.block, step.entity, step.action].find(Boolean) || '');
   // Unless it is what was asked for: "get me 256 cobblestone" is nothing
   // but dug rock, and was judged stuck after five minutes of it.
-  const wanted = new Set([goal.item, step.item, step.drops, ...(goal.tasks || []).map(t => t.item)].filter(Boolean));
+  const wanted = new Set([goal.item, goal.material, step.item, step.drops, ...(goal.tasks || []).map(t => t.item)].filter(Boolean));
   const items = bot.inventory.items().filter(i => wanted.has(i.name) || !FILLER.test(i.name)).map(i => `${i.name}:${i.count}`).sort().join(',');
   return `${phase}|${items}`;
 }
@@ -1854,12 +1854,20 @@ function lowestPortalBlock(bot) {
 // in the portal, and stand there.
 const inPortal = bot => [0, 1].some(dy => bot.blockAt?.(bot.entity.position.offset(0, dy, 0).floored())?.name === 'nether_portal');
 async function enterPortal(bot, task, portal, arrived) {
+  // Standing in the portal it just came through, the bot must step out
+  // first: a player is not sent back until it has left the sheet.
+  if (inPortal(bot) && !arrived()) {
+    await move(bot, task, { label: 'leave_portal', keys: ['back'], sneak: true, maxMs: 1200, tick: 50, until: () => !inPortal(bot) });
+  }
   await navigate(bot, task, new goals.GoalNear(portal.x, portal.y, portal.z, 1), { timeoutMs: 20000 });
   if (arrived()) return;
   bot.pathfinder.setGoal(null);
   if (!inPortal(bot)) {
-    await move(bot, task, { label: 'enter_portal', keys: ['forward'], sneak: true, look: pos(portal).offset(0.5, 0.5, 0.5), maxMs: 4000, tick: 50,
-      until: () => inPortal(bot) || arrived() });
+    // Crouched, it cannot step down: a portal a block below the bot's feet
+    // is walked into upright, the one step checked to land in the sheet.
+    const below = portal.y < Math.floor(bot.entity.position.y);
+    await move(bot, task, { label: 'enter_portal', keys: ['forward'], sneak: !below, why: below ? 'a step down into the portal' : undefined,
+      look: pos(portal).offset(0.5, 0.5, 0.5), maxMs: 4000, tick: 50, until: () => inPortal(bot) || arrived() });
   }
   if (arrived()) return;
   if (!inPortal(bot)) throw new Error('Could not step into the portal');
@@ -2489,7 +2497,10 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         excuseWatch(goal, Date.now() - detourFrom);
         onStep(goal); continue;
       }
+      const huntFrom = Date.now();
       if (!endTask && await huntObserved(bot, task, activeWork, saveWork, { navigate }, decisionClient)) {
+        // A fight is not being stuck: its time is excused like survival's.
+        excuseWatch(goal, Date.now() - huntFrom);
         goal.failures = 0; goal.stalls = 0; delete goal.lastError; save(); onStep(goal); continue;
       }
       if (goal.recoveryAdvice?.active) {

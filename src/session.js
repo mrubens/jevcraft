@@ -12,7 +12,7 @@ const { setAside, isSetAside, attemptsFor } = require('./progress');
 const { planCatalog } = require('./knowledge');
 const { runGoal, runIdle, createSurvival } = require('./work');
 const { Task } = require('./skills');
-const { parseAddress, clarificationReply, CLARIFY_MS } = require('./chat-address');
+const { parseAddress, chatNames, clarificationReply, CLARIFY_MS } = require('./chat-address');
 const { compatibilityPlugin } = require('./compatibility');
 const { requestedCommand, createCommandAccess } = require('./commands');
 const { classifyCommand } = require('./command-classifier');
@@ -232,7 +232,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       retainedRequest: retained?.request, blueprint: retained?.blueprint, survival: survival.state,
       // A dream set aside is not chased by the idle loop either.
       dream: standing?.dream && !standing.satisfiedAt && !standing.paused ? standing.dream : undefined,
-      ledgerRun: standing?.dream && !standing.satisfiedAt ? standing.ledgerRun : undefined };
+      ledgerRun: standing?.dream && !standing.satisfiedAt && !standing.paused ? standing.ledgerRun : undefined };
     world.hydrate(goal);
     memory.bind(goal);
     const task = new Task('survival', goal.request);
@@ -342,7 +342,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const owner = (active?.goal || store.read())?.from;
     const company = Object.values(bot.players).filter(p => p.username !== bot.username && p.username !== from).length;
     // "Stop Jev", with the name last, is as addressed as "Jev stop".
-    const named = new RegExp(`\\b${me}\\b`, 'i').test(address.text);
+    const named = chatNames(bot.username || config.username).some(name => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(address.text));
     if (stopping && !address.explicit && !named && owner !== from && company > 0) return;
     if (stopping) {
       invalidateRequests();
