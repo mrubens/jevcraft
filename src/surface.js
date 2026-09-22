@@ -216,7 +216,10 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       // we just excavated, rather than forbidding its only dry escape.
       try { await tunnelStep(bot, task, ascentGoal, record, target, { dig: actions.dig, navigate: actions.navigate || navigate }); }
       catch (err) {
-        if (err.name === 'StaircaseStalled') { state.heading = ((state.heading || 0) + 1) % 8; delete state.target; state.ascent = { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} }; save(); }
+        // Higher ground that cannot be reached is not the way out: the
+        // ravine rule demanded y 70 of a bot sealed in its own pocket on a
+        // hillside at 66, and kept it digging at the hill all day.
+        if (err.name === 'StaircaseStalled') { state.heading = ((state.heading || 0) + 1) % 8; delete state.target; delete state.minimumY; state.ascent = { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} }; save(); }
         throw err;
       }
       if (surfaceReturnComplete(bot, goal)) { delete goal.surfaceReturn; save(); }

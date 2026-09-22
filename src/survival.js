@@ -922,7 +922,17 @@ class Survival {
         // Nothing watching: the night is spent working, not waiting. The
         // pocket is the mouth of a mine, and a tunnel in rock is as closed
         // as the pocket was.
-        if (!watcher && !watched && await this.nightMine(task, goal, save)) { onStep(goal); return true; }
+        // Mined out of and sealed again three times in two minutes is a
+        // pocket the mine cannot leave: on a hillside the first step is
+        // into the open, the shelter fills it, and the mine digs it again,
+        // every two seconds. That pocket is waited in tonight instead.
+        const here = `${refuge.origin.x},${refuge.origin.y},${refuge.origin.z}`;
+        const starts = (this.state.pocketStarts || []).filter(s => s.at > Date.now() - 120000 && s.pocket === here);
+        if (starts.length >= 3 && !isSetAside(this, 'night_mine', here)) setAside(this, 'night_mine', here, 'the pocket was dug out of and resealed three times in two minutes', 600000);
+        if (!watcher && !watched && !isSetAside(this, 'night_mine', here)) {
+          this.state.pocketStarts = [...starts, { pocket: here, at: Date.now() }];
+          if (await this.nightMine(task, goal, save)) { onStep(goal); return true; }
+        }
         await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter');
