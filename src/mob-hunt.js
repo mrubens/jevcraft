@@ -479,6 +479,14 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       // one every fifteen seconds until it had avoided all twelve and had
       // nothing left to hunt. Cover breaks their line and makes them come
       // round it, which is the thing that was missing.
+      // Below and behind rock: go through the floor. A fortress roof is two
+      // blocks of nether brick with the spawner room under it, and no amount
+      // of walking round the outside ever reaches that.
+      if (near.position.y < bot.entity.position.y - 2) {
+        goal.step = { action: 'dig_down_to_them', entity: step.entity, drop: Math.round(bot.entity.position.y - near.position.y) }; save();
+        try { if (await descendTo(bot, task, near.position) >= 1) return; }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastDescentError = err.message; }
+      }
       goal.step = { action: 'break_their_line', entity: step.entity, watched: state.watchFails }; save();
       try { if (await raiseCover(bot, task, near.position)) { await sleep(300); return; } }
       catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }

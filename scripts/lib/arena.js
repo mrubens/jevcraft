@@ -25,6 +25,16 @@ const ARENAS = Object.freeze({
     open: [2042.5, 77, 2003.5],
     wall: [2042.5, 77, 2003.5],
   },
+  // The live run's actual problem: a spawner room under a fortress roof,
+  // with the bot on top of it. Blazes below, two blocks of rock between,
+  // and no way round. Jev watched this for an hour and took nothing home.
+  tower: {
+    shell: [1900, 70, 1900, 1930, 94, 1930],
+    hollow: [1905, 84, 1905, 1925, 90, 1925],
+    chamber: [1905, 77, 1905, 1925, 81, 1925],
+    open: [1915.5, 84, 1915.5],
+    wall: [1907.5, 84, 1915.5],
+  },
   // Somewhere to wait while an arena is rebuilt. Filling a shell around the
   // bot would bury it for as long as the next command takes.
   holding: {
@@ -76,6 +86,13 @@ const DRILLS = Object.freeze([
     kit: [['bow', 1], ['arrow', 32]],
     at: [[2016.5, 80, 2010.5], [2016.5, 80, 2013.5]], seconds: 75, expect: { deaths: 0, drops: 1, damage: 14 },
     why: 'Two blazes, with a bow. What the bow is worth, in health and seconds.' },
+  // The live fortress, reproduced: standing on the roof with the spawner
+  // room underneath. Nothing is reachable by walking, and a hunt that can
+  // only walk will watch them until the sun burns out.
+  { name: 'blaze_spawner', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 4, arena: 'tower', stand: 'open',
+    at: [[1915.5, 79, 1915.5], [1913.5, 79, 1915.5], [1917.5, 79, 1915.5], [1915.5, 79, 1913.5]],
+    seconds: 90, expect: { deaths: 0, drops: 1 },
+    why: 'The dream run\'s actual wall: blazes in a room below a roof the bot is standing on.' },
   { name: 'blaze_swarm_wall', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 4, arena: 'room', stand: 'wall',
     at: [[2009.5, 80, 2010.5], [2010.5, 80, 2008.5], [2010.5, 80, 2012.5], [2011.5, 80, 2010.5]],
     seconds: 90, expect: { deaths: 0, drops: 1 },
@@ -111,7 +128,9 @@ function arenaBuild(name, { dimension = 'minecraft:the_nether' } = {}) {
   if (!arena) throw new Error(`Unknown arena ${name}`);
   const [x1, y1, z1, x2, y2, z2] = arena.shell;
   return [...[`forceload add ${x1 - 16} ${z1 - 16} ${x2 + 16} ${z2 + 16}`,
-    box([x1, y1, z1, x2, y2, z2], 'netherrack'), box(arena.hollow, 'air')]
+    box([x1, y1, z1, x2, y2, z2], 'netherrack'), box(arena.hollow, 'air'),
+    // A second chamber below, sealed off, for the arenas that have one.
+    ...(arena.chamber ? [box(arena.chamber, 'air')] : [])]
     .map(command => `execute in ${dimension} run ${command}`), sweep(name, { dimension })];
 }
 

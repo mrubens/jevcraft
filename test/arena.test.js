@@ -23,11 +23,13 @@ test('every drill names a real arena, a stand inside it, and a spawn point for e
     assert(arena, `${d.name} names arena ${d.arena}`);
     const stand = arena[d.stand || 'open'];
     assert(stand, `${d.name} has a stand`);
-    const [x1, y1, z1, x2, y2, z2] = arena.hollow;
-    const inside = ([x, y, z]) => x > x1 - 1 && x < x2 + 1 && y >= y1 && y <= y2 && z > z1 - 1 && z < z2 + 1;
+    const within = ([x1, y1, z1, x2, y2, z2]) => ([x, y, z]) => x > x1 - 1 && x < x2 + 1 && y >= y1 && y <= y2 && z > z1 - 1 && z < z2 + 1;
+    const inside = within(arena.hollow);
+    // A tower arena has a second chamber below, which is the point of it.
+    const anywhere = p => inside(p) || (arena.chamber && within(arena.chamber)(p));
     assert(inside(stand), `${d.name} stands inside its arena`);
     assert(d.at.length >= d.count, `${d.name} has a spawn point per mob`);
-    for (const at of d.at.slice(0, d.count)) assert(inside(at), `${d.name} spawns ${at} inside its arena`);
+    for (const at of d.at.slice(0, d.count)) assert(anywhere(at), `${d.name} spawns ${at} inside its arena`);
     assert(['defend', 'hunt'].includes(d.mode));
     assert(d.mode !== 'hunt' || d.item, `${d.name} hunts for a named drop`);
     assert(d.why && d.seconds > 0 && d.expect);
@@ -155,4 +157,16 @@ test('a drill can add to the kit, so what a tool is worth can be measured', () =
   const without = resetCommands('ArenaX', drill('blaze_pair')).join('\n');
   assert(!without.includes('minecraft:bow'), 'the plain drill keeps the loadout the dream run actually carried');
   for (const text of [withBow, without]) assert(text.includes('give ArenaX minecraft:diamond_sword 1'), 'the standard kit is still given');
+});
+
+test('the tower arena puts the mobs in a sealed room under the floor the bot stands on', () => {
+  const tower = ARENAS.tower;
+  const spawner = drill('blaze_spawner');
+  const [, roofTop] = [tower.chamber[4], tower.hollow[1]];
+  assert(tower.chamber[4] < tower.hollow[1] - 1, 'the chamber ceiling is below the floor the bot stands on');
+  assert.equal(spawner.arena, 'tower');
+  for (const at of spawner.at) assert(at[1] < tower.hollow[1], 'every blaze starts below the bot');
+  const build = arenaBuild('tower');
+  assert.equal(build.length, 5, 'forceload, shell, upper room, lower chamber, sweep');
+  assert(build[3].includes('minecraft:air') && build[3].includes('1905 77 1905'), 'the chamber is carved too');
 });
