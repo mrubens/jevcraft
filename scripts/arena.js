@@ -183,9 +183,9 @@ async function runDrill(d, attempt) {
     // A mob summoned outside its aggro range sometimes never came, and a
     // drill where nothing happens measures nothing. Eight seconds of that
     // and the encounter is brought to the bot.
-    if (!run.nudged && Date.now() - started > 8000 && alive(d.entity).length &&
+    if (Date.now() - (run.nudgedAt || started) > 8000 && alive(d.entity).length &&
         !alive(d.entity).some(e => e.position.distanceTo(bot.entity.position) < 6)) {
-      run.nudged = true;
+      run.nudged = true; run.nudgedAt = Date.now();
       const p = bot.entity.position;
       await command(`execute in minecraft:the_nether run tp @e[tag=arena,limit=${d.count}] ${(p.x + 3).toFixed(1)} ${p.y} ${p.z.toFixed(1)}`);
       log({ drill: d.name, attempt, nudged: 'targets brought to three blocks; they would not approach' });

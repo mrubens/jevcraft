@@ -12,7 +12,7 @@ const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute, countOf } = require('./skills');
 const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield, canStrike } = require('./combat');
-const { digBunker, bunkerSide, wallStands, centroid } = require('./bunker');
+const { digBunker, bunkerSide, wallStands, nearWall, centroid } = require('./bunker');
 const { deflect } = require('./projectile-guard');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
@@ -270,7 +270,7 @@ class Survival {
       // answer, but a hold with no end would be a new way to stall a run.
       if (pack) this.state.bunkerSince ||= Date.now(); else delete this.state.bunkerSince;
       const holding = this.state.bunkerSince && Date.now() - this.state.bunkerSince > 45000;
-      if (pack && !holding && bot.health >= 10 && (bunkerSide(bot, bot.entity.position.floored(), centroid(danger)) || wallStands(bot, centroid(danger)).length)) {
+      if (pack && !holding && bot.health >= 10 && nearWall(bot, centroid(danger))) {
         this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health,
           held: Math.round((Date.now() - this.state.bunkerSince) / 1000) });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); delete this.state.trappedSince; return; }

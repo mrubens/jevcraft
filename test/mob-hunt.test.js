@@ -475,3 +475,14 @@ test('the wall search looks for walls, not for the floor it is standing on', () 
   for (const cell of stands) assert.equal(cell.y, 77, 'every stand is at the bot\'s own level, not on the floor blocks');
   assert.equal(stands[0].x, 5, 'and it is the cell beside the wall');
 });
+
+test('something overhead is reached by standing under it, never by towering up to it', () => {
+  const { approaches } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0.5, 77, 0.5) } };
+  const overhead = approaches(bot, { position: new Vec3(6.5, 80, 0.5) });
+  assert.equal(overhead.length, 1, 'no follow goal for a flying target: a tower is a place to fall off');
+  assert.equal(overhead[0].y, 77, 'the goal keeps the bot at its own level');
+  const level = approaches(bot, { position: new Vec3(6.5, 77, 0.5) });
+  assert.equal(level.length, 2, 'a target on the ground is followed as usual, with the ground goal as fallback');
+});

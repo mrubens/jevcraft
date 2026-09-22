@@ -120,6 +120,17 @@ function wallStands(bot, from, { distance = 16, count = 512 } = {}) {
   return [...stands.values()].sort((a, b) => a.score - b.score).map(s => s.cell);
 }
 
+// Close enough that walking there is cheaper than being shot on the way.
+// Crossing nine blocks of open ground to reach a wall cost the arena's
+// blaze pair forty-one health against twenty-six for simply fighting where
+// it stood: a doorway is worth having, not worth travelling for.
+const WALK_TO_WALL = 5;
+function nearWall(bot, from, { within = WALK_TO_WALL } = {}) {
+  if (bunkerSide(bot, bot.entity.position.floored(), from)) return true;
+  const here = bot.entity.position;
+  return wallStands(bot, from, { distance: within + 2 }).some(cell => cell.distanceTo(here) <= within);
+}
+
 async function reachWall(bot, task, from, navigate) {
   if (bunkerSide(bot, bot.entity.position.floored(), from)) return true;
   if (!navigate) return false;
@@ -228,4 +239,4 @@ async function bunkerFight(bot, task, goal, save, actions, { item = 'blaze_rod',
   return gained;
 }
 
-module.exports = { bunkerFight, digBunker, cornerCell, reachWall, wallStands, swarm, blazes, bunkerSide, centroid, SWARM };
+module.exports = { bunkerFight, digBunker, cornerCell, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, WALK_TO_WALL, SWARM };

@@ -14,7 +14,7 @@ const { collectNearbyDrops } = require('./drop-collection');
 const { decideTree } = require('./decisions');
 const { descendTo } = require('./descent');
 const { bridgeTo } = require('./bridging');
-const { bunkerFight, digBunker, swarm, centroid: bunkerCentroid } = require('./bunker');
+const { bunkerFight, digBunker, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
@@ -108,7 +108,14 @@ function canBegin(bot, handler = {}) {
 // beneath and swinging up is the second thing to try.
 function approaches(bot, target) {
   const t = target.position, y = Math.round(bot.entity.position.y);
-  return [new goals.GoalFollow(target, 2), new goals.GoalNear(Math.floor(t.x), y, Math.floor(t.z), 1)];
+  const ground = new goals.GoalNear(Math.floor(t.x), y, Math.floor(t.z), 1);
+  // Following a thing that is flying means towering up to it, and a tower
+  // is a place to fall off. The one death in the last forty-five arena runs
+  // was not a mob at all: the bot killed its blaze from the top of a pillar
+  // and then dropped twenty health's worth of blocks. Something overhead is
+  // reached by standing under it.
+  if (t.y > bot.entity.position.y + 1.5) return [ground];
+  return [new goals.GoalFollow(target, 2), ground];
 }
 // `movement` is the combat movement policy, whose `allowed` vets each step;
 // the survey itself runs on the pathfinder's own movements. Passing one for
@@ -351,7 +358,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // Not in the open, if something out there shoots. Health comes back at
     // the same rate behind a wall and the wall is free.
     const shooters = threats(bot, 24).filter(t => t.visible && SHOOTERS.has(t.entity.name));
-    if (shooters.length && bot.health < 18) {
+    if (shooters.length && bot.health < 18 && nearWall(bot, bunkerCentroid(shooters))) {
       goal.step = { action: 'dig_in_to_recover', shooters: shooters.length, health: bot.health }; save();
       try { await digBunker(bot, task, goal, save, { from: bunkerCentroid(shooters), navigate: actions.navigate }); return; }
       // Why it could not dig in matters as much as that it did not: a
@@ -384,7 +391,11 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // one at a time. A single one is still fought in the open, which now
     // costs nothing at all.
     const inView = threats(bot, 24).filter(t => t.entity.name === step.entity && t.visible).length;
-    const cornered = handler.ranged && (inView >= 2 || (swarm(bot) && bot.health < 16));
+    // A wall at hand, not a wall somewhere. Sent to find one nine blocks
+    // off, the bot took forty-one damage crossing the room and arrived with
+    // nothing; fighting where it stood cost twenty-six.
+    const cornered = handler.ranged && (inView >= 2 || (swarm(bot) && bot.health < 16)) &&
+      nearWall(bot, near.position);
     if (cornered && !(state.bunkerFailedAt > Date.now() - 120000)) {
       goal.step = { action: 'take_the_door', entity: step.entity, inView, health: bot.health }; save();
       try { await bunkerFight(bot, task, goal, save, actions, { item: step.item, want: countOf(bot, step.item) + 1 }); return; }
