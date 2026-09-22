@@ -12,6 +12,7 @@ const { surveyRoute, countOf } = require('./skills');
 const { decideTree } = require('./decisions');
 const { descendTo } = require('./descent');
 const { bridgeTo } = require('./bridging');
+const { bunkerFight, swarm } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
@@ -64,9 +65,13 @@ function isolated(bot, target, handler = handlers[target.name] || {}) {
   // hunted kind blocks the fight only when it is close to the bot itself,
   // or no blaze in a fortress would ever be fought. A mob of another kind
   // is given more room, a shooter most of all.
-  const crowd = threats(bot).some(t => t.entity !== target && (t.entity.name === target.name
-    ? t.distance < 8
-    : t.distance < (SHOOTERS.has(t.entity.name) ? 16 : 12) || t.entity.position.distanceTo(target.position) < 8));
+  // Six blazes stood over a spawner with the bot seven blocks off and none
+  // was ever "isolated". Kin out of sight cannot shoot; up to two more in
+  // view is a fight, three is a swarm.
+  const others = threats(bot).filter(t => t.entity !== target);
+  const kinInView = others.filter(t => t.entity.name === target.name && t.visible && t.distance < 8).length;
+  const crowd = kinInView >= 3 || others.some(t => t.entity.name !== target.name &&
+    (t.distance < (SHOOTERS.has(t.entity.name) ? 16 : 12) || t.entity.position.distanceTo(target.position) < 8));
   if (crowd) return false;
   // A sword sweep must not hit a nearby player or provoke another mob. A
   // flock of chickens is not a crowd of mobs: a passive animal only needs
@@ -312,6 +317,13 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
   if (near) {
     if (goal.fortressSearch) goal.fortressSearch.patrols = 0;
+    rememberSighting(state, bot, near);
+    // A spawner's worth of blazes is fought from a bunker, not in the open:
+    // dig in beside them and take them at the door.
+    if (step.entity === 'blaze' && swarm(bot) && !(state.bunkerFailedAt > Date.now() - 120000)) {
+      try { await bunkerFight(bot, task, goal, save, actions, { item: step.item, want: countOf(bot, step.item) + 1 }); return; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.bunkerFailedAt = Date.now(); state.lastBunkerError = err.message; save(); }
+    }
     const key = near.uuid || near.id;
     if (!state.stalking || state.stalking.key !== key) state.stalking = { key, since: Date.now() };
     const distance = near.position.distanceTo(bot.entity.position);
@@ -340,6 +352,22 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     await sleep(1000); return;
   }
   delete state.stalking;
+  // Where the blazes were last seen is where they will be again: a spawner
+  // keeps its room full. After a death the bot swept from the portal as if
+  // it had never been there. Head back to the freshest sighting first.
+  const spot = rememberedSpot(state, bot);
+  if (spot && actions.navigate) {
+    spot.triedAt = Date.now(); spot.tries = (spot.tries || 0) + 1; save();
+    goal.step = { action: 'return_to_blazes', target: { x: spot.x, y: spot.y, z: spot.z }, seen: spot.seen }; save();
+    const from = bot.entity.position.clone();
+    try { await actions.navigate(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 6), { timeoutMs: 60000, stallMs: 10000 }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    if (bot.entity.position.distanceTo(from) < 2 && actions.tunnel) {
+      try { await actions.tunnel(bot, task, goal, save, new Vec3(spot.x, spot.y, spot.z), 'fortress'); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+    return;
+  }
   // Blazes live in fortresses, and a fortress is found by sweeping, not by
   // rings around the portal: fortress strips run north to south, so a walk
   // east or west crosses one. Nether bricks in view end the sweep.
@@ -351,6 +379,25 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   const { surfaceObserver } = require('./surface');
   const underground = dimension(bot) === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
   await actions.explore(bot, task, goal, save, step.entity, { surfaceOnly: dimension(bot) === 'overworld' && !underground, frontier: false });
+}
+
+// Sightings of the hunted mob, clustered within sixteen blocks, newest
+// first; a cluster seen many times is a spawner.
+function rememberSighting(state, bot, entity) {
+  const p = entity.position, dimension = bot.game?.dimension;
+  state.sightings ||= [];
+  const near = state.sightings.find(s => s.dimension === dimension && Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z) < 16);
+  if (near) { Object.assign(near, { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), at: Date.now(), seen: (near.seen || 1) + 1 }); }
+  else state.sightings.unshift({ x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), dimension, at: Date.now(), seen: 1 });
+  state.sightings = state.sightings.slice(0, 12);
+}
+// The freshest sighting in this dimension worth walking back to: not one
+// just tried, not one the bot is already at, not one given up on.
+function rememberedSpot(state, bot) {
+  const here = bot.entity.position, dimension = bot.game?.dimension;
+  return (state.sightings || []).filter(s => s.dimension === dimension && (s.tries || 0) < 4 && !(s.triedAt > Date.now() - 180000) &&
+    Math.hypot(s.x - here.x, s.z - here.z) > 12 && Math.hypot(s.x - here.x, s.y - here.y, s.z - here.z) < 400)
+    .sort((a, b) => (b.seen - a.seen) || (b.at - a.at))[0] || null;
 }
 
 const FORTRESS_BLOCKS = ['nether_bricks', 'nether_brick_fence', 'nether_brick_stairs', 'nether_brick_slab', 'nether_wart'];
@@ -496,4 +543,4 @@ async function findFortressStep(bot, task, goal, save, actions) {
   }
 }
 
-module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, FORTRESS_LEG };
+module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, rememberSighting, rememberedSpot, FORTRESS_LEG };

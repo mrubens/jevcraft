@@ -113,7 +113,11 @@ test('combat movement excludes only the selected live target and never persists 
   bot._combatEncounter = { task, target, dimension: bot.game.dimension, expiresAt: Date.now() + 30000 };
   assert(combatTarget(bot, target)); assert.doesNotThrow(() => checkThreats(bot));
   assert(safeFromHostiles(bot, target.position));
-  const other = { ...target, id: 8, position: new Vec3(4, 64, .5) }; bot.entities[8] = other;
+  // Another of the hunted kind never ends the fight (the hunt's crowd rule
+  // decides); a mob of another kind at four blocks does.
+  const kin = { ...target, id: 9, position: new Vec3(4, 64, .5) }; bot.entities[9] = kin;
+  assert.doesNotThrow(() => checkThreats(bot)); delete bot.entities[9];
+  const other = { ...target, id: 8, name: 'wither_skeleton', position: new Vec3(4, 64, .5) }; bot.entities[8] = other;
   assert.throws(() => checkThreats(bot), { name: 'NeedsSafety' }); assert(!safeFromHostiles(bot, other.position)); delete bot.entities[8];
   bot.health = 11; assert(!combatTarget(bot, target)); bot.health = 20;
   task.cancel(); assert(!combatTarget(bot, target)); task.cancelled = false;
@@ -380,4 +384,35 @@ test('a fortress whose every stretch in view was walked is patrolled again, not 
   assert.equal(tunnels.length, 0, 'no sweep leg while the fortress is in view');
   assert.equal(goal.fortressSearch.patrols, 1); assert.deepEqual(goal.fortressSearch.target, { x: 96, y: 65, z: 0 }, 'the leg target is kept for later');
   assert.equal(goal.fortressSearch.visited.length, 2);
+});
+
+test('blaze sightings are remembered by place and the hunt walks back to the busiest one', () => {
+  const { rememberSighting, rememberedSpot } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(-40, 65, -10) } };
+  const state = {};
+  rememberSighting(state, bot, { position: new Vec3(30, 77, 76) });
+  rememberSighting(state, bot, { position: new Vec3(31, 77, 75) });
+  rememberSighting(state, bot, { position: new Vec3(7, 53, -30) });
+  assert.equal(state.sightings.length, 2, 'two blazes in one room are one place');
+  const spot = rememberedSpot(state, bot);
+  assert.deepEqual([spot.x, spot.y, spot.z, spot.seen], [31, 77, 75, 2], 'the room seen twice comes first');
+  spot.triedAt = Date.now();
+  assert.equal(rememberedSpot(state, bot).seen, 1, 'a spot just tried yields to the next');
+  bot.game.dimension = 'overworld';
+  assert.equal(rememberedSpot(state, bot), null, 'sightings belong to their dimension');
+});
+
+test('a swarm of blazes is fought from a bunker dug into natural rock away from them', () => {
+  const { bunkerSide, swarm } = require('../src/bunker');
+  const { Vec3 } = require('vec3');
+  const rock = { name: 'netherrack', boundingBox: 'block', diggable: true }, air = { boundingBox: 'empty' };
+  const bot = { entity: { position: new Vec3(0.5, 65, 0.5) }, game: { dimension: 'the_nether' }, world: { raycast: () => null },
+    time: { timeOfDay: 6000 },
+    entities: Object.fromEntries([1, 2, 3].map(i => [i, { id: i, name: 'blaze', position: new Vec3(8 + i, 66, 0.5), isValid: true, height: 1.8 }])),
+    // Rock to the west only; the blazes are east.
+    blockAt: p => (p.y === 64 || (p.x < 0 && p.y <= 66)) ? { ...rock, position: p } : { ...air, position: p } };
+  assert(swarm(bot), 'three blazes in view are a swarm');
+  const side = bunkerSide(bot, new Vec3(0, 65, 0), new Vec3(10, 66, 0));
+  assert.deepEqual([side.x, side.z], [-1, 0], 'the bunker goes into the rock away from the blazes');
 });

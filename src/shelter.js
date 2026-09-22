@@ -7,7 +7,10 @@ const replaceable = b => b && ['air', 'cave_air', 'void_air', 'short_grass', 'ta
 const solid = b => b?.boundingBox === 'block' && !['sand', 'gravel', 'magma_block', 'cactus', 'powder_snow', 'ice', 'packed_ice', 'blue_ice'].includes(b.name);
 const position = p => new Vec3(p.x, p.y, p.z);
 const plankMaterials = Object.keys(recipes).filter(name => name.endsWith('_planks'));
-const buildingMaterials = new Set(['dirt', 'cobblestone', 'cobbled_deepslate', ...plankMaterials, 'andesite', 'diorite', 'granite', 'stone']);
+// Nether stone too: cornered by a hoglin with sixty netherrack in the
+// pockets, the bot had "no blocks" to wall itself off with.
+const buildingMaterials = new Set(['dirt', 'cobblestone', 'cobbled_deepslate', ...plankMaterials, 'andesite', 'diorite', 'granite', 'stone',
+  'netherrack', 'nether_bricks', 'blackstone', 'basalt', 'tuff', 'deepslate', 'end_stone']);
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
 
 function foundation(origin) {

@@ -61,7 +61,10 @@ function inEncounter(bot) {
 // the last few seconds, a shooter in view counts at twice the range.
 function immediateThreat(bot) {
   const fighting = inEncounter(bot), hurt = bot._recentHurtAt > Date.now() - 4000;
-  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible &&
+  // Another of the kind being fought never ends the fight: the hunt's own
+  // crowd rule decides how many blazes are too many.
+  const kin = t => fighting && t.entity.name === bot._combatEncounter.target?.name;
+  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible && !kin(t) &&
     t.distance <= (ranged.has(t.entity.name) ? (fighting ? 8 : hurt ? 32 : 16) : (fighting ? 5 : 8)));
 }
 
