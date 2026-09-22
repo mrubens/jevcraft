@@ -67,6 +67,13 @@ function inEncounter(bot) {
 // takes them back.
 function hunted(bot, entity) {
   const hunt = bot._huntingEntity;
+  // Never within a sword's reach. The exemption exists so a distant blaze
+  // is not sealed against; a blaze in the bot's face is an emergency
+  // whatever the hunt intends, and the emergency answer is a swing. Without
+  // this, four blazes sat at two blocks while the deliberate fight found no
+  // candidate and the reactive one had been told to look away: forty-three
+  // damage, no swing thrown.
+  if (entity.position && entity.position.distanceTo(bot.entity.position) <= 3.5) return false;
   return !!hunt && hunt.name === entity.name && hunt.until > Date.now() &&
     (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 14 && kitReady(bot);
 }

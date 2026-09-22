@@ -402,7 +402,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       if (!nearWall(bot, from)) {
         goal.step = { action: 'take_cover', shooters: shooters.length, health: bot.health }; save();
         try { if (await raiseCover(bot, task, from)) { await sleep(400); return; } }
-        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; state.lastCoverError = err.message; }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; goal.mobHunt.lastCoverError = err.message; }
         await sleep(500); task.check(); return;
       }
       goal.step = { action: 'dig_in_to_recover', shooters: shooters.length, health: bot.health }; save();
@@ -410,7 +410,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       // Why it could not dig in matters as much as that it did not: a
       // swallowed failure here reads, from outside, as a bot that simply
       // chose to stand in the open and be shot.
-      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; state.lastBunkerError = err.message; save(); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; goal.mobHunt.lastBunkerError = err.message; save(); }
     }
     await sleep(500); task.check(); return;
   }
@@ -419,6 +419,10 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // Exploring for it instead climbed to the surface every time a cave spider
   // showed, and the diamond shaft was dug and left three times in a row.
   // A mob that stays out of reach for a minute is set aside for two.
+  // Everything above reads `goal.mobHunt` by name: `state` is declared here,
+  // and a reference to it earlier in this function is a temporal-dead-zone
+  // crash, which is what "Cannot access 'state' before initialization"
+  // was, thrown out of the recovery branch on every tick the bot was hurt.
   const state = goal.mobHunt;
   const near = Object.values(bot.entities || {}).filter(e => e.name === step.entity && e.isValid !== false &&
     !(state?.avoided?.[e.uuid || e.id] > Date.now() - 120000) && e.position.distanceTo(bot.entity.position) < 32)
