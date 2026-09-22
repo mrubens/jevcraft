@@ -7,7 +7,19 @@ const { dryStanding } = require('./mining-access');
 const { safeFromHostiles, hostileEntities } = require('./danger');
 const { checkAir, maintainVitals, chooseFood } = require('./vitals');
 const { aimAtEntity, shootBow } = require('./projectiles');
-const { decideTree } = require('./decisions');
+const { decideTree, announceFallback } = require('./decisions');
+
+// With Jev unreachable, or never configured, the fight goes on by a fixed
+// order instead of stopping in the End with the dragon overhead: out of
+// danger first, then the crystals that heal it, then the head within reach,
+// then an arrow, then a better position, then a second's watch.
+function endFallback(safe) {
+  return children => {
+    const keys = Object.keys(children), find = test => keys.find(test);
+    return (!safe && find(k => k.startsWith('move_'))) || find(k => k.startsWith('crystal_')) || find(k => k === 'strike_head') ||
+      find(k => k === 'shoot_dragon') || find(k => k.startsWith('move_')) || keys[0];
+  };
+}
 const { canStrike } = require('./combat');
 const { durable, carriedEquipment } = require('./mob-policy');
 const { fallDanger, recoverFall } = require('./fall-recovery');
@@ -265,10 +277,11 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       bot.clearControlStates(); for (let n = 0; n < 10; n++) { check(); if (!safeEndPoint(bot, bot.entity.position)) break; await sleep(100); }
     } };
     if (!Object.keys(tree).length) throw blocked('No observed safe End route, reachable dragon head or clear bow shot; supplies and position are saved');
-    if (!client) throw blocked('End action selection needs the configured Jev decision client');
     const controller = new AbortController(), watcher = setInterval(() => { try { check(); } catch (err) { controller.abort(err); } }, 50);
     let decision;
-    try { decision = await decideTree(client, { tree, rootInstructions: endDecisionInstructions, kind: 'end',
+    const fallback = endFallback(safe);
+    try { decision = !client ? { path: [fallback(tree)], action: tree[fallback(tree)], fallback: { reason: 'no Jev client' } } :
+      await decideTree(client, { tree, rootInstructions: endDecisionInstructions, kind: 'end', fallback,
       state: endDecisionState({ request: goal.request, health: bot.health, food: bot.food, arrows: countOf(bot, 'arrow'),
         position: { ...bot.entity.position }, safe, dragon: state.dragon,
         head: head && { position: { ...head.position }, reachable: canStrike(bot, head) }, crystals: state.observedCrystals, combat: state }),
@@ -276,8 +289,9 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       isFresh: () => dimension(bot) === 'end' && bot.health >= healthBefore && bot.entity.position.distanceTo(start) < 1 }); }
     finally { clearInterval(watcher); }
     check();
+    if (client && !decision.stale) announceFallback(bot, goal, decision);
     goal.decisions ||= []; goal.decisions.push({ at: new Date().toISOString(), path: decision.path, judgments: decision.judgments,
-      usage: decision.usage, latencyMs: decision.latencyMs, stale: decision.stale, options: JSON.parse(JSON.stringify(tree)) });
+      usage: decision.usage, latencyMs: decision.latencyMs, stale: decision.stale, fallback: decision.fallback, options: JSON.parse(JSON.stringify(tree)) });
     goal.decisions = goal.decisions.slice(-40);
     if (decision.stale) return;
     goal.step = { action: 'end_combat', selected: decision.path, dragonHealth: beforeDragon, observedCrystals: crystals.length }; save();
@@ -306,4 +320,4 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
   }
 }
 
-module.exports = { metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };
+module.exports = { endFallback, metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };

@@ -232,3 +232,12 @@ test('a cloud arriving while eating interrupts consumption and starts an escape 
   assert(reflex); assert(stopped); assert.equal(goal.endCombat.lastInterrupted.reason, 'dragon_breath_cloud');
   assert.equal(task.interruptCheck, undefined); assert.equal(bot.listenerCount('entityMoved'), 0);
 });
+
+test('without Jev the End fight goes on in a fixed order: out of danger, crystals, head, arrow, position', () => {
+  const { endFallback } = require('../src/end-combat');
+  const tree = { observe: {}, move_a: {}, shoot_dragon: {}, crystal_7: {}, strike_head: {} };
+  assert.equal(endFallback(false)(tree), 'move_a', 'unsafe ground is left first');
+  assert.equal(endFallback(true)(tree), 'crystal_7');
+  assert.equal(endFallback(true)({ observe: {}, shoot_dragon: {}, strike_head: {} }), 'strike_head');
+  assert.equal(endFallback(true)({ observe: {} }), 'observe');
+});

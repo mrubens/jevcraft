@@ -7,7 +7,7 @@ const { dryStanding, miningMovement } = require('./mining-access');
 const { safeFromHostiles, checkThreats } = require('./danger');
 const { checkAir } = require('./vitals');
 const { surveyRoute, countOf } = require('./skills');
-const { decideTree } = require('./decisions');
+const { decideTree, announceFallback } = require('./decisions');
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
 const vector = p => new Vec3(p.x, p.y, p.z);
 const frameOffsets = [];
@@ -125,13 +125,20 @@ async function walkBearing(bot, task, goal, save, target, actions, client) {
     const watch = setInterval(() => { try { task.check(); checkAir(bot); checkThreats(bot); } catch (e) { controller.abort(e); } }, 100);
     const stopThinking = require('./speech').thinking(bot);
     let decision;
-    try { decision = await decideTree(client, { tree, kind: 'stronghold', state: { request: goal.request, task: 'Follow observed Eyes of Ender', target,
+    // Without Jev: the least-walked waypoint, then the one nearest the
+    // estimate. The walk was the one step of the late game that stopped
+    // outright when Jev did not answer.
+    const fallback = children => Object.keys(children).sort((a, b) => (children[a].description.previousVisits - children[b].description.previousVisits) ||
+      (children[a].description.remainingDistanceToEstimatedTarget - children[b].description.remainingDistanceToEstimatedTarget))[0];
+    try { decision = !client ? { path: [fallback(tree)], action: tree[fallback(tree)], fallback: { reason: 'no Jev client' } } :
+      await decideTree(client, { tree, kind: 'stronghold', fallback, state: { request: goal.request, task: 'Follow observed Eyes of Ender', target,
       latestBearing: search.bearings.at(-1), estimatedTargetIsUnverified: true, health: bot.health, food: bot.food }, signal: controller.signal,
     isFresh: () => bot.game.dimension === dimension && bot.entity.position.distanceTo(origin) < 1 }); }
     finally { clearInterval(watch); stopThinking(); }
     task.check();
+    if (client && !decision.stale) announceFallback(bot, goal, decision);
     goal.decisions ||= []; goal.decisions.push({ at: new Date().toISOString(), path: decision.path, judgments: decision.judgments,
-      latencyMs: decision.latencyMs, usage: decision.usage, stale: decision.stale, state: { target }, options: JSON.parse(JSON.stringify(tree)) });
+      latencyMs: decision.latencyMs, usage: decision.usage, stale: decision.stale, fallback: decision.fallback, state: { target }, options: JSON.parse(JSON.stringify(tree)) });
     goal.decisions = goal.decisions.slice(-40); save();
     if (!decision.stale) await decision.action.run();
   } finally { surface.restore(); }
