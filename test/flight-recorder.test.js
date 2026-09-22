@@ -9,22 +9,28 @@ const { flightRecorder } = require('../src/harness/flight');
 const settle = () => new Promise(resolve => setTimeout(resolve, 50));
 const rows = file => fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
 
-test('heartbeats are written slim, the goal only when it changes, and terrain only on a death or a connection', async () => {
+test('heartbeats and steps are written slim, the whole goal once a minute or on a death, and terrain only on a death or a connection', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'flight-'));
   const recorder = flightRecorder(directory, 'jev');
-  const world = { blocks: [[0, 0, 0, 0]] }, goal = { step: { action: 'tunnel' }, decisions: ['big'] };
-  recorder.record({ kind: 'observation', at: 'a', snapshot: { world, goal, position: { x: 1, y: 2, z: 3 }, health: 20, held: ['forward'], controller: { name: 'bridge_step' } } });
-  recorder.record({ kind: 'decision', at: 'b', snapshot: { world, goal } });
-  recorder.record({ kind: 'survival', at: 'c', snapshot: { world, goal } });
-  recorder.record({ kind: 'error', at: 'd', snapshot: { world, goal: { ...goal, step: { action: 'persist' } } } });
-  recorder.record({ kind: 'danger', at: 'e', snapshot: { world, goal, health: 0 } });
+  const world = { blocks: [[0, 0, 0, 0]] }, goal = { request: 'beat the game', step: { action: 'tunnel' }, decisions: ['big'] };
+  const at = s => new Date(Date.parse('2026-09-22T22:00:00Z') + s * 1000).toISOString();
+  recorder.record({ kind: 'observation', at: at(0), snapshot: { world, goal, position: { x: 1, y: 2, z: 3 }, health: 20, held: ['forward'], controller: { name: 'bridge_step' } } });
+  recorder.record({ kind: 'action', at: at(1), snapshot: { world, goal, position: { x: 1, y: 2, z: 3 } } });
+  recorder.record({ kind: 'decision', at: at(2), snapshot: { world, goal, decision: { path: ['a'] } } });
+  recorder.record({ kind: 'survival', at: at(3), snapshot: { world, goal, decision: { path: ['a'] } } });
+  recorder.record({ kind: 'danger', at: at(4), snapshot: { world, goal, health: 0 } });
+  recorder.record({ kind: 'error', at: at(70), snapshot: { world, goal } });
   recorder.close(); await settle();
-  const [beat, decision, survival, error, death] = rows(recorder.file);
+  const [beat, step, decision, survival, death, late] = rows(recorder.file);
   assert.deepEqual(Object.keys(beat.snapshot).filter(k => beat.snapshot[k] !== undefined).sort(), ['controller', 'health', 'held', 'position', 'step'], 'a heartbeat is where, how, which keys, who, and the step');
-  assert(decision.snapshot.goal && !survival.snapshot.goal, 'the goal is written when it changes, not again');
-  assert(error.snapshot.goal, 'a changed goal is written');
-  assert.deepEqual([decision, survival, error].map(r => !!r.snapshot.world), [false, false, false], 'no terrain on ordinary frames');
-  assert(death.snapshot.world, 'terrain on a death');
+  assert(!step.snapshot.goal && step.snapshot.step, 'a work step is written slim too');
+  assert(decision.snapshot.goal.decisions, 'the first full frame carries the whole goal');
+  assert(decision.snapshot.decision && !survival.snapshot.decision, 'the decision only on decision frames');
+  assert.equal(survival.snapshot.goal.decisions, undefined, 'within the minute, a compact goal');
+  assert.equal(survival.snapshot.goal.step.action, 'tunnel');
+  assert(death.snapshot.goal.decisions && death.snapshot.world, 'a death carries everything');
+  assert(late.snapshot.goal.decisions, 'a minute on, the whole goal again');
+  assert.deepEqual([decision, survival, late].map(r => !!r.snapshot.world), [false, false, false], 'no terrain on ordinary frames');
   fs.rmSync(directory, { recursive: true, force: true });
 });
 

@@ -9,9 +9,10 @@
 // run all day. The first version wrote the whole goal view with every
 // once-a-second heartbeat, about ninety megabytes an hour, and at its cap it
 // stopped writing: the deaths after the second hour were lost. Now:
-//   - heartbeats are written slim: where, how healthy, which keys, who holds
-//     them, and the step;
-//   - the goal is written only when it has changed;
+//   - heartbeats and work steps are written slim: where, how healthy, which
+//     keys, who holds them, and the step;
+//   - other frames carry a compact goal, the whole of it once a minute and
+//     on a death or a connection, and the decision only on decision frames;
 //   - terrain only on a death or a connection;
 //   - a file that reaches its size starts the next part, and each bot keeps
 //     its own newest ten, by age, so two bots sharing the directory never
@@ -21,7 +22,14 @@ const path = require('node:path');
 
 const KEEP = 10, PART_BYTES = 50 * 1024 * 1024;
 const KEEP_WORLD = new Set(['danger', 'connection']);
-const HEARTBEAT = new Set(['observation', 'vitals', 'motion']);
+// Step frames come one or two a second while working, and the goal changes
+// on every one (its step counter), so "only when it changes" never skipped
+// it: forty megabytes in half an hour. They are written slim like the
+// heartbeats; the full goal goes with deaths, connections and once a minute.
+const HEARTBEAT = new Set(['observation', 'vitals', 'motion', 'action']);
+const FULL_GOAL = new Set(['danger', 'connection']), FULL_GOAL_EVERY_MS = 60000;
+const compact = goal => goal && { request: goal.request, kind: goal.kind, status: goal.status, step: goal.step,
+  survivalAction: goal.survivalAction, lastError: goal.lastError };
 
 function slim(frame) {
   const s = frame.snapshot || {};
@@ -34,7 +42,7 @@ function flightRecorder(directory, label = 'jev', { now = () => new Date(), part
   fs.mkdirSync(directory, { recursive: true });
   const prefix = label.replace(/[^a-zA-Z0-9_-]/g, '_');
   const started = now().toISOString().replace(/[:.]/g, '-');
-  let part = 0, file, stream, bytes = 0, closed = false, lastGoal = null;
+  let part = 0, file, stream, bytes = 0, closed = false, fullGoalAt = 0;
   function prune() {
     const mine = fs.readdirSync(directory).filter(f => f.startsWith(`${prefix}-`) && f.endsWith('.jsonl'))
       .map(f => ({ f, at: fs.statSync(path.join(directory, f)).mtimeMs })).sort((a, b) => a.at - b.at);
@@ -47,7 +55,7 @@ function flightRecorder(directory, label = 'jev', { now = () => new Date(), part
     fs.writeFileSync(file, '', { flag: 'a' });
     stream = fs.createWriteStream(file, { flags: 'a' });
     stream.on('error', () => { closed = true; });
-    bytes = 0; lastGoal = null;
+    bytes = 0; fullGoalAt = 0;
     prune();
   }
   open();
@@ -58,8 +66,10 @@ function flightRecorder(directory, label = 'jev', { now = () => new Date(), part
     else {
       const snapshot = { ...(frame.snapshot || {}) };
       if (!KEEP_WORLD.has(frame.kind)) delete snapshot.world;
-      const goal = JSON.stringify(snapshot.goal ?? null);
-      if (goal === lastGoal) delete snapshot.goal; else lastGoal = goal;
+      const at = Date.parse(frame.at) || Date.now();
+      if (FULL_GOAL.has(frame.kind) || at - fullGoalAt >= FULL_GOAL_EVERY_MS) fullGoalAt = at;
+      else snapshot.goal = compact(snapshot.goal);
+      if (frame.kind !== 'decision') delete snapshot.decision;
       row = { ...frame, snapshot };
     }
     const line = JSON.stringify(row) + '\n';
