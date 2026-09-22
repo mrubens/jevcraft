@@ -65,6 +65,15 @@ function inEncounter(bot) {
 // no rod. While a hunt for this kind is live and the bot is whole and
 // armoured, the hunt owns them; below the fight floor the survival layer
 // takes them back.
+// The hunt's claim alone. Where the question is "should this mob keep the
+// bot hidden" rather than "should it swing", a blaze at the door is the
+// best reason to come out, not a reason to stay in.
+function claimed(bot, entity) {
+  const hunt = bot._huntingEntity;
+  return !!hunt && hunt.name === entity.name && hunt.until > Date.now() &&
+    (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 14 && kitReady(bot);
+}
+
 function hunted(bot, entity) {
   const hunt = bot._huntingEntity;
   // Never within a sword's reach. The exemption exists so a distant blaze
@@ -127,4 +136,4 @@ function checkThreats(bot) {
   if (threat) throw new NeedsSafety(threat);
 }
 
-module.exports = { hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provokedEnderman, hunted };
+module.exports = { hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provokedEnderman, hunted, claimed };

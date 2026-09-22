@@ -1,7 +1,7 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { threats, immediateThreat, checkThreats, hunted } = require('./danger');
+const { threats, immediateThreat, checkThreats, hunted, claimed } = require('./danger');
 const shelter = require('./shelter');
 const { decideTree, announceFallback } = require('./decisions');
 const { maintainVitals, chooseFood, checkAir } = require('./vitals');
@@ -679,7 +679,7 @@ class Survival {
       // waits forever: healed and armed beside the blaze room, the bot sat
       // sealed in for ten minutes because the blazes were still there, which
       // was the reason it came.
-      const watched = !shelterNeeded(bot) && threats(bot).some(t => t.distance < 20 && (t.visible || t.distance < 6) && !hunted(bot, t.entity));
+      const watched = !shelterNeeded(bot) && threats(bot).some(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity));
       if (watched) this.state.watchedSince ||= Date.now(); else delete this.state.watchedSince;
       const outwaited = watched && Date.now() - this.state.watchedSince > 180000;
       // A sealed pocket within a walk of the base's bed is left for it: the
