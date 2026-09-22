@@ -1347,7 +1347,8 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     goal.buildId = entry.id;
     goal.design = entry.design || goal.design;
     goal.blueprint = structuredClone(entry.blueprint);
-    goal.buildOwned = { ...bot.buildRegistry.ownership(bot, entry.bounds, dimensionName(bot), entry.id), ...goal.buildOwned };
+    // Finishing owns nothing of the neighbours: their cells are theirs.
+    goal.buildOwned = { ...goal.buildOwned };
     goal.step = { action: goal.continueBuild.mode === 'repair' ? 'repair_building' : 'finish_building', building: entry.name };
     save(); onStep(goal);
     bot.chat(goal.continueBuild.mode === 'repair' ? `I'll check ${entry.name} over and put back anything missing.`
@@ -1473,10 +1474,12 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
       await explore(bot, task, goal, save, 'supported building site', { surfaceOnly: true });
       return false;
     }
-    // Past structures inside the new bounds are Jev's own work, not player
-    // property: without this the site-changed guard rejects its own walls.
+    // The building being changed is Jev's own work, not player property:
+    // without this the site-changed guard rejects its own walls. Only that
+    // one: the neighbours are built around, and owned they were stripped as
+    // scaffolding when the new part was finished.
     if (registry) {
-      goal.buildOwned = { ...registry.ownership(bot, goal.blueprint.bounds, dimensionName(bot), goal.buildId), ...goal.buildOwned };
+      if (edited) goal.buildOwned = { ...registry.ownership(bot, goal.blueprint.bounds, dimensionName(bot), undefined, { only: edited.id }), ...goal.buildOwned };
       registry.remember(goal, { dimension: dimensionName(bot) });
     }
     save();

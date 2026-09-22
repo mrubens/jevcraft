@@ -329,3 +329,13 @@ test('changing a building is one mode, and restoring it is another', () => {
   assert(!/\badd\b/i.test(MODES.repair) && !/remove|reshape/i.test(MODES.repair),
     'and does not invite them either');
 });
+
+test('a new part owns nothing of its neighbours, so their walls are never taken for scaffolding', () => {
+  const store = new BuildRegistry(null);
+  const cottage = buildGoal('Cottage', { x: 0, y: 62, z: 0 }, [{ x: 0, y: 62, z: 0, material: 'cobblestone' }, { x: 1, y: 62, z: 0, material: 'cobblestone' }]);
+  store.remember(cottage, { dimension: 'overworld' });
+  const standing = world({ blocks: { '0,62,0': 'cobblestone', '1,62,0': 'cobblestone' } });
+  const bounds = { min: { x: -3, y: 60, z: -3 }, max: { x: 4, y: 66, z: 3 } };
+  assert.deepEqual(store.ownership(standing, bounds, 'overworld', undefined, { only: 'lamp-post' }), {}, 'a lamp post beside it owns none of the cottage');
+  assert.deepEqual(Object.keys(store.ownership(standing, bounds, 'overworld', undefined, { only: cottage.buildId })).sort(), ['0,62,0', '1,62,0'], 'an edit of the cottage owns the cottage');
+});
