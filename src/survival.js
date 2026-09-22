@@ -38,7 +38,13 @@ const NIGHT_ORES = new Set(['coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'r
 function nightOre(bot, feet, skip = {}) {
   const ids = [...NIGHT_ORES].map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
   const found = bot.findBlocks?.({ matching: ids, maxDistance: 24, count: 32 }) || [];
-  const p = found.filter(q => q.y <= feet.y + 1 && q.y >= -48 && !(skip[`${q}`] > Date.now()))
+  // Not ore touching water or lava. The staircase will not open a cell onto
+  // a liquid, so every step toward such an ore is refused but the sideways
+  // ones: the mine paced back and forth under a copper in the wall of a
+  // flooded cave, the same cave it had drowned in.
+  const wet = q => [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]]
+    .some(([x, y, z]) => /water|lava|bubble_column|kelp|seagrass/.test(bot.blockAt(q.offset(x, y, z))?.name || ''));
+  const p = found.filter(q => q.y <= feet.y + 1 && q.y >= -48 && !(skip[`${q}`] > Date.now()) && !wet(q))
     .sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))[0];
   return p ? { position: p, name: bot.blockAt(p)?.name } : null;
 }

@@ -892,3 +892,17 @@ test('a night-mine target the steps never get closer to is set aside, even when 
   assert(survival.state.nightMine.lastAbandoned, 'the pacing is noticed');
   assert(survival.state.nightMine.skip[`${ore}`], 'and the ore rests');
 });
+
+test('the night mine does not choose an ore in the wall of a flooded cave', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const wet = new Vec3(4, 55, 0), dry = new Vec3(-9, 55, 0);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 15000 },
+    entity: { position: new Vec3(0.5, 62, 0.5) }, health: 20, food: 20, registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }], slots: {} },
+    findBlocks: () => [wet, dry], world: { raycast: () => null },
+    blockAt: p => ({ name: p.equals(wet) || p.equals(dry) ? 'copper_ore' : p.equals(wet.offset(0, 1, 0)) ? 'water' : 'stone', boundingBox: 'block', position: p }) });
+  const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {} });
+  survival.report = () => {};
+  await survival.nightMine(new Task('night', 'mine'), { kind: 'win' }, () => {});
+  assert.deepEqual(survival.state.nightMine.target, { x: dry.x, y: dry.y, z: dry.z }, 'the dry ore, though it is farther');
+});
