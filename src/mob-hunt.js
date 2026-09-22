@@ -72,8 +72,12 @@ function isolated(bot, target, handler = handlers[target.name] || {}) {
   // view is a fight, three is a swarm.
   const others = threats(bot).filter(t => t.entity !== target);
   const kinInView = others.filter(t => t.entity.name === target.name && t.visible && t.distance < 8).length;
+  // A hoglin twelve blocks off is not a reason to leave a blaze alone. The
+  // crimson forest above a fortress is full of them, and at twelve blocks
+  // every blaze in the spawner room was "not isolated" and none was ever
+  // fought. Something that shoots still gets a wide berth.
   const crowd = kinInView >= 3 || others.some(t => t.entity.name !== target.name &&
-    (t.distance < (SHOOTERS.has(t.entity.name) ? 16 : 12) || t.entity.position.distanceTo(target.position) < 8));
+    (t.distance < (SHOOTERS.has(t.entity.name) ? 16 : 8) || t.entity.position.distanceTo(target.position) < 6));
   if (crowd) return false;
   // A sword sweep must not hit a nearby player or provoke another mob. A
   // flock of chickens is not a crowd of mobs: a passive animal only needs
@@ -469,8 +473,19 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     state.watchingSince ||= Date.now();
     if (Date.now() - state.watchingSince > 15000) {
       state.watchingSince = Date.now();
-      (state.avoided ||= {})[key] = Date.now(); delete state.stalking; save();
-      bot.chat?.(`Watching ${step.entity.replaceAll('_', ' ')}s and getting nowhere. Trying another angle.`);
+      state.watchFails = (state.watchFails || 0) + 1;
+      // Change the situation, not the target. Setting the mob aside was
+      // itself the bug: with a spawner room full of blazes the bot avoided
+      // one every fifteen seconds until it had avoided all twelve and had
+      // nothing left to hunt. Cover breaks their line and makes them come
+      // round it, which is the thing that was missing.
+      goal.step = { action: 'break_their_line', entity: step.entity, watched: state.watchFails }; save();
+      try { if (await raiseCover(bot, task, near.position)) { await sleep(300); return; } }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+      if (state.watchFails >= 3) {
+        (state.avoided ||= {})[key] = Date.now(); delete state.stalking; state.watchFails = 0; save();
+        bot.chat?.(`Watching ${step.entity.replaceAll('_', ' ')}s and getting nowhere. Trying another angle.`);
+      }
       return;
     }
     await sleep(1000); return;
