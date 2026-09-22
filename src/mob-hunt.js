@@ -11,6 +11,7 @@ const { checkAir } = require('./vitals');
 const { surveyRoute, countOf } = require('./skills');
 const { decideTree } = require('./decisions');
 const { descendTo } = require('./descent');
+const { bridgeTo } = require('./bridging');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
@@ -406,6 +407,16 @@ async function findFortressStep(bot, task, goal, save, actions) {
         goal.step = { action: 'find_fortress', found: state.found, descending: true, legs: state.legs }; save();
         try { if (await descendTo(bot, task, nearest) >= 1) { state.approachFails = 0; return; } }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastDescentError = err.message; }
+      }
+      // Across open air, level with the structure or above it: lay a span
+      // straight at it. The pathfinder bridged a block a minute here.
+      const flatGap = Math.hypot(nearest.x + 0.5 - above.x, nearest.z + 0.5 - above.z);
+      if (flatGap > 1.5 && flatGap <= 64 && nearest.y <= above.y) {
+        goal.step = { action: 'find_fortress', found: state.found, bridging: true, legs: state.legs }; save();
+        const from = bot.entity.position.clone();
+        try { await bridgeTo(bot, task, nearest, { maxBlocks: 64 }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastBridgeError = err.message; }
+        if (nearest.distanceTo(bot.entity.position) < nearest.distanceTo(from) - 1.5) { state.approachFails = 0; return; }
       }
       const gapBefore = nearest.distanceTo(bot.entity.position);
       try { await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); }

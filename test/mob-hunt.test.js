@@ -344,3 +344,22 @@ test('a fortress roof under a shelf is reached by digging straight down, never o
   for (let y = 50; y <= 63; y++) column[y] = air;
   await assert.rejects(descendTo(bot, new Task('hunt'), new Vec3(0, 40, 0)), /too deep/);
 });
+
+test('a span is laid one block ahead at a time toward a fortress across open air, and stops beside it', async () => {
+  const { bridgeTo } = require('../src/bridging');
+  const { Vec3 } = require('vec3');
+  const blocks = new Map([[`${new Vec3(0, 64, 0)}`, 'netherrack']]);
+  const at = p => ({ name: blocks.get(`${p}`) || 'air', boundingBox: blocks.has(`${p}`) ? 'block' : 'empty', diggable: true, position: p, digTime: () => 500 });
+  let look = null; const placed = [];
+  const bot = {
+    entity: { position: new Vec3(0.5, 65, 0.5) }, health: 20,
+    inventory: { items: () => [{ name: 'netherrack', count: 20, type: 1 }] },
+    blockAt: at, equip: async () => {}, lookAt: async p => { look = p; },
+    placeBlock: async (ref, face) => { const p = ref.position.plus(face); blocks.set(`${p}`, 'netherrack'); placed.push([p.x, p.y, p.z]); },
+    setControlState: (name, on) => { if (name === 'forward' && on && look) bot.entity.position = new Vec3(Math.floor(look.x) + 0.5, 65, Math.floor(look.z) + 0.5); },
+    dig: async () => {},
+  };
+  const laid = await bridgeTo(bot, new Task('hunt'), new Vec3(6, 64, 0));
+  assert.equal(laid, 5); assert.deepEqual(placed, [[1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0], [5, 64, 0]]);
+  assert.equal(bot.entity.position.x, 5.5, 'standing on the last span block, beside the brick');
+});
