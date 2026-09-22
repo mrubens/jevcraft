@@ -19,6 +19,28 @@ Seven of the dream run's deaths in one night were combat, and every lesson cost 
 | blaze_pair | FAIL | 0 | 0/3 | 0 | - |
 | blaze_swarm_wall | FAIL | 0 | 0/3 | 0 | - |
 
+**After five fixes (2026-09-22 05:10 UTC), same drills, three runs each.** No deaths anywhere, against three in the baseline.
+
+| drill | verdict | deaths | cleared | drops | damage | secs |
+|---|---|---|---|---|---|---|
+| zombie_single | PASS->FAIL | 0->0 | 3/3->2/3 | 0->0 | 1.5->1.5 | 7.5->6.7 |
+| wither_skeleton_single | PASS->PASS | 0->0 | 3/3->3/3 | 0->0 | 1.9->2.0 | 5.4->5.5 |
+| wither_skeleton_pair | PASS->PASS | 0->0 | 3/3->3/3 | 0->0 | 15.4->0 | 18.1->38.5 |
+| hoglin_single | PASS->FAIL | 0->0 | 3/3->3/3 | 0->0 | 8.8->13.0 | 8.6->9.1 |
+| hoglin_herd | FAIL->PASS | 3->0 | 0/3->0/3 | 0->0 | 34.8->0 | - |
+| blaze_single | FAIL->PASS | 0->0 | 0/3->2/3 | 0->1 | 0->6.7 | ->35.3 |
+| blaze_pair | FAIL->FAIL | 0->0 | 0/3->1/3 | 0->1 | 0->31.3 | ->76 |
+| blaze_swarm_wall | FAIL->PASS | 0->0 | 0/3->0/3 | 0->1 | 0->27.2 | - |
+
+The fixes, in the order the drills forced them: stand under a hovering target; the mob the bot came for is not the survival layer's emergency; judge combat readiness by the kit carried rather than what is in hand; meet a pack at a bunker door, bounded to forty-five seconds; fight a swarm in the open until hurt, because blazes hover out of reach of a doorway.
+
+**Still open.**
+
+9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
+10. *Two blazes cost 31 damage where one costs 6.7.* It fights them now instead of hiding, which is the point, but the second blaze roughly quintuples the bill and only one run in three cleared. The pair is the case to work on next.
+11. *A pack of two costs time instead of health.* `wither_skeleton_pair` went from 15.4 damage in 18 seconds to zero damage in 38: the bunker door is the right answer and it is twice as slow. Worth keeping, worth knowing.
+12. *`hoglin_single` at 13 damage and one zombie run that never cleared* are both inside the noise band above, but neither has been explained.
+
 **Opportunities.**
 
 1. *The blaze drill reproduced the fortress stall exactly.* Three runs, the same error each time ("no dry combat route to blaze"), then `dig_in`: no swing, no damage taken, no rod. A blaze hovers, so there is no standing room within two blocks of it, the route check refuses the fight, and the survival layer's shooter rule wins and walls the bot in. This is why the dream run spent an hour in a fortress with nothing to show. Now the approach falls back to the ground under the target, which a sword reaches from three blocks.
