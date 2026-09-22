@@ -80,12 +80,19 @@ function planTerrainSite(bot, schematic, { naturalGround, replaceable, at }) {
     }
     if (!valid || !reached || cuts.size + fill.size > PREP_LIMITS.changes) continue;
     const blocks = schematic.blocks.map(p => ({ ...p, ...origin.offset(p.x, p.y, p.z) }));
-    for (const p of fill.values()) if (!shape.has(key(p))) blocks.push(p);
     // offset() returns a bare Vec3, which silently dropped the mark saying a
     // cell is a room the design asked for. Rooms below the prepared deck are
     // exactly the ones worth keeping: that is the part cut into the ground.
     const emptyMap = new Map(schematic.empty.map(p => ({ ...origin.offset(p.x, p.y, p.z), ...(p.carved && { carved: true }) }))
       .filter(p => p.carved || p.y > (deck.get(`${p.x},${p.z}`) ?? base)).map(p => [key(p), { ...p }]));
+    // Fill goes in after the rooms are known: a column with no foundation
+    // block was filled to the deck, and where the design carved a room at
+    // floor level the same cell was both placed and dug, so the building
+    // could never verify.
+    for (const [k, p] of fill) {
+      if (emptyMap.has(k)) { fill.delete(k); continue; }
+      if (!shape.has(k)) blocks.push(p);
+    }
     // Reserve standing/head space along all added approach cells.
     for (const [xz, top] of deck) {
       const [x, z] = xz.split(',').map(Number);

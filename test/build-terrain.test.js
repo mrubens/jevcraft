@@ -192,3 +192,14 @@ test('a floor the design chose still may not become a pedestal', () => {
   const level = selectSchematicSite(bot, schematic, { prefer: new Vec3(0, 63, 0), baseY: 67 });
   assert(level, 'choosing a sensible floor still works');
 });
+
+test('earthworks never fill a cell the design carves as a room', () => {
+  const cellar = { ...source, name: 'Pavilion with a sunken step', regions: [...source.regions, { from: [2, 0, 2], to: [2, 0, 2], block: 'air' }] };
+  const schematic = validateSchematic(cellar, registry), bot = world('water');
+  const site = selectSchematicSite(bot, schematic);
+  assert(site?.terrain, 'the island foundation is still planned');
+  const carved = new Set(site.empty.filter(p => p.carved).map(p => `${p.x},${p.y},${p.z}`));
+  assert(carved.size, 'the carved cell is kept in the plan');
+  assert(!site.terrain.fill.some(p => carved.has(`${p.x},${p.y},${p.z}`)), 'nothing is filled where a room was drawn');
+  assert(!site.blocks.some(p => carved.has(`${p.x},${p.y},${p.z}`)), 'and nothing is placed there');
+});
