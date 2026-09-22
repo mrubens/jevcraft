@@ -340,9 +340,13 @@ test('a fortress roof under a shelf is reached by digging straight down, never o
   column[64] = solid('netherrack'); column[62] = { name: 'lava', boundingBox: 'empty', diggable: false }; bot.entity.position = new Vec3(0.5, 65, 0.5);
   await assert.rejects(descendTo(bot, new Task('hunt'), new Vec3(0, 50, 0)), /too deep or ends in lava/);
   assert.equal(column[64].name, 'netherrack', 'the shelf stays whole');
-  // A ten-block drop: refused too.
+  // A twelve-block drop: refused too; and hurt, even seven is too far.
   for (let y = 50; y <= 63; y++) column[y] = air;
   await assert.rejects(descendTo(bot, new Task('hunt'), new Vec3(0, 40, 0)), /too deep/);
+  column[57] = solid('nether_bricks'); bot.health = 12;
+  await assert.rejects(descendTo(bot, new Task('hunt'), new Vec3(0, 57, 0)), /too deep/);
+  bot.health = 20;
+  assert.equal(await descendTo(bot, new Task('hunt'), new Vec3(0, 57, 0)), 7, 'at full health the seven-block drop onto the fortress roof is taken');
 });
 
 test('a span is laid one block ahead at a time toward a fortress across open air, and stops beside it', async () => {

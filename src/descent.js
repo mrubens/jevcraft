@@ -6,19 +6,21 @@
 // helper refuses over lava, over a long fall, and when hurt.
 const { equipBestTool } = require('./skills');
 
-// Fall damage starts at four blocks; five costs a heart.
-const MAX_DROP = 5;
+// Fall damage starts at four blocks: a nine-block drop costs three hearts,
+// which full health can spare; hurt, the allowance shrinks.
+const MAX_DROP = 9;
+const allowedDrop = bot => (bot.health ?? 20) >= 16 ? 9 : (bot.health ?? 20) >= 10 ? 6 : 4;
 const passable = b => !b || b.boundingBox === 'empty';
 const molten = b => b && ['lava', 'water', 'fire', 'magma_block', 'powder_snow'].includes(b.name);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // The block the bot would land on if the one underfoot went, and how far it
 // would fall; null when the drop is unsafe.
-function landing(bot, feet) {
-  for (let k = 2; k <= MAX_DROP + 2; k++) {
+function landing(bot, feet, limit = allowedDrop(bot)) {
+  for (let k = 2; k <= limit + 2; k++) {
     const block = bot.blockAt(feet.offset(0, -k, 0));
     if (!block || molten(block)) return null;
-    if (!passable(block)) return k - 1 <= MAX_DROP ? { block, fall: k - 1 } : null;
+    if (!passable(block)) return k - 1 <= limit ? { block, fall: k - 1 } : null;
   }
   return null;
 }
@@ -47,4 +49,4 @@ async function descendTo(bot, task, target, { hpFloor = 12, maxSteps = 24 } = {}
   return start - bot.entity.position.y;
 }
 
-module.exports = { descendTo, landing, MAX_DROP };
+module.exports = { descendTo, landing, allowedDrop, MAX_DROP };
