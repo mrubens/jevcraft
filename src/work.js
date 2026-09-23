@@ -2678,6 +2678,13 @@ function gameHandlers(bot, decisionClient) {
           await gatherWool(bot, task, goal, save, null, homeActions());
         },
         stash_valuables: (bot, task, goal, save) => stashValuables(bot, task, goal, save, homeActions()),
+        // A chest on the spot when home is too far (field-cache.js).
+        cache_valuables: (bot, task, goal, save) => require('./field-cache').cacheValuables(bot, task, goal, save, homeActions()),
+        take_cache: async (bot, task, goal, save) => {
+          const { nearCache, emptyCache } = require('./field-cache');
+          const near = nearCache(bot, goal);
+          return near ? emptyCache(bot, task, goal, save, homeActions(), near.cache) : false;
+        },
         find_stronghold: (bot, task, goal, save) => findStronghold(bot, task, goal, save, {
           navigate, explore, surfaceStep,
           tunnel: async (bot, task, goal, save, target, resource) => {

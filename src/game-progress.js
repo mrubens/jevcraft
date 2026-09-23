@@ -304,6 +304,11 @@ async function gameStep(bot, task, goal, save, actions) {
     if (chosen?.ran) return false;
     if (chosen?.stage) stage = chosen.stage;
   }
+  // Back in the Overworld with nothing left to cross for: a field cache in
+  // reach is emptied before the ladder goes on.
+  if (actions.take_cache && dimension(bot) === 'overworld' && !['enter_nether', 'reach_nether'].includes(stage.action) && stage.phase !== 'complete') {
+    if (await actions.take_cache(bot, task, goal, save)) return false;
+  }
   progress.phase = stage.phase; goal.step = { action: 'game_progression', ...stage };
   timeRung(bot, goal, stage.phase);
   save();
@@ -332,6 +337,9 @@ async function gameStep(bot, task, goal, save, actions) {
     if (stage.action === 'enter_nether' && actions.stash_valuables && !await actions.stash_valuables(bot, task, goal, save)) return false;
     if (stage.action === 'enter_nether' && actions.food_reserve && !await actions.food_reserve(bot, task, goal, save)) return false;
     if (stage.action === 'enter_nether' && actions.prepare_combat && !await actions.prepare_combat(bot, task, goal, save)) return false;
+    // Home too far to walk them back to: a chest on the spot, once the
+    // preparations are done and the crossing is next (field-cache.js).
+    if (stage.action === 'enter_nether' && actions.cache_valuables) await actions.cache_valuables(bot, task, goal, save);
     if (stage.action === 'enter_end' && actions.prepare_end && !await actions.prepare_end(bot, task, goal, save)) return false;
     const execute = actions[stage.action];
     if (!execute) throw Object.assign(new Error(`Game progression is blocked at ${stage.phase.replaceAll('_', ' ')}: the ${stage.action.replaceAll('_', ' ')} action is not implemented yet. Earlier progress is saved.`), { name: 'Blocked' });

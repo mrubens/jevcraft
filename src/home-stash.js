@@ -431,8 +431,8 @@ async function moveOut(bot, window, move) {
 
 // Put spares (and, before the Nether, valuables) in the chest. The moves
 // are worked out again against the real contents once the lid is open.
-async function stockStash(bot, task, goal, save, home, actions, { valuables = false } = {}) {
-  const planned = stashDeposits(bot, home, { valuables });
+async function stockStash(bot, task, goal, save, home, actions, { valuables = false, only = null } = {}) {
+  const planned = stashDeposits(bot, home, { valuables }).filter(m => !only || only(m));
   if (!planned.length) return [];
   const step = () => { goal.step = { action: valuables ? 'stash_valuables' : 'stock_stash', items: planned }; save(); };
   step();
@@ -440,7 +440,7 @@ async function stockStash(bot, task, goal, save, home, actions, { valuables = fa
     // The walk home has its own step; back at the chest, this is the step again.
     step();
     const stored = [];
-    for (const move of stashDeposits(bot, home, { valuables, items: window.items() })) {
+    for (const move of stashDeposits(bot, home, { valuables, items: window.items() }).filter(m => !only || only(m))) {
       task.check();
       // Only what fits: a free slot, or room in a stack of the same item.
       if (!chestRoomFor(bot, window, move.item)) continue;
