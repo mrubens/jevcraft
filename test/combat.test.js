@@ -168,3 +168,22 @@ test('a crit jump that comes down out of reach is not tried again at that mob: t
   assert.equal(await strike(bot, new Task('stairs'), zombie), 'plain', 'no second jump at the same zombie');
   assert.deepEqual(bot.attacks, ['hit']);
 });
+
+test('beside a neutral zombified piglin the sword does not sweep: the swing is made with a pickaxe', async () => {
+  const { strike } = require('../src/combat');
+  const { Vec3 } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  const sword = { name: 'diamond_sword', count: 1 }, pickaxe = { name: 'diamond_pickaxe', count: 1 };
+  const bot = { registry, entity: { position: new Vec3(0.5, 10, 0.5), onGround: false, velocity: new Vec3(0, 0, 0) }, entities: {}, controlState: {}, attacks: [], heldItem: sword,
+    inventory: { items: () => [sword, pickaxe] }, equip: async item => { bot.heldItem = item; },
+    blockAt: p => p.y < 10 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }, lookAt: async () => {},
+    attack(t) { this.attacks.push(`${this.heldItem.name}>${t.name}`); }, world: { raycast: () => null } };
+  const hoglin = { id: 1, name: 'hoglin', position: new Vec3(2, 10, 0.5), height: 1.4, width: 1.4, isValid: true };
+  bot.entities[1] = hoglin;
+  bot.entities[2] = { id: 2, name: 'zombified_piglin', position: new Vec3(3, 10, 1.5), isValid: true, metadata: {} };
+  assert.equal(await strike(bot, new Task('bystander'), hoglin), 'unswept');
+  assert.deepEqual(bot.attacks, ['diamond_pickaxe>hoglin']);
+  delete bot.entities[2]; bot.heldItem = sword; bot.attacks = [];
+  assert.equal(await strike(bot, new Task('alone'), hoglin), 'plain', 'with nobody beside it the sword swings as before');
+  assert.deepEqual(bot.attacks, ['diamond_sword>hoglin']);
+});

@@ -109,7 +109,24 @@ function critReady(bot, target) {
 // of reach, and the dream run died jumping on its stairs for fourteen
 // seconds while a zombie hit it every second and not one swing landed.
 const CRIT_MISS_MS = 8000;
+// A sword's full swing on the ground sweeps: every mob within a block of the
+// target takes a hit too. Beside a neutral zombified piglin that is the
+// whole group turned on the bot (the replay run, from its hoglin pillar).
+// With one near, the swing is made with a tool that does not sweep, or as a
+// critical, which does not either; failing both, it is held.
+const BYSTANDERS = new Set(['zombified_piglin', 'piglin', 'enderman']);
+function bystanders(bot, target) {
+  const { provoked } = require('./danger');
+  return Object.values(bot.entities || {}).filter(e => BYSTANDERS.has(e.name) && e !== target && e.isValid !== false && e.position &&
+    target.position && e.position.distanceTo(target.position) <= 2.5 && !provoked(bot, e));
+}
 async function strike(bot, task, target) {
+  const near = bystanders(bot, target);
+  if (near.length && /_sword$/.test(bot.heldItem?.name || '')) {
+    const tool = bot.inventory.items().find(i => /_axe$/.test(i.name)) || bot.inventory.items().find(i => /_pickaxe$/.test(i.name));
+    if (tool) { await bot.equip(tool, 'hand'); bot.attack(target); return 'unswept'; }
+    if (!critReady(bot, target)) return 'held';
+  }
   const missed = bot._critMiss && bot._critMiss.id === target.id && Date.now() - bot._critMiss.at < CRIT_MISS_MS;
   if (!missed && critReady(bot, target)) {
     // Past the top of the jump: seen rising, now coming down. Standing
@@ -170,4 +187,4 @@ async function defendNearby(bot, task, goal, save) {
   save(); return true;
 }
 
-module.exports = { critReady, strike, defenseWeapon, canStrike, strikeTarget, defendNearby, SHOOTERS, shooter, bowReady, aim, shotTargets, shoot, raiseShield, lowerShield };
+module.exports = { critReady, strike, bystanders, defenseWeapon, canStrike, strikeTarget, defendNearby, SHOOTERS, shooter, bowReady, aim, shotTargets, shoot, raiseShield, lowerShield };
