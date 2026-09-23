@@ -32,6 +32,8 @@ const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMov
 const { dryPassable, supportCell, swimmableWater } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
 const { noticeLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep } = require('./exploration');
+const { lootNearby, lootStep, unlootedLandmarks } = require('./looting');
+const { openChest } = require('./chest-delivery');
 const { barterStep, gatherBastionGold } = require('./bartering');
 const { descendPillar, pillarUp, pillarSite } = require('./pillar-recovery');
 const { gameStep, watchGameProgress, dimension, nextGameStage, DEFERRABLE, RUNG_WAIT_MS } = require('./game-progress');
@@ -2261,6 +2263,11 @@ function idleOptions(bot, goal) {
         run: (b, t, g, sv) => exploreStep(b, t, g, sv, { navigate, home, noticeVillage }) };
     }
   }
+  // Looting: the nearest remembered ruined portal, dungeon or temple whose
+  // chests have not been opened.
+  const unlooted = unlootedLandmarks(bot, goal)[0];
+  if (unlooted) options.loot = { description: `Loot: walk ${unlooted.distance} blocks to the ${unlooted.landmark.kind.replaceAll('_', ' ')} and open its chests. Ruined portals hold gold, obsidian and flint and steel; dungeons and temples iron, gold, bread and now and then diamonds.`,
+    run: (b, t, g, sv) => lootStep(b, t, g, sv, lootActions()) };
   if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.`, item: 'torch', count: 4 };
   // The standing dream. With nothing asked and nothing urgent, the next
   // rung of the beat-the-game ladder is on offer; it is a long walk from a
@@ -2508,6 +2515,8 @@ function gameHandlers(bot, decisionClient) {
   };
 }
 
+const lootActions = () => ({ approach: approachWorkstation, open: openChest, navigate });
+
 async function runIdle(bot, task, goal, store, { survival, decisionClient, recoveryAdviser, onStep = () => {}, until = () => false, backoffMs = 3000 } = {}) {
   survival ||= createSurvival(bot, { state: goal.survival, client: decisionClient });
   goal.survival = survival.state;
@@ -2531,7 +2540,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
         await breakStillness(bot, task, goal, save, { client: decisionClient, survival, onStep });
         failures = 0; save(); onStep(goal); continue;
       }
-      const acted = await survival.step(task, goal, save, onStep);
+      const acted = await survival.step(task, goal, save, onStep) || await lootNearby(bot, task, goal, save, lootActions());
       if (!acted) await idleWork(bot, task, goal, save, decisionClient, onStep);
       failures = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); narrate(bot, goal);
     } catch (err) {
@@ -2628,6 +2637,8 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
       }
       if (!endTask && await maintainPickaxe(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; }
+      // A structure's chest within reach is opened as a rule (looting.js).
+      if (goal.kind === 'win' && !endTask && await inCatch(task, goal, () => lootNearby(bot, task, goal, save, lootActions()))) { goal.stalls = 0; save(); onStep(goal); continue; }
       // Work starts on dry ground. A crafting table placed from a pool under
       // the base failed and failed, the bot bobbing for air in between.
       if (!endTask && await progressWatchdog(bot, task, goal, save)) { onStep(goal); continue; }

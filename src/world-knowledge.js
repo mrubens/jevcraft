@@ -14,7 +14,7 @@
 // running goal is the freshest copy there is.
 // The explored map and the landmarks found (exploration.js) are the
 // world's too: an area walked once is known to every goal after.
-const WORLD_FIELDS = ['portals', 'portalFrame', 'villages', 'endPortal', 'strongholdSearch', 'explored', 'landmarks'];
+const WORLD_FIELDS = ['portals', 'portalFrame', 'villages', 'endPortal', 'strongholdSearch', 'explored', 'landmarks', 'looted'];
 // Progress toward beating the game belongs to the run, and every run of it
 // in this world is the same run: the milestones are observations of this
 // bot in this world.

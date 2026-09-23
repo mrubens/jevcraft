@@ -14,6 +14,7 @@ const IDLE_OPTIONS = [
   { key: 'stone_tools', label: 'make stone tools', when: 'a stone pickaxe, axe or sword is missing' },
   { key: 'stock_wood', label: 'stock up to sixteen logs', when: 'fewer than sixteen logs are carried and a tree is in view' },
   { key: 'explore', label: 'explore the nearest unexplored area', when: 'in the Overworld, with an unexplored area within 512 blocks of home' },
+  { key: 'loot', label: 'open the chests of a remembered structure', when: 'in the Overworld, with a ruined portal, dungeon or temple within 256 blocks whose chests are unopened' },
   { key: 'torches', label: 'craft torches', when: 'coal is carried and fewer than eight torches' },
   { key: 'harvest_and_bake', label: 'harvest the home plot and bake bread', when: 'wheat on the home plot is ripe' },
   { key: 'tend_farm', label: 'tend the home plot', when: 'the home plot needs tilling, planting or a look' },
