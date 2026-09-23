@@ -980,3 +980,16 @@ test('floating in water, the way out is dry ground with air above, never another
   assert(!water.has(`${exit.x},${exit.y},${exit.z}`), `dry: ${exit}`);
   assert.equal(exit.distanceTo(new Vec3(0, 10, 0)), 1);
 });
+
+test('beside a drop is a neighbouring cell with no floor for three blocks or lava under it; firm ground has neither', () => {
+  const { besideDrop, firmGround } = require('../src/survival');
+  // A ledge three wide at y 99 (z 0..2), a drop to the north (z < 0).
+  const blockAt = p => (p.y === 99 && p.z >= 0 && p.z <= 2 && Math.abs(p.x) <= 6) ? { name: 'netherrack', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  const bot = { entity: { position: new Vec3(0.5, 100, 0.5) }, blockAt };
+  assert.equal(besideDrop(bot, new Vec3(0, 100, 0)), true, 'the edge row');
+  assert.equal(besideDrop(bot, new Vec3(0, 100, 1)), false, 'the middle row of a three-wide ledge has floor all round');
+  assert.equal(firmGround(bot).z, 1, 'and is where the bot steps to');
+  const wide = { entity: bot.entity, blockAt: p => (p.y === 99 && p.z >= 0 && p.z <= 8 && Math.abs(p.x) <= 6) ? { name: 'netherrack', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p } };
+  const cell = firmGround(wide);
+  assert(cell && cell.z >= 1 && !besideDrop(wide, cell), `a cell with ground all round: ${cell}`);
+});

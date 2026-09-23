@@ -92,6 +92,44 @@ const TERRAIN = Object.freeze([
     ],
     chest: [3205, 61, 3005], home: [3205, 60, 3003],
   },
+  {
+    name: 'ledge_fight',
+    why: 'Death sixteen: a wither skeleton came at the bot on the ledge by its portal, and one hit put it over the edge, thirty blocks down.',
+    dimension: 'the_nether', seconds: 60, edge: true,
+    start: [3055.5, 101, 3050.5],
+    kit: [['diamond_sword', 1], ['cooked_beef', 8], ['netherrack', 32]],
+    armor: { head: 'iron_helmet', chest: 'iron_chestplate', legs: 'iron_leggings', feet: 'iron_boots', offhand: 'shield' },
+    build: [
+      'forceload add 3040 3040 3070 3070',
+      'kill @e[tag=terrain]',
+      // Under the 32768-block limit of one fill: over it, the fill does nothing
+      // and the bot is placed inside solid netherrack.
+      'fill 3040 80 3040 3070 110 3070 minecraft:air',
+      // A ledge three wide over a forty-block drop, the bot on its edge row.
+      'fill 3048 100 3050 3062 100 3052 minecraft:netherrack',
+      'summon minecraft:wither_skeleton 3059.5 101 3052.5 {PersistenceRequired:1b,Tags:["terrain"],HandItems:[{id:"minecraft:stone_sword",count:1},{}]}',
+    ],
+    mob: 'wither_skeleton',
+  },
+  {
+    name: 'ledge_shot',
+    why: 'Death seventeen: on a ledge in the Nether, a skeleton shot from thirteen blocks, the bot dug in where it stood, on the edge row, and went over thirty blocks.',
+    dimension: 'the_nether', seconds: 45, edge: true,
+    start: [3055.5, 101, 3080.5],
+    kit: [['diamond_sword', 1], ['cooked_beef', 8], ['netherrack', 32]],
+    armor: { head: 'iron_helmet', chest: 'iron_chestplate', legs: 'iron_leggings', feet: 'iron_boots', offhand: 'shield' },
+    build: [
+      'forceload add 3040 3070 3070 3100',
+      'kill @e[tag=terrain]',
+      'fill 3040 80 3070 3070 110 3100 minecraft:air',
+      // The bot on the edge row of a ledge; the drop behind it, away from the shooter.
+      'fill 3048 100 3080 3062 100 3084 minecraft:netherrack',
+      // Across a gap, a skeleton on its own island, thirteen blocks off.
+      'fill 3053 100 3092 3057 100 3095 minecraft:netherrack',
+      'summon minecraft:skeleton 3055.5 101 3093.5 {PersistenceRequired:1b,Tags:["terrain"],HandItems:[{id:"minecraft:bow",count:1},{}]}',
+    ],
+    mob: 'skeleton', survive: true,
+  },
 ]);
 
 const terrainDrill = name => TERRAIN.find(d => d.name === name);
@@ -103,6 +141,8 @@ function placeCommands(user, d) {
     `effect give ${user} minecraft:instant_health 1 10 true`, `effect give ${user} minecraft:saturation 1 10 true`,
     `gamemode survival ${user}`];
   for (const [item, count] of d.kit) lines.push(`give ${user} minecraft:${item} ${count}`);
+  const slots = { head: 'armor.head', chest: 'armor.chest', legs: 'armor.legs', feet: 'armor.feet', offhand: 'weapon.offhand' };
+  for (const [slot, item] of Object.entries(d.armor || {})) lines.push(`item replace entity ${user} ${slots[slot]} with minecraft:${item}`);
   lines.push(`time set ${d.night ? 18000 : 6000}`);
   lines.push(at(d.dimension, `tp ${user} ${d.start.join(' ')}`));
   return lines;

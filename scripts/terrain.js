@@ -86,6 +86,27 @@ const RUNS = {
     await waitFor(bounded, arrived, 10000).catch(() => {});
     return { pass: arrived(), detail: { dimension: bot.game.dimension } };
   },
+  async ledge_fight(d, bounded) {
+    // The survival layer, as on the live run: whatever it does about the
+    // skeleton, it must not end at the bottom of the drop.
+    const survival = createSurvival(bot, { state: {} });
+    const goal = { kind: 'win', request: 'terrain drill' };
+    const mobAlive = () => Object.values(bot.entities).some(e => e.name === d.mob && e.isValid !== false);
+    let steps = 0;
+    try { while (!watch.died && mobAlive()) { bounded.check(); await survival.step(bounded, goal, () => {}); steps++; await sleep(50); } }
+    catch (err) { if (err.name !== 'OutOfTime') throw err; }
+    return { pass: !mobAlive(), detail: { mobAlive: mobAlive(), health: Math.round(bot.health), steps, last: goal.survivalAction?.action } };
+  },
+  async ledge_shot(d, bounded) {
+    // Shot at across a gap it cannot cross: passing is still being on the
+    // ledge at the end, alive.
+    const survival = createSurvival(bot, { state: {} });
+    const goal = { kind: 'win', request: 'terrain drill' };
+    const actions = [];
+    try { while (!watch.died) { bounded.check(); await survival.step(bounded, goal, () => {}); const a = goal.survivalAction?.action; if (a && actions.at(-1) !== a) actions.push(a); await sleep(50); } }
+    catch (err) { if (err.name !== 'OutOfTime') throw err; }
+    return { pass: !watch.died && bot.entity.position.y >= d.start[1] - 1, detail: { health: Math.round(bot.health), y: Math.round(bot.entity.position.y), actions: actions.slice(0, 8) } };
+  },
   async chest_lid(d, bounded) {
     const home = { origin: { x: d.home[0], y: d.home[1], z: d.home[2] }, dimension: 'overworld',
       stash: { position: { x: d.chest[0], y: d.chest[1], z: d.chest[2] }, contents: { cooked_beef: 8 } } };

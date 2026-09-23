@@ -89,6 +89,36 @@ function lavaExit(bot) {
   return cells.sort((a, b) => far(a) - far(b))[0] || null;
 }
 
+// A fight is not taken with a drop beside the bot: one hit's knockback on
+// a Nether ledge was a thirty-block fall, twice in ten minutes. Beside a
+// drop means a neighbouring cell the body could be pushed into with no
+// floor for three blocks under it, or lava under it.
+const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+function dropAt(bot, c) {
+  const b = bot.blockAt(c);
+  if (!b || b.boundingBox === 'block') return false;
+  for (let dy = 1; dy <= 3; dy++) {
+    const under = bot.blockAt(c.offset(0, -dy, 0));
+    if (!under) return false;
+    if (under.name === 'lava') return true;
+    if (under.boundingBox === 'block') return false;
+  }
+  return true;
+}
+const besideDrop = (bot, feet) => AROUND.some(([dx, dz]) => dropAt(bot, feet.offset(dx, 0, dz)));
+function firmGround(bot, radius = 4) {
+  const feet = bot.entity.position.floored(), cells = [];
+  const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name); };
+  for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (let dy = -1; dy <= 1; dy++) {
+    const c = feet.offset(dx, dy, dz);
+    const floor = bot.blockAt(c.offset(0, -1, 0));
+    if (floor?.boundingBox !== 'block' || /magma/.test(floor.name) || !open(c) || !open(c.offset(0, 1, 0)) || besideDrop(bot, c) || lavaBeside(bot, c)) continue;
+    cells.push(c);
+  }
+  const far = c => c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
+  return cells.sort((a, b) => far(a) - far(b))[0] || null;
+}
+
 // Hostiles that daylight does not remove and that keep following.
 const PERSISTENT_THREATS = new Set(['creeper', 'spider', 'cave_spider', 'enderman', 'witch', 'pillager', 'vindicator', 'husk', 'drowned']);
 // Mobs worth hiding from rather than meeting. A wither skeleton carries a
@@ -222,6 +252,17 @@ class Survival {
 
   async flee(task, goal, save) {
     const bot = this.bot;
+    // Off the edge before anything else is done about the mob. Only when
+    // one is close enough to hit, and only to a cell a few blocks off.
+    const close = threats(bot).filter(t => t.distance <= 8);
+    if (close.length && besideDrop(bot, bot.entity.position.floored()) && !isSetAside(this, 'firm_ground', 'here')) {
+      const cell = firmGround(bot);
+      if (cell) {
+        this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, threats: close.map(t => t.entity.name) });
+        try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 3000, stallMs: 1500 }); return; }
+        catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; setAside(this, 'firm_ground', 'here', err, 5000); }
+      }
+    }
     // A swing can buy room, but it must not consume the escape action. Ending
     // the turn after every hit trapped an unarmed bot in a losing melee loop.
     const swung = await defendNearby(bot, task, goal, save);
@@ -1155,4 +1196,4 @@ class Survival {
   }
 }
 
-module.exports = { Survival, inLava, inWater, lavaExit, night, shelterNeeded, lavaBeside, bedSite, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
