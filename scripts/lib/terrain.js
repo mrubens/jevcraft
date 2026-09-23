@@ -40,6 +40,20 @@ const CAVE = capturedBuild('./flooded-cave.json', [3400, 40, 3400]);
 
 const TERRAIN = Object.freeze([
   {
+    name: 'enchant_table',
+    why: 'Enchanting, new: a table beside the bot, a diamond sword, lapis and ten levels. Passing is a sword that comes back enchanted.',
+    dimension: 'overworld', seconds: 60,
+    start: [3600.5, 65, 3600.5],
+    kit: [['diamond_sword', 1], ['lapis_lazuli', 16], ['iron_chestplate', 1]],
+    build: [
+      'forceload add 3590 3590 3610 3610',
+      'fill 3595 64 3595 3605 64 3605 minecraft:stone',
+      'fill 3595 65 3595 3605 70 3605 minecraft:air',
+      'setblock 3602 65 3600 minecraft:enchanting_table',
+    ],
+    xpLevels: 10,
+  },
+  {
     name: 'mineshaft_cart',
     why: 'A mineshaft\'s chest rides in a minecart: an entity, not a block. The first landmark the run found and did nothing with.',
     dimension: 'overworld', seconds: 60,
@@ -219,6 +233,7 @@ function placeCommands(user, d) {
     `gamemode survival ${user}`];
   for (const [item, count] of d.kit) lines.push(`give ${user} minecraft:${item} ${count}`);
   for (const effect of d.effects || []) lines.push(`effect give ${user} minecraft:${effect} 600 0 true`);
+  lines.push(`xp set ${user} ${d.xpLevels || 0} levels`);
   const slots = { head: 'armor.head', chest: 'armor.chest', legs: 'armor.legs', feet: 'armor.feet', offhand: 'weapon.offhand' };
   for (const [slot, item] of Object.entries(d.armor || {})) lines.push(`item replace entity ${user} ${slots[slot]} with minecraft:${item}`);
   lines.push(`time set ${d.night ? 18000 : 6000}`);

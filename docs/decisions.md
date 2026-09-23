@@ -260,6 +260,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `stock_wood` | root | stock up to sixteen logs | fewer than sixteen logs are carried and a tree is in view |
 | `explore` | root | explore the nearest unexplored area | in the Overworld, with an unexplored area within 512 blocks of home |
 | `loot` | root | open the chests of a remembered structure | in the Overworld, with a ruined portal, dungeon, temple or mineshaft within 256 blocks whose chests are unopened |
+| `enchant` | root | enchant gear at the enchanting table | a table is carried, in view or remembered, lapis is carried, the experience level is five or more, and gear is unenchanted |
 | `torches` | root | craft torches | coal is carried and fewer than eight torches |
 | `harvest_and_bake` | root | harvest the home plot and bake bread | wheat on the home plot is ripe |
 | `tend_farm` | root | tend the home plot | the home plot needs tilling, planting or a look |
@@ -288,6 +289,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `stock_wood` | root | stock up to sixteen logs | by day in the Overworld, and fewer than sixteen logs are carried and a tree is in view |
 | `explore` | root | explore the nearest unexplored area | by day in the Overworld, and in the Overworld, with an unexplored area within 512 blocks of home |
 | `loot` | root | open the chests of a remembered structure | by day in the Overworld, and in the Overworld, with a ruined portal, dungeon, temple or mineshaft within 256 blocks whose chests are unopened |
+| `enchant` | root | enchant gear at the enchanting table | by day in the Overworld, and a table is carried, in view or remembered, lapis is carried, the experience level is five or more, and gear is unenchanted |
 | `torches` | root | craft torches | by day in the Overworld, and coal is carried and fewer than eight torches |
 | `harvest_and_bake` | root | harvest the home plot and bake bread | by day in the Overworld, and wheat on the home plot is ripe |
 | `tend_farm` | root | tend the home plot | by day in the Overworld, and the home plot needs tilling, planting or a look |

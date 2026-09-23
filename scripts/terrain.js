@@ -51,6 +51,17 @@ bot.on('move', () => { if (watch && bot.entity?.position && String(bot.game.dime
 // Each drill's run: the real code, bounded by the drill's time, returning
 // what passing needs to see.
 const RUNS = {
+  async enchant_table(d, bounded) {
+    const { enchantStep } = require('../src/enchanting');
+    const { workstation } = require('../src/work');
+    const goal = { kind: 'win', request: 'terrain drill' };
+    await sleep(1500);
+    let error = null, done = 0;
+    try { while (done < 2 && await enchantStep(bot, bounded, goal, () => {}, { workstation })) done++; } catch (err) { error = err.message; }
+    const { enchantsOf } = require('../src/enchanting');
+    const sword = bot.inventory.items().find(i => i.name === 'diamond_sword');
+    return { pass: enchantsOf(sword).length > 0 && countOf(bot, 'lapis_lazuli') > 0, detail: { sword: enchantsOf(sword), inventory: bot.inventory.items().map(i => `${i.count} ${i.name}`), done: goal.enchanting?.done, level: bot.experience?.level, error } };
+  },
   async mineshaft_cart(d, bounded) {
     const { lootNearby } = require('../src/looting');
     const goal = { kind: 'win', request: 'terrain drill', landmarks: [{ kind: 'mineshaft', x: d.shaft[0], y: d.shaft[1], z: d.shaft[2], dimension: 'overworld' }] };

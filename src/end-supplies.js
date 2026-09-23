@@ -20,6 +20,16 @@ async function prepareEndSupplies(bot, task, goal, save, actions) {
     await actions.acquireStep(bot, task, item, count + (['bow', 'iron_pickaxe'].includes(item) ? countOf(bot, item) : 0), goal, save);
     return false;
   }
+  // An enchanting table before the End, and whatever the levels will buy on
+  // the sword, the bow and the armour (enchanting.js): the dragon and its
+  // endermen are the fights that most need it.
+  const { tableNear, enchantReady } = require('./enchanting');
+  if (actions.enchant && !tableNear(bot, goal)) {
+    goal.step = { action: 'prepare_end_supplies', item: 'enchanting_table', count: 1 }; save();
+    await actions.acquireStep(bot, task, 'enchanting_table', 1, goal, save);
+    return false;
+  }
+  if (actions.enchant && enchantReady(bot, goal)) { await actions.enchant(bot, task, goal, save); return false; }
   // The ordinary food controller sees preparingEnd and gathers this reserve.
   if (foodSupply(bot) < 64 || bot.food < 18) return false;
   if (bot.health < 18) {

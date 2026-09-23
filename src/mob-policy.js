@@ -11,6 +11,9 @@ const vanilla = require('../data/vanilla-26.1.json');
 const handlers = {
   blaze: { item: 'blaze_rod', dimension: 'nether', ranged: true }, enderman: { item: 'ender_pearl' },
   spider: { item: 'string', cost: 16 }, chicken: { item: 'feather', passive: true },
+  // Leather for a book, and a book for the enchanting table: the only other
+  // way the planner knew was rabbit hide, which no action gathers.
+  cow: { item: 'leather', passive: true },
 };
 const armor = suffix => ['iron', 'diamond', 'netherite'].map(material => `${material}_${suffix}`);
 const combatGear = {
