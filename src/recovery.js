@@ -24,7 +24,10 @@ function recordDeath(bot, state, now = Date.now()) {
   // event. Preserve the last observed alive inventory, with its evidence time.
   const observed = bot._aliveInventory;
   const recent = observed && observed.entityId === bot.entity.id && now - observed.at <= 2000;
-  state.deaths = [...(state.deaths || []), { at: new Date(now).toISOString(), position: { ...bot.entity.position }, dimension: bot.game.dimension }].slice(-10);
+  // Lava at the body: what it dropped burns, and nothing is gone back for.
+  const cell = bot.entity.position.floored();
+  const lava = [cell, cell.offset(0, 1, 0), cell.offset(0, -1, 0)].some(c => /lava/.test(bot.blockAt?.(c)?.name || ''));
+  state.deaths = [...(state.deaths || []), { at: new Date(now).toISOString(), position: { ...bot.entity.position }, dimension: bot.game.dimension, ...(lava ? { lava } : {}) }].slice(-10);
   state.recovery = { status: 'pending', at: new Date(now).toISOString(), position: { ...bot.entity.position },
     dimension: bot.game.dimension, inventoryBeforeDeath: recent ? { ...observed.items } : stock(bot),
     inventoryObservedAt: new Date(recent ? observed.at : now).toISOString(), recovered: {}, attempts: 0 };

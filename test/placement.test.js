@@ -67,3 +67,17 @@ test('an oriented block is placed facing the wanted way, not the way the click p
   assert.equal(look.yaw, Math.PI / 2);
   assert.equal(placed.facing, 'west');
 });
+
+test('placing with stay never moves the bot: a cell its body is in, its own column or out of reach is refused', async () => {
+  // Sealing on a Nether ledge, the bot stepped back to clear a wall cell
+  // and fell twenty blocks into the lava sea.
+  const moves = [];
+  const bot = { game: { gameMode: 'survival' }, entity: { position: new Vec3(0.75, 64, 0.5) }, inventory: { items: () => [{ name: 'netherrack', count: 20 }] },
+    equip: async () => {}, blockAt: p => ({ name: p.y === 63 && p.x === 0 && p.z === 0 ? 'netherrack' : 'air', boundingBox: p.y === 63 && p.x === 0 && p.z === 0 ? 'block' : 'empty', position: p }),
+    setControlState: (k, v) => { if (v) moves.push(k); }, getControlState: () => false, lookAt: async () => {},
+    placeBlock: async () => assert.fail('placed') };
+  await assert.rejects(place(bot, new Task('seal'), new Vec3(1, 64, 0), 'netherrack', { stay: true }), /would move me off this ledge/, 'the body overlaps the cell');
+  await assert.rejects(place(bot, new Task('seal'), new Vec3(0, 63, 0), 'cobblestone', { stay: true }), /would move me off this ledge|obstructed/, 'the floor underfoot');
+  await assert.rejects(place(bot, new Task('seal'), new Vec3(6, 64, 0), 'netherrack', { stay: true }), /would move me off this ledge/, 'out of reach');
+  assert.deepEqual(moves, [], 'no key was pressed');
+});

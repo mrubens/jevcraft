@@ -302,3 +302,13 @@ test('an operator command runs as an aside, leaving Jev working rather than paus
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('a death in lava is recorded as one: its drops burn', () => {
+  const { bot } = fixture();
+  const state = {};
+  recordDeath(bot, state, 1000000);
+  assert.equal(state.deaths[0].lava, undefined);
+  bot.blockAt = p => ({ name: p.y <= Math.floor(bot.entity.position.y) ? 'lava' : 'air', position: p });
+  recordDeath(bot, state, 1001000);
+  assert.equal(state.deaths[1].lava, true);
+});

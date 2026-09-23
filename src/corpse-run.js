@@ -41,7 +41,7 @@ function corpseRun(bot, goal, now = Date.now()) {
     for (const [name, count] of Object.entries(recovery.recovered || {})) if (items[name] && (items[name] -= count) <= 0) delete items[name];
     const where = dim(death.dimension);
     goal.corpseRun = { deathAt: death.at, position: { ...death.position }, dimension: where, items, passes: 0, stuck: 0,
-      status: where === 'end' ? 'void' : Object.keys(items).length ? 'open' : 'nothing',
+      status: where === 'end' ? 'void' : death.lava ? 'burned' : Object.keys(items).length ? 'open' : 'nothing',
       respawn: dim(bot.game?.dimension) === where ? { ...bot.entity.position } : null };
   }
   const run = goal.corpseRun;

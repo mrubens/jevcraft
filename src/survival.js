@@ -898,11 +898,14 @@ class Survival {
     // The nearest cells first: the ones a mob could step into.
     const material = () => bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
     const cells = shelter.missingShell(bot, refuge).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    // Beside a drop the bot does not move to place: what it can reach from
+    // where it stands, and nothing else (place's `stay`).
+    const stay = dropWithin(bot, origin, 2);
     for (const p of cells) {
       task.check();
       const name = material(); if (!name) break;
       if (danger.some(t => t.entity.position.floored().equals(p))) continue;
-      try { await this.actions.place(bot, task, p, name); }
+      try { await this.actions.place(bot, task, p, name, { stay }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
     }
     if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) { refuge.verifiedAt = new Date().toISOString(); save(); return true; }
@@ -1023,9 +1026,10 @@ class Survival {
     if (!cells.length) return false;
     this.report(goal, save, { action: 'dig_in', threats: danger.map(t => t.entity.name), cells: cells.length });
     let placed = 0;
+    const stay = dropWithin(bot, feet, 2);
     for (const p of cells) {
       task.check();
-      try { await this.actions.place(bot, task, p, material); placed++; }
+      try { await this.actions.place(bot, task, p, material, { stay }); placed++; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
     }
     return placed > 0;

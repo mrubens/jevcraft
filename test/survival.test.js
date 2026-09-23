@@ -1427,3 +1427,17 @@ test('a seal that closes nothing says so, and the spot is not sealed again at on
   assert.equal(await survival.sealHere(new Task('night'), goal, () => {}, []), false);
   assert.equal(placed, 1, 'set aside: not tried again straight away');
 });
+
+test('sealing beside a drop places with stay, so the bot never steps off the ledge to do it', async () => {
+  // A one-block ledge of netherrack at (0, 63, 0), open air all round and
+  // down to lava: the dream run's first death without the restore.
+  const origin = new Vec3(0, 64, 0);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether' }, entity: { position: origin.offset(0.5, 0, 0.5) }, entities: {},
+    inventory: { items: () => [{ name: 'netherrack', count: 40 }] },
+    blockAt: p => { const name = p.equals(new Vec3(0, 63, 0)) ? 'netherrack' : p.y < 30 ? 'lava' : 'air'; return { name, position: p, boundingBox: name === 'netherrack' ? 'block' : 'empty' }; } });
+  const options = [];
+  const survival = new Survival(bot, { place: async (b, t, p, m, opts) => { options.push(opts); throw new Error('no anchor'); }, navigate: async () => {} });
+  await survival.sealHere(new Task('ledge'), {}, () => {}, []);
+  assert(options.length > 0);
+  assert(options.every(o => o?.stay === true), JSON.stringify(options.slice(0, 2)));
+});

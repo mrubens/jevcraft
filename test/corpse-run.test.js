@@ -80,3 +80,10 @@ test('nothing lying at the spot: gone, said once', async () => {
   assert.equal(goal.corpseRun.status, 'gone');
   assert.match(said.at(-1), /Nothing left/);
 });
+
+test('a death in lava is not gone back for: the drops burned', () => {
+  const { bot, goal } = world();
+  goal.survival.deaths[0].lava = true;
+  assert.equal(corpseRun(bot, goal), null);
+  assert.equal(goal.corpseRun.status, 'burned');
+});

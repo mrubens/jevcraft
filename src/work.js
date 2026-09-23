@@ -390,10 +390,19 @@ async function nudgeClear(bot, task, p) {
 
 // Mineflayer yaw for looking toward each horizontal facing (0 is north, -z).
 const PLACEMENT_YAW = { north: 0, west: Math.PI / 2, south: Math.PI, east: -Math.PI / 2 };
-async function place(bot, task, p, material, { face, properties } = {}) {
+async function place(bot, task, p, material, { face, properties, stay = false } = {}) {
   task.check();
   const cell = { ...p, material, properties };
   if (buildCellComplete(bot, cell)) return;
+  // Walling in on a ledge: a cell that needs the bot to step aside, back
+  // off or walk closer is left, never moved for. Sealing on a Nether ledge
+  // with a piglin about, the dream run stepped back off it into the lava
+  // sea twenty blocks down (2026-09-23, the first death without the restore).
+  if (stay) {
+    const feet = bot.entity.position.floored();
+    if (hitboxIntrudes(bot, p) || (feet.x === p.x && feet.z === p.z && Math.abs(feet.y - p.y) <= 1) ||
+      bot.entity.position.offset(0, 1.62, 0).distanceTo(p.offset(0.5, 0.5, 0.5)) > 4.5) throw new Error(`Placing at ${p} would move me off this ledge`);
+  }
   if (isDoor(material) && !air(bot.blockAt(p.offset(0, 1, 0)))) throw new Error(`A door needs room for its top half at ${p}`);
   // Ground cover is replaced by a placed block, the way the game does it:
   // leaf litter on the chest cell held up the whole base.
