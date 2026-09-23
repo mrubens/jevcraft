@@ -1175,3 +1175,40 @@ test('with a hoglin about, the bot steps back from an edge three blocks off, to 
   assert.equal(moved.length, 1);
   assert(moved[0].x <= 2, `to x ${moved[0].x}: three blocks from the drop at x 6`);
 });
+
+test('a pickaxe about to break is replaced from the pockets inside the night mine, and none at all is made if it can be', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  let items = [{ name: 'iron_pickaxe', count: 1, durabilityUsed: 240 }, { name: 'iron_ingot', count: 17 }, { name: 'stick', count: 4 }, { name: 'crafting_table', count: 1 }, { name: 'cobblestone', count: 63 }];
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 15000 },
+    entity: { position: new Vec3(0.5, 24, 0.5) }, health: 20, food: 20, registry, inventory: { items: () => items, slots: {}, emptySlotCount: () => 5 },
+    findBlocks: () => [], blockAt: p => ({ name: 'stone', boundingBox: 'block', position: p }), world: { raycast: () => null } });
+  const made = [];
+  const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {}, acquireStep: async (b, t, item, count) => { made.push([item, count]); } });
+  survival.report = () => {};
+  assert.equal(await survival.nightMine(new Task('night', 'mine'), { kind: 'win' }, () => {}), true);
+  assert.deepEqual(made, [['iron_pickaxe', 2]], 'ten uses left, seventeen ingots carried: a new iron pickaxe before the next step');
+  items = items.filter(i => !/pickaxe|ingot/.test(i.name));
+  assert(survival.canNightMine({ kind: 'win' }), 'no pickaxe, but stone and sticks and a table: the night is still mined');
+  await survival.nightMine(new Task('night', 'mine'), { kind: 'win' }, () => {});
+  assert.deepEqual(made.at(-1), ['stone_pickaxe', 1]);
+  items = items.filter(i => i.name !== 'cobblestone');
+  assert.equal(survival.canNightMine({ kind: 'win' }), false, 'nothing to dig with and nothing to make one from');
+});
+
+test('night-mine steps that do not move the bot are given up after four, before they wear the pickaxe out', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const ore = new Vec3(8, 55, 0);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 15000 },
+    entity: { position: new Vec3(0.5, 55, 0.5) }, health: 20, food: 20, registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }], slots: {} },
+    findBlocks: () => [ore], blockAt: p => ({ name: p.equals(ore) ? 'iron_ore' : p.y < 55 ? 'stone' : 'air', boundingBox: p.y < 55 || p.equals(ore) ? 'block' : 'empty', position: p }),
+    world: { raycast: () => null }, pathfinder: { movements: {} } });
+  // Every step "succeeds" and the server puts the bot back where it was.
+  const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {} });
+  survival.report = () => {};
+  let n = 0;
+  for (; n < 12 && !survival.state.nightMine?.lastAbandoned; n++) await survival.nightMine(new Task('night', 'mine'), { kind: 'win' }, () => {});
+  assert.equal(survival.state.nightMine.lastAbandoned?.why, 'four steps without moving');
+  assert(n <= 5, `given up after ${n} steps, not twelve`);
+});

@@ -202,6 +202,22 @@ const emptySite = (bot, refuge) => refuge.kind !== 'house' && !refuge.verifiedAt
 // until the drills say it beats the rules (JEV_ENCOUNTERS=1).
 // A creeper within seven blocks: no pocket or bunker is begun, the blast
 // comes before the last block.
+// Night-mine tools: the uses left on a pickaxe, and the one the pockets
+// can make now (iron before stone), with sticks or planks and a table carried.
+const PICKAXE_SPARE_USES = 24;
+function remainingUses(bot, item) {
+  const max = bot.registry?.itemsByName?.[item.name]?.maxDurability;
+  return max ? max - (item.durabilityUsed || 0) : Infinity;
+}
+function pickaxeCraftable(bot) {
+  const has = name => countOf(bot, name);
+  const planks = bot.inventory.items().filter(i => /_planks$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  const logs = bot.inventory.items().filter(i => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  if (!(has('stick') >= 2 || planks >= 2 || logs >= 1) || !has('crafting_table')) return null;
+  if (has('iron_ingot') >= 3) return 'iron_pickaxe';
+  if (has('cobblestone') >= 3 || has('cobbled_deepslate') >= 3) return 'stone_pickaxe';
+  return null;
+}
 const creeperClose = danger => danger.some(t => t.entity.name === 'creeper' && t.distance <= 7);
 const encounterJudgments = survival => !!survival.client && process.env.JEV_ENCOUNTERS === '1';
 
@@ -1015,7 +1031,7 @@ class Survival {
     if ((bot.health ?? 20) < 10 || immediateThreat(bot)) return false;
     // Not with anything watching: the same test the pocket uses to stay shut.
     if (threats(bot).some(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity))) return false;
-    if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) return false;
+    if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name)) && !pickaxeCraftable(bot)) return false;
     // A bed defers the mine only when the night is to be slept: with the
     // plan made for a shelter (the bed in view out of reach, or none
     // carried), a bed within sight kept the mine shut and the bot waited
@@ -1030,6 +1046,22 @@ class Survival {
     if (!this.canNightMine(goal)) return false;
     // Ore dug with no free slot stays on the floor of the tunnel.
     if (bot.game?.gameMode !== 'creative' && !((bot.inventory.emptySlotCount?.() ?? 1) > 0) && !await makeRoom(bot, task, 'raw_iron')) return false;
+    // A pickaxe about to go is replaced from the pockets before the next
+    // step: the daytime spare rule never runs inside the mine, and the dream
+    // run wore an iron pickaxe from twenty-two uses to none in eighteen
+    // seconds with seventeen ingots and a crafting table carried, then
+    // sealed itself in for the night with nothing to dig with.
+    const best = Math.max(0, ...bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => remainingUses(bot, i)));
+    if (best < PICKAXE_SPARE_USES && this.actions.acquireStep) {
+      const make = pickaxeCraftable(bot);
+      if (make && !isSetAside(this, 'night_pickaxe', make)) {
+        this.report(goal, save, { action: 'craft_pickaxe', item: make, remaining: best });
+        try { await this.actions.acquireStep(bot, task, make, countOf(bot, make) + 1, goal, save); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'night_pickaxe', make, err, 600000); }
+        return true;
+      }
+      if (!best) return false;
+    }
     const feet = bot.entity.position.floored();
     const mine = this.state.nightMine ||= { startedAt: Date.now(), origin: { ...feet }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };
     // Boxed in: every heading refused (water or lava behind the rock on all
@@ -1067,6 +1099,13 @@ class Survival {
       } else {
         await tunnelStep(bot, task, mine, save, target, { dig: this.actions.dig, navigate: this.actions.navigate, strict: true });
         mine.failures = 0;
+        // Steps that do not move the bot at all: the server kept putting the
+        // blocks back (a client and server that disagree), every step wore
+        // the pickaxe by two, and twelve looks was more than the pickaxe had.
+        const at = bot.entity.position.floored();
+        const key = `${at.x},${at.y},${at.z}`;
+        mine.still = mine.still?.key === key ? { key, steps: mine.still.steps + 1 } : { key, steps: 0 };
+        if (mine.still.steps >= 4) { mine.still = null; this.abandonTarget(mine, 'four steps without moving', { recorded: true }); save(); return true; }
         // Steps that succeed without getting closer are a failure too: the
         // mine paced four blocks back and forth under a copper it could not
         // reach, every step a success, and never set it aside.
