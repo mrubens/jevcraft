@@ -744,6 +744,10 @@ class Survival {
     const bot = this.bot;
     if (await reachShore(bot, task, goal, save, { move: this.actions.navigate })) return;
     let refuge = await this.reachableRefuge(task, goal, save, this.currentShelter());
+    // Last night's pocket beside a flooded cave is not gone back to from
+    // outside it: the night mine had nowhere to go there, and the bot waited
+    // two nights in it. A dry site is looked for first (shelterSites).
+    if (refuge && refuge.kind !== 'house' && !shelter.inside(bot, refuge) && shelter.wetBelow(bot, pos(refuge.origin)) > 0) refuge = null;
     if (!refuge) {
       // Beside a lava lake nothing within twelve blocks has a safe shell;
       // look further before giving the night up as unsafe.

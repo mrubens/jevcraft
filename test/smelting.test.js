@@ -247,3 +247,27 @@ test('pockets filled while the batch cooks are cleared before the output is take
   assert(opens >= 2, 'the window was closed to make room and opened again');
   assert(looked && looked.x < 0, 'thrown away from the furnace, which is at +x');
 });
+
+test('a furnace holding another batch\'s output and input has them taken out, then smelts what was asked', { timeout: 3000 }, async () => {
+  let output = { name: 'iron_ingot', count: 3 }, input = { name: 'raw_iron', count: 2 }, taken = [];
+  let loaded = 0, cooked = 0;
+  const furnace = {
+    outputItem: () => output || (loaded ? { name: 'cooked_mutton', count: loaded } : null),
+    takeOutput: async () => { if (output) { taken.push(output.name); output = null; } else { cooked += loaded; loaded = 0; } },
+    inputItem: () => input, takeInput: async () => { taken.push(input.name); input = null; },
+    fuelItem: () => ({ name: 'coal', count: 1 }), fuel: .5,
+    putInput: async (type, meta, count) => { loaded += count; }, putFuel: async () => {}, close: () => {},
+  };
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) },
+    inventory: { items: () => [{ name: 'mutton', count: 1 }, { name: 'coal', count: 8 }, ...(cooked ? [{ name: 'cooked_mutton', count: cooked }] : [])] },
+    registry: { blocksByName: { furnace: { id: 1 } }, itemsByName: { mutton: { id: 5 }, coal: { id: 6 } } },
+    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: p => ({ name: 'furnace', position: p }),
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+    pathfinder: { movements: {}, goto: async () => {}, setGoal: () => {} },
+    openFurnace: async () => furnace,
+  };
+  await smelt(bot, new Task('smelt', 'test'), { item: 'cooked_mutton', from: 'mutton', count: 1, fuelItem: 'coal' }, {});
+  assert.deepEqual(taken, ['iron_ingot', 'raw_iron'], 'the old batch out first');
+  assert.equal(cooked, 1);
+});

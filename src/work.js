@@ -1018,7 +1018,18 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     : (bot.inventory.emptySlotCount?.() ?? 1);
   const roomInWindow = () => free() > 0 || (Array.isArray(furnace.slots) && Number.isInteger(furnace.inventoryStart) &&
     furnace.slots.slice(furnace.inventoryStart, furnace.inventoryEnd).some(i => i?.name === step.item && i.count < (i.stackSize || 64)));
+  // Another batch's output is taken out first: it is the bot's own ingots
+  // or food from an earlier smelt, and refusing the furnace over it held the
+  // dream run at one furnace for half an hour ("Furnace contains a
+  // different output", a hundred and sixty-six times).
+  const clearOther = async () => {
+    const other = furnace.outputItem();
+    if (!other || other.name === step.item) return;
+    if (!roomInWindow()) throw new Error('Furnace contains a different output and there is no room to take it');
+    await furnace.takeOutput();
+  };
   const collect = async () => {
+    await clearOther();
     const output = furnace.outputItem();
     if (!output) return;
     if (output.name !== step.item) throw new Error('Furnace contains a different output');
@@ -1037,7 +1048,9 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   try {
     await collect();
     if (taken < needed) {
-      const existing = furnace.inputItem();
+      let existing = furnace.inputItem();
+      // Another batch's input comes back out to the pockets the same way.
+      if (existing && existing.name !== step.from && typeof furnace.takeInput === 'function' && roomInWindow()) { await furnace.takeInput(); existing = furnace.inputItem(); }
       if (existing && existing.name !== step.from) throw new Error('Furnace contains another input');
       const amount = needed - taken;
       const missingInput = Math.max(0, amount - (existing?.count || 0));
