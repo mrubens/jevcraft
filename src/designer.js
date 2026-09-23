@@ -9,6 +9,13 @@ const MODEL = 'anthropic/claude-opus-5.5';
 // The generative model (OpenRouter) is for Creative play only. In Survival
 // every judgment is Jev's, so a dream run never waits on or pays for it.
 const generativeAllowed = bot => bot?.game?.gameMode === 'creative';
+// Whether a build request goes to the generative designer rather than Jev's
+// templates and shelf. In Creative, when it does, every build request goes
+// there, a plain house included: materials are free, so the catalog's only
+// advantage, cost, does not apply.
+function designerAvailable(bot, { mode = process.env.BUILD_DESIGNER || 'auto', apiKey = process.env.OPENROUTER_API_KEY } = {}) {
+  return generativeAllowed(bot) && (mode === 'openrouter' || mode === 'auto' && !!apiKey);
+}
 const LIMITS = { width: 25, height: 16, depth: 25, regions: 256, blocks: 6000 };
 const CEILING = { width: 48, height: 32, depth: 48, regions: 256, blocks: 12000 };
 const SECONDS_PER_BLOCK = 1.2;
@@ -499,4 +506,4 @@ function schematicScaffolding(bot, goal) {
     return ['dirt', 'cobblestone'].includes(block?.name) && (block.stateId ?? block.name) === state ? [{ ...p }] : [];
   });
 }
-module.exports = { MODEL, generativeAllowed, LIMITS, CEILING, SECONDS_PER_BLOCK, SURVEY, SCHEMA, designProgress, buildPalette, validateSchematic, surveyForDesign, designBuilding, selectSchematicSite, canClearSchematicBlock, schematicScaffolding };
+module.exports = { MODEL, generativeAllowed, designerAvailable, LIMITS, CEILING, SECONDS_PER_BLOCK, SURVEY, SCHEMA, designProgress, buildPalette, validateSchematic, surveyForDesign, designBuilding, selectSchematicSite, canClearSchematicBlock, schematicScaffolding };

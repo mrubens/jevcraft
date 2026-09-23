@@ -6,6 +6,7 @@ const mineflayer = require('mineflayer');
 const { pathfinder } = require('mineflayer-pathfinder');
 const { configureMovements } = require('./movement');
 const { interpret, GoalStore } = require('./objectives');
+const { designerAvailable } = require('./designer');
 const { WorldKnowledge } = require('./world-knowledge');
 const { DAY } = require('./day');
 const { setAside, isSetAside, attemptsFor } = require('./progress');
@@ -206,7 +207,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     try {
       const structures = builds.describe(bot, bot.entity.position, bot.game.dimension);
       const runId = dreamRun(standing);
-      const next = await nextDreamRequest(withRun(client, runId), standing, { structures, shelf: require('./schematic-library').library(bot.registry) });
+      const next = await nextDreamRequest(withRun(client, runId), standing, { structures, shelf: require('./schematic-library').library(bot.registry), designer: designerAvailable(bot) });
       if (ended || active) return;
       standing.lastAttemptAt = Date.now();
       if (!next || next.done) {
@@ -485,6 +486,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (spec.kind === 'resume') {
         await resume(revision); return;
       }
+      // In Creative with the generative designer, a plain house is drawn like
+      // any other building rather than taken from the built-in catalog.
+      if (spec.kind === 'house' && designerAvailable(bot)) spec.kind = 'build';
       // Work no survival route can do is refused here, before it replaces
       // work that can be done. "Get me bedrock" stopped a build, then was
       // parked as impossible, and the build had to be dug out with resume.

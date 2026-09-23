@@ -13,7 +13,8 @@ const DREAMS = {
 
 // The village vocabulary: the parts a village wants and how many of each.
 // A part is on offer only when the schematic shelf holds a design for it,
-// so nothing here ever needs a generative model.
+// so in Survival nothing here ever needs a generative model. In Creative the
+// designer draws the part instead (nextDreamRequest).
 const VILLAGE_PARTS = {
   cottage: { limit: 4, description: 'A small cottage: the basic dwelling. A village wants several, near each other.' },
   mansion: { limit: 1, description: 'A larger house for the village centre.' },
@@ -77,7 +78,7 @@ function besideNewest(structures) {
 
 // The next request the dream wants run, as a goal spec the session can
 // launch. Null means the dream is satisfied for now.
-async function nextDreamRequest(client, standing, { structures = [], shelf = [], signal } = {}) {
+async function nextDreamRequest(client, standing, { structures = [], shelf = [], designer = false, signal } = {}) {
   if (!standing?.dream || !DREAMS[standing.dream]) return null;
   if (standing.dream === 'beat_the_game') {
     return { kind: 'win', request: 'beat the game', dream: 'beat_the_game', from: standing.setBy };
@@ -85,15 +86,22 @@ async function nextDreamRequest(client, standing, { structures = [], shelf = [],
   const available = [...new Set(shelf.map(e => e.part))];
   const chosen = await chooseVillagePart(client, { structures, available, signal });
   if (chosen.done || !chosen.part) return { done: true, dream: 'build_a_village', villageScore: chosen.score, judgments: chosen.judgments, usage: chosen.usage };
+  const anchor = besideNewest(structures);
+  const placement = anchor ? { buildAnchor: anchor, buildContinuation: { mode: 'fresh', placement: 'beside_target', judgments: chosen.judgments } } : {};
+  // With the generative designer (Creative), the part is drawn for this
+  // village rather than taken off the shelf: the shelf still says which
+  // parts a village can have, not what they look like.
+  if (designer) {
+    return { kind: 'build', request: `build for the village: ${VILLAGE_PARTS[chosen.part].description}`, dream: 'build_a_village', villagePart: chosen.part,
+      villageScore: chosen.score, villageJudgments: chosen.judgments, usage: chosen.usage, from: standing.setBy, ...placement };
+  }
   // Then which design from the shelf: a second Jev choice, over real
   // schematics, that ends with a validated design and no generative call.
   const design = await require('./schematic-library').chooseSchematic(client, { part: chosen.part, entries: shelf, structures, signal });
   if (!design) throw new Error(`No design on the shelf could be chosen for the ${chosen.part}`);
-  const anchor = besideNewest(structures);
   return { kind: 'build', request: `build ${design.entry.summary.name} (${chosen.part})`, dream: 'build_a_village', villagePart: chosen.part,
     design: { source: design.entry.source, backend: 'schematic-library', libraryId: design.entry.id, createdAt: new Date().toISOString(), judgments: design.judgments, usage: design.usage },
-    villageScore: chosen.score, villageJudgments: chosen.judgments, usage: chosen.usage, from: standing.setBy,
-    ...(anchor ? { buildAnchor: anchor, buildContinuation: { mode: 'fresh', placement: 'beside_target', judgments: chosen.judgments } } : {}) };
+    villageScore: chosen.score, villageJudgments: chosen.judgments, usage: chosen.usage, from: standing.setBy, ...placement };
 }
 
 // Whether the idle loop should hand the dream another request now.

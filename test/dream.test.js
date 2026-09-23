@@ -37,6 +37,14 @@ test('Jev picks the next part and scores the village; an unoffered part is refus
   assert.deepEqual(next.buildAnchor, { x: 1, y: 64, z: -1 }, 'placed beside the newest standing structure');
   assert.equal(next.buildContinuation.placement, 'beside_target');
   await assert.rejects(chooseVillagePart({ systemOne: async () => ({ answers: { part: { choice: 'castle' }, progress: { score: 1 } } }) }, { structures, available: ['cottage'] }), /not offered/);
+  // With the designer (Creative) the part is drawn, not taken off the shelf.
+  const drawn = await nextDreamRequest({ systemOne: async ({ questions }) => {
+    assert(!questions.design, 'no shelf design is chosen when the designer draws');
+    return client.systemOne({ questions, state: {} });
+  } }, { dream: 'build_a_village', setBy: 'Player' }, { structures, shelf, designer: true });
+  assert.equal(drawn.kind, 'build'); assert.equal(drawn.design, undefined); assert.equal(drawn.villagePart, 'cottage');
+  assert.match(drawn.request, /cottage/, 'the request still names the part, so the village counts it once built');
+  assert.equal(drawn.buildContinuation.placement, 'beside_target');
   const done = await nextDreamRequest({ systemOne: async () => ({ answers: { part: { choice: 'done' }, progress: { score: 3 } } }) }, { dream: 'build_a_village' }, { structures, shelf });
   assert.equal(done.done, true); assert.equal(done.villageScore, 3);
 });

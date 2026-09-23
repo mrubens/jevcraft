@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { Vec3 } = require('vec3');
 const registry = require('minecraft-data')('26.1');
-const { MODEL, buildPalette, validateSchematic, designBuilding, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('../src/designer');
+const { MODEL, designerAvailable, buildPalette, validateSchematic, designBuilding, selectSchematicSite, canClearSchematicBlock, schematicScaffolding } = require('../src/designer');
 const { designedBuildStep } = require('../src/work');
 const { reservedForConstruction } = require('../src/build-sites');
 const { Task } = require('../src/skills');
@@ -238,6 +238,15 @@ test('a buildable design that does not answer the request goes back to the desig
   await designedBuildStep(bot, new Task('review'), goal, () => {}, jev);
   assert(goal.design); assert.equal(goal.designAttempts, 2);
   assert(bodies[1].messages.at(-1).content.includes('does not answer the request'), 'the designer is told why');
+});
+
+test('the generative designer is used only in Creative, and there only when it is configured', () => {
+  const creative = { game: { gameMode: 'creative' } }, survival = { game: { gameMode: 'survival' } };
+  assert(designerAvailable(creative, { mode: 'auto', apiKey: 'key' }));
+  assert(designerAvailable(creative, { mode: 'openrouter', apiKey: '' }), 'openrouter mode insists, and says so if the key is missing');
+  assert(!designerAvailable(creative, { mode: 'auto', apiKey: '' }));
+  assert(!designerAvailable(creative, { mode: 'jev', apiKey: 'key' }));
+  for (const mode of ['auto', 'openrouter']) assert(!designerAvailable(survival, { mode, apiKey: 'key' }), `${mode} in Survival`);
 });
 
 test('in Survival the generative designer is never called, whatever the key or mode; Jev designs instead', async t => {
