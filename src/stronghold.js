@@ -15,11 +15,15 @@ for (let offset = -1; offset <= 1; offset++) frameOffsets.push(
   { x: -2, z: offset, facing: 'east' }, { x: 2, z: offset, facing: 'west' },
   { x: offset, z: -2, facing: 'south' }, { x: offset, z: 2, facing: 'north' });
 
-function observedPortal(bot) {
+// A stronghold spans a hundred blocks and more: in the rehearsal world the
+// portal room was forty-five blocks sideways and seventy down from where the
+// eyes pointed, ninety-seven in a line, one past the old ninety-six. Near the
+// estimate the look reaches a whole stronghold.
+function observedPortal(bot, { maxDistance = 96 } = {}) {
   const id = bot.registry.blocksByName.end_portal_frame?.id;
   if (id === undefined) return null;
   const seen = new Set();
-  for (const p of bot.findBlocks({ matching: id, maxDistance: 96, count: 48 })) {
+  for (const p of bot.findBlocks({ matching: id, maxDistance, count: 48 })) {
     for (const offset of frameOffsets) {
       const center = p.offset(-offset.x, 0, -offset.z), key = `${center}`;
       if (seen.has(key)) continue;
@@ -136,7 +140,8 @@ async function findStronghold(bot, task, goal, save, actions, client) {
   task.check(); checkAir(bot); checkThreats(bot);
   if (String(bot.game.dimension).replace(/^minecraft:/, '') !== 'overworld') throw blocked('Stronghold search requires the Overworld');
   const search = goal.strongholdSearch ||= { bearings: [], throws: 0, moves: 0, visited: {} };
-  const portal = observedPortal(bot);
+  const near = search.estimate && horizontal(bot.entity.position, search.estimate) < 96;
+  const portal = observedPortal(bot, { maxDistance: near ? 160 : 96 });
   if (portal) {
     goal.endPortal = portal;
     goal.gameProgress.milestones.stronghold_located = { at: Date.now(), ...portal };

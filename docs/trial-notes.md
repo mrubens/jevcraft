@@ -250,6 +250,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 98. *A batch of one beef, for good.* The saved furnace batch was one beef whose furnace had gone cold and empty; finishing it meant getting beef again, which the planner has no method for, and "I'll keep trying" ran to attempt seven, after an earlier stretch of "I can't reach the furnace holding our saved batch" that could never resolve either. A saved batch with nothing in its furnace and none of its input carried is let go, and so is one whose furnace is out of reach three times running.
 
+99. *The portal room was one block past the look.* In the endgame rehearsal (`.test-endgame`, seed 2026092301) the eyes led to within seven blocks of the stronghold's start and the search then ran out its twenty-five minutes: the portal room lay forty-five blocks sideways and seventy down, ninety-seven blocks in a line, and the frame look reached ninety-six. Within ninety-six blocks of the eyes' estimate the look now reaches a hundred and sixty. The drill passed at the next run: four throws, the estimate on the true start, the portal at (85, -18, 2021) in 9.7 minutes, nineteen eyes left, no deaths.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
