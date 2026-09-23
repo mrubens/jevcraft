@@ -847,6 +847,11 @@ async function craft(bot, task, step, goal) {
     ...(step.recipe.shape ? { inShape: step.recipe.shape.map(row => row.map(name => name ? bot.registry.itemsByName[name].id : null)) } :
       { ingredients: step.recipe.ingredients.map(name => bot.registry.itemsByName[name].id) }) }) : bot.recipesFor(id, null, step.count, table)[0];
   if (!recipe) throw new Error(`No usable recipe for ${step.count} ${step.item}`);
+  // Room for what is made, junk first, the recipe's own ingredients kept:
+  // with the pockets full the crafted item had nowhere to go, and the craft
+  // drill made one pickaxe in 150 seconds against eight in nine (the day
+  // audit's sixteen "timed out waiting for world/inventory update").
+  if (!roomFor(bot, step.item)) await makeRoom(bot, task, step.item, { keep: new Set(Object.keys(step.consumes || {})) });
   const before = countOf(bot, step.item);
   task.check();
   // Reconcile the cursor/grid between recipes while keeping a shared batch at
@@ -945,6 +950,8 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     goal.smelting = { item: step.item, from: step.from, fuelItem: plannedFuel, position: { ...block.position }, dimension: dimension(bot), targetInventory: before + needed, count: needed };
     save();
   }
+  // The same for the furnace's output, before the window opens.
+  if (!roomFor(bot, step.item)) await makeRoom(bot, task, step.item, { keep: new Set([step.from, plannedFuel]) });
   const furnace = await bot.openFurnace(block);
   // While a container is open Mineflayer updates that window's player slots;
   // bot.inventory can still contain the pre-transfer counts until it closes.

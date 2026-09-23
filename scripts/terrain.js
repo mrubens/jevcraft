@@ -51,6 +51,24 @@ bot.on('move', () => { if (watch && bot.entity?.position && String(bot.game.dime
 // Each drill's run: the real code, bounded by the drill's time, returning
 // what passing needs to see.
 const RUNS = {
+  async craft_full_pockets(d, bounded) { return RUNS.craft_cycle(d, bounded); },
+  async craft_cycle(d, bounded) {
+    const { acquireStep } = require('../src/work');
+    const goal = { kind: 'obtain', request: 'terrain drill' };
+    await sleep(1500);
+    const errors = {}, took = [];
+    try { for (let round = 0; round < d.rounds; round++) {
+      const want = countOf(bot, 'stone_pickaxe') + 1, started = Date.now();
+      for (let tries = 0; tries < 12 && countOf(bot, 'stone_pickaxe') < want; tries++) {
+        bounded.check();
+        try { await acquireStep(bot, bounded, 'stone_pickaxe', want, goal, () => {}); }
+        catch (err) { if (['OutOfTime', 'Cancelled'].includes(err.name)) throw err; const k = err.message.slice(0, 70); errors[k] = (errors[k] || 0) + 1; }
+      }
+      took.push(Math.round((Date.now() - started) / 100) / 10);
+    } } catch (err) { if (err.name !== 'OutOfTime') throw err; errors['(out of time)'] = 1; }
+    const timeouts = Object.entries(errors).filter(([k]) => /Timed out/.test(k)).reduce((n, [, v]) => n + v, 0);
+    return { pass: countOf(bot, 'stone_pickaxe') >= d.rounds && timeouts === 0, detail: { pickaxes: countOf(bot, 'stone_pickaxe'), secondsPerRound: took, errors, free: bot.inventory.emptySlotCount(), cursor: bot.inventory.selectedItem?.name, grid: [1, 2, 3, 4].map(i => bot.inventory.slots[i]?.name || '-') } };
+  },
   async village_trade(d, bounded) {
     const { tradeStep } = require('../src/trading');
     const goal = { kind: 'win', request: 'terrain drill', villages: [{ x: d.village[0], y: d.village[1], z: d.village[2], dimension: 'overworld' }] };

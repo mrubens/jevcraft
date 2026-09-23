@@ -42,6 +42,9 @@ const secs = ms => Math.round(ms / 1000);
 const pos = s => s?.position ? `(${Math.round(s.position.x)}, ${Math.round(s.position.y)}, ${Math.round(s.position.z)})` : '?';
 const stepOf = s => s?.step?.action || s?.goal?.step?.action || null;
 const survivalOf = s => s?.survivalAction?.action || s?.goal?.survivalAction?.action || null;
+// The survival action stays in the snapshot after it ends: only a recent one
+// is what the bot is doing (the first audit charged six minutes to "eat").
+const currentSurvival = (s, t) => { const a = s?.survivalAction || s?.goal?.survivalAction; return a && (!a.at || t - Date.parse(a.at) < 8000) ? a.action : null; };
 const dist = (a, b) => a && b ? Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) : 0;
 const obs = frames.filter(f => f.kind === 'observation' && f.snapshot?.position);
 
@@ -50,7 +53,7 @@ const obs = frames.filter(f => f.kind === 'observation' && f.snapshot?.position)
 const time = {};
 for (let i = 0; i < obs.length - 1; i++) {
   const s = obs[i].snapshot, dt = Math.min(obs[i + 1].t - obs[i].t, 5000);
-  const survival = survivalOf(s), step = stepOf(s);
+  const survival = currentSurvival(s, obs[i].t), step = stepOf(s);
   const key = survival ? `survival:${survival}` : `step:${step || 'none'}`;
   time[key] = (time[key] || 0) + dt;
 }
@@ -65,7 +68,7 @@ for (let i = 0; i < obs.length;) {
   while (j + 1 < obs.length && dist(obs[j + 1].snapshot.position, obs[i].snapshot.position) < 0.5) j++;
   const span = obs[j].t - obs[i].t;
   if (span >= 20000) {
-    const s = obs[i].snapshot, survivals = new Set(obs.slice(i, j + 1).map(o => survivalOf(o.snapshot)).filter(Boolean));
+    const s = obs[i].snapshot, survivals = new Set(obs.slice(i, j + 1).map(o => currentSurvival(o.snapshot, o.t)).filter(Boolean));
     still.push({ from: obs[i].t, to: obs[j].t, seconds: secs(span), at: pos(s), step: stepOf(s), survival: [...survivals].join('/'),
       waiting: [...survivals].some(a => WAITS.has(a)) });
   }
@@ -128,7 +131,7 @@ for (const f of frames) {
   lastHealth = h;
 }
 const deaths = damage.filter(d => d.to <= 0);
-const chat = frames.filter(f => f.kind === 'chat').map(f => ({ t: f.t, text: f.label }));
+const chat = frames.filter(f => f.kind === 'chat').map(f => ({ t: f.t, text: f.detail?.message || f.label, from: f.detail?.from }));
 // Made and thrown away: a "leaving N X here" said after X was crafted or
 // taken in the same stretch.
 const thrown = chat.filter(c => /leaving \d+ ([a-z _]+) here/i.test(c.text || ''));
@@ -206,7 +209,7 @@ out('## Jev inference by question');
 for (const [q, v] of Object.entries(inference.byQuestion).sort((a, b) => (b[1].input + b[1].output) - (a[1].input + a[1].output))) out(`- ${q}: ${v.calls} calls, ${v.input + v.output} tokens; ${v.rules} by rule`);
 out('');
 out('## Chat');
-for (const c of chat) out(`- ${clock(c.t)} ${c.text}`);
+for (const c of chat) out(`- ${clock(c.t)} ${c.from && c.from !== 'Jev' ? `<${c.from}> ` : ''}${c.text}`);
 
 const file = path.join(__dirname, '..', 'artifacts', `audit-${new Date(frames[0].t).toISOString().replace(/[:.]/g, '-').slice(0, 19)}.md`);
 fs.mkdirSync(path.dirname(file), { recursive: true });

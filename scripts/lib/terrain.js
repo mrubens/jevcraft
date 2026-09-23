@@ -40,6 +40,35 @@ const CAVE = capturedBuild('./flooded-cave.json', [3400, 40, 3400]);
 
 const TERRAIN = Object.freeze([
   {
+    name: 'craft_cycle',
+    why: 'The day audit: sixteen "timed out waiting for world/inventory update" in a day, crafting and smelting, with "invalid operation" retries. Crafting planks, sticks and stone pickaxes over and over, counting them.',
+    dimension: 'overworld', seconds: 150,
+    start: [3800.5, 65, 3800.5],
+    kit: [['oak_log', 32], ['cobblestone', 64], ['crafting_table', 1]],
+    build: [
+      'forceload add 3790 3790 3810 3810',
+      'fill 3795 64 3795 3805 64 3805 minecraft:stone',
+      'fill 3795 65 3795 3805 70 3805 minecraft:air',
+    ],
+    rounds: 8,
+  },
+  {
+    name: 'craft_full_pockets',
+    why: 'The same, with the pockets full of junk the way the dream run carries them: the crafted pickaxe has nowhere to go.',
+    dimension: 'overworld', seconds: 150,
+    start: [3800.5, 65, 3800.5],
+    kit: [['oak_log', 32], ['cobblestone', 64], ['crafting_table', 1],
+      ...['dirt', 'gravel', 'andesite', 'diorite', 'granite', 'tuff', 'netherrack', 'soul_sand', 'nether_wart', 'nether_brick_fence', 'wheat_seeds', 'spruce_sapling',
+        'oak_sapling', 'birch_sapling', 'bone', 'rotten_flesh', 'feather', 'egg', 'string', 'leather', 'flint', 'clay_ball', 'sand', 'cobbled_deepslate', 'deepslate',
+        'calcite', 'dripstone_block', 'moss_block', 'glow_lichen', 'pointed_dripstone', 'kelp', 'sugar_cane', 'cactus'].map(name => [name, 1])],
+    build: [
+      'forceload add 3790 3790 3810 3810',
+      'fill 3795 64 3795 3805 64 3805 minecraft:stone',
+      'fill 3795 65 3795 3805 70 3805 minecraft:air',
+    ],
+    rounds: 4,
+  },
+  {
     name: 'village_trade',
     why: 'Trading, new: a fletcher, a cleric and a coal buyer with fixed offers. Passing is an ender pearl bought, with emeralds from what was spare.',
     dimension: 'overworld', seconds: 120,
