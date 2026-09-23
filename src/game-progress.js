@@ -296,7 +296,11 @@ function nextGameStage(bot, goal) {
   // the Overworld hunt is the fallback once the Nether search has rested.
   if (count(bot, 'ender_pearl') < target - eyes && warped.warpedOpen(goal))
     return { phase: 'obtain_ender_pearls', action: 'enter_nether', item: 'ender_pearl', count: target - eyes, via: 'warped_forest' };
-  if (count(bot, 'ender_pearl') < target - eyes) return { phase: 'obtain_ender_pearls', action: 'acquire', item: 'ender_pearl', count: target - eyes };
+  // Endermen when they show, and something worth doing while they do not:
+  // walking rings about looking for one was the dullest hour of the run
+  // (the user, 2026-09-23). The patrol hunts one in view and otherwise
+  // goes on an expedition or explores new ground (work.js pearl_patrol).
+  if (count(bot, 'ender_pearl') < target - eyes) return { phase: 'obtain_ender_pearls', action: 'pearl_patrol', item: 'ender_pearl', count: target - eyes };
   if (eyes < target) return { phase: 'craft_eyes', action: 'acquire', item: 'ender_eye', count: target };
   if (!m.stronghold_located) return { phase: 'find_stronghold', action: 'find_stronghold' };
   return { phase: 'enter_end', action: 'enter_end' };

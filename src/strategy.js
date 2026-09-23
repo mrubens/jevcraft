@@ -23,7 +23,7 @@ const { setAside, isSetAside } = require('./progress');
 const { immediateThreat } = require('./danger');
 
 const WALK_BLOCKS_PER_S = 4;
-const LATER = new Set(['acquire', 'enter_nether', 'find_stronghold', 'trade', 'barter']);
+const LATER = new Set(['acquire', 'enter_nether', 'find_stronghold', 'trade', 'barter', 'pearl_patrol']);
 const HOLD_MS = 10 * 60 * 1000, SIDE_REST_MS = 10 * 60 * 1000, SIDE_FAIL_MS = 30 * 60 * 1000;
 const fatal = err => ['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name);
 const label = phase => phase.replaceAll('_', ' ');

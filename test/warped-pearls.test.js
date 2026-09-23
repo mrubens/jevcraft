@@ -39,7 +39,7 @@ test('in the Overworld, a remembered warped forest sends the bot back through th
   const { bot, goal } = fixture('overworld');
   assert.equal(nextGameStage(bot, goal).via, 'warped_forest', 'none known yet: back through the portal to look for one');
   setAside(goal, 'rung', 'warped_search', 'none found', 600000);
-  assert.equal(nextGameStage(bot, goal).action, 'acquire', 'the search rested: the Overworld hunt');
+  assert.equal(nextGameStage(bot, goal).action, 'pearl_patrol', 'the search rested: endermen on sight, an expedition or exploring between');
   goal.landmarks = [{ kind: 'warped_forest', x: 300, y: 70, z: 40, dimension: 'nether' }];
   const stage = nextGameStage(bot, goal);
   assert.equal(stage.action, 'enter_nether'); assert.equal(stage.via, 'warped_forest', 'one remembered: go there');
@@ -67,4 +67,14 @@ test('a walk that fails at once is not a leg: the sweep tunnels on and gives up 
   assert(warped.warpedOpen(goal), 'forty quick tries are not a search spent');
   await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 }, { now: () => Date.now() + 16 * 60000 });
   assert.equal(warped.warpedOpen(goal), false, 'a quarter of an hour without a forest: it rests');
+});
+
+test('the pearl patrol hunts an enderman in view, and otherwise goes on an expedition or explores', () => {
+  const { patrolChoice } = require('../src/work');
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, entities: {} };
+  assert.equal(patrolChoice(bot, { explore: {}, deep_dark: {} }), 'deep_dark');
+  assert.equal(patrolChoice(bot, { explore: {} }), 'explore');
+  assert.equal(patrolChoice(bot, {}), 'search', 'nothing else to do: the search as before');
+  bot.entities[4] = { name: 'enderman', position: new Vec3(30, 64, 0), isValid: true };
+  assert.equal(patrolChoice(bot, { explore: {}, deep_dark: {} }), 'hunt', 'the fun part');
 });

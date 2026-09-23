@@ -2703,6 +2703,14 @@ async function netherFoodReady(bot, task, goal, save) {
 
 // The executors the game-completion ladder can call, shared by the win
 // objective and by idle dream between requests.
+// What the pearl patrol does now: hunt an enderman in view, else a turn of
+// an expedition or an exploring leg, else the hunt's own search.
+function patrolChoice(bot, trips) {
+  const seen = Object.values(bot.entities || {}).some(e => e.name === 'enderman' && e.isValid !== false && e.position?.distanceTo(bot.entity.position) <= 48);
+  if (seen) return 'hunt';
+  return ['deep_dark', 'trial_chambers', 'explore'].find(k => trips[k]) || 'search';
+}
+
 function gameHandlers(bot, decisionClient) {
   return {
         // Which open rung, or a side trip, next: Jev's choice (strategy.js).
@@ -2741,6 +2749,23 @@ function gameHandlers(bot, decisionClient) {
           await gatherWool(bot, task, goal, save, null, homeActions());
         },
         stash_valuables: (bot, task, goal, save) => stashValuables(bot, task, goal, save, homeActions()),
+        // Endermen in view are hunted; with none, a turn of an expedition or
+        // an exploring leg, and the endermen met on the way are taken.
+        pearl_patrol: async (bot, task, goal, save) => {
+          const stage = goal.step;
+          const trips = sideTrips(bot, goal, decisionClient);
+          const pick = patrolChoice(bot, trips);
+          if (pick === 'hunt') { goal.step = { ...stage, patrol: 'hunt' }; save(); await acquireStep(bot, task, 'ender_pearl', countOf(bot, 'ender_pearl') + (stage.count || 1), goal, save); return; }
+          if (pick !== 'search') {
+            goal.step = { ...stage, patrol: pick }; save();
+            if (goal.patrolSaid !== pick) { goal.patrolSaid = pick; bot.chat?.(`No endermen about. ${trips[pick].says || pick.replaceAll('_', ' ')} meanwhile, and take any enderman I meet.`); }
+            try { await trips[pick].run(bot, task, goal, save); }
+            catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'strategy_side', pick, err, 10 * 60 * 1000); }
+            return;
+          }
+          // Nothing else to do: the hunt's own search, as before.
+          await acquireStep(bot, task, 'ender_pearl', countOf(bot, 'ender_pearl') + (stage.count || 1), goal, save);
+        },
         // Pearls from the warped forest (warped-pearls.js).
         warped_pearls: (bot, task, goal, save, stage) => require('./warped-pearls').warpedPearls(bot, task, goal, save,
           { navigate, acquireStep, notice: (b2, g2, sv2) => noticeLandmarks(b2, g2, sv2, { force: true }),
@@ -3003,4 +3028,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { maintainBlocks, workstation, noteError, localBatch, smelt, turnSearch, searchFor, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
+module.exports = { patrolChoice, maintainBlocks, workstation, noteError, localBatch, smelt, turnSearch, searchFor, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
