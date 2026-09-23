@@ -47,8 +47,10 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
     return true;
   }
   // None known: sweep for one.
-  const search = goal.warpedSearch ||= { legs: 0, heading: Math.floor(Math.random() * 4), fails: 0 };
-  if (search.legs >= SEARCH_LEGS) {
+  const search = goal.warpedSearch ||= { legs: 0, heading: Math.floor(Math.random() * 4), fails: 0, tries: 0 };
+  // Legs are ground covered, not attempts: on the first live search every
+  // walk failed at once on Nether ground and eight "legs" went in a second.
+  if (search.legs >= SEARCH_LEGS || (search.tries || 0) >= SEARCH_LEGS * 3) {
     setAside(goal, 'rung', 'warped_search', `${SEARCH_LEGS} legs without a warped forest`, REST_MS); delete goal.warpedSearch; save();
     bot.chat?.('No warped forest found. Pearls the other way for now.');
     return false;
@@ -60,11 +62,19 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
   if (search.legs === 0 && !search.said) { search.said = true; bot.chat?.('Looking for a warped forest: endermen, and their pearls.'); }
   const before = Math.hypot(leg.x - here.x, leg.z - here.z);
   const seen = () => { actions.notice?.(bot, goal, save); return warpedKnown(goal).length > 0; };
+  const start = bot.entity.position.clone();
   try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 8), { timeoutMs: 45000, stallMs: 8000, stopWhen: seen }); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  // No way on foot: through the netherrack, as the fortress sweep goes.
+  if (bot.entity.position.distanceTo(start) < 2 && actions.tunnel && !warpedKnown(goal).length) {
+    try { await actions.tunnel(bot, task, goal, save, leg); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; search.lastError = err.message; }
+  }
   const after = Math.hypot(leg.x - bot.entity.position.x, leg.z - bot.entity.position.z);
+  search.tries = (search.tries || 0) + 1;
   if (after < before - 16 || warpedKnown(goal).length) { search.legs++; search.fails = 0; }
-  else if (++search.fails >= 3) { search.heading++; search.fails = 0; search.legs++; }
+  else if (after < before - 1) search.fails = 0;
+  else if (++search.fails >= 3) { search.heading++; search.fails = 0; }
   save();
   return true;
 }

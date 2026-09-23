@@ -54,3 +54,15 @@ test('the sweep walks legs of sixty-four and rests after eight without a forest'
   assert(Math.hypot(legs[0][0], legs[0][1]) >= 60, 'a sixty-four-block leg');
   assert.equal(warped.warpedOpen(goal), false, 'eight legs and nothing: the search rests');
 });
+
+test('a walk that fails at once is not a leg: the sweep tunnels on and gives up only after real tries', async () => {
+  const { bot, goal } = fixture('the_nether');
+  let tunnels = 0;
+  const actions = { navigate: async () => {}, tunnel: async () => { tunnels++; }, acquireStep: async () => {}, notice: () => {} };
+  for (let i = 0; i < 10; i++) await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 });
+  assert.equal(tunnels, 10, 'each stuck walk goes on through the netherrack');
+  assert.equal(goal.warpedSearch.legs, 0, 'and ten stuck tries are not ten legs');
+  assert(warped.warpedOpen(goal), 'the search is still on');
+  for (let i = 0; i < 20; i++) await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 });
+  assert.equal(warped.warpedOpen(goal), false, 'twenty-four tries without ground: it rests');
+});
