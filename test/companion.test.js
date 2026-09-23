@@ -227,3 +227,19 @@ test('server biome IDs override empty stale block biome objects', () => {
   const { biomeAt } = require('../src/discovery');
   assert.equal(biomeAt({ registry: { biomes: { 143: { name: 'minecraft:cherry_grove' } } }, blockAt: () => ({ biome: { id: 143, name: '' } }) }, new Vec3(0, 70, 0)), 'cherry_grove');
 });
+
+test('nether gold is not broken with a piglin within sixteen blocks: they turn on a player who does, gold armour or not', () => {
+  const { opportunityCandidates } = require('../src/opportunistic-mining');
+  const { bot, ore } = oreWorld();
+  const Block = require('prismarine-block')(registry);
+  bot.game.dimension = 'the_nether';
+  bot.blockAt = p => { const point = p.floored(); const block = Block.fromStateId(registry.blocksByName[point.equals(ore) ? 'nether_gold_ore' : point.y < 70 ? 'netherrack' : 'air'].defaultState); block.position = point; return block; };
+  const primary = { drops: 'netherrack' };
+  assert.equal(opportunityCandidates(bot, {}, primary)[0]?.resource, 'gold_nugget', 'alone, the gold is taken');
+  bot.entities = { 1: { name: 'zombified_piglin', position: new Vec3(4, 70, 1), isValid: true } };
+  assert.equal(opportunityCandidates(bot, {}, primary).length, 1, 'a zombified piglin does not care');
+  bot.entities[2] = { name: 'piglin', position: new Vec3(12, 70, 1), isValid: true };
+  assert.equal(opportunityCandidates(bot, {}, primary).length, 0, 'a piglin ten blocks off would turn');
+  bot.entities[2].position = new Vec3(22, 70, 1);
+  assert.equal(opportunityCandidates(bot, {}, primary).length, 1, 'twenty blocks off it does not');
+});

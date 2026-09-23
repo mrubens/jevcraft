@@ -21,6 +21,8 @@ const fuelCarried = bot => bot.inventory.items().reduce((n, i) => n + (i.name ==
 // (see bartering.js), so nether gold ore within reach is taken while the
 // pearls are short, like coal while the fuel is.
 const PEARLS_WANTED = 16;
+const GOLD_BLOCKS = /^(nether_gold_ore|gilded_blackstone|gold_block|gold_ore|deepslate_gold_ore)$/;
+const piglinsWithin = (bot, p, r) => Object.values(bot.entities || {}).some(e => /^piglin/.test(e.name || '') && e.isValid !== false && e.position && e.position.distanceTo(p) <= r);
 const neededByRule = (bot, candidate) => (candidate.resource === 'coal' && fuelCarried(bot) < FUEL_UNITS_WANTED) ||
   (candidate.resource === 'gold_nugget' && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED);
 
@@ -37,6 +39,9 @@ function opportunityCandidates(bot, goal, primary) {
     const definition = bot.registry.blocksByName[block.name];
     const resource = definition?.drops?.map(drop => bot.registry.items[typeof drop === 'number' ? drop : drop.drop]?.name).find(Boolean);
     if (!resource || resource === primary.drops || countOf(bot, resource) >= (resource === 'coal' || resource === 'raw_iron' ? 64 : resource === 'gold_nugget' ? 256 : 32)) return [];
+    // Piglins turn on a player who breaks gold near them, gold armour or
+    // not: the same sixteen blocks the bastion gold keeps (bartering.js).
+    if (GOLD_BLOCKS.test(block.name) && piglinsWithin(bot, position, 16)) return [];
     if (goal.opportunistic?.skipped?.[`${position}`] > Date.now() - 120000) return [];
     const tools = bot.inventory.items().filter(item => (!block.harvestTools || block.harvestTools[item.type]) &&
       (bot.registry.itemsByName[item.name]?.maxDurability || 0) - (item.durabilityUsed || 0) >= 16);
@@ -113,4 +118,4 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
   } finally { Object.assign(movement, previous); }
 }
 
-module.exports = { LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };
+module.exports = { piglinsWithin, LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };
