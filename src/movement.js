@@ -29,12 +29,14 @@ function gapSurvivable(movements, node, dir, k = 1) {
 
 class SurvivalMovements extends Movements {
   getMoveParkourForward(node, dir, neighbors) {
-    if (!this.allowGapJumps) return;
+    if (!this.allowGapJumps || this.bot?._gapJumpsOffUntil > Date.now()) return;
     const found = [];
     super.getMoveParkourForward(node, dir, found);
     for (const move of found) {
       const d = Math.abs(move.x - node.x) + Math.abs(move.z - node.z);
-      if (d - 1 > GAP_MAX || Math.abs(move.y - node.y) > 1) continue;
+      // Level or down, never up: a jump across a gap and a block up at a
+      // walk fell short, and the bot jumped at it for minutes.
+      if (d - 1 > GAP_MAX || move.y > node.y || node.y - move.y > 1) continue;
       let safe = true;
       for (let k = 1; k < d && safe; k++) safe = gapSurvivable(this, node, dir, k);
       if (safe) neighbors.push(move);

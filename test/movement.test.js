@@ -159,3 +159,14 @@ test('a gap a miss survives is jumped instead of bridged; lava, a deep crevice a
   movement.allowGapJumps = false;
   assert.deepEqual(jumps(movement, gapWorld()), []);
 });
+
+test('no jump across a gap and up a block, and gap jumps rest after walks keep ending short', () => {
+  const bot = botFixture();
+  const movement = configureMovements(bot);
+  // The far side one block higher.
+  const raised = (p, dx, dy, dz) => { const b = gapWorld()(p, dx, dy, dz); const x = p.x + dx, y = p.y + dy; if (x === 2 && y === 70) return { ...b, name: 'stone', physical: true, safe: false, height: 71 }; return b; };
+  assert.deepEqual(jumps(movement, raised), [], 'up across a gap at a walk falls short');
+  assert.deepEqual(jumps(movement, gapWorld()), [[2, 70, 0]]);
+  bot._gapJumpsOffUntil = Date.now() + 60000;
+  assert.deepEqual(jumps(movement, gapWorld()), [], 'resting after short walks');
+});

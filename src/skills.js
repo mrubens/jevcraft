@@ -387,6 +387,12 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
       await sleep(50);
     }
     if (!acquired && goal.isEnd && !goal.isEnd(bot.entity.position.floored())) {
+      // Walks that keep ending short with gap jumps on: the jumps go off for
+      // five minutes (movement.js). The live run jumped at the same gap and
+      // fell back, twenty-three short walks in a row, on its way to a portal.
+      const now = Date.now();
+      bot._shortWalks = [...(bot._shortWalks || []).filter(t => now - t < 60000), now];
+      if (bot._shortWalks.length >= 3 && bot.pathfinder?.movements?.allowGapJumps) { bot._gapJumpsOffUntil = now + 5 * 60000; bot._shortWalks = []; }
       throw new Error('Navigation ended before reaching the destination');
     }
   } catch (err) {

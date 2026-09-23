@@ -218,6 +218,11 @@ function pickaxeCraftable(bot) {
   if (has('cobblestone') >= 3 || has('cobbled_deepslate') >= 3) return 'stone_pickaxe';
   return null;
 }
+// A creeper whose fuse is lit (its swell direction is 1).
+function creeperSwelling(bot, entity) {
+  const i = bot.registry?.entitiesByName?.creeper?.metadataKeys?.indexOf('swell_dir');
+  return i >= 0 && entity.metadata?.[i] === 1;
+}
 const creeperClose = danger => danger.some(t => t.entity.name === 'creeper' && t.distance <= 7);
 const encounterJudgments = survival => !!survival.client && process.env.JEV_ENCOUNTERS === '1';
 
@@ -314,6 +319,8 @@ class Survival {
       this.report(goal, save, { action: 'block_shot', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
       return;
     }
+    // A creeper is fought the player's way before anything is decided.
+    if (await this.creeperDance(task, goal, save, danger, swung)) return;
     // With encounter judgments on, the stance is Jev's; the rules below take
     // over when it declines, is unsure, or the chosen tactic cannot be done.
     if (encounterJudgments(this) && await this.stanceStep(task, goal, save, danger, swung)) return;
@@ -370,6 +377,44 @@ class Survival {
     lowerShield(bot);
     if (await this.rangedChoice(task, goal, save, danger, armed)) return;
     await this.escape(task, goal, save, danger, armed);
+  }
+
+  // A creeper, the player's way: hit it, back off out of the blast while
+  // the hit's knockback and the distance put its fuse out, and hit it again
+  // when it comes on. Running only delays it (a creeper follows), and a
+  // pocket beside it is worse: the dream run ran from one for forty
+  // seconds, walled itself in with it outside, and one blast took twelve
+  // health through iron. Only armed, at eight health or more, with no other
+  // mob within five blocks and no drop within two for the knockback.
+  async creeperDance(task, goal, save, danger, swung) {
+    const bot = this.bot;
+    const creeper = danger.find(t => t.entity.name === 'creeper' && t.distance <= 6);
+    if (!creeper) return false;
+    const armed = /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '');
+    const feet = bot.entity.position.floored();
+    if (!armed || (bot.health ?? 20) < 8 || danger.some(t => t !== creeper && t.distance <= 5) || dropWithin(bot, feet, 2) || lavaBeside(bot, feet)) return false;
+    const e = creeper.entity;
+    const look = e.position.offset(0, 1, 0);
+    const distance = () => e.position.distanceTo(bot.entity.position);
+    const swelling = creeperSwelling(bot, e);
+    // Just hit, or lit within reach, or in reach while the sword recovers:
+    // back off out of the blast.
+    if (swung || (swelling && creeper.distance < 3.5) || canStrike(bot, e)) {
+      this.report(goal, save, { action: 'creeper_back_off', distance: Number(creeper.distance.toFixed(1)), swelling, struck: swung, health: bot.health });
+      await move(bot, task, { label: 'creeper_back_off', keys: ['back'], sneak: false, why: 'backing out of a creeper\'s blast between hits', look, maxMs: 700, tick: 50, until: () => distance() >= 4.5 });
+      return true;
+    }
+    // Out of reach and not lit: close in for the next hit, the swing reflex
+    // takes it at the next look.
+    if (!swelling) {
+      this.report(goal, save, { action: 'creeper_close_in', distance: Number(creeper.distance.toFixed(1)), health: bot.health });
+      await move(bot, task, { label: 'creeper_close_in', keys: ['forward'], sneak: false, why: 'closing to swing range on a creeper that is not lit', look, maxMs: 600, tick: 50,
+        until: () => canStrike(bot, e) || creeperSwelling(bot, e) });
+      return true;
+    }
+    // Lit but out of reach: keep backing.
+    await move(bot, task, { label: 'creeper_back_off', keys: ['back'], sneak: false, why: 'a lit creeper just out of reach', look, maxMs: 500, tick: 50, until: () => distance() >= 5 });
+    return true;
   }
 
   // The stance for an encounter: fight, go up, dig into the wall, seal in,
