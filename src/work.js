@@ -425,6 +425,23 @@ function searchFor(goal, resource, here) {
   return search;
 }
 
+// A staircase set aside takes its ore with it. The mining step chose the
+// same ore again and again and never checked the set-aside list: the replay
+// run persisted nineteen times at "the staircase toward (-625, 28, 308) is
+// set aside". The ore, and what is within four blocks of it, rests twenty
+// minutes, and the step returns for the next choice.
+async function tunnelOrSetAside(bot, task, goal, save, target, resource, ore = null) {
+  try { await resourceTunnelStep(bot, task, goal, save, target, resource, { dig, navigate }); }
+  catch (err) {
+    if (err.name !== 'StaircaseStalled') throw err;
+    const at = ore || target;
+    setAside(goal, 'reach', at, err.message, 1200000);
+    const names = [bot.blockAt(at)?.name].filter(Boolean);
+    if (names.length) for (const p of find(bot, names, 72, 32)) if (p.distanceTo(at) <= 4) setAside(goal, 'reach', p, 'beside a staircase set aside', 1200000);
+    save();
+  }
+}
+
 async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfaceResource(resource), frontier = surfaceOnly } = {}) {
   if (surfaceOnly && !surfaceReturnComplete(bot, goal)) {
     await surfaceStep(bot, task, goal, save);
@@ -471,7 +488,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
         const b = bot.blockAt(new Vec3(target.x, y, target.z));
         if (b?.name === 'water') surface.y = y + 2;
       }
-      await resourceTunnelStep(bot, task, goal, save, surface, resource, { dig, navigate });
+      await tunnelOrSetAside(bot, task, goal, save, surface, resource, target);
       return;
     }
     save();
@@ -705,9 +722,9 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
   if (!candidates.length) {
     if (step.depth !== null && step.depth !== undefined) {
       const names = step.sources || Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
-      const ore = find(bot, names, 64, 16).find(p => safeFromHostiles(bot, p));
+      const ore = find(bot, names, 64, 16).find(p => safeFromHostiles(bot, p) && !isSetAside(goal, 'reach', p));
       const target = ore || bot.entity.position.floored().offset(24, step.depth - bot.entity.position.floored().y, 0);
-      await resourceTunnelStep(bot, task, goal, save, target, step.block, { dig, navigate });
+      await tunnelOrSetAside(bot, task, goal, save, target, step.block, ore);
     } else await explore(bot, task, goal, save, step.block);
     return;
   }
