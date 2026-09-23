@@ -20,7 +20,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const KEEP = 10, PART_BYTES = 50 * 1024 * 1024;
+// The newest ten, and everything from the last day under half a gigabyte:
+// kept by count alone, a day of restarts after fixes (a file each) pruned
+// two wither-skeleton deaths from an hour before, and they could not be
+// read back.
+const KEEP = 10, PART_BYTES = 50 * 1024 * 1024, KEEP_MS = 24 * 3600 * 1000, KEEP_BYTES = 500 * 1024 * 1024;
 const KEEP_WORLD = new Set(['danger', 'connection']);
 // Step frames come one or two a second while working, and the goal changes
 // on every one (its step counter), so "only when it changes" never skipped
@@ -38,15 +42,21 @@ function slim(frame) {
     step: s.goal?.step, survivalAction: s.goal?.survivalAction } };
 }
 
-function flightRecorder(directory, label = 'jev', { now = () => new Date(), partBytes = PART_BYTES, keep = KEEP } = {}) {
+function flightRecorder(directory, label = 'jev', { now = () => new Date(), partBytes = PART_BYTES, keep = KEEP, keepMs = KEEP_MS, keepBytes = KEEP_BYTES } = {}) {
   fs.mkdirSync(directory, { recursive: true });
   const prefix = label.replace(/[^a-zA-Z0-9_-]/g, '_');
   const started = now().toISOString().replace(/[:.]/g, '-');
   let part = 0, file, stream, bytes = 0, closed = false, fullGoalAt = 0;
   function prune() {
     const mine = fs.readdirSync(directory).filter(f => f.startsWith(`${prefix}-`) && f.endsWith('.jsonl'))
-      .map(f => ({ f, at: fs.statSync(path.join(directory, f)).mtimeMs })).sort((a, b) => a.at - b.at);
-    for (const { f } of mine.slice(0, Math.max(0, mine.length - keep))) { try { fs.unlinkSync(path.join(directory, f)); } catch (_) {} }
+      .map(f => { const st = fs.statSync(path.join(directory, f)); return { f, at: st.mtimeMs, size: st.size }; }).sort((a, b) => b.at - a.at);
+    const cutoff = now().getTime() - keepMs;
+    let total = 0;
+    mine.forEach(({ f, at, size }, i) => {
+      total += size;
+      if (i < keep || (at >= cutoff && total <= keepBytes)) return;
+      try { fs.unlinkSync(path.join(directory, f)); } catch (_) {}
+    });
   }
   function open() {
     stream?.end();

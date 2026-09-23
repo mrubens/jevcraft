@@ -51,3 +51,17 @@ test('a full file starts the next part rather than going silent, and each bot ke
   assert(fs.existsSync(other), 'another bot\'s file is left alone');
   fs.rmSync(directory, { recursive: true, force: true });
 });
+
+test('a day of restarts is kept: files from the last day stay past the newest ten, older ones go', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'flight-'));
+  const now = Date.now();
+  for (let i = 0; i < 20; i++) { const f = path.join(directory, `jev-recent-${i}.jsonl`); fs.writeFileSync(f, '{}\n'); const t = new Date(now - (i + 1) * 60000); fs.utimesSync(f, t, t); }
+  for (let i = 0; i < 5; i++) { const f = path.join(directory, `jev-stale-${i}.jsonl`); fs.writeFileSync(f, '{}\n'); const t = new Date(now - (48 + i) * 3600000); fs.utimesSync(f, t, t); }
+  const recorder = flightRecorder(directory, 'jev');
+  recorder.record({ kind: 'chat', at: 't0', snapshot: {} });
+  recorder.close(); await settle();
+  const left = fs.readdirSync(directory);
+  assert.equal(left.filter(f => f.startsWith('jev-recent-')).length, 20, 'twenty restarts in the last hour are all kept');
+  assert.equal(left.filter(f => f.startsWith('jev-stale-')).length, 0, 'two-day-old files go');
+  fs.rmSync(directory, { recursive: true, force: true });
+});
