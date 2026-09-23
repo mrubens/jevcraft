@@ -213,7 +213,10 @@ out('');
 out('## Chat');
 for (const c of chat) out(`- ${clock(c.t)} ${c.from && c.from !== 'Jev' ? `<${c.from}> ` : ''}${c.text}`);
 
-const file = path.join(__dirname, '..', 'artifacts', `audit-${new Date(frames[0].t).toISOString().replace(/[:.]/g, '-').slice(0, 19)}.md`);
+// Another bot's audit of the same window (the clean run beside the dream)
+// is named for it, so neither overwrites the other.
+const suffix = identity === '127_0_0_1-25580-Jev' ? '' : `-${identity}`;
+const file = path.join(__dirname, '..', 'artifacts', `audit-${new Date(frames[0].t).toISOString().replace(/[:.]/g, '-').slice(0, 19)}${suffix}.md`);
 fs.mkdirSync(path.dirname(file), { recursive: true });
 fs.writeFileSync(file, lines.join('\n') + '\n');
 console.log(lines.slice(0, 12).join('\n'));
