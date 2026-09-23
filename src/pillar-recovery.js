@@ -33,6 +33,10 @@ function pillarDescent(bot, goal) {
 
 async function descendPillar(bot, task, goal, save, expected) {
   task.check(); checkAir(bot); checkThreats(bot);
+  // Not a pillar raised on purpose, to a portal overhead: the climb went up
+  // to 48 and this took it back down to 47, over and over.
+  const raised = bot._pillarUp, feet = bot.entity.position.floored();
+  if (raised && raised.until > Date.now() && raised.x === feet.x && raised.z === feet.z) return false;
   const candidate = pillarDescent(bot, goal);
   if (!candidate || expected && JSON.stringify(candidate) !== JSON.stringify(expected)) return false;
   bot.pathfinder.setGoal(null); bot.clearControlStates?.();
@@ -116,7 +120,7 @@ async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40 } = {}) {
     const below = bot.blockAt(feet.offset(0, -1, 0));
     if (!below || below.boundingBox !== 'block') break;
     await move(bot, task, { label: 'pillar_up', keys: ['jump'], sneak: false, until: () => bot.entity.position.y >= start + 1.05, maxMs: 1200, tick: 20 });
-    try { await bot.placeBlock(below, new Vec3(0, 1, 0)); placed++; }
+    try { await bot.placeBlock(below, new Vec3(0, 1, 0)); placed++; bot._pillarUp = { x: feet.x, z: feet.z, until: Date.now() + 600000 }; }
     catch (err) { task.check(); }
     for (let i = 0; i < 20 && !bot.entity.onGround; i++) { task.check(); await new Promise(resolve => setTimeout(resolve, 25)); }
     if (bot.entity.position.floored().y <= start) break;

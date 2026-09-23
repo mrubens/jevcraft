@@ -486,3 +486,13 @@ test('the pillar is raised from the nearest column clear of lava all the way up,
   assert(!(site.x === 0 && site.z === 0), 'not the column beside the lava');
   assert(Math.abs(site.x + 1) + Math.abs(site.z) > 1, 'nor any other column touching it');
 });
+
+test('a pillar raised on purpose is not taken back down by the pillar descent', async () => {
+  const { descendPillar } = require('../src/pillar-recovery');
+  let dug = 0;
+  const bot = { entity: { position: new Vec3(0.5, 20, 0.5), onGround: true }, game: { gameMode: 'survival', dimension: 'the_nether' }, entities: {}, oxygenLevel: 20,
+    _pillarUp: { x: 0, z: 0, until: Date.now() + 60000 }, blockAt: p => ({ name: p.y < 20 ? 'netherrack' : 'air', boundingBox: p.y < 20 ? 'block' : 'empty', position: p }),
+    dig: async () => { dug++; }, pathfinder: { setGoal() {} } };
+  assert.equal(await descendPillar(bot, new Task('down'), {}, () => {}), false);
+  assert.equal(dug, 0);
+});
