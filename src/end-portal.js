@@ -58,8 +58,11 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
   movement.allowedPosition = p => outside(p) && policy.allowed(p);
   movement.scafoldingBlocks = []; movement.allow1by1towers = false;
   const approach = async (positions, { scaffold = false } = {}) => {
-    // Blocks are laid only for a floor that is not there.
+    // Blocks are laid only for a floor that is not there, and then stacked
+    // too: the recorded rehearsal fell into the cave under the ring after
+    // nine eyes, and with no pillaring there was no way back up to it.
     movement.scafoldingBlocks = scaffold ? previous.scafoldingBlocks : [];
+    movement.allow1by1towers = scaffold ? previous.allow1by1towers !== false : false;
     // Unfilled frames are only 13/16 of a block high. An integer GoalBlock
     // atop one can appear reached to the planner but fail after real landing.
     // Interact from ordinary surrounding footing instead of using frame tops.
