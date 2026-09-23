@@ -1272,3 +1272,26 @@ test('on a sand island at dusk with one block and a pickaxe, the bot digs straig
   assert.equal(placed.get(`${new Vec3(refuge.origin.x, refuge.origin.y + 2, refuge.origin.z)}`), 'netherrack', 'capped with the netherrack');
   assert(refuge.verifiedAt, 'and it counts as a sealed shelter');
 });
+
+test('short of blocks for the room on open grass, the bot digs a shaft pocket instead of gathering dirt a block at a time', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const dug = new Set(), placed = new Map();
+  const ground = p => { const y = Math.floor(p.y); return y >= 63 ? 'air' : y === 62 ? 'grass_block' : y >= 58 ? 'dirt' : 'stone'; };
+  const blockAt = p => { const f = p.floored(), k = `${f}`; const name = placed.get(k) || (dug.has(k) ? 'air' : ground(f)); return { position: f, name, boundingBox: name === 'air' ? 'empty' : 'block', diggable: true }; };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000 },
+    entity: { position: new Vec3(0.5, 63, 0.5), onGround: true }, health: 20, food: 20, registry,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'dirt', count: 11 }], slots: {}, emptySlotCount: () => 5 },
+    findBlocks: () => [], blockAt, world: { raycast: () => null }, pathfinder: { movements: {}, getPathTo: () => ({ status: 'success', path: [] }), setGoal() {} } });
+  const actions = { navigate: async () => {},
+    dig: async (b, t, p) => { dug.add(`${p.floored()}`); bot.entity.position = new Vec3(p.x + 0.5, p.y, p.z + 0.5); },
+    place: async (b, t, p, name) => { placed.set(`${p.floored()}`, name); },
+    acquireStep: async () => assert.fail('no dirt gathering: the shaft costs one block') };
+  // The room already planned beside the bot, twenty-eight blocks short of eleven.
+  const survival = new Survival(bot, actions, { state: { shelters: [{ origin: { x: 3, y: 63, z: 0 }, dimension: 'overworld', createdAt: new Date().toISOString() }] } });
+  await survival.refugeStep(new Task('dusk'), { kind: 'win' }, () => {});
+  const shaft = survival.state.shelters.find(s => s.shaft);
+  assert(shaft?.verifiedAt, 'a sealed shaft pocket');
+  assert.equal(shaft.origin.y, 60, 'three down, walled in dirt with grass over the rim');
+  assert.equal(placed.get(`${new Vec3(0, 62, 0)}`), 'dirt', 'capped with a block of dirt');
+});

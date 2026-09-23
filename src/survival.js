@@ -719,7 +719,10 @@ class Survival {
       // A site selected above a mining pocket can reserve every block needed
       // to escape it. Reach that still-empty site before searching for supplies;
       // approachRefuge relaxes only this reservation and restores it afterwards.
-      if (bot.entity.position.y < refuge.origin.y && emptySite(bot, refuge)) {
+      // Well below it, not one block: gathering dirt steps the bot into the
+      // hole it dug, and read as "below the site" that sent it back up
+      // after every block, one dirt a trip, with a creeper closing in.
+      if (bot.entity.position.y < refuge.origin.y - 1.5 && emptySite(bot, refuge)) {
         this.report(goal, save, { action: 'return_to_surface', target: refuge.origin });
         task.interruptCheck = () => checkThreats(bot);
         try {
@@ -732,6 +735,11 @@ class Survival {
         await this.leave(task, goal, save, refuge);
         if (shelter.inside(bot, refuge)) return;
       }
+      // Short of blocks: a shaft pocket costs one block where the room costs
+      // twenty-eight. Two or three down into dirt or rock and a block over
+      // the head, before a trip for blocks (the dream run gathered dirt one
+      // block at a time on open grass at night and a creeper found it).
+      if (!shelter.inside(bot, refuge) && await this.shaftPocket(task, goal, save)) return;
       this.report(goal, save, { action: 'gather_shelter_materials', need: required, carried: stock, origin: refuge.origin });
       task.interruptCheck = () => checkThreats(bot);
       try {
