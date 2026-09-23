@@ -130,7 +130,7 @@ test('short of the block reserve by day, the bot tops it up: cobblestone with a 
   const { maintainBlocks } = require('../src/work');
   const got = [];
   const bot = { game: { gameMode: 'survival', dimension: 'overworld' }, time: { timeOfDay: 3000 }, entity: { isInWater: false, position: { x: 0, y: 64, z: 0 } },
-    registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'dirt', count: 4 }] } };
+    registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'dirt', count: 4 }, { name: 'oak_log', count: 4 }] } };
   const goal = { kind: 'win' };
   // acquireStep is the real planner; stand it in by watching the step the upkeep records.
   await maintainBlocks(bot, { check() {} }, goal, () => {}).catch(() => {});

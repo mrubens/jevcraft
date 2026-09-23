@@ -970,6 +970,24 @@ class Survival {
     return true;
   }
 
+  async openOnWatcher(task, goal, save, refuge, watcher) {
+    const bot = this.bot;
+    if (watcher.distance > 4.5 || watcher.entity.name === 'creeper' || (bot.health ?? 20) < 16 || typeof this.actions.dig !== 'function') return false;
+    if (!/_(sword|axe)$/.test(defenseWeapon(bot)?.name || '')) return false;
+    if (threats(bot, 16).filter(t => t.entity !== watcher.entity).length > 1) return false;
+    const feet = bot.entity.position.floored(), at = watcher.entity.position;
+    const dx = at.x - (feet.x + 0.5), dz = at.z - (feet.z + 0.5);
+    const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
+    const cells = [feet.plus(step).offset(0, 1, 0), feet.plus(step)].filter(c => bot.blockAt(c)?.boundingBox === 'block' && bot.blockAt(c).diggable);
+    if (!cells.length) return false;
+    this.report(goal, save, { action: 'open_on_watcher', target: watcher.entity.name, distance: Number(watcher.distance.toFixed(1)), health: bot.health });
+    for (const c of cells) {
+      try { await this.actions.dig(bot, task, c, { requireDrops: false }); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+    }
+    return true;
+  }
+
   async digIn(task, goal, save, danger) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function') return false;
@@ -1232,11 +1250,20 @@ class Survival {
     if (target && NIGHT_ORES.has(mine.targetOre) && bot.blockAt(target)?.name !== mine.targetOre) { target = null; delete mine.target; }
     if (target && !NIGHT_ORES.has(mine.targetOre) && target.distanceTo(bot.entity.position) < 2.5) target = null;
     if (!target) {
-      const ore = nightOre(bot, feet, attemptsFor(this));
+      // From a pocket on the surface, down into the rock first: an ore off to
+      // the side was reached through the hillside, the pocket opened at every
+      // step and was sealed again, three times, and the night was waited out.
+      const atSurface = surfaceObserver(bot)(bot.entity.position);
+      const ore = !atSurface && nightOre(bot, feet, attemptsFor(this));
       if (ore) { target = ore.position; mine.targetOre = ore.name; }
       else {
         // No ore in reach of the eye: a branch, down to a working depth
-        // and then along, in the mine's heading.
+        // and then along, in the mine's heading, and from the surface the
+        // heading whose first steps are into solid ground.
+        if (atSurface) {
+          const solidAhead = h => { const [x, z] = [[1, 0], [0, 1], [-1, 0], [0, -1]][h % 4]; return [0, 1].every(dy => bot.blockAt(feet.offset(x, dy, z))?.boundingBox === 'block'); };
+          for (let i = 0; i < 4 && !solidAhead(mine.heading); i++) mine.heading++;
+        }
         const [dx, dz] = [[1, 0], [0, 1], [-1, 0], [0, -1]][mine.heading % 4];
         target = feet.offset(dx * 24, Math.max(-10, 16 - feet.y), dz * 24);
         if (target.y < feet.y - 10) target.y = feet.y - 10;
@@ -1380,6 +1407,10 @@ class Survival {
         // a wait with no named reason cost an hour of guessing.
         const watcher = threats(bot).find(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity));
         const hunt = bot._huntingEntity;
+        // One mob at the wall and the bot armed and whole: the wall toward it
+        // is opened and the fight rules take it. A skeleton at three blocks
+        // kept the pocket shut from midnight to dawn, the night mine off.
+        if (watcher && await this.openOnWatcher(task, goal, save, refuge, watcher)) { onStep(goal); return true; }
         // Nothing watching: the night is spent working, not waiting. The
         // pocket is the mouth of a mine, and a tunnel in rock is as closed
         // as the pocket was.

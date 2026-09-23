@@ -243,12 +243,24 @@ async function maintainPickaxe(bot, task, goal, save) {
 // pickaxe is: cobblestone with a pickaxe, dirt without, netherrack in the
 // Nether. Never in water or at night on the surface, and a gather that
 // fails rests ten minutes.
+const WOOD_RESERVE = 3;
 async function maintainBlocks(bot, task, goal, save) {
   if (bot.game?.gameMode === 'creative') return false;
   const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy');
+  if (bot.entity?.isInWater || (bot.game?.dimension === 'overworld' && shelterNeeded(bot))) return false;
+  // Wood too, three logs' worth: the sticks for a pickaxe and a table. Worn
+  // pickaxes and no wood had the bot climbing out of its night mine by
+  // hand, a block every twenty-three seconds for four minutes.
+  const woodUnits = bot.inventory.items().reduce((n, i) => n + (/_log$|_stem$/.test(i.name) ? i.count : /_planks$/.test(i.name) ? i.count / 4 : i.name === 'stick' ? i.count / 8 : 0), 0);
+  if (woodUnits < WOOD_RESERVE && /overworld/.test(String(bot.game?.dimension || 'overworld')) && !isSetAside(goal, 'block_reserve', 'wood')) {
+    const species = (bot._catalogObservation?.nearby || []).find(name => /_log$/.test(name)) || 'oak_log';
+    goal.step = { action: 'wood_reserve', item: species, have: woodUnits }; save();
+    try { await acquireStep(bot, task, species, countOf(bot, species) + Math.ceil(WOOD_RESERVE + 1 - woodUnits), goal, save); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'block_reserve', 'wood', err, 600000); }
+    return true;
+  }
   const have = blockStock(bot);
   if (have >= BLOCK_RESERVE || isSetAside(goal, 'block_reserve', 'gather')) return false;
-  if (bot.entity?.isInWater || (bot.game?.dimension === 'overworld' && shelterNeeded(bot))) return false;
   const nether = /nether/.test(String(bot.game?.dimension || ''));
   const item = nether ? 'netherrack' : pickaxeTier(bot) >= 1 ? 'cobblestone' : 'dirt';
   goal.step = { action: 'block_reserve', item, have }; save();

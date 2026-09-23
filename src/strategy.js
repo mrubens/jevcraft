@@ -63,7 +63,10 @@ function strategyOptions(bot, goal, stage, sides = {}) {
   // half a minute at the far end. That is arithmetic, not judgment; asked,
   // Jev sent the bot 240 blocks to a chest with half a minute of day left.
   const fits = side => !Number.isFinite(side.walkBlocks) || (side.walkBlocks * 2 / WALK_BLOCKS_PER_S + 30) * 20 < DAY.DUSK - t;
-  if (daylight && fit) for (const [key, side] of Object.entries(sides)) {
+  // Not while the next step is a basic tool: Jev chose a dungeon over the
+  // stone pickaxe it had none of.
+  const toolless = rungs.length && /^(stone_pickaxe|stone_sword|iron_pickaxe)$/.test(rungs[0].phase);
+  if (daylight && fit && !toolless) for (const [key, side] of Object.entries(sides)) {
     if (side && !isSetAside(goal, 'strategy_side', key) && fits(side)) options[key] = { description: side.description, says: side.says, run: side.run, side: true };
   }
   return Object.keys(options).length > 1 ? options : null;

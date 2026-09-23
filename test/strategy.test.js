@@ -92,3 +92,11 @@ test('a trip that does not fit in the daylight left is not offered', () => {
   bot.time.timeOfDay = 9000;
   assert.equal(strategyOptions(bot, goal, stage, sides).loot, undefined, 'twenty-five seconds before dusk there is not');
 });
+
+test('no side trip while the next step is a basic tool', () => {
+  const { bot, goal } = fixture([]);
+  bot.inventory.items = () => [{ name: 'wooden_pickaxe', count: 1 }, { name: 'stone_sword', count: 1 }];
+  const sides = { loot: { description: 'Loot the dungeon.', run: async () => {} } };
+  const options = strategyOptions(bot, goal, { phase: 'stone_pickaxe', action: 'acquire' }, sides);
+  assert(!options || !options.loot, 'the pickaxe first');
+});

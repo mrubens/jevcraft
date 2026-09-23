@@ -914,7 +914,7 @@ test('a night-mine target the steps never get closer to is set aside, even when 
   const ore = new Vec3(8, 55, 0);
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 15000 },
     entity: { position: new Vec3(0.5, 55, 0.5) }, health: 20, food: 20, registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }], slots: {} },
-    findBlocks: () => [ore], blockAt: p => ({ name: p.equals(ore) ? 'iron_ore' : p.y < 55 ? 'stone' : 'air', boundingBox: p.y < 55 || p.equals(ore) ? 'block' : 'empty', position: p }),
+    findBlocks: () => [ore], blockAt: p => ({ name: p.equals(ore) ? 'iron_ore' : p.y < 55 || p.y >= 60 ? 'stone' : 'air', boundingBox: p.y < 55 || p.y >= 60 || p.equals(ore) ? 'block' : 'empty', position: p }),
     world: { raycast: () => null }, pathfinder: { movements: {} } });
   // Every step "succeeds" by pacing along z, never closer in x.
   let z = 0;
@@ -1214,7 +1214,7 @@ test('night-mine steps that do not move the bot are given up after four, before 
   const ore = new Vec3(8, 55, 0);
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 15000 },
     entity: { position: new Vec3(0.5, 55, 0.5) }, health: 20, food: 20, registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }], slots: {} },
-    findBlocks: () => [ore], blockAt: p => ({ name: p.equals(ore) ? 'iron_ore' : p.y < 55 ? 'stone' : 'air', boundingBox: p.y < 55 || p.equals(ore) ? 'block' : 'empty', position: p }),
+    findBlocks: () => [ore], blockAt: p => ({ name: p.equals(ore) ? 'iron_ore' : p.y < 55 || p.y >= 60 ? 'stone' : 'air', boundingBox: p.y < 55 || p.y >= 60 || p.equals(ore) ? 'block' : 'empty', position: p }),
     world: { raycast: () => null }, pathfinder: { movements: {} } });
   // Every step "succeeds" and the server puts the bot back where it was.
   const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {} });
@@ -1317,4 +1317,37 @@ test('with a creeper close no pillar, pocket or bunker is offered: it walks unde
   assert(withCreeper.includes('retreat'));
   const withZombie = Object.keys(survival.stanceOptions(new Task('x'), {}, () => {}, [t('zombie', 4)], false));
   assert(withZombie.includes('pillar'), 'a zombie is climbed away from');
+});
+
+test('from a pocket on the surface the night mine goes down into solid ground, not sideways to an ore through the hillside', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const ore = new Vec3(6, 58, -5);
+  // A hillside: solid to the east (+x), open air to the west, sky above.
+  const blockAt = p => { const f = p.floored(); const solid = f.y < 64 || (f.x >= 1 && f.y < 66); return { position: f, name: f.equals(ore) ? 'copper_ore' : solid ? 'stone' : 'air', boundingBox: solid || f.equals(ore) ? 'block' : 'empty' }; };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 15000 },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }], slots: {} },
+    findBlocks: () => [ore], blockAt, world: { raycast: () => null } });
+  const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {} });
+  const reports = []; survival.report = (g, sv, a) => reports.push(a);
+  survival.state.nightMine = { heading: 2, failures: 0, mined: 0 };
+  await survival.nightMine(new Task('night'), { kind: 'win' }, () => {});
+  assert.equal(reports[0].ore, 'branch', 'no side ore from the surface');
+  assert(reports[0].target.x > 0, `into the hill (+x), not out to the open west: ${JSON.stringify(reports[0].target)}`);
+});
+
+test('one skeleton at the wall of the pocket, the bot armed and whole: the wall toward it is opened for the fight', async () => {
+  const { Survival } = require('../src/survival');
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, health: 20, entities: { 7: { id: 7, name: 'skeleton', position: new Vec3(3.9, 64, 0.5), height: 1.99, isValid: true } },
+    time: { timeOfDay: 15000 }, entity: { position: new Vec3(0.5, 64, 0.5) }, world: { raycast: () => null },
+    inventory: { items: () => [{ name: 'diamond_sword', count: 1 }], slots: {} },
+    blockAt: p => ({ position: p.floored(), name: 'stone', boundingBox: 'block', diggable: true }) });
+  const dug = [];
+  const survival = new Survival(bot, { dig: async (b, t, p) => dug.push(`${p}`) }, { state: { shelters: [] } });
+  survival.report = () => {};
+  const watcher = { entity: bot.entities[7], distance: 3.4, visible: false };
+  assert(await survival.openOnWatcher(new Task('pocket'), {}, () => {}, {}, watcher));
+  assert.deepEqual(dug.sort(), [`${new Vec3(1, 64, 0)}`, `${new Vec3(1, 65, 0)}`].sort(), 'the two cells toward it');
+  bot.health = 10;
+  assert.equal(await survival.openOnWatcher(new Task('pocket'), {}, () => {}, {}, watcher), false, 'hurt, the wall stays');
 });
