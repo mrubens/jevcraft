@@ -1984,15 +1984,18 @@ async function tunnelToward(bot, task, goal, save, target, key) {
   // of its search in time, and the staircase went round a lava pool below
   // the portal ninety-eight times. Every way back to a portal ends here.
   const here = bot.entity.position;
-  if (target.y - here.y > 6 && Math.hypot(target.x - here.x, target.z - here.z) <= 6 && !isSetAside(goal, 'pillar', target)) {
-    const site = pillarSite(bot, target.y, target);
+  // Within sixteen sideways: the column is looked for near the portal,
+  // anywhere in twelve of the bot. From ten blocks off the pillar was never
+  // tried and the given-up staircase was refused a hundred times instead.
+  if (target.y - here.y > 6 && Math.hypot(target.x - here.x, target.z - here.z) <= 16 && !isSetAside(goal, 'pillar', target)) {
+    const site = pillarSite(bot, target.y, target, { radius: 12 });
     goal.step = { action: 'pillar_to_portal', portal: { x: target.x, y: target.y, z: target.z }, from: Math.round(here.y), site: site && { ...site } }; save();
     const before = here.y;
     if (site && site.distanceTo(bot.entity.position.floored()) >= 1) {
       try { await navigate(bot, task, new goals.GoalBlock(site.x, site.y, site.z), { timeoutMs: 10000, stallMs: 3000 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
-    if (site) await pillarUp(bot, task, target.y, { dig });
+    if (site && site.distanceTo(bot.entity.position.floored()) < 1.5) await pillarUp(bot, task, target.y, { dig });
     if (bot.entity.position.y - before >= 2) return;
     setAside(goal, 'pillar', target, 'the pillar toward the portal would not rise', 300000); save();
   }
