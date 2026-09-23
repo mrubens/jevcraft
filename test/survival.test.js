@@ -1083,6 +1083,15 @@ test('a night mine refused on every heading is boxed in and waits the night out 
 });
 
 
+test('four unreachable ores of one vein are set aside, not a mine boxed in', () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: {}, entity: { position: new Vec3(0.5, 16, 0.5) }, inventory: { items: () => [] } });
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  const mine = survival.state.nightMine = { heading: 0, failures: 0, mined: 105, targetOre: 'copper_ore' };
+  for (let i = 0; i < 4; i++) { mine.target = { x: -550 - i, y: 16, z: -363 }; mine.targetOre = 'copper_ore'; survival.abandonTarget(mine, 'No safe way toward it: no floor, moss block in the way'); }
+  assert(!(mine.boxedInUntil > Date.now()), 'the vein by the lush cave is set aside; the mine goes on by a branch');
+  assert.equal(mine.heading, 0, 'and the heading is kept for the branch');
+});
+
 test('mining steps that keep the pocket sealed are not dig-outs: the night mine is not set aside after three', async () => {
   const { isSetAside } = require('../src/progress');
   const origin = new Vec3(0, 30, 0), blocks = new Map();

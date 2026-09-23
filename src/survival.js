@@ -1290,7 +1290,15 @@ class Survival {
     if (NIGHT_ORES.has(mine.targetOre) && mine.target && !recorded) attemptsFor(this).fail('night_mine', mine.target, why, { restMs: 600000 });
     if (mine.target) unwatch(this, 'night_mine', mine.target);
     mine.lastAbandoned = { target: mine.target, why, at: new Date().toISOString() };
-    mine.heading++; delete mine.target; delete mine.tunnel; mine.failures = 0;
+    // Boxed in is every heading refused, not every block of one vein: four
+    // copper ores beside a lush cave were refused in a second, and the mine
+    // sealed itself in for the night with a pickaxe and a stack of stone.
+    // An unreachable ore is set aside above and the next look takes a
+    // branch; only refused branches count toward boxed in.
+    const branch = mine.targetOre === 'branch';
+    if (branch) mine.heading++;
+    delete mine.target; delete mine.tunnel; mine.failures = 0;
+    if (!branch) return;
     const now = Date.now();
     mine.refusals = [...(mine.refusals || []).filter(r => now - r.at < 60000 && r.mined === mine.mined), { at: now, mined: mine.mined }];
     if (mine.refusals.length >= 4) { mine.boxedInUntil = now + 600000; mine.refusals = []; }
