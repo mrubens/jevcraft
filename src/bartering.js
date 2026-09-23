@@ -108,4 +108,36 @@ async function barterStep(bot, task, goal, save, actions = {}) {
   return { thrown: thrownAt.length, pearls: gained };
 }
 
-module.exports = { barterReady, barterStep, goldOnHand, wearingGold, KEEP };
+// Gold for bartering from a bastion remembered by exploration.js: a gold
+// block is nine ingots. Piglins turn on a player who mines gold where they
+// can see it, gold armour or not, so only a block no piglin is within
+// sixteen blocks of is taken, and gilded blackstone (a nugget now and then)
+// the same way. A trip there is one leg at a time; at the bastion, one block.
+const BASTION_GOLD = ['gold_block', 'gilded_blackstone'];
+function bastionGold(bot) {
+  const ids = BASTION_GOLD.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
+  const watchers = Object.values(bot.entities || {}).filter(e => /^piglin/.test(e.name || '') && e.isValid !== false && e.position);
+  return bot.findBlocks({ matching: ids, maxDistance: 24, count: 32 })
+    .filter(p => watchers.every(e => e.position.distanceTo(p) > 16))
+    .sort((a, b) => (bot.blockAt(b)?.name === 'gold_block') - (bot.blockAt(a)?.name === 'gold_block') || a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+}
+const bastionKnown = (bot, goal) => require('./exploration').knownLandmarks(bot, goal, 'bastion', 384).length > 0;
+async function gatherBastionGold(bot, task, goal, save, actions = {}) {
+  task.check(); checkAir(bot); checkThreats(bot);
+  const exploration = require('./exploration');
+  const arrived = await exploration.goToLandmark(bot, task, goal, save, ['bastion'], { navigate: actions.navigate || navigate, reach: 384, arrive: 20 });
+  if (!arrived) { if (arrived === null) throw new Error('No bastion remembered within reach'); return false; }
+  const target = bastionGold(bot)[0];
+  if (!target) { setAside(goal, 'landmark_trip', `bastion:${arrived.x},${arrived.z}`, 'no gold here that no piglin can see', 1800000); save(); return false; }
+  const name = bot.blockAt(target)?.name, drop = name === 'gold_block' ? 'gold_block' : 'gold_nugget';
+  goal.step = { action: 'bastion_gold', block: name, position: { x: target.x, y: target.y, z: target.z } }; save();
+  const before = countOf(bot, 'gold_block') + countOf(bot, 'gold_nugget');
+  await actions.approachDryMining(bot, task, target, { navigate: actions.navigate || navigate, dig: actions.dig });
+  await actions.dig(bot, task, target, { requiredTool: 'iron_pickaxe', requireDrops: name === 'gold_block' });
+  if (actions.collectNearbyDrops) await actions.collectNearbyDrops(bot, task, drop, { origin: target, radius: 6, waitForSpawnMs: 800 });
+  // Gold blocks go straight to ingots: nine to throw.
+  if (countOf(bot, 'gold_block') && actions.acquireStep) await actions.acquireStep(bot, task, 'gold_ingot', countOf(bot, 'gold_ingot') + 9 * countOf(bot, 'gold_block'), goal, save);
+  return countOf(bot, 'gold_block') + countOf(bot, 'gold_nugget') + countOf(bot, 'gold_ingot') > before;
+}
+
+module.exports = { barterReady, barterStep, goldOnHand, wearingGold, KEEP, bastionGold, bastionKnown, gatherBastionGold };

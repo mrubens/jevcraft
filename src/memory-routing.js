@@ -76,7 +76,9 @@ async function resolveMemory(client, spec, username, context) {
   const notes = (memory.notes || []).map(e => ({ ...e, description: `NOTE ${e.note}, saved ${e.at}` }));
   const preferences = (memory.preferences || []).map(e => ({ ...e, description: `LEARNED PREFERENCE ${e.category}: ${e.value}, inferred from the player's request ${e.request}, at ${e.at}. A soft default, not an explicit favorite.` }));
   const history = (memory.history || []).map(e => ({ ...e, description: `PAST TASK (${e.status}) ${e.request}, at ${e.at}` }));
-  const entries = operation === 'visit' ? places : operation === 'repeat' ? history.filter(e => e.intent) : [...places, ...notes, ...preferences, ...history];
+  const found = (memory.found || []).map((e, i) => ({ ...e, id: `found:${i}`, description: `FOUND BY JEV WHILE EXPLORING: a ${e.label} at ${e.position.x}, ${e.position.z} in the ${e.dimension}${e.firstAt ? `, first seen ${new Date(e.firstAt).toISOString()}` : ''}` }));
+  const entries = operation === 'visit' ? [...places, ...found] : operation === 'repeat' ? history.filter(e => e.intent)
+    : operation === 'recall' ? [...places, ...notes, ...preferences, ...history, ...found] : [...places, ...notes, ...preferences, ...history];
   const seen = {};
   const selected = await select(client, state, entries, 'memory_entry',
     { none: 'No unambiguous saved entry matches.', ...(['recall', 'forget'].includes(operation) && { all: operation === 'forget' ? 'The speaker explicitly wants to forget ALL of their saved memories.' : 'The speaker asks generally what is remembered, without a particular subject.' }) }, seen);
@@ -94,7 +96,7 @@ async function resolveMemory(client, spec, username, context) {
     return clarify(`Do you want me to do "${selected.request}" again? Ask me for it directly and I'll start.`);
   }
   if (operation === 'repeat') return { ...structuredClone(selected.intent), from: spec.from, askedAs: spec.request, repeatedMemoryId: selected.id, interpretation: spec.interpretation };
-  return { ...spec, memory: { operation, targetId: selected === 'all' ? 'all' : selected.id } };
+  return { ...spec, memory: { operation, targetId: selected === 'all' ? 'all' : selected.id, ...(String(selected.id).startsWith('found:') && { found: selected }) } };
 }
 
 module.exports = { resolveMemory, labelCandidates, coordinateCandidates };

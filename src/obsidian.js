@@ -137,6 +137,16 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
     } catch (err) { task.check(); works.lastScoopError = err.message; save(); }
     return;
   }
+  // Nothing here: a ruined portal remembered (its frame is obsidian to
+  // mine, often with gold beside it) or a surface lava pool remembered
+  // (exploration.js), before any shaft. A ruined portal only while there is
+  // a pickaxe that can take obsidian.
+  if (!surface.length) {
+    const diamond = bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
+    const kinds = diamond ? ['ruined_portal', 'lava_pool'] : ['lava_pool'];
+    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, kinds, { navigate, filter: l => l.kind !== 'ruined_portal' || (l.obsidian || 0) > 0 });
+    if (arrived !== null) { if (arrived) { goal.step = { ...step, phase: 'at_landmark', kind: arrived.kind }; save(); } return; }
+  }
   // No walkable way to a shore: dig toward one, or toward the nearest pool,
   // or down to where the lava lakes are. The staircase stops short of any
   // liquid it would expose and backs out to try another approach.

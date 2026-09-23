@@ -32,7 +32,7 @@ const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMov
 const { dryPassable, supportCell, swimmableWater } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
 const { noticeLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep } = require('./exploration');
-const { barterStep } = require('./bartering');
+const { barterStep, gatherBastionGold } = require('./bartering');
 const { descendPillar, pillarUp, pillarSite } = require('./pillar-recovery');
 const { gameStep, watchGameProgress, dimension, nextGameStage, DEFERRABLE, RUNG_WAIT_MS } = require('./game-progress');
 const { carriedEquipment } = require('./mob-policy');
@@ -1958,7 +1958,7 @@ async function portalLeg(bot, task, p) {
   const here = bot.entity.position, flat = at => Math.hypot(p.x - at.x, p.z - at.z), before = flat(here);
   const step = Math.min(32, before - 8) / before;
   const leg = { x: here.x + (p.x - here.x) * step, z: here.z + (p.z - here.z) * step };
-  try { await navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 4), { timeoutMs: 30000, stallMs: 8000 }); }
+  try { await navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 4), { timeoutMs: 30000, stallMs: 8000, sprint: true }); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   return flat(bot.entity.position) < before - 6;
 }
@@ -2480,6 +2480,10 @@ function gameHandlers(bot, decisionClient) {
         // it has set aside as fruitless lets the trip go with what there is.
         food_reserve: (bot, task, goal, save) => netherFoodReady(bot, task, goal, save),
         barter: (bot, task, goal, save) => barterStep(bot, task, goal, save, { acquireStep, navigate }),
+        bastion_gold: async (bot, task, goal, save) => {
+          try { return await gatherBastionGold(bot, task, goal, save, { acquireStep, navigate, dig, approachDryMining, collectNearbyDrops }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'rung', 'bastion_gold', err, 1800000); save(); return false; }
+        },
         prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
         home: (bot, task, goal, save, stage) => homeStep(bot, task, goal, save, stage, homeActions()),
         // A bed from a remembered village: dug up, it drops itself.

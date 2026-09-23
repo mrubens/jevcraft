@@ -120,7 +120,7 @@ function villageBedRung(bot, goal, { now = Date.now() } = {}) {
 async function walkToVillage(bot, task, village, actions, range = 6) {
   const centre = pos(village.bell || village);
   if (bot.entity.position.distanceTo(centre) <= 24) return;
-  await actions.navigate(bot, task, new goals.GoalNear(centre.x, centre.y, centre.z, range), { timeoutMs: 120000, stallMs: 15000 });
+  await actions.navigate(bot, task, new goals.GoalNear(centre.x, centre.y, centre.z, range), { timeoutMs: 120000, stallMs: 15000, sprint: true });
 }
 
 async function collectDrops(bot, task, actions, near, names, until, limit = 12) {

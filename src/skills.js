@@ -250,24 +250,35 @@ async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs 
 }
 
 /** Move somewhere, aborting cleanly if the task is cancelled mid-path. */
-async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen } = {}) {
+// `sprint` is for long trips over open ground (exploring, a walk to a
+// remembered place, home): a third faster, at about a hunger point every
+// forty blocks, so only while hunger is above fourteen. Everything else
+// walks: sprinting into a fight spoils the swing, and along a ledge it is
+// a longer fall.
+const SPRINT_FOOD = 14;
+async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false } = {}) {
   task.check();
   if (require('./flight').canFly(bot)) return require('./flight').flyNavigate(bot, task, goal, { timeoutMs, stallMs, stopWhen });
   // A stopped trip can leave our empty boat underfoot. Clear only that owned
   // boat before player physics attempts to walk through its solid hull.
   if (bot._ownedBoats?.size && !bot.vehicle) await require('./boats').clearOwnedBoatAtFeet(bot, task);
+  const movements = bot.pathfinder?.movements, sprinting = sprint && (bot.food ?? 20) > SPRINT_FOOD && !!movements;
+  const walked = sprinting ? movements.allowSprinting : undefined;
+  if (sprinting) movements.allowSprinting = true;
   const deadline = Date.now() + timeoutMs;
-  for (let attempt = 0; ; attempt++) {
-    task.check(); checkAir(bot);
-    if (stopWhen?.()) return;
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new Error('navigation timed out');
-    try { return await navigateAttempt(bot, task, goal, { timeoutMs: remaining, stallMs, stopWhen }); }
-    catch (err) {
-      if (!(err instanceof NavigationCorrectionLoop || err instanceof NavigationStall) || attempt > 0 ||
-        !await recoverNavigation(bot, task, deadline, stopWhen)) throw err;
+  try {
+    for (let attempt = 0; ; attempt++) {
+      task.check(); checkAir(bot);
+      if (stopWhen?.()) return;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new Error('navigation timed out');
+      try { return await navigateAttempt(bot, task, goal, { timeoutMs: remaining, stallMs, stopWhen }); }
+      catch (err) {
+        if (!(err instanceof NavigationCorrectionLoop || err instanceof NavigationStall) || attempt > 0 ||
+          !await recoverNavigation(bot, task, deadline, stopWhen)) throw err;
+      }
     }
-  }
+  } finally { if (sprinting) movements.allowSprinting = walked; }
 }
 
 async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }) {

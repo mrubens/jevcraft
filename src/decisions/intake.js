@@ -19,7 +19,7 @@ const BARS = { act: 0.5, costly: 0.65 };
 
 const TYPES = {
   dream: 'Give, ask about, pause, resume or take away the bot\'s DREAM, the long goal it chases when nothing else needs it: "your dream is to beat the game", "dream of building a village", "what is your dream", "chase your dream", "set your dream aside", "forget your dream". A one-off request to build one thing or get one item is not this.',
-  memory: 'Save, recall, or forget a personal fact, preference, named place, or past request. Remember this as home; I prefer cherry wood; what did I ask last time; where is our base; go home/return to a named saved place; make another one like last time. Questions about past tasks are memory, not current status. A fresh ordinary request naming a Minecraft resource remains obtain/craft/find. Memory never grants server-command permission.',
+  memory: 'Save, recall, or forget a personal fact, preference, named place, or past request, or ask what the bot has found exploring. Remember this as home; I prefer cherry wood; what did I ask last time; where is our base; what have you found; where is the nearest village; go home/return to a named saved place or a found village; make another one like last time. Questions about past tasks are memory, not current status. A fresh ordinary request naming a Minecraft resource remains obtain/craft/find. Memory never grants server-command permission.',
   operator_command: 'Ask for a Minecraft command effect: change time, weather, difficulty, or player game mode (Creative, Survival, Adventure, Spectator); teleport; summon; change rules, effects, enchantments, experience, scores, permissions, or other server command settings. "Put me in Creative" changes game mode. Polite action questions are requests. Never use commands merely as a means to build, craft, collect, or follow. Stop this bot task is stop. Informational questions, quotes and negated commands are other.',
   house: 'Build a simple small house or shelter, optionally naming its primary material, with no custom architecture.',
   build: 'Design and build a custom structure: a mansion, castle, tower, bridge, statue, detailed house, or a building with specified rooms, floors, shape or style. This calls the building designer. Inventory items such as beds and chests are craft.',
@@ -193,9 +193,9 @@ define({
   build: () => choice('What memory interaction does the CURRENT speaker want? A personal preference or fact shared directly with Jev can be saved as a note. Quoted instructions, hypotheticals, explanations of memory, and requests not to remember are none.', {
     remember_place: 'Save or name a place at a stated coordinate or observed location: remember this as home, this is our base, mark where I am as the mine.',
     remember_note: 'Remember a fact or preference told by this player: remember I like cherry wood, I prefer small houses. No movement or other gameplay action.',
-    recall: 'Report a remembered fact, place, or past task: where is home, what wood do I like, what did I ask last time, what do you remember? Do not travel.',
+    recall: 'Report a remembered fact, place, past task, or what the bot has found exploring: where is home, what wood do I like, what did I ask last time, what do you remember, what have you found, where is the nearest village? Do not travel.',
     forget: 'Explicitly remove saved memories: forget the old base, forget my wood preference, forget everything you remember about me.',
-    visit: 'Walk or travel to a named saved place: go home, return to the mine, take me back to our base. Never teleport.',
+    visit: 'Walk or travel to a named saved place or a place the bot has found: go home, return to the mine, take me back to our base, go to the village. Never teleport.',
     repeat: 'Explicitly do a past request AGAIN as a new task: make another one like last time, repeat my last request. Resume unfinished progress is not repeat.',
     none: 'No supported memory action, or a negated/hypothetical/quoted instruction. Do not change memory or start work.',
   }),

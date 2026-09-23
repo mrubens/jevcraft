@@ -375,7 +375,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       const stopThinking = literal || active ? () => {} : thinking(bot);
       const spec = literal ? { kind: 'operator_command' } : await interpret(requestClient, request, from, bot.username, {
         registry: bot.registry, players: Object.keys(bot.players),
-        ...requestPosition, memory: memory.context(from),
+        ...requestPosition, memory: { ...memory.context(from), found: require('./exploration').foundEntries(world.known) },
         builds: builds.describe(bot, bot.entity.position, bot.game.dimension),
         continueBuilds: (request, candidates) => resolveBuildContinuation(requestClient, request, candidates,
           { speaker: requestPosition.speakerPosition }),
@@ -423,7 +423,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         return;
       }
       if (spec.kind === 'memory') {
-        bot.chat(memory.handle(spec));
+        bot.chat(memory.handle(spec, { world: world.known }));
         if (active?.goal.from === from) active.goal.memoryContext = memory.context(from);
         observation?.sample('memory', { operation: spec.memory.operation });
         return;

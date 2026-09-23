@@ -1,6 +1,6 @@
 'use strict';
 const { DAY } = require('./day');
-const { barterReady } = require('./bartering');
+const { barterReady, goldOnHand, bastionKnown } = require('./bartering');
 const { isSetAside, setAside, attemptsFor } = require('./progress');
 const { homeStage, bedCarried, woolCarried, homeOf } = require('./home-base');
 const { restockStage, rungWants } = require('./home-stash');
@@ -225,6 +225,9 @@ function nextGameStage(bot, goal) {
   // Short of pearls with gold on hand and a piglin in view: barter before
   // going back. The enderman hunt in the Overworld is the other way.
   if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && barterReady(bot, goal)) return { phase: 'obtain_ender_pearls', action: 'barter', item: 'ender_pearl', count: target - eyes };
+  // No gold to throw, and a bastion remembered: its gold blocks first.
+  if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && !goldOnHand(bot) && bastionKnown(bot, goal) && !isSetAside(goal, 'rung', 'bastion_gold'))
+    return { phase: 'obtain_ender_pearls', action: 'bastion_gold', item: 'gold_ingot' };
   if (where === 'nether') return { phase: 'return_with_blaze_supplies', action: 'return_overworld' };
   if (where !== 'overworld') return { phase: 'unknown_dimension', action: 'unsupported_dimension' };
   // TODO: a cleric villager sells ender pearls for emeralds; with a village

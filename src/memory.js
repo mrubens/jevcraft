@@ -118,8 +118,9 @@ class CompanionMemory {
     this.state.forgottenPreferences = this.state.forgottenPreferences.slice(-256);
     this.flush(); return count;
   }
-  handle(spec) {
-    const { operation, label, location, note, targetId, replaceId } = spec.memory;
+  handle(spec, { world } = {}) {
+    const { operation, label, location, note, targetId, replaceId, found } = spec.memory;
+    if (found) return `The ${found.label} I found is at ${found.position.x}, ${found.position.y}, ${found.position.z} in the ${found.dimension}.`;
     const from = spec.from;
     if (operation === 'remember_place') {
       const place = this.rememberPlace(from, label, location.position, location.dimension);
@@ -129,10 +130,11 @@ class CompanionMemory {
     if (operation === 'forget') return this.forget(from, targetId) ? "I've forgotten that." : "I couldn't find that in your notes.";
     const context = this.context(from), entries = [...context.places, ...context.notes, ...context.history, ...context.preferences];
     if (targetId === 'all') {
-      if (!entries.length) return "I haven't saved anything for you yet. Try: Jev remember this as home.";
+      const explored = world ? ` ${require('./exploration').foundSentence(world)}` : '';
+      if (!entries.length) return text(`I haven't saved anything for you yet. Try: Jev remember this as home.${explored}`);
       const labels = context.places.slice(-3).map(e => e.label);
       const latest = context.notes.at(-1)?.note;
-      return text(`I remember ${context.places.length} places, ${context.notes.length} notes, ${context.preferences.length} learned preferences, and ${context.history.length} tasks.${labels.length ? ` Places: ${labels.join(', ')}.` : ''}${latest ? ` Latest note: ${latest}` : ''}`);
+      return text(`I remember ${context.places.length} places, ${context.notes.length} notes, ${context.preferences.length} learned preferences, and ${context.history.length} tasks.${labels.length ? ` Places: ${labels.join(', ')}.` : ''}${latest ? ` Latest note: ${latest}` : ''}${explored}`);
     }
     const entry = entries.find(e => e.id === targetId);
     if (!entry) return "I don't remember that yet.";
@@ -155,7 +157,7 @@ async function visitPlace(bot, task, goal, save, { navigate, boatTravel }) {
   if (bot.entity.position.distanceTo(target) <= 3) return true;
   goal.step = { action: 'visit', label: place.label, position: p, dimension: place.dimension }; save();
   if (boatTravel && await boatTravel(target)) return false;
-  await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2), { timeoutMs: 60000, stallMs: 6000 });
+  await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2), { timeoutMs: 60000, stallMs: 6000, sprint: true });
   task.check(); return bot.entity.position.distanceTo(target) <= 3;
 }
 

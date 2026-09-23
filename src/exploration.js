@@ -185,7 +185,7 @@ async function exploreStep(bot, task, goal, save, { navigate, home, noticeVillag
   const start = bot.entity.position.clone();
   goal.step = { action: 'explore', area: target.key, target: { x: Math.round(target.x), z: Math.round(target.z) }, distance: target.fromHere, known: explorationSummary(goal, dimensionOf(bot)) };
   save();
-  try { await navigate(bot, task, new goals.GoalNearXZ(target.x, target.z, 12), { timeoutMs: LEG_MS, stallMs: 8000 }); }
+  try { await navigate(bot, task, new goals.GoalNearXZ(target.x, target.z, 12), { timeoutMs: LEG_MS, stallMs: 8000, sprint: true }); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   const gained = Math.hypot(target.x - start.x, target.z - start.z) - Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z);
   noticeLandmarks(bot, goal, save, { force: true });
@@ -197,4 +197,50 @@ async function exploreStep(bot, task, goal, save, { navigate, home, noticeVillag
   return arrived || gained >= 8;
 }
 
-module.exports = { AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };
+// A trip to the nearest remembered landmark of the given kinds, in order of
+// preference: one leg of up to two minutes, sprinting while food allows.
+// A landmark the walk makes no ground toward rests half an hour. Returns
+// the landmark when the bot is within `arrive` of it, false while on the way,
+// and null when there is none to go to.
+async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 512, arrive = 12, filter = () => true } = {}) {
+  let choice = null;
+  for (const kind of kinds) {
+    choice = knownLandmarks(bot, goal, kind, reach).find(k => filter(k.landmark) && !isSetAside(goal, 'landmark_trip', `${k.landmark.kind}:${k.landmark.x},${k.landmark.z}`));
+    if (choice) break;
+  }
+  if (!choice) return null;
+  const { landmark } = choice, key = `${landmark.kind}:${landmark.x},${landmark.z}`;
+  if (choice.distance <= arrive) return landmark;
+  const before = choice.distance;
+  goal.step = { action: 'go_to_landmark', kind: landmark.kind, target: { x: landmark.x, y: landmark.y, z: landmark.z }, distance: before }; save();
+  try { await navigate(bot, task, new goals.GoalNearXZ(landmark.x, landmark.z, Math.max(2, arrive - 4)), { timeoutMs: 120000, stallMs: 8000, sprint: true }); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  const after = Math.hypot(landmark.x - bot.entity.position.x, landmark.z - bot.entity.position.z);
+  if (after <= arrive) return landmark;
+  if (before - after < 8) { setAside(goal, 'landmark_trip', key, 'the walk there made no ground', 1800000); save(); }
+  return false;
+}
+
+// What the bot has found, in a sentence: for "what have you found?".
+function foundSentence(known = {}, where = 'overworld') {
+  const villages = (known.villages || []).filter(v => v.dimension === where);
+  const landmarks = (known.landmarks || []).filter(l => l.dimension === where);
+  const areas = Object.keys(known.explored || {}).filter(k => k.startsWith(`${where}:`)).length;
+  if (!villages.length && !landmarks.length) return areas ? `I've walked ${areas} areas and found nothing worth remembering yet.` : "I haven't explored yet.";
+  const counts = {};
+  for (const l of landmarks) counts[l.kind] = (counts[l.kind] || 0) + 1;
+  const parts = [...(villages.length ? [`${villages.length} village${villages.length === 1 ? '' : 's'}`] : []),
+    ...Object.entries(counts).map(([kind, n]) => `${n} ${phrase(kind)}${n === 1 ? '' : 's'}`)];
+  return `I've walked ${areas} areas and found ${parts.join(', ')}.`;
+}
+
+// The findings as memory entries for chat: recalled ("what have you
+// found?", "where is the nearest village?") and visited ("go to the
+// village"). They are the world's, not a player's, so they are never forgotten.
+function foundEntries(known = {}) {
+  const villages = (known.villages || []).map(v => ({ kind: 'village', x: v.x, y: v.y, z: v.z, dimension: v.dimension, firstAt: v.seenAt }));
+  return [...villages, ...(known.landmarks || [])].map(l => ({ kind: l.kind, label: phrase(l.kind), position: { x: l.x, y: l.y, z: l.z },
+    dimension: l.dimension, firstAt: l.firstAt }));
+}
+
+module.exports = { foundEntries, goToLandmark, foundSentence, AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };
