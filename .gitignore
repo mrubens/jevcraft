@@ -22,4 +22,6 @@ artifacts/
 .test-fresh-nether/
 .test-fresh-concrete/
 .test-acceptance/
+.test-replay/
+.geyser/
 .test-endgame/
