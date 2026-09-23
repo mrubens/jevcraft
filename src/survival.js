@@ -482,6 +482,12 @@ class Survival {
     const bot = this.bot;
     const kinds = [...new Set(danger.map(t => t.entity.name))].sort().join(',');
     const options = this.stanceOptions(task, goal, save, danger, swung);
+    // A stance that just failed against these mobs is not offered again for
+    // twenty seconds: the clean run's pillar, knocked off by four zombies,
+    // was chosen again each tick, the rules fought between, and the bot went
+    // pillar, fight, pillar, defend, off the edge, fight, flee, and died.
+    const failed = this.state.stanceFailed;
+    if (failed && failed.kinds === kinds && Date.now() - failed.at < 20000) delete options[failed.choice];
     const held = this.state.stance;
     const holding = held && held.kinds === kinds && Date.now() - held.at < 15000 && bot.health > held.health - 6;
     // Unsure last time: the rules keep this encounter for the hold too. Asked
@@ -509,7 +515,7 @@ class Survival {
     }
     if (!/^shoot_/.test(choice)) lowerShield(bot);
     const done = await options[choice].run();
-    if (!done) { delete this.state.stance; return false; }
+    if (!done) { delete this.state.stance; this.state.stanceFailed = { choice, kinds, at: Date.now() }; return false; }
     return true;
   }
 

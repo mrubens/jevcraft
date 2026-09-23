@@ -1441,3 +1441,18 @@ test('sealing beside a drop places with stay, so the bot never steps off the led
   assert(options.length > 0);
   assert(options.every(o => o?.stay === true), JSON.stringify(options.slice(0, 2)));
 });
+
+test('a stance that failed is not offered again against the same mobs for twenty seconds', async () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, health: 20, food: 20,
+    inventory: { items: () => [], slots: {} }, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const ran = [], trees = [];
+  survival.stanceOptions = () => ({ pillar: { description: 'up', run: async () => { ran.push('pillar'); return false; } },
+    fight: { description: 'fight', run: async () => { ran.push('fight'); return true; } }, seal: { description: 'seal', run: async () => true } });
+  survival.decide = async (task, goal, save, q) => { trees.push(Object.keys(q.tree)); return { path: [q.tree.pillar ? 'pillar' : 'fight'] }; };
+  const danger = [{ entity: { name: 'zombie' }, distance: 2 }];
+  assert.equal(await survival.stanceStep(new Task('pack'), {}, () => {}, danger, false), false, 'knocked off the pillar');
+  assert.equal(await survival.stanceStep(new Task('pack'), {}, () => {}, danger, false), true);
+  assert.deepEqual(ran, ['pillar', 'fight']);
+  assert(!trees[1].includes('pillar'), `the failed pillar was not offered again: ${trees[1]}`);
+});
