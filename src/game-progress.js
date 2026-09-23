@@ -377,7 +377,12 @@ async function gameStep(bot, task, goal, save, actions) {
     // Wolves sit here: they attack what the bot hits, and the far side is
     // zombified piglins and endermen.
     if (['enter_nether', 'enter_end'].includes(stage.action) && actions.wolves) await actions.wolves(bot, task, goal, save, true);
-    if (stage.action === 'enter_nether' && actions.stash_valuables && !await actions.stash_valuables(bot, task, goal, save)) return false;
+    // At home past the ladder, valuables go in whatever comes next, not
+    // only before the Nether: the dream run walked a day with sixty lapis,
+    // thirty-six raw iron and nineteen ingots, and after the kit restore was
+    // stopped a death took all of it. The keepsakes' keeps hold back what
+    // the stage spends (pearls, rods, eyes, the diamonds before the pickaxe).
+    if (actions.stash_valuables && !await actions.stash_valuables(bot, task, goal, save)) return false;
     if (stage.action === 'enter_nether' && actions.food_reserve && !await actions.food_reserve(bot, task, goal, save)) return false;
     if (stage.action === 'enter_nether' && actions.prepare_combat && !await actions.prepare_combat(bot, task, goal, save)) return false;
     // Home too far to walk them back to: a chest on the spot, once the

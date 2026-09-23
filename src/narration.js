@@ -120,7 +120,7 @@ function stepLine(goal, step, decision) {
     case 'place_chest': return 'Putting a chest beside the bed for a spare kit.';
     case 'stock_stash': return 'Stocking the stash chest with spares.';
     case 'restock': return 'Taking my spare kit out of the stash chest.';
-    case 'stash_valuables': return 'Leaving my valuables in the stash chest before the Nether.';
+    case 'stash_valuables': return 'Leaving my valuables in the stash chest while I am home.';
     case 'idle': return {
       cook_food: `Quiet for now, so I'll cook the ${name(step.item).replace(/^(cooked|baked) /, '')}.`,
       stone_tools: `Quiet for now, so I'll make a ${name(step.item)}.`,

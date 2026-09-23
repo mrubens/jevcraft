@@ -240,7 +240,7 @@ test('the idle loop offers stocking the stash beside the farm chores, and each s
   const options = idleOptions(w.bot, { ...w.goal, kind: 'survive' });
   assert.match(options.stock_stash.description, /kit: 1 stone pickaxe, 8 oak log, and to keep for later: 4 oak log/, 'the chest holds eight kit logs and the four over eight as a keepsake');
   for (const [step, pattern] of [[{ action: 'place_chest' }, /chest beside the bed/], [{ action: 'stock_stash' }, /Stocking the stash chest/], [{ action: 'restock' }, /spare kit out of the stash/],
-    [{ action: 'stash_valuables' }, /valuables in the stash chest before the Nether/], [{ action: 'idle', choice: 'stock_stash' }, /stock the stash chest/], [{ action: 'game_progression', phase: 'home_restock' }, /home restock/]]) {
+    [{ action: 'stash_valuables' }, /valuables in the stash chest while I am home/], [{ action: 'idle', choice: 'stock_stash' }, /stock the stash chest/], [{ action: 'game_progression', phase: 'home_restock' }, /home restock/]]) {
     assert.match(stepLine({}, step), pattern);
   }
   const said = [], bot = { chat: line => said.push(line) };
@@ -345,4 +345,26 @@ test('a restock makes room before it opens the chest, and a restock that takes n
   w2.goal.survival.home.stash.contents = { iron_pickaxe: 1 };
   assert.deepEqual(await stash.restockFromStash(w2.bot, new Task('restock'), w2.goal, w2.save, w2.goal.survival.home, w2.actions), []);
   assert(require('../src/progress').isSetAside(w2.goal, 'restock_item', 'iron_pickaxe'), 'the chest is not opened again for it at the next step');
+});
+
+test('at home past the ladder, valuables go in before any later stage, not only the Nether', async () => {
+  const gear = [['white_bed', 1], ['iron_pickaxe', 1], ['shield', 1], ['water_bucket', 1], ['oak_log', 8], ['cobblestone', 64], ['cooked_beef', 4], ['crafting_table', 1], ['furnace', 1],
+    ['iron_helmet', 1], ['iron_chestplate', 1], ['iron_leggings', 1], ['iron_boots', 1], ['golden_boots', 1], ['bow', 1], ['arrow', 16], ['diamond_sword', 1], ['diamond_pickaxe', 1],
+    ['blaze_rod', 8], ['ender_pearl', 1], ['diamond', 5], ['lapis_lazuli', 60], ['raw_iron', 36]];
+  const w = await establishedHome({ items: gear });
+  const { bot, goal, save, actions } = w;
+  const chest = chestAt(w, []);
+  // The warped forest resting: the pearl patrol is next, in the Overworld.
+  require('../src/progress').setAside(goal, 'rung', 'warped_pearls', 'resting', 600000);
+  const stage = nextGameStage(bot, goal).action;
+  assert.equal(stage, 'pearl_patrol');
+  const ran = [];
+  const handlers = { stash_valuables: (b, t, g, s) => stash.stashValuables(b, t, g, s, actions), [stage]: async () => { ran.push(stage); } };
+  assert.equal(await gameStep(bot, new Task('win'), goal, save, handlers), false);
+  assert.deepEqual(ran, [], `the stash came before ${stage}`);
+  const stored = chest.stored();
+  assert.equal(stored.diamond, 5); assert.equal(stored.lapis_lazuli, 60); assert(stored.raw_iron >= 28, JSON.stringify(stored));
+  assert(!stored.blaze_rod && !stored.ender_pearl, 'the supplies the eyes need stay in the pockets');
+  await gameStep(bot, new Task('win'), goal, save, handlers);
+  assert.deepEqual(ran, [stage]);
 });
