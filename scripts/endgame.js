@@ -214,7 +214,9 @@ bot.once('spawn', async () => {
   try {
     await bot.waitForChunksToLoad();
     configureMovements(bot);
-    await commands([`op ${username}`, 'difficulty normal', `gamemode spectator ${audience}`]);
+    // A run that ended mid-air (the dragon's knockback) rejoins there: slow
+    // falling for the setup, or the next drill dies before its first step.
+    await commands([`op ${username}`, `effect give ${username} minecraft:slow_falling 8 0 true`, 'difficulty normal', `gamemode spectator ${audience}`]);
     for (const name of drills) {
       if (!DRILLS[name]) throw new Error(`Unknown drill ${name}`);
       died = false;
