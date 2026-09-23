@@ -2789,6 +2789,8 @@ function gameHandlers(bot, decisionClient) {
             tunnel: (b2, t2, g2, sv2, target) => tunnelStep(b2, t2, g2, sv2, target, { dig, navigate }) }, stage || goal.step),
         // Wolves sit before a crossing and stand again after (wolves.js).
         wolves: (bot, task, goal, save, sit) => require('./wolves').commandWolves(bot, task, goal, save, sit),
+        // Back for a death's drops (corpse-run.js).
+        corpse_run: (bot, task, goal, save) => require('./corpse-run').corpseRunStep(bot, task, goal, save, { move: navigate }),
         // A chest on the spot when home is too far (field-cache.js).
         cache_valuables: (bot, task, goal, save) => require('./field-cache').cacheValuables(bot, task, goal, save, homeActions()),
         take_cache: async (bot, task, goal, save) => {

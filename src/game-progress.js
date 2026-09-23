@@ -332,6 +332,9 @@ async function gameStep(bot, task, goal, save, actions) {
   if (bot.game.gameMode !== 'survival') throw Object.assign(new Error('The game-completion task requires Survival mode'), { name: 'Blocked' });
   const progress = observeProgress(bot, goal);
   let stage = nextGameStage(bot, goal);
+  // Back for what the last death dropped, before anything else: close to
+  // the respawn its drops have five minutes (corpse-run.js).
+  if (actions.corpse_run && stage.phase !== 'complete' && await actions.corpse_run(bot, task, goal, save)) return false;
   // Strategy: which of the open rungs, or a side trip, is Jev's to choose
   // (strategy.js). A side trip that ran is this step's work.
   if (actions.strategy && stage.phase !== 'complete') {
