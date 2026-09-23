@@ -246,4 +246,94 @@ async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
   } finally { Object.assign(movement, saved); }
 }
 
-module.exports = { reachShore, digToShore, notchOut, stepOut };
+// Open sea with no ground in sight. The dream run's night tunnel came up
+// under a cold ocean, and the bot stood on its own pillar searching for oak
+// logs 233 times: every survey found only the sea floor, and the taiga it
+// had walked the day before lay a hundred blocks west. A player swims for
+// the land they remember. The nearest explored area of a land biome (home
+// if there is none), swum to at the surface until ground comes into view;
+// the search then walks onto it like any other.
+const SEA_BIOME = /ocean|river/;
+const SWIM_MS = 180000, SEGMENT_MS = 2000, LAND_IDS = ['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'mycelium', 'moss_block', 'stone',
+  'granite', 'diorite', 'andesite', 'sand', 'red_sand', 'gravel', 'sandstone', 'snow_block', 'clay', 'mud'];
+
+function atSea(bot) {
+  const feet = bot.entity.position.floored();
+  let water = 0;
+  for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) {
+    if (/water/.test(bot.blockAt(feet.offset(dx, 0, dz))?.name || '') || /water/.test(bot.blockAt(feet.offset(dx, -1, dz))?.name || '')) water++;
+  }
+  return water >= 40;
+}
+
+// Dry ground to stand on in view, away from where the crossing began (the
+// bot's own pillar is dry ground too).
+function landInView(bot, reach, away = null) {
+  const ids = LAND_IDS.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
+  return bot.findBlocks({ matching: ids, maxDistance: reach, count: 1,
+    useExtraInfo: b => { const p = b.position.offset(0, 1, 0); return (!away || p.distanceTo(away) > 6) && dryStanding(bot, p); } })[0] || null;
+}
+
+function knownLand(bot, goal) {
+  const { isSetAside } = require('./progress');
+  const here = bot.entity.position;
+  const AREA = 64, found = [];
+  for (const [key, area] of Object.entries(goal.explored || {})) {
+    const [where, cell] = key.split(':');
+    if (where !== 'overworld' || !area.biome || SEA_BIOME.test(area.biome) || isSetAside(goal, 'cross_sea', key)) continue;
+    const [ax, az] = cell.split(',').map(Number);
+    found.push({ key, biome: area.biome.replace(/_/g, ' '), x: ax * AREA + AREA / 2, z: az * AREA + AREA / 2 });
+  }
+  const home = goal.survival?.home;
+  if (home?.origin && /overworld/.test(home.dimension || 'overworld') && !isSetAside(goal, 'cross_sea', 'home')) found.push({ key: 'home', biome: 'home', x: home.origin.x, z: home.origin.z });
+  const flat = p => Math.hypot(p.x - here.x, p.z - here.z);
+  // Not the area the bot is floating in: its biome was read on the beach.
+  return found.filter(p => flat(p) > 24).sort((a, b) => flat(a) - flat(b))[0] || null;
+}
+
+async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs = SWIM_MS } = {}) {
+  const { inWater } = require('./survival');
+  const { setAside } = require('./progress');
+  if (!/overworld/.test(String(bot.game?.dimension || 'overworld')) || !atSea(bot)) return false;
+  const start = bot.entity.position.clone();
+  if (landInView(bot, 48, start)) return false;
+  const target = knownLand(bot, goal);
+  if (!target) return false;
+  const flat = () => Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z);
+  goal.step = { action: 'cross_sea', toward: { x: target.x, z: target.z }, land: target.biome, from: { ...start.floored() } }; save();
+  const heading = Math.abs(target.x - start.x) > Math.abs(target.z - start.z) ? (target.x < start.x ? 'west' : 'east') : (target.z < start.z ? 'north' : 'south');
+  bot.chat?.(target.key === 'home' ? `No land in sight. Swimming for home, ${Math.round(flat())} blocks ${heading}.`
+    : `No land in sight. Swimming for the ${target.biome} I walked, ${Math.round(flat())} blocks ${heading}.`);
+  // Off the pillar and into the sea: the nearest open water toward the land.
+  if (!inWater(bot)) {
+    const feet = start.floored(), cells = [];
+    for (let dx = -5; dx <= 5; dx++) for (let dz = -5; dz <= 5; dz++) for (const dy of [0, -1]) {
+      const c = feet.offset(dx, dy, dz);
+      if (/water/.test(bot.blockAt(c)?.name || '') && bot.blockAt(c.offset(0, 1, 0))?.boundingBox === 'empty' && !/water/.test(bot.blockAt(c.offset(0, 1, 0))?.name || '')) cells.push(c);
+    }
+    cells.sort((a, b) => (Math.hypot(a.x - target.x, a.z - target.z) + a.distanceTo(feet)) - (Math.hypot(b.x - target.x, b.z - target.z) + b.distanceTo(feet)));
+    if (!cells.length) { setAside(goal, 'cross_sea', target.key, 'no open water to swim from', 10 * 60000); save(); return false; }
+    try { await navigate(bot, task, new goals.GoalNear(cells[0].x, cells[0].y, cells[0].z, 1), { timeoutMs: 20000, stallMs: 6000, stopWhen: () => inWater(bot) }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    if (!inWater(bot)) { setAside(goal, 'cross_sea', target.key, 'could not get into the water', 10 * 60000); save(); return false; }
+  }
+  const began = Date.now(), before = flat();
+  let stuck = 0;
+  while (Date.now() - began < swimMs) {
+    task.check(); checkAir(bot);
+    if (landInView(bot, 24, start)) break;
+    if (flat() < 8) { setAside(goal, 'cross_sea', target.key, 'swum there and found only water', 60 * 60000); save(); break; }
+    const was = bot.entity.position.clone();
+    await motion(bot, task, { label: 'swim_for_land', keys: ['forward', 'jump'], sneak: false, why: 'swimming for the land remembered',
+      look: new Vec3(target.x, bot.entity.position.y + 1.6, target.z), maxMs: segmentMs, tick: 50 });
+    const moved = Math.hypot(bot.entity.position.x - was.x, bot.entity.position.z - was.z);
+    // Ice over the sea, a wall of rock: three segments without a block of
+    // headway and the swim is over for now.
+    if (moved < 1 && ++stuck >= 3) { setAside(goal, 'cross_sea', target.key, 'no headway swimming', 10 * 60000); save(); break; }
+    if (moved >= 1) stuck = 0;
+  }
+  goal.step = { ...goal.step, swum: Math.round(before - flat()), landInView: !!landInView(bot, 24, start) }; save();
+  return before - flat() >= 4 || !!goal.step.landInView;
+}
+
+module.exports = { reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView };

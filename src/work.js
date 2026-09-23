@@ -586,6 +586,12 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
         }
       }
     }
+    // Nothing but sea within the survey: swim for the land remembered.
+    if (!destination && !land.length && surfaceOnly) {
+      const { crossSea } = require('./shore');
+      surface?.restore();
+      if (await crossSea(bot, task, goal, save)) return;
+    }
     if (!destination && await descendCanopy(bot, task, goal, save)) return;
     if (!destination && await descendPillar(bot, task, goal, save)) return;
     if (!destination) { search.leg++; save(); throw new Error(`No reachable surveyed ground while searching for ${resource}`); }

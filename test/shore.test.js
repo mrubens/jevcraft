@@ -135,3 +135,47 @@ test('a bank of stone that would take long to dig from the water is not cut: tha
   bot.digTime = () => 10000;
   assert.equal(await notchOut(bot, new Task('lake'), {}, () => {}), false);
 });
+
+// Open sea for two hundred blocks round (0, 62, 0), a taiga walked the day
+// before to the west, and the bot on the sea floor's pillar with no ground
+// in sight: it swims west, not searching the sea floor again.
+function sea() {
+  const { Vec3 } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  const block = (p, name) => ({ position: p, name, type: registry.blocksByName[name]?.id, boundingBox: /air|water/.test(name) ? 'empty' : 'block' });
+  const nameAt = p => p.x < -60 ? (p.y <= 62 ? 'grass_block' : 'air') : p.y <= 55 ? 'stone' : p.y <= 62 ? 'water' : 'air';
+  const bot = { registry, game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 62.2, 0.5), isInWater: true, onGround: false },
+    oxygenLevel: 20, controlState: {}, said: [], looks: [],
+    blockAt: p => { const f = p.floored(); return block(f, nameAt(f)); },
+    findBlocks({ maxDistance, useExtraInfo }) {
+      // The shore at x = -61, in view only once the bot is within reach.
+      const shore = new Vec3(-61, 62, Math.floor(bot.entity.position.z));
+      return bot.entity.position.x - shore.x <= maxDistance && useExtraInfo(block(shore, 'grass_block')) ? [shore] : [];
+    },
+    lookAt: async p => { bot.looks.push(p); }, chat: m => bot.said.push(m),
+    getControlState: k => !!bot.controlState[k],
+    setControlState(k, v) { bot.controlState[k] = v; if (k === 'forward' && v) bot.entity.position = bot.entity.position.offset(-10, 0, 0); },
+  };
+  const goal = { explored: { 'overworld:0,0': { biome: 'cold_ocean' }, 'overworld:-2,0': { biome: 'taiga' }, 'overworld:3,3': { biome: 'forest' } } };
+  return { bot, goal };
+}
+
+test('at sea with no ground in sight, the bot swims for the nearest land it has walked', async () => {
+  const { crossSea } = require('../src/shore');
+  const { bot, goal } = sea();
+  assert.equal(await crossSea(bot, new Task('wood'), goal, () => {}, { segmentMs: 30 }), true);
+  assert.equal(goal.step.action, 'cross_sea');
+  assert.equal(goal.step.land, 'taiga');
+  assert.match(bot.said[0], /taiga.*west/);
+  assert(bot.looks.some(p => p.x < -90), 'looking west while swimming');
+  assert(bot.entity.position.x < -20, `swum west: ${bot.entity.position.x}`);
+  assert.equal(goal.step.landInView, true);
+});
+
+test('with ground in sight, or nothing remembered, the sea crossing leaves it to the ordinary search', async () => {
+  const { crossSea } = require('../src/shore');
+  const near = sea(); near.bot.entity.position.x = -20;
+  assert.equal(await crossSea(near.bot, new Task('wood'), near.goal, () => {}, { segmentMs: 30 }), false, 'the shore is in view');
+  const blank = sea(); blank.goal.explored = { 'overworld:0,0': { biome: 'cold_ocean' } };
+  assert.equal(await crossSea(blank.bot, new Task('wood'), blank.goal, () => {}, { segmentMs: 30 }), false, 'no land known');
+});
