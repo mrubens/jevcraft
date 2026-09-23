@@ -417,6 +417,11 @@ async function waitFor(task, predicate, timeout = 3000) {
 }
 
 async function standAt(bot, task, actions, p, range = 0) {
+  // Already within reach of the cell: no walk. Standing on farmland (a
+  // block less a sixteenth) the bot's feet floor into the farmland itself,
+  // the pathfinder cannot start from inside a block, and the dream run
+  // failed that walk a hundred and eight times planting its own plot.
+  if (range && bot.entity.position.distanceTo(new Vec3(p.x + 0.5, p.y, p.z + 0.5)) <= range + 1) return;
   const goal = range ? new goals.GoalNear(p.x, p.y, p.z, range) : new goals.GoalBlock(p.x, p.y, p.z);
   await actions.navigate(bot, task, goal, { timeoutMs: 30000, stallMs: 8000 });
 }

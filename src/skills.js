@@ -386,7 +386,13 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
       if (Date.now() >= landingDeadline) throw new Error('Navigation ended without safe footing');
       await sleep(50);
     }
-    if (!acquired && goal.isEnd && !goal.isEnd(bot.entity.position.floored())) {
+    // Standing on farmland, a slab or soul sand the feet floor into the
+    // block itself; the pathfinder's own cell is the one above it. Judged by
+    // the floor alone, the dream run's walks on its own plot all "ended
+    // short", a hundred and eight times in seven minutes.
+    const feet = bot.entity.position.floored(), under = bot.blockAt?.(feet);
+    const standing = bot.entity.position.y - feet.y > 0.001 && bot.entity.onGround !== false && under?.boundingBox === 'block' ? feet.offset(0, 1, 0) : feet;
+    if (!acquired && goal.isEnd && !goal.isEnd(feet) && !goal.isEnd(standing)) {
       // Walks that keep ending short with gap jumps on: the jumps go off for
       // five minutes (movement.js). The live run jumped at the same gap and
       // fell back, twenty-three short walks in a row, on its way to a portal.
