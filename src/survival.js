@@ -75,6 +75,10 @@ function lavaBeside(bot, p) {
 // the pool beside it at eight health, and it "held a defensive position"
 // in the lava four times until it burned. The nearest cell with a floor,
 // air for the body and no lava in it, forward and jumping at it.
+// Phantoms spawn over a player awake for three in-game days (72000 ticks).
+const SLEEP_DEBT_TICKS = 48000;
+const worldAge = bot => Number(bot.time?.age);
+
 const inLava = bot => !!bot.entity?.isInLava || [0, 1].some(dy => bot.blockAt(bot.entity.position.floored().offset(0, dy, 0))?.name === 'lava');
 const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(bot.entity.position.floored())?.name === 'water';
 function lavaExit(bot) {
@@ -819,7 +823,17 @@ class Survival {
     }
     if (!slept) throw new Error(this.state.lastSleepError || 'The night did not pass in bed');
     attemptsFor(this).clear('sleep', 'bed'); delete this.state.nightPlan;
+    this.state.sleptAtAge = worldAge(bot);
     this.report(goal, save, { action: 'leave_shelter', reason: 'Morning. Back to it.' });
+  }
+
+  // Ticks awake since the last sleep, counted from the first time the bot
+  // looked if it has never slept. Two in-game days is the limit.
+  sleepDebt() {
+    const age = worldAge(this.bot);
+    if (!Number.isFinite(age)) return false;
+    this.state.sleptAtAge ??= age;
+    return age - this.state.sleptAtAge > SLEEP_DEBT_TICKS;
   }
 
   // A night in a pocket was a night standing still: eleven minutes behind a
@@ -1138,7 +1152,10 @@ class Survival {
       foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: desiredFood, hungerMaximum: 20, starvationAt: 0,
         requiredBeforeExpedition: !!expeditionFood } };
     const armed = kitReady(bot);
-    const canStayUp = night(bot) && needsShelter && bedReady && armed;
+    // Phantoms come for a player who has not slept in three nights. After
+    // two nights awake (sealed in, night mining, staying up), staying up is
+    // off the table while a bed is on offer.
+    const canStayUp = night(bot) && needsShelter && bedReady && armed && !this.sleepDebt();
     const tree = (night(bot) && needsShelter && !canStayUp) || (expeditionFood && needsFood) ? {} : {
       continue_request: { description: canStayUp ? 'Stay up tonight, armed and armoured, and keep working the request outside: spiders and the other night mobs are what a hunt for string needs, and the bed is one action away whenever the night has nothing more to give. Two minutes at a time, then this question again.'
         : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
@@ -1180,4 +1197,4 @@ class Survival {
   }
 }
 
-module.exports = { Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

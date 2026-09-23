@@ -1011,3 +1011,21 @@ test('a reserve top-up once chosen is held: "get food or carry on" is not asked 
   assert.deepEqual(offered[0], ['continue_request', 'obtain_food'], 'asked once');
   assert(offered.slice(1).every(keys => !keys.includes('continue_request')), `then held: ${JSON.stringify(offered)}`);
 });
+
+test('after two nights awake, staying up is off the table while a bed is on offer: phantoms come on the third', async () => {
+  const { Survival, SLEEP_DEBT_TICKS } = require('../src/survival');
+  const seen = [];
+  const make = () => Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000, age: 100000 },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' }, 45: { name: 'shield' } } }, heldItem: { name: 'iron_sword' },
+    blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
+  const bot = make();
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => ({}) } });
+  survival.decide = async (task, goal, save, { tree }) => { seen.push(Object.keys(tree).sort()); return { path: ['sleep_in_bed'], action: { run: async () => {} }, stale: false }; };
+  survival.sleepStep = async () => {};
+  await survival.step(new Task('t', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
+  bot.time.age += SLEEP_DEBT_TICKS + 1;
+  await survival.step(new Task('t', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert.deepEqual(seen[0], ['continue_request', 'sleep_in_bed'], 'rested: staying up is a choice');
+  assert.equal(seen.length, 1, 'two nights awake: only the bed, taken without asking');
+});
