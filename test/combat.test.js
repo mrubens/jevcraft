@@ -151,3 +151,20 @@ test('a swing jumps for a critical hit when it safely can, and swings plainly un
   const c = make(); c.zombie.name = 'creeper';
   assert.equal(critReady(c.bot, c.zombie), false, 'never at a creeper');
 });
+
+test('a crit jump that comes down out of reach is not tried again at that mob: the next swings are plain', async () => {
+  const { strike } = require('../src/combat');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0.5, 10, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, entities: {}, controlState: {}, attacks: [],
+    blockAt: p => p.y < 10 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }, lookAt: async () => {},
+    attack() { this.attacks.push('hit'); }, world: { raycast: () => null },
+    // The jump lands a step up the stair, out of the zombie's reach.
+    setControlState(k, v) { this.controlState[k] = v; if (k === 'jump' && v) { setTimeout(() => { this.entity.onGround = false; this.entity.velocity = new Vec3(0, 0.4, 0); }, 20);
+      setTimeout(() => { this.entity.velocity = new Vec3(0, -0.2, 0); this.entity.position = new Vec3(0.5, 14, 0.5); }, 60); setTimeout(() => { this.entity.onGround = true; }, 90); } } };
+  const zombie = { id: 7, name: 'zombie', position: new Vec3(2, 10, 0.5), height: 1.95, width: 0.6, isValid: true };
+  bot.entities[7] = zombie;
+  assert.equal(await strike(bot, new Task('stairs'), zombie), 'missed');
+  bot.entity.position = new Vec3(0.5, 10, 0.5);
+  assert.equal(await strike(bot, new Task('stairs'), zombie), 'plain', 'no second jump at the same zombie');
+  assert.deepEqual(bot.attacks, ['hit']);
+});

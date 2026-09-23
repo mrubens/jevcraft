@@ -276,6 +276,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 111. *An hour on the first rung with two diamond pickaxes.* The ladder counts a tool spent below a fifth of its durability; a fifth of a diamond pickaxe is three hundred uses, so at two hundred and two each Jev's pair counted as nothing and the stone-pickaxe rung came round again. The stone one it made went straight back on the ground, because the full-pockets tidy dropped the spare tool before the forty-six nether brick fences on the junk list. A tool is sound now at a fifth or sixty-four uses, whichever is less, and room is made from junk before tools.
 
+112. *Death on the stairs, 2026-09-23 07:29 UTC (replay server).* A zombie followed the gold staircase down and hit for 1.38 through iron once a second for fourteen seconds; the bot "fought" the whole time and never landed a swing. The flight recorder showed its height bouncing 38, 39, 40: every swing began with the jump for a critical, the jump landed a step up the stair, the zombie below was out of reach and the swing came back "missed". A crit jump that comes down out of reach is not tried again at that mob for eight seconds; the swings are plain. Kit restored by the aid, labelled.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

@@ -104,8 +104,14 @@ function critReady(bot, target) {
   if (!head || head.boundingBox !== 'empty' || /water|lava/.test(head.name)) return false;
   return !besideDrop(bot, feet);
 }
+// A jump that came down out of reach is not tried again at the same mob for
+// a while: on a staircase the jump lands a step up, the zombie below is out
+// of reach, and the dream run died jumping on its stairs for fourteen
+// seconds while a zombie hit it every second and not one swing landed.
+const CRIT_MISS_MS = 8000;
 async function strike(bot, task, target) {
-  if (critReady(bot, target)) {
+  const missed = bot._critMiss && bot._critMiss.id === target.id && Date.now() - bot._critMiss.at < CRIT_MISS_MS;
+  if (!missed && critReady(bot, target)) {
     // Past the top of the jump: seen rising, now coming down. Standing
     // still reads a small downward velocity too, and the first version
     // swung the instant the feet left the ground, on the way up: no crit.
@@ -119,7 +125,7 @@ async function strike(bot, task, target) {
       bot.attack(target); bot._critSwings = (bot._critSwings || 0) + 1; return 'critical';
     }
     for (let i = 0; i < 10 && !bot.entity.onGround; i++) { task.check(); await sleep(25); }
-    if (!(bot.entities[target.id] === target && target.isValid !== false && canStrike(bot, target))) return 'missed';
+    if (!(bot.entities[target.id] === target && target.isValid !== false && canStrike(bot, target))) { bot._critMiss = { id: target.id, at: Date.now() }; return 'missed'; }
   }
   bot.attack(target); return 'plain';
 }
