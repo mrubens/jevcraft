@@ -38,15 +38,20 @@ const skippedRecently = (goal, key) => goal.opportunistic?.skipped?.[key] > Date
 // use, one candidate per item name, nearest first. What the surplus tidy
 // would toss again is not picked up: the loop of dropping and fetching
 // a stack of cobblestone is not opportunism.
+// A few drops are never left for want of room: the bot's own staircase dug
+// a diamond out and the pockets were too full to look, so it lay there.
+const PRECIOUS = /^(diamond|emerald|ancient_debris|netherite_scrap|netherite_ingot|enchanted_golden_apple|trial_key|ominous_trial_key|heavy_core|echo_shard)$/;
 function dropCandidates(bot, goal = {}) {
-  if (!bot.entities || bot.game?.gameMode === 'creative' || !dryStanding(bot, bot.entity.position) || immediateThreat(bot) || crowded(bot)) return [];
+  if (!bot.entities || bot.game?.gameMode === 'creative' || !dryStanding(bot, bot.entity.position) || immediateThreat(bot)) return [];
+  const full = crowded(bot);
   const here = bot.entity.position, out = [], seen = new Set();
   for (const entity of Object.values(bot.entities)) {
     const dropped = entity.getDroppedItem?.();
     const item = dropped?.name;
     if (!item || entity.isValid === false || !entity.position || seen.has(item)) continue;
+    if (full && !PRECIOUS.test(item)) continue;
     if (entity.position.distanceTo(here) > LIMITS.dropRadius) continue;
-    if (!(isKeepsake(item) || isKitMaterial(bot, item))) continue;
+    if (!(isKeepsake(item) || isKitMaterial(bot, item) || PRECIOUS.test(item))) continue;
     if (item in SURPLUS && countOf(bot, item) >= SURPLUS[item]) continue;
     if (skippedRecently(goal, `drop:${item}`)) continue;
     if (!safeFromHostiles(bot, entity.position) || !pickupPositions(bot, entity).length) continue;
@@ -154,6 +159,11 @@ async function opportunisticPickups(bot, task, goal, save, primary, actions, cli
   state.pickupSteps = (state.pickupSteps || 0) + 1;
   try {
     const drops = dropCandidates(bot, goal);
+    // Room for the precious one first, junk thrown away from it.
+    for (const d of drops.filter(d => PRECIOUS.test(d.item))) {
+      const { roomFor, makeRoom } = require('./inventory-tidy');
+      if (!roomFor(bot, d.item)) await makeRoom(bot, task, d.item, { away: d.position });
+    }
     if (drops.length) return await pickUpDrops(bot, task, goal, save, state, drops, executors);
     const asking = state.pickupSteps % LIMITS.primarySteps === 0 && !!client;
     const animals = asking ? animalCandidates(bot, goal) : [];
@@ -178,4 +188,4 @@ async function opportunisticPickups(bot, task, goal, save, primary, actions, cli
   }
 }
 
-module.exports = { LIMITS, ANIMALS, dropCandidates, animalCandidates, opportunisticPickups };
+module.exports = { PRECIOUS, LIMITS, ANIMALS, dropCandidates, animalCandidates, opportunisticPickups };

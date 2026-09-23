@@ -152,7 +152,10 @@ test('a keepsake or kit item lying within eight blocks is picked up by rule, wha
   assert.deepEqual(dropCandidates(bot, {}).map(c => c.item), ['string', 'oak_log'], 'dirt is not kept, the feather is out of reach, and cobblestone over the tidy cap would be tossed again');
   bot.inventory.items = () => [{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }, { name: 'cobblestone', count: 20 }];
   assert.deepEqual(dropCandidates(bot, {}).map(c => c.item), ['string', 'cobblestone', 'oak_log'], 'nearest first, and cobblestone under the cap is kit material');
-  bot.inventory.emptySlotCount = () => 2; assert.equal(dropCandidates(bot, {}).length, 0, 'crowded pockets pick nothing up'); bot.inventory.emptySlotCount = () => 12;
+  bot.inventory.emptySlotCount = () => 2; assert.equal(dropCandidates(bot, {}).length, 0, 'crowded pockets pick nothing up');
+  bot.entities[6] = drop(6, 'diamond', 1, 3.0);
+  assert.deepEqual(dropCandidates(bot, {}).map(c => c.item), ['diamond'], 'except a diamond, full pockets or not');
+  delete bot.entities[6]; bot.inventory.emptySlotCount = () => 12;
   // The pickup is a rule: no client, no question, the collector is called for each and the step is restored.
   let items = [{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }];
   bot.inventory.items = () => items;
