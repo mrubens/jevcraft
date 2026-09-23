@@ -298,6 +298,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 122. *A staircase set aside, chosen again.* The mining step persisted nineteen times at "the staircase toward (-625, 28, 308) is set aside; trying another way": the tunnel rested the target, but the mining step picked the nearest ore in view without looking at the set-aside list, the same ore each time. The ore it was for (and anything of its kind within four blocks) now rests twenty minutes when its staircase does, and the mining step's choice skips what is resting.
 
+123. *A working night mine taken for a restless one.* The user asked why Jev sheltered instead of mining. The pocket dig-out rule (three dig-outs in two minutes set the night mine aside) counted every successful mining step since my earlier fix, and a mine digging down or inward never opens the pocket: three "dig-outs" 1.4 seconds apart after three blocks, and the night was waited out. A dig-out is now counted only when the step leaves the pocket unsealed. Phantoms are the sleep-debt rule's business (the bed on the third night), and mining under rock is out of their way.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

@@ -1055,3 +1055,21 @@ test('a night mine refused on every heading is boxed in and waits the night out 
   assert(mine.boxedInUntil > Date.now(), 'all four headings refused within a minute');
 });
 
+
+test('mining steps that keep the pocket sealed are not dig-outs: the night mine is not set aside after three', async () => {
+  const { isSetAside } = require('../src/progress');
+  const origin = new Vec3(0, 30, 0), blocks = new Map();
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20,
+    time: { timeOfDay: 16000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'air' : 'stone'), boundingBox: blocks.get(`${p}`) === 'air' || p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'empty' : 'block', position: p }),
+    world: { raycast: () => null } });
+  const refuge = { origin: { ...origin }, dimension: 'overworld' };
+  const survival = new Survival(bot, {}, { state: { shelters: [refuge] } });
+  assert(shelter.sealed(bot, refuge), 'the fixture pocket is sealed');
+  let steps = 0;
+  survival.nightMine = async () => { steps++; return true; }; // mines downward: the pocket stays shut
+  for (let i = 0; i < 4; i++) { try { await survival.step(new Task('night'), { kind: 'win' }, () => {}); } catch (_) { /* other branches */ } }
+  assert(steps >= 3, `the mine ran (${steps})`);
+  assert(!isSetAside(survival, 'night_mine', `${origin.x},${origin.y},${origin.z}`), 'not counted as dig-outs');
+});

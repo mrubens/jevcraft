@@ -1060,7 +1060,11 @@ class Survival {
         // aside at y 23 under solid rock, where nothing ever resealed.
         if (!watcher && !watched && !isSetAside(this, 'night_mine', here)) {
           if (await this.nightMine(task, goal, save)) {
-            this.state.pocketStarts = [...starts, { pocket: here, at: Date.now() }];
+            // And only when the step opened the pocket: a mine that digs
+            // down or inward keeps it sealed, and counting each of its steps
+            // set the mine aside after three blocks (the replay run, three
+            // "dig-outs" 1.4 seconds apart, then the night spent waiting).
+            if (!shelter.sealed(bot, refuge)) this.state.pocketStarts = [...starts, { pocket: here, at: Date.now() }];
             onStep(goal); return true;
           }
         }
