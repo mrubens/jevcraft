@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-57 questions: 9 decision trees and 48 batched questions.
+58 questions: 10 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -116,6 +116,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: no detour: an error or a five-second timeout is swallowed and the main step carries on
 - Options built in: src/opportunistic-pickups.js (animalCandidates)
+
+### `trade_choice`
+
+**At a village with the villagers' offers read: which one trade to make?**
+
+- When: A trade step (the idle trade option, or the pearl rung when a cleric's pearls are known) once the offers of the villagers in reach are read and at least one trade is feasible.
+- Decision tree, choice; stakes low; ledger kind `trade`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/trading.js (tradeStep, tradeOptions)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `buy_[a-z_]+_\d+` (pattern) | root | buy this item with emeralds | the output is something the run needs (pearls, arrows, a bow, better armour or tools, food when short) and the emeralds are carried |
+| `sell_[a-z_]+_\d+` (pattern) | root | sell spare items for emeralds | the input is carried beyond what is kept back, and fewer than forty emeralds are carried |
 
 ## build
 
@@ -260,7 +275,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `stock_wood` | root | stock up to sixteen logs | fewer than sixteen logs are carried and a tree is in view |
 | `explore` | root | explore the nearest unexplored area | in the Overworld, with an unexplored area within 512 blocks of home |
 | `loot` | root | open the chests of a remembered structure | in the Overworld, with a ruined portal, dungeon, temple or mineshaft within 256 blocks whose chests are unopened |
+| `earn_xp` | root | smelt raw ore for experience | eight or more of a raw ore are carried, gear is still unenchanted and the experience level is under thirty |
 | `enchant` | root | enchant gear at the enchanting table | a table is carried, in view or remembered, lapis is carried, the experience level is five or more, and gear is unenchanted |
+| `trade` | root | trade at a remembered village | a village is remembered within 256 blocks and emeralds or spare items to sell are carried |
 | `torches` | root | craft torches | coal is carried and fewer than eight torches |
 | `harvest_and_bake` | root | harvest the home plot and bake bread | wheat on the home plot is ripe |
 | `tend_farm` | root | tend the home plot | the home plot needs tilling, planting or a look |
@@ -289,7 +306,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `stock_wood` | root | stock up to sixteen logs | by day in the Overworld, and fewer than sixteen logs are carried and a tree is in view |
 | `explore` | root | explore the nearest unexplored area | by day in the Overworld, and in the Overworld, with an unexplored area within 512 blocks of home |
 | `loot` | root | open the chests of a remembered structure | by day in the Overworld, and in the Overworld, with a ruined portal, dungeon, temple or mineshaft within 256 blocks whose chests are unopened |
+| `earn_xp` | root | smelt raw ore for experience | by day in the Overworld, and eight or more of a raw ore are carried, gear is still unenchanted and the experience level is under thirty |
 | `enchant` | root | enchant gear at the enchanting table | by day in the Overworld, and a table is carried, in view or remembered, lapis is carried, the experience level is five or more, and gear is unenchanted |
+| `trade` | root | trade at a remembered village | by day in the Overworld, and a village is remembered within 256 blocks and emeralds or spare items to sell are carried |
 | `torches` | root | craft torches | by day in the Overworld, and coal is carried and fewer than eight torches |
 | `harvest_and_bake` | root | harvest the home plot and bake bread | by day in the Overworld, and wheat on the home plot is ripe |
 | `tend_farm` | root | tend the home plot | by day in the Overworld, and the home plot needs tilling, planting or a look |

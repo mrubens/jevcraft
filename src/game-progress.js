@@ -233,9 +233,12 @@ function nextGameStage(bot, goal) {
     return { phase: 'obtain_ender_pearls', action: 'bastion_gold', item: 'gold_ingot' };
   if (where === 'nether') return { phase: 'return_with_blaze_supplies', action: 'return_overworld' };
   if (where !== 'overworld') return { phase: 'unknown_dimension', action: 'unsupported_dimension' };
-  // TODO: a cleric villager sells ender pearls for emeralds; with a village
-  // remembered (goal.villages), trading would make this rung a walk rather
-  // than an enderman hunt. Trading is not implemented.
+  // A cleric's pearls, when a village is remembered and a pearl trade has
+  // been read there (trading.js): a walk and some emeralds instead of an
+  // enderman hunt. Set aside like any rung when it stops paying.
+  const pearlOffer = Object.values(goal.trading?.offers || {}).some(o => (o.trades || []).some(t => t.outputItem?.name === 'ender_pearl' && !t.tradeDisabled));
+  if (count(bot, 'ender_pearl') < target - eyes && pearlOffer && !isSetAside(goal, 'rung', 'trade_pearls') && require('./villages').knownVillages(bot, goal, 512).length)
+    return { phase: 'obtain_ender_pearls', action: 'trade', item: 'ender_pearl', count: target - eyes };
   if (count(bot, 'ender_pearl') < target - eyes) return { phase: 'obtain_ender_pearls', action: 'acquire', item: 'ender_pearl', count: target - eyes };
   if (eyes < target) return { phase: 'craft_eyes', action: 'acquire', item: 'ender_eye', count: target };
   if (!m.stronghold_located) return { phase: 'find_stronghold', action: 'find_stronghold' };

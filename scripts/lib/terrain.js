@@ -40,6 +40,23 @@ const CAVE = capturedBuild('./flooded-cave.json', [3400, 40, 3400]);
 
 const TERRAIN = Object.freeze([
   {
+    name: 'village_trade',
+    why: 'Trading, new: a fletcher, a cleric and a coal buyer with fixed offers. Passing is an ender pearl bought, with emeralds from what was spare.',
+    dimension: 'overworld', seconds: 120,
+    start: [3700.5, 65, 3700.5],
+    kit: [['stick', 40], ['coal', 64], ['emerald', 3], ['cooked_beef', 8]],
+    build: [
+      'forceload add 3690 3690 3715 3715',
+      'fill 3693 64 3693 3710 64 3710 minecraft:grass_block',
+      'fill 3693 65 3693 3710 72 3710 minecraft:air',
+      'kill @e[type=minecraft:villager,x=3690,y=60,z=3690,dx=25,dy=15,dz=25]',
+      'summon minecraft:villager 3704.5 65 3700.5 {NoAI:1b,PersistenceRequired:1b,VillagerData:{profession:"minecraft:fletcher",level:2,type:"minecraft:plains"},Offers:{Recipes:[{buy:{id:"minecraft:stick",count:32},sell:{id:"minecraft:emerald",count:1},maxUses:16},{buy:{id:"minecraft:emerald",count:1},sell:{id:"minecraft:arrow",count:16},maxUses:12}]}}',
+      'summon minecraft:villager 3700.5 65 3705.5 {NoAI:1b,PersistenceRequired:1b,VillagerData:{profession:"minecraft:cleric",level:4,type:"minecraft:plains"},Offers:{Recipes:[{buy:{id:"minecraft:emerald",count:5},sell:{id:"minecraft:ender_pearl",count:1},maxUses:12}]}}',
+      'summon minecraft:villager 3696.5 65 3700.5 {NoAI:1b,PersistenceRequired:1b,VillagerData:{profession:"minecraft:armorer",level:1,type:"minecraft:plains"},Offers:{Recipes:[{buy:{id:"minecraft:coal",count:15},sell:{id:"minecraft:emerald",count:1},maxUses:16}]}}',
+    ],
+    village: [3700, 65, 3700],
+  },
+  {
     name: 'enchant_table',
     why: 'Enchanting, new: a table beside the bot, a diamond sword, lapis and ten levels. Passing is a sword that comes back enchanted.',
     dimension: 'overworld', seconds: 60,

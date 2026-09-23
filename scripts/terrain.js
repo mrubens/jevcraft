@@ -51,6 +51,16 @@ bot.on('move', () => { if (watch && bot.entity?.position && String(bot.game.dime
 // Each drill's run: the real code, bounded by the drill's time, returning
 // what passing needs to see.
 const RUNS = {
+  async village_trade(d, bounded) {
+    const { tradeStep } = require('../src/trading');
+    const goal = { kind: 'win', request: 'terrain drill', villages: [{ x: d.village[0], y: d.village[1], z: d.village[2], dimension: 'overworld' }] };
+    await sleep(2000);
+    let trades = 0, error = null;
+    try { while (countOf(bot, 'ender_pearl') < 1 && trades < 12) { bounded.check(); if (!await tradeStep(bot, bounded, goal, () => {}, { navigate })) break; trades++; } }
+    catch (err) { if (err.name !== 'OutOfTime') error = err.message; }
+    return { pass: countOf(bot, 'ender_pearl') >= 1, detail: { trades, pearls: countOf(bot, 'ender_pearl'), emeralds: countOf(bot, 'emerald'), arrows: countOf(bot, 'arrow'),
+      made: goal.trading?.trades?.map(t => `${t.kind}:${t.gave?.count} ${t.gave?.name}->${t.got?.count} ${t.got?.name}`), read: Object.values(goal.trading?.offers || {}).map(o => (o.trades || []).length), error } };
+  },
   async enchant_table(d, bounded) {
     const { enchantStep } = require('../src/enchanting');
     const { workstation } = require('../src/work');

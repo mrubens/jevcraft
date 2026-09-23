@@ -34,6 +34,7 @@ const { RecoveryAdviser } = require('./recovery-adviser');
 const { noticeLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep } = require('./exploration');
 const { lootNearby, lootStep, unlootedLandmarks } = require('./looting');
 const { enchantReady, enchantStep, enchantable } = require('./enchanting');
+const { tradeWorthwhile, tradeStep } = require('./trading');
 const { openChest } = require('./chest-delivery');
 const { barterStep, gatherBastionGold } = require('./bartering');
 const { descendPillar, pillarUp, pillarSite } = require('./pillar-recovery');
@@ -2328,6 +2329,17 @@ function idleOptions(bot, goal) {
     run: (b, t, g, sv) => lootStep(b, t, g, sv, lootActions()) };
   // Enchanting: a table carried, in view or remembered, lapis in hand, five
   // levels or more, and gear still plain (enchanting.js).
+  // Trading: a village remembered and something to sell or spend (trading.js).
+  if (tradeWorthwhile(bot, goal)) options.trade = { description: 'Trade at the remembered village: read the villagers\' offers, sell spare coal, sticks, wheat and the like for emeralds, and buy what the run needs (ender pearls, arrows, a bow, better armour or tools, food).',
+    run: (b, t, g, sv) => tradeStep(b, t, g, sv, { navigate, decide, client: t.opportunityClient }) };
+  // Experience for enchanting: the ingots taken out of a furnace give it,
+  // and the raw ore is carried and stashed by the stack. Only while there is
+  // gear to enchant and the level is under thirty, so it is never ground for
+  // its own sake.
+  const RAW_ORE = { raw_iron: 'iron_ingot', raw_gold: 'gold_ingot', raw_copper: 'copper_ingot' };
+  const rawOre = Object.keys(RAW_ORE).map(name => [name, countOf(bot, name)]).filter(([, n]) => n >= 8).sort((a, b) => b[1] - a[1])[0];
+  if (rawOre && (bot.experience?.level ?? 0) < 30 && enchantable(bot).length) options.earn_xp = { description: `Earn experience for enchanting: smelt ${Math.min(rawOre[1], 32)} of the ${rawOre[1]} ${rawOre[0].replaceAll('_', ' ')} carried (level ${bot.experience?.level ?? 0} now; each level is a better enchant). The ingots are useful too.`,
+    item: RAW_ORE[rawOre[0]], count: countOf(bot, RAW_ORE[rawOre[0]]) + Math.min(rawOre[1], 32) };
   if (enchantReady(bot, goal)) options.enchant = { description: `Enchant the ${enchantable(bot)[0].item.name.replaceAll('_', ' ')} at the enchanting table with ${bot.experience?.level} levels and the lapis carried: Sharpness, Protection or Power for the fights ahead.`,
     run: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) };
   if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.`, item: 'torch', count: 4 };
@@ -2553,6 +2565,13 @@ function gameHandlers(bot, decisionClient) {
         bastion_gold: async (bot, task, goal, save) => {
           try { return await gatherBastionGold(bot, task, goal, save, { acquireStep, navigate, dig, approachDryMining, collectNearbyDrops }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'rung', 'bastion_gold', err, 1800000); save(); return false; }
+        },
+        // Pearls from a cleric: sell what is spare until the emeralds are
+        // there, then buy. A trip that makes no trade sets the rung aside.
+        trade: async (bot, task, goal, save) => {
+          const made = await tradeStep(bot, task, goal, save, { navigate, decide, client: decisionClient });
+          if (!made) { setAside(goal, 'rung', 'trade_pearls', 'no trade made', 1800000); save(); }
+          return made;
         },
         prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep, enchant: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) }),
         home: (bot, task, goal, save, stage) => homeStep(bot, task, goal, save, stage, homeActions()),

@@ -15,7 +15,9 @@ const IDLE_OPTIONS = [
   { key: 'stock_wood', label: 'stock up to sixteen logs', when: 'fewer than sixteen logs are carried and a tree is in view' },
   { key: 'explore', label: 'explore the nearest unexplored area', when: 'in the Overworld, with an unexplored area within 512 blocks of home' },
   { key: 'loot', label: 'open the chests of a remembered structure', when: 'in the Overworld, with a ruined portal, dungeon, temple or mineshaft within 256 blocks whose chests are unopened' },
+  { key: 'earn_xp', label: 'smelt raw ore for experience', when: 'eight or more of a raw ore are carried, gear is still unenchanted and the experience level is under thirty' },
   { key: 'enchant', label: 'enchant gear at the enchanting table', when: 'a table is carried, in view or remembered, lapis is carried, the experience level is five or more, and gear is unenchanted' },
+  { key: 'trade', label: 'trade at a remembered village', when: 'a village is remembered within 256 blocks and emeralds or spare items to sell are carried' },
   { key: 'torches', label: 'craft torches', when: 'coal is carried and fewer than eight torches' },
   { key: 'harvest_and_bake', label: 'harvest the home plot and bake bread', when: 'wheat on the home plot is ripe' },
   { key: 'tend_farm', label: 'tend the home plot', when: 'the home plot needs tilling, planting or a look' },
@@ -119,6 +121,19 @@ define({
   build: ({ options }) => require('../typesafe').choice('Standing instruction: an animal in view whose drop the bot is short of is worth a short chase, even when it is not an ingredient of the current request. These candidates already pass checks for isolation, safe footing, health and a twelve-block radius; the chase is bounded and the main request resumes afterward. Wool is the next bed; feathers are the next quiver of arrows. Choose continue if the player explicitly said no detours/only the requested item, or if the request is urgent.', {
     ...options, continue: 'Keep working on the requested task without a detour.',
   }),
+});
+
+define({
+  id: 'trade_choice', area: 'resources', kind: 'trade', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'At a village with the villagers\' offers read: which one trade to make?',
+  trigger: 'A trade step (the idle trade option, or the pearl rung when a cleric\'s pearls are known) once the offers of the villagers in reach are read and at least one trade is feasible.',
+  source: 'src/trading.js (tradeStep, tradeOptions)',
+  options: [
+    { pattern: 'buy_[a-z_]+_\\d+', label: 'buy this item with emeralds', when: 'the output is something the run needs (pearls, arrows, a bow, better armour or tools, food when short) and the emeralds are carried', level: 'root', dynamic: true },
+    { pattern: 'sell_[a-z_]+_\\d+', label: 'sell spare items for emeralds', when: 'the input is carried beyond what is kept back, and fewer than forty emeralds are carried', level: 'root', dynamic: true },
+  ],
+  instructions: workInstructions('Which trade should the bot make now? Buying what the run needs (ender pearls above all) comes before selling; selling spare items is for the emeralds that buying needs.'),
+  fallback: firstOption,
 });
 
 module.exports = { IDLE_OPTIONS };
