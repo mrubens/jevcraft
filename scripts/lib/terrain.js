@@ -130,6 +130,27 @@ const TERRAIN = Object.freeze([
     ],
     mob: 'skeleton', survive: true,
   },
+  {
+    name: 'barter',
+    why: 'Pearls from piglins: forty ingots thrown, the pearls picked up, and no fight with the piglins over it.',
+    dimension: 'the_nether', seconds: 150,
+    start: [3300.5, 100, 3300.5],
+    kit: [['gold_ingot', 40], ['golden_boots', 1], ['diamond_sword', 1], ['cooked_beef', 8]],
+    armor: { head: 'iron_helmet', chest: 'iron_chestplate', legs: 'iron_leggings', feet: 'iron_boots' },
+    build: [
+      'forceload add 3290 3290 3310 3310',
+      'kill @e[tag=terrain]',
+      'kill @e[type=!player,x=3290,y=95,z=3290,dx=20,dy=15,dz=20]',
+      'fill 3290 99 3290 3310 106 3310 minecraft:air',
+      'fill 3294 99 3294 3306 99 3306 minecraft:netherrack',
+      'fill 3294 100 3294 3306 104 3294 minecraft:glass', 'fill 3294 100 3306 3306 104 3306 minecraft:glass',
+      'fill 3294 100 3294 3294 104 3306 minecraft:glass', 'fill 3306 100 3294 3306 104 3306 minecraft:glass',
+      'fill 3294 105 3294 3306 105 3306 minecraft:glass',
+      'summon minecraft:piglin 3297 100 3297 {PersistenceRequired:1b,IsImmuneToZombification:1b,Tags:["terrain"]}',
+      'summon minecraft:piglin 3303 100 3297 {PersistenceRequired:1b,IsImmuneToZombification:1b,Tags:["terrain"]}',
+      'summon minecraft:piglin 3300 100 3303 {PersistenceRequired:1b,IsImmuneToZombification:1b,Tags:["terrain"]}',
+    ],
+  },
 ]);
 
 const terrainDrill = name => TERRAIN.find(d => d.name === name);

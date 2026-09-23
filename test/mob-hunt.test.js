@@ -628,3 +628,17 @@ test('bricks in view with nothing twelve blocks off to walk to are shunned and t
   assert.deepEqual(tunnels, [[0, 96]], 'and the leg in hand is walked, not a new one begun');
   assert.equal(goal.fortressSearch.legs, 3);
 });
+
+test('in the Nether short of pearls, with gold and a piglin in view, the ladder barters before going home', () => {
+  const { nextGameStage } = require('../src/game-progress');
+  const { Vec3 } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  const items = [{ name: 'blaze_rod', count: 8 }, { name: 'gold_ingot', count: 20 }];
+  const bot = { registry, game: { dimension: 'the_nether', gameMode: 'survival' }, entity: { position: new Vec3(0, 64, 0) }, inventory: { items: () => items, slots: {} },
+    entities: { 7: { id: 7, name: 'piglin', position: new Vec3(5, 64, 0), isValid: true, metadata: [] } } };
+  const goal = { kind: 'win', gameProgress: { version: 1, milestones: { nether_entered: { at: 1 } } } };
+  const stage = nextGameStage(bot, goal);
+  assert.equal(stage.action, 'barter', JSON.stringify(stage));
+  bot.entities = {};
+  assert.notEqual(nextGameStage(bot, goal).action, 'barter', 'no piglin in view: home to hunt');
+});

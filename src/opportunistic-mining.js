@@ -18,7 +18,12 @@ const pos = p => new Vec3(p.x, p.y, p.z);
 // reach while the fuel is short is taken without asking.
 const FUEL_UNITS_WANTED = 8;
 const fuelCarried = bot => bot.inventory.items().reduce((n, i) => n + (i.name === 'coal' || i.name === 'charcoal' ? i.count : i.name === 'coal_block' ? i.count * 9 : 0), 0);
-const neededByRule = (bot, candidate) => candidate.resource === 'coal' && fuelCarried(bot) < FUEL_UNITS_WANTED;
+// Gold in the Nether is pearls: nine ingots a pearl bartered with piglins
+// (see bartering.js), so nether gold ore within reach is taken while the
+// pearls are short, like coal while the fuel is.
+const PEARLS_WANTED = 16;
+const neededByRule = (bot, candidate) => (candidate.resource === 'coal' && fuelCarried(bot) < FUEL_UNITS_WANTED) ||
+  (candidate.resource === 'gold_nugget' && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED);
 
 function opportunityCandidates(bot, goal, primary) {
   if (!bot.registry?.blocksArray || !bot.findBlocks || bot.health < 16 || bot.food < 14 || bot.game?.gameMode === 'creative' || !dryStanding(bot, bot.entity.position) || immediateThreat(bot)) return [];
@@ -32,7 +37,7 @@ function opportunityCandidates(bot, goal, primary) {
     if (!block?.diggable || !safeFromHostiles(bot, position)) return [];
     const definition = bot.registry.blocksByName[block.name];
     const resource = definition?.drops?.map(drop => bot.registry.items[typeof drop === 'number' ? drop : drop.drop]?.name).find(Boolean);
-    if (!resource || resource === primary.drops || countOf(bot, resource) >= (resource === 'coal' || resource === 'raw_iron' ? 64 : 32)) return [];
+    if (!resource || resource === primary.drops || countOf(bot, resource) >= (resource === 'coal' || resource === 'raw_iron' ? 64 : resource === 'gold_nugget' ? 256 : 32)) return [];
     if (goal.opportunistic?.skipped?.[`${position}`] > Date.now() - 120000) return [];
     const tools = bot.inventory.items().filter(item => (!block.harvestTools || block.harvestTools[item.type]) &&
       (bot.registry.itemsByName[item.name]?.maxDurability || 0) - (item.durabilityUsed || 0) >= 16);

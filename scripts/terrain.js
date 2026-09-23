@@ -107,6 +107,18 @@ const RUNS = {
     catch (err) { if (err.name !== 'OutOfTime') throw err; }
     return { pass: !watch.died && bot.entity.position.y >= d.start[1] - 1, detail: { health: Math.round(bot.health), y: Math.round(bot.entity.position.y), actions: actions.slice(0, 8) } };
   },
+  async barter(d, bounded) {
+    const { barterStep } = require('../src/bartering');
+    const goal = { kind: 'win', request: 'terrain drill' };
+    const ingots = () => countOf(bot, 'gold_ingot'), pearls = () => countOf(bot, 'ender_pearl');
+    const piglinsAlive = () => Object.values(bot.entities).filter(e => e.name === 'piglin' && e.isValid !== false).length;
+    let rounds = 0, error = null;
+    const before = piglinsAlive();
+    try { while (!watch.died && ingots() > 0 && rounds < 40) { bounded.check(); await barterStep(bot, bounded, goal, () => {}, { navigate, acquireStep: async () => {} }); rounds++; } }
+    catch (err) { if (err.name !== 'OutOfTime') error = err.message; }
+    const thrown = goal.barter?.thrown || 0;
+    return { pass: thrown >= 36 && piglinsAlive() >= 3 && !error, detail: { thrown, pearls: pearls(), piglins: `${piglinsAlive()} of ${before}`, rounds, gold: bot.inventory.slots[8]?.name, error } };
+  },
   async chest_lid(d, bounded) {
     const home = { origin: { x: d.home[0], y: d.home[1], z: d.home[2] }, dimension: 'overworld',
       stash: { position: { x: d.chest[0], y: d.chest[1], z: d.chest[2] }, contents: { cooked_beef: 8 } } };

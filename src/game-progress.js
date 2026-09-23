@@ -1,5 +1,6 @@
 'use strict';
 const { DAY } = require('./day');
+const { barterReady } = require('./bartering');
 const { isSetAside, setAside, attemptsFor } = require('./progress');
 const { homeStage, bedCarried, woolCarried, homeOf } = require('./home-base');
 const { restockStage, rungWants } = require('./home-stash');
@@ -221,6 +222,9 @@ function nextGameStage(bot, goal) {
     return where === 'nether' ? { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: rods } :
       { phase: 'reach_nether', action: 'enter_nether' };
   }
+  // Short of pearls with gold on hand and a piglin in view: barter before
+  // going back. The enderman hunt in the Overworld is the other way.
+  if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && barterReady(bot, goal)) return { phase: 'obtain_ender_pearls', action: 'barter', item: 'ender_pearl', count: target - eyes };
   if (where === 'nether') return { phase: 'return_with_blaze_supplies', action: 'return_overworld' };
   if (where !== 'overworld') return { phase: 'unknown_dimension', action: 'unsupported_dimension' };
   // TODO: a cleric villager sells ender pearls for emeralds; with a village

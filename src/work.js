@@ -31,6 +31,7 @@ const { designWithJev } = require('./build-templates');
 const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine, dryStanding } = require('./mining-access');
 const { dryPassable, supportCell, swimmableWater } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
+const { barterStep } = require('./bartering');
 const { descendPillar, pillarUp, pillarSite } = require('./pillar-recovery');
 const { gameStep, watchGameProgress, dimension, nextGameStage, DEFERRABLE, RUNG_WAIT_MS } = require('./game-progress');
 const { carriedEquipment } = require('./mob-policy');
@@ -2473,6 +2474,7 @@ function gameHandlers(bot, decisionClient) {
         // survival layer's stock-driven search fills the reserve; a search
         // it has set aside as fruitless lets the trip go with what there is.
         food_reserve: (bot, task, goal, save) => netherFoodReady(bot, task, goal, save),
+        barter: (bot, task, goal, save) => barterStep(bot, task, goal, save, { acquireStep, navigate }),
         prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
         home: (bot, task, goal, save, stage) => homeStep(bot, task, goal, save, stage, homeActions()),
         // A bed from a remembered village: dug up, it drops itself.
