@@ -695,6 +695,30 @@ test('hurt, or with a zombie closing, the bow stays in the pack and the escape r
   assert.deepEqual(crowded.events, ['equip iron_sword', 'attack', 'raise shield'], 'a zombie within a sword\'s reach is fought, the shield up between swings, not drawn on or run from');
 });
 
+test('with encounter judgments on, Jev picks the stance once and it holds; unsure, the rules decide', async () => {
+  process.env.JEV_ENCOUNTERS = '1';
+  try {
+    const calls = [];
+    const client = { systemOne: async ({ state, questions }) => { calls.push({ state, questions }); return { answers: { branch_0: { choice: 'retreat', confidence: 0.9 } } }; } };
+    const { bot, events, controller, task, goal } = archerFixture({ client });
+    bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
+    assert(await controller.step(task, goal, () => {}));
+    assert.equal(goal.decisions.at(-1).id, 'encounter_stance');
+    assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['fight', 'pillar', 'retreat', 'seal', 'shoot_7']);
+    assert.deepEqual(calls[0].state.threats, [{ name: 'skeleton', distance: 10, shoots: true, visible: true }]);
+    assert.deepEqual(events, ['navigate'], 'the retreat ran');
+    bot.entity.position = new Vec3(.5, 64, .5);
+    await controller.step(task, goal, () => {});
+    assert.equal(calls.length, 1, 'the stance holds for the same mobs, not asked again at every tick');
+
+    let asked = 0;
+    const unsure = archerFixture({ client: { systemOne: async () => ({ answers: { branch_0: asked++ ? { choice: 'shoot_7', confidence: 0.9 } : { choice: 'fight', confidence: 0.2 } } }) } });
+    assert(await unsure.controller.step(unsure.task, unsure.goal, () => {}));
+    assert.equal(unsure.goal.decisions.find(d => d.id === 'encounter_stance').gated.below, 'caller');
+    assert.equal(unsure.goal.survivalAction.action, 'shoot', 'the rules took over: the ranged question, then the shot');
+  } finally { delete process.env.JEV_ENCOUNTERS; }
+});
+
 test('a carried bed goes down at bedtime, the night passes, and the bed comes back up', async () => {
   const { Survival, bedSite } = require('../src/survival');
   const blocks = new Map(); let items = [{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }];

@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-59 questions: 11 decision trees and 48 batched questions.
+60 questions: 12 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -61,6 +61,25 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `shoot_\d+` (pattern) | root | shoot this mob | it is in clear view with a solved arrow path (up to three targets) |
 | `retreat` | root | run for cover out of its sight | always |
 | `dig_in` | root | seal a two-block pocket here | twelve or more building blocks are carried |
+
+### `encounter_stance`
+
+**Hostile mobs are on the bot: fight here, go up, dig into the wall, seal in, run, or shoot?**
+
+- When: An encounter the reflexes (the swing at arm's length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible; held while the same kinds of mob are about, for fifteen seconds, and until health falls by six. Only with JEV_ENCOUNTERS=1.
+- Decision tree, choice; stakes high; ledger kind `combat`
+- Bar: 0.35 at every level of the tree: unsure, the encounter rules decide as they did before the experiment
+- Jev unreachable: stops: no safe default
+- Options built in: src/survival.js (stanceOptions)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `fight` | root | fight where the bot stands | a sword, axe or trident is carried and health is eight or more |
+| `pillar` | root | go two blocks up and fight from there | two scaffold blocks carried and three clear blocks overhead |
+| `bunker` | root | dig into the nearby wall and fight at the doorway | a wall is near and health is ten or more |
+| `seal` | root | seal a pocket and wait | four or more building blocks are carried |
+| `retreat` | root | run for footing out of reach and sight | always |
+| `shoot_\d+` (pattern) | root | shoot this mob with the bow | health eight or more, nothing that bites within three blocks, and a clear arrow path (up to two targets) |
 
 ### `hunt_target`
 

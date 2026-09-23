@@ -57,4 +57,28 @@ define({
   gate: { threshold: 0.2, below: 'fallback', why: 'unsure, the health rule decides: shoot while healthy, otherwise retreat' },
 });
 
+// The stance for an encounter, once per encounter (src/survival.js
+// stanceStep). An experiment in the arena first: asked only with
+// JEV_ENCOUNTERS=1, and the rules take over when it is unsure.
+define({
+  id: 'encounter_stance', area: 'combat', kind: 'combat', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
+  question: 'Hostile mobs are on the bot: fight here, go up, dig into the wall, seal in, run, or shoot?',
+  trigger: 'An encounter the reflexes (the swing at arm\'s length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible; held while the same kinds of mob are about, for fifteen seconds, and until health falls by six. Only with JEV_ENCOUNTERS=1.',
+  source: 'src/survival.js (stanceOptions)',
+  instructions: {
+    task: 'Hostile mobs are close. Choose the stance for this encounter NOW. The bot will keep to it for the next several seconds, swinging at anything in reach whatever you choose.',
+    guidance: 'Use the threats (kind, distance, whether they shoot), health, armour, weapon, shield, arrows and building blocks. Every option listed is already checked possible from here. Weigh what each mob does: walkers cannot climb a pillar, shooters can hit a pillar or a runner, a crowd in the open hits from every side while a doorway admits one at a time, a sealed pocket takes no damage but gains nothing. previousStance says what was chosen last and the health then.',
+  },
+  options: [
+    { key: 'fight', label: 'fight where the bot stands', when: 'a sword, axe or trident is carried and health is eight or more', level: 'root' },
+    { key: 'pillar', label: 'go two blocks up and fight from there', when: 'two scaffold blocks carried and three clear blocks overhead', level: 'root' },
+    { key: 'bunker', label: 'dig into the nearby wall and fight at the doorway', when: 'a wall is near and health is ten or more', level: 'root' },
+    { key: 'seal', label: 'seal a pocket and wait', when: 'four or more building blocks are carried', level: 'root' },
+    { key: 'retreat', label: 'run for footing out of reach and sight', when: 'always', level: 'root' },
+    { pattern: 'shoot_\\d+', label: 'shoot this mob with the bow', when: 'health eight or more, nothing that bites within three blocks, and a clear arrow path (up to two targets)', level: 'root', dynamic: true },
+  ],
+  fallback: 'throws',
+  gate: { threshold: 0.35, below: 'caller', why: 'unsure, the encounter rules decide as they did before the experiment' },
+});
+
 module.exports = { safetyOrder, FOOD_OPTIONS };

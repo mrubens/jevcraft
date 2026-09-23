@@ -254,6 +254,7 @@ bot.once('spawn', async () => {
       require('../src/env').loadEnv();
       client = new (require('../src/typesafe').TypeSafe)();
       log({ jev: 'System One decides which target to take' });
+      if (process.env.JEV_ENCOUNTERS === '1') log({ jev: 'System One also picks the stance for each encounter (encounter_stance)' });
     }
     // Count the swings and the shield from the inside: the arena scores what
     // the fighting code did, not what it meant to do.

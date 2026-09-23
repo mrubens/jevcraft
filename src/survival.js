@@ -195,6 +195,10 @@ function bedSite(bot) {
 const emptySite = (bot, refuge) => refuge.kind !== 'house' && !refuge.verifiedAt &&
   shelter.shell(refuge.origin).every(p => shelter.replaceable(bot.blockAt(p)));
 
+// Encounter stances asked of Jev: the arena's experiment switch, off in play
+// until the drills say it beats the rules (JEV_ENCOUNTERS=1).
+const encounterJudgments = survival => !!survival.client && process.env.JEV_ENCOUNTERS === '1';
+
 // Minecraft actions are injected to avoid a dependency cycle with the work
 // executor. The state lives on the retained goal and can also be shared by an
 // idle companion session. No survival interruption replaces the player request.
@@ -283,6 +287,9 @@ class Survival {
       this.report(goal, save, { action: 'block_shot', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
       return;
     }
+    // With encounter judgments on, the stance is Jev's; the rules below take
+    // over when it declines, is unsure, or the chosen tactic cannot be done.
+    if (encounterJudgments(this) && await this.stanceStep(task, goal, save, danger, swung)) return;
     // A mob at arm's length is fought, swing after swing, while health holds:
     // a route search between swings is seconds of free hits, and nothing
     // outruns a zombie in a tunnel anyway. Low health falls through to the
@@ -338,6 +345,72 @@ class Survival {
     await this.escape(task, goal, save, danger, armed);
   }
 
+  // The stance for an encounter: fight, go up, dig into the wall, seal in,
+  // run, or shoot, each already checked possible from here. Asked once and
+  // held while the same kinds of mob are about, for fifteen seconds, and
+  // until health falls by six; the reflexes (the swing at arm's length, the
+  // shield against an arrow in flight, off a ledge, away from lava) run
+  // before it every tick whatever the stance.
+  stanceOptions(task, goal, save, danger, swung) {
+    const bot = this.bot, options = {};
+    const nearest = danger[0];
+    const armed = /_(sword|axe)$|^trident$/.test(defenseWeapon(bot)?.name || '');
+    const inReach = t => t.distance <= 3.2 || canStrike(bot, t.entity);
+    const { SCAFFOLD } = require('./pillar-recovery');
+    const scaffold = bot.inventory.items().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0);
+    const feet = bot.entity.position.floored();
+    const headroom = [1, 2, 3].every(dy => { const b = bot.blockAt(feet.offset(0, dy, 0)); return b && b.boundingBox === 'empty' && !/lava|water/.test(b.name); });
+    if (armed && bot.health >= 8) options.fight = { description: 'Fight here: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet.',
+      run: async () => {
+        if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); if (!swung) await defendNearby(bot, task, goal, save); return true; }
+        return this.charge(task, goal, save, nearest, false);
+      } };
+    if (scaffold >= 2 && headroom) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.',
+      run: () => this.pillarFrom(task, goal, save, danger) };
+    if (bot.health >= 10 && nearWall(bot, centroid(danger))) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.',
+      run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
+        try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
+    if (shelter.materialStock(bot) >= 4) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.',
+      run: () => this.sealHere(task, goal, save, danger) };
+    options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.',
+      run: () => this.runAway(task, goal, save, danger) };
+    if (bot.health >= 8 && !danger.some(t => t.distance <= 3 && !shooter(t.entity))) {
+      for (const t of shotTargets(bot, danger).slice(0, 2)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.`,
+        run: async () => { await this.shootAt(task, goal, save, t); return true; } };
+    }
+    return options;
+  }
+
+  async stanceStep(task, goal, save, danger, swung) {
+    const bot = this.bot;
+    const kinds = [...new Set(danger.map(t => t.entity.name))].sort().join(',');
+    const options = this.stanceOptions(task, goal, save, danger, swung);
+    const held = this.state.stance;
+    let choice = held && held.kinds === kinds && Date.now() - held.at < 15000 && bot.health > held.health - 6 && options[held.choice] ? held.choice : null;
+    if (!choice) {
+      if (Object.keys(options).length < 2) return false;
+      const armour = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
+      const state = { health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
+        shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
+        threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), visible: t.visible })),
+        previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health } : null };
+      const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
+      let decision;
+      try {
+        decision = await this.decide(task, goal, save, { id: 'encounter_stance', state, tree,
+          isFresh: () => Math.abs(bot.health - state.health) < 4 });
+      } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+      if (decision.stale || decision.gated || decision.fallback) return false;
+      choice = decision.path.at(-1);
+      this.state.stance = { choice, kinds, at: Date.now(), health: bot.health };
+    }
+    if (!/^shoot_/.test(choice)) lowerShield(bot);
+    const done = await options[choice].run();
+    if (!done) { delete this.state.stance; return false; }
+    return true;
+  }
+
   // A shooter in view at bow range, and a bow in the pack: running from a
   // skeleton is how most of the dream run's deaths went, arrows in the back.
   // Code lists the shots that have a clear arc, the retreat and the pocket;
@@ -381,10 +454,11 @@ class Survival {
     delete this.state.trappedSince;
   }
 
-  async escape(task, goal, save, danger, armed) {
+  // Footing out of reach and out of sight, by a route that does not pass a
+  // hostile: true when the bot set off (arrived or was cut short, so the
+  // next look is from wherever it got to), false when no route was found.
+  async runAway(task, goal, save, danger) {
     const bot = this.bot;
-    lowerShield(bot);
-    this.report(goal, save, { action: 'escape_threat', threats: danger.map(t => ({ name: t.entity.name, distance: t.distance })) });
     const movements = bot.pathfinder.movements;
     const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
     Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
@@ -415,7 +489,7 @@ class Survival {
           if (route.status !== 'success') continue;
           this.report(goal, save, { action: 'leave_lava_edge', destination: { ...p }, threats: danger.map(t => t.entity.name) });
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(p.x, p.y, p.z), { timeoutMs: 5000, stallMs: 2000 }); } catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
-          return;
+          return true;
         }
       }
       // The far spots first when the chaser persists; the ordinary hop is the
@@ -429,15 +503,30 @@ class Survival {
         if (route.status !== 'success') continue;
         // Do not run through another hostile to escape the closest one.
         if (route.path.some(point => about.some(e => e.position.distanceTo(pos(point)) < Math.min(4, e.position.distanceTo(bot.entity.position) - 1)))) continue;
-        try { await this.actions.navigate(bot, task, destination, { timeoutMs: persistent ? 14000 : 7000, stallMs: 3000 }); delete this.state.trappedSince; return; }
+        try { await this.actions.navigate(bot, task, destination, { timeoutMs: persistent ? 14000 : 7000, stallMs: 3000 }); delete this.state.trappedSince; return true; }
         catch (err) {
           task.check(); if (err.name === 'NeedsAir') throw err;
           setAside(this, 'escape', p, err, 60000); save();
           // Reobserve positions after a partial escape instead of running the
           // next stale route against the old mob positions.
-          return;
+          return true;
         }
       }
+      return false;
+    } finally { Object.assign(movements, previous); bot.clearControlStates(); }
+  }
+
+  async escape(task, goal, save, danger, armed) {
+    const bot = this.bot;
+    lowerShield(bot);
+    this.report(goal, save, { action: 'escape_threat', threats: danger.map(t => ({ name: t.entity.name, distance: t.distance })) });
+    if (await this.runAway(task, goal, save, danger)) return;
+    const movements = bot.pathfinder.movements;
+    const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
+    Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
+    try {
+      // The cornered rules: no route away was found (or it was cut short).
+      const nearest = danger[0];
       // Cornered with stone in hand: a wall between us and the mob beats a
       // hold. Only the cell one step toward it, and only while that cell is
       // still empty; a mob already in it is fought, not walled.
@@ -445,7 +534,6 @@ class Survival {
       // hid from a piglin. With a ranged mob in view and no way out, close
       // every open side into a two-block pocket and let it pass. Against a
       // melee mob alone, the single wall toward it is enough.
-      const nearest = danger[0];
       // A herd is sealed out like a shooter: one wall toward one hoglin
       // leaves the other four, and the bot held a "defensive position" at
       // five health in the middle of seven of them.
