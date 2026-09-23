@@ -675,6 +675,7 @@ function rememberedSpot(state, bot) {
     .sort((a, b) => (b.seen - a.seen) || (b.at - a.at))[0] || null;
 }
 
+const FORTRESS_MIN_BRICKS = 24;
 const FORTRESS_BLOCKS = ['nether_bricks', 'nether_brick_fence', 'nether_brick_stairs', 'nether_brick_slab', 'nether_wart'];
 const FORTRESS_LEG = 96;
 // The next leg of the sweep: ninety-six blocks along x, one way, at a
@@ -701,7 +702,12 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // and every tick tried the same drop. The sweep meets it elsewhere.
   state.shunned = (state.shunned || []).filter(sh => sh.until > Date.now());
   const shunned = b => state.shunned.some(sh => Math.hypot(sh.x - b.x, sh.z - b.z) <= 16);
-  const bricks = bot.findBlocks({ matching: ids, maxDistance: 128, count: 512 }).filter(b => !shunned(b));
+  // A fortress is hundreds of bricks. A handful is the bot's own: it
+  // carries nether bricks and builds its pockets and bridges with them, and
+  // the sweep "patrolled" three of its own blocks while starting a new leg
+  // every tick, four hundred of them, never old enough to turn.
+  const found = bot.findBlocks({ matching: ids, maxDistance: 128, count: 512 }).filter(b => !shunned(b));
+  const bricks = found.length >= FORTRESS_MIN_BRICKS ? found : [];
   if (bricks.length) {
     const here = bot.entity.position;
     const nearest = bricks.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];

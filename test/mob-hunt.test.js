@@ -362,7 +362,13 @@ test('the fortress sweep runs in ninety-six-block legs along x at a safe height,
   const goal = {};
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target, resource) => tunnels.push([target.x, target.z, resource]) });
   assert.equal(goal.fortressSearch.legs, 1); assert(Math.abs(tunnels[0][0]) >= FORTRESS_LEG - 1, 'a full leg along x'); assert.equal(tunnels[0][2], 'fortress');
-  bot.findBlocks = () => [new Vec3(30, 64, 12)];
+  // Three bricks are the bot's own building blocks, not a fortress: the sweep goes on.
+  bot.findBlocks = () => [new Vec3(3, 64, 1), new Vec3(3, 65, 1), new Vec3(4, 64, 1)];
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target, resource) => tunnels.push([target.x, target.z, resource]) });
+  assert.equal(goal.fortressSearch.found, undefined, 'a handful of bricks is not a fortress');
+  assert.equal(goal.fortressSearch.legs, 1, 'and the leg in hand is kept');
+  tunnels.length = 1;
+  bot.findBlocks = () => [new Vec3(30, 64, 12), ...Array.from({ length: 30 }, (_, i) => new Vec3(40 + i, 64, 12))];
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target) => tunnels.push([target.x, target.z, 'bricks']) });
   assert.deepEqual(tunnels[1], [30, 12, 'bricks']); assert.deepEqual(goal.fortressSearch.found, { x: 30, y: 64, z: 12 });
 });
@@ -440,7 +446,7 @@ test('a fortress whose every stretch in view was walked is patrolled again, not 
   const { Vec3 } = require('vec3');
   const clear = { boundingBox: 'empty' };
   const bot = { registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 65, 0.5) }, chat() {},
-    blockAt: () => clear, findBlocks: () => [new Vec3(2, 64, 0), new Vec3(20, 64, 0)] };
+    blockAt: () => clear, findBlocks: () => [new Vec3(2, 64, 0), new Vec3(20, 64, 0), ...Array.from({ length: 24 }, (_, i) => new Vec3(21 + i, 64, 1))] };
   const goal = { fortressSearch: { axis: 1, legs: 3, visited: [{ x: 20, y: 64, z: 0 }, { x: 40, y: 64, z: 0 }], target: { x: 96, y: 65, z: 0 } } };
   const tunnels = [];
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target) => tunnels.push([target.x, target.z]) });
