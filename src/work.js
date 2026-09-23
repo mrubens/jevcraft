@@ -28,7 +28,7 @@ const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives, knownResourceLocations, knownResourceNames, rememberResources, isSurfaceResource } = require('./resource-observation');
 const { designBuilding, designerAvailable, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding, LIMITS, SECONDS_PER_BLOCK } = require('./designer');
 const { designWithJev } = require('./build-templates');
-const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine, dryStanding } = require('./mining-access');
+const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine, dryStanding, miningReach } = require('./mining-access');
 const { dryPassable, supportCell, swimmableWater } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
 const { noticeLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep } = require('./exploration');
@@ -760,6 +760,10 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
     }
     const before = countOf(bot, step.drops);
     let access;
+    // Where the step is going, for the record: the day audit saw the mine
+    // step walk twelve blocks up its own staircase and could not say toward
+    // which block.
+    if (goal?.step?.action === 'mine') { goal.step.target = { x: p.x, y: p.y, z: p.z }; goal.step.from = { ...bot.entity.position.floored() }; }
     try {
       await approachDryMining(bot, task, p, { navigate, dig });
       access = miningMovement(bot);
@@ -912,6 +916,8 @@ function localBatch(bot, goal, save = () => {}) {
   return goal.smelting || null;
 }
 
+const WAIT_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'copper_ore', 'lapis_ore', 'redstone_ore', 'diamond_ore',
+  'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_copper_ore', 'deepslate_lapis_ore', 'deepslate_redstone_ore', 'deepslate_diamond_ore'];
 async function smelt(bot, task, step, goal, save = () => {}) {
   task.check();
   const pending = localBatch(bot, goal, save);
@@ -951,14 +957,20 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     delete pending.unreachable;
   } else block = await workstation(bot, task, 'furnace', goal);
   const before = countOf(bot, step.item);
-  const needed = Math.min(pending ? pending.targetInventory - before : step.count, 64);
+  // A new batch is only as large as the raw input carried: a smelt of four
+  // gold with one raw gold in hand left the batch in that furnace while the
+  // bot dug for the rest, and the way back to it failed (the day audit's six
+  // minutes on four ingots). The planner gathers the rest and smelts it as a
+  // batch of its own, at whatever furnace is nearest then.
+  const carriedInput = countOf(bot, step.from);
+  const needed = Math.min(pending ? pending.targetInventory - before : (carriedInput > 0 ? Math.min(step.count, carriedInput) : step.count), 64);
   if (goal && !pending) {
     goal.smelting = { item: step.item, from: step.from, fuelItem: plannedFuel, position: { ...block.position }, dimension: dimension(bot), targetInventory: before + needed, count: needed };
     save();
   }
   // The same for the furnace's output, before the window opens.
   if (!roomFor(bot, step.item)) await makeRoom(bot, task, step.item, { keep: new Set([step.from, plannedFuel]) });
-  const furnace = await bot.openFurnace(block);
+  let furnace = await bot.openFurnace(block);
   // While a container is open Mineflayer updates that window's player slots;
   // bot.inventory can still contain the pre-transfer counts until it closes.
   const carried = name => Array.isArray(furnace.slots) && Number.isInteger(furnace.inventoryStart)
@@ -1006,11 +1018,26 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       };
       await fuel();
       const deadline = Date.now() + amount * 12000 + 10000;
+      // Ten seconds an item is time the bot stood beside the furnace (the
+      // day audit's minute and a half): an ore within arm's reach is dug
+      // meanwhile, from where it stands, the furnace shut and opened again.
+      let waitDigs = 0;
+      const oreInReach = () => find(bot, WAIT_ORES, 5, 12).find(p => miningReach(bot, bot.entity.position, p) && bot.canDigBlock?.(bot.blockAt(p)) &&
+        !isSetAside(goal || {}, 'reach', p) && safeFromHostiles(bot, p));
       while (taken < needed) {
         task.check();
         if (Date.now() > deadline) throw new Error(`Smelting ${step.item} timed out`);
         await collect();
         if (taken < needed) await fuel();
+        const ore = taken < needed && waitDigs < 6 && Date.now() < deadline - 15000 && (needed - taken) >= 2 && oreInReach();
+        if (ore) {
+          waitDigs++;
+          furnace.close();
+          try { await dig(bot, task, ore, { requireDrops: false }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (goal) setAside(goal, 'reach', ore, err.message, 120000); }
+          furnace = await bot.openFurnace(block);
+          continue;
+        }
         if (taken < needed) await sleep(250);
       }
     }

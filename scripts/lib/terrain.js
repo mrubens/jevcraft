@@ -40,6 +40,20 @@ const CAVE = capturedBuild('./flooded-cave.json', [3400, 40, 3400]);
 
 const TERRAIN = Object.freeze([
   {
+    name: 'furnace_wait',
+    why: 'The day audit: a minute and a half standing beside a working furnace. Eight raw iron to smelt with ore in reach of where the bot stands.',
+    dimension: 'overworld', seconds: 150,
+    start: [3900.5, 65, 3900.5],
+    kit: [['raw_iron', 8], ['coal', 8], ['stone_pickaxe', 1], ['furnace', 1]],
+    build: [
+      'forceload add 3890 3890 3910 3910',
+      'fill 3895 64 3895 3905 64 3905 minecraft:stone',
+      'fill 3895 65 3895 3905 70 3905 minecraft:air',
+      'setblock 3902 65 3900 minecraft:furnace',
+      'setblock 3900 66 3902 minecraft:coal_ore', 'setblock 3898 65 3900 minecraft:iron_ore', 'setblock 3900 65 3898 minecraft:coal_ore',
+    ],
+  },
+  {
     name: 'craft_cycle',
     why: 'The day audit: sixteen "timed out waiting for world/inventory update" in a day, crafting and smelting, with "invalid operation" retries. Crafting planks, sticks and stone pickaxes over and over, counting them.',
     dimension: 'overworld', seconds: 150,

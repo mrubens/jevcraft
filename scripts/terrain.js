@@ -51,6 +51,17 @@ bot.on('move', () => { if (watch && bot.entity?.position && String(bot.game.dime
 // Each drill's run: the real code, bounded by the drill's time, returning
 // what passing needs to see.
 const RUNS = {
+  async furnace_wait(d, bounded) {
+    const { acquireStep } = require('../src/work');
+    const goal = { kind: 'obtain', request: 'terrain drill' };
+    await sleep(1500);
+    const before = { coal: countOf(bot, 'coal'), raw: countOf(bot, 'raw_iron') + countOf(bot, 'iron_ore') };
+    let error = null;
+    const started = Date.now();
+    try { for (let i = 0; i < 6 && countOf(bot, 'iron_ingot') < 8; i++) await acquireStep(bot, bounded, 'iron_ingot', 8, goal, () => {}); } catch (err) { error = err.message; }
+    const ores = ['3900,66,3902', '3898,65,3900', '3900,65,3898'].filter(k => !/_ore$/.test(bot.blockAt(vec(k.split(',').map(Number)))?.name || '')).length;
+    return { pass: countOf(bot, 'iron_ingot') >= 8 && ores >= 1, detail: { ingots: countOf(bot, 'iron_ingot'), oresDugWhileWaiting: ores, seconds: Math.round((Date.now() - started) / 1000), error } };
+  },
   async craft_full_pockets(d, bounded) { return RUNS.craft_cycle(d, bounded); },
   async craft_cycle(d, bounded) {
     const { acquireStep } = require('../src/work');

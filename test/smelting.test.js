@@ -185,3 +185,28 @@ test('a furnace batch planned on planks burns carried coal when no planks are le
   assert.deepEqual(fuelled, [[registry.itemsByName.coal.id, 1]], 'one coal covers three ingots');
   assert.equal(ingots, 3); assert.equal(coal, 1);
 });
+
+test('a new batch is only as large as the raw input carried: four planned with one raw gold smelts one', { timeout: 3000 }, async () => {
+  let ingots = 0, raw = 1, closed = false, loaded = 0;
+  const furnace = {
+    outputItem: () => loaded ? { name: 'gold_ingot', count: loaded } : null,
+    takeOutput: async () => { ingots += loaded; loaded = 0; },
+    inputItem: () => null, fuelItem: () => ({ name: 'coal', count: 1 }), fuel: .5,
+    putInput: async (type, meta, count) => { assert.equal(count, 1, 'one raw gold loaded, not four'); raw -= count; loaded += count; },
+    putFuel: async () => {}, close: () => { closed = true; },
+  };
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) },
+    inventory: { items: () => [...(raw ? [{ name: 'raw_gold', count: raw }] : []), ...(ingots ? [{ name: 'gold_ingot', count: ingots }] : []), { name: 'coal', count: 8 }] },
+    registry: { blocksByName: { furnace: { id: 1 } }, itemsByName: { raw_gold: { id: 5 }, coal: { id: 6 } } },
+    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: p => ({ name: 'furnace', position: p }),
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+    pathfinder: { movements: {}, goto: async () => {}, setGoal: () => {} },
+    openFurnace: async () => furnace,
+  };
+  const goal = {};
+  await smelt(bot, new Task('smelt', 'test'), { item: 'gold_ingot', from: 'raw_gold', count: 4, fuelItem: 'coal' }, goal);
+  assert(closed);
+  assert.equal(ingots, 1);
+  assert.equal(goal.smelting, undefined, 'no batch left waiting in the furnace');
+});

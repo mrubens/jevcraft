@@ -306,6 +306,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 126. *A bed in sight, no plan to use it.* The second night after the fix of note 123 was still eleven minutes of waiting, reason "waiting for daylight", no watcher. The night mine refuses while a bed is carried or in sight during sleeping hours (the night belongs to the bed), but that night's plan was a shelter: the bed in view was out of reach and none was carried, so the bot neither slept nor mined. The bed now defers the mine only when the night's plan is to sleep.
 
+127. *The first audit's open items.* The six minutes on four gold ingots: a new smelt batch is now only as large as the raw input carried, so nothing is left waiting in a furnace while the bot digs for the rest, and the rest is smelted as a batch of its own at whatever furnace is nearest. Standing beside a working furnace: while a batch has more than fifteen seconds to run, an ore within arm's reach of where the bot stands is dug meanwhile, the furnace shut and opened again (the drill `furnace_wait`: eight ingots, three ores dug while waiting, eighty-one seconds). The pacing near the mine was the mine step walking twelve blocks up its own staircase toward a block the record did not name, and the tunnel's return to its worksite bringing it back down, twice; the mine step now records its target and where it set out from, for the next audit to say which block.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
