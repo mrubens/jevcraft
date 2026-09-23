@@ -132,7 +132,16 @@ async function until(task, predicate, timeout, message) {
 
 async function maintainVitals(bot, task, onAction = () => {}) {
   task.check();
-  if (needsAir(bot) || headSubmerged(bot)) await surfaceForAir(bot, task, onAction);
+  // A submerged head with the air bar full is a reason to swim up only while
+  // swimming up works. Under a stone roof it never could: the replay run and
+  // its drill tried every tick, and the way out (the shore search, which can
+  // dig) never had a turn. After a failed swim, only low air sends it up
+  // again for a minute.
+  const lately = bot._surfaceFailedAt > Date.now() - 60000;
+  if (needsAir(bot) || (headSubmerged(bot) && !lately)) {
+    try { await surfaceForAir(bot, task, onAction); delete bot._surfaceFailedAt; }
+    catch (err) { if (err.name !== 'Cancelled' && /breathable air/.test(err.message)) bot._surfaceFailedAt = Date.now(); throw err; }
+  }
   // Natural regeneration needs at least 18 hunger points. A sheltered injured
   // player at 17 must not wait all night with carried food and no healing.
   if (!(bot.food <= 16 || (bot.health < 20 && bot.food < 18) || (bot.health <= 12 && bot.food < 20))) return false;

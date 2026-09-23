@@ -20,8 +20,20 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
   const start = bot.entity.position.floored();
   let waterY = start.y;
   while (waterY < start.y + 16 && swimmableWater(bot.blockAt(new Vec3(start.x, waterY + 1, start.z)))) waterY++;
-  if (!dryPassable(bot.blockAt(new Vec3(start.x, waterY + 1, start.z)))) throw new Error('No open water surface observed while seeking shore');
-  await surface(bot, task, waterY);
+  // No open surface above: the water fills to a roof. Nothing to float up
+  // to, so straight to digging out (it spun on this error 783 times in two
+  // minutes of the drill).
+  if (!dryPassable(bot.blockAt(new Vec3(start.x, waterY + 1, start.z)))) {
+    const movement = bot.pathfinder.movements, saved = { canDig: movement.canDig, dontCreateFlow: movement.dontCreateFlow, allowedPosition: movement.allowedPosition };
+    try { if (await digToShore(bot, task, goal, save, movement, move, goal.shoreRecovery?.failures || {})) return true; }
+    finally { Object.assign(movement, saved); bot.pathfinder.setGoal(null); bot.clearControlStates(); }
+    throw new Error('No open water surface observed while seeking shore');
+  }
+  // Floating up first, where it can be done: under a roof it cannot, and a
+  // failed float ended the search before the dig-out had its turn.
+  let floated = true;
+  try { await surface(bot, task, waterY); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; floated = false; }
   task.check(); checkAir(bot); checkThreats(bot);
   const movement = bot.pathfinder.movements;
   const previous = { canDig: movement.canDig, scafoldingBlocks: movement.scafoldingBlocks, allowParkour: movement.allowParkour };
@@ -83,6 +95,10 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     // After landings that failed too: the replay run's pool offered a swim to
     // a landing it never reached, every time, and that alone kept the pickaxe
     // out of it.
+    // Out from under the surface rules first: they add a cost of a hundred to
+    // breaking anything but leaves, and every dig route came back "noPath"
+    // with dry cells a block away (the drill's probe found it).
+    policy.restore();
     if (await digToShore(bot, task, goal, save, movement, move, state.failures)) return true;
     throw new Error('No reachable dry shore found in the observed water area');
   } finally {

@@ -11,7 +11,45 @@ const { Vec3 } = require('vec3');
 
 const at = (dimension, command) => `execute in minecraft:${dimension} run ${command}`;
 
+// A place captured from the live world (a spectator probe's block dump) and
+// rebuilt at an offset: the box filled with stone, then each row's runs of
+// air and water laid with one fill each. Every water cell is laid as a
+// source (left as air, the flowing part drained and the pool was dry); every
+// solid block is stone, since what matters is where the rock is.
+function capturedBuild(file, to) {
+  const cap = require(file), { origin, size, cells } = cap;
+  const dx = to[0] - origin.x, dy = to[1] - origin.y, dz = to[2] - origin.z;
+  const kind = name => /^water/.test(name) ? 'water' : /air$|^air|torch|_carpet|snow$/.test(name) ? 'air' : 'stone';
+  const x1 = origin.x + dx, y1 = origin.y + dy, z1 = origin.z + dz;
+  const lines = [`forceload add ${x1 - 8} ${z1 - 8} ${x1 + size.x + 8} ${z1 + size.z + 8}`,
+    `fill ${x1 - 2} ${y1 - 2} ${z1 - 2} ${x1 + size.x + 1} ${y1 + size.y + 1} ${z1 + size.z + 1} minecraft:stone`];
+  for (let y = 0; y < size.y; y++) for (let z = 0; z < size.z; z++) {
+    let run = null;
+    const flush = end => { if (run && run.k !== 'stone') lines.push(`fill ${x1 + run.from} ${y1 + y} ${z1 + z} ${x1 + end} ${y1 + y} ${z1 + z} minecraft:${run.k}`); };
+    for (let x = 0; x < size.x; x++) {
+      const k = kind(cells[(y * size.z + z) * size.x + x]);
+      if (run && run.k === k) continue;
+      flush(x - 1); run = { k, from: x };
+    }
+    flush(size.x - 1);
+  }
+  const jev = cap.jev;
+  return { lines, start: [jev.x + dx, jev.y + dy, jev.z + dz] };
+}
+const CAVE = capturedBuild('./flooded-cave.json', [3400, 40, 3400]);
+
 const TERRAIN = Object.freeze([
+  {
+    name: 'flooded_cave',
+    why: 'The replay run, 2026-09-23: an hour swimming in a flooded cave sixteen blocks under the base, dry air three blocks east behind a stone wall, the shore search offering a swim to a landing it never reached. Captured from the live world and rebuilt.',
+    dimension: 'overworld', seconds: 120, bulk: true,
+    // Water breathing: the live pool had air pockets its rebuild does not,
+    // and the question here is the way out, not the air.
+    effects: ['water_breathing'],
+    start: CAVE.start,
+    kit: [['diamond_pickaxe', 1], ['cooked_beef', 8], ['cobblestone', 32]],
+    build: CAVE.lines,
+  },
   {
     name: 'flooded_ore',
     why: 'Death twelve and the hour of pacing: the night mine chose a copper in the wall of a flooded cave, could never reach it, and drowned there.',
@@ -162,6 +200,7 @@ function placeCommands(user, d) {
     `effect give ${user} minecraft:instant_health 1 10 true`, `effect give ${user} minecraft:saturation 1 10 true`,
     `gamemode survival ${user}`];
   for (const [item, count] of d.kit) lines.push(`give ${user} minecraft:${item} ${count}`);
+  for (const effect of d.effects || []) lines.push(`effect give ${user} minecraft:${effect} 600 0 true`);
   const slots = { head: 'armor.head', chest: 'armor.chest', legs: 'armor.legs', feet: 'armor.feet', offhand: 'weapon.offhand' };
   for (const [slot, item] of Object.entries(d.armor || {})) lines.push(`item replace entity ${user} ${slots[slot]} with minecraft:${item}`);
   lines.push(`time set ${d.night ? 18000 : 6000}`);

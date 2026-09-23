@@ -51,6 +51,28 @@ bot.on('move', () => { if (watch && bot.entity?.position && String(bot.game.dime
 // Each drill's run: the real code, bounded by the drill's time, returning
 // what passing needs to see.
 const RUNS = {
+  async flooded_cave(d, bounded) {
+    // As the game loop has it: the survival layer first, then, standing in
+    // water, the shore search. Passing is dry ground and alive.
+    const { reachShore } = require('../src/shore');
+    const { dryStanding } = require('../src/mining-access');
+    const { swimmableWater } = require('../src/terrain');
+    const survival = createSurvival(bot, { state: {} });
+    const goal = { kind: 'win', request: 'terrain drill' };
+    const actions = [], errors = {};
+    const out = () => dryStanding(bot, bot.entity.position) && !swimmableWater(bot.blockAt(bot.entity.position.floored()));
+    try {
+      while (!watch.died && !out()) {
+        bounded.check();
+        try {
+          if (!await survival.step(bounded, goal, () => {})) await reachShore(bot, bounded, goal, () => {}, { move: navigate });
+        } catch (err) { if (['OutOfTime', 'Cancelled'].includes(err.name)) throw err; errors[err.message.slice(0, 80)] = (errors[err.message.slice(0, 80)] || 0) + 1; }
+        const a = goal.step?.action || goal.survivalAction?.action; if (a && actions.at(-1) !== a) actions.push(a);
+        await sleep(50);
+      }
+    } catch (err) { if (err.name !== 'OutOfTime') throw err; }
+    return { pass: out() && !watch.died, detail: { out: out(), y: Math.round(bot.entity.position.y * 10) / 10, actions: actions.slice(0, 10), errors, dig: goal.shoreRecovery?.dig } };
+  },
   async flooded_ore(d, bounded) {
     const survival = createSurvival(bot, { state: {} });
     const targets = [];
@@ -130,7 +152,9 @@ const RUNS = {
 };
 
 async function runDrill(d, attempt) {
-  await commands(buildCommands(d));
+  // A captured place is hundreds of fills: sent forty lines at a time.
+  if (d.bulk) { const lines = buildCommands(d); for (let i = 0; i < lines.length; i += 40) { fs.writeFileSync(consolePath, lines.slice(i, i + 40).join('\n') + '\n'); await sleep(300); } await sleep(1500); }
+  else await commands(buildCommands(d));
   await commands(placeCommands(username, d));
   await commands([`gamemode spectator ${audience}`, `spectate ${username} ${audience}`]);
   const dimension = d.dimension === 'the_nether' ? 'nether' : 'overworld';
