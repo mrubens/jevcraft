@@ -1330,6 +1330,7 @@ test('from a pocket on the surface the night mine goes down into solid ground, n
     findBlocks: () => [ore], blockAt, world: { raycast: () => null } });
   const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {} });
   const reports = []; survival.report = (g, sv, a) => reports.push(a);
+  survival.shaftPocket = async () => false; // no rock straight down here: the heading rule
   survival.state.nightMine = { heading: 2, failures: 0, mined: 0 };
   await survival.nightMine(new Task('night'), { kind: 'win' }, () => {});
   assert.equal(reports[0].ore, 'branch', 'no side ore from the surface');
@@ -1350,4 +1351,18 @@ test('one skeleton at the wall of the pocket, the bot armed and whole: the wall 
   assert.deepEqual(dug.sort(), [`${new Vec3(1, 64, 0)}`, `${new Vec3(1, 65, 0)}`].sort(), 'the two cells toward it');
   bot.health = 10;
   assert.equal(await survival.openOnWatcher(new Task('pocket'), {}, () => {}, {}, watcher), false, 'hurt, the wall stays');
+});
+
+test('a night mine from a surface pocket first sinks the pocket into the rock', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 15000 },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }], slots: {} },
+    findBlocks: () => [], blockAt: p => ({ position: p.floored(), name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }), world: { raycast: () => null } });
+  const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {} });
+  let sunk = 0; survival.shaftPocket = async () => { sunk++; return true; };
+  survival.state.nightMine = { heading: 0, failures: 0, mined: 0 };
+  assert.equal(await survival.nightMine(new Task('night'), { kind: 'win' }, () => {}), true);
+  assert.equal(sunk, 1);
+  assert(survival.state.nightMine.sunkAt, 'once a night mine');
 });

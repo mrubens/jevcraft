@@ -1254,6 +1254,11 @@ class Survival {
       // the side was reached through the hillside, the pocket opened at every
       // step and was sealed again, three times, and the night was waited out.
       const atSurface = surfaceObserver(bot)(bot.entity.position);
+      // Better still, the pocket itself goes down: a shaft into the rock and
+      // a block over the head (shaftPocket), and the mine starts from there.
+      // Every direction looks solid from inside a pocket (its own walls), so
+      // no heading check tells the hillside from the hill.
+      if (atSurface && !mine.sunkAt && await this.shaftPocket(task, goal, save)) { mine.sunkAt = Date.now(); save(); return true; }
       const ore = !atSurface && nightOre(bot, feet, attemptsFor(this));
       if (ore) { target = ore.position; mine.targetOre = ore.name; }
       else {
