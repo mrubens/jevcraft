@@ -290,6 +290,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 118. *A restock that could not finish, again and again.* At the base the run cycled through restocks the chest could not complete (a furnace forty times over, flagged each time by the no-progress watchdog, then planned again at once). A restock that makes no measurable progress now sets its items aside for fifteen minutes, and the restock plan leaves them out.
 
+119. *What the landmarks are for.* A mineshaft was remembered and then ignored. Now its chests are looted where they ride, in minecarts (entities, opened like a chest), passed over when a spawner is within ten blocks (cave spiders), and with no cobweb in view a remembered mineshaft is where the search for string goes. A Nether fortress's chests are opened too, never a bastion's and never with a piglin in sight; and a village's. The new terrain drill `mineshaft_cart` (a rail tunnel with a chest minecart) passes, and caught a record bug on the way: mineflayer updates an open window's copy of the pockets, not the bot's, so every loot had been recorded as taking nothing; the count now reads the window's own slots.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

@@ -51,6 +51,16 @@ bot.on('move', () => { if (watch && bot.entity?.position && String(bot.game.dime
 // Each drill's run: the real code, bounded by the drill's time, returning
 // what passing needs to see.
 const RUNS = {
+  async mineshaft_cart(d, bounded) {
+    const { lootNearby } = require('../src/looting');
+    const goal = { kind: 'win', request: 'terrain drill', landmarks: [{ kind: 'mineshaft', x: d.shaft[0], y: d.shaft[1], z: d.shaft[2], dimension: 'overworld' }] };
+    await sleep(1500);
+    const before = { bread: countOf(bot, 'bread'), iron: countOf(bot, 'iron_ingot') };
+    let opened = false, error = null;
+    try { opened = await lootNearby(bot, bounded, goal, () => {}, { approach: null, open: null, navigate }); } catch (err) { error = err.message; }
+    const took = { bread: countOf(bot, 'bread') - before.bread, iron: countOf(bot, 'iron_ingot') - before.iron };
+    return { pass: opened && took.bread === 3 && took.iron === 4, detail: { opened, took, record: goal.looted && Object.values(goal.looted)[0], error } };
+  },
   async flooded_cave(d, bounded) {
     // As the game loop has it: the survival layer first, then, standing in
     // water, the shore search. Passing is dry ground and alive.

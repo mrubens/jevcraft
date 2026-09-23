@@ -86,3 +86,35 @@ test('what is worth taking', () => {
   for (const name of ['rotten_flesh', 'golden_sword', 'light_weighted_pressure_plate']) assert(!wanted(bot, name), name);
   assert.equal(phraseTaken({ gold_ingot: 2 }), '2 gold ingot');
 });
+
+test('a mineshaft\'s chests ride in minecarts: opened as entities, one beside a spawner passed over', async () => {
+  const { lootableMinecarts } = require('../src/looting');
+  const shaft = { kind: 'mineshaft', x: 40, y: 30, z: 40, dimension: 'overworld' };
+  const { bot, items } = world({}, { position: new Vec3(38, 30, 38) });
+  const cart = { id: 5, uuid: 'cart-a', name: 'chest_minecart', position: new Vec3(41.5, 30, 42.5), isValid: true };
+  bot.entities[5] = cart;
+  const goal = { landmarks: [shaft] };
+  assert.deepEqual(lootableMinecarts(bot, goal).map(e => e.id), [5]);
+  const opened = [];
+  const actions = { navigate: async () => { bot.entity.position = new Vec3(41, 30, 41); }, makeRoom: false,
+    openEntity: async (b, t, e) => { opened.push(e.id); return { containerItems: () => [{ name: 'rail', count: 9, type: registry.itemsByName.rail.id }, { name: 'bread', count: 3, type: registry.itemsByName.bread.id }],
+      withdraw: async (type, meta, count) => { items.push({ name: registry.items[type].name, count, type }); }, close() {} }; } };
+  assert.equal(await lootNearby(bot, task, goal, () => {}, actions), true);
+  assert.deepEqual(opened, [5]);
+  assert(items.some(i => i.name === 'bread'));
+  assert.deepEqual(goal.looted['cart:cart-a'].left, { rail: 9 });
+  assert.deepEqual(lootableMinecarts(bot, goal), [], 'not opened twice');
+  const guarded = world({ '41,31,45': 'spawner' }, { position: new Vec3(38, 30, 38) }).bot;
+  guarded.entities[6] = { id: 6, uuid: 'cart-b', name: 'chest_minecart', position: new Vec3(41.5, 30, 42.5), isValid: true };
+  assert.deepEqual(lootableMinecarts(guarded, { landmarks: [shaft] }), [], 'a cave spider spawner beside it');
+});
+
+test('a fortress chest is opened in the Nether only with no piglin in sight; a village chest in the Overworld', () => {
+  const fortress = { kind: 'nether_fortress', x: 10, y: 70, z: 10, dimension: 'nether' };
+  const { bot } = world({ '30,70,10': 'chest' }, { dimension: 'the_nether', position: new Vec3(25, 70, 10) });
+  assert.equal(lootableChests(bot, { landmarks: [fortress] }).length, 1);
+  bot.entities[9] = { id: 9, name: 'piglin', position: new Vec3(20, 70, 10), isValid: true };
+  assert.equal(lootableChests(bot, { landmarks: [fortress] }).length, 0, 'a piglin looking on');
+  const village = world({ '105,64,100': 'chest' }, { position: new Vec3(100, 64, 100) }).bot;
+  assert.equal(lootableChests(village, { villages: [{ x: 100, y: 64, z: 100, dimension: 'overworld' }] }).length, 1);
+});

@@ -445,6 +445,14 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       .map(p => [`${p}`, p])).values()].filter(p => !reservedForConstruction(goal, p) && safeFromHostiles(bot, p) &&
       !isSetAside(goal, 'reach', p) && (!surface || !bot.blockAt(p) || surface.isSurface(p)))
       .sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    // Cobwebs (string) hang in mineshafts: with none in view, a remembered
+    // mineshaft is where to look, and the walk or the tunnel down to it is
+    // what brings them into view.
+    if (!observed.length && resourceNames.includes('cobweb') && !surfaceOnly) {
+      const { knownLandmarks } = require('./exploration');
+      const shaft = knownLandmarks(bot, goal, 'mineshaft', 256).map(k => k.landmark).find(l => !isSetAside(goal, 'reach', new Vec3(l.x, l.y, l.z)));
+      if (shaft) observed.push(new Vec3(shaft.x, shaft.y, shaft.z));
+    }
     if (observed.length) {
       target = observed[0];
       search.observedTarget = { ...target };
@@ -2315,7 +2323,7 @@ function idleOptions(bot, goal) {
   // Looting: the nearest remembered ruined portal, dungeon or temple whose
   // chests have not been opened.
   const unlooted = unlootedLandmarks(bot, goal)[0];
-  if (unlooted) options.loot = { description: `Loot: walk ${unlooted.distance} blocks to the ${unlooted.landmark.kind.replaceAll('_', ' ')} and open its chests. Ruined portals hold gold, obsidian and flint and steel; dungeons and temples iron, gold, bread and now and then diamonds.`,
+  if (unlooted) options.loot = { description: `Loot: walk ${unlooted.distance} blocks to the ${unlooted.landmark.kind.replaceAll('_', ' ')} and open its chests. Ruined portals hold gold, obsidian and flint and steel; dungeons and temples iron, gold, bread and now and then diamonds; a mineshaft's chests ride in minecarts, with rails, iron, gold and bread, and its cobwebs are string.`,
     run: (b, t, g, sv) => lootStep(b, t, g, sv, lootActions()) };
   if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.`, item: 'torch', count: 4 };
   // The standing dream. With nothing asked and nothing urgent, the next

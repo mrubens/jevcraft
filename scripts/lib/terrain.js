@@ -40,6 +40,24 @@ const CAVE = capturedBuild('./flooded-cave.json', [3400, 40, 3400]);
 
 const TERRAIN = Object.freeze([
   {
+    name: 'mineshaft_cart',
+    why: 'A mineshaft\'s chest rides in a minecart: an entity, not a block. The first landmark the run found and did nothing with.',
+    dimension: 'overworld', seconds: 60,
+    start: [3500.5, 41, 3500.5],
+    kit: [['iron_pickaxe', 1], ['cooked_beef', 8]],
+    build: [
+      'forceload add 3490 3490 3520 3520',
+      'fill 3495 38 3495 3512 46 3505 minecraft:stone',
+      'fill 3499 41 3500 3510 42 3501 minecraft:air',
+      'fill 3499 40 3500 3510 40 3501 minecraft:oak_planks',
+      'fill 3500 41 3500 3510 41 3500 minecraft:rail',
+      'setblock 3503 42 3501 minecraft:cobweb',
+      'kill @e[type=minecraft:chest_minecart,x=3490,y=35,z=3490,dx=30,dy=15,dz=30]',
+      'summon minecraft:chest_minecart 3506.5 41 3500.5 {Items:[{Slot:0b,id:"minecraft:bread",count:3},{Slot:1b,id:"minecraft:iron_ingot",count:4},{Slot:2b,id:"minecraft:rail",count:9}]}',
+    ],
+    shaft: [3503, 41, 3501],
+  },
+  {
     name: 'flooded_cave',
     why: 'The replay run, 2026-09-23: an hour swimming in a flooded cave sixteen blocks under the base, dry air three blocks east behind a stone wall, the shore search offering a swim to a landing it never reached. Captured from the live world and rebuilt.',
     dimension: 'overworld', seconds: 120, bulk: true,
