@@ -307,11 +307,13 @@ function ownGround(bot, from) {
 // live run's sand bar was two, a block of water between them, and from one
 // the other was "ground in view" every time. Other islets are skipped, the
 // bot's own among them.
+// Only ground at the sea's level or above: a cave floor at y 30 under the
+// sea bed is dry standing too, and the live run declined for one.
 function landInView(bot, reach, own = new Set()) {
   const ids = LAND_IDS.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
-  const islets = new Set(own);
+  const islets = new Set(own), level = Math.floor(bot.entity.position.y) - 2;
   const cells = bot.findBlocks({ matching: ids, maxDistance: reach, count: 64,
-    useExtraInfo: b => { const p = b.position.offset(0, 1, 0); return !own.has(`${p.x},${p.z}`) && dryStanding(bot, p); } })
+    useExtraInfo: b => { const p = b.position.offset(0, 1, 0); return p.y >= level && !own.has(`${p.x},${p.z}`) && dryStanding(bot, p); } })
     .sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
   for (const c of cells) {
     if (islets.has(`${c.x},${c.z}`)) continue;
