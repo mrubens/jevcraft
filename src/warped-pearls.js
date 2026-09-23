@@ -14,7 +14,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { setAside, isSetAside } = require('./progress');
 
-const LEG = 64, SEARCH_LEGS = 8, REST_MS = 30 * 60 * 1000, STALL_MS = 15 * 60 * 1000;
+const LEG = 64, SEARCH_LEGS = 8, SEARCH_MS = 15 * 60 * 1000, REST_MS = 30 * 60 * 1000, STALL_MS = 15 * 60 * 1000;
 const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 const inNether = l => /nether/.test(String(l.dimension || ''));
@@ -47,10 +47,13 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
     return true;
   }
   // None known: sweep for one.
-  const search = goal.warpedSearch ||= { legs: 0, heading: Math.floor(Math.random() * 4), fails: 0, tries: 0 };
+  const search = goal.warpedSearch ||= { legs: 0, heading: Math.floor(Math.random() * 4), fails: 0, tries: 0, startedAt: now() };
+  search.startedAt ||= now();
   // Legs are ground covered, not attempts: on the first live search every
   // walk failed at once on Nether ground and eight "legs" went in a second.
-  if (search.legs >= SEARCH_LEGS || (search.tries || 0) >= SEARCH_LEGS * 3) {
+  // And time spent, not tries: stuck on a pillar, twenty-four tries went in
+  // a minute. Eight legs, or a quarter of an hour, and the search rests.
+  if (search.legs >= SEARCH_LEGS || now() - search.startedAt > SEARCH_MS) {
     setAside(goal, 'rung', 'warped_search', `${SEARCH_LEGS} legs without a warped forest`, REST_MS); delete goal.warpedSearch; save();
     bot.chat?.('No warped forest found. Pearls the other way for now.');
     return false;

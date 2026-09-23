@@ -63,6 +63,8 @@ test('a walk that fails at once is not a leg: the sweep tunnels on and gives up 
   assert.equal(tunnels, 10, 'each stuck walk goes on through the netherrack');
   assert.equal(goal.warpedSearch.legs, 0, 'and ten stuck tries are not ten legs');
   assert(warped.warpedOpen(goal), 'the search is still on');
-  for (let i = 0; i < 20; i++) await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 });
-  assert.equal(warped.warpedOpen(goal), false, 'twenty-four tries without ground: it rests');
+  for (let i = 0; i < 30; i++) await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 });
+  assert(warped.warpedOpen(goal), 'forty quick tries are not a search spent');
+  await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 }, { now: () => Date.now() + 16 * 60000 });
+  assert.equal(warped.warpedOpen(goal), false, 'a quarter of an hour without a forest: it rests');
 });
