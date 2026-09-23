@@ -72,3 +72,59 @@ test('under a roof, with no landing counted as surface, the bot climbs out onto 
   assert.equal(landed, true);
   assert.equal(goal.step.climb, true);
 });
+
+// A one-wide pool at (0, 62, 0), water beside it at (1, 62, 0), banks two
+// above the water everywhere else.
+function pool({ items = [], waterBeside = true } = {}) {
+  const { Vec3 } = require('vec3');
+  const placed = new Map(), dug = new Set();
+  const name = p => {
+    const k = `${p.x},${p.y},${p.z}`;
+    if (placed.has(k)) return placed.get(k);
+    if (dug.has(k)) return 'air';
+    if (p.y >= 64) return 'air';
+    if (p.x === 0 && p.z === 0 && p.y >= 59) return p.y <= 62 ? 'water' : 'air';
+    if (waterBeside && p.x === 1 && p.z === 0 && p.y >= 60) return p.y <= 62 ? 'water' : 'air';
+    return 'dirt';
+  };
+  const bot = { entity: { position: new Vec3(0.5, 62.2, 0.5), onGround: false, isInWater: true }, inventory: { items: () => items },
+    blockAt: p => { const f = p.floored(); const n = name(f); return { position: f, name: n, boundingBox: /air|water/.test(n) ? 'empty' : 'block', diggable: true }; },
+    equip: async () => {}, lookAt: async () => {}, getControlState: () => false,
+    setControlState: (key, on) => { if (key === 'jump' && on) { bot.entity.position = bot.target || bot.entity.position; bot.entity.onGround = true; bot.entity.isInWater = false; } },
+    placeBlock: async (ref, face) => { const p = ref.position.plus(face); placed.set(`${p.x},${p.y},${p.z}`, 'dirt'); bot.target = p.offset(0.5, 1, 0.5); },
+    dig: async b => { dug.add(`${b.position.x},${b.position.y},${b.position.z}`); bot.target = b.position.offset(0.5, 0, 0.5).offset(0, -1, 0); } };
+  return { bot, placed, dug };
+}
+
+test('in a high-banked pool with blocks carried, a block goes into the water beside and the bot climbs onto it', async () => {
+  const { stepOut } = require('../src/shore');
+  const { bot, placed } = pool({ items: [{ name: 'cobblestone', count: 20 }] });
+  const goal = {};
+  assert.equal(await stepOut(bot, new Task('pool'), goal, () => {}), true);
+  assert(placed.has('1,62,0'), 'the block at the waterline beside');
+  assert.equal(goal.survivalAction.action, 'step_out_of_water');
+});
+
+test('with no blocks, a step is cut into the bank at the waterline and climbed', async () => {
+  const { notchOut, stepOut } = require('../src/shore');
+  const { bot, dug } = pool({ waterBeside: false });
+  assert.equal(await stepOut(bot, new Task('pool'), {}, () => {}), false, 'no blocks to place');
+  const goal = {};
+  assert.equal(await notchOut(bot, new Task('pool'), goal, () => {}), true);
+  assert(dug.has('1,63,0') || dug.has('-1,63,0') || dug.has('0,63,1') || dug.has('0,63,-1'), 'the block over the step dug');
+  assert.equal(goal.survivalAction.action, 'notch_out_of_water');
+});
+
+test('with no bank beside it, the bot swims to the nearest bank a step can be cut into', async () => {
+  const { notchOut } = require('../src/shore');
+  const { Vec3 } = require('vec3');
+  const { bot, dug } = pool({ waterBeside: false });
+  // Open water all round the bot for two blocks; the banks are further off.
+  const inner = bot.blockAt;
+  bot.blockAt = p => { const f = p.floored(); if (Math.abs(f.x) <= 2 && Math.abs(f.z) <= 1 && f.y >= 59 && f.y <= 62) return { position: f, name: 'water', boundingBox: 'empty' }; if (Math.abs(f.x) <= 2 && Math.abs(f.z) <= 1 && f.y >= 63) return { position: f, name: 'air', boundingBox: 'empty' }; return inner(p); };
+  const set = bot.setControlState;
+  bot.setControlState = (key, on) => { if (key === 'forward' && on && !bot.swum) { bot.swum = true; bot.entity.position = new Vec3(0.5, 62.2, 1.5); } set(key, on); };
+  const goal = {};
+  assert.equal(await notchOut(bot, new Task('lake'), goal, () => {}), true);
+  assert([...dug].some(k => /,63,2$|,63,-2$|^3,63|^-3,63/.test(k)), `a bank block dug: ${[...dug]}`);
+});

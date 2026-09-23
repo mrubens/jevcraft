@@ -99,6 +99,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     // breaking anything but leaves, and every dig route came back "noPath"
     // with dry cells a block away (the drill's probe found it).
     policy.restore();
+    if (await stepOut(bot, task, goal, save)) return true;
     if (await notchOut(bot, task, goal, save)) return true;
     if (await digToShore(bot, task, goal, save, movement, move, state.failures)) return true;
     throw new Error('No reachable dry shore found in the observed water area');
@@ -106,6 +107,43 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     policy.restore(); Object.assign(movement, previous);
     bot.pathfinder.setGoal(null); bot.clearControlStates();
   }
+}
+
+// A block into the water beside the bot, at the waterline, as a player
+// does: stood on, the bank is a block up and hopped onto. Blocks carried
+// and a water cell beside with room over it; the step cut into the bank
+// (notchOut) is the way without blocks.
+async function stepOut(bot, task, goal, save) {
+  const { inWater } = require('./survival');
+  const shelter = require('./shelter');
+  if (!inWater(bot) || typeof bot.placeBlock !== 'function') return false;
+  const block = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name));
+  if (!block) return false;
+  const feet = bot.entity.position.floored();
+  const water = /water/.test(bot.blockAt(feet)?.name || '') ? feet : feet.offset(0, -1, 0);
+  const wet = b => /water/.test(b?.name || '');
+  const open = b => b && (b.boundingBox === 'empty');
+  const dirs = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+  for (const d of dirs) {
+    const cell = water.plus(d), under = cell.offset(0, -1, 0);
+    if (!wet(bot.blockAt(cell)) || !open(bot.blockAt(cell.offset(0, 1, 0))) || !open(bot.blockAt(cell.offset(0, 2, 0)))) continue;
+    // Something solid to place against: the floor under it, or a side.
+    const faces = [[under, new Vec3(0, 1, 0)], ...dirs.map(f => [cell.plus(f), f.scaled(-1)])];
+    const anchor = faces.find(([p]) => bot.blockAt(p)?.boundingBox === 'block');
+    if (!anchor) continue;
+    goal.step = { action: 'step_out_of_water', at: { ...cell } };
+    goal.survivalAction = { action: 'step_out_of_water', at: new Date().toISOString() }; save();
+    try {
+      await bot.equip(block, 'hand');
+      await bot.placeBlock(bot.blockAt(anchor[0]), anchor[1]);
+    } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; continue; }
+    if (bot.blockAt(cell)?.boundingBox !== 'block') continue;
+    await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'onto the block placed at the waterline',
+      look: cell.offset(0.5, 1.2, 0.5), maxMs: 2000, tick: 50, until: () => bot.entity.onGround && !inWater(bot) });
+    (goal.shoreRecovery ||= {}).stepped = { at: new Date().toISOString(), at_cell: { ...cell } }; save();
+    return !inWater(bot);
+  }
+  return false;
 }
 
 // A pool whose banks stand too high to climb from the water: a step cut
@@ -121,9 +159,25 @@ async function notchOut(bot, task, goal, save) {
   const soft = b => b && (b.boundingBox === 'empty' ? !/water|lava/.test(b.name) : b.diggable && !/bedrock|obsidian|chest|furnace|bed$/.test(b.name));
   const dirs = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
   const lavaNear = c => [c, c.offset(1, 0, 0), c.offset(-1, 0, 0), c.offset(0, 0, 1), c.offset(0, 0, -1), c.offset(0, 1, 0)].some(q => /lava/.test(bot.blockAt(q)?.name || ''));
-  for (const d of dirs) {
-    const step = water.plus(d), body = step.offset(0, 1, 0), head = step.offset(0, 2, 0);
-    if (!solid(bot.blockAt(step)) || !soft(bot.blockAt(body)) || !soft(bot.blockAt(head)) || lavaNear(body) || lavaNear(head)) continue;
+  // The bank beside the bot, or the nearest within four blocks swum to: a
+  // lake under stone cliffs had no bank beside the spot the bot floated in.
+  const options = [];
+  for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) {
+    const from = water.offset(dx, 0, dz);
+    if (!/water/.test(bot.blockAt(from)?.name || '') || !bot.blockAt(from.offset(0, 1, 0)) || bot.blockAt(from.offset(0, 1, 0)).boundingBox === 'block') continue;
+    for (const d of dirs) {
+      const step = from.plus(d), body = step.offset(0, 1, 0), head = step.offset(0, 2, 0);
+      if (!solid(bot.blockAt(step)) || !soft(bot.blockAt(body)) || !soft(bot.blockAt(head)) || lavaNear(body) || lavaNear(head)) continue;
+      options.push({ from, step, body, head, cost: Math.abs(dx) + Math.abs(dz) + [body, head].filter(c => bot.blockAt(c)?.boundingBox === 'block').length });
+    }
+  }
+  options.sort((a, b) => a.cost - b.cost);
+  for (const { from, step, body, head } of options.slice(0, 3)) {
+    if (!from.equals(water)) {
+      await motion(bot, task, { label: 'swim_to_bank', keys: ['forward', 'jump'], sneak: false, why: 'swimming to the bank a step can be cut into',
+        look: from.offset(0.5, 0.8, 0.5), maxMs: 4000, tick: 50, until: () => bot.entity.position.floored().x === from.x && bot.entity.position.floored().z === from.z });
+      if (bot.entity.position.floored().x !== from.x || bot.entity.position.floored().z !== from.z) continue;
+    }
     goal.step = { action: 'notch_out_of_water', step: { ...step } };
     goal.survivalAction = { action: 'notch_out_of_water', at: new Date().toISOString() }; save();
     const { equipBestTool } = require('./skills');
@@ -131,13 +185,13 @@ async function notchOut(bot, task, goal, save) {
       const b = bot.blockAt(c);
       if (b?.boundingBox !== 'block') continue;
       task.check();
-      try { await equipBestTool(bot, b); await bot.dig(b, true); }
+      try { await equipBestTool(bot, b); } catch (_) { /* the hand, then */ }
+      try { await bot.dig(b, true); }
       catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
     }
     await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'onto the step cut into the bank',
       look: body.offset(0.5, 0.5, 0.5), maxMs: 2500, tick: 50, until: () => bot.entity.onGround && !inWater(bot) });
     if (!inWater(bot)) { (goal.shoreRecovery ||= {}).notched = { at: new Date().toISOString(), step: { ...step } }; save(); return true; }
-    return false;
   }
   return false;
 }
@@ -180,4 +234,4 @@ async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
   } finally { Object.assign(movement, saved); }
 }
 
-module.exports = { reachShore, digToShore, notchOut };
+module.exports = { reachShore, digToShore, notchOut, stepOut };
