@@ -76,15 +76,17 @@ function lavaBeside(bot, p) {
 // in the lava four times until it burned. The nearest cell with a floor,
 // air for the body and no lava in it, forward and jumping at it.
 const inLava = bot => !!bot.entity?.isInLava || [0, 1].some(dy => bot.blockAt(bot.entity.position.floored().offset(0, dy, 0))?.name === 'lava');
+const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(bot.entity.position.floored())?.name === 'water';
 function lavaExit(bot) {
   const feet = bot.entity.position.floored(), cells = [];
-  const dry = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire/.test(b.name); };
+  const dry = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name); };
   for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) for (let dy = -1; dy <= 2; dy++) {
     const c = feet.offset(dx, dy, dz);
     if (bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block' || bot.blockAt(c.offset(0, -1, 0))?.name === 'magma_block' || !dry(c) || !dry(c.offset(0, 1, 0))) continue;
     cells.push(c);
   }
-  return cells.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0] || null;
+  const far = c => c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
+  return cells.sort((a, b) => far(a) - far(b))[0] || null;
 }
 
 // Hostiles that daylight does not remove and that keep following.
@@ -1153,4 +1155,4 @@ class Survival {
   }
 }
 
-module.exports = { Survival, inLava, lavaExit, night, shelterNeeded, lavaBeside, bedSite, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { Survival, inLava, inWater, lavaExit, night, shelterNeeded, lavaBeside, bedSite, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

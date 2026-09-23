@@ -15,7 +15,7 @@ const { updateDigCapabilities } = require('./movement');
 const { resourceTunnelStep, tunnelStep, staircaseResting } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard, safeFood } = require('./vitals');
 const { decideTree, announceFallback, firstOption } = require('./decisions');
-const { Survival } = require('./survival');
+const { Survival, inWater, lavaExit } = require('./survival');
 const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
 const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, rememberSource, committedSource } = require('./decision-options');
 const { reviewDesign } = require('./design-review');
@@ -759,6 +759,13 @@ function recallWorkstations(bot, goal) {
 }
 
 async function workstation(bot, task, name, goal) {
+  // Out of the water first. A furnace placed from a flooded pit at the base
+  // could not be reached from where the bot floated, nor the table after
+  // it: "I can't reach the furnace I placed", again and again.
+  if (inWater(bot) && !bot.entity.isInLava) {
+    const exit = lavaExit(bot);
+    if (exit) { try { await navigate(bot, task, new goals.GoalBlock(exit.x, exit.y, exit.z), { timeoutMs: 8000, stallMs: 3000 }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; } }
+  }
   // Use a carried table nearby instead of spending ingredients/scaffolding
   // walking back to a distant bench. Existing nearby player tables may still
   // be reused, but only tables placed by this session are collected afterward.

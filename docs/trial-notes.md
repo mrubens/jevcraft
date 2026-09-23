@@ -216,6 +216,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 81. *Death fifteen: held its position in lava.* Under the portal, at ten health with nothing to eat, a hoglin knocked Jev into the lava pool beside it at eight; the survival layer answered with "hold defensive position" four times, in the lava, until it burned. Nothing looked at whether the bot was in lava. Now it is the first question of every survival step: in lava, the nearest cell with a floor and air for the body, forward and jumping at it, before any fight, hold or decision.
 
+82. *A furnace placed from the water.* Back at the base after death fifteen, the pond had run into the pit beside the furnace and table, and Jev, floating there, placed a new furnace and then could not reach it: "I can't reach the furnace I placed", then the table, and thirty seconds still. A workstation is now placed and used from dry ground: floating in water, the bot first steps to the nearest dry cell with air above (the lava exit's search, which now also refuses water and measures from cell centres, not corners).
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

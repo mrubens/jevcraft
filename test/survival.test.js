@@ -968,3 +968,15 @@ test('in lava, the way out is the nearest cell with a floor and air, and nothing
   assert.equal(goal.survivalAction.action, 'leave_lava');
   assert.equal(inLava(bot), false, 'and it is out');
 });
+
+test('floating in water, the way out is dry ground with air above, never another water cell', () => {
+  const { inWater, lavaExit } = require('../src/survival');
+  const water = new Set(['0,10,0', '1,10,0', '0,10,1']);
+  const blockAt = p => water.has(`${p.x},${p.y},${p.z}`) ? { name: 'water', boundingBox: 'empty', position: p }
+    : p.y < 10 ? { name: 'dirt', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  const bot = { entity: { position: new Vec3(0.5, 10.4, 0.5), isInWater: true }, blockAt };
+  assert.equal(inWater(bot), true);
+  const exit = lavaExit(bot);
+  assert(!water.has(`${exit.x},${exit.y},${exit.z}`), `dry: ${exit}`);
+  assert.equal(exit.distanceTo(new Vec3(0, 10, 0)), 1);
+});
