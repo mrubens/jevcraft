@@ -16,13 +16,13 @@ Most "AI plays Minecraft" bots hand a large language model the whole problem and
 - *Which of these three sources of wood is worth walking to?*
 - *Does the design that came back actually answer the request?*
 
-When Jev is not sure enough, the bot asks a one-line question instead of guessing. When something has failed repeatedly, Jev picks between recovery options that code has already checked, and only if it is unsure does an optional generative model get a turn. The result is a bot whose behaviour you can inspect answer by answer, that costs about two thousand tokens per chat request, and that never executes anything the model invented.
+When Jev is not sure enough, the bot asks a one-line question instead of guessing. When something has failed repeatedly, Jev picks between recovery options that code has already checked. The result is a bot whose behaviour you can inspect answer by answer, that costs about two thousand tokens per chat request, and that never executes anything the model invented.
 
 ## What Jev can do
 
 - **Gather and craft.** Resolve items from the real Minecraft catalog and work through recipes, ingredients, harvest tools, smelting, and concrete hardening.
 - **Combine requests.** Plan shared materials for several outputs, batch compatible gathering and crafting, and track each delivery. Full diamond armor means all four pieces.
-- **Build from descriptions.** Turn a request and nearby terrain into a schematic, gather its materials, prepare the ground, and place the blocks. Without a generative model, Jev configures building templates.
+- **Build from descriptions.** Turn a request and nearby terrain into a schematic, gather its materials, prepare the ground, and place the blocks. In Survival, or without a generative model, Jev configures building templates.
 - **Explore with you.** Come, follow, find observed blocks and creatures, search for biomes, swim, and use boats for surveyed crossings.
 - **Remember your world.** Save named places and notes, recall past tasks, learn a wood preference from ordinary requests, and return to remembered locations after reconnecting.
 - **Handle survival needs.** Seek food and shelter, cook and eat, replace worn tools, respond to hazards, and recover without forgetting your request.
@@ -94,7 +94,7 @@ Jev answers three kinds of question: a **Choice** among options code lists, a **
 | Dusk or hunger while working | Continue the request, secure a shelter, or forage; and which forage option | Choice | Eating carried food and air are rules in code, not choices |
 | A build request | Whether it continues a standing structure and where it goes; in template mode, which style, floors, size and material | Choices | The generative designer draws custom shapes; templates need no generation |
 | A design comes back | Whether the validated design answers the request in kind, scale and material | Noul | A poor fit goes back to the designer with Jev's verdict as feedback, before hours of placing blocks |
-| Something keeps failing | Which code-checked recovery action is most likely to unblock the original request | Choice | Executes it under a budget. An unsure Jev, or a repeat of the same failure, escalates to the optional generative adviser |
+| Something keeps failing | Which code-checked recovery action is most likely to unblock the original request | Choice | Executes it under a budget. An unsure Jev does nothing from the advice |
 | A boat, an ore, a mob, a stronghold, the dragon | Whether a surveyed crossing is worth a boat; whether a nearby ore is worth a detour; the next bounded combat or search action | Choices | Bounded, verified execution with safety reflexes in code |
 | An operator command | Each branch of the server's own command tree, the argument roles, then whether the result faithfully implements the request | Choices + Noul | Runs the command once, only from allowed players, only above a faithfulness bar |
 
@@ -102,7 +102,7 @@ Every one of these questions is defined in one place, [`src/decisions`](src/deci
 
 [How Jev thinks](docs/how-jev-thinks.md) walks through one recorded request with the real answers, confidences, latency and token counts, and ships the trace so you can open it in the Observatory.
 
-The two places a generative model is used, both optional and both through OpenRouter, are the ones that need generation: drawing a custom schematic from a request and terrain survey, and reasoning about a failure Jev could not judge. Everything else is selection, and selection is what a System One model does well.
+The one place a generative model is used, optionally, through OpenRouter and only in Creative, is the one that needs generation: drawing a custom schematic from a request and terrain survey. Everything else is selection, and selection is what a System One model does well.
 
 If Jev cannot be reached (the service is down, a request times out), the bot does not stop. The same decision tree is walked with a code default, shelter before food before the request and otherwise the first option listed, the decision is recorded as a *code default*, and the bot says so once in chat and once more when Jev is back. The Observatory shows those decisions in their own colour, so an outage is visible rather than silent.
 
@@ -201,27 +201,26 @@ Jev build a small sandstone watchtower
 Jev build a cobblestone sculpture
 ```
 
-With an OpenRouter key, the designer receives the request, a terrain heightmap, inventory, game mode, and the supported palette, and returns a schematic. Code validates its geometry; Jev judges whether it answers the request; then the bot gathers materials through ordinary recipes (or the Creative inventory) and builds it. Jev prefers level ground but can cut terrain, fill gaps, and set a foundation in shallow water, within bounded earthworks that only move natural ground. Jev's own earlier buildings and anything a player built are built around, never over.
+In Creative with an OpenRouter key, the designer receives the request, a terrain heightmap, inventory, game mode, and the supported palette, and returns a schematic. Code validates its geometry; Jev judges whether it answers the request; then the bot gathers materials through ordinary recipes (or the Creative inventory) and builds it. Jev prefers level ground but can cut terrain, fill gaps, and set a foundation in shallow water, within bounded earthworks that only move natural ground. Jev's own earlier buildings and anything a player built are built around, never over.
 
 The executor supports structures up to **25 × 16 × 25 blocks** in the ordinary case and larger ones when a request calls for it, with at most **16 materials**. Stairs, slabs and wooden doors carry their orientation; fluids, gravity blocks and redstone are not supported schematic elements.
 
-With `BUILD_DESIGNER=jev`, or `auto` without an OpenRouter key, Jev selects and configures cottage, mansion, or tower templates, or picks a ready-made design from the shelf of forty-five in `data/schematics` and the generators (chapels, wells, farms, barns, pavilions, monuments and more). These designs are built as they are, with no separate fit review. A plain `Jev build a house` uses the compact shelter workflow. Ask to extend, finish, or change a building Jev already built and it works out which one you mean; without the custom designer a change is built beside the original instead, since a template cannot be drawn against it.
+In Survival, with `BUILD_DESIGNER=jev`, or with `auto` and no OpenRouter key, Jev selects and configures cottage, mansion, or tower templates, or picks a ready-made design from the shelf of forty-five in `data/schematics` and the generators (chapels, wells, farms, barns, pavilions, monuments and more). These designs are built as they are, with no separate fit review. A plain `Jev build a house` uses the compact shelter workflow. Ask to extend, finish, or change a building Jev already built and it works out which one you mean; without the custom designer a change is built beside the original instead, since a template cannot be drawn against it.
 
 ## Model configuration
 
 | Setting | Purpose |
 | --- | --- |
 | `TYPESAFE_API_KEY` | Use Jev through TypeSafe. |
-| `OPENROUTER_API_KEY` | Use Jev through OpenRouter and enable the optional design and recovery models. |
+| `OPENROUTER_API_KEY` | Use Jev through OpenRouter and enable the optional building designer in Creative. |
 | `JEV_PROVIDER` | Force `typesafe` or `openrouter`. Otherwise a TypeSafe key takes precedence. |
 | `TYPESAFE_DEFAULT_MODEL` | TypeSafe decision model; default `jev-latest`. |
 | `OPENROUTER_JEV_MODEL` | OpenRouter decision model; default `typesafe/jev-1.13`. |
-| `BUILD_DESIGNER` | `auto` uses OpenRouter when configured, otherwise templates; `jev` always uses templates; `openrouter` requires generated designs. |
+| `BUILD_DESIGNER` | `auto` uses OpenRouter in Creative when configured, otherwise templates; `jev` always uses templates; `openrouter` requires generated designs in Creative. Survival always uses templates. |
 | `OPENROUTER_BUILD_MODEL` | Generative building model. |
-| `RECOVERY_ADVISER` | `auto` lets Jev, then the generative model, advise on repeated failures; `jev` uses Jev only, with no generative calls; `off` disables both. |
-| `OPENROUTER_RECOVERY_MODEL` | Generative recovery model. |
+| `RECOVERY_ADVISER` | `jev` (default) lets Jev pick a code-checked action after repeated failures; `off` disables it. |
 
-Both generative settings default to `anthropic/claude-fable-5.1`. Recovery advice, from either model, can only select implemented actions and has call, time, and execution limits. See [`.env.example`](.env.example) for connection and viewer settings. Keep credentials in `.env`, which is excluded from Git.
+The building model defaults to `anthropic/claude-opus-5.5`. Recovery advice can only select implemented actions and has call, time, and execution limits. See [`.env.example`](.env.example) for connection and viewer settings. Keep credentials in `.env`, which is excluded from Git.
 
 ## Watching Jev think
 
@@ -230,7 +229,7 @@ The **Observatory** is a local browser view of the bot's surroundings and reason
 - Orbit, behind-the-bot, first-person, and top-down cameras over the loaded terrain, with textures from your local Minecraft installation and route and build overlays.
 - **Inside Jev's head**: a running count of Jev calls, their median latency, tokens, and how often Jev asked the player instead of acting. For each decision, the question that was asked at every branch, the options offered, their probabilities, and how confident the answer was. Single-option steps are labelled as never having reached the model.
 - **This run**: a persistent ledger of the current request or dream, kept by the bot across restarts: elapsed time, restarts, Jev calls and tokens, split by the kind of question asked. Every finished run adds a line to [`docs/run-ledger.md`](docs/run-ledger.md).
-- Each chat request as its own event, with every typed answer from the interpretation call and the catalog walk that named the item; clarifying questions with the confidence that caused them; recovery events that say whether Jev or the generative adviser chose.
+- Each chat request as its own event, with every typed answer from the interpretation call and the catalog walk that named the item; clarifying questions with the confidence that caused them; recovery events with Jev's choice and its probabilities.
 - A timeline, replay, recording export and import, and live stop and resume.
 
 Enable it with `JEV_DASHBOARD_PORT=3040` when starting the bot, or browse recordings and the illustrated sample without a bot:

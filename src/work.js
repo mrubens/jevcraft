@@ -26,7 +26,7 @@ const { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginS
 const { bootstrapPickaxe } = require('./tool-recovery');
 const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives, knownResourceLocations, knownResourceNames, rememberResources, isSurfaceResource } = require('./resource-observation');
-const { designBuilding, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding, LIMITS, SECONDS_PER_BLOCK } = require('./designer');
+const { designBuilding, generativeAllowed, validateSchematic, selectSchematicSite, canClearSchematicBlock, schematicScaffolding, LIMITS, SECONDS_PER_BLOCK } = require('./designer');
 const { designWithJev } = require('./build-templates');
 const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine, dryStanding } = require('./mining-access');
 const { dryPassable, supportCell, swimmableWater } = require('./terrain');
@@ -1411,7 +1411,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
   if (!goal.design) {
     const mode = process.env.BUILD_DESIGNER || 'auto';
     if (!['auto', 'jev', 'openrouter'].includes(mode)) throw new Blocked('BUILD_DESIGNER must be auto, jev or openrouter');
-    const fallback = mode === 'jev' || mode === 'auto' && !process.env.OPENROUTER_API_KEY;
+    const fallback = mode === 'jev' || !generativeAllowed(bot) || mode === 'auto' && !process.env.OPENROUTER_API_KEY;
     // A template cannot be drawn against an existing building, so an edit
     // without the custom designer came out as a separate building that then
     // took over the original's record. Say so and build it beside instead.

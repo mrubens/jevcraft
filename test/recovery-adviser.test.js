@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
 const { Task } = require('../src/skills');
-const { RecoveryAdviser, askFable, validateAdvice, LIMITS } = require('../src/recovery-adviser');
+const { RecoveryAdviser, askJev, LIMITS } = require('../src/recovery-adviser');
 const { runGoal } = require('../src/work');
 const registry = require('minecraft-data')('26.1');
 const option = { id: 'option_1', kind: 'acquire', item: 'dirt', count: 12, description: 'Gather footing blocks' };
@@ -17,50 +17,9 @@ function fixture() {
   const goal = { kind: 'obtain', item: 'pumpkin', count: 1, request: 'get a pumpkin', from: 'Player', lastError: 'No safe path', survival: {} };
   return { bot, goal, task: new Task('recovery', 'get a pumpkin') };
 }
-const advice = async () => ({ diagnosis: 'Change approach', steps: [option], model: 'fable', usage: { prompt_tokens: 12 } });
-const config = { apiKey: 'test-secret', observe: async () => structuredClone(observation), ask: advice };
-
-test('Fable receives the observed state and dynamic enum; credentials are not persisted', async () => {
-  const { bot, task } = fixture();
-  let body;
-  const result = await askFable(bot, task, observation, { apiKey: 'test-secret', fetchImpl: async (_url, options) => {
-    assert.equal(options.headers.Authorization, 'Bearer test-secret'); body = JSON.parse(options.body);
-    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ diagnosis: 'Use footing blocks', steps: ['option_1'] }) } }], usage: { prompt_tokens: 12 } }) };
-  } });
-  assert.equal(body.model, 'anthropic/claude-fable-5.1');
-  assert.deepEqual(body.response_format.json_schema.schema.properties.steps.items.enum, ['option_1']);
-  assert.deepEqual(JSON.parse(body.messages[1].content), observation);
-  assert.equal(result.steps[0].count, 12);
-  assert(!JSON.stringify(result).includes('test-secret'));
-});
-
-test('advice cannot introduce commands, items, quantities, repeated actions or extra fields', () => {
-  for (const value of [
-    { diagnosis: 'Cheat', steps: ['/give @s diamond'] },
-    { diagnosis: 'Cheat', steps: [{ id: 'option_1', command: '/tp' }] },
-    { diagnosis: 'Cheat', steps: ['option_1'], command: '/give' },
-    { diagnosis: 'Repeat', steps: ['option_1', 'option_1'] },
-    { diagnosis: 'Too long', steps: ['option_1', 'a', 'b', 'c'] },
-  ]) assert.throws(() => validateAdvice(value, observation.options));
-  assert.deepEqual(validateAdvice({ diagnosis: 'No supported escape', steps: [] }, observation.options).steps, []);
-});
-
-test('stop, newly observed danger, and request timeout abort an in-flight LLM call', async () => {
-  for (const mode of ['stop', 'threat', 'timeout']) {
-    const { bot, task } = fixture();
-    let aborted = false;
-    const fetchImpl = (_url, { signal }) => new Promise((_resolve, reject) => {
-      signal.addEventListener('abort', () => { aborted = true; reject(signal.reason); });
-    });
-    const timer = setTimeout(() => {
-      if (mode === 'stop') task.cancel();
-      if (mode === 'threat') bot.entities.zombie = { name: 'zombie', position: bot.entity.position.offset(2, 0, 0) };
-    }, 10);
-    await assert.rejects(askFable(bot, task, observation, { apiKey: 'test-secret', fetchImpl, timeoutMs: mode === 'timeout' ? 30 : 500 }),
-      mode === 'stop' ? /cancelled/ : mode === 'threat' ? /Threat/ : /timed out/);
-    clearTimeout(timer); assert(aborted);
-  }
-});
+const advice = async () => ({ diagnosis: 'Change approach', steps: [option], model: 'jev', usage: { prompt_tokens: 12 } });
+// The judge stands in for Jev: these tests are about what the adviser does with a pick.
+const config = { client: {}, observe: async () => structuredClone(observation), judge: advice };
 
 test('persistent plan resumes bounded actions without changing the original request or declaring it complete', async () => {
   const { bot, goal, task } = fixture();
@@ -90,14 +49,14 @@ test('stale plans are discarded after death, dimension change, changed request, 
   }
 });
 
-test('no key/off retain normal behavior; failed service calls and repeated failures are budgeted', async () => {
+test('no Jev/off retain normal behavior; failed Jev calls and repeated failures are budgeted', async () => {
   const { bot, goal, task } = fixture(); let calls = 0;
-  const ask = async () => { calls++; throw new Error('Service unavailable'); };
-  for (const override of [{ apiKey: '' }, { enabled: false }]) {
-    assert.equal(await new RecoveryAdviser(bot, {}, { ...config, ask, ...override }).suggest(task, goal, () => {}), false);
+  const judge = async () => { calls++; throw new Error('Service unavailable'); };
+  for (const override of [{ client: null }, { enabled: false }]) {
+    assert.equal(await new RecoveryAdviser(bot, {}, { ...config, judge, ...override }).suggest(task, goal, () => {}), false);
   }
   assert.equal(calls, 0);
-  const adviser = new RecoveryAdviser(bot, {}, { ...config, ask });
+  const adviser = new RecoveryAdviser(bot, {}, { ...config, judge });
   await adviser.suggest(task, goal, () => {});
   await adviser.suggest(task, goal, () => {});
   assert.equal(calls, 1); // cooldown
@@ -126,7 +85,7 @@ test('deep surface recovery survives restart and continues beyond twelve inspect
   const { bot, goal, task } = fixture();
   bot.entity.position.y = -50;
   const surface = { id: 'option_1', kind: 'surface', description: 'Return to the surface' };
-  const adviser = new RecoveryAdviser(bot, {}, { ...config, ask: async () => ({ diagnosis: 'Leave this blocked shaft', steps: [surface] }),
+  const adviser = new RecoveryAdviser(bot, {}, { ...config, judge: async () => ({ diagnosis: 'Leave this blocked shaft', steps: [surface] }),
     execute: async () => { bot.entity.position.y++; return bot.entity.position.y >= 64; } });
   await adviser.suggest(task, goal, () => {});
   let restored = goal;
@@ -139,7 +98,7 @@ test('deep surface recovery survives restart and continues beyond twelve inspect
   assert.equal(restored.recoveryAdvice.calls, 1);
 
   const stalled = fixture();
-  const stuck = new RecoveryAdviser(stalled.bot, {}, { ...config, ask: async () => ({ diagnosis: 'Try returning', steps: [surface] }), execute: async () => false });
+  const stuck = new RecoveryAdviser(stalled.bot, {}, { ...config, judge: async () => ({ diagnosis: 'Try returning', steps: [surface] }), execute: async () => false });
   await stuck.suggest(stalled.task, stalled.goal, () => {});
   stalled.goal.recoveryAdvice.active.attempts = LIMITS.surfaceSteps;
   await assert.rejects(stuck.step(stalled.task, stalled.goal, () => {}), /budget exhausted/);
@@ -149,7 +108,7 @@ test('deep surface recovery survives restart and continues beyond twelve inspect
 test('supply recovery budgets include gathering and the final inventory verification', async () => {
   const { bot, goal, task } = fixture(); let steps = 0;
   const supplies = { ...option, dependencies: [{ action: 'mine', block: 'dirt', count: 12 }] };
-  const adviser = new RecoveryAdviser(bot, {}, { ...config, ask: async () => ({ diagnosis: 'Gather footing', steps: [supplies] }), execute: async () => ++steps >= 13 });
+  const adviser = new RecoveryAdviser(bot, {}, { ...config, judge: async () => ({ diagnosis: 'Gather footing', steps: [supplies] }), execute: async () => ++steps >= 13 });
   await adviser.suggest(task, goal, () => {});
   for (let i = 0; i < 13; i++) assert(await adviser.step(task, goal, () => {}));
   assert.equal(goal.recoveryAdvice.active, undefined);
@@ -158,7 +117,7 @@ test('supply recovery budgets include gathering and the final inventory verifica
 
 test('runGoal escalates repeated survival failures, executes the plan, then verifies the retained objective', async () => {
   const { bot, goal, task } = fixture(); let recovered = false, asks = 0, failures = 0;
-  const adviser = new RecoveryAdviser(bot, {}, { ...config, ask: async (...args) => { asks++; return advice(...args); },
+  const adviser = new RecoveryAdviser(bot, {}, { ...config, judge: async (...args) => { asks++; return advice(...args); },
     execute: async () => { recovered = true; return true; } });
   const survival = { state: goal.survival, step: async () => {
     if (!recovered) { failures++; throw new Error('Cannot reach shelter'); }
@@ -218,11 +177,11 @@ test('Jev names each thing it will try once, however many steps say the same', a
   const relocate = n => ({ id: `option_${n}`, kind: 'relocate', position: { x: n, y: 64, z: 0 }, description: 'Move somewhere else' });
   const adviser = new RecoveryAdviser(bot, {}, { ...config,
     observe: async () => ({ context: observation.context, options: [relocate(1), relocate(2)] }),
-    ask: async () => ({ diagnosis: 'Try elsewhere', steps: [relocate(1), relocate(2)], model: 'fable', usage: {} }) });
+    judge: async () => ({ diagnosis: 'Try elsewhere', steps: [relocate(1), relocate(2)], model: 'jev', usage: {} }) });
   await adviser.suggest(task, goal, () => {});
-  const idea = said.find(m => m.startsWith('I have an idea'));
+  const idea = said.find(m => m.startsWith('That is not working'));
   assert(idea, `Jev says what it intends to try: ${JSON.stringify(said)}`);
-  assert.equal(idea, "I have an idea. I'll try a different approach.",
+  assert.equal(idea, "That is not working. I'll try a different approach.",
     'two relocations are one intention, not a stutter');
 
   // Genuinely different steps are still listed in order.
@@ -230,46 +189,36 @@ test('Jev names each thing it will try once, however many steps say the same', a
   const mixed = [relocate(1), { id: 'option_3', kind: 'surface', description: 'Head up' }];
   const second = new RecoveryAdviser(bot, {}, { ...config,
     observe: async () => ({ context: observation.context, options: mixed }),
-    ask: async () => ({ diagnosis: 'Up and over', steps: mixed, model: 'fable', usage: {} }) });
+    judge: async () => ({ diagnosis: 'Up and over', steps: mixed, model: 'jev', usage: {} }) });
   await second.suggest(task, { ...goal, recoveryAdvice: undefined }, () => {});
-  assert.equal(said.find(m => m.startsWith('I have an idea')),
-    "I have an idea. I'll try a different approach, then getting back to the surface.");
+  assert.equal(said.find(m => m.startsWith('That is not working')),
+    "That is not working. I'll try a different approach, then getting back to the surface.");
 });
 
-test('Jev gets the first look at a failure; the generative model is asked only when Jev is unsure or has had its turn', async () => {
-  const { askJev } = require('../src/recovery-adviser');
+test('Jev judges every failure; an unsure Jev records no plan and nothing else is asked', async () => {
   const { bot, goal, task } = fixture();
-  let fableCalls = 0, jevConfidence = 0.9;
+  let jevConfidence = 0.9, jevCalls = 0;
   const client = { model: 'jev-test', systemOne: async ({ questions }) => {
+    jevCalls++;
     assert(questions.recovery.criteria.option_1); assert(questions.recovery.criteria.none);
     return { answers: { recovery: { choice: 'option_1', confidence: jevConfidence, probabilities: { option_1: jevConfidence, none: 1 - jevConfidence } } }, usage: { input_tokens: 90 } };
   } };
-  const adviser = new RecoveryAdviser(bot, {}, { ...config, client, ask: async (...args) => { fableCalls++; return advice(...args); }, execute: async () => true });
+  const { judge: _stub, ...observed } = config;
+  const adviser = new RecoveryAdviser(bot, {}, { ...observed, client, execute: async () => true });
   assert(await adviser.suggest(task, goal, () => {}));
-  assert.equal(fableCalls, 0);
   assert.equal(goal.recoveryAdvice.history[0].source, 'jev');
   assert.equal(goal.recoveryAdvice.history[0].jev.judgment.choice, 'option_1');
   assert.match(goal.recoveryAdvice.history[0].diagnosis, /Jev chose/);
-  // The same failure again: Jev had its turn, so the reasoning model looks.
+  // The same failure again gets a fresh look from Jev, within the same-failure limit.
   goal.recoveryAdvice.lastAskedAt = 0; delete goal.recoveryAdvice.active;
   assert(await adviser.suggest(task, goal, () => {}));
-  assert.equal(fableCalls, 1);
-  assert.equal(goal.recoveryAdvice.history[1].source, 'fable');
-  // A new failure Jev is unsure about escalates straight away.
+  assert.equal(jevCalls, 2);
+  assert.equal(goal.recoveryAdvice.history[1].source, 'jev');
+  // An unsure Jev is no pick.
   const unsure = fixture(); jevConfidence = 0.3;
-  const cautious = new RecoveryAdviser(unsure.bot, {}, { ...config, client, ask: async (...args) => { fableCalls++; return advice(...args); }, execute: async () => true });
-  assert(await cautious.suggest(unsure.task, unsure.goal, () => {}));
-  assert.equal(fableCalls, 2);
-  assert.equal(unsure.goal.recoveryAdvice.history[0].source, 'fable');
+  assert.equal(await new RecoveryAdviser(unsure.bot, {}, { ...observed, client, execute: async () => true }).suggest(unsure.task, unsure.goal, () => {}), false);
+  assert.equal(unsure.goal.recoveryAdvice.history[0].status, 'no_plan');
   assert.equal(unsure.goal.recoveryAdvice.history[0].jev.judgment.confidence, 0.3);
-  // Jev alone, with no generative key, still recovers; an unsure Jev alone records no plan.
-  const alone = fixture();
-  const solo = new RecoveryAdviser(alone.bot, {}, { ...config, apiKey: '', client, ask: async () => assert.fail('no key'), execute: async () => true });
-  assert.equal(await solo.suggest(alone.task, alone.goal, () => {}), false);
-  assert.equal(alone.goal.recoveryAdvice.history[0].status, 'no_plan');
-  jevConfidence = 0.95;
-  const recovered = fixture();
-  assert(await new RecoveryAdviser(recovered.bot, {}, { ...config, apiKey: '', client, ask: async () => assert.fail('no key'), execute: async () => true }).suggest(recovered.task, recovered.goal, () => {}));
   await assert.rejects(askJev({ model: 'jev', systemOne: async () => ({ answers: { recovery: { choice: 'invented', confidence: 1 } } }) }, bot, task, observation), /unavailable/);
 });
 
@@ -294,13 +243,19 @@ test('a failing mining step always offers leaving for another source, and taking
   assert.deepEqual(Object.keys(goal.survival?.attempts || goal.attempts).filter(k => k.startsWith('reach:')).sort(), ['reach:3,65,0', 'reach:3,66,0']);
 });
 
-test('jev mode asks Jev and never the generative model, whatever key is set', () => {
+test('recovery advice is Jev alone: on by default, off only when turned off, and never a paid model', () => {
   const { bot } = fixture();
-  const saved = process.env.OPENROUTER_API_KEY; process.env.OPENROUTER_API_KEY = 'would-spend';
+  const saved = { key: process.env.OPENROUTER_API_KEY, mode: process.env.RECOVERY_ADVISER };
+  process.env.OPENROUTER_API_KEY = 'would-spend'; delete process.env.RECOVERY_ADVISER;
   try {
-    const jev = new RecoveryAdviser(bot, {}, { mode: 'jev', client: {} });
-    assert.equal(jev.apiKey, undefined); assert(jev.configured, 'Jev alone is enough');
+    const byDefault = new RecoveryAdviser(bot, {}, { client: {} });
+    assert(byDefault.configured, 'Jev alone is enough'); assert.equal(byDefault.apiKey, undefined);
+    assert(new RecoveryAdviser(bot, {}, { mode: 'jev', client: {} }).configured);
     assert(!new RecoveryAdviser(bot, {}, { mode: 'off', client: {} }).configured);
-    assert.equal(new RecoveryAdviser(bot, {}, { mode: 'auto', client: {} }).apiKey, 'would-spend');
-  } finally { if (saved === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = saved; }
+    assert(!new RecoveryAdviser(bot, {}, {}).configured, 'no Jev connection, no advice');
+  } finally {
+    for (const [name, value] of [['OPENROUTER_API_KEY', saved.key], ['RECOVERY_ADVISER', saved.mode]]) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  }
 });

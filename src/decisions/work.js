@@ -83,14 +83,14 @@ define({
 });
 
 // Recovery after repeated failure: Jev picks among bounded options the code
-// already checked; the generative adviser is asked only when Jev is unsure.
+// already checked. There is no generative second opinion.
 define({
   id: 'recovery_action', area: 'recovery', kind: 'recovery', primitive: 'choice', stakes: 'medium',
   question: 'After repeated failure at a step, which offered recovery action is most likely to unblock the request?',
   trigger: 'The same step has failed three times, or a failure was Blocked.',
   source: 'src/recovery-options.js (the options), src/recovery-adviser.js (askJev)',
-  unreachable: 'the generative adviser is asked when configured; otherwise the failure goes on to persist (a clean slate and a backoff)',
-  gate: { threshold: 0.6, below: 'caller', why: 'unsure, or none, the generative adviser is asked when configured; otherwise nothing is done from the advice' },
+  unreachable: 'the failure goes on to persist (a clean slate and a backoff)',
+  gate: { threshold: 0.6, below: 'caller', why: 'unsure, or none, nothing is done from the advice' },
   build: ({ options }) => require('../typesafe').choice({
     task: 'The bot has failed repeatedly at its current step. Which offered recovery action is most likely to unblock the ORIGINAL player request?',
     guidance: 'Every option is a bounded attempt that code has already checked for safety and feasibility. Use `failure`, `recentFailures`, `previousAdvice`, `terrain`, `inventory` and `tools`. Prefer a concrete change of approach over repeating what just failed. Supplies the request does not need are not progress. Choose none when no offered action addresses the recorded failure.',

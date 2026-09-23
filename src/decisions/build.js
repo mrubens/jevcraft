@@ -35,28 +35,28 @@ build({
   build: ({ options }) => choice('Where should this structure go? "Here" means at the speaker\'s own position.', options),
 });
 
-// The template designer, for when no generative designer is configured.
+// The template designer, for Survival and whenever no generative designer is configured.
 build({
-  id: 'template_style', batch: 'template design', source: 'src/build-templates.js (designWithJev)', question: 'Which template fits the request: cottage, mansion, tower, or none?', trigger: 'A build request with no generative designer configured.', primitive: 'choice', stakes: 'medium',
+  id: 'template_style', batch: 'template design', source: 'src/build-templates.js (designWithJev)', question: 'Which template fits the request: cottage, mansion, tower, or none?', trigger: 'A build request in Survival, or with no generative designer configured.', primitive: 'choice', stakes: 'medium',
   build: () => choice('Choose the closest supported structure that can fulfill this request. Select unsupported if the requested shape or essential feature cannot be represented by these templates.', {
     cottage: 'Small rectangular house/cottage, optionally multiple floors.', mansion: 'Large rectangular mansion with windows, wide entrance and multiple floors.', tower: 'Tall square tower with interior stairs.', unsupported: 'Requires another structure or custom geometry, such as bridge, castle battlements, statue, circular dome, complex wings or unsupported essential details.',
   }),
 });
 build({
-  id: 'template_floors', batch: 'template design', source: 'src/build-templates.js (designWithJev)', question: 'How many floors?', trigger: 'A build request with no generative designer configured.', primitive: 'choice', stakes: 'low',
+  id: 'template_floors', batch: 'template design', source: 'src/build-templates.js (designWithJev)', question: 'How many floors?', trigger: 'A build request in Survival, or with no generative designer configured.', primitive: 'choice', stakes: 'low',
   build: () => choice('Assuming a supported template, select its requested number of floors. Default to two for a mansion, three for a tower, one for a cottage. Select unsupported if more than three floors are essential.', { 1: 'One floor', 2: 'Two floors', 3: 'Three floors', unsupported: 'Requires more than three floors' }),
 });
 build({
-  id: 'template_size', batch: 'template design', source: 'src/build-templates.js (designWithJev)', question: 'Ordinary or large?', trigger: 'A build request with no generative designer configured.', primitive: 'choice', stakes: 'low',
+  id: 'template_size', batch: 'template design', source: 'src/build-templates.js (designWithJev)', question: 'Ordinary or large?', trigger: 'A build request in Survival, or with no generative designer configured.', primitive: 'choice', stakes: 'low',
   build: () => choice('Select the overall requested size for a supported template.', { normal: 'Ordinary or compact size; default', large: 'Explicitly large, grand or spacious size' }),
 });
 build({
-  id: 'template_shelf_part', batch: 'template design', source: 'src/build-templates.js (designWithJev), src/schematic-library.js (library)', question: 'If no template fits, which ready-made design on the shelf is asked for?', trigger: 'A build request with no generative designer configured, when the shelf has parts.', primitive: 'choice', stakes: 'medium',
+  id: 'template_shelf_part', batch: 'template design', source: 'src/build-templates.js (designWithJev), src/schematic-library.js (library)', question: 'If no template fits, which ready-made design on the shelf is asked for?', trigger: 'A build request in Survival, or with no generative designer configured, when the shelf has parts.', primitive: 'choice', stakes: 'medium',
   build: ({ parts }) => choice('Assuming the request does not fit a rectangular cottage, mansion or tower, which kind of ready-made building on the shelf does it ask for?',
     { ...parts, none: 'None of these: the request needs something the shelf does not have.' }),
 });
 build({
-  id: 'template_material', batch: 'template design', source: 'src/build-templates.js (designWithJev)', question: 'Is a building material named or remembered?', trigger: 'A build request with no generative designer configured.', primitive: 'choice', stakes: 'low',
+  id: 'template_material', batch: 'template design', source: 'src/build-templates.js (designWithJev)', question: 'Is a building material named or remembered?', trigger: 'A build request in Survival, or with no generative designer configured.', primitive: 'choice', stakes: 'low',
   build: () => choice('Can a primary building material be resolved from this request or relevant memory? Current explicit instructions override explicit memory notes, which override learned memory.preferences. Use a remembered wood species as planks for an unspecified building.', { specified: 'A primary material, color or wood species is requested or preferred in relevant memory.', default: 'No requested or remembered preferred material; use oak planks.' }),
 });
 build({

@@ -180,7 +180,7 @@ test('a saved custom plan is revalidated without changing its shape or calling a
   const source = draft(); source.entrance = [2, 1, 1];
   const goal = { request: 'build my unusual structure', designDraft: source, designAttempts: 2, designError: 'entrance must be on an exterior edge' };
   t.mock.method(global, 'fetch', () => { throw new Error('Valid saved geometry needs no new model call'); });
-  const asked = [], bot = world(); bot.chat = () => {};
+  const asked = [], bot = world(); bot.chat = () => {}; bot.game.gameMode = 'creative';
   await designedBuildStep(bot, new Task('recheck'), goal, () => {}, { systemOne: async ({ questions }) => {
     asked.push(...Object.keys(questions));
     if (!questions.fits) throw new Error('Do not substitute a template');
@@ -200,7 +200,7 @@ test('invalid custom geometry gets another advisor repair instead of falling int
     if (previousMode === undefined) delete process.env.BUILD_DESIGNER; else process.env.BUILD_DESIGNER = previousMode;
   });
   const bad = draft(); bad.regions[0].to[0] = 30;
-  const goal = { request: 'build an arch', designDraft: bad, designAttempts: 2 }, bot = world(); bot.chat = () => {};
+  const goal = { request: 'build an arch', designDraft: bad, designAttempts: 2 }, bot = world(); bot.chat = () => {}; bot.game.gameMode = 'creative';
   let calls = 0;
   t.mock.method(global, 'fetch', async (_url, options) => {
     calls++;
@@ -223,7 +223,7 @@ test('a buildable design that does not answer the request goes back to the desig
     if (previous === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = previous;
     if (previousMode === undefined) delete process.env.BUILD_DESIGNER; else process.env.BUILD_DESIGNER = previousMode;
   });
-  const goal = { request: 'build a huge castle', designAttempts: 0 }, bot = world(); bot.chat = () => {};
+  const goal = { request: 'build a huge castle', designAttempts: 0 }, bot = world(); bot.chat = () => {}; bot.game.gameMode = 'creative';
   const bodies = [];
   t.mock.method(global, 'fetch', async (_url, options) => {
     bodies.push(JSON.parse(options.body));
@@ -238,6 +238,25 @@ test('a buildable design that does not answer the request goes back to the desig
   await designedBuildStep(bot, new Task('review'), goal, () => {}, jev);
   assert(goal.design); assert.equal(goal.designAttempts, 2);
   assert(bodies[1].messages.at(-1).content.includes('does not answer the request'), 'the designer is told why');
+});
+
+test('in Survival the generative designer is never called, whatever the key or mode; Jev designs instead', async t => {
+  const previous = process.env.OPENROUTER_API_KEY, previousMode = process.env.BUILD_DESIGNER;
+  t.after(() => {
+    if (previous === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = previous;
+    if (previousMode === undefined) delete process.env.BUILD_DESIGNER; else process.env.BUILD_DESIGNER = previousMode;
+  });
+  process.env.OPENROUTER_API_KEY = 'would-spend';
+  t.mock.method(global, 'fetch', () => { throw new Error('Survival must not call OpenRouter'); });
+  for (const mode of ['auto', 'openrouter']) {
+    process.env.BUILD_DESIGNER = mode;
+    const bot = world(); bot.chat = () => {};
+    const asked = [];
+    const jev = { systemOne: async ({ questions }) => { asked.push(...Object.keys(questions)); throw Object.assign(new Error('Jev was asked'), { name: 'JevAsked' }); } };
+    await assert.rejects(designedBuildStep(bot, new Task('survival build'), { request: 'build a tall tower', designAttempts: 0 }, () => {}, jev), { name: 'JevAsked' });
+    assert(asked.length, `${mode}: Jev designs in Survival`);
+  }
+  assert.equal(global.fetch.mock.callCount(), 0);
 });
 
 test('a sealed interior entrance is rejected and a non-enterable sculpture needs no invented door', () => {

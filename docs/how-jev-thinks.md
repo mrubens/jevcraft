@@ -63,11 +63,11 @@ If a step fails three times in a row, code enumerates the recovery actions it co
 
 If the service itself is unreachable, the tree is walked with a code default instead, shelter before food before the request and otherwise the first option listed, and the decision is recorded as a *code default* so the Observatory shows where a judgment is missing. The bot keeps working through the outage and says once in chat that it is on defaults, and once that Jev is back.
 
-In a recorded run, the bot had a birch log ready but the player had left the area. Jev answered *none* at 0.83: no option would make the player visible. Only then was the optional generative model asked, and it agreed, in fourteen seconds and at about a hundred times the cost. Jev's turn took under a second. The generative model is kept for the case Jev cannot judge; it is not the first resort.
+In a recorded run, the bot had a birch log ready but the player had left the area. Jev answered *none* at 0.83: no option would make the player visible. Jev's turn took under a second. An earlier version then asked a generative model for a second opinion; it agreed, in fourteen seconds and at about a hundred times the cost, and has since been removed: recovery is Jev's call alone.
 
 ## Designs get a second opinion
 
-A custom build is the one place a generative model draws something. Code validates the geometry: connected, buildable, an entrance you can walk through. Then Jev is asked a single Noul: does this design answer the request in kind, scale and material? A castle that came back as a hut is buildable and wrong. Below 0.5 the drawing goes back to the designer with Jev's verdict as feedback, before anyone spends an hour placing blocks.
+A custom build in Creative is the one place a generative model draws something. Code validates the geometry: connected, buildable, an entrance you can walk through. Then Jev is asked a single Noul: does this design answer the request in kind, scale and material? A castle that came back as a hut is buildable and wrong. Below 0.5 the drawing goes back to the designer with Jev's verdict as feedback, before anyone spends an hour placing blocks.
 
 ## What to take from this
 

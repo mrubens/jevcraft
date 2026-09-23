@@ -175,7 +175,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Which template fits the request: cottage, mansion, tower, or none?**
 
-- When: A build request with no generative designer configured.
+- When: A build request in Survival, or with no generative designer configured.
 - Batched question, choice; stakes medium; ledger kind `design`; batch **template design**
 - Bar: none
 - Jev unreachable: the request fails and the player is told "I'm having trouble thinking right now"; stop and status still work
@@ -185,7 +185,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **How many floors?**
 
-- When: A build request with no generative designer configured.
+- When: A build request in Survival, or with no generative designer configured.
 - Batched question, choice; stakes low; ledger kind `design`; batch **template design**
 - Bar: none
 - Jev unreachable: the request fails and the player is told "I'm having trouble thinking right now"; stop and status still work
@@ -195,7 +195,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Ordinary or large?**
 
-- When: A build request with no generative designer configured.
+- When: A build request in Survival, or with no generative designer configured.
 - Batched question, choice; stakes low; ledger kind `design`; batch **template design**
 - Bar: none
 - Jev unreachable: the request fails and the player is told "I'm having trouble thinking right now"; stop and status still work
@@ -205,7 +205,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **If no template fits, which ready-made design on the shelf is asked for?**
 
-- When: A build request with no generative designer configured, when the shelf has parts.
+- When: A build request in Survival, or with no generative designer configured, when the shelf has parts.
 - Batched question, choice; stakes medium; ledger kind `design`; batch **template design**
 - Bar: none
 - Jev unreachable: the request fails and the player is told "I'm having trouble thinking right now"; stop and status still work
@@ -215,7 +215,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Is a building material named or remembered?**
 
-- When: A build request with no generative designer configured.
+- When: A build request in Survival, or with no generative designer configured.
 - Batched question, choice; stakes low; ledger kind `design`; batch **template design**
 - Bar: none
 - Jev unreachable: the request fails and the player is told "I'm having trouble thinking right now"; stop and status still work
@@ -303,8 +303,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: The same step has failed three times, or a failure was Blocked.
 - Batched question, choice; stakes medium; ledger kind `recovery`
-- Bar: 0.6: unsure, or none, the generative adviser is asked when configured; otherwise nothing is done from the advice
-- Jev unreachable: the generative adviser is asked when configured; otherwise the failure goes on to persist (a clean slate and a backoff)
+- Bar: 0.6: unsure, or none, nothing is done from the advice
+- Jev unreachable: the failure goes on to persist (a clean slate and a backoff)
 - Options built in: src/recovery-options.js (the options), src/recovery-adviser.js (askJev)
 
 ## endgame
