@@ -37,10 +37,12 @@ test('in the Nether with the rods in hand, the pearls come from the warped fores
 
 test('in the Overworld, a remembered warped forest sends the bot back through the portal for pearls', () => {
   const { bot, goal } = fixture('overworld');
-  assert.equal(nextGameStage(bot, goal).action, 'acquire', 'none known: the Overworld hunt, as before');
+  assert.equal(nextGameStage(bot, goal).via, 'warped_forest', 'none known yet: back through the portal to look for one');
+  setAside(goal, 'rung', 'warped_search', 'none found', 600000);
+  assert.equal(nextGameStage(bot, goal).action, 'acquire', 'the search rested: the Overworld hunt');
   goal.landmarks = [{ kind: 'warped_forest', x: 300, y: 70, z: 40, dimension: 'nether' }];
   const stage = nextGameStage(bot, goal);
-  assert.equal(stage.action, 'enter_nether'); assert.equal(stage.via, 'warped_forest');
+  assert.equal(stage.action, 'enter_nether'); assert.equal(stage.via, 'warped_forest', 'one remembered: go there');
 });
 
 test('the sweep walks legs of sixty-four and rests after eight without a forest', async () => {

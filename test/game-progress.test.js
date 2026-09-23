@@ -47,6 +47,7 @@ test('progression resolves real carried eyes, powder, rods and pearls without sp
   assert.equal(nextGameStage(bot, goal).action, 'return_overworld');
   bot.game.dimension = 'overworld';
   assert.equal(nextGameStage(bot, goal).item, 'ender_pearl'); assert.equal(nextGameStage(bot, goal).count, 10);
+  assert.equal(nextGameStage(bot, goal).action, 'acquire', 'the warped search rested above: the Overworld hunt');
   give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 3, ender_pearl: 10 });
   assert.equal(nextGameStage(bot, goal).item, 'ender_eye'); assert.equal(nextGameStage(bot, goal).count, 16);
   give({ ender_eye: 16 }); assert.equal(nextGameStage(bot, goal).action, 'find_stronghold');

@@ -292,8 +292,9 @@ function nextGameStage(bot, goal) {
   const pearlOffer = Object.values(goal.trading?.offers || {}).some(o => (o.trades || []).some(t => t.outputItem?.name === 'ender_pearl' && !t.tradeDisabled));
   if (count(bot, 'ender_pearl') < target - eyes && pearlOffer && !isSetAside(goal, 'rung', 'trade_pearls') && require('./villages').knownVillages(bot, goal, 512).length)
     return { phase: 'obtain_ender_pearls', action: 'trade', item: 'ender_pearl', count: target - eyes };
-  // A warped forest remembered in the Nether beats a night walk here.
-  if (count(bot, 'ender_pearl') < target - eyes && warped.warpedKnown(goal).length && warped.warpedOpen(goal))
+  // A warped forest (remembered, or looked for) beats a night walk here:
+  // the Overworld hunt is the fallback once the Nether search has rested.
+  if (count(bot, 'ender_pearl') < target - eyes && warped.warpedOpen(goal))
     return { phase: 'obtain_ender_pearls', action: 'enter_nether', item: 'ender_pearl', count: target - eyes, via: 'warped_forest' };
   if (count(bot, 'ender_pearl') < target - eyes) return { phase: 'obtain_ender_pearls', action: 'acquire', item: 'ender_pearl', count: target - eyes };
   if (eyes < target) return { phase: 'craft_eyes', action: 'acquire', item: 'ender_eye', count: target };
