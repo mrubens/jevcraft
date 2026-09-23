@@ -94,11 +94,12 @@ async function descendPillar(bot, task, goal, save, expected) {
 // next cell up; the pathfinder takes over from wherever it stops.
 const SCAFFOLD = ['netherrack', 'cobblestone', 'cobbled_deepslate', 'dirt', 'nether_bricks', 'blackstone', 'basalt', 'stone', 'andesite', 'diorite', 'granite', 'tuff', 'soul_soil'];
 const DIGGABLE_ABOVE = /^(netherrack|stone|deepslate|cobblestone|cobbled_deepslate|dirt|gravel|sand|soul_sand|soul_soil|basalt|blackstone|andesite|diorite|granite|tuff|nether_bricks|glowstone|magma_block|crimson_nylium|warped_nylium|nether_quartz_ore|nether_gold_ore|.*_leaves)$/;
-async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40 } = {}) {
+async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = true } = {}) {
   const { move } = require('./motion');
   let placed = 0;
   while (bot.entity.position.y < targetY - 0.5 && placed < maxBlocks) {
-    task.check(); checkAir(bot); checkThreats(bot);
+    // A climb away from the threat itself does not stop for it.
+    task.check(); checkAir(bot); if (threats) checkThreats(bot);
     const feet = bot.entity.position.floored();
     const head = feet.offset(0, 2, 0), above = bot.blockAt(head);
     if (!above) break;
@@ -119,8 +120,16 @@ async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40 } = {}) {
     const start = feet.y;
     const below = bot.blockAt(feet.offset(0, -1, 0));
     if (!below || below.boundingBox !== 'block') break;
-    await move(bot, task, { label: 'pillar_up', keys: ['jump'], sneak: false, until: () => bot.entity.position.y >= start + 1.05, maxMs: 1200, tick: 20 });
-    try { await bot.placeBlock(below, new Vec3(0, 1, 0)); placed++; bot._pillarUp = { x: feet.x, z: feet.z, until: Date.now() + 600000 }; }
+    await move(bot, task, { label: 'pillar_up', keys: ['jump'], sneak: false, until: () => bot.entity.position.y >= start + 1.1, maxMs: 1200, tick: 20 });
+    // The server has the position a tick behind: placed the moment the feet
+    // cleared the cell here, it still saw the body in it and refused.
+    await new Promise(resolve => setTimeout(resolve, 60));
+    // Placed with the look already down (set before the jump): placeBlock's
+    // own smooth turn took ticks, the bot fell back into the cell before the
+    // packet went, and the server refused every block of a pillar from two
+    // hoglins in the arena.
+    const place = bot._placeBlockWithOptions ? () => bot._placeBlockWithOptions(below, new Vec3(0, 1, 0), { swingArm: 'right', forceLook: true }) : () => bot.placeBlock(below, new Vec3(0, 1, 0));
+    try { await place(); placed++; bot._pillarUp = { x: feet.x, z: feet.z, until: Date.now() + 600000 }; }
     catch (err) { task.check(); }
     for (let i = 0; i < 20 && !bot.entity.onGround; i++) { task.check(); await new Promise(resolve => setTimeout(resolve, 25)); }
     if (bot.entity.position.floored().y <= start) break;
@@ -153,4 +162,4 @@ function pillarSite(bot, targetY, target, { radius = 5 } = {}) {
   return sites.sort((a, b) => far(a) - far(b))[0] || null;
 }
 
-module.exports = { pillarDescent, descendPillar, pillarUp, pillarSite };
+module.exports = { pillarDescent, descendPillar, pillarUp, pillarSite, SCAFFOLD };

@@ -271,6 +271,13 @@ class Survival {
     // outruns a zombie in a tunnel anyway. Low health falls through to the
     // escape search below.
     const armed = /_(sword|axe)$|^trident$/.test(defenseWeapon(bot)?.name || '');
+    // Two hoglins on open ground are fought from two blocks up: they cannot
+    // climb, a player two up is out of their reach but not out of the
+    // sword's, and there are no free hits while a pocket is built around
+    // them. The replay run died to a pair in nine seconds; the arena pair
+    // drill lost two of three the same way, digging in while both hit.
+    const hoglins = danger.filter(t => ['hoglin', 'zoglin'].includes(t.entity.name) && t.distance <= 10);
+    if (hoglins.length >= 2 && await this.pillarFrom(task, goal, save, hoglins)) return;
     // An enderman teleports after a runner and hits for four through iron:
     // death eighteen ran, held, ate, and died at the fifth hit. It is fought
     // where it stands while health holds, and below that sealed out: a
@@ -471,6 +478,24 @@ class Survival {
         reason: 'No safe retreat; defend visible hostiles that enter reach' });
       for (let n = 0; n < 2; n++) { task.check(); checkAir(bot); await sleep(100); }
     } finally { Object.assign(movements, previous); bot.clearControlStates(); }
+  }
+
+  // Two blocks straight up, where the head room allows and blocks are
+  // carried; true once the feet are clear of what was beneath them.
+  async pillarFrom(task, goal, save, danger) {
+    const bot = this.bot;
+    const feet = bot.entity.position.floored();
+    if (this.state.pillar && feet.y >= this.state.pillar.y + 2 && Math.hypot(feet.x - this.state.pillar.x, feet.z - this.state.pillar.z) < 1) return false;
+    const { pillarUp, SCAFFOLD } = require('./pillar-recovery');
+    if (bot.inventory.items().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0) < 2) return false;
+    if (![1, 2, 3].every(dy => { const b = bot.blockAt(feet.offset(0, dy, 0)); return b && b.boundingBox === 'empty' && !/lava|water/.test(b.name); })) return false;
+    this.report(goal, save, { action: 'pillar_from', threats: danger.map(t => t.entity.name), health: bot.health });
+    lowerShield(bot);
+    try { await pillarUp(bot, task, feet.y + 2, { dig: this.actions.dig, maxBlocks: 2, threats: false }); }
+    catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+    if (bot.entity.position.y < feet.y + 1.9) return false;
+    this.state.pillar = { x: feet.x, y: feet.y, z: feet.z, at: Date.now() };
+    return true;
   }
 
   // A saved shelter is only useful if there is a way to it. Forty blocks up

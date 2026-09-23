@@ -155,3 +155,18 @@ test('final construction cleanup can descend its own scaffold onto the finished 
   goal.blueprint.blocks.push({ x: 0, y: 76, z: 0, material: 'cobblestone' });
   assert.equal(pillarDescent(bot, goal), null, 'designed geometry is never a disposable scaffold');
 });
+
+test('a pillar block is placed with the look already down, not after a slow turn', async () => {
+  const { pillarUp } = require('../src/pillar-recovery');
+  const { Task } = require('../src/skills');
+  const calls = [];
+  let y = 64;
+  const blockAt = p => ({ name: p.y < 64 || (p.y < y && p.y >= 64) ? 'netherrack' : 'air', boundingBox: p.y < 64 || (p.y < y && p.y >= 64) ? 'block' : 'empty', diggable: true, position: p });
+  const bot = { registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 64, 0.5), yaw: 0, onGround: true, velocity: new Vec3(0, 0, 0) }, entities: {}, blockAt,
+    inventory: { items: () => [{ name: 'netherrack', count: 8 }] }, equip: async () => {}, look: async () => {}, controlState: {},
+    setControlState(k, v) { this.controlState[k] = v; if (k === 'jump' && v) { this.entity.onGround = false; this.entity.position = new Vec3(0.5, y + 1.2, 0.5); } },
+    clearControlStates() {}, _placeBlockWithOptions: async (ref, face, options) => { calls.push(options); y += 1; bot.entity.position = new Vec3(0.5, y, 0.5); bot.entity.onGround = true; } };
+  await pillarUp(bot, new Task('pillar'), 66, { maxBlocks: 2, threats: false });
+  assert.equal(calls.length, 2);
+  assert(calls.every(o => o.forceLook === true));
+});
