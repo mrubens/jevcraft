@@ -12,7 +12,9 @@
 // One store per world. Every goal is filled from it when it launches, and
 // every save of that goal writes the fields back, deletions included: the
 // running goal is the freshest copy there is.
-const WORLD_FIELDS = ['portals', 'portalFrame', 'villages', 'endPortal', 'strongholdSearch'];
+// The explored map and the landmarks found (exploration.js) are the
+// world's too: an area walked once is known to every goal after.
+const WORLD_FIELDS = ['portals', 'portalFrame', 'villages', 'endPortal', 'strongholdSearch', 'explored', 'landmarks'];
 // Progress toward beating the game belongs to the run, and every run of it
 // in this world is the same run: the milestones are observations of this
 // bot in this world.

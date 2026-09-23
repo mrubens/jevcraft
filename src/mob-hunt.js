@@ -801,7 +801,14 @@ async function findFortressStep(bot, task, goal, save, actions) {
     }
   }
   const here = bot.entity.position;
+  // A fortress seen before (exploration.js remembers them) is walked back
+  // to rather than swept for again.
+  const remembered = require('./exploration').knownLandmarks(bot, goal, 'nether_fortress').find(k => k.distance > 24 && !shunned(k.landmark));
+  if (remembered && !state.rememberedTarget) {
+    state.target = { x: remembered.landmark.x, y: remembered.landmark.y, z: remembered.landmark.z }; state.rememberedTarget = true; state.legSince = Date.now();
+  }
   if (!state.target || Math.hypot(state.target.x - here.x, state.target.z - here.z) < 8) {
+    delete state.rememberedTarget;
     const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++; state.legSince = Date.now();
   }
   goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();

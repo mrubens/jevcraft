@@ -19,7 +19,8 @@ function fixture(items, { timeOfDay = 3000 } = {}) {
 test('spare daylight offers the feasible chores and the long game, and Jev chooses', async () => {
   const { bot, goal, task } = fixture([['beef', 4], ['wooden_pickaxe', 1], ['oak_log', 2]]);
   const options = idleOptions(bot, goal);
-  assert.deepEqual(Object.keys(options).sort(), ['cook_food', 'long_game', 'stone_tools']);
+  assert.deepEqual(Object.keys(options).sort(), ['cook_food', 'explore', 'long_game', 'stone_tools']);
+  assert.match(options.explore.description, /0 areas walked, 0 villages/);
   assert.match(options.cook_food.description, /4 raw beef/); assert.equal(options.cook_food.item, 'cooked_beef');
   assert.match(options.long_game.description, /stone pickaxe/, 'the ladder starts with a rung you can see');
   assert.equal(idleOptions(bot, { ...goal, dream: undefined }).long_game, undefined, 'no dream, no ladder');

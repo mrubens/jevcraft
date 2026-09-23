@@ -31,6 +31,7 @@ const { designWithJev } = require('./build-templates');
 const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine, dryStanding } = require('./mining-access');
 const { dryPassable, supportCell, swimmableWater } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
+const { noticeLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep } = require('./exploration');
 const { barterStep } = require('./bartering');
 const { descendPillar, pillarUp, pillarSite } = require('./pillar-recovery');
 const { gameStep, watchGameProgress, dimension, nextGameStage, DEFERRABLE, RUNG_WAIT_MS } = require('./game-progress');
@@ -2248,6 +2249,17 @@ function idleOptions(bot, goal) {
   // The base's chores, each one already checked feasible: a plot to tend,
   // wheat to bake, cows to lead in or breed.
   Object.assign(options, homeChores(bot, goal));
+  // Exploring: the nearest unexplored area around home, and what is there.
+  // Villages and ruined portals are worth knowing before they are needed.
+  if (bot.game?.dimension === 'overworld' || /overworld/.test(String(bot.game?.dimension || ''))) {
+    const home = goal.survival?.home?.origin;
+    const target = unexploredArea(bot, goal, { home });
+    if (target) {
+      const known = explorationSummary(goal);
+      options.explore = { description: `Explore: walk to the nearest unexplored area (${target.fromHere} blocks away) and see what is there. Known so far: ${summaryText(known)}. Villages mean beds, food and trades; a ruined portal or a surface lava pool means obsidian; dungeons, mineshafts and temples mean chests.`,
+        run: (b, t, g, sv) => exploreStep(b, t, g, sv, { navigate, home, noticeVillage }) };
+    }
+  }
   if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.`, item: 'torch', count: 4 };
   // The standing dream. With nothing asked and nothing urgent, the next
   // rung of the beat-the-game ladder is on offer; it is a long walk from a
@@ -2509,6 +2521,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       }
       await keepRoom(bot, task, goal);
       noticeVillage(bot, goal, save);
+      noticeLandmarks(bot, goal, save);
       if (stillFor(bot) >= STILL_MS && !permittedWait(bot, goal)) {
         await breakStillness(bot, task, goal, save, { client: decisionClient, survival, onStep });
         failures = 0; save(); onStep(goal); continue;
@@ -2566,6 +2579,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     // Say what the last step started on. Here rather than at the loop's end,
     // because survival and continued work leave the loop body early.
     noticeVillage(bot, goal, save);
+    noticeLandmarks(bot, goal, save);
     noticePortal(bot, goal, save);
     narrate(bot, goal);
     const before = JSON.stringify(inventory(bot));
