@@ -1073,3 +1073,14 @@ test('mining steps that keep the pocket sealed are not dig-outs: the night mine 
   assert(steps >= 3, `the mine ran (${steps})`);
   assert(!isSetAside(survival, 'night_mine', `${origin.x},${origin.y},${origin.z}`), 'not counted as dig-outs');
 });
+
+test('with the night planned for a shelter, a bed in sight does not keep the night mine shut', () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20,
+    time: { timeOfDay: 16000 }, entity: { position: new Vec3(0.5, 30, 0.5) },
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'white_bed', count: 1 }], slots: [] },
+    blockAt: () => ({ name: 'stone', boundingBox: 'block' }), world: { raycast: () => null } });
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  assert.equal(survival.canNightMine({}), false, 'a bed carried and no plan yet: the night is for sleep');
+  survival.state.nightPlan = { plan: 'shelter', until: Date.now() + 60000 };
+  assert.equal(survival.canNightMine({}), true, 'the plan is a shelter: mine');
+});

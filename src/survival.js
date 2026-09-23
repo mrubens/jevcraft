@@ -902,7 +902,12 @@ class Survival {
     // Not with anything watching: the same test the pocket uses to stay shut.
     if (threats(bot).some(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity))) return false;
     if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) return false;
-    if (sleepable(bot) && !sleepWaiting(this) && (bedCarried(bot) || bedToSleepIn(bot, goal))) return false;
+    // A bed defers the mine only when the night is to be slept: with the
+    // plan made for a shelter (the bed in view out of reach, or none
+    // carried), a bed within sight kept the mine shut and the bot waited
+    // eleven minutes of the second audited night.
+    const sleeping = this.state.nightPlan?.until > Date.now() ? this.state.nightPlan.plan !== 'shelter' : true;
+    if (sleeping && sleepable(bot) && !sleepWaiting(this) && (bedCarried(bot) || bedToSleepIn(bot, goal))) return false;
     return true;
   }
 
