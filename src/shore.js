@@ -74,6 +74,13 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
         look: exit.offset(0.5, 1, 0.5), maxMs: 2500, tick: 50, until: () => bot.entity.onGround && !inWater(bot) });
       if (!inWater(bot)) { state.landed = { position: { ...bot.entity.position }, at: new Date().toISOString(), climbed: true }; save(); return true; }
     }
+    // Walled in: a flooded cave whose dry side is behind stone. The replay
+    // run swam in one for forty-five minutes, dry air three blocks east
+    // through a wall the swimming route could not cross. The pickaxe makes
+    // the shore: the nearest dry cell within ten blocks, dug to, water
+    // allowed to flow (the pathfinder otherwise will not break a block
+    // beside it), never lava.
+    if (!attempts && await digToShore(bot, task, goal, save, movement, move)) return true;
     throw new Error('No reachable dry shore found in the observed water area');
   } finally {
     policy.restore(); Object.assign(movement, previous);
@@ -81,4 +88,29 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
   }
 }
 
-module.exports = { reachShore };
+async function digToShore(bot, task, goal, save, movement, move) {
+  const ids = bot.registry.blocksArray.filter(b => b.boundingBox === 'block').map(b => b.id);
+  const dry = p => dryStanding(bot, p) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name);
+  const lavaNear = p => [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, 2, 0], [0, -1, 0]]
+    .some(([dx, dy, dz]) => /lava/.test(bot.blockAt(p.offset(dx, dy, dz))?.name || ''));
+  const cells = bot.findBlocks({ matching: ids, maxDistance: 10, count: 128, useExtraInfo: block => dry(block.position.offset(0, 1, 0)) })
+    .map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+  const saved = { canDig: movement.canDig, dontCreateFlow: movement.dontCreateFlow };
+  Object.assign(movement, { canDig: true, dontCreateFlow: false });
+  try {
+    for (const p of cells.slice(0, 4)) {
+      task.check(); checkAir(bot);
+      const destination = new goals.GoalBlock(p.x, p.y, p.z);
+      const route = await surveyRoute(bot, task, movement, destination, 800);
+      if (route.status !== 'success' || (route.path || []).some(q => lavaNear(new Vec3(q.x, q.y, q.z)))) continue;
+      goal.step = { action: 'dig_to_shore', from: { ...bot.entity.position }, destination: { ...p } };
+      goal.survivalAction = { action: 'dig_to_shore', at: new Date().toISOString() }; save();
+      try { await move(bot, task, destination, { timeoutMs: 45000, stallMs: 8000 }); }
+      catch (error) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(error.name)) throw error; continue; }
+      if (dryStanding(bot, bot.entity.position)) return true;
+    }
+    return false;
+  } finally { Object.assign(movement, saved); }
+}
+
+module.exports = { reachShore, digToShore };
