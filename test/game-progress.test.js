@@ -29,7 +29,9 @@ test('the ladder runs again after a first Nether entry when the pockets hold no 
   bot.inventory.items = () => GEAR;
   assert.equal(nextGameStage(bot, goal).action, 'enter_nether', 'with the whole kit the ladder is silent and the portal is next');
   bot.inventory.items = () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'blaze_rod', count: 2 }];
-  assert.equal(nextGameStage(bot, goal).action, 'enter_nether', 'Nether supplies in hand mean the later stages own the shopping');
+  assert.equal(nextGameStage(bot, goal).phase, 'stone_sword', 'Nether supplies in hand skip the bed and the bucket, not the fighting kit');
+  bot.inventory.items = () => [...GEAR.filter(i => !['white_bed', 'water_bucket', 'bow', 'arrow'].includes(i.name)), { name: 'blaze_rod', count: 2 }];
+  assert.equal(nextGameStage(bot, goal).action, 'enter_nether', 'with the kit on, the later stages own the shopping');
 });
 
 test('progression resolves real carried eyes, powder, rods and pearls without spending them twice', () => {
@@ -183,4 +185,14 @@ test('a diamond pickaxe with two hundred uses left is a pickaxe, not a reason to
   assert.notEqual(nextGameStage(bot, goal).phase, 'stone_pickaxe');
   bot.inventory.items = () => [{ name: 'diamond_pickaxe', count: 1, durabilityUsed: max - 20 }, { name: 'iron_sword', count: 1 }];
   assert.equal(nextGameStage(bot, goal).phase, 'stone_pickaxe', 'twenty uses is not a trip');
+});
+
+test('with blaze rods in hand the armour lost in a death is still made again before anything else', () => {
+  const { bot, goal } = fixture(); observeProgress(bot, goal);
+  const noArmour = GEAR.filter(i => !/^iron_(helmet|chestplate|leggings|boots)$/.test(i.name)).concat({ name: 'blaze_rod', count: 7 });
+  bot.inventory.items = () => noArmour;
+  const stage = nextGameStage(bot, goal);
+  assert.match(stage.phase, /^iron_/, 'the armour rung, not the Nether');
+  bot.inventory.items = () => GEAR.filter(i => i.name !== 'bucket' && i.name !== 'water_bucket').concat({ name: 'blaze_rod', count: 7 });
+  assert.equal(nextGameStage(bot, goal).action, 'enter_nether', 'a missing bucket is not the fighting kit and waits');
 });

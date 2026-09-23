@@ -7,6 +7,7 @@ const { activePortal, enterEnd, bridgeFootings } = require('../src/end-portal');
 const { nextGameStage } = require('../src/game-progress');
 const { Task } = require('../src/skills');
 
+const KIT = ['diamond_pickaxe', 'diamond_sword', 'shield', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'golden_boots'].map(name => ({ name, count: 1 }));
 function fixture({ eyes = 12, filled = 0, active = false } = {}) {
   const center = new Vec3(0, 64, 0), blocks = new Map(), item = { name: 'ender_eye', count: eyes };
   for (const [i, offset] of frameOffsets.entries()) {
@@ -20,7 +21,8 @@ function fixture({ eyes = 12, filled = 0, active = false } = {}) {
   let controls = {}, activated = 0;
   const bot = { registry, entity: { position: new Vec3(-2.5, 64, .5) }, entities: {},
     game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 20, oxygenLevel: 20,
-    inventory: { items: () => item.count ? [item] : [] },
+    // The fighting kit, so the ladder's gear rungs are met and the portal is what is tested.
+    inventory: { items: () => [...(item.count ? [item] : []), ...KIT] },
     blockAt: p => blocks.get(`${p.floored()}`) || { name: p.y < 64 ? 'stone' : 'air', position: p.floored(), boundingBox: p.y < 64 ? 'block' : 'empty' },
     world: { raycast: () => null },
     pathfinder: { movements: { canDig: true, scafoldingBlocks: [1], allow1by1towers: true }, getPathTo: () => ({ status: 'success', path: [] }), setGoal() {} },

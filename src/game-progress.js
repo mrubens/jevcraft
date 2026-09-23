@@ -213,6 +213,23 @@ function ladderRung(bot, goal, waiting) {
   return null;
 }
 
+// The rungs that are the fighting kit: tools, shield, armour, and the
+// golden boots the Nether's piglins look for. The rest of the ladder (bed,
+// bucket, bow, the better sword) waits while supplies are in hand.
+const GEAR = /^(stone_pickaxe|stone_sword|iron_pickaxe|shield|iron_armour|iron_(helmet|chestplate|leggings|boots)|golden_boots)$/;
+const NOT_GEAR = new Set(['iron_sword', 'bucket', 'bow', 'arrows', 'diamond_sword']);
+function gearStage(bot, goal) {
+  const rung = ladderRung(bot, goal, NOT_GEAR);
+  if (!rung || !GEAR.test(rung.phase)) return null;
+  const home = homeOf(bot, goal);
+  if (home?.stash?.position) {
+    const wants = rungWants(bot, rung, { home, goal });
+    const restock = restockStage(bot, goal, wants);
+    if (restock) return { ...restock, action: 'home', home: { ...restock, wants } };
+  }
+  return rung;
+}
+
 function nextGameStage(bot, goal) {
   if (verifyGameCompletion(bot, goal)) return { phase: 'complete' };
   const where = dimension(bot), m = goal.gameProgress?.milestones || {};
@@ -224,6 +241,11 @@ function nextGameStage(bot, goal) {
   // is how three Nether trips went in with less than the first one.
   const supplies = ['ender_eye', 'blaze_rod', 'blaze_powder', 'ender_pearl'].reduce((n, name) => n + count(bot, name), 0);
   if (where === 'overworld' && !supplies) { const prep = preparationStage(bot, goal); if (prep) return prep; }
+  // The kit a fight needs is rebuilt whatever supplies are carried: blaze
+  // rods from the stash, taken before the armour lost in a lava death was
+  // made again, skipped the ladder, and the bot went through the Nether and
+  // back in no armour and died to one creeper on the far shore.
+  if (where === 'overworld' && supplies) { const gear = gearStage(bot, goal); if (gear) return gear; }
   if (where === 'end') return m.dragon_defeated ? { phase: 'return_alive', action: 'exit_end' } : { phase: 'defeat_dragon', action: 'fight_dragon' };
   // Survey throws deliberately spend eyes. Do not send Jev back to the Nether
   // after each throw while it still has a spare and twelve portal eyes. A
