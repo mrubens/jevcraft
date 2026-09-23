@@ -1054,3 +1054,4 @@ test('a night mine refused on every heading is boxed in and waits the night out 
   mine.target = { x: 0, y: 45, z: 24 }; survival.abandonTarget(mine, 'No safe way toward it: lava or water in the way');
   assert(mine.boxedInUntil > Date.now(), 'all four headings refused within a minute');
 });
+

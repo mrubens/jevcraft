@@ -1119,7 +1119,7 @@ class Survival {
     }
     const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot) && (underground || !routeBlocked);
     const walkStart = homeBed && homeBed.foot.distanceTo(bot.entity.position) > 96 ? DAY.WALK_HOME_FAR : DAY.WALK_HOME;
-    if (homeWalk && (bot.time.timeOfDay >= walkStart || underground) && !sleepWaiting(this)) {
+    if (homeWalk && (bot.time.timeOfDay >= walkStart || underground) && !sleepWaiting(this) && !isSetAside(this, 'surface_home', 'here')) {
       this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });
       // Out of the shaft by the stairs it dug, then home over the ground:
       // a path search from the bottom of a mine to a bed timed out. A
@@ -1127,7 +1127,16 @@ class Survival {
       // failing sets the bed aside, and only for two minutes.
       if (underground && this.actions.surfaceStep) {
         try { await this.actions.surfaceStep(bot, task, goal, save); }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        catch (err) {
+          task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+          // A climb that fails every tick is not a way home: sixteen blocks
+          // under the bed the dream run tried it once a second, reporting
+          // nothing. Three failures in a minute set the walk aside, and the
+          // night is spent the other ways (a pocket, the mine).
+          const now = Date.now();
+          this.state.surfaceFailures = [...(this.state.surfaceFailures || []).filter(t => now - t < 60000), now];
+          if (this.state.surfaceFailures.length >= 3) { setAside(this, 'surface_home', 'here', err, 600000); this.state.surfaceFailures = []; this.report(goal, save, { action: 'surface_home_set_aside', reason: err.message }); }
+        }
       } else if (bot.time.timeOfDay < SLEEP_FROM) {
         try { await this.actions.navigate(bot, task, new goals.GoalNear(homeBed.foot.x, homeBed.foot.y, homeBed.foot.z, 3), { timeoutMs: 60000, stallMs: 8000, sprint: true }); }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'bed_route', 'home', err, 120000); }
