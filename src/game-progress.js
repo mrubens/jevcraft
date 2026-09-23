@@ -110,6 +110,22 @@ function preparationRung(bot, goal = {}, now = Date.now()) {
   }
   return ladderRung(bot, goal, new Set());
 }
+// The rungs open now, in ladder order: the first, and then each rung the
+// ladder would go on to if the ones before it waited their turn, for as long
+// as those before it may wait (DEFERRABLE). A rung that may not wait, or one
+// already set aside, closes the list. What Jev chooses among (strategy.js).
+function openRungs(bot, goal = {}, now = Date.now()) {
+  const skipped = new Set(Object.keys(attemptsFor(goal).of('rung', now)));
+  const out = [];
+  for (let i = 0; i < 12; i++) {
+    const rung = ladderRung(bot, goal, skipped);
+    if (!rung || out.some(r => r.phase === rung.phase)) break;
+    out.push(rung);
+    if (!DEFERRABLE.has(rung.phase)) break;
+    skipped.add(rung.phase);
+  }
+  return out;
+}
 function ladderRung(bot, goal, waiting) {
   const ready = rung => rung && !waiting.has(rung.phase) ? rung : null;
   // Equipped gear lives outside inventory.items(): armour in slots 5 to 8,
@@ -269,7 +285,15 @@ function timeRung(bot, goal, phase, now = Date.now()) {
 async function gameStep(bot, task, goal, save, actions) {
   task.check();
   if (bot.game.gameMode !== 'survival') throw Object.assign(new Error('The game-completion task requires Survival mode'), { name: 'Blocked' });
-  const progress = observeProgress(bot, goal), stage = nextGameStage(bot, goal);
+  const progress = observeProgress(bot, goal);
+  let stage = nextGameStage(bot, goal);
+  // Strategy: which of the open rungs, or a side trip, is Jev's to choose
+  // (strategy.js). A side trip that ran is this step's work.
+  if (actions.strategy && stage.phase !== 'complete') {
+    const chosen = await actions.strategy(bot, task, goal, save, stage);
+    if (chosen?.ran) return false;
+    if (chosen?.stage) stage = chosen.stage;
+  }
   progress.phase = stage.phase; goal.step = { action: 'game_progression', ...stage };
   timeRung(bot, goal, stage.phase);
   save();
@@ -306,4 +330,4 @@ async function gameStep(bot, task, goal, save, actions) {
   return false;
 }
 
-module.exports = { timeRung, preparationRung, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };
+module.exports = { timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };

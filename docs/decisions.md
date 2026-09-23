@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-58 questions: 10 decision trees and 48 batched questions.
+59 questions: 11 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -315,6 +315,25 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `breed_cows` | root | breed the cows in the home pen | by day in the Overworld, and two adult cows are penned and wheat is carried |
 | `lure_cows` | root | lead loose cows into the home pen | by day in the Overworld, and the pen has fewer than two cows and cows are in view |
 | `stock_stash` | root | put spares in the stash chest | by day in the Overworld, and the stash chest is within reach and spares are carried |
+
+## strategy
+
+### `win_strategy`
+
+**On the way to beating the game, which of the open steps, or which side trip, should the bot do next?**
+
+- When: Each step of the beat-the-game ladder in the Overworld while more than one thing is open; the answer holds until the ladder's next step or the options change, or ten minutes pass. A side trip runs once and then rests ten minutes.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/strategy.js (strategyOptions), src/game-progress.js (openRungs), src/work.js (sideTrips)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `rung_[a-z_]+` (pattern) | root | a rung of the ladder | the ladder's next rung (the fallback), and each rung after it the ladder may reach while the ones before it wait (shield, iron sword, bucket, golden boots, bow, arrows, diamond sword); pickaxes and armour are never skipped |
+| `loot` | root | open the chests of a remembered structure | by day, health fourteen or more and hunger twelve or more, with an unlooted ruined portal, dungeon, temple or mineshaft within 256 blocks |
+| `trade` | root | trade at a remembered village | by day and fit, with a village remembered and something to sell or spend |
+| `enchant` | root | enchant gear at the enchanting table | by day and fit, with a table known, lapis carried, level five or more and gear unenchanted |
 
 ## recovery
 

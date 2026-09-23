@@ -35,6 +35,7 @@ const { noticeLandmarks, unexploredArea, explorationSummary, summaryText, explor
 const { lootNearby, lootStep, unlootedLandmarks } = require('./looting');
 const { enchantReady, enchantStep, enchantable } = require('./enchanting');
 const { tradeWorthwhile, tradeStep } = require('./trading');
+const { strategyStep } = require('./strategy');
 const { openChest } = require('./chest-delivery');
 const { barterStep, gatherBastionGold } = require('./bartering');
 const { descendPillar, pillarUp, pillarSite } = require('./pillar-recovery');
@@ -2398,16 +2399,9 @@ function idleOptions(bot, goal) {
         run: (b, t, g, sv) => exploreStep(b, t, g, sv, { navigate, home, noticeVillage }) };
     }
   }
-  // Looting: the nearest remembered ruined portal, dungeon or temple whose
-  // chests have not been opened.
-  const unlooted = unlootedLandmarks(bot, goal)[0];
-  if (unlooted) options.loot = { description: `Loot: walk ${unlooted.distance} blocks to the ${unlooted.landmark.kind.replaceAll('_', ' ')} and open its chests. Ruined portals hold gold, obsidian and flint and steel; dungeons and temples iron, gold, bread and now and then diamonds; a mineshaft's chests ride in minecarts, with rails, iron, gold and bread, and its cobwebs are string.`,
-    run: (b, t, g, sv) => lootStep(b, t, g, sv, lootActions()) };
-  // Enchanting: a table carried, in view or remembered, lapis in hand, five
-  // levels or more, and gear still plain (enchanting.js).
-  // Trading: a village remembered and something to sell or spend (trading.js).
-  if (tradeWorthwhile(bot, goal)) options.trade = { description: 'Trade at the remembered village: read the villagers\' offers, sell spare coal, sticks, wheat and the like for emeralds, and buy what the run needs (ender pearls, arrows, a bow, better armour or tools, food).',
-    run: (b, t, g, sv) => tradeStep(b, t, g, sv, { navigate, decide, client: t.opportunityClient }) };
+  const sides = sideTrips(bot, goal);
+  if (sides.loot) options.loot = sides.loot;
+  if (sides.trade) options.trade = sides.trade;
   // Experience for enchanting: the ingots taken out of a furnace give it,
   // and the raw ore is carried and stashed by the stack. Only while there is
   // gear to enchant and the level is under thirty, so it is never ground for
@@ -2416,8 +2410,7 @@ function idleOptions(bot, goal) {
   const rawOre = Object.keys(RAW_ORE).map(name => [name, countOf(bot, name)]).filter(([, n]) => n >= 8).sort((a, b) => b[1] - a[1])[0];
   if (rawOre && (bot.experience?.level ?? 0) < 30 && enchantable(bot).length) options.earn_xp = { description: `Earn experience for enchanting: smelt ${Math.min(rawOre[1], 32)} of the ${rawOre[1]} ${rawOre[0].replaceAll('_', ' ')} carried (level ${bot.experience?.level ?? 0} now; each level is a better enchant). The ingots are useful too.`,
     item: RAW_ORE[rawOre[0]], count: countOf(bot, RAW_ORE[rawOre[0]]) + Math.min(rawOre[1], 32) };
-  if (enchantReady(bot, goal)) options.enchant = { description: `Enchant the ${enchantable(bot)[0].item.name.replaceAll('_', ' ')} at the enchanting table with ${bot.experience?.level} levels and the lapis carried: Sharpness, Protection or Power for the fights ahead.`,
-    run: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) };
+  if (sides.enchant) options.enchant = sides.enchant;
   if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.`, item: 'torch', count: 4 };
   // The standing dream. With nothing asked and nothing urgent, the next
   // rung of the beat-the-game ladder is on offer; it is a long walk from a
@@ -2429,6 +2422,28 @@ function idleOptions(bot, goal) {
     if (stage.phase !== 'complete') options.long_game = { description: `Work toward beating the game. The next stage is ${stage.phase.replaceAll('_', ' ')}${stage.item ? ` (${stage.count} ${stage.item.replaceAll('_', ' ')})` : ''}; it may mean a long trip and a real fight, so choose it with supplies, tools and daylight in hand.`, phase: stage.phase, stage };
   }
   return options;
+}
+
+// The trips worth making from wherever the bot is, each already checked
+// feasible: shared by idle work and the strategy on the way to the dragon.
+function sideTrips(bot, goal, client) {
+  const trips = {};
+  // Looting: the nearest remembered ruined portal, dungeon or temple whose
+  // chests have not been opened.
+  const unlooted = unlootedLandmarks(bot, goal)[0];
+  if (unlooted) trips.loot = { description: `Loot: walk ${unlooted.distance} blocks to the ${unlooted.landmark.kind.replaceAll('_', ' ')} and open its chests. Ruined portals hold gold, obsidian and flint and steel; dungeons and temples iron, gold, bread and now and then diamonds; a mineshaft's chests ride in minecarts, with rails, iron, gold and bread, and its cobwebs are string.`,
+    says: `I'll loot the ${unlooted.landmark.kind.replaceAll('_', ' ')} ${unlooted.distance} blocks away`, walkBlocks: unlooted.distance,
+    run: (b, t, g, sv) => lootStep(b, t, g, sv, lootActions()) };
+  // Trading: a village remembered and something to sell or spend (trading.js).
+  if (tradeWorthwhile(bot, goal)) trips.trade = { description: 'Trade at the remembered village: read the villagers\' offers, sell spare coal, sticks, wheat and the like for emeralds, and buy what the run needs (ender pearls, arrows, a bow, better armour or tools, food).',
+    says: 'I\'ll go trade at the village',
+    run: (b, t, g, sv) => tradeStep(b, t, g, sv, { navigate, decide, client: client || t.opportunityClient }) };
+  // Enchanting: a table carried, in view or remembered, lapis in hand, five
+  // levels or more, and gear still plain (enchanting.js).
+  if (enchantReady(bot, goal)) trips.enchant = { description: `Enchant the ${enchantable(bot)[0].item.name.replaceAll('_', ' ')} at the enchanting table with ${bot.experience?.level} levels and the lapis carried: Sharpness, Protection or Power for the fights ahead.`,
+    says: `I'll enchant my ${enchantable(bot)[0].item.name.replaceAll('_', ' ')}`,
+    run: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) };
+  return trips;
 }
 
 async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acquire = acquireStep, handlers, actions } = {}) {
@@ -2628,6 +2643,8 @@ async function netherFoodReady(bot, task, goal, save) {
 // objective and by idle dream between requests.
 function gameHandlers(bot, decisionClient) {
   return {
+        // Which open rung, or a side trip, next: Jev's choice (strategy.js).
+        strategy: (bot, task, goal, save, stage) => strategyStep(bot, task, goal, save, stage, { client: decisionClient, decide, sides: sideTrips(bot, goal, decisionClient) }),
         acquireStep, acquireSetStep, enter_nether: netherStep, return_overworld: returnFromNether,
         enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate }),
         fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate }, decisionClient),

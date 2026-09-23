@@ -70,6 +70,22 @@ define({
   instructions: workInstructions('Between player requests, with shelter and food already sufficient: how should the bot spend spare daylight?'),
   fallback: firstOption,
 });
+// Strategy on the way to the dragon (src/strategy.js): the ladder's order
+// is the fallback, and Jev weighs what the order cannot see.
+define({
+  id: 'win_strategy', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'On the way to beating the game, which of the open steps, or which side trip, should the bot do next?',
+  trigger: 'Each step of the beat-the-game ladder in the Overworld while more than one thing is open; the answer holds until the ladder\'s next step or the options change, or ten minutes pass. A side trip runs once and then rests ten minutes.',
+  source: 'src/strategy.js (strategyOptions), src/game-progress.js (openRungs), src/work.js (sideTrips)',
+  options: [
+    { pattern: 'rung_[a-z_]+', label: 'a rung of the ladder', when: 'the ladder\'s next rung (the fallback), and each rung after it the ladder may reach while the ones before it wait (shield, iron sword, bucket, golden boots, bow, arrows, diamond sword); pickaxes and armour are never skipped', level: 'root', dynamic: true },
+    { key: 'loot', label: 'open the chests of a remembered structure', when: 'by day, health fourteen or more and hunger twelve or more, with an unlooted ruined portal, dungeon, temple or mineshaft within 256 blocks', level: 'root' },
+    { key: 'trade', label: 'trade at a remembered village', when: 'by day and fit, with a village remembered and something to sell or spend', level: 'root' },
+    { key: 'enchant', label: 'enchant gear at the enchanting table', when: 'by day and fit, with a table known, lapis carried, level five or more and gear unenchanted', level: 'root' },
+  ],
+  instructions: workInstructions('On the way to beating the game, several things are open. Which should the bot do next? The ladder\'s next step is a sensible default; choose another step or a side trip when it serves the run better now (a chest that holds what the step is digging for, levels that should go on the sword before the fights, a step that has stalled).'),
+  fallback: firstOption,
+});
 define({
   id: 'stillness_detour', area: 'idle', kind: 'idle', primitive: 'choice', stakes: 'low', tree: true,
   question: 'The bot has stood still twenty seconds: what useful thing should it do from here for a few minutes?',
