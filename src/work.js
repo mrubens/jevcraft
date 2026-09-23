@@ -514,6 +514,10 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       search.observedTarget = { ...target };
     }
     if (surfaceOnly && await boatTravelStep(bot, task, goal, save, target, { acquireStep })) return;
+    // Nothing but sea and islets about, and none of it in view: swim for the
+    // land remembered. Before the survey, which found the next islet a hop
+    // away and would walk between them.
+    if (surfaceOnly && !observed.length && await require('./shore').crossSea(bot, task, goal, save)) return;
     // When a known resource is well below us, circling the same mountain does
     // not get closer. Approach through a dry, supported staircase. Stay above
     // a water-covered deposit rather than tunnelling into the water itself.
@@ -585,12 +589,6 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
           destination = candidate; break;
         }
       }
-    }
-    // Nothing but sea within the survey: swim for the land remembered.
-    if (!destination && surfaceOnly) {
-      const { crossSea } = require('./shore');
-      surface?.restore();
-      if (await crossSea(bot, task, goal, save)) return;
     }
     if (!destination && await descendCanopy(bot, task, goal, save)) return;
     if (!destination && await descendPillar(bot, task, goal, save)) return;

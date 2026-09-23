@@ -278,7 +278,7 @@ function ownGround(bot, from) {
     for (let y = start.y + 4; y >= start.y - 4; y--) {
       const b = bot.blockAt(new Vec3(x, y, z));
       if (!b) return false;
-      if (/water|kelp|seagrass|lava|bubble/.test(b.name)) return false;
+      if (/water|kelp|seagrass|lava|bubble|ice/.test(b.name)) return false;
       if (b.boundingBox === 'block') return true;
     }
     return false;
@@ -303,11 +303,23 @@ function ownGround(bot, from) {
   return seen;
 }
 
-// Dry ground to stand on in view that is not the bot's own islet.
+// Land in view: dry ground to stand on that is more than an islet. The
+// live run's sand bar was two, a block of water between them, and from one
+// the other was "ground in view" every time. Other islets are skipped, the
+// bot's own among them.
 function landInView(bot, reach, own = new Set()) {
   const ids = LAND_IDS.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
-  return bot.findBlocks({ matching: ids, maxDistance: reach, count: 1,
-    useExtraInfo: b => { const p = b.position.offset(0, 1, 0); return !own.has(`${p.x},${p.z}`) && dryStanding(bot, p); } })[0] || null;
+  const islets = new Set(own);
+  const cells = bot.findBlocks({ matching: ids, maxDistance: reach, count: 64,
+    useExtraInfo: b => { const p = b.position.offset(0, 1, 0); return !own.has(`${p.x},${p.z}`) && dryStanding(bot, p); } })
+    .sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+  for (const c of cells) {
+    if (islets.has(`${c.x},${c.z}`)) continue;
+    const ground = ownGround(bot, c.offset(0.5, 1, 0.5));
+    if (!ground) return c;
+    for (const k of ground) islets.add(k);
+  }
+  return null;
 }
 
 function knownLand(bot, goal) {
@@ -333,7 +345,7 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   // Why a crossing was not made, for the audit: the reason it declined.
   const decline = why => { goal.seaCrossing = { declined: why, at: new Date().toISOString(), from: { ...bot.entity.position.floored() } }; save(); return false; };
   if (!/overworld/.test(String(bot.game?.dimension || 'overworld'))) return decline('not the Overworld');
-  if (!atSea(bot)) return decline('not at sea');
+  if (!atSea(bot)) return false;
   const start = bot.entity.position.clone();
   const own = ownGround(bot, start);
   if (!own) return decline('standing on more ground than an islet');

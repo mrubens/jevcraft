@@ -144,13 +144,14 @@ function sea() {
   const { Vec3 } = require('vec3');
   const registry = require('minecraft-data')('26.1');
   const block = (p, name) => ({ position: p, name, type: registry.blocksByName[name]?.id, boundingBox: /air|water/.test(name) ? 'empty' : 'block' });
-  const nameAt = p => p.x < -60 ? (p.y <= 62 ? 'grass_block' : 'air') : p.x >= 0 && p.x <= 12 && p.z === 0 && p.y === 62 ? 'sand' : p.y <= 55 ? 'stone' : p.y <= 62 ? 'water' : 'air';
+  // A second bar a block of water past the first, as the live run's was.
+  const nameAt = p => p.x < -60 ? (p.y <= 62 ? 'grass_block' : 'air') : (p.x >= 0 && p.x <= 12 || p.x >= 14 && p.x <= 20) && p.z === 0 && p.y === 62 ? 'sand' : p.y <= 55 ? 'stone' : p.y <= 62 ? 'water' : 'air';
   const bot = { registry, game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 63, 0.5), isInWater: false, onGround: true },
     oxygenLevel: 20, controlState: {}, said: [], looks: [],
     blockAt: p => { const f = p.floored(); return block(f, nameAt(f)); },
     findBlocks({ maxDistance, useExtraInfo }) {
-      const shore = new Vec3(-61, 62, Math.floor(bot.entity.position.z)), bar = new Vec3(12, 62, 0);
-      return [bar, shore].filter(p => p.distanceTo(bot.entity.position) <= maxDistance && useExtraInfo(bot.blockAt(p)));
+      const shore = new Vec3(-61, 62, Math.floor(bot.entity.position.z)), bar = new Vec3(12, 62, 0), next = new Vec3(14, 62, 0);
+      return [bar, next, shore].filter(p => p.distanceTo(bot.entity.position) <= maxDistance && useExtraInfo(bot.blockAt(p)));
     },
     lookAt: async p => { bot.looks.push(p); }, chat: m => bot.said.push(m),
     getControlState: k => !!bot.controlState[k],
