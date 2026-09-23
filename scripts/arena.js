@@ -83,7 +83,7 @@ bot.on('error', err => { if (run) run.errors.push(err.message); log({ error: err
 bot.on('kicked', reason => log({ kicked: String(reason) }));
 bot.on('end', reason => { if (!finished) { log({ arena: 'FAIL', reason: `connection ended: ${reason}` }); process.exit(1); } });
 
-const alive = name => Object.values(bot.entities).filter(e => e.name === name && e.isValid !== false &&
+const alive = name => Object.values(bot.entities).filter(e => (Array.isArray(name) ? name.includes(e.name) : e.name === name) && e.isValid !== false &&
   e.position?.distanceTo(bot.entity.position) < 64);
 
 // What actually killed the bot, in the server's own words. "Slain by

@@ -104,6 +104,14 @@ function lastResortFood(bot) {
   return bot.inventory.items().find(item => lastResortFoods.has(item.name) && bot.registry.foodsByName?.[item.name]);
 }
 
+const CLOSE = 5;
+function closeHostile(bot) {
+  const here = bot.entity?.position;
+  if (!here) return false;
+  return Object.values(bot.entities || {}).some(e => e !== bot.entity && e.position && e.isValid !== false &&
+    (bot.registry?.entitiesByName?.[e.name]?.type === 'hostile' || e.type === 'hostile') && e.position.distanceTo(here) <= CLOSE);
+}
+
 function chooseFood(bot) {
   return bot.inventory.items().filter(item => safeFood(bot, item))
     .sort((a, b) => {
@@ -128,6 +136,11 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   // Natural regeneration needs at least 18 hunger points. A sheltered injured
   // player at 17 must not wait all night with carried food and no healing.
   if (!(bot.food <= 16 || (bot.health < 20 && bot.food < 18) || (bot.health <= 12 && bot.food < 20))) return false;
+  // Not with a mob at arm's length. Eating is a second and a half standing
+  // still with the hand busy, and the health it brings back comes over the
+  // next minute: death nineteen ate twice at six health with a zombie
+  // beside it. Starvation is the one reason to eat anyway.
+  if (bot.food > 2 && closeHostile(bot)) return false;
   // Last resort only when it unlocks regeneration or holds off starvation;
   // a bot at full health does not eat rotten flesh for the fun of it.
   const food = chooseFood(bot) || ((bot.food < 18 && bot.health < 20) || bot.food <= 6 ? lastResortFood(bot) : null);

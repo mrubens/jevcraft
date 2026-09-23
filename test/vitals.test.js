@@ -181,3 +181,21 @@ test('with nothing else to eat, rotten flesh is eaten when it is the way back to
   const poison = { registry, inventory: { items: () => [{ name: 'spider_eye', count: 3 }, { name: 'pufferfish', count: 1 }] } };
   assert.equal(lastResortFood(poison), undefined, 'poison is never a last resort');
 });
+
+test('no eating with a hostile mob within five blocks, unless starving', async () => {
+  const { maintainVitals } = require('../src/vitals');
+  const { Vec3 } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  let ate = 0;
+  const bot = { registry, health: 6, food: 12, oxygenLevel: 20, entity: { position: new Vec3(0, 64, 0) },
+    entities: { 1: { name: 'zombie', position: new Vec3(2, 64, 0), isValid: true } },
+    inventory: { items: () => [{ name: 'bread', count: 4, type: registry.itemsByName.bread.id }] },
+    equip: async () => {}, consume: async () => { ate++; bot.food += 5; }, deactivateItem() {}, blockAt: () => ({ name: 'air' }) };
+  const task = { check() {} };
+  assert.equal(await maintainVitals(bot, task), false, 'a zombie beside it');
+  assert.equal(ate, 0);
+  bot.entities[1].position = new Vec3(12, 64, 0);
+  assert.equal(await maintainVitals(bot, task), true, 'with the zombie gone, it eats');
+  bot.entities[1].position = new Vec3(2, 64, 0); bot.food = 2;
+  assert.equal(await maintainVitals(bot, task), true, 'starving, it eats anyway');
+});

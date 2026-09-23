@@ -67,6 +67,9 @@ const DRILLS = Object.freeze([
   { name: 'wither_skeleton_pair', mode: 'defend', entity: 'wither_skeleton', count: 2, arena: 'corridor', stand: 'open',
     at: [[2047.5, 77, 2003.5], [2049.5, 77, 2003.5]], seconds: 60, expect: { deaths: 0, cleared: true, damage: 16 },
     why: 'Two in a corridor: the second arrives while the first is still swinging.' },
+  { name: 'cave_trio', mode: 'defend', entity: ['skeleton', 'zombie', 'zombie'], count: 3, arena: 'corridor', stand: 'open',
+    at: [[2049.5, 77, 2003.5], [2046.5, 77, 2003.5], [2045.5, 77, 2003.5]], seconds: 60, expect: { deaths: 0, damage: 14 },
+    why: 'Death nineteen. A skeleton and two zombies at three to five blocks in a mineshaft: it dug a bunker while they hit it, then ate twice at six health.' },
   { name: 'hoglin_single', mode: 'defend', entity: 'hoglin', count: 1, arena: 'room', stand: 'open',
     at: [[2016.5, 77, 2010.5]], seconds: 45, expect: { deaths: 0, cleared: true, damage: 10 },
     why: 'Death six. A hoglin charges and knocks back.' },
@@ -180,8 +183,9 @@ function resetCommands(user, d, { dimension = 'minecraft:the_nether' } = {}) {
 // Every mob is tagged and persistent: a blaze that wandered off would end
 // the drill early and a despawn would look like a kill.
 function spawnCommands(d, { dimension = 'minecraft:the_nether' } = {}) {
-  return d.at.slice(0, d.count).map(at =>
-    `execute in ${dimension} run summon minecraft:${d.entity} ${place(at)} {PersistenceRequired:1b,Tags:["arena"]}`);
+  // A mixed group names one kind per position.
+  return d.at.slice(0, d.count).map((at, i) =>
+    `execute in ${dimension} run summon minecraft:${Array.isArray(d.entity) ? d.entity[i] : d.entity} ${place(at)} {PersistenceRequired:1b,Tags:["arena"]}`);
 }
 
 function median(values) {
