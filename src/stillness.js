@@ -82,7 +82,7 @@ function permittedWait(bot, goal, now = Date.now()) {
   // as activity above); stalled at the same number, it is a stall.
   // A bundle's step is its child's, wrapped.
   const action = goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action;
-  if (HOLDS.has(action) || action === 'recover_before_combat' && (bot.health ?? 20) < 20 && (bot.food ?? 20) >= 18) return 'recovering';
+  if (HOLDS.has(action) || ['recover_before_combat', 'recover_before_nether'].includes(action) && (bot.health ?? 20) < 20 && (bot.food ?? 20) >= 18) return 'recovering';
   return null;
 }
 

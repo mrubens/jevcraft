@@ -218,6 +218,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 82. *A furnace placed from the water.* Back at the base after death fifteen, the pond had run into the pit beside the furnace and table, and Jev, floating there, placed a new furnace and then could not reach it: "I can't reach the furnace I placed", then the table, and thirty seconds still. A workstation is now placed and used from dry ground: floating in water, the bot first steps to the nearest dry cell with air above (the lava exit's search, which now also refuses water and measures from cell centres, not corners).
 
+83. *Death sixteen: back through the portal with three pieces of food.* After respawning at home the blaze hunt walked straight back through the portal: the food gate is a rung on the ladder, and the hunt's own way to the Nether did not pass it. Jev fought a blaze down to four health, recovered to eighteen, and a wither skeleton knocked it off the ledge by the portal, thirty blocks. The gate now also stands at the crossing itself, whoever asks for it: a Nether reserve (24 food points, or twenty working minutes of trying and at least some food), and sixteen health, waited for beside the portal (a permitted wait while healing).
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

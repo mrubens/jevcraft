@@ -248,3 +248,16 @@ test('a bug in the code is recorded with where it happened; a failure in the wor
   assert.equal(goal.lastErrorAt, undefined);
   assert.equal(goal.lastError, 'No wheat seed took on the plot');
 });
+
+test('the crossing waits for health as well as food, however it is reached', async () => {
+  const { gameHandlers } = require('../src/work');
+  const registry = require('minecraft-data')('26.1');
+  const bot = { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 9, food: 20,
+    inventory: { items: () => [{ name: 'cooked_beef', count: 8, type: registry.itemsByName.cooked_beef.id }] }, entity: { position: { x: 0, y: 64, z: 0 } } };
+  const goal = {};
+  const entered = await gameHandlers(bot).enter_nether(bot, new Task('cross'), goal, () => {});
+  assert.equal(entered, false, 'not through the portal at nine health');
+  assert.equal(goal.step.action, 'recover_before_nether');
+  const { permittedWait } = require('../src/stillness');
+  assert.equal(permittedWait({ ...bot, entities: {}, isSleeping: false }, goal), 'recovering', 'healing at the portal is a wait, not a stall');
+});

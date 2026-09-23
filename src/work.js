@@ -1996,6 +1996,15 @@ async function tunnelToward(bot, task, goal, save, target, key) {
 
 async function netherStep(bot, task, goal, save) {
   if (String(bot.game.dimension).includes('nether')) return true;
+  // Fed and healed before the portal, however the crossing was reached.
+  if (bot.game?.gameMode === 'survival' && bot.game.difficulty !== 'peaceful') {
+    if (!await netherFoodReady(bot, task, goal, save)) return false;
+    if ((bot.health ?? 20) < NETHER_HEALTH) {
+      goal.step = { action: 'recover_before_nether', health: Math.round(bot.health), needed: NETHER_HEALTH, food: bot.food }; save();
+      for (let i = 0; i < 10; i++) { task.check(); await sleep(100); }
+      return false;
+    }
+  }
   // The portal is often underground and the Nether has no wood: the same
   // supplies a descent needs, checked before the walk rather than after a
   // stone pickaxe wears to five on the way.
@@ -2382,6 +2391,67 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
 // the planner for anything craftable, and a search for sheep or cows.
 const homeActions = () => ({ acquireStep, navigate, place, dig, explore });
 
+// Two steaks was the whole larder for the first Nether trip. The survival
+// layer's stock-driven search fills the reserve; a search it has set aside
+// as fruitless lets the trip go with what there is. It is asked at the
+// crossing itself as well as on the ladder: after a death the blaze hunt
+// walked straight back through the portal with three pieces of food, fought
+// at four health, and was knocked off the ledge.
+const NETHER_HEALTH = 16;
+async function netherFoodReady(bot, task, goal, save) {
+  // The gate never waits. It takes food from the chest, harvests the
+  // plot, or sends the survival layer hunting, and after twenty
+  // working minutes of that it lets the crossing go with what there
+  // is. It used to return having done nothing whenever the chest
+  // would not open and the animal search was resting, and the loop
+  // spun on it at twenty passes a second.
+  const NETHER_FOOD = NETHER_FOOD_POINTS, now = Date.now();
+  if (foodSupply(bot) >= NETHER_FOOD) { delete goal.preparingNether; unwatch(goal, 'food_gate', 'nether'); return true; }
+  // The supervisor: twenty minutes with no more food carried lets the
+  // crossing go with what there is, but not with nothing: with
+  // nothing the hunt sends it straight home, a round trip for every
+  // twenty minutes. Finding some food restarts the clock.
+  const gate = watch(goal, 'food_gate', 'nether', foodSupply(bot), { better: 'higher', stallMs: 20 * 60000, restMs: 60000,
+    why: 'twenty minutes without any more food', now });
+  if (gate.stalled && foodSupply(bot) > 0) {
+    bot.chat?.(`I've spent twenty minutes getting food together. Going with what I have (${foodSupply(bot)} points).`);
+    delete goal.preparingNether; return true;
+  }
+  goal.preparingNether = true; goal.stockFood = true;
+  const survivalState = goal.survival || {};
+  // The chest first, from wherever the bot is.
+  const stashFood = Object.entries(survivalState.home?.stash?.contents || {})
+    .reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
+  const home = require('./home-base').homeOf(bot, goal);
+  const attempts = attemptsFor(goal);
+  if (stashFood > 0 && home?.stash?.position && !attempts.resting('fetch_food', 'stash', now)) {
+    goal.step = { action: 'fetch_food_from_stash', foodPoints: foodSupply(bot), required: NETHER_FOOD, inChest: stashFood }; save();
+    try { await restockFromStash(bot, task, goal, save, home, homeActions(), []); }
+    catch (err) {
+      task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+      attempts.fail('fetch_food', 'stash', err, { restMs: 120000 }); save();
+    }
+    return false;
+  }
+  // Then the plot: wheat into bread.
+  const chore = require('./home-base').homeChores(bot, goal).harvest_and_bake;
+  if (chore && !attempts.resting('chore', 'harvest_and_bake', now)) {
+    goal.step = { action: 'harvest_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
+    try { await chore.run(bot, task, goal, save, homeActions()); }
+    catch (err) {
+      task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+      attempts.fail('chore', 'harvest_and_bake', err, { restMs: 120000 }); save();
+    }
+    return false;
+  }
+  // Then the hunt. A search set aside as fruitless is taken up again:
+  // the gate is the reason to look, and resting it was the stall.
+  if (attempts.resting('food_search', 'stock', now)) { attempts.clear('food_search', 'stock'); unwatch(goal, 'food_search', 'stock'); }
+  goal.step = { action: 'hunt_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD, minutes: Math.round((now - (gate.record?.startedAt || now)) / 60000) }; save();
+  await explore(bot, task, goal, save, 'animals', { surfaceOnly: true });
+  return false;
+}
+
 // The executors the game-completion ladder can call, shared by the win
 // objective and by idle dream between requests.
 function gameHandlers(bot, decisionClient) {
@@ -2394,59 +2464,7 @@ function gameHandlers(bot, decisionClient) {
         // Two steaks was the whole larder for the first Nether trip. The
         // survival layer's stock-driven search fills the reserve; a search
         // it has set aside as fruitless lets the trip go with what there is.
-        food_reserve: async (bot, task, goal, save) => {
-          // The gate never waits. It takes food from the chest, harvests the
-          // plot, or sends the survival layer hunting, and after twenty
-          // working minutes of that it lets the crossing go with what there
-          // is. It used to return having done nothing whenever the chest
-          // would not open and the animal search was resting, and the loop
-          // spun on it at twenty passes a second.
-          const NETHER_FOOD = NETHER_FOOD_POINTS, now = Date.now();
-          if (foodSupply(bot) >= NETHER_FOOD) { delete goal.preparingNether; unwatch(goal, 'food_gate', 'nether'); return true; }
-          // The supervisor: twenty minutes with no more food carried lets the
-          // crossing go with what there is, but not with nothing: with
-          // nothing the hunt sends it straight home, a round trip for every
-          // twenty minutes. Finding some food restarts the clock.
-          const gate = watch(goal, 'food_gate', 'nether', foodSupply(bot), { better: 'higher', stallMs: 20 * 60000, restMs: 60000,
-            why: 'twenty minutes without any more food', now });
-          if (gate.stalled && foodSupply(bot) > 0) {
-            bot.chat?.(`I've spent twenty minutes getting food together. Going with what I have (${foodSupply(bot)} points).`);
-            delete goal.preparingNether; return true;
-          }
-          goal.preparingNether = true; goal.stockFood = true;
-          const survivalState = goal.survival || {};
-          // The chest first, from wherever the bot is.
-          const stashFood = Object.entries(survivalState.home?.stash?.contents || {})
-            .reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
-          const home = require('./home-base').homeOf(bot, goal);
-          const attempts = attemptsFor(goal);
-          if (stashFood > 0 && home?.stash?.position && !attempts.resting('fetch_food', 'stash', now)) {
-            goal.step = { action: 'fetch_food_from_stash', foodPoints: foodSupply(bot), required: NETHER_FOOD, inChest: stashFood }; save();
-            try { await restockFromStash(bot, task, goal, save, home, homeActions(), []); }
-            catch (err) {
-              task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-              attempts.fail('fetch_food', 'stash', err, { restMs: 120000 }); save();
-            }
-            return false;
-          }
-          // Then the plot: wheat into bread.
-          const chore = require('./home-base').homeChores(bot, goal).harvest_and_bake;
-          if (chore && !attempts.resting('chore', 'harvest_and_bake', now)) {
-            goal.step = { action: 'harvest_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
-            try { await chore.run(bot, task, goal, save, homeActions()); }
-            catch (err) {
-              task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-              attempts.fail('chore', 'harvest_and_bake', err, { restMs: 120000 }); save();
-            }
-            return false;
-          }
-          // Then the hunt. A search set aside as fruitless is taken up again:
-          // the gate is the reason to look, and resting it was the stall.
-          if (attempts.resting('food_search', 'stock', now)) { attempts.clear('food_search', 'stock'); unwatch(goal, 'food_search', 'stock'); }
-          goal.step = { action: 'hunt_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD, minutes: Math.round((now - (gate.record?.startedAt || now)) / 60000) }; save();
-          await explore(bot, task, goal, save, 'animals', { surfaceOnly: true });
-          return false;
-        },
+        food_reserve: (bot, task, goal, save) => netherFoodReady(bot, task, goal, save),
         prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep }),
         home: (bot, task, goal, save, stage) => homeStep(bot, task, goal, save, stage, homeActions()),
         // A bed from a remembered village: dug up, it drops itself.
