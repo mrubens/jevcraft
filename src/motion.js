@@ -25,6 +25,10 @@ async function move(bot, task, { label, keys = ['forward'], sneak = true, why, l
   for (const key of keys) if (!MOVEMENT.has(key)) throw new Error(`Not a movement key: ${key}`);
   if (!sneak && keys.some(key => HORIZONTAL.has(key)) && !why) throw new Error(`${label}: walking upright needs a reason`);
   const limit = Math.min(maxMs, MAX_MS);
+  // Always yield once: a move whose goal is already met returns before its
+  // first tick, and a loop of those never lets the connection's keepalive
+  // through (the arena server timed the bot out mid-drill).
+  await new Promise(resolve => setImmediate(resolve));
   if (look) await bot.lookAt(look, true);
   task.check();
   const touched = [...new Set([...keys, ...(sneak ? ['sneak'] : [])])];

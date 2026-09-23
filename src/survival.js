@@ -392,11 +392,15 @@ class Survival {
     if (!creeper) return false;
     const armed = /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '');
     const feet = bot.entity.position.floored();
-    if (!armed || (bot.health ?? 20) < 8 || danger.some(t => t !== creeper && t.distance <= 5) || dropWithin(bot, feet, 2) || lavaBeside(bot, feet)) return false;
+    // Other creepers are the same dance, the nearest hit and all of them
+    // backed from; any other mob close is not (the pair drill: 11 damage
+    // while a second creeper kept the dance off).
+    if (!armed || (bot.health ?? 20) < 8 || danger.some(t => t.entity.name !== 'creeper' && t.distance <= 5) || dropWithin(bot, feet, 2) || lavaBeside(bot, feet)) return false;
     const e = creeper.entity;
+    const creepers = danger.filter(t => t.entity.name === 'creeper').map(t => t.entity);
     const look = e.position.offset(0, 1, 0);
-    const distance = () => e.position.distanceTo(bot.entity.position);
-    const swelling = creeperSwelling(bot, e);
+    const distance = () => Math.min(...creepers.map(c => c.position.distanceTo(bot.entity.position)));
+    const swelling = creepers.some(c => creeperSwelling(bot, c) && c.position.distanceTo(bot.entity.position) < 4);
     // Just hit, or lit within reach, or in reach while the sword recovers:
     // back off out of the blast.
     if (swung || (swelling && creeper.distance < 3.5) || canStrike(bot, e)) {
@@ -406,13 +410,18 @@ class Survival {
     }
     // Out of reach and not lit: close in for the next hit, the swing reflex
     // takes it at the next look.
+    const lit = () => creepers.some(c => creeperSwelling(bot, c) && c.position.distanceTo(bot.entity.position) < 4);
     if (!swelling) {
       this.report(goal, save, { action: 'creeper_close_in', distance: Number(creeper.distance.toFixed(1)), health: bot.health });
       await move(bot, task, { label: 'creeper_close_in', keys: ['forward'], sneak: false, why: 'closing to swing range on a creeper that is not lit', look, maxMs: 600, tick: 50,
-        until: () => canStrike(bot, e) || creeperSwelling(bot, e) });
+        until: () => canStrike(bot, e) || lit() });
       return true;
     }
-    // Lit but out of reach: keep backing.
+    // Lit, out of reach and already backing room: nothing for the dance to
+    // do. Answering "back off until five away" at five away returned at once,
+    // every step, and the loop never let the connection breathe: the arena
+    // server timed the bot out twice in the creeper pair drill.
+    if (distance() >= 5) return false;
     await move(bot, task, { label: 'creeper_back_off', keys: ['back'], sneak: false, why: 'a lit creeper just out of reach', look, maxMs: 500, tick: 50, until: () => distance() >= 5 });
     return true;
   }
