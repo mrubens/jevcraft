@@ -71,6 +71,22 @@ function lavaBeside(bot, p) {
   }
   return false;
 }
+// In lava, nothing else is the question: a hoglin knocked the bot into
+// the pool beside it at eight health, and it "held a defensive position"
+// in the lava four times until it burned. The nearest cell with a floor,
+// air for the body and no lava in it, forward and jumping at it.
+const inLava = bot => !!bot.entity?.isInLava || [0, 1].some(dy => bot.blockAt(bot.entity.position.floored().offset(0, dy, 0))?.name === 'lava');
+function lavaExit(bot) {
+  const feet = bot.entity.position.floored(), cells = [];
+  const dry = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire/.test(b.name); };
+  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) for (let dy = -1; dy <= 2; dy++) {
+    const c = feet.offset(dx, dy, dz);
+    if (bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block' || bot.blockAt(c.offset(0, -1, 0))?.name === 'magma_block' || !dry(c) || !dry(c.offset(0, 1, 0))) continue;
+    cells.push(c);
+  }
+  return cells.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0] || null;
+}
+
 // Hostiles that daylight does not remove and that keep following.
 const PERSISTENT_THREATS = new Set(['creeper', 'spider', 'cave_spider', 'enderman', 'witch', 'pillager', 'vindicator', 'husk', 'drowned']);
 // Mobs worth hiding from rather than meeting. A wither skeleton carries a
@@ -883,6 +899,15 @@ class Survival {
       return false;
     }
     if (this.rememberHouse(goal.blueprint)) save();
+    if (inLava(bot)) {
+      const exit = lavaExit(bot);
+      this.report(goal, save, { action: 'leave_lava', to: exit && { ...exit }, health: bot.health });
+      if (exit) {
+        await move(bot, task, { label: 'out_of_lava', keys: ['forward', 'jump'], sneak: false, why: 'in lava: the nearest dry cell, whatever the ground',
+          look: exit.offset(0.5, 1, 0.5), maxMs: 2500, tick: 50, until: () => !inLava(bot) && bot.entity.onGround });
+      }
+      onStep(goal); return true;
+    }
     await maintainVitals(bot, task, action => this.report(goal, save, action));
     const refuge = this.currentShelter();
     if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) {
@@ -1128,4 +1153,4 @@ class Survival {
   }
 }
 
-module.exports = { Survival, night, shelterNeeded, lavaBeside, bedSite, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { Survival, inLava, lavaExit, night, shelterNeeded, lavaBeside, bedSite, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

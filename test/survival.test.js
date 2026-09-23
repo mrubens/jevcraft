@@ -948,3 +948,23 @@ test('the escape runs from every hostile about, not only the one in view: no run
   const nearest = p => Math.min(p.distanceTo(zombie.position), p.distanceTo(blaze.position));
   assert(nearest(moved[0]) >= nearest(start) + 4, `ground gained on the nearest of both, not only the zombie: ${moved[0]}`);
 });
+
+test('in lava, the way out is the nearest cell with a floor and air, and nothing else is decided first', async () => {
+  const { Survival, inLava, lavaExit } = require('../src/survival');
+  const lava = new Set(['0,10,0', '0,11,0', '-1,10,0', '0,10,-1']);
+  const blockAt = p => lava.has(`${p.x},${p.y},${p.z}`) ? { name: 'lava', boundingBox: 'empty', position: p }
+    : p.y < 10 ? { name: 'netherrack', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  const bot = { entity: { position: new Vec3(0.5, 10, 0.5), isInLava: true, onGround: false }, blockAt, health: 6, food: 20,
+    game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: {}, controlState: {},
+    setControlState(k, v) { this.controlState[k] = v; if (k === 'forward' && v) { this.entity.position = new Vec3(1.5, 10, 0.5); this.entity.isInLava = false; this.entity.onGround = true; } },
+    lookAt: async () => {}, inventory: { items: () => [], slots: {} }, time: { timeOfDay: 6000 }, on() {}, removeListener() {} };
+  assert.equal(inLava(bot), true);
+  const exit = lavaExit(bot);
+  assert.equal(exit.distanceTo(new Vec3(0, 10, 0)), 1, 'a step off, not across the pool');
+  assert(!lava.has(`${exit.x},${exit.y},${exit.z}`));
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  const goal = {};
+  assert.equal(await survival.step(new Task('lava'), goal, () => {}, () => {}), true);
+  assert.equal(goal.survivalAction.action, 'leave_lava');
+  assert.equal(inLava(bot), false, 'and it is out');
+});
