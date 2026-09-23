@@ -74,7 +74,7 @@ async function serverCount(test, what) {
 const countInEnd = type => serverCount(`in minecraft:the_end if entity @e[type=minecraft:${type}]`, type);
 const dragonKilled = async () => await serverCount(`if entity @a[name=${username},advancements={minecraft:end/kill_dragon=true}]`, 'the dragon') > 0;
 
-const KIT = [['ender_eye', 20], ['diamond_pickaxe', 1], ['diamond_sword', 1], ['bow', 1], ['arrow', 64], ['cooked_beef', 64],
+const KIT = [['ender_eye', 20], ['diamond_pickaxe', 1], ['diamond_sword', 1], ['bow', 1], ['arrow', 64], ['cooked_beef', 64], ['water_bucket', 1],
   ['cobblestone', 64], ['cobblestone', 64], ['torch', 32], ['water_bucket', 1], ['white_bed', 1], ['oak_log', 16]];
 const ARMOUR = { 'armor.head': 'iron_helmet', 'armor.chest': 'iron_chestplate', 'armor.legs': 'iron_leggings', 'armor.feet': 'iron_boots', 'weapon.offhand': 'shield' };
 async function kit(extra = []) {

@@ -5,10 +5,13 @@ const { carriedEquipment, durable } = require('./mob-policy');
 const { foodSupply } = require('./foraging');
 const { checkThreats } = require('./danger');
 
+// Two water buckets: one for a landing after the dragon's knockback, one
+// poured against an enderman (end-combat.js). With one, the enderman took
+// the bucket and the next knockback had nothing to land in.
 async function prepareEndSupplies(bot, task, goal, save, actions) {
   task.check(); goal.preparingEnd = true; save();
   if (!await prepareCombatGear(bot, task, goal, save, actions)) return false;
-  for (const [item, count] of [['bow', 1], ['arrow', 192], ['cobblestone', 64], ['iron_pickaxe', 1], ['water_bucket', 1]]) {
+  for (const [item, count] of [['bow', 1], ['arrow', 192], ['cobblestone', 64], ['iron_pickaxe', 1], ['water_bucket', 2]]) {
     const equipment = carriedEquipment(bot);
     const ready = item === 'bow' ? equipment.some(i => i.name === 'bow' && durable(bot.registry, i)) :
       item === 'iron_pickaxe' ? equipment.some(i => ['iron_pickaxe', 'diamond_pickaxe', 'netherite_pickaxe'].includes(i.name)) : countOf(bot, item) >= count;

@@ -38,7 +38,13 @@ async function recoverFall(bot, task, goal, save, { timeoutMs = 12000, refill = 
   if (!fallDanger(bot)) return false;
   const dimension = bot.game.dimension, initialHealth = bot.health;
   const water = bot.inventory.items().find(i => i.name === 'water_bucket');
-  if (!water) throw Object.assign(new Error('Airborne after knockback without a carried water bucket'), { name: 'Blocked' });
+  // With no water there is nothing to do in the air but land: as Blocked it
+  // stopped the dragon fight mid-flight at twelve health, alive.
+  if (!water) {
+    const until = Date.now() + 5000;
+    while (bot.entity.onGround === false && Date.now() < until) { task.check(); if (bot.health <= 0 || bot.isAlive === false) break; await new Promise(r => setTimeout(r, 50)); }
+    return false;
+  }
   if (String(dimension).includes('nether')) throw new Error('Water cannot protect a landing in the Nether');
   const before = countOf(bot, 'water_bucket'), emptyBefore = countOf(bot, 'bucket');
   bot.pathfinder.setGoal(null); bot.clearControlStates(); bot.stopDigging?.();

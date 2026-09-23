@@ -67,6 +67,34 @@ function safeEndPoint(bot, p, hazards = endHazards(bot)) {
     hazards.every(({ entity, radius }) => hazardDistance(p, entity) > radius);
 }
 
+// Water answers an enderman: one that touches it is hurt and teleports
+// away, and a source poured at the feet spreads a ring of flowing water it
+// has to cross to strike. The End kit carries a bucket for this. Poured
+// only on solid ground into the bot's own open cell; taken back once no
+// turned mob is near, so the bucket is there for the next one.
+async function pourAtFeet(bot, check) {
+  const bucket = bot.inventory.items().find(i => i.name === 'water_bucket');
+  // One bucket stays full for a knocked-back landing.
+  if (!bucket || countOf(bot, 'water_bucket') < 2) return null;
+  const feet = bot.entity.position.floored(), below = feet.offset(0, -1, 0);
+  if (bot.blockAt(below)?.boundingBox !== 'block' || bot.blockAt(feet)?.name !== 'air') return null;
+  await bot.equip(bucket, 'hand'); check();
+  await bot.lookAt(below.offset(.5, 1, .5), true);
+  bot.activateItem();
+  for (let n = 0; n < 20; n++) { check(); if (bot.blockAt(feet)?.name === 'water') return feet; await sleep(50); }
+  return null;
+}
+async function takeWaterBack(bot, check, at) {
+  const p = vector(at), bucket = bot.inventory.items().find(i => i.name === 'bucket');
+  if (!bucket || bot.blockAt(p)?.name !== 'water' || bot.entity.position.distanceTo(p.offset(.5, .5, .5)) > 4) return false;
+  const before = countOf(bot, 'water_bucket');
+  await bot.equip(bucket, 'hand'); check();
+  await bot.lookAt(p.offset(.5, .9, .5), true);
+  bot.activateItem();
+  for (let n = 0; n < 20; n++) { check(); if (countOf(bot, 'water_bucket') > before) return true; await sleep(50); }
+  return false;
+}
+
 // Why a point is not safe, for the record when nothing can be done.
 function unsafeBecause(bot, p, hazards = endHazards(bot)) {
   const out = [];
@@ -209,6 +237,18 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         else { await bot.lookAt(target.position.offset(0, (target.height || 1.8) * .8, 0), true); await sleep(50); }
       }
     };
+    // The water poured for the last enderman comes back once none is near;
+    // left behind, it is lost, and the bucket goes on empty.
+    if (state.water && !hostileEntities(bot, 16).some(e => live(bot, e))) {
+      if (!await takeWaterBack(bot, check, state.water.at) && bot.entity.position.distanceTo(vector(state.water.at)) > 4) delete state.water;
+      else if (countOf(bot, 'water_bucket')) delete state.water;
+      save();
+    }
+    const turned = hostileEntities(bot, 12).find(e => live(bot, e) && e.name === 'enderman');
+    if (turned && !state.water) {
+      const at = await pourAtFeet(bot, check);
+      if (at) { state.water = { at: { ...at }, poured: Date.now() }; state.pours = (state.pours || 0) + 1; goal.step = { action: 'end_water', against: 'enderman', at: { ...at } }; save(); }
+    }
     const attacker = hostileEntities(bot, 6).find(e => live(bot, e));
     if (attacker && sword) {
       goal.step = { action: 'end_defend', target: attacker.name, distance: Math.round(attacker.position.distanceTo(bot.entity.position) * 10) / 10 }; save();

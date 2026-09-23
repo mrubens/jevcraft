@@ -257,3 +257,32 @@ test('a turned enderman within six blocks is met with the sword by the End fight
   assert.deepEqual(hits, [8]);
   assert.equal(bot.heldItem.name, 'diamond_sword');
 });
+
+test('a turned enderman in view meets water poured at the feet, and the water comes back once none is near', async () => {
+  const { bot, goal, task } = fixture();
+  let items = [{ name: 'water_bucket', count: 1 }, { name: 'water_bucket', count: 1 }, { name: 'diamond_sword', count: 1, type: registry.itemsByName.diamond_sword.id, durabilityUsed: 0 }, { name: 'cooked_beef', count: 8 }];
+  bot.inventory.items = () => items;
+  const water = new Set(), blockAt = bot.blockAt;
+  bot.blockAt = p => water.has(`${p.floored()}`) ? { name: 'water', boundingBox: 'empty' } : blockAt(p);
+  bot.equip = async item => { bot.heldItem = item; }; bot.lookAt = async () => {}; bot.setControlState = () => {}; bot.controlState = {};
+  bot.activateItem = () => {
+    const feet = bot.entity.position.floored();
+    const swap = (from, to) => { const i = items.findIndex(x => x.name === from); items = items.map((x, n) => n === i ? { name: to, count: 1 } : x); };
+    if (bot.heldItem.name === 'water_bucket') { water.add(`${feet}`); swap('water_bucket', 'bucket'); }
+    else if (bot.heldItem.name === 'bucket') { water.delete(`${feet}`); swap('bucket', 'water_bucket'); }
+  };
+  const enderman = entity(bot, 8, 'enderman', new Vec3(10, 64, .5), { creepy: true });
+  await fightEndStep(bot, task, goal, () => {}, { navigate: async () => {} }, null).catch(() => {});
+  assert(water.has(`${new Vec3(0, 64, 0)}`), 'poured into the bot\'s own cell');
+  assert.equal(goal.endCombat.pours, 1);
+  delete bot.entities[enderman.id];
+  await fightEndStep(bot, task, goal, () => {}, { navigate: async () => {} }, null).catch(() => {});
+  assert.equal(water.size, 0, 'taken back');
+  assert.equal(items.filter(i => i.name === 'water_bucket').length, 2);
+  assert.equal(goal.endCombat.water, undefined);
+  // With one bucket, it stays full for a knocked-back landing.
+  items = items.filter((i, n) => !(i.name === 'water_bucket' && n === 0));
+  entity(bot, 9, 'enderman', new Vec3(10, 64, .5), { creepy: true });
+  await fightEndStep(bot, task, goal, () => {}, { navigate: async () => {} }, null).catch(() => {});
+  assert.equal(water.size, 0);
+});
