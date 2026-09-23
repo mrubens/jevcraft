@@ -12,7 +12,7 @@ const { decide } = require('./decisions');
 // The dragon_fight question and its fixed-order fallback live in
 // decisions/combat.js; endFallback is re-exported for its callers.
 const { endFallback } = require('./decisions/combat');
-const { canStrike, strike } = require('./combat');
+const { canStrike, defendNearby, raiseShield, lowerShield } = require('./combat');
 const { durable, carriedEquipment } = require('./mob-policy');
 const { fallDanger, recoverFall } = require('./fall-recovery');
 const { cloudRadius, hazardDistance, endEmergency, checkEndEmergency, evadeDragon } = require('./end-safety');
@@ -226,18 +226,25 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // survival layer answered instead and sealed the bot in where the
     // dragon's breath pooled; that is not how the run plays it.
     const sword = bot.inventory.items().find(i => /_sword$/.test(i.name) && durable(bot.registry, i));
+    // The sword on its cooldown and the shield up between swings, the way
+    // the survival layer fights (combat.js defendNearby): swinging alone,
+    // the recorded rehearsal traded blow for blow with an enderman through
+    // iron and lost, 20 health to none in six seconds with the dragon at 26.
+    const shielded = bot.inventory.slots?.[45]?.name === 'shield';
     const defendHere = async ms => {
       const until = Date.now() + ms;
       if (sword && bot.heldItem?.name !== sword.name) { await bot.equip(sword, 'hand'); check(); }
-      while (Date.now() < until) {
-        check();
-        const target = hostileEntities(bot, 6).filter(e => live(bot, e)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
-        if (!target) break;
-        if (sword && canStrike(bot, target)) { await strike(bot, task, target); progress = true; state.defended = (state.defended || 0) + 1; }
-        // Eyes on its legs while it comes: a look at an enderman's head is
-        // what turns one.
-        else { await bot.lookAt(target.position.offset(0, (target.height || 1.8) * .25, 0), true); await sleep(50); }
-      }
+      try {
+        while (Date.now() < until) {
+          check();
+          const target = hostileEntities(bot, 6).filter(e => live(bot, e)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
+          if (!target) break;
+          if (sword && canStrike(bot, target)) { if (await defendNearby(bot, task, goal, save)) { progress = true; state.defended = (state.defended || 0) + 1; } else await sleep(50); }
+          // Shield up and eyes on its legs while it comes: a look at an
+          // enderman's head is what turns one.
+          else { if (shielded) raiseShield(bot); await bot.lookAt(target.position.offset(0, (target.height || 1.8) * .25, 0), true); await sleep(50); }
+        }
+      } finally { lowerShield(bot); }
     };
     // The water poured for the last enderman comes back once none is near;
     // left behind, it is lost, and the bucket goes on empty.
