@@ -266,12 +266,14 @@ function atSea(bot) {
   return water >= 40;
 }
 
-// Dry ground to stand on in view, away from where the crossing began (the
-// bot's own pillar is dry ground too).
+// Dry ground to stand on in view, away from where the crossing began: the
+// bot's own pillar is dry ground too, and so was the sand bar a few blocks
+// across beside it in the live run, which kept the swim from starting.
+const OWN_GROUND = 10;
 function landInView(bot, reach, away = null) {
   const ids = LAND_IDS.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
   return bot.findBlocks({ matching: ids, maxDistance: reach, count: 1,
-    useExtraInfo: b => { const p = b.position.offset(0, 1, 0); return (!away || p.distanceTo(away) > 6) && dryStanding(bot, p); } })[0] || null;
+    useExtraInfo: b => { const p = b.position.offset(0, 1, 0); return (!away || p.distanceTo(away) > OWN_GROUND) && dryStanding(bot, p); } })[0] || null;
 }
 
 function knownLand(bot, goal) {

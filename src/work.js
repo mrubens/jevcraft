@@ -587,7 +587,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       }
     }
     // Nothing but sea within the survey: swim for the land remembered.
-    if (!destination && !land.length && surfaceOnly) {
+    if (!destination && surfaceOnly) {
       const { crossSea } = require('./shore');
       surface?.restore();
       if (await crossSea(bot, task, goal, save)) return;
