@@ -2402,7 +2402,7 @@ function idleOptions(bot, goal) {
   const sides = sideTrips(bot, goal);
   if (sides.loot) options.loot = sides.loot;
   if (sides.trade) options.trade = sides.trade;
-  if (sides.deep_dark) options.deep_dark = sides.deep_dark;
+  for (const key of ['deep_dark', 'trial_chambers', 'fetch_cache']) if (sides[key]) options[key] = sides[key];
   // Experience for enchanting: the ingots taken out of a furnace give it,
   // and the raw ore is carried and stashed by the stack. Only while there is
   // gear to enchant and the level is under thirty, so it is never ground for
@@ -2441,13 +2441,28 @@ function sideTrips(bot, goal, client) {
     run: (b, t, g, sv) => tradeStep(b, t, g, sv, { navigate, decide, client: client || t.opportunityClient }) };
   // Enchanting: a table carried, in view or remembered, lapis in hand, five
   // levels or more, and gear still plain (enchanting.js).
-  // The deep dark: an ancient city's chests, the bold trip (deep-dark.js).
-  const deepDark = require('./deep-dark');
-  if (deepDark.deepDarkReady(bot, goal)) trips.deep_dark = { description: deepDark.describe(goal),
-    says: goal.deepDark?.legs || (goal.landmarks || []).some(l => l.kind === 'ancient_city') ? "I'll go back down to the deep dark" : "I'll go looking for an ancient city in the deep dark",
-    run: (b, t, g, sv) => deepDark.deepDarkTrip(b, t, g, sv, { dig, navigate, tunnel: tunnelStep,
-      loot: (b2, t2, g2, sv2) => lootNearby(b2, t2, g2, sv2, lootActions()),
-      notice: (b2, g2, sv2) => noticeLandmarks(b2, g2, sv2, { force: true }) }) };
+  // The bold trips underground, packed light (deep-dark.js, trip-kit.js):
+  // an ancient city in the deep dark, and the trial chambers' vaults.
+  const expeditions = require('./deep-dark');
+  const tripActions = { dig, navigate, place, acquireStep, tunnel: tunnelStep,
+    loot: (b2, t2, g2, sv2) => lootNearby(b2, t2, g2, sv2, lootActions()),
+    notice: (b2, g2, sv2) => noticeLandmarks(b2, g2, sv2, { force: true }) };
+  for (const [kind, says] of [['deep_dark', "I'll go looking for an ancient city in the deep dark"], ['trial_chambers', "I'll go looking for trial chambers"]]) {
+    if (expeditions.expeditionReady(bot, goal, kind)) trips[kind] = { description: expeditions.describe(goal, kind), says,
+      run: (b, t, g, sv) => expeditions.expeditionTrip(b, t, g, sv, tripActions, kind) };
+  }
+  // The surface, walked for what it has: villages, temples, portals.
+  if (/overworld/.test(String(bot.game?.dimension || ''))) {
+    const home = goal.survival?.home?.origin;
+    const target = unexploredArea(bot, goal, { home });
+    if (target) trips.explore = { description: `Explore: walk to the nearest unexplored area (${target.fromHere} blocks away) and see what is there. Known so far: ${summaryText(explorationSummary(goal))}. Villages mean beds, food and trades; temples, shipwrecks and ruined portals mean chests.`,
+      says: "I'll go exploring", run: (b, t, g, sv) => exploreStep(b, t, g, sv, { navigate, home, noticeVillage }) };
+  }
+  // A cache from an earlier trip, far enough off that passing will not
+  // bring it back: fetch it.
+  const cached = require('./field-cache').nearCache(bot, goal, 512);
+  if (cached && cached.distance > 48) trips.fetch_cache = { description: `Walk ${Math.round(cached.distance)} blocks back to the chest left before an earlier trip and take its things back (${Object.entries(cached.cache.contents).filter(([, n]) => n > 0).slice(0, 5).map(([k, n]) => `${n} ${k.replaceAll('_', ' ')}`).join(', ')}).`,
+    says: "I'll fetch my things from the chest I left", run: (b, t, g, sv) => require('./field-cache').emptyCache(b, t, g, sv, homeActions(), cached.cache) };
   if (enchantReady(bot, goal)) trips.enchant = { description: `Enchant the ${enchantable(bot)[0].item.name.replaceAll('_', ' ')} at the enchanting table with ${bot.experience?.level} levels and the lapis carried: Sharpness, Protection or Power for the fights ahead.`,
     says: `I'll enchant my ${enchantable(bot)[0].item.name.replaceAll('_', ' ')}`,
     run: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) };
@@ -2664,7 +2679,8 @@ function gameHandlers(bot, decisionClient) {
         food_reserve: (bot, task, goal, save) => netherFoodReady(bot, task, goal, save),
         barter: (bot, task, goal, save) => barterStep(bot, task, goal, save, { acquireStep, navigate }),
         bastion_gold: async (bot, task, goal, save) => {
-          try { return await gatherBastionGold(bot, task, goal, save, { acquireStep, navigate, dig, approachDryMining, collectNearbyDrops }); }
+          try { return await gatherBastionGold(bot, task, goal, save, { acquireStep, navigate, dig, place, approachDryMining, collectNearbyDrops,
+            loot: (b2, t2, g2, sv2) => lootNearby(b2, t2, g2, sv2, lootActions()) }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'rung', 'bastion_gold', err, 1800000); save(); return false; }
         },
         // Pearls from a cleric: sell what is spare until the emeralds are

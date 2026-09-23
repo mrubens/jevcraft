@@ -574,5 +574,5 @@ function stashChores(bot, goal) {
     run: (b, t, g, s, a) => stockStash(b, t, g, s, home, a) } };
 }
 
-module.exports = { CHEST_MAX, expandStash, SPARE_KIT, VALUABLES, KEEPSAKES, KIT_FOOD_POINTS, NETHER_FOOD_POINTS, slotFits, keepsakeOf, isKeepsake, isKitMaterial, stashDeposits, stashWithdrawals, rungWants, planIngredients, stashStatus, forgetChest, rememberContents,
+module.exports = { withChest, moveIn, chestRoomFor, CHEST_MAX, expandStash, SPARE_KIT, VALUABLES, KEEPSAKES, KIT_FOOD_POINTS, NETHER_FOOD_POINTS, slotFits, keepsakeOf, isKeepsake, isKitMaterial, stashDeposits, stashWithdrawals, rungWants, planIngredients, stashStatus, forgetChest, rememberContents,
   restockStage, placeStashChest, stockStash, restockFromStash, stashValuables, stashChores, describeContents };

@@ -125,8 +125,13 @@ const bastionKnown = (bot, goal) => require('./exploration').knownLandmarks(bot,
 async function gatherBastionGold(bot, task, goal, save, actions = {}) {
   task.check(); checkAir(bot); checkThreats(bot);
   const exploration = require('./exploration');
+  // A raid: packed light first (trip-kit.js), planned to die.
+  if (actions.place && actions.acquireStep) await require('./trip-kit').packLight(bot, task, goal, save, actions, 'bastion');
   const arrived = await exploration.goToLandmark(bot, task, goal, save, ['bastion'], { navigate: actions.navigate || navigate, reach: 384, arrive: 20 });
   if (!arrived) { if (arrived === null) throw new Error('No bastion remembered within reach'); return false; }
+  // Its chests first, piglins or not (looting.js): gold, and whatever else
+  // a bastion keeps.
+  if (actions.loot && await actions.loot(bot, task, goal, save)) return true;
   const target = bastionGold(bot)[0];
   if (!target) { setAside(goal, 'landmark_trip', `bastion:${arrived.x},${arrived.z}`, 'no gold here that no piglin can see', 1800000); save(); return false; }
   const name = bot.blockAt(target)?.name, drop = name === 'gold_block' ? 'gold_block' : 'gold_nugget';

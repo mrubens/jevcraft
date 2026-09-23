@@ -44,6 +44,7 @@ function markExplored(bot, goal, { now = Date.now() } = {}) {
 //   nether_fortress  nether brick: blazes, the rods for the eyes
 //   bastion          blackstone with gold: gold blocks to barter with
 //   warped_forest    warped nylium and stems: endermen, and their pearls
+//   trial_chambers   tuff and copper halls, trial spawners and vaults
 //   deep_dark        sculk below y 0: the biome ancient cities are built in
 //   ancient_city     deepslate tiles and bricks among sculk, or the
 //                    reinforced deepslate of its portal frame: loot chests
@@ -95,6 +96,15 @@ const DETECTORS = [
     const sculk = find(bot, ['sculk', 'sculk_vein', 'sculk_sensor', 'sculk_shrieker'], 48, 16);
     const seed = built.find(p => sculk.some(q => q.distanceTo(p) <= 16));
     return seed ? at(seed, { built: built.length }) : null;
+  } },
+  { kind: 'trial_chambers', dimension: 'overworld', same: 64, detect: bot => {
+    const marks = find(bot, ['trial_spawner', 'vault'], 48, 8);
+    if (marks.length) return at(marks[0], { marks: marks.length });
+    const tuff = find(bot, ['tuff_bricks', 'chiseled_tuff', 'chiseled_tuff_bricks', 'polished_tuff'], 48, 64).filter(p => p.y < 10);
+    if (tuff.length < 16) return null;
+    const copper = find(bot, ['copper_grate', 'waxed_copper_grate', 'copper_bulb', 'waxed_copper_bulb', 'oxidized_copper_grate', 'waxed_oxidized_copper_grate'], 48, 8);
+    const seed = tuff.find(p => copper.some(q => q.distanceTo(p) <= 16));
+    return seed ? at(seed, { tuff: tuff.length }) : null;
   } },
   { kind: 'nether_fortress', dimension: 'nether', same: 96, detect: bot => {
     const bricks = find(bot, ['nether_bricks', 'nether_brick_fence', 'nether_brick_stairs'], 64, 128);

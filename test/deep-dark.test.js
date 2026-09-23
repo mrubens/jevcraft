@@ -63,3 +63,23 @@ test('while the ladder walks about after endermen, Jev is offered the deep dark 
   assert.deepEqual(Object.keys(options).sort(), ['deep_dark', 'stage_obtain_ender_pearls']);
   assert(options.stage_obtain_ender_pearls.fallback, 'the ladder stays the fallback');
 });
+
+test('trial chambers: a trial spawner or vault marks them, a dropped key is picked up, and a key opens a vault', async () => {
+  const { DETECTORS } = require('../src/exploration');
+  assert(DETECTORS.find(d => d.kind === 'trial_chambers').detect(bot({ blocks: { '4,-28,4': 'trial_spawner' } })), 'a trial spawner');
+  const b = bot({ y: -30, blocks: { '6,-30,2': 'vault' }, items: [['iron_pickaxe', 1], ['cooked_beef', 8]] });
+  const goal = { landmarks: [{ kind: 'trial_chambers', x: 4, y: -28, z: 4, dimension: 'overworld' }], expeditions: { trial_chambers: { heading: 0, legs: 1, legFails: 0 } } };
+  const key = { name: 'trial_key', count: 1 };
+  b.entities = { 5: { position: new Vec3(3, -30, 1), getDroppedItem: () => key } };
+  const went = [];
+  const actions = { navigate: async (bb, t, g) => { went.push([g.x, g.y, g.z]); }, tunnel: async () => {}, dig: async () => {}, loot: async () => false };
+  assert.equal(await dd.expeditionStep(b, new Task('tc'), goal, () => {}, actions, 'trial_chambers'), 'key');
+  delete b.entities[5];
+  const items = [['iron_pickaxe', 1], ['trial_key', 1]].map(([name, count]) => ({ name, count }));
+  b.inventory.items = () => items;
+  let used = null;
+  b.equip = async () => {}; b.activateBlock = async block => { used = block.position; };
+  assert.equal(await dd.expeditionStep(b, new Task('tc'), goal, () => {}, actions, 'trial_chambers'), 'vault');
+  assert.deepEqual([used.x, used.y, used.z], [6, -30, 2]);
+  assert.equal(await dd.expeditionStep(b, new Task('tc'), goal, () => {}, actions, 'trial_chambers') === 'vault', false, 'a vault opened once is not opened again');
+});

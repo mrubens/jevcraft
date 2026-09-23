@@ -337,7 +337,7 @@ async function gameStep(bot, task, goal, save, actions) {
   }
   // Back in the Overworld with nothing left to cross for: a field cache in
   // reach is emptied before the ladder goes on.
-  if (actions.take_cache && dimension(bot) === 'overworld' && !['enter_nether', 'reach_nether'].includes(stage.action) && stage.phase !== 'complete') {
+  if (actions.take_cache && !['enter_nether', 'reach_nether'].includes(stage.action) && stage.phase !== 'complete') {
     if (await actions.take_cache(bot, task, goal, save)) return false;
   }
   progress.phase = stage.phase; goal.step = { action: 'game_progression', ...stage };
