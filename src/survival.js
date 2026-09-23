@@ -996,9 +996,14 @@ class Survival {
         const here = `${refuge.origin.x},${refuge.origin.y},${refuge.origin.z}`;
         const starts = (this.state.pocketStarts || []).filter(s => s.at > Date.now() - 120000 && s.pocket === here);
         if (starts.length >= 3 && !isSetAside(this, 'night_mine', here)) setAside(this, 'night_mine', here, 'the pocket was dug out of and resealed three times in two minutes', 600000);
+        // Counted only when the mine dug: a try the mine declined (no room,
+        // nothing in reach) is not a dig-out, and counting those set the mine
+        // aside at y 23 under solid rock, where nothing ever resealed.
         if (!watcher && !watched && !isSetAside(this, 'night_mine', here)) {
-          this.state.pocketStarts = [...starts, { pocket: here, at: Date.now() }];
-          if (await this.nightMine(task, goal, save)) { onStep(goal); return true; }
+          if (await this.nightMine(task, goal, save)) {
+            this.state.pocketStarts = [...starts, { pocket: here, at: Date.now() }];
+            onStep(goal); return true;
+          }
         }
         await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
