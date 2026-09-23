@@ -31,7 +31,7 @@ const { designWithJev } = require('./build-templates');
 const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine, dryStanding } = require('./mining-access');
 const { dryPassable, supportCell, swimmableWater } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
-const { descendPillar, pillarUp } = require('./pillar-recovery');
+const { descendPillar, pillarUp, pillarSite } = require('./pillar-recovery');
 const { gameStep, watchGameProgress, dimension, nextGameStage, DEFERRABLE, RUNG_WAIT_MS } = require('./game-progress');
 const { carriedEquipment } = require('./mob-policy');
 const { huntObserved, prepareMobHunt, prepareCombatGear } = require('./mob-hunt');
@@ -1985,9 +1985,14 @@ async function tunnelToward(bot, task, goal, save, target, key) {
   // the portal ninety-eight times. Every way back to a portal ends here.
   const here = bot.entity.position;
   if (target.y - here.y > 6 && Math.hypot(target.x - here.x, target.z - here.z) <= 6 && !isSetAside(goal, 'pillar', target)) {
-    goal.step = { action: 'pillar_to_portal', portal: { x: target.x, y: target.y, z: target.z }, from: Math.round(here.y) }; save();
+    const site = pillarSite(bot, target.y, target);
+    goal.step = { action: 'pillar_to_portal', portal: { x: target.x, y: target.y, z: target.z }, from: Math.round(here.y), site: site && { ...site } }; save();
     const before = here.y;
-    await pillarUp(bot, task, target.y, { dig });
+    if (site && site.distanceTo(bot.entity.position.floored()) >= 1) {
+      try { await navigate(bot, task, new goals.GoalBlock(site.x, site.y, site.z), { timeoutMs: 10000, stallMs: 3000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+    if (site) await pillarUp(bot, task, target.y, { dig });
     if (bot.entity.position.y - before >= 2) return;
     setAside(goal, 'pillar', target, 'the pillar toward the portal would not rise', 300000); save();
   }

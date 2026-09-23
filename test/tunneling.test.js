@@ -474,3 +474,15 @@ test('a pillar goes straight up a block a time, digging what is overhead, and st
   assert.equal(await pillarUp(bot, new Task('lava'), 24, { dig: async () => {} }), 0);
   assert.equal(bot.entity.position.y, 16);
 });
+
+test('the pillar is raised from the nearest column clear of lava all the way up, not beside the lava fall', () => {
+  const { pillarSite } = require('../src/pillar-recovery');
+  // Floor at y 9 everywhere; a lava fall at x = -1 from y 10 to 30.
+  const blockAt = p => p.y <= 9 ? { name: 'netherrack', boundingBox: 'block', position: p, diggable: true }
+    : (p.x === -1 && p.z === 0 && p.y <= 30) ? { name: 'lava', boundingBox: 'empty', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  const bot = { entity: { position: new Vec3(0.5, 10, 0.5) }, blockAt };
+  const site = pillarSite(bot, 28, new Vec3(0, 28, 0));
+  assert(site, 'a site is found');
+  assert(!(site.x === 0 && site.z === 0), 'not the column beside the lava');
+  assert(Math.abs(site.x + 1) + Math.abs(site.z) > 1, 'nor any other column touching it');
+});

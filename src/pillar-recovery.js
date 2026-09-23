@@ -124,4 +124,29 @@ async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40 } = {}) {
   return placed;
 }
 
-module.exports = { pillarDescent, descendPillar, pillarUp };
+// Where to stand for the pillar: the nearest column, within a few blocks
+// of the bot and six sideways of the target, with a floor to start from
+// and every cell up to the target's height air or diggable, with no lava or
+// water in or beside it. Under the portal the lava fall was beside the
+// column the bot stood in, and the pillar stopped before its first block.
+function pillarSite(bot, targetY, target, { radius = 5 } = {}) {
+  const feet = bot.entity.position.floored();
+  const liquid = c => /lava|water/.test(bot.blockAt(c)?.name || '');
+  const sites = [];
+  for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (let dy = -1; dy <= 1; dy++) {
+    const base = feet.offset(dx, dy, dz);
+    if (target && Math.hypot(base.x - target.x, base.z - target.z) > 6) continue;
+    if (bot.blockAt(base.offset(0, -1, 0))?.boundingBox !== 'block' || !dryPassable(bot.blockAt(base)) || !dryPassable(bot.blockAt(base.offset(0, 1, 0)))) continue;
+    let ok = true;
+    for (let y = base.y; y <= targetY + 1 && ok; y++) {
+      const c = new Vec3(base.x, y, base.z), b = bot.blockAt(c);
+      if (!b || liquid(c) || directions.some(d => liquid(c.plus(d)))) ok = false;
+      else if (!dryPassable(b) && !(DIGGABLE_ABOVE.test(b.name) && b.diggable)) ok = false;
+    }
+    if (ok) sites.push(base);
+  }
+  const far = c => c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
+  return sites.sort((a, b) => far(a) - far(b))[0] || null;
+}
+
+module.exports = { pillarDescent, descendPillar, pillarUp, pillarSite };
