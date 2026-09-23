@@ -1382,3 +1382,16 @@ test('a hoglin close on a ledge: the bot seals itself in rather than fight, pill
   assert(placed.length >= 4, `a pocket went up (${placed.length} blocks)`);
   assert.notEqual(goal.survivalAction?.action, 'pillar_from');
 });
+
+test('a shelter site with dry rock below is chosen over a nearer one beside a flooded cave', () => {
+  const shelter = require('../src/shelter');
+  const registry = require('minecraft-data')('26.1');
+  const name = p => p.y >= 64 ? 'air' : (p.x >= -1 && p.x <= 2 && p.z >= -1 && p.z <= 2 && p.y >= 57 && p.y <= 60) ? 'water' : p.y === 63 ? 'grass_block' : 'stone';
+  const bot = { registry, game: { dimension: 'overworld', minY: -64, height: 384 }, entity: { position: new Vec3(0.5, 64, 0.5) },
+    blockAt: p => { const f = p.floored(); const n = name(f); return { position: f, name: n, boundingBox: /air|water/.test(n) ? 'empty' : 'block', type: registry.blocksByName[n]?.id }; },
+    findBlocks: () => [new Vec3(9, 63, 0)] };
+  const sites = shelter.shelterSites(bot, {});
+  assert(sites.length >= 2, `both sites are safe (${sites.length})`);
+  assert.deepEqual([sites[0].x, sites[0].z], [9, 0], 'the dry one first, though it is further');
+  assert(shelter.wetBelow(bot, new Vec3(0, 64, 0)) > 0 && shelter.wetBelow(bot, new Vec3(9, 64, 0)) === 0);
+});

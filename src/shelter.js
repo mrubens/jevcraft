@@ -64,7 +64,24 @@ function shelterSites(bot, goal, maxDistance = 12) {
     useExtraInfo: b => replaceable(bot.blockAt(b.position.offset(0, 1, 0))) && replaceable(bot.blockAt(b.position.offset(0, 2, 0))),
   }).map(p => p.offset(0, 1, 0));
   spots.unshift(bot.entity.position.floored());
-  return spots.filter(p => safeSite(bot, p, goal)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+  const here = bot.entity.position;
+  const safe = spots.filter(p => safeSite(bot, p, goal)).sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+  // Ground a night mine can go down into: of the nearest dozen, those with
+  // no water or lava in the rock below and around come first. The dream run
+  // sealed in beside a flooded cave, every way down was refused, and the
+  // night was waited out. Distance decides between equally dry sites.
+  const wet = new Map(safe.slice(0, 12).map(p => [p, wetBelow(bot, p)]));
+  return safe.sort((a, b) => ((wet.get(a) ?? 0) > 0) - ((wet.get(b) ?? 0) > 0) || a.distanceTo(here) - b.distanceTo(here));
+}
+
+// Liquid in a sparse sample of the rock under a site: four blocks round,
+// eight down, every other block.
+function wetBelow(bot, origin) {
+  let n = 0;
+  for (let dx = -4; dx <= 4; dx += 2) for (let dz = -4; dz <= 4; dz += 2) for (let dy = -1; dy >= -8; dy -= 2) {
+    if (/water|lava/.test(bot.blockAt(origin.offset(dx, dy, dz))?.name || '')) n++;
+  }
+  return n;
 }
 
 function enclosure(shelter) {
@@ -146,4 +163,4 @@ function beyond(bot, o, door) {
   return [-1, 0, 1].filter(dy => replaceable(bot.blockAt(door.plus(d).offset(0, dy, 0)))).length;
 }
 
-module.exports = { foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, exits, closures, buildingMaterials, solid, replaceable };
+module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, exits, closures, buildingMaterials, solid, replaceable };
