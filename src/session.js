@@ -535,8 +535,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (saved && ['running', 'recovering'].includes(saved.status) && !survival.state.paused) {
         bot.chat(survival.state.recovery?.status === 'pending' ? "I'm back! I'll look for my dropped items, then carry on." : "I'm back! I'll carry on where I left off.");
         launch(saved);
-      } else if (survival.state.deathBlocked) bot.chat("I keep getting hurt there. I'll wait here. Say Jev resume when you're ready.");
-      else bot.chat('Call me Jev: "Jev come here", "Jev follow me", "Jev craft a chest", or "Jev get me 8 birch stairs".');
+      } else bot.chat('Call me Jev: "Jev come here", "Jev follow me", "Jev craft a chest", or "Jev get me 8 birch stairs".');
     } catch (err) { console.error('[bot] spawn:', err); bot.quit('Could not initialize the world'); }
   });
   bot.on('death', () => {
@@ -545,18 +544,18 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // connection, so request respawn directly without recording a second death.
     if (!spawned && survival.state.recovery?.status === 'pending') { bot.respawn(); return; }
     const saved = active && !active.idle ? active.goal : store.read();
-    recordDeath(bot, survival.state, Date.now(), { pause: saved?.kind !== 'win' });
+    recordDeath(bot, survival.state);
     if (saved && ['pending', 'running', 'recovering'].includes(saved.status)) {
       saved.lastError = 'The bot died; recovering from observed inventory after respawn';
-      saved.status = survival.state.deathBlocked ? 'blocked' : 'recovering';
+      saved.status = 'recovering';
       saveGoal(saved);
     }
     saveSurvival();
-    console.log(JSON.stringify({ death: survival.state.recovery, blocked: survival.state.deathBlocked }));
+    console.log(JSON.stringify({ death: survival.state.recovery }));
     if (!spawned) { bot.respawn(); return; }
     // Reconnect to discard all old inventory/window promises before respawning.
     // They must not issue a late action against the new life's inventory.
-    stop(survival.state.deathBlocked ? 'blocked' : 'recovering').catch(console.error);
+    stop('recovering').catch(console.error);
     bot.quit('Respawning after death');
   });
   function close(reason) {

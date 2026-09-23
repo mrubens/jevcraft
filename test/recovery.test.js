@@ -20,22 +20,17 @@ function fixture() {
   return { bot, recovery, supply: value => { items = value; } };
 }
 
-test('death records observed inventory and pauses after three recent deaths without erasing refuges', () => {
+test('death records observed inventory and never pauses, however many deaths, without erasing refuges', () => {
   const { bot, supply } = fixture();
   supply([{ name: 'oak_log', count: 3 }]);
   const state = { shelters: [{ origin: { x: 1, y: 64, z: 1 } }], paused: false };
   recordDeath(bot, state, 1000000);
   assert.deepEqual(state.recovery.inventoryBeforeDeath, { oak_log: 3 });
-  assert.equal(state.paused, false);
   recordDeath(bot, state, 1001000); recordDeath(bot, state, 1002000);
-  assert.equal(state.paused, true);
-  assert.match(state.deathBlocked, /three times/);
+  assert.equal(state.paused, false, 'three quick deaths do not stop the bot');
+  assert.equal(state.deathBlocked, undefined);
+  assert.equal(state.deaths.length, 3, 'they are recorded');
   assert.equal(state.shelters.length, 1);
-  // The run to beat the game does not pause: it plans to die.
-  const run = { shelters: [], paused: false };
-  for (let i = 0; i < 3; i++) recordDeath(bot, run, 1000000 + i * 1000, { pause: false });
-  assert.equal(run.paused, false); assert.equal(run.deathBlocked, undefined);
-  assert.equal(run.deaths.length, 3, 'the deaths are still recorded');
 });
 
 test('inventory clearing before the death event does not erase the recent alive observation', () => {
