@@ -123,7 +123,7 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
 // while the pearls are short, and go on. No mine or tunnel step is running
 // there, so the rule above never saw it. The look is cheap and throttled.
 const PASSING_RADIUS = 4;
-const shortOfPearls = bot => /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED;
+const shortOfPearls = bot => !!bot.inventory?.items && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED;
 function goldInPassing(bot, goal, now = Date.now()) {
   if (!shortOfPearls(bot) || now - (bot._goldLookAt || 0) < 500) return false;
   bot._goldLookAt = now;
@@ -132,7 +132,7 @@ function goldInPassing(bot, goal, now = Date.now()) {
   return opportunityCandidates(bot, goal, { drops: null }, { radius: PASSING_RADIUS }).some(c => c.resource === 'gold_nugget');
 }
 async function mineGoldInPassing(bot, task, goal, save, { navigate, dig }) {
-  if (!shortOfPearls(bot) || !navigate || !dig) return false;
+  if (!navigate || !dig || !shortOfPearls(bot)) return false;
   return opportunisticMining(bot, task, goal, save, { drops: null }, { navigate, dig, radius: PASSING_RADIUS, only: c => c.resource === 'gold_nugget' }, null);
 }
 
