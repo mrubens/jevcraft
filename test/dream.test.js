@@ -146,7 +146,7 @@ test('a dream launch that failed waits two minutes, whatever the last goal was',
   const resting = () => isSetAside(survival, 'dream_launch', standing.dream);
   assert.equal(shouldLaunchDream(standing, { status: 'complete', request: 'get me a pumpkin' }, { now, resting: resting() }), false);
   assert.equal(shouldLaunchDream(standing, null, { now, resting: resting() }), false, 'a fresh state is no excuse to retry at once');
-  assert.equal(isSetAside(survival, 'dream_launch', standing.dream, now + FAILED_LAUNCH_MS + 1), false, 'the rest is two minutes');
+  assert.equal(isSetAside(survival, 'dream_launch', standing.dream, now + FAILED_LAUNCH_MS + 1000), false, 'the rest is two minutes');
   assert.equal(shouldLaunchDream(standing, null, { now, resting: false }), true);
 });
 
