@@ -1227,7 +1227,7 @@ async function executeAcquisition(bot, task, step, goal, save) {
   else if (step.action === 'harden') await harden(bot, task, goal, save, step.item);
   else if (step.action === 'fill_bucket') await collectWater(bot, task, goal, save, { navigate, explore });
   else if (step.action === 'make_obsidian') await makeObsidian(bot, task, step, goal, save, { navigate, dig, approachDryMining, collectNearbyDrops, resourceTunnelStep, acquireStep });
-  else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep, navigate, returnOverworld: returnFromNether,
+  else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep, navigate, dig, returnOverworld: returnFromNether,
     // The fortress sweep keeps no worksite: the rejoin walked the bot back
     // to the ledge it had just left, every other tick.
     // 'approach' is a shaft dug at a mob rather than past one, so the

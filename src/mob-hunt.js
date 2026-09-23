@@ -1,4 +1,5 @@
 'use strict';
+const { goldInPassing, mineGoldInPassing } = require('./opportunistic-mining');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead, shooter, hasFood, FIGHT_FLOOR: HUNT_FLOOR } = require('./mob-policy');
@@ -625,11 +626,16 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // it had never been there. Head back to the freshest sighting first.
   const spot = rememberedSpot(state, bot);
   if (spot && actions.navigate) {
+    if (await mineGoldInPassing(bot, task, goal, save, actions)) return;
     spot.triedAt = Date.now(); spot.tries = (spot.tries || 0) + 1; save();
     goal.step = { action: 'return_to_blazes', target: { x: spot.x, y: spot.y, z: spot.z }, seen: spot.seen }; save();
     const from = bot.entity.position.clone();
-    try { await actions.navigate(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 6), { timeoutMs: 60000, stallMs: 10000 }); }
+    let stoppedForGold = false;
+    const stopWhen = () => (stoppedForGold = goldInPassing(bot, goal));
+    try { await actions.navigate(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 6), { timeoutMs: 60000, stallMs: 10000, stopWhen }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    // A walk cut short for gold is not a try at the spot.
+    if (stoppedForGold) { spot.tries--; delete spot.triedAt; save(); return; }
     if (bot.entity.position.distanceTo(from) < 2 && actions.tunnel) {
       try { await actions.tunnel(bot, task, goal, save, new Vec3(spot.x, spot.y, spot.z), 'fortress'); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
@@ -690,6 +696,8 @@ function turnSweep(state) {
 }
 async function findFortressStep(bot, task, goal, save, actions) {
   const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
+  if (await mineGoldInPassing(bot, task, goal, save, actions)) return;
+  const stopWhen = () => goldInPassing(bot, goal);
   const ids = FORTRESS_BLOCKS.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
   // Bricks near a face that would not be approached are ignored for ten
   // minutes: the fortress was straight below a shelf with a cave between,
@@ -809,7 +817,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     state.visited.push({ x: next.x, y: next.y, z: next.z }); state.visited = state.visited.slice(-32);
     goal.step = { action: 'find_fortress', found: state.found, walking: { x: next.x, y: next.y, z: next.z }, legs: state.legs }; save();
     if (actions.navigate) {
-      try { await actions.navigate(bot, task, new goals.GoalNear(next.x, next.y + 1, next.z, 3), { timeoutMs: 30000, stallMs: 6000 }); }
+      try { await actions.navigate(bot, task, new goals.GoalNear(next.x, next.y + 1, next.z, 3), { timeoutMs: 30000, stallMs: 6000, stopWhen }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; await actions.tunnel(bot, task, goal, save, next, 'fortress'); }
     } else await actions.tunnel(bot, task, goal, save, next, 'fortress');
     return;
@@ -835,7 +843,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // The pathfinder first: it walks open ground, bridges and climbs where a
   // staircase can only dig. The tunnel takes over where it finds no way.
   if (actions.navigate) {
-    try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 6), { timeoutMs: 30000, stallMs: 8000 }); }
+    try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 6), { timeoutMs: 30000, stallMs: 8000, stopWhen }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     if (flat(bot.entity.position) < before - 6) { state.legFails = 0; return; }
   }

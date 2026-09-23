@@ -243,3 +243,30 @@ test('nether gold is not broken with a piglin within sixteen blocks: they turn o
   bot.entities[2].position = new Vec3(22, 70, 1);
   assert.equal(opportunityCandidates(bot, {}, primary).length, 1, 'twenty blocks off it does not');
 });
+
+test('a Nether walk stops for gold within four blocks while pearls are short, and the fortress step digs it before going on', async () => {
+  const { goldInPassing } = require('../src/opportunistic-mining');
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot, ore, stock } = oreWorld();
+  const Block = require('prismarine-block')(registry);
+  bot.game.dimension = 'the_nether';
+  let gold = true;
+  bot.blockAt = p => { const point = p.floored(); const block = Block.fromStateId(registry.blocksByName[point.equals(ore) && gold ? 'nether_gold_ore' : point.y < 70 ? 'netherrack' : 'air'].defaultState); block.position = point; return block; };
+  bot.findBlocks = ({ matching, useExtraInfo }) => gold && matching.includes(registry.blocksByName.nether_gold_ore.id) && (!useExtraInfo || useExtraInfo(bot.blockAt(ore))) ? [ore] : [];
+  let now = 1e12;
+  assert.equal(goldInPassing(bot, {}, now), true, 'gold two blocks off the path stops the walk');
+  assert.equal(goldInPassing(bot, {}, now + 100), false, 'the look is throttled');
+  bot.entities = { 7: { name: 'piglin', position: new Vec3(8, 70, 1), isValid: true } };
+  assert.equal(goldInPassing(bot, {}, now += 1000), false, 'not with a piglin to see it');
+  bot.entities = {};
+  stock([{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }, { name: 'ender_pearl', type: registry.itemsByName.ender_pearl.id, count: 16 }]);
+  assert.equal(goldInPassing(bot, {}, now += 1000), false, 'with the pearls in hand the gold is left');
+  stock([{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }]);
+
+  const dug = [], legs = [];
+  const goal = { kind: 'win', step: { action: 'hunt_mob' } };
+  const actions = { navigate: async (b, t, g) => { legs.push(g); }, dig: async (b, t, p) => { dug.push(`${p}`); gold = false; }, tunnel: async () => {} };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.deepEqual(dug, [`${ore}`], 'the gold is dug first');
+  assert.equal(goal.fortressSearch.legs, 0, 'and the sweep leg waits for the next step');
+});

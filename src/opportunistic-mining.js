@@ -26,10 +26,10 @@ const piglinsWithin = (bot, p, r) => Object.values(bot.entities || {}).some(e =>
 const neededByRule = (bot, candidate) => (candidate.resource === 'coal' && fuelCarried(bot) < FUEL_UNITS_WANTED) ||
   (candidate.resource === 'gold_nugget' && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED);
 
-function opportunityCandidates(bot, goal, primary) {
+function opportunityCandidates(bot, goal, primary, { radius = LIMITS.radius } = {}) {
   if (!bot.registry?.blocksArray || !bot.findBlocks || bot.health < 16 || bot.food < 14 || bot.game?.gameMode === 'creative' || !dryStanding(bot, bot.entity.position) || immediateThreat(bot)) return [];
   const ores = bot.registry.blocksArray.filter(block => /_ore$|^ancient_debris$/.test(block.name));
-  const candidates = bot.findBlocks({ matching: ores.map(block => block.id), maxDistance: LIMITS.radius, count: 16,
+  const candidates = bot.findBlocks({ matching: ores.map(block => block.id), maxDistance: radius, count: 16,
     useExtraInfo: block => (!bot.canSeeBlock || bot.canSeeBlock(block)) && !reservedForConstruction(goal, block.position) &&
       !block.position.equals(supportCell(bot.entity.position)) && safeFromHostiles(bot, block.position),
   });
@@ -48,24 +48,24 @@ function opportunityCandidates(bot, goal, primary) {
     if (block.harvestTools && !tools.length) return [];
     const room = bot.inventory.emptySlotCount?.() > 1 || bot.inventory.items().some(item => item.name === resource && item.count <= (item.stackSize || 64) - 8);
     if (!room) return [];
-    const standing = dryMiningPositions(bot, position).filter(p => p.distanceTo(bot.entity.position) <= LIMITS.radius);
+    const standing = dryMiningPositions(bot, position).filter(p => p.distanceTo(bot.entity.position) <= radius);
     if (!standing.length) return [];
     return [{ position, block: block.name, resource, tool: tools[0]?.name, standing, carried: countOf(bot, resource) }];
   }).slice(0, 5);
 }
 
-async function opportunisticMining(bot, task, goal, save, primary, { navigate, dig }, client = task.opportunityClient) {
+async function opportunisticMining(bot, task, goal, save, primary, { navigate, dig, radius = LIMITS.radius, only = null }, client = task.opportunityClient) {
   if (goal.kind === 'find') return false;
   const state = goal.opportunistic ||= { primarySteps: 0, history: [], skipped: {} };
   const asking = ++state.primarySteps % LIMITS.primarySteps === 0 && !!client;
-  const all = opportunityCandidates(bot, goal, primary);
+  const all = opportunityCandidates(bot, goal, primary, { radius }).filter(c => !only || only(c));
   const needed = all.filter(c => neededByRule(bot, c));
   const candidates = needed.length ? needed : asking ? all : [];
   if (!candidates.length) return false;
   const start = bot.entity.position.clone();
   const movement = bot.pathfinder.movements, previous = { canDig: movement.canDig, scafoldingBlocks: movement.scafoldingBlocks,
     allow1by1towers: movement.allow1by1towers, allowedPosition: movement.allowedPosition };
-  const allowed = p => pos(p).distanceTo(start) <= LIMITS.radius && (!previous.allowedPosition || previous.allowedPosition(p));
+  const allowed = p => pos(p).distanceTo(start) <= radius && (!previous.allowedPosition || previous.allowedPosition(p));
   Object.assign(movement, { canDig: false, scafoldingBlocks: [], allow1by1towers: false, allowedPosition: allowed });
   const choices = [];
   try {
@@ -118,4 +118,22 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
   } finally { Object.assign(movement, previous); }
 }
 
-module.exports = { piglinsWithin, LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };
+// Nether gold in passing: the walks of the blaze hunt and the fortress
+// sweep, where the Nether's time goes, stop for gold within four blocks
+// while the pearls are short, and go on. No mine or tunnel step is running
+// there, so the rule above never saw it. The look is cheap and throttled.
+const PASSING_RADIUS = 4;
+const shortOfPearls = bot => /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED;
+function goldInPassing(bot, goal, now = Date.now()) {
+  if (!shortOfPearls(bot) || now - (bot._goldLookAt || 0) < 500) return false;
+  bot._goldLookAt = now;
+  const id = bot.registry?.blocksByName?.nether_gold_ore?.id;
+  if (id === undefined || !bot.findBlocks?.({ matching: [id], maxDistance: PASSING_RADIUS, count: 1 }).length) return false;
+  return opportunityCandidates(bot, goal, { drops: null }, { radius: PASSING_RADIUS }).some(c => c.resource === 'gold_nugget');
+}
+async function mineGoldInPassing(bot, task, goal, save, { navigate, dig }) {
+  if (!shortOfPearls(bot) || !navigate || !dig) return false;
+  return opportunisticMining(bot, task, goal, save, { drops: null }, { navigate, dig, radius: PASSING_RADIUS, only: c => c.resource === 'gold_nugget' }, null);
+}
+
+module.exports = { goldInPassing, mineGoldInPassing, PASSING_RADIUS, piglinsWithin, LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };
