@@ -296,11 +296,15 @@ function knownLand(bot, goal) {
 async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs = SWIM_MS } = {}) {
   const { inWater } = require('./survival');
   const { setAside } = require('./progress');
-  if (!/overworld/.test(String(bot.game?.dimension || 'overworld')) || !atSea(bot)) return false;
+  // Why a crossing was not made, for the audit: the reason it declined.
+  const decline = why => { goal.seaCrossing = { declined: why, at: new Date().toISOString(), from: { ...bot.entity.position.floored() } }; save(); return false; };
+  if (!/overworld/.test(String(bot.game?.dimension || 'overworld'))) return decline('not the Overworld');
+  if (!atSea(bot)) return decline('not at sea');
   const start = bot.entity.position.clone();
-  if (landInView(bot, 48, start)) return false;
+  const seen = landInView(bot, 48, start);
+  if (seen) return decline(`ground in view at ${seen}`);
   const target = knownLand(bot, goal);
-  if (!target) return false;
+  if (!target) return decline('no land remembered');
   const flat = () => Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z);
   goal.step = { action: 'cross_sea', toward: { x: target.x, z: target.z }, land: target.biome, from: { ...start.floored() } }; save();
   const heading = Math.abs(target.x - start.x) > Math.abs(target.z - start.z) ? (target.x < start.x ? 'west' : 'east') : (target.z < start.z ? 'north' : 'south');
