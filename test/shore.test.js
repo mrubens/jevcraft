@@ -128,3 +128,10 @@ test('with no bank beside it, the bot swims to the nearest bank a step can be cu
   assert.equal(await notchOut(bot, new Task('lake'), goal, () => {}), true);
   assert([...dug].some(k => /,63,2$|,63,-2$|^3,63|^-3,63/.test(k)), `a bank block dug: ${[...dug]}`);
 });
+
+test('a bank of stone that would take long to dig from the water is not cut: that drowned the live bot', async () => {
+  const { notchOut } = require('../src/shore');
+  const { bot } = pool({ waterBeside: false });
+  bot.digTime = () => 10000;
+  assert.equal(await notchOut(bot, new Task('lake'), {}, () => {}), false);
+});

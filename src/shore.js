@@ -146,6 +146,7 @@ async function stepOut(bot, task, goal, save) {
   return false;
 }
 
+const NOTCH_DIG_MS = 4000;
 // A pool whose banks stand too high to climb from the water: a step cut
 // into the bank at the waterline, the two blocks over it dug out, and the
 // bot climbs onto it. The live run swam in a one-wide pool with its banks
@@ -168,7 +169,13 @@ async function notchOut(bot, task, goal, save) {
     for (const d of dirs) {
       const step = from.plus(d), body = step.offset(0, 1, 0), head = step.offset(0, 2, 0);
       if (!solid(bot.blockAt(step)) || !soft(bot.blockAt(body)) || !soft(bot.blockAt(head)) || lavaNear(body) || lavaNear(head)) continue;
-      options.push({ from, step, body, head, cost: Math.abs(dx) + Math.abs(dz) + [body, head].filter(c => bot.blockAt(c)?.boundingBox === 'block').length });
+      // Only a quick dig: in water and off the ground a block takes about
+      // twenty-five times as long, and two of stone drowned the live bot
+      // sinking while it dug. The game's own dig time says how long.
+      const toDig = [body, head].map(c => bot.blockAt(c)).filter(b => b?.boundingBox === 'block');
+      const ms = toDig.reduce((n, b) => n + (typeof bot.digTime === 'function' ? bot.digTime(b) : 500), 0);
+      if (ms > NOTCH_DIG_MS) continue;
+      options.push({ from, step, body, head, cost: Math.abs(dx) + Math.abs(dz) + toDig.length });
     }
   }
   options.sort((a, b) => a.cost - b.cost);
@@ -181,13 +188,18 @@ async function notchOut(bot, task, goal, save) {
     goal.step = { action: 'notch_out_of_water', step: { ...step } };
     goal.survivalAction = { action: 'notch_out_of_water', at: new Date().toISOString() }; save();
     const { equipBestTool } = require('./skills');
+    // At the surface while digging (jump held), and never past the air:
+    // the air rule surfaces the bot and the next step tries again.
+    const { digWithAirGuard } = require('./vitals');
     for (const c of [head, body]) {
       const b = bot.blockAt(c);
       if (b?.boundingBox !== 'block') continue;
       task.check();
       try { await equipBestTool(bot, b); } catch (_) { /* the hand, then */ }
-      try { await bot.dig(b, true); }
+      bot.setControlState?.('jump', true);
+      try { await digWithAirGuard(bot, task, b); }
       catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+      finally { bot.setControlState?.('jump', false); }
     }
     await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'onto the step cut into the bank',
       look: body.offset(0.5, 0.5, 0.5), maxMs: 2500, tick: 50, until: () => bot.entity.onGround && !inWater(bot) });
