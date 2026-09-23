@@ -4,7 +4,7 @@ const { makeRoom } = require('./inventory-tidy');
 const { attemptsFor, setAside, isSetAside, failedWithin, watch, unwatch } = require('./progress');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { threats, immediateThreat, checkThreats, hunted, claimed } = require('./danger');
+const { threats, immediateThreat, checkThreats, hunted, claimed, hostileEntities } = require('./danger');
 const shelter = require('./shelter');
 const { decideTree, announceFallback } = require('./decisions');
 const { maintainVitals, chooseFood, checkAir } = require('./vitals');
@@ -300,7 +300,12 @@ class Survival {
     Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
     try {
       const ids = ESCAPE_FOOTING.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
-      const distance = p => Math.min(...danger.map(t => t.entity.position.distanceTo(p)));
+      // Away from every hostile about, not only the ones in view this
+      // instant: at two health the bot ran from a blaze, then from a piglin
+      // twenty blocks the other way, straight back to the blaze, which had
+      // dropped out of sight for the second look.
+      const about = [...new Set([...danger.map(t => t.entity), ...hostileEntities(bot, 32)])];
+      const distance = p => Math.min(...about.map(e => e.position.distanceTo(p)));
       // A creeper does not burn off at dawn and follows to about sixteen
       // blocks. A six-block hop from one only buys a minute before it is back
       // at the same tree; the escape from a mob that persists has to reach
@@ -333,7 +338,7 @@ class Survival {
         const route = await surveyRoute(bot, task, movements, destination, 150);
         if (route.status !== 'success') continue;
         // Do not run through another hostile to escape the closest one.
-        if (route.path.some(point => danger.some(t => t.entity.position.distanceTo(pos(point)) < Math.min(4, t.distance - 1)))) continue;
+        if (route.path.some(point => about.some(e => e.position.distanceTo(pos(point)) < Math.min(4, e.position.distanceTo(bot.entity.position) - 1)))) continue;
         try { await this.actions.navigate(bot, task, destination, { timeoutMs: persistent ? 14000 : 7000, stallMs: 3000 }); delete this.state.trappedSince; return; }
         catch (err) {
           task.check(); if (err.name === 'NeedsAir') throw err;

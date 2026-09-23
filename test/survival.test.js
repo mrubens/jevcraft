@@ -928,3 +928,23 @@ test('a bed in view is a bed to sleep in: its foot, a cell to stand in, never a 
   bot.game.dimension = 'the_nether';
   assert.equal(observedBed(bot), null, 'a bed in the Nether explodes');
 });
+
+test('the escape runs from every hostile about, not only the one in view: no running from a zombie into a blaze', async () => {
+  const { Survival } = require('../src/survival');
+  const feet = new Vec3(0, 10, 0);
+  const zombie = { id: 1, name: 'zombie', type: 'hostile', position: new Vec3(10.5, 10, 0.5), height: 1.95, width: 0.6, isValid: true };
+  const blaze = { id: 2, name: 'blaze', type: 'hostile', position: new Vec3(-8.5, 12, 0.5), height: 1.8, width: 0.6, isValid: true };
+  const moved = [];
+  const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entity: { position: feet.offset(0.5, 0, 0.5) }, entities: { 1: zombie, 2: blaze },
+    registry: require('minecraft-data')('26.1'), inventory: { items: () => [] }, world: { raycast: () => null }, on() {}, removeListener() {}, clearControlStates() {},
+    blockAt: p => p.y < 10 ? { name: 'stone', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p },
+    findBlocks: ({ count, useExtraInfo }) => { const out = []; for (let x = -12; x <= 12; x++) for (let z = -12; z <= 12; z++) { const p = new Vec3(x, 9, z); const b = bot.blockAt(p); if (!useExtraInfo || useExtraInfo({ ...b, position: p })) out.push(p); } return out.slice(0, count); },
+    pathfinder: { movements: {}, getPathTo: async () => ({ status: 'success', path: [] }), setGoal() {} } };
+  const survival = new Survival(bot, { navigate: async (b, t, goal) => { moved.push(new Vec3(goal.x, goal.y, goal.z)); } }, { state: { shelters: [] } });
+  // Only the zombie is "in view"; the blaze is behind the bot, out of sight for this look.
+  await survival.escape(new Task('run'), {}, () => {}, [{ entity: zombie, distance: 10 }], true);
+  assert.equal(moved.length, 1);
+  const start = feet.offset(0.5, 0, 0.5);
+  const nearest = p => Math.min(p.distanceTo(zombie.position), p.distanceTo(blaze.position));
+  assert(nearest(moved[0]) >= nearest(start) + 4, `ground gained on the nearest of both, not only the zombie: ${moved[0]}`);
+});
