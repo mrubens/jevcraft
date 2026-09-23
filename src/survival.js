@@ -294,6 +294,15 @@ class Survival {
     const bot = this.bot;
     // Off the edge before anything else is done about the mob. Only when
     // one is close enough to hit, and only to a cell a few blocks off.
+    // A hoglin close and a drop within its toss: a pocket, the one thing it
+    // cannot throw the bot out of. Fighting, pillaring and stepping away on
+    // the ledge by the live run's Nether portal each ended thirty blocks down,
+    // three deaths in five minutes. The reserve always has the blocks.
+    const tossers = heavyHitters(threats(bot), 6);
+    if (tossers.length && dropWithin(bot, bot.entity.position.floored(), 3) && !creeperClose(threats(bot)) && shelter.materialStock(bot) >= 4) {
+      this.report(goal, save, { action: 'seal_on_ledge', threats: tossers.map(t => t.entity.name), health: bot.health });
+      if (await this.sealHere(task, goal, save, threats(bot).filter(t => t.visible))) return;
+    }
     // A hoglin throws the body blocks, not a step: with one about, the edge
     // three blocks off is the edge, and the ground moved to is three blocks
     // from any drop (the day audit's two Nether falls, one into lava).

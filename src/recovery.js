@@ -15,7 +15,11 @@ function observeAliveInventory(bot, now = Date.now()) {
   }
 }
 
-function recordDeath(bot, state, now = Date.now()) {
+// Three deaths in ten minutes pause the bot for a person to look, except on
+// the run to beat the game: it packs light and plans to die, a kit-restore
+// gives the kit back, and the pause only stood the run still (the user,
+// 2026-09-23: "why do we need that check").
+function recordDeath(bot, state, now = Date.now(), { pause = true } = {}) {
   // 26.1 can clear inventory before Mineflayer emits the health-based death
   // event. Preserve the last observed alive inventory, with its evidence time.
   const observed = bot._aliveInventory;
@@ -24,7 +28,7 @@ function recordDeath(bot, state, now = Date.now()) {
   state.recovery = { status: 'pending', at: new Date(now).toISOString(), position: { ...bot.entity.position },
     dimension: bot.game.dimension, inventoryBeforeDeath: recent ? { ...observed.items } : stock(bot),
     inventoryObservedAt: new Date(recent ? observed.at : now).toISOString(), recovered: {}, attempts: 0 };
-  if (state.deaths.filter(d => now - Date.parse(d.at) < 600000).length >= 3) {
+  if (pause && state.deaths.filter(d => now - Date.parse(d.at) < 600000).length >= 3) {
     state.paused = true;
     state.deathBlocked = 'I died three times within ten minutes. Progress is saved; I need a safer situation before you ask me to resume.';
   }

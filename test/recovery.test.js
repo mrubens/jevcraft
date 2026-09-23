@@ -31,6 +31,11 @@ test('death records observed inventory and pauses after three recent deaths with
   assert.equal(state.paused, true);
   assert.match(state.deathBlocked, /three times/);
   assert.equal(state.shelters.length, 1);
+  // The run to beat the game does not pause: it plans to die.
+  const run = { shelters: [], paused: false };
+  for (let i = 0; i < 3; i++) recordDeath(bot, run, 1000000 + i * 1000, { pause: false });
+  assert.equal(run.paused, false); assert.equal(run.deathBlocked, undefined);
+  assert.equal(run.deaths.length, 3, 'the deaths are still recorded');
 });
 
 test('inventory clearing before the death event does not erase the recent alive observation', () => {

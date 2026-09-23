@@ -1366,3 +1366,19 @@ test('a night mine from a surface pocket first sinks the pocket into the rock', 
   assert.equal(sunk, 1);
   assert(survival.state.nightMine.sunkAt, 'once a night mine');
 });
+
+test('a hoglin close on a ledge: the bot seals itself in rather than fight, pillar or walk the edge', async () => {
+  const placed = [];
+  const hoglin = { id: 3, name: 'hoglin', position: new Vec3(-1.5, 64, 0.5), height: 1.4, isValid: true };
+  const world = ledgeWorld();
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 18, food: 20,
+    entity: { position: new Vec3(3.5, 64, 0.5), onGround: true }, entities: { 3: hoglin }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'diamond_sword' }, { name: 'netherrack', count: 16 }], slots: {} }, world: { raycast: () => null },
+    blockAt: p => { const k = `${p.floored()}`; return placed.includes(k) ? { position: p.floored(), name: 'netherrack', boundingBox: 'block' } : world(p); },
+    pathfinder: { movements: {}, setGoal() {}, getPathTo: () => ({ status: 'noPath', path: [] }) }, clearControlStates() {} });
+  const survival = new Survival(bot, { place: async (b, t, p) => { placed.push(`${p.floored()}`); }, navigate: async () => {} }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('ledge'), goal, () => {});
+  assert(placed.length >= 4, `a pocket went up (${placed.length} blocks)`);
+  assert.notEqual(goal.survivalAction?.action, 'pillar_from');
+});

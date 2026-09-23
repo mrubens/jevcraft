@@ -544,8 +544,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // A dead player can rejoin before respawning. No work has started in this
     // connection, so request respawn directly without recording a second death.
     if (!spawned && survival.state.recovery?.status === 'pending') { bot.respawn(); return; }
-    recordDeath(bot, survival.state);
     const saved = active && !active.idle ? active.goal : store.read();
+    recordDeath(bot, survival.state, Date.now(), { pause: saved?.kind !== 'win' });
     if (saved && ['pending', 'running', 'recovering'].includes(saved.status)) {
       saved.lastError = 'The bot died; recovering from observed inventory after respawn';
       saved.status = survival.state.deathBlocked ? 'blocked' : 'recovering';
