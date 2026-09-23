@@ -8,6 +8,7 @@ const { dryStanding } = require('./mining-access');
 const { safeFromHostiles, checkThreats } = require('./danger');
 const { checkAir } = require('./vitals');
 const { floatAfterBoat, clearOwnedBoatAtFeet, leaveBoat } = require('./boats');
+const { move: motion } = require('./motion');
 
 // Shelter construction needs dry ground before it can choose a local site.
 // A failed crossing may leave that ground farther away than the shelter scan.
@@ -59,6 +60,19 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
         state.failures[`${p}`] = Date.now(); state.lastError = error.message; save();
         if (++attempts >= 3) break;
       }
+    }
+    // Under a roof no landing is "surface", and the base's own flooded pit,
+    // with its dry floor one block away, had no shore at all: the bot bobbed
+    // in it through an evening. With no landing even tried, the nearest dry
+    // cell with a floor and air for the body is climbed onto, as out of lava.
+    const { lavaExit, inWater } = require('./survival');
+    const exit = lavaExit(bot);
+    if (!attempts && exit && exit.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) <= 3.5) {
+      goal.step = { action: 'reach_shore', from: { ...bot.entity.position }, destination: { ...exit }, climb: true };
+      goal.survivalAction = { action: 'reach_shore', at: new Date().toISOString() }; save();
+      await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'out of the water onto the nearest dry cell',
+        look: exit.offset(0.5, 1, 0.5), maxMs: 2500, tick: 50, until: () => bot.entity.onGround && !inWater(bot) });
+      if (!inWater(bot)) { state.landed = { position: { ...bot.entity.position }, at: new Date().toISOString(), climbed: true }; save(); return true; }
     }
     throw new Error('No reachable dry shore found in the observed water area');
   } finally {

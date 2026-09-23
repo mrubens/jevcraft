@@ -55,3 +55,20 @@ test('shore recovery verifies arrival, retains failures and restores movement on
     for (const [key, value] of Object.entries(previous)) assert.equal(bot.pathfinder.movements[key], value, key);
   }
 });
+
+test('under a roof, with no landing counted as surface, the bot climbs out onto the nearest dry cell', async () => {
+  const { Vec3 } = require('vec3');
+  const { reachShore } = require('../src/shore');
+  const { Task } = require('../src/skills');
+  const water = new Set(['0,62,0', '1,62,0']);
+  const blockAt = p => water.has(`${p.x},${p.y},${p.z}`) ? { name: 'water', type: 1, boundingBox: 'empty', position: p, getProperties: () => ({ level: 0 }) }
+    : p.y === 66 ? { name: 'oak_planks', boundingBox: 'block', position: p } : p.y < 62 || (p.y === 62 && !water.has(`${p.x},${p.y},${p.z}`) && Math.abs(p.x) > 2) ? { name: 'dirt', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  const bot = { registry: require('minecraft-data')('26.1'), game: { dimension: 'overworld', minY: -64, height: 384 }, entity: { position: new Vec3(0.5, 62.2, 0.5), onGround: false, isInWater: true },
+    blockAt, findBlocks: () => [], controlState: {}, entities: {}, oxygenLevel: 20, lookAt: async () => {}, clearControlStates() {},
+    setControlState(k, v) { this.controlState[k] = v; if (k === 'forward' && v) { this.entity.position = new Vec3(-1.5, 62, 0.5); this.entity.isInWater = false; this.entity.onGround = true; } },
+    pathfinder: { movements: { allowedPosition: () => true }, setGoal() {} } };
+  const goal = {};
+  const landed = await reachShore(bot, new Task('shore'), goal, () => {}, { surface: async () => {} });
+  assert.equal(landed, true);
+  assert.equal(goal.step.climb, true);
+});
