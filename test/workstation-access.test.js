@@ -58,7 +58,22 @@ test('an inaccessible saved furnace never switches to a different furnace or los
   bot.openFurnace = async () => assert.fail('saved ingredients belong to the inaccessible furnace');
   const goal = { smelting: { item: 'glass', from: 'sand', count: 2, targetInventory: 2, position: { ...p } } }, saved = structuredClone(goal);
   await assert.rejects(smelt(bot, new Task('resume furnace'), goal.smelting, goal), { name: 'Blocked', message: "I can't reach the furnace holding our saved batch" });
-  assert.deepEqual(goal, saved);
+  const { unreachable, ...kept } = goal.smelting;
+  assert.deepEqual({ smelting: kept }, saved); assert.equal(unreachable, 1);
+  // Out of reach three times running, the batch is let go rather than
+  // retried for good.
+  await assert.rejects(smelt(bot, new Task('resume furnace'), goal.smelting, goal), { name: 'Blocked' });
+  await assert.rejects(smelt(bot, new Task('resume furnace'), goal.smelting, goal), /stayed out of reach/);
+  assert.equal(goal.smelting, undefined); assert.equal(goal.lostSmelting.item, 'glass');
+});
+
+test('a saved batch whose furnace is empty, with none of its input carried, is let go', async () => {
+  const { bot, p } = fixture();
+  bot.pathfinder.getPathTo = () => ({ status: 'success' });
+  bot.openFurnace = async () => ({ outputItem: () => null, inputItem: () => null, fuelItem: () => null, close: () => {} });
+  const goal = { request: 'beat the game', smelting: { item: 'cooked_beef', from: 'beef', fuelItem: 'coal', count: 1, targetInventory: 1, position: { ...p } } };
+  await assert.rejects(smelt(bot, new Task('resume furnace'), goal.smelting, goal), /nothing left in the furnace/);
+  assert.equal(goal.smelting, undefined); assert.equal(goal.lostSmelting.reason, 'empty');
 });
 
 test('a saved furnace outside loaded chunks is approached before being declared missing', async () => {

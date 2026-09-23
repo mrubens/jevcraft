@@ -886,7 +886,14 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     }
     // Never switch furnaces while the saved ingredients/output belong to this one.
     block = await approachWorkstation(bot, task, 'furnace', [p]);
-    if (!block) throw new Blocked("I can't reach the furnace holding our saved batch");
+    // A furnace that stays out of reach costs the batch, not the run: the
+    // dream run retried an unreachable one-beef batch for good.
+    if (!block && (pending.unreachable = (pending.unreachable || 0) + 1) >= 3) {
+      goal.lostSmelting = { ...pending, at: new Date().toISOString() }; delete goal.smelting; save();
+      throw new Error('The furnace holding our saved batch stayed out of reach; starting the batch again');
+    }
+    if (!block) { save(); throw new Blocked("I can't reach the furnace holding our saved batch"); }
+    delete pending.unreachable;
   } else block = await workstation(bot, task, 'furnace', goal);
   const before = countOf(bot, step.item);
   const needed = Math.min(pending ? pending.targetInventory - before : step.count, 64);
@@ -900,7 +907,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   const carried = name => Array.isArray(furnace.slots) && Number.isInteger(furnace.inventoryStart)
     ? furnace.slots.slice(furnace.inventoryStart, furnace.inventoryEnd).filter(i => i?.name === name).reduce((n, i) => n + i.count, 0)
     : countOf(bot, name);
-  let taken = 0, supplies;
+  let taken = 0, supplies, emptyBatch = false;
   const collect = async () => {
     const output = furnace.outputItem();
     if (!output) return;
@@ -916,6 +923,10 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       if (existing && existing.name !== step.from) throw new Error('Furnace contains another input');
       const amount = needed - taken;
       const missingInput = Math.max(0, amount - (existing?.count || 0));
+      // A saved batch with nothing in the furnace and nothing carried is
+      // not a batch: finishing it meant getting the raw food all over again,
+      // which the dream run tried for good ("no supported method for beef").
+      if (missingInput > carried(step.from) && pending && !existing && !taken && !carried(step.from)) emptyBatch = true;
       if (missingInput > carried(step.from)) throw new SmeltingSuppliesNeeded(step.from, missingInput);
       if (missingInput) await furnace.putInput(bot.registry.itemsByName[step.from].id, null, missingInput);
       const fuel = async () => {
@@ -954,6 +965,10 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     finally { furnace.close(); }
   }
   if (bot._syncWindow) await bot._syncWindow(bot.inventory);
+  if (emptyBatch) {
+    goal.lostSmelting = { ...goal.smelting, at: new Date().toISOString(), reason: 'empty' }; delete goal.smelting; save();
+    throw new Error('The saved batch has nothing left in the furnace; letting it go');
+  }
   if (supplies) {
     if (!goal?.smelting) throw new Blocked(supplies.message);
     // Close the furnace before finding supplies, retaining its location and
