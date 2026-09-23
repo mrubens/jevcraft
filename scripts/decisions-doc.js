@@ -36,7 +36,7 @@ function render() {
         `- Options built in: ${cell(q.source)}`, '');
       if (q.tree) {
         lines.push('| Option | Level | What it is | Offered when |', '| --- | --- | --- | --- |');
-        for (const o of q.options) lines.push(`| \`${o.key || o.pattern}\`${o.pattern ? ' (pattern)' : ''} | ${o.level || 'root'} | ${cell(o.label)} | ${cell(o.when)} |`);
+        for (const o of q.options) lines.push(`| \`${cell(o.key || o.pattern)}\`${o.pattern ? ' (pattern)' : ''} | ${o.level || 'root'} | ${cell(o.label)} | ${cell(o.when)} |`);
         lines.push('');
       }
     }

@@ -92,7 +92,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `obtain_item` | root | gather and make the requested outputs | always (the root) |
-| `mine|craft|smelt|harden|fill_bucket|make_obsidian|hunt_mob|creative_inventory` (pattern) | obtain_item | the next recipe dependency | the shared recipe plan's next step |
+| `mine\|craft\|smelt\|harden\|fill_bucket\|make_obsidian\|hunt_mob\|creative_inventory` (pattern) | obtain_item | the next recipe dependency | the shared recipe plan's next step |
 | `source_[a-z_]+_-?\d+_-?\d+_-?\d+` (pattern) | step | work this source | reachable blocks of the resource grouped by block and place, up to four, none set aside |
 | `find_resource` | step | search for a reachable source | a mine step with no reachable source |
 | `execute_recipe` | step | carry out the recipe step | a non-mining step |
@@ -133,13 +133,13 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `build_house` | root | continue building the house | always (the root) |
 | `choose_site` | build_house | choose a site | no site is reserved yet |
-| `reserve_site|survey_ground` (pattern) | choose_site | reserve the inspected site, or look for level ground | under choose_site: a level site was found, or not |
+| `reserve_site\|survey_ground` (pattern) | choose_site | reserve the inspected site, or look for level ground | under choose_site: a level site was found, or not |
 | `gather_materials` | build_house | gather building material | less material is carried than the blocks still missing |
-| `source_[a-z_]+_-?\d+_-?\d+_-?\d+|explore_resource|mine|craft|smelt|prepare_material` (pattern) | gather_materials | a source or recipe step for the material | under gather_materials |
+| `source_[a-z_]+_-?\d+_-?\d+_-?\d+\|explore_resource\|mine\|craft\|smelt\|prepare_material` (pattern) | gather_materials | a source or recipe step for the material | under gather_materials |
 | `clear_interior` | build_house | clear the inside and doorway | blocks stand where the house must be empty |
 | `clear_-?\d+_-?\d+_-?\d+` (pattern) | clear_interior | clear this cell | under clear_interior |
 | `build` | build_house | place blocks, lowest layer first | material is carried and cells are unbuilt |
-| `(?:place|clear)_-?\d+_-?\d+_-?\d+` (pattern) | build | place or clear this cell | under build: the lowest unfinished layer |
+| `(?:place\|clear)_-?\d+_-?\d+_-?\d+` (pattern) | build | place or clear this cell | under build: the lowest unfinished layer |
 
 ### `build_mode`
 
