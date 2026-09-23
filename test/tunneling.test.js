@@ -452,3 +452,25 @@ test('pinned below two skeletons at full health, the staircase claims them and c
   assert(!hurt.length || hurt[0].destination.distanceTo(surface) >= bot.entity.position.floored().distanceTo(surface) - 0.1 || !bot._huntingEntity, 'hurt, no claim');
   assert.equal(bot._huntingEntity, undefined);
 });
+
+test('a pillar goes straight up a block a time, digging what is overhead, and stops beside lava', async () => {
+  const { pillarUp } = require('../src/pillar-recovery');
+  const registry = require('minecraft-data')('26.1');
+  const solid = new Map(), lava = new Set();
+  for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) solid.set(`${x},9,${z}`, 'netherrack');
+  solid.set('0,14,0', 'netherrack');
+  const block = p => { const k = `${p.x},${p.y},${p.z}`; if (lava.has(k)) return { name: 'lava', boundingBox: 'empty', position: p };
+    const n = solid.get(k); return n ? { name: n, boundingBox: 'block', diggable: true, position: p } : { name: 'air', boundingBox: 'empty', position: p }; };
+  const bot = { registry, entity: { position: new Vec3(0.5, 10, 0.5), onGround: true, yaw: 0 }, game: { dimension: 'the_nether', gameMode: 'survival' }, entities: {}, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'netherrack', count: 64, type: 1 }] }, blockAt: block,
+    equip: async () => {}, look: async () => {}, controlState: {}, setControlState(k, v) { this.controlState[k] = v; if (k === 'jump' && v) this.entity.position = this.entity.position.offset(0, 1.1, 0); },
+    placeBlock: async (ref) => { solid.set(`${ref.position.x},${ref.position.y + 1},${ref.position.z}`, 'netherrack'); bot.entity.position = new Vec3(0.5, ref.position.y + 2, 0.5); } };
+  const dug = [];
+  const placed = await pillarUp(bot, new Task('up'), 16, { dig: async (b, t, p) => { dug.push(p.y); solid.delete(`${p.x},${p.y},${p.z}`); } });
+  assert.equal(bot.entity.position.y, 16, 'up to the height asked');
+  assert.equal(placed, 6); assert.deepEqual(dug, [14], 'and the block overhead was dug');
+  // Lava beside the next cell up: stop where it stands.
+  bot.entity.position = new Vec3(0.5, 16, 0.5); lava.add('1,17,0');
+  assert.equal(await pillarUp(bot, new Task('lava'), 24, { dig: async () => {} }), 0);
+  assert.equal(bot.entity.position.y, 16);
+});

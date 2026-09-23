@@ -81,4 +81,47 @@ async function descendPillar(bot, task, goal, save, expected) {
     bot._client.removeListener('multi_block_change', changedMany);
   }
 }
-module.exports = { pillarDescent, descendPillar };
+// Straight up, a block at a time: jump, put a block where the feet were,
+// clear what is over the head. For a place overhead that no stairs reach:
+// the dream run's Nether portal stood on a platform thirty blocks over a
+// cavern floor, and the staircase went ninety-eight rounds beside a lava
+// pool under it. Stops at the height asked for, at a block it must not dig
+// (obsidian, the portal, a chest), or where lava or water is beside the
+// next cell up; the pathfinder takes over from wherever it stops.
+const SCAFFOLD = ['netherrack', 'cobblestone', 'cobbled_deepslate', 'dirt', 'nether_bricks', 'blackstone', 'basalt', 'stone', 'andesite', 'diorite', 'granite', 'tuff', 'soul_soil'];
+const DIGGABLE_ABOVE = /^(netherrack|stone|deepslate|cobblestone|cobbled_deepslate|dirt|gravel|sand|soul_sand|soul_soil|basalt|blackstone|andesite|diorite|granite|tuff|nether_bricks|glowstone|magma_block|crimson_nylium|warped_nylium|nether_quartz_ore|nether_gold_ore|.*_leaves)$/;
+async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40 } = {}) {
+  const { move } = require('./motion');
+  let placed = 0;
+  while (bot.entity.position.y < targetY - 0.5 && placed < maxBlocks) {
+    task.check(); checkAir(bot); checkThreats(bot);
+    const feet = bot.entity.position.floored();
+    const head = feet.offset(0, 2, 0), above = bot.blockAt(head);
+    if (!above) break;
+    // Nothing wet or burning in or beside the cells the body will pass
+    // through, or over the block it is about to dig.
+    const liquid = c => /lava|water/.test(bot.blockAt(c)?.name || '');
+    const passing = [feet.offset(0, 1, 0), head, head.offset(0, 1, 0)];
+    if (passing.some(liquid) || passing.slice(0, 2).some(c => directions.some(d => liquid(c.plus(d))))) break;
+    if (!dryPassable(above)) {
+      if (!DIGGABLE_ABOVE.test(above.name) || !above.diggable) break;
+      await dig(bot, task, head, { requireDrops: false });
+      continue;
+    }
+    const block = bot.inventory.items().find(i => SCAFFOLD.includes(i.name));
+    if (!block) break;
+    await bot.equip(block, 'hand');
+    await bot.look(bot.entity.yaw, -Math.PI / 2, true);
+    const start = feet.y;
+    const below = bot.blockAt(feet.offset(0, -1, 0));
+    if (!below || below.boundingBox !== 'block') break;
+    await move(bot, task, { label: 'pillar_up', keys: ['jump'], sneak: false, until: () => bot.entity.position.y >= start + 1.05, maxMs: 1200, tick: 20 });
+    try { await bot.placeBlock(below, new Vec3(0, 1, 0)); placed++; }
+    catch (err) { task.check(); }
+    for (let i = 0; i < 20 && !bot.entity.onGround; i++) { task.check(); await new Promise(resolve => setTimeout(resolve, 25)); }
+    if (bot.entity.position.floored().y <= start) break;
+  }
+  return placed;
+}
+
+module.exports = { pillarDescent, descendPillar, pillarUp };

@@ -31,7 +31,7 @@ const { designWithJev } = require('./build-templates');
 const { dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine, dryStanding } = require('./mining-access');
 const { dryPassable, supportCell, swimmableWater } = require('./terrain');
 const { RecoveryAdviser } = require('./recovery-adviser');
-const { descendPillar } = require('./pillar-recovery');
+const { descendPillar, pillarUp } = require('./pillar-recovery');
 const { gameStep, watchGameProgress, dimension, nextGameStage, DEFERRABLE, RUNG_WAIT_MS } = require('./game-progress');
 const { carriedEquipment } = require('./mob-policy');
 const { huntObserved, prepareMobHunt, prepareCombatGear } = require('./mob-hunt');
@@ -1938,6 +1938,17 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   // a staircase toward it the way an ore is reached; a portal at y=-11 is
   // not on any surface route.
   const distance = here.distanceTo(pos(p));
+  // Straight overhead and out of the stairs' reach: up by a pillar first.
+  // The pathfinder builds towers too, but a thirty-block one never came out
+  // of its search in time, and the staircase went round a lava pool below
+  // the portal ninety-eight times.
+  if (p.y - here.y > 6 && Math.hypot(p.x - here.x, p.z - here.z) <= 6 && !isSetAside(goal, 'pillar', pos(p))) {
+    goal.step = { action: 'pillar_to_portal', portal: { x: p.x, y: p.y, z: p.z }, from: Math.round(here.y) }; save();
+    const before = here.y;
+    await pillarUp(bot, task, p.y, { dig });
+    if (bot.entity.position.y - before >= 2) return true;
+    setAside(goal, 'pillar', pos(p), 'the pillar toward the portal would not rise', 300000); save();
+  }
   if (distance <= 48) {
     try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000 }); return true; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
