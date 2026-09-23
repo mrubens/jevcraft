@@ -237,6 +237,16 @@ function nextGameStage(bot, goal) {
   // so loss, crafting batches and partial pickups do not advance a fake counter.
   const target = Number.isInteger(portalNeed) ? portalNeed : 16, eyes = count(bot, 'ender_eye');
   const rods = Math.ceil(Math.max(0, target - eyes - count(bot, 'blaze_powder')) / 2);
+  // Eyes, rods, powder and pearls in the stash chest are the chest's first:
+  // the run set off for the fortress with six blaze rods left at home.
+  if (where === 'overworld') {
+    const wants = [];
+    if (eyes < target) wants.push({ item: 'ender_eye', count: target - eyes });
+    if (count(bot, 'blaze_rod') < rods) wants.push({ item: 'blaze_rod', count: rods - count(bot, 'blaze_rod') }, { item: 'blaze_powder', count: 2 * (rods - count(bot, 'blaze_rod')) });
+    if (count(bot, 'ender_pearl') < target - eyes) wants.push({ item: 'ender_pearl', count: target - eyes - count(bot, 'ender_pearl') });
+    const restock = wants.length && restockStage(bot, goal, wants);
+    if (restock) { const supply = restock.items.filter(m => m.want); if (supply.length) return { ...restock, phase: 'restock_supplies', action: 'home', home: { ...restock, items: supply, wants } }; }
+  }
   if (count(bot, 'blaze_rod') < rods) {
     return where === 'nether' ? { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: rods } :
       { phase: 'reach_nether', action: 'enter_nether' };

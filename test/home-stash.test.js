@@ -29,6 +29,7 @@ function chestAt(w, contents = []) {
     deposit: async (type, metadata, count) => { const name = registry.items[type].name; assert(w.stacks.some(i => i.name === name && i.count >= count), `deposit ${count} ${name} carried`); w.take(name, count); const c = container.find(i => i.name === name); if (c) c.count += count; else container.push(stack(name, count)); },
     withdraw: async (type, metadata, count) => { const name = registry.items[type].name; const c = container.find(i => i.name === name); assert(c && c.count >= count, `withdraw ${count} ${name} stored`); c.count -= count; if (!c.count) container.splice(container.indexOf(c), 1); w.give(name, count); },
     close: () => window.closed++,
+    get slots() { const all = Array(63).fill(null); container.forEach((c, n) => { all[n] = c; }); return all; },
   };
   w.bot.openContainer = async block => { assert.equal(block.name, 'chest', 'only a chest opens'); window.opened++; return window; };
   w.bot.moveSlotItem = async (from, to) => {
@@ -280,4 +281,41 @@ test('a restock item set aside after a restock that changed nothing is not plann
   setAside(goal, 'restock_item', 'furnace', 'no measurable progress', 900000);
   const after = restockStage(bot, goal);
   assert(!after || !after.items.some(m => m.item === 'furnace'));
+});
+
+test('the chest holds a stack of the bulk things at most: 216 coal and 103 raw iron filled the dream run\'s chest', () => {
+  const bot = carrying([['coal', 100], ['raw_iron', 40], ['lapis_lazuli', 30]]);
+  const full = byItem(stash.stashDeposits(bot, holding({ coal: 216, raw_iron: 103, lapis_lazuli: 99 }), { valuables: true }));
+  assert.equal(full.coal, undefined); assert.equal(full.raw_iron, undefined); assert.equal(full.lapis_lazuli, undefined);
+  const some = byItem(stash.stashDeposits(bot, holding({ coal: 40, raw_iron: 50 }), { valuables: true }));
+  assert.equal(some.coal, 24, 'up to a stack of coal in the chest'); assert.equal(some.raw_iron, 14); assert.equal(some.lapis_lazuli, 30);
+});
+
+test('a full chest does not hold up the Nether: nothing fits, no second chest can go, and the trip goes on', async () => {
+  const gear = [['white_bed', 1], ['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['water_bucket', 1], ['oak_log', 8], ['cobblestone', 64], ['cooked_beef', 4], ['crafting_table', 1], ['furnace', 1],
+    ['iron_helmet', 1], ['iron_chestplate', 1], ['iron_leggings', 1], ['iron_boots', 1], ['golden_boots', 1], ['bow', 1], ['arrow', 16], ['diamond_sword', 1], ['diamond_pickaxe', 1], ['emerald', 5]];
+  const w = await establishedHome({ items: gear });
+  const { bot, goal, save, actions } = w;
+  const kinds = ['stone', 'granite', 'diorite', 'andesite', 'dirt', 'sand', 'gravel', 'oak_planks', 'spruce_planks', 'birch_planks', 'glass', 'torch', 'stick', 'bone_meal', 'string', 'feather', 'leather', 'paper', 'book', 'bread', 'apple', 'wheat', 'flint', 'clay_ball', 'brick', 'bowl', 'snowball'];
+  const chest = chestAt(w, kinds.map(k => [k, 1]));
+  const stored = { ...chest.stored() };
+  goal.survival.home.stash.contents = stored;
+  const first = await stash.stashValuables(bot, new Task('win'), goal, save, actions);
+  assert.equal(first, true, 'nothing fitted, so the ladder goes on');
+  assert(goal.survival.home.stash.fullAt, 'the chest is known to be full');
+  assert.deepEqual(chest.stored(), stored, 'nothing was forced in');
+  assert.equal(await stash.stashValuables(bot, new Task('win'), goal, save, actions), true);
+  assert.equal(chest.window.opened, 1, 'and it is not asked again at every step');
+});
+
+test('blaze rods, powder and pearls left in the stash are fetched before the portal', async () => {
+  const gear = [['white_bed', 1], ['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['water_bucket', 1], ['oak_log', 8], ['cobblestone', 64], ['cooked_beef', 12], ['crafting_table', 1], ['furnace', 1],
+    ['iron_helmet', 1], ['iron_chestplate', 1], ['iron_leggings', 1], ['iron_boots', 1], ['golden_boots', 1], ['bow', 1], ['arrow', 16], ['diamond_sword', 1], ['diamond_pickaxe', 1]];
+  const w = await establishedHome({ items: gear });
+  w.goal.survival.home.stash.contents = { blaze_rod: 6, ender_pearl: 3 };
+  const stage = nextGameStage(w.bot, w.goal);
+  assert.equal(stage.phase, 'restock_supplies');
+  assert.deepEqual(byItem(stage.home.items), { blaze_rod: 6, ender_pearl: 3 });
+  w.goal.survival.home.stash.contents = {};
+  assert.equal(nextGameStage(w.bot, w.goal).action, 'enter_nether', 'with nothing in the chest the portal is next');
 });

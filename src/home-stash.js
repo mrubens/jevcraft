@@ -170,9 +170,26 @@ function spareByType(items, matches, keep, moved = {}) {
 // from what the pockets can spare, then the keepsakes over what the pockets
 // keep, and before the Nether the valuables. Each rule sees what the ones
 // before it already moved, so a log is a kit log or a keepsake, never both.
+// What the chest holds of the bulk things at most: past this they stay in
+// the pockets (and the tidy's rules) instead. The dream run's chest held
+// 216 coal in four stacks, 103 raw iron and 99 lapis, and with all
+// twenty-seven slots taken every deposit before the Nether failed, nine
+// times over, while the ladder waited on it.
+const CHEST_MAX = Object.freeze({ coal: 64, charcoal: 64, raw_iron: 64, raw_gold: 64, lapis_lazuli: 64, iron_ingot: 64, bone: 16, feather: 32, leather: 32, flint: 16 });
+const woolCap = 16;
+function capped(home, name, count, moved) {
+  const cap = /_wool$/.test(name) ? woolCap : CHEST_MAX[name];
+  if (cap === undefined) return count;
+  return Math.max(0, Math.min(count, cap - (contentsOf(home)[name] || 0) - (moved[name] || 0)));
+}
+
 function stashDeposits(bot, home, { valuables = false, items = bot.inventory.items() } = {}) {
   const moves = [], moved = {};
-  const record = move => { moves.push(move); moved[move.item] = (moved[move.item] || 0) + move.count; };
+  const record = move => {
+    const count = capped(home, move.item, move.count, moved);
+    if (count <= 0) return;
+    moves.push({ ...move, count }); moved[move.item] = (moved[move.item] || 0) + count;
+  };
   for (const slot of SPARE_KIT) {
     let need = slot.count - storedIn(bot, home, slot);
     for (const spare of spares(bot, slot, items)) {
@@ -425,12 +442,57 @@ async function stockStash(bot, task, goal, save, home, actions, { valuables = fa
     const stored = [];
     for (const move of stashDeposits(bot, home, { valuables, items: window.items() })) {
       task.check();
+      // Only what fits: a free slot, or room in a stack of the same item.
+      if (!chestRoomFor(bot, window, move.item)) continue;
       try { await moveIn(bot, window, move); stored.push(move); }
-      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; break; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
     home.stash.stockedAt = new Date().toISOString();
+    home.stash.slots = containerSlots(window);
+    if (freeContainerSlots(window) === 0) home.stash.fullAt = new Date().toISOString(); else delete home.stash.fullAt;
     return stored;
   });
+}
+
+const containerSlots = window => Number.isInteger(window.inventoryStart) ? window.inventoryStart : 27;
+const freeContainerSlots = window => Array.isArray(window.slots) ? window.slots.slice(0, containerSlots(window)).filter(i => !i).length : 1;
+function chestRoomFor(bot, window, name) {
+  if (freeContainerSlots(window) > 0) return true;
+  const size = stackSize(bot, name);
+  return size > 1 && typeof window.containerItems === 'function' && window.containerItems().some(i => i.name === name && i.count < size);
+}
+
+// A full single chest becomes a double one: a second chest beside it,
+// facing the same way, which the game joins to the first. Once; a chest
+// that will not join is taken back up and the stash stays as it is.
+async function expandStash(bot, task, goal, save, home, actions) {
+  const at = pos(home.stash.position);
+  const block = bot.blockAt(at);
+  if (!isChest(block)) return false;
+  const props = typeof block.getProperties === 'function' ? block.getProperties() : {};
+  if (props.type && props.type !== 'single') return false;
+  const facing = props.facing || 'north';
+  const sides = /north|south/.test(facing) ? [new Vec3(1, 0, 0), new Vec3(-1, 0, 0)] : [new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+  const cell = sides.map(d => at.plus(d)).find(c => {
+    const here = bot.blockAt(c), floor = bot.blockAt(c.offset(0, -1, 0)), above = bot.blockAt(c.offset(0, 1, 0));
+    return here && ['air', 'cave_air', 'short_grass', 'leaf_litter', 'snow'].includes(here.name) && floor?.boundingBox === 'block' && above?.boundingBox === 'empty';
+  });
+  if (!cell) return false;
+  goal.step = { action: 'expand_stash', at: plain(cell), facing }; save();
+  if (!countOf(bot, 'chest')) {
+    if (!actions.acquireStep) return false;
+    await actions.acquireStep(bot, task, 'chest', 1, goal, save);
+  }
+  await actions.place(bot, task, cell, 'chest', { properties: { facing } });
+  const placed = bot.blockAt(cell);
+  const joined = isChest(placed) && (typeof placed.getProperties !== 'function' || (placed.getProperties().type || 'single') !== 'single');
+  if (!joined) {
+    if (isChest(placed) && actions.dig) { try { await actions.dig(bot, task, cell); } catch (err) { task.check(); } }
+    return false;
+  }
+  home.stash.second = plain(cell); home.stash.expandedAt = new Date().toISOString(); delete home.stash.fullAt; save();
+  bot.chat?.('The stash chest was full, so I made it a double chest.');
+  return true;
 }
 
 // Take the kit out: what the pockets are short of and what the ladder wants.
@@ -462,13 +524,26 @@ async function stashValuables(bot, task, goal, save, actions, { now = Date.now()
   const { homeOf, homeDistance, HOME_REACH } = base();
   const home = homeOf(bot, goal);
   if (!home?.stash?.position || homeDistance(bot, home) > HOME_REACH) return true;
-  if (isSetAside(goal, 'stash', 'chest', now)) return true;
+  if (isSetAside(goal, 'stash', 'chest', now) || isSetAside(goal, 'stash', 'valuables', now)) return true;
   if (!stashDeposits(bot, home, { valuables: true }).some(m => m.valuable)) return true;
-  try { await stockStash(bot, task, goal, save, home, actions, { valuables: true }); }
+  let stored = [];
+  try { stored = await stockStash(bot, task, goal, save, home, actions, { valuables: true }); }
   catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
     if (home.stash) { setAside(goal, 'stash', 'chest', err, RETRY_MS); save(); }
+    return false;
   }
+  // Full: a second chest once, and otherwise the trip goes on with what
+  // could not be stored. Returning false with nothing stored asked again,
+  // nine times, and the portal waited on a chest with no room.
+  if (home.stash?.fullAt && !isSetAside(goal, 'stash', 'expand', now)) {
+    let expanded = false;
+    try { expanded = await expandStash(bot, task, goal, save, home, actions); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    if (!expanded) { setAside(goal, 'stash', 'expand', 'could not add a second chest', 60 * 60 * 1000); save(); }
+    else return false;
+  }
+  if (!stored.some(m => m.valuable)) { setAside(goal, 'stash', 'valuables', 'nothing more fits', RETRY_MS); save(); return true; }
   return false;
 }
 
@@ -488,5 +563,5 @@ function stashChores(bot, goal) {
     run: (b, t, g, s, a) => stockStash(b, t, g, s, home, a) } };
 }
 
-module.exports = { SPARE_KIT, VALUABLES, KEEPSAKES, KIT_FOOD_POINTS, NETHER_FOOD_POINTS, slotFits, keepsakeOf, isKeepsake, isKitMaterial, stashDeposits, stashWithdrawals, rungWants, planIngredients, stashStatus, forgetChest, rememberContents,
+module.exports = { CHEST_MAX, expandStash, SPARE_KIT, VALUABLES, KEEPSAKES, KIT_FOOD_POINTS, NETHER_FOOD_POINTS, slotFits, keepsakeOf, isKeepsake, isKitMaterial, stashDeposits, stashWithdrawals, rungWants, planIngredients, stashStatus, forgetChest, rememberContents,
   restockStage, placeStashChest, stockStash, restockFromStash, stashValuables, stashChores, describeContents };
