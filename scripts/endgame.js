@@ -121,13 +121,21 @@ async function runUntil(task, goal, save, handler, done, { minutes }) {
   const survival = createSurvival(bot, { state: goal.survival || {}, client });
   goal.survival = survival.state;
   const deadline = Date.now() + minutes * 60000;
-  let steps = 0, errors = {};
+  let steps = 0, errors = {}; const fast = {};
   const trace = setInterval(() => { try { log({ trace: where(), step: goal.step?.action, survival: goal.survivalAction?.action }); } catch (_) {} }, 2000);
   try {
   while (!(await done()) && !died && Date.now() < deadline) {
     task.check(); steps++;
     try {
-      if (await survival.step(task, goal, save)) continue;
+      const began = Date.now();
+      // As runGoal does: in the End the fight owns every tick, survival
+      // included. The rehearsal ran the survival layer there and measured
+      // a fight the run never has.
+      if (!/end$/.test(dimension()) && await survival.step(task, goal, save)) {
+        // A survival step that returns at once, over and over, is a spin.
+        if (Date.now() - began < 5) { const k = goal.survivalAction?.action || '?'; fast[k] = (fast[k] || 0) + 1; await sleep(50); }
+        continue;
+      }
       await handler(bot, task, goal, save);
     } catch (err) {
       if (err.name === 'Cancelled') throw err;
@@ -138,7 +146,7 @@ async function runUntil(task, goal, save, handler, done, { minutes }) {
     await sleep(50);
   }
   } finally { clearInterval(trace); }
-  return { steps, errors: Object.entries(errors).sort((a, b) => b[1] - a[1]).slice(0, 6), minutes: Math.round((minutes * 60000 - Math.max(0, deadline - Date.now())) / 6000) / 10 };
+  return { steps, instantSurvival: fast, errors: Object.entries(errors).sort((a, b) => b[1] - a[1]).slice(0, 6), minutes: Math.round((minutes * 60000 - Math.max(0, deadline - Date.now())) / 6000) / 10 };
 }
 
 const DRILLS = {

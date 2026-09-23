@@ -241,3 +241,19 @@ test('without Jev the End fight goes on in a fixed order: out of danger, crystal
   assert.equal(endFallback(true)({ observe: {}, shoot_dragon: {}, strike_head: {} }), 'strike_head');
   assert.equal(endFallback(true)({ observe: {} }), 'observe');
 });
+
+test('a turned enderman within six blocks is met with the sword by the End fight itself', async () => {
+  const { bot, goal, task } = fixture();
+  const sword = { name: 'diamond_sword', count: 1, type: registry.itemsByName.diamond_sword.id, durabilityUsed: 0 };
+  bot.inventory.items = () => [sword, { name: 'bow', count: 1 }, { name: 'arrow', count: 64 }, { name: 'cooked_beef', count: 8 }];
+  bot.equip = async item => { bot.heldItem = item; };
+  bot.lookAt = async () => {}; bot.setControlState = () => {}; bot.controlState = {};
+  const hits = [];
+  bot.attack = target => { hits.push(target.id); delete bot.entities[target.id]; };
+  bot.entity.onGround = true; bot.entity.velocity = new Vec3(0, 0, 0); bot.entity.height = 1.8;
+  entity(bot, 8, 'enderman', new Vec3(2, 64, .5), { creepy: true });
+  await fightEndStep(bot, task, goal, () => {}, { navigate: async () => {} }, null);
+  assert.equal(goal.step.action, 'end_defend');
+  assert.deepEqual(hits, [8]);
+  assert.equal(bot.heldItem.name, 'diamond_sword');
+});

@@ -12,7 +12,7 @@ const { decide } = require('./decisions');
 // The dragon_fight question and its fixed-order fallback live in
 // decisions/combat.js; endFallback is re-exported for its callers.
 const { endFallback } = require('./decisions/combat');
-const { canStrike } = require('./combat');
+const { canStrike, strike } = require('./combat');
 const { durable, carriedEquipment } = require('./mob-policy');
 const { fallDanger, recoverFall } = require('./fall-recovery');
 const { cloudRadius, hazardDistance, endEmergency, checkEndEmergency, evadeDragon } = require('./end-safety');
@@ -192,6 +192,28 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       if (await maintainVitals(bot, task, action => { goal.survivalAction = { ...action, at: new Date().toISOString() }; save(); })) return;
     }
     if (bot.food < 16 && !chooseFood(bot)) throw blocked('End combat has no carried food to restore hunger');
+    // No survival layer in the End: the game loop hands the dimension to
+    // this step, so a turned enderman is answered here, with the sword,
+    // under the same checks as the rest of the fight. In the rehearsal the
+    // survival layer answered instead and sealed the bot in where the
+    // dragon's breath pooled; that is not how the run plays it.
+    const sword = bot.inventory.items().find(i => /_sword$/.test(i.name) && durable(bot.registry, i));
+    const defendHere = async ms => {
+      const until = Date.now() + ms;
+      if (sword && bot.heldItem?.name !== sword.name) { await bot.equip(sword, 'hand'); check(); }
+      while (Date.now() < until) {
+        check();
+        const target = hostileEntities(bot, 6).filter(e => live(bot, e)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
+        if (!target) break;
+        if (sword && canStrike(bot, target)) { await strike(bot, task, target); progress = true; state.defended = (state.defended || 0) + 1; }
+        else { await bot.lookAt(target.position.offset(0, (target.height || 1.8) * .8, 0), true); await sleep(50); }
+      }
+    };
+    const attacker = hostileEntities(bot, 6).find(e => live(bot, e));
+    if (attacker && sword) {
+      goal.step = { action: 'end_defend', target: attacker.name, distance: Math.round(attacker.position.distanceTo(bot.entity.position) * 10) / 10 }; save();
+      await defendHere(2000); return;
+    }
     const crystals = observeArena(bot, state);
     state.observedCrystals = crystals.map(e => ({ id: e.id, position: { ...e.position } }));
     state.dragon = dragon && { id: dragon.id, position: { ...dragon.position }, health: beforeDragon, phase: metadata(bot, dragon, 'phase') };
@@ -280,6 +302,15 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       state.idleObservations = (state.idleObservations || 0) + 1;
       bot.clearControlStates(); for (let n = 0; n < 10; n++) { check(); if (!safeEndPoint(bot, bot.entity.position)) break; await sleep(100); }
     } };
+    // Unsafe only because of mobs close by (endermen turned by a glance or a
+    // crystal's blast): hold with the sword out for them to come, and the
+    // next step looks again. The no-progress budget still bounds it. As Blocked
+    // it ended the rehearsal with the dragon at 148 of 200.
+    if (!Object.keys(tree).length && !safe && unsafeBecause(bot, bot.entity.position).every(r => !/ender_dragon|end_crystal|area_effect_cloud|dragon_fireball/.test(r))) {
+      state.heldForMobs = { at: Date.now(), unsafe: unsafeBecause(bot, bot.entity.position).slice(0, 6) }; save();
+      goal.step = { action: 'end_hold', unsafe: state.heldForMobs.unsafe }; save();
+      await defendHere(1000); return;
+    }
     if (!Object.keys(tree).length) {
       state.emptyChoice = { at: Date.now(), position: { ...bot.entity.position }, safe, unsafe: safe ? [] : unsafeBecause(bot, bot.entity.position).slice(0, 6),
         crystals: crystals.length, dragon: !!dragon, bow, arrows: countOf(bot, 'arrow'), focus: focus?.name, idle: state.idleObservations || 0 };
