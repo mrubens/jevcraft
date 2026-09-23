@@ -209,6 +209,22 @@ class Survival {
         bot._recentHurtAt = Date.now();
         // Who did it, by kind: a neutral mob that hits the bot has turned.
         if (source?.name) (bot._hurtBy ||= {})[source.name] = Date.now();
+        // Hurt three times in fifteen seconds with no survival action at all
+        // is a bug with no trace: the replay run was shot for forty-eight
+        // seconds in the Nether and the record held nothing but its health.
+        // Say what was going on, once in a while, so it can be found.
+        const now = Date.now();
+        bot._hurtTimes = [...(bot._hurtTimes || []).filter(t => now - t < 15000), now];
+        if (bot._hurtTimes.length >= 3 && !(bot._survivalReportedAt > now - 15000) && !(bot._silentHurtLoggedAt > now - 30000)) {
+          bot._silentHurtLoggedAt = now;
+          const { threats: seen, immediateThreat: urgent, hunted, combatTarget } = require('./danger');
+          const goal = bot._survivalGoal;
+          console.log(`[bug] hurt without a survival response ${JSON.stringify({ health: Math.round(bot.health), source: source?.name,
+            step: goal?.step?.action, lastSurvival: goal?.survivalAction?.action,
+            immediate: urgent(bot)?.entity?.name || null,
+            threats: seen(bot, 32).slice(0, 5).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible,
+              hunted: !!hunted(bot, t.entity), target: !!combatTarget(bot, t.entity) })) })}`);
+        }
       };
       bot.on('entityHurt', bot._survivalHurtListener);
     }
@@ -240,6 +256,7 @@ class Survival {
 
   report(goal, save, action) {
     goal.survivalAction = { ...action, at: new Date().toISOString() }; save();
+    this.bot._survivalReportedAt = Date.now(); this.bot._survivalGoal = goal;
   }
 
   async flee(task, goal, save) {
@@ -276,8 +293,11 @@ class Survival {
     // sword's, and there are no free hits while a pocket is built around
     // them. The replay run died to a pair in nine seconds; the arena pair
     // drill lost two of three the same way, digging in while both hit.
-    const hoglins = danger.filter(t => ['hoglin', 'zoglin'].includes(t.entity.name) && t.distance <= 10);
-    if (hoglins.length >= 2 && await this.pillarFrom(task, goal, save, hoglins)) return;
+    // Up before they are in reach, not after: on the live run the pillar went
+    // up with a hoglin already at arm's length, which threw the bot off it.
+    // Two in sight within sixteen, or one within ten once health is down.
+    const hoglins = danger.filter(t => ['hoglin', 'zoglin'].includes(t.entity.name) && t.distance <= 16);
+    if ((hoglins.length >= 2 || (hoglins.some(t => t.distance <= 10) && bot.health < 14)) && await this.pillarFrom(task, goal, save, hoglins)) return;
     // An enderman teleports after a runner and hits for four through iron:
     // death eighteen ran, held, ate, and died at the fifth hit. It is fought
     // where it stands while health holds, and below that sealed out: a
