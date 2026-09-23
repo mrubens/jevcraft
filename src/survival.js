@@ -499,10 +499,17 @@ class Survival {
       // look further before giving the night up as unsafe.
       let sites = shelter.shelterSites(bot, goal);
       if (!sites.length) sites = shelter.shelterSites(bot, goal, 32);
+      // Six sites, a little over half a second each: at a hundred and fifty
+      // milliseconds every survey from a hollow eleven blocks under the
+      // surface timed out, and the dream run retried the whole list for
+      // seven attempts at dusk.
       let site;
-      for (const p of sites) {
-        if ((await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalBlock(p.x, p.y, p.z), 150)).status === 'success') { site = p; break; }
+      for (const p of sites.slice(0, 6)) {
+        if ((await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalBlock(p.x, p.y, p.z), 600)).status === 'success') { site = p; break; }
       }
+      // No site to walk to: the night is spent sealed in where the bot
+      // stands, as the unreachable-shelter rule above intends.
+      if (!site && await this.sealHere(task, goal, save, threats(bot).filter(t => t.visible))) return;
       if (!site) throw new Error('No reachable, supported 3 by 3 shelter site observed');
       refuge = { origin: { ...site }, dimension: bot.game.dimension, createdAt: new Date().toISOString() };
       this.state.shelters.push(refuge); save();

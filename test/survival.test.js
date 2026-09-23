@@ -1029,3 +1029,18 @@ test('after two nights awake, staying up is off the table while a bed is on offe
   assert.deepEqual(seen[0], ['continue_request', 'sleep_in_bed'], 'rested: staying up is a choice');
   assert.equal(seen.length, 1, 'two nights awake: only the bed, taken without asking');
 });
+
+test('with no shelter site that can be walked to, the night is sealed in where the bot stands', async () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: {}, entity: { position: new Vec3(0.5, 47, 0.5) },
+    inventory: { items: () => [{ name: 'cobblestone', count: 64 }] }, blockAt: p => ({ name: p.y < 47 ? 'stone' : 'air', boundingBox: p.y < 47 ? 'block' : 'empty' }),
+    pathfinder: { movements: {}, getPathTo: () => ({ status: 'timeout', path: [] }) } });
+  const controller = new Survival(bot, {}, { state: { shelters: [] } });
+  const sites = shelter.shelterSites;
+  let sealed = 0;
+  shelter.shelterSites = () => [new Vec3(9, 58, 9)];
+  controller.sealHere = async () => { sealed++; return true; };
+  try {
+    await controller.refugeStep(new Task('dusk in a hollow'), {}, () => {});
+    assert.equal(sealed, 1);
+  } finally { shelter.shelterSites = sites; }
+});
