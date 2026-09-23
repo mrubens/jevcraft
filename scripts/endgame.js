@@ -85,11 +85,21 @@ async function kit(extra = []) {
 }
 
 const bot = mineflayer.createBot({ host: '127.0.0.1', port, username, version: '26.1', auth: 'offline' });
-bot.loadPlugin(compatibilityPlugin); bot.loadPlugin(pathfinder);
+bot.loadPlugin(compatibilityPlugin); bot.loadPlugin(pathfinder); bot.loadPlugin(require('../src/gaze').gazePlugin);
 let client = null;
 if (process.env.ENDGAME_JEV === '1') { const { TypeSafe } = require('../src/typesafe'); client = new TypeSafe(); }
 let died = false;
 bot.on('death', () => { died = true; });
+// The moment an enderman turns, and what the bot was doing and looking at.
+const turned = new Set();
+bot.on('entityUpdate', e => {
+  if (e.name !== 'enderman' || turned.has(e.id)) return;
+  const key = bot.registry.entitiesByName.enderman.metadataKeys.indexOf('creepy');
+  if (!e.metadata?.[key]) return;
+  turned.add(e.id);
+  log({ provoked: { id: e.id, distance: Math.round(e.position.distanceTo(bot.entity.position)), pitch: Math.round((bot.entity.pitch || 0) * 100) / 100,
+    controls: Object.entries(bot.controlState || {}).filter(([, v]) => v).map(([k]) => k), pathfinding: !!bot.pathfinder?.isMoving?.(), held: bot.heldItem?.name } });
+});
 
 // Where the bot stands, what is under it, and the nearest End stone: the
 // dragon drill's first honest failure was on the spawn platform.
@@ -102,6 +112,12 @@ const dimension = () => String(bot.game?.dimension || '').replace(/^minecraft:/,
 // The ladder's step with the survival layer beside it, as the run has it:
 // survival first, the rung when survival has nothing to do.
 async function runUntil(task, goal, save, handler, done, { minutes }) {
+  // Every change of step or survival action is logged where it happened:
+  // the two-second trace missed a walk off the spawn platform entirely.
+  let last = '';
+  const logged = save;
+  save = () => { logged(); const now = JSON.stringify([goal.step?.action, goal.survivalAction?.action]);
+    if (now !== last) { last = now; try { log({ change: { step: goal.step, survival: goal.survivalAction }, where: where() }); } catch (_) {} } };
   const survival = createSurvival(bot, { state: goal.survival || {}, client });
   goal.survival = survival.state;
   const deadline = Date.now() + minutes * 60000;

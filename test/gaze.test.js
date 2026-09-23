@@ -1,0 +1,31 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { EventEmitter } = require('events');
+const { Vec3 } = require('vec3');
+const registry = require('minecraft-data')('26.1');
+const { gazePlugin, lowerGaze, DOWN } = require('../src/gaze');
+
+const creepy = registry.entitiesByName.enderman.metadataKeys.indexOf('creepy');
+const scene = ({ enderman = new Vec3(20, 64, 0), angry = false, moving = true, pitch = 0 } = {}) => {
+  const bot = Object.assign(new EventEmitter(), { registry, controlState: { forward: moving },
+    entity: { position: new Vec3(0, 64, 0), pitch }, pathfinder: { isMoving: () => moving }, entities: {} });
+  if (enderman) bot.entities[7] = { name: 'enderman', position: enderman, metadata: angry ? { [creepy]: true } : {} };
+  return bot;
+};
+
+test('walking level with an enderman in view, the gaze goes to the ground ahead', () => {
+  assert.equal(lowerGaze(scene()), true);
+  const bot = scene(); gazePlugin(bot); bot.emit('spawn'); bot.emit('physicsTick');
+  assert.equal(bot.entity.pitch, DOWN);
+});
+
+test('the gaze is left alone otherwise', () => {
+  assert.equal(lowerGaze(scene({ enderman: null })), false, 'no enderman');
+  assert.equal(lowerGaze(scene({ enderman: new Vec3(90, 64, 0) })), false, 'too far to see');
+  assert.equal(lowerGaze(scene({ angry: true })), false, 'already provoked: the fight looks where it must');
+  assert.equal(lowerGaze(scene({ moving: false })), false, 'standing: aiming, digging, eating');
+  const dodge = scene(); dodge.pathfinder.isMoving = () => false;
+  assert.equal(lowerGaze(dodge), true, 'a dodge pressing the keys itself walks eyes down too');
+  assert.equal(lowerGaze(scene({ pitch: 0.6 })), false, 'a deliberate look up at a crystal');
+});

@@ -116,7 +116,10 @@ async function evadeOverTerrain(bot, task, goal, save, dragon, { allowed = () =>
       const evidence = { at: Date.now(), from: { ...start }, to: { ...bot.entity.position }, hazard: { id: dragon.id, name: dragon.name }, terrainRoute: true };
       goal.endCombat.lastEvasion = evidence; save(); bot.emit('end_combat', { evasion: evidence }); return true;
     }
-    throw Object.assign(new Error('No surveyed walking escape from the dragon on loaded terrain'), { name: 'Blocked' });
+    // One dodge with nowhere to go is a bad moment, not the end of the
+    // fight: the next step looks again. As a Blocked error it ended the
+    // rehearsal at full health with two crystals down.
+    throw Object.assign(new Error('No surveyed walking escape from the dragon on loaded terrain'), { name: 'NoEscape' });
   } finally { bot.pathfinder.setGoal(null); bot.clearControlStates(); Object.assign(movement, previous); }
 }
 

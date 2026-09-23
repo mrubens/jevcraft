@@ -61,6 +61,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   });
   bot.loadPlugin(compatibilityPlugin);
   bot.loadPlugin(pathfinder);
+  bot.loadPlugin(require('./gaze').gazePlugin);
   // Mineflayer injects its own chat plugin after createBot, which would
   // overwrite a wrapper installed now; the filter goes on once chat exists.
   bot.once('spawn', () => quietRepeats(bot));
