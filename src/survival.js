@@ -267,6 +267,19 @@ class Survival {
     // outruns a zombie in a tunnel anyway. Low health falls through to the
     // escape search below.
     const armed = /_(sword|axe)$|^trident$/.test(defenseWeapon(bot)?.name || '');
+    // An enderman teleports after a runner and hits for four through iron:
+    // death eighteen ran, held, ate, and died at the fifth hit. It is fought
+    // where it stands while health holds, and below that sealed out: a
+    // two-high pocket is a room a three-high enderman cannot stand in.
+    const enderman = danger.find(t => t.entity.name === 'enderman' && t.distance <= 8);
+    if (enderman && !danger.some(t => t.entity.name !== 'enderman' && t.distance <= 8)) {
+      if (armed && bot.health >= 8) {
+        this.report(goal, save, { action: 'fight', threats: ['enderman'], health: bot.health, stand: true });
+        if (!swung && !canStrike(bot, enderman.entity)) await this.charge(task, goal, save, enderman, false);
+        return;
+      }
+      if (await this.sealHere(task, goal, save, danger)) return;
+    }
     // Within a sword's reach, not an arm's: a wither skeleton hits from
     // three blocks, and at two and a half the bot was searching for a
     // route instead of swinging.
