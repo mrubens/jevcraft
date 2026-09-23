@@ -7,24 +7,16 @@ const { dryStanding } = require('./mining-access');
 const { safeFromHostiles, hostileEntities } = require('./danger');
 const { checkAir, maintainVitals, chooseFood } = require('./vitals');
 const { aimAtEntity, shootBow } = require('./projectiles');
-const { decideTree, announceFallback } = require('./decisions');
+const { decide } = require('./decisions');
 
-// With Jev unreachable, or never configured, the fight goes on by a fixed
-// order instead of stopping in the End with the dragon overhead: out of
-// danger first, then the crystals that heal it, then the head within reach,
-// then an arrow, then a better position, then a second's watch.
-function endFallback(safe) {
-  return children => {
-    const keys = Object.keys(children), find = test => keys.find(test);
-    return (!safe && find(k => k.startsWith('move_'))) || find(k => k.startsWith('crystal_')) || find(k => k === 'strike_head') ||
-      find(k => k === 'shoot_dragon') || find(k => k.startsWith('move_')) || keys[0];
-  };
-}
+// The dragon_fight question and its fixed-order fallback live in
+// decisions/combat.js; endFallback is re-exported for its callers.
+const { endFallback } = require('./decisions/combat');
 const { canStrike } = require('./combat');
 const { durable, carriedEquipment } = require('./mob-policy');
 const { fallDanger, recoverFall } = require('./fall-recovery');
 const { cloudRadius, hazardDistance, endEmergency, checkEndEmergency, evadeDragon } = require('./end-safety');
-const { endDecisionInstructions, endDecisionState } = require('./end-decisions');
+const { endDecisionState } = require('./decisions/end-state');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
 const vector = p => new Vec3(p.x, p.y, p.z);
@@ -277,22 +269,11 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       bot.clearControlStates(); for (let n = 0; n < 10; n++) { check(); if (!safeEndPoint(bot, bot.entity.position)) break; await sleep(100); }
     } };
     if (!Object.keys(tree).length) throw blocked('No observed safe End route, reachable dragon head or clear bow shot; supplies and position are saved');
-    const controller = new AbortController(), watcher = setInterval(() => { try { check(); } catch (err) { controller.abort(err); } }, 50);
-    let decision;
-    const fallback = endFallback(safe);
-    try { decision = !client ? { path: [fallback(tree)], action: tree[fallback(tree)], fallback: { reason: 'no Jev client' } } :
-      await decideTree(client, { tree, rootInstructions: endDecisionInstructions, kind: 'end', fallback,
+    const decision = await decide('dragon_fight', { client, bot, goal, tree, context: { safe }, interrupt: check, watchMs: 50,
       state: endDecisionState({ request: goal.request, health: bot.health, food: bot.food, arrows: countOf(bot, 'arrow'),
         position: { ...bot.entity.position }, safe, dragon: state.dragon,
         head: head && { position: { ...head.position }, reachable: canStrike(bot, head) }, crystals: state.observedCrystals, combat: state }),
-      signal: controller.signal,
-      isFresh: () => dimension(bot) === 'end' && bot.health >= healthBefore && bot.entity.position.distanceTo(start) < 1 }); }
-    finally { clearInterval(watcher); }
-    check();
-    if (client && !decision.stale) announceFallback(bot, goal, decision);
-    goal.decisions ||= []; goal.decisions.push({ at: new Date().toISOString(), path: decision.path, judgments: decision.judgments,
-      usage: decision.usage, latencyMs: decision.latencyMs, stale: decision.stale, fallback: decision.fallback, options: JSON.parse(JSON.stringify(tree)) });
-    goal.decisions = goal.decisions.slice(-40);
+      isFresh: () => dimension(bot) === 'end' && bot.health >= healthBefore && bot.entity.position.distanceTo(start) < 1 });
     if (decision.stale) return;
     goal.step = { action: 'end_combat', selected: decision.path, dragonHealth: beforeDragon, observedCrystals: crystals.length }; save();
     try { await decision.action.run(); }

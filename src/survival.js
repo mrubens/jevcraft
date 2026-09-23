@@ -6,7 +6,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { threats, immediateThreat, checkThreats, hunted, claimed, hostileEntities } = require('./danger');
 const shelter = require('./shelter');
-const { decideTree, announceFallback } = require('./decisions');
+const { decide } = require('./decisions');
 const { maintainVitals, chooseFood, checkAir } = require('./vitals');
 const { foodSupply, forageChoices } = require('./foraging');
 const { bedCarried, placeOriented, isBed, homeOf, layout, homeChores } = require('./home-base');
@@ -312,8 +312,7 @@ class Survival {
     if (shelter.materialStock(bot) >= 12) tree.dig_in = { description: 'Seal a two-block pocket where the bot stands and wait for it to lose interest.', run: () => this.sealHere(task, goal, save, danger) };
     const state = { health: bot.health, food: bot.food, arrowsCarried: countOf(bot, 'arrow'), recentSurvivalAction: goal.survivalAction,
       threats: danger.map(t => ({ name: t.entity.name, distance: Math.round(t.distance), shoots: shooter(t.entity) })) };
-    const fallback = children => bot.health >= 12 ? Object.keys(children)[0] : 'retreat';
-    const decision = await this.decide(task, goal, save, { state, tree, fallback, kind: 'survival',
+    const decision = await this.decide(task, goal, save, { id: 'ranged_response', state, tree, context: { health: bot.health },
       isFresh: () => Math.abs(bot.health - state.health) < 4 && targets.some(t => bot.entities[t.entity.id] === t.entity && t.entity.isValid !== false) });
     if (decision.stale) return true;
     await decision.action.run();
@@ -727,30 +726,10 @@ class Survival {
     if (exit.outside) await this.actions.navigate(bot, task, new goals.GoalBlock(exit.outside.x, exit.outside.y, exit.outside.z), { timeoutMs: 10000 });
   }
 
-  // One Jev decision over a tree the code built, recorded with the state
-  // and the options so the Observatory can show what was asked. Without a
-  // client the fallback rule walks the tree, as it does during an outage.
-  async decide(task, goal, save, { state, tree, fallback, kind, isFresh = () => true, interrupt = () => {} }) {
-    const bot = this.bot;
-    let decision;
-    if (!this.client) {
-      const key = fallback(tree, []);
-      decision = { path: [key], action: tree[key].children ? Object.values(tree[key].children)[0] : tree[key] };
-    } else {
-      const controller = new AbortController();
-      const watcher = setInterval(() => { try { task.check(); checkAir(bot); interrupt(); } catch (err) { controller.abort(err); } }, 100);
-      const stopThinking = thinking(bot);
-      try { decision = await decideTree(this.client, { state, tree, signal: controller.signal, fallback, kind, isFresh }); }
-      finally { clearInterval(watcher); stopThinking(); }
-      task.check(); checkAir(bot); interrupt();
-      announceFallback(bot, goal, decision);
-    }
-    if (!decision.stale && decision.action.valid && !decision.action.valid()) decision.stale = true;
-    goal.decisions ||= [];
-    goal.decisions.push({ at: new Date().toISOString(), path: decision.path, state, options: JSON.parse(JSON.stringify(tree)),
-      latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, stale: decision.stale, fallback: decision.fallback });
-    goal.decisions = goal.decisions.slice(-40); save();
-    return decision;
+  // One Jev decision over a tree the code built: the question is defined in
+  // decisions/survival.js and asked the one way every question is.
+  decide(task, goal, save, { id, state, tree, context, isFresh = () => true, interrupt = () => {} }) {
+    return decide(id, { client: this.client, bot: this.bot, task, goal, save, tree, state, context, isFresh, interrupt });
   }
 
   // The carried bed goes down where the night caught us and comes back up
@@ -1164,14 +1143,8 @@ class Survival {
       children: offWorld && this.actions.returnOverworld ? { return_for_food: { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked; nothing here is safe to eat.',
         run: async () => { goal.survivalAction = { action: 'return_for_food', at: new Date().toISOString() }; save(); await this.actions.returnOverworld(bot, task, goal, save); } } }
         : await forageChoices(bot, task, goal, save, this.actions, this.state) };
-    if (!this.client) {
-      if (needsShelter) await (tree.sleep_in_bed || tree.secure_shelter).run();
-      else await Object.values(tree.obtain_food.children)[0].run();
-      onStep(goal); return true;
-    }
-    // Without Jev, shelter comes before food and food before the request:
-    // the order a careful player keeps when nobody is weighing the trade.
-    const fallback = children => ['sleep_in_bed', 'secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
+    // Without Jev, shelter comes before food and food before the request
+    // (the survival_priority question's fallback, in decisions/survival.js).
     // A reserve top-up once chosen is held, not asked again: at full health
     // and hunger "get food or carry on" went to Jev every five seconds,
     // thirty times in two bursts, obtain_food each time at 0.96 to 0.98.
@@ -1183,7 +1156,7 @@ class Survival {
     // One option is not a question. Jev was asked to pick the only shelter
     // on offer every night the bot could not stay up.
     if (Object.keys(tree).length === 1 && !Object.values(tree)[0].children) { await Object.values(tree)[0].run(); onStep(goal); return true; }
-    const decision = await this.decide(task, goal, save, { state, tree, fallback, kind: 'survival', interrupt: () => checkThreats(bot),
+    const decision = await this.decide(task, goal, save, { id: 'survival_priority', state, tree, interrupt: () => checkThreats(bot),
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);
     if (decision.stale) return true;

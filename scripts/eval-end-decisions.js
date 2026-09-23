@@ -4,7 +4,7 @@
 require('../src/env').loadEnv();
 const fs = require('fs'), path = require('path');
 const { TypeSafe } = require('../src/typesafe'), { decideTree } = require('../src/decisions');
-const { endDecisionInstructions, endDecisionState } = require('../src/end-decisions');
+const { endDecisionInstructions, endDecisionState } = require('../src/decisions/end-state');
 const leaf = description => ({ description });
 const attack = leaf({ action: 'Shoot the currently arrow-vulnerable flying dragon along the checked clear trajectory',
   safeFiringPosition: true, flightSeconds: 1, dragonHealth: 175.5, observedHealingCrystals: 0 });

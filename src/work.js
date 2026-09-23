@@ -14,7 +14,7 @@ const { reservedForConstruction, portalSiteClear, selectPortalSite, portalSuppor
 const { updateDigCapabilities } = require('./movement');
 const { resourceTunnelStep, tunnelStep, staircaseResting } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard, safeFood } = require('./vitals');
-const { decideTree, announceFallback, firstOption } = require('./decisions');
+const { decide } = require('./decisions');
 const { Survival, inWater, lavaExit } = require('./survival');
 const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
 const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, rememberSource, committedSource } = require('./decision-options');
@@ -1302,32 +1302,19 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
   // fail the decision eval. Jev decides what to build with and where to get
   // it; code decides when to eat.
   const tree = { build_house: { description: 'Continue the retained player request to build a house.', children: subtasks } };
-  await decideAction(bot, task, goal, save, client, onStep, tree);
+  await decideAction(bot, task, goal, save, client, onStep, tree, {}, 'house_build_step');
   return !!goal.blueprint && verifyHouse(bot, goal.blueprint).ok;
 }
 
-async function decideAction(bot, task, goal, save, client, onStep, tree, context = {}) {
+// The work questions (decisions/work.js): which one is named by `id`.
+async function decideAction(bot, task, goal, save, client, onStep, tree, context = {}, id = 'resource_source') {
   const observation = decisionObservation(bot, goal);
   const state = { ...observation, ...context };
   const fingerprint = () => decisionFingerprint(bot, { inventory: planningInventory, immediateThreat, needsAir });
   const initial = fingerprint();
-  const controller = new AbortController();
-  const watcher = setInterval(() => {
-    try { task.check(); checkAir(bot); }
-    catch (err) { controller.abort(err); }
-  }, 100);
-  let decision;
-  try {
-    decision = await decideTree(client, { state, tree, signal: controller.signal, isFresh: () => fingerprint() === initial, fallback: firstOption, kind: 'source' });
-  } finally { clearInterval(watcher); }
-  task.check(); checkAir(bot);
-  announceFallback(bot, goal, decision);
-  const record = { at: new Date().toISOString(), path: decision.path, latencyMs: decision.latencyMs,
-    state, options: JSON.parse(JSON.stringify(tree)), usage: decision.usage, judgments: decision.judgments, asked: decision.asked,
-    model: client.model, stale: decision.stale || (decision.action?.valid ? !decision.action.valid() : false), fallback: decision.fallback };
-  goal.decisions ||= []; goal.decisions.push(record); goal.decisions = goal.decisions.slice(-40);
-  save(); onStep(goal);
-  if (record.stale) return false;
+  const decision = await decide(id, { client, bot, task, goal, save, tree, state, isFresh: () => fingerprint() === initial });
+  onStep(goal);
+  if (decision.stale) return false;
   try { await decision.action.run(); }
   catch (err) {
     task.check(); if (err.name === 'NeedsAir') throw err;
@@ -1829,7 +1816,7 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
     obtain_item: { description: 'Gather shared materials and make the requested outputs, preparing necessary tools first.', children: {
       [step.action]: { description: `Resolve the next ${step.action} dependency for ${step.item || step.drops}.`, children: actions },
     } },
-  }, { acquisition: { ...acquisition, dependencies: plan.map(s => ({ action: s.action, item: s.item || s.drops, count: s.count, tool: s.tool })) } });
+  }, { acquisition: { ...acquisition, dependencies: plan.map(s => ({ action: s.action, item: s.item || s.drops, count: s.count, tool: s.tool })) } }, 'resource_source');
   return false;
 }
 
@@ -2295,7 +2282,7 @@ async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acqu
     timeOfDay: bot.time?.timeOfDay, daylightTicksRemaining: Math.max(0, DAY.DUSK - (bot.time?.timeOfDay || 0)),
     health: bot.health, food: bot.food, foodReserve: foodSupply(bot), inventory: planningInventory(bot),
     retainedRequest: goal.retainedRequest || null, home: goal.survival?.home ? `A home base with a plot, a pen${goal.survival.home.stash?.position ? ', a bed and a stash chest' : ' and a bed'} stands at ${goal.survival.home.origin.x}, ${goal.survival.home.origin.z}.` : goal.blueprint ? 'A house is built nearby.' : 'No house yet.' };
-  await decideAction(bot, task, goal, save, client, onStep, tree, state);
+  await decideAction(bot, task, goal, save, client, onStep, tree, state, 'idle_work');
   return true;
 }
 
@@ -2397,7 +2384,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   const step = goal.step;
   try {
     if (!client || options.length === 1) await tree[options[0]].run();
-    else await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `Standing still for ${Math.round(ms / 1000)} seconds on ${reason.replace(/^\w+:/, '').replaceAll('_', ' ')}. Choose something useful to do from here for a few minutes; the stalled work gets its turn again afterwards.` });
+    else await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `Standing still for ${Math.round(ms / 1000)} seconds on ${reason.replace(/^\w+:/, '').replaceAll('_', ' ')}. Choose something useful to do from here for a few minutes; the stalled work gets its turn again afterwards.` }, 'stillness_detour');
   } finally { goal.step = step; markActivity(bot, 'detour'); save(); }
   return true;
 }

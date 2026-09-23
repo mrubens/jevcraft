@@ -1,5 +1,5 @@
 'use strict';
-const { choice } = require('./typesafe');
+const { choice } = require('../typesafe');
 
 // The caller constructs only executable leaves. Each sibling choice has an
 // explicit conditional premise; questions in the batch never read each other.

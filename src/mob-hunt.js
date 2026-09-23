@@ -11,7 +11,7 @@ const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
 const { checkAir } = require('./vitals');
 const { surveyRoute, countOf } = require('./skills');
 const { collectNearbyDrops } = require('./drop-collection');
-const { decideTree, announceFallback, firstOption } = require('./decisions');
+const { decide } = require('./decisions');
 const { descendTo } = require('./descent');
 const { setAside, isSetAside, watch, unwatch } = require('./progress');
 const { bridgeTo } = require('./bridging');
@@ -345,9 +345,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   } };
   const snapshot = { request: goal.request, resource: state.item, need: state.targetCount - countOf(bot, state.item), health: bot.health, food: bot.food, dimension: dimension(bot) };
   let decision;
-  if (client) {
-    const controller = new AbortController();
-    const watcher = setInterval(() => { if (task.cancelled || !canBegin(bot, handler)) controller.abort(new Error('Combat decision interrupted')); }, 100);
+  {
     // Fresh means the fight is still the one Jev was shown. Health equal to
     // the snapshot was the test, and a bot on fire loses health every second:
     // alight in a fortress, every answer came back stale and the bot stood
@@ -356,17 +354,12 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     // With Jev unreachable the nearest candidate is fought: it passed the
     // same checks, and standing in a blaze's sight waiting for an answer is
     // the worse choice.
-    try { decision = await decideTree(client, { state: snapshot, tree, signal: controller.signal, kind: 'combat', fallback: firstOption,
+    const interrupt = () => { if (!canBegin(bot, handler)) throw Object.assign(new Error('Combat decision interrupted'), { name: 'CombatInterrupted' }); };
+    try { decision = await decide('hunt_target', { client, bot, task, goal, save, tree, state: snapshot, interrupt,
       isFresh: () => canBegin(bot, handler) && bot.health >= snapshot.health - 4 && candidates.every(e => !positions.has(e.id) ||
         valid(bot, e) && e.position.distanceTo(positions.get(e.id)) < 2 && isolated(bot, e, handler)) }); }
-    catch (err) { task.check(); if (controller.signal.aborted) return false; throw err; }
-    finally { clearInterval(watcher); }
-  } else decision = { path: [Object.keys(tree)[0]], action: Object.values(tree)[0] };
-  task.check(); checkAir(bot);
-  if (client && !decision.stale) announceFallback(bot, goal, decision);
-  goal.decisions ||= []; goal.decisions.push({ at: new Date().toISOString(), state: snapshot, path: decision.path,
-    options: JSON.parse(JSON.stringify(tree)), latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, stale: decision.stale, fallback: decision.fallback });
-  goal.decisions = goal.decisions.slice(-40); save();
+    catch (err) { task.check(); if (err.name === 'CombatInterrupted') return false; throw err; }
+  }
   if (decision.stale) return false;
   await decision.action.run();
   return decision.path[0] !== 'defer';

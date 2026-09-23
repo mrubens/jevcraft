@@ -1,6 +1,6 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
-const { endDecisionState } = require('../src/end-decisions');
+const { endDecisionState } = require('../src/decisions/end-state');
 test('combat facts distinguish actual healing, arrow immunity and unresolved crystal evidence', () => {
   const context = { request: 'Win', health: 20, food: 20, arrows: 64, position: { x: 0, y: 64, z: 0 }, safe: true,
     dragon: { phase: 0, health: 175.5 }, crystals: [], combat: { noProgress: 4, shots: [], knownCrystals: {

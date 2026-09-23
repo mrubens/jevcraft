@@ -745,7 +745,9 @@ test('at night with a bed and full kit the choices are sleep, shelter, or stay u
     blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
   const bot = make([{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }]);
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client });
-  survival.decide = async (task, goal, save, { tree, fallback }) => { seen.push(Object.keys(tree).sort()); const key = fallback(tree); return { path: [key], action: tree[key], stale: false }; };
+  // The fallback is the question's own, from its definition.
+  const { question } = require('../src/decisions');
+  survival.decide = async (task, goal, save, { id, tree }) => { seen.push(Object.keys(tree).sort()); const key = question(id).fallback(tree, []); return { path: [key], action: tree[key], stale: false }; };
   survival.sleepStep = async () => { seen.push('slept'); };
   await survival.step(new Task('test', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
   assert.deepEqual(seen, [['continue_request', 'sleep_in_bed'], 'slept'], 'with a bed at hand, shelter is not on the list');
