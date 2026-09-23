@@ -861,7 +861,7 @@ async function craft(bot, task, step, goal) {
   // with the pockets full the crafted item had nowhere to go, and the craft
   // drill made one pickaxe in 150 seconds against eight in nine (the day
   // audit's sixteen "timed out waiting for world/inventory update").
-  if (!roomFor(bot, step.item)) await makeRoom(bot, task, step.item, { keep: new Set(Object.keys(step.consumes || {})) });
+  if (!roomFor(bot, step.item)) await makeRoom(bot, task, step.item, { keep: new Set(Object.keys(step.consumes || {})), away: table?.position });
   const before = countOf(bot, step.item);
   task.check();
   // Reconcile the cursor/grid between recipes while keeping a shared batch at
@@ -969,7 +969,8 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     save();
   }
   // The same for the furnace's output, before the window opens.
-  if (!roomFor(bot, step.item)) await makeRoom(bot, task, step.item, { keep: new Set([step.from, plannedFuel]) });
+  const keepForSmelt = new Set([step.from, plannedFuel]);
+  if (!roomFor(bot, step.item)) await makeRoom(bot, task, step.item, { keep: keepForSmelt, away: block.position });
   let furnace = await bot.openFurnace(block);
   // While a container is open Mineflayer updates that window's player slots;
   // bot.inventory can still contain the pre-transfer counts until it closes.
@@ -977,10 +978,27 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     ? furnace.slots.slice(furnace.inventoryStart, furnace.inventoryEnd).filter(i => i?.name === name).reduce((n, i) => n + i.count, 0)
     : countOf(bot, name);
   let taken = 0, supplies, emptyBatch = false;
+  // Room is checked again at the moment of taking: the slot made before the
+  // window opened was filled by dirt from the furnace's own footing, then by
+  // ore dug while waiting, and the ingots sat in the furnace until the wait
+  // timed out ("have 0 of 4, 0 free slots", three times in a day audit).
+  const free = () => Array.isArray(furnace.slots) && Number.isInteger(furnace.inventoryStart)
+    ? furnace.slots.slice(furnace.inventoryStart, furnace.inventoryEnd).filter(i => !i).length
+    : (bot.inventory.emptySlotCount?.() ?? 1);
+  const roomInWindow = () => free() > 0 || (Array.isArray(furnace.slots) && Number.isInteger(furnace.inventoryStart) &&
+    furnace.slots.slice(furnace.inventoryStart, furnace.inventoryEnd).some(i => i?.name === step.item && i.count < (i.stackSize || 64)));
   const collect = async () => {
     const output = furnace.outputItem();
     if (!output) return;
     if (output.name !== step.item) throw new Error('Furnace contains a different output');
+    if (!roomInWindow()) {
+      try { if (bot._syncWindow) await bot._syncWindow(furnace); } catch (_) { /* best effort */ }
+      furnace.close();
+      try { if (bot._syncWindow) await bot._syncWindow(bot.inventory); } catch (_) { /* best effort */ }
+      await makeRoom(bot, task, step.item, { keep: keepForSmelt, away: block.position });
+      furnace = await bot.openFurnace(block);
+      if (!furnace.outputItem()) return;
+    }
     const amount = output.count;
     await furnace.takeOutput();
     taken += amount;
@@ -1029,7 +1047,8 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         if (Date.now() > deadline) throw new Error(`Smelting ${step.item} timed out`);
         await collect();
         if (taken < needed) await fuel();
-        const ore = taken < needed && waitDigs < 6 && Date.now() < deadline - 15000 && (needed - taken) >= 2 && oreInReach();
+        // Only with a slot to spare: the dug ore takes one, the ingots another.
+        const ore = taken < needed && waitDigs < 6 && Date.now() < deadline - 15000 && (needed - taken) >= 2 && free() >= 2 && oreInReach();
         if (ore) {
           waitDigs++;
           furnace.close();

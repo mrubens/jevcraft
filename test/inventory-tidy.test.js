@@ -70,7 +70,7 @@ test('with every stack under its cap, room for food is made from the cheapest st
   const stacks = [{ name: 'cobblestone', count: 64 }, { name: 'cobblestone', count: 62 }, { name: 'coal', count: 64 }, { name: 'netherrack', count: 3 },
     { name: 'netherrack', count: 64 }, { name: 'raw_iron', count: 12 }, { name: 'diamond_sword', count: 1 }];
   let free = 0; const tossed = [];
-  const b = { registry, inventory: { items: () => stacks, emptySlotCount: () => free, slots: {} },
+  const b = { registry, game: { dimension: 'the_nether' }, inventory: { items: () => stacks, emptySlotCount: () => free, slots: {} },
     toss: async () => { throw new Error('whole stacks only'); },
     tossStack: async item => { tossed.push(`${item.count} ${item.name}`); stacks.splice(stacks.indexOf(item), 1); free++; } };
   assert.equal(await makeRoom(b, null, 'mutton'), true);
@@ -89,4 +89,26 @@ test('junk goes before a spare tool when room is made', async () => {
     tossStack: async item => { tossed.push(item.name); stacks.splice(stacks.indexOf(item), 1); free++; } };
   assert.equal(await makeRoom(b, null, 'raw_iron'), true);
   assert.deepEqual(tossed, ['nether_brick_fence']);
+});
+
+test('golden boots are the Nether gold, not spare boots, even with iron boots worn', async () => {
+  const { spares } = require('../src/inventory-tidy');
+  const stacks = [{ name: 'golden_boots', count: 1 }, { name: 'leather_boots', count: 1 }];
+  const b = { registry, inventory: { items: () => stacks, emptySlotCount: () => 0, slots: { 8: { name: 'iron_boots' } } } };
+  assert.deepEqual(spares(b).map(i => i.name), ['leather_boots']);
+});
+
+test('the second day audit pockets: nether wart, an egg and Overworld netherrack make room before cobblestone or ore', async () => {
+  const { makeRoom } = require('../src/inventory-tidy');
+  const stacks = [{ name: 'cobblestone', count: 64 }, { name: 'raw_iron', count: 64 }, { name: 'raw_iron', count: 3 }, { name: 'nether_wart', count: 64 },
+    { name: 'lapis_lazuli', count: 64 }, { name: 'coal', count: 63 }, { name: 'netherrack', count: 51 }, { name: 'wheat_seeds', count: 32 }, { name: 'egg', count: 1 }];
+  let free = 0; const tossed = [];
+  const b = { registry, game: { dimension: 'overworld' }, inventory: { items: () => stacks, emptySlotCount: () => free, slots: {} },
+    tossStack: async item => { tossed.push(item.name); stacks.splice(stacks.indexOf(item), 1); free++; } };
+  for (let i = 0; i < 3; i++) { free = 0; assert.equal(await makeRoom(b, null, 'gold_ingot'), true); }
+  assert.deepEqual(tossed, ['nether_wart', 'egg', 'netherrack']);
+  b.game.dimension = 'the_nether';
+  stacks.push({ name: 'netherrack', count: 40 });
+  free = 0; await makeRoom(b, null, 'gold_ingot');
+  assert.notEqual(tossed.at(-1), 'netherrack', 'in the Nether a stack of netherrack is kept for bridging');
 });

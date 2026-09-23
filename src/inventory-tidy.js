@@ -26,8 +26,13 @@ const tier = name => TIERS.findIndex(t => name.startsWith(`${t}_`));
 const TOOL = /_(sword|pickaxe|axe|shovel|hoe)$/, ARMOUR = /_(helmet|chestplate|leggings|boots)$/;
 const SINGLES = new Set(['flint_and_steel', 'shears', 'fishing_rod', 'shield', 'bow', 'crossbow']);
 const WORN = { helmet: 5, chestplate: 6, leggings: 7, boots: 8 };
+// One pair of golden boots is not a spare: they are the Nether's piglin
+// gold, carried beside the iron. Counted as boots no better than the iron
+// ones worn, the pair was crafted and tossed twice in one day audit, and
+// the golden-boots rung ran out its time mining gold for a third.
 function spares(bot, keep = new Set()) {
-  const items = bot.inventory.items().filter(i => !keep.has(i.name));
+  const gold = bot.inventory.items().find(i => i.name === 'golden_boots');
+  const items = bot.inventory.items().filter(i => !keep.has(i.name) && i !== gold);
   const out = [];
   const byKind = {};
   for (const item of items) {
@@ -68,16 +73,23 @@ function crowded(bot) {
 
 // Drop what is over the cap, biggest surplus first, until the pockets have
 // room again. Returns what was dropped so the caller can say so once.
+// A stack dropped at the feet is picked straight back up. Throw it behind,
+// away from where the work is heading (or behind the way the bot faces),
+// upward so it carries, and out of reach: the day audit's cobblestone went
+// 189, 64, 125 at one crafting table, and 128, 64, 128 at a furnace.
+async function faceAway(bot, away) {
+  if (typeof bot.lookAt !== 'function' || !bot.entity?.position) return;
+  const here = bot.entity.position;
+  let d;
+  if (away && Number.isFinite(away.x)) d = { x: here.x - away.x, z: here.z - away.z };
+  else { const yaw = bot.entity.yaw || 0; d = { x: Math.sin(yaw), z: Math.cos(yaw) }; }
+  const norm = Math.hypot(d.x, d.z) || 1;
+  try { await bot.lookAt(here.offset(d.x / norm * 4, 2.2, d.z / norm * 4), true); } catch (_) {}
+}
+
 async function tidyInventory(bot, task, { force = false, away = null, keep } = {}) {
   if (!force && !crowded(bot)) return [];
-  // A stack dropped at the feet is picked straight back up. Throw it behind,
-  // away from where the work is heading, so it lands out of reach.
-  if (away && typeof bot.lookAt === 'function') {
-    const here = bot.entity.position;
-    const d = { x: here.x - away.x, z: here.z - away.z };
-    const norm = Math.hypot(d.x, d.z) || 1;
-    try { await bot.lookAt(here.offset(d.x / norm * 4, 2.2, d.z / norm * 4), true); } catch (_) {}
-  }
+  await faceAway(bot, away);
   const dropped = [];
   for (const { name, count } of surplus(bot, keep).sort((a, b) => b.count - a.count)) {
     task?.check?.();
@@ -101,17 +113,29 @@ async function tidyInventory(bot, task, { force = false, away = null, keep } = {
 // netherrack, all under their caps, the tidy found nothing to drop and four
 // hundred hunts in a row were refused for want of one slot. Stacks go in
 // this order, the smallest first, down to the floor each keeps.
+//
+// The second day audit smelted with thirty-four kinds in thirty-six slots
+// and nothing on this list to drop: a stack of nether wart (the run does
+// not brew), an egg, a stack of seeds under its floor, fifty-one netherrack
+// under its floor in the Overworld. Netherrack is kept in the Nether, where
+// it is the bridge and the pillar; elsewhere cobblestone does that job. The
+// seeds go last, whole, when nothing else is left.
+const nether = bot => /nether/.test(String(bot.game?.dimension || ''));
 const EXPENDABLE = [
   ['dirt', 0], ['gravel', 0], [/_sapling$/, 0], ['nether_brick_fence', 0], ['leaf_litter', 0], ['short_grass', 0],
-  ['netherrack', 32], ['cobbled_deepslate', 0], ['cobblestone', 64], ['soul_sand', 0], ['nether_bricks', 0], ['wheat_seeds', 8],
+  ['nether_wart', 0], ['egg', 0], ['poisonous_potato', 0], ['spider_eye', 0],
+  ['netherrack', bot => nether(bot) ? 32 : 0], ['cobbled_deepslate', 0], ['cobblestone', 64], ['soul_sand', 0], ['nether_bricks', 0],
+  ['wheat_seeds', 8], ['raw_copper', 0], ['copper_ingot', 0], ['rotten_flesh', 0], ['wheat_seeds', 0],
 ];
 async function makeRoom(bot, task, name, { keep = new Set(), away = null } = {}) {
   if (roomFor(bot, name)) return true;
+  await faceAway(bot, away);
   // Junk before tools: with forty-six nether brick fences in the pockets the
   // tidy threw out the stone pickaxe first, and the ladder, counting the
   // worn diamond pickaxes as spent, made another and threw it out again.
-  for (const [match, floor] of EXPENDABLE) {
+  for (const [match, floorOf] of EXPENDABLE) {
     if (roomFor(bot, name)) return true;
+    const floor = typeof floorOf === 'function' ? floorOf(bot) : floorOf;
     const test = typeof match === 'string' ? n => n === match : n => match.test(n);
     const stacks = bot.inventory.items().filter(i => test(i.name) && i.name !== name && !keep.has(i.name)).sort((a, b) => a.count - b.count);
     let total = stacks.reduce((n, i) => n + i.count, 0);
@@ -126,4 +150,4 @@ async function makeRoom(bot, task, name, { keep = new Set(), away = null } = {})
   return roomFor(bot, name);
 }
 
-module.exports = { makeRoom, tidyInventory, surplus, spares, roomFor, crowded, SURPLUS, FREE_SLOTS };
+module.exports = { makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, SURPLUS, FREE_SLOTS };

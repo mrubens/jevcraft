@@ -210,3 +210,39 @@ test('a new batch is only as large as the raw input carried: four planned with o
   assert.equal(ingots, 1);
   assert.equal(goal.smelting, undefined, 'no batch left waiting in the furnace');
 });
+
+test('pockets filled while the batch cooks are cleared before the output is taken, junk thrown away from the furnace', { timeout: 3000 }, async () => {
+  // Thirty-six slots: raw gold, coal, and thirty-four of junk and keepers,
+  // the dirt from the furnace's footing among them.
+  // One slot free when the window opens; dirt fills it while the batch cooks.
+  const pockets = [{ name: 'raw_gold', count: 5 }, { name: 'coal', count: 8 },
+    ...Array.from({ length: 33 }, (_, i) => ({ name: `keeper_${i}`, count: 1 }))];
+  let loaded = 0, ingots = 0, opens = 0, looked = null;
+  const window = () => ({
+    // The window's player slots follow the pockets live, as Mineflayer's do.
+    get slots() { return [null, null, null, ...pockets.map(p => ({ ...p, stackSize: 64 })), ...Array(Math.max(0, 36 - pockets.length)).fill(null)]; },
+    inventoryStart: 3, inventoryEnd: 39,
+    outputItem: () => loaded ? { name: 'gold_ingot', count: loaded } : null,
+    takeOutput: async () => { assert(pockets.length < 36, 'a slot for the ingots when they are taken'); ingots += loaded; loaded = 0; pockets.push({ name: 'gold_ingot', count: ingots }); },
+    inputItem: () => null, fuelItem: () => ({ name: 'coal', count: 1 }), fuel: .5,
+    putInput: async (type, meta, count) => { pockets[0].count -= count; loaded += count; pockets.push({ name: 'dirt', count: 3 }); },
+    putFuel: async () => {}, close: () => {},
+  });
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0), yaw: 0 },
+    inventory: { items: () => pockets, emptySlotCount: () => 36 - pockets.length },
+    registry: { blocksByName: { furnace: { id: 1 } }, itemsByName: { raw_gold: { id: 5 }, coal: { id: 6 }, gold_ingot: { id: 7, stackSize: 64 } } },
+    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: p => ({ name: 'furnace', position: p }),
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+    pathfinder: { movements: {}, goto: async () => {}, setGoal: () => {} },
+    lookAt: async p => { looked = p; },
+    tossStack: async item => { pockets.splice(pockets.indexOf(item), 1); },
+    openFurnace: async () => { opens++; return window(); },
+  };
+  await smelt(bot, new Task('smelt', 'test'), { item: 'gold_ingot', from: 'raw_gold', count: 4, fuelItem: 'coal' }, {});
+  assert.equal(ingots, 4);
+  assert(!pockets.some(p => p.name === 'dirt'), 'the dirt made the room');
+  assert(pockets.some(p => p.name === 'keeper_0') && pockets.some(p => p.name === 'coal'), 'nothing else was dropped');
+  assert(opens >= 2, 'the window was closed to make room and opened again');
+  assert(looked && looked.x < 0, 'thrown away from the furnace, which is at +x');
+});
