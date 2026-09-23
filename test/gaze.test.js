@@ -29,3 +29,15 @@ test('the gaze is left alone otherwise', () => {
   assert.equal(lowerGaze(dodge), true, 'a dodge pressing the keys itself walks eyes down too');
   assert.equal(lowerGaze(scene({ pitch: 0.6 })), false, 'a deliberate look up at a crystal');
 });
+
+test('a goal missing the methods the pathfinder calls every tick is made whole, a bare position becomes a block goal', () => {
+  const { wholeGoal } = require('../src/skills');
+  const log = console.log; const lines = []; console.log = l => lines.push(l);
+  try {
+    const bare = wholeGoal({ x: 3.4, y: 64, z: -2.2 });
+    assert.equal(typeof bare.isValid, 'function'); assert.deepEqual([bare.x, bare.y, bare.z], [3, 64, -3]);
+    const partial = wholeGoal({ isEnd: () => true, heuristic: () => 0 });
+    assert.equal(partial.isValid(), true); assert.equal(partial.hasChanged(), false);
+    assert.match(lines[0], /\[bug\] the pathfinder was given an incomplete goal/);
+  } finally { console.log = log; }
+});

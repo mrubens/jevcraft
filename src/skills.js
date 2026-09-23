@@ -256,6 +256,20 @@ async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs 
 // walks: sprinting into a fight spoils the swing, and along a ledge it is
 // a longer fall.
 const SPRINT_FOOD = 14;
+// The pathfinder calls isValid and hasChanged on its goal every tick, and a
+// goal without them threw inside the physics tick and took the process down
+// (the dream run, 2026-09-23 02:06, "stateGoal.isValid is not a function").
+// A goal is made whole where it is handed to the pathfinder (session.js
+// wraps setGoal) and the caller named, so the next one is found.
+function wholeGoal(goal) {
+  if (!goal || (typeof goal.isValid === 'function' && typeof goal.hasChanged === 'function' && typeof goal.isEnd === 'function')) return goal;
+  console.log(`[bug] the pathfinder was given an incomplete goal ${JSON.stringify(goal).slice(0, 160)}\n${new Error().stack.split('\n').slice(2, 7).join('\n')}`);
+  if (typeof goal.isEnd !== 'function' && [goal.x, goal.y, goal.z].every(Number.isFinite)) return new (require('mineflayer-pathfinder').goals.GoalBlock)(Math.floor(goal.x), Math.floor(goal.y), Math.floor(goal.z));
+  if (typeof goal.isValid !== 'function') goal.isValid = () => true;
+  if (typeof goal.hasChanged !== 'function') goal.hasChanged = () => false;
+  return goal;
+}
+
 async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false } = {}) {
   task.check();
   if (require('./flight').canFly(bot)) return require('./flight').flyNavigate(bot, task, goal, { timeoutMs, stallMs, stopWhen });
@@ -410,7 +424,7 @@ async function equipBestTool(bot, block) {
   }
 }
 
-module.exports = { pickaxeDurability,
+module.exports = { wholeGoal, pickaxeDurability,
   Task,
   Cancelled,
   navigate,

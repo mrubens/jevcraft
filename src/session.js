@@ -61,6 +61,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   });
   bot.loadPlugin(compatibilityPlugin);
   bot.loadPlugin(pathfinder);
+  // Every goal the pathfinder is given, by any route (goto calls setGoal),
+  // is made whole first: one without isValid crashed the process twice.
+  const setGoal = bot.pathfinder?.setGoal;
+  if (setGoal) bot.pathfinder.setGoal = (goal, dynamic) => setGoal.call(bot.pathfinder, require('./skills').wholeGoal(goal), dynamic);
   bot.loadPlugin(require('./gaze').gazePlugin);
   // Mineflayer injects its own chat plugin after createBot, which would
   // overwrite a wrapper installed now; the filter goes on once chat exists.
