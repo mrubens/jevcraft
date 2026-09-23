@@ -7,7 +7,39 @@ const Move = require('mineflayer-pathfinder/lib/move');
 const { damagingTerrain, swimmingBlocks, swimmableWater } = require('./terrain');
 const { isDoor, doorAt, doorAllowsDirection } = require('./doors');
 
+// Parkour, where a miss costs nothing: with it off, the only way across a
+// crack in the ground was a block laid in it, and the bot built little
+// bridges over every one. The pathfinder's own jumps are kept (level, up a
+// block, down a block; two-block gaps only while sprinting) when every
+// column jumped over is survivable: ground or water within five blocks
+// down and nothing that burns. A deep crevice or lava is bridged or walked
+// round as before.
+const GAP_FALL_MAX = 5, GAP_MAX = 2;
+const BURNS = /lava|fire|magma_block|campfire/;
+function gapSurvivable(movements, node, dir, k = 1) {
+  for (let dy = -1; dy >= -(GAP_FALL_MAX + 1); dy--) {
+    const b = movements.getBlock(node, dir.x * k, dy, dir.z * k);
+    if (!b) return false;
+    if (BURNS.test(b.name || '')) return false;
+    if (b.liquid) return /water/.test(b.name || '');
+    if (b.physical) return true;
+  }
+  return false;
+}
+
 class SurvivalMovements extends Movements {
+  getMoveParkourForward(node, dir, neighbors) {
+    if (!this.allowGapJumps) return;
+    const found = [];
+    super.getMoveParkourForward(node, dir, found);
+    for (const move of found) {
+      const d = Math.abs(move.x - node.x) + Math.abs(move.z - node.z);
+      if (d - 1 > GAP_MAX || Math.abs(move.y - node.y) > 1) continue;
+      let safe = true;
+      for (let k = 1; k < d && safe; k++) safe = gapSurvivable(this, node, dir, k);
+      if (safe) neighbors.push(move);
+    }
+  }
   getMoveForward(node, direction, neighbors) {
     const target = new Vec3(node.x + direction.x, node.y, node.z + direction.z);
     const here = this.getBlock(node, 0, 0, 0), there = this.getBlock(node, direction.x, 0, direction.z);
@@ -137,13 +169,15 @@ function configureMovements(bot) {
   }
   movement.canDig = true;
   movement.allow1by1towers = true;
-  movement.allowParkour = false;
+  // Parkour on, filtered to the one-block level jump (getMoveParkourForward).
+  movement.allowParkour = true;
+  movement.allowGapJumps = true;
   movement.allowSprinting = false;
   movement.maxDropDown = 3;
   // The defaults, kept for the main loop to restore each tick: a policy a
   // step applies and never restores on an error path otherwise cripples
   // every later path search with someone else's restrictions.
-  bot._movementDefaults = { canDig: true, allow1by1towers: true, allowParkour: false, allowSprinting: false, maxDropDown: 3,
+  bot._movementDefaults = { canDig: true, allow1by1towers: true, allowParkour: true, allowSprinting: false, maxDropDown: 3,
     scafoldingBlocks: [...movement.scafoldingBlocks], allowedPosition: undefined };
   // Pathfinder otherwise treats water as a safe landing at ANY depth,
   // even when a cliff has ledges between the bot and that water.
@@ -176,4 +210,4 @@ function updateDigCapabilities(bot) {
     else movement.blocksCantBreak.add(block.id);
   }
 }
-module.exports = { configureMovements, updateDigCapabilities, installToolPolicy };
+module.exports = { configureMovements, updateDigCapabilities, installToolPolicy, SurvivalMovements, gapSurvivable };

@@ -124,3 +124,38 @@ test('aquatic plants support swimming, surface entry and shore exits without bui
     assert.equal(landing?.position.y, 69, `${name} surface entry`);
   }
 });
+
+// Stone ground at y 69 with a gap along x from 1 to `width`, floored `depth`
+// blocks below the feet with `floor`.
+function gapWorld({ width = 1, depth = 3, floor = 'stone' } = {}) {
+  return (p, dx, dy, dz) => {
+    const x = p.x + dx, y = p.y + dy, z = p.z + dz;
+    const gap = x >= 1 && x <= width;
+    let name = 'air';
+    if (gap) { if (y === 70 - depth) name = floor; else if (y < 70 - depth) name = 'stone'; }
+    else if (y <= 69) name = 'stone';
+    const physical = !['air', 'lava', 'water'].includes(name);
+    return { position: new Vec3(x, y, z), name, physical, safe: name === 'air', liquid: name === 'lava' || name === 'water', height: physical ? y + 1 : y, climbable: false };
+  };
+}
+const jumps = (movement, world) => {
+  movement.getBlock = world;
+  const neighbors = [];
+  movement.getMoveParkourForward({ x: 0, y: 70, z: 0, remainingBlocks: 0 }, new Vec3(1, 0, 0), neighbors);
+  return neighbors.map(n => [n.x, n.y, n.z]);
+};
+
+test('a gap a miss survives is jumped instead of bridged; lava, a deep crevice and a wide gap are not', () => {
+  const movement = configureMovements(botFixture());
+  assert.equal(movement.allowParkour, true);
+  assert.deepEqual(jumps(movement, gapWorld()), [[2, 70, 0]], 'a one-block crack three deep: jumped');
+  assert.deepEqual(jumps(movement, gapWorld({ depth: 3, floor: 'lava' })), [], 'never over lava');
+  assert.deepEqual(jumps(movement, gapWorld({ depth: 20 })), [], 'a crevice twenty deep is bridged or walked round');
+  assert.deepEqual(jumps(movement, gapWorld({ depth: 4, floor: 'water' })), [[2, 70, 0]], 'water under the gap is a soft landing');
+  assert.deepEqual(jumps(movement, gapWorld({ width: 2 })), [], 'two blocks wide needs a sprint');
+  movement.allowSprinting = true;
+  assert.deepEqual(jumps(movement, gapWorld({ width: 2 })), [[3, 70, 0]], 'sprinting, a two-block gap a miss survives is jumped');
+  assert.deepEqual(jumps(movement, gapWorld({ width: 3 })), [], 'three is too far to risk');
+  movement.allowGapJumps = false;
+  assert.deepEqual(jumps(movement, gapWorld()), []);
+});
