@@ -51,3 +51,10 @@ test('the goal guard wraps the pathfinder it is injected after', () => {
   try { bot.pathfinder.setGoal({ x: 1, y: 2, z: 3 }); } finally { console.log = log; }
   assert.equal(typeof set.isValid, 'function');
 });
+
+test('something that is not a destination at all is refused, not set', () => {
+  const { wholeGoal } = require('../src/skills');
+  const log = console.log; console.log = () => {};
+  try { assert.throws(() => wholeGoal({ label: 'walk_to_drop', keys: ['forward'] }), /Not a pathfinder goal/); }
+  finally { console.log = log; }
+});

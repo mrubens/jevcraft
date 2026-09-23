@@ -265,6 +265,9 @@ function wholeGoal(goal) {
   if (!goal || (typeof goal.isValid === 'function' && typeof goal.hasChanged === 'function' && typeof goal.isEnd === 'function')) return goal;
   console.log(`[bug] the pathfinder was given an incomplete goal ${JSON.stringify(goal).slice(0, 160)}\n${new Error().stack.split('\n').slice(2, 7).join('\n')}`);
   if (typeof goal.isEnd !== 'function' && [goal.x, goal.y, goal.z].every(Number.isFinite)) return new (require('mineflayer-pathfinder').goals.GoalBlock)(Math.floor(goal.x), Math.floor(goal.y), Math.floor(goal.z));
+  // Not a destination at all (a motion spec was one): refused, so the walk
+  // fails as an ordinary error instead of crashing the next physics tick.
+  if (typeof goal.isEnd !== 'function' || typeof goal.heuristic !== 'function') throw new Error('Not a pathfinder goal');
   if (typeof goal.isValid !== 'function') goal.isValid = () => true;
   if (typeof goal.hasChanged !== 'function') goal.hasChanged = () => false;
   return goal;

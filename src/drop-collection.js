@@ -1,5 +1,9 @@
 'use strict';
-const { move } = require('./motion');
+// The key-press helper, by its module: collectNearbyDrops takes a `move`
+// option (the pathfinder's navigate) that shadowed it, and the straight walk
+// at a drop handed a motion spec to the pathfinder as its goal, which
+// crashed the process (2026-09-23, four times).
+const motion = require('./motion');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { navigate, surveyRoute, countOf } = require('./skills');
@@ -131,7 +135,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         // player cannot walk off an edge, so the walk is slower and longer.
         const up = drop.position.y > bot.entity.position.y + 0.6;
         try {
-          await move(bot, task, { label: 'walk_to_drop', keys: up ? ['forward', 'jump'] : ['forward'], sneak: !up,
+          await motion.move(bot, task, { label: 'walk_to_drop', keys: up ? ['forward', 'jump'] : ['forward'], sneak: !up,
             why: up ? 'jumping up to a drop above: a step up, not over an edge' : undefined,
             look: drop.position.offset(0, 0.2, 0), maxMs: up ? 900 : 2500, tick: 50, until: gained });
         } catch (_) { task.check(); }
