@@ -92,7 +92,7 @@ async function nextDreamRequest(client, standing, { structures = [], shelf = [],
   // village rather than taken off the shelf: the shelf still says which
   // parts a village can have, not what they look like.
   if (designer) {
-    return { kind: 'build', request: `build for the village: ${VILLAGE_PARTS[chosen.part].description}`, dream: 'build_a_village', villagePart: chosen.part,
+    return { kind: 'build', request: `build ${VILLAGE_PARTS[chosen.part].description.replace(/^A /, 'a ').replace(/\.$/, '')}`, dream: 'build_a_village', villagePart: chosen.part,
       villageScore: chosen.score, villageJudgments: chosen.judgments, usage: chosen.usage, from: standing.setBy, ...placement };
   }
   // Then which design from the shelf: a second Jev choice, over real

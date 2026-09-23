@@ -349,6 +349,8 @@ async function nudgeClear(bot, task, p) {
     until: () => !hitboxIntrudes(bot, p) });
 }
 
+// Mineflayer yaw for looking toward each horizontal facing (0 is north, -z).
+const PLACEMENT_YAW = { north: 0, west: Math.PI / 2, south: Math.PI, east: -Math.PI / 2 };
 async function place(bot, task, p, material, { face, properties } = {}) {
   task.check();
   const cell = { ...p, material, properties };
@@ -379,7 +381,22 @@ async function place(bot, task, p, material, { face, properties } = {}) {
     const sneak = interactableBlocks.has(ref.name) && !wasSneaking;
     try {
       if (sneak) { bot.setControlState('sneak', true); await bot.waitForTicks(1); task.check(); }
-      if (face?.to) await bot._placeBlockWithOptions(ref, f.scaled(-1), { delta: face.to.minus(ref.position), swingArm: 'right' });
+      // A stair or door takes its facing from the way the player looks, and
+      // looking at the click point from a diagonal rounded a west stair to
+      // south: the build then waited on a block that could never match. Face
+      // the wanted direction exactly and click without turning again.
+      const facingYaw = PLACEMENT_YAW[properties?.facing];
+      if (facingYaw !== undefined) {
+        const target = face?.to || ref.position.offset(0.5, 0.5, 0.5), eyes = bot.entity.position.offset(0, 1.62, 0);
+        await bot.look(facingYaw, Math.atan2(target.y - eyes.y, Math.hypot(target.x - eyes.x, target.z - eyes.z)), true);
+        // The turn reaches the server with the next movement packet, but the
+        // click goes at once: a stair placed straight after walking took the
+        // walking direction. Let the turn go out first.
+        await bot.waitForTicks(2);
+      }
+      const look = facingYaw !== undefined ? { forceLook: 'ignore' } : {};
+      if (face?.to) await bot._placeBlockWithOptions(ref, f.scaled(-1), { delta: face.to.minus(ref.position), swingArm: 'right', ...look });
+      else if (facingYaw !== undefined) await bot._placeBlockWithOptions(ref, f.scaled(-1), { swingArm: 'right', ...look });
       else await bot.placeBlock(ref, f.scaled(-1));
       await waitFor(task, () => buildCellComplete(bot, cell) ||
         (material.endsWith('_concrete_powder') && bot.blockAt(p)?.name === material.replace('_powder', '')));
