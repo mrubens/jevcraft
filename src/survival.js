@@ -392,8 +392,12 @@ class Survival {
         if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); if (!swung) await defendNearby(bot, task, goal, save); return true; }
         return this.charge(task, goal, save, nearest, false);
       } };
-    if (scaffold >= 2 && headroom) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.',
-      run: () => this.pillarFrom(task, goal, save, danger) };
+    // Already up is the stance held, not a stance that failed: read as a
+    // failure it was asked again every tick, a hundred and twenty times in
+    // three hoglin drills.
+    const up = this.state.pillar && feet.y >= this.state.pillar.y + 2 && Math.hypot(feet.x - this.state.pillar.x, feet.z - this.state.pillar.z) < 1;
+    if ((scaffold >= 2 && headroom) || up) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.',
+      run: async () => up || this.pillarFrom(task, goal, save, danger) };
     if (bot.health >= 10 && !creeperClose(danger) && nearWall(bot, centroid(danger))) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.',
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
@@ -414,7 +418,12 @@ class Survival {
     const kinds = [...new Set(danger.map(t => t.entity.name))].sort().join(',');
     const options = this.stanceOptions(task, goal, save, danger, swung);
     const held = this.state.stance;
-    let choice = held && held.kinds === kinds && Date.now() - held.at < 15000 && bot.health > held.health - 6 && options[held.choice] ? held.choice : null;
+    const holding = held && held.kinds === kinds && Date.now() - held.at < 15000 && bot.health > held.health - 6;
+    // Unsure last time: the rules keep this encounter for the hold too. Asked
+    // again every tick against blazes, each unsure answer was a third of a
+    // second standing still under fire.
+    if (holding && held.choice === 'rules') return false;
+    let choice = holding && options[held.choice] ? held.choice : null;
     if (!choice) {
       if (Object.keys(options).length < 2) return false;
       const armour = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
@@ -428,7 +437,8 @@ class Survival {
         decision = await this.decide(task, goal, save, { id: 'encounter_stance', state, tree,
           isFresh: () => Math.abs(bot.health - state.health) < 4 });
       } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
-      if (decision.stale || decision.gated || decision.fallback) return false;
+      if (decision.stale) return false;
+      if (decision.gated || decision.fallback) { this.state.stance = { choice: 'rules', kinds, at: Date.now(), health: bot.health }; return false; }
       choice = decision.path.at(-1);
       this.state.stance = { choice, kinds, at: Date.now(), health: bot.health };
     }

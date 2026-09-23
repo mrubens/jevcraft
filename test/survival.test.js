@@ -716,6 +716,9 @@ test('with encounter judgments on, Jev picks the stance once and it holds; unsur
     assert(await unsure.controller.step(unsure.task, unsure.goal, () => {}));
     assert.equal(unsure.goal.decisions.find(d => d.id === 'encounter_stance').gated.below, 'caller');
     assert.equal(unsure.goal.survivalAction.action, 'shoot', 'the rules took over: the ranged question, then the shot');
+    const stanceAsks = () => unsure.goal.decisions.filter(d => d.id === 'encounter_stance').length;
+    await unsure.controller.step(unsure.task, unsure.goal, () => {});
+    assert.equal(stanceAsks(), 1, 'unsure once, the rules keep the encounter: the stance is not asked again at the next tick');
   } finally { delete process.env.JEV_ENCOUNTERS; }
 });
 
