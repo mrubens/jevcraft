@@ -695,6 +695,9 @@ class Survival {
       // No site to walk to: the night is spent sealed in where the bot
       // stands, as the unreachable-shelter rule above intends.
       if (!site && await this.sealHere(task, goal, save, threats(bot).filter(t => t.visible))) return;
+      // No site, no blocks: straight down into rock and a block over the
+      // head, the player's way on a sand island at dusk.
+      if (!site && await this.shaftPocket(task, goal, save)) return;
       // No site and no blocks, but a pickaxe: into the ground. A staircase
       // into rock is a shelter and a mine at once. The dream run came back
       // from the Nether at dusk with one netherrack and an iron pickaxe, and
@@ -825,6 +828,60 @@ class Survival {
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
     }
     if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) { refuge.verifiedAt = new Date().toISOString(); save(); }
+    return true;
+  }
+
+  // Straight down to a pocket walled in rock, then one block over the head.
+  // The dream run came back from the Nether onto a sand island in the sea
+  // at dusk with one netherrack: no site for a shelter, no blocks to build
+  // one, and a staircase toward ore ran out under the water every time.
+  // Down the column the bot stands on, while every cell dug and every wall
+  // beside it is dry, until the two cells it stands in are walled by solid
+  // blocks (sand is not: it falls), twelve blocks at most.
+  async shaftPocket(task, goal, save) {
+    const bot = this.bot;
+    if (typeof this.actions.place !== 'function' || typeof this.actions.dig !== 'function') return false;
+    if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) return false;
+    if (isSetAside(this, 'shaft_pocket', 'here')) return false;
+    const wet = c => /water|lava/.test(bot.blockAt(c)?.name || '');
+    const sides = c => [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)].map(d => c.plus(d));
+    // The shelter's own test, but for the one cell over the head, which the
+    // shaft opens and the cap closes.
+    const walled = feet => shelter.missingShell(bot, { origin: feet }).every(p => p.equals(feet.offset(0, 2, 0)));
+    const start = bot.entity.position.floored();
+    // Look before digging: the whole column must be safe, or none of it is dug.
+    let bottom = null;
+    const first = start.offset(0, -1, 0);
+    if (!bot.blockAt(first) || wet(first) || sides(first).some(wet)) { setAside(this, 'shaft_pocket', 'here', 'water beside the first block down', 600000); return false; }
+    for (let depth = 2; depth <= 12; depth++) {
+      const feet = start.offset(0, -depth, 0);
+      const cell = feet;
+      const b = bot.blockAt(cell), under = bot.blockAt(cell.offset(0, -1, 0));
+      if (!b || !under || b.name === 'bedrock' || wet(cell) || wet(cell.offset(0, -1, 0)) || /lava|magma/.test(under.name)) break;
+      if (sides(cell).some(wet) || sides(cell.offset(0, 1, 0)).some(wet)) break;
+      if (walled(feet)) { bottom = feet; break; }
+    }
+    if (!bottom) { setAside(this, 'shaft_pocket', 'here', 'no dry rock straight down', 600000); return false; }
+    this.report(goal, save, { action: 'shaft_pocket', from: { ...start }, to: { ...bottom } });
+    for (let y = start.y - 1; y >= bottom.y; y--) {
+      task.check(); checkAir(bot);
+      const c = new Vec3(start.x, y, start.z);
+      if (bot.blockAt(c)?.boundingBox === 'block') await this.actions.dig(bot, task, c, { requireDrops: false });
+      for (let i = 0; i < 20 && bot.entity.position.y > y + 0.1; i++) { task.check(); await sleep(50); }
+    }
+    // One block over the head: whatever solid block the pockets hold now,
+    // cobblestone from the dig among them. Sand or gravel would fall on it.
+    const roof = bottom.offset(0, 2, 0);
+    const cap = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name));
+    if (!cap) { setAside(this, 'shaft_pocket', 'here', 'nothing solid to close the shaft with', 600000); return false; }
+    if (!shelter.solid(bot.blockAt(roof))) {
+      try { await this.actions.place(bot, task, roof, cap.name); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+    if (!shelter.solid(bot.blockAt(roof))) { setAside(this, 'shaft_pocket', 'here', 'the cap would not go on', 600000); return false; }
+    const refuge = { origin: { ...bottom }, dimension: bot.game.dimension, createdAt: new Date().toISOString(), emergency: true, shaft: true };
+    if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) refuge.verifiedAt = new Date().toISOString();
+    this.state.shelters.push(refuge); save();
     return true;
   }
 

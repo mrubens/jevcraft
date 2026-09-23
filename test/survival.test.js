@@ -1227,7 +1227,46 @@ test('no shelter site and no blocks, but a pickaxe: the night is dug into the gr
   const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {}, place: async () => {} }, { state: { shelters: [] } });
   let mined = 0;
   survival.nightMine = async () => { mined++; return true; };
+  survival.shaftPocket = async () => false; // no rock straight down here
   await survival.refugeStep(new Task('dusk'), { kind: 'win' }, () => {});
   assert.equal(mined, 1, 'the mine began where the bot stands');
   assert(survival.state.nightMine?.origin, 'and it is the night mine the next step continues');
+});
+
+// A sand island: sand to y 59 over sandstone and stone, the sea all round
+// above y 60 beyond the island's edge.
+function sandIsland() {
+  return p => {
+    const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+    const island = Math.abs(x) <= 3 && Math.abs(z) <= 3;
+    let name;
+    if (y >= 63) name = 'air';
+    else if (y >= 60) name = island ? 'sand' : (y === 62 || y >= 60 ? 'water' : 'sand');
+    else if (y >= 57) name = 'sandstone';
+    else name = 'stone';
+    return { position: new Vec3(x, y, z), name, boundingBox: /air|water/.test(name) ? 'empty' : 'block', diggable: true };
+  };
+}
+
+test('on a sand island at dusk with one block and a pickaxe, the bot digs straight down into rock and caps the shaft', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const dug = new Set(), placed = new Map();
+  const world = sandIsland();
+  const blockAt = p => { const k = `${p.floored()}`; if (placed.has(k)) return { position: p.floored(), name: placed.get(k), boundingBox: 'block' }; if (dug.has(k)) return { position: p.floored(), name: 'air', boundingBox: 'empty' }; return world(p); };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000 },
+    entity: { position: new Vec3(0.5, 63, 0.5), onGround: true }, health: 20, food: 20, registry,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'netherrack', count: 1 }], slots: {}, emptySlotCount: () => 5 },
+    findBlocks: () => [], blockAt, world: { raycast: () => null }, pathfinder: { movements: {}, getPathTo: () => ({ status: 'noPath', path: [] }), setGoal() {} } });
+  const actions = { navigate: async () => {},
+    dig: async (b, t, p) => { dug.add(`${p.floored()}`); bot.entity.position = new Vec3(0.5, p.y, 0.5); },
+    place: async (b, t, p, name) => { placed.set(`${p.floored()}`, name); } };
+  const survival = new Survival(bot, actions, { state: { shelters: [] } });
+  survival.nightMine = async () => assert.fail('the shaft comes first');
+  await survival.refugeStep(new Task('dusk'), { kind: 'win' }, () => {});
+  const refuge = survival.state.shelters.at(-1);
+  assert(refuge?.shaft, 'a shaft pocket was made');
+  assert(refuge.origin.y <= 57, `down into the sandstone (feet at ${refuge.origin.y})`);
+  assert.equal(placed.get(`${new Vec3(0, refuge.origin.y + 2, 0)}`), 'netherrack', 'capped with the netherrack');
+  assert(refuge.verifiedAt, 'and it counts as a sealed shelter');
 });
