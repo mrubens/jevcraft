@@ -1670,7 +1670,14 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     if (work) { goal.cleanupAccessRepairs = (goal.cleanupAccessRepairs || 0) + 1; repairedAccess = true; save(); }
     else goal.buildPhase = 'cleanup';
   }
+  // A working lot chosen before the order knew about support (or before the
+  // world changed) can hold only cells with nothing to attach to. Choose the
+  // lot again once before calling the building blocked.
+  if (!work && batch && !goal.buildBatchRechosen) {
+    delete goal.buildBatch; goal.buildBatchRechosen = true; save(); return false;
+  }
   if (!work) throw new Blocked('I cannot reach the next part of the building yet; the design and progress are saved');
+  delete goal.buildBatchRechosen;
   const p = pos(work.position);
   goal.step = { action: work.cleanup ? 'clear_schematic' : 'build_schematic', operation: work.operation,
     position: { ...p }, material: work.material, properties: work.properties, remainingBlocks: missing.length }; save(); onStep(goal);

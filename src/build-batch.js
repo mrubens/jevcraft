@@ -24,7 +24,10 @@ function planFitsInventory(registry, plan, stock, limit = 30) {
 }
 function orderBuildCells(bot, missing) {
   const sorted = missing.filter(p => !p.companion).sort((a, b) => a.y - b.y || a.x - b.x || a.z - b.z);
-  if (!sorted.some(p => p.properties) || !bot.blockAt) return sorted;
+  // Every design, not only one with trim: a heart of plain concrete sorted by
+  // x put the unsupported edge of a lobe first, and a batch shrunk to one cell
+  // by a full inventory could never place it.
+  if (!bot.blockAt) return sorted;
   const key = p => `${p.x},${p.y},${p.z}`, pending = new Map(sorted.map(p => [key(p), p])), ordered = [], planned = new Map();
   const rank = new Map(sorted.map((p, i) => [key(p), i])), ready = new Heap(), queued = new Set();
   const faces = [new Vec3(0, -1, 0), new Vec3(0, 1, 0), new Vec3(-1, 0, 0), new Vec3(1, 0, 0), new Vec3(0, 0, -1), new Vec3(0, 0, 1)];

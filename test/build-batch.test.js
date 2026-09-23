@@ -54,3 +54,16 @@ test('a long roof with supports in reverse order does not repeatedly rescan the 
   assert.equal(ordered[0].x, 5999); assert.equal(ordered.at(-1).x, 0);
   assert(reads < cells.length * 40, `${reads} world reads should scale with cells and adjacent faces`);
 });
+
+test('a plain-block shape is ordered by support too, so a one-cell batch is always placeable', () => {
+  // The bottom of a heart: a tip, then three across. Sorted by x alone the
+  // left cell came first, with nothing beside or under it yet.
+  const tip = { x: 0, y: 65, z: 0, material: 'red_concrete' };
+  const row = [-1, 0, 1].map(x => ({ x, y: 66, z: 0, material: 'red_concrete' }));
+  const bot = { registry, blockAt: p => p.equals(new Vec3(0, 65, 0)) ? { name: 'red_concrete', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' } };
+  assert.deepEqual(orderBuildCells(bot, row)[0], row[1], 'the cell on the tip goes first');
+  const stock = { dirt: 64 * 35 };
+  const plan = outputs => [{ produces: Object.fromEntries(outputs.map(o => [o.item, o.count])) }];
+  assert.deepEqual(createBuildBatch(bot, row, plan, stock).cells, [row[1]]);
+  assert.deepEqual(orderBuildCells({ ...bot, blockAt: () => ({ name: 'air', boundingBox: 'empty' }) }, [tip, ...row])[0], tip);
+});
