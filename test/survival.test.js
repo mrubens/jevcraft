@@ -1108,3 +1108,33 @@ test('with the night planned for a shelter, a bed in sight does not keep the nig
   survival.state.nightPlan = { plan: 'shelter', until: Date.now() + 60000 };
   assert.equal(survival.canNightMine({}), true, 'the plan is a shelter: mine');
 });
+
+test('in lava with no dry cell in sight the bot swims up and back toward its last dry footing, and never stands', { timeout: 6000 }, async () => {
+  const held = new Set(); let looked = null;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 15, food: 20,
+    entity: { position: new Vec3(.5, 27, .5), onGround: false }, entities: {}, inventory: { items: () => [], slots: {} },
+    blockAt: p => ({ position: p, name: p.y <= 31 ? 'lava' : 'air', boundingBox: 'empty' }),
+    setControlState: (key, on) => { if (on) held.add(key); }, getControlState: () => false, lookAt: async p => { looked = p; } });
+  const survival = new Survival(bot, {}, { state: { shelters: [], lastDry: { x: -30, y: 42, z: -60 } } });
+  const goal = {};
+  const started = Date.now();
+  assert(await survival.step(new Task('lava'), goal, () => {}));
+  assert.equal(goal.survivalAction.action, 'leave_lava'); assert.equal(goal.survivalAction.to, null);
+  assert(held.has('jump') && held.has('forward'), 'swimming, not standing');
+  assert(looked && looked.x < -29 && looked.z < -59, 'toward the last dry footing');
+  assert(Date.now() - started >= 2000, 'the step held the keys, it did not return at once');
+});
+
+test('with a creeper close the bot gets away from it instead of starting a pocket', async () => {
+  const bot = Object.assign(new EventEmitter(), { entity: { position: new Vec3(0, 64, 0) }, health: 20, pathfinder: { movements: {} }, clearControlStates() {}, inventory: { items: () => [{ name: 'cobblestone', count: 64 }], slots: {} } });
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  const calls = [];
+  survival.runAway = async (task, goal, save, danger, options) => { calls.push({ names: danger.map(t => t.entity.name), options }); return calls.length > 1; };
+  survival.sealHere = async () => assert.fail('no pocket with a creeper at four blocks');
+  survival.report = () => {};
+  const t = (name, distance) => ({ entity: { name, position: new Vec3(distance, 64, 0) }, distance, visible: true });
+  await survival.escape(new Task('crowd'), {}, () => {}, [t('creeper', 4), t('skeleton', 6), t('zombie', 7)], true);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1].names, ['creeper'], 'the second run is from the creepers alone');
+  assert.equal(calls[1].options.only, true);
+});

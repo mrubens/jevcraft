@@ -112,3 +112,9 @@ test('a request that fails at intake says why, and an outage is not a request to
   assert.match(intakeProblem(Object.assign(new Error('503 Service Unavailable'), { name: 'TypeSafeError' })), /trouble thinking/);
   assert.match(intakeProblem(new Error('Jev selected an unavailable option')), /another way/);
 });
+
+test('an error that lists lapis lazuli is not an outage: "lapis" is not "API"', () => {
+  const { friendlyProblem } = require('../src/speech');
+  assert.doesNotMatch(friendlyProblem(new Error('No measurable progress on {"items":[{"item":"lapis_lazuli","count":64}]}')), /trouble thinking/);
+  assert.match(friendlyProblem(new Error('TypeSafe request timed out')), /trouble thinking/);
+});

@@ -110,7 +110,9 @@ function friendlyProblem(error) {
   if (/tool|pickaxe|durability/i.test(text)) return 'I need the right tool before I can keep going.';
   if (/find|search|explor/i.test(text)) return 'I haven\'t found it yet. We may need to look farther away.';
   if (/route|path|reach|standing|navigation|stair|surface|obstruct|place|support/i.test(text)) return 'I can\'t reach a safe spot to do that yet.';
-  if (/API|TypeSafe|OpenRouter|fetch|model|network|timeout|timed out/i.test(text)) return 'I\'m having trouble thinking right now. Please try again in a moment.';
+  // Whole words: "lapis" has "api" in it, and a stash error listing lapis
+  // lazuli told the player seven times that Jev could not think.
+  if (/\bAPI\b|TypeSafe|OpenRouter|\bfetch\b|\bmodel\b|\bnetwork\b|\btimeout\b|timed out/i.test(text)) return 'I\'m having trouble thinking right now. Please try again in a moment.';
   return 'I got stuck and couldn\'t finish that yet.';
 }
 

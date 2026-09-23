@@ -81,10 +81,12 @@ const worldAge = bot => Number(bot.time?.age);
 
 const inLava = bot => !!bot.entity?.isInLava || [0, 1].some(dy => bot.blockAt(bot.entity.position.floored().offset(0, dy, 0))?.name === 'lava');
 const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(bot.entity.position.floored())?.name === 'water';
-function lavaExit(bot) {
+// Out to six blocks: at three, a fall into the Nether's lava sea found no
+// shore, the step did nothing, and the bot burned four seconds standing.
+function lavaExit(bot, radius = 6) {
   const feet = bot.entity.position.floored(), cells = [];
   const dry = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name); };
-  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) for (let dy = -1; dy <= 2; dy++) {
+  for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (let dy = -1; dy <= 5; dy++) {
     const c = feet.offset(dx, dy, dz);
     if (bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block' || bot.blockAt(c.offset(0, -1, 0))?.name === 'magma_block' || !dry(c) || !dry(c.offset(0, 1, 0))) continue;
     cells.push(c);
@@ -197,6 +199,9 @@ const emptySite = (bot, refuge) => refuge.kind !== 'house' && !refuge.verifiedAt
 
 // Encounter stances asked of Jev: the arena's experiment switch, off in play
 // until the drills say it beats the rules (JEV_ENCOUNTERS=1).
+// A creeper within seven blocks: no pocket or bunker is begun, the blast
+// comes before the last block.
+const creeperClose = danger => danger.some(t => t.entity.name === 'creeper' && t.distance <= 7);
 const encounterJudgments = survival => !!survival.client && process.env.JEV_ENCOUNTERS === '1';
 
 // Minecraft actions are injected to avoid a dependency cycle with the work
@@ -367,11 +372,11 @@ class Survival {
       } };
     if (scaffold >= 2 && headroom) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.',
       run: () => this.pillarFrom(task, goal, save, danger) };
-    if (bot.health >= 10 && nearWall(bot, centroid(danger))) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.',
+    if (bot.health >= 10 && !creeperClose(danger) && nearWall(bot, centroid(danger))) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.',
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
-    if (shelter.materialStock(bot) >= 4) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.',
+    if (shelter.materialStock(bot) >= 4 && !creeperClose(danger)) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.',
       run: () => this.sealHere(task, goal, save, danger) };
     options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.',
       run: () => this.runAway(task, goal, save, danger) };
@@ -426,7 +431,7 @@ class Survival {
     for (const t of targets) tree[`shoot_${t.entity.id}`] = { description: { action: 'Shoot this mob with the bow from where the bot stands. It is in clear view at bow range and shoots back; each arrow takes about a second to draw, standing still.',
       entity: t.entity.name, distance: Math.round(t.distance), arrowsCarried: countOf(bot, 'arrow') }, run: () => this.shootAt(task, goal, save, t) };
     tree.retreat = { description: 'Run for footing out of its range and out of its sight; the mob keeps shooting while the bot runs.', run: () => this.escape(task, goal, save, danger, armed) };
-    if (shelter.materialStock(bot) >= 12) tree.dig_in = { description: 'Seal a two-block pocket where the bot stands and wait for it to lose interest.', run: () => this.sealHere(task, goal, save, danger) };
+    if (shelter.materialStock(bot) >= 12 && !creeperClose(danger)) tree.dig_in = { description: 'Seal a two-block pocket where the bot stands and wait for it to lose interest.', run: () => this.sealHere(task, goal, save, danger) };
     const state = { health: bot.health, food: bot.food, arrowsCarried: countOf(bot, 'arrow'), recentSurvivalAction: goal.survivalAction,
       threats: danger.map(t => ({ name: t.entity.name, distance: Math.round(t.distance), shoots: shooter(t.entity) })) };
     const decision = await this.decide(task, goal, save, { id: 'ranged_response', state, tree, context: { health: bot.health },
@@ -457,7 +462,10 @@ class Survival {
   // Footing out of reach and out of sight, by a route that does not pass a
   // hostile: true when the bot set off (arrived or was cut short, so the
   // next look is from wherever it got to), false when no route was found.
-  async runAway(task, goal, save, danger) {
+  // With `only`, the room gained is measured from those mobs alone (the
+  // creepers in a crowd), and a nearer hop will do; the route still passes
+  // no hostile.
+  async runAway(task, goal, save, danger, { gain = 4, only = false } = {}) {
     const bot = this.bot;
     const movements = bot.pathfinder.movements;
     const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
@@ -469,7 +477,8 @@ class Survival {
       // twenty blocks the other way, straight back to the blaze, which had
       // dropped out of sight for the second look.
       const about = [...new Set([...danger.map(t => t.entity), ...hostileEntities(bot, 32)])];
-      const distance = p => Math.min(...about.map(e => e.position.distanceTo(p)));
+      const from = only ? danger.map(t => t.entity) : about;
+      const distance = p => Math.min(...from.map(e => e.position.distanceTo(p)));
       // A creeper does not burn off at dawn and follows to about sixteen
       // blocks. A six-block hop from one only buys a minute before it is back
       // at the same tree; the escape from a mob that persists has to reach
@@ -478,7 +487,7 @@ class Survival {
       const footing = bot.findBlocks({ matching: ids, maxDistance: persistent ? 40 : 20, count: 512,
         useExtraInfo: b => shelter.solid(b) && shelter.replaceable(bot.blockAt(b.position.offset(0, 1, 0))) && shelter.replaceable(bot.blockAt(b.position.offset(0, 2, 0))),
       }).map(p => p.offset(0, 1, 0)).filter(p => !isSetAside(this, 'escape', p) && !lavaBeside(bot, p));
-      const gaining = p => distance(p) >= distance(bot.entity.position) + 4;
+      const gaining = p => distance(p) >= distance(bot.entity.position) + gain;
       // Beside lava, one knockback is the end: the dream run died that way at
       // its pouring spot, in full iron, with the diamond pickaxe. Get two
       // blocks from the lava first, whatever the mob does meanwhile.
@@ -495,7 +504,7 @@ class Survival {
       // The far spots first when the chaser persists; the ordinary hop is the
       // fallback, because standing still beside a creeper is never the answer.
       const far = persistent ? footing.filter(p => p.distanceTo(bot.entity.position) >= 20 && distance(p) >= 20).sort((a, b) => distance(b) - distance(a)) : [];
-      const near = footing.filter(p => p.distanceTo(bot.entity.position) >= 6 && gaining(p)).sort((a, b) => distance(b) - distance(a));
+      const near = footing.filter(p => p.distanceTo(bot.entity.position) >= (only ? 3 : 6) && gaining(p)).sort((a, b) => distance(b) - distance(a));
       const candidates = [...far.slice(0, 12), ...near.slice(0, 12)];
       for (const p of candidates) {
         const destination = new goals.GoalBlock(p.x, p.y, p.z);
@@ -527,6 +536,13 @@ class Survival {
     try {
       // The cornered rules: no route away was found (or it was cut short).
       const nearest = danger[0];
+      // A creeper close is not sealed against: the pocket takes seconds of
+      // block after block and the blast comes first. The day audit's cave
+      // death began an eighteen-cell pocket with three creepers at four
+      // blocks, and one blast took seventeen health. Away from the creepers
+      // first, by any footing that puts more room between them and the bot.
+      const creepers = creeperClose(danger) ? danger.filter(t => t.entity.name === 'creeper' && t.distance <= 7) : [];
+      if (creepers.length && await this.runAway(task, goal, save, creepers, { gain: 2, only: true })) { delete this.state.trappedSince; return; }
       // Cornered with stone in hand: a wall between us and the mob beats a
       // hold. Only the cell one step toward it, and only while that cell is
       // still empty; a mob already in it is fought, not walled.
@@ -564,7 +580,7 @@ class Survival {
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); delete this.state.trappedSince; return; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
       }
-      if ((crowd || danger.some(shoots)) && await this.sealHere(task, goal, save, danger)) { delete this.state.trappedSince; return; }
+      if ((crowd || danger.some(shoots)) && !creepers.length && await this.sealHere(task, goal, save, danger)) { delete this.state.trappedSince; return; }
       // A lone mob that does not shoot is met, not walled: the wall came
       // first, and a wither skeleton standing between the sword's reach
       // and the charge's minimum was walled off every time.
@@ -1091,11 +1107,20 @@ class Survival {
     if (inLava(bot)) {
       const exit = lavaExit(bot);
       this.report(goal, save, { action: 'leave_lava', to: exit && { ...exit }, health: bot.health });
-      if (exit) {
-        await move(bot, task, { label: 'out_of_lava', keys: ['forward', 'jump'], sneak: false, why: 'in lava: the nearest dry cell, whatever the ground',
-          look: exit.offset(0.5, 1, 0.5), maxMs: 2500, tick: 50, until: () => !inLava(bot) && bot.entity.onGround });
-      }
+      // No dry cell in sight: swim up and back toward the last dry footing,
+      // never stand. The step with nothing to do returned at once, a
+      // thousand times in four seconds, while the bot burned.
+      const toward = exit ? exit.offset(0.5, 1, 0.5) : this.state.lastDry ? pos(this.state.lastDry).offset(0.5, 1, 0.5) : null;
+      await move(bot, task, { label: 'out_of_lava', keys: toward ? ['forward', 'jump'] : ['jump'], sneak: false,
+        why: exit ? 'in lava: the nearest dry cell, whatever the ground' : 'in lava with no dry cell in sight: up, and back the way the bot came',
+        look: toward || undefined, maxMs: 2500, tick: 50, until: () => !inLava(bot) && bot.entity.onGround });
       onStep(goal); return true;
+    }
+    // The last dry footing, for the way back out of lava.
+    if (bot.entity.onGround && !bot.entity.isInWater) {
+      const f = bot.entity.position.floored();
+      const last = this.state.lastDry;
+      if (!last || last.x !== f.x || last.y !== f.y || last.z !== f.z) this.state.lastDry = { x: f.x, y: f.y, z: f.z, dimension: String(bot.game?.dimension || '') };
     }
     await maintainVitals(bot, task, action => this.report(goal, save, action));
     const refuge = this.currentShelter();
