@@ -67,6 +67,15 @@ function safeEndPoint(bot, p, hazards = endHazards(bot)) {
     hazards.every(({ entity, radius }) => hazardDistance(p, entity) > radius);
 }
 
+// Why a point is not safe, for the record when nothing can be done.
+function unsafeBecause(bot, p, hazards = endHazards(bot)) {
+  const out = [];
+  if (!safeFromHostiles(bot, p)) out.push('hostile path');
+  for (const e of hostileEntities(bot, 64)) if (p.distanceTo(e.position) < 20) out.push(`${e.name} ${Math.round(p.distanceTo(e.position))}`);
+  for (const { entity, radius } of hazards) if (hazardDistance(p, entity) <= radius) out.push(`${entity.name} ${Math.round(hazardDistance(p, entity))}<=${radius}`);
+  return out;
+}
+
 // The server assigns the dragon's eight part ids immediately after its root.
 // In a stationary sitting phase the head is 6.5 blocks forward and one below
 // the root. Flying head positions additionally use server flight history, so
@@ -123,7 +132,10 @@ async function arenaRoutes(bot, task, goal, policy, focus) {
   for (const candidate of [...buckets.values()].sort((a, b) => a.score - b.score).slice(0, 10)) {
     task.check();
     const p = candidate.p, destination = new goals.GoalBlock(p.x, p.y, p.z);
-    const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 250);
+    // A second: from the island's edge the ground climbs nine blocks to the
+    // pillars, and every quarter-second survey timed out, so the rehearsal
+    // bot stood at the edge with nothing to choose.
+    const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 1000);
     if (route.status === 'success' && route.path.every(policy.allowed)) routes.push({ ...candidate, destination,
       clearCrystalShot: focus?.name === 'end_crystal' && !repeatedCrystalMiss(goal.endCombat, focus, p.offset(.5, 0, .5)) &&
         !!aimAtEntity(bot, focus, new Vec3(0, 0, 0), p.offset(.5, 0, .5)),
@@ -268,7 +280,12 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       state.idleObservations = (state.idleObservations || 0) + 1;
       bot.clearControlStates(); for (let n = 0; n < 10; n++) { check(); if (!safeEndPoint(bot, bot.entity.position)) break; await sleep(100); }
     } };
-    if (!Object.keys(tree).length) throw blocked('No observed safe End route, reachable dragon head or clear bow shot; supplies and position are saved');
+    if (!Object.keys(tree).length) {
+      state.emptyChoice = { at: Date.now(), position: { ...bot.entity.position }, safe, unsafe: safe ? [] : unsafeBecause(bot, bot.entity.position).slice(0, 6),
+        crystals: crystals.length, dragon: !!dragon, bow, arrows: countOf(bot, 'arrow'), focus: focus?.name, idle: state.idleObservations || 0 };
+      save();
+      throw blocked(`No observed safe End route, reachable dragon head or clear bow shot; supplies and position are saved (${JSON.stringify(state.emptyChoice)})`);
+    }
     const decision = await decide('dragon_fight', { client, bot, goal, tree, context: { safe }, interrupt: check, watchMs: 50,
       state: endDecisionState({ request: goal.request, health: bot.health, food: bot.food, arrows: countOf(bot, 'arrow'),
         position: { ...bot.entity.position }, safe, dragon: state.dragon,

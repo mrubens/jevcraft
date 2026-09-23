@@ -54,6 +54,26 @@ async function locateStronghold() {
   throw new Error('The server did not answer where the stronghold is');
 }
 
+// The server's answer to an `execute if` test, as a count. The client's
+// view is no test: the dragon flies out of tracking range, and the first
+// dragon drill "passed" in a minute with two arrows shot and every crystal
+// standing. The dragon's death is the kill_dragon advancement.
+async function serverCount(test, what) {
+  const before = fs.existsSync(serverLog) ? fs.statSync(serverLog).size : 0;
+  await command(`execute ${test}`);
+  for (let i = 0; i < 40; i++) {
+    await sleep(250);
+    const text = fs.readFileSync(serverLog, 'utf8').slice(before);
+    // "Test passed. Count: 9" on this server; a bare "Test passed" is one.
+    const m = /Test passed(?:[.,] count: (\d+))?/i.exec(text);
+    if (m) return Number(m[1] ?? 1);
+    if (/Test failed/.test(text)) return 0;
+  }
+  throw new Error(`The server did not answer about ${what}`);
+}
+const countInEnd = type => serverCount(`in minecraft:the_end if entity @e[type=minecraft:${type}]`, type);
+const dragonKilled = async () => await serverCount(`if entity @a[name=${username},advancements={minecraft:end/kill_dragon=true}]`, 'the dragon') > 0;
+
 const KIT = [['ender_eye', 20], ['diamond_pickaxe', 1], ['diamond_sword', 1], ['bow', 1], ['arrow', 64], ['cooked_beef', 64],
   ['cobblestone', 64], ['cobblestone', 64], ['torch', 32], ['water_bucket', 1], ['white_bed', 1], ['oak_log', 16]];
 const ARMOUR = { 'armor.head': 'iron_helmet', 'armor.chest': 'iron_chestplate', 'armor.legs': 'iron_leggings', 'armor.feet': 'iron_boots', 'weapon.offhand': 'shield' };
@@ -71,6 +91,13 @@ if (process.env.ENDGAME_JEV === '1') { const { TypeSafe } = require('../src/type
 let died = false;
 bot.on('death', () => { died = true; });
 
+// Where the bot stands, what is under it, and the nearest End stone: the
+// dragon drill's first honest failure was on the spawn platform.
+function where() {
+  const p = bot.entity.position, under = bot.blockAt(p.offset(0, -1, 0))?.name;
+  const stone = bot.registry.blocksByName.end_stone && bot.findBlocks({ matching: bot.registry.blocksByName.end_stone.id, maxDistance: 64, count: 1 })[0];
+  return { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), under, endStone: stone ? Math.round(stone.distanceTo(p)) : null, health: bot.health };
+}
 const dimension = () => String(bot.game?.dimension || '').replace(/^minecraft:/, '');
 // The ladder's step with the survival layer beside it, as the run has it:
 // survival first, the rung when survival has nothing to do.
@@ -79,7 +106,9 @@ async function runUntil(task, goal, save, handler, done, { minutes }) {
   goal.survival = survival.state;
   const deadline = Date.now() + minutes * 60000;
   let steps = 0, errors = {};
-  while (!done() && !died && Date.now() < deadline) {
+  const trace = setInterval(() => { try { log({ trace: where(), step: goal.step?.action, survival: goal.survivalAction?.action }); } catch (_) {} }, 2000);
+  try {
+  while (!(await done()) && !died && Date.now() < deadline) {
     task.check(); steps++;
     try {
       if (await survival.step(task, goal, save)) continue;
@@ -87,11 +116,12 @@ async function runUntil(task, goal, save, handler, done, { minutes }) {
     } catch (err) {
       if (err.name === 'Cancelled') throw err;
       errors[err.message.slice(0, 120)] = (errors[err.message.slice(0, 120)] || 0) + 1;
-      if (err.name === 'Blocked') { log({ blocked: err.message }); break; }
+      if (err.name === 'Blocked') { log({ blocked: err.message, where: where() }); break; }
       await sleep(500);
     }
     await sleep(50);
   }
+  } finally { clearInterval(trace); }
   return { steps, errors: Object.entries(errors).sort((a, b) => b[1] - a[1]).slice(0, 6), minutes: Math.round((minutes * 60000 - Math.max(0, deadline - Date.now())) / 6000) / 10 };
 }
 
@@ -127,6 +157,12 @@ const DRILLS = {
     return { drill: 'enter_end', pass: /end$/.test(dimension()) && !died, died, dimension: dimension(), eyesLeft: countOf(bot, 'ender_eye'), ...outcome };
   },
   async dragon(task) {
+    // Straight onto the spawn platform, where the portal lands a player:
+    // the fight is what is rehearsed here. ENDGAME_VIA_PORTAL=1 walks in.
+    if (!/end$/.test(dimension()) && process.env.ENDGAME_VIA_PORTAL !== '1') {
+      await command(`execute in minecraft:the_end run tp ${username} 100.5 49 0.5`);
+      await sleep(4000); await bot.waitForChunksToLoad();
+    }
     if (!/end$/.test(dimension())) {
       const entered = await DRILLS.enter_end(task);
       log({ result: entered });
@@ -135,14 +171,16 @@ const DRILLS = {
     await kit([['arrow', 64], ['arrow', 64]]);
     const goal = { kind: 'win', request: 'endgame rehearsal', gameProgress: { version: 1, milestones: { nether_entered: { at: 1 }, end_entered: { at: Date.now() } } } };
     const handlers = gameHandlers(bot, client);
-    let seen = false;
-    const dragonAlive = () => { const alive = Object.values(bot.entities).some(e => e.name === 'ender_dragon' && e.isValid !== false); seen ||= alive; return alive; };
-    const crystals = () => Object.values(bot.entities).filter(e => e.name === 'end_crystal' && e.isValid !== false).length;
+    // Truth from the server, asked every twenty seconds.
     await sleep(3000);
-    const before = crystals(); dragonAlive();
-    const outcome = await runUntil(task, goal, () => {}, handlers.fight_dragon, () => seen && !dragonAlive(), { minutes: Number(process.env.ENDGAME_MINUTES || 25) });
+    const before = await countInEnd('end_crystal');
+    let checkedAt = 0, killed = await dragonKilled();
+    if (killed) return { drill: 'dragon', pass: false, skipped: 'this player has killed a dragon already: the advancement cannot tell a new kill' };
+    const slain = async () => { if (Date.now() - checkedAt > 20000) { checkedAt = Date.now(); killed = await dragonKilled(); } return killed; };
+    const outcome = await runUntil(task, goal, () => {}, handlers.fight_dragon, slain, { minutes: Number(process.env.ENDGAME_MINUTES || 25) });
+    killed = await dragonKilled();
     const combat = goal.endCombat || {};
-    return { drill: 'dragon', pass: seen && !dragonAlive() && !died, died, dragonSeen: seen, crystalsBefore: before, crystalsAfter: crystals(),
+    return { drill: 'dragon', pass: killed && !died, died, dragonsInView: await countInEnd('ender_dragon'), crystalsBefore: before, crystalsAfter: await countInEnd('end_crystal'),
       destroyed: (combat.destroyedCrystals || []).length, shots: (combat.shots || []).length, arrowsLeft: countOf(bot, 'arrow'), ...outcome };
   },
 };

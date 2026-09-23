@@ -118,7 +118,11 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
       if (dryStanding(bot, p) && safeFromHostiles(bot, p) && [1, 2, 3].every(y => dryPassable(bot.blockAt(frame.offset(0, y, 0))))) edges.push(p);
     }
     edges.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
-    await approach(edges);
+    // Round a floorless ring to its one edge with standing room: pushed to
+    // the far side by the stairs' silverfish, the rehearsal bot had no way
+    // back to the only walkable edge but a bridge.
+    try { await approach(edges); }
+    catch (err) { if (!/No observed dry route/.test(err.message)) throw err; await approach(edges, { scaffold: true }); }
     bot.pathfinder.setGoal(null); bot.clearControlStates();
     goal.endPortal.activeVerifiedAt = Date.now(); goal.step = { action: 'enter_end_portal', center: { ...center } }; save();
     const deadline = Date.now() + entryMs;
