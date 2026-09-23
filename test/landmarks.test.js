@@ -131,3 +131,10 @@ test('navigate sprints only when asked and fed, and puts the setting back', asyn
   assert.equal(seen[0], true); assert.equal(seen.at(-1), false, 'not when hungry');
   assert.equal(movements.allowSprinting, false, 'restored');
 });
+
+test('the bot\'s own portal is not a ruined portal', () => {
+  const blocks = { '20,64,20': 'obsidian', '21,64,20': 'obsidian', '22,64,20': 'netherrack' };
+  const goal = { portals: [{ x: 21, y: 65, z: 20, dimension: 'overworld' }] };
+  noticeLandmarks(world(blocks), goal, () => {}, { force: true });
+  assert.equal((goal.landmarks || []).length, 0);
+});

@@ -122,10 +122,15 @@ function noticeLandmarks(bot, goal, save, { now = Date.now(), every = 30, moved 
   look.steps = 0; look.at = { x: here.x, z: here.z };
   if (typeof bot.findBlocks !== 'function') { if (newArea) save(); return []; }
   const where = dimensionOf(bot), found = [];
+  // The bot's own portal is obsidian beside the netherrack it placed: not a
+  // ruin. The first live "ruined portal" was its own frame, which the
+  // obsidian step would then have mined.
+  const own = [...(goal.portals || []), ...(goal.portalFrame?.blocks || [])].filter(p => !p.dimension || p.dimension === where);
   for (const detector of DETECTORS.filter(d => d.dimension === where)) {
     let place = null;
     try { place = detector.detect(bot); } catch (_) { place = null; }
     if (!place) continue;
+    if (detector.kind === 'ruined_portal' && own.some(p => Math.hypot(p.x - place.x, p.z - place.z) <= 12)) continue;
     const { landmark, isNew } = rememberLandmark(goal, detector.kind, where, place, now);
     found.push(landmark);
     if (isNew) {
