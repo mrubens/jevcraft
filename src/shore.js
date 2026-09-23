@@ -80,7 +80,10 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     // the shore: the nearest dry cell within ten blocks, dug to, water
     // allowed to flow (the pathfinder otherwise will not break a block
     // beside it), never lava.
-    if (!attempts && await digToShore(bot, task, goal, save, movement, move)) return true;
+    // After landings that failed too: the replay run's pool offered a swim to
+    // a landing it never reached, every time, and that alone kept the pickaxe
+    // out of it.
+    if (await digToShore(bot, task, goal, save, movement, move)) return true;
     throw new Error('No reachable dry shore found in the observed water area');
   } finally {
     policy.restore(); Object.assign(movement, previous);
