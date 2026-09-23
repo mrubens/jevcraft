@@ -165,6 +165,8 @@ function sea() {
 test('at sea with no ground in sight, the bot swims for the nearest land it has walked', async () => {
   const { crossSea } = require('../src/shore');
   const { bot, goal, move } = sea();
+  // At the bar's edge: the centre over the water, the feet on the sand.
+  bot.entity.position.z = -0.2;
   assert.equal(await crossSea(bot, new Task('wood'), goal, () => {}, { segmentMs: 30, move }), true, JSON.stringify(goal.seaCrossing));
   assert.equal(goal.step.action, 'cross_sea');
   assert.equal(goal.step.land, 'taiga');

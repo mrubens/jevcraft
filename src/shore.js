@@ -283,9 +283,14 @@ function ownGround(bot, from) {
     }
     return false;
   };
-  const seen = new Set(), queue = [[start.x, start.z]];
-  if (!dry(start.x, start.z)) return seen;
-  seen.add(`${start.x},${start.z}`);
+  // Every column under the body: standing at a bank's edge, the centre is
+  // over the water and the feet are on the bank (the live run declined for
+  // that, its own bar three blocks off counted as land in sight).
+  const seen = new Set(), queue = [];
+  for (const dx of [-0.3, 0.3]) for (const dz of [-0.3, 0.3]) {
+    const x = Math.floor(from.x + dx), z = Math.floor(from.z + dz), k = `${x},${z}`;
+    if (!seen.has(k) && dry(x, z)) { seen.add(k); queue.push([x, z]); }
+  }
   while (queue.length) {
     const [x, z] = queue.shift();
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
