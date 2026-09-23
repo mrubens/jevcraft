@@ -57,7 +57,7 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
   const outside = p => Math.abs(Math.floor(p.x) - center.x) > 1 || Math.abs(Math.floor(p.z) - center.z) > 1;
   movement.allowedPosition = p => outside(p) && policy.allowed(p);
   movement.scafoldingBlocks = []; movement.allow1by1towers = false;
-  const approach = async (positions, { scaffold = false } = {}) => {
+  const approach = async (positions, { scaffold = false, reach = null } = {}) => {
     // Blocks are laid only for a floor that is not there, and then stacked
     // too: the recorded rehearsal fell into the cave under the ring after
     // nine eyes, and with no pillaring there was no way back up to it.
@@ -74,7 +74,10 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
       await actions.navigate(bot, task, destination, { timeoutMs: 15000, stallMs: 4000 });
       check();
       if (dimension(bot) !== 'overworld') throw blocked('Dimension changed before verified portal entry');
-      if (dryStanding(bot, bot.entity.position) && outside(bot.entity.position)) return;
+      // Arrived means within reach of the frame too: the second recorded
+      // rehearsal stopped on its bridge a block past arm's length and gave
+      // the portal up with three frames empty.
+      if (dryStanding(bot, bot.entity.position) && outside(bot.entity.position) && (!reach || miningReach(bot, bot.entity.position, reach))) return;
     }
     throw blocked('No observed dry route to the outside of the End portal');
   };
@@ -85,8 +88,8 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
       if (!outside(bot.entity.position) || !dryStanding(bot, bot.entity.position) || !miningReach(bot, bot.entity.position, position)) {
         // Standing room that is there first; footing laid when none of it
         // can be walked to.
-        try { await approach(dryMiningPositions(bot, position, 24)); }
-        catch (err) { if (!/No observed dry route/.test(err.message)) throw err; await approach(bridgeFootings(bot, position, outside), { scaffold: true }); }
+        try { await approach(dryMiningPositions(bot, position, 24), { reach: position }); }
+        catch (err) { if (!/No observed dry route/.test(err.message)) throw err; await approach(bridgeFootings(bot, position, outside), { scaffold: true, reach: position }); }
       }
       check();
       const fresh = portalAt(bot, center), frame = bot.blockAt(position);
