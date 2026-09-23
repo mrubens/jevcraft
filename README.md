@@ -98,6 +98,8 @@ Jev answers three kinds of question: a **Choice** among options code lists, a **
 | A boat, an ore, a mob, a stronghold, the dragon | Whether a surveyed crossing is worth a boat; whether a nearby ore is worth a detour; the next bounded combat or search action | Choices | Bounded, verified execution with safety reflexes in code |
 | An operator command | Each branch of the server's own command tree, the argument roles, then whether the result faithfully implements the request | Choices + Noul | Runs the command once, only from allowed players, only above a faithfulness bar |
 
+Every one of these questions is defined in one place, [`src/decisions`](src/decisions/index.js), with its stakes, the confidence bar its answer must clear and what happens below it, and the code's own answer for when Jev cannot be reached. The in-game decision trees are asked through one runner (`decide`) and the batched questions through `ask`, so the outage walk, the abort on cancellation, the staleness check and the decision log are the same everywhere; nothing else in `src` calls the model, and a test holds it to that. The full list, generated from the definitions, is in [docs/decisions.md](docs/decisions.md).
+
 [How Jev thinks](docs/how-jev-thinks.md) walks through one recorded request with the real answers, confidences, latency and token counts, and ships the trace so you can open it in the Observatory.
 
 The two places a generative model is used, both optional and both through OpenRouter, are the ones that need generation: drawing a custom schematic from a request and terrain survey, and reasoning about a failure Jev could not judge. Everything else is selection, and selection is what a System One model does well.

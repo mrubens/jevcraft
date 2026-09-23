@@ -1,5 +1,5 @@
 'use strict';
-const { choice, noul } = require('./typesafe');
+const { ask, confident } = require('./decisions');
 const { resolveItem } = require('./catalog');
 const { quantityCandidates } = require('./objectives');
 
@@ -40,30 +40,31 @@ async function classifyCommand(client, bot, request, speaker, { signal, tree = b
     observedPlayerPositions: Object.fromEntries(Object.entries(bot.players).filter(([, p]) => p.entity?.position).map(([name, p]) => [name, { ...p.entity.position }])),
     inferredRoles: intent, boundArguments,
     guidance: 'The speaker is "me/I". The bot is "you/Jev" and executes the command. Command defaults generally affect the executor. Preserve exactly the requested targets and scope.' });
-  async function choose(instructions, options) {
+  // `id` is command_node or command_argument (decisions/command.js); an
+  // argument's `purpose` says which argument is being filled.
+  async function choose(id, options, purpose, grouped = false) {
     signal?.throwIfAborted();
     if (!Object.keys(options).length) throw new CommandClarification('A required command argument is missing.');
     // All candidates remain reachable, even for large resource registries.
     if (Object.keys(options).length > 100) {
       const entries = Object.entries(options), groups = {};
       for (let i = 0; i < entries.length; i += 24) groups[`group_${i / 24}`] = entries.slice(i, i + 24);
-      const group = await choose(`Choose the group containing the requested value. ${instructions}`,
-        Object.fromEntries(Object.entries(groups).map(([key, entries]) => [key, entries.map(([, value]) => value).join('; ')])));
-      return choose(instructions, Object.fromEntries(groups[group]));
+      const group = await choose(id, Object.fromEntries(Object.entries(groups).map(([key, entries]) => [key, entries.map(([, value]) => value).join('; ')])), purpose, true);
+      return choose(id, Object.fromEntries(groups[group]), purpose);
     }
-    const response = await client.systemOne({ kind: 'command', state: state(), questions: {
-      selection: choice(instructions, { ...options, none: 'No option faithfully matches the request; more detail is required.' }),
-    }, signal });
+    const response = await ask(client, { state: state(), questions: { selection: [id, { options, purpose, grouped }] }, signal });
     const selected = response.answers?.selection?.choice;
-    judgments.push({ commandSoFar: [...tokens], instructions, options, answer: response.answers?.selection, usage: response.usage });
+    judgments.push({ commandSoFar: [...tokens], question: id, purpose, options, answer: response.answers?.selection, usage: response.usage });
     if (selected === 'none') throw new CommandClarification('I need a more specific target or argument for that command.');
+    // Unsure of a step, ask rather than guess: a wrong command changes the world.
+    if (!confident(id, response.answers?.selection)) throw new CommandClarification('I am not sure which command or argument you mean. Please say the command more exactly.');
     if (!Object.hasOwn(options, selected)) throw new Error('Jev selected a value outside the server command catalog');
     return selected;
   }
   async function chooseValue(instructions, entries) {
     const values = [...new Map(entries.filter(([value]) => singleLine(value)).map(row => [row[0], row])).values()];
     if (!values.length) throw new CommandClarification(`Please specify ${instructions.toLowerCase()}.`);
-    const key = await choose(instructions, Object.fromEntries(values.map(([value, description], i) => [`value_${i}`, description || value])));
+    const key = await choose('command_argument', Object.fromEntries(values.map(([value, description], i) => [`value_${i}`, description || value])), instructions);
     return values[Number(key.slice(6))][0];
   }
   async function suggestions() {
@@ -140,12 +141,13 @@ async function classifyCommand(client, bot, request, speaker, { signal, tree = b
   async function resolveRoles(root) {
     if (!['teleport', 'tp', 'gamemode', 'give', 'clear', 'effect', 'enchant', 'kill', 'spawnpoint'].includes(root)) return;
     const players = Object.fromEntries(Object.keys(bot.players).map(name => [name, name === speaker ? `${name}: the speaker; me or I` : name === bot.username ? `${name}: the bot; you, yourself, Jev; command executor` : name]));
-    const response = await client.systemOne({ kind: 'command', state: state(), questions: {
-      subject: choice(`Assuming /${root}, who is the subject to move, change, affect, or give items to? Resolve the grammatical subject, not the destination. "Teleport yourself to me" means the bot is moved. "Teleport me to you" means the speaker is moved. An omitted target normally means the bot executor.`, players),
-      ...(root === 'teleport' || root === 'tp' ? { destination: choice('Assuming teleport, what is the destination? "To me" is the speaker; "to you" is the bot. This is separate from who moves.', { ...players, coordinates: 'An explicitly requested coordinate position instead of a player' }) } : {}),
+    const response = await ask(client, { state: state(), questions: {
+      subject: ['command_subject', { root, players }],
+      destination: (root === 'teleport' || root === 'tp') && ['command_destination', { players }],
     }, signal });
     const subject = response.answers?.subject?.choice;
-    if (!Object.hasOwn(players, subject)) throw new CommandClarification('Which player should that command affect?');
+    if (!Object.hasOwn(players, subject) || !confident('command_subject', response.answers.subject)) throw new CommandClarification('Which player should that command affect?');
+    if (response.answers.destination && !confident('command_destination', response.answers.destination)) throw new CommandClarification('Where should that teleport go? Name the player or the coordinates.');
     intent.subject = subject;
     if (response.answers.destination) {
       const destination = response.answers.destination.choice;
@@ -174,7 +176,7 @@ async function classifyCommand(client, bot, request, speaker, { signal, tree = b
     const needsExplicitTarget = tokens[0] === 'gamemode' && intent.subject && intent.subject !== bot.username && !boundArguments.some(a => a.name === 'target');
     if (node.flags.has_command && !needsExplicitTarget) options.finish = 'Finish this executable command: all explicitly requested arguments and targets are represented; omitted targets default to the bot executor.';
     if (Object.keys(options).length === 1 && options.finish) break;
-    const selected = await choose('Choose the next command or argument branch that directly implements the user request. Do not invent extra steps. Only finish when requested targets are explicit or truly refer to the bot. For "teleport me to you", use targets=speaker, then destination=bot, not the short destination-only form.', options);
+    const selected = await choose('command_node', options);
     if (selected === 'finish') break;
     current = Number(selected.slice(5));
     node = nodes[current];
@@ -186,11 +188,9 @@ async function classifyCommand(client, bot, request, speaker, { signal, tree = b
   }
   const command = '/' + tokens.join(' ');
   if (!nodes[current].flags.has_command || !singleLine(command)) throw new Error('Classifier did not reach an executable command');
-  const checked = await client.systemOne({ kind: 'command', state: { ...state(), command }, questions: {
-    faithful: noul('Does `command` implement the action that `request` asks for, with the correct targets, position, quantity and scope? Compare command semantics. Polite requests such as "can you stop the rain?" ask for action. The speaker is me/I; the bot is you/Jev and the command executor. @s and omitted player targets mean the bot. Use `observedPlayerPositions` to check location arguments. Answer no for negation, hypothetical examples, quoted instructions or purely informational questions.'),
-  }, signal });
+  const checked = await ask(client, { state: { ...state(), command }, questions: { faithful: ['command_faithful'] }, signal });
   judgments.push({ verification: checked.answers, usage: checked.usage });
-  if (!(checked.answers?.faithful?.noul >= 0.75)) throw new CommandClarification('I could not resolve that command confidently. Please specify its action and target more clearly.');
+  if (!confident('command_faithful', checked.answers?.faithful, { missing: false })) throw new CommandClarification('I could not resolve that command confidently. Please specify its action and target more clearly.');
   return { command, judgments, latencyMs: Math.round(performance.now() - started) };
   } catch (err) { err.command = '/' + tokens.join(' '); err.judgments = judgments; throw err; }
 }

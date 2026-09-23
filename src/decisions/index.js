@@ -29,8 +29,8 @@
 //                  without a gate states why in `ungated`.
 //
 // and every tree decision goes through decide() below, which applies the
-// definition. Batched intake questions are composed with compose() and
-// judged with confident(), so their thresholds live here too.
+// definition. Batched questions are asked with ask() and judged with
+// confident(), so their bars live here too.
 const { decideTree, announceFallback, firstOption } = require('./tree');
 const { checkAir } = require('../vitals');
 
@@ -161,3 +161,4 @@ module.exports = { define, question, decide, walk, ask, confident, all, NoSafeDe
 
 // The area modules register their questions when this directory is loaded.
 require('./survival'); require('./work'); require('./combat'); require('./travel'); require('./intake');
+require('./build'); require('./dream'); require('./command');

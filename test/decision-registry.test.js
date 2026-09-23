@@ -58,18 +58,24 @@ test('the ledger kind is the question\'s own: idle and stillness are no longer c
   assert.deepEqual(kinds, ['idle', 'idle', 'build', 'source']);
 });
 
-test('only the decisions directory talks to Jev: the files still calling systemOne directly are the ones not yet moved, and no others', () => {
+test('only the decisions directory talks to Jev: no other file calls systemOne', () => {
   const src = path.join(__dirname, '..', 'src');
   const direct = [];
   const walk = dir => { for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, f.name);
     if (f.isDirectory()) { if (f.name !== 'decisions') walk(p); continue; }
+    // typesafe.js is the client; ledger.js wraps it to charge each call to its run.
     if (f.name.endsWith('.js') && !['typesafe.js', 'ledger.js'].includes(f.name) && /\.systemOne\(/.test(fs.readFileSync(p, 'utf8'))) direct.push(path.relative(src, p));
   } };
   walk(src);
-  const notYetMoved = ['boats.js', 'build-templates.js', 'builds.js', 'command-classifier.js', 'design-review.js', 'dream.js', 'opportunistic-mining.js',
-    'opportunistic-pickups.js', 'recovery-adviser.js', 'schematic-library.js'];
-  assert.deepEqual(direct.sort(), notYetMoved.sort());
+  assert.deepEqual(direct, []);
+});
+
+test('the four command steps that were ungated are gated now; every question is registered once', () => {
+  for (const id of ['command_node', 'command_argument', 'command_subject', 'command_destination']) assert(decisions.question(id).gate, id);
+  const ids = decisions.all().map(q => q.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert(ids.length >= 57);
 });
 
 test('the intake bars come from the definitions: the objective, the item pick, the catalog and memory', () => {
@@ -79,4 +85,9 @@ test('the intake bars come from the definitions: the objective, the item pick, t
   assert.deepEqual(require('../src/catalog').AMBIGUOUS, decisions.question('catalog_branch').ambiguous);
   assert.equal(decisions.confident('bundle_candidate', { noul: 0.1 }), false, 'a sure no is not a sure yes');
   assert.equal(decisions.confident('noted_wood', { choice: 'oak' }, { missing: false }), false);
+});
+
+test('docs/decisions.md is generated from the registry and is current', () => {
+  const { render } = require('../scripts/decisions-doc');
+  assert.equal(fs.readFileSync(path.join(__dirname, '..', 'docs', 'decisions.md'), 'utf8'), render(), 'run node scripts/decisions-doc.js');
 });

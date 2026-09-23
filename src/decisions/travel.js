@@ -17,3 +17,14 @@ define({
 });
 
 module.exports = { leastVisited };
+
+// A boat for a crossing the code has already checked: level water, room for
+// the boat and a safe shore at each end.
+define({
+  id: 'boat_crossing', area: 'travel', kind: 'travel', primitive: 'choice', stakes: 'low',
+  build: () => require('../typesafe').choice(
+    'Choose how to travel for this request. Code has verified a level water route, boat clearance and a safe shore at each end. Boats are useful for long river/lake crossings; small puddles are already excluded. Prefer a boat when this makes meaningful progress and saves a long swim. Respect an explicit request to swim, stay on land or avoid crafting. A boat already in inventory costs no crafting. New boats cost five planks plus access to a crafting table. Do not abandon the main task for an unnecessary boat.', {
+      boat: 'Use a carried boat, or make a wooden boat, for this water crossing.',
+      walk_or_swim: 'Continue ordinary walking/swimming without a boat.',
+    }),
+});

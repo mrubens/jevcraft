@@ -1,5 +1,4 @@
 'use strict';
-const { choice, score } = require('./typesafe');
 
 // A dream for when nobody has asked for anything: the thing the bot
 // works toward on its own. Code enumerates what could come next from what
@@ -54,15 +53,11 @@ const VILLAGE_LEVELS = [
 // the hill-climbing signal and the gauge people will watch.
 async function chooseVillagePart(client, { structures, available, signal } = {}) {
   const state = villageState(structures), candidates = villageCandidates(structures, { available });
-  const questions = {
-    progress: score('How complete is the village described in `standing`, judged from what stands and how the buildings sit together?', VILLAGE_LEVELS),
-    ...(Object.keys(candidates).length ? { part: choice({
-      task: 'The bot is building a village on its own. Which part should it add next?',
-      guidance: 'Dwellings first, then a landmark or a centre, then the pieces that make it read as a village. Consider what already stands in `standing` and its counts. Choose done when adding more would not make it more of a village.',
-    }, { ...candidates, done: 'The village is complete enough; do not add another building.' }) } : {}),
-  };
-  const response = await client.systemOne({ signal, kind: 'dream', state: { standing: state.standing.map(s => ({ name: s.name, request: s.request, size: s.size, distance: s.distance, standing: s.standing })),
-    counts: state.counts, offered: Object.keys(candidates) }, questions });
+  const response = await require('./decisions').ask(client, { signal, state: { standing: state.standing.map(s => ({ name: s.name, request: s.request, size: s.size, distance: s.distance, standing: s.standing })),
+    counts: state.counts, offered: Object.keys(candidates) }, questions: {
+    progress: ['village_progress', { levels: VILLAGE_LEVELS }],
+    part: Object.keys(candidates).length && ['village_part', { candidates }],
+  } });
   const part = response.answers?.part?.choice, progress = response.answers?.progress;
   if (part !== undefined && part !== 'done' && !Object.hasOwn(candidates, part)) throw new Error('Jev chose a village part that was not offered');
   // No answer to a question that was asked is a failed call, not "done":
@@ -124,25 +119,18 @@ function shouldLaunchDream(standing, lastGoal, { now = Date.now(), ready = true,
 // How the player gives, asks about, pauses, resumes or takes back the dream
 // in chat. A dream is something the player gives Jev, not something Jev
 // chose for itself, so every one of these is the player's call.
-const OPERATIONS = {
-  set_beat_the_game: 'Give Jev the dream of beating the game: your dream is to beat the game, dream of beating Minecraft, go for the dragon when you have nothing else to do.',
-  set_build_a_village: 'Give Jev the dream of building a village: your dream is to build a village, dream of a village, keep adding houses whenever you are free.',
-  query: 'Ask what the dream is, or how it is going: what is your dream, what are you working toward, how is the village coming along.',
-  pause: 'Set the dream aside for now without forgetting it: pause your dream, stop chasing your dream for now, take a break from the village.',
-  resume: 'Pick the dream back up: chase your dream, get back to your dream, carry on with the village.',
-  clear: 'Take the dream away: forget your dream, no more dream, give up on the village for good.',
-  none: 'None of these; a quoted, hypothetical or negated statement, or a request about something else.',
-};
+const { OPERATIONS } = require('./decisions/dream');
 async function resolveDream(client, spec) {
-  const response = await client.systemOne({ kind: 'dream', state: { request: spec.request, speaker: spec.from,
+  const response = await require('./decisions').ask(client, { state: { request: spec.request, speaker: spec.from,
     guidance: 'The dream is what Jev chases when nobody has asked for anything. Giving one does not interrupt a request that is active.' },
-  questions: { operation: choice('What does the speaker want to do with Jev\'s dream?', OPERATIONS) } });
+  questions: { operation: ['dream_operation'] } });
   const operation = response.answers?.operation?.choice;
   if (!Object.hasOwn(OPERATIONS, operation)) throw new Error('Invalid dream operation');
   // Taking the dream away closes its run and cannot be undone, and giving a
   // new one replaces the old: both need a surer answer than a question
   // about it does. Pausing is reversible and is not held back.
-  const needed = operation === 'clear' ? 0.75 : operation.startsWith('set_') ? 0.65 : 0;
+  const bars = require('./decisions').question('dream_operation').bars;
+  const needed = operation === 'clear' ? bars.clear : operation.startsWith('set_') ? bars.set : 0;
   const confidence = response.answers.operation?.confidence;
   if (Number.isFinite(confidence) && confidence < needed) {
     return { ...spec, kind: 'clarify', message: operation === 'clear'

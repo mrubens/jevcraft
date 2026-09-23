@@ -5,9 +5,8 @@ const { checkAir, needsAir } = require('./vitals');
 const { checkThreats, immediateThreat } = require('./danger');
 const { recoveryOptions, executeRecoveryOption } = require('./recovery-options');
 const { thinking } = require('./speech');
-const { choice } = require('./typesafe');
 const LIMITS = { calls: 6, windowMs: 3600000, sameFailure: 2, cooldownMs: 60000, requestMs: 45000, planMs: 900000, actionMs: 120000, actionSteps: 12,
-  surfaceMs: 600000, surfaceSteps: 192, jevConfidence: 0.6 };
+  surfaceMs: 600000, surfaceSteps: 192, jevConfidence: require('./decisions').question('recovery_action').gate.threshold };
 const emergency = err => ['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name);
 const identity = goal => JSON.stringify([goal.request, goal.kind, goal.item, goal.count, goal.from]);
 const life = goal => goal.survival?.deaths?.at(-1)?.at || null;
@@ -45,12 +44,7 @@ const describeOption = o => o.kind === 'acquire' ? `Gather ${o.count} ${String(o
 async function askJev(client, bot, task, observation, { signal, threshold = LIMITS.jevConfidence } = {}) {
   const started = Date.now();
   const options = Object.fromEntries(observation.options.map(o => [o.id, describeOption(o)]));
-  const response = await client.systemOne({ state: observation.context, signal, kind: 'recovery', questions: {
-    recovery: choice({
-      task: 'The bot has failed repeatedly at its current step. Which offered recovery action is most likely to unblock the ORIGINAL player request?',
-      guidance: 'Every option is a bounded attempt that code has already checked for safety and feasibility. Use `failure`, `recentFailures`, `previousAdvice`, `terrain`, `inventory` and `tools`. Prefer a concrete change of approach over repeating what just failed. Supplies the request does not need are not progress. Choose none when no offered action addresses the recorded failure.',
-    }, { ...options, none: 'None of the offered actions addresses the recorded failure.' }),
-  } });
+  const response = await require('./decisions').ask(client, { state: observation.context, signal, questions: { recovery: ['recovery_action', { options }] } });
   task.check();
   const answer = response.answers?.recovery;
   if (!answer || !(answer.choice === 'none' || Object.hasOwn(options, answer.choice))) throw new Error('Jev selected an unavailable recovery option');

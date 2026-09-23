@@ -1,7 +1,6 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { choice } = require('./typesafe');
 const { countOf, surveyRoute } = require('./skills');
 const { dryMiningPositions, miningReach, dryStanding } = require('./mining-access');
 const { immediateThreat, safeFromHostiles } = require('./danger');
@@ -75,12 +74,10 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
       }
     }
     if (!choices.length) return false;
-    const response = needed.length ? { answers: { opportunity: { choice: 'ore_0', rule: 'fuel' } } } : await client.systemOne({ kind: 'mining', state: { request: goal.request, primary, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
+    const response = needed.length ? { answers: { opportunity: { choice: 'ore_0', rule: 'fuel' } } } : await require('./decisions').ask(client, { state: { request: goal.request, primary, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
       limits: LIMITS, candidates: choices.map(({ standing, ...c }) => ({ ...c, distance: c.position.distanceTo(start) })) },
-    questions: { opportunity: choice('Standing instruction: collect useful ores noticed along the way, even when they are not ingredients for the current request. These candidates already pass strict checks for tools, safe access, inventory room, a six-block radius and a twelve-second detour. Prefer picking up a scarce valuable resource such as diamonds, emeralds or needed iron; return to the main request immediately afterward. Choose continue for low-value surplus or if the player explicitly said no detours/only the requested item. Asking for coal alone does NOT forbid grabbing a nearby diamond.', {
-      ...Object.fromEntries(choices.map((c, i) => [`ore_${i}`, `${c.block}: yields ${c.resource}; already carrying ${c.carried}; ${c.routeSteps} walking steps away.`])),
-      continue: 'Keep working on the requested task without a detour.',
-    }) }, signal: AbortSignal.timeout(5000) });
+    questions: { opportunity: ['opportunistic_ore', { options: Object.fromEntries(choices.map((c, i) => [`ore_${i}`, `${c.block}: yields ${c.resource}; already carrying ${c.carried}; ${c.routeSteps} walking steps away.`])) }] },
+    signal: AbortSignal.timeout(5000) });
     task.check();
     const selected = response.answers?.opportunity?.choice;
     state.lastDecision = { at: new Date().toISOString(), answer: response.answers?.opportunity, usage: response.usage };

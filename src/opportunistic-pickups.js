@@ -1,6 +1,5 @@
 'use strict';
 const { goals } = require('mineflayer-pathfinder');
-const { choice } = require('./typesafe');
 const { countOf } = require('./skills');
 const { dryStanding } = require('./mining-access');
 const { immediateThreat, safeFromHostiles } = require('./danger');
@@ -159,12 +158,10 @@ async function opportunisticPickups(bot, task, goal, save, primary, actions, cli
     const asking = state.pickupSteps % LIMITS.primarySteps === 0 && !!client;
     const animals = asking ? animalCandidates(bot, goal) : [];
     if (!animals.length) return false;
-    const response = await client.systemOne({ kind: 'pickup', state: { request: goal.request, primary, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
+    const response = await require('./decisions').ask(client, { state: { request: goal.request, primary, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
       limits: LIMITS, candidates: animals.map(({ entity, ...c }) => ({ ...c, position: plain(entity.position) })) },
-    questions: { opportunity: choice('Standing instruction: an animal in view whose drop the bot is short of is worth a short chase, even when it is not an ingredient of the current request. These candidates already pass checks for isolation, safe footing, health and a twelve-block radius; the chase is bounded and the main request resumes afterward. Wool is the next bed; feathers are the next quiver of arrows. Choose continue if the player explicitly said no detours/only the requested item, or if the request is urgent.', {
-      ...Object.fromEntries(animals.map((c, i) => [`animal_${i}`, `${c.animal}: ${c.label}; carrying ${c.carried} of ${c.wanted} wanted; ${Math.round(c.distance)} blocks away.`])),
-      continue: 'Keep working on the requested task without a detour.',
-    }) }, signal: AbortSignal.timeout(5000) });
+    questions: { opportunity: ['opportunistic_animal', { options: Object.fromEntries(animals.map((c, i) => [`animal_${i}`, `${c.animal}: ${c.label}; carrying ${c.carried} of ${c.wanted} wanted; ${Math.round(c.distance)} blocks away.`])) }] },
+    signal: AbortSignal.timeout(5000) });
     task.check();
     const selected = response.answers?.opportunity?.choice;
     state.lastDecision = { at: new Date().toISOString(), answer: response.answers?.opportunity, usage: response.usage };
