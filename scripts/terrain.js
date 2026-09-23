@@ -151,6 +151,21 @@ const RUNS = {
       detail: { targetedWet: targets.includes(wet), mined: survival.state.nightMine?.mined || 0, targets: [...new Set(targets)].slice(0, 6),
         attempts: survival.state.attempts } };
   },
+  async crack_jump(d, bounded) {
+    let error = null;
+    try { await navigate(bot, bounded, new goals.GoalBlock(d.target[0], d.target[1] + 1, d.target[2]), { timeoutMs: 30000, stallMs: 8000 }); }
+    catch (err) { error = err.message; }
+    const crack = bot.blockAt(vec(d.crack))?.name;
+    const arrived = bot.entity.position.distanceTo(vec(d.target).offset(0.5, 1, 0.5)) <= 1.5;
+    return { pass: arrived && crack === 'air' && watch.minY >= d.start[1] - 0.2, detail: { arrived, crack, minY: Math.round(watch.minY * 10) / 10, error } };
+  },
+  async crack_over_lava(d, bounded) {
+    let error = null;
+    try { await navigate(bot, bounded, new goals.GoalBlock(d.target[0], d.target[1] + 1, d.target[2]), { timeoutMs: 30000, stallMs: 8000 }); }
+    catch (err) { error = err.message; }
+    const crack = bot.blockAt(vec(d.crack))?.name;
+    return { pass: !watch.died && watch.minY >= d.start[1] - 0.2, detail: { crack, minY: Math.round(watch.minY * 10) / 10, died: !!watch.died, error } };
+  },
   async bridge_over_drop(d, bounded) {
     const placed = await bridgeTo(bot, bounded, vec(d.target), { maxBlocks: 20 });
     const gap = bot.entity.position.distanceTo(vec(d.target).offset(0.5, 1, 0.5));

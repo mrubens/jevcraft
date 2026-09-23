@@ -162,6 +162,41 @@ const TERRAIN = Object.freeze([
     wet: [3020, 58, 3015], dry: [3008, 58, 3015],
   },
   {
+    name: 'crack_jump',
+    why: 'The user, 2026-09-23: the bot laid a little bridge over every one-block crack. A crack three deep is jumped; nothing is placed in it.',
+    dimension: 'overworld', seconds: 40,
+    start: [3101.5, 101, 3041.5],
+    // Blocks to bridge with, so a pass means it chose the jump.
+    kit: [['cobblestone', 16]],
+    build: [
+      'forceload add 3090 3030 3130 3050',
+      'fill 3095 90 3036 3125 110 3046 minecraft:air',
+      'fill 3100 100 3040 3112 100 3042 minecraft:stone',
+      // The crack: one wide, the width of the path, floored three down.
+      'fill 3106 97 3040 3106 100 3042 minecraft:air',
+      'fill 3106 96 3040 3106 96 3042 minecraft:stone',
+    ],
+    crack: [3106, 100, 3041],
+    target: [3111, 100, 3041],
+  },
+  {
+    name: 'crack_over_lava',
+    why: 'The same crack over lava: never jumped. Bridged, or not crossed, and never fallen into.',
+    dimension: 'overworld', seconds: 40,
+    start: [3101.5, 101, 3061.5],
+    kit: [['cobblestone', 16]],
+    build: [
+      'forceload add 3090 3050 3130 3070',
+      'fill 3095 90 3056 3125 110 3066 minecraft:air',
+      'fill 3100 100 3060 3112 100 3062 minecraft:stone',
+      'fill 3106 97 3060 3106 100 3062 minecraft:air',
+      'fill 3106 96 3060 3106 96 3062 minecraft:lava',
+      'fill 3105 95 3059 3107 95 3063 minecraft:stone',
+    ],
+    crack: [3106, 100, 3061],
+    target: [3111, 100, 3061],
+  },
+  {
     name: 'bridge_over_drop',
     why: 'Death eleven: the bridge stood upright at the end of its span while it placed, and went over.',
     dimension: 'overworld', seconds: 60, edge: true,
