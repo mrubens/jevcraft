@@ -95,6 +95,18 @@ function surfaceAbove(bot, x, z, from) {
   return null;
 }
 
+// Open sky over a cell: nothing solid (leaves aside) up to forty blocks.
+// The clean run chose its base beside a pool at y 0 in a cave, dark enough
+// for four zombies, and died there levelling it.
+function openSky(bot, p, reach = 40) {
+  for (let dy = 1; dy <= reach; dy++) {
+    const b = bot.blockAt(new Vec3(p.x, p.y + dy, p.z));
+    if (!b) return true;
+    if (b.boundingBox === 'block' && !/_leaves$/.test(b.name)) return false;
+  }
+  return true;
+}
+
 function baseAnchor(bot, goal) {
   const here = bot.entity.position.floored();
   const village = knownVillages(bot, goal, BED_REACH)[0]?.village;
@@ -110,6 +122,12 @@ function baseAnchor(bot, goal) {
   }
   const house = (goal.survival?.shelters || []).find(s => s.kind === 'house' && s.dimension === bot.game.dimension);
   if (house) return { kind: 'house', ...plain(house.origin) };
+  // Underground, the surface over the bot: the rung comes up wherever the
+  // ladder is, often in the mine.
+  if (!openSky(bot, here)) {
+    const top = surfaceAbove(bot, here.x, here.z, Math.min(here.y + 96, (bot.game?.minY ?? -64) + (bot.game?.height ?? 384) - 1));
+    if (top !== null) return { kind: 'here', x: here.x, y: top, z: here.z };
+  }
   return { kind: 'here', ...plain(here) };
 }
 
@@ -192,7 +210,7 @@ function chooseBaseSite(bot, goal, { radius = SITE_RADIUS } = {}) {
   if (waterId === undefined) return null;
   const point = new Vec3(anchor.x, anchor.y, anchor.z);
   const water = (bot.findBlocks({ matching: [waterId], maxDistance: radius, count: 512, point,
-    useExtraInfo: b => clear(bot.blockAt(b.position.offset(0, 1, 0))) }) || [])
+    useExtraInfo: b => clear(bot.blockAt(b.position.offset(0, 1, 0))) && openSky(bot, b.position) }) || [])
     .sort((a, b) => a.distanceTo(point) - b.distanceTo(point));
   // The nearest site that needs the least levelling: a flat one is taken as
   // soon as it is seen, a bumpy one only when nothing flatter is close.
@@ -223,7 +241,7 @@ function chooseBaseSite(bot, goal, { radius = SITE_RADIUS } = {}) {
   // grass and dirt finds cave floors and the same slope over and over.
   const columns = new Map();
   for (const b of bot.findBlocks({ matching: groundIds, maxDistance: radius, count: 4096, point,
-    useExtraInfo: b => clear(bot.blockAt(b.position.offset(0, 1, 0))) && bot.blockAt(b.position.offset(0, -1, 0))?.boundingBox === 'block' }) || []) {
+    useExtraInfo: b => clear(bot.blockAt(b.position.offset(0, 1, 0))) && bot.blockAt(b.position.offset(0, -1, 0))?.boundingBox === 'block' && openSky(bot, b.position) }) || []) {
     const key = `${b.x},${b.z}`;
     if (!columns.has(key) || columns.get(key).y < b.y) columns.set(key, b);
   }

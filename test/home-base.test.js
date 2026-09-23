@@ -383,3 +383,13 @@ test('levelling a base never digs into a building Jev put up', () => {
   const loose = home.siteWork(bot, goal, flat, { strict: false });
   assert(!loose.digs.some(p => p.x === wall.x && p.z === wall.z), 'loose: that cell is left as it is');
 });
+
+test('a base is never sited on water under a roof: the clean run built in a cave pool at y 0 and died to its zombies', () => {
+  const near = pond(20, 0), far = pond(-40, 0);
+  const w = world({ ponds: [near, far] });
+  // A stone ceiling eight blocks over the near pond and its shores.
+  for (let x = 8; x <= 32; x++) for (let z = -12; z <= 12; z++) w.set(new Vec3(x, LEVEL + 8, z), 'stone');
+  const site = home.chooseBaseSite(w.bot, goalWith(w.bot));
+  assert(site, 'the open pond still makes a site');
+  assert(site.water.x < -30, `the roofed pond was passed over: ${JSON.stringify(site.water)}`);
+});
