@@ -779,7 +779,16 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // passes and the walk brings them into view; the sweep left the
     // structure for the lava shore after one pass. Six empty patrols and
     // the sweep goes on along the fortress's own axis to the next section.
-    if (!next) {
+    // Nothing twelve blocks off to walk to, walked or not: this is not a
+    // stretch of fortress to patrol but a few bricks (the bot's own pocket
+    // walls, often) or a corner seen through rock. Patrolling it was a
+    // return that did nothing, six times over, then a fresh leg that the
+    // next look undid: twenty seconds still, again and again. It is shunned
+    // like an unapproachable face, and the sweep goes on.
+    if (!next && !walkable.some(b => b.distanceTo(here) >= 12)) {
+      state.shunned.push({ x: nearest.x, z: nearest.z, until: Date.now() + 600000 }); delete state.found; state.patrols = 0; save();
+    }
+    else if (!next) {
       state.patrols = (state.patrols || 0) + 1;
       if (state.patrols <= 6) {
         state.visited = state.visited.slice(-2);

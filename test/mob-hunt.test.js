@@ -612,3 +612,19 @@ test('fit to fight is one test: the claim on a quarry and the hunt agree, and ro
   assert.equal(fitToFight(bot), true, 'rotten flesh is something to eat');
   assert.equal(claimed(bot, blaze), true);
 });
+
+test('bricks in view with nothing twelve blocks off to walk to are shunned and the sweep goes on, not patrolled in place', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const clear = { boundingBox: 'empty' };
+  // A pocket's worth of bricks around the bot: all within five blocks.
+  const pocket = Array.from({ length: 30 }, (_, i) => new Vec3(1 + (i % 3), 64 + Math.floor(i / 9), (i % 9) - 4));
+  const bot = { registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 65, 0.5) }, chat() {},
+    blockAt: () => clear, findBlocks: () => pocket };
+  const goal = { fortressSearch: { axis: 1, heading: 1, legs: 3, legSince: Date.now() - 60000, target: { x: 0, y: 65, z: 96 } } };
+  const tunnels = [];
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target) => tunnels.push([target.x, target.z]) });
+  assert.equal(goal.fortressSearch.shunned.length, 1, 'the bricks are shunned');
+  assert.deepEqual(tunnels, [[0, 96]], 'and the leg in hand is walked, not a new one begun');
+  assert.equal(goal.fortressSearch.legs, 3);
+});
