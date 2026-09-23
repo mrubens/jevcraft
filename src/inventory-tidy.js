@@ -107,7 +107,9 @@ const EXPENDABLE = [
 ];
 async function makeRoom(bot, task, name, { keep = new Set(), away = null } = {}) {
   if (roomFor(bot, name)) return true;
-  await tidyInventory(bot, task, { force: true, keep: new Set([...keep, name]), away });
+  // Junk before tools: with forty-six nether brick fences in the pockets the
+  // tidy threw out the stone pickaxe first, and the ladder, counting the
+  // worn diamond pickaxes as spent, made another and threw it out again.
   for (const [match, floor] of EXPENDABLE) {
     if (roomFor(bot, name)) return true;
     const test = typeof match === 'string' ? n => n === match : n => match.test(n);
@@ -120,6 +122,7 @@ async function makeRoom(bot, task, name, { keep = new Set(), away = null } = {})
       catch (err) { task?.check?.(); break; }
     }
   }
+  if (!roomFor(bot, name)) await tidyInventory(bot, task, { force: true, keep: new Set([...keep, name]), away });
   return roomFor(bot, name);
 }
 

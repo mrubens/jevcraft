@@ -80,3 +80,13 @@ test('with every stack under its cap, room for food is made from the cheapest st
   assert.deepEqual(tossed, ['3 netherrack', '62 cobblestone'], 'netherrack is at its floor, so the smaller cobblestone goes next');
   assert(stacks.some(s => s.name === 'coal') && stacks.some(s => s.name === 'raw_iron'));
 });
+
+test('junk goes before a spare tool when room is made', async () => {
+  const { makeRoom } = require('../src/inventory-tidy');
+  const stacks = [{ name: 'nether_brick_fence', count: 46 }, { name: 'stone_pickaxe', count: 1 }, { name: 'diamond_pickaxe', count: 1 }];
+  let free = 0; const tossed = [];
+  const b = { registry, inventory: { items: () => stacks, emptySlotCount: () => free, slots: {} },
+    tossStack: async item => { tossed.push(item.name); stacks.splice(stacks.indexOf(item), 1); free++; } };
+  assert.equal(await makeRoom(b, null, 'raw_iron'), true);
+  assert.deepEqual(tossed, ['nether_brick_fence']);
+});

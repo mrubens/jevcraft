@@ -174,3 +174,13 @@ test('a rung\'s clock keeps its time when another step comes between', () => {
   }
   assert(goal.rungClocks.shield.activeMs >= 10 * 20000, 'the shield has had its twenty seconds ten times over');
 });
+
+test('a diamond pickaxe with two hundred uses left is a pickaxe, not a reason to make a stone one', () => {
+  const { bot, goal } = fixture();
+  bot.registry = require('minecraft-data')('26.1');
+  const max = bot.registry.itemsByName.diamond_pickaxe.maxDurability;
+  bot.inventory.items = () => [{ name: 'diamond_pickaxe', count: 1, durabilityUsed: max - 202 }, { name: 'iron_sword', count: 1 }];
+  assert.notEqual(nextGameStage(bot, goal).phase, 'stone_pickaxe');
+  bot.inventory.items = () => [{ name: 'diamond_pickaxe', count: 1, durabilityUsed: max - 20 }, { name: 'iron_sword', count: 1 }];
+  assert.equal(nextGameStage(bot, goal).phase, 'stone_pickaxe', 'twenty uses is not a trip');
+});

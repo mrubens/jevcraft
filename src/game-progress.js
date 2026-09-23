@@ -120,7 +120,10 @@ function ladderRung(bot, goal, waiting) {
   // while the old one still works, so the spare is made above ground and
   // not after the shaft goes dark. Twenty percent of durability is enough
   // to finish a trip and get back to a crafting table.
-  const usable = item => { const max = bot.registry?.itemsByName?.[item.name]?.maxDurability; return !max || max - (item.durabilityUsed || 0) >= max * 0.2; };
+  // Or sixty-four uses, whichever is less: a fifth of a diamond pickaxe is
+  // three hundred uses, and at two hundred and two the dream run counted
+  // both of its diamond pickaxes spent and made stone ones for an hour.
+  const usable = item => { const max = bot.registry?.itemsByName?.[item.name]?.maxDurability; return !max || max - (item.durabilityUsed || 0) >= Math.min(max * 0.2, 64); };
   const sound = [...bot.inventory.items(), ...equipped].filter(usable).map(i => i.name);
   const best = kind => Math.max(0, ...sound.filter(n => n.endsWith(`_${kind}`)).map(tierOf));
   // A worn tool is still in the inventory, so the replacement is one more
