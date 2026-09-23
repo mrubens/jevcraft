@@ -868,6 +868,10 @@ class Survival {
     if (bot.game?.gameMode !== 'creative' && !((bot.inventory.emptySlotCount?.() ?? 1) > 0) && !await makeRoom(bot, task, 'raw_iron')) return false;
     const feet = bot.entity.position.floored();
     const mine = this.state.nightMine ||= { startedAt: Date.now(), origin: { ...feet }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };
+    // Boxed in: every heading refused (water or lava behind the rock on all
+    // four sides) turned the mine in place fourteen hundred times at a
+    // pocket among lava pools. The night is waited out instead.
+    if (mine.boxedInUntil > Date.now()) return false;
     let target = mine.target && pos(mine.target);
     if (target && NIGHT_ORES.has(mine.targetOre) && bot.blockAt(target)?.name !== mine.targetOre) { target = null; delete mine.target; }
     if (target && !NIGHT_ORES.has(mine.targetOre) && target.distanceTo(bot.entity.position) < 2.5) target = null;
@@ -924,6 +928,9 @@ class Survival {
     if (mine.target) unwatch(this, 'night_mine', mine.target);
     mine.lastAbandoned = { target: mine.target, why, at: new Date().toISOString() };
     mine.heading++; delete mine.target; delete mine.tunnel; mine.failures = 0;
+    const now = Date.now();
+    mine.refusals = [...(mine.refusals || []).filter(r => now - r.at < 60000 && r.mined === mine.mined), { at: now, mined: mine.mined }];
+    if (mine.refusals.length >= 4) { mine.boxedInUntil = now + 600000; mine.refusals = []; }
   }
 
   async wait(task, goal, save, reason = 'Waiting for daylight inside the verified shelter') {

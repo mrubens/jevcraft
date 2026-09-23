@@ -1044,3 +1044,13 @@ test('with no shelter site that can be walked to, the night is sealed in where t
     assert.equal(sealed, 1);
   } finally { shelter.shelterSites = sites; }
 });
+
+test('a night mine refused on every heading is boxed in and waits the night out instead of turning in place', () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: {}, entity: { position: new Vec3(0.5, 55, 0.5) }, inventory: { items: () => [] } });
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  const mine = survival.state.nightMine = { heading: 0, failures: 0, mined: 3, target: { x: 24, y: 45, z: 0 }, targetOre: 'branch' };
+  for (let i = 0; i < 3; i++) { mine.target = { x: 24, y: 45, z: i }; survival.abandonTarget(mine, 'No safe way toward it: lava or water in the way'); }
+  assert(!(mine.boxedInUntil > Date.now()), 'three turns are not yet boxed in');
+  mine.target = { x: 0, y: 45, z: 24 }; survival.abandonTarget(mine, 'No safe way toward it: lava or water in the way');
+  assert(mine.boxedInUntil > Date.now(), 'all four headings refused within a minute');
+});
