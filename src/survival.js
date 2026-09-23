@@ -1172,6 +1172,14 @@ class Survival {
     // Without Jev, shelter comes before food and food before the request:
     // the order a careful player keeps when nobody is weighing the trade.
     const fallback = children => ['sleep_in_bed', 'secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
+    // A reserve top-up once chosen is held, not asked again: at full health
+    // and hunger "get food or carry on" went to Jev every five seconds,
+    // thirty times in two bursts, obtain_food each time at 0.96 to 0.98.
+    // Held for five minutes, while food is still wanted and nothing needs
+    // shelter; the source is still Jev's to choose each time.
+    const foodPlan = this.state.foodPlan;
+    if (foodPlan && (foodPlan.until < Date.now() || !needsFood || needsShelter || stockPaused)) delete this.state.foodPlan;
+    if (this.state.foodPlan && tree.obtain_food) delete tree.continue_request;
     // One option is not a question. Jev was asked to pick the only shelter
     // on offer every night the bot could not stay up.
     if (Object.keys(tree).length === 1 && !Object.values(tree)[0].children) { await Object.values(tree)[0].run(); onStep(goal); return true; }
@@ -1179,6 +1187,8 @@ class Survival {
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);
     if (decision.stale) return true;
+    if (decision.path[0] === 'obtain_food' && !hungry && !this.state.foodPlan) this.state.foodPlan = { until: Date.now() + 300000, at: new Date().toISOString() };
+    if (decision.path[0] === 'continue_request') delete this.state.foodPlan;
     await decision.action.run();
     return decision.path[0] !== 'continue_request';
   }

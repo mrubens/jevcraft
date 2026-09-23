@@ -143,10 +143,14 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   }
   for (const target of prey) {
     const observed = target.position.clone();
-    const item = preyFood(bot, target);
-    choices[`hunt_${target.id}`] = { description: { action: 'hunt a passive animal and verify ingredient pickup; chicken must be cooked before eating',
+    const item = preyFood(bot, target), raw = item.replaceAll('_', ' ');
+    // Said of this animal's own food. Every hunt used to say "chicken must be
+    // cooked before eating", and a rabbit came with needsCooking false.
+    const needsCooking = !safeFood(bot, { name: item });
+    choices[`hunt_${target.id}`] = { description: { action: `Hunt this ${target.name.replaceAll('_', ' ')} and pick up its ${raw}. ${needsCooking
+      ? `Raw ${raw} can poison; it must be cooked before eating.` : `Raw ${raw} is safe to eat, and worth much more cooked.`}`,
       animal: target.name, position: { ...target.position.floored() }, distance: Math.round(target.position.distanceTo(bot.entity.position)),
-      availableWeapon: bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name))?.name || 'bare hands', food: item, needsCooking: !safeFood(bot, { name: item }) },
+      availableWeapon: bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name))?.name || 'bare hands', food: item, needsCooking },
     valid: () => bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) === item && target.position.distanceTo(observed) < 2,
     run: async () => {
       goal.survivalAction = { action: 'gather_food', animal: target.name, position: { ...target.position }, at: new Date().toISOString() }; save();

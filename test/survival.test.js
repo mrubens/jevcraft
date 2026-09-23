@@ -993,3 +993,19 @@ test('beside a drop is a neighbouring cell with no floor for three blocks or lav
   const cell = firmGround(wide);
   assert(cell && cell.z >= 1 && !besideDrop(wide, cell), `a cell with ground all round: ${cell}`);
 });
+
+test('a reserve top-up once chosen is held: "get food or carry on" is not asked again every step', async () => {
+  const { Survival } = require('../src/survival');
+  const client = { systemOne: async () => { throw new Error('offline'); } };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 3000 },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, pathfinder: { movements: {}, setGoal() {} },
+    blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client });
+  const offered = [];
+  survival.decide = async (task, goal, save, { tree }) => { offered.push(Object.keys(tree).sort()); return { path: ['obtain_food'], action: { run: async () => {} }, stale: false }; };
+  const goal = { kind: 'win', request: 'beat the game', stockFood: true };
+  for (let i = 0; i < 3; i++) await survival.step(new Task('test', 'food'), goal, () => {});
+  assert.deepEqual(offered[0], ['continue_request', 'obtain_food'], 'asked once');
+  assert(offered.slice(1).every(keys => !keys.includes('continue_request')), `then held: ${JSON.stringify(offered)}`);
+});
