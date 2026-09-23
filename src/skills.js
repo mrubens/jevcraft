@@ -270,6 +270,12 @@ function wholeGoal(goal) {
   return goal;
 }
 
+function goalGuardPlugin(bot) {
+  const setGoal = bot.pathfinder?.setGoal;
+  if (!setGoal) { console.log('[bug] goal guard: no pathfinder to guard; load it after the pathfinder'); return; }
+  bot.pathfinder.setGoal = (goal, dynamic) => setGoal.call(bot.pathfinder, wholeGoal(goal), dynamic);
+}
+
 async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false } = {}) {
   task.check();
   if (require('./flight').canFly(bot)) return require('./flight').flyNavigate(bot, task, goal, { timeoutMs, stallMs, stopWhen });
@@ -424,7 +430,7 @@ async function equipBestTool(bot, block) {
   }
 }
 
-module.exports = { wholeGoal, pickaxeDurability,
+module.exports = { wholeGoal, goalGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,

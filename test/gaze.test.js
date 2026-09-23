@@ -41,3 +41,13 @@ test('a goal missing the methods the pathfinder calls every tick is made whole, 
     assert.match(lines[0], /\[bug\] the pathfinder was given an incomplete goal/);
   } finally { console.log = log; }
 });
+
+test('the goal guard wraps the pathfinder it is injected after', () => {
+  const { goalGuardPlugin } = require('../src/skills');
+  let set = null;
+  const bot = { pathfinder: { setGoal(goal) { set = goal; } } };
+  goalGuardPlugin(bot);
+  const log = console.log; console.log = () => {};
+  try { bot.pathfinder.setGoal({ x: 1, y: 2, z: 3 }); } finally { console.log = log; }
+  assert.equal(typeof set.isValid, 'function');
+});
