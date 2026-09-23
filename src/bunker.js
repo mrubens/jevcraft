@@ -151,6 +151,33 @@ function nearWall(bot, from, { within = WALK_TO_WALL } = {}) {
   return wallStands(bot, from, { distance: within + 2 }).some(cell => cell.distanceTo(here) <= within);
 }
 
+// How long the bunker would take to dig with the best tool carried, walk to
+// the wall included: from where the bot stands, or the nearest wall stand.
+// Rebuilding its kit after a death, the dream run dug one with a stone
+// pickaxe for fifteen seconds under two skeletons' arrows and died at the
+// doorway (2026-09-23 23:16).
+function bunkerDigMs(bot, from) {
+  const { cheapestTool } = require('./skills');
+  let feet = bot.entity.position.floored(), side = bunkerSide(bot, feet, from), ms = 0;
+  if (!side) {
+    const stand = wallStands(bot, from, { distance: WALK_TO_WALL + 2 }).find(c => c.distanceTo(bot.entity.position) <= WALK_TO_WALL);
+    if (!stand) return Infinity;
+    feet = stand; side = bunkerSide(bot, feet, from);
+    if (!side) return Infinity;
+    ms += feet.distanceTo(bot.entity.position) * 250;
+  }
+  const cellMs = b => {
+    if (typeof b.digTime !== 'function') return 750;
+    const tool = cheapestTool(bot, b);
+    return b.digTime(tool ? tool.type : null, false, false, false, [], {});
+  };
+  for (let d = 1; d <= DEPTH; d++) {
+    const cell = feet.plus(side.scaled(d));
+    for (const p of [cell, cell.offset(0, 1, 0)]) { const b = bot.blockAt(p); if (solid(b)) ms += cellMs(b); }
+  }
+  return ms;
+}
+
 async function reachWall(bot, task, from, navigate) {
   if (bunkerSide(bot, bot.entity.position.floored(), from)) return true;
   if (!navigate) return false;
@@ -287,4 +314,4 @@ async function raiseCover(bot, task, from) {
   return solid(bot.blockAt(cell)) ? cell : false;
 }
 
-module.exports = { bunkerFight, digBunker, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, WALK_TO_WALL, SWARM };
+module.exports = { bunkerDigMs, bunkerFight, digBunker, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, WALK_TO_WALL, SWARM };

@@ -100,6 +100,7 @@ function lavaExit(bot, radius = 6) {
 // drop means a neighbouring cell the body could be pushed into with no
 // floor for three blocks under it, or lava under it.
 const { besideDrop, dropWithin, KNOCKBACK } = require('./terrain');
+const BUNKER_DIG_MS = 3000;
 const heavyHitters = (danger, radius) => danger.filter(t => KNOCKBACK.has(t.entity.name) && t.distance <= radius);
 function firmGround(bot, radius = 4, { margin = 1 } = {}) {
   const feet = bot.entity.position.floored(), cells = [];
@@ -463,7 +464,9 @@ class Survival {
     // live run, 17:16, at three health).
     if (((scaffold >= 2 && headroom) || up) && !creeperClose(danger)) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.',
       run: async () => up || this.pillarFrom(task, goal, save, danger) };
-    if (bot.health >= 10 && !creeperClose(danger) && nearWall(bot, centroid(danger))) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.',
+    // A bunker that is quick to dig: three seconds of digging under fire is
+    // the most it is worth (bunker.js bunkerDigMs).
+    if (bot.health >= 10 && !creeperClose(danger) && nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.',
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
@@ -681,7 +684,7 @@ class Survival {
       // answer, but a hold with no end would be a new way to stall a run.
       if (pack) this.state.bunkerSince ||= Date.now(); else delete this.state.bunkerSince;
       const holding = this.state.bunkerSince && Date.now() - this.state.bunkerSince > 45000;
-      if (pack && !holding && bot.health >= 10 && nearWall(bot, centroid(danger))) {
+      if (pack && !holding && bot.health >= 10 && nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) {
         this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health,
           held: Math.round((Date.now() - this.state.bunkerSince) / 1000) });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); delete this.state.trappedSince; return; }
