@@ -2402,6 +2402,7 @@ function idleOptions(bot, goal) {
   const sides = sideTrips(bot, goal);
   if (sides.loot) options.loot = sides.loot;
   if (sides.trade) options.trade = sides.trade;
+  if (sides.deep_dark) options.deep_dark = sides.deep_dark;
   // Experience for enchanting: the ingots taken out of a furnace give it,
   // and the raw ore is carried and stashed by the stack. Only while there is
   // gear to enchant and the level is under thirty, so it is never ground for
@@ -2440,6 +2441,13 @@ function sideTrips(bot, goal, client) {
     run: (b, t, g, sv) => tradeStep(b, t, g, sv, { navigate, decide, client: client || t.opportunityClient }) };
   // Enchanting: a table carried, in view or remembered, lapis in hand, five
   // levels or more, and gear still plain (enchanting.js).
+  // The deep dark: an ancient city's chests, the bold trip (deep-dark.js).
+  const deepDark = require('./deep-dark');
+  if (deepDark.deepDarkReady(bot, goal)) trips.deep_dark = { description: deepDark.describe(goal),
+    says: goal.deepDark?.legs || (goal.landmarks || []).some(l => l.kind === 'ancient_city') ? "I'll go back down to the deep dark" : "I'll go looking for an ancient city in the deep dark",
+    run: (b, t, g, sv) => deepDark.deepDarkTrip(b, t, g, sv, { dig, navigate, tunnel: tunnelStep,
+      loot: (b2, t2, g2, sv2) => lootNearby(b2, t2, g2, sv2, lootActions()),
+      notice: (b2, g2, sv2) => noticeLandmarks(b2, g2, sv2, { force: true }) }) };
   if (enchantReady(bot, goal)) trips.enchant = { description: `Enchant the ${enchantable(bot)[0].item.name.replaceAll('_', ' ')} at the enchanting table with ${bot.experience?.level} levels and the lapis carried: Sharpness, Protection or Power for the fights ahead.`,
     says: `I'll enchant my ${enchantable(bot)[0].item.name.replaceAll('_', ' ')}`,
     run: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) };

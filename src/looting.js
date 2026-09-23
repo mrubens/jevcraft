@@ -26,11 +26,13 @@ const { roomFor, makeRoom } = require('./inventory-tidy');
 const { immediateThreat } = require('./danger');
 const { setAside, isSetAside } = require('./progress');
 
-const LOOTABLE = ['ruined_portal', 'dungeon', 'jungle_temple', 'desert_temple', 'mineshaft', 'nether_fortress'];
+const LOOTABLE = ['ruined_portal', 'dungeon', 'jungle_temple', 'desert_temple', 'mineshaft', 'nether_fortress', 'ancient_city'];
 const MINESHAFT_REACH = 64, VILLAGE_REACH = 40;
 const NEAR = 24, OF_STRUCTURE = 16, HOME_CLEAR = 24;
 // What is taken beyond the keepsakes and the kit: what the ladder uses.
-const LOOT = /^(gold_(ingot|nugget|block)|iron_(ingot|nugget|block)|diamond|obsidian|crying_obsidian|flint_and_steel|fire_charge|ender_pearl|ender_eye|blaze_rod|(enchanted_)?golden_apple|golden_carrot|golden_(helmet|chestplate|leggings|boots)|bucket|water_bucket|lava_bucket|bread|coal|emerald)$/;
+// An ancient city's chests add the enchanted books, echo shards and
+// diamond gear that make the trip worth its warden.
+const LOOT = /^(gold_(ingot|nugget|block)|iron_(ingot|nugget|block)|diamond|diamond_(helmet|chestplate|leggings|boots|sword|pickaxe|axe|hoe|shovel)|obsidian|crying_obsidian|flint_and_steel|fire_charge|ender_pearl|ender_eye|blaze_rod|(enchanted_)?golden_apple|golden_carrot|golden_(helmet|chestplate|leggings|boots)|bucket|water_bucket|lava_bucket|bread|coal|emerald|enchanted_book|echo_shard|experience_bottle|lapis_lazuli)$/;
 const wanted = (bot, name) => LOOT.test(name) || isKeepsake(name) || isKitMaterial(bot, name);
 const key = p => `${p.x},${p.y},${p.z}`;
 const overworld = bot => /overworld$/.test(String(bot.game?.dimension || 'overworld'));
@@ -43,7 +45,7 @@ const plain = p => ({ x: p.x, y: p.y, z: p.z });
 // sideways and twenty-four up or down of a remembered lootable landmark.
 function structureOf(goal, p, bot = null) {
   const landmark = (goal.landmarks || []).find(l => LOOTABLE.includes(l.kind) && l.kind !== 'mineshaft' && (bot ? sameDimension(bot, l) : true) &&
-    Math.hypot(l.x - p.x, l.z - p.z) <= (l.kind === 'nether_fortress' ? 48 : OF_STRUCTURE) && Math.abs((l.y ?? p.y) - p.y) <= 24);
+    Math.hypot(l.x - p.x, l.z - p.z) <= (l.kind === 'nether_fortress' ? 48 : l.kind === 'ancient_city' ? 80 : OF_STRUCTURE) && Math.abs((l.y ?? p.y) - p.y) <= 24);
   if (landmark) return landmark;
   // A village is its own record (villages.js), not a landmark.
   const village = (goal.villages || []).find(v => (bot ? sameDimension(bot, v) : true) && Math.hypot(v.x - p.x, v.z - p.z) <= VILLAGE_REACH);
@@ -195,7 +197,7 @@ function unlootedLandmarks(bot, goal, reach = 256) {
   if (!overworld(bot)) return [];
   const here = bot.entity?.position;
   if (!here) return [];
-  return (goal.landmarks || []).filter(l => LOOTABLE.includes(l.kind) && l.kind !== 'nether_fortress' && !l.lootedAt && sameDimension(bot, l) &&
+  return (goal.landmarks || []).filter(l => LOOTABLE.includes(l.kind) && l.kind !== 'nether_fortress' && l.kind !== 'ancient_city' && !l.lootedAt && sameDimension(bot, l) &&
     !isSetAside(goal, 'landmark_trip', `${l.kind}:${l.x},${l.z}`))
     .map(landmark => ({ landmark, distance: Math.round(Math.hypot(landmark.x - here.x, landmark.z - here.z)) }))
     .filter(l => l.distance <= reach).sort((a, b) => a.distance - b.distance);

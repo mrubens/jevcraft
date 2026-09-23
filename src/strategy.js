@@ -23,6 +23,7 @@ const { setAside, isSetAside } = require('./progress');
 const { immediateThreat } = require('./danger');
 
 const WALK_BLOCKS_PER_S = 4;
+const LATER = new Set(['acquire', 'enter_nether', 'find_stronghold', 'trade', 'barter']);
 const HOLD_MS = 10 * 60 * 1000, SIDE_REST_MS = 10 * 60 * 1000, SIDE_FAIL_MS = 30 * 60 * 1000;
 const fatal = err => ['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name);
 const label = phase => phase.replaceAll('_', ' ');
@@ -48,9 +49,13 @@ function rungOption(rung, first) {
 function strategyOptions(bot, goal, stage, sides = {}) {
   if (bot.game?.gameMode !== 'survival' || dimension(bot) !== 'overworld') return null;
   const rungs = openRungs(bot, goal);
-  if (!rungs.length || rungs[0].phase !== stage.phase) return null;
   const options = {};
-  rungs.forEach((rung, i) => { options[`rung_${rung.phase}`] = rungOption(rung, i === 0); });
+  if (rungs.length && rungs[0].phase === stage.phase) rungs.forEach((rung, i) => { options[`rung_${rung.phase}`] = rungOption(rung, i === 0); });
+  // Past the preparation ladder (pearls, the stronghold, the crossing): the
+  // ladder's stage and the side trips. The dream run spent an afternoon
+  // walking about after endermen with an ancient city never looked for.
+  else if (LATER.has(stage.action) || stage.phase === 'obtain_ender_pearls') options[`stage_${stage.phase}`] = { description: `The ladder's next step: ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.`, stage, fallback: true };
+  else return null;
   const t = bot.time?.timeOfDay ?? 0;
   const daylight = t < DAY.DUSK;
   const fit = (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 12 && !immediateThreat(bot);
@@ -91,9 +96,10 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     choice = decision.path.at(-1);
     goal.strategy = { choice, ladderNext: stage.phase, keys, at: now(), source: decision.fallback ? 'fallback' : 'jev' };
     save();
-    if (choice !== `rung_${stage.phase}`) bot.chat?.(options[choice].side ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
+    if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].side ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
   }
   const option = options[choice];
+  if (option.stage) return null;
   if (option.rung) return option.rung.phase === stage.phase ? null : { stage: option.rung };
   // A side trip: once, then a rest, and the next step asks again.
   delete goal.strategy;

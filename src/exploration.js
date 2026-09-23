@@ -43,6 +43,9 @@ function markExplored(bot, goal, { now = Date.now() } = {}) {
 //   jungle_temple    tripwire and mossy stone in the jungle: loot chests
 //   nether_fortress  nether brick: blazes, the rods for the eyes
 //   bastion          blackstone with gold: gold blocks to barter with
+//   deep_dark        sculk below y 0: the biome ancient cities are built in
+//   ancient_city     deepslate tiles and bricks among sculk, or the
+//                    reinforced deepslate of its portal frame: loot chests
 const block = (bot, name) => bot.registry?.blocksByName?.[name]?.id;
 const find = (bot, names, maxDistance = 48, count = 64) => {
   const ids = names.map(n => block(bot, n)).filter(id => id !== undefined);
@@ -78,6 +81,19 @@ const DETECTORS = [
   { kind: 'jungle_temple', dimension: 'overworld', same: 32, detect: bot => {
     const hook = find(bot, ['tripwire_hook'], 32, 8).find(p => near(bot, p, ['mossy_cobblestone', 'chiseled_stone_bricks'], 4));
     return hook && at(hook);
+  } },
+  { kind: 'deep_dark', dimension: 'overworld', same: 64, detect: bot => {
+    const sculk = find(bot, ['sculk', 'sculk_vein', 'sculk_sensor', 'sculk_catalyst', 'sculk_shrieker'], 32, 64).filter(p => p.y < 0);
+    return sculk.length >= 12 ? at(sculk[0], { sculk: sculk.length }) : null;
+  } },
+  { kind: 'ancient_city', dimension: 'overworld', same: 96, detect: bot => {
+    const frame = find(bot, ['reinforced_deepslate'], 48, 4).filter(p => p.y < -20);
+    if (frame.length) return at(frame[0], { frame: frame.length });
+    const built = find(bot, ['deepslate_tiles', 'deepslate_bricks', 'cracked_deepslate_tiles', 'cracked_deepslate_bricks', 'polished_deepslate', 'chiseled_deepslate'], 48, 64).filter(p => p.y < -20);
+    if (built.length < 16) return null;
+    const sculk = find(bot, ['sculk', 'sculk_vein', 'sculk_sensor', 'sculk_shrieker'], 48, 16);
+    const seed = built.find(p => sculk.some(q => q.distanceTo(p) <= 16));
+    return seed ? at(seed, { built: built.length }) : null;
   } },
   { kind: 'nether_fortress', dimension: 'nether', same: 96, detect: bot => {
     const bricks = find(bot, ['nether_bricks', 'nether_brick_fence', 'nether_brick_stairs'], 64, 128);
