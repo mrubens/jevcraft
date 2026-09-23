@@ -335,6 +335,8 @@ async function gameStep(bot, task, goal, save, actions) {
     if (chosen?.ran) return false;
     if (chosen?.stage) stage = chosen.stage;
   }
+  // Back in the Overworld and not crossing: wolves left sitting stand up.
+  if (actions.wolves && goal.wolfOrder?.sit && dimension(bot) === 'overworld' && !['enter_nether', 'reach_nether', 'enter_end'].includes(stage.action)) await actions.wolves(bot, task, goal, save, false);
   // Back in the Overworld with nothing left to cross for: a field cache in
   // reach is emptied before the ladder goes on.
   if (actions.take_cache && !['enter_nether', 'reach_nether'].includes(stage.action) && stage.phase !== 'complete') {
@@ -365,6 +367,9 @@ async function gameStep(bot, task, goal, save, actions) {
     // iron ore is not available to repair this dependency once inside.
     // Valuables stay home before the crossing: nothing in the chest burns
     // with the body, and the Nether needs none of it.
+    // Wolves sit here: they attack what the bot hits, and the far side is
+    // zombified piglins and endermen.
+    if (['enter_nether', 'enter_end'].includes(stage.action) && actions.wolves) await actions.wolves(bot, task, goal, save, true);
     if (stage.action === 'enter_nether' && actions.stash_valuables && !await actions.stash_valuables(bot, task, goal, save)) return false;
     if (stage.action === 'enter_nether' && actions.food_reserve && !await actions.food_reserve(bot, task, goal, save)) return false;
     if (stage.action === 'enter_nether' && actions.prepare_combat && !await actions.prepare_combat(bot, task, goal, save)) return false;

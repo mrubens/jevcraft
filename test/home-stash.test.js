@@ -82,8 +82,8 @@ test('keepsakes go in over what the pockets keep, never twice, and the surplus t
     ['iron_ingot', 8], ['raw_iron', 12], ['gold_ingot', 1], ['raw_gold', 5], ['diamond', 2], ['ender_pearl', 20], ['blaze_rod', 9], ['blaze_powder', 4], ['obsidian', 3],
     ['oak_log', 20], ['birch_log', 4], ['coal', 20], ['charcoal', 4], ['wheat_seeds', 70], ['wheat', 64], ['carrot', 65], ['potato', 10], ['cobblestone', 64], ['stone_pickaxe', 1]]);
   const moves = stash.stashDeposits(bot, holding({ oak_log: 8, cobblestone: 64, stone_pickaxe: 1, cooked_beef: 8 }));
-  assert.deepEqual(byItem(moves), { white_wool: 4, string: 4, feather: 6, bone: 3, bone_meal: 2, gunpowder: 1, arrow: 8, leather: 2, flint: 2, raw_iron: 4, raw_gold: 2,
-    ender_pearl: 4, blaze_rod: 1, oak_log: 16, coal: 8, wheat_seeds: 6, carrot: 1 }, 'three obsidian stay in the pockets: a portal is ten');
+  assert.deepEqual(byItem(moves), { white_wool: 4, string: 4, feather: 6, bone_meal: 2, gunpowder: 1, arrow: 8, leather: 2, flint: 2, raw_iron: 4, raw_gold: 2,
+    ender_pearl: 4, blaze_rod: 1, oak_log: 16, coal: 8, wheat_seeds: 6, carrot: 1 }, 'three obsidian stay in the pockets: a portal is ten; bones stay for a wolf');
   assert(moves.every(m => m.keepsake), 'the kit is full, so every move is a keepsake');
   // Wool and logs are families: seven wool carried, three kept, the biggest pile spent first; twenty-four logs, eight kept, all from the oak pile.
   // Gold keeps what the boots need: one ingot plus three raw. Diamonds stay without the diamond pickaxe.

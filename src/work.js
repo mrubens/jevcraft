@@ -2432,7 +2432,7 @@ function idleOptions(bot, goal) {
   const sides = sideTrips(bot, goal);
   if (sides.loot) options.loot = sides.loot;
   if (sides.trade) options.trade = sides.trade;
-  for (const key of ['deep_dark', 'trial_chambers', 'fetch_cache']) if (sides[key]) options[key] = sides[key];
+  for (const key of ['deep_dark', 'trial_chambers', 'fetch_cache', 'tame_wolf', 'breed_sheep', 'breed_chickens']) if (sides[key]) options[key] = sides[key];
   // Experience for enchanting: the ingots taken out of a furnace give it,
   // and the raw ore is carried and stashed by the stack. Only while there is
   // gear to enchant and the level is under thirty, so it is never ground for
@@ -2488,6 +2488,15 @@ function sideTrips(bot, goal, client) {
     if (target) trips.explore = { description: `Explore: walk to the nearest unexplored area (${target.fromHere} blocks away) and see what is there. Known so far: ${summaryText(explorationSummary(goal))}. Villages mean beds, food and trades; temples, shipwrecks and ruined portals mean chests.`,
       says: "I'll go exploring", run: (b, t, g, sv) => exploreStep(b, t, g, sv, { navigate, home, noticeVillage }) };
   }
+  // Animals: a wolf tamed with bones, sheep and chickens bred in the field
+  // (wolves.js, breeding.js).
+  const wolves = require('./wolves'), breeding = require('./breeding');
+  if (wolves.tameReady(bot, goal)) trips.tame_wolf = { description: `Tame the wolf in view with the ${countOf(bot, 'bone')} bones carried (a third of bones tame, on average): a companion that fights skeletons and zombies beside the bot. It is told to sit before a Nether or End crossing.`,
+    says: "I'll tame that wolf", run: (b, t, g, sv) => wolves.tameWolf(b, t, g, sv, { navigate }) };
+  if (breeding.breedReady(bot, goal, 'sheep')) trips.breed_sheep = { description: 'Breed the two sheep in view with two wheat: more sheep near here are wool for the next bed.',
+    says: "I'll breed these sheep", run: (b, t, g, sv) => breeding.breedNearby(b, t, g, sv, 'sheep', { navigate }) };
+  if (breeding.breedReady(bot, goal, 'chicken')) trips.breed_chickens = { description: 'Breed the two chickens in view with two seeds: more chickens near here are feathers for arrows.',
+    says: "I'll breed these chickens", run: (b, t, g, sv) => breeding.breedNearby(b, t, g, sv, 'chicken', { navigate }) };
   // A cache from an earlier trip, far enough off that passing will not
   // bring it back: fetch it.
   const cached = require('./field-cache').nearCache(bot, goal, 512);
@@ -2736,6 +2745,8 @@ function gameHandlers(bot, decisionClient) {
         warped_pearls: (bot, task, goal, save, stage) => require('./warped-pearls').warpedPearls(bot, task, goal, save,
           { navigate, acquireStep, notice: (b2, g2, sv2) => noticeLandmarks(b2, g2, sv2, { force: true }),
             tunnel: (b2, t2, g2, sv2, target) => tunnelStep(b2, t2, g2, sv2, target, { dig, navigate }) }, stage || goal.step),
+        // Wolves sit before a crossing and stand again after (wolves.js).
+        wolves: (bot, task, goal, save, sit) => require('./wolves').commandWolves(bot, task, goal, save, sit),
         // A chest on the spot when home is too far (field-cache.js).
         cache_valuables: (bot, task, goal, save) => require('./field-cache').cacheValuables(bot, task, goal, save, homeActions()),
         take_cache: async (bot, task, goal, save) => {

@@ -88,7 +88,9 @@ const KEEPSAKES = Object.freeze([
   { label: 'wool', matches: name => /_wool$/.test(name), keep: 3 },
   { label: 'string', matches: name => name === 'string', keep: 0 },
   { label: 'feathers', matches: name => name === 'feather', keep: 0 },
-  { label: 'bones', matches: name => name === 'bone' || name === 'bone_meal', keep: 0 },
+  // Eight bones stay in the pockets: a wild wolf is tamed where it is met.
+  { label: 'bones', matches: name => name === 'bone', keep: 8 },
+  { label: 'bone meal', matches: name => name === 'bone_meal', keep: 0 },
   { label: 'gunpowder', matches: name => name === 'gunpowder', keep: 0 },
   { label: 'arrows', matches: name => name === 'arrow', keep: 32 },
   { label: 'leather', matches: name => name === 'leather', keep: 0 },
