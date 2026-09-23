@@ -15,7 +15,7 @@ const { updateDigCapabilities } = require('./movement');
 const { resourceTunnelStep, tunnelStep, staircaseResting } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard, safeFood } = require('./vitals');
 const { decide } = require('./decisions');
-const { Survival, inWater, lavaExit } = require('./survival');
+const { Survival, inWater, lavaExit, shelterNeeded } = require('./survival');
 const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
 const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, rememberSource, committedSource } = require('./decision-options');
 const { reviewDesign } = require('./design-review');
@@ -236,6 +236,24 @@ async function maintainPickaxe(bot, task, goal, save) {
   if (!sparePickaxeMaterials(bot)) return false;
   if (!(goal.spareAnnouncedAt > Date.now() - 10 * 60 * 1000)) { goal.spareAnnouncedAt = Date.now(); bot.chat('My pickaxe is nearly done. Making a spare before it goes.'); }
   await acquireStep(bot, task, 'stone_pickaxe', countOf(bot, 'stone_pickaxe') + 1, goal, save);
+  return true;
+}
+
+// Sixteen building blocks carried, made up when short, the way the spare
+// pickaxe is: cobblestone with a pickaxe, dirt without, netherrack in the
+// Nether. Never in water or at night on the surface, and a gather that
+// fails rests ten minutes.
+async function maintainBlocks(bot, task, goal, save) {
+  if (bot.game?.gameMode === 'creative') return false;
+  const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy');
+  const have = blockStock(bot);
+  if (have >= BLOCK_RESERVE || isSetAside(goal, 'block_reserve', 'gather')) return false;
+  if (bot.entity?.isInWater || (bot.game?.dimension === 'overworld' && shelterNeeded(bot))) return false;
+  const nether = /nether/.test(String(bot.game?.dimension || ''));
+  const item = nether ? 'netherrack' : pickaxeTier(bot) >= 1 ? 'cobblestone' : 'dirt';
+  goal.step = { action: 'block_reserve', item, have }; save();
+  try { await acquireStep(bot, task, item, countOf(bot, item) + (BLOCK_RESERVE - have), goal, save); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'block_reserve', 'gather', err, 600000); }
   return true;
 }
 
@@ -2846,6 +2864,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
       }
       if (!endTask && await maintainPickaxe(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; }
+      if (!endTask && goal.kind === 'win' && await maintainBlocks(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; }
       // A structure's chest within reach is opened as a rule (looting.js).
       if (goal.kind === 'win' && !endTask && await inCatch(task, goal, () => lootNearby(bot, task, goal, save, lootActions()))) { goal.stalls = 0; save(); onStep(goal); continue; }
       // Work starts on dry ground. A crafting table placed from a pool under
@@ -2961,4 +2980,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { workstation, noteError, localBatch, smelt, turnSearch, searchFor, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
+module.exports = { maintainBlocks, workstation, noteError, localBatch, smelt, turnSearch, searchFor, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };

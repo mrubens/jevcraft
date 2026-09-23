@@ -127,6 +127,13 @@ const EXPENDABLE = [
   ['netherrack', bot => nether(bot) ? 32 : 0], ['cobbled_deepslate', 0], ['cobblestone', 64], ['soul_sand', 0], ['nether_bricks', 0],
   ['wheat_seeds', 8], ['raw_copper', 0], ['copper_ingot', 0], ['rotten_flesh', 0], ['wheat_seeds', 0],
 ];
+// A reserve of building blocks is never thrown away: sixteen are a step out
+// of a cliff-banked lake, a wall against a creeper, a pillar out of a pit.
+// The live run had none when it needed one and drowned digging stone.
+const BLOCK_RESERVE = 16;
+const BUILDING = /^(dirt|cobblestone|cobbled_deepslate|stone|andesite|diorite|granite|tuff|deepslate|netherrack|nether_bricks|blackstone|basalt|end_stone)$|_planks$/;
+const blockStock = bot => bot.inventory.items().filter(i => BUILDING.test(i.name)).reduce((n, i) => n + i.count, 0);
+
 async function makeRoom(bot, task, name, { keep = new Set(), away = null } = {}) {
   if (roomFor(bot, name)) return true;
   await faceAway(bot, away);
@@ -141,6 +148,7 @@ async function makeRoom(bot, task, name, { keep = new Set(), away = null } = {})
     let total = stacks.reduce((n, i) => n + i.count, 0);
     for (const stack of stacks) {
       if (roomFor(bot, name) || total - stack.count < floor) break;
+      if (BUILDING.test(stack.name) && blockStock(bot) - stack.count < BLOCK_RESERVE) continue;
       task?.check?.();
       try { await (bot.tossStack ? bot.tossStack(stack) : bot.toss(stack.type, null, stack.count)); total -= stack.count; }
       catch (err) { task?.check?.(); break; }
@@ -150,4 +158,4 @@ async function makeRoom(bot, task, name, { keep = new Set(), away = null } = {})
   return roomFor(bot, name);
 }
 
-module.exports = { makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, SURPLUS, FREE_SLOTS };
+module.exports = { makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };

@@ -215,8 +215,9 @@ test('pockets filled while the batch cooks are cleared before the output is take
   // Thirty-six slots: raw gold, coal, and thirty-four of junk and keepers,
   // the dirt from the furnace's footing among them.
   // One slot free when the window opens; dirt fills it while the batch cooks.
-  const pockets = [{ name: 'raw_gold', count: 5 }, { name: 'coal', count: 8 },
-    ...Array.from({ length: 33 }, (_, i) => ({ name: `keeper_${i}`, count: 1 }))];
+  // Twenty cobblestone keep the block reserve, so the dirt is spare.
+  const pockets = [{ name: 'raw_gold', count: 5 }, { name: 'coal', count: 8 }, { name: 'cobblestone', count: 20 },
+    ...Array.from({ length: 32 }, (_, i) => ({ name: `keeper_${i}`, count: 1 }))];
   let loaded = 0, ingots = 0, opens = 0, looked = null;
   const window = () => ({
     // The window's player slots follow the pockets live, as Mineflayer's do.

@@ -112,3 +112,31 @@ test('the second day audit pockets: nether wart, an egg and Overworld netherrack
   free = 0; await makeRoom(b, null, 'gold_ingot');
   assert.notEqual(tossed.at(-1), 'netherrack', 'in the Nether a stack of netherrack is kept for bridging');
 });
+
+test('sixteen building blocks are never thrown away to make room', async () => {
+  const { makeRoom } = require('../src/inventory-tidy');
+  const stacks = [{ name: 'dirt', count: 10 }, { name: 'cobblestone', count: 8 }, { name: 'nether_wart', count: 64 }];
+  let free = 0; const tossed = [];
+  const b = { registry, game: { dimension: 'overworld' }, inventory: { items: () => stacks, emptySlotCount: () => free, slots: {} },
+    tossStack: async item => { tossed.push(item.name); stacks.splice(stacks.indexOf(item), 1); free++; } };
+  await makeRoom(b, null, 'gold_ingot');
+  assert.deepEqual(tossed, ['nether_wart']);
+  free = 0;
+  await makeRoom(b, null, 'raw_iron');
+  assert(!tossed.includes('dirt') && !tossed.includes('cobblestone'), 'eighteen blocks, the reserve is sixteen: none goes');
+});
+
+test('short of the block reserve by day, the bot tops it up: cobblestone with a pickaxe, netherrack in the Nether', async () => {
+  const { maintainBlocks } = require('../src/work');
+  const got = [];
+  const bot = { game: { gameMode: 'survival', dimension: 'overworld' }, time: { timeOfDay: 3000 }, entity: { isInWater: false, position: { x: 0, y: 64, z: 0 } },
+    registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'dirt', count: 4 }] } };
+  const goal = { kind: 'win' };
+  // acquireStep is the real planner; stand it in by watching the step the upkeep records.
+  await maintainBlocks(bot, { check() {} }, goal, () => {}).catch(() => {});
+  assert.equal(goal.step.action, 'block_reserve'); assert.equal(goal.step.item, 'cobblestone'); assert.equal(goal.step.have, 4);
+  bot.game.dimension = 'the_nether';
+  delete goal.survival; delete goal.step; delete goal.attempts;
+  await maintainBlocks(bot, { check() {} }, goal, () => {}).catch(() => {});
+  assert.equal(goal.step.item, 'netherrack');
+});
