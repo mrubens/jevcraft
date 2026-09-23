@@ -101,8 +101,11 @@ async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
     // A landing the swim just failed to reach is not tried again by digging.
     .filter(p => !(failed[`${p}`] > Date.now() - 60000))
     .sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
-  const saved = { canDig: movement.canDig, dontCreateFlow: movement.dontCreateFlow };
-  Object.assign(movement, { canDig: true, dontCreateFlow: false });
+  // Without the shore search's surface-only rule too: under a roof nothing
+  // is surface, and every dig route came back "noPath" with dry cells a
+  // block away.
+  const saved = { canDig: movement.canDig, dontCreateFlow: movement.dontCreateFlow, allowedPosition: movement.allowedPosition };
+  Object.assign(movement, { canDig: true, dontCreateFlow: false, allowedPosition: undefined });
   // What the dig looked at, for the record when it finds nothing.
   const record = (goal.shoreRecovery ||= {}).dig = { at: new Date().toISOString(), cells: cells.length, tried: [] };
   try {
