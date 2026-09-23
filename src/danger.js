@@ -26,7 +26,15 @@ function provoked(bot, entity) {
   if (bot._provokedMobs?.get(entity.id) === entity) return true;
   if (entity.name === 'enderman') {
     const key = bot.registry?.entitiesByName?.enderman?.metadataKeys?.indexOf('creepy');
-    return key >= 0 && !!entity.metadata?.[key];
+    if (!(key >= 0 && entity.metadata?.[key])) return false;
+    // Angry is not angry at the bot. An enderman the dragon's charge hits
+    // turns on the dragon and screams all the same: seven at once in the
+    // rehearsal, and the bot, counting them all its own, fought and stared
+    // them into its real enemies. One that has hurt the bot lately, or has
+    // come within four blocks of it, is taken as the bot's.
+    if (bot._hurtBy?.enderman > Date.now() - 20000) return true;
+    const here = bot.entity?.position;
+    return !here || !entity.position || entity.position.distanceTo(here) <= 4;
   }
   return Object.hasOwn(GROUP_ANGER, entity.name) && bot._hurtBy?.[entity.name] > Date.now() - GROUP_ANGER[entity.name];
 }

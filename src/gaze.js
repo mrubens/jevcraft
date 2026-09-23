@@ -15,12 +15,13 @@ const DOWN = -0.5; // radians: about thirty degrees below the horizon
 const LEVEL = 0.05;
 const RANGE = 64;
 
+// Any enderman, screaming or not: one that screams may be angry at the
+// dragon, and a glance makes it the bot's.
 function endermanInView(bot) {
   const here = bot.entity?.position;
   if (!here) return false;
-  const creepy = bot.registry?.entitiesByName?.enderman?.metadataKeys?.indexOf('creepy');
   return Object.values(bot.entities || {}).some(e => e.name === 'enderman' && e.isValid !== false && e.position &&
-    e.position.distanceTo(here) <= RANGE && !(creepy >= 0 && e.metadata?.[creepy]));
+    e.position.distanceTo(here) <= RANGE);
 }
 
 // Whether this tick's gaze should be lowered: moving forward with a level

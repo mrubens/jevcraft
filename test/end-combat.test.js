@@ -272,6 +272,7 @@ test('a turned enderman in view meets water poured at the feet, and the water co
     else if (bot.heldItem.name === 'bucket') { water.delete(`${feet}`); swap('bucket', 'water_bucket'); }
   };
   const enderman = entity(bot, 8, 'enderman', new Vec3(10, 64, .5), { creepy: true });
+  bot._hurtBy = { enderman: Date.now() }; // this one has hit the bot
   await fightEndStep(bot, task, goal, () => {}, { navigate: async () => {} }, null).catch(() => {});
   assert(water.has(`${new Vec3(0, 64, 0)}`), 'poured into the bot\'s own cell');
   assert.equal(goal.endCombat.pours, 1);
@@ -285,4 +286,15 @@ test('a turned enderman in view meets water poured at the feet, and the water co
   entity(bot, 9, 'enderman', new Vec3(10, 64, .5), { creepy: true });
   await fightEndStep(bot, task, goal, () => {}, { navigate: async () => {} }, null).catch(() => {});
   assert.equal(water.size, 0);
+});
+
+test('a screaming enderman that has not come near nor hurt the bot is not its enemy', () => {
+  const { bot } = fixture();
+  const { hostileEntities } = require('../src/danger');
+  entity(bot, 8, 'enderman', new Vec3(15, 64, .5), { creepy: true });
+  assert.deepEqual(hostileEntities(bot, 64).map(e => e.id), [], 'angry at the dragon, perhaps');
+  bot.entities[8].position = new Vec3(3.5, 64, .5);
+  assert.deepEqual(hostileEntities(bot, 64).map(e => e.id), [8], 'within four blocks it is taken as the bot\'s');
+  bot.entities[8].position = new Vec3(15, 64, .5); bot._hurtBy = { enderman: Date.now() };
+  assert.deepEqual(hostileEntities(bot, 64).map(e => e.id), [8], 'and after it hurt the bot');
 });

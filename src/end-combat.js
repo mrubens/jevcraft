@@ -234,7 +234,9 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         const target = hostileEntities(bot, 6).filter(e => live(bot, e)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
         if (!target) break;
         if (sword && canStrike(bot, target)) { await strike(bot, task, target); progress = true; state.defended = (state.defended || 0) + 1; }
-        else { await bot.lookAt(target.position.offset(0, (target.height || 1.8) * .8, 0), true); await sleep(50); }
+        // Eyes on its legs while it comes: a look at an enderman's head is
+        // what turns one.
+        else { await bot.lookAt(target.position.offset(0, (target.height || 1.8) * .25, 0), true); await sleep(50); }
       }
     };
     // The water poured for the last enderman comes back once none is near;

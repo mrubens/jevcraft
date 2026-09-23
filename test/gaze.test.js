@@ -23,7 +23,7 @@ test('walking level with an enderman in view, the gaze goes to the ground ahead'
 test('the gaze is left alone otherwise', () => {
   assert.equal(lowerGaze(scene({ enderman: null })), false, 'no enderman');
   assert.equal(lowerGaze(scene({ enderman: new Vec3(90, 64, 0) })), false, 'too far to see');
-  assert.equal(lowerGaze(scene({ angry: true })), false, 'already provoked: the fight looks where it must');
+  assert.equal(lowerGaze(scene({ angry: true })), true, 'a screaming one may be angry at the dragon: a glance makes it the bot\'s');
   assert.equal(lowerGaze(scene({ moving: false })), false, 'standing: aiming, digging, eating');
   const dodge = scene(); dodge.pathfinder.isMoving = () => false;
   assert.equal(lowerGaze(dodge), true, 'a dodge pressing the keys itself walks eyes down too');
