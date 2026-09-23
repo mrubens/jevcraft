@@ -279,6 +279,11 @@ function nextGameStage(bot, goal) {
   // No gold to throw, and a bastion remembered: its gold blocks first.
   if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && !goldOnHand(bot) && bastionKnown(bot, goal) && !isSetAside(goal, 'rung', 'bastion_gold'))
     return { phase: 'obtain_ender_pearls', action: 'bastion_gold', item: 'gold_ingot' };
+  // Pearls from the warped forest while here: one known, or a sweep for one
+  // (warped-pearls.js), before the walk back.
+  const warped = require('./warped-pearls');
+  if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && warped.warpedOpen(goal))
+    return { phase: 'obtain_ender_pearls', action: 'warped_pearls', item: 'ender_pearl', count: target - eyes };
   if (where === 'nether') return { phase: 'return_with_blaze_supplies', action: 'return_overworld' };
   if (where !== 'overworld') return { phase: 'unknown_dimension', action: 'unsupported_dimension' };
   // A cleric's pearls, when a village is remembered and a pearl trade has
@@ -287,6 +292,9 @@ function nextGameStage(bot, goal) {
   const pearlOffer = Object.values(goal.trading?.offers || {}).some(o => (o.trades || []).some(t => t.outputItem?.name === 'ender_pearl' && !t.tradeDisabled));
   if (count(bot, 'ender_pearl') < target - eyes && pearlOffer && !isSetAside(goal, 'rung', 'trade_pearls') && require('./villages').knownVillages(bot, goal, 512).length)
     return { phase: 'obtain_ender_pearls', action: 'trade', item: 'ender_pearl', count: target - eyes };
+  // A warped forest remembered in the Nether beats a night walk here.
+  if (count(bot, 'ender_pearl') < target - eyes && warped.warpedKnown(goal).length && warped.warpedOpen(goal))
+    return { phase: 'obtain_ender_pearls', action: 'enter_nether', item: 'ender_pearl', count: target - eyes, via: 'warped_forest' };
   if (count(bot, 'ender_pearl') < target - eyes) return { phase: 'obtain_ender_pearls', action: 'acquire', item: 'ender_pearl', count: target - eyes };
   if (eyes < target) return { phase: 'craft_eyes', action: 'acquire', item: 'ender_eye', count: target };
   if (!m.stronghold_located) return { phase: 'find_stronghold', action: 'find_stronghold' };

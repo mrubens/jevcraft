@@ -42,6 +42,8 @@ test('progression resolves real carried eyes, powder, rods and pearls without sp
   give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 2 });
   assert.deepEqual(nextGameStage(bot, goal), { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: 3 });
   give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 3 });
+  assert.equal(nextGameStage(bot, goal).action, 'warped_pearls', 'rods in hand: the pearls from the warped forest while here');
+  require('../src/progress').setAside(goal, 'rung', 'warped_search', 'none found', 600000);
   assert.equal(nextGameStage(bot, goal).action, 'return_overworld');
   bot.game.dimension = 'overworld';
   assert.equal(nextGameStage(bot, goal).item, 'ender_pearl'); assert.equal(nextGameStage(bot, goal).count, 10);

@@ -43,6 +43,7 @@ function markExplored(bot, goal, { now = Date.now() } = {}) {
 //   jungle_temple    tripwire and mossy stone in the jungle: loot chests
 //   nether_fortress  nether brick: blazes, the rods for the eyes
 //   bastion          blackstone with gold: gold blocks to barter with
+//   warped_forest    warped nylium and stems: endermen, and their pearls
 //   deep_dark        sculk below y 0: the biome ancient cities are built in
 //   ancient_city     deepslate tiles and bricks among sculk, or the
 //                    reinforced deepslate of its portal frame: loot chests
@@ -101,6 +102,12 @@ const DETECTORS = [
     const here = bot.entity.position;
     const nearest = bricks.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
     return at(nearest, { bricks: bricks.length });
+  } },
+  // Endermen spawn thickly in the warped forest and let a player be who
+  // does not look at them: the pearls for the eyes, without a night walk.
+  { kind: 'warped_forest', dimension: 'nether', same: 96, detect: bot => {
+    const warped = find(bot, ['warped_nylium', 'warped_stem', 'warped_wart_block'], 48, 64);
+    return warped.length >= 24 ? at(warped[0], { warped: warped.length }) : null;
   } },
   { kind: 'bastion', dimension: 'nether', same: 64, detect: bot => {
     const gilded = find(bot, ['gilded_blackstone', 'gold_block'], 48, 16).filter(p => near(bot, p, ['polished_blackstone_bricks', 'blackstone', 'cracked_polished_blackstone_bricks'], 3));

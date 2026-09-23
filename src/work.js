@@ -2686,6 +2686,9 @@ function gameHandlers(bot, decisionClient) {
           await gatherWool(bot, task, goal, save, null, homeActions());
         },
         stash_valuables: (bot, task, goal, save) => stashValuables(bot, task, goal, save, homeActions()),
+        // Pearls from the warped forest (warped-pearls.js).
+        warped_pearls: (bot, task, goal, save, stage) => require('./warped-pearls').warpedPearls(bot, task, goal, save,
+          { navigate, acquireStep, notice: (b2, g2, sv2) => noticeLandmarks(b2, g2, sv2, { force: true }) }, stage || goal.step),
         // A chest on the spot when home is too far (field-cache.js).
         cache_valuables: (bot, task, goal, save) => require('./field-cache').cacheValuables(bot, task, goal, save, homeActions()),
         take_cache: async (bot, task, goal, save) => {
