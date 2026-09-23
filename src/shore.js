@@ -339,7 +339,7 @@ function knownLand(bot, goal) {
   return found.filter(p => flat(p) > 24).sort((a, b) => flat(a) - flat(b))[0] || null;
 }
 
-async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs = SWIM_MS, move = navigate } = {}) {
+async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs = SWIM_MS, move = navigate, toward = null } = {}) {
   const { inWater } = require('./survival');
   const { setAside } = require('./progress');
   // Why a crossing was not made, for the audit: the reason it declined.
@@ -351,13 +351,15 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   if (!own) return decline('standing on more ground than an islet');
   const seen = landInView(bot, 48, own);
   if (seen) return decline(`ground in view at ${seen}`);
-  const target = knownLand(bot, goal);
+  const { isSetAside } = require('./progress');
+  const target = (toward && !isSetAside(goal, 'cross_sea', toward.key) && Math.hypot(toward.x - start.x, toward.z - start.z) > 12 ? toward : null) || knownLand(bot, goal);
   if (!target) return decline('no land remembered');
   const flat = () => Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z);
   goal.step = { action: 'cross_sea', toward: { x: target.x, z: target.z }, land: target.biome, from: { ...start.floored() } }; save();
   const heading = Math.abs(target.x - start.x) > Math.abs(target.z - start.z) ? (target.x < start.x ? 'west' : 'east') : (target.z < start.z ? 'north' : 'south');
   bot.chat?.(target.key === 'home' ? `No land in sight. Swimming for home, ${Math.round(flat())} blocks ${heading}.`
-    : `No land in sight. Swimming for the ${target.biome} I walked, ${Math.round(flat())} blocks ${heading}.`);
+    : target === toward ? `No land in sight. Swimming for the ${target.biome} I saw, ${Math.round(flat())} blocks ${heading}.`
+      : `No land in sight. Swimming for the ${target.biome} I walked, ${Math.round(flat())} blocks ${heading}.`);
   // Off the pillar and into the sea: the nearest open water toward the land.
   if (!inWater(bot)) {
     const feet = start.floored(), cells = [];

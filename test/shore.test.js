@@ -185,3 +185,12 @@ test('with ground in sight, on the mainland, or nothing remembered, the sea cros
   assert.equal(await crossSea(blank.bot, new Task('wood'), blank.goal, () => {}, { segmentMs: 30, move: blank.move }), false, 'no land known');
   assert.equal(blank.goal.seaCrossing.declined, 'no land remembered');
 });
+
+test('an oak log remembered across the water is swum for before the land walked', async () => {
+  const { crossSea } = require('../src/shore');
+  const { bot, goal, move } = sea();
+  const toward = { x: -100, z: 60, key: 'oak_log:(-100, 64, 60)', biome: 'oak log' };
+  assert.equal(await crossSea(bot, new Task('wood'), goal, () => {}, { segmentMs: 30, move, toward }), true);
+  assert.match(bot.said[0], /oak log I saw/);
+  assert.deepEqual(goal.step.toward, { x: -100, z: 60 });
+});
