@@ -261,3 +261,9 @@ test('the crossing waits for health as well as food, however it is reached', asy
   const { permittedWait } = require('../src/stillness');
   assert.equal(permittedWait({ ...bot, entities: {}, isSleeping: false }, goal), 'recovering', 'healing at the portal is a wait, not a stall');
 });
+
+test('a ring search is turned to its next leg from the same origin, not dropped', () => {
+  const { turnSearch } = require('../src/work');
+  const turned = turnSearch({ enderman: { attempts: 4, origin: { x: -369, y: 59, z: -69 }, leg: 1, walksWithoutProgress: 2 } });
+  assert.deepEqual(turned.enderman, { attempts: 0, origin: { x: -369, y: 59, z: -69 }, leg: 2 });
+});

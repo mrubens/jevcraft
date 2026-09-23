@@ -230,6 +230,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 88. *No shore under a roof.* In the base's flooded pit again, Jev bobbed between "surface" and "wait for bedtime" through an evening and then "No reachable dry shore found", with dry floor a block away: the shore search only takes landings under open sky, and the pit is under the base's roof. With no landing even tried, the bot now climbs onto the nearest dry cell with a floor and air (forward and jumping, as out of lava). The flooding itself (the pond running into a pit beside the furnace) is still to be dealt with at the base.
 
+89. *Four minutes in one cell looking for endermen.* Every walk of the enderman search from a hillside ledge ended "navigation timed out without reaching new ground", and every failure went to persist, which turns the search: a frontier search to its next heading, but a ring search (no heading) was dropped outright, so the next search began again here on its first leg, the walk that had just failed. A ring search is now turned to its next leg from the same origin.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

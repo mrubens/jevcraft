@@ -2142,9 +2142,15 @@ const IMPOSSIBLE = /No supported survival acquisition|does not spawn in Peaceful
 // time, up to fifteen seconds, so an impossible spot costs little per hour) and
 // goes again with a clean slate. Only the player, the game, or a request
 // that is impossible by definition ends a request.
+// A ring search (no frontier heading) is turned too, to its next leg from
+// the same origin. It used to be dropped, so the next search began again
+// from here on its first leg, the same walk that had just failed: the hunt
+// for endermen stood four minutes in one cell doing exactly that.
 const turnSearch = search => Object.fromEntries(Object.entries(search || {})
-  .filter(([, entry]) => Number.isInteger(entry?.frontier?.heading))
-  .map(([resource, entry]) => [resource, { attempts: 0, frontier: { heading: (entry.frontier.heading + 1) % 8, legs: 0 } }]));
+  .filter(([, entry]) => Number.isInteger(entry?.frontier?.heading) || entry?.origin)
+  .map(([resource, entry]) => [resource, Number.isInteger(entry.frontier?.heading)
+    ? { attempts: 0, frontier: { heading: (entry.frontier.heading + 1) % 8, legs: 0 } }
+    : { attempts: 0, origin: entry.origin, leg: (entry.leg || 0) + 1 }]));
 async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } = {}) {
   goal.struggles = (goal.struggles || 0) + 1;
   goal.lastStruggle = { at: new Date().toISOString(), error: err.message };
