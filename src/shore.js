@@ -99,12 +99,47 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     // breaking anything but leaves, and every dig route came back "noPath"
     // with dry cells a block away (the drill's probe found it).
     policy.restore();
+    if (await notchOut(bot, task, goal, save)) return true;
     if (await digToShore(bot, task, goal, save, movement, move, state.failures)) return true;
     throw new Error('No reachable dry shore found in the observed water area');
   } finally {
     policy.restore(); Object.assign(movement, previous);
     bot.pathfinder.setGoal(null); bot.clearControlStates();
   }
+}
+
+// A pool whose banks stand too high to climb from the water: a step cut
+// into the bank at the waterline, the two blocks over it dug out, and the
+// bot climbs onto it. The live run swam in a one-wide pool with its banks
+// two above the water and dived to dig a route, again and again.
+async function notchOut(bot, task, goal, save) {
+  const { inWater } = require('./survival');
+  if (!inWater(bot) || typeof bot.dig !== 'function') return false;
+  const feet = bot.entity.position.floored();
+  const water = /water/.test(bot.blockAt(feet)?.name || '') ? feet : feet.offset(0, -1, 0);
+  const solid = b => b?.boundingBox === 'block' && !/lava|magma/.test(b.name);
+  const soft = b => b && (b.boundingBox === 'empty' ? !/water|lava/.test(b.name) : b.diggable && !/bedrock|obsidian|chest|furnace|bed$/.test(b.name));
+  const dirs = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+  const lavaNear = c => [c, c.offset(1, 0, 0), c.offset(-1, 0, 0), c.offset(0, 0, 1), c.offset(0, 0, -1), c.offset(0, 1, 0)].some(q => /lava/.test(bot.blockAt(q)?.name || ''));
+  for (const d of dirs) {
+    const step = water.plus(d), body = step.offset(0, 1, 0), head = step.offset(0, 2, 0);
+    if (!solid(bot.blockAt(step)) || !soft(bot.blockAt(body)) || !soft(bot.blockAt(head)) || lavaNear(body) || lavaNear(head)) continue;
+    goal.step = { action: 'notch_out_of_water', step: { ...step } };
+    goal.survivalAction = { action: 'notch_out_of_water', at: new Date().toISOString() }; save();
+    const { equipBestTool } = require('./skills');
+    for (const c of [head, body]) {
+      const b = bot.blockAt(c);
+      if (b?.boundingBox !== 'block') continue;
+      task.check();
+      try { await equipBestTool(bot, b); await bot.dig(b, true); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+    }
+    await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'onto the step cut into the bank',
+      look: body.offset(0.5, 0.5, 0.5), maxMs: 2500, tick: 50, until: () => bot.entity.onGround && !inWater(bot) });
+    if (!inWater(bot)) { (goal.shoreRecovery ||= {}).notched = { at: new Date().toISOString(), step: { ...step } }; save(); return true; }
+    return false;
+  }
+  return false;
 }
 
 async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
@@ -131,7 +166,10 @@ async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
       const route = await surveyRoute(bot, task, movement, destination, 800);
       const lava = (route.path || []).some(q => lavaNear(new Vec3(q.x, q.y, q.z)));
       record.tried.push({ to: `${p}`, status: route.status, lava }); save();
-      if (route.status !== 'success' || lava) continue;
+      // Never down: a route that dives to dig sank the bot three blocks, the
+      // air rule brought it up, and it dived again every ten seconds.
+      const dives = (route.path || []).some(q => q.y < Math.floor(bot.entity.position.y) - 1);
+      if (route.status !== 'success' || lava || dives) continue;
       goal.step = { action: 'dig_to_shore', from: { ...bot.entity.position }, destination: { ...p } };
       goal.survivalAction = { action: 'dig_to_shore', at: new Date().toISOString() }; save();
       try { await move(bot, task, destination, { timeoutMs: 45000, stallMs: 8000 }); }
@@ -142,4 +180,4 @@ async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
   } finally { Object.assign(movement, saved); }
 }
 
-module.exports = { reachShore, digToShore };
+module.exports = { reachShore, digToShore, notchOut };
