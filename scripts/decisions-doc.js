@@ -10,22 +10,36 @@ const path = require('path');
 const { all } = require('../src/decisions');
 
 function render() {
-  const areas = {};
   const questions = all().filter(q => q.area !== 'test');
+  const areas = {};
   for (const q of questions) (areas[q.area] ||= []).push(q);
   const cell = text => String(text).replaceAll('|', '\\|').replace(/\s+/g, ' ');
+  const batches = {};
+  for (const q of questions) if (q.batch) (batches[q.batch] ||= []).push(q.id);
   const lines = ['# Every question Jev is asked', '',
     'Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit by hand: change the definition and regenerate.', '',
-    'Each question is defined once, with its stakes (what a wrong answer costs), its bar (a confidence below it is not acted on as asked, and what happens instead), and, for the in-game trees, the code\'s own answer when Jev cannot be reached. Every tree decision is asked through one runner (`decide`), and every batched question through `ask`; nothing else in `src` calls the model.', '',
-    `${questions.length} questions.`, ''];
-  for (const [area, questions] of Object.entries(areas)) {
-    lines.push(`## ${area}`, '', '| Question | Primitive | Stakes | Ledger kind | Bar | When unreachable |', '| --- | --- | --- | --- | --- | --- |');
-    for (const q of questions) {
-      const bar = q.gate ? `${q.gate.threshold}: ${q.gate.why}` : q.ungated ? `none: ${q.ungated}` : 'none';
-      const fallback = q.tree ? (q.fallback === 'throws' ? 'stops: no safe default' : 'code default') : 'the caller\'s own handling';
-      lines.push(`| \`${q.id}\` | ${q.primitive} | ${q.stakes} | ${q.kind} | ${cell(bar)} | ${fallback} |`);
+    'Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.', '',
+    `${questions.length} questions: ${questions.filter(q => q.tree).length} decision trees and ${questions.filter(q => !q.tree).length} batched questions.`, '',
+    '## Batches', '', 'Questions that ride in one call together (the intake batch is one call per chat message):', ''];
+  for (const [batch, ids] of Object.entries(batches)) lines.push(`- **${batch}** (${ids.length}): ${ids.map(id => `\`${id}\``).join(', ')}`);
+  lines.push('');
+  for (const [area, list] of Object.entries(areas)) {
+    lines.push(`## ${area}`, '');
+    for (const q of list) {
+      const bar = q.gate ? `${q.gate.threshold}${q.tree ? ' at every level of the tree' : ''}: ${q.gate.why}` : q.ungated ? `none: ${q.ungated}` : 'none';
+      const unreachable = q.tree ? (q.fallback === 'throws' ? 'stops: no safe default' : 'the code\'s own order walks the tree (recorded as a code default, and said once in chat)') : q.unreachable;
+      lines.push(`### \`${q.id}\``, '', `**${cell(q.question)}**`, '',
+        `- When: ${cell(q.trigger)}`,
+        `- ${q.tree ? 'Decision tree' : 'Batched question'}, ${q.primitive}; stakes ${q.stakes}; ledger kind \`${q.kind}\`${q.batch ? `; batch **${q.batch}**` : ''}`,
+        `- Bar: ${cell(bar)}`,
+        `- Jev unreachable: ${cell(unreachable)}`,
+        `- Options built in: ${cell(q.source)}`, '');
+      if (q.tree) {
+        lines.push('| Option | Level | What it is | Offered when |', '| --- | --- | --- | --- |');
+        for (const o of q.options) lines.push(`| \`${o.key || o.pattern}\`${o.pattern ? ' (pattern)' : ''} | ${o.level || 'root'} | ${cell(o.label)} | ${cell(o.when)} |`);
+        lines.push('');
+      }
     }
-    lines.push('');
   }
   return lines.join('\n');
 }

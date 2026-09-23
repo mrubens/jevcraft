@@ -15,6 +15,11 @@ test('every question is defined with stakes, a ledger kind and a primitive; tree
     if (q.stakes === 'high') assert(q.gate || q.ungated, `${q.id} is gated or says why not`);
   }
   assert.throws(() => decisions.define({ id: 'bad', area: 'x', kind: 'x', primitive: 'choice', stakes: 'high', tree: true, fallback: 'throws' }), /gate/);
+  for (const q of all) {
+    assert(q.question && q.trigger && q.source, `${q.id} says what it asks, when, and where its options come from`);
+    if (q.tree) assert(q.options.length, `${q.id} declares its options`);
+    else assert(q.unreachable, `${q.id} says what happens when Jev is unreachable`);
+  }
 });
 
 test('only the decisions directory calls decideTree: every in-game tree goes through the one runner', () => {
@@ -29,32 +34,39 @@ test('only the decisions directory calls decideTree: every in-game tree goes thr
   assert.deepEqual(offenders, []);
 });
 
-const tree = () => ({ a: { description: 'first', run: async () => 'a' }, b: { description: 'second', run: async () => 'b' } });
+// Two options each question declares: the first is its fallback's pick.
+const KEYS = { survival_priority: ['obtain_food', 'continue_request'], stillness_detour: ['mine_nearby', 'look_around'],
+  idle_work: ['cook_food', 'stone_tools'], house_build_step: ['build_house', 'build_house'], resource_source: ['obtain_item', 'obtain_item'], test_throws: ['a', 'b'] };
+const tree = (id = 'survival_priority') => { const [a, b] = KEYS[id]; return a === b
+  ? { [a]: { description: 'root', children: Object.fromEntries((id === 'house_build_step' ? ['gather_materials', 'build'] : ['find_resource', 'execute_recipe'])
+    .map((key, i) => [key, { description: i ? 'second' : 'first', run: async () => key }])) } }
+  : { [a]: { description: 'first', run: async () => 'a' }, [b]: { description: 'second', run: async () => 'b' } }; };
 
 test('a judgment under the gate is not acted on: the fallback walks the tree instead, and the log says so', async () => {
-  const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'b', confidence: 0.1 } } }) };
+  const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'continue_request', confidence: 0.1 } } }) };
   const goal = {};
   const decision = await decisions.decide('survival_priority', { client, task: new Task('t'), goal, tree: tree(), state: {} });
-  assert.deepEqual(decision.path, ['a'], 'the safety order, not the coin flip');
+  assert.deepEqual(decision.path, ['obtain_food'], 'the safety order, not the coin flip');
   assert.equal(decision.gated.confidence, 0.1);
   assert.equal(goal.decisions.at(-1).id, 'survival_priority');
   assert.equal(goal.decisions.at(-1).kind, 'survival');
-  const sure = await decisions.decide('survival_priority', { client: { systemOne: async () => ({ answers: { branch_0: { choice: 'b', confidence: 0.9 } } }) }, task: new Task('t'), goal, tree: tree(), state: {} });
-  assert.deepEqual(sure.path, ['b']); assert.equal(sure.gated, undefined);
+  const sure = await decisions.decide('survival_priority', { client: { systemOne: async () => ({ answers: { branch_0: { choice: 'continue_request', confidence: 0.9 } } }) }, task: new Task('t'), goal, tree: tree(), state: {} });
+  assert.deepEqual(sure.path, ['continue_request']); assert.equal(sure.gated, undefined);
 });
 
 test('without a client the fallback walks the tree; a question with no safe default says so instead', async () => {
-  const decision = await decisions.decide('stillness_detour', { client: null, task: new Task('t'), tree: tree(), state: {} });
-  assert.deepEqual(decision.path, ['a']);
+  const decision = await decisions.decide('stillness_detour', { client: null, task: new Task('t'), tree: tree('stillness_detour'), state: {} });
+  assert.deepEqual(decision.path, ['mine_nearby']);
   assert.equal(decision.fallback.reason, 'no Jev client');
-  decisions.define({ id: 'test_throws', area: 'test', kind: 'test', primitive: 'choice', stakes: 'low', tree: true, fallback: 'throws' });
-  await assert.rejects(decisions.decide('test_throws', { client: null, task: new Task('t'), tree: tree(), state: {} }), /no safe default/);
+  decisions.define({ id: 'test_throws', area: 'test', kind: 'test', primitive: 'choice', stakes: 'low', tree: true, fallback: 'throws',
+    question: 'a test', trigger: 'the test', source: 'test', options: [{ pattern: '[ab]', label: 'a or b', when: 'always' }] });
+  await assert.rejects(decisions.decide('test_throws', { client: null, task: new Task('t'), tree: tree('test_throws'), state: {} }), /no safe default/);
 });
 
 test('the ledger kind is the question\'s own: idle and stillness are no longer charged as "source"', async () => {
   const kinds = [];
-  const client = { systemOne: async ({ kind }) => { kinds.push(kind); return { answers: { branch_0: { choice: 'a', confidence: 0.9 } } }; } };
-  for (const id of ['idle_work', 'stillness_detour', 'house_build_step', 'resource_source']) await decisions.decide(id, { client, task: new Task('t'), tree: tree(), state: {} });
+  const client = { systemOne: async ({ kind, questions }) => { kinds.push(kind); const first = Object.keys(Object.values(questions)[0].criteria)[0]; return { answers: { branch_0: { choice: first, confidence: 0.9 }, branch_1: { choice: first, confidence: 0.9 } } }; } };
+  for (const id of ['idle_work', 'stillness_detour', 'house_build_step', 'resource_source']) await decisions.decide(id, { client, task: new Task('t'), tree: tree(id), state: {} });
   assert.deepEqual(kinds, ['idle', 'idle', 'build', 'source']);
 });
 

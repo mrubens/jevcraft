@@ -43,27 +43,31 @@ const INTERACTIONS = {
     examples: ['how can I win the game?', 'explain how crafting works', 'do not build that house', 'what does Alex mean by collect wood?'] },
 };
 
-const request = spec => define({ area: 'intake', kind: 'request', ...spec });
+// The batched interpretation of a chat message (objectives.js interpret):
+// one call carries every question below marked batch 'request'.
+const FAILED = "the request fails and the player is told \"I'm having trouble thinking right now\"; stop and status still work";
+const request = spec => define({ area: 'intake', kind: 'request', batch: 'request', unreachable: FAILED,
+  source: 'src/objectives.js (interpret)', ...spec });
 
 // The routing pair: what is wanted, and whether anything should happen.
 request({
-  id: 'intake_objective', primitive: 'choice', stakes: 'high',
+  id: 'intake_objective', question: 'What outcome does the message ask for: which of the sixteen request types?', trigger: 'Every chat message that reaches the bot.', primitive: 'choice', stakes: 'high',
   gate: { threshold: BARS.costly, below: 'caller', why: 'unsure, the bot asks which of the two likeliest outcomes was meant; the bar is 0.65 for the costly kinds and 0.5 for the rest, and none for other, status, stop, resume and dream' },
   bars: BARS,
   build: () => choice('Categorize the requested outcome in `request` in the Minecraft game. Creative, Survival, Adventure and Spectator name game modes even when the word "mode" is omitted. Item requests belong to obtain or craft regardless of which particular Minecraft item is named. Choose obtain for collect/get/gather/fetch requests even when the item can be crafted; choose craft for explicit make/craft/create inventory items. Recipes and feasibility are checked after routing. A simple small house is house; custom structures and mansions are build; crafting an inventory item is craft. Coming once differs from continuously following. Changing the world or player with an explicitly requested command effect is operator_command.', TYPES),
 });
 request({
-  id: 'intake_interaction', primitive: 'choice', stakes: 'high',
+  id: 'intake_interaction', question: 'Is the message an instruction to act, or talk about something?', trigger: 'Every chat message that reaches the bot.', primitive: 'choice', stakes: 'high',
   gate: { threshold: BARS.costly, below: 'caller', why: 'for a costly kind, unsure whether it was an instruction or talk, the bot asks "now, or were we just talking?"' },
   build: () => choice('Classify the speaker intent in `request_body`, with the bot name prefix removed. The speaker is talking to a Minecraft bot. Is this an instruction to perform an action/report its current activity, or a discussion without an instruction to act? Judge intent, not feasibility or the topic.', INTERACTIONS),
 });
 request({
-  id: 'intake_addressed', primitive: 'noul', stakes: 'medium',
+  id: 'intake_addressed', question: "Is the message for this bot, when it does not start with the bot's name?", trigger: "A chat message without the bot's name in front.", primitive: 'noul', stakes: 'medium',
   gate: { threshold: 0.5, below: 'caller', why: 'a message not clearly for this bot is left to the players it was for' },
   build: () => noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.'),
 });
 request({
-  id: 'intake_memory_statement', primitive: 'noul', stakes: 'medium',
+  id: 'intake_memory_statement', question: 'Is the speaker telling Jev a personal fact or preference to remember?', trigger: 'Every chat message that reaches the bot.', primitive: 'noul', stakes: 'medium',
   gate: { threshold: 0.75, below: 'caller', why: 'a discussion is saved as a memory only when Jev is sure it is a personal statement for Jev' },
   build: () => noul('Is the speaker directly sharing a personal preference or personal fact with Jev to remember, rather than asking for a gameplay action? For example "I prefer small houses" or "my favorite wood is cherry". Exclude quoted/hypothetical/negated statements, general Minecraft facts, and instructions to perform a new action.'),
 });
@@ -71,7 +75,7 @@ request({
 // minds waiting. "Quick, before dark" and "whenever you get a chance" are
 // the same objective with different tolerances.
 request({
-  id: 'intake_urgency', primitive: 'score', stakes: 'low',
+  id: 'intake_urgency', question: 'How much time pressure does the wording put on the request?', trigger: 'Every chat message that reaches the bot.', primitive: 'score', stakes: 'low',
   build: () => score('How much time pressure does the speaker put on this request, judging only the wording of `request_body`? Politeness is not urgency; a plain imperative is ordinary.', [
     'No time pressure, or explicitly relaxed: whenever you can, no rush, when you get a chance.',
     'Ordinary: a plain request with no timing words either way.',
@@ -81,7 +85,7 @@ request({
 
 // What the request is about: the item, how many, for whom, from what.
 request({
-  id: 'intake_item', primitive: 'choice', stakes: 'medium',
+  id: 'intake_item', question: 'Which of the word-overlap catalog candidates is the requested item?', trigger: 'Asked speculatively with every message whose words overlap catalog items; read for obtain and craft.', primitive: 'choice', stakes: 'medium',
   gate: { threshold: 0.6, below: 'caller', why: 'unsure of the pick among the word-overlap candidates, the full catalog walk decides instead' },
   build: ({ candidates }) => choice({
     task: 'Assuming an obtain or craft request for ONE type of output, which listed catalog item is the requested output? These candidates were found by word overlap with the request and may include irrelevant items. Select the requested output, not a tool or ingredient needed to obtain it.',
@@ -89,18 +93,18 @@ request({
   }, candidates),
 });
 request({
-  id: 'intake_quantity', primitive: 'choice', stakes: 'medium',
+  id: 'intake_quantity', question: 'How many of the item are asked for, from the numbers in the message?', trigger: 'Asked speculatively with every message; read for obtain and craft.', primitive: 'choice', stakes: 'medium',
   build: ({ numbers }) => choice('Assuming an item request, select the quantity applying to the requested output. Candidates were extracted from this request. "A/an" or "a single" item means 1. Stacks contain 64 items. If no requested output quantity is stated, select unspecified; do not invent a batch size.',
     { ...Object.fromEntries(numbers.map(n => [n, `${n} items requested by a quantity in the message`])), unspecified: 'No stated output quantity; the application will use its default.' }),
 });
 request({
-  id: 'intake_outputs', primitive: 'choice', stakes: 'medium',
+  id: 'intake_outputs', question: 'One kind of item, or several (a set)?', trigger: 'Asked speculatively with every message; read for obtain and craft.', primitive: 'choice', stakes: 'medium',
   build: () => choice('Assuming an obtain/craft request, does the player want one type of output or multiple types/a set? Full diamond armor is four outputs even without listing them. Ingredients mentioned only as a means to make one output do not count.', {
     single: 'One type of final item, possibly many copies.', multiple: 'Several distinct final items or a full set, such as full armor, or armor and a bed.',
   }),
 });
 request({
-  id: 'intake_delivery', primitive: 'choice', stakes: 'low',
+  id: 'intake_delivery', question: 'Who should receive the item: the speaker, the bot, or unstated?', trigger: 'Asked speculatively with every message; read for obtain and craft.', primitive: 'choice', stakes: 'low',
   build: () => choice('Assuming an item request, identify the recipient stated in `request`. The speaker is the human and you/yourself refers to the bot. Select unspecified when the request only says to make, craft, get or collect an item without naming its recipient. Do not infer a recipient merely because a human issued the request.', {
     speaker: 'The human speaker: get me, bring me, give me, craft me, for me. Bring/deliver without another named recipient also means the speaker.',
     bot: 'The bot: for yourself, get yourself, for your own use, keep it.',
@@ -108,12 +112,12 @@ request({
   }),
 });
 request({
-  id: 'intake_target', primitive: 'choice', stakes: 'low',
+  id: 'intake_target', question: 'Which player should the bot come to or follow?', trigger: 'Asked speculatively with every message; read for come and follow.', primitive: 'choice', stakes: 'low',
   build: ({ from, players = [] }) => choice('Assuming come or follow, which available player should the bot approach? "me" or no name means the speaker.',
     Object.fromEntries([...new Set([from, ...players])].map(name => [name, name === from ? `${name}: the speaker (me)` : name]))),
 });
 request({
-  id: 'intake_material', primitive: 'choice', stakes: 'medium',
+  id: 'intake_material', question: 'What should a small house be built of?', trigger: 'Asked speculatively with every message; read for house.', primitive: 'choice', stakes: 'medium',
   build: () => choice('Assuming the request is a small house, which primary construction material should be used? Current explicit materials take priority. When unspecified, use relevant explicit memory notes, then learned wood preferences in memory.preferences. Use oak_planks only if there is no relevant preference.', {
     oak_planks: 'Oak planks: explicitly requested, preferred, or the default when there is no relevant memory.',
     cobblestone: 'Cobblestone.', dirt: 'Dirt.', other: 'Another specified or remembered preferred building material (including cherry or other wood species); resolve it from the full catalog.',
@@ -122,12 +126,14 @@ request({
 
 // Wood: chosen in this message, and preferred in the notes.
 request({
-  id: 'intake_wood_choice', primitive: 'choice', stakes: 'low',
+  id: 'intake_wood_choice', question: 'Does the speaker explicitly choose a wood species in this message?', trigger: 'Every chat message; learned as a preference for obtain, craft, house and build.', primitive: 'choice', stakes: 'low',
   gate: { threshold: 0.7, below: 'caller', why: 'a wood species is learned as a preference only when the message clearly chose it' },
   build: ({ woods }) => choice('Which wood species does the speaker explicitly choose for their own requested supplies or construction in THIS message? Use only the current request, never memory, inventory, recipe ingredients, or bot defaults as evidence. A one-time request for cherry logs counts. Exclude quotes, hypotheticals, negated choices, orders for another player or the bot itself, discovery-only requests, and ambiguous/multiple species. For unspecified wood or an inherited preference choose none.', { ...woods, none: 'No single explicit wood choice for this player in the current action request.' }),
 });
 define({
-  id: 'noted_wood', area: 'intake', kind: 'preferences', primitive: 'choice', stakes: 'low',
+  id: 'noted_wood', area: 'intake', kind: 'preferences', primitive: 'choice', stakes: 'low', batch: 'request',
+  question: 'Which wood species do the player\'s saved notes prefer?', trigger: 'With every message when the player has notes (in the request batch), and on its own when a catalog walk needs the preference.',
+  source: 'src/objectives.js (interpret), src/preferences.js (resolvedPreferenceContext)', unreachable: FAILED,
   gate: { threshold: 0.7, below: 'caller', why: 'an old wood preference is replaced by a note only when the note clearly states one' },
   build: ({ woods }) => choice('Which wood species do the personal notes in `memory.notes` (or `playerNotes`) explicitly prefer? Use the latest clear preference if notes conflict. Exclude quotes, hypotheticals and species the player dislikes. Choose none if the notes do not state a positive wood preference.',
     { ...woods, none: 'No explicit positive wood preference in these notes.' }),
@@ -138,6 +144,8 @@ define({
 // when a runner-up is close, and always below the floor.
 define({
   id: 'catalog_branch', area: 'item', kind: 'catalog', primitive: 'choice', stakes: 'medium',
+  question: 'Which branch of the item catalog holds the requested item? (one level at a time)', trigger: 'An obtain, craft or house request whose item the word-overlap pick did not settle; also command item arguments.',
+  source: 'src/catalog.js (resolveItem over catalogTree)', unreachable: FAILED,
   gate: { threshold: 0.5, below: 'caller', why: 'unsure at a leaf, the bot asks "did you mean A or B?" when a runner-up holds 0.25, and always below 0.35' },
   ambiguous: { confidence: 0.5, runnerUp: 0.25, floor: 0.35 },
   build: ({ blocksOnly, options }) => choice({ task: blocksOnly ? 'Select the next catalog branch containing the requested building material.' :
@@ -146,7 +154,9 @@ define({
   { ...options, none: 'No branch contains the requested item or material.' }),
 });
 define({
-  id: 'bundle_candidate', area: 'item', kind: 'bundle', primitive: 'noul', stakes: 'medium',
+  id: 'bundle_candidate', area: 'item', kind: 'bundle', primitive: 'noul', stakes: 'medium', batch: 'bundle catalog page (up to 28)',
+  question: 'Does this catalog branch hold one of the requested outputs?', trigger: 'A request for several kinds of item: once per branch, a page at a time.',
+  source: 'src/item-bundle.js (resolveItemBundle)', unreachable: FAILED,
   gate: { threshold: 0.65, below: 'caller', why: 'a catalog branch is followed only when Jev is sure it holds a requested output' },
   build: ({ index }) => noul({
     task: `Does candidates.candidate_${index} contain at least one of the FINAL outputs the player requests? Select every requested output, including members of explicitly requested sets.`,
@@ -154,17 +164,23 @@ define({
   }),
 });
 define({
-  id: 'bundle_covered', area: 'item', kind: 'bundle', primitive: 'noul', stakes: 'medium',
+  id: 'bundle_covered', area: 'item', kind: 'bundle', primitive: 'noul', stakes: 'medium', batch: 'bundle outputs',
+  question: 'Do the selected outputs cover everything asked for, and nothing more?', trigger: 'Once the bundle walk has selected its outputs.',
+  source: 'src/item-bundle.js (resolveItemBundle)', unreachable: FAILED,
   gate: { threshold: 0.65, below: 'caller', why: 'unsure the list is whole, the bot asks the player to name the items rather than drop one' },
   build: () => noul('Do selectedOutputs cover ALL final item outputs requested in request, including every piece of a requested set, with no extra unrequested outputs? Ingredients mentioned only as a means are not outputs. For an unspecified variant, one matching default counts as satisfying the requested item: use explicit context.memory notes, then learned context.memory.preferences for wood, otherwise ordinary white/oak defaults. A preferred cherry plank is still a plank, not an extra output. Past tasks in memory are not current requests and must not add outputs. Answer no if any output is missing or any unrelated item was added.'),
 });
 define({
-  id: 'bundle_quantity', area: 'item', kind: 'bundle', primitive: 'choice', stakes: 'medium',
+  id: 'bundle_quantity', area: 'item', kind: 'bundle', primitive: 'choice', stakes: 'medium', batch: 'bundle outputs',
+  question: 'How many of this output are asked for?', trigger: 'Once per selected output of a bundle.',
+  source: 'src/item-bundle.js (resolveItemBundle)', unreachable: FAILED,
   build: ({ item, numbers }) => choice(`How many ${item} are requested in request? Apply numbers only to this output. A full set contains one of each member; two sets contain two of each. An unspecified amount is default.`,
     { ...Object.fromEntries(numbers.map(n => [n, `${n} of ${item}`])), default: 'No explicit amount: one item (or the ordinary concrete batch).' }),
 });
 define({
-  id: 'bundle_recipient', area: 'item', kind: 'bundle', primitive: 'choice', stakes: 'low',
+  id: 'bundle_recipient', area: 'item', kind: 'bundle', primitive: 'choice', stakes: 'low', batch: 'bundle outputs',
+  question: 'Who should receive this output?', trigger: 'Once per selected output of a bundle.',
+  source: 'src/item-bundle.js (resolveItemBundle)', unreachable: FAILED,
   build: ({ item }) => choice(`Who should receive ${item} in request? Use the recipient for the whole list unless the player gives this item a different recipient.`, {
     speaker: 'Give/bring/deliver to the speaker (me/for me); bring without another named recipient.',
     bot: 'Keep it, for yourself, or no recipient specified.',
@@ -173,7 +189,9 @@ define({
 
 // Finding something in the world.
 define({
-  id: 'discovery_category', area: 'intake', kind: 'discovery', primitive: 'choice', stakes: 'low',
+  id: 'discovery_category', area: 'intake', kind: 'discovery', primitive: 'choice', stakes: 'low', batch: 'request',
+  question: 'For a find request: is the thing a biome, a creature or a block?', trigger: 'Asked speculatively with every message (in the request batch); read for find.',
+  source: 'src/objectives.js (interpret), src/discovery.js (resolveDiscovery)', unreachable: FAILED,
   build: () => choice('Assuming the player wants to FIND something in the world, what kind of thing is it? A biome is an environment such as a cherry grove; a sheep is a living entity; a cherry log is a block. This locates things through exploration, without commands.', {
     biome: 'A biome or environment to visit.', entity: 'A living animal, creature or mob to find without attacking it.',
     block: 'A block or plant to locate, rather than collect.', none: 'No supported biome, living entity or block.',
@@ -181,6 +199,8 @@ define({
 });
 define({
   id: 'discovery_target', area: 'travel', kind: 'discovery', primitive: 'choice', stakes: 'medium',
+  question: 'Which catalog branch or exact biome or creature is to be found? (one level at a time)', trigger: 'A find request for a biome or creature.',
+  source: 'src/discovery.js (discoveryCatalog)', unreachable: FAILED,
   build: ({ options }) => choice('Choose the catalog branch or exact target matching the requested biome or creature. Names and members come from this Minecraft version. Cherry biome means cherry_grove. Do not replace the requested species with a nearby alternative.', {
     ...options, none: 'No match in this catalog.',
   }),
@@ -189,6 +209,8 @@ define({
 // Memory: what the player wants done with it, and which entry.
 define({
   id: 'memory_operation', area: 'memory', kind: 'memory', primitive: 'choice', stakes: 'medium',
+  question: 'What memory action does the speaker want: remember a place or note, recall, forget, visit, or repeat?', trigger: 'A message routed as memory.',
+  source: 'src/memory-routing.js (resolveMemory)', unreachable: FAILED,
   gate: { threshold: 0.75, below: 'caller', why: 'forgetting cannot be undone: an unsure "forget" is a question back ("say exactly what")' },
   build: () => choice('What memory interaction does the CURRENT speaker want? A personal preference or fact shared directly with Jev can be saved as a note. Quoted instructions, hypotheticals, explanations of memory, and requests not to remember are none.', {
     remember_place: 'Save or name a place at a stated coordinate or observed location: remember this as home, this is our base, mark where I am as the mine.',
@@ -203,15 +225,16 @@ define({
 // The "which entry" questions. Each is asked over entries the code offers
 // (verbatim spans, observed positions, saved entries), in groups of 24 when
 // there are more: `grouped` asks for the group first.
-const selection = (id, stakes, text, extra = {}) => define({ id, area: 'memory', kind: 'memory', primitive: 'choice', stakes, ...extra,
+const selection = (id, stakes, text, extra = {}) => define({ id, area: 'memory', kind: 'memory', primitive: 'choice', stakes,
+  source: 'src/memory-routing.js (select over offered entries)', unreachable: FAILED, ...extra,
   build: ({ criteria, grouped, ...args }) => { const t = typeof text === 'function' ? text(args) : text; return choice(grouped ? `Choose the group containing the matching entry. ${t}` : t, criteria); } });
-selection('memory_entry', 'high', ({ operation }) => `Select the saved entry matching the current ${operation} request. For last/previous choose the latest matching timestamp. Choose none if ambiguous or missing. Names may be paraphrased.`, {
+selection('memory_entry', 'high', ({ operation }) => `Select the saved entry matching the current ${operation} request. For last/previous choose the latest matching timestamp. Choose none if ambiguous or missing. Names may be paraphrased.`, { question: 'Which saved entry (or found place) does the recall, forget, visit or repeat mean?', trigger: 'A memory recall, forget, visit or repeat.',
   gate: { threshold: 0.75, below: 'caller', why: 'forget below 0.75 asks which memory; repeating a costly past request below 0.65 asks the player to ask directly' },
   bars: { forget: 0.75, repeat: 0.65 }, repeatCostly: COSTLY,
 });
-selection('memory_place_name', 'low', 'Choose the shortest complete place NAME in the message. Keep distinguishing words (red barn, north mine). Omit framing such as remember, this is, our, as, please and coordinates. Copy only the name.');
-selection('memory_place_location', 'medium', 'Choose the location the player is explicitly naming. The offered positions are known observations. Here/this/this place means the speaking player location, not the bot location. "Remember this as ..." labels where the speaker stood. Prefer written coordinates when supplied. A place merely mentioned without coordinates or an indication of here/this/where I am is none.');
-selection('memory_place_dimension', 'low', ({ current }) => `Which dimension do the written coordinates refer to? Default to the current dimension ${current} unless the message explicitly says another.`);
-selection('memory_note_replaces', 'medium', 'Assuming this message saves a new note, which existing note does it clearly update or contradict? Select none for a separate fact or preference.');
+selection('memory_place_name', 'low', 'Choose the shortest complete place NAME in the message. Keep distinguishing words (red barn, north mine). Omit framing such as remember, this is, our, as, please and coordinates. Copy only the name.', { question: "Which span of the message is the place's name?", trigger: 'A request to remember a place.' });
+selection('memory_place_location', 'medium', 'Choose the location the player is explicitly naming. The offered positions are known observations. Here/this/this place means the speaking player location, not the bot location. "Remember this as ..." labels where the speaker stood. Prefer written coordinates when supplied. A place merely mentioned without coordinates or an indication of here/this/where I am is none.', { question: 'Which observed position is the place being named?', trigger: 'A request to remember a place.' });
+selection('memory_place_dimension', 'low', ({ current }) => `Which dimension do the written coordinates refer to? Default to the current dimension ${current} unless the message explicitly says another.`, { question: 'Which dimension do written coordinates refer to?', trigger: 'Remembering a place by written coordinates.' });
+selection('memory_note_replaces', 'medium', 'Assuming this message saves a new note, which existing note does it clearly update or contradict? Select none for a separate fact or preference.', { question: 'Which existing note does a new note update, if any?', trigger: 'A request to remember a note, when notes exist.' });
 
 module.exports = { TYPES, INTERACTIONS, COSTLY, UNGATED, BARS };

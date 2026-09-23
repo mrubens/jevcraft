@@ -17,17 +17,17 @@ const OPERATIONS = {
   none: 'None of these; a quoted, hypothetical or negated statement, or a request about something else.',
 };
 define({
-  id: 'dream_operation', area: 'dream', kind: 'dream', primitive: 'choice', stakes: 'high',
+  id: 'dream_operation', source: 'src/dream.js (resolveDream)', unreachable: 'the request fails and the player is told "I\'m having trouble thinking right now"', question: 'What does the speaker want done with Jev\'s dream: set one, ask, pause, resume, or clear?', trigger: 'A message routed as dream.', area: 'dream', kind: 'dream', primitive: 'choice', stakes: 'high',
   gate: { threshold: 0.75, below: 'caller', why: 'clearing the dream below 0.75 and setting one below 0.65 are confirmed in words first; the rest are reversible' },
   bars: { clear: 0.75, set: 0.65 },
   build: () => choice('What does the speaker want to do with Jev\'s dream?', OPERATIONS),
 });
 define({
-  id: 'village_progress', area: 'dream', kind: 'dream', primitive: 'score', stakes: 'low',
+  id: 'village_progress', batch: 'village', source: 'src/dream.js (chooseVillagePart)', unreachable: 'the village dream step fails and is set aside for two minutes', question: 'How complete is the village, judged from what stands?', trigger: 'Each step of the build-a-village dream.', area: 'dream', kind: 'dream', primitive: 'score', stakes: 'low',
   build: ({ levels }) => score('How complete is the village described in `standing`, judged from what stands and how the buildings sit together?', levels),
 });
 define({
-  id: 'village_part', area: 'dream', kind: 'dream', primitive: 'choice', stakes: 'medium',
+  id: 'village_part', batch: 'village', source: 'src/dream.js (chooseVillagePart over villageCandidates)', unreachable: 'the village dream step fails and is set aside for two minutes', question: 'Which part should the village get next, or is it done?', trigger: 'Each step of the build-a-village dream, while parts are on offer.', area: 'dream', kind: 'dream', primitive: 'choice', stakes: 'medium',
   build: ({ candidates }) => choice({
     task: 'The bot is building a village on its own. Which part should it add next?',
     guidance: 'Dwellings first, then a landmark or a centre, then the pieces that make it read as a village. Consider what already stands in `standing` and its counts. Choose done when adding more would not make it more of a village.',

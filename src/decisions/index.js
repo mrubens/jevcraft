@@ -25,8 +25,20 @@
 //                  threshold is not acted on as asked. below is 'fallback'
 //                  (the fallback walks the tree instead) or 'caller' (the
 //                  caller has its own low-confidence path: a clarifying
-//                  question, a narrower action). A high-stakes question
-//                  without a gate states why in `ungated`.
+//                  question, a narrower action). A tree's gate applies at
+//                  every level of it. A high-stakes question without a gate
+//                  states why in `ungated`.
+//   question       what is asked, in a plain sentence
+//   trigger        when it is asked
+//   source         where its options or candidates are built
+//   options        a tree's option catalogue: every key the tree can hold,
+//                  as { key } or { pattern }, with a label, when it is on
+//                  offer, and the level it sits at. decide() checks each tree
+//                  against it: a key not in the catalogue fails a test, and
+//                  is logged as a bug in play.
+//   unreachable    for a batched question, what happens when Jev cannot be
+//                  reached (a tree's is its fallback)
+//   batch          the batch a question rides in, when it rides in one
 //
 // and every tree decision goes through decide() below, which applies the
 // definition. Batched questions are asked with ask() and judged with
@@ -52,6 +64,11 @@ function define(spec) {
   if (spec.gate && (!(spec.gate.threshold > 0 && spec.gate.threshold < 1) || !BELOW.has(spec.gate.below) || !spec.gate.why)) problems.push('a gate with threshold, below and why');
   if (spec.gate?.below === 'fallback' && typeof spec.fallback !== 'function') problems.push('a fallback for its gate to fall back to');
   if (spec.stakes === 'high' && !spec.gate && !spec.ungated) problems.push('a gate, or `ungated` saying why a high-stakes answer is acted on at any confidence');
+  if (!spec.question) problems.push('a plain question');
+  if (!spec.trigger) problems.push('a trigger');
+  if (!spec.source) problems.push('a source');
+  if (spec.tree && !(Array.isArray(spec.options) && spec.options.length && spec.options.every(o => (o.key || o.pattern) && o.label && o.when))) problems.push('an option catalogue ({ key or pattern, label, when })');
+  if (!spec.tree && !spec.unreachable) problems.push('an unreachable description');
   if (problems.length) throw new Error(`Decision ${spec.id || '(unnamed)'} needs ${problems.join(', ')}`);
   const frozen = Object.freeze({ ...spec });
   QUESTIONS.set(spec.id, frozen);
@@ -62,6 +79,20 @@ function question(id) {
   const spec = QUESTIONS.get(id);
   if (!spec) throw new Error(`No decision is defined as ${id}`);
   return spec;
+}
+
+// Every key in the tree must be one its question declares. Under the test
+// runner an undeclared key fails; in play it is logged once as a bug.
+const declared = (spec, key) => spec.options.some(o => o.key === key || (o.pattern && new RegExp(`^(?:${o.pattern})$`).test(key)));
+const reported = new Set();
+function checkOptions(spec, tree) {
+  const unknown = [];
+  const visit = children => { for (const [key, node] of Object.entries(children)) { if (!declared(spec, key)) unknown.push(key); if (node.children) visit(node.children); } };
+  visit(tree);
+  if (!unknown.length) return;
+  const message = `${spec.id} offered options it does not declare: ${unknown.join(', ')}`;
+  if (process.env.NODE_TEST_CONTEXT) throw new Error(message);
+  if (!reported.has(message)) { reported.add(message); console.error('[bug]', message); }
 }
 
 // The code's own walk down a tree, for an outage, no client, or a gate.
@@ -89,6 +120,7 @@ class NoSafeDefault extends Error {
 async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100 }) {
   const spec = question(id);
   if (!tree || !Object.keys(tree).length) throw new Error(`No feasible options for ${id}`);
+  checkOptions(spec, tree);
   const fallback = typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : null;
   let decision;
   if (!client) {
