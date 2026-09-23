@@ -79,7 +79,8 @@ function catalogTree(registry, { blocksOnly = false } = {}) {
 // player rather than a coin toss executed for the next ten minutes.
 // Below `floor` the pick is a question whatever the runner-up holds: a
 // 0.3 answer spread thin over six items was executed as if it were sure.
-const AMBIGUOUS = { confidence: 0.5, runnerUp: 0.25, floor: 0.35 };
+// The bars are the catalog_branch question's (decisions/intake.js).
+const AMBIGUOUS = require('./decisions').question('catalog_branch').ambiguous;
 
 async function resolveItem(client, registry, request, { blocksOnly = false, context = {}, noted } = {}) {
   context = { ...context, memory: await resolvedPreferenceContext(client, registry, context.memory, { noted }) };
@@ -100,12 +101,8 @@ async function resolveItem(client, registry, request, { blocksOnly = false, cont
         const matches = suggestions.filter(s => contains(children[key], s.item)).slice(0, 8).map(s => s.item);
         return [key, `${children[key].description}${matches.length ? `. Relevant catalog entries in this branch: ${matches.join(', ')}` : ''}`];
       }));
-      const response = await client.systemOne({ kind: 'catalog', state: { request, selectedCatalogPath: path, lexicalSuggestions: suggestions, ...context }, questions: {
-        item: choice({ task: blocksOnly ? 'Select the next catalog branch containing the requested building material.' :
-          'Select the next catalog branch containing the item the player wants obtained or crafted. Select the requested output, not a tool or ingredient needed to obtain it.',
-        guidance: 'Each branch is generated from the actual Minecraft catalog. Match the requested species, color, and item kind. Current explicit choices override memory. For an unspecified wood variant, use relevant explicit memory notes first, then memory.preferences as a soft default; a remembered species applies to logs, planks, and wooden variants, not unrelated items. If there is no relevant wood preference, use oak as the ordinary unspecified wood default. Do not add outputs or infer a new player choice from a default. Bare grass means the grass plant unless grass block/turf is specified. Lexical suggestions are hints, not restrictions. Choose none only if none of these branches contains the requested item.' },
-        { ...options, none: 'No branch contains the requested item or material.' }),
-      } });
+      const response = await require('./decisions').ask(client, { state: { request, selectedCatalogPath: path, lexicalSuggestions: suggestions, ...context },
+        questions: { item: ['catalog_branch', { blocksOnly, options }] } });
       selected = response.answers?.item?.choice;
       judgments.push({ path: [...path], options, answer: response.answers?.item, usage: response.usage });
       if (selected === 'none') return { item: null, path, judgments, latencyMs: Math.round(performance.now() - started) };

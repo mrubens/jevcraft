@@ -2,24 +2,20 @@
 
 const fs = require('fs');
 const path = require('path');
-const { choice, noul, score } = require('./typesafe');
 const { Vec3 } = require('vec3');
 const { buildCellComplete } = require('./build-blocks');
 const { chatNames, parseAddress } = require('./chat-address');
 const { resolveItem, itemCandidates, itemChoices } = require('./catalog');
 const { resolveItemBundle } = require('./item-bundle');
-const { resolveDiscovery, CATEGORY_QUESTION } = require('./discovery');
+const { resolveDiscovery } = require('./discovery');
 const { resolveMemory } = require('./memory-routing');
-const { woodChoices, requestedPreferences, preferenceContext, NOTED_WOOD_QUESTION } = require('./preferences');
+const { woodChoices, requestedPreferences, preferenceContext } = require('./preferences');
 
-// How sure Jev has to be about what was asked before the bot acts on it. Below
-// this the bot asks a one-line question instead of guessing, and the bar is
-// higher for the requests that cost hours or change the world: a misheard
-// "come here" costs a few seconds, a misheard "build a castle" costs an
-// afternoon. Answers that carry no confidence figure are not gated.
-const CONFIDENCE = { act: 0.5, costly: 0.65, item: 0.6 };
-const COSTLY = new Set(['build', 'house', 'operator_command', 'win', 'nether']);
-const UNGATED = new Set(['other', 'status', 'stop', 'resume', 'dream']);
+// The questions, their bars and the request types are defined in
+// decisions/intake.js; CONFIDENCE is kept as a view of those bars.
+const { TYPES, INTERACTIONS, COSTLY, UNGATED, BARS } = require('./decisions/intake');
+const { ask, question } = require('./decisions');
+const CONFIDENCE = { ...BARS, item: question('intake_item').gate.threshold };
 const PHRASES = {
   memory: 'remember or recall something', dream: 'change my dream', operator_command: 'run a server command', house: 'build a small house',
   build: 'design and build something', obtain: 'go and get an item', craft: 'craft an item', find: 'find something in the world',
@@ -27,32 +23,6 @@ const PHRASES = {
   stop: 'stop', status: 'report what I am doing', resume: 'resume the saved task', other: 'just talk',
 };
 const phrase = kind => PHRASES[kind] || String(kind).replaceAll('_', ' ');
-
-const TYPES = {
-  dream: 'Give, ask about, pause, resume or take away the bot\'s DREAM, the long goal it chases when nothing else needs it: "your dream is to beat the game", "dream of building a village", "what is your dream", "chase your dream", "set your dream aside", "forget your dream". A one-off request to build one thing or get one item is not this.',
-  memory: 'Save, recall, or forget a personal fact, preference, named place, or past request. Remember this as home; I prefer cherry wood; what did I ask last time; where is our base; go home/return to a named saved place; make another one like last time. Questions about past tasks are memory, not current status. A fresh ordinary request naming a Minecraft resource remains obtain/craft/find. Memory never grants server-command permission.',
-  operator_command: 'Ask for a Minecraft command effect: change time, weather, difficulty, or player game mode (Creative, Survival, Adventure, Spectator); teleport; summon; change rules, effects, enchantments, experience, scores, permissions, or other server command settings. "Put me in Creative" changes game mode. Polite action questions are requests. Never use commands merely as a means to build, craft, collect, or follow. Stop this bot task is stop. Informational questions, quotes and negated commands are other.',
-  house: 'Build a simple small house or shelter, optionally naming its primary material, with no custom architecture.',
-  build: 'Design and build a custom structure: a mansion, castle, tower, bridge, statue, detailed house, or a building with specified rooms, floors, shape or style. This calls the building designer. Inventory items such as beds and chests are craft.',
-  obtain: 'Get, gather, collect, bring or give a Minecraft item or block, of any kind.',
-  craft: 'Make or craft an inventory item such as a tool, chest, stairs, planks, or other recipe output.',
-  find: 'Find, seek, show or travel to a biome, living creature, or block in the world through exploration. Find a sheep, find a cherry biome, find a cherry log. Find me means come; get/bring/give an item means obtain. This does not authorize locate/teleport commands.',
-  come: 'Come here, approach a player, or meet the speaker once.',
-  follow: 'Follow a player continuously, stay with them, or accompany them.',
-  nether: 'Find or create a working route to the Nether.',
-  win: 'Beat Minecraft or win the game through survival progression, defeating the Ender Dragon and returning alive. This is a gameplay objective, not permission to use commands. Questions about how to win and requests not to fight are other.',
-  stop: 'Stop or cancel the current task.',
-  status: 'Ask what this bot is doing now, how its current task is going, or whether it has finished. Report the bot current activity or progress.',
-  resume: 'Continue or retry the saved task.',
-  other: 'Conversation, explanations, general questions about Minecraft, negated instructions, or unsupported requests. Do not execute a task merely mentioned as a topic. Requests for the bot current activity/progress are status; requests to perform a supported action use that action.',
-};
-
-const INTERACTIONS = {
-  request: { meaning: 'An instruction for this Minecraft bot to act, control its task, report current or remembered information, or save a personal preference/fact told directly to it. Imperative verbs address the bot, even without please. Long-term goals are actions too. Polite action questions are instructions.',
-    examples: ['win the game', 'collect some wood', 'could you build me a house?', 'what are you doing now?'] },
-  discussion: { meaning: 'An explanation, general fact, hypothetical discussion, quoted statement, or negation, without asking this bot to execute that action.',
-    examples: ['how can I win the game?', 'explain how crafting works', 'do not build that house', 'what does Alex mean by collect wood?'] },
-};
 
 // Candidate extraction is exact code; Jev selects which mentioned quantity
 // applies to the requested output. Never offer unrelated batch sizes.
@@ -92,59 +62,39 @@ async function interpret(client, request, from, username, context = {}) {
   const candidates = itemCandidates(registry, address.text, { limit: 24 });
   const candidateChoices = candidates.length ? itemChoices(candidates) : null;
   const started = performance.now();
-  const response = await client.systemOne({ kind: 'request',
+  const response = await ask(client, { kind: 'request',
     state: { request, request_body: address.text, speaker: from, bot_name: username, bot_names: chatNames(username), explicitly_addressed: address.explicit,
       availablePlayers: context.players || [from], memory },
     questions: {
-      ...(candidateChoices ? { item: choice({
-        task: 'Assuming an obtain or craft request for ONE type of output, which listed catalog item is the requested output? These candidates were found by word overlap with the request and may include irrelevant items. Select the requested output, not a tool or ingredient needed to obtain it.',
-        guidance: 'Match the requested species, color and item kind exactly. Current explicit choices override memory. For an unspecified wood variant, use relevant explicit memory notes first, then memory.preferences as a soft default, then oak. Bare grass means the grass plant unless grass block/turf is specified. Choose none if the requested item is not listed or the request names several outputs.',
-      }, candidateChoices) } : {}),
-      ...(memory?.notes?.length ? { noted_wood: NOTED_WOOD_QUESTION(woods) } : {}),
-      discovery_category: CATEGORY_QUESTION(),
-      // A Score, so the survival trade-offs later can weigh how much the
-      // player minds waiting. "Quick, before dark" and "whenever you get a
-      // chance" are the same objective with different tolerances.
-      urgency: score('How much time pressure does the speaker put on this request, judging only the wording of `request_body`? Politeness is not urgency; a plain imperative is ordinary.', [
-        'No time pressure, or explicitly relaxed: whenever you can, no rush, when you get a chance.',
-        'Ordinary: a plain request with no timing words either way.',
-        'Pressed: quickly, hurry, now, right away, before dark, as fast as you can, or a stated deadline.',
-      ]),
+      item: candidateChoices && ['intake_item', { candidates: candidateChoices }],
+      noted_wood: memory?.notes?.length && ['noted_wood', { woods }],
+      discovery_category: ['discovery_category'],
+      urgency: ['intake_urgency'],
       // Only worth asking when the name is missing: with it, the answer was
       // never read, and a missing answer still failed the whole request.
-      ...(!address.explicit ? { addressed: noul('Is `request` directed at this bot asking it to act or report, rather than conversation with another player? All names in `bot_names` refer to this same bot. `explicitly_addressed` records a direct name prefix.') } : {}),
-      wood_choice: choice('Which wood species does the speaker explicitly choose for their own requested supplies or construction in THIS message? Use only the current request, never memory, inventory, recipe ingredients, or bot defaults as evidence. A one-time request for cherry logs counts. Exclude quotes, hypotheticals, negated choices, orders for another player or the bot itself, discovery-only requests, and ambiguous/multiple species. For unspecified wood or an inherited preference choose none.', { ...woods, none: 'No single explicit wood choice for this player in the current action request.' }),
-      memory_statement: noul('Is the speaker directly sharing a personal preference or personal fact with Jev to remember, rather than asking for a gameplay action? For example "I prefer small houses" or "my favorite wood is cherry". Exclude quoted/hypothetical/negated statements, general Minecraft facts, and instructions to perform a new action.'),
-      interaction: choice('Classify the speaker intent in `request_body`, with the bot name prefix removed. The speaker is talking to a Minecraft bot. Is this an instruction to perform an action/report its current activity, or a discussion without an instruction to act? Judge intent, not feasibility or the topic.', INTERACTIONS),
-      objective: choice('Categorize the requested outcome in `request` in the Minecraft game. Creative, Survival, Adventure and Spectator name game modes even when the word "mode" is omitted. Item requests belong to obtain or craft regardless of which particular Minecraft item is named. Choose obtain for collect/get/gather/fetch requests even when the item can be crafted; choose craft for explicit make/craft/create inventory items. Recipes and feasibility are checked after routing. A simple small house is house; custom structures and mansions are build; crafting an inventory item is craft. Coming once differs from continuously following. Changing the world or player with an explicitly requested command effect is operator_command.', TYPES),
-      quantity: choice('Assuming an item request, select the quantity applying to the requested output. Candidates were extracted from this request. "A/an" or "a single" item means 1. Stacks contain 64 items. If no requested output quantity is stated, select unspecified; do not invent a batch size.',
-        { ...Object.fromEntries(numbers.map(n => [n, `${n} items requested by a quantity in the message`])), unspecified: 'No stated output quantity; the application will use its default.' }),
-      outputs: choice('Assuming an obtain/craft request, does the player want one type of output or multiple types/a set? Full diamond armor is four outputs even without listing them. Ingredients mentioned only as a means to make one output do not count.', {
-        single: 'One type of final item, possibly many copies.', multiple: 'Several distinct final items or a full set, such as full armor, or armor and a bed.',
-      }),
-      delivery: choice('Assuming an item request, identify the recipient stated in `request`. The speaker is the human and you/yourself refers to the bot. Select unspecified when the request only says to make, craft, get or collect an item without naming its recipient. Do not infer a recipient merely because a human issued the request.', {
-        speaker: 'The human speaker: get me, bring me, give me, craft me, for me. Bring/deliver without another named recipient also means the speaker.',
-        bot: 'The bot: for yourself, get yourself, for your own use, keep it.',
-        unspecified: 'No recipient is stated: craft a chest, make eight stairs, collect eight blocks, get a pickaxe. The application will keep the items in the bot inventory.',
-      }),
-      target: choice('Assuming come or follow, which available player should the bot approach? "me" or no name means the speaker.', Object.fromEntries([...new Set([from, ...(context.players || [])])].map(name => [name, name === from ? `${name}: the speaker (me)` : name]))),
-      material: choice('Assuming the request is a small house, which primary construction material should be used? Current explicit materials take priority. When unspecified, use relevant explicit memory notes, then learned wood preferences in memory.preferences. Use oak_planks only if there is no relevant preference.', {
-        oak_planks: 'Oak planks: explicitly requested, preferred, or the default when there is no relevant memory.',
-        cobblestone: 'Cobblestone.', dirt: 'Dirt.', other: 'Another specified or remembered preferred building material (including cherry or other wood species); resolve it from the full catalog.',
-      }),
+      addressed: !address.explicit && ['intake_addressed'],
+      wood_choice: ['intake_wood_choice', { woods }],
+      memory_statement: ['intake_memory_statement'],
+      interaction: ['intake_interaction'],
+      objective: ['intake_objective'],
+      quantity: ['intake_quantity', { numbers }],
+      outputs: ['intake_outputs'],
+      delivery: ['intake_delivery'],
+      target: ['intake_target', { from, players: context.players || [] }],
+      material: ['intake_material'],
     },
   });
   const a = response.answers;
   if (!a || !Object.hasOwn(TYPES, a.objective?.choice) || !Object.hasOwn(INTERACTIONS, a.interaction?.choice) || (!address.explicit && !Number.isFinite(a.addressed?.noul))) {
     throw new Error('Invalid Jev interpretation response');
   }
-  if (!address.explicit && a.addressed.noul < 0.5) return null;
+  if (!address.explicit && a.addressed.noul < question('intake_addressed').gate.threshold) return null;
   // The memory classifier separately distinguishes a personal statement from
   // quoted, hypothetical or negated instructions. Such statements are useful
   // even when the broad action/discussion classifier calls them discussion.
   // Asking about the dream or a memory is a question to the bot, not a
   // discussion about one, however it is phrased.
-  const kind = a.objective.choice === 'memory' || (a.interaction.choice === 'discussion' && a.memory_statement?.noul >= 0.75)
+  const kind = a.objective.choice === 'memory' || (a.interaction.choice === 'discussion' && a.memory_statement?.noul >= question('intake_memory_statement').gate.threshold)
     ? 'memory' : a.objective.choice === 'dream' ? 'dream' : a.interaction.choice === 'request' ? a.objective.choice : 'other';
   const spec = { kind, request, from, interpretation: a, usage: response.usage, latencyMs: Math.round(performance.now() - started) };
   // Kept as a plain number on the goal so decision state can carry it

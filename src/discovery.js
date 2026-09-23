@@ -1,7 +1,7 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { choice } = require('./typesafe');
+const { ask } = require('./decisions');
 const { resolveItem } = require('./catalog');
 const { dryPassable, damagingTerrain } = require('./terrain');
 const { safeFromHostiles } = require('./danger');
@@ -23,15 +23,10 @@ function discoveryCatalog(registry, kind) {
   return tree;
 }
 
-const CATEGORY_QUESTION = () => choice('Assuming the player wants to FIND something in the world, what kind of thing is it? A biome is an environment such as a cherry grove; a sheep is a living entity; a cherry log is a block. This locates things through exploration, without commands.', {
-  biome: 'A biome or environment to visit.', entity: 'A living animal, creature or mob to find without attacking it.',
-  block: 'A block or plant to locate, rather than collect.', none: 'No supported biome, living entity or block.',
-});
-
 // The category question can be asked speculatively in the same batch as the
 // request interpretation; a caller that already has that answer passes it.
 async function resolveDiscovery(client, registry, request, { category } = {}) {
-  const root = category ? { answers: { category } } : await client.systemOne({ kind: 'discovery', state: { request }, questions: { category: CATEGORY_QUESTION() } });
+  const root = category ? { answers: { category } } : await ask(client, { state: { request }, questions: { category: ['discovery_category'] } });
   const kind = root.answers?.category?.choice, judgments = [root];
   if (kind === 'none') return { target: null, judgments };
   if (!['biome', 'entity', 'block'].includes(kind)) throw new Error('Invalid discovery category');
@@ -41,9 +36,8 @@ async function resolveDiscovery(client, registry, request, { category } = {}) {
   }
   let children = discoveryCatalog(registry, kind);
   for (let depth = 0; depth < 3; depth++) {
-    const answer = await client.systemOne({ kind: 'discovery', state: { request, targetKind: kind }, questions: { target: choice('Choose the catalog branch or exact target matching the requested biome or creature. Names and members come from this Minecraft version. Cherry biome means cherry_grove. Do not replace the requested species with a nearby alternative.', {
-      ...Object.fromEntries(Object.entries(children).map(([key, node]) => [key, node.description])), none: 'No match in this catalog.',
-    }) } });
+    const answer = await ask(client, { state: { request, targetKind: kind }, questions: { target: ['discovery_target',
+      { options: Object.fromEntries(Object.entries(children).map(([key, node]) => [key, node.description])) }] } });
     judgments.push(answer);
     const key = answer.answers?.target?.choice;
     if (key === 'none') return { target: null, judgments };
@@ -171,4 +165,4 @@ async function discoverStep(bot, task, goal, save, { navigate, explore, boatTrav
   return false;
 }
 
-module.exports = { CATEGORY_QUESTION, discoveryCatalog, resolveDiscovery, biomeAt, biomeLocations, explorationTarget, discoverStep };
+module.exports = { discoveryCatalog, resolveDiscovery, biomeAt, biomeLocations, explorationTarget, discoverStep };

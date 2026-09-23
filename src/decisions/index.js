@@ -48,6 +48,7 @@ function define(spec) {
   if (!PRIMITIVES.has(spec.primitive)) problems.push('a primitive');
   if (!STAKES.has(spec.stakes)) problems.push('stakes');
   if (spec.tree && !(typeof spec.fallback === 'function' || spec.fallback === 'throws')) problems.push("a fallback or fallback: 'throws'");
+  if (!spec.tree && typeof spec.build !== 'function') problems.push('a tree flag or a build(args) that returns its typed question');
   if (spec.gate && (!(spec.gate.threshold > 0 && spec.gate.threshold < 1) || !BELOW.has(spec.gate.below) || !spec.gate.why)) problems.push('a gate with threshold, below and why');
   if (spec.gate?.below === 'fallback' && typeof spec.fallback !== 'function') problems.push('a fallback for its gate to fall back to');
   if (spec.stakes === 'high' && !spec.gate && !spec.ungated) problems.push('a gate, or `ungated` saying why a high-stakes answer is acted on at any confidence');
@@ -129,24 +130,34 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   return decision;
 }
 
-// Batched questions (intake): each defined question contributes its typed
-// question; the caller sends them in one call and reads the answers with
-// confident(), which applies each question's own threshold.
-function compose(entries) {
-  return Object.fromEntries(entries.filter(Boolean).map(([key, id, built]) => { question(id); return [key, built]; }));
+// Batched questions (intake and the rest): each defined question builds its
+// typed question from the caller's arguments, and they go in one call. The
+// answers are read with confident(), which applies each question's own bar.
+// `questions` is { key: [id, args] }; a falsy entry is left out, so a
+// speculative question is included with a condition in place.
+async function ask(client, { questions, state, signal, kind }) {
+  const entries = Object.entries(questions).filter(([, entry]) => entry);
+  if (!entries.length) throw new Error('No questions to ask');
+  const specs = entries.map(([key, [id]]) => [key, question(id)]);
+  const built = Object.fromEntries(entries.map(([key, [id, args]]) => [key, question(id).build(args || {})]));
+  return client.systemOne({ kind: kind || specs[0][1].kind, state, questions: built, signal });
 }
-function confident(id, answer, { threshold } = {}) {
+// Whether an answer clears its question's bar. A Noul clears it when the
+// probability of yes is at least the bar: a sure "no" is not a sure "yes".
+// An answer with no confidence figure clears it unless `missing: false`
+// (the preference questions never learned from an unscored answer).
+function confident(id, answer, { threshold, missing = true } = {}) {
   const spec = question(id);
   const bar = threshold ?? spec.gate?.threshold;
   if (!answer) return false;
   if (bar === undefined) return true;
-  if (spec.primitive === 'noul') return (answer.probability ?? 0) >= bar || (answer.probability ?? 1) <= 1 - bar;
-  return (answer.confidence ?? 1) >= bar;
+  if (spec.primitive === 'noul') { const p = answer.noul ?? answer.probability; return Number.isFinite(p) ? p >= bar : missing; }
+  return Number.isFinite(answer.confidence) ? answer.confidence >= bar : missing;
 }
 
 const all = () => [...QUESTIONS.values()];
 
-module.exports = { define, question, decide, walk, compose, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
+module.exports = { define, question, decide, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
 
 // The area modules register their questions when this directory is loaded.
-require('./survival'); require('./work'); require('./combat'); require('./travel');
+require('./survival'); require('./work'); require('./combat'); require('./travel'); require('./intake');

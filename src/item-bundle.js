@@ -1,5 +1,5 @@
 'use strict';
-const { choice, noul } = require('./typesafe');
+const { ask, confident, question } = require('./decisions');
 const { catalogTree, itemCandidates } = require('./catalog');
 const { resolvedPreferenceContext } = require('./preferences');
 
@@ -20,16 +20,13 @@ async function resolveItemBundle(client, registry, request, numbers = [], contex
         path: entry.path, description: entry.node.description, item: entry.node.item,
         relevantEntries: suggestions.filter(item => contains(entry.node, item)),
       }]));
-      const response = await client.systemOne({ kind: 'bundle', state: { request, candidates, context }, questions:
-        Object.fromEntries(page.map((_, i) => [`candidate_${i}`, noul({
-          task: `Does candidates.candidate_${i} contain at least one of the FINAL outputs the player requests? Select every requested output, including members of explicitly requested sets.`,
-          rules: 'Full armor means helmet, chestplate, leggings and boots in the named material, not weapons or horse/wolf armor. Exclude ingredients, tools needed to obtain outputs, negated items, and optional suggestions. An unspecified variant means ONE ordinary default, not all variants: white for an uncolored bed/wool; for unspecified wooden objects use relevant explicit context.memory notes, then context.memory.preferences, then oak if neither applies. Honor current explicit colors/species over memory, and choose only one matching variant. A branch can contain a requested output even when its description only shows some examples.',
-        })])) });
+      const response = await ask(client, { state: { request, candidates, context },
+        questions: Object.fromEntries(page.map((_, i) => [`candidate_${i}`, ['bundle_candidate', { index: i }]])) });
       judgments.push({ candidates, answers: response.answers, usage: response.usage });
       for (let i = 0; i < page.length; i++) {
         const value = response.answers?.[`candidate_${i}`]?.noul;
         if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error('Invalid multi-item catalog response');
-        if (value < 0.65) continue;
+        if (!confident('bundle_candidate', { noul: value })) continue;
         const { node, path } = page[i];
         if (node.item) items.push(node.item);
         else next.push(...Object.entries(node.children).map(([key, child]) => ({ path: [...path, key], node: child })));
@@ -40,18 +37,14 @@ async function resolveItemBundle(client, registry, request, numbers = [], contex
   }
   if (frontier.length) throw new Error('Multi-item catalog exceeded its depth limit');
   if (!items.length) return { items: [], judgments };
-  const questions = { covered: noul('Do selectedOutputs cover ALL final item outputs requested in request, including every piece of a requested set, with no extra unrequested outputs? Ingredients mentioned only as a means are not outputs. For an unspecified variant, one matching default counts as satisfying the requested item: use explicit context.memory notes, then learned context.memory.preferences for wood, otherwise ordinary white/oak defaults. A preferred cherry plank is still a plank, not an extra output. Past tasks in memory are not current requests and must not add outputs. Answer no if any output is missing or any unrelated item was added.') };
+  const questions = { covered: ['bundle_covered'] };
   for (const [i, item] of items.entries()) {
-    questions[`quantity_${i}`] = choice(`How many ${item} are requested in request? Apply numbers only to this output. A full set contains one of each member; two sets contain two of each. An unspecified amount is default.`,
-      { ...Object.fromEntries(numbers.map(n => [n, `${n} of ${item}`])), default: 'No explicit amount: one item (or the ordinary concrete batch).' });
-    questions[`recipient_${i}`] = choice(`Who should receive ${item} in request? Use the recipient for the whole list unless the player gives this item a different recipient.`, {
-      speaker: 'Give/bring/deliver to the speaker (me/for me); bring without another named recipient.',
-      bot: 'Keep it, for yourself, or no recipient specified.',
-    });
+    questions[`quantity_${i}`] = ['bundle_quantity', { item, numbers }];
+    questions[`recipient_${i}`] = ['bundle_recipient', { item }];
   }
-  const response = await client.systemOne({ kind: 'bundle', state: { request, selectedOutputs: items, context }, questions });
+  const response = await ask(client, { state: { request, selectedOutputs: items, context }, questions });
   judgments.push({ selectedOutputs: items, answers: response.answers, usage: response.usage });
-  if (!(response.answers?.covered?.noul >= 0.65)) return { items: [], judgments, incomplete: true };
+  if (!(response.answers?.covered?.noul >= question('bundle_covered').gate.threshold)) return { items: [], judgments, incomplete: true };
   const outputs = items.map((item, i) => {
     const quantity = response.answers?.[`quantity_${i}`]?.choice, recipient = response.answers?.[`recipient_${i}`]?.choice;
     if (![...numbers, 'default'].includes(quantity) || !['speaker', 'bot'].includes(recipient)) throw new Error('Invalid item quantity or recipient in combined request');

@@ -57,3 +57,26 @@ test('the ledger kind is the question\'s own: idle and stillness are no longer c
   for (const id of ['idle_work', 'stillness_detour', 'house_build_step', 'resource_source']) await decisions.decide(id, { client, task: new Task('t'), tree: tree(), state: {} });
   assert.deepEqual(kinds, ['idle', 'idle', 'build', 'source']);
 });
+
+test('only the decisions directory talks to Jev: the files still calling systemOne directly are the ones not yet moved, and no others', () => {
+  const src = path.join(__dirname, '..', 'src');
+  const direct = [];
+  const walk = dir => { for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, f.name);
+    if (f.isDirectory()) { if (f.name !== 'decisions') walk(p); continue; }
+    if (f.name.endsWith('.js') && !['typesafe.js', 'ledger.js'].includes(f.name) && /\.systemOne\(/.test(fs.readFileSync(p, 'utf8'))) direct.push(path.relative(src, p));
+  } };
+  walk(src);
+  const notYetMoved = ['boats.js', 'build-templates.js', 'builds.js', 'command-classifier.js', 'design-review.js', 'dream.js', 'opportunistic-mining.js',
+    'opportunistic-pickups.js', 'recovery-adviser.js', 'schematic-library.js'];
+  assert.deepEqual(direct.sort(), notYetMoved.sort());
+});
+
+test('the intake bars come from the definitions: the objective, the item pick, the catalog and memory', () => {
+  const { CONFIDENCE } = require('../src/objectives');
+  assert.equal(CONFIDENCE.costly, decisions.question('intake_objective').gate.threshold);
+  assert.equal(CONFIDENCE.item, decisions.question('intake_item').gate.threshold);
+  assert.deepEqual(require('../src/catalog').AMBIGUOUS, decisions.question('catalog_branch').ambiguous);
+  assert.equal(decisions.confident('bundle_candidate', { noul: 0.1 }), false, 'a sure no is not a sure yes');
+  assert.equal(decisions.confident('noted_wood', { choice: 'oak' }, { missing: false }), false);
+});
