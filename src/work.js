@@ -2739,6 +2739,11 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // Progress ends a struggle: the persistence counter is for one stuck
       // stretch, not a lifetime tally read out in chat as "attempt 50".
       if (!unchanged && goal.struggles) { goal.struggles = 0; }
+      // A restock that changes nothing (the chest does not hold what its
+      // record says, or the kit slot is already met another way) would be
+      // planned again at once: the replay run restocked a furnace forty
+      // times over. Its items rest for a quarter of an hour.
+      if (goal.stalls > 30 && goal.step?.action === 'restock') for (const move of goal.step.items || []) setAside(goal, 'restock_item', move.item, 'no measurable progress', 900000);
       if (goal.stalls > 30) throw new Blocked(`No measurable progress on ${JSON.stringify(goal.step)}`);
     } catch (err) {
       task.interruptCheck = undefined;

@@ -266,3 +266,18 @@ test('before the Nether a restock tops food up to the crossing reserve, not a da
   assert.equal(day, 2, 'a day: two steaks, sixteen points');
   assert.equal(nether, 3, 'the Nether: three steaks, twenty-four points');
 });
+
+test('a restock item set aside after a restock that changed nothing is not planned again', () => {
+  const { restockStage } = require('../src/home-stash');
+  const { setAside } = require('../src/progress');
+  const registry = require('minecraft-data')('26.1');
+  const items = [];
+  const bot = { registry, entity: { position: { x: 0, y: 64, z: 0, distanceTo: () => 2 } }, game: { dimension: 'overworld', difficulty: 'normal' }, inventory: { items: () => items, slots: [] }, health: 20, food: 20 };
+  const home = { origin: { x: 0, y: 64, z: 0 }, dimension: 'overworld', stash: { position: { x: 1, y: 64, z: 0 }, contents: { furnace: 1 } } };
+  const goal = { survival: { home } };
+  const before = restockStage(bot, goal);
+  assert(before?.items.some(m => m.item === 'furnace'), 'empty pockets want the furnace the chest holds');
+  setAside(goal, 'restock_item', 'furnace', 'no measurable progress', 900000);
+  const after = restockStage(bot, goal);
+  assert(!after || !after.items.some(m => m.item === 'furnace'));
+});

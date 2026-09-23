@@ -333,7 +333,7 @@ function restockStage(bot, goal, wants = [], { now = Date.now() } = {}) {
   const home = homeOf(bot, goal);
   if (!home?.stash?.position || homeDistance(bot, home) > HOME_REACH) return null;
   if (isSetAside(goal, 'stash', 'chest', now)) return null;
-  const moves = stashWithdrawals(bot, home, wants, { foodPoints: foodTarget(goal) });
+  const moves = stashWithdrawals(bot, home, wants, { foodPoints: foodTarget(goal) }).filter(m => !isSetAside(goal, 'restock_item', m.item, now));
   if (!moves.length) return null;
   return { phase: 'home_restock', action: 'restock', items: moves };
 }
