@@ -83,7 +83,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     // After landings that failed too: the replay run's pool offered a swim to
     // a landing it never reached, every time, and that alone kept the pickaxe
     // out of it.
-    if (await digToShore(bot, task, goal, save, movement, move)) return true;
+    if (await digToShore(bot, task, goal, save, movement, move, state.failures)) return true;
     throw new Error('No reachable dry shore found in the observed water area');
   } finally {
     policy.restore(); Object.assign(movement, previous);
@@ -91,21 +91,28 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
   }
 }
 
-async function digToShore(bot, task, goal, save, movement, move) {
+async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
   const ids = bot.registry.blocksArray.filter(b => b.boundingBox === 'block').map(b => b.id);
   const dry = p => dryStanding(bot, p) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name);
   const lavaNear = p => [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, 2, 0], [0, -1, 0]]
     .some(([dx, dy, dz]) => /lava/.test(bot.blockAt(p.offset(dx, dy, dz))?.name || ''));
   const cells = bot.findBlocks({ matching: ids, maxDistance: 10, count: 128, useExtraInfo: block => dry(block.position.offset(0, 1, 0)) })
-    .map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    .map(p => p.offset(0, 1, 0))
+    // A landing the swim just failed to reach is not tried again by digging.
+    .filter(p => !(failed[`${p}`] > Date.now() - 60000))
+    .sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
   const saved = { canDig: movement.canDig, dontCreateFlow: movement.dontCreateFlow };
   Object.assign(movement, { canDig: true, dontCreateFlow: false });
+  // What the dig looked at, for the record when it finds nothing.
+  const record = (goal.shoreRecovery ||= {}).dig = { at: new Date().toISOString(), cells: cells.length, tried: [] };
   try {
     for (const p of cells.slice(0, 4)) {
       task.check(); checkAir(bot);
       const destination = new goals.GoalBlock(p.x, p.y, p.z);
       const route = await surveyRoute(bot, task, movement, destination, 800);
-      if (route.status !== 'success' || (route.path || []).some(q => lavaNear(new Vec3(q.x, q.y, q.z)))) continue;
+      const lava = (route.path || []).some(q => lavaNear(new Vec3(q.x, q.y, q.z)));
+      record.tried.push({ to: `${p}`, status: route.status, lava }); save();
+      if (route.status !== 'success' || lava) continue;
       goal.step = { action: 'dig_to_shore', from: { ...bot.entity.position }, destination: { ...p } };
       goal.survivalAction = { action: 'dig_to_shore', at: new Date().toISOString() }; save();
       try { await move(bot, task, destination, { timeoutMs: 45000, stallMs: 8000 }); }
