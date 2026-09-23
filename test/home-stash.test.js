@@ -319,3 +319,30 @@ test('blaze rods, powder and pearls left in the stash are fetched before the por
   w.goal.survival.home.stash.contents = {};
   assert.equal(nextGameStage(w.bot, w.goal).action, 'enter_nether', 'with nothing in the chest the portal is next');
 });
+
+test('a restock makes room before it opens the chest, and a restock that takes nothing is not planned again at once', async () => {
+  const keepers = ['emerald', 'gold_nugget', 'redstone', 'quartz', 'glowstone_dust', 'amethyst_shard', 'copper_ingot', 'book', 'paper', 'compass', 'clock', 'map', 'name_tag', 'lead', 'saddle',
+    'spyglass', 'brush', 'bowl', 'glass_bottle', 'honeycomb', 'slime_ball', 'magma_cream', 'ghast_tear', 'prismarine_shard', 'nautilus_shell', 'rabbit_hide', 'ink_sac', 'glow_ink_sac'];
+  const gear = [['iron_sword', 1], ['oak_log', 8], ['cobblestone', 64], ['cooked_beef', 8], ['crafting_table', 1], ['furnace', 1], ['water_bucket', 1]];
+  const w = await establishedHome({ items: [...gear, ['dirt', 18], ...keepers.map(k => [k, 1])] });
+  const { bot, goal, save, actions } = w;
+  assert.equal(w.stacks.length, 36, 'thirty-six slots taken');
+  const chest = chestAt(w, [['iron_pickaxe', 1]]);
+  chest.window.firstEmptyInventorySlot = () => w.stacks.length >= 36 ? null : 27 + w.stacks.length;
+  bot.tossStack = async item => { w.stacks.splice(w.stacks.indexOf(item), 1); };
+  const home = goal.survival.home;
+  home.stash.contents = { iron_pickaxe: 1 };
+  const taken = await stash.restockFromStash(bot, new Task('restock'), goal, save, home, actions);
+  assert.deepEqual(taken.map(m => m.item), ['iron_pickaxe']);
+  assert(!w.stacks.some(i => i.name === 'dirt'), 'the dirt made the room');
+  assert(bot.inventory.items().some(i => i.name === 'iron_pickaxe'));
+
+  // Full of keepers, nothing to drop: nothing comes out, and the pickaxe rests.
+  const w2 = await establishedHome({ items: [...gear, ['emerald', 1], ...keepers.map(k => [k, 1]), ['diamond', 1]] });
+  const chest2 = chestAt(w2, [['iron_pickaxe', 1]]);
+  chest2.window.firstEmptyInventorySlot = () => w2.stacks.length >= 36 ? null : 27 + w2.stacks.length;
+  w2.bot.tossStack = async item => { w2.stacks.splice(w2.stacks.indexOf(item), 1); };
+  w2.goal.survival.home.stash.contents = { iron_pickaxe: 1 };
+  assert.deepEqual(await stash.restockFromStash(w2.bot, new Task('restock'), w2.goal, w2.save, w2.goal.survival.home, w2.actions), []);
+  assert(require('../src/progress').isSetAside(w2.goal, 'restock_item', 'iron_pickaxe'), 'the chest is not opened again for it at the next step');
+});

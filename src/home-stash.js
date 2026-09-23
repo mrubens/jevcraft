@@ -499,18 +499,29 @@ async function expandStash(bot, task, goal, save, home, actions) {
 async function restockFromStash(bot, task, goal, save, home, actions, wants = []) {
   const step = () => { goal.step = { action: 'restock', items: stashWithdrawals(bot, home, wants, { foodPoints: foodTarget(goal) }) }; save(); };
   step();
+  // Room first, with the lid shut (nothing can be dropped from an open
+  // window): with thirty-six slots taken the spare pickaxe had nowhere to
+  // go, and the chest was opened and shut once a second for twenty seconds.
+  const planned = goal.step.items || [];
+  const { makeRoom } = require('./inventory-tidy');
+  const keep = new Set(planned.map(m => m.item));
+  for (const move of planned) { task.check(); await makeRoom(bot, task, move.item, { keep, away: pos(home.stash.position) }); }
   try {
-    return await withChest(bot, task, goal, save, home, actions, async window => {
+    const taken = await withChest(bot, task, goal, save, home, actions, async window => {
       step();
       const taken = [];
       for (const move of stashWithdrawals(bot, home, wants, { items: window.items(), foodPoints: foodTarget(goal) })) {
         task.check();
         try { await moveOut(bot, window, move); taken.push(move); }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; break; }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       }
       home.stash.restockedAt = new Date().toISOString();
       return taken;
     });
+    // Nothing came out: the same plan would open the chest again at once.
+    // Its items rest a quarter of an hour, not thirty tries.
+    if (!taken.length) { for (const move of planned) setAside(goal, 'restock_item', move.item, 'the restock took nothing', 900000); save(); }
+    return taken;
   } catch (err) {
     if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) && home.stash) { setAside(goal, 'stash', 'chest', err, RETRY_MS); save(); }
     throw err;
