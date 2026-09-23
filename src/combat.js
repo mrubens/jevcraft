@@ -4,6 +4,8 @@ const { threats } = require('./danger');
 const { checkAir } = require('./vitals');
 const { durable, SHOOTERS, shooter } = require('./mob-policy');
 const { countOf } = require('./skills');
+const { besideDrop } = require('./terrain');
+const { move } = require('./motion');
 const { bowSolution, aimAtEntity, shootBow } = require('./projectiles');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -83,6 +85,45 @@ function canStrike(bot, entity) {
   return !hit || eye.distanceTo(hit.intersect || hit.position) >= direction.norm() - 0.1;
 }
 
+// A critical hit is a swing on the way down from a jump: half as much again,
+// so a diamond sword kills a zombie or a skeleton in two swings, not three.
+// Every swing jumps when it safely can: on the ground, out of liquid, head
+// room for the jump, no drop beside it (a hit taken in the air throws the
+// bot further), not sprinting, and not at the mobs below. Otherwise, or if
+// the jump's window is missed, a plain swing.
+const NO_CRIT = new Set(['creeper', 'hoglin', 'zoglin']);
+function critReady(bot, target) {
+  const e = bot.entity;
+  // Not at a creeper, which is struck and backed from, nor a hoglin or a
+  // zoglin, which throw what they hit into the air: in the arena the jump
+  // took 15.2 damage from a hoglin against 9.6 for plain swings.
+  if (!e?.onGround || e.isInWater || e.isInLava || NO_CRIT.has(target?.name)) return false;
+  if (bot.getControlState ? bot.getControlState('sprint') : bot.controlState?.sprint) return false;
+  const feet = e.position.floored();
+  const head = bot.blockAt?.(feet.offset(0, 2, 0));
+  if (!head || head.boundingBox !== 'empty' || /water|lava/.test(head.name)) return false;
+  return !besideDrop(bot, feet);
+}
+async function strike(bot, task, target) {
+  if (critReady(bot, target)) {
+    // Past the top of the jump: seen rising, now coming down. Standing
+    // still reads a small downward velocity too, and the first version
+    // swung the instant the feet left the ground, on the way up: no crit.
+    let rose = false;
+    // The server reads the fall a tick behind: swung on the first falling
+    // tick the hit was plain; two ticks down it is a critical.
+    const falling = () => { const vy = bot.entity.velocity?.y ?? 0; if (vy > 0.05) rose = true; return rose && !bot.entity.onGround && vy < -0.15; };
+    const down = await move(bot, task, { label: 'crit_jump', keys: ['jump'], sneak: false, until: falling, maxMs: 900, tick: 10 });
+    if (down && bot.entities[target.id] === target && target.isValid !== false && canStrike(bot, target)) {
+      await bot.lookAt(target.position.offset(0, (target.height || 1.8) / 2, 0), true);
+      bot.attack(target); bot._critSwings = (bot._critSwings || 0) + 1; return 'critical';
+    }
+    for (let i = 0; i < 10 && !bot.entity.onGround; i++) { task.check(); await sleep(25); }
+    if (!(bot.entities[target.id] === target && target.isValid !== false && canStrike(bot, target))) return 'missed';
+  }
+  bot.attack(target); return 'plain';
+}
+
 function strikeTarget(bot) {
   return threats(bot, 5).find(({ entity, visible, distance }) => (visible || distance <= 2) && canStrike(bot, entity));
 }
@@ -112,15 +153,15 @@ async function defendNearby(bot, task, goal, save) {
   await bot.lookAt(target.position.offset(0, (target.height || 1.8) / 2, 0), true);
   task.check(); checkAir(bot);
   if (bot.entities[target.id] !== target || target.isValid === false || strikeTarget(bot)?.entity !== target) return false;
-  bot.attack(target); bot._defenseAttackAt = Date.now();
+  const swing = await strike(bot, task, target); bot._defenseAttackAt = Date.now();
   // The shield comes up for the cooldown between swings: a wither skeleton
   // took twenty health in six seconds of unguarded swordplay. Not against
   // a creeper, which is struck and backed away from.
   if (target.name !== 'creeper' && bot.inventory.slots?.[45]?.name === 'shield') raiseShield(bot);
   goal.survivalAction = { action: 'defend', target: target.name, entityId: target.id,
-    distance: Number(threat.distance.toFixed(2)), weapon: weapon?.name || 'bare hands', health: bot.health,
+    distance: Number(threat.distance.toFixed(2)), weapon: weapon?.name || 'bare hands', health: bot.health, swing,
     at: new Date().toISOString() };
   save(); return true;
 }
 
-module.exports = { defenseWeapon, canStrike, strikeTarget, defendNearby, SHOOTERS, shooter, bowReady, aim, shotTargets, shoot, raiseShield, lowerShield };
+module.exports = { critReady, strike, defenseWeapon, canStrike, strikeTarget, defendNearby, SHOOTERS, shooter, bowReady, aim, shotTargets, shoot, raiseShield, lowerShield };

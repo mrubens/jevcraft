@@ -125,3 +125,29 @@ test('a shot lowers the shield to draw, releases after the draw, then covers beh
   assert.deepEqual(events, ['raise shield', 'lower shield', 'equip bow', 'draw', 'release', 'raise shield']);
   lowerShield(bot); assert.equal(events.at(-1), 'lower shield'); lowerShield(bot); assert.equal(events.length, 7, 'lowering twice is once');
 });
+
+test('a swing jumps for a critical hit when it safely can, and swings plainly under a low roof, beside a drop, or at a creeper', async () => {
+  const { strike, critReady } = require('../src/combat');
+  const { Vec3 } = require('vec3');
+  const ground = p => p.y < 10 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' };
+  const make = (blockAt = ground) => {
+    const bot = { entity: { position: new Vec3(0.5, 10, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, entities: {}, controlState: {}, attacks: [],
+      blockAt, lookAt: async () => {}, attack(t) { this.attacks.push(this.entity.onGround ? 'ground' : 'air'); },
+      setControlState(k, v) { this.controlState[k] = v; if (k === 'jump' && v) { setTimeout(() => { this.entity.onGround = false; this.entity.velocity = new Vec3(0, 0.4, 0); }, 20); setTimeout(() => { this.entity.velocity = new Vec3(0, -0.2, 0); }, 60); } } };
+    const zombie = { id: 1, name: 'zombie', position: new Vec3(2, 10, 0.5), height: 1.95, width: 0.6, isValid: true };
+    bot.entities[1] = zombie; bot.world = { raycast: () => null };
+    return { bot, zombie };
+  };
+  const open = make();
+  assert.equal(critReady(open.bot, open.zombie), true);
+  assert.equal(await strike(open.bot, new Task('crit'), open.zombie), 'critical');
+  assert.deepEqual(open.bot.attacks, ['air'], 'the swing lands on the way down');
+  assert(open.bot.entity.velocity.y < 0, 'after the top of the jump, not on the way up');
+  const low = make(p => p.y < 10 || p.y === 12 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' });
+  assert.equal(critReady(low.bot, low.zombie), false, 'a two-block roof leaves no room for the jump');
+  assert.equal(await strike(low.bot, new Task('plain'), low.zombie), 'plain');
+  const edge = make(p => (p.y < 10 && p.z >= 0) ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' });
+  assert.equal(critReady(edge.bot, edge.zombie), false, 'not with a drop beside it');
+  const c = make(); c.zombie.name = 'creeper';
+  assert.equal(critReady(c.bot, c.zombie), false, 'never at a creeper');
+});

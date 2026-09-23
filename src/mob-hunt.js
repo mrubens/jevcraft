@@ -3,7 +3,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead, shooter, hasFood, FIGHT_FLOOR: HUNT_FLOOR } = require('./mob-policy');
 const { threats, checkThreats, NeedsSafety } = require('./danger');
-const { canStrike, defenseWeapon, bowReady, shoot } = require('./combat');
+const { canStrike, defenseWeapon, bowReady, shoot, strike } = require('./combat');
 const { deflect } = require('./projectile-guard');
 const { aimAtEntity } = require('./projectiles');
 const { dryStanding } = require('./mining-access');
@@ -243,8 +243,8 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
         bot._provokedMobs.set(target.id, target);
         if (bot._provokedMobs.size > 64) bot._provokedMobs.delete(bot._provokedMobs.keys().next().value);
       }
-      bot.attack(target); attacks++;
-      goal.step = { action: 'hunt_mob', entity: target.name, entityId: target.id, item: state.item, attacks, health: bot.health }; save();
+      const swing = await strike(bot, task, target); if (swing !== 'missed') attacks++;
+      goal.step = { action: 'hunt_mob', entity: target.name, entityId: target.id, item: state.item, attacks, swing, health: bot.health }; save();
       const wearBefore = shieldWear(), swungAt = Date.now();
       if (!guarded) {
         // Nothing to block: wait out the swing cooldown, keep facing the animal.

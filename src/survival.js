@@ -93,19 +93,7 @@ function lavaExit(bot) {
 // a Nether ledge was a thirty-block fall, twice in ten minutes. Beside a
 // drop means a neighbouring cell the body could be pushed into with no
 // floor for three blocks under it, or lava under it.
-const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-function dropAt(bot, c) {
-  const b = bot.blockAt(c);
-  if (!b || b.boundingBox === 'block') return false;
-  for (let dy = 1; dy <= 3; dy++) {
-    const under = bot.blockAt(c.offset(0, -dy, 0));
-    if (!under) return false;
-    if (under.name === 'lava') return true;
-    if (under.boundingBox === 'block') return false;
-  }
-  return true;
-}
-const besideDrop = (bot, feet) => AROUND.some(([dx, dz]) => dropAt(bot, feet.offset(dx, 0, dz)));
+const { besideDrop } = require('./terrain');
 function firmGround(bot, radius = 4) {
   const feet = bot.entity.position.floored(), cells = [];
   const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name); };

@@ -40,4 +40,20 @@ function supportCell(point) {
   return new Vec3(Math.floor(point.x), Math.ceil(point.y) - 1, Math.floor(point.z));
 }
 
-module.exports = { dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+// Beside a drop: a neighbouring cell the body could be pushed into with no
+// floor for three blocks under it, or lava under it. See survival.js flee.
+const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+function dropAt(bot, c) {
+  const b = bot.blockAt(c);
+  if (!b || b.boundingBox === 'block') return false;
+  for (let dy = 1; dy <= 3; dy++) {
+    const under = bot.blockAt(c.offset(0, -dy, 0));
+    if (!under) return false;
+    if (under.name === 'lava') return true;
+    if (under.boundingBox === 'block') return false;
+  }
+  return true;
+}
+const besideDrop = (bot, feet) => AROUND.some(([dx, dz]) => dropAt(bot, feet.offset(dx, 0, dz)));
+
+module.exports = { besideDrop, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

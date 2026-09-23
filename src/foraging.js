@@ -8,6 +8,7 @@ const { surveyRoute } = require('./skills');
 const { homeFood, eatFromHome } = require('./home-base');
 const { villageFood, eatFromVillage } = require('./villages');
 const { makeRoom } = require('./inventory-tidy');
+const { strike } = require('./combat');
 const vanilla = require('../data/vanilla-26.1.json');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Raw chicken is an ingredient, never edible reserve. Its cooking dependency
@@ -86,7 +87,7 @@ async function hunt(bot, task, target, actions, goal, save) {
       const hit = bot.world.raycast(eye, direction.unit(), direction.norm());
       if (hit && eye.distanceTo(hit.intersect || hit.position) < direction.norm() - 0.25) throw new Error(`Food target ${target.name} is behind solid cover`);
       await bot.lookAt(aim, true);
-      bot.attack(target); attacks++;
+      if (await strike(bot, task, target) !== 'missed') attacks++;
       for (let i = 0; i < 8; i++) { task.check(); checkThreats(bot); await sleep(100); }
     }
     bot.pathfinder.setGoal(null); bot.clearControlStates();
