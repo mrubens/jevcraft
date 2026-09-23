@@ -252,6 +252,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 99. *The portal room was one block past the look.* In the endgame rehearsal (`.test-endgame`, seed 2026092301) the eyes led to within seven blocks of the stronghold's start and the search then ran out its twenty-five minutes: the portal room lay forty-five blocks sideways and seventy down, ninety-seven blocks in a line, and the frame look reached ninety-six. Within ninety-six blocks of the eyes' estimate the look now reaches a hundred and sixty. The drill passed at the next run: four throws, the estimate on the true start, the portal at (85, -18, 2021) in 9.7 minutes, nineteen eyes left, no deaths.
 
+100. *A portal ring over a cave.* The rehearsal's portal room had been cut through by a cave: the frames hung over open air, the silverfish stairs on the east the only floor, and the eyes for the three far frames had nowhere to be placed from ("no observed dry route" within six seconds, eight eyes in). When no standing room beside a frame can be walked to, footing is laid now: an open cell outside the ring and within reach, the pathfinder allowed its scaffolding for that approach only. `enter_end` passed at the next run, in the End in twelve seconds with seventeen eyes left.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

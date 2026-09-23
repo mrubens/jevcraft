@@ -12,6 +12,24 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const vector = p => new Vec3(p.x, p.y, p.z);
 const blocked = message => Object.assign(new Error(message), { name: 'Blocked' });
 
+// A cave through the portal room can take its floor: in the rehearsal
+// world the ring hung over open air with the silverfish stairs the only
+// footing, out of reach of the far frames. Then the footing is laid: any
+// open cell beside the frame and outside the ring, within reach of it,
+// is a place to stand once a block is put under it.
+function bridgeFootings(bot, frame, outside) {
+  const out = [];
+  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) for (const dy of [0, 1]) {
+    const p = frame.offset(dx, dy, dz), below = bot.blockAt(p.offset(0, -1, 0));
+    if (!outside(p) || !dryPassable(bot.blockAt(p)) || !dryPassable(bot.blockAt(p.offset(0, 1, 0)))) continue;
+    if (!below || below.name === 'end_portal_frame' || /lava|water/.test(below.name)) continue;
+    if (!miningReach(bot, p.offset(.5, 0, .5), frame)) continue;
+    out.push(p);
+  }
+  const here = bot.entity.position;
+  return out.sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+}
+
 function activePortal(bot, center) {
   for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) {
     if (bot.blockAt(center.offset(x, 0, z))?.name !== 'end_portal') return false;
@@ -39,7 +57,9 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
   const outside = p => Math.abs(Math.floor(p.x) - center.x) > 1 || Math.abs(Math.floor(p.z) - center.z) > 1;
   movement.allowedPosition = p => outside(p) && policy.allowed(p);
   movement.scafoldingBlocks = []; movement.allow1by1towers = false;
-  const approach = async positions => {
+  const approach = async (positions, { scaffold = false } = {}) => {
+    // Blocks are laid only for a floor that is not there.
+    movement.scafoldingBlocks = scaffold ? previous.scafoldingBlocks : [];
     // Unfilled frames are only 13/16 of a block high. An integer GoalBlock
     // atop one can appear reached to the planner but fail after real landing.
     // Interact from ordinary surrounding footing instead of using frame tops.
@@ -60,7 +80,10 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
     if (missing.length) {
       const position = vector(missing[0].position);
       if (!outside(bot.entity.position) || !dryStanding(bot, bot.entity.position) || !miningReach(bot, bot.entity.position, position)) {
-        await approach(dryMiningPositions(bot, position, 24));
+        // Standing room that is there first; footing laid when none of it
+        // can be walked to.
+        try { await approach(dryMiningPositions(bot, position, 24)); }
+        catch (err) { if (!/No observed dry route/.test(err.message)) throw err; await approach(bridgeFootings(bot, position, outside), { scaffold: true }); }
       }
       check();
       const fresh = portalAt(bot, center), frame = bot.blockAt(position);
@@ -126,4 +149,4 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
   }
 }
 
-module.exports = { activePortal, enterEnd };
+module.exports = { activePortal, enterEnd, bridgeFootings };

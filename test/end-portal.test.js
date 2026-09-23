@@ -3,7 +3,7 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
 const registry = require('minecraft-data')('26.1');
 const { frameOffsets, portalAt } = require('../src/stronghold');
-const { activePortal, enterEnd } = require('../src/end-portal');
+const { activePortal, enterEnd, bridgeFootings } = require('../src/end-portal');
 const { nextGameStage } = require('../src/game-progress');
 const { Task } = require('../src/skills');
 
@@ -124,5 +124,21 @@ test('portal contact waits for the server dimension packet despite predicted fal
       else { await assert.rejects(run, /No living End/); assert.equal(goal.gameProgress.milestones.end_entered, undefined); }
       assert.equal(goal.step.action, 'await_end_transition');
     } finally { clearTimeout(timer); }
+  }
+});
+
+test('a portal room whose floor a cave took: footing beside the far frame is laid, outside the ring and within reach', () => {
+  const { bot, center } = fixture();
+  // Nothing under the ring but air (the cave), as in the rehearsal world.
+  const blockAt = bot.blockAt;
+  bot.blockAt = p => { const b = blockAt(p); return b.name === 'stone' ? { name: 'cave_air', position: p.floored(), boundingBox: 'empty' } : b; };
+  const outside = p => Math.abs(Math.floor(p.x) - center.x) > 1 || Math.abs(Math.floor(p.z) - center.z) > 1;
+  const frame = center.offset(-2, 0, 0);
+  const footings = bridgeFootings(bot, frame, outside);
+  assert(footings.length > 0);
+  for (const p of footings) {
+    assert(outside(p), `${p} is outside the ring`);
+    assert.notEqual(bot.blockAt(p.offset(0, -1, 0)).name, 'end_portal_frame', 'never on a frame top');
+    assert(p.offset(.5, 1.62, .5).distanceTo(frame.offset(.5, .5, .5)) <= 5, `${p} reaches the frame`);
   }
 });
