@@ -329,8 +329,11 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         desiredHorizontalRange: route.desiredHorizontalRange }, run: async () => {
         state.visits[route.key] = (state.visits[route.key] || 0) + 1; save();
         const initiallySafe = safeEndPoint(bot, bot.entity.position);
+        // A walk stops for a mob at arm's length: the recorded rehearsal
+        // walked twenty blocks under an enderman's blows, 16.2 health to 1.1
+        // in eight seconds, and the sword never had a turn.
         await actions.navigate(bot, task, route.destination, { timeoutMs: 18000, stallMs: 4000,
-          stopWhen: () => initiallySafe && !safeEndPoint(bot, bot.entity.position) });
+          stopWhen: () => (initiallySafe && !safeEndPoint(bot, bot.entity.position)) || hostileEntities(bot, 4).some(e => live(bot, e)) });
       } };
     }
     // A pause can reveal a vulnerable phase, but it must not indefinitely
