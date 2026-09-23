@@ -891,6 +891,7 @@ class Survival {
     const bot = this.bot;
     if (shelter.materialStock(bot) < 12) return this.digIn(task, goal, save, danger);
     const origin = bot.entity.position.floored();
+    if (isSetAside(this, 'seal_here', `${origin}`)) return false;
     let refuge = this.state.shelters.find(s => s.origin.x === origin.x && s.origin.y === origin.y && s.origin.z === origin.z && s.dimension === bot.game.dimension);
     if (!refuge) { refuge = { origin: { ...origin }, dimension: bot.game.dimension, createdAt: new Date().toISOString(), emergency: true }; this.state.shelters.push(refuge); save(); }
     this.report(goal, save, { action: 'dig_in', threats: danger.map(t => t.entity.name), cells: shelter.missingShell(bot, refuge).length });
@@ -904,7 +905,13 @@ class Survival {
       try { await this.actions.place(bot, task, p, name); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
     }
-    if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) { refuge.verifiedAt = new Date().toISOString(); save(); }
+    if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) { refuge.verifiedAt = new Date().toISOString(); save(); return true; }
+    // A pass that closed nothing is not a pocket: saying it was sent the
+    // caller straight back here, fourteen times a second, all evening.
+    if (cells.length && shelter.missingShell(bot, refuge).length >= cells.length) {
+      setAside(this, 'seal_here', `${origin}`, `${cells.length} cells of the shell would not take a block`, 60000); save();
+      return false;
+    }
     return true;
   }
 

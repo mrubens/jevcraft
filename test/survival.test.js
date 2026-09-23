@@ -1395,3 +1395,35 @@ test('a shelter site with dry rock below is chosen over a nearer one beside a fl
   assert.deepEqual([sites[0].x, sites[0].z], [9, 0], 'the dry one first, though it is further');
   assert(shelter.wetBelow(bot, new Vec3(0, 64, 0)) > 0 && shelter.wetBelow(bot, new Vec3(9, 64, 0)) === 0);
 });
+
+// The live pocket on a sand bar at sea: walls and roof of cobblestone, and
+// sand in four cells of the ring under them.
+function sandFloorPocket() {
+  const origin = new Vec3(0, 64, 0), blocks = new Map();
+  for (const p of shelter.shell(origin)) blocks.set(`${p}`, 'cobblestone');
+  for (const [x, z] of [[1, -1], [-1, 0], [-1, 1], [0, 1]]) blocks.set(`${origin.offset(x, -1, z)}`, 'sand');
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: origin.offset(0.5, 0, 0.5) }, entities: {},
+    inventory: { items: () => [{ name: 'cobblestone', count: 160 }] },
+    blockAt: p => { const name = blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'); return { name, position: p, boundingBox: name === 'air' ? 'empty' : 'block' }; } });
+  return { origin, blocks, bot, refuge: { origin, dimension: 'overworld' } };
+}
+
+test('sand resting under the shell is floor, not a missing cell; sand in a wall still is', () => {
+  const { origin, blocks, bot, refuge } = sandFloorPocket();
+  assert.deepEqual(shelter.missingShell(bot, refuge), []);
+  assert.equal(shelter.sealed(bot, refuge), true);
+  blocks.set(`${origin.offset(1, 0, 0)}`, 'sand');
+  assert.equal(shelter.missingShell(bot, refuge).length, 1);
+});
+
+test('a seal that closes nothing says so, and the spot is not sealed again at once', async () => {
+  const { origin, blocks, bot } = sandFloorPocket();
+  blocks.set(`${origin.offset(1, 0, 0)}`, 'sand');
+  let placed = 0;
+  const survival = new Survival(bot, { place: async () => { placed++; throw new Error('the cell is full'); }, navigate: async () => {} });
+  const goal = {};
+  assert.equal(await survival.sealHere(new Task('night'), goal, () => {}, []), false);
+  assert.equal(placed, 1);
+  assert.equal(await survival.sealHere(new Task('night'), goal, () => {}, []), false);
+  assert.equal(placed, 1, 'set aside: not tried again straight away');
+});

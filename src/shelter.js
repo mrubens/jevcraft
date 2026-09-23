@@ -95,7 +95,15 @@ function enclosure(shelter) {
 // one shelter fail verification forever after every reachable cell was in.
 const enclosedAir = (bot, p) => replaceable(bot.blockAt(p)) &&
   [new Vec3(0, 1, 0), new Vec3(0, -1, 0), ...directions].every(d => bot.blockAt(p.plus(d))?.boundingBox === 'block');
-function missingShell(bot, shelter) { return enclosure(shelter).filter(p => !solid(bot.blockAt(p)) && !enclosedAir(bot, p)); }
+// Sand or gravel under the shell is floor: it falls only into a hole, and
+// nothing comes up through it. Counted missing, it could never be filled
+// (the cell is full), and the live bot, walled in on a sand bar at sea,
+// sealed the same pocket fourteen times a second.
+const floorSolid = b => b?.boundingBox === 'block' && !['magma_block', 'cactus', 'powder_snow'].includes(b.name);
+function missingShell(bot, shelter) {
+  const floorY = shelter.kind !== 'house' ? position(shelter.origin).y - 1 : null;
+  return enclosure(shelter).filter(p => !(p.y === floorY ? floorSolid : solid)(bot.blockAt(p)) && !enclosedAir(bot, p));
+}
 function inside(bot, shelter) {
   if (shelter.dimension !== bot.game.dimension) return false;
   const feet = bot.entity.position.floored(), o = position(shelter.origin);
@@ -106,7 +114,7 @@ function sealed(bot, shelter) {
   if (shelter.kind === 'house') return !missingShell(bot, shelter).length && shelter.blueprint.empty
     .filter(p => !(p.x === o.x && p.z === o.z - 2))
     .every(p => replaceable(bot.blockAt(position(p))));
-  return !missingShell(bot, shelter).length && solid(bot.blockAt(o.offset(0, -1, 0))) &&
+  return !missingShell(bot, shelter).length && floorSolid(bot.blockAt(o.offset(0, -1, 0))) &&
     replaceable(bot.blockAt(o)) && replaceable(bot.blockAt(o.offset(0, 1, 0)));
 }
 function materialStock(bot) {
