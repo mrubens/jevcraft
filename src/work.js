@@ -21,7 +21,7 @@ const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, 
 const { reviewDesign } = require('./design-review');
 const { narrate } = require('./narration');
 const { planCatalog, sourceBlocks } = require('./knowledge');
-const { takeCreativeItem } = require('./creative');
+const { takeCreativeItem, clearCreativeInventory } = require('./creative');
 const { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit } = require('./surface');
 const { bootstrapPickaxe } = require('./tool-recovery');
 const { foodSupply } = require('./foraging');
@@ -46,7 +46,7 @@ const { exitEnd } = require('./end-exit');
 const { prepareEndSupplies } = require('./end-supplies');
 const { collectWater } = require('./water');
 const { makeObsidian } = require('./obsidian');
-const { tidyInventory, roomFor, makeRoom } = require('./inventory-tidy');
+const { tidyInventory, roomFor, makeRoom, crowded } = require('./inventory-tidy');
 const { homeStep, homeChores , gatherWool, woolCarried } = require('./home-base');
 const { stashValuables, restockFromStash, NETHER_FOOD_POINTS } = require('./home-stash');
 const { noticeVillage, takeVillageBed } = require('./villages');
@@ -1134,7 +1134,7 @@ async function executeAcquisition(bot, task, step, goal, save) {
   goal.step = step;
   save();
   if (step.action === 'mine') await mine(bot, task, step, goal, save);
-  else if (step.action === 'creative_inventory') await takeCreativeItem(bot, task, step.item, step.count);
+  else if (step.action === 'creative_inventory') await takeCreativeItem(bot, task, step.item, step.count, { keep: wantedItems(goal) });
   else if (step.action === 'craft') await craft(bot, task, step, goal);
   else if (step.action === 'smelt') await smelt(bot, task, step, goal, save);
   else if (step.action === 'harden') await harden(bot, task, goal, save, step.item);
@@ -2222,13 +2222,23 @@ function createRecoveryAdviser(bot, client) {
 
 // Full pockets stall quietly: ore mined and never picked up, a crafting
 // grid spilling on the ground. Surplus stone goes before that happens.
-async function keepRoom(bot, task, goal) {
-  const heading = goal.step?.destination || goal.step?.target || goal.tunnel?.target;
-  // What the step makes, what it digs for, and what it will use: sand on
-  // its way to glass or concrete powder is an ingredient, not surplus.
-  const wanted = [goal.item, goal.step?.item, goal.step?.from, goal.step?.block, goal.step?.drops, goal.smelting?.from,
+// What the step makes, what it digs for, and what it will use: sand on
+// its way to glass or concrete powder is an ingredient, not surplus.
+function wantedItems(goal = {}) {
+  return new Set([goal.item, goal.step?.item, goal.step?.from, goal.step?.block, goal.step?.drops, goal.smelting?.from,
     ...Object.keys(goal.step?.consumes || {}), ...Object.keys(goal.step?.requires || {}),
-    ...(goal.tasks || []).map(t => t.item), ...(goal.blueprint?.blocks || []).map(b => b.material)].filter(Boolean);
+    ...(goal.tasks || []).map(t => t.item), ...(goal.blueprint?.blocks || []).map(b => b.material)].filter(Boolean));
+}
+
+async function keepRoom(bot, task, goal) {
+  // In Creative nothing carried is scarce: clear what the work does not
+  // need instead of dropping it in the players' world.
+  if (bot.game?.gameMode === 'creative') {
+    if (crowded(bot)) await clearCreativeInventory(bot, task, wantedItems(goal));
+    return;
+  }
+  const heading = goal.step?.destination || goal.step?.target || goal.tunnel?.target;
+  const wanted = [...wantedItems(goal)];
   const dropped = await tidyInventory(bot, task, { away: heading && Number.isFinite(heading.x) ? heading : null, keep: new Set(wanted) });
   if (dropped.length) {
     // Tunnelling refills the stone every few minutes; say so now and then,
