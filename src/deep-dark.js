@@ -151,10 +151,14 @@ const deepDarkStep = (bot, task, goal, save, actions) => expeditionStep(bot, tas
 // Toward a point: the pathfinder, then a staircase step. True when it got
 // six blocks closer or arrived.
 async function approach(bot, task, state, save, target, actions, range) {
+  const { valuableInPassing, mineValuableInPassing } = require('./opportunistic-mining');
+  // A diamond within four blocks of the way is dug first.
+  if (actions.goal && await mineValuableInPassing(bot, task, actions.goal, save, actions)) return true;
   const from = bot.entity.position.clone();
   const gap = () => bot.entity.position.distanceTo(target);
   const start = gap();
-  try { await actions.navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, range), { timeoutMs: 30000, stallMs: 8000 }); }
+  const stopWhen = actions.goal ? () => valuableInPassing(bot, actions.goal) : undefined;
+  try { await actions.navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, range), { timeoutMs: 30000, stallMs: 8000, stopWhen }); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   if (gap() <= range + 1 || gap() < start - 6) return true;
   try { await actions.tunnel(bot, task, state, save, target, { dig: actions.dig, navigate: actions.navigate }); }
@@ -166,6 +170,7 @@ async function approach(bot, task, state, save, target, actions, range) {
 // site is done, or a warden sends it home.
 async function expeditionTrip(bot, task, goal, save, actions, kind = 'deep_dark', { ms = TRIP_MS } = {}) {
   const trip = require('./trip-kit');
+  actions = { ...actions, goal };
   if (actions.place && actions.acquireStep) await trip.packLight(bot, task, goal, save, actions, kind);
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {

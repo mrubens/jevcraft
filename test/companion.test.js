@@ -270,3 +270,31 @@ test('a Nether walk stops for gold within four blocks while pearls are short, an
   assert.deepEqual(dug, [`${ore}`], 'the gold is dug first');
   assert.equal(goal.fortressSearch.legs, 0, 'and the sweep leg waits for the next step');
 });
+
+test('a diamond beside the tunnel is dug by rule, never walked past for want of a question', async () => {
+  const { opportunisticMining, valuableInPassing } = require('../src/opportunistic-mining');
+  const { bot, ore } = oreWorld();
+  const find = bot.findBlocks;
+  bot.findBlocks = opts => opts.useExtraInfo ? find(opts) : [ore];
+  const dug = [];
+  const goal = { kind: 'win', opportunistic: { primarySteps: 0, history: [], skipped: {} } };
+  assert.equal(valuableInPassing(bot, goal, Date.now() + 1000), true, 'a walk stops for it');
+  const mined = await opportunisticMining(bot, new Task('tunnel'), goal, () => {}, { drops: 'cobblestone' }, {
+    navigate: async () => {}, dig: async (b, t, p) => { dug.push(`${p}`); } }, null);
+  assert.equal(mined, true, 'no Jev asked, the diamond taken all the same');
+  assert.deepEqual(dug, [`${ore}`]);
+});
+
+test('iron ore is taken by rule while iron is short, and left once the pockets hold enough', () => {
+  const { opportunityCandidates } = require('../src/opportunistic-mining');
+  const { bot, ore, stock } = oreWorld();
+  const Block = require('prismarine-block')(registry);
+  bot.blockAt = p => { const f = p.floored(); const b = Block.fromStateId(registry.blocksByName[f.equals(ore) ? 'iron_ore' : f.y < 70 ? 'stone' : 'air'].defaultState); b.position = f; return b; };
+  const neededNow = () => opportunityCandidates(bot, {}, { drops: 'cobblestone' }).length;
+  assert.equal(neededNow(), 1);
+  const { valuableInPassing } = require('../src/opportunistic-mining');
+  const find = bot.findBlocks; bot.findBlocks = o => o.useExtraInfo ? find(o) : [ore];
+  assert.equal(valuableInPassing(bot, {}, Date.now() + 5000), true, 'short of iron: a walk stops for it');
+  stock([{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }, { name: 'raw_iron', type: registry.itemsByName.raw_iron.id, count: 40 }]);
+  assert.equal(valuableInPassing(bot, {}, Date.now() + 10000), false, 'forty carried: walked past');
+});

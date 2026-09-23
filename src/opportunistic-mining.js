@@ -23,8 +23,15 @@ const fuelCarried = bot => bot.inventory.items().reduce((n, i) => n + (i.name ==
 const PEARLS_WANTED = 16;
 const GOLD_BLOCKS = /^(nether_gold_ore|gilded_blackstone|gold_block|gold_ore|deepslate_gold_ore)$/;
 const piglinsWithin = (bot, p, r) => Object.values(bot.entities || {}).some(e => /^piglin/.test(e.name || '') && e.isValid !== false && e.position && e.position.distanceTo(p) <= r);
+// And diamonds, always, and iron while short: the bot walked a shaft past a
+// diamond because the question is asked every third step, and the answer
+// was never in doubt. Iron is every tool, armour piece and bucket.
+const IRON_WANTED = 32;
+const ironShort = bot => countOf(bot, 'raw_iron') + countOf(bot, 'iron_ingot') < IRON_WANTED;
 const neededByRule = (bot, candidate) => (candidate.resource === 'coal' && fuelCarried(bot) < FUEL_UNITS_WANTED) ||
-  (candidate.resource === 'gold_nugget' && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED);
+  (candidate.resource === 'gold_nugget' && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED) ||
+  (candidate.resource === 'diamond' && countOf(bot, 'diamond') < 64) ||
+  (candidate.resource === 'raw_iron' && ironShort(bot));
 
 function opportunityCandidates(bot, goal, primary, { radius = LIMITS.radius } = {}) {
   if (!bot.registry?.blocksArray || !bot.findBlocks || bot.health < 16 || bot.food < 14 || bot.game?.gameMode === 'creative' || !dryStanding(bot, bot.entity.position) || immediateThreat(bot)) return [];
@@ -124,16 +131,23 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
 // there, so the rule above never saw it. The look is cheap and throttled.
 const PASSING_RADIUS = 4;
 const shortOfPearls = bot => !!bot.inventory?.items && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED;
+// Diamonds the same way, on any walk in any dimension.
+const DIAMOND_ORES = ['diamond_ore', 'deepslate_diamond_ore'];
+const passingKinds = bot => [...(shortOfPearls(bot) ? ['nether_gold_ore'] : []), ...(countOf(bot, 'diamond') < 64 ? DIAMOND_ORES : []),
+  ...(ironShort(bot) ? ['iron_ore', 'deepslate_iron_ore'] : [])];
+const passingResource = c => c.resource === 'diamond' || c.resource === 'raw_iron' || (c.resource === 'gold_nugget' && /nether/.test(String(c.block || '')));
 function goldInPassing(bot, goal, now = Date.now()) {
-  if (!shortOfPearls(bot) || now - (bot._goldLookAt || 0) < 500) return false;
+  if (!bot.inventory?.items || now - (bot._goldLookAt || 0) < 500) return false;
+  const kinds = passingKinds(bot);
+  if (!kinds.length) return false;
   bot._goldLookAt = now;
-  const id = bot.registry?.blocksByName?.nether_gold_ore?.id;
-  if (id === undefined || !bot.findBlocks?.({ matching: [id], maxDistance: PASSING_RADIUS, count: 1 }).length) return false;
-  return opportunityCandidates(bot, goal, { drops: null }, { radius: PASSING_RADIUS }).some(c => c.resource === 'gold_nugget');
+  const ids = kinds.map(n => bot.registry?.blocksByName?.[n]?.id).filter(id => id !== undefined);
+  if (!ids.length || !bot.findBlocks?.({ matching: ids, maxDistance: PASSING_RADIUS, count: 1 }).length) return false;
+  return opportunityCandidates(bot, goal, { drops: null }, { radius: PASSING_RADIUS }).some(c => passingResource(c) && neededByRule(bot, c));
 }
 async function mineGoldInPassing(bot, task, goal, save, { navigate, dig }) {
-  if (!navigate || !dig || !shortOfPearls(bot)) return false;
-  return opportunisticMining(bot, task, goal, save, { drops: null }, { navigate, dig, radius: PASSING_RADIUS, only: c => c.resource === 'gold_nugget' }, null);
+  if (!navigate || !dig || !bot.inventory?.items || !passingKinds(bot).length) return false;
+  return opportunisticMining(bot, task, goal, save, { drops: null }, { navigate, dig, radius: PASSING_RADIUS, only: passingResource }, null);
 }
 
-module.exports = { goldInPassing, mineGoldInPassing, PASSING_RADIUS, piglinsWithin, LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };
+module.exports = { goldInPassing, mineGoldInPassing, valuableInPassing: goldInPassing, mineValuableInPassing: mineGoldInPassing, PASSING_RADIUS, piglinsWithin, LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };
