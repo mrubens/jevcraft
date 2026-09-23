@@ -264,6 +264,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 105. *Water against endermen, and a bucket for each job.* An enderman that touches water is hurt and teleports away, so a turned one within twelve blocks now meets a bucket poured into the bot's own cell, whose flowing ring it has to cross to strike; the water is taken back once none is near. The first run with it went 5.8 minutes, no death, the dragon from 121.5 to 102.25, and ended because the one bucket was out on the ground when the dragon's knockback lifted the bot, and fall recovery called a waterless fall Blocked. The End supplies are two buckets now, water is poured only with two carried, and a fall with none is simply waited out.
 
+106. *The run moves to a recorded server (2026-09-23 05:54 UTC).* At the user's request the dream run continues on `.test-replay/` (port 25580), a Fabric server with ServerReplay that records Jev from join to leave for rendering in ReplayMod. Its world is a copy of `natural-20260921-b` taken about three minutes before the move, so those minutes of play on 25579 are lost; the bot's own state was copied across, and Jev rejoined at (-630, 36, 254) carrying on where it left off. Nothing else about the run changed: same code, same kit-restore aid (now pointed at the new console), same supervisor.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
