@@ -78,7 +78,9 @@ for (let i = 0; i < obs.length;) {
 // In water: air below full, or the shore and surfacing actions.
 const wet = [];
 for (let i = 0; i < obs.length;) {
-  const inWater = o => (o.snapshot.oxygen ?? 20) < 20 || /reach_shore|surface|swim/.test(survivalOf(o.snapshot) || '') || /reach_shore|dig_to_shore/.test(stepOf(o.snapshot) || '');
+  // The surfacing action by its exact name: "return_to_surface" and
+  // "ascend_to_surface" are walks up out of a mine, not water.
+  const inWater = o => (o.snapshot.oxygen ?? 20) < 20 || /^(reach_shore|surface|swim)$/.test(survivalOf(o.snapshot) || '') || /^(reach_shore|dig_to_shore)$/.test(stepOf(o.snapshot) || '');
   if (!inWater(obs[i])) { i++; continue; }
   let j = i;
   while (j + 1 < obs.length && (inWater(obs[j + 1]) || obs[j + 1].t - obs[j].t < 3000 && inWater(obs[Math.min(j + 2, obs.length - 1)]))) j++;

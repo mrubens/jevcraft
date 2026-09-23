@@ -263,11 +263,17 @@ async function prepareExpeditionStep(bot, task, goal, save) {
   save(); return true;
 }
 
-async function waitFor(task, predicate, timeout = 4000) {
+// `what` says what was awaited, for the record: sixteen bare "timed out
+// waiting for world/inventory update" in the first audited day said nothing
+// about which item, how many were wanted, or how many had come.
+async function waitFor(task, predicate, timeout = 4000, what = null) {
   const end = Date.now() + timeout;
   while (Date.now() < end) { task.check(); if (predicate()) return; await sleep(100); }
-  throw new Error('Timed out waiting for world/inventory update');
+  let detail = '';
+  try { detail = what ? `: ${what()}` : ''; } catch (_) { /* best effort */ }
+  throw new Error(`Timed out waiting for world/inventory update${detail}`);
 }
+const awaitedItem = (bot, item, want, context) => () => `${item.replaceAll('_', ' ')} after ${context} (have ${countOf(bot, item)} of ${want}, ${bot.inventory.emptySlotCount?.() ?? '?'} free slots${bot.inventory.selectedItem ? `, cursor ${bot.inventory.selectedItem.name}` : ''})`;
 
 // Digging the block underfoot is a one-block drop when the block beneath it
 // is solid and harmless: the way a player takes an ore they are standing on
@@ -862,7 +868,7 @@ async function craft(bot, task, step, goal) {
     task.check();
     try { await bot.craft(recipe, 1, table); }
     finally { task.check(); await settleCraftInventory(bot, task); }
-    await waitFor(task, () => countOf(bot, step.item) >= before + recipe.result.count * (n + 1));
+    await waitFor(task, () => countOf(bot, step.item) >= before + recipe.result.count * (n + 1), 4000, awaitedItem(bot, step.item, before + recipe.result.count * (n + 1), `crafting${table ? ' at a table' : ''}`));
   }
   if (table && !goal?.holdWorkstation && (goal?.expeditionReady || goal?.preparingExpedition) && bot._ownedWorkstations?.has(`crafting_table:${table.position}`)) {
     const count = countOf(bot, 'crafting_table');
@@ -1032,7 +1038,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     await acquireStep(bot, task, supplies.item, supplies.count, work, checkpoint);
     return;
   }
-  await waitFor(task, () => countOf(bot, step.item) >= before + needed);
+  await waitFor(task, () => countOf(bot, step.item) >= before + needed, 4000, awaitedItem(bot, step.item, before + needed, 'smelting'));
   if (goal) { delete goal.smelting; save(); }
   // A furnace the bot placed goes with it when it is travelling, like a
   // crafting table does. Leaving one behind at every camp cost the dream run
