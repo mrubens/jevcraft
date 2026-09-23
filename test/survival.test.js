@@ -1138,3 +1138,40 @@ test('with a creeper close the bot gets away from it instead of starting a pocke
   assert.deepEqual(calls[1].names, ['creeper'], 'the second run is from the creepers alone');
   assert.equal(calls[1].options.only, true);
 });
+
+// A ledge: floor at y 63 for x up to 5, then a drop to a lava sea.
+function ledgeWorld({ wallAt = null } = {}) {
+  return p => {
+    const x = Math.floor(p.x), y = Math.floor(p.y);
+    if (wallAt !== null && x === wallAt && y >= 64 && y <= 65) return { position: p, name: 'netherrack', boundingBox: 'block' };
+    if (y === 63 && x <= 5) return { position: p, name: 'netherrack', boundingBox: 'block' };
+    if (y < 63 && x <= 5) return { position: p, name: 'netherrack', boundingBox: 'block' };
+    if (y <= 55) return { position: p, name: 'lava', boundingBox: 'empty' };
+    return { position: p, name: 'air', boundingBox: 'empty' };
+  };
+}
+
+test('a drop within reach of a hoglin\'s toss counts, along a clear line only', () => {
+  const { dropWithin, besideDrop } = require('../src/terrain');
+  const bot = { blockAt: ledgeWorld() };
+  const feet = new Vec3(3, 64, 0);
+  assert.equal(besideDrop(bot, feet), false, 'the next cell is floor');
+  assert.equal(dropWithin(bot, feet, 3), true, 'the edge three blocks off is the edge for a hoglin');
+  assert.equal(dropWithin(bot, new Vec3(1, 64, 0), 3), false, 'five blocks back is clear');
+  assert.equal(dropWithin({ blockAt: ledgeWorld({ wallAt: 4 }) }, feet, 3), false, 'a wall between stops the flight');
+});
+
+test('with a hoglin about, the bot steps back from an edge three blocks off, to ground three blocks from any drop', async () => {
+  const moved = [];
+  const hoglin = { id: 3, name: 'hoglin', position: new Vec3(-6, 64, 0.5), height: 1.4, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20,
+    entity: { position: new Vec3(3.5, 64, 0.5), onGround: true }, entities: { 3: hoglin }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'diamond_sword' }], slots: {} }, world: { raycast: () => null }, blockAt: ledgeWorld(),
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {} });
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { moved.push({ x: g.x, y: g.y, z: g.z }); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('ledge'), goal, () => {});
+  assert.equal(goal.survivalAction.action, 'off_the_edge');
+  assert.equal(moved.length, 1);
+  assert(moved[0].x <= 2, `to x ${moved[0].x}: three blocks from the drop at x 6`);
+});

@@ -35,6 +35,18 @@ const ARENAS = Object.freeze({
     open: [1915.5, 84, 1915.5],
     wall: [1907.5, 84, 1915.5],
   },
+  // A Nether ledge over the lava sea: the day audit of 2026-09-23 lost the
+  // bot twice to a hoglin's toss from two and three blocks off an edge, once
+  // eleven blocks down and once into lava. The ledge is nine wide, its edge
+  // at x 1955 and twelve blocks above the lava; the bot stands three blocks
+  // from the edge with the hoglins coming from behind.
+  ledge: {
+    shell: [1942, 58, 1998, 1968, 90, 2022],
+    hollow: [1947, 62, 2003, 1963, 85, 2017],
+    fills: [[[1947, 62, 2003, 1955, 76, 2017], 'netherrack'], [[1956, 62, 2003, 1963, 64, 2017], 'lava']],
+    open: [1952.5, 77, 2010.5],
+    wall: [1952.5, 77, 2010.5],
+  },
   // Somewhere to wait while an arena is rebuilt. Filling a shell around the
   // bot would bury it for as long as the next command takes.
   holding: {
@@ -83,6 +95,12 @@ const DRILLS = Object.freeze([
     at: [[2014.5, 77, 2008.5], [2015.5, 77, 2010.5], [2014.5, 77, 2012.5], [2016.5, 77, 2010.5]],
     seconds: 75, expect: { deaths: 0, damage: 14 },
     why: 'The hilltop. Four at once must be sealed out, not charged; clearing them is a bonus.' },
+  { name: 'hoglin_ledge', mode: 'defend', entity: 'hoglin', count: 1, arena: 'ledge', stand: 'open',
+    at: [[1947.5, 77, 2010.5]], seconds: 45, expect: { deaths: 0, damage: 12 },
+    why: 'The day audit, 2026-09-23: a hoglin\'s toss from three blocks off a Nether edge, eleven blocks down.' },
+  { name: 'hoglin_ledge_pair', mode: 'defend', entity: 'hoglin', count: 2, arena: 'ledge', stand: 'open',
+    at: [[1947.5, 77, 2008.5], [1947.5, 77, 2012.5]], seconds: 60, expect: { deaths: 0, damage: 16 },
+    why: 'The day audit, 2026-09-23: hoglins on a ledge, a step toward firm ground, and a toss into the lava sea.' },
   { name: 'enderman_single', mode: 'hunt', entity: 'enderman', item: 'ender_pearl', count: 1, arena: 'room', stand: 'open',
     at: [[2016.5, 77, 2010.5]], seconds: 60, expect: { deaths: 0, cleared: true, damage: 12 },
     why: 'Death eighteen. Forty health and four a hit through iron, and it teleports: running is no answer, only the fight or a roof it cannot stand under.' },
@@ -142,7 +160,8 @@ function arenaBuild(name, { dimension = 'minecraft:the_nether' } = {}) {
   return [...[`forceload add ${x1 - 16} ${z1 - 16} ${x2 + 16} ${z2 + 16}`,
     box([x1, y1, z1, x2, y2, z2], 'netherrack'), box(arena.hollow, 'air'),
     // A second chamber below, sealed off, for the arenas that have one.
-    ...(arena.chamber ? [box(arena.chamber, 'air')] : [])]
+    ...(arena.chamber ? [box(arena.chamber, 'air')] : []),
+    ...(arena.fills || []).map(([volume, block]) => box(volume, block))]
     .map(command => `execute in ${dimension} run ${command}`), sweep(name, { dimension })];
 }
 

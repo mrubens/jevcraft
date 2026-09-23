@@ -55,5 +55,22 @@ function dropAt(bot, c) {
   return true;
 }
 const besideDrop = (bot, feet) => AROUND.some(([dx, dz]) => dropAt(bot, feet.offset(dx, 0, dz)));
+// A drop within `radius` blocks along a clear line: where a hoglin's toss
+// can carry the body, not only the next cell. The day audit's two Nether
+// falls began two and three blocks from the edge. A wall in between stops
+// the flight, so a drop behind one does not count.
+function dropWithin(bot, feet, radius = 3) {
+  const open = c => { const b = bot.blockAt(c), head = bot.blockAt(c.offset(0, 1, 0)); return !!b && b.boundingBox !== 'block' && (!head || head.boundingBox !== 'block'); };
+  for (const [dx, dz] of AROUND) {
+    for (let r = 1; r <= radius; r++) {
+      const c = feet.offset(dx * r, 0, dz * r);
+      if (dropAt(bot, c)) return true;
+      if (!open(c)) break;
+    }
+  }
+  return false;
+}
+// Mobs whose hit throws the body blocks, not a step.
+const KNOCKBACK = new Set(['hoglin', 'zoglin', 'ravager', 'iron_golem', 'warden']);
 
-module.exports = { besideDrop, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

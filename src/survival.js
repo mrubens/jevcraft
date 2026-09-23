@@ -99,14 +99,15 @@ function lavaExit(bot, radius = 6) {
 // a Nether ledge was a thirty-block fall, twice in ten minutes. Beside a
 // drop means a neighbouring cell the body could be pushed into with no
 // floor for three blocks under it, or lava under it.
-const { besideDrop } = require('./terrain');
-function firmGround(bot, radius = 4) {
+const { besideDrop, dropWithin, KNOCKBACK } = require('./terrain');
+const heavyHitters = (danger, radius) => danger.filter(t => KNOCKBACK.has(t.entity.name) && t.distance <= radius);
+function firmGround(bot, radius = 4, { margin = 1 } = {}) {
   const feet = bot.entity.position.floored(), cells = [];
   const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name); };
   for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (let dy = -1; dy <= 1; dy++) {
     const c = feet.offset(dx, dy, dz);
     const floor = bot.blockAt(c.offset(0, -1, 0));
-    if (floor?.boundingBox !== 'block' || /magma/.test(floor.name) || !open(c) || !open(c.offset(0, 1, 0)) || besideDrop(bot, c) || lavaBeside(bot, c)) continue;
+    if (floor?.boundingBox !== 'block' || /magma/.test(floor.name) || !open(c) || !open(c.offset(0, 1, 0)) || (margin > 1 ? dropWithin(bot, c, margin) : besideDrop(bot, c)) || lavaBeside(bot, c)) continue;
     cells.push(c);
   }
   const far = c => c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
@@ -272,9 +273,14 @@ class Survival {
     const bot = this.bot;
     // Off the edge before anything else is done about the mob. Only when
     // one is close enough to hit, and only to a cell a few blocks off.
+    // A hoglin throws the body blocks, not a step: with one about, the edge
+    // three blocks off is the edge, and the ground moved to is three blocks
+    // from any drop (the day audit's two Nether falls, one into lava).
     const close = threats(bot).filter(t => t.distance <= 8);
-    if (close.length && besideDrop(bot, bot.entity.position.floored()) && !isSetAside(this, 'firm_ground', 'here')) {
-      const cell = firmGround(bot);
+    const heavy = heavyHitters(threats(bot), 10).length > 0;
+    const feet = bot.entity.position.floored();
+    if ((close.length || heavy) && (heavy ? dropWithin(bot, feet, 3) : besideDrop(bot, feet)) && !isSetAside(this, 'firm_ground', 'here')) {
+      const cell = (heavy && firmGround(bot, 8, { margin: 3 })) || firmGround(bot);
       if (cell) {
         this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, threats: close.map(t => t.entity.name) });
         try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 3000, stallMs: 1500 }); return; }
@@ -488,6 +494,9 @@ class Survival {
         useExtraInfo: b => shelter.solid(b) && shelter.replaceable(bot.blockAt(b.position.offset(0, 1, 0))) && shelter.replaceable(bot.blockAt(b.position.offset(0, 2, 0))),
       }).map(p => p.offset(0, 1, 0)).filter(p => !isSetAside(this, 'escape', p) && !lavaBeside(bot, p));
       const gaining = p => distance(p) >= distance(bot.entity.position) + gain;
+      // With a hoglin about, no footing near an edge and no route along one.
+      const heavy = heavyHitters(threats(bot, 16), 16).length > 0;
+      const edgeSafe = p => !heavy || !dropWithin(bot, p, 2);
       // Beside lava, one knockback is the end: the dream run died that way at
       // its pouring spot, in full iron, with the diamond pickaxe. Get two
       // blocks from the lava first, whatever the mob does meanwhile.
@@ -503,8 +512,8 @@ class Survival {
       }
       // The far spots first when the chaser persists; the ordinary hop is the
       // fallback, because standing still beside a creeper is never the answer.
-      const far = persistent ? footing.filter(p => p.distanceTo(bot.entity.position) >= 20 && distance(p) >= 20).sort((a, b) => distance(b) - distance(a)) : [];
-      const near = footing.filter(p => p.distanceTo(bot.entity.position) >= (only ? 3 : 6) && gaining(p)).sort((a, b) => distance(b) - distance(a));
+      const far = persistent ? footing.filter(p => p.distanceTo(bot.entity.position) >= 20 && distance(p) >= 20 && edgeSafe(p)).sort((a, b) => distance(b) - distance(a)) : [];
+      const near = footing.filter(p => p.distanceTo(bot.entity.position) >= (only ? 3 : 6) && gaining(p) && edgeSafe(p)).sort((a, b) => distance(b) - distance(a));
       const candidates = [...far.slice(0, 12), ...near.slice(0, 12)];
       for (const p of candidates) {
         const destination = new goals.GoalBlock(p.x, p.y, p.z);
@@ -512,6 +521,7 @@ class Survival {
         if (route.status !== 'success') continue;
         // Do not run through another hostile to escape the closest one.
         if (route.path.some(point => about.some(e => e.position.distanceTo(pos(point)) < Math.min(4, e.position.distanceTo(bot.entity.position) - 1)))) continue;
+        if (heavy && route.path.some(point => besideDrop(bot, pos(point).floored()))) continue;
         try { await this.actions.navigate(bot, task, destination, { timeoutMs: persistent ? 14000 : 7000, stallMs: 3000 }); delete this.state.trappedSince; return true; }
         catch (err) {
           task.check(); if (err.name === 'NeedsAir') throw err;

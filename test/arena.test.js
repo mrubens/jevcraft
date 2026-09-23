@@ -170,3 +170,14 @@ test('the tower arena puts the mobs in a sealed room under the floor the bot sta
   assert.equal(build.length, 5, 'forceload, shell, upper room, lower chamber, sweep');
   assert(build[3].includes('minecraft:air') && build[3].includes('1905 77 1905'), 'the chamber is carved too');
 });
+
+test('every fill an arena makes is within the server\'s 32768-block limit', () => {
+  const { arenaBuild } = require('../scripts/lib/arena');
+  for (const name of Object.keys(ARENAS)) for (const line of arenaBuild(name)) {
+    const m = / fill (-?\d+) (-?\d+) (-?\d+) (-?\d+) (-?\d+) (-?\d+) /.exec(line);
+    if (!m) continue;
+    const [x1, y1, z1, x2, y2, z2] = m.slice(1).map(Number);
+    const volume = (Math.abs(x2 - x1) + 1) * (Math.abs(y2 - y1) + 1) * (Math.abs(z2 - z1) + 1);
+    assert(volume <= 32768, `${name}: ${line} fills ${volume}`);
+  }
+});
