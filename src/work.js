@@ -1032,8 +1032,9 @@ function catalogPlan(bot, item, count, stock, goal = {}) {
   });
   const nearby = [...new Set([...bot._catalogObservation.nearby, ...knownResourceNames(bot, goal)])];
   const equipment = carriedEquipment(bot).map(item => item.name);
-  const makePlan = nearby => Array.isArray(item) ? batchPlan(bot.registry, outputs, stock, { nearby, tools, equipment }).steps :
-    planCatalog(bot.registry, item, count, stock, { nearby, tools, equipment });
+  const dimension = bot.game?.dimension;
+  const makePlan = nearby => Array.isArray(item) ? batchPlan(bot.registry, outputs, stock, { nearby, tools, equipment, dimension }).steps :
+    planCatalog(bot.registry, item, count, stock, { nearby, tools, equipment, dimension });
   const plan = makePlan(nearby);
   const alternatives = observeRecipeAlternatives(bot, plan, goal);
   return alternatives.some(name => !nearby.includes(name))

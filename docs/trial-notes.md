@@ -244,6 +244,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 95. *Phantoms (from a player's review of the decision page).* Phantoms spawn over a player who has not slept in three in-game days, and nothing counted nights awake: the run spends many nights sealed in or night mining, and "stay up" was on offer every night the bot was armed and had a bed. The world tick of the last sleep is now kept, and after two days awake staying up is off the table while a bed is on offer, so the bed is taken. With no bed about, a sealed pocket or a mine is still the night, and phantoms only come under open sky. The same review found the rest largely sound; the open points it raised that hold up are caged End crystals (no build-up option), food breadth (no fishing) and the shield in the ranged response.
 
+96. *Nether gold ore in the Overworld.* The golden-boots rung stood in the Overworld planning to mine twenty-six nuggets' worth of nether gold ore. The planner's cost estimate treats anything carried as free, so ten nuggets made the ingot-from-nuggets recipe beat smelting raw gold, and the rest of the nuggets had only one source, in another dimension. The planner now knows the dimension it plans in: a source found only in another dimension costs a trip, and a handful (under thirty-two) of something whose only source is elsewhere is not free. In the Overworld the boots are now gold ore, smelted; in the Nether, nether gold ore; with forty nuggets carried, the nuggets.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.

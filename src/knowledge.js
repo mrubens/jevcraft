@@ -62,7 +62,18 @@ function planCatalog(registry, item, count, inventory = {}, options = {}) {
 
 // One stock ledger for the whole request. Requested outputs are reserved before
 // planning ingredients, so a chest cannot spend the planks the player also wants.
-function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [], equipment = [], reserveOutputs = true } = {}) {
+// Blocks that only occur in one dimension. A source from another dimension
+// is not ruled out (it may be the only way), but it costs a trip: the live
+// run stood in the Overworld planning to mine nether gold ore for golden
+// boots, with gold ore and a furnace the local route.
+const NETHER_ONLY = /^(nether_gold_ore|nether_quartz_ore|ancient_debris|netherrack|soul_sand|soul_soil|glowstone|basalt|blackstone|gilded_blackstone|crimson_(stem|hyphae|nylium|fungus|roots)|warped_(stem|hyphae|nylium|fungus|roots|wart_block)|nether_wart(_block)?|shroomlight|weeping_vines|twisting_vines)$/;
+const END_ONLY = /^(end_stone|chorus_plant|chorus_flower|purpur_block|purpur_pillar)$/;
+const dimensionOfBlock = block => NETHER_ONLY.test(block) ? 'nether' : END_ONLY.test(block) ? 'end' : null;
+const TRIP_COST = 200;
+
+function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [], equipment = [], reserveOutputs = true, dimension = null } = {}) {
+  const here = dimension ? String(dimension).replace(/^minecraft:/, '').replace(/^the_/, '') : null;
+  const elsewhere = block => { const home = dimensionOfBlock(block); return !!here && !!home && home !== here; };
   const totals = {};
   for (const { item, count } of outputs) {
     if (!registry.itemsByName[item]) throw new PlanError(`No Minecraft item named ${item}`, item);
@@ -111,10 +122,15 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
   function estimate(name) {
     if (!estimates) {
       let costs = {};
-      for (const [item, amount] of Object.entries(stock)) if (amount > 0) costs[item] = 0;
+      // Carried is free, but not a handful of something whose only source is
+      // in another dimension: ten gold nuggets made nuggets look free, the
+      // ingot was planned from nuggets, and the other twenty-six were to be
+      // mined in the Nether while the bot stood in the Overworld.
+      const onlyElsewhere = item => (data.sources[item] || []).length > 0 && (data.sources[item] || []).every(source => elsewhere(source.block));
+      for (const [item, amount] of Object.entries(stock)) if (amount > 0) costs[item] = onlyElsewhere(item) && amount < 32 ? TRIP_COST : 0;
       for (const [item, sources] of Object.entries(data.sources)) for (const source of sources) {
         if (source.enchantment || !usableSource(item, source)) continue;
-        const cost = (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0);
+        const cost = (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0) + (elsewhere(source.block) ? TRIP_COST : 0);
         costs[item] = Math.min(costs[item] ?? 1000, cost);
       }
       for (const [item, sources] of Object.entries(data.mobSources)) costs[item] = Math.min(costs[item] ?? 1000, ...sources.map(s => s.cost ?? 80));
@@ -239,7 +255,7 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
         // Craftable objects should be made from ingredients. Do not roam the
         // world destroying other players' chests or houses as a cheap source.
         if (!usableSource(name, source)) continue;
-        methods.push({ cost: (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0), run: () => {
+        methods.push({ cost: (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0) + (elsewhere(source.block) ? TRIP_COST : 0), run: () => {
           let tool = source.tool;
           if (source.enchantment) {
             const enchanted = tools.find(t => t.enchantments?.includes(source.enchantment) && (!source.allowedTools.length || source.allowedTools.includes(t.name)));
