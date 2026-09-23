@@ -455,6 +455,29 @@ test('a fortress whose every stretch in view was walked is patrolled again, not 
   assert.equal(goal.fortressSearch.visited.length, 2);
 });
 
+test('after six empty patrols the sweep leaves along the fortress, and the section left behind does not pull it back', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const clear = { boundingBox: 'empty' };
+  // A corridor along x from 0 to 44 at z 0: every stretch walked.
+  const bricks = [new Vec3(2, 64, 0), new Vec3(20, 64, 0), ...Array.from({ length: 24 }, (_, i) => new Vec3(21 + i, 64, 1))];
+  const bot = { registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 65, 0.5) }, chat() {},
+    blockAt: () => clear, findBlocks: () => bricks };
+  const goal = { fortressSearch: { axis: 1, legs: 3, patrols: 6, visited: [{ x: 20, y: 64, z: 0 }, { x: 40, y: 64, z: 0 }] } };
+  const walked = [];
+  const actions = { navigate: async (b, t, g) => { walked.push([g.x, g.z]); }, tunnel: async () => {} };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  const state = goal.fortressSearch;
+  assert(state.leaving, 'the section is left behind');
+  assert.equal(state.heading, 0, 'along the corridor (+x), the way the fortress runs');
+  // Ninety blocks out the same bricks are still in view: the leg goes on.
+  bot.entity.position = new Vec3(30.5, 65, 0.5);
+  walked.length = 0;
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(goal.step.action, 'find_fortress'); assert(goal.step.target, 'a sweep leg, not the walk back to the bricks just patrolled');
+  assert(!goal.step.found);
+});
+
 test('blaze sightings are remembered by place and the hunt walks back to the busiest one', () => {
   const { rememberSighting, rememberedSpot } = require('../src/mob-hunt');
   const { Vec3 } = require('vec3');

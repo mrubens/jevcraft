@@ -669,6 +669,7 @@ function rememberedSpot(state, bot) {
 }
 
 const FORTRESS_MIN_BRICKS = 24;
+const LEAVE_RADIUS = 48, LEAVE_MS = 4 * 60 * 1000;
 const FORTRESS_BLOCKS = ['nether_bricks', 'nether_brick_fence', 'nether_brick_stairs', 'nether_brick_slab', 'nether_wart'];
 const FORTRESS_LEG = 96;
 // The next leg of the sweep: ninety-six blocks along x, one way, at a
@@ -694,7 +695,14 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // minutes: the fortress was straight below a shelf with a cave between,
   // and every tick tried the same drop. The sweep meets it elsewhere.
   state.shunned = (state.shunned || []).filter(sh => sh.until > Date.now());
-  const shunned = b => state.shunned.some(sh => Math.hypot(sh.x - b.x, sh.z - b.z) <= 16);
+  // Leaving a section after its patrols: that section is behind the bot for
+  // the length of the leg. From ninety blocks out the same bricks were still
+  // in view, the leg was undone at once, and the dream run walked out and
+  // back between the fortress and a leg ninety blocks off every three
+  // minutes.
+  if (state.leaving && !(state.leaving.until > Date.now())) delete state.leaving;
+  const left = b => !!state.leaving && Math.hypot(state.leaving.x - b.x, state.leaving.z - b.z) <= LEAVE_RADIUS;
+  const shunned = b => state.shunned.some(sh => Math.hypot(sh.x - b.x, sh.z - b.z) <= (sh.radius || 16)) || left(b);
   // A fortress is hundreds of bricks. A handful is the bot's own: it
   // carries nether bricks and builds its pockets and bridges with them, and
   // the sweep "patrolled" three of its own blocks while starting a new leg
@@ -788,7 +796,14 @@ async function findFortressStep(bot, task, goal, save, actions) {
         if (!(state.patrolSaidAt > Date.now() - 120000)) { state.patrolSaidAt = Date.now(); bot.chat?.('Walked this stretch. Patrolling the fortress for blazes.'); }
         return;
       }
-      state.patrols = 0; delete state.target; state.heading = 1; state.visited = [];
+      // Along the fortress's own length, away from where it was patrolled:
+      // fortress corridors run straight along x or z.
+      const spanX = Math.max(...bricks.map(b => b.x)) - Math.min(...bricks.map(b => b.x));
+      const spanZ = Math.max(...bricks.map(b => b.z)) - Math.min(...bricks.map(b => b.z));
+      const mean = k => bricks.reduce((n, b) => n + b[k], 0) / bricks.length;
+      state.heading = spanX >= spanZ ? (mean('x') >= here.x ? 0 : 2) : (mean('z') >= here.z ? 1 : 3);
+      state.leaving = { x: Math.round(here.x), z: Math.round(here.z), until: Date.now() + LEAVE_MS };
+      state.patrols = 0; delete state.target; state.visited = []; save();
     }
     else {
     state.visited.push({ x: next.x, y: next.y, z: next.z }); state.visited = state.visited.slice(-32);
@@ -808,6 +823,8 @@ async function findFortressStep(bot, task, goal, save, actions) {
     state.target = { x: remembered.landmark.x, y: remembered.landmark.y, z: remembered.landmark.z }; state.rememberedTarget = true; state.legSince = Date.now();
   }
   if (!state.target || Math.hypot(state.target.x - here.x, state.target.z - here.z) < 8) {
+    // A leg walked to its end: whatever was left behind may be seen again.
+    if (state.target && !state.rememberedTarget) delete state.leaving;
     delete state.rememberedTarget;
     const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++; state.legSince = Date.now();
   }
