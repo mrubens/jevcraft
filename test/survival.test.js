@@ -1215,3 +1215,19 @@ test('night-mine steps that do not move the bot are given up after four, before 
   assert.equal(survival.state.nightMine.lastAbandoned?.why, 'four steps without moving');
   assert(n <= 5, `given up after ${n} steps, not twelve`);
 });
+
+test('no shelter site and no blocks, but a pickaxe: the night is dug into the ground, not failed every eight seconds', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000 },
+    entity: { position: new Vec3(0.5, 64, 0.5), onGround: true }, health: 20, food: 20, registry,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'netherrack', count: 1 }], slots: {}, emptySlotCount: () => 5 },
+    findBlocks: () => [], blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }),
+    world: { raycast: () => null }, pathfinder: { movements: {}, getPathTo: () => ({ status: 'noPath', path: [] }), setGoal() {} } });
+  const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {}, place: async () => {} }, { state: { shelters: [] } });
+  let mined = 0;
+  survival.nightMine = async () => { mined++; return true; };
+  await survival.refugeStep(new Task('dusk'), { kind: 'win' }, () => {});
+  assert.equal(mined, 1, 'the mine began where the bot stands');
+  assert(survival.state.nightMine?.origin, 'and it is the night mine the next step continues');
+});

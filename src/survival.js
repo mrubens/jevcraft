@@ -695,6 +695,14 @@ class Survival {
       // No site to walk to: the night is spent sealed in where the bot
       // stands, as the unreachable-shelter rule above intends.
       if (!site && await this.sealHere(task, goal, save, threats(bot).filter(t => t.visible))) return;
+      // No site and no blocks, but a pickaxe: into the ground. A staircase
+      // into rock is a shelter and a mine at once. The dream run came back
+      // from the Nether at dusk with one netherrack and an iron pickaxe, and
+      // failed to find a shelter site every eight seconds on the savanna.
+      if (!site && this.canNightMine(goal)) {
+        this.state.nightMine ||= { startedAt: Date.now(), origin: { ...bot.entity.position.floored() }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };
+        if (await this.nightMine(task, goal, save)) return;
+      }
       if (!site) throw new Error('No reachable, supported 3 by 3 shelter site observed');
       refuge = { origin: { ...site }, dimension: bot.game.dimension, createdAt: new Date().toISOString() };
       this.state.shelters.push(refuge); save();
