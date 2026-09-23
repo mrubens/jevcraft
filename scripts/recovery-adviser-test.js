@@ -1,6 +1,6 @@
 'use strict';
 // Controlled fault-injection test: three synthetic navigation failures, a real
-// Fable request, real recovery movement, and the original come goal verified.
+// Jev recovery judgment, real recovery movement, and the original come goal verified.
 // Console setup in this script is test-only and never available to the adviser.
 require('../src/env').loadEnv();
 const assert = require('node:assert/strict');
@@ -48,8 +48,8 @@ bot.once('spawn', async () => {
     const result = await runGoal(bot, task, goal, new GoalStore(path.join(directory, 'goal.json')), { maxSteps: 30,
       onStep: g => log({ step: g.step, recoveryAction: g.recoveryAction, error: g.lastError, position: bot.entity.position }) });
     assert(result.ok, result.reason); assert.equal(injected, 3);
-    const record = goal.recoveryAdvice.history.find(h => h.model === 'anthropic/claude-fable-5.1' && h.outcome?.startsWith('Recovery actions completed'));
-    assert(record, 'A real Fable plan must have executed successfully');
+    const record = goal.recoveryAdvice.history.find(h => h.source === 'jev' && h.outcome?.startsWith('Recovery actions completed'));
+    assert(record, 'A real Jev recovery plan must have executed successfully');
     assert(record.steps.some(s => s.kind === 'relocate'), 'Test must exercise real repositioning');
     assert.equal(goal.kind, 'come'); assert.equal(goal.request, 'Jev come here');
     const distance = bot.entity.position.distanceTo(bot.players[player].entity.position);
