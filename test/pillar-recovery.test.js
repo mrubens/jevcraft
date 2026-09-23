@@ -170,3 +170,9 @@ test('a pillar block is placed with the look already down, not after a slow turn
   assert.equal(calls.length, 2);
   assert(calls.every(o => o.forceLook === true));
 });
+
+test('a pillar of nether bricks, as the pillar builds them, is dug back down too', () => {
+  const { bot, blocks, goal } = fixture();
+  for (let y = 74; y <= 76; y++) blocks.set(`${new Vec3(0, y, 0)}`, 'nether_bricks');
+  assert.equal(pillarDescent(bot, goal)?.blockName, 'nether_bricks');
+});

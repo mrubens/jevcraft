@@ -6,7 +6,10 @@ const { safeFromHostiles, checkThreats } = require('./danger');
 const { equipBestTool } = require('./skills');
 const { checkAir, digWithAirGuard } = require('./vitals');
 const directions = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
-const material = /^(dirt|cobblestone|cobbled_deepslate|stone|deepslate|granite|diorite|andesite|tuff|netherrack)$|_log$/;
+// Every block a pillar is built of (SCAFFOLD below) can be dug back down:
+// the live run built four of nether bricks toward its portal, ran out of
+// blocks, and would not come down its own pillar again.
+const material = /^(dirt|cobblestone|cobbled_deepslate|stone|deepslate|granite|diorite|andesite|tuff|netherrack|nether_bricks|blackstone|basalt|soul_soil)$|_log$/;
 const fullCube = b => b && !damagingTerrain.has(b.name) && b.shapes?.some(s =>
   s[0] === 0 && s[1] === 0 && s[2] === 0 && s[3] === 1 && s[4] === 1 && s[5] === 1);
 const unsafe = b => !b || damagingTerrain.has(b.name) || ['water', 'bubble_column'].includes(b.name);
