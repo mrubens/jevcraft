@@ -337,7 +337,7 @@ class Survival {
     // Up before they are in reach, not after: on the live run the pillar went
     // up with a hoglin already at arm's length, which threw the bot off it.
     // Two in sight within sixteen, or one within ten once health is down.
-    const hoglins = danger.filter(t => ['hoglin', 'zoglin'].includes(t.entity.name) && t.distance <= 16);
+    const hoglins = creeperClose(danger) ? [] : danger.filter(t => ['hoglin', 'zoglin'].includes(t.entity.name) && t.distance <= 16);
     if ((hoglins.length >= 2 || (hoglins.some(t => t.distance <= 10) && bot.health < 14)) && await this.pillarFrom(task, goal, save, hoglins)) return;
     // An enderman teleports after a runner and hits for four through iron:
     // death eighteen ran, held, ate, and died at the fifth hit. It is fought
@@ -441,7 +441,9 @@ class Survival {
     // failure it was asked again every tick, a hundred and twenty times in
     // three hoglin drills.
     const up = this.state.pillar && feet.y >= this.state.pillar.y + 2 && Math.hypot(feet.x - this.state.pillar.x, feet.z - this.state.pillar.z) < 1;
-    if ((scaffold >= 2 && headroom) || up) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.',
+    // Not with a creeper close: it walks under the pillar and goes off (the
+    // live run, 17:16, at three health).
+    if (((scaffold >= 2 && headroom) || up) && !creeperClose(danger)) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.',
       run: async () => up || this.pillarFrom(task, goal, save, danger) };
     if (bot.health >= 10 && !creeperClose(danger) && nearWall(bot, centroid(danger))) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.',
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
