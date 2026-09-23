@@ -842,26 +842,47 @@ class Survival {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function' || typeof this.actions.dig !== 'function') return false;
     if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) return false;
-    if (isSetAside(this, 'shaft_pocket', 'here')) return false;
+    // Set aside by the column stood on, not for the whole world.
+    const spot = `${bot.entity.position.floored().x},${bot.entity.position.floored().z}`;
+    if (isSetAside(this, 'shaft_pocket', spot)) return false;
     const wet = c => /water|lava/.test(bot.blockAt(c)?.name || '');
     const sides = c => [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)].map(d => c.plus(d));
     // The shelter's own test, but for the one cell over the head, which the
     // shaft opens and the cap closes.
     const walled = feet => shelter.missingShell(bot, { origin: feet }).every(p => p.equals(feet.offset(0, 2, 0)));
-    const start = bot.entity.position.floored();
-    // Look before digging: the whole column must be safe, or none of it is dug.
-    let bottom = null;
-    const first = start.offset(0, -1, 0);
-    if (!bot.blockAt(first) || wet(first) || sides(first).some(wet)) { setAside(this, 'shaft_pocket', 'here', 'water beside the first block down', 600000); return false; }
-    for (let depth = 2; depth <= 12; depth++) {
-      const feet = start.offset(0, -depth, 0);
-      const cell = feet;
-      const b = bot.blockAt(cell), under = bot.blockAt(cell.offset(0, -1, 0));
-      if (!b || !under || b.name === 'bedrock' || wet(cell) || wet(cell.offset(0, -1, 0)) || /lava|magma/.test(under.name)) break;
-      if (sides(cell).some(wet) || sides(cell.offset(0, 1, 0)).some(wet)) break;
-      if (walled(feet)) { bottom = feet; break; }
+    // Look before digging: the whole column must be dry, or none of it is
+    // dug. The bottom of the first column that works, or null.
+    const columnBottom = top => {
+      const first = top.offset(0, -1, 0);
+      if (!bot.blockAt(first) || bot.blockAt(first).boundingBox !== 'block' || wet(first) || sides(first).some(wet)) return null;
+      for (let depth = 2; depth <= 12; depth++) {
+        const cell = top.offset(0, -depth, 0);
+        const b = bot.blockAt(cell), under = bot.blockAt(cell.offset(0, -1, 0));
+        if (!b || !under || b.name === 'bedrock' || wet(cell) || wet(cell.offset(0, -1, 0)) || /lava|magma/.test(under.name)) return null;
+        if (sides(cell).some(wet) || sides(cell.offset(0, 1, 0)).some(wet)) return null;
+        if (walled(cell)) return cell;
+      }
+      return null;
+    };
+    // The column underfoot, or the nearest one within four blocks on the
+    // same ground: on the island's edge the first block down had the sea
+    // beside it, and the middle of the island did not.
+    const here = bot.entity.position.floored();
+    const columns = [here];
+    for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) if (dx || dz) columns.push(here.offset(dx, 0, dz));
+    columns.sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+    let start = null, bottom = null;
+    for (const top of columns) {
+      if (!shelter.replaceable(bot.blockAt(top)) || !shelter.replaceable(bot.blockAt(top.offset(0, 1, 0)))) continue;
+      const found = columnBottom(top);
+      if (found) { start = top; bottom = found; break; }
     }
-    if (!bottom) { setAside(this, 'shaft_pocket', 'here', 'no dry rock straight down', 600000); return false; }
+    if (!bottom) { setAside(this, 'shaft_pocket', spot, 'no dry rock straight down within four blocks', 600000); return false; }
+    if (!start.equals(here)) {
+      try { await this.actions.navigate(bot, task, new goals.GoalBlock(start.x, start.y, start.z), { timeoutMs: 8000, stallMs: 3000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      if (!bot.entity.position.floored().equals(start)) { setAside(this, 'shaft_pocket', spot, 'could not stand on the dry column', 120000); return false; }
+    }
     this.report(goal, save, { action: 'shaft_pocket', from: { ...start }, to: { ...bottom } });
     for (let y = start.y - 1; y >= bottom.y; y--) {
       task.check(); checkAir(bot);
@@ -873,12 +894,12 @@ class Survival {
     // cobblestone from the dig among them. Sand or gravel would fall on it.
     const roof = bottom.offset(0, 2, 0);
     const cap = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name));
-    if (!cap) { setAside(this, 'shaft_pocket', 'here', 'nothing solid to close the shaft with', 600000); return false; }
+    if (!cap) { setAside(this, 'shaft_pocket', spot, 'nothing solid to close the shaft with', 600000); return false; }
     if (!shelter.solid(bot.blockAt(roof))) {
       try { await this.actions.place(bot, task, roof, cap.name); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
-    if (!shelter.solid(bot.blockAt(roof))) { setAside(this, 'shaft_pocket', 'here', 'the cap would not go on', 600000); return false; }
+    if (!shelter.solid(bot.blockAt(roof))) { setAside(this, 'shaft_pocket', spot, 'the cap would not go on', 600000); return false; }
     const refuge = { origin: { ...bottom }, dimension: bot.game.dimension, createdAt: new Date().toISOString(), emergency: true, shaft: true };
     if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) refuge.verifiedAt = new Date().toISOString();
     this.state.shelters.push(refuge); save();

@@ -1255,11 +1255,12 @@ test('on a sand island at dusk with one block and a pickaxe, the bot digs straig
   const world = sandIsland();
   const blockAt = p => { const k = `${p.floored()}`; if (placed.has(k)) return { position: p.floored(), name: placed.get(k), boundingBox: 'block' }; if (dug.has(k)) return { position: p.floored(), name: 'air', boundingBox: 'empty' }; return world(p); };
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000 },
-    entity: { position: new Vec3(0.5, 63, 0.5), onGround: true }, health: 20, food: 20, registry,
+    // On the island's edge: the sea is beside the first block down here.
+    entity: { position: new Vec3(3.5, 63, 0.5), onGround: true }, health: 20, food: 20, registry,
     inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'netherrack', count: 1 }], slots: {}, emptySlotCount: () => 5 },
     findBlocks: () => [], blockAt, world: { raycast: () => null }, pathfinder: { movements: {}, getPathTo: () => ({ status: 'noPath', path: [] }), setGoal() {} } });
-  const actions = { navigate: async () => {},
-    dig: async (b, t, p) => { dug.add(`${p.floored()}`); bot.entity.position = new Vec3(0.5, p.y, 0.5); },
+  const actions = { navigate: async (b, t, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+    dig: async (b, t, p) => { dug.add(`${p.floored()}`); bot.entity.position = new Vec3(p.x + 0.5, p.y, p.z + 0.5); },
     place: async (b, t, p, name) => { placed.set(`${p.floored()}`, name); } };
   const survival = new Survival(bot, actions, { state: { shelters: [] } });
   survival.nightMine = async () => assert.fail('the shaft comes first');
@@ -1267,6 +1268,7 @@ test('on a sand island at dusk with one block and a pickaxe, the bot digs straig
   const refuge = survival.state.shelters.at(-1);
   assert(refuge?.shaft, 'a shaft pocket was made');
   assert(refuge.origin.y <= 57, `down into the sandstone (feet at ${refuge.origin.y})`);
-  assert.equal(placed.get(`${new Vec3(0, refuge.origin.y + 2, 0)}`), 'netherrack', 'capped with the netherrack');
+  assert(Math.abs(refuge.origin.x) <= 2, 'from a column in from the edge');
+  assert.equal(placed.get(`${new Vec3(refuge.origin.x, refuge.origin.y + 2, refuge.origin.z)}`), 'netherrack', 'capped with the netherrack');
   assert(refuge.verifiedAt, 'and it counts as a sealed shelter');
 });
