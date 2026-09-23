@@ -266,14 +266,43 @@ function atSea(bot) {
   return water >= 40;
 }
 
-// Dry ground to stand on in view, away from where the crossing began: the
-// bot's own pillar is dry ground too, and so was the sand bar a few blocks
-// across beside it in the live run, which kept the swim from starting.
-const OWN_GROUND = 10;
-function landInView(bot, reach, away = null) {
+// The dry ground the bot stands on, as columns: its pillar, and the sand
+// bar eleven blocks long it was on in the live run, whose far end a
+// distance rule counted as land in sight. Columns whose topmost block (four
+// above to four below the start) is solid and not under water, joined side
+// to side. Null when there is more of it than an islet has.
+const ISLET = 600;
+function ownGround(bot, from) {
+  const start = from.floored();
+  const dry = (x, z) => {
+    for (let y = start.y + 4; y >= start.y - 4; y--) {
+      const b = bot.blockAt(new Vec3(x, y, z));
+      if (!b) return false;
+      if (/water|kelp|seagrass|lava|bubble/.test(b.name)) return false;
+      if (b.boundingBox === 'block') return true;
+    }
+    return false;
+  };
+  const seen = new Set(), queue = [[start.x, start.z]];
+  if (!dry(start.x, start.z)) return seen;
+  seen.add(`${start.x},${start.z}`);
+  while (queue.length) {
+    const [x, z] = queue.shift();
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const k = `${x + dx},${z + dz}`;
+      if (seen.has(k) || !dry(x + dx, z + dz)) continue;
+      seen.add(k); if (seen.size > ISLET) return null;
+      queue.push([x + dx, z + dz]);
+    }
+  }
+  return seen;
+}
+
+// Dry ground to stand on in view that is not the bot's own islet.
+function landInView(bot, reach, own = new Set()) {
   const ids = LAND_IDS.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
   return bot.findBlocks({ matching: ids, maxDistance: reach, count: 1,
-    useExtraInfo: b => { const p = b.position.offset(0, 1, 0); return (!away || p.distanceTo(away) > OWN_GROUND) && dryStanding(bot, p); } })[0] || null;
+    useExtraInfo: b => { const p = b.position.offset(0, 1, 0); return !own.has(`${p.x},${p.z}`) && dryStanding(bot, p); } })[0] || null;
 }
 
 function knownLand(bot, goal) {
@@ -293,7 +322,7 @@ function knownLand(bot, goal) {
   return found.filter(p => flat(p) > 24).sort((a, b) => flat(a) - flat(b))[0] || null;
 }
 
-async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs = SWIM_MS } = {}) {
+async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs = SWIM_MS, move = navigate } = {}) {
   const { inWater } = require('./survival');
   const { setAside } = require('./progress');
   // Why a crossing was not made, for the audit: the reason it declined.
@@ -301,7 +330,9 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   if (!/overworld/.test(String(bot.game?.dimension || 'overworld'))) return decline('not the Overworld');
   if (!atSea(bot)) return decline('not at sea');
   const start = bot.entity.position.clone();
-  const seen = landInView(bot, 48, start);
+  const own = ownGround(bot, start);
+  if (!own) return decline('standing on more ground than an islet');
+  const seen = landInView(bot, 48, own);
   if (seen) return decline(`ground in view at ${seen}`);
   const target = knownLand(bot, goal);
   if (!target) return decline('no land remembered');
@@ -319,7 +350,7 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
     }
     cells.sort((a, b) => (Math.hypot(a.x - target.x, a.z - target.z) + a.distanceTo(feet)) - (Math.hypot(b.x - target.x, b.z - target.z) + b.distanceTo(feet)));
     if (!cells.length) { setAside(goal, 'cross_sea', target.key, 'no open water to swim from', 10 * 60000); save(); return false; }
-    try { await navigate(bot, task, new goals.GoalNear(cells[0].x, cells[0].y, cells[0].z, 1), { timeoutMs: 20000, stallMs: 6000, stopWhen: () => inWater(bot) }); }
+    try { await move(bot, task, new goals.GoalNear(cells[0].x, cells[0].y, cells[0].z, 1), { timeoutMs: 20000, stallMs: 6000, stopWhen: () => inWater(bot) }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     if (!inWater(bot)) { setAside(goal, 'cross_sea', target.key, 'could not get into the water', 10 * 60000); save(); return false; }
   }
@@ -327,7 +358,7 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   let stuck = 0;
   while (Date.now() - began < swimMs) {
     task.check(); checkAir(bot);
-    if (landInView(bot, 24, start)) break;
+    if (landInView(bot, 24, own)) break;
     if (flat() < 8) { setAside(goal, 'cross_sea', target.key, 'swum there and found only water', 60 * 60000); save(); break; }
     const was = bot.entity.position.clone();
     await motion(bot, task, { label: 'swim_for_land', keys: ['forward', 'jump'], sneak: false, why: 'swimming for the land remembered',
@@ -338,8 +369,8 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
     if (moved < 1 && ++stuck >= 3) { setAside(goal, 'cross_sea', target.key, 'no headway swimming', 10 * 60000); save(); break; }
     if (moved >= 1) stuck = 0;
   }
-  goal.step = { ...goal.step, swum: Math.round(before - flat()), landInView: !!landInView(bot, 24, start) }; save();
+  goal.step = { ...goal.step, swum: Math.round(before - flat()), landInView: !!landInView(bot, 24, own) }; save();
   return before - flat() >= 4 || !!goal.step.landInView;
 }
 
-module.exports = { reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView };
+module.exports = { reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView, ownGround };
