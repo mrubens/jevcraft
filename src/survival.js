@@ -15,7 +15,7 @@ const { kitReady } = require('./mob-policy');
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute, countOf } = require('./skills');
-const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield, canStrike } = require('./combat');
+const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield, raiseShield, canStrike } = require('./combat');
 const { digBunker, bunkerSide, wallStands, nearWall, centroid } = require('./bunker');
 const { deflect } = require('./projectile-guard');
 const { reservedForConstruction } = require('./build-sites');
@@ -30,6 +30,7 @@ const { NETHER_FOOD_POINTS, KIT_FOOD_POINTS } = require('./home-stash');
 // Lava within two blocks sideways or one below: a knockback lands in it.
 // A cell the bot can step into without falling or burning: solid under it,
 // room for its body, and no lava beside.
+const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'pillager']);
 function firmStep(bot, p) {
   if (!p) return false;
   const floor = bot.blockAt(p.offset(0, -1, 0)), body = [bot.blockAt(p), bot.blockAt(p.offset(0, 1, 0))];
@@ -336,6 +337,8 @@ class Survival {
     const swung = await defendNearby(bot, task, goal, save);
     const danger = threats(bot).filter(t => t.visible);
     if (!danger.length) { lowerShield(bot); return; }
+    // A skeleton is walked up to behind the raised shield and struck.
+    if (!swung && await this.shieldAdvance(task, goal, save, danger)) return;
     // Something already in the air is answered before anything is decided:
     // the decision takes longer than the flight.
     if (!swung && await deflect(bot, task)) {
@@ -400,6 +403,52 @@ class Survival {
     lowerShield(bot);
     if (await this.rangedChoice(task, goal, save, danger, armed)) return;
     await this.escape(task, goal, save, danger, armed);
+  }
+
+  // A shooter on the ground, the player's way: walk at it behind the raised
+  // shield, lower it to strike, raise it again. Measured in the arena
+  // (2026-09-24), one skeleton eight blocks off for twenty seconds: 17.7
+  // damage standing without a shield, 16.3 raising the shield as each arrow
+  // came (a shield takes a quarter second to come up, and the arrow is
+  // quicker), none holding it up throughout, and 2 advancing behind it, the
+  // skeleton dead in five seconds. The first trials' skeleton deaths were
+  // all the per-arrow block or a pocket built under fire. Not with a melee
+  // mob at arm's length or a creeper close; ground that is not firm ahead
+  // is held behind the shield instead of walked.
+  async shieldAdvance(task, goal, save, danger) {
+    const bot = this.bot;
+    if (bot.inventory.slots?.[45]?.name !== 'shield') return false;
+    const weapon = defenseWeapon(bot);
+    if (!/_(sword|axe)$/.test(weapon?.name || '') || bot.health < 6) return false;
+    if (creeperClose(danger) || danger.some(t => t.distance <= 3 && !shooter(t.entity))) return false;
+    const target = danger.filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16).sort((a, b) => a.distance - b.distance)[0];
+    if (!target) return false;
+    const e = target.entity;
+    this.report(goal, save, { action: 'advance_on_shooter', entity: e.name, target: { x: Math.floor(e.position.x), y: Math.floor(e.position.y), z: Math.floor(e.position.z) },
+      distance: Number(target.distance.toFixed(1)), health: bot.health });
+    if (bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand');
+    const end = Date.now() + 12000;
+    try {
+      while (Date.now() < end && bot.entities[e.id] === e && e.isValid !== false && bot.health >= 4) {
+        task.check(); checkAir(bot);
+        if (threats(bot).some(t => t.entity !== e && ((t.distance <= 3 && !shooter(t.entity)) || (t.entity.name === 'creeper' && t.distance <= 5)))) break;
+        await bot.lookAt(e.position.offset(0, 1.5, 0), true);
+        if (canStrike(bot, e)) {
+          lowerShield(bot); await sleep(150); task.check();
+          if (bot.entities[e.id] === e && canStrike(bot, e)) bot.attack(e);
+          await sleep(250); raiseShield(bot); await sleep(400);
+          continue;
+        }
+        const flat = e.position.minus(bot.entity.position); flat.y = 0;
+        const ahead = bot.entity.position.plus(flat.scaled(1 / Math.max(flat.norm(), 1))).floored();
+        const level = firmStep(bot, ahead), up = !level && firmStep(bot, ahead.offset(0, 1, 0));
+        raiseShield(bot);
+        if (!level && !up) { await sleep(700); break; }
+        await move(bot, task, { label: 'advance_on_shooter', keys: up ? ['forward', 'jump'] : ['forward'], sneak: false,
+          why: 'behind the raised shield toward a shooter, onto ground checked firm', look: e.position.offset(0, 1.5, 0), maxMs: 300, tick: 50, until: () => canStrike(bot, e) });
+      }
+    } finally { lowerShield(bot); bot.clearControlStates?.(); }
+    return true;
   }
 
   // A creeper, the player's way: hit it, back off out of the blast while

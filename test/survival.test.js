@@ -643,13 +643,16 @@ test('cornered by a ranged mob with no way out, the bot closes every open side i
 });
 
 // A skeleton in view at ten blocks, a bow and arrows in the pack.
-function archerFixture({ health = 20, client } = {}) {
+// A shield and a sword walk a skeleton down behind the shield (measured:
+// 2 damage against 16 to 17 for the bow at eight blocks), so the bow's own
+// flow is tested with one of the two missing.
+function archerFixture({ health = 20, client, sword = false, shield = true } = {}) {
   const registry = require('prismarine-registry')('26.1');
   const skeleton = { id: 7, name: 'skeleton', position: new Vec3(10.5, 64, .5), width: .6, height: 1.99, isValid: true };
   const arrows = { name: 'arrow', count: 8 }, events = [], destination = new Vec3(-8, 64, 0);
   const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
     entity: { position: new Vec3(.5, 64, .5) }, entities: { 7: skeleton }, health, food: 20, oxygenLevel: 20, quickBarSlot: 0,
-    time: { timeOfDay: 6000 }, inventory: { items: () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, arrows], slots: { 45: { name: 'shield' } } },
+    time: { timeOfDay: 6000 }, inventory: { items: () => [...(sword ? [{ name: 'iron_sword' }] : []), { name: 'bow', count: 1, durabilityUsed: 0 }, arrows], slots: shield ? { 45: { name: 'shield' } } : {} },
     world: { raycast: () => null },
     blockAt: p => ({ position: p.floored(), name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }),
     findBlocks: () => [destination.offset(0, -1, 0)],
@@ -683,7 +686,7 @@ test('a skeleton in view at bow range is shot from where the bot stands, then th
 test('Jev is offered the shot, the retreat and, with blocks in the pack, a pocket; its choice runs', async () => {
   let asked;
   const client = { systemOne: async ({ state, questions }) => { asked = { state, questions }; return { answers: { branch_0: { choice: 'retreat' } } }; } };
-  const { bot, events, controller, task, goal } = archerFixture({ client });
+  const { bot, events, controller, task, goal } = archerFixture({ client, sword: true, shield: false });
   bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
   assert(await controller.step(task, goal, () => {}));
   assert.deepEqual(Object.keys(asked.questions.branch_0.criteria).sort(), ['dig_in', 'retreat', 'shoot_7']);
@@ -692,11 +695,24 @@ test('Jev is offered the shot, the retreat and, with blocks in the pack, a pocke
   assert.equal(goal.survivalAction.action, 'escape_threat');
 });
 
+test('with a sword and a shield a skeleton is walked up to behind the raised shield, not shot at or hidden from', async () => {
+  const { bot, events, controller, task, goal } = archerFixture({ sword: true, shield: true });
+  bot.setControlState = () => {}; bot.clearControlStates = () => {};
+  // Close the gap each look, as walking would; struck once it is in reach.
+  bot.lookAt = async () => { if (bot.entity.position.distanceTo(bot.entities[7].position) > 2.5) bot.entity.position = bot.entity.position.offset(2, 0, 0); };
+  bot.blockAt = p => ({ position: p, name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' });
+  bot.attack = target => { events.push('attack'); target.isValid = false; };
+  assert(await controller.step(task, goal, () => {}));
+  assert.equal(goal.survivalAction.action, 'advance_on_shooter');
+  assert(events.includes('raise shield') && events.includes('attack'), events.join(','));
+  assert(!events.includes('draw'), 'no bow at eight blocks with a sword and a shield');
+});
+
 test('hurt, or with a zombie closing, the bow stays in the pack and the escape rules take over', async () => {
-  const hurt = archerFixture({ health: 6 });
+  const hurt = archerFixture({ health: 6, sword: true, shield: false });
   assert(await hurt.controller.step(hurt.task, hurt.goal, () => {}));
   assert.deepEqual(hurt.events, ['navigate']); assert.equal(hurt.goal.decisions, undefined, 'no question at six health');
-  const crowded = archerFixture();
+  const crowded = archerFixture({ sword: true, shield: true });
   crowded.bot.entities[8] = { id: 8, name: 'zombie', position: new Vec3(3, 64, .5), width: .6, height: 1.95, isValid: true };
   assert(await crowded.controller.step(crowded.task, crowded.goal, () => {}));
   assert.deepEqual(crowded.events, ['equip iron_sword', 'attack', 'raise shield'], 'a zombie within a sword\'s reach is fought, the shield up between swings, not drawn on or run from');
@@ -707,7 +723,7 @@ test('with encounter judgments on, Jev picks the stance once and it holds; unsur
   try {
     const calls = [];
     const client = { systemOne: async ({ state, questions }) => { calls.push({ state, questions }); return { answers: { branch_0: { choice: 'retreat', confidence: 0.9 } } }; } };
-    const { bot, events, controller, task, goal } = archerFixture({ client });
+    const { bot, events, controller, task, goal } = archerFixture({ client, sword: true, shield: false });
     bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
     assert(await controller.step(task, goal, () => {}));
     assert.equal(goal.decisions.at(-1).id, 'encounter_stance');
@@ -719,7 +735,7 @@ test('with encounter judgments on, Jev picks the stance once and it holds; unsur
     assert.equal(calls.length, 1, 'the stance holds for the same mobs, not asked again at every tick');
 
     let asked = 0;
-    const unsure = archerFixture({ client: { systemOne: async () => ({ answers: { branch_0: asked++ ? { choice: 'shoot_7', confidence: 0.9 } : { choice: 'fight', confidence: 0.2 } } }) } });
+    const unsure = archerFixture({ sword: true, shield: false, client: { systemOne: async () => ({ answers: { branch_0: asked++ ? { choice: 'shoot_7', confidence: 0.9 } : { choice: 'fight', confidence: 0.2 } } }) } });
     assert(await unsure.controller.step(unsure.task, unsure.goal, () => {}));
     assert.equal(unsure.goal.decisions.find(d => d.id === 'encounter_stance').gated.below, 'caller');
     assert.equal(unsure.goal.survivalAction.action, 'shoot', 'the rules took over: the ranged question, then the shot');
