@@ -813,7 +813,7 @@ async function workSource(bot, task, step, goal, save, source) {
 }
 
 // Keep working the source Jev already chose. Recorded as a decision so the
-// trail and the Observatory show the step, marked as needing no question.
+// trail and the flight recording show the step, marked as needing no question.
 async function continueSource(bot, task, step, goal, save, onStep) {
   const source = committedSource(bot, goal, step);
   if (!source) return false;
@@ -836,7 +836,7 @@ async function moveOnFromResource(bot, task, goal, save) {
   if (step?.action !== 'mine' || !step.block) return false;
   const nearby = find(bot, step.sources || [step.block], 16, 64);
   for (const p of nearby) setAside(goal, 'reach', p, 'set aside with the rest of this area', 120000);
-  // The marker shows on the dashboard during the walk and is taken down
+  // The marker shows in the step log during the walk and is taken down
   // after it: left in place, the work loop had no step to run and spun on it
   // for eighty-four seconds (trial 23).
   const marker = { action: 'move_on', resource: step.drops || step.block, setAside: nearby.length };

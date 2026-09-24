@@ -1,0 +1,125 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { Vec3 } = require('vec3');
+const { Trace, clean, decisionSource } = require('../src/recorder/trace');
+const { observeBot, terrain } = require('../src/recorder/observer');
+
+function bot() {
+  const b = new EventEmitter(); b.username = 'TestJev'; b.entity = { id: 1, position: new Vec3(2, 64, 3), yaw: .3, pitch: .1 };
+  b.entities = { 1: b.entity }; b.health = 20; b.food = 17; b.game = { dimension: 'overworld' };
+  b.inventory = { items: () => [{ name: 'oak_log', count: 2 }, { name: 'oak_log', count: 3 }] };
+  b.blockAt = p => p.x > 7 ? null : { name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' };
+  return b;
+}
+
+test('trace snapshots survive later mutation, redact credential fields and bound retained frames', () => {
+  const trace = new Trace(), state = { position: { x: 1 }, apiKey: 'sensitive', OPENROUTER_API_KEY: 'sensitive' };
+  trace.append({ snapshot: state }); state.position.x = 99;
+  assert.equal(trace.frames[0].snapshot.position.x, 1);
+  assert.equal(trace.frames[0].snapshot.apiKey, '[redacted]');
+  assert.equal(trace.frames[0].snapshot.OPENROUTER_API_KEY, '[redacted]');
+  for (let i=0;i<605;i++) trace.append({ snapshot: {} });
+  assert.equal(trace.frames.length, 600); assert.equal(trace.view().limited,true);
+  assert.deepEqual(trace.view(604).frames.map(f=>f.id),[605,606]);
+  assert.equal(clean(2n),'2');
+});
+
+test('observer captures loaded terrain, route and immutable state, fencing a replaced connection', () => {
+  const b=bot(), trace=new Trace(); let goal={request:'get wood',decisions:[]};
+  const observation=observeBot(trace,b,{getGoal:()=>goal});
+  b.emit('spawn'); assert.equal(trace.connected,true);
+  const world=terrain(b,1); assert.equal(world.known.length,9); assert(world.blocks.every(block=>block[1]<0));
+  b.emit('path_update',{path:[new Vec3(3,64,4)]});
+  goal.decisions.push({at:'2026-09-18T19:00:00Z',path:['gather'],judgments:[{choice:'gather'}]});
+  goal.lastError='Previous action failed; deciding the next move';
+  observation.sample(); observation.sample('step');
+  const frame=trace.frames.at(-1); assert.equal(frame.kind,'decision'); assert.equal(frame.source,'jev');
+  assert.equal(frame.snapshot.inventory.oak_log,5); assert.equal(frame.snapshot.route.length,1);
+  b.entity.position.x=10; assert.equal(frame.snapshot.position.x,2);
+  const replacement=observeBot(trace,bot()); const serial=trace.serial; b.emit('health'); b.emit('end');
+  assert.equal(trace.serial,serial); assert.equal(trace.epoch,2);
+  observation.detach(); replacement.detach(); assert.equal(b.listenerCount('health'),0);
+});
+
+test('observer failures cannot throw into bot event handlers', () => {
+  const b=bot(), trace=new Trace(), observer=observeBot(trace,b,{getGoal:()=>{throw new Error('checkpoint unavailable');}});
+  assert.doesNotThrow(()=>b.emit('spawn')); assert.equal(trace.observationError,'checkpoint unavailable');observer.detach();
+});
+
+test('live Fable advice remains separate from Jev classifier judgments and records recovery outcomes', () => {
+  const b = bot(), trace = new Trace(), goal = { request: 'find a way to the Nether', decisions: [
+    { at: '2026-09-18T19:00:00Z', path: ['gather'], judgments: [{ choice: 'gather' }] },
+  ] };
+  const observation = observeBot(trace, b, { getGoal: () => goal });
+  b.emit('spawn');
+  const advice = { model: 'anthropic/claude-fable-5.1', diagnosis: 'Use the dry ledge', steps: [{ kind: 'relocate' }], context: { inventory: { dirt: 3 } } };
+  b.emit('recovery_advice', advice);
+  assert.equal(trace.frames.at(-1).source, 'fable');
+  assert.equal(trace.frames.at(-1).detail.model, advice.model);
+  b.emit('recovery_result', { outcome: 'Recovery actions completed; retrying original objective' });
+  assert.equal(trace.frames.at(-1).source, 'rules');
+  assert.match(trace.frames.at(-1).label, /retrying original objective/);
+  observation.detach();
+});
+
+test('chat interpretations, clarifying questions and Jev recovery picks are attributed to Jev, not to rules or Fable', () => {
+  const b = bot(), trace = new Trace(), goal = { request: 'get me a pumpkin', decisions: [] };
+  const observation = observeBot(trace, b, { getGoal: () => goal });
+  b.emit('spawn');
+  observation.sample('request', { request: 'Jev get me a pumpkin', kind: 'obtain', interpretation: { objective: { choice: 'obtain', confidence: 0.97 } }, usage: { input_tokens: 1900, output_tokens: 300 }, latencyMs: 210 });
+  assert.equal(trace.frames.at(-1).source, 'jev'); assert.equal(trace.frames.at(-1).label, 'Understood: obtain');
+  observation.sample('clarify', { request: 'Jev bring me grass', kind: 'clarify', message: 'Did you mean short grass or grass block?', clarification: { reason: 'ambiguous_item' } });
+  assert.equal(trace.frames.at(-1).source, 'jev'); assert.match(trace.frames.at(-1).label, /^Asked back: Did you mean/);
+  b.emit('recovery_advice', { source: 'jev', model: 'jev-latest', diagnosis: 'Jev chose: relocate', steps: [{ kind: 'relocate' }], jev: { judgment: { choice: 'option_2', confidence: 0.81 } } });
+  assert.equal(trace.frames.at(-1).source, 'jev'); assert.equal(trace.frames.at(-1).label, 'Jev chose a recovery action');
+  // A decision with a single feasible option never reached Jev and says so.
+  goal.decisions.push({ at: '2026-09-18T19:00:01Z', path: ['obtain_item', 'mine', 'source_oak_log_3_64_0'], judgments: [] });
+  observation.sample('step');
+  assert.equal(trace.frames.at(-1).source, 'rules'); assert.match(trace.frames.at(-1).label, /only feasible option/);
+  observation.detach();
+});
+
+test('heartbeat frames are evicted before requests and decisions, so a chat request outlives ten minutes of terrain samples', () => {
+  const { MAX_FRAMES } = require('../src/recorder/trace');
+  const trace = new Trace();
+  trace.append({ kind: 'request', label: 'Understood: obtain', snapshot: {} });
+  trace.append({ kind: 'decision', label: 'obtain_item → mine', snapshot: {} });
+  for (let i = 0; i < MAX_FRAMES + 50; i++) trace.append({ kind: i % 2 ? 'observation' : 'vitals', snapshot: {} });
+  trace.append({ kind: 'clarify', label: 'Asked back: which one?', snapshot: {} });
+  assert.equal(trace.frames.length, MAX_FRAMES);
+  assert.deepEqual(trace.frames.filter(f => !['observation', 'vitals'].includes(f.kind)).map(f => f.kind), ['request', 'decision', 'clarify']);
+  assert.equal(trace.frames[0].id, 1);
+  assert.equal(trace.view().oldestId, 1);
+});
+
+test('an idle step with no action to name is recorded as a heartbeat rather than a blank activity', () => {
+  const b = bot(), trace = new Trace(), goal = { request: 'Stay alive and prepare supplies between player requests', kind: 'survive', decisions: [] };
+  const observation = observeBot(trace, b, { getGoal: () => goal });
+  b.emit('spawn');
+  observation.sample('step');
+  assert.equal(trace.frames.at(-1).kind, 'observation'); assert.equal(trace.frames.at(-1).source, 'observed');
+  goal.step = { action: 'collect', item: 'oak_log' };
+  observation.sample('step');
+  assert.equal(trace.frames.at(-1).kind, 'action'); assert.equal(trace.frames.at(-1).label, 'collect oak log');
+  observation.detach();
+});
+
+test('the session attaches the flight recorder to its bot and detaches it when the session closes', async t => {
+  const mineflayer = require('mineflayer'), { createSession } = require('../src/session');
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'jev-recorder-session-')); t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const b = bot(); b._client = new EventEmitter(); b.players = {}; b.loadPlugin = () => {}; b.chat = () => {}; b.quit = () => b.emit('end');
+  let attached = null, detached = false; const original = mineflayer.createBot;
+  const recorder = { attach(_bot, options) { attached = options; return { sample() {}, detach() { detached = true; } }; } };
+  let session;
+  try {
+    mineflayer.createBot = () => b;
+    session = createSession({ host: 'test', port: 1, username: 'Jev' }, {}, { stateDirectory: directory, recorder });
+    assert.equal(attached.server, 'test:1'); assert.equal(typeof attached.getGoal, 'function');
+    session.shutdown(); assert.equal(detached, true);
+  } finally { session?.shutdown(); mineflayer.createBot = original; }
+});

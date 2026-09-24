@@ -1,7 +1,6 @@
 'use strict';
-// The flight recorder: every live frame, written to disk as it happens. The
-// dashboard's trace lives in memory and goes with the process, so the
-// frames around a death were gone after the restart that fixed it, and
+// The flight recorder: every live frame, written to disk as it happens. A
+// trace kept in memory goes with the process, so the frames around a death were gone after the restart that fixed it, and
 // "why did it fall" meant reconstructing a line from a rejoin position and
 // the last logged step.
 //

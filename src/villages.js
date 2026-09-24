@@ -74,7 +74,7 @@ function rememberVillage(goal, save, village, where, now = Date.now()) {
 // The cheap, rare check the main loops call every step: it looks every
 // thirtieth step or once the bot has moved on, and only in the Overworld.
 // A new village is announced once through the ordinary survival narration
-// and labelled in the Observatory the same way.
+// and recorded in the flight recording the same way.
 const scans = new WeakMap();
 function noticeVillage(bot, goal, save, { now = Date.now(), every = SCAN_EVERY, moved = SCAN_MOVED, force = false } = {}) {
   const here = bot.entity?.position;

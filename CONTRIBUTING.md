@@ -27,13 +27,11 @@ Node 22 or newer. `npm test` runs about eleven hundred tests in about twenty sec
 
 **A change to what Jev is asked.** Add or update a case in `scripts/eval-intents.js` or `scripts/eval-decisions.js` and run it; both make live calls and write their judgments to `artifacts/`. Paste the summary line. If a case is a matter of taste (two defensible answers), do not add it: evals hold judgments with one right answer.
 
-**An Observatory change.** Include what it looks like on the illustrated demo (`npm run harness`, then the *Illustrated run* session) and on a recording.
-
 **A README or docs change.** Keep claims tied to something that runs: a test, an eval, a preserved run under `artifacts/`.
 
 ## Bug reports
 
-Include the Minecraft version, game mode and difficulty, the exact chat request, and a short log or an exported Observatory trace. Review a trace before attaching it: it can contain chat, player names and world coordinates.
+Include the Minecraft version, game mode and difficulty, the exact chat request, and a short log or the flight-recording frames around the problem (`node scripts/flight.js`). Review them before attaching: it can contain chat, player names and world coordinates.
 
 ## Style
 

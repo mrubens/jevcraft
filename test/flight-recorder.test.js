@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { flightRecorder } = require('../src/harness/flight');
+const { flightRecorder } = require('../src/recorder/flight');
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 50));
 const rows = file => fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);

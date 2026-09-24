@@ -24,7 +24,6 @@ Scripts that stage a world write commands to the server's console through a name
 - `try-plan.js` (`npm run plan`): the recipe planner offline, for an item, a count and optional nearby blocks. No server, no key.
 - `live-test.js` (`npm run live`): a second client types chat to a running bot and prints what it says and where it goes.
 - `build-followup-test.js` (`npm run build-followup`): a build, then a follow-up to it; non-zero exit on failure.
-- `harness.js` (`npm run harness`): the Observatory as a standalone viewer over `artifacts/` and `.bot-state/`.
 - `decisions-doc.js`: writes `docs/decisions.md` from `src/decisions`; `--check` is what the test suite runs.
 
 ## Evals (live Jev calls, no game server)
@@ -38,7 +37,7 @@ Scripts that stage a world write commands to the server's console through a name
 
 ## Trials and runs
 
-- `first-days.js`: the first-three-days trial. `start <world>` makes a fresh world on `.clean-run` (25581) and a fresh bot (dashboard 3044); `verdict` audits the run from its flight recording; `status` lists trials. New worlds get a datapack giving spectators night vision.
+- `first-days.js`: the first-three-days trial. `start <world>` makes a fresh world on `.clean-run` (25581) and a fresh bot (its pid in `.bot-state/pids/`); `verdict` audits the run from its flight recording; `status` lists trials. New worlds get a datapack giving spectators night vision.
 - `acceptance.js` (`npm run accept`): a Survival acceptance run with a fresh identity and empty inventory, on an isolated `MC_PORT`.
 - `audit-day.js`: a day's audit from the flight recorder: stillness, water, retries, pacing, damage and inference cost (`AUDIT_IDENTITY`).
 - `flight.js`: flight-recorder frames around a moment, or `--deaths` (`--label`).
@@ -61,7 +60,7 @@ Each stages its setup with commands and then lets the bot use ordinary Survival 
 - **Delivery:** `chest-delivery-test`, `ledge-delivery-test`, `return-delivery-test`, `full-inventory-delivery-test`, `bundle-capacity-test`.
 - **Building and shelter:** `build-shapes-test`, `building-regression-test`, `door-building-test`, `oriented-building-test`, `terrain-build-test`, `designer-test`, `verify-schematic`, `shelter-test`, `shelter-approach-test`, `shelter-supplies-test`, `snow-shelter-test`.
 - **Combat, recovery and the End:** `combat-test`, `retreat-test`, `mob-hunt-test`, `archery-test`, `eye-search-test`, `end-entry-test`, `end-fight-test`, `recovery-test`, `recovery-routes-test`, `recovery-adviser-test`.
-- **Chat, session and memory:** `control-test` (stop, resume, restart), `commands-test`, `maintenance-resume-test`, `companion-live-test`, `memory-live-test`, `implicit-memory-live-test`.
+- **Chat, session and memory:** `control-test` (stop, resume, restart), `commands-test`, `companion-live-test`, `memory-live-test`, `implicit-memory-live-test`.
 
 Read a test's header before running it: it names the port, the setup it stages and whether it needs a key.
 
@@ -73,7 +72,6 @@ Kept for the record; they load but reproduce a specific moment and may need a re
 
 - `extract-knowledge.py`: rebuilds `data/vanilla-26.1.json` (recipes, tags, loot) from a vanilla `server-26.1.jar`.
 - `generate-schematics.js`: asks the designer for a schematic and writes it to `data/schematics/` (`OPENROUTER_API_KEY`).
-- `create-robot-skin.js`: draws the Jev robot skin as PNG, SVG and a resource pack.
 
 ## Libraries (`scripts/lib`)
 

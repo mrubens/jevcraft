@@ -9,8 +9,8 @@
 //   node scripts/first-days.js verdict               # the current trial, now or at its end
 //   node scripts/first-days.js status                # the trial log
 //
-// The clean server is .clean-run on 25581; the bot is the one on dashboard
-// 3044. A trial is sixty minutes of wall clock from the bot's first join:
+// The clean server is .clean-run on 25581; the bot is the one whose pid is
+// in .bot-state/pids/127.0.0.1-25581-Jev.pid. A trial is sixty minutes of wall clock from the bot's first join:
 // three days of twenty minutes. Nothing in the game is touched but the
 // world's name; Jev is not an operator.
 const fs = require('fs');
@@ -105,10 +105,18 @@ function spectatorNightVision(worldDir) {
   write('data/minecraft/tags/function/tick.json', JSON.stringify({ values: ['trial:spectators'] }, null, 2));
 }
 
+// The trial's bot, by the pid file index.js writes. A bot started before
+// the pid files (it served a viewer on port 3044) is found by that port.
+const BOT_PID = path.join(STATE, 'pids', '127.0.0.1-25581-Jev.pid');
+function botPid() {
+  try { const p = fs.readFileSync(BOT_PID, 'utf8').trim(); if (p && alive(p)) return p; } catch (_) {}
+  return pid(3044);
+}
+
 async function start(world) {
   if (!/^[a-z0-9-]+$/.test(world || '')) throw new Error('A world name of lowercase letters, digits and dashes');
   const props = path.join(SERVER, 'server.properties');
-  const server = pid(25581), bot = pid(3044);
+  const server = pid(25581), bot = botPid();
   if (bot) { process.kill(Number(bot)); await sleep(3000); }
   if (server) {
     fs.writeFileSync(path.join(SERVER, 'console.in'), 'stop\n');
@@ -129,7 +137,7 @@ async function start(world) {
   // A watchdog that restarts a silent bot may have started one on the old
   // state while the server was down (trial 2 ran on the old state that way):
   // no bot at all before the state is archived.
-  for (let i = 0; i < 20; i++) { const other = pid(3044); if (!other) break; process.kill(Number(other), 'SIGKILL'); await sleep(1500); }
+  for (let i = 0; i < 20; i++) { const other = botPid(); if (!other) break; process.kill(Number(other), 'SIGKILL'); await sleep(1500); }
   // Fresh bot state: the old files kept aside, the dream seeded.
   const archive = path.join(STATE, `archive-${IDENTITY}-${Date.now()}`);
   fs.mkdirSync(archive, { recursive: true });
@@ -137,10 +145,10 @@ async function start(world) {
   fs.writeFileSync(path.join(STATE, `${IDENTITY}-dream.json`), JSON.stringify({ version: 1, dream: 'beat_the_game', setBy: 'TestPlayer', setAt: new Date().toISOString() }));
   const out = fs.openSync(process.env.FIRST_DAYS_LOG || path.join(ROOT, 'artifacts', `first-days-${world}.log`), 'a');
   const child = spawn(process.execPath, ['index.js'], { cwd: ROOT, detached: true, stdio: ['ignore', out, out],
-    env: { ...process.env, MC_HOST: '127.0.0.1', MC_PORT: '25581', MC_USERNAME: 'Jev', JEV_DASHBOARD_PORT: '3044', RECOVERY_ADVISER: 'jev', JEV_ENCOUNTERS: '1' } });
+    env: { ...process.env, MC_HOST: '127.0.0.1', MC_PORT: '25581', MC_USERNAME: 'Jev', RECOVERY_ADVISER: 'jev', JEV_ENCOUNTERS: '1' } });
   child.unref();
-  for (let i = 0; i < 30 && !pid(3044); i++) await sleep(1000);
-  if (String(pid(3044)) !== String(child.pid)) throw new Error(`The bot on 3044 is not the trial's own (${pid(3044)} vs ${child.pid}); start again`);
+  for (let i = 0; i < 30 && !botPid(); i++) await sleep(1000);
+  if (String(botPid()) !== String(child.pid)) throw new Error(`The trial's bot is not the one just started (${botPid()} vs ${child.pid}); start again`);
   const all = trials();
   all.push({ world, startedAt: new Date().toISOString() });
   saveTrials(all);

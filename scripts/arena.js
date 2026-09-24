@@ -61,8 +61,6 @@ async function commands(list) { for (const line of list) await command(line); }
 const bot = mineflayer.createBot({ host: process.env.MC_HOST || '127.0.0.1', port, username, version: '26.1', auth: 'offline' });
 bot.loadPlugin(compatibilityPlugin);
 bot.loadPlugin(pathfinder);
-// The Observatory, when asked for: the same live trace the dream run uses.
-let harness = null;
 let currentGoal = { request: 'arena', status: 'starting' };
 
 // Everything a run is scored on, gathered by listener rather than by asking
@@ -246,12 +244,6 @@ bot.once('spawn', async () => {
     await bot.waitForChunksToLoad();
     configureMovements(bot);
     require('../src/speech').quietRepeats?.(bot);
-    if (process.env.ARENA_DASHBOARD_PORT) {
-      harness = await require('../src/harness/server').startHarness({ port: Number(process.env.ARENA_DASHBOARD_PORT),
-        artifacts: path.join(__dirname, '..', 'artifacts'), stateDirectory: path.join(__dirname, '..', '.bot-state') });
-      harness.attach(bot, { getGoal: () => currentGoal, server: `127.0.0.1:${port} · arena ${id}` });
-      log({ observatory: harness.url });
-    }
     if (process.env.ARENA_JEV === '1') {
       require('../src/env').loadEnv();
       client = new (require('../src/typesafe').TypeSafe)();

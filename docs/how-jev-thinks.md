@@ -1,6 +1,6 @@
 # How Jev thinks
 
-A walk through one chat request, with the real numbers from a recorded run, to show what the model is asked, what it answers, and what code does in between. The recording is in [`traces/get-me-a-pumpkin.json`](traces/get-me-a-pumpkin.json); open it in the Observatory with **Open trace** to follow along.
+A walk through one chat request, with the real numbers from a recorded run, to show what the model is asked, what it answers, and what code does in between. The recording is in [`traces/get-me-a-pumpkin.json`](traces/get-me-a-pumpkin.json), as JSON frames to follow along with.
 
 ## One message, one call
 
@@ -49,7 +49,7 @@ The threshold depends on what a mistake would cost. A misheard "come here" waste
 
 ## Deciding what to do next
 
-Once a request is running, the bot loops: observe the world, work out the feasible next actions, do one, verify it. Jev is consulted only when there is a real choice. In the pumpkin run there was not: the plan was "take a pumpkin from the Creative inventory", one feasible action, so the decision was recorded as *only feasible option* and no call was made. The Observatory counts these separately so you can see how often the model was actually needed.
+Once a request is running, the bot loops: observe the world, work out the feasible next actions, do one, verify it. Jev is consulted only when there is a real choice. In the pumpkin run there was not: the plan was "take a pumpkin from the Creative inventory", one feasible action, so the decision was recorded as *only feasible option* and no call was made. The decision log keeps these apart so you can see how often the model was actually needed.
 
 When there is a choice, it is a semantic one. Gathering wood in Survival, code finds the reachable logs and groups them into *sources*: a source is a block type, how many of it are within reach, how far it is, and how much climbing. Jev is asked which source, with the request in front of it, and code picks the nearest block inside the source it chose. In the decision eval, asked to build a *birch* house with six oak logs four blocks away and six birch logs twenty-two blocks away, Jev chose birch at 0.96. Asked for a house with no species named, it chose three close logs over nine far ones at 0.95.
 
@@ -61,7 +61,7 @@ Some things are never a choice. Eating carried food when hungry is a rule. Surfa
 
 If a step fails three times in a row, code enumerates the recovery actions it could take from here: gather footing blocks, return to the surface, move to one of six surveyed standing spots, and so on. Each is something it has already checked it can do. Jev is asked which one is most likely to unblock the original request, or *none*.
 
-If the service itself is unreachable, the tree is walked with a code default instead, shelter before food before the request and otherwise the first option listed, and the decision is recorded as a *code default* so the Observatory shows where a judgment is missing. The bot keeps working through the outage and says once in chat that it is on defaults, and once that Jev is back.
+If the service itself is unreachable, the tree is walked with a code default instead, shelter before food before the request and otherwise the first option listed, and the decision is recorded as a *code default* so the log shows where a judgment is missing. The bot keeps working through the outage and says once in chat that it is on defaults, and once that Jev is back.
 
 In a recorded run, the bot had a birch log ready but the player had left the area. Jev answered *none* at 0.83: no option would make the player visible. Jev's turn took under a second. An earlier version then asked a generative model for a second opinion; it agreed, in fourteen seconds and at about a hundred times the cost, and has since been removed: recovery is Jev's call alone.
 

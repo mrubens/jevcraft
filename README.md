@@ -1,10 +1,10 @@
 # JevBot
 
-A Minecraft companion you talk to in game chat, built to show what a [System One](https://docs.typesafe.ai/concepts/system-one) model is good at. Ask Jev to gather supplies, build something, find a biome, or follow you on an adventure. Every judgment the bot makes about what you meant and what to do next is a typed answer from [TypeSafe's Jev](https://typesafe.ai/), with a probability attached, and you can watch each one happen in a local 3D Observatory.
+A Minecraft companion you talk to in game chat, built to show what a [System One](https://docs.typesafe.ai/concepts/system-one) model is good at. Ask Jev to gather supplies, build something, find a biome, or follow you on an adventure. Every judgment the bot makes about what you meant and what to do next is a typed answer from [TypeSafe's Jev](https://typesafe.ai/), with a probability attached, and every one is logged with the options it was chosen from.
 
 **Experimental, targeting Minecraft Java Edition 26.1.** Gathering, building, exploration, and survival support work; difficult terrain and long tasks can still need help. Fully autonomous game completion is a development goal, not a finished capability.
 
-[Quick start](#quick-start) · [How Jev is used](#how-jev-is-used) · [Chat commands](#talking-to-jev) · [Building](#building) · [Observatory](#watching-jev-think) · [Roadmap](ROADMAP.md)
+[Quick start](#quick-start) · [How Jev is used](#how-jev-is-used) · [Chat commands](#talking-to-jev) · [Building](#building) · [What Jev decided](#seeing-what-jev-decided) · [Roadmap](ROADMAP.md)
 
 ## Why this project exists
 
@@ -26,7 +26,7 @@ When Jev is not sure enough, the bot asks a one-line question instead of guessin
 - **Explore with you.** Come, follow, find observed blocks and creatures, search for biomes, swim, and use boats for surveyed crossings.
 - **Remember your world.** Save named places and notes, recall past tasks, learn a wood preference from ordinary requests, and return to remembered locations after reconnecting.
 - **Handle survival needs.** Seek food and shelter, cook and eat, replace worn tools, respond to hazards, and recover without forgetting your request.
-- **Show its work.** Inspect terrain, inventory, activity, and every Jev judgment in a local 3D Observatory. Stop and resume from chat or the viewer.
+- **Show its work.** Every Jev judgment is logged with the question, the options offered and their probabilities, and a flight recording keeps what the bot saw and did for the audits.
 
 ## Quick start
 
@@ -58,8 +58,6 @@ MC_PORT=25565
 MC_VERSION=26.1
 MC_USERNAME=Jev
 MC_AUTH=offline
-
-JEV_DASHBOARD_PORT=3040
 ```
 
 Use `MC_AUTH=offline` when your server allows it. For an authenticated server, use `MC_AUTH=microsoft` with the bot's own Minecraft account and complete the sign-in prompt. Your player and the bot need separate identities.
@@ -78,7 +76,7 @@ Jev craft me a chest
 Jev build a house
 ```
 
-Open [the live Observatory](http://127.0.0.1:3040/?session=live) and keep the bot process running while you play.
+Keep the bot process running while you play; its console prints each step and the decision behind it.
 
 ## How Jev is used
 
@@ -104,11 +102,11 @@ Jev answers three kinds of question: a **Choice** among options code lists, a **
 
 Every one of these questions is defined in one place, [`src/decisions`](src/decisions/index.js), with its stakes, the confidence bar its answer must clear and what happens below it, and the code's own answer for when Jev cannot be reached. The in-game decision trees are asked through one runner (`decide`) and the batched questions through `ask`, so the outage walk, the abort on cancellation, the staleness check and the decision log are the same everywhere; nothing else in `src` calls the model, and a test holds it to that. The full list, generated from the definitions, is in [docs/decisions.md](docs/decisions.md).
 
-[How Jev thinks](docs/how-jev-thinks.md) walks through one recorded request with the real answers, confidences, latency and token counts, and ships the trace so you can open it in the Observatory.
+[How Jev thinks](docs/how-jev-thinks.md) walks through one recorded request with the real answers, confidences, latency and token counts, and ships the recorded trace.
 
 The one place a generative model is used, optionally, through OpenRouter and only in Creative, is the one that needs generation: drawing a custom schematic from a request and terrain survey. Everything else is selection, and selection is what a System One model does well.
 
-If Jev cannot be reached (the service is down, a request times out), the bot does not stop. The same decision tree is walked with a code default, shelter before food before the request and otherwise the first option listed, the decision is recorded as a *code default*, and the bot says so once in chat and once more when Jev is back. The Observatory shows those decisions in their own colour, so an outage is visible rather than silent.
+If Jev cannot be reached (the service is down, a request times out), the bot does not stop. The same decision tree is walked with a code default, shelter before food before the request and otherwise the first option listed, the decision is recorded as a *code default*, and the bot says so once in chat and once more when Jev is back. The decision log marks those as code defaults, so an outage is visible rather than silent.
 
 Two design rules run through all of it. **Jev chooses, code enumerates**: the model never sees an option code did not construct and check, so it cannot invent a coordinate, a command or a quantity. **Judgments are Jev's, with the facts**: when the bot plays, a tactical or strategic choice is put to Jev as options with the numbers that bear on it, not decided by a hand-written rule, and Jev's pick is taken at any confidence; code keeps the mechanics, what is possible now, and reflexes faster than a question. Where a person is on the other end (a chat request, a server command, a build that would replace something), confidence is a second axis: below the bar the bot asks instead of acting. The [rule audit](docs/rule-audit.md) lists what has been handed to Jev and what code still decides.
 
@@ -154,7 +152,7 @@ Jev chase your dream
 Jev forget your dream
 ```
 
-With **build a village**, code lists the parts a village still lacks from the buildings that actually stand, and Jev picks the next one and scores how village-like the place already is. The part is then chosen from a shelf of forty-five ready-made, validated designs (cottages, a mansion, a tower, wells, farm plots, chapels, barns, lamp posts, plazas) with Jev picking the design that suits what already stands, so in Survival no generative model is ever called. In Creative with the designer, the shelf only says which parts a village can have: each part is drawn by the designer instead. Each part goes beside the newest one so the village grows as a cluster, and the Observatory shows the dream and the village score on every event.
+With **build a village**, code lists the parts a village still lacks from the buildings that actually stand, and Jev picks the next one and scores how village-like the place already is. The part is then chosen from a shelf of forty-five ready-made, validated designs (cottages, a mansion, a tower, wells, farm plots, chapels, barns, lamp posts, plazas) with Jev picking the design that suits what already stands, so in Survival no generative model is ever called. In Creative with the designer, the shelf only says which parts a village can have: each part is drawn by the designer instead. Each part goes beside the newest one so the village grows as a cluster, and the decision log records the dream and the village score with each part.
 
 With **beat the game**, the idle loop hands Jev the survival ladder: stone tools, a stone sword, an iron pickaxe, a shield, an iron sword, a bucket, a home base, iron armour, golden boots, a bow and arrows, then the Nether, blaze rods, Eyes of Ender, the stronghold and the dragon. Each rung is something the planner can already do, and progress is only ever read off the world, never off a counter.
 
@@ -226,23 +224,13 @@ In Survival, with `BUILD_DESIGNER=jev`, or with `auto` and no OpenRouter key, Je
 
 The building model defaults to `anthropic/claude-opus-5.5`. Recovery advice can only select implemented actions and has call, time, and execution limits. See [`.env.example`](.env.example) for connection and viewer settings. Keep credentials in `.env`, which is excluded from Git.
 
-## Watching Jev think
+## Seeing what Jev decided
 
-The **Observatory** is a local browser view of the bot's surroundings and reasoning:
-
-- Orbit, behind-the-bot, first-person, and top-down cameras over the loaded terrain, with textures from your local Minecraft installation and route and build overlays.
-- **Inside Jev's head**: a running count of Jev calls, their median latency, tokens, and how often Jev asked the player instead of acting. For each decision, the question that was asked at every branch, the options offered, their probabilities, and how confident the answer was. Single-option steps are labelled as never having reached the model.
-- **This run**: a persistent ledger of the current request or dream, kept by the bot across restarts: elapsed time, restarts, Jev calls and tokens, split by the kind of question asked. Every finished run adds a line to [`docs/run-ledger.md`](docs/run-ledger.md).
-- Each chat request as its own event, with every typed answer from the interpretation call and the catalog walk that named the item; clarifying questions with the confidence that caused them; recovery events with Jev's choice and its probabilities.
-- A timeline, replay, recording export and import, and live stop and resume.
-
-Enable it with `JEV_DASHBOARD_PORT=3040` when starting the bot, or browse recordings and the illustrated sample without a bot:
-
-```sh
-npm run harness
-```
-
-Open [localhost:3040](http://127.0.0.1:3040). See the [Observatory guide](docs/observatory.md) for controls, textures, and recordings.
+- **The console.** Each step prints a JSON line: the step, the decision behind it (the question, the path taken and Jev's probabilities) and any error.
+- **The decision trail.** Every decision is kept with the task in `.bot-state/`, including single-option steps marked as never having reached the model and code defaults used when Jev could not be reached.
+- **The flight recording.** What the bot saw and did, sampled every few seconds and at every decision, written to `.bot-state/flight/` and kept for a day (`JEV_FLIGHT=0` turns it off). `node scripts/flight.js --deaths` prints the frames before each death; `node scripts/audit-day.js` audits a day for standing still, retries, pacing and damage.
+- **The run ledger.** Jev calls, tokens and latency per run, split by the kind of question, written to `.bot-state/run-ledger.md` as each run finishes.
+- **The questions themselves.** [docs/decisions.md](docs/decisions.md) lists every question with its options, trigger and fallback.
 
 ## Optional operator commands
 
@@ -265,7 +253,8 @@ The application is CommonJS JavaScript. The main pieces are:
 | Recipes, combined tasks, and execution | `src/knowledge.js`, `src/batch-plan.js`, `src/item-bundle.js`, `src/work.js` |
 | Survival, travel, and recovery | `src/survival.js`, `src/stillness.js` (the stall rule), `src/combat-estimate.js`, `src/torches.js`, `src/movement.js`, `src/boats.js`, `src/recovery-adviser.js` |
 | Beating the game | `src/game-progress.js` (the ladder), `src/strategy.js` (which rung next), `src/dream.js` |
-| Schematics, design review, and viewer | `src/designer.js`, `src/design-review.js`, `src/harness/`, `public/harness/` |
+| Schematics and design review | `src/designer.js`, `src/design-review.js` |
+| The flight recording | `src/recorder/` |
 
 Run the local checks without a Minecraft server or API key:
 
@@ -304,7 +293,7 @@ Two harnesses measure the bot playing on its own:
 
 Both need their own disposable server; see [scripts/README.md](scripts/README.md).
 
-Contributions are most useful when they turn a concrete gameplay failure into a small reproducible test and an improvement to a general capability. See [CONTRIBUTING.md](CONTRIBUTING.md) for the two design rules, what to include with each kind of change, and how the evals fit in. Review Observatory recordings before sharing them: they can contain chat, player names, and world coordinates. Unit tests run on every push and pull request; the live Jev evals run on `main` when the repository has a TypeSafe key configured.
+Contributions are most useful when they turn a concrete gameplay failure into a small reproducible test and an improvement to a general capability. See [CONTRIBUTING.md](CONTRIBUTING.md) for the two design rules, what to include with each kind of change, and how the evals fit in. Review flight recordings and logs before sharing them: they can contain chat, player names, and world coordinates. Unit tests run on every push and pull request; the live Jev evals run on `main` when the repository has a TypeSafe key configured.
 
 JevBot is released under the [MIT License](LICENSE).
 

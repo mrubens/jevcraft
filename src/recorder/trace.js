@@ -58,25 +58,6 @@ function goalView(goal = {}) {
     blueprint: goal.blueprint && { origin: goal.blueprint.origin, blocks: goal.blueprint.blocks?.slice(0, 6000) },
   });
 }
-function classify(row) {
-  if (row.disconnected || row.connection) return ['connection', 'Connection changed'];
-  if (row.death) return ['danger', 'Player died'];
-  if (row.acceptance || row.result) return ['result', `Run ${row.acceptance || row.result}`];
-  if (row.navigationStall) return ['error', 'Navigation stalled'];
-  if (row.navigationRecovery) return ['recovery', 'Navigation recovery'];
-  if (row.handover) return ['action', `Item handover · ${row.handover.event || 'update'}`];
-  if (row.mobHunt) return ['action', `Mob encounter · ${row.mobHunt.outcome}`];
-  if (row.strongholdSearch) return ['action', `Stronghold search · ${human(row.strongholdSearch.kind)}`];
-  if (row.error || row.lastError) return ['error', row.error || row.lastError];
-  if (row.survivalAction?.action) return ['survival', human(row.survivalAction.action)];
-  if (row.step?.action) return ['action', `${human(row.step.action)} ${human(row.step.item || row.step.block || '')}`.trim()];
-  if (row.chat) return ['chat', row.chat];
-  if (row.start) return ['start', 'Request started'];
-  if (row.scenario) return ['start', row.scenario];
-  if (row.resumed) return ['start', 'Saved request resumed'];
-  if (row.health !== undefined) return ['vitals', 'Vitals updated'];
-  return ['observation', 'World observed'];
-}
 function decisionSource(decision, kind) {
   // A chat request is understood by Jev before anything else happens, and a
   // clarifying question is Jev saying it was not sure enough to act.
@@ -86,42 +67,6 @@ function decisionSource(decision, kind) {
   if (decision?.fallback) return 'fallback';
   if (decision?.judgments?.length && ['decision', 'action'].includes(kind)) return 'jev';
   return kind === 'survival' || kind === 'danger' ? 'survival' : 'rules';
-}
-
-function legacyFrames(rows, goal = {}) {
-  // Goal files provide current context, never retroactive inventory or health.
-  let state = { goal: goalView({ kind: goal.kind, request: goal.request, item: goal.item, count: goal.count,
-    interpretation: goal.interpretation, itemResolution: goal.itemResolution }), connected: null };
-  let lastAction, lastDecision;
-  const frames = [], sizes = []; let bytes = 0;
-  for (const [index, row] of rows.entries()) {
-    const decision = row.decision && !row.decision.stale ? row.decision : row.decision || state.decision;
-    const action = row.survivalAction;
-    const newSurvival = action?.at && action.at !== lastAction;
-    const newDecision = row.decision?.at && row.decision.at !== lastDecision;
-    let [kind, label] = classify({ ...row, survivalAction: newSurvival ? action : undefined });
-    if (newDecision && kind === 'observation') [kind, label] = ['decision', 'Decision selected'];
-    if (action?.at) lastAction = action.at;
-    if (row.decision?.at) lastDecision = row.decision.at;
-    const at = row.at || row.time || (newSurvival ? action.at : newDecision ? row.decision.at : null);
-    const nested = row.navigationStall || row.navigationRecovery || row.handover || row.start || {};
-    state = { ...state, goal: { ...state.goal,
-      ...(row.start && { request: row.start.request, kind: row.start.kind, count: row.start.count }),
-      ...(row.scenario && !state.goal.request && { request: row.scenario }),
-      ...(row.step && { step: row.step }), ...(action && { survivalAction: action }),
-      ...(row.status && { status: row.status }), error: row.error || row.reason || null,
-      ...(decision?.state?.acquisition?.dependencies && { dependencies: decision.state.acquisition.dependencies }),
-    }, decision,
-    ...(position(row.position || nested.position) && { position: position(row.position || nested.position) }),
-    ...(row.inventory && { inventory: row.inventory }), ...(row.tools && { tools: row.tools }),
-    ...Object.fromEntries(['health', 'food', 'oxygen', 'dimension'].filter(k => row[k] !== undefined).map(k => [k, row[k]])),
-    };
-    const frame = { id: index + 1, at, kind, label: String(label).slice(0, 240), source: decisionSource(newDecision ? row.decision : null, kind),
-      snapshot: clean(state), detail: clean(row) };
-    frames.push(frame); const size = Buffer.byteLength(JSON.stringify(frame)); sizes.push(size); bytes += size;
-    while (frames.length > MAX_FRAMES || (bytes > MAX_TRACE_BYTES && frames.length > 1)) { frames.shift(); bytes -= sizes.shift(); }
-  }
-  return frames.slice(-MAX_FRAMES);
 }
 
 // A once-a-second heartbeat fills the window in ten minutes and would carry
@@ -152,4 +97,4 @@ class Trace {
     latestId: this.serial, limited: this.serial > this.frames.length }; }
 }
 
-module.exports = { MAX_FRAMES, clean, position, goalView, classify, decisionSource, legacyFrames, Trace };
+module.exports = { MAX_FRAMES, clean, position, goalView, decisionSource, Trace };

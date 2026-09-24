@@ -114,8 +114,8 @@ class Ledger {
     return run;
   }
   get(id) { return (id && this.state.runs[id]) || this.state.closed.find(r => r.id === id) || null; }
-  // What the Observatory shows: the named run, or the standing bucket when
-  // nothing is running, with the totals worked out for right now.
+  // A summary of the named run, or of the standing bucket when nothing is
+  // running, with the totals worked out for right now.
   view(id) {
     const run = this.get(id) || this.state.idle;
     return { current: summarize(run, this.now()), recent: this.state.closed.slice(-3).reverse().map(r => summarize(r, this.now())) };
@@ -148,7 +148,7 @@ function duration(ms) {
 
 const HEADER = `# Run ledger
 
-One line per finished run, written by the bot itself (\`src/ledger.js\`): a dream from the moment it was given until it was satisfied or cleared, or a single player request until it completed or blocked. Tokens are Jev's, input plus output, over every call the run made; restarts count the processes that carried the run after the one that started it. A request resumed after it blocked gets a second line with its running totals when it ends again. The live figures, with the breakdown by question kind, are in the Observatory.
+One line per finished run, written by the bot itself (\`src/ledger.js\`): a dream from the moment it was given until it was satisfied or cleared, or a single player request until it completed or blocked. Tokens are Jev's, input plus output, over every call the run made; restarts count the processes that carried the run after the one that started it. A request resumed after it blocked gets a second line with its running totals when it ends again. The breakdown by question kind is kept in \`.bot-state/\` with the run.
 
 | Started (UTC) | Run | Outcome | Elapsed | Restarts | Jev calls | Tokens |
 |---|---|---|---|---|---|---|

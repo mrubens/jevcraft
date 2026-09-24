@@ -30,3 +30,6 @@ artifacts/
 # Local tooling and logs
 .claude/
 logs/
+
+# Written by bots started before the ledger moved to .bot-state/
+docs/run-ledger.md

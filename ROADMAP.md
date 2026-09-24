@@ -16,7 +16,7 @@ These are development priorities, not release dates. Existing capabilities and s
 - **Keep moving in natural terrain.** Swimming, shore exits, uneven footing, cave access, and getting off scaffolding; a failed approach is tried a different way before it is repeated.
 - **Recover without losing the request.** Tool replacement, food, death recovery, and resuming after a disconnect, with blockers specific enough for a player to help with.
 - **Make interruptions predictable.** Stop stays responsive during travel, model calls, crafting and construction, and the useful parts of a paused task are kept.
-- **Keep chat brief and useful.** Meaningful changes and plain-language problems in chat; the detail in the Observatory.
+- **Keep chat brief and useful.** Meaningful changes and plain-language problems in chat; the detail in the decision log and flight recording.
 
 Success looks like an ordinary play session in which Jev completes multi-item requests, survives routine interruptions, and resumes without repeating work or requiring a restart.
 
@@ -42,7 +42,7 @@ Success looks like Jev finding supplies beyond the immediate area, returning rel
 
 - **Easier setup:** clearer configuration, connection diagnostics, and contributor instructions.
 - **Repeatable validation:** automated checks and reproducible isolated gameplay fixtures, with failures that are easy to inspect.
-- **Better observability:** clearer material plans, progress, blockers, and model usage in the Observatory; recordings that make regressions easier to reproduce.
+- **Better observability:** clearer material plans, progress, blockers, and model usage in the logs; recordings that make regressions easier to reproduce.
 - **Version maintenance:** keep Minecraft recipes, protocol compatibility, and supported-version documentation aligned.
 
 Contributions are especially useful when they turn a concrete gameplay failure into a small, reproducible test and an improvement to a general capability.

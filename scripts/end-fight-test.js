@@ -24,16 +24,13 @@ const id = Date.now().toString(36), username = prior?.username || `Fight${id}`, 
 fs.mkdirSync(directory, { recursive: true });
 const log = data => { const line = JSON.stringify({ at: new Date().toISOString(), ...data }); console.log(line); fs.appendFileSync(path.join(directory, 'events.jsonl'), line + '\n'); };
 async function main() {
-const harness = process.env.END_DASHBOARD_PORT ? await require('../src/harness/server').startHarness({
-  port: Number(process.env.END_DASHBOARD_PORT), artifacts: path.join(__dirname, '..', 'artifacts'),
-}) : null;
+const recorder = require('../src/recorder').startRecorder({ directory: path.join(directory, 'flight'), label: username });
 const bot = mineflayer.createBot({ host: '127.0.0.1', port: fixturePort, username, version: '26.1', auth: 'offline' });
 bot.loadPlugin(compatibilityPlugin); bot.loadPlugin(pathfinder);
 const task = new Task('controlled End fight'), timer = setTimeout(() => task.cancel(), 30 * 60000), client = new TypeSafe();
 let goal, detach, observation, deaths = 0, minimumHealth = 20, finishing = false;
 const save = () => { fs.writeFileSync(path.join(directory, 'goal.json'), JSON.stringify(goal, null, 2)); observation?.sample('step', undefined, goal); };
-observation = harness?.attach(bot, { getGoal: () => goal, server: `127.0.0.1:${fixturePort} · controlled End trial` });
-if (harness) log({ observatory: harness.url, directory });
+observation = recorder.attach(bot, { getGoal: () => goal, server: `127.0.0.1:${fixturePort} · controlled End trial` });
 bot.on('death', () => { deaths++; log({ death: true, position: bot.entity.position, dimension: dimension(bot) }); task.cancel(); });
 bot.on('health', () => { minimumHealth = Math.min(minimumHealth, bot.health); log({ health: bot.health, food: bot.food, position: bot.entity.position }); });
 bot._client.on('entity_velocity', packet => { if (packet.entityId === bot.entity?.id) log({ playerVelocity: packet.velocity, position: bot.entity.position }); });
@@ -86,7 +83,7 @@ bot.once('spawn', async () => {
   } catch (err) { log({ result: 'FAIL', error: err.stack, position: bot.entity?.position, health: bot.health, deaths, directory }); process.exitCode = 1; }
   finally {
     finishing = true; detach?.(); clearTimeout(timer); bot.pathfinder.setGoal(null); bot.clearControlStates();
-    if (harness) { fs.writeFileSync(path.join(directory, 'trace.json'), JSON.stringify(harness.trace.view())); await harness.close(); }
+    fs.writeFileSync(path.join(directory, 'trace.json'), JSON.stringify(recorder.trace.view())); await recorder.close();
     bot.quit(); setTimeout(() => process.exit(process.exitCode || 0), 500);
   }
 });

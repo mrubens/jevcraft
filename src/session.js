@@ -46,8 +46,8 @@ function unworkable(bot, spec) {
   return null;
 }
 
-function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), harness,
-  runLedger = path.join(__dirname, '..', 'docs', 'run-ledger.md') } = {}) {
+function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), recorder,
+  runLedger = path.join(stateDirectory, 'run-ledger.md') } = {}) {
   let ended = false, spawned = false, resolveClosed;
   const connectedAt = Date.now();
   const closed = new Promise(resolve => { resolveClosed = resolve; });
@@ -114,7 +114,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   const world = new WorldKnowledge(new GoalStore(path.join(stateDirectory, `${memoryIdentity}-world.json`)),
     { seedFrom: memoryIdentity === identity ? [store.read(), idleStore.read()] : [] });
   // The cost ledger: every Jev call charged to the request or dream it
-  // served, kept per world, and summarized to docs/run-ledger.md when a run
+  // served, kept per world, and summarized to run-ledger.md in the state directory when a run
   // ends. The client feeds it; the session only says which run is paying.
   const ledger = new Ledger(path.join(stateDirectory, `${memoryIdentity}-ledger.json`), {
     age: () => bot.time?.age, onClose: run => { if (runLedger) appendSummary(runLedger, run); } });
@@ -288,20 +288,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (saved !== current) bot.chat(`Back to your earlier task: ${saved.request}.`);
     launch(saved);
   }
-  observation = harness?.attach(bot, {
+  // The flight recording: what the bot sees and decides, for the audits.
+  observation = recorder?.attach(bot, {
     server: `${config.host}:${config.port}`,
     getGoal: () => active?.goal || store.read() || {},
-    getLedger: () => ledger.view(active?.goal.ledgerRun ?? dreamStore.read()?.ledgerRun),
-    controls: {
-      stop: async () => { if (ended) throw new Error('Connection ended'); invalidateRequests(); await stop(); },
-      resume: async options => {
-        if (ended || !ready) throw new Error('The bot is not ready');
-        const revision = generation; pendingRequests++;
-        const operation = pending.then(() => resume(revision, options));
-        pending = operation.catch(() => {}).finally(() => { pendingRequests--; });
-        return operation;
-      },
-    },
   });
 
   // One open question per player, answered within a minute and a half or

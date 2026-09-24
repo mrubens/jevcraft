@@ -9,7 +9,6 @@ const { Vec3 } = require('vec3');
 const { Ledger, withRun, summaryLine, appendSummary, duration, HEADER, TICKS_PER_DAY } = require('../src/ledger');
 const { TypeSafe, choice } = require('../src/typesafe');
 const { decideTree } = require('../src/decisions');
-const { startHarness } = require('../src/harness/server');
 
 const scratch = t => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-ledger-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true })); return dir; };
 const clock = start => { let now = start; return { now: () => now, tick: ms => { now += ms; } }; };
@@ -147,22 +146,3 @@ test('tree decisions carry their kind to the client', async () => {
   assert.equal(asked.kind, 'survival'); assert.deepEqual(decision.path, ['gather']);
 });
 
-test('the Observatory serves the attached ledger with the live view and hides it when it cannot be read', async t => {
-  const dir = scratch(t);
-  const harness = await startHarness({ port: 0, artifacts: path.join(dir, 'artifacts'), stateDirectory: path.join(dir, 'state') });
-  t.after(() => harness.close());
-  const bot = new EventEmitter(); bot.username = 'TestJev'; bot.entity = { id: 1, position: new Vec3(0, 64, 0), yaw: 0, pitch: 0 }; bot.entities = {};
-  bot.health = 20; bot.food = 20; bot.game = { dimension: 'overworld' }; bot.inventory = { items: () => [] }; bot.blockAt = () => null;
-  const ledger = new Ledger(path.join(dir, 'state', 'ledger.json'), { processId: 'p1' });
-  const run = ledger.open({ kind: 'dream', name: 'dream · beat the game' });
-  ledger.record({ run: run.id, kind: 'survival', usage: { input_tokens: 500, output_tokens: 20 }, latencyMs: 400 });
-  let readable = true;
-  harness.attach(bot, { getLedger: () => { if (!readable) throw new Error('unreadable'); return ledger.view(run.id); }, controls: {} });
-  bot.emit('spawn');
-  const get = async () => (await fetch(`${harness.url}/api/sessions/live`, { headers: { host: new URL(harness.url).host } })).json();
-  const live = await get();
-  assert.equal(live.ledger.current.name, 'dream · beat the game');
-  assert.deepEqual([live.ledger.current.calls, live.ledger.current.tokens, live.ledger.current.byKind[0].key], [1, 520, 'survival']);
-  readable = false;
-  assert.equal((await get()).ledger, null);
-});

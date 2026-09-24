@@ -34,11 +34,8 @@ const goalStore = new GoalStore(path.join(directory, 'goal.json'));
 const log = entry => { console.log(JSON.stringify(entry)); fs.appendFileSync(path.join(directory, 'events.jsonl'), JSON.stringify(entry) + '\n'); };
 async function main() {
 let currentGoal = { request, status: 'starting' }, observation, winWitness;
-const harness = process.env.ACCEPT_DASHBOARD_PORT ? await require('../src/harness/server').startHarness({
-  port: Number(process.env.ACCEPT_DASHBOARD_PORT), artifacts: path.join(__dirname, '..', 'artifacts'),
-  stateDirectory: path.join(__dirname, '..', '.bot-state'),
-}) : null;
-if (harness) log({ observatory: harness.url, run: id });
+// The run's flight recording, kept with its evidence.
+const recorder = require('../src/recorder').startRecorder({ directory: path.join(directory, 'flight'), label: username });
 const bot = mineflayer.createBot({
   host: process.env.MC_HOST || 'localhost', port: acceptancePort,
   username, auth: 'offline', version: process.env.MC_VERSION || false,
@@ -46,7 +43,7 @@ const bot = mineflayer.createBot({
 bot.loadPlugin(compatibilityPlugin);
 bot.loadPlugin(pathfinder);
 bot.once('spawn', () => require('../src/speech').quietRepeats(bot));
-observation = harness?.attach(bot, { getGoal: () => currentGoal, server: `${process.env.MC_HOST || 'localhost'}:${process.env.MC_PORT || 25565} · acceptance ${id}` });
+observation = recorder.attach(bot, { getGoal: () => currentGoal, server: `${process.env.MC_HOST || 'localhost'}:${process.env.MC_PORT || 25565} · acceptance ${id}` });
 const toolState = () => bot.inventory.items().filter(i => bot.registry.itemsByName[i.name]?.maxDurability)
   .map(i => ({ name: i.name, slot: i.slot, durabilityUsed: i.durabilityUsed || 0,
     remaining: bot.registry.itemsByName[i.name].maxDurability - (i.durabilityUsed || 0) }));
@@ -182,8 +179,8 @@ bot.once('spawn', async () => {
     finishing = true; clearTimeout(timer);
     if (winWitness) { fs.writeFileSync(path.join(directory, 'win-witness.json'), JSON.stringify(winWitness.state, null, 2)); winWitness.detach(); }
     receiver?.quit(); bot.quit();
-    if (harness) fs.writeFileSync(path.join(directory, 'observatory.json'), JSON.stringify({ format: 'jev-harness', version: 1, ...harness.trace.view() }));
-    await harness?.close();
+    fs.writeFileSync(path.join(directory, 'trace.json'), JSON.stringify(recorder.trace.view()));
+    await recorder.close();
     setTimeout(() => process.exit(process.exitCode || 0), 500);
   }
 });

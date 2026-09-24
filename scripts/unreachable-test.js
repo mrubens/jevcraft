@@ -33,7 +33,7 @@ observer.once('spawn', async () => {
   try {
     await observer.waitForChunksToLoad();
     child = spawn(process.execPath, ['index.js'], { cwd: root, env: { ...process.env, MC_HOST: host, MC_PORT: String(port),
-      MC_VERSION: '26.1', MC_USERNAME: username, JEV_DASHBOARD_PORT: '' } });
+      MC_VERSION: '26.1', MC_USERNAME: username } });
     for (const stream of [child.stdout, child.stderr]) stream.on('data', data => fs.appendFileSync(path.join(directory, 'bot.log'), data));
     await until(() => observer.players[username]?.entity && replies.some(r => r.startsWith('Call me Jev')), 'ready bot');
     log({ scenario: 'controlled impossible item request over real chat', username, witness, server: `${host}:${port}`, gameMode: observer.game.gameMode });

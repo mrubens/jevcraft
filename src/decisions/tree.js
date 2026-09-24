@@ -5,7 +5,7 @@ const { choice } = require('../typesafe');
 // explicit conditional premise; questions in the batch never read each other.
 // A Jev outage must not stop the bot. When the service fails after its own
 // retries and the caller supplies a fallback rule, the tree is walked with
-// that rule instead and the decision says so, so the Observatory shows a
+// that rule instead and the decision says so, so the decision log shows a
 // code default where a judgment would have been. A cancelled task and a
 // rejected request (4xx) still throw: those are not outages.
 const TRANSIENT = new Set([408, 429, 500, 502, 503, 504, 529]);

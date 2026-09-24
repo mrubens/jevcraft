@@ -86,7 +86,7 @@ function stepLine(goal, step, decision) {
   switch (step.action) {
     case 'combined_request': return detail ? stepLine(goal, detail, decision) : null;
     // Once per resource, not once per tree: which trunk Jev picked is in the
-    // Observatory, and a line per tree drowned the lines that mattered.
+    // decision log, and a line per tree drowned the lines that mattered.
     case 'mine': return `Getting ${step.count ? `${step.count} ` : ''}${plural(step.count, step.drops || step.block)}.`;
     case 'craft': return `Crafting ${step.count ? `${step.count} ` : ''}${plural(step.count, step.item)}.`;
     case 'smelt': return `Smelting ${step.count > 1 ? `${step.count} ` : ''}${plural(step.count, step.item)}.`;
