@@ -60,7 +60,13 @@ function verdict(trial, { now = Date.now() } = {}) {
   const state = JSON.parse(fs.readFileSync(path.join(STATE, `${IDENTITY}.json`), 'utf8'));
   const survival = (() => { try { return JSON.parse(fs.readFileSync(path.join(STATE, `${IDENTITY}-survival.json`), 'utf8')); } catch (_) { return state.survival; } })();
   state.survival = survival || state.survival;
-  const deaths = new Set([...a.deaths.map(d => d.t), ...(state.survival?.deaths || []).map(d => Date.parse(d.at)).filter(t => t >= from && t <= to)]);
+  // One death, however many records: the flight's damage frame and the
+  // survival record of the same death differ by milliseconds, and a set of
+  // exact times counted trial 21's one death twice.
+  const deaths = new Set();
+  for (const t of [...a.deaths.map(d => d.t), ...(state.survival?.deaths || []).map(d => Date.parse(d.at)).filter(t => t >= from && t <= to)].sort((x, y) => x - y)) {
+    if (![...deaths].some(d => Math.abs(d - t) < 10000)) deaths.add(t);
+  }
   // A loop: the same problem persisted three times, or a step flipping.
   const loops = [...Object.entries(a.problems).filter(([, v]) => v.count >= 3).map(([p, v]) => `${v.count}× ${p.slice(0, 120)}`),
     ...a.flips.map(f => `flipping ${f.between}`)];

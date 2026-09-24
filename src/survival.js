@@ -436,6 +436,10 @@ class Survival {
     // one. The dream run charged three from a river at ten health and stood
     // in the water, shot, for thirty-seven seconds (2026-09-24).
     if (!ground.length || ground.length !== shooters.length || shooters.length > 3 || (shooters.length > 1 && bot.health < 14)) return false;
+    // A charge that could not get going rests: re-chosen every tick, trial
+    // 21's bot raised its shield for a moment a tick and stood forty seconds
+    // under a skeleton's arrows across uneven ground (2026-09-24).
+    if (isSetAside(this, 'close_on_shooter', 'here')) return false;
     if (bot.entity.isInWater || inWater(bot) || bot.entity.onGround === false) return false;
     let target = ground[0];
     const shielded = bot.inventory.slots?.[45]?.name === 'shield';
@@ -450,7 +454,7 @@ class Survival {
       while (Date.now() < end && bot.health >= 4) {
         const gap = bot.entity.position.distanceTo(e.position);
         if (gap < best - 0.5) { best = gap; bestAt = Date.now(); }
-        else if (Date.now() - bestAt > 3000 && !canStrike(bot, e)) break;
+        else if (Date.now() - bestAt > 3000 && !canStrike(bot, e)) { setAside(this, 'close_on_shooter', 'here', 'three seconds without getting nearer', 15000); return false; }
         task.check(); checkAir(bot);
         // The one down, the next: nearest of the others still in sight.
         if (bot.entities[e.id] !== e || e.isValid === false) {
@@ -469,8 +473,9 @@ class Survival {
         }
         const flat = e.position.minus(bot.entity.position); flat.y = 0;
         const ahead = bot.entity.position.plus(flat.scaled(1 / Math.max(flat.norm(), 1))).floored();
-        const level = firmStep(bot, ahead), up = !level && firmStep(bot, ahead.offset(0, 1, 0));
-        if (!level && !up) { if (!shielded) return false; raiseShield(bot); await sleep(700); break; }
+        // Level, a step up, or a step down: a block's drop is walked.
+        const level = firmStep(bot, ahead), up = !level && firmStep(bot, ahead.offset(0, 1, 0)), down = !level && !up && firmStep(bot, ahead.offset(0, -1, 0));
+        if (!level && !up && !down) { setAside(this, 'close_on_shooter', 'here', 'no firm ground toward the shooter', 15000); return false; }
         await move(bot, task, { label: 'close_on_shooter', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false,
           why: 'running at a lone shooter over ground checked firm', look: e.position.offset(0, 1.5, 0), maxMs: 250, tick: 50, until: () => canStrike(bot, e) });
       }
