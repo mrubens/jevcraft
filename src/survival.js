@@ -1670,7 +1670,10 @@ class Survival {
         const at = bot.entity.position.floored();
         const key = `${at.x},${at.y},${at.z}`;
         mine.still = mine.still?.key === key ? { key, steps: mine.still.steps + 1 } : { key, steps: 0 };
-        if (mine.still.steps >= 4) { mine.still = null; this.abandonTarget(mine, 'four steps without moving', { recorded: true }); save(); return true; }
+        // Rested like any other failure: marked recorded when nothing was,
+        // the same ore was offered straight back and chosen fifteen times in
+        // five seconds (trial 29).
+        if (mine.still.steps >= 4) { mine.still = null; this.abandonTarget(mine, 'four steps without moving'); save(); return true; }
         // Steps that succeed without getting closer are a failure too: the
         // mine paced four blocks back and forth under a copper it could not
         // reach, every step a success, and never set it aside.

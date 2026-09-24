@@ -1293,6 +1293,10 @@ test('night-mine steps that do not move the bot are given up after four, before 
   for (; n < 12 && !survival.state.nightMine?.lastAbandoned; n++) await survival.nightMine(new Task('night', 'mine'), { kind: 'win' }, () => {});
   assert.equal(survival.state.nightMine.lastAbandoned?.why, 'four steps without moving');
   assert(n <= 5, `given up after ${n} steps, not twelve`);
+  const { position } = survival.state.nightMine.lastAbandoned.target ? { position: survival.state.nightMine.lastAbandoned.target } : {};
+  if (survival.state.nightMine.lastAbandoned.target && survival.state.nightMine.targetOre !== 'branch') {
+    assert(require('../src/progress').attemptsFor(survival).resting('night_mine', position), 'the ore rests, so it is not offered straight back');
+  }
 });
 
 test('no shelter site and no blocks, but a pickaxe: the night is dug into the ground, not failed every eight seconds', async () => {
