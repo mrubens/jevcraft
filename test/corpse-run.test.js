@@ -35,6 +35,14 @@ test('in the Overworld with no kit the run waits for daylight', () => {
   assert(corpseRun(bot, goal), 'by day');
 });
 
+test('daylight is no help below ground: a cave death waits for the kit', () => {
+  const { bot, goal } = world();
+  goal.survival.deaths[0].position = { x: 400, y: 15, z: 0 };
+  assert.equal(corpseRun(bot, goal), null, 'unarmoured, by day, to a cave at y 15: no');
+  wearKit(bot);
+  assert(corpseRun(bot, goal), 'with the kit on');
+});
+
 test('what is worth going back for: the kit and supplies, not blocks or stone tools', () => {
   assert.deepEqual(worth({ iron_chestplate: 1, diamond_sword: 1, blaze_rod: 8, dirt: 40, stone_pickaxe: 1, cobblestone: 64, ender_pearl: 2 }),
     { iron_chestplate: 1, diamond_sword: 1, blaze_rod: 8, ender_pearl: 2 });

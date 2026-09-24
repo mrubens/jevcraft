@@ -54,7 +54,7 @@ function corpseRun(bot, goal, now = Date.now()) {
   // killed it once killed it again (2026-09-24 00:49). In the Nether the
   // kit is worn first; in the Overworld the kit, or daylight. A far death's
   // drops keep meanwhile; a near one's may not, which is the price.
-  if (!fitToGo(bot)) return null;
+  if (!fitToGo(bot, run.position)) return null;
   // When the drops started to age: at the death, if the bot came back to
   // life within the loaded ground round them; else when it came near.
   if (!run.loadedAt && run.respawn && flat(run.respawn, run.position) <= TICKING) run.loadedAt = run.deathAt;
@@ -63,10 +63,16 @@ function corpseRun(bot, goal, now = Date.now()) {
   return run;
 }
 
-function fitToGo(bot) {
+// Daylight is no help below ground: the dream run went back unarmoured by
+// day to a cave at y 15 where two zombies had just killed it, and they
+// killed it again (2026-09-24). Below sea level the kit is needed as in the
+// Nether.
+const SEA_LEVEL = 60;
+function fitToGo(bot, where) {
   const { kitReady } = require('./mob-policy');
   if (kitReady(bot)) return true;
   if (dim(bot.game?.dimension) !== 'overworld') return false;
+  if (where && where.y < SEA_LEVEL) return false;
   const t = bot.time?.timeOfDay ?? 0;
   return t < 12500 || t >= 23500;
 }
