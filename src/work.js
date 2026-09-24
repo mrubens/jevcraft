@@ -504,7 +504,11 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
     const radius = 24 * (1 + Math.floor(search.leg / 8));
     let target = pos(search.origin).offset(Math.round(Math.cos(angle) * radius), 0, Math.round(Math.sin(angle) * radius));
     if (frontier) target = explorationTarget(search, resource, bot.entity.position);
-    const resourceNames = [...new Set([...Object.entries(MINEABLE).filter(([name, data]) => name === resource || data.drops === resource).map(([name]) => name),
+    // Any wood is wood: a search for oak walked a hundred and twenty-eight
+    // legs past spruce and birch in trial 9 and reached dusk with no tools
+    // (2026-09-24). The log step takes whatever wood is in view (logInView).
+    const resourceNames = LOG.test(resource) ? Object.keys(bot.registry.blocksByName).filter(n => LOG.test(n))
+      : [...new Set([...Object.entries(MINEABLE).filter(([name, data]) => name === resource || data.drops === resource).map(([name]) => name),
       ...(bot.registry.blocksByName[resource] ? [resource] : []), ...sourceBlocks(bot.registry, resource)])];
     const observed = [...new Map([...find(bot, resourceNames, 128, 8), ...knownResourceLocations(bot, goal, resourceNames)]
       .map(p => [`${p}`, p])).values()].filter(p => !reservedForConstruction(goal, p) && safeFromHostiles(bot, p) &&

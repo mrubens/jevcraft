@@ -847,9 +847,12 @@ class Survival {
     return null;
   }
 
+  // True when it did something toward a shelter; false when there is none
+  // to be had here for now (the caller then leaves the tick to the work).
   async refugeStep(task, goal, save) {
     const bot = this.bot;
-    if (await reachShore(bot, task, goal, save, { move: this.actions.navigate })) return;
+    if (isSetAside(this, 'refuge', 'anywhere')) return false;
+    if (await reachShore(bot, task, goal, save, { move: this.actions.navigate })) return true;
     let refuge = await this.reachableRefuge(task, goal, save, this.currentShelter());
     // Last night's pocket beside a flooded cave is not gone back to from
     // outside it: the night mine had nowhere to go there, and the bot waited
@@ -870,19 +873,28 @@ class Survival {
       }
       // No site to walk to: the night is spent sealed in where the bot
       // stands, as the unreachable-shelter rule above intends.
-      if (!site && await this.sealHere(task, goal, save, threats(bot).filter(t => t.visible))) return;
+      if (!site && await this.sealHere(task, goal, save, threats(bot).filter(t => t.visible))) return true;
       // No site, no blocks: straight down into rock and a block over the
       // head, the player's way on a sand island at dusk.
-      if (!site && await this.shaftPocket(task, goal, save)) return;
+      if (!site && await this.shaftPocket(task, goal, save)) return true;
       // No site and no blocks, but a pickaxe: into the ground. A staircase
       // into rock is a shelter and a mine at once. The dream run came back
       // from the Nether at dusk with one netherrack and an iron pickaxe, and
       // failed to find a shelter site every eight seconds on the savanna.
       if (!site && this.canNightMine(goal)) {
         this.state.nightMine ||= { startedAt: Date.now(), origin: { ...bot.entity.position.floored() }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };
-        if (await this.nightMine(task, goal, save)) return;
+        if (await this.nightMine(task, goal, save)) return true;
       }
-      if (!site) throw new Error('No reachable, supported 3 by 3 shelter site observed');
+      // Nowhere, nothing to build with, no ground to dig: failing that every
+      // tick was trial 9's loop at minute ten, with no wood yet to make any
+      // of it possible (2026-09-24). It rests three minutes and the work
+      // goes on, which is what finds the wood.
+      if (!site) {
+        setAside(this, 'refuge', 'anywhere', 'no reachable site, no blocks and no ground to dig', 180000);
+        delete this.state.nightPlan;
+        this.report(goal, save, { action: 'no_shelter_here', reason: 'no reachable site, no blocks and no ground to dig' });
+        return false;
+      }
       refuge = { origin: { ...site }, dimension: bot.game.dimension, createdAt: new Date().toISOString() };
       this.state.shelters.push(refuge); save();
     }
@@ -1711,7 +1723,7 @@ class Survival {
     // left the half-built shell standing in the dark.
     if (needsShelter && plan?.plan === 'shelter' && !(bedReady && sleepable(bot))) {
       plan.until = Date.now() + 120000;
-      await this.refugeStep(task, goal, save); onStep(goal); return true;
+      if (await this.refugeStep(task, goal, save) !== false) { onStep(goal); return true; }
     }
     if (!needsShelter && this.state.recovery?.status === 'pending') {
       this.report(goal, save, { action: 'recover_items', origin: this.state.recovery.position });

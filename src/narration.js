@@ -45,9 +45,11 @@ const SURVIVAL = {
   // sight, and read as the bot not seeing it (the user, 2026-09-24).
   dig_in: (goal, action) => {
     const known = [...new Set((action.threats || []).map(t => name(t.name || t)))];
-    return known.length ? `Walling off from the ${known.join(' and the ')} until it passes.` : 'Something is shooting at me, so I\'m digging in until it passes.';
+    // Nothing seen: said as such, not guessed at.
+    return known.length ? `Walling off from the ${known.join(' and the ')} until it passes.` : 'Walling myself in until it is safe.';
   },
   wall_off: 'Cornered, so I\'m walling the tunnel shut.',
+  no_shelter_here: 'Nowhere to shelter here and nothing to build one with. I\'ll keep going and keep watch.',
   leave_lava_edge: 'Getting away from the lava before anything else.',
   return_to_surface: 'Heading back up to the surface.',
   recover_items: "Going back for the things I dropped.",
