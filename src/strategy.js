@@ -78,7 +78,7 @@ function strategyState(bot, goal, stage, options) {
   return {
     situation: 'On the way to beating the game (Nether, blaze rods, ender pearls, the stronghold, the dragon). Several things are open; choose which to do next. The ladder\'s order is a sensible default, not a rule.',
     ladderNext: stage.phase, minutesOnLadderNext: clock ? Math.round(clock.activeMs / 60000) : 0,
-    note: 'A step that has taken twenty working minutes is set aside for half an hour. Nothing skipped here is skipped for good: every step is done before the Nether.',
+    note: 'minutesOnLadderNext is how long the ladder\'s next step has been worked on without finishing; this is asked again every twenty of them. Another open step can go first. Nothing skipped here is skipped for good: every step is done before the Nether.',
     timeOfDay: t, daylightMinutesRemaining: Math.round(Math.max(0, DAY.DUSK - t) / 1200 * 10) / 10,
     health: bot.health, food: bot.food, experienceLevel: bot.experience?.level ?? 0,
     inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),

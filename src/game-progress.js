@@ -94,9 +94,9 @@ function preparationStage(bot, goal = {}) {
   return rung;
 }
 // Rungs that may wait their turn. Twenty minutes of work on one without
-// finishing sets it aside for half an hour and the ladder goes on to the
-// next: "a rung every couple of minutes", not a day on a shield. The wait
-// only reorders the ladder. A set-aside rung comes back as soon as nothing
+// finishing puts the choice of what next to Jev again (timeRung): "a rung
+// every couple of minutes", not a day on a shield. A wait only reorders
+// the ladder. A set-aside rung comes back as soon as nothing
 // else is left, so nothing on this list is ever skipped on the way to the
 // Nether. Pickaxes and armour are not on it: nothing after them works
 // without them.
@@ -325,9 +325,11 @@ function timeRung(bot, goal, phase, now = Date.now()) {
   const previous = goal.rungTime?.phase === phase ? rung.lastAt : now;
   rung.activeMs += Math.min(30000, Math.max(0, now - previous)); rung.lastAt = now;
   goal.rungTime = { phase, ...rung };
-  if (!DEFERRABLE.has(phase) || rung.activeMs < RUNG_BUDGET_MS) return false;
-  setAside(goal, 'rung', phase, `twenty working minutes without finishing the ${phase.replaceAll('_', ' ')}`, RUNG_WAIT_MS); delete clocks[phase]; delete goal.rungTime;
-  bot.chat?.(`The ${phase.replaceAll('_', ' ')} is taking too long. I'll come back to it and get on with the rest first.`);
+  // Every twenty working minutes without finishing, the strategy is asked
+  // again with the minutes said (minutesOnLadderNext): another open rung can
+  // go first, and that is Jev's to weigh, not a set-aside by rule.
+  if (!DEFERRABLE.has(phase) || rung.activeMs < RUNG_BUDGET_MS * ((rung.reasked || 0) + 1)) return false;
+  rung.reasked = (rung.reasked || 0) + 1; delete goal.strategy;
   return true;
 }
 
