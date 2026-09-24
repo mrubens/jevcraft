@@ -1112,18 +1112,47 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       let waitDigs = 0;
       const oreInReach = () => find(bot, WAIT_ORES, 5, 12).find(p => miningReach(bot, bot.entity.position, p) && bot.canDigBlock?.(bot.blockAt(p)) &&
         !isSetAside(goal || {}, 'reach', p) && safeFromHostiles(bot, p));
+      // Further off, walked to and back while a long batch cooks: an ore
+      // within sixteen, else a log while fewer than sixteen are carried.
+      // Twenty raw iron at the base is two hundred seconds, and the dream
+      // run stood by its furnace for four minutes of them with nothing in
+      // arm's reach (the user: "he's not doing anything").
+      const LOGS = Object.keys(bot.registry.blocksByName).filter(n => /_log$/.test(n) && !/stripped/.test(n));
+      const walkTarget = () => {
+        const ok = p => !isSetAside(goal || {}, 'reach', p) && safeFromHostiles(bot, p);
+        const ore = find(bot, WAIT_ORES, 16, 16).find(ok);
+        if (ore) return ore;
+        const logs = bot.inventory.items().filter(i => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+        return logs < 16 ? find(bot, LOGS, 16, 16).filter(p => p.y <= bot.entity.position.y + 3).find(ok) : null;
+      };
+      const cooking = () => (needed - taken) * 10000;
       while (taken < needed) {
         task.check();
         if (Date.now() > deadline) throw new Error(`Smelting ${step.item} timed out`);
         await collect();
         if (taken < needed) await fuel();
         // Only with a slot to spare: the dug ore takes one, the ingots another.
-        const ore = taken < needed && waitDigs < 6 && Date.now() < deadline - 15000 && (needed - taken) >= 2 && free() >= 2 && oreInReach();
+        const spare = taken < needed && Date.now() < deadline - 15000 && (needed - taken) >= 2 && free() >= 2;
+        const ore = spare && waitDigs < 6 && oreInReach();
         if (ore) {
           waitDigs++;
           furnace.close();
           try { await dig(bot, task, ore, { requireDrops: false }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (goal) setAside(goal, 'reach', ore, err.message, 120000); }
+          furnace = await bot.openFurnace(block);
+          continue;
+        }
+        const far = spare && waitDigs < 12 && cooking() >= 30000 && walkTarget();
+        if (far) {
+          waitDigs++;
+          furnace.close();
+          if (goal) { goal.step = { ...goal.step, whileCooking: { block: bot.blockAt(far)?.name, at: { x: far.x, y: far.y, z: far.z } } }; save(); }
+          try {
+            await navigate(bot, task, new goals.GoalGetToBlock(far.x, far.y, far.z), { timeoutMs: 15000, stallMs: 5000 });
+            await dig(bot, task, far, { requireDrops: false });
+          } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (goal) setAside(goal, 'reach', far, err.message, 300000); }
+          try { await navigate(bot, task, new goals.GoalNear(block.position.x, block.position.y, block.position.z, 3), { timeoutMs: 20000, stallMs: 6000 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
           furnace = await bot.openFurnace(block);
           continue;
         }

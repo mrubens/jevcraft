@@ -271,3 +271,32 @@ test('a furnace holding another batch\'s output and input has them taken out, th
   assert.deepEqual(taken, ['iron_ingot', 'raw_iron'], 'the old batch out first');
   assert.equal(cooked, 1);
 });
+
+test('a long batch is not stood beside: an ore further off is walked to and dug while it cooks, then the batch is finished', { timeout: 5000 }, async () => {
+  const { goals } = require('mineflayer-pathfinder');
+  let ingots = 0, raw = 6, loaded = 0, walkedOut = false;
+  const walks = [];
+  const furnace = {
+    // The ingots come only once the bot has been away and back.
+    outputItem: () => walkedOut && loaded ? { name: 'iron_ingot', count: loaded } : null,
+    takeOutput: async () => { ingots += loaded; loaded = 0; },
+    inputItem: () => (loaded && !walkedOut ? { name: 'raw_iron', count: loaded } : null), fuelItem: () => ({ name: 'coal', count: 1 }), fuel: .5,
+    putInput: async (type, meta, count) => { raw -= count; loaded += count; },
+    putFuel: async () => {}, close: () => {},
+  };
+  const ore = new Vec3(10, 64, 0), furnaceAt = new Vec3(1, 64, 0);
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) }, entities: {},
+    inventory: { items: () => [...(raw ? [{ name: 'raw_iron', count: raw }] : []), ...(ingots ? [{ name: 'iron_ingot', count: ingots }] : []), { name: 'coal', count: 8 }], emptySlotCount: () => 20 },
+    registry: { blocksByName: { furnace: { id: 1 }, coal_ore: { id: 7 } }, itemsByName: { raw_iron: { id: 5 }, coal: { id: 6 } } },
+    findBlocks: ({ matching }) => matching.includes(7) ? [ore] : [furnaceAt],
+    blockAt: p => p.equals(ore) ? { name: 'coal_ore', position: p } : { name: 'furnace', position: p },
+    world: { raycast: () => ({ position: furnaceAt }) },
+    pathfinder: { movements: {}, setGoal: () => {}, goto: async g => { walks.push(g); if (g instanceof goals.GoalGetToBlock) { walkedOut = true; bot.entity.position = new Vec3(9, 64, 0); } else bot.entity.position = new Vec3(0, 64, 0); } },
+    openFurnace: async () => furnace,
+  };
+  const goal = {};
+  await smelt(bot, new Task('smelt', 'test'), { item: 'iron_ingot', from: 'raw_iron', count: 6, fuelItem: 'coal' }, goal);
+  assert(walks.some(g => g instanceof goals.GoalGetToBlock && g.x === 10), 'walked to the ore');
+  assert.equal(ingots, 6);
+});
