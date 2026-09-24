@@ -337,8 +337,8 @@ class Survival {
     const swung = await defendNearby(bot, task, goal, save);
     const danger = threats(bot).filter(t => t.visible);
     if (!danger.length) { lowerShield(bot); return; }
-    // A skeleton is walked up to behind the raised shield and struck.
-    if (!swung && await this.shieldAdvance(task, goal, save, danger)) return;
+    // A lone skeleton is run at and struck.
+    if (!swung && await this.closeOnShooter(task, goal, save, danger)) return;
     // Something already in the air is answered before anything is decided:
     // the decision takes longer than the flight.
     if (!swung && await deflect(bot, task)) {
@@ -405,26 +405,28 @@ class Survival {
     await this.escape(task, goal, save, danger, armed);
   }
 
-  // A shooter on the ground, the player's way: walk at it behind the raised
-  // shield, lower it to strike, raise it again. Measured in the arena
-  // (2026-09-24), one skeleton eight blocks off for twenty seconds: 17.7
-  // damage standing without a shield, 16.3 raising the shield as each arrow
-  // came (a shield takes a quarter second to come up, and the arrow is
-  // quicker), none holding it up throughout, and 2 advancing behind it, the
-  // skeleton dead in five seconds. The first trials' skeleton deaths were
-  // all the per-arrow block or a pocket built under fire. Not with a melee
-  // mob at arm's length or a creeper close; ground that is not firm ahead
-  // is held behind the shield instead of walked.
-  async shieldAdvance(task, goal, save, danger) {
+  // A lone shooter on the ground, the player's way: run at it and hit it.
+  // Measured in the arena (2026-09-24, scripts/shield-probe.js), one
+  // skeleton eight blocks off, twenty seconds a stance: 17.7 damage standing,
+  // 16.3 raising the shield as each arrow came (it takes a quarter second to
+  // come up; the arrow is quicker), 15.8 to 17.5 with the bow and no kill,
+  // none holding the shield up throughout and no kill either, 2 walking at
+  // it behind the shield (dead in five seconds), and 0 to 2 sprinting at it
+  // with a stone sword and no shield (dead in four). The first trials'
+  // skeleton deaths were the per-arrow block and pockets built under fire.
+  // Only a lone one (no other shooter within twelve), armed, at six health
+  // or more, with no melee mob at arm's length and no creeper close; ground
+  // that is not firm ahead is held behind the shield, if there is one.
+  async closeOnShooter(task, goal, save, danger) {
     const bot = this.bot;
-    if (bot.inventory.slots?.[45]?.name !== 'shield') return false;
     const weapon = defenseWeapon(bot);
     if (!/_(sword|axe)$/.test(weapon?.name || '') || bot.health < 6) return false;
     if (creeperClose(danger) || danger.some(t => t.distance <= 3 && !shooter(t.entity))) return false;
-    const target = danger.filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16).sort((a, b) => a.distance - b.distance)[0];
-    if (!target) return false;
-    const e = target.entity;
-    this.report(goal, save, { action: 'advance_on_shooter', entity: e.name, target: { x: Math.floor(e.position.x), y: Math.floor(e.position.y), z: Math.floor(e.position.z) },
+    const shooters = danger.filter(t => t.visible && shooter(t.entity));
+    const target = shooters.filter(t => GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16).sort((a, b) => a.distance - b.distance)[0];
+    if (!target || shooters.some(t => t !== target && t.distance <= 12)) return false;
+    const e = target.entity, shielded = bot.inventory.slots?.[45]?.name === 'shield';
+    this.report(goal, save, { action: 'close_on_shooter', entity: e.name, target: { x: Math.floor(e.position.x), y: Math.floor(e.position.y), z: Math.floor(e.position.z) },
       distance: Number(target.distance.toFixed(1)), health: bot.health });
     if (bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand');
     const end = Date.now() + 12000;
@@ -434,18 +436,18 @@ class Survival {
         if (threats(bot).some(t => t.entity !== e && ((t.distance <= 3 && !shooter(t.entity)) || (t.entity.name === 'creeper' && t.distance <= 5)))) break;
         await bot.lookAt(e.position.offset(0, 1.5, 0), true);
         if (canStrike(bot, e)) {
-          lowerShield(bot); await sleep(150); task.check();
-          if (bot.entities[e.id] === e && canStrike(bot, e)) bot.attack(e);
-          await sleep(250); raiseShield(bot); await sleep(400);
+          bot.clearControlStates?.(); lowerShield(bot);
+          if (bot.entities[e.id] === e) bot.attack(e);
+          if (shielded) raiseShield(bot);
+          await sleep(650); lowerShield(bot);
           continue;
         }
         const flat = e.position.minus(bot.entity.position); flat.y = 0;
         const ahead = bot.entity.position.plus(flat.scaled(1 / Math.max(flat.norm(), 1))).floored();
         const level = firmStep(bot, ahead), up = !level && firmStep(bot, ahead.offset(0, 1, 0));
-        raiseShield(bot);
-        if (!level && !up) { await sleep(700); break; }
-        await move(bot, task, { label: 'advance_on_shooter', keys: up ? ['forward', 'jump'] : ['forward'], sneak: false,
-          why: 'behind the raised shield toward a shooter, onto ground checked firm', look: e.position.offset(0, 1.5, 0), maxMs: 300, tick: 50, until: () => canStrike(bot, e) });
+        if (!level && !up) { if (!shielded) return false; raiseShield(bot); await sleep(700); break; }
+        await move(bot, task, { label: 'close_on_shooter', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false,
+          why: 'running at a lone shooter over ground checked firm', look: e.position.offset(0, 1.5, 0), maxMs: 250, tick: 50, until: () => canStrike(bot, e) });
       }
     } finally { lowerShield(bot); bot.clearControlStates?.(); }
     return true;
