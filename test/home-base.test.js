@@ -428,3 +428,10 @@ test('with two ponds in reach, where home goes is Jev\'s pick of the sites found
   assert.match(offered.site_0, /blocks away/);
   assert.deepEqual(goal.survival.home.origin, sites[1].origin, 'Jev\'s pick');
 });
+
+test('with torches carried and dark ground around home, lighting it is a chore on offer, told what light does and does not do', async () => {
+  const w = await establishedHome({ items: [['wooden_hoe', 1], ['torch', 8]] }), { bot, goal } = w;
+  const chores = home.homeChores(bot, goal);
+  assert(chores.light_home, Object.keys(chores).join(','));
+  assert.match(chores.light_home.description, /dark enough for monsters to spawn.*does not drive off/);
+});

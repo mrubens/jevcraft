@@ -910,6 +910,23 @@ async function eatFromHome(bot, task, goal, save, actions) {
 }
 
 // The chores Jev chooses between when nothing needs it, each feasible now.
+// The dark ground around home, where monsters spawn between the bed, the
+// plot and the pen: looked at once a minute (a few hundred cells).
+const darkAtHome = new Map();
+function homeDarkness(bot, home, now = Date.now()) {
+  const key = `${home.origin.x},${home.origin.y},${home.origin.z}`;
+  const cached = darkAtHome.get(key);
+  if (cached && now - cached.at < 60000) return cached;
+  const torches = require('./torches');
+  const centre = pos(layout(home).footprint[31]).offset(0, 1, 0);
+  const dark = torches.darkCells(bot, torches.groundCells(bot, centre, 10));
+  const result = { at: now, dark: dark.length, plan: torches.torchPlan(dark) };
+  darkAtHome.set(key, result);
+  return result;
+}
+const torchMakings = bot => (countOf(bot, 'coal') + countOf(bot, 'charcoal')) > 0 &&
+  (countOf(bot, 'stick') > 0 || bot.inventory.items().some(i => /_planks$|_log$/.test(i.name)));
+
 function homeChores(bot, goal, { now = Date.now() } = {}) {
   const home = homeOf(bot, goal);
   if (!home || !(home.completedAt || homeComplete(bot, goal))) return {};
@@ -931,6 +948,22 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
         if (status.grown.length) await harvestPlot(b, t, g, s, home, a);
         else if (status.bare.length && countOf(b, 'wheat_seeds')) await plantPlot(b, t, g, s, home, a);
         home.plot.checkedAt = new Date().toISOString(); s();
+      } };
+  }
+  // Light: torches where monsters could spawn around home, when some are
+  // carried or can be made.
+  if (!far) {
+    const { dark, plan } = homeDarkness(bot, home, now);
+    const carried = countOf(bot, 'torch');
+    if (plan.length && (carried || torchMakings(bot))) options.light_home = {
+      description: `Put ${plan.length} torch${plan.length === 1 ? '' : 'es'} around home: ${dark} spots between the bed, the plot and the pen are dark enough for monsters to spawn, and light stops them spawning (it does not drive off those already there). ${carried} torches carried${carried < plan.length ? '; the rest made from coal and sticks first' : ''}.`,
+      run: async (b, t, g, s, a) => {
+        if (countOf(b, 'torch') < plan.length) await a.acquireStep(b, t, 'torch', Math.ceil(plan.length / 4) * 4, g, s);
+        if (homeDistance(b, home) > 8) await goHome(b, t, g, s, home, a);
+        g.step = { action: 'light_home', torches: plan.length }; s();
+        const placed = await require('./torches').placeTorches(b, t, a, plan, { max: plan.length });
+        darkAtHome.delete(`${home.origin.x},${home.origin.y},${home.origin.z}`);
+        if (!placed) throw new Error('No torch went down around home');
       } };
   }
   // Spares for the chest beside the bed, whenever the pockets have any.

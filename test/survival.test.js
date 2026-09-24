@@ -1727,3 +1727,20 @@ test('the night mine\'s next ore is Jev\'s pick of the nearest of each kind, cop
   assert.equal(Object.keys(tree).length, 3, 'one of each kind, and the branch');
   assert.match(tree.ore_0.description, /nothing on the ladder wants it/);
 });
+
+test('in a dark tunnel with torches, lighting it is one of Jev\'s night-mine options, and a torch goes down when chosen', async () => {
+  const registry = require('minecraft-data')('26.1');
+  const placed = [];
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld' }, entities: {}, entity: { position: new Vec3(0.5, 20, 0.5) },
+    inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'torch', count: 4 }], emptySlotCount: () => 10, slots: [] },
+    findBlocks: () => [],
+    // A tunnel: stone all round but a two-high corridor along x.
+    blockAt: p => { const open = p.z === 0 && (p.y === 20 || p.y === 21) && Math.abs(p.x) <= 6; return { name: open ? 'air' : 'stone', boundingBox: open ? 'empty' : 'block', position: p, skyLight: 0 }; } });
+  const survival = new Survival(bot, { place: async (b, t, p, m) => placed.push([`${p}`, m]) }, { client: { systemOne: async () => ({}) } });
+  let offered;
+  survival.decide = async (task, goal, save, q) => { offered = Object.keys(q.tree); return { path: ['light_tunnel'], stale: false }; };
+  const result = await survival.nightTarget(new Task('night'), {}, () => {}, new Vec3(0, 20, 0));
+  assert(offered.includes('light_tunnel') && offered.includes('branch'), offered.join(','));
+  assert.deepEqual(result, { lit: true });
+  assert.equal(placed.length, 1); assert.equal(placed[0][1], 'torch');
+});

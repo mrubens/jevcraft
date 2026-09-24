@@ -52,7 +52,7 @@ define({
     { key: 'shaft_pocket', label: 'dig straight down and cap it', when: 'always; fails where the ground cannot be dug', level: 'root' },
     { key: 'night_mine', label: 'dig a mine from here for the night', when: 'a pickaxe (or one can be made), health ten or more, nothing watching', level: 'root' },
   ],
-  instructions: { task: 'Night is coming and the bot will shelter. Choose how.', guidance: 'Each option says its distance and the blocks it needs against those carried. Placing a block takes about a second, gathering more takes minutes; mobs spawn in the dark; a room or pocket is kept for later nights.' },
+  instructions: { task: 'Night is coming and the bot will shelter. Choose how.', guidance: 'Each option says its distance and the blocks it needs against those carried. Placing a block takes about a second, gathering more takes minutes; mobs spawn in the dark (darkHere says where the bot stands is dark enough); a room or pocket is kept for later nights.' },
   // Without Jev, the old order.
   fallback: children => ['saved_shelter', 'build_at_site', 'seal_here', 'shaft_pocket', 'night_mine'].find(k => children[k]) || Object.keys(children)[0],
 });
@@ -84,8 +84,9 @@ define({
   options: [
     { pattern: 'ore_\\d+', label: 'dig to this ore', when: 'the nearest of its kind, with its distance, what is carried and what it is for', level: 'root', dynamic: true },
     { key: 'branch', label: 'dig a branch down and along', when: 'always', level: 'root' },
+    { key: 'light_tunnel', label: 'put a torch in the tunnel here', when: 'torches carried and the cells around are dark enough for monsters', level: 'root' },
   ],
-  instructions: { task: 'The bot is mining through the night from its shelter. Choose the next target.', guidance: 'Each ore says how far it is, how much of what it gives is carried, and what that is for. A pickaxe wears a use a block. The player wants the bot never to stand idle when useful work is in reach.' },
+  instructions: { task: 'The bot is mining through the night from its shelter. Choose the next target, or light the tunnel.', guidance: 'Each ore says how far it is, how much of what it gives is carried, and what that is for. A pickaxe wears a use a block. The player wants the bot never to stand idle when useful work is in reach.' },
   fallback: children => Object.keys(children).find(k => k !== 'branch') || 'branch',
 });
 
@@ -100,11 +101,12 @@ define({
     { key: 'harvest_and_bake', label: 'harvest the ripe wheat and bake bread', when: 'enough ripe or carried wheat for a loaf', level: 'root' },
     { key: 'tend_farm', label: 'till, harvest or plant the plot', when: 'the plot needs work', level: 'root' },
     { key: 'breed_cows', label: 'breed the cows in the pen', when: 'two adults, two wheat, and the cooldown past', level: 'root' },
+    { key: 'light_home', label: 'put torches where monsters could spawn around home', when: 'ground around home is dark and torches are carried or can be made', level: 'root' },
     { key: 'grow_plot', label: 'mark the plot to grow by a column', when: 'the home is complete and the plot has not grown yet', level: 'root' },
     { key: 'wait_for_bedtime', label: 'wait by the bed for bedtime', when: 'always', level: 'root' },
     { pattern: '[a-z_]+', label: 'another home chore', when: 'offered by the stash or the home', level: 'root', dynamic: true },
   ],
-  instructions: { task: 'The bot is at home and bedtime is near. Choose a chore to do before it, or wait by the bed.', guidance: 'Each chore says what it does and what it is for. Bread and a stocked chest are tomorrow\'s food and kit.' },
+  instructions: { task: 'The bot is at home and bedtime is near. Choose a chore to do before it, or wait by the bed.', guidance: 'Each chore says what it does and what it is for. Bread and a stocked chest are tomorrow\'s food and kit; light around home keeps the night\'s monsters from spawning there. The player wants the bot never to stand idle when useful work is in reach.' },
   fallback: children => ['stock_stash', 'harvest_and_bake', 'tend_farm', 'breed_cows'].find(k => children[k]) || Object.keys(children).find(k => k !== 'wait_for_bedtime') || 'wait_for_bedtime',
 });
 
@@ -137,7 +139,7 @@ define({
   source: 'src/survival.js (stanceOptions)',
   instructions: {
     task: 'Hostile mobs are close. Choose the stance for this encounter NOW. The bot will keep to it for the next several seconds, swinging at anything in reach whatever you choose.',
-    guidance: 'Use the threats (kind, distance, whether they shoot), health, armour, weapon, shield, arrows and building blocks. Every option listed is already checked possible from here. Weigh what each mob does: walkers cannot climb a pillar, shooters can hit a pillar or a runner, a crowd in the open hits from every side while a doorway admits one at a time, a sealed pocket takes no damage but gains nothing. Placing blocks (pillar, seal, bunker) takes about a second a block, and anything at arm\'s length hits freely meanwhile. Measured in the arena against one skeleton eight blocks off for twenty seconds: standing took 17.7 damage, raising the shield as each arrow came 16.3, the bow 16 to 17 with no kill, running in with a sword 0 to 2 with the skeleton dead in four seconds; two skeletons run at one after the other cost nothing and both died in eight. On Normal, unarmoured, a zombie or husk hits for about 3, a skeleton arrow 2 to 4, a spider 2, a creeper blast up to 20 at point blank; full iron armour takes off about three fifths. A stone sword kills a zombie in about four hits and an iron sword in three, a hit about every 0.6 seconds, so a crowd at arm\'s length lands several hits for each one that dies. A creeper is best hit and backed from (the dance): its blast comes about a second and a half after it lights, and a pocket or pillar is seldom finished first. Hoglins and ravagers throw a player about three blocks, so near a drop (dropWithinThreeBlocks) a hit from one can be a fall; a sealed pocket is the one place they cannot throw the bot out of. estimate is worked out for this bot: each mob\'s hit after its armour, the swings its weapon needs to kill it, and fightHere, about how long and how much health killing them all where it stands would take (every biter reaching it, shooters hitting while in sight). previousStance says what was chosen last and the health then.',
+    guidance: 'Use the threats (kind, distance, whether they shoot), health, armour, weapon, shield, arrows and building blocks. Every option listed is already checked possible from here. Weigh what each mob does: walkers cannot climb a pillar, shooters can hit a pillar or a runner, a crowd in the open hits from every side while a doorway admits one at a time, a sealed pocket takes no damage but gains nothing. Placing blocks (pillar, seal, bunker) takes about a second a block, and anything at arm\'s length hits freely meanwhile. Measured in the arena against one skeleton eight blocks off for twenty seconds: standing took 17.7 damage, raising the shield as each arrow came 16.3, the bow 16 to 17 with no kill, running in with a sword 0 to 2 with the skeleton dead in four seconds; two skeletons run at one after the other cost nothing and both died in eight. On Normal, unarmoured, a zombie or husk hits for about 3, a skeleton arrow 2 to 4, a spider 2, a creeper blast up to 20 at point blank; full iron armour takes off about three fifths. A stone sword kills a zombie in about four hits and an iron sword in three, a hit about every 0.6 seconds, so a crowd at arm\'s length lands several hits for each one that dies. A creeper is best hit and backed from (the dance): its blast comes about a second and a half after it lights, and a pocket or pillar is seldom finished first. Hoglins and ravagers throw a player about three blocks, so near a drop (dropWithinThreeBlocks) a hit from one can be a fall; a sealed pocket is the one place they cannot throw the bot out of. estimate is worked out for this bot: each mob\'s hit after its armour, the swings its weapon needs to kill it, and fightHere, about how long and how much health killing them all where it stands would take (every biter reaching it, shooters hitting while in sight). darkHere says the ground where the bot stands is dark enough for monsters to spawn: more may come. previousStance says what was chosen last and the health then.',
   },
   options: [
     { key: 'fight', label: 'fight where the bot stands', when: 'a sword, axe or trident is carried', level: 'root' },

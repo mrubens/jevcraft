@@ -13,6 +13,10 @@ const { foodSupply, forageChoices } = require('./foraging');
 const { bedCarried, placeOriented, isBed, homeOf, layout, homeChores } = require('./home-base');
 const { kitReady } = require('./mob-policy');
 const { fightEstimate } = require('./combat-estimate');
+const { darkCells, groundCells, placeTorches, lightSources, blockLight } = require('./torches');
+// Dark enough where the bot stands for monsters to spawn: a fact for the
+// questions that weigh staying against leaving.
+const darkHere = bot => { const feet = bot.entity.position.floored(); return blockLight(feet, lightSources(bot, feet, 4)) === 0 && ((bot.blockAt(feet)?.skyLight ?? 15) < 8 || night(bot)); };
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute, countOf } = require('./skills');
@@ -697,6 +701,7 @@ class Survival {
       const state = { health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
         dropWithinThreeBlocks: dropWithin(bot, bot.entity.position.floored(), 3),
+        darkHere: darkHere(bot),
         threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), visible: t.visible })),
         // This bot's numbers: each mob's hit after its armour, swings to
         // kill with its weapon, and what fighting all of them here costs.
@@ -1037,7 +1042,7 @@ class Survival {
       }
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
       const decision = Object.keys(tree).length === 1 ? { path: [Object.keys(tree)[0]] }
-        : await this.decide(task, goal, save, { id: 'shelter_method', tree, state: { timeOfDay: bot.time?.timeOfDay, health: bot.health, food: bot.food, buildingBlocks: stock,
+        : await this.decide(task, goal, save, { id: 'shelter_method', tree, state: { timeOfDay: bot.time?.timeOfDay, health: bot.health, food: bot.food, buildingBlocks: stock, darkHere: darkHere(bot), torches: countOf(bot, 'torch'),
           underground: !surfaceObserver(bot)(bot.entity.position), pickaxe: bot.inventory.items().find(i => /_pickaxe$/.test(i.name))?.name || null,
           nearbyThreats: threats(bot).filter(t => t.distance < 24).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance) })) } });
       if (decision.stale) return true;
@@ -1561,16 +1566,25 @@ class Survival {
   async nightTarget(task, goal, save, feet) {
     const bot = this.bot;
     const choices = nightOreChoices(bot, feet, attemptsFor(this));
-    if (!choices.length) return null;
+    // The tunnel behind, dark enough for monsters: a torch is Jev's option
+    // (never the rule's; without Jev the mine goes on as it did).
+    const dark = this.client && countOf(bot, 'torch') ? darkCells(bot, groundCells(bot, feet, 3)).filter(c => !c.equals(feet)) : [];
+    if (!choices.length && !dark.length) return null;
     if (!this.client) return nightOre(bot, feet, attemptsFor(this));
     const tree = Object.fromEntries(choices.map((c, i) => { const [item, use] = ORE_YIELD[c.kind];
       return [`ore_${i}`, { description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).` }]; }));
     tree.branch = { description: 'Dig a branch down to a working depth and along it, looking for ore on the way.' };
+    if (dark.length) tree.light_tunnel = { description: `Put a torch in the tunnel here: ${dark.length} cells around the bot are dark enough for monsters to spawn in, and light stops them (${countOf(bot, 'torch')} torches carried).` };
     const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree, context: {},
       state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
     if (decision.stale) return null;
     if (decision.fallback) return nightOre(bot, feet, attemptsFor(this));
     const pick = decision.path.at(-1);
+    if (pick === 'light_tunnel') {
+      const placed = await placeTorches(bot, task, this.actions, [dark.sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))[0]], { max: 1 });
+      this.report(goal, save, { action: 'light_tunnel', placed, torches: countOf(bot, 'torch') });
+      return { lit: true };
+    }
     return pick === 'branch' ? null : choices[Number(pick.slice(4))] || null;
   }
 
@@ -1618,6 +1632,7 @@ class Survival {
       // no heading check tells the hillside from the hill.
       if (atSurface && !mine.sunkAt && await this.shaftPocket(task, goal, save)) { mine.sunkAt = Date.now(); save(); return true; }
       const ore = !atSurface && await this.nightTarget(task, goal, save, feet);
+      if (ore?.lit) return true;
       if (ore) { target = ore.position; mine.targetOre = ore.name; }
       else {
         // No ore in reach of the eye: a branch, down to a working depth

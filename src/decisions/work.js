@@ -30,6 +30,7 @@ const IDLE_OPTIONS = [
   { key: 'breed_cows', label: 'breed the cows in the home pen', when: 'two adult cows are penned and wheat is carried' },
   { key: 'lure_cows', label: 'lead loose cows into the home pen', when: 'the pen has fewer than two cows and cows are in view' },
   { key: 'stock_stash', label: 'put spares in the stash chest', when: 'the stash chest is within reach and spares are carried' },
+  { key: 'light_home', label: 'put torches where monsters could spawn around home', when: 'the home stands, ground around it is dark, and torches are carried or can be made' },
   { key: 'long_game', label: 'work toward beating the game', when: 'the dream is to beat the game and its ladder is not complete' },
 ];
 
