@@ -2,7 +2,7 @@
 
 Jev is a Minecraft companion you talk to in game chat, built to show what a [System One](https://docs.typesafe.ai/concepts/system-one) model is good at. Ask Jev to gather supplies, build something, find a biome, or follow you on an adventure. Every judgment the bot makes about what you meant and what to do next is a typed answer from [TypeSafe's Jev](https://typesafe.ai/), with a probability attached, and every one is logged with the options it was chosen from.
 
-**Experimental, targeting Minecraft Java Edition 26.1.** Gathering, building, exploration, and survival support work; difficult terrain and long tasks can still need help. Fully autonomous game completion is a development goal, not a finished capability.
+**For Minecraft Java Edition 26.1.** Jev gathers, crafts, builds, explores and survives on its own, and beating the game from a fresh Survival start is the goal it is measured against ([where it stands](GOAL.md#where-it-stands)).
 
 [Quick start](#quick-start) · [How Jev is used](#how-jev-is-used) · [Chat commands](#talking-to-jev) · [Building](#building) · [What Jev decided](#seeing-what-jev-decided) · [Roadmap](ROADMAP.md)
 
@@ -125,7 +125,7 @@ Start a request with **"Jev …"** or the bot's configured username. These are e
 | `Jev find a cherry biome` | Explore using observed biome data. |
 | `Jev find a sheep` | Look for and approach a sheep without attacking it. |
 | `Jev build a small cherry mansion` | Request a custom building design. |
-| `Jev find a way to the Nether` | Work toward a portal and verify entry; survival progression remains experimental. |
+| `Jev find a way to the Nether` | Gather what a portal needs, build or find one, and verify the crossing. |
 
 **"For me" requests delivery.** `Jev craft me a chest` brings the chest to you; `Jev craft a chest` keeps it. Stay nearby for handovers. If there is no safe throwing spot, Jev can use or place a nearby chest, verify the stored items, and tell you its coordinates.
 
@@ -297,12 +297,12 @@ Contributions are most useful when they turn a concrete gameplay failure into a 
 
 jev-craft is released under the [MIT License](LICENSE).
 
-## Current limitations
+## Scope
 
-- Recognizing an item does not guarantee a working Survival acquisition path. Farming is limited to the home plot's wheat; trading and enchanting are not implemented; some blocks need an already enchanted tool.
-- Rare resources, complex terrain, large builds, and long expeditions can still get stuck. Recovery can only use actions the bot knows how to execute.
-- Boat travel requires loaded, level water and observed shores within its survey range; open-ocean exploration and flying follow are not supported.
-- Building preparation does not clear arbitrary player structures or handle deep-water and lava foundations.
-- `Jev beat Minecraft` starts an experimental progression objective. Reliable fresh-start Nether progression and a complete dragon defeat with a living return remain unfinished.
+- **Minecraft Java 26.1**, Survival or Creative, on a server you run. The bot joins as an ordinary player; it needs operator rights only for the optional server commands.
+- **Getting things:** mining, crafting and smelting from the real recipe data; hunting, farming the home plot, breeding and shearing; trading with villagers and bartering with piglins; enchanting at a table. Asked for an item with no Survival route, Jev says so rather than trying.
+- **Getting around:** walking, swimming, climbing out of holes, bridging, boats across water it has surveyed, and flight in Creative.
+- **Building:** templates in Survival and generated designs in Creative, on ground it levels itself. It never demolishes a structure it did not place.
+- **Beating the game:** the full run from an empty inventory to the dragon is the goal, measured in trials on fresh worlds; [GOAL.md](GOAL.md) says where it stands.
 
-See the [roadmap](ROADMAP.md) for priorities and planned improvements.
+The [roadmap](ROADMAP.md) has what comes next.
