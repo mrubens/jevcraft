@@ -9,7 +9,7 @@ const { corpseRun, corpseRunStep, worth } = require('../src/corpse-run');
 function world({ deathAgoMs = 60000, dimension = 'overworld', deathDimension = 'overworld', at = new Vec3(0, 64, 0), status = 'finished' } = {}) {
   const deathAt = new Date(Date.now() - deathAgoMs).toISOString();
   const inventory = [], equipped = {}, said = [];
-  const bot = { game: { dimension }, entity: { position: at.clone() }, chat: m => said.push(m),
+  const bot = { game: { dimension }, entity: { position: at.clone() }, chat: m => said.push(m), registry: require('minecraft-data')('26.1'), time: { timeOfDay: 1000 },
     inventory: { items: () => inventory, slots: {} },
     equip: async (item, slot) => { equipped[slot] = item.name; bot.inventory.slots[{ head: 5, torso: 6, legs: 7, feet: 8 }[slot]] = item; } };
   const goal = { survival: {
@@ -18,6 +18,22 @@ function world({ deathAgoMs = 60000, dimension = 'overworld', deathDimension = '
   const give = (name, count) => { const it = inventory.find(i => i.name === name); if (it) it.count += count; else inventory.push({ name, count }); };
   return { bot, goal, said, equipped, give };
 }
+
+function wearKit(bot) {
+  const kit = { 5: 'iron_helmet', 6: 'iron_chestplate', 7: 'iron_leggings', 8: 'iron_boots', 45: 'shield' };
+  for (const [slot, name] of Object.entries(kit)) bot.inventory.slots[slot] = { name, durabilityUsed: 0, type: bot.registry.itemsByName[name].id };
+  const items = bot.inventory.items();
+  bot.inventory.items = () => [...items, { name: 'iron_sword', count: 1, durabilityUsed: 0 }];
+}
+
+test('in the Overworld with no kit the run waits for daylight', () => {
+  const { bot, goal } = world();
+  bot.time.timeOfDay = 15000;
+  assert.equal(corpseRun(bot, goal), null, 'no kit, at night');
+  assert.equal(goal.corpseRun.status, 'open', 'still to do');
+  bot.time.timeOfDay = 1000;
+  assert(corpseRun(bot, goal), 'by day');
+});
 
 test('what is worth going back for: the kit and supplies, not blocks or stone tools', () => {
   assert.deepEqual(worth({ iron_chestplate: 1, diamond_sword: 1, blaze_rod: 8, dirt: 40, stone_pickaxe: 1, cobblestone: 64, ender_pearl: 2 }),
@@ -54,7 +70,9 @@ test('a Nether death waits for the next Nether trip; the End is not gone back to
   assert.equal(corpseRun(nether.bot, nether.goal), null);
   assert.equal(nether.goal.corpseRun.status, 'open');
   nether.bot.game.dimension = 'the_nether';
-  assert(corpseRun(nether.bot, nether.goal));
+  assert.equal(corpseRun(nether.bot, nether.goal), null, 'no kit on: not into the Nether for it');
+  wearKit(nether.bot);
+  assert(corpseRun(nether.bot, nether.goal), 'kit on: go');
   const end = world({ deathDimension: 'the_end', dimension: 'the_end' });
   assert.equal(corpseRun(end.bot, end.goal), null);
   assert.equal(end.goal.corpseRun.status, 'void');

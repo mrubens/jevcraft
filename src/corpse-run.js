@@ -48,12 +48,26 @@ function corpseRun(bot, goal, now = Date.now()) {
   if (run.status !== 'open') return null;
   if (now - Date.parse(run.deathAt) > KEEP_MS) { run.status = 'stale'; return null; }
   if (dim(bot.game?.dimension) !== run.dimension) return null;
+  // Fit to go: the dream run walked back to a fortress's edge with no
+  // armour for the armour it had dropped there, and the wither skeleton that
+  // killed it once killed it again (2026-09-24 00:49). In the Nether the
+  // kit is worn first; in the Overworld the kit, or daylight. A far death's
+  // drops keep meanwhile; a near one's may not, which is the price.
+  if (!fitToGo(bot)) return null;
   // When the drops started to age: at the death, if the bot came back to
   // life within the loaded ground round them; else when it came near.
   if (!run.loadedAt && run.respawn && flat(run.respawn, run.position) <= TICKING) run.loadedAt = run.deathAt;
   if (!run.loadedAt && flat(bot.entity.position, run.position) <= TICKING) run.loadedAt = new Date(now).toISOString();
   if (run.loadedAt && now - Date.parse(run.loadedAt) > DESPAWN_MS - MARGIN_MS) { run.status = 'despawned'; return null; }
   return run;
+}
+
+function fitToGo(bot) {
+  const { kitReady } = require('./mob-policy');
+  if (kitReady(bot)) return true;
+  if (dim(bot.game?.dimension) !== 'overworld') return false;
+  const t = bot.time?.timeOfDay ?? 0;
+  return t < 12500 || t >= 23500;
 }
 
 const listed = items => Object.entries(items).map(([name, n]) => `${n > 1 ? `${n} ` : ''}${name.replace(/_/g, ' ')}`).join(', ');
