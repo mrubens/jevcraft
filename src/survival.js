@@ -1586,7 +1586,11 @@ class Survival {
       // was the reason it came.
       const watched = !shelterNeeded(bot) && threats(bot).some(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity));
       if (watched) this.state.watchedSince ||= Date.now(); else delete this.state.watchedSince;
-      const outwaited = watched && Date.now() - this.state.watchedSince > 180000;
+      // Out after three minutes of it, but not hurt: at three health the
+      // dream run left its pocket past a skeleton and was shot on the stairs
+      // (2026-09-24). Below ten the pocket is where it heals, eating behind
+      // the wall.
+      const outwaited = watched && Date.now() - this.state.watchedSince > 180000 && (bot.health ?? 20) >= 10;
       // A sealed pocket within a walk of the base's bed is left for it: the
       // night passes in the bed, not behind the wall.
       // Only from a pocket on the surface: a walk to the bed from a pocket
