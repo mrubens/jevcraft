@@ -816,10 +816,15 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
   // The pool is re-read as the vein opens up: the blocks behind the first
   // three are not in the list until the first three are gone. Ten blocks
   // from where the bot stands is the leash; three rescans the budget.
-  let mined = 0, rescans = 0, pool = candidates.slice(0, 24);
+  // Three blocks in a row that could not be had from here: the next are
+  // the same kind of problem, and trying them one by one stood trial 8's bot
+  // still for half a minute at the foot of its stairs, a new coal target a
+  // second (2026-09-24). Move instead.
+  let mined = 0, rescans = 0, missed = 0, pool = candidates.slice(0, 24);
   while (true) {
     task.check(); checkAir(bot);
     if (mined && satisfied()) return;
+    if (!mined && missed >= 3) break;
     let p = pool.shift();
     while (p && mined && p.distanceTo(bot.entity.position) > 10) p = pool.shift();
     if (!p) {
@@ -865,6 +870,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
     }
     if (countOf(bot, step.drops) > before) return;
     setAside(goal, 'reach', p, goal.lastMiningError || 'dug nothing there', 120000);
+    missed++;
   }
   save();
   if (selected) throw new Error(goal.lastMiningError || `No ${step.drops} collected at ${selected}`);
