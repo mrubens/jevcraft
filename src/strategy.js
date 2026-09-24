@@ -31,6 +31,9 @@ const label = phase => phase.replaceAll('_', ' ');
 const RUNG_WHY = {
   bed: 'a night slept passes in seconds and sets the spawn point; three wool from sheep, or a bed from a village',
   iron_pickaxe: 'mines the iron for armour and the diamonds past it',
+  home_water: 'the pond that waters the plot',
+  home_plot: 'wheat for bread, tomorrow\'s food',
+  home_pen: 'cows kept for steak and leather',
   shield: 'blocks arrows and creeper blasts; the fights ahead are easier behind one',
   iron_sword: 'kills faster than stone',
   bucket: 'water for lava, falls and the End portal room',

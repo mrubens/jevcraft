@@ -103,7 +103,9 @@ function preparationStage(bot, goal = {}) {
 // The bed too: nothing after it needs it to start, and on a savanna with no
 // sheep trial 25 walked five hundred blocks for wool with the iron pickaxe
 // never on offer (2026-09-24).
-const DEFERRABLE = new Set(['bed', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword']);
+// And the home's pond, plot and pen: the armour does not need them, and a
+// plot that would not till held trial 28's ladder short of the armour.
+const DEFERRABLE = new Set(['bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword']);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
   const waiting = new Set(Object.keys(attemptsFor(goal).of('rung', now)));
