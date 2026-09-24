@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-61 questions: 13 decision trees and 48 batched questions.
+62 questions: 14 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -119,6 +119,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `source_[a-z_]+_-?\d+_-?\d+_-?\d+` (pattern) | step | work this source | reachable blocks of the resource grouped by block and place, up to four, none set aside |
 | `find_resource` | step | search for a reachable source | a mine step with no reachable source |
 | `execute_recipe` | step | carry out the recipe step | a non-mining step |
+
+### `gather_more`
+
+**The step has what it asked for and more of the same is within reach: keep taking it, or stop?**
+
+- When: Once per source, when a mining step has met its count and more of the trunk, vein or stone face is within six blocks, up to a cap (eight logs, thirty-two of an ore, two dozen stone).
+- Decision tree, choice; stakes low; ledger kind `source`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (moreOfSource)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `take_more` | root | keep taking it while it is at hand, up to the cap | always |
+| `enough` | root | stop at what the step asked for | always |
 
 ### `upkeep`
 

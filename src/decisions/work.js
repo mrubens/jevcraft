@@ -141,6 +141,20 @@ define({
   }, { ...options, none: 'None of the offered actions addresses the recorded failure.' }),
 });
 
+// How much of a source to take, once the step has what it asked for.
+define({
+  id: 'gather_more', area: 'resources', kind: 'source', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'The step has what it asked for and more of the same is within reach: keep taking it, or stop?',
+  trigger: 'Once per source, when a mining step has met its count and more of the trunk, vein or stone face is within six blocks, up to a cap (eight logs, thirty-two of an ore, two dozen stone).',
+  source: 'src/work.js (moreOfSource)',
+  options: [
+    { key: 'take_more', label: 'keep taking it while it is at hand, up to the cap', when: 'always', level: 'root' },
+    { key: 'enough', label: 'stop at what the step asked for', when: 'always', level: 'root' },
+  ],
+  instructions: workInstructions('A mining step has what it asked for, and more of the same trunk, vein or stone face is within reach. Choose whether to keep taking it now or go on; the options say what is carried and the cap.'),
+  fallback: () => 'take_more',
+});
+
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
   id: 'upkeep', area: 'resources', kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,

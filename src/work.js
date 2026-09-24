@@ -759,7 +759,15 @@ async function workSource(bot, task, step, goal, save, source) {
       const rock = /^(cobblestone|cobbled_deepslate)$/.test(step.drops);
       const wanted = () => /_log$/.test(source.block) ? countOf(bot, step.drops) < 8 : ore ? countOf(bot, step.drops) < 32
         : rock ? countOf(bot, step.drops) < Math.max(24, before + (step.count || 1)) : countOf(bot, step.drops) < before + (step.count || 1);
+      // Once the step has what it asked for, more of the same is Jev's call,
+      // asked once for this source: the cap and what is carried are said.
+      const cap = /_log$/.test(source.block) ? 8 : ore ? 32 : rock ? Math.max(24, before + (step.count || 1)) : before + (step.count || 1);
+      let askedMore = false;
       for (let extra = 0; extra < 24 && wanted(); extra++) {
+        if (!askedMore && countOf(bot, step.drops) >= before + (step.count || 1)) {
+          askedMore = true;
+          if (!await moreOfSource(bot, task, goal, save, step, source, cap)) break;
+        }
         let next = nearestRemaining(bot, source);
         if ((!next || next.distanceTo(bot.entity.position) > 6) && ore) {
           const here = bot.entity.position;
@@ -841,6 +849,26 @@ function logInView(bot, step) {
   const name = other && bot.blockAt(other)?.name;
   if (!name) return step;
   return { ...step, block: name, sources: [name], drops: name, produces: { [name]: step.count || 1 }, insteadOf: step.block };
+}
+
+// More of a source than the step asked for: the rest of a trunk (up to
+// eight logs), of a vein (up to a stack of thirty-two), or two dozen stone
+// from a face at hand. The dream run walked to a fresh tree for every
+// smelt's fuel and climbed a hill fourteen times for one iron at a time; a
+// source already reached is a few seconds' work. Without Jev, taken.
+async function moreOfSource(bot, task, goal, save, step, source, cap) {
+  const client = task.opportunityClient;
+  if (!client) return true;
+  const what = String(step.drops || step.block).replaceAll('_', ' ');
+  const tree = {
+    take_more: { description: `Keep taking the ${String(source.block).replaceAll('_', ' ')} within reach until ${cap} ${what} are carried (${countOf(bot, step.drops)} now): a few seconds a block while it is at hand, where coming back later is a walk.` },
+    enough: { description: `Stop at what the step asked for (${step.count || 1} ${what}) and go on.` },
+  };
+  try {
+    const decision = await decide('gather_more', { client, bot, task, goal, save, tree, context: {},
+      state: { step: { action: step.action, item: step.drops || step.block, asked: step.count || 1 }, carried: countOf(bot, step.drops), cap, request: goal.request, rung: goal.rungTime?.phase || null } });
+    return decision.stale || decision.path.at(-1) !== 'enough';
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return true; }
 }
 
 async function mine(bot, task, step, goal, save, selected) {
@@ -3289,4 +3317,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { logInView, patrolChoice, maintainBlocks, upkeepStep, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

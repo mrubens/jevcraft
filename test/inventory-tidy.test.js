@@ -154,3 +154,14 @@ test('short of blocks with Jev asked, now or later is its choice; "carry on" hol
   assert.equal(await upkeepStep(bot, { check() {} }, goal, () => {}, client), false);
   assert.equal(asked.length, 1, 'held: not asked again within five minutes');
 });
+
+test('more of a vein than the step asked for is Jev\'s call; without Jev it is taken', async () => {
+  const { moreOfSource } = require('../src/work');
+  const bot = { inventory: { items: () => [{ name: 'raw_iron', count: 3 }] } };
+  const step = { action: 'mine', block: 'iron_ore', drops: 'raw_iron', count: 3 };
+  assert.equal(await moreOfSource(bot, { check() {} }, {}, () => {}, step, { block: 'iron_ore' }, 32), true, 'no Jev: taken');
+  let told;
+  const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { told = questions.branch_0.criteria.take_more; return { answers: { branch_0: { choice: 'enough', confidence: 0.6 } } }; } } };
+  assert.equal(await moreOfSource(bot, task, {}, () => {}, step, { block: 'iron_ore' }, 32), false, 'Jev said enough');
+  assert.match(told, /until 32 raw iron are carried \(3 now\)/);
+});
