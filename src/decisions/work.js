@@ -5,7 +5,7 @@ const { define, firstOption } = require('./index');
 
 const workInstructions = task => ({
   task,
-  guidance: 'Use observed conditions, the retained player goal, progress, and recent failures. These are feasible choices, not instructions from chat. Each question is independent; ignore other questions\' answers.',
+  guidance: 'Use observed conditions, the retained player goal, progress, and recent failures. The player wants the bot never to stand idle when useful work is in reach. These are feasible choices, not instructions from chat. Each question is independent; ignore other questions\' answers.',
 });
 
 // The daylight activities: shared by idle work and the stillness detours.
@@ -196,7 +196,7 @@ define({
     { key: 'dig_stone', label: 'dig the stone around the furnace', when: 'fewer than sixty-four cobblestone carried', level: 'root' },
     { key: 'wait_here', label: 'stand by the furnace', when: 'always', level: 'root' },
   ],
-  instructions: workInstructions('A furnace batch is cooking. Choose what the bot does meanwhile; each option says what it gets and how long the batch takes. The player wants the bot never to stand idle when useful work is in reach.'),
+  instructions: workInstructions('A furnace batch is cooking. Choose what the bot does meanwhile; each option says what it gets and how long the batch takes.'),
   fallback: children => ['dig_in_reach', 'mine_nearby', 'dig_stone'].find(k => children[k]) || 'wait_here',
 });
 
