@@ -168,6 +168,22 @@ define({
   fallback: firstOption,
 });
 
+// Full pockets: which stack goes.
+define({
+  id: 'inventory_drop', area: 'resources', kind: 'inventory', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The pockets are full and something needs room: which stack is dropped, or none?',
+  trigger: 'An item the work wants (a drop, a craft, a smelt, food) has no slot; asked up to three times until there is room.',
+  source: 'src/inventory-tidy.js (makeRoom, jevMakesRoom)',
+  ungated: 'dropped stacks lie where they fell and can be picked up again; the only-tool and block-reserve facts are said in each option',
+  options: [
+    { pattern: 'drop_\\d+', label: 'drop this stack', when: 'any stack but the item the room is for and what the work in hand uses', level: 'root', dynamic: true },
+    { key: 'none', label: 'drop nothing and go without', when: 'always', level: 'root' },
+  ],
+  instructions: workInstructions('The pockets are full and the work needs room for `roomFor`. Choose a stack to drop, or none. Each option says how much of it is carried and whether it is the only tool of its kind, food, or part of the block reserve.'),
+  // Without Jev, the tidy's own order (the caller runs it).
+  fallback: () => 'none',
+});
+
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
   id: 'upkeep', area: 'resources', kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,

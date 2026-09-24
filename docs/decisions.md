@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-66 questions: 18 decision trees and 48 batched questions.
+67 questions: 19 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -190,6 +190,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `take_more` | root | keep taking it while it is at hand, up to the cap | always |
 | `enough` | root | stop at what the step asked for | always |
+
+### `inventory_drop`
+
+**The pockets are full and something needs room: which stack is dropped, or none?**
+
+- When: An item the work wants (a drop, a craft, a smelt, food) has no slot; asked up to three times until there is room.
+- Decision tree, choice; stakes medium; ledger kind `inventory`
+- Bar: none: dropped stacks lie where they fell and can be picked up again; the only-tool and block-reserve facts are said in each option
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/inventory-tidy.js (makeRoom, jevMakesRoom)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `drop_\d+` (pattern) | root | drop this stack | any stack but the item the room is for and what the work in hand uses |
+| `none` | root | drop nothing and go without | always |
 
 ### `upkeep`
 

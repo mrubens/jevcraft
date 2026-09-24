@@ -134,9 +134,54 @@ const BLOCK_RESERVE = 16;
 const BUILDING = /^(dirt|cobblestone|cobbled_deepslate|stone|andesite|diorite|granite|tuff|deepslate|netherrack|nether_bricks|blackstone|basalt|end_stone)$|_planks$/;
 const blockStock = bot => bot.inventory.items().filter(i => BUILDING.test(i.name)).reduce((n, i) => n + i.count, 0);
 
+// What goes when the pockets are full is Jev's: every stack, with what it is
+// (the only pickaxe, part of the block reserve, what the work in hand is
+// for), and "nothing" (go without what the room was for). Up to three
+// stacks a time. Without Jev, the order below.
+async function jevMakesRoom(bot, task, name, keep) {
+  const client = task?.opportunityClient;
+  if (!client) return null;
+  const { decide } = require('./decisions');
+  for (let round = 0; round < 3 && !roomFor(bot, name); round++) {
+    const counts = {};
+    for (const i of bot.inventory.items()) counts[i.name] = (counts[i.name] || 0) + i.count;
+    const stacks = bot.inventory.items().filter(i => i.name !== name && !keep.has(i.name));
+    if (!stacks.length) return false;
+    const kind = n => (TOOL.test(n) && n.match(TOOL)[1]) || null;
+    const tree = {};
+    stacks.slice(0, 24).forEach((stack, n) => {
+      const notes = [];
+      const k = kind(stack.name);
+      if (k && !bot.inventory.items().some(i => i !== stack && kind(i.name) === k)) notes.push(`the only ${k}`);
+      if (BUILDING.test(stack.name) && blockStock(bot) - stack.count < BLOCK_RESERVE) notes.push(`part of the ${BLOCK_RESERVE}-block reserve for pillars, walls and pockets`);
+      if (bot.registry?.foodsByName?.[stack.name]) notes.push('food');
+      tree[`drop_${n}`] = { description: `Drop ${stack.count} ${stack.name.replaceAll('_', ' ')} (${counts[stack.name]} carried in all)${notes.length ? `: ${notes.join('; ')}` : ''}.`, stack };
+    });
+    tree.none = { description: `Drop nothing and go without the ${name.replaceAll('_', ' ')}.` };
+    let decision;
+    try {
+      decision = await decide('inventory_drop', { client, bot, task, tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description }])),
+        state: { roomFor: name, carriedKinds: Object.keys(counts).length, freeSlots: bot.inventory.emptySlotCount?.() ?? 0, keeping: [...keep] } });
+    } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return null; }
+    if (decision.stale) continue;
+    // Jev unreachable: the tidy's own order.
+    if (decision.fallback) return null;
+    const pick = decision.path.at(-1);
+    if (pick === 'none') return false;
+    const stack = tree[pick]?.stack;
+    if (!stack) return null;
+    task?.check?.();
+    try { await (bot.tossStack ? bot.tossStack(stack) : bot.toss(stack.type, null, stack.count)); }
+    catch (err) { task?.check?.(); return null; }
+  }
+  return roomFor(bot, name);
+}
+
 async function makeRoom(bot, task, name, { keep = new Set(), away = null } = {}) {
   if (roomFor(bot, name)) return true;
   await faceAway(bot, away);
+  const chosen = await jevMakesRoom(bot, task, name, keep);
+  if (chosen !== null) return chosen;
   // Junk before tools: with forty-six nether brick fences in the pockets the
   // tidy threw out the stone pickaxe first, and the ladder, counting the
   // worn diamond pickaxes as spent, made another and threw it out again.

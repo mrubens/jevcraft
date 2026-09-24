@@ -165,3 +165,19 @@ test('more of a vein than the step asked for is Jev\'s call; without Jev it is t
   assert.equal(await moreOfSource(bot, task, {}, () => {}, step, { block: 'iron_ore' }, 32), false, 'Jev said enough');
   assert.match(told, /until 32 raw iron are carried \(3 now\)/);
 });
+
+test('full pockets: which stack goes is Jev\'s, told what each is; "none" goes without', async () => {
+  const { makeRoom } = require('../src/inventory-tidy');
+  let items = [{ name: 'stone_pickaxe', count: 1, type: 1 }, { name: 'dirt', count: 20, type: 2 }, { name: 'cobblestone', count: 10, type: 3 }];
+  const tossed = [];
+  const bot = { registry, inventory: { items: () => items, emptySlotCount: () => (items.length < 3 ? 1 : 0) }, entity: { position: { x: 0, y: 64, z: 0 } },
+    tossStack: async stack => { tossed.push(stack.name); items = items.filter(i => i !== stack); } };
+  let offered;
+  const pick = choice => ({ check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: typeof choice === 'function' ? choice(offered) : choice, confidence: 0.6 } } }; } } });
+  assert.equal(await makeRoom(bot, pick('none'), 'raw_iron'), false, 'Jev chose to go without');
+  assert.deepEqual(tossed, []);
+  assert.match(offered.drop_0, /the only pickaxe/);
+  assert.match(offered.drop_1, /part of the 16-block reserve/);
+  assert.equal(await makeRoom(bot, pick('drop_1'), 'raw_iron'), true);
+  assert.deepEqual(tossed, ['dirt'], 'Jev\'s pick went');
+});
