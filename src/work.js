@@ -2829,6 +2829,17 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     offer('look_around', 'Walk about twenty-four blocks in a direction not tried lately and see what is there: animals, trees, ore in a cliff, a better way on.',
       () => navigate(bot, bounded, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 }));
   }
+  // Nothing else on offer: a walk to new ground, dusk or not, rather than
+  // standing where the work stalled. Trial 17, a desert at dusk with no wood
+  // and so no tools, had no detour at all and stood a minute (2026-09-24).
+  if (!Object.keys(tree).length && overworld) {
+    const turn = goal.survival || scratch;
+    const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; turn.detourHeading = heading;
+    const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
+    const target = here.offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
+    offer('look_around', 'Walk about twenty-four blocks in a direction not tried lately: nothing else can be done from here.',
+      () => navigate(bot, bounded, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 }));
+  }
   const options = Object.keys(tree);
   const stats = survival?.state || goal.survival || goal;
   recordStill(stats, reason, ms, { now, detour: options.join(',') || 'none' });
