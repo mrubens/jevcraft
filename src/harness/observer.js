@@ -38,6 +38,9 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       inventory: Object.fromEntries([...new Set(items.map(i => i.name))].map(n => [n, items.filter(i => i.name === n).reduce((a, i) => a + i.count, 0)])),
       tools: items.filter(i => bot.registry?.itemsByName?.[i.name]?.maxDurability).map(i => ({ name: i.name,
         remaining: bot.registry.itemsByName[i.name].maxDurability - (i.durabilityUsed || 0) })),
+      // Worn, which items() leaves out: the armour and the off-hand.
+      equipment: Object.fromEntries([[5, 'head'], [6, 'torso'], [7, 'legs'], [8, 'feet'], [45, 'offhand']]
+        .map(([slot, name]) => [name, bot.inventory?.slots?.[slot]?.name || null])),
       goal: goalView(goal), decision: goal.decisions?.at(-1), world, route,
       // Who is moving the bot, and how: the step on the goal went stale
       // while other code held the keys, and a fall had to be reconstructed.
