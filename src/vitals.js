@@ -81,7 +81,7 @@ async function surfaceForAir(bot, task, onAction = () => {}) {
   onAction({ action: 'surface', oxygen: bot.oxygenLevel });
   bot.pathfinder.setGoal(null); bot.stopDigging(); bot.clearControlStates();
   const route = airRoute(bot);
-  if (!route) throw new Error('No observed swimming route to breathable air');
+  if (!route) return straightUp(bot, task);
   const deadline = Date.now() + 15000;
   let index = 0;
   try {
@@ -100,6 +100,31 @@ async function surfaceForAir(bot, task, onAction = () => {}) {
       await sleep(50);
     }
     task.check();
+  } finally { bot.clearControlStates(); }
+}
+
+// No observed swimming route: straight up, as a player trapped under water
+// goes, digging what is over the head (a fallen sand ceiling keeps coming,
+// so it keeps being dug) and swimming through what is not. Trial 7's bot
+// broke into a lakebed on its way up a staircase, the sand came down and the
+// water after it, and "no observed swimming route" was thrown twenty times a
+// second until it drowned (2026-09-24).
+async function straightUp(bot, task, { maxMs = 8000 } = {}) {
+  const deadline = Date.now() + maxMs;
+  try {
+    while ((bot.oxygenLevel ?? 20) < 20 || headSubmerged(bot)) {
+      task.check();
+      if (Date.now() >= deadline) throw new Error('No way up to air found: dug and swam straight up for eight seconds');
+      const above = bot.blockAt(bot.entity.position.offset(0, 2, 0).floored());
+      if (above && above.boundingBox === 'block' && above.diggable && !/bedrock/.test(above.name)) {
+        bot.clearControlStates();
+        await bot.lookAt(above.position.offset(0.5, 0.5, 0.5), true);
+        try { await bot.dig(above, true); } catch (_) { await sleep(100); }
+        continue;
+      }
+      await require('./motion').move(bot, task, { label: 'swim_up', keys: ['jump'], sneak: false, why: 'no swimming route: straight up to air',
+        maxMs: 300, tick: 50, until: () => !headSubmerged(bot) });
+    }
   } finally { bot.clearControlStates(); }
 }
 

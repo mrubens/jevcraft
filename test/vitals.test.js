@@ -61,6 +61,26 @@ test('surfacing refills the air bar and releases swimming controls', async () =>
   assert(!controls.jump && !controls.forward);
 });
 
+test('with no swimming route the bot digs up through the sand that fell on it and swims up', async () => {
+  // Trial 7: a staircase broke into a lakebed, the sand came down, the water after it.
+  const { Vec3 } = require('vec3');
+  const sand = new Set(['0,58,0', '0,59,0']);
+  const bot = { entity: { position: new Vec3(0.5, 56, 0.5), onGround: false, isInWater: true }, oxygenLevel: 2,
+    blockAt: p => {
+      const k = `${p.x},${p.y},${p.z}`;
+      const name = sand.has(k) ? 'sand' : p.x === 0 && p.z === 0 && p.y >= 56 && p.y < 64 ? 'water' : p.y >= 64 ? 'air' : 'stone';
+      return { name, position: p, boundingBox: name === 'sand' || name === 'stone' ? 'block' : 'empty', diggable: true, getProperties: () => ({ level: 0 }) };
+    },
+    pathfinder: { setGoal() {} }, stopDigging() {}, clearControlStates() {}, setControlState() {}, lookAt: async () => {},
+    dig: async block => { sand.delete(`${block.position.x},${block.position.y},${block.position.z}`); dug.push(`${block.position}`); } };
+  const dug = [];
+  const rise = setInterval(() => { if (!sand.has(`0,${Math.floor(bot.entity.position.y) + 2},0`)) bot.entity.position.y += 0.5; if (bot.entity.position.y >= 64) bot.oxygenLevel = 20; }, 20);
+  try { await surfaceForAir(bot, new Task('test', 'surface')); }
+  finally { clearInterval(rise); }
+  assert.deepEqual(dug, ['(0, 58, 0)', '(0, 59, 0)'], 'the fallen sand, one block at a time');
+  assert.equal(bot.oxygenLevel, 20);
+});
+
 test('a full initial air bar does not skip surfacing after an underwater reconnect', async () => {
   const bot = waterWorld(), actions = [], controls = {};
   bot.oxygenLevel = 20; bot.food = 20; bot.health = 20;
