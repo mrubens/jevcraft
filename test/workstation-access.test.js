@@ -60,9 +60,8 @@ test('an inaccessible saved furnace never switches to a different furnace or los
   await assert.rejects(smelt(bot, new Task('resume furnace'), goal.smelting, goal), { name: 'Blocked', message: "I can't reach the furnace holding our saved batch" });
   const { unreachable, ...kept } = goal.smelting;
   assert.deepEqual({ smelting: kept }, saved); assert.equal(unreachable, 1);
-  // Out of reach three times running, the batch is let go rather than
-  // retried for good.
-  await assert.rejects(smelt(bot, new Task('resume furnace'), goal.smelting, goal), { name: 'Blocked' });
+  // Out of reach twice running, the batch is let go rather than retried
+  // for good (twice, as a rung that fails twice is left).
   await assert.rejects(smelt(bot, new Task('resume furnace'), goal.smelting, goal), /stayed out of reach/);
   assert.equal(goal.smelting, undefined); assert.equal(goal.lostSmelting.item, 'glass');
 });
@@ -161,3 +160,4 @@ test('a craft that made nothing is clicked once more before the step fails', asy
   assert.equal(clicks, 2);
   assert.equal(stock.stick, 4);
 });
+

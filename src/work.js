@@ -1056,7 +1056,9 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     block = await approachWorkstation(bot, task, 'furnace', [p]);
     // A furnace that stays out of reach costs the batch, not the run: the
     // dream run retried an unreachable one-beef batch for good.
-    if (!block && (pending.unreachable = (pending.unreachable || 0) + 1) >= 3) {
+    // Twice, like any failure (persist leaves a rung that failed twice):
+    // at three, trial 10's bucket rung was left first and the batch kept.
+    if (!block && (pending.unreachable = (pending.unreachable || 0) + 1) >= 2) {
       goal.lostSmelting = { ...pending, at: new Date().toISOString() }; delete goal.smelting; save();
       throw new Error('The furnace holding our saved batch stayed out of reach; starting the batch again');
     }
