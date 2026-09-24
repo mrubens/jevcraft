@@ -685,9 +685,21 @@ async function workSource(bot, task, step, goal, save, source) {
         : rock ? countOf(bot, step.drops) < Math.max(24, before + (step.count || 1)) : countOf(bot, step.drops) < before + (step.count || 1);
       for (let extra = 0; extra < 24 && wanted(); extra++) {
         let next = nearestRemaining(bot, source);
-        if ((!next || next.distanceTo(bot.entity.position) > 6) && (ore || rock)) {
+        if ((!next || next.distanceTo(bot.entity.position) > 6) && ore) {
           const here = bot.entity.position;
           next = (await miningCandidates(bot, task, step, goal)).filter(p => p.distanceTo(here) <= 6).sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0] || null;
+        }
+        // Rock is looked for within reach only. The full candidate search
+        // over forty-eight blocks of stone, each block tried for an open face,
+        // took minutes underground and was run again for every block: trial
+        // 15's bot sat thirteen minutes at 93% of a core and lost its
+        // connection (2026-09-24).
+        if ((!next || next.distanceTo(bot.entity.position) > 6) && rock) {
+          const here = bot.entity.position, feet = here.floored();
+          next = find(bot, step.sources || [step.block], 6, 24)
+            .filter(p => !p.equals(feet.offset(0, -1, 0)) && !reservedForConstruction(goal, p) && !isSetAside(goal, 'reach', p) &&
+              faces.some(f => air(bot.blockAt(p.plus(f)))))
+            .sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0] || null;
         }
         if (!next || next.distanceTo(bot.entity.position) > 6) break;
         task.check(); checkAir(bot);

@@ -66,13 +66,19 @@ function permittedWait(bot, goal, now = Date.now()) {
   // Something hostile in view is the survival layer's moment. For a
   // minute, and not the hunt's own quarry: a blaze watched through the
   // floor held the bot still for as long as it stayed.
+  // The minute runs from when one came into view and starts again only
+  // once none is in view: cleared at its end instead, it began a fresh minute
+  // at the next look and a mob in sight exempted the bot for good (trial 15
+  // stood thirteen minutes without the rule firing, 2026-09-24).
   try {
     const { threats, claimed } = require('./danger');
-    if (now - (bot._stalls?.hostileSince ?? now) < 60000 && threats(bot, 16).some(t => (t.visible || t.distance < 6) && !claimed(bot, t.entity))) {
-      if (bot._stalls) bot._stalls.hostileSince ??= now;
-      return 'a hostile in view';
+    const inView = threats(bot, 16).some(t => (t.visible || t.distance < 6) && !claimed(bot, t.entity));
+    const stalls = bot._stalls;
+    if (!inView) { if (stalls) delete stalls.hostileSince; }
+    else {
+      const since = stalls ? (stalls.hostileSince ??= now) : now;
+      if (now - since < 60000) return 'a hostile in view';
     }
-    if (bot._stalls) delete bot._stalls.hostileSince;
   } catch (_) {}
   const encounter = bot._combatEncounter;
   if (encounter && encounter.expiresAt > now && !encounter.task?.cancelled) return 'in a fight';

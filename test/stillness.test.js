@@ -106,6 +106,7 @@ test('asleep, in a fight, holding a door or getting out of danger is not measure
     world: { raycast: () => null }, time: { timeOfDay: 18000 }, inventory: { slots: {} } };
   assert.equal(permittedWait(watched, { step: { action: 'mine' } }, now), 'a hostile in view');
   assert.equal(permittedWait(watched, { step: { action: 'mine' } }, now + 61000), null, 'for a minute: a skeleton across a ravine does not hold the bot still for good');
+  assert.equal(permittedWait(watched, { step: { action: 'mine' } }, now + 62000), null, 'and the minute does not start again while it is still there');
 });
 
 test('a stall is set aside, thrown at every check until the loop takes it, and a stalled survival action is refused', () => {
