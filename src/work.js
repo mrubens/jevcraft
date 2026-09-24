@@ -772,9 +772,14 @@ async function moveOnFromResource(bot, task, goal, save) {
   if (step?.action !== 'mine' || !step.block) return false;
   const nearby = find(bot, step.sources || [step.block], 16, 64);
   for (const p of nearby) setAside(goal, 'reach', p, 'set aside with the rest of this area', 120000);
-  goal.step = { action: 'move_on', resource: step.drops || step.block, setAside: nearby.length }; save();
+  // The marker shows on the dashboard during the walk and is taken down
+  // after it: left in place, the work loop had no step to run and spun on it
+  // for eighty-four seconds (trial 23).
+  const marker = { action: 'move_on', resource: step.drops || step.block, setAside: nearby.length };
+  goal.step = marker; save();
   bot.chat?.(`I can't get at the ${String(step.block).replaceAll('_', ' ')} here. I'll look somewhere else.`);
-  await explore(bot, task, goal, save, step.block);
+  try { await explore(bot, task, goal, save, step.block); }
+  finally { if (goal.step === marker) { goal.step = step; save(); } }
   return true;
 }
 

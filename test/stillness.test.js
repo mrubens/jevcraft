@@ -156,6 +156,16 @@ test('a stalled step is done differently first, then something else, then its ru
   assert(goal.survival.stillness.events.some(e => e.reason === 'survival:night_mine'));
 });
 
+test('a stalled mine moves on from this patch and keeps its step: no step-less marker is left for the loop to spin on', async () => {
+  const { answerStall } = require('../src/work');
+  const bot = Object.assign(botAt(0.5, 64, 0.5), { registry, health: 20, food: 20, findBlocks: () => [], blockAt: () => ({ name: 'air', boundingBox: 'empty' }),
+    pathfinder: { movements: {}, setGoal() {}, goto: async () => {} }, clearControlStates() {}, chat() {} });
+  const step = { action: 'mine', block: 'dirt', sources: ['dirt', 'grass_block'], drops: 'dirt', count: 4 };
+  const goal = { kind: 'win', survival: {}, step };
+  await answerStall(bot, new Task('stall'), goal, () => {}, { key: 'step:dirt', layer: 'work', strikes: 1 }).catch(() => {});
+  assert.equal(goal.step, step, `the mine step is back: ${JSON.stringify(goal.step)}`);
+});
+
 test('seconds stalled are kept per hour and per reason, for the notes to read back', () => {
   const state = {}, now = Date.parse('2026-09-22T19:30:00Z');
   recordStill(state, 'step:stock_food_for_nether', 25000, { now, detour: 'look_around' });
