@@ -90,10 +90,15 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
   // just after it: inventories are recorded only with actions and decisions,
   // and a minute of mining often has none inside it (trial 13's iron, 24 raw
   // ore into the furnace at the end of a "pacing" minute).
+  // By binary search: scanning every inventory for every candidate window
+  // took the verdict five minutes once they were recorded every ten seconds.
+  const firstAtOrAfter = t => { let lo = 0, hi = inventories.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (inventories[mid].t < t) lo = mid + 1; else hi = mid; } return lo; };
   const gained = (from, to) => {
-    const before = inventories.filter(f => f.t <= from && f.t >= from - 60000).at(-1) || inventories.find(f => f.t >= from && f.t <= to);
-    const seen = inventories.filter(f => f.t > (before?.t ?? from) && f.t <= to + 30000);
-    if (!before || !seen.length) return false;
+    const i = firstAtOrAfter(from + 1) - 1;
+    const before = (i >= 0 && inventories[i].t >= from - 60000 ? inventories[i] : null) || (inventories[i + 1]?.t <= to ? inventories[i + 1] : null);
+    if (!before) return false;
+    const seen = inventories.slice(firstAtOrAfter(before.t + 1), firstAtOrAfter(to + 30001));
+    if (!seen.length) return false;
     const first = before.snapshot.inventory, best = {};
     for (const f of seen) for (const [k, n] of Object.entries(f.snapshot.inventory)) if (!FILLER.test(k)) best[k] = Math.max(best[k] || 0, +n || 0);
     return Object.entries(best).some(([k, n]) => n > (+first[k] || 0));
