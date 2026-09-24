@@ -1755,7 +1755,11 @@ class Survival {
       this.report(goal, save, { action: 'recover_items', origin: this.state.recovery.position });
       if (await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate)) { onStep(goal); return true; }
     }
-    const expeditionFood = (goal.preparingExpedition || goal.preparingEnd || goal.preparingNether) && bot.game.difficulty !== 'peaceful';
+    // The game ladder's early expedition kit is tools and wood; its food is
+    // stocked before the Nether (preparingNether) and the End. Driven by the
+    // kit, the search walked trial 20's first five minutes looking for an
+    // animal at full hunger (2026-09-24).
+    const expeditionFood = ((goal.preparingExpedition && goal.kind !== 'win') || goal.preparingEnd || goal.preparingNether) && bot.game.difficulty !== 'peaceful';
     // One reserve for the crossing, kept with the stash that fills it: it was
     // written out here, in the Nether gate and in the stash, three times.
     const desiredFood = goal.preparingEnd ? 64 : goal.preparingNether ? NETHER_FOOD_POINTS : KIT_FOOD_POINTS;
