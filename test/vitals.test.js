@@ -218,6 +218,10 @@ test('no eating with a hostile mob within five blocks, unless starving', async (
   assert.equal(await maintainVitals(bot, task), true, 'with the zombie gone, it eats');
   bot.entities[1].position = new Vec3(2, 64, 0); bot.food = 2;
   assert.equal(await maintainVitals(bot, task), true, 'starving, it eats anyway');
+  // Sealed in, the zombie on the far side of the wall: it eats.
+  bot.food = 12; bot.entities[1].position = new Vec3(3, 64, 0);
+  bot.world = { raycast: (from, dir) => ({ position: new Vec3(1, 65, 0), intersect: from.plus(dir.scaled(1)) }) };
+  assert.equal(await maintainVitals(bot, task), true, 'a zombie behind a wall is no reason not to eat');
 });
 
 test('suffocating with the head in gravel, the block is dug before anything else', async () => {

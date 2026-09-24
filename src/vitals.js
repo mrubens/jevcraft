@@ -145,11 +145,22 @@ function lastResortFood(bot) {
 }
 
 const CLOSE = 5;
+// Close and able to get at the bot: through a wall it is not. Sealed in a
+// pocket at three health with a skeleton outside, the dream run would not
+// eat, so could not heal, and the work walked it out to be shot (2026-09-24).
 function closeHostile(bot) {
   const here = bot.entity?.position;
   if (!here) return false;
+  const eye = here.offset(0, 1.62, 0);
+  const reaches = e => {
+    if (typeof bot.world?.raycast !== 'function') return true;
+    const aim = e.position.offset(0, Math.min(e.height || 1.6, 1.6), 0), dir = aim.minus(eye), d = dir.norm();
+    if (d < 1.2) return true;
+    const hit = bot.world.raycast(eye, dir.scaled(1 / d), d);
+    return !hit || eye.distanceTo(hit.intersect || hit.position) >= d - 0.5;
+  };
   return Object.values(bot.entities || {}).some(e => e !== bot.entity && e.position && e.isValid !== false &&
-    (bot.registry?.entitiesByName?.[e.name]?.type === 'hostile' || e.type === 'hostile') && e.position.distanceTo(here) <= CLOSE);
+    (bot.registry?.entitiesByName?.[e.name]?.type === 'hostile' || e.type === 'hostile') && e.position.distanceTo(here) <= CLOSE && reaches(e));
 }
 
 function chooseFood(bot) {
