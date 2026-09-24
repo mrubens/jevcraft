@@ -211,7 +211,11 @@ function watchStalls(bot, goalOf) {
     }, { _stallMarked: true });
   }
   stalls.timer = setInterval(() => {
-    const now = Date.now(), dt = Math.min(now - last, 5000); last = now;
+    const now = Date.now(), late = now - last - TICK_MS, dt = Math.min(now - last, 5000); last = now;
+    // A look that comes seconds late is the event loop held by synchronous
+    // work: said with what the bot was on, so the next one is found by name
+    // and not by a server dropping the bot (the home-site fit, 2026-09-24).
+    if (late > 3000) console.log(`[blocked] ${Math.round(late / 1000)}s on ${stalls.goalOf ? actionOf(stalls.goalOf() || {}, now).key : 'nothing'}`);
     const goal = stalls.goalOf?.();
     if (!goal || stalls.stall || bot.game?.gameMode === 'creative' || /end/.test(String(bot.game?.dimension || ''))) return;
     try {

@@ -230,7 +230,14 @@ function chooseBaseSite(bot, goal, { radius = SITE_RADIUS, dryOk = false } = {})
     }
     return best && (({ cost, ...site }) => site)(best);
   };
-  const natural = fit(water);
+  // The nearest sixty-four candidates, not all of them: each is fitted in
+  // twenty placements of a sixty-three-cell footprint, and four thousand
+  // columns of dry ground blocked the event loop for tens of seconds at a
+  // time, long enough for the server to drop the bot and a zombie to kill it
+  // without an answer (the dream run, 2026-09-24). The nearest are the sites
+  // wanted anyway; a flat one ends the search at once.
+  const NEAREST = 64;
+  const natural = fit(water.slice(0, NEAREST));
   if (natural) return natural;
   // No pond within reach, but a bucket of water in the pockets is a pond
   // anywhere: a one-block hole beside the plot, filled once. The run's
@@ -244,13 +251,13 @@ function chooseBaseSite(bot, goal, { radius = SITE_RADIUS, dryOk = false } = {})
   // One candidate per column, the surface: a thousand-block scan of
   // grass and dirt finds cave floors and the same slope over and over.
   const columns = new Map();
-  for (const b of bot.findBlocks({ matching: groundIds, maxDistance: radius, count: 4096, point,
+  for (const b of bot.findBlocks({ matching: groundIds, maxDistance: radius, count: 1024, point,
     useExtraInfo: b => clear(bot.blockAt(b.position.offset(0, 1, 0))) && bot.blockAt(b.position.offset(0, -1, 0))?.boundingBox === 'block' && openSky(bot, b.position) }) || []) {
     const key = `${b.x},${b.z}`;
     if (!columns.has(key) || columns.get(key).y < b.y) columns.set(key, b);
   }
   const ground = [...columns.values()].sort((a, b) => a.distanceTo(point) - b.distanceTo(point));
-  return fit(ground, { pourWater: true });
+  return fit(ground.slice(0, NEAREST), { pourWater: true });
 }
 
 function establishHome(goal, site, { now = Date.now() } = {}) {
