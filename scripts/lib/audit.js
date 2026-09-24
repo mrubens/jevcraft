@@ -86,11 +86,16 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
   // is worth keeping (src/stillness.js FILLER).
   const { FILLER } = require('../../src/stillness');
   const inventories = frames.filter(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
+  // What was carried just before the window against everything seen up to
+  // just after it: inventories are recorded only with actions and decisions,
+  // and a minute of mining often has none inside it (trial 13's iron, 24 raw
+  // ore into the furnace at the end of a "pacing" minute).
   const gained = (from, to) => {
-    const inside = inventories.filter(f => f.t >= from - 5000 && f.t <= to + 5000);
-    if (inside.length < 2) return false;
-    const first = inside[0].snapshot.inventory, best = {};
-    for (const f of inside) for (const [k, n] of Object.entries(f.snapshot.inventory)) if (!FILLER.test(k)) best[k] = Math.max(best[k] || 0, +n || 0);
+    const before = inventories.filter(f => f.t <= from && f.t >= from - 60000).at(-1) || inventories.find(f => f.t >= from && f.t <= to);
+    const seen = inventories.filter(f => f.t > (before?.t ?? from) && f.t <= to + 30000);
+    if (!before || !seen.length) return false;
+    const first = before.snapshot.inventory, best = {};
+    for (const f of seen) for (const [k, n] of Object.entries(f.snapshot.inventory)) if (!FILLER.test(k)) best[k] = Math.max(best[k] || 0, +n || 0);
     return Object.entries(best).some(([k, n]) => n > (+first[k] || 0));
   };
   const pacing = [];

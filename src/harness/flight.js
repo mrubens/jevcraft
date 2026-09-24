@@ -46,7 +46,11 @@ function flightRecorder(directory, label = 'jev', { now = () => new Date(), part
   fs.mkdirSync(directory, { recursive: true });
   const prefix = label.replace(/[^a-zA-Z0-9_-]/g, '_');
   const started = now().toISOString().replace(/[:.]/g, '-');
-  let part = 0, file, stream, bytes = 0, closed = false, fullGoalAt = 0;
+  // The pockets every ten seconds on a heartbeat: without them a minute of
+  // quiet mining showed no gain to the audit, and was scored as pacing
+  // (trial 13's iron, 2026-09-24). A few hundred bytes a minute.
+  const INVENTORY_EVERY_MS = 10000;
+  let part = 0, file, stream, bytes = 0, closed = false, fullGoalAt = 0, inventoryAt = 0;
   function prune() {
     const mine = fs.readdirSync(directory).filter(f => f.startsWith(`${prefix}-`) && f.endsWith('.jsonl'))
       .map(f => { const st = fs.statSync(path.join(directory, f)); return { f, at: st.mtimeMs, size: st.size }; }).sort((a, b) => b.at - a.at);
@@ -72,7 +76,11 @@ function flightRecorder(directory, label = 'jev', { now = () => new Date(), part
   function record(frame) {
     if (closed) return;
     let row;
-    if (HEARTBEAT.has(frame.kind)) row = slim(frame);
+    if (HEARTBEAT.has(frame.kind)) {
+      row = slim(frame);
+      const at = Date.parse(frame.at) || Date.now();
+      if (frame.kind === 'observation' && frame.snapshot?.inventory && at - inventoryAt >= INVENTORY_EVERY_MS) { row.snapshot.inventory = frame.snapshot.inventory; inventoryAt = at; }
+    }
     else {
       const snapshot = { ...(frame.snapshot || {}) };
       if (!KEEP_WORLD.has(frame.kind)) delete snapshot.world;
