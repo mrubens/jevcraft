@@ -344,6 +344,20 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 145. *Standing by the furnace (the user: "he's not doing anything").* Twenty raw iron in the base furnace is two hundred seconds, and with no ore within arm's reach of a surface base the bot stood beside it for four minutes. While a batch has thirty seconds or more to go, the bot now walks to an ore within sixteen blocks (else a log, while fewer than sixteen are carried), digs it and comes back, up to twelve times a batch.
 
+146. *An hour of the user's eye (01:30 to 02:30 UTC).* Watching the dream run, the user (and their daughter) named what an audit would take hours to find. Each is fixed and tested:
+- *Iron armour in the pockets.* The spare set came out of the stash after a death and was carried, not worn: armour went on only in the check before a crossing. The best armour carried is now worn at every game step (golden boots on the feet in the Nether), and a carried shield goes on the off-hand.
+- *Logs left lying.* Pockets of 32 kinds, three stacks of them cobblestone: a stack is the cap now.
+- *A diamond sword on the trees.* Nothing beats a fist on a log, so the sword from the last fight stayed in hand, two uses a log. A weapon or tool is put away for fist work, and a stone axe is made before felling trees when the pockets can make one.
+- *Leaf litter as fuel* (the user's idea): measured on the arena server, a hundred ticks each, half an item. It is kept (sixteen, thirty-two before it is surplus) and burned before planks. Blaze rods came off the fuel list: a furnace with no coal could have burned the eyes' rods.
+- *Lapis for enchanting* (the daughter's): sixteen are carried, lapis ore is taken in passing while short, and an enchanting table is a side trip once two diamonds and five levels are in hand, not only in the last preparations before the End, where it had never been made in two runs.
+- *Wool* (the user's): shears from two ingots, sheep sheared (not killed) for the bed and as a side trip toward fifteen wool.
+- *"I think I lost it" and off a bridge.* The corpse run in the Nether charged a wither skeleton four blocks up the fortress and the floor went from under it. A charge is level ground only, not from an edge, and walks without digging, towering or dropping more than two.
+- *A mineshaft two blocks away that was not there.* Forty-seven blocks down: loot trips measured the map, and the walk stopped on the grass over a dungeon. Loot trips now keep to structures near the bot's own height.
+- *Air.* A drowning's air reading of none outlived the body: the clean run "came up for air" on grass for minutes. A respawn refills it.
+- *A skeleton in the pocket.* The clean run sealed itself in with one at 0.3 blocks and waited eighteen minutes: a mob within reach inside the pocket is fought.
+
+147. *Beds against the dragon (the user's).* Measured on the endgame server in iron armour: a bed blown from open ground three or four blocks off killed the clicker; from a trench one block deep, sneaking, bed three off, 4.4 to 6.7 damage, the bed's near side in plain sight (a two-deep trench took none but hid the bed: a click through the ground is not a player's, so it is never used). Four beds are End supplies now, from wool; when the dragon perches the fight may lay one beside its head and blow it from such a trench (bed-bomb.js), ahead of the sword in the fallback order. The rehearsal on a fresh End (the old one moved aside) took five crystals in its first minute, then stopped: in the exit portal's basin with the dragon over it, no route counted as safe and the fight called it Blocked. Unsafe with no way out now holds and looks again whatever the danger. Netherite waits: beds uncover ancient debris in the Nether, but the upgrade needs a smithing template from a bastion's chests.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
