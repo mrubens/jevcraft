@@ -393,3 +393,19 @@ test('a base is never sited on water under a roof: the clean run built in a cave
   assert(site, 'the open pond still makes a site');
   assert(site.water.x < -30, `the roofed pond was passed over: ${JSON.stringify(site.water)}`);
 });
+
+test('home is measured in three dimensions: forty blocks down a mine under the base is not home', () => {
+  const home = { origin: { x: 0, y: 63, z: 0 } };
+  assert(home.origin && require('../src/home-base').homeDistance({ entity: { position: new Vec3(0.5, 64, 0.5) } }, home) < 1);
+  assert(require('../src/home-base').homeDistance({ entity: { position: new Vec3(0.5, 24, 0.5) } }, home) >= 39);
+});
+
+test('a landmark is walked to at its depth, not to the grass over it', async () => {
+  const { goToLandmark } = require('../src/exploration');
+  const goals = [];
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, game: { dimension: 'overworld' } };
+  const goal = { landmarks: [{ kind: 'dungeon', x: 40, y: 30, z: 0, dimension: 'overworld' }] };
+  await goToLandmark(bot, new Task('loot'), goal, () => {}, ['dungeon'], { navigate: async (b, t, g) => { goals.push(g); bot.entity.position = new Vec3(40.5, 64, 0.5); }, arrive: 10 });
+  assert.equal(goals[0].y, 30, 'the goal has the dungeon\'s depth');
+  assert.equal(goals[0].constructor.name, 'GoalNear');
+});

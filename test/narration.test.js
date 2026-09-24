@@ -93,3 +93,13 @@ test('a combined request narrates its inner step and a delivery says what is com
   goal.step = { action: 'deliver', item: 'iron_pickaxe', count: 1, recipient: 'Player' };
   assert.equal(narrate(bot, goal, { now: 1000 + MIN_GAP_MS }), 'Bringing you 1 iron pickaxe.');
 });
+
+test('a trip home of ten blocks is not announced; one of eighty is', () => {
+  const said = [], bot = { chat: line => said.push(line) };
+  const at = new Date().toISOString();
+  const near = { survivalAction: { action: 'go_home_for_night', distance: 10, at } };
+  assert.equal(narrate(bot, near, { now: Date.now() }), null);
+  const far = { survivalAction: { action: 'go_home_for_night', distance: 80, at } };
+  assert.equal(narrate(bot, far, { now: Date.now() }), 'Getting dark. Heading home to bed.');
+  assert.deepEqual(said, ['Getting dark. Heading home to bed.']);
+});

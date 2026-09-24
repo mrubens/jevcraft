@@ -104,7 +104,7 @@ function knownVillages(bot, goal, reach = Infinity) {
   if (!here) return [];
   const where = dimension(bot);
   return (goal.villages || []).filter(v => v.dimension === where)
-    .map(village => ({ village, distance: Math.round(Math.hypot(village.x - here.x, village.z - here.z)) }))
+    .map(village => ({ village, distance: Math.round(Math.hypot(village.x - here.x, (village.y ?? here.y) - here.y, village.z - here.z)) }))
     .filter(v => v.distance <= reach).sort((a, b) => a.distance - b.distance);
 }
 

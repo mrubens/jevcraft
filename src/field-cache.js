@@ -90,7 +90,7 @@ function nearCache(bot, goal, reach = REACH) {
   // hour is a trip that ended without saying so (a death, a change of plan).
   const held = c => c.hold && Date.now() - Date.parse(c.placedAt || 0) < 30 * 60 * 1000;
   return (goal.caches || []).filter(c => c.dimension === dimension && !held(c) && Object.values(c.contents || {}).some(n => n > 0) && !isSetAside(goal, 'field_cache_take', `${c.position.x},${c.position.z}`))
-    .map(c => ({ cache: c, distance: Math.hypot(c.position.x - here.x, c.position.z - here.z) }))
+    .map(c => ({ cache: c, distance: Math.hypot(c.position.x - here.x, c.position.y - here.y, c.position.z - here.z) }))
     .filter(c => c.distance <= reach).sort((a, b) => a.distance - b.distance)[0] || null;
 }
 

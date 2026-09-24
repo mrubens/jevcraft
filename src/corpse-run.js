@@ -20,7 +20,8 @@ const CHEAP = /^(wooden|stone)_(sword|pickaxe|axe)$/;
 const TICKING = 128, DESPAWN_MS = 5 * 60000, MARGIN_MS = 20000, KEEP_MS = 3 * 3600000, LEG_MS = 120000, ARRIVE = 6;
 const ARMOUR = { helmet: 'head', chestplate: 'torso', leggings: 'legs', boots: 'feet' };
 const dim = name => String(name || 'overworld').replace(/^minecraft:/, '').replace(/^the_/, '');
-const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+// Three dimensions: a death in a mine under the bed is not beside the bed.
+const flat = (a, b) => Math.hypot(a.x - b.x, (a.y ?? b.y) - (b.y ?? a.y), a.z - b.z);
 
 function worth(items = {}) {
   const out = {};
@@ -91,7 +92,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items } }; save();
   const before = flat(bot.entity.position, spot);
   if (before > ARRIVE) {
-    try { await move(bot, task, new goals.GoalNearXZ(spot.x, spot.z, 3), { timeoutMs: LEG_MS, stallMs: 8000, sprint: true }); }
+    try { await move(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 3), { timeoutMs: LEG_MS, stallMs: 8000, sprint: true }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     const after = flat(bot.entity.position, spot);
     if (after > ARRIVE) {

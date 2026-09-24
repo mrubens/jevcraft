@@ -26,7 +26,10 @@ const SURVIVAL = {
   seal_shelter: 'Sealing myself in for the night.',
   sheltered: "I'm safe inside. I'll wait for morning.",
   sleep: 'Night. Bedding down.',
-  go_home_for_night: "Getting dark. Heading home to bed.",
+  // Only a trip worth the name: "heading home to bed" ten blocks from the
+  // bed, then "home before bedtime", read as a bot talking to itself (the
+  // user, 2026-09-24).
+  go_home_for_night: (goal, action) => (action.distance ?? 99) > 24 ? 'Getting dark. Heading home to bed.' : null,
   wait_for_bedtime: "Home before dark. Waiting for bedtime.",
   evening_chore: (goal, action) => `Home before dark. ${({ stock_stash: 'Stocking the chest', harvest_and_bake: 'Harvesting and baking', tend_farm: 'Tending the plot', breed_cows: 'Breeding the cows' })[action.chore] || 'A chore'} before bed.`,
   grow_plot: 'Home before dark. The plot can be bigger; one more row tomorrow.',
@@ -180,7 +183,7 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
     // Any survival line repeated word for word inside the window is the same
     // news again: five food searches in a row read as a stuck bot.
     if (line && state.lastSurvivalLine?.line === line && now - state.lastSurvivalLine.at < ESCAPE_REPEAT_MS) { state.survival = action.at; return null; }
-    if (!phrase || speak(line)) { state.survival = action.at; if (line) state.lastSurvivalLine = { line, at: now }; return line || null; }
+    if (!phrase || !line || speak(line)) { state.survival = action.at; if (line) state.lastSurvivalLine = { line, at: now }; return line || null; }
     return null;
   }
   const decision = goal.decisions?.at(-1);

@@ -263,7 +263,8 @@ function homeOf(bot, goal) {
 }
 function homeDistance(bot, home) {
   const here = bot.entity.position;
-  return Math.hypot(here.x - (home.origin.x + 0.5), here.z - (home.origin.z + 0.5));
+  // Three dimensions: forty blocks down a mine under the base is not home.
+  return Math.hypot(here.x - (home.origin.x + 0.5), here.y - (home.origin.y + 1), here.z - (home.origin.z + 0.5));
 }
 
 function plotStatus(bot, home) {

@@ -149,7 +149,7 @@ const LANDMARK_KINDS = DETECTORS.map(d => d.kind);
 function rememberLandmark(goal, kind, where, place, now = Date.now()) {
   const detector = DETECTORS.find(d => d.kind === kind);
   goal.landmarks ||= [];
-  const known = goal.landmarks.find(l => l.kind === kind && l.dimension === where && Math.hypot(l.x - place.x, l.z - place.z) < (detector?.same || 32));
+  const known = goal.landmarks.find(l => l.kind === kind && l.dimension === where && Math.hypot(l.x - place.x, (l.y ?? place.y) - (place.y ?? l.y), l.z - place.z) < (detector?.same || 32));
   if (known) { known.seenAt = now; for (const [k, v] of Object.entries(place)) if (typeof v === 'number' && !['x', 'y', 'z'].includes(k)) known[k] = Math.max(known[k] || 0, v); return { landmark: known, isNew: false }; }
   const entry = { kind, ...place, dimension: where, firstAt: now, seenAt: now };
   goal.landmarks.push(entry);
@@ -200,7 +200,7 @@ function knownLandmarks(bot, goal, kind, reach = Infinity) {
   const here = bot.entity?.position, where = dimensionOf(bot);
   if (!here) return [];
   return (goal.landmarks || []).filter(l => l.kind === kind && l.dimension === where)
-    .map(landmark => ({ landmark, distance: Math.round(Math.hypot(landmark.x - here.x, landmark.z - here.z)) }))
+    .map(landmark => ({ landmark, distance: Math.round(Math.hypot(landmark.x - here.x, (landmark.y ?? here.y) - here.y, landmark.z - here.z)) }))
     .filter(l => l.distance <= reach).sort((a, b) => a.distance - b.distance);
 }
 
@@ -271,9 +271,12 @@ async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 51
   if (choice.distance <= arrive) return landmark;
   const before = choice.distance;
   goal.step = { action: 'go_to_landmark', kind: landmark.kind, target: { x: landmark.x, y: landmark.y, z: landmark.z }, distance: before }; save();
-  try { await navigate(bot, task, new goals.GoalNearXZ(landmark.x, landmark.z, Math.max(2, arrive - 4)), { timeoutMs: 120000, stallMs: 8000, sprint: true }); }
+  // To the place itself, depth and all: a walk that judged only the map
+  // stopped on the grass over a buried dungeon and "looted" nothing.
+  const goal3 = landmark.y === undefined ? new goals.GoalNearXZ(landmark.x, landmark.z, Math.max(2, arrive - 4)) : new goals.GoalNear(landmark.x, landmark.y, landmark.z, Math.max(2, arrive - 4));
+  try { await navigate(bot, task, goal3, { timeoutMs: 120000, stallMs: 8000, sprint: true }); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-  const after = Math.hypot(landmark.x - bot.entity.position.x, landmark.z - bot.entity.position.z);
+  const after = Math.hypot(landmark.x - bot.entity.position.x, (landmark.y ?? bot.entity.position.y) - bot.entity.position.y, landmark.z - bot.entity.position.z);
   if (after <= arrive) return landmark;
   if (before - after < 8) { setAside(goal, 'landmark_trip', key, 'the walk there made no ground', 1800000); save(); }
   return false;
