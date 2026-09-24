@@ -187,6 +187,9 @@ async function maintainVitals(bot, task, onAction = () => {}) {
         catch (err) { bot.deactivateItem(); reject(err); }
       }, 100);
     });
+    // The hand can empty between the equip and the bite (a slot resync);
+    // mineflayer's consume reads the held item's name without looking.
+    if (bot.heldItem === null) throw new Error('The food was not in hand to eat');
     await Promise.race([bot.consume(), cancelled]);
     await until(task, () => bot.food > before, 3000, 'Eating did not restore hunger');
   } finally { clearInterval(watcher); bot.deactivateItem(); }

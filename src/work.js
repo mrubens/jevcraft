@@ -84,8 +84,11 @@ const faces = [new Vec3(0, -1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Ve
 const reportedBugs = new Set();
 function noteError(goal, err) {
   goal.lastError = err.message;
-  if (!(err instanceof TypeError || err instanceof ReferenceError || err instanceof RangeError)) { delete goal.lastErrorAt; return; }
   const frames = String(err.stack || '').split('\n').filter(line => /\/src\//.test(line)).map(line => line.trim().replace(/^at /, '').replace(/\(?\/.*\/src\//, '(src/'));
+  // Where a failure came from, past the shared primitives: "navigation
+  // ended" five times over said nothing about which walk it was.
+  goal.lastErrorFrom = frames.filter(f => !/src\/(skills|motion)\.js/.test(f)).slice(0, 2).join(' < ') || undefined;
+  if (!(err instanceof TypeError || err instanceof ReferenceError || err instanceof RangeError)) { delete goal.lastErrorAt; return; }
   goal.lastErrorAt = frames.slice(0, 3).join(' < ');
   if (!reportedBugs.has(err.message)) { reportedBugs.add(err.message); console.error('[bug]', err.stack); }
 }
@@ -2376,7 +2379,7 @@ const turnSearch = search => Object.fromEntries(Object.entries(search || {})
     : { attempts: 0, origin: entry.origin, leg: (entry.leg || 0) + 1 }]));
 async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } = {}) {
   goal.struggles = (goal.struggles || 0) + 1;
-  goal.lastStruggle = { at: new Date().toISOString(), error: err.message };
+  goal.lastStruggle = { at: new Date().toISOString(), error: err.message, from: goal.lastErrorFrom };
   // A clean search, but not the heading that just failed: an empty search
   // re-derives its heading from the resource's name, which pointed the bot
   // straight back along the route it had turned away from.
@@ -3087,7 +3090,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         return { ok: false, reason: err.message, goal };
       }
       if (err.name === 'Blocked' || goal.failures >= 5) {
-        goal.lastStruggleStep = goal.step;
+        // The step that failed, not the last retry: a step that throws
+        // before it names itself leaves the retry's name on the goal.
+        if (goal.step?.action !== 'persist') goal.lastStruggleStep = goal.step;
         await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { backoffMs }));
         continue;
       }
