@@ -47,6 +47,16 @@ function structureOf(goal, p, bot = null) {
   const landmark = (goal.landmarks || []).find(l => LOOTABLE.includes(l.kind) && l.kind !== 'mineshaft' && (bot ? sameDimension(bot, l) : true) &&
     Math.hypot(l.x - p.x, l.z - p.z) <= ({ nether_fortress: 48, ancient_city: 80, trial_chambers: 48, bastion: 48 }[l.kind] || OF_STRUCTURE) && Math.abs((l.y ?? p.y) - p.y) <= 24);
   if (landmark) return landmark;
+  // A Nether chest among nether bricks is a fortress's, whichever landmark
+  // was recorded: fortresses sprawl, one is remembered per ninety-six
+  // blocks, and five chests in the fortress the dream run was hunting were
+  // fifty to a hundred blocks from the one it had written down, so none was
+  // "a fortress chest" (the user: "why isn't Jev looting the chests?").
+  if (bot && /nether/.test(where(bot)) && typeof bot.blockAt === 'function') {
+    let bricks = 0;
+    for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -2; dz <= 2; dz++) if (/^nether_brick/.test(bot.blockAt(p.offset(dx, dy, dz))?.name || '')) bricks++;
+    if (bricks >= 4) return { kind: 'nether_fortress', x: p.x, y: p.y, z: p.z, dimension: 'nether', inferred: true };
+  }
   // A village is its own record (villages.js), not a landmark.
   const village = (goal.villages || []).find(v => (bot ? sameDimension(bot, v) : true) && Math.hypot(v.x - p.x, v.z - p.z) <= VILLAGE_REACH);
   return village ? { kind: 'village', ...village } : null;
@@ -69,7 +79,7 @@ function ownChest(goal, p) {
 // The unopened structure chests within reach, nearest first.
 function lootableChests(bot, goal, { reach = NEAR } = {}) {
   const id = bot.registry?.blocksByName?.chest?.id;
-  if (id === undefined || typeof bot.findBlocks !== 'function' || (!goal.landmarks?.length && !goal.villages?.length)) return [];
+  if (id === undefined || typeof bot.findBlocks !== 'function' || (!goal.landmarks?.length && !goal.villages?.length && overworld(bot))) return [];
   // In the Nether a fortress's with no piglin looking on, and a bastion's
   // whoever is looking: a bastion raid is packed light and planned to die
   // (trip-kit.js); opening its chests turns the piglins, and that is the raid.

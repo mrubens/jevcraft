@@ -130,3 +130,12 @@ test('a structure buried far below is not "two blocks away": it waits until the 
   assert.equal(unlootedLandmarks(bot, goal)[0].landmark.kind, 'mineshaft', 'down at its depth, it is');
   assert.equal(unlootedLandmarks(bot, goal)[0].distance, 4);
 });
+
+test('a Nether chest among nether bricks is a fortress chest, whichever fortress was written down', () => {
+  const { structureOf } = require('../src/looting');
+  const bot = { game: { dimension: 'the_nether' }, blockAt: p => ({ name: p.y === 52 || (Math.abs(p.x - 100) === 1 && p.y === 53) ? 'nether_bricks' : 'air', position: p }) };
+  const s = structureOf({ landmarks: [{ kind: 'nether_fortress', x: 0, y: 64, z: 0, dimension: 'nether' }] }, new Vec3(100, 53, 0), bot);
+  assert.equal(s?.kind, 'nether_fortress');
+  const plain = { game: { dimension: 'the_nether' }, blockAt: p => ({ name: 'netherrack', position: p }) };
+  assert.equal(structureOf({ landmarks: [] }, new Vec3(100, 53, 0), plain), null, 'a chest in plain netherrack is nobody\'s');
+});

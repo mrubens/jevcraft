@@ -681,7 +681,10 @@ class Survival {
       // behind it, took it from 19 to nothing in five of them (the dream
       // run, 2026-09-24 00:07). The fight rule swings at the top of every
       // tick; here the tick ends so the next one swings again.
-      const melee = danger.find(t => !shoots(t) && t.entity.name !== 'creeper' && (t.distance <= 3.2 || canStrike(bot, t.entity)));
+      // A shooter at arm's length too: a blaze three blocks off was walled
+      // against for twelve seconds of block placing while it shot, where two
+      // swings would have ended it (the user, 2026-09-24).
+      const melee = danger.find(t => t.entity.name !== 'creeper' && (t.distance <= 3.2 || canStrike(bot, t.entity)));
       if (armed && melee && bot.health >= 6) {
         this.report(goal, save, { action: 'fight', threats: [melee.entity.name], health: bot.health, cornered: true });
         delete this.state.trappedSince; return;

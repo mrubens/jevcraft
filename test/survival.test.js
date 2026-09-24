@@ -1547,3 +1547,16 @@ test('no charge up or down a fortress, or from an edge; a charge walks without d
   assert.deepEqual(seen, [{ canDig: false, allow1by1towers: false, maxDropDown: 2 }]);
   assert.deepEqual(bot.pathfinder.movements, { canDig: true, allow1by1towers: true, maxDropDown: 4 }, 'restored');
 });
+
+test('cornered with a blaze at arm\'s length, the bot swings instead of walling', async () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, health: 20,
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'netherrack', count: 40 }], slots: {} }, heldItem: { name: 'iron_sword' },
+    pathfinder: { movements: {} }, clearControlStates() {}, setControlState() {}, deactivateItem() {},
+    blockAt: p => ({ name: p.y < 64 ? 'nether_bricks' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }) });
+  const survival = new Survival(bot, { navigate: async () => {}, place: async () => assert.fail('no wall') });
+  survival.runAway = async () => false;
+  survival.sealHere = async () => assert.fail('no pocket with a blaze in reach');
+  const goal = {};
+  await survival.escape(new Task('fortress'), goal, () => {}, [{ entity: { name: 'blaze', position: new Vec3(2.5, 65, 0.5) }, distance: 2.4, visible: true }], true);
+  assert.equal(goal.survivalAction.action, 'fight');
+});
