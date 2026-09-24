@@ -35,8 +35,22 @@ function incoming(bot, { reach = REACH } = {}) {
 
 // Hold the block until the shot has landed or gone by, then hand movement
 // back. Bounded in tens of milliseconds: this runs inside a fight loop.
+// Not with a mob at arm's length that does not shoot: the shield covers one
+// way, and turning it to an arrow gives the one hitting the bot its back.
+// The dream run died that way in a cave (2026-09-24): full iron, a shield,
+// its hand empty, turning to the skeleton's arrows every second while two
+// zombies beside it took it from twenty to nothing in fifty seconds.
+const MELEE_REACH = 3.5;
+function meleeClose(bot) {
+  try {
+    const { threats } = require('./danger');
+    const { shooter } = require('./combat');
+    return threats(bot, MELEE_REACH + 1).some(t => t.distance <= MELEE_REACH && !shooter(t.entity));
+  } catch (_) { return false; }
+}
+
 async function deflect(bot, task, { holdMs = 700 } = {}) {
-  if (!shielded(bot)) return false;
+  if (!shielded(bot) || meleeClose(bot)) return false;
   const shot = incoming(bot)[0];
   if (!shot) return false;
   const deadline = Date.now() + holdMs;
@@ -55,4 +69,4 @@ async function deflect(bot, task, { holdMs = 700 } = {}) {
   return true;
 }
 
-module.exports = { deflect, incoming, INCOMING, REACH };
+module.exports = { deflect, incoming, meleeClose, INCOMING, REACH };
