@@ -12,6 +12,7 @@ const { maintainVitals, chooseFood, checkAir } = require('./vitals');
 const { foodSupply, forageChoices } = require('./foraging');
 const { bedCarried, placeOriented, isBed, homeOf, layout, homeChores } = require('./home-base');
 const { kitReady } = require('./mob-policy');
+const { fightEstimate } = require('./combat-estimate');
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute, countOf } = require('./skills');
@@ -597,7 +598,9 @@ class Survival {
     // health): said, not decided by hiding the options.
     const creeper = danger.find(t => t.entity.name === 'creeper' && t.distance <= 7);
     const creeperNote = creeper ? ` A creeper is ${Math.round(creeper.distance)} blocks off: it walks up to whatever is built and goes off, and a pocket is not closed before the blast.` : '';
-    if (armed) options.fight = { description: 'Fight here: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet.',
+    const cost = fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
+      armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health }).fightHere;
+    if (armed) options.fight = { description: `Fight here: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}.`,
       run: async () => {
         if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); if (!swung) await defendNearby(bot, task, goal, save); return true; }
         if (await this.charge(task, goal, save, nearest, false, { chosen: true })) return true;
@@ -672,6 +675,10 @@ class Survival {
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
         dropWithinThreeBlocks: dropWithin(bot, bot.entity.position.floored(), 3),
         threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), visible: t.visible })),
+        // This bot's numbers: each mob's hit after its armour, swings to
+        // kill with its weapon, and what fighting all of them here costs.
+        estimate: fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
+          armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health } : null };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
       let decision;
