@@ -43,15 +43,24 @@ const tree = (id = 'survival_priority') => { const [a, b] = KEYS[id]; return a =
   : { [a]: { description: 'first', run: async () => 'a' }, [b]: { description: 'second', run: async () => 'b' } }; };
 
 test('a judgment under the gate is not acted on: the fallback walks the tree instead, and the log says so', async () => {
-  const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'continue_request', confidence: 0.1 } } }) };
+  decisions.define({ id: 'test_gated', area: 'test', kind: 'test', primitive: 'choice', stakes: 'low', tree: true, fallback: children => children.b ? 'b' : Object.keys(children)[0],
+    gate: { threshold: 0.35, below: 'fallback', why: 'a test' }, question: 'a test', trigger: 'the test', source: 'test', options: [{ pattern: '[ab]', label: 'a or b', when: 'always' }] });
+  const gatedTree = () => ({ a: { description: 'a' }, b: { description: 'b' } });
+  const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'a', confidence: 0.1 } } }) };
   const goal = {};
-  const decision = await decisions.decide('survival_priority', { client, task: new Task('t'), goal, tree: tree(), state: {} });
-  assert.deepEqual(decision.path, ['obtain_food'], 'the safety order, not the coin flip');
+  const decision = await decisions.decide('test_gated', { client, task: new Task('t'), goal, tree: gatedTree(), state: {} });
+  assert.deepEqual(decision.path, ['b'], 'the fallback, not the coin flip');
   assert.equal(decision.gated.confidence, 0.1);
-  assert.equal(goal.decisions.at(-1).id, 'survival_priority');
-  assert.equal(goal.decisions.at(-1).kind, 'survival');
-  const sure = await decisions.decide('survival_priority', { client: { systemOne: async () => ({ answers: { branch_0: { choice: 'continue_request', confidence: 0.9 } } }) }, task: new Task('t'), goal, tree: tree(), state: {} });
-  assert.deepEqual(sure.path, ['continue_request']); assert.equal(sure.gated, undefined);
+  assert.equal(goal.decisions.at(-1).id, 'test_gated');
+  const sure = await decisions.decide('test_gated', { client: { systemOne: async () => ({ answers: { branch_0: { choice: 'a', confidence: 0.9 } } }) }, task: new Task('t'), goal, tree: gatedTree(), state: {} });
+  assert.deepEqual(sure.path, ['a']); assert.equal(sure.gated, undefined);
+});
+
+test('the play decisions have no gate: Jev\'s pick stands at any confidence', async () => {
+  for (const id of ['survival_priority', 'ranged_response', 'encounter_stance', 'dragon_fight']) assert.equal(decisions.question(id).gate, undefined, id);
+  const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'continue_request', confidence: 0.1 } } }) };
+  const decision = await decisions.decide('survival_priority', { client, task: new Task('t'), goal: {}, tree: tree(), state: {} });
+  assert.deepEqual(decision.path, ['continue_request']); assert.equal(decision.gated, undefined);
 });
 
 test('without a client the fallback walks the tree; a question with no safe default says so instead', async () => {

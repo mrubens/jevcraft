@@ -46,7 +46,7 @@ define({
   ],
   instructions: endDecisionInstructions,
   fallback: (children, path, context = {}) => endFallback(context.safe)(children),
-  gate: { threshold: 0.2, below: 'fallback', why: 'unsure, the fixed order decides: out of danger, crystals, head, arrow, position' },
+  ungated: 'Jev\'s pick is taken at any confidence and asked again each step; the fixed order (out of danger, crystals, head, arrow, position) answers only when Jev cannot be reached',
 });
 
 module.exports = { endFallback };

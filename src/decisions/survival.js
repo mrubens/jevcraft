@@ -35,7 +35,7 @@ define({
     ...FOOD_OPTIONS,
   ],
   fallback: safetyOrder,
-  gate: { threshold: 0.2, below: 'fallback', why: 'a coin flip between the night, food and the request goes to the safety order, not to whichever side edged it' },
+  ungated: 'Jev\'s pick is taken at any confidence: the choice is asked again at the next survival step, so a close call costs one step; the safety order answers only when Jev cannot be reached',
 });
 
 // A shooter in view and a bow in the pack: shoot, retreat or dig in.
@@ -54,31 +54,32 @@ define({
     { key: 'dig_in', label: 'seal a two-block pocket here', when: 'twelve or more building blocks are carried', level: 'root' },
   ],
   fallback: (children, path, context = {}) => (context.health ?? 20) >= 12 ? Object.keys(children)[0] : (children.retreat ? 'retreat' : Object.keys(children)[0]),
-  gate: { threshold: 0.2, below: 'fallback', why: 'unsure, the health rule decides: shoot while healthy, otherwise retreat' },
+  ungated: 'Jev\'s pick is taken at any confidence; the health rule answers only when Jev cannot be reached',
 });
 
 // The stance for an encounter, once per encounter (src/survival.js
-// stanceStep). An experiment in the arena first: asked only with
-// JEV_ENCOUNTERS=1, and the rules take over when it is unsure.
+// stanceStep). Jev's pick stands, sure or not; the rules answer only when
+// Jev cannot be reached, or with JEV_ENCOUNTERS=0.
 define({
   id: 'encounter_stance', area: 'combat', kind: 'combat', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
   question: 'Hostile mobs are on the bot: fight here, go up, dig into the wall, seal in, run, or shoot?',
-  trigger: 'An encounter the reflexes (the swing at arm\'s length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible; held while the same kinds of mob are about, for fifteen seconds, and until health falls by six. Only with JEV_ENCOUNTERS=1.',
+  trigger: 'An encounter the reflexes (the swing at arm\'s length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible; held while the same kinds of mob are about, for fifteen seconds, and until health falls by six. Off with JEV_ENCOUNTERS=0.',
   source: 'src/survival.js (stanceOptions)',
   instructions: {
     task: 'Hostile mobs are close. Choose the stance for this encounter NOW. The bot will keep to it for the next several seconds, swinging at anything in reach whatever you choose.',
-    guidance: 'Use the threats (kind, distance, whether they shoot), health, armour, weapon, shield, arrows and building blocks. Every option listed is already checked possible from here. Weigh what each mob does: walkers cannot climb a pillar, shooters can hit a pillar or a runner, a crowd in the open hits from every side while a doorway admits one at a time, a sealed pocket takes no damage but gains nothing. previousStance says what was chosen last and the health then.',
+    guidance: 'Use the threats (kind, distance, whether they shoot), health, armour, weapon, shield, arrows and building blocks. Every option listed is already checked possible from here. Weigh what each mob does: walkers cannot climb a pillar, shooters can hit a pillar or a runner, a crowd in the open hits from every side while a doorway admits one at a time, a sealed pocket takes no damage but gains nothing. Placing blocks (pillar, seal, bunker) takes about a second a block, and anything at arm\'s length hits freely meanwhile. Measured in the arena against one skeleton eight blocks off for twenty seconds: standing took 17.7 damage, raising the shield as each arrow came 16.3, the bow 16 to 17 with no kill, running in with a sword 0 to 2 with the skeleton dead in four seconds; two skeletons run at one after the other cost nothing and both died in eight. previousStance says what was chosen last and the health then.',
   },
   options: [
     { key: 'fight', label: 'fight where the bot stands', when: 'a sword, axe or trident is carried and health is eight or more', level: 'root' },
     { key: 'pillar', label: 'go two blocks up and fight from there', when: 'two scaffold blocks carried and three clear blocks overhead', level: 'root' },
     { key: 'bunker', label: 'dig into the nearby wall and fight at the doorway', when: 'a wall is near and health is ten or more', level: 'root' },
     { key: 'seal', label: 'seal a pocket and wait', when: 'four or more building blocks are carried', level: 'root' },
+    { key: 'charge_shooter', label: 'run at the ground shooters one after another and strike', when: 'one to three skeletons, strays, bogged, pillagers or witches in view within sixteen, a blade carried, health six or more, not in water', level: 'root' },
     { key: 'retreat', label: 'run for footing out of reach and sight', when: 'always', level: 'root' },
     { pattern: 'shoot_\\d+', label: 'shoot this mob with the bow', when: 'health eight or more, nothing that bites within three blocks, and a clear arrow path (up to two targets)', level: 'root', dynamic: true },
   ],
   fallback: 'throws',
-  gate: { threshold: 0.35, below: 'caller', why: 'unsure, the encounter rules decide as they did before the experiment' },
+  ungated: 'Jev\'s pick is taken at any confidence: a stance is held fifteen seconds and asked again when health falls by six, so a close call is soon corrected; the encounter rules answer only when Jev cannot be reached',
 });
 
 module.exports = { safetyOrder, FOOD_OPTIONS };

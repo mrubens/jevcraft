@@ -212,8 +212,7 @@ function bedSite(bot) {
 const emptySite = (bot, refuge) => refuge.kind !== 'house' && !refuge.verifiedAt &&
   shelter.shell(refuge.origin).every(p => shelter.replaceable(bot.blockAt(p)));
 
-// Encounter stances asked of Jev: the arena's experiment switch, off in play
-// until the drills say it beats the rules (JEV_ENCOUNTERS=1).
+// Encounter stances are Jev's; JEV_ENCOUNTERS=0 hands them to the rules.
 // A creeper within seven blocks: no pocket or bunker is begun, the blast
 // comes before the last block.
 // Night-mine tools: the uses left on a pickaxe, and the one the pockets
@@ -238,7 +237,7 @@ function creeperSwelling(bot, entity) {
   return i >= 0 && entity.metadata?.[i] === 1;
 }
 const creeperClose = danger => danger.some(t => t.entity.name === 'creeper' && t.distance <= 7);
-const encounterJudgments = survival => !!survival.client && process.env.JEV_ENCOUNTERS === '1';
+const encounterJudgments = survival => !!survival.client && process.env.JEV_ENCOUNTERS !== '0';
 
 // Minecraft actions are injected to avoid a dependency cycle with the work
 // executor. The state lives on the retained goal and can also be shared by an
@@ -342,8 +341,6 @@ class Survival {
     const swung = await defendNearby(bot, task, goal, save);
     const danger = threats(bot).filter(t => t.visible);
     if (!danger.length) { lowerShield(bot); return; }
-    // A lone skeleton is run at and struck.
-    if (!swung && await this.closeOnShooter(task, goal, save, danger)) return;
     // Something already in the air is answered before anything is decided:
     // the decision takes longer than the flight.
     if (!swung && await deflect(bot, task)) {
@@ -352,9 +349,11 @@ class Survival {
     }
     // A creeper is fought the player's way before anything is decided.
     if (await this.creeperDance(task, goal, save, danger, swung)) return;
-    // With encounter judgments on, the stance is Jev's; the rules below take
-    // over when it declines, is unsure, or the chosen tactic cannot be done.
+    // The stance is Jev's. The rules below answer only when Jev cannot be
+    // reached, is switched off (JEV_ENCOUNTERS=0), or every stance has just
+    // failed.
     if (encounterJudgments(this) && await this.stanceStep(task, goal, save, danger, swung)) return;
+    if (!swung && await this.closeOnShooter(task, goal, save, danger)) return;
     // A mob at arm's length is fought, swing after swing, while health holds:
     // a route search between swings is seconds of free hits, and nothing
     // outruns a zombie in a tunnel anyway. Low health falls through to the
@@ -551,6 +550,9 @@ class Survival {
     // The dream run pillared with two zombies beside it, unarmoured, and
     // went from twenty to nothing in eight seconds (2026-09-24).
     const armsLength = danger.some(t => t.distance <= 3 && !shooter(t.entity));
+    // Building costs a second or so a block: said to Jev with the options
+    // below rather than decided for it by hiding them.
+    const buildCost = armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the blocks go down.' : '';
     if (armed && bot.health >= 8) options.fight = { description: 'Fight here: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet.',
       run: async () => {
         if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); if (!swung) await defendNearby(bot, task, goal, save); return true; }
@@ -562,16 +564,21 @@ class Survival {
     const up = this.state.pillar && feet.y >= this.state.pillar.y + 2 && Math.hypot(feet.x - this.state.pillar.x, feet.z - this.state.pillar.z) < 1;
     // Not with a creeper close: it walks under the pillar and goes off (the
     // live run, 17:16, at three health).
-    if (((scaffold >= 2 && headroom && !armsLength) || up) && !creeperClose(danger)) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.',
+    if (((scaffold >= 2 && headroom) || up) && !creeperClose(danger)) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost),
       run: async () => up || this.pillarFrom(task, goal, save, danger) };
     // A bunker that is quick to dig: three seconds of digging under fire is
     // the most it is worth (bunker.js bunkerDigMs).
-    if (bot.health >= 10 && !armsLength && !creeperClose(danger) && nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.',
+    if (bot.health >= 10 && !creeperClose(danger) && nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.' + buildCost,
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
-    if (shelter.materialStock(bot) >= 4 && !armsLength && !creeperClose(danger)) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.',
+    if (shelter.materialStock(bot) >= 4 && !creeperClose(danger)) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + buildCost,
       run: () => this.sealHere(task, goal, save, danger) };
+    // The charge at a few ground shooters, where it can be run.
+    const ground = danger.filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16);
+    if (ground.length && ground.length <= 3 && armed && bot.health >= 6 && !inWater(bot) && !isSetAside(this, 'close_on_shooter', 'here')) options.charge_shooter = {
+      description: `Run at the ${ground.map(t => t.entity.name).join(', ')} (nearest ${Math.round(ground[0].distance)} blocks) and strike, one after another, over ground checked firm; gives way if it cannot get nearer.`,
+      run: () => this.closeOnShooter(task, goal, save, danger) };
     options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.',
       run: () => this.runAway(task, goal, save, danger) };
     if (bot.health >= 8 && !armsLength) {
@@ -589,17 +596,17 @@ class Survival {
     // twenty seconds: the clean run's pillar, knocked off by four zombies,
     // was chosen again each tick, the rules fought between, and the bot went
     // pillar, fight, pillar, defend, off the edge, fight, flee, and died.
-    const failed = this.state.stanceFailed;
-    if (failed && failed.kinds === kinds && Date.now() - failed.at < 20000) delete options[failed.choice];
+    // Every stance that failed in the last twenty seconds, so two that fail
+    // are not tried turn about.
+    const failed = [].concat(this.state.stanceFailed || []).filter(f => f.kinds === kinds && Date.now() - f.at < 20000);
+    for (const f of failed) delete options[f.choice];
+    if (!Object.keys(options).length) return false;
     const held = this.state.stance;
     const holding = held && held.kinds === kinds && Date.now() - held.at < 15000 && bot.health > held.health - 6;
-    // Unsure last time: the rules keep this encounter for the hold too. Asked
-    // again every tick against blazes, each unsure answer was a third of a
-    // second standing still under fire.
-    if (holding && held.choice === 'rules') return false;
     let choice = holding && options[held.choice] ? held.choice : null;
+    // One stance possible is no choice: it is taken without asking.
+    if (!choice && Object.keys(options).length === 1) choice = Object.keys(options)[0];
     if (!choice) {
-      if (Object.keys(options).length < 2) return false;
       const armour = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
       const state = { health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
@@ -611,14 +618,19 @@ class Survival {
         decision = await this.decide(task, goal, save, { id: 'encounter_stance', state, tree,
           isFresh: () => Math.abs(bot.health - state.health) < 4 });
       } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
-      if (decision.stale) return false;
-      if (decision.gated || decision.fallback) { this.state.stance = { choice: 'rules', kinds, at: Date.now(), health: bot.health }; return false; }
+      // Stale: the moment moved on while Jev answered; the next tick asks
+      // again from where the bot is then.
+      if (decision.stale) return true;
+      // Jev could not be reached: the rules answer this tick.
+      if (decision.fallback) return false;
       choice = decision.path.at(-1);
-      this.state.stance = { choice, kinds, at: Date.now(), health: bot.health };
     }
+    if (!holding || held.choice !== choice) this.state.stance = { choice, kinds, at: Date.now(), health: bot.health };
     if (!/^shoot_/.test(choice)) lowerShield(bot);
     const done = await options[choice].run();
-    if (!done) { delete this.state.stance; this.state.stanceFailed = { choice, kinds, at: Date.now() }; return false; }
+    // A stance that could not be carried out is not offered again for a
+    // while, and Jev chooses again at the next tick from what is left.
+    if (!done) { delete this.state.stance; this.state.stanceFailed = [...failed, { choice, kinds, at: Date.now() }]; }
     return true;
   }
 

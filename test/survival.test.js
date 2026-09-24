@@ -687,11 +687,13 @@ test('a skeleton in view at bow range is shot from where the bot stands, then th
 });
 
 test('Jev is offered the shot, the retreat and, with blocks in the pack, a pocket; its choice runs', async () => {
+  // The ranged question answers when the stance is not asked (JEV_ENCOUNTERS=0).
+  process.env.JEV_ENCOUNTERS = '0';
   let asked;
   const client = { systemOne: async ({ state, questions }) => { asked = { state, questions }; return { answers: { branch_0: { choice: 'retreat' } } }; } };
   const { bot, events, controller, task, goal } = archerFixture({ client, sword: true, shield: false, lone: false });
   bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
-  assert(await controller.step(task, goal, () => {}));
+  try { assert(await controller.step(task, goal, () => {})); } finally { delete process.env.JEV_ENCOUNTERS; }
   assert.deepEqual(Object.keys(asked.questions.branch_0.criteria).sort(), ['dig_in', 'retreat', 'shoot_17', 'shoot_7']);
   assert.deepEqual(asked.state.threats, [{ name: 'skeleton', distance: 10, shoots: true }, { name: 'blaze', distance: 12, shoots: true }]); assert.equal(asked.state.arrowsCarried, 8);
   assert.deepEqual(events, ['navigate'], 'the retreat ran and nothing was drawn');
@@ -744,31 +746,26 @@ test('hurt, or with a zombie closing, the bow stays in the pack and the escape r
   assert.deepEqual(crowded.events, ['equip iron_sword', 'attack', 'raise shield'], 'a zombie within a sword\'s reach is fought, the shield up between swings, not drawn on or run from');
 });
 
-test('with encounter judgments on, Jev picks the stance once and it holds; unsure, the rules decide', async () => {
-  process.env.JEV_ENCOUNTERS = '1';
-  try {
-    const calls = [];
-    const client = { systemOne: async ({ state, questions }) => { calls.push({ state, questions }); return { answers: { branch_0: { choice: 'retreat', confidence: 0.9 } } }; } };
-    const { bot, events, controller, task, goal } = archerFixture({ client, sword: true, shield: false, lone: false });
-    bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
-    assert(await controller.step(task, goal, () => {}));
-    assert.equal(goal.decisions.at(-1).id, 'encounter_stance');
-    assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['fight', 'pillar', 'retreat', 'seal', 'shoot_17', 'shoot_7']);
-    assert.deepEqual(calls[0].state.threats, [{ name: 'skeleton', distance: 10, shoots: true, visible: true }, { name: 'blaze', distance: 11.7, shoots: true, visible: true }]);
-    assert.deepEqual(events, ['navigate'], 'the retreat ran');
-    bot.entity.position = new Vec3(.5, 64, .5);
-    await controller.step(task, goal, () => {});
-    assert.equal(calls.length, 1, 'the stance holds for the same mobs, not asked again at every tick');
+test('Jev picks the stance once and it holds; unsure, its pick still stands', async () => {
+  const calls = [];
+  const client = { systemOne: async ({ state, questions }) => { calls.push({ state, questions }); return { answers: { branch_0: { choice: 'retreat', confidence: 0.9 } } }; } };
+  const { bot, events, controller, task, goal } = archerFixture({ client, sword: true, shield: false, lone: false });
+  bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
+  assert(await controller.step(task, goal, () => {}));
+  assert.equal(goal.decisions.at(-1).id, 'encounter_stance');
+  assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['charge_shooter', 'fight', 'pillar', 'retreat', 'seal', 'shoot_17', 'shoot_7']);
+  assert.deepEqual(calls[0].state.threats, [{ name: 'skeleton', distance: 10, shoots: true, visible: true }, { name: 'blaze', distance: 11.7, shoots: true, visible: true }]);
+  assert.deepEqual(events, ['navigate'], 'the retreat ran');
+  bot.entity.position = new Vec3(.5, 64, .5);
+  await controller.step(task, goal, () => {});
+  assert.equal(calls.length, 1, 'the stance holds for the same mobs, not asked again at every tick');
 
-    let asked = 0;
-    const unsure = archerFixture({ sword: true, shield: false, lone: false, client: { systemOne: async () => ({ answers: { branch_0: asked++ ? { choice: 'shoot_7', confidence: 0.9 } : { choice: 'fight', confidence: 0.2 } } }) } });
-    assert(await unsure.controller.step(unsure.task, unsure.goal, () => {}));
-    assert.equal(unsure.goal.decisions.find(d => d.id === 'encounter_stance').gated.below, 'caller');
-    assert.equal(unsure.goal.survivalAction.action, 'shoot', 'the rules took over: the ranged question, then the shot');
-    const stanceAsks = () => unsure.goal.decisions.filter(d => d.id === 'encounter_stance').length;
-    await unsure.controller.step(unsure.task, unsure.goal, () => {});
-    assert.equal(stanceAsks(), 1, 'unsure once, the rules keep the encounter: the stance is not asked again at the next tick');
-  } finally { delete process.env.JEV_ENCOUNTERS; }
+  const unsure = archerFixture({ sword: true, shield: false, lone: false, client: { systemOne: async () => ({ answers: { branch_0: { choice: 'shoot_7', confidence: 0.2 } } }) } });
+  assert(await unsure.controller.step(unsure.task, unsure.goal, () => {}));
+  const asked = unsure.goal.decisions.find(d => d.id === 'encounter_stance');
+  assert.equal(asked.gated, undefined, 'no gate: an unsure pick is not handed to the rules');
+  assert.equal(unsure.goal.survivalAction.action, 'shoot', 'Jev\'s pick ran');
+  assert(!unsure.goal.decisions.some(d => d.id === 'ranged_response'), 'no second question from the rules');
 });
 
 test('a carried bed goes down at bedtime, the night passes, and the bed comes back up', async () => {
@@ -1374,7 +1371,7 @@ test('a zombie at arm\'s length comes before the bed: it is fought, not slept be
   assert.deepEqual(swung, ['zombie'], `struck, not slept beside (${goal.survivalAction?.action})`);
 });
 
-test('with a creeper close no pillar, pocket or bunker is offered: it walks underneath and goes off', () => {
+test('with a creeper close no pillar, pocket or bunker is offered; at arm\'s length they are, with what building costs', () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, health: 3.2, food: 10, entities: {},
     entity: { position: new Vec3(0.5, 64, 0.5) }, registry: require('minecraft-data')('26.1'),
     inventory: { items: () => [{ name: 'diamond_sword' }, { name: 'cobblestone', count: 64 }], slots: {} },
@@ -1386,11 +1383,12 @@ test('with a creeper close no pillar, pocket or bunker is offered: it walks unde
   assert(withCreeper.includes('retreat'));
   const withZombie = Object.keys(survival.stanceOptions(new Task('x'), {}, () => {}, [t('zombie', 4)], false));
   assert(withZombie.includes('pillar'), 'a zombie is climbed away from');
-  // Up before it is in reach, not after: at arm's length a pillar or a
-  // pocket is a second of free hits; the answer is the sword or the feet.
-  const atArmsLength = Object.keys(survival.stanceOptions(new Task('x'), {}, () => {}, [t('zombie', 2), t('zombie', 2.8)], false));
-  assert(!atArmsLength.includes('pillar') && !atArmsLength.includes('seal') && !atArmsLength.includes('bunker'), atArmsLength.join(','));
-  assert(atArmsLength.includes('retreat'));
+  // At arm's length building is still Jev's to choose; the description says
+  // what it costs, the options are not hidden.
+  const atArmsLength = survival.stanceOptions(new Task('x'), {}, () => {}, [t('zombie', 2), t('zombie', 2.8)], false);
+  assert(atArmsLength.pillar, Object.keys(atArmsLength).join(','));
+  assert.match(JSON.stringify(atArmsLength.pillar.description), /arm's length/);
+  assert(atArmsLength.retreat);
 });
 
 test('from a pocket on the surface the night mine goes down into solid ground, not sideways to an ore through the hillside', async () => {
@@ -1525,7 +1523,7 @@ test('a stance that failed is not offered again against the same mobs for twenty
     fight: { description: 'fight', run: async () => { ran.push('fight'); return true; } }, seal: { description: 'seal', run: async () => true } });
   survival.decide = async (task, goal, save, q) => { trees.push(Object.keys(q.tree)); return { path: [q.tree.pillar ? 'pillar' : 'fight'] }; };
   const danger = [{ entity: { name: 'zombie' }, distance: 2 }];
-  assert.equal(await survival.stanceStep(new Task('pack'), {}, () => {}, danger, false), false, 'knocked off the pillar');
+  assert.equal(await survival.stanceStep(new Task('pack'), {}, () => {}, danger, false), true, 'knocked off the pillar: the tick is spent, the rules do not step in');
   assert.equal(await survival.stanceStep(new Task('pack'), {}, () => {}, danger, false), true);
   assert.deepEqual(ran, ['pillar', 'fight']);
   assert(!trees[1].includes('pillar'), `the failed pillar was not offered again: ${trees[1]}`);

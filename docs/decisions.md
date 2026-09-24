@@ -26,7 +26,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter or food top-up is still being carried out.
 - Decision tree, choice; stakes high; ledger kind `survival`
-- Bar: 0.2 at every level of the tree: a coin flip between the night, food and the request goes to the safety order, not to whichever side edged it
+- Bar: none: Jev's pick is taken at any confidence: the choice is asked again at the next survival step, so a close call costs one step; the safety order answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/survival.js (step: the tree), src/foraging.js (forageChoices: the food options)
 
@@ -52,7 +52,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: A shooting mob is in clear view at bow range, a bow and arrows are carried, health is eight or more and no melee mob is within three blocks.
 - Decision tree, choice; stakes high; ledger kind `survival`
-- Bar: 0.2 at every level of the tree: unsure, the health rule decides: shoot while healthy, otherwise retreat
+- Bar: none: Jev's pick is taken at any confidence; the health rule answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/survival.js (rangedChoice)
 
@@ -66,9 +66,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Hostile mobs are on the bot: fight here, go up, dig into the wall, seal in, run, or shoot?**
 
-- When: An encounter the reflexes (the swing at arm's length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible; held while the same kinds of mob are about, for fifteen seconds, and until health falls by six. Only with JEV_ENCOUNTERS=1.
+- When: An encounter the reflexes (the swing at arm's length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible; held while the same kinds of mob are about, for fifteen seconds, and until health falls by six. Off with JEV_ENCOUNTERS=0.
 - Decision tree, choice; stakes high; ledger kind `combat`
-- Bar: 0.35 at every level of the tree: unsure, the encounter rules decide as they did before the experiment
+- Bar: none: Jev's pick is taken at any confidence: a stance is held fifteen seconds and asked again when health falls by six, so a close call is soon corrected; the encounter rules answer only when Jev cannot be reached
 - Jev unreachable: stops: no safe default
 - Options built in: src/survival.js (stanceOptions)
 
@@ -78,6 +78,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `pillar` | root | go two blocks up and fight from there | two scaffold blocks carried and three clear blocks overhead |
 | `bunker` | root | dig into the nearby wall and fight at the doorway | a wall is near and health is ten or more |
 | `seal` | root | seal a pocket and wait | four or more building blocks are carried |
+| `charge_shooter` | root | run at the ground shooters one after another and strike | one to three skeletons, strays, bogged, pillagers or witches in view within sixteen, a blade carried, health six or more, not in water |
 | `retreat` | root | run for footing out of reach and sight | always |
 | `shoot_\d+` (pattern) | root | shoot this mob with the bow | health eight or more, nothing that bites within three blocks, and a clear arrow path (up to two targets) |
 
@@ -396,7 +397,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: Each step of the dragon fight in the End.
 - Decision tree, choice; stakes high; ledger kind `end`
-- Bar: 0.2 at every level of the tree: unsure, the fixed order decides: out of danger, crystals, head, arrow, position
+- Bar: none: Jev's pick is taken at any confidence and asked again each step; the fixed order (out of danger, crystals, head, arrow, position) answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/end-combat.js (fightEndStep)
 
