@@ -77,6 +77,21 @@ test('surface routes can bridge and clear foliage but cannot pillar up, excavate
   for (const [key, value] of Object.entries(before)) assert.deepEqual(bot.pathfinder.movements[key], value);
 });
 
+test('from the foot of a pit the walk may pillar and dig its way out of the start\'s box; on the surface it may not', () => {
+  const { bot, blocks } = world();
+  // A shaft five deep: stone to y 68 everywhere but the bot's column.
+  bot.blockAt = p => {
+    const name = blocks.get(`${p}`) || (p.y < 64 || (p.y < 69 && !(p.x === 0 && p.z === 0)) ? 'stone' : 'air');
+    return { name, position: p, boundingBox: name === 'air' ? 'empty' : 'block' };
+  };
+  const policy = surfaceMovement(bot);
+  const movements = bot.pathfinder.movements, cost = b => movements.exclusionAreasBreak.at(-1)(b);
+  assert.equal(movements.allow1by1towers, true, 'a pillar up the shaft');
+  assert.equal(cost({ name: 'stone', position: new Vec3(1, 65, 0) }), 0, 'a step cut in the wall beside it');
+  assert.equal(cost({ name: 'stone', position: new Vec3(9, 65, 0) }), 100, 'not a tunnel off across the country');
+  policy.restore();
+});
+
 test('surface travel permits river swimming with open headroom while rejecting dives and covered water', () => {
   const { bot } = world();
   bot.blockAt = p => {

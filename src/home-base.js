@@ -663,13 +663,18 @@ async function gatherWool(bot, task, goal, save, home, actions) {
     try { if (await shearing.shearSheep(bot, task, goal, save, { navigate: actions.navigate, acquireStep: actions.acquireStep, want: before + 3 })) return; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   }
-  const sheep = Object.values(bot.entities).filter(e => e.name === 'sheep' && e.isValid !== false && !isBaby(bot, e) && e.position.distanceTo(bot.entity.position) < 48)
+  const { setAside, isSetAside } = require('./progress');
+  const sheep = Object.values(bot.entities).filter(e => e.name === 'sheep' && e.isValid !== false && !isBaby(bot, e) && e.position.distanceTo(bot.entity.position) < 48 &&
+    !isSetAside(goal, 'wool_sheep', e.uuid || e.id))
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
   goal.step = { action: 'gather_wool', target: sheep ? plain(sheep.position.floored()) : null, carried: before }; save();
   if (!sheep) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   const where = sheep.position.clone();
+  // A sheep that could not be had rests; the next try is another sheep, not
+  // the nearest one again.
+  let failure = null;
   try { await require('./foraging').hunt(bot, task, sheep, actions, goal, save); }
-  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; failure = err; }
   const drops = Object.values(bot.entities).filter(e => /_wool$/.test(e.getDroppedItem?.()?.name || '') && e.position.distanceTo(where) < 10);
   for (const drop of drops) {
     task.check();
@@ -677,7 +682,10 @@ async function gatherWool(bot, task, goal, save, home, actions) {
     await actions.navigate(bot, task, new goals.GoalNear(d.x, d.y, d.z, 0.5), { timeoutMs: 8000, stallMs: 3000, stopWhen: () => woolCarried(bot).total > before });
     await sleep(200);
   }
-  if (woolCarried(bot).total <= before) throw new Error('No wool picked up from the sheep');
+  if (woolCarried(bot).total <= before) {
+    setAside(goal, 'wool_sheep', sheep.uuid || sheep.id, failure?.message || 'no wool from it', 180000);
+    throw new Error(failure ? `No wool from the sheep: ${failure.message}` : 'No wool picked up from the sheep');
+  }
 }
 
 async function closeGate(bot, task, home) {

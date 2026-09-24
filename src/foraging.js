@@ -70,14 +70,22 @@ async function hunt(bot, task, target, actions, goal, save) {
     if (weapon) await bot.equip(weapon, 'hand');
     else if (bot.heldItem) await bot.unequip('hand');
     const valid = () => bot.entities[target.id] === target && target.isValid !== false;
-    let attacks = 0;
+    let attacks = 0, missed = 0, nearest = Infinity;
     while (valid() && Date.now() < deadline) {
       task.check(); checkAir(bot); checkThreats(bot);
       if (preyFood(bot, target) !== item) throw new Error(`Food target ${target.name} is no longer an eligible passive adult`);
       if (!surface.isSurface(target.position)) throw new Error(`Food target ${target.name} moved away from safe surface terrain`);
       if (bot.entity.position.distanceTo(target.position) > 2.8) {
         try { await actions.navigate(bot, task, new goals.GoalFollow(target, 2), { timeoutMs: 5000, stallMs: 2500, stopWhen: () => !valid() }); }
-        catch (err) { task.check(); checkAir(bot); checkThreats(bot); if (err.name === 'NeedsAir') throw err; }
+        catch (err) {
+          task.check(); checkAir(bot); checkThreats(bot); if (err.name === 'NeedsAir') throw err;
+          // Two walks that failed and got no nearer: this one cannot be got
+          // to from here. The first trial on a fresh world stood at the foot
+          // of its own stone pit for the whole forty-five seconds, walking
+          // at a sheep every five (2026-09-24).
+          const gap = bot.entity.position.distanceTo(target.position);
+          if (gap < nearest - 1) { nearest = gap; missed = 0; } else if (++missed >= 2) throw new Error(`Cannot get to the ${target.name} from here: ${err.message}`);
+        }
         continue;
       }
       if (!valid()) break;

@@ -51,8 +51,19 @@ function surfaceMovement(bot) {
   // Clear leaf body-space when a canopy blocks an otherwise supported route.
   // Trunks, terrain and buildings still cannot be excavated by surface travel;
   // stricter inherited no-dig and construction restrictions remain in force.
-  Object.assign(movements, { canDig: previous.canDig === true, allowSprinting: false, allow1by1towers: false,
-    exclusionAreasBreak: [...(previous.exclusionAreasBreak || []), block => dryLeaf(block) ? 0 : 100],
+  // Leaving where the bot stands is always allowed: from the foot of a pit
+  // it dug itself, sheer walls and no towers left no route at all, and the
+  // first fresh-world trial stood at the bottom of one for a minute and a
+  // half walking at a sheep (2026-09-24). From a pit, a pillar and digging
+  // within the start's own box are allowed; out on the surface the walk
+  // keeps to it.
+  // Sunk: walled in at head height on three sides or four, the foot of a
+  // pit or a shaft (open sky above it is still a pit; a roofed house with
+  // room around the bot is not).
+  const sunk = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => bot.blockAt(start.offset(dx, 1, dz))?.boundingBox === 'block').length >= 3;
+  const nearStart = q => Math.abs(q.x - start.x) <= 4 && Math.abs(q.z - start.z) <= 4 && q.y >= start.y - 1;
+  Object.assign(movements, { canDig: previous.canDig === true, allowSprinting: false, allow1by1towers: sunk && previous.allow1by1towers !== false,
+    exclusionAreasBreak: [...(previous.exclusionAreasBreak || []), block => dryLeaf(block) || (sunk && block.position && nearStart(block.position)) ? 0 : 100],
     allowedPosition: p => allowed(p) && (!previous.allowedPosition || previous.allowedPosition(p)) });
   return { isSurface, allowed, restore: () => Object.assign(movements, previous) };
 }
