@@ -149,13 +149,19 @@ const sleepable = bot => bot.time?.timeOfDay >= SLEEP_FROM && bot.time.timeOfDay
 // radius out to a hundred and sixty.)
 // A bed remembered as claimed counts while its chunk is unloaded; a bed
 // seen to be gone does not.
-const HOME_BED_WALK = 160;
+// The walk home to bed: a long one at dusk, a short one once the night has
+// come. Dark already, the clean run walked a hundred and thirty blocks to
+// its bed through the mobs, arrived at three health with a skeleton, a
+// spider and a spear-carrying zombie beside it, could not sleep, and died
+// there twice (2026-09-24 00:48).
+const HOME_BED_WALK = 160, NIGHT_BED_WALK = 48;
+const darkNow = bot => { const t = bot.time?.timeOfDay ?? 0; return t >= 13000 && t < 23000; };
 function nearbyHomeBed(bot, goal) {
   const home = homeOf(bot, goal);
   if (!home?.bed?.claimedAt) return null;
   const { bed } = layout(home);
   const foot = pos(bed.foot), block = bot.blockAt(foot);
-  if (foot.distanceTo(bot.entity.position) > HOME_BED_WALK || (block && !isBed(block))) return null;
+  if (foot.distanceTo(bot.entity.position) > (darkNow(bot) ? NIGHT_BED_WALK : HOME_BED_WALK) || (block && !isBed(block))) return null;
   return { foot, head: pos(bed.head), stand: pos(bed.stand), placed: true };
 }
 // Any bed in view, not only our own: the live run sealed itself into a
@@ -948,7 +954,12 @@ class Survival {
   async shaftPocket(task, goal, save) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function' || typeof this.actions.dig !== 'function') return false;
-    if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) return false;
+    // No pickaxe (respawned with nothing, at night, beside the mobs that
+    // killed it: the clean run died there a second time gathering dirt for
+    // a shelter): the shaft still goes down where every block in it digs by
+    // hand in a second, dirt and the like, and the dug dirt is the cap.
+    const pick = bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
+    const handSoft = b => !!b && (typeof b.digTime === 'function' ? b.digTime(null, false, false, false, [], {}) <= 1000 : /^(dirt|grass_block|podzol|mycelium|coarse_dirt|rooted_dirt|mud|clay|moss_block)$/.test(b.name));
     // Set aside by the column stood on, not for the whole world.
     const spot = `${bot.entity.position.floored().x},${bot.entity.position.floored().z}`;
     if (isSetAside(this, 'shaft_pocket', spot)) return false;
@@ -962,10 +973,12 @@ class Survival {
     const columnBottom = top => {
       const first = top.offset(0, -1, 0);
       if (!bot.blockAt(first) || bot.blockAt(first).boundingBox !== 'block' || wet(first) || sides(first).some(wet)) return null;
+      if (!pick && !handSoft(bot.blockAt(first))) return null;
       for (let depth = 2; depth <= 12; depth++) {
         const cell = top.offset(0, -depth, 0);
         const b = bot.blockAt(cell), under = bot.blockAt(cell.offset(0, -1, 0));
         if (!b || !under || b.name === 'bedrock' || wet(cell) || wet(cell.offset(0, -1, 0)) || /lava|magma/.test(under.name)) return null;
+        if (!pick && b.boundingBox === 'block' && !handSoft(b)) return null;
         if (sides(cell).some(wet) || sides(cell.offset(0, 1, 0)).some(wet)) return null;
         if (walled(cell)) return cell;
       }
@@ -1167,9 +1180,14 @@ class Survival {
       // three blocks from the foot: a single goal failed from twenty blocks.
       const approaches = [[site.stand, 1], [site.foot, 2], [site.foot, 3]];
       let reached = false, lastError = null;
+      // Watching on the way: hurt, or a mob in view close by, and the walk
+      // stops so the next tick's threat rules have the bot, not the bed.
+      const setOut = bot.health ?? 20;
+      const trouble = () => (bot.health ?? 20) <= setOut - 3 || threats(bot, 6).some(t => t.visible);
       for (const [p, range] of approaches) {
-        try { await this.actions.navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, range), { timeoutMs: 45000, stallMs: 8000 }); reached = site.foot.distanceTo(bot.entity.position) <= 3.5; }
+        try { await this.actions.navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, range), { timeoutMs: 45000, stallMs: 8000, stopWhen: trouble }); reached = site.foot.distanceTo(bot.entity.position) <= 3.5; }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; lastError = err; }
+        if (!reached && trouble()) { this.report(goal, save, { action: 'sleep_interrupted', health: bot.health }); throw new Error('Trouble on the way to bed'); }
         if (reached) break;
       }
       if (!reached) { setAside(this, 'bed_route', 'home', lastError || 'not close enough', 120000); this.report(goal, save, { action: 'sleep_failed', reason: `no way to the bed: ${lastError?.message || 'not close enough'}` }); throw lastError || new Error('No way to the bed'); }

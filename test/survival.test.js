@@ -802,9 +802,14 @@ test('the bed at the base is slept in when it is near, and it stays where it is'
     blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
   const goal = { kind: 'win', survival: { home } };
   assert(nearbyHomeBed(bot, goal)?.placed, 'the base bed counts');
+  // At dusk a long walk home; once it is dark, only a short one.
+  bot.time.timeOfDay = 12000;
   bot.entity.position = new Vec3(80.5, 64, 0.5); assert(nearbyHomeBed(bot, goal), 'eighty blocks is a walk, not a night');
   bot.entity.position = new Vec3(140.5, 64, 0.5); assert(nearbyHomeBed(bot, goal), 'a hundred and forty is still a walk started early');
   bot.entity.position = new Vec3(200.5, 64, 0.5); assert.equal(nearbyHomeBed(bot, goal), null, 'two hundred is not');
+  bot.time.timeOfDay = 13000;
+  bot.entity.position = new Vec3(80.5, 64, 0.5); assert.equal(nearbyHomeBed(bot, goal), null, 'dark already: eighty blocks through the mobs is not a walk to bed');
+  bot.entity.position = new Vec3(40.5, 64, 0.5); assert(nearbyHomeBed(bot, goal), 'forty is');
   bot.entity.position = new Vec3(3.5, 64, 3.5);
   const walked = [], dug = [];
   const survival = new Survival(bot, { navigate: async (b, t, g) => { walked.push([g.x, g.y, g.z]); bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); }, dig: async (b, t, p) => dug.push(`${p}`) }, { state: goal.survival });
@@ -1471,4 +1476,48 @@ test('cornered with a wither skeleton at arm\'s length and blazes behind it, the
   await survival.escape(new Task('fortress'), goal, () => {}, danger, true);
   assert.equal(goal.survivalAction.action, 'fight');
   assert.equal(goal.survivalAction.cornered, true);
+});
+
+test('the walk to bed stops when the bot is hurt on the way, for the threat rules to take it', async () => {
+  const { Survival } = require('../src/survival');
+  const { layout } = require('../src/home-base');
+  const home = { version: 1, dimension: 'overworld', origin: { x: 0, y: 63, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 63, z: 0 }, bed: { placedAt: 'now', claimedAt: 'now' }, plot: {}, pen: {} };
+  const { bed } = layout(home);
+  const blocks = new Map([[`${new Vec3(bed.foot.x, bed.foot.y, bed.foot.z)}`, 'white_bed'], [`${new Vec3(bed.head.x, bed.head.y, bed.head.z)}`, 'white_bed']]);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 12500 },
+    entity: { position: new Vec3(30.5, 64, 0.5) }, health: 20, food: 20, isSleeping: false, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, sleep: async () => assert.fail('no sleep'),
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
+  const goal = { kind: 'win', survival: { home } };
+  let walks = 0;
+  // An arrow on the way: the walk's stopWhen sees the health drop.
+  const survival = new Survival(bot, { navigate: async (b, t, g, opts) => { walks++; bot.health = 15; bot.entity.position = new Vec3(20.5, 64, 0.5); assert(opts.stopWhen(), 'the walk sees the hit'); } }, { state: goal.survival });
+  await assert.rejects(survival.sleepStep(new Task('test', 'sleep'), goal, () => {}), /Trouble on the way to bed/);
+  assert.equal(walks, 1);
+  assert.equal(goal.survivalAction.action, 'sleep_interrupted');
+});
+
+test('respawned with nothing at night, the bot digs down into dirt by hand and caps it with the dirt', async () => {
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1'), Block = require('prismarine-block')(registry);
+  const dug = new Set(), placed = new Map(), items = [];
+  const nameAt = y => y >= 63 ? 'air' : y >= 58 ? 'dirt' : 'stone';
+  const blockAt = p => {
+    const f = p.floored(), k = `${f}`;
+    const name = placed.get(k) || (dug.has(k) ? 'air' : nameAt(f.y));
+    const b = Block.fromStateId(registry.blocksByName[name].defaultState); b.position = f; return b;
+  };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: {}, registry, entity: { position: new Vec3(0.5, 63, 0.5), onGround: true },
+    health: 20, inventory: { items: () => items, slots: {} }, blockAt });
+  const actions = { navigate: async () => {},
+    dig: async (b, t, p) => { dug.add(`${p.floored()}`); bot.entity.position = new Vec3(p.x + 0.5, p.y, p.z + 0.5); const d = items.find(i => i.name === 'dirt'); if (d) d.count++; else items.push({ name: 'dirt', count: 1 }); },
+    place: async (b, t, p, name) => { placed.set(`${p.floored()}`, name); } };
+  const survival = new Survival(bot, actions, { state: { shelters: [] } });
+  assert.equal(await survival.shaftPocket(new Task('night'), {}, () => {}), true);
+  assert(dug.has('(0, 62, 0)') && dug.has('(0, 61, 0)'), [...dug].join(' '));
+  assert.equal(placed.get('(0, 62, 0)'), 'dirt', 'capped with the dug dirt');
+  // Bare hands on stone: no shaft.
+  const stone = new Survival(Object.assign(new EventEmitter(), { ...bot, blockAt: p => { const b = Block.fromStateId(registry.blocksByName[p.y >= 63 ? 'air' : 'stone'].defaultState); b.position = p.floored(); return b; },
+    entity: { position: new Vec3(0.5, 63, 0.5) }, inventory: { items: () => [], slots: {} } }), actions, { state: { shelters: [] } });
+  assert.equal(await stone.shaftPocket(new Task('night'), {}, () => {}), false);
 });
