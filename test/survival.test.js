@@ -1456,3 +1456,19 @@ test('a stance that failed is not offered again against the same mobs for twenty
   assert.deepEqual(ran, ['pillar', 'fight']);
   assert(!trees[1].includes('pillar'), `the failed pillar was not offered again: ${trees[1]}`);
 });
+
+test('cornered with a wither skeleton at arm\'s length and blazes behind it, the bot fights instead of sealing', async () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, health: 19,
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'netherrack', count: 40 }], slots: {} }, heldItem: { name: 'iron_sword' },
+    pathfinder: { movements: {} }, clearControlStates() {}, setControlState() {}, deactivateItem() {},
+    blockAt: p => ({ name: p.y < 64 ? 'nether_bricks' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }) });
+  const survival = new Survival(bot, { navigate: async () => {}, place: async () => assert.fail('no block placed') });
+  survival.runAway = async () => false;
+  survival.sealHere = async () => assert.fail('no pocket sealed with a sword at arm\'s length');
+  const danger = [{ entity: { name: 'wither_skeleton', position: new Vec3(2, 64, 0.5) }, distance: 1.5, visible: true },
+    { entity: { name: 'blaze', position: new Vec3(8, 66, 0) }, distance: 8, visible: true }];
+  const goal = {};
+  await survival.escape(new Task('fortress'), goal, () => {}, danger, true);
+  assert.equal(goal.survivalAction.action, 'fight');
+  assert.equal(goal.survivalAction.cornered, true);
+});

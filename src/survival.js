@@ -669,6 +669,17 @@ class Survival {
       // nothing was a crowd, the bot charged it, and met four at three
       // blocks. A pack seen coming is a pack. Seal while there is still
       // time to place the blocks, and never charge into one.
+      // A sword-wielder already at arm's length is fought, not walled: the
+      // pocket is seconds of standing still placing blocks with no swing,
+      // and in the fortress a wither skeleton beside the bot, two blazes
+      // behind it, took it from 19 to nothing in five of them (the dream
+      // run, 2026-09-24 00:07). The fight rule swings at the top of every
+      // tick; here the tick ends so the next one swings again.
+      const melee = danger.find(t => !shoots(t) && t.entity.name !== 'creeper' && (t.distance <= 3.2 || canStrike(bot, t.entity)));
+      if (armed && melee && bot.health >= 6) {
+        this.report(goal, save, { action: 'fight', threats: [melee.entity.name], health: bot.health, cornered: true });
+        delete this.state.trappedSince; return;
+      }
       const crowd = danger.filter(t => t.distance <= 12).length >= 2;
       const pack = danger.filter(t => t.distance <= 16).length >= 2;
       // Tried and measured: charging a pack of shooters killed the bot in the
