@@ -70,7 +70,7 @@ define({
     { key: 'stay', label: 'stay in the pocket', when: 'always', level: 'root' },
     { key: 'leave', label: 'open the pocket and go back to work', when: 'always', level: 'root' },
   ],
-  instructions: { task: 'The bot is sealed in a small pocket. Choose what to do next.', guidance: 'Use the time of day, health, food, armour and the mobs about (distance, in sight, whether they shoot). Mobs spawn in the dark and cave mobs do not burn at dawn. A pocket is safe but gains nothing; health comes back while fed. watchedForSeconds is how long a mob has kept watch.' },
+  instructions: { task: 'The bot is sealed in a small pocket. Choose what to do next.', guidance: 'Use the time of day, health, food, armour and the mobs about (distance, in sight, whether they shoot). Mobs spawn in the dark; zombies and skeletons in the open burn once the sun is up, creepers, spiders and cave mobs do not. A pocket is safe but gains nothing, and a night in one is about seven minutes; health comes back while fed. workWaiting is what the work outside is on. watchedForSeconds is how long a mob has kept watch. The player wants the bot never to stand idle when useful work is in reach.' },
   // Without Jev, the old order, worked out by the caller.
   fallback: (children, path, context = {}) => children[context.rule] ? context.rule : children.stay ? 'stay' : Object.keys(children)[0],
 });

@@ -1778,7 +1778,7 @@ class Survival {
           run: () => this.openOnWatcher(task, goal, save, refuge, watcher, { chosen: true }) };
       if (night && !watcher && !refused(this, 'survival:night_mine'))
         options.night_mine = { description: 'Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too.', run: () => this.nightMine(task, goal, save) };
-      options.stay = { description: night ? `Stay in the pocket until daylight${who ? `; ${who} is outside` : ''}.` : `Stay in the pocket${who ? ` while ${who} is outside` : ''}${(bot.health ?? 20) < 20 ? ', healing' : ''}.`,
+      options.stay = { description: night ? `Stay in the pocket until daylight${who ? `; ${who} is outside` : ''}.` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${(bot.health ?? 20) < 20 ? ', healing' : ''}.`,
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };
@@ -1794,7 +1794,9 @@ class Survival {
       if (!choice) {
         const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
         const decision = await this.decide(task, goal, save, { id: 'pocket_next', tree, context: { rule },
-          state: { timeOfDay: bot.time?.timeOfDay, night, health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
+          state: { timeOfDay: bot.time?.timeOfDay, night, daylight: night ? 'night' : (bot.time?.timeOfDay ?? 0) >= 22000 ? 'dawn: zombies and skeletons in the open burn once the sun is up' : 'day',
+            workWaiting: goal.rungTime?.phase || goal.step?.item || goal.step?.block || goal.request || null,
+            health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
             threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity) })) } });
         if (decision.stale) { onStep(goal); return true; }
         choice = decision.path.at(-1);
