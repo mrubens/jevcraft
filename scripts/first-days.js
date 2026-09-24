@@ -93,18 +93,33 @@ async function start(world) {
   if (server) {
     fs.writeFileSync(path.join(SERVER, 'console.in'), 'stop\n');
     for (let i = 0; i < 60 && alive(server); i++) await sleep(1000);
+    // A server that said "Stopping" and never went kept the old world up,
+    // and trial 5 ran on trial 4's world and player (2026-09-24).
+    if (alive(server)) { process.kill(Number(server), 'SIGTERM'); for (let i = 0; i < 20 && alive(server); i++) await sleep(1000); }
+    if (alive(server)) { process.kill(Number(server), 'SIGKILL'); await sleep(2000); }
   }
+  if (pid(25581)) throw new Error('The old server is still on 25581; nothing was started');
   fs.writeFileSync(props, fs.readFileSync(props, 'utf8').replace(/^level-name=.*$/m, `level-name=${world}`));
+  spawn('sh', ['start.sh'], { cwd: SERVER, detached: true, stdio: 'ignore' }).unref();
+  for (let i = 0; i < 120 && !pid(25581); i++) await sleep(1000);
+  const log = () => { try { return fs.readFileSync(path.join(SERVER, 'logs', 'latest.log'), 'utf8'); } catch (_) { return ''; } };
+  for (let i = 0; i < 60 && !log().includes(`Preparing level "${world}"`); i++) await sleep(1000);
+  if (!log().includes(`Preparing level "${world}"`)) throw new Error(`The server on 25581 did not load ${world}`);
+  // A watchdog that restarts a silent bot may have started one on the old
+  // state while the server was down (trial 2 ran on the old state that way):
+  // no bot at all before the state is archived.
+  for (let i = 0; i < 20; i++) { const other = pid(3044); if (!other) break; process.kill(Number(other), 'SIGKILL'); await sleep(1500); }
   // Fresh bot state: the old files kept aside, the dream seeded.
   const archive = path.join(STATE, `archive-${IDENTITY}-${Date.now()}`);
   fs.mkdirSync(archive, { recursive: true });
   for (const f of fs.readdirSync(STATE).filter(f => f.startsWith(IDENTITY) && f.endsWith('.json'))) fs.renameSync(path.join(STATE, f), path.join(archive, f));
   fs.writeFileSync(path.join(STATE, `${IDENTITY}-dream.json`), JSON.stringify({ version: 1, dream: 'beat_the_game', setBy: 'TestPlayer', setAt: new Date().toISOString() }));
-  spawn('sh', ['start.sh'], { cwd: SERVER, detached: true, stdio: 'ignore' }).unref();
-  for (let i = 0; i < 120 && !pid(25581); i++) await sleep(1000);
   const out = fs.openSync(process.env.FIRST_DAYS_LOG || path.join(ROOT, 'artifacts', `first-days-${world}.log`), 'a');
-  spawn(process.execPath, ['index.js'], { cwd: ROOT, detached: true, stdio: ['ignore', out, out],
-    env: { ...process.env, MC_HOST: '127.0.0.1', MC_PORT: '25581', MC_USERNAME: 'Jev', JEV_DASHBOARD_PORT: '3044', RECOVERY_ADVISER: 'jev', JEV_ENCOUNTERS: '1' } }).unref();
+  const child = spawn(process.execPath, ['index.js'], { cwd: ROOT, detached: true, stdio: ['ignore', out, out],
+    env: { ...process.env, MC_HOST: '127.0.0.1', MC_PORT: '25581', MC_USERNAME: 'Jev', JEV_DASHBOARD_PORT: '3044', RECOVERY_ADVISER: 'jev', JEV_ENCOUNTERS: '1' } });
+  child.unref();
+  for (let i = 0; i < 30 && !pid(3044); i++) await sleep(1000);
+  if (String(pid(3044)) !== String(child.pid)) throw new Error(`The bot on 3044 is not the trial's own (${pid(3044)} vs ${child.pid}); start again`);
   const all = trials();
   all.push({ world, startedAt: new Date().toISOString() });
   saveTrials(all);
