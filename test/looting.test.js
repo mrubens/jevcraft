@@ -44,13 +44,13 @@ test('a chest at a remembered ruined portal is opened, the useful things taken a
   assert.equal(opened.length, 1);
 });
 
-test('only structure chests: not the stash, not a chest near home, not one far from any landmark', async () => {
+test('any chest seen, but not the stash and not one near home', async () => {
   const blocks = { '22,64,21': 'chest', '60,64,60': 'chest' };
   const { bot } = world(blocks, { position: new Vec3(30, 64, 30) });
-  assert.deepEqual(lootableChests(bot, { landmarks: [portal] }).map(p => p.toString()), ['(22, 64, 21)'], 'the chest by no landmark is someone\'s');
-  assert.deepEqual(lootableChests(bot, { landmarks: [portal], survival: { home: { origin: { x: 25, z: 25 } } } }), [], 'a chest at home is not loot');
-  assert.deepEqual(lootableChests(bot, { landmarks: [portal], survival: { home: { stash: { position: { x: 22, y: 64, z: 21 } } } } }), []);
-  assert.deepEqual(lootableChests(bot, {}), [], 'no landmarks, no loot');
+  assert.deepEqual(lootableChests(bot, { landmarks: [portal] }).map(p => p.toString()), ['(22, 64, 21)', '(60, 64, 60)'], 'the one by no landmark too');
+  assert.deepEqual(lootableChests(bot, { landmarks: [portal], survival: { home: { origin: { x: 25, z: 25 } } } }).map(p => p.toString()), ['(60, 64, 60)'], 'a chest at home is not loot');
+  assert.deepEqual(lootableChests(bot, { landmarks: [portal], survival: { home: { stash: { position: { x: 22, y: 64, z: 21 } } } } }).map(p => p.toString()), ['(60, 64, 60)'], 'nor the stash');
+  assert.deepEqual(lootableChests(bot, {}).map(p => p.toString()), ['(22, 64, 21)', '(60, 64, 60)'], 'no landmark needed: any chest seen is opened');
 });
 
 test('a chest with TNT beneath is a desert temple trap and is left, and nothing is opened in the Nether', () => {
@@ -137,5 +137,11 @@ test('a Nether chest among nether bricks is a fortress chest, whichever fortress
   const s = structureOf({ landmarks: [{ kind: 'nether_fortress', x: 0, y: 64, z: 0, dimension: 'nether' }] }, new Vec3(100, 53, 0), bot);
   assert.equal(s?.kind, 'nether_fortress');
   const plain = { game: { dimension: 'the_nether' }, blockAt: p => ({ name: 'netherrack', position: p }) };
-  assert.equal(structureOf({ landmarks: [] }, new Vec3(100, 53, 0), plain), null, 'a chest in plain netherrack is nobody\'s');
+  assert.equal(structureOf({ landmarks: [] }, new Vec3(100, 53, 0), plain).kind, 'chest', 'a chest in plain netherrack is just a chest');
+});
+
+test('any chest seen is opened unless it is the bot\'s own: the stash, a field cache, one it placed', () => {
+  const { bot } = world({ '40,64,40': 'chest', '50,64,50': 'chest', '60,64,60': 'chest' }, { position: new Vec3(50, 64, 45) });
+  const goal = { caches: [{ position: { x: 40, y: 64, z: 40 } }], placedWorkstations: ['chest:(60, 64, 60)'] };
+  assert.deepEqual(lootableChests(bot, goal).map(p => `${p}`), ['(50, 64, 50)'], 'the wild chest, not the cache or the placed one');
 });

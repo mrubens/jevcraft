@@ -38,7 +38,12 @@ const SURVIVAL = {
   dig_in_bunker: (goal, action) => `Too many of them out here (${[...new Set(action.threats || [])].join(', ')}). Digging into the rock to meet them one at a time.`,
   fight: (goal, action) => `Fighting ${[...new Set((action.threats || []).map(name))].join(' and ')}.`,
   charge: (goal, action) => `No way out, so I'm going for the ${name(action.target)}.`,
-  dig_in: 'Something is shooting at me, so I\'m digging in until it passes.',
+  // Named when known: "something is shooting" was said of a blaze in plain
+  // sight, and read as the bot not seeing it (the user, 2026-09-24).
+  dig_in: (goal, action) => {
+    const known = [...new Set((action.threats || []).map(t => name(t.name || t)))];
+    return known.length ? `Walling off from the ${known.join(' and the ')} until it passes.` : 'Something is shooting at me, so I\'m digging in until it passes.';
+  },
   wall_off: 'Cornered, so I\'m walling the tunnel shut.',
   leave_lava_edge: 'Getting away from the lava before anything else.',
   return_to_surface: 'Heading back up to the surface.',

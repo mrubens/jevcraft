@@ -59,7 +59,12 @@ function structureOf(goal, p, bot = null) {
   }
   // A village is its own record (villages.js), not a landmark.
   const village = (goal.villages || []).find(v => (bot ? sameDimension(bot, v) : true) && Math.hypot(v.x - p.x, v.z - p.z) <= VILLAGE_REACH);
-  return village ? { kind: 'village', ...village } : null;
+  if (village) return { kind: 'village', ...village };
+  // Any other chest seen: opened, and remembered as opened (goal.looted).
+  // Nobody else plays these worlds, and the bot's own (the stash, caches)
+  // are kept out by ownChest (the user: "why not just open any chest he
+  // sees and then remember it?").
+  return bot ? { kind: 'chest', x: p.x, y: p.y, z: p.z, inferred: true } : null;
 }
 
 function trapped(bot, p) {
@@ -73,13 +78,17 @@ function ownChest(goal, p) {
   const home = goal.survival?.home;
   if (home?.stash?.position && key(home.stash.position) === key(p)) return true;
   if (home?.origin && Math.hypot(home.origin.x - p.x, home.origin.z - p.z) <= HOME_CLEAR) return true;
+  // Field caches and any chest the bot placed are its own too: with every
+  // other chest now open to it, those must never look like loot.
+  if ((goal.caches || []).some(c => c.position && key(c.position) === key(p))) return true;
+  if ((goal.placedWorkstations || []).some(w => /^chest:/.test(w) && w.replace(/\s/g, '').endsWith(`(${p.x},${p.y},${p.z})`))) return true;
   return [goal.pendingChestDelivery?.position, ...(goal.deliveryEvidence || []).map(e => e.position)].some(q => q && key(q) === key(p));
 }
 
 // The unopened structure chests within reach, nearest first.
 function lootableChests(bot, goal, { reach = NEAR } = {}) {
   const id = bot.registry?.blocksByName?.chest?.id;
-  if (id === undefined || typeof bot.findBlocks !== 'function' || (!goal.landmarks?.length && !goal.villages?.length && overworld(bot))) return [];
+  if (id === undefined || typeof bot.findBlocks !== 'function') return [];
   // In the Nether a fortress's with no piglin looking on, and a bastion's
   // whoever is looking: a bastion raid is packed light and planned to die
   // (trip-kit.js); opening its chests turns the piglins, and that is the raid.
@@ -88,7 +97,7 @@ function lootableChests(bot, goal, { reach = NEAR } = {}) {
   const here = bot.entity.position, looted = goal.looted || {};
   return bot.findBlocks({ matching: id, maxDistance: reach, count: 16 })
     .filter(p => { const s = !looted[key(p)] && !isSetAside(goal, 'loot_chest', key(p)) && !ownChest(goal, p) && structureOf(goal, p, bot);
-      return s && (overworld(bot) || (s.kind === 'nether_fortress' && !watched) || s.kind === 'bastion') && !trapped(bot, p); })
+      return s && (overworld(bot) || (['nether_fortress', 'chest'].includes(s.kind) && !watched) || s.kind === 'bastion') && !trapped(bot, p); })
     .sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
 }
 

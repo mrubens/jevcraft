@@ -64,11 +64,18 @@ function threats(bot, radius = 24) {
   const position = bot.entity.position;
   return hostileEntities(bot, radius).map(entity => {
     const distance = entity.position.distanceTo(position);
-    const eye = position.offset(0, 1.5, 0);
-    const target = entity.position.offset(0, Math.min(entity.height || 1.6, 1.6), 0);
-    const direction = target.minus(eye);
-    const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
-    return { entity, distance, visible: !hit || eye.distanceTo(hit.intersect || hit.position) >= eye.distanceTo(target) - 0.5 };
+    // Seen if any of head, middle or feet is: one ray to one point near the
+    // head called a blaze behind a fortress fence or a floor's edge unseen,
+    // and the bot walled itself in against "something shooting" that was in
+    // plain sight (the user, 2026-09-24).
+    const eye = position.offset(0, 1.62, 0), height = entity.height || 1.6;
+    const clear = target => {
+      const direction = target.minus(eye);
+      const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
+      return !hit || eye.distanceTo(hit.intersect || hit.position) >= eye.distanceTo(target) - 0.5;
+    };
+    const visible = [Math.min(height, 1.6), height / 2, 0.15].some(dy => clear(entity.position.offset(0, dy, 0)));
+    return { entity, distance, visible };
   }).sort((a, b) => a.distance - b.distance);
 }
 
