@@ -725,7 +725,25 @@ async function moveOnFromResource(bot, task, goal, save) {
   return true;
 }
 
+// Any wood will do for a log step, when the species asked for is not in
+// view and another is: the dream run circled a forest and an island full of
+// oak and spruce looking for acacia (the user, 2026-09-24). Planks, sticks,
+// tables and fuel take any wood, and the next step plans from the pockets.
+const LOG = /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak)_log$/;
+function logInView(bot, step) {
+  if (!LOG.test(step.block || '') || typeof bot.findBlocks !== 'function') return step;
+  if (find(bot, [step.block], 32, 1).length) return step;
+  const names = Object.keys(bot.registry?.blocksByName || {}).filter(n => LOG.test(n) && n !== step.block);
+  const other = find(bot, names, 32, 1)[0];
+  const name = other && bot.blockAt(other)?.name;
+  if (!name) return step;
+  return { ...step, block: name, sources: [name], drops: name, produces: { [name]: step.count || 1 }, insteadOf: step.block };
+}
+
 async function mine(bot, task, step, goal, save, selected) {
+  // Not for a request that named its wood (a spruce build wants spruce).
+  if (goal?.kind === 'win' || !goal?.item) step = logInView(bot, step);
+  if (step.insteadOf && goal) { goal.step = step; save(); }
   const surfaceOnly = isSurfaceResource(step.block);
   if (surfaceOnly && !surfaceReturnComplete(bot, goal)) {
     await surfaceStep(bot, task, goal, save); return;
@@ -3140,4 +3158,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { patrolChoice, maintainBlocks, workstation, noteError, localBatch, smelt, turnSearch, searchFor, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
+module.exports = { logInView, patrolChoice, maintainBlocks, workstation, noteError, localBatch, smelt, turnSearch, searchFor, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
