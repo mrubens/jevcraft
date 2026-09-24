@@ -150,7 +150,10 @@ const sparePickaxeMaterials = bot => countOf(bot, 'cobblestone') >= 3 &&
 // where it stalled: the current shaft, search and surface return, the
 // mining sites' work positions, the hunt's marks, a fortress face.
 function looseEnds(goal, now = Date.now()) {
-  delete goal.tunnel; delete goal.search; delete goal.surfaceReturn;
+  // The search is turned, not dropped (answerStall): dropped, a search for
+  // wood across a desert began again from its first heading at every stall
+  // and zig-zagged (trial 17, 2026-09-24).
+  delete goal.tunnel; delete goal.surfaceReturn;
   if (goal.miningSites) for (const site of Object.values(goal.miningSites)) { delete site.workPosition; site.rejoinBlockedUntil = now + 600000; }
   if (goal.mobHunt) { attemptsFor(goal).clearAction('hunt_target'); delete goal.mobHunt.stalking; }
   if (goal.fortressSearch) {
