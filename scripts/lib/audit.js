@@ -79,12 +79,25 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
   }
 
   // Pacing: a minute in which the bot walked more than thirty blocks and ended
-  // within five of where it began.
+  // within five of where it began, and got nothing for it. Walking about a
+  // furnace mining the coal round it, an iron pickaxe and a shield made in
+  // the minute, is work in a small place, not pacing (the first-days trial
+  // 7 was failed for exactly that); the measure is the stall rule's, what
+  // is worth keeping (src/stillness.js FILLER).
+  const { FILLER } = require('../../src/stillness');
+  const inventories = frames.filter(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
+  const gained = (from, to) => {
+    const inside = inventories.filter(f => f.t >= from - 5000 && f.t <= to + 5000);
+    if (inside.length < 2) return false;
+    const first = inside[0].snapshot.inventory, best = {};
+    for (const f of inside) for (const [k, n] of Object.entries(f.snapshot.inventory)) if (!FILLER.test(k)) best[k] = Math.max(best[k] || 0, +n || 0);
+    return Object.entries(best).some(([k, n]) => n > (+first[k] || 0));
+  };
   const pacing = [];
   for (let i = 0; i < obs.length; i++) {
     let j = i, walked = 0;
     while (j + 1 < obs.length && obs[j + 1].t - obs[i].t <= 60000) { walked += dist(obs[j].snapshot.position, obs[j + 1].snapshot.position); j++; }
-    if (obs[j].t - obs[i].t >= 50000 && walked > 30 && dist(obs[i].snapshot.position, obs[j].snapshot.position) < 5) {
+    if (obs[j].t - obs[i].t >= 50000 && walked > 30 && dist(obs[i].snapshot.position, obs[j].snapshot.position) < 5 && !gained(obs[i].t, obs[j].t)) {
       pacing.push({ from: obs[i].t, to: obs[j].t, walked: Math.round(walked), net: Math.round(dist(obs[i].snapshot.position, obs[j].snapshot.position)), at: pos(obs[i].snapshot), step: stepOf(obs[i].snapshot) });
       i = j;
     }

@@ -14,3 +14,25 @@ test('the first-days milestones: iron tools, iron armour worn, a shield, a bed a
   assert.equal(milestones(snapshot, state).iron_armour, true);
   assert.equal(milestones({ inventory: {}, equipment: {} }, {}).home, false);
 });
+
+test('pacing is a minute of walking back and forth that gains nothing; the same walk making a pickaxe is work', () => {
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const { analyse } = require('../scripts/lib/audit');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pacing-'));
+  const identity = 'test-Jev', t0 = Date.parse('2026-09-24T05:00:00Z');
+  const frames = [];
+  const minute = (start, inventoryAt) => {
+    for (let i = 0; i <= 60; i++) {
+      const x = i % 8 < 4 ? (i % 4) * 2 : 8 - (i % 4) * 2;
+      frames.push({ kind: 'observation', at: new Date(start + i * 1000).toISOString(), snapshot: { position: { x, y: 64, z: 0 }, step: { action: 'mine' } } });
+      if (i % 10 === 0) frames.push({ kind: 'action', at: new Date(start + i * 1000 + 1).toISOString(), snapshot: { position: { x, y: 64, z: 0 }, inventory: inventoryAt(i) } });
+    }
+  };
+  minute(t0, () => ({ cobblestone: 5, stick: 2 }));
+  minute(t0 + 120000, i => ({ cobblestone: 5, stick: 2, ...(i >= 40 ? { iron_pickaxe: 1 } : {}) }));
+  fs.writeFileSync(path.join(dir, `${identity}-2026-09-24T04-59-00-000Z.jsonl`), frames.map(f => JSON.stringify(f)).join('\n'));
+  const a = analyse({ identity, from: t0 - 1000, to: t0 + 200000, dir });
+  assert.equal(a.pacing.length, 1, JSON.stringify(a.pacing));
+  assert(a.pacing[0].from < t0 + 60000, 'the empty-handed minute, not the one that made a pickaxe');
+  fs.rmSync(dir, { recursive: true });
+});
