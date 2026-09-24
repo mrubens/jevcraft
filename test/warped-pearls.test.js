@@ -26,6 +26,19 @@ test('a warped forest is warped nylium and stems in the Nether', () => {
   assert.equal(detect(bot).warped, 30);
 });
 
+test('a warped forest beyond the block search is found by the loaded chunks\' biome', () => {
+  const { DETECTORS } = require('../src/exploration');
+  const detect = DETECTORS.find(d => d.kind === 'warped_forest').detect;
+  const warped = registry.biomesByName.warped_forest.id, wastes = registry.biomesByName.nether_wastes.id;
+  const bot = { registry, entity: { position: new Vec3(0.5, 64, 0.5) }, findBlocks: () => [],
+    blockAt: p => ({ position: p, name: 'netherrack', biome: { id: p.x >= 90 && p.z >= 30 ? warped : wastes } }) };
+  const found = detect(bot);
+  assert(found && found.biome, JSON.stringify(found));
+  assert.equal(found.x, 96); assert.equal(found.z, 32);
+  bot.blockAt = p => ({ position: p, name: 'netherrack', biome: { id: wastes } });
+  assert.equal(detect(bot), null);
+});
+
 test('in the Nether with the rods in hand, the pearls come from the warped forest before the walk back', () => {
   const { bot, goal } = fixture('the_nether');
   assert.equal(nextGameStage(bot, goal).action, 'warped_pearls', 'none known: the sweep for one');

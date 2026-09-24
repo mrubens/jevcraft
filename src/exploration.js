@@ -55,6 +55,23 @@ const find = (bot, names, maxDistance = 48, count = 64) => {
 };
 const near = (bot, p, names, r = 2) => { for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) if (names.includes(bot.blockAt(p.offset(dx, dy, dz))?.name)) return true; return false; };
 const at = (p, detail = {}) => ({ x: p.x, y: p.y, z: p.z, ...detail });
+// The nearest loaded column of a biome, sampled every sixteen blocks out to
+// `reach` at the bot's height (Nether biomes are three-dimensional; this is
+// the height the bot would walk at).
+function biomeNear(bot, name, { reach = 128, step = 16 } = {}) {
+  const here = bot.entity?.position?.floored?.();
+  if (!here || typeof bot.blockAt !== 'function') return null;
+  let best = null;
+  for (let dx = -reach; dx <= reach; dx += step) for (let dz = -reach; dz <= reach; dz += step) {
+    const b = bot.blockAt(here.offset(dx, 0, dz));
+    if (!b?.biome) continue;
+    const biome = String(bot.registry?.biomes?.[b.biome.id]?.name || b.biome.name || '').replace('minecraft:', '');
+    if (biome !== name) continue;
+    const d = dx * dx + dz * dz;
+    if (!best || d < best.d) best = { d, p: here.offset(dx, 0, dz) };
+  }
+  return best ? at(best.p, { biome: true }) : null;
+}
 const DETECTORS = [
   { kind: 'ruined_portal', dimension: 'overworld', same: 24, detect: bot => {
     const found = find(bot, ['crying_obsidian', 'obsidian']);
@@ -115,9 +132,12 @@ const DETECTORS = [
   } },
   // Endermen spawn thickly in the warped forest and let a player be who
   // does not look at them: the pearls for the eyes, without a night walk.
+  // The blocks within forty-eight, or failing that the chunks' own biome
+  // anywhere in the loaded ground: the first live search walked legs past
+  // ground it had loaded and never looked at.
   { kind: 'warped_forest', dimension: 'nether', same: 96, detect: bot => {
     const warped = find(bot, ['warped_nylium', 'warped_stem', 'warped_wart_block'], 48, 64);
-    return warped.length >= 24 ? at(warped[0], { warped: warped.length }) : null;
+    return warped.length >= 24 ? at(warped[0], { warped: warped.length }) : biomeNear(bot, 'warped_forest');
   } },
   { kind: 'bastion', dimension: 'nether', same: 64, detect: bot => {
     const gilded = find(bot, ['gilded_blackstone', 'gold_block'], 48, 16).filter(p => near(bot, p, ['polished_blackstone_bricks', 'blackstone', 'cracked_polished_blackstone_bricks'], 3));
