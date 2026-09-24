@@ -342,6 +342,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 144. *The corpse run's first real test (00:49 UTC).* It worked as written and that was the problem: the bot went back into the Nether and walked to the fortress's edge for the kit it had dropped, wearing none of it, and the wither skeleton that killed it there killed it again. A corpse run now waits until the bot is fit: the kit worn for the Nether; in the Overworld the kit or daylight. A far death's drops keep while it waits.
 
+145. *Standing by the furnace (the user: "he's not doing anything").* Twenty raw iron in the base furnace is two hundred seconds, and with no ore within arm's reach of a surface base the bot stood beside it for four minutes. While a batch has thirty seconds or more to go, the bot now walks to an ore within sixteen blocks (else a log, while fewer than sixteen are carried), digs it and comes back, up to twelve times a batch.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
