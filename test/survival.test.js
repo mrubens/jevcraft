@@ -1329,6 +1329,11 @@ test('with a creeper close no pillar, pocket or bunker is offered: it walks unde
   assert(withCreeper.includes('retreat'));
   const withZombie = Object.keys(survival.stanceOptions(new Task('x'), {}, () => {}, [t('zombie', 4)], false));
   assert(withZombie.includes('pillar'), 'a zombie is climbed away from');
+  // Up before it is in reach, not after: at arm's length a pillar or a
+  // pocket is a second of free hits; the answer is the sword or the feet.
+  const atArmsLength = Object.keys(survival.stanceOptions(new Task('x'), {}, () => {}, [t('zombie', 2), t('zombie', 2.8)], false));
+  assert(!atArmsLength.includes('pillar') && !atArmsLength.includes('seal') && !atArmsLength.includes('bunker'), atArmsLength.join(','));
+  assert(atArmsLength.includes('retreat'));
 });
 
 test('from a pocket on the surface the night mine goes down into solid ground, not sideways to an ore through the hillside', async () => {

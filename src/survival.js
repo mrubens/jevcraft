@@ -464,6 +464,12 @@ class Survival {
     const scaffold = bot.inventory.items().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0);
     const feet = bot.entity.position.floored();
     const headroom = [1, 2, 3].every(dy => { const b = bot.blockAt(feet.offset(0, dy, 0)); return b && b.boundingBox === 'empty' && !/lava|water/.test(b.name); });
+    // Nothing is built, dug or drawn with a mob at arm's length that does
+    // not shoot: a pillar, a pocket, a bunker and a bow each take a second
+    // or more of standing still, and every one of those seconds is its hit.
+    // The dream run pillared with two zombies beside it, unarmoured, and
+    // went from twenty to nothing in eight seconds (2026-09-24).
+    const armsLength = danger.some(t => t.distance <= 3 && !shooter(t.entity));
     if (armed && bot.health >= 8) options.fight = { description: 'Fight here: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet.',
       run: async () => {
         if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); if (!swung) await defendNearby(bot, task, goal, save); return true; }
@@ -475,19 +481,19 @@ class Survival {
     const up = this.state.pillar && feet.y >= this.state.pillar.y + 2 && Math.hypot(feet.x - this.state.pillar.x, feet.z - this.state.pillar.z) < 1;
     // Not with a creeper close: it walks under the pillar and goes off (the
     // live run, 17:16, at three health).
-    if (((scaffold >= 2 && headroom) || up) && !creeperClose(danger)) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.',
+    if (((scaffold >= 2 && headroom && !armsLength) || up) && !creeperClose(danger)) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.',
       run: async () => up || this.pillarFrom(task, goal, save, danger) };
     // A bunker that is quick to dig: three seconds of digging under fire is
     // the most it is worth (bunker.js bunkerDigMs).
-    if (bot.health >= 10 && !creeperClose(danger) && nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.',
+    if (bot.health >= 10 && !armsLength && !creeperClose(danger) && nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.',
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
-    if (shelter.materialStock(bot) >= 4 && !creeperClose(danger)) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.',
+    if (shelter.materialStock(bot) >= 4 && !armsLength && !creeperClose(danger)) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.',
       run: () => this.sealHere(task, goal, save, danger) };
     options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.',
       run: () => this.runAway(task, goal, save, danger) };
-    if (bot.health >= 8 && !danger.some(t => t.distance <= 3 && !shooter(t.entity))) {
+    if (bot.health >= 8 && !armsLength) {
       for (const t of shotTargets(bot, danger).slice(0, 2)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.`,
         run: async () => { await this.shootAt(task, goal, save, t); return true; } };
     }
