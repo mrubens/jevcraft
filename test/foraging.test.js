@@ -52,7 +52,7 @@ test('carried raw chicken exposes catalog cooking and plans real furnace, tool a
       plan = planCatalog(registry, output, quantity, { chicken: 3 }, { nearby: ['oak_log', 'stone'] });
     },
   }, {});
-  assert(!choices.search_food);
+  assert(choices.search_food, 'a search is always on offer beside the rest');
   assert.equal(choices.cook_cooked_chicken.description.safeToEatRaw, false);
   await choices.cook_cooked_chicken.run();
   assert(plan.some(s => s.item === 'wooden_pickaxe'));
@@ -95,7 +95,7 @@ test('food surveys continue partial paths and keep only completed surface routes
   assert(choices.hunt_2, 'The completed surface route exposes the animal to Jev');
   assert(!choices.hunt_1, 'A completed noPath result remains unavailable');
   assert(!choices.hunt_3, 'A route through underground terrain remains unavailable');
-  assert(!choices.search_food);
+  assert(choices.search_food, 'a search is always on offer beside the rest');
   assert.equal(bot.pathfinder.movements.allowedPosition, undefined);
 });
 
@@ -133,7 +133,7 @@ test('surface food choices include rabbits and mooshrooms, but exclude babies an
   const choices = await forageChoices(bot, new Task('test', 'food'), {}, () => {}, {}, {});
   assert.equal(choices.hunt_1.description.food, 'rabbit');
   assert.equal(choices.hunt_2.description.food, 'beef');
-  assert.deepEqual(Object.keys(choices), ['hunt_1', 'hunt_2']);
+  assert.deepEqual(Object.keys(choices), ['hunt_1', 'hunt_2', 'search_food']);
   assert(choices.hunt_1.valid());
   rabbit.metadata[registry.entitiesByName.rabbit.metadataKeys.indexOf('type')] = 99;
   assert(!choices.hunt_1.valid(), 'Recheck animal eligibility after the model decision');

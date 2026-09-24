@@ -11,10 +11,10 @@ const safetyOrder = children => ['sleep_in_bed', 'go_home_for_night', 'secure_sh
 const FOOD_OPTIONS = [
   { pattern: 'cook_[a-z_]+', label: 'cook a carried ingredient', when: 'raw food and fuel are carried; the output is safe food', level: 'obtain_food', dynamic: true },
   { key: 'prepare_hunting_sword', label: 'make a wooden sword to hunt with', when: 'animals are in view and no weapon is carried', level: 'obtain_food' },
-  { pattern: 'hunt_\\d+', label: 'hunt this animal', when: 'an adult food animal in view is reachable on safe surface ground', level: 'obtain_food', dynamic: true },
+  { pattern: 'hunt_\\d+', label: 'hunt this animal', when: 'an adult food animal in view is reachable on safe surface ground; the nearest hostile to it is said', level: 'obtain_food', dynamic: true },
   { key: 'go_home_for_food', label: 'walk home and eat from its stores', when: 'the base has bread, ripe wheat or a cow to spare within reach', level: 'obtain_food' },
   { key: 'village_food', label: 'take ripe crops and hay from a remembered village', when: 'a village with crops or hay is remembered within reach', level: 'obtain_food' },
-  { key: 'search_food', label: 'walk to another dry area to look for animals', when: 'none of the other food options is feasible', level: 'obtain_food' },
+  { key: 'search_food', label: 'walk to another dry area to look for animals', when: 'always', level: 'obtain_food' },
   { key: 'return_for_food', label: 'go back through the portal for food', when: 'off the Overworld, where nothing is safe to eat', level: 'obtain_food' },
 ];
 

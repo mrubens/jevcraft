@@ -37,8 +37,7 @@ async function candidates(bot, task, state) {
     const danger = threats(bot);
     const observed = Object.values(bot.entities).filter(e => preyFood(bot, e) && e.isValid !== false &&
       surface.isSurface(e.position) &&
-      e.position.distanceTo(bot.entity.position) < 32 && !(state.failedPrey?.[e.uuid || e.id] > Date.now() - 120000) &&
-      danger.every(t => t.entity.position.distanceTo(e.position) > 20))
+      e.position.distanceTo(bot.entity.position) < 32 && !(state.failedPrey?.[e.uuid || e.id] > Date.now() - 120000))
       .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
     const reachable = [];
     // A partial path is an unfinished search, not an unreachable animal.
@@ -46,8 +45,7 @@ async function candidates(bot, task, state) {
     for (const target of observed.slice(0, 8)) {
       const route = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalFollow(target, 2), 500);
       if (route.status === 'success' && bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) &&
-        surface.isSurface(target.position) && threats(bot).every(t => t.entity.position.distanceTo(target.position) > 20) &&
-        (route.path || []).every(p => surface.allowed(p))) reachable.push(target);
+        surface.isSurface(target.position) && (route.path || []).every(p => surface.allowed(p))) reachable.push(target);
       if (reachable.length === 3) break;
     }
     return reachable;
@@ -158,7 +156,9 @@ async function forageChoices(bot, task, goal, save, actions, state) {
     choices[`hunt_${target.id}`] = { description: { action: `Hunt this ${target.name.replaceAll('_', ' ')} and pick up its ${raw}. ${needsCooking
       ? `Raw ${raw} can poison; it must be cooked before eating.` : `Raw ${raw} is safe to eat, and worth much more cooked.`}`,
       animal: target.name, position: { ...target.position.floored() }, distance: Math.round(target.position.distanceTo(bot.entity.position)),
-      availableWeapon: bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name))?.name || 'bare hands', food: item, needsCooking },
+      availableWeapon: bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name))?.name || 'bare hands', food: item, needsCooking,
+      // Said, not filtered: an animal near a hostile was dropped from the list.
+      nearestHostileToIt: (() => { const d = threats(bot).map(t => ({ name: t.entity.name, distance: Math.round(t.entity.position.distanceTo(target.position)) })).sort((a, b) => a.distance - b.distance)[0]; return d && d.distance <= 32 ? d : null; })() },
     valid: () => bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) === item && target.position.distanceTo(observed) < 2,
     run: async () => {
       goal.survivalAction = { action: 'gather_food', animal: target.name, position: { ...target.position }, at: new Date().toISOString() }; save();
@@ -201,7 +201,8 @@ async function forageChoices(bot, task, goal, save, actions, state) {
       finally { task.interruptCheck = undefined; }
     },
   };
-  if (!Object.keys(choices).length) choices.search_food = {
+  // Always on offer: the animals in view may be the wrong ones to go for.
+  choices.search_food = {
     description: 'Walk to another observed dry area to search for passive animals; avoid remembered failed targets.',
     run: async () => {
       goal.survivalAction = { action: 'search_food', at: new Date().toISOString() }; save();

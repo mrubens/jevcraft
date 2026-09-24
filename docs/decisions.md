@@ -39,10 +39,10 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `obtain_food` | root | get food | food carried is under the reserve and hunger or a stock top-up calls for it (not at night when shelter is needed) |
 | `cook_[a-z_]+` (pattern) | obtain_food | cook a carried ingredient | raw food and fuel are carried; the output is safe food |
 | `prepare_hunting_sword` | obtain_food | make a wooden sword to hunt with | animals are in view and no weapon is carried |
-| `hunt_\d+` (pattern) | obtain_food | hunt this animal | an adult food animal in view is reachable on safe surface ground |
+| `hunt_\d+` (pattern) | obtain_food | hunt this animal | an adult food animal in view is reachable on safe surface ground; the nearest hostile to it is said |
 | `go_home_for_food` | obtain_food | walk home and eat from its stores | the base has bread, ripe wheat or a cow to spare within reach |
 | `village_food` | obtain_food | take ripe crops and hay from a remembered village | a village with crops or hay is remembered within reach |
-| `search_food` | obtain_food | walk to another dry area to look for animals | none of the other food options is feasible |
+| `search_food` | obtain_food | walk to another dry area to look for animals | always |
 | `return_for_food` | obtain_food | go back through the portal for food | off the Overworld, where nothing is safe to eat |
 
 ### `shelter_method`
