@@ -233,14 +233,16 @@ test('the Nether food gate never waits: a rested search is taken up again, and t
   assert.equal(goal.survival.progress['food_gate:nether'], undefined, 'and the gate is done with');
 });
 
-test('low on air with no rescue under way, the step is stopped once and unwinds to the survival layer', () => {
+test('low on air with no rescue under way, the step is stopped and every check unwinds until the survival layer runs', () => {
   const { airWatch, checkStall } = require('../src/stillness');
   let stopped = 0, closed = 0;
   const bot = { oxygenLevel: 8, pathfinder: { setGoal: g => { if (g === null) stopped++; } }, clearControlStates() {}, currentWindow: { id: 3 }, closeWindow: () => { closed++; } };
   airWatch(bot);
   assert.equal(stopped, 1); assert.equal(closed, 1);
   assert.throws(() => checkStall(bot), e => e.name === 'NeedsAir', 'the next check unwinds the step');
-  assert.doesNotThrow(() => checkStall(bot), 'once');
+  assert.throws(() => checkStall(bot), e => e.name === 'NeedsAir', 'and the one after, if the first was swallowed');
+  bot._airAbort = false; // the survival layer ran (Survival.stepOnce)
+  assert.doesNotThrow(() => checkStall(bot));
   airWatch(bot); assert.equal(stopped, 1, 'not again within five seconds');
   const surfacing = { oxygenLevel: 6, _survivalGoal: { survivalAction: { action: 'surface', at: new Date().toISOString() } }, pathfinder: { setGoal: () => assert.fail('the rescue is not stopped') } };
   airWatch(surfacing); assert.equal(surfacing._airAbort, undefined);
@@ -259,6 +261,8 @@ test('hit twice with no survival response, the held step is stopped and unwinds 
   bot.emit('entityHurt', bot.entity);
   assert.equal(stopped, 1); assert.equal(closed, 1);
   assert.throws(() => checkStall(bot), e => e.name === 'NeedsSafety');
+  assert.throws(() => checkStall(bot), e => e.name === 'NeedsSafety', 'held until the survival layer runs');
+  bot._threatAbort = false; // the survival layer ran
   bot._survivalReportedAt = Date.now(); bot._threatAbortAt = 0;
   bot.emit('entityHurt', bot.entity); bot.emit('entityHurt', bot.entity);
   assert.doesNotThrow(() => checkStall(bot), 'a fight the survival layer is answering is left alone');

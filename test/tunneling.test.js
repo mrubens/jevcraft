@@ -548,3 +548,19 @@ test('whether to plug water that ran into a dug cell is Jev\'s; without Jev it i
   assert.equal(await leakResponse(bot, { check() {} }, p, LIQUID, { placer }), true, 'no Jev: plugged');
   assert.deepEqual(placed, ['cobblestone']);
 });
+
+test('a window is opened only in reach, and a wait for it answers the task and gives up in seconds, not twenty', async () => {
+  const { openWindow } = require('../src/skills');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0, 64, 0), eyeHeight: 1.62 } };
+  const never = () => new Promise(() => {});
+  await assert.rejects(openWindow(bot, { check() {} }, never, { block: { position: new Vec3(7, 64, 0) }, what: 'the furnace' }), /the furnace is out of reach/);
+  let hit = false;
+  setTimeout(() => { hit = true; }, 120);
+  const task = { check() { if (hit) throw Object.assign(new Error('Threat nearby'), { name: 'NeedsSafety' }); } };
+  const started = Date.now();
+  await assert.rejects(openWindow(bot, task, never, { block: { position: new Vec3(2, 64, 0) } }), e => e.name === 'NeedsSafety');
+  assert(Date.now() - started < 1000, 'the watchdog reaches a step waiting on a window');
+  await assert.rejects(openWindow(bot, { check() {} }, never, { timeoutMs: 200, what: 'the chest' }), /the chest did not open/);
+  assert.equal(await openWindow(bot, { check() {} }, async () => 'window', { block: { position: new Vec3(2, 64, 0) } }), 'window');
+});

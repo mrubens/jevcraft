@@ -6,7 +6,7 @@ const { STALL_MS, watchStalls, unwatchStalls, checkStall, takeStall, recordStill
 
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { navigate, surveyRoute, equipBestTool, pickaxeTier, pickaxeDurability, countOf, shakeLoose } = require('./skills');
+const { navigate, surveyRoute, equipBestTool, pickaxeTier, pickaxeDurability, countOf, shakeLoose, openWindow } = require('./skills');
 const { MINEABLE, TOOL_TIERS } = require('./plan');
 const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
@@ -1150,7 +1150,7 @@ async function craft(bot, task, step, goal) {
   for (let n = 0; n < batches; n++) {
     task.check();
     const made = () => countOf(bot, step.item) >= before + recipe.result.count * (n + 1);
-    try { await bot.craft(recipe, 1, table); }
+    try { await openWindow(bot, task, () => bot.craft(recipe, 1, table), { block: table, what: 'the crafting table', timeoutMs: 10000 }); }
     finally { task.check(); await settleCraftInventory(bot, task); }
     // A craft whose ingredients were left on the cursor made nothing (both
     // runs, every ten minutes or so: "cursor oak_planks"). Settled, it is
@@ -1158,7 +1158,7 @@ async function craft(bot, task, step, goal) {
     try { await waitFor(task, made, 4000); }
     catch (err) {
       task.check();
-      try { await bot.craft(recipe, 1, table); }
+      try { await openWindow(bot, task, () => bot.craft(recipe, 1, table), { block: table, what: 'the crafting table', timeoutMs: 10000 }); }
       finally { task.check(); await settleCraftInventory(bot, task); }
       await waitFor(task, made, 4000, awaitedItem(bot, step.item, before + recipe.result.count * (n + 1), `crafting${table ? ' at a table' : ''}, twice`));
     }
@@ -1285,7 +1285,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   // The same for the furnace's output, before the window opens.
   const keepForSmelt = new Set([step.from, plannedFuel]);
   if (!roomFor(bot, step.item)) await makeRoom(bot, task, step.item, { keep: keepForSmelt, away: block.position });
-  let furnace = await bot.openFurnace(block);
+  let furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
   // While a container is open Mineflayer updates that window's player slots;
   // bot.inventory can still contain the pre-transfer counts until it closes.
   const carried = name => Array.isArray(furnace.slots) && Number.isInteger(furnace.inventoryStart)
@@ -1321,7 +1321,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       furnace.close();
       try { if (bot._syncWindow) await bot._syncWindow(bot.inventory); } catch (_) { /* best effort */ }
       await makeRoom(bot, task, step.item, { keep: keepForSmelt, away: block.position });
-      furnace = await bot.openFurnace(block);
+      furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
       if (!furnace.outputItem()) return;
     }
     const amount = output.count;
@@ -1400,7 +1400,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           furnace.close();
           try { await dig(bot, task, ore, { requireDrops: false }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (goal) setAside(goal, 'reach', ore, err.message, 120000); }
-          furnace = await bot.openFurnace(block);
+          furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
           continue;
         }
         let far = spare && allow('mine_nearby') && waitDigs < 12 && cooking() >= 30000 && walkTarget();
@@ -1425,7 +1425,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           }
           try { await navigate(bot, task, new goals.GoalNear(block.position.x, block.position.y, block.position.z, 3), { timeoutMs: 20000, stallMs: 6000 }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-          furnace = await bot.openFurnace(block);
+          furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
           continue;
         }
         // Nothing to walk to, or none of it reachable: the stone in arm's
@@ -1442,7 +1442,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           furnace.close();
           try { await dig(bot, task, rock, { requireDrops: false }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (goal) setAside(goal, 'reach', rock, err.message, 120000); }
-          furnace = await bot.openFurnace(block);
+          furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
           continue;
         }
         if (taken < needed) await sleep(250);

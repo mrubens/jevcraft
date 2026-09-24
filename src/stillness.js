@@ -250,7 +250,7 @@ function airWatch(bot, now = Date.now()) {
   try { bot.pathfinder?.setGoal?.(null); } catch (_) { /* nothing to stop */ }
   try { bot.clearControlStates?.(); } catch (_) { /* nothing held */ }
   try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow); } catch (_) { /* no window */ }
-  console.log(`[air] ${bot.oxygenLevel} air and no rescue under way: the step is stopped for the survival layer`);
+  console.log(`[air] ${bot.oxygenLevel} air and no rescue under way: the step is stopped for the survival layer ${JSON.stringify({ sinceCheckMs: bot._lastCheckAt ? now - bot._lastCheckAt : null, digging: bot.targetDigBlock?.name || null, window: bot.currentWindow?.type ?? null })}`);
 }
 
 function unwatchStalls(bot) { if (bot._stalls?.timer) { clearInterval(bot._stalls.timer); delete bot._stalls.timer; } }
@@ -272,9 +272,15 @@ class Stalled extends Error {
 }
 // Called from Task.check: a raised stall unwinds whatever is running.
 function checkStall(bot) {
-  if (bot._airAbort) { bot._airAbort = false; const { NeedsAir } = require('./vitals'); throw new NeedsAir(); }
+  // Both held until the survival layer runs (Survival.stepOnce clears
+  // them): thrown once and swallowed by a catch on the way up, the step went
+  // on and trial 30 was shot dead with the hurt watchdog firing three times.
+  const now = bot._lastCheckAt = Date.now();
+  // Ten seconds at most, should a loop never hand the survival layer its turn.
+  if (bot._airAbort && now - (bot._airAbortAt || 0) > 10000) bot._airAbort = false;
+  if (bot._threatAbort && now - (bot._threatAbortAt || 0) > 10000) bot._threatAbort = false;
+  if (bot._airAbort) { const { NeedsAir } = require('./vitals'); throw new NeedsAir(); }
   if (bot._threatAbort) {
-    bot._threatAbort = false;
     const { NeedsSafety, threats } = require('./danger');
     throw new NeedsSafety(threats(bot, 16)[0] || { entity: { name: 'something unseen' }, distance: 0 });
   }

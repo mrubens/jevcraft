@@ -299,7 +299,9 @@ class Survival {
           try { bot.pathfinder?.setGoal?.(null); } catch (_) { /* not walking */ }
           try { bot.clearControlStates?.(); } catch (_) { /* nothing held */ }
           try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow); } catch (_) { /* no window */ }
-          console.log(`[hurt] hit twice with no survival response (health ${Math.round(bot.health)}): the step is stopped for the survival layer`);
+          console.log(`[hurt] hit twice with no survival response (health ${Math.round(bot.health)}): the step is stopped for the survival layer ${JSON.stringify({
+            sinceCheckMs: bot._lastCheckAt ? now - bot._lastCheckAt : null, digging: bot.targetDigBlock?.name || null, window: bot.currentWindow?.type ?? null,
+            pathing: bot.pathfinder?.isMoving?.() ?? null, step: bot._survivalGoal?.step?.action || null })}`);
         }
         if (bot._hurtTimes.length >= 3 && !(bot._survivalReportedAt > now - 15000) && !(bot._silentHurtLoggedAt > now - 30000)) {
           bot._silentHurtLoggedAt = now;
@@ -1768,6 +1770,8 @@ class Survival {
 
   async stepOnce(task, goal, save, onStep) {
     const bot = this.bot;
+    // The survival layer has the turn: what the watchdogs held for it is met.
+    bot._airAbort = false; bot._threatAbort = false;
     goal.survival = this.state;
     task.interruptCheck = undefined;
     // A shield raised to cover the last shot comes down at the next look:

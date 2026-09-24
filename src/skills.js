@@ -466,7 +466,37 @@ async function equipBestTool(bot, block) {
   }
 }
 
-module.exports = { wholeGoal, goalGuardPlugin, pickaxeDurability,
+// A window (a furnace, a chest, a crafting table) opened without leaving the
+// step blind. Mineflayer clicks the block and waits for the server's window
+// with no timeout of its own but twenty seconds, checking nothing: trial 30
+// clicked a furnace seven blocks off and stood there, shot by a skeleton,
+// for those twenty seconds, the watchdogs unable to reach it. The block must
+// be in reach, the task is checked while the window comes, and a window
+// that has not come in a few seconds is given up (and closed if it comes late).
+const REACH = 4.9;
+async function openWindow(bot, task, open, { block = null, what = 'the window', timeoutMs = 5000 } = {}) {
+  task.check();
+  if (block?.position && bot.entity?.position) {
+    const eye = bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0);
+    if (eye.distanceTo(block.position.offset(0.5, 0.5, 0.5)) > REACH) throw new Error(`${what} is out of reach`);
+  }
+  let settled = false, value, failure, abandoned = false;
+  const pending = open();
+  pending.then(v => { settled = true; value = v; if (abandoned && v && typeof bot.closeWindow === 'function') { try { bot.closeWindow(v); } catch (_) { /* gone */ } } },
+    e => { settled = true; failure = e; });
+  const end = Date.now() + timeoutMs;
+  try {
+    while (!settled) {
+      task.check();
+      if (Date.now() > end) throw new Error(`${what} did not open`);
+      await sleep(50);
+    }
+  } catch (err) { abandoned = true; throw err; }
+  if (failure) throw failure;
+  return value;
+}
+
+module.exports = { openWindow, wholeGoal, goalGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,
