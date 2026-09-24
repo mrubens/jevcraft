@@ -199,3 +199,18 @@ test('no eating with a hostile mob within five blocks, unless starving', async (
   bot.entities[1].position = new Vec3(2, 64, 0); bot.food = 2;
   assert.equal(await maintainVitals(bot, task), true, 'starving, it eats anyway');
 });
+
+test('suffocating with the head in gravel, the block is dug before anything else', async () => {
+  const { maintainVitals, headInBlock } = require('../src/vitals');
+  const dug = [];
+  const bot = { oxygenLevel: 20, health: 12, food: 20, entity: { position: new Vec3(0.5, 35, 0.5) }, inventory: { items: () => [] },
+    blockAt: p => ({ name: dug.includes(`${p}`) || p.y !== 36 ? 'air' : 'gravel', position: p, boundingBox: dug.includes(`${p}`) || p.y !== 36 ? 'empty' : 'block' }),
+    dig: async b => { dug.push(`${b.position}`); }, equip: async () => {} };
+  assert.equal(headInBlock(bot), false, 'not hurting: not suffocation');
+  bot._recentHurtAt = Date.now();
+  assert.equal(headInBlock(bot), true);
+  const actions = [];
+  await maintainVitals(bot, new Task('mine'), a => actions.push(a.action));
+  assert.deepEqual(dug, ['(0, 36, 0)']);
+  assert.equal(actions[0], 'dig_out_of_block');
+});

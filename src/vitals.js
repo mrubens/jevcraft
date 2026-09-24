@@ -8,7 +8,19 @@ class NeedsAir extends Error {
   constructor() { super('Low air: interrupt work and surface'); this.name = 'NeedsAir'; }
 }
 
-function needsAir(bot) { return bot.oxygenLevel <= 12; }
+// The head in a solid block: suffocating, a point every half second. The
+// clean run's night mine let gravel (or its own digging) close over its head
+// at y 35 and died there in ten seconds, its steps failing around it
+// (2026-09-24). Counted as needing air, so work stops, and the block is dug.
+// Only while it is hurting (suffocation is a point every half second): a
+// position read mid-step inside a block's corner is not suffocation.
+function headInBlock(bot) {
+  if (!(bot._recentHurtAt > Date.now() - 2000)) return false;
+  const eye = bot.entity?.position?.offset(0, bot.entity.eyeHeight || 1.62, 0);
+  const b = eye && bot.blockAt?.(eye.floored());
+  return !!b && b.boundingBox === 'block' && !/_leaves$|glass|slab|stairs|fence|wall|door|trapdoor|scaffolding|chest|bed$/.test(b.name);
+}
+function needsAir(bot) { return bot.oxygenLevel <= 12 || headInBlock(bot); }
 function checkAir(bot) { if (needsAir(bot)) throw new NeedsAir(); }
 function headSubmerged(bot) {
   const eye = bot.entity?.position?.offset(0, bot.entity.eyeHeight || 1.62, 0);
@@ -138,7 +150,15 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   // dig) never had a turn. After a failed swim, only low air sends it up
   // again for a minute.
   const lately = bot._surfaceFailedAt > Date.now() - 60000;
-  if (needsAir(bot) || (headSubmerged(bot) && !lately)) {
+  // Out of the block first: dug with the best tool carried, a few tries.
+  for (let tries = 0; tries < 4 && headInBlock(bot); tries++) {
+    const eye = bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0).floored(), block = bot.blockAt(eye);
+    onAction({ action: 'dig_out_of_block', block: block.name, at: { ...eye } });
+    try { await require('./skills').equipBestTool(bot, block); } catch (_) { /* the hand, then */ }
+    try { await bot.dig(block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
+    task.check();
+  }
+  if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
     try { await surfaceForAir(bot, task, onAction); delete bot._surfaceFailedAt; }
     catch (err) { if (err.name !== 'Cancelled' && /breathable air/.test(err.message)) bot._surfaceFailedAt = Date.now(); throw err; }
   }
@@ -173,4 +193,4 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   return true;
 }
 
-module.exports = { lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
+module.exports = { lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
