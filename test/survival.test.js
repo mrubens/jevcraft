@@ -1560,3 +1560,15 @@ test('cornered with a blaze at arm\'s length, the bot swings instead of walling'
   await survival.escape(new Task('fortress'), goal, () => {}, [{ entity: { name: 'blaze', position: new Vec3(2.5, 65, 0.5) }, distance: 2.4, visible: true }], true);
   assert.equal(goal.survivalAction.action, 'fight');
 });
+
+test('hit by a blaze with none in sight, the nearest blaze is the one: seen, as the attacker', () => {
+  const blaze = { name: 'blaze', type: 'hostile', position: new Vec3(10, 66, 0), height: 1.8 };
+  const bot = { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 1: blaze },
+    time: { timeOfDay: 6000 }, world: { raycast: () => ({ position: new Vec3(5, 65, 0), intersect: new Vec3(5, 65, 0.5) }) } };
+  assert.equal(threats(bot)[0].visible, false, 'behind the fortress wall');
+  bot._hurtBy = { blaze: Date.now() };
+  const t = threats(bot)[0];
+  assert.equal(t.visible, true); assert.equal(t.attributed, true);
+  bot._hurtBy = { blaze: Date.now() - 10000 };
+  assert.equal(threats(bot)[0].visible, false, 'an old hit names nobody');
+});

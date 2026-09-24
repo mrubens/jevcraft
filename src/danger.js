@@ -60,9 +60,10 @@ function hostileEntities(bot, radius = 24) {
   });
 }
 
+const ATTRIBUTE_MS = 5000;
 function threats(bot, radius = 24) {
   const position = bot.entity.position;
-  return hostileEntities(bot, radius).map(entity => {
+  const list = hostileEntities(bot, radius).map(entity => {
     const distance = entity.position.distanceTo(position);
     // Seen if any of head, middle or feet is: one ray to one point near the
     // head called a blaze behind a fortress fence or a floor's edge unseen,
@@ -77,6 +78,18 @@ function threats(bot, radius = 24) {
     const visible = [Math.min(height, 1.6), height / 2, 0.15].some(dy => clear(entity.position.offset(0, dy, 0)));
     return { entity, distance, visible };
   }).sort((a, b) => a.distance - b.distance);
+  // Hit by a kind of mob a moment ago and none of that kind in sight: the
+  // nearest one is the one, as a player turning to the fire knows. Fire in
+  // the Nether is a blaze or a ghast, and the server says which (the hurt
+  // event's source); "something is shooting at me" while hunting blazes
+  // was the bot not using what it knew (the user, 2026-09-24).
+  const now = Date.now();
+  for (const kind of Object.keys(bot._hurtBy || {})) {
+    if (now - bot._hurtBy[kind] > ATTRIBUTE_MS || list.some(t => t.entity.name === kind && t.visible)) continue;
+    const attacker = list.find(t => t.entity.name === kind);
+    if (attacker) Object.assign(attacker, { visible: true, attributed: true });
+  }
+  return list;
 }
 
 // Mid-encounter, a second mob interrupts only when it is nearly on the
