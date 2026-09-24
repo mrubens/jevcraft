@@ -20,6 +20,28 @@ choose. Line numbers are as of commit 27ef475.
   (`charge_shooter`), and pillar, seal and bunker are offered at arm's length
   with what building costs there in the description.
 
+## Done since
+
+- d48caef: the creeper dance and building beside a mob or a creeper are
+  stance options with their costs said, not rules run first or options
+  hidden; health no longer hides a stance; a chosen fight holds its ground
+  when the charge cannot be run. A stall, and a run of five failures
+  (`persist`), is answered by Jev: another way, the rung for later, or a
+  detour, with the strikes and the failure as facts; the three-failure
+  move-on rule is gone. An ore the bot is short of is put to Jev at once
+  with the shortage said, not taken by rule.
+- 6662106: the night. The walk home is an option from dusk (not a fixed
+  hour), staying up is always offered with the kit, the bed and the nights
+  awake said, and a shelter beside a bed is offered with the bed's
+  advantage said. Probed: unarmoured with no bed Jev shelters (1.0); with
+  the bed forty-five blocks off it walks home (0.62 at dusk, 0.71 at night).
+- 1b3fa96: `keep_working`, leaving mobs be for fifteen seconds, is a stance;
+  the stance question is told what mobs hit for and how fast a sword kills.
+  Probed: a zombie at twelve is fought (0.82), a creeper at five is danced
+  (0.92), a skeleton at ten is charged (0.89). Three zombies at six against
+  an unarmoured bot at eight health is also fought (0.88): Jev's call,
+  watched in the trials.
+
 The gates that remain are all on player-facing questions (intake, commands,
 builds, memory, dream): below the bar the bot asks the player, which is Jev's
 uncertainty put to a person, not a rule choosing.
@@ -29,10 +51,6 @@ uncertainty put to a person, not a rule choosing.
 ### Encounters (many times a minute in a fight)
 | Where | Rule | Proposal |
 |---|---|---|
-| danger.js:136 | Work stops for any hostile within 8 (shooters 16 or 32) before a stance is asked | Keep a floor (melee within 3, or hit); the band beyond it goes to `encounter_stance` with a `keep_working` option |
-| survival.js:352, 494 | The creeper dance runs before the stance question | `creeper_dance` stance option |
-| survival.js:322 | Hoglin near a drop: seal in, before the stance | A `knockbackDrop` fact on the stance; keep only feasibility |
-| survival.js:558-586 | Stance options hidden by health (fight 8, bunker 10, charge 6, shoot 8) and a creeper within 7 | Offer them; health and the creeper go in the descriptions |
 | survival.js:410, 642 | `ranged_response` asks the same thing as the stance | Merge into `encounter_stance` |
 | survival.js:747-838 | `escape()`'s cornered order: run, fight, bunker, seal, charge, wall off, hold | `wall_off` and `hold` stance options; the order becomes the outage fallback |
 | survival.js:701 | A persistent follower means a 20-40 block run, not a hop | `retreat_near` / `retreat_far` with a `persistentFollower` fact |
@@ -44,9 +62,7 @@ uncertainty put to a person, not a rule choosing.
 ### Night and shelter (every tick of every night)
 | Where | Rule | Proposal |
 |---|---|---|
-| day.js:11-14 | Work stops at 9500; the walk home at 10000 or 11000 | Ask from about 9000 with time, distance home and walk time as facts; a `go_home` option |
-| survival.js:1730-1762 | Walking home for the bed runs before `survival_priority` | `go_home_to_bed` on `survival_priority` |
-| survival.js:1825 | Staying up is offered only with bed, full kit and little sleep debt | Offer it; kit, bed and debt as facts |
+| survival.js (evening at home) | Chores before bedtime in a fixed order | Offer them to `idle_work` or a new `evening_chore` |
 | survival.js:877-955, shelter.js:68 | Which shelter: saved one, site, seal here, shaft pocket, night mine | New `shelter_method` decision |
 | survival.js:1593-1663, 1149 | Inside a pocket: stay, leave, open on a watcher, night-mine | New `pocket_next` decision |
 | survival.js:46, 57, 1422, 1465 | Night-mine ores, depth, and when a pickaxe is replaced | New `night_mine_target`, with uses left as a fact |
@@ -54,9 +70,7 @@ uncertainty put to a person, not a rule choosing.
 ### Work (every mining step, every stall)
 | Where | Rule | Proposal |
 |---|---|---|
-| work.js:152-202, 2505-2546, stillness.js:244 | The stall answer ladder: turn the search, move on, detour, set the rung aside after 3 strikes or 2 struggles; `persist` stands still up to 15 s | One `stall_answer` decision (try_differently, detour, set_aside_rung, keep_going, recovery); today's order becomes its fallback |
-| work.js:3218 | Unsure recovery: move on from the resource by rule | An option of recovery, or `stall_answer` |
-| opportunistic-mining.js:36 | Coal, iron, diamonds and lapis are taken without asking | Offer them on `opportunistic_ore` with counts carried and needed |
+| stillness.js:244 | A stalled survival action is refused for ten minutes | Keep it offered with the stall as a fact |
 | work.js:715, 862 | How much to gather: logs 8, vein 32, rock 24 | A second level on `resource_source` |
 | work.js:874 | Three missed candidates, then explore | Back to `resource_source` with the misses as facts |
 | work.js:205-243 | A spare pickaxe under 24 uses; a wood and block reserve, every tick | New `upkeep` decision |
