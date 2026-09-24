@@ -917,9 +917,19 @@ async function craft(bot, task, step, goal) {
     Math.max(1, Math.floor((bot.registry.itemsByName[step.item].stackSize || 64) / recipe.result.count)));
   for (let n = 0; n < batches; n++) {
     task.check();
+    const made = () => countOf(bot, step.item) >= before + recipe.result.count * (n + 1);
     try { await bot.craft(recipe, 1, table); }
     finally { task.check(); await settleCraftInventory(bot, task); }
-    await waitFor(task, () => countOf(bot, step.item) >= before + recipe.result.count * (n + 1), 4000, awaitedItem(bot, step.item, before + recipe.result.count * (n + 1), `crafting${table ? ' at a table' : ''}`));
+    // A craft whose ingredients were left on the cursor made nothing (both
+    // runs, every ten minutes or so: "cursor oak_planks"). Settled, it is
+    // clicked once more here rather than failing the whole step.
+    try { await waitFor(task, made, 4000); }
+    catch (err) {
+      task.check();
+      try { await bot.craft(recipe, 1, table); }
+      finally { task.check(); await settleCraftInventory(bot, task); }
+      await waitFor(task, made, 4000, awaitedItem(bot, step.item, before + recipe.result.count * (n + 1), `crafting${table ? ' at a table' : ''}, twice`));
+    }
   }
   if (table && !goal?.holdWorkstation && (goal?.expeditionReady || goal?.preparingExpedition) && bot._ownedWorkstations?.has(`crafting_table:${table.position}`)) {
     const count = countOf(bot, 'crafting_table');

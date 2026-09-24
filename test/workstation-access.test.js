@@ -144,3 +144,20 @@ test('stop while planning station access prevents crafting a replacement and res
   await assert.rejects(acquireStep(bot, task, 'chest', 1, goal, () => {}), { name: 'Cancelled' });
   assert.equal(goal.step, undefined); assert.deepEqual(bot.pathfinder.movements, original);
 });
+
+test('a craft that made nothing is clicked once more before the step fails', async () => {
+  const { bot } = fixture(), stock = { oak_planks: 2 };
+  let clicks = 0;
+  bot.findBlocks = () => [];
+  bot._catalogObservation = { at: Date.now(), position: { ...bot.entity.position }, nearby: [] };
+  bot.inventory = { slots: [], items: () => Object.entries(stock).filter(([, count]) => count)
+    .map(([name, count]) => ({ name, count, type: bot.registry.itemsByName[name].id })) };
+  bot.craft = async recipe => {
+    // The first click leaves the planks on the cursor and makes nothing.
+    if (++clicks === 1) return;
+    for (const delta of recipe.delta) { const name = bot.registry.items[delta.id].name; stock[name] = (stock[name] || 0) + delta.count; }
+  };
+  await acquireStep(bot, new Task('sticks'), 'stick', 4, {}, () => {});
+  assert.equal(clicks, 2);
+  assert.equal(stock.stick, 4);
+});
