@@ -56,3 +56,17 @@ test('request lifetime preserves cancellation from a nested classifier too', asy
   await client.systemOne({ signal: nested.signal }); nested.abort(); assert(received.aborted);
   assert(!parent.signal.aborted);
 });
+
+test('a service that is down is asked again in a minute, not by every caller meanwhile', async t => {
+  let calls = 0;
+  t.mock.method(global, 'fetch', async () => { calls++; throw new Error('connect ETIMEDOUT'); });
+  const client = new TypeSafe({ provider: 'typesafe', apiKey: 'test-key', maxRetries: 0 });
+  await assert.rejects(client.systemOne({ state: {}, questions: {} }), /ETIMEDOUT/);
+  assert.equal(calls, 1);
+  await assert.rejects(client.systemOne({ state: {}, questions: {} }), /not answering/);
+  assert.equal(calls, 1, 'the second caller fails at once and takes its fallback');
+  client.openUntil = Date.now() - 1;
+  t.mock.method(global, 'fetch', async () => ({ ok: true, headers: { get: () => null }, text: async () => '{"answers":{}}' }));
+  await client.systemOne({ state: {}, questions: {} });
+  assert.equal(client.openUntil, undefined, 'an answer closes it');
+});

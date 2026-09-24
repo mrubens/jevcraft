@@ -58,15 +58,23 @@ class TypeSafe {
   // independently server-side. Measure latency and token use for each workload.
   // `run` and `kind` never reach the wire: they say which run the ledger
   // charges the call to and what sort of question it was.
+  // A service that is down is asked again in a minute, not by every caller
+  // meanwhile: at up to thirty seconds a call (three tries at ten), a run of
+  // decisions during an outage would stand the bot still for minutes. While
+  // the breaker is open a call fails at once and its caller takes its
+  // rule-based fallback.
   async systemOne({ state, questions, model = this.model, signal, run, kind }) {
+    if (this.openUntil > Date.now()) throw new TypeSafeError(`The decision service is not answering; asking again in ${Math.ceil((this.openUntil - Date.now()) / 1000)}s`, { status: 503 });
     const started = performance.now();
     try {
       const response = await this.exchange({ state, questions, model, signal });
       this.charge({ run, kind, usage: response?.usage, latencyMs: performance.now() - started, ok: true });
+      delete this.openUntil;
       return response;
     } catch (err) {
       // A call abandoned by its own caller cost nothing worth counting.
       if (!signal?.aborted) this.charge({ run, kind, latencyMs: performance.now() - started, ok: false });
+      if (!signal?.aborted && !(err instanceof TypeSafeError && err.status && !RETRY_STATUSES.has(err.status))) this.openUntil = Date.now() + 60000;
       throw err;
     }
   }
