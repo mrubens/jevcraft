@@ -62,6 +62,9 @@ class Task {
   /** Throws if the task was cancelled, unwinding whatever skill is running. */
   check() {
     if (this.cancelled) throw new Cancelled(this.label);
+    // A stall raised by the supervisor (stillness.js) unwinds the step like
+    // a cancellation, until the loop has answered it.
+    this.stallCheck?.();
     this.interruptCheck?.();
   }
 }

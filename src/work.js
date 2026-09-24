@@ -2,7 +2,7 @@
 const { move } = require('./motion');
 const { attemptsFor, setAside, isSetAside, watch, unwatch } = require('./progress');
 const { DAY } = require('./day');
-const { STILL_MS, watchActivity, markActivity, stillFor, permittedWait, stillReason, recordStill } = require('./stillness');
+const { STALL_MS, watchStalls, unwatchStalls, checkStall, takeStall, recordStill } = require('./stillness');
 
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
@@ -143,90 +143,57 @@ const descentSuppliesLow = bot => woodCarried(bot) < 2;
 const remainingUses = (bot, item) => (bot.registry?.itemsByName?.[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
 const sparePickaxeMaterials = bot => countOf(bot, 'cobblestone') >= 3 &&
   (countOf(bot, 'stick') >= 2 || bot.inventory.items().some(i => /_planks$/.test(i.name) && i.count >= 2) || logsCarried(bot) >= 1);
-// The stall counter fires when the bot stands still; an hour shuffling
-// along a ledge looked like progress to it. This watches the net: five
-// minutes with under eight blocks of movement, the same phase and the same
-// pockets is stuck, whatever the steps say. Once: the current shaft, search
-// and hunt marks are dropped and the bot says so. Twice: strike out
-// twenty-four blocks in a fresh direction. Three times: go home.
-const WATCH_MS = 5 * 60 * 1000, WATCH_BLOCKS = 8;
-// What counts as a change. Rock dug on the way is not: a tunnel adds
-// cobblestone every step, so a shaft pacing along one ledge looked like
-// progress for as long as it paced. The retry steps are not a new phase
-// either: persist and the tunnel retreat changed the step's name, and every
-// change restarted the five minutes.
-const FILLER = /^(cobblestone|cobbled_deepslate|netherrack|dirt|coarse_dirt|gravel|stone|deepslate|andesite|diorite|granite|tuff|calcite|basalt|blackstone|sand|red_sand|soul_sand|soul_soil|end_stone)$/;
-const RETRY_STEPS = new Set(['persist', 'retreat_from_tunnel', 'shake_loose', 'strike_out', 'return_home']);
-function progressKey(bot, goal, previous) {
-  const step = goal.step || {};
-  const phase = goal.gameProgress?.phase || (RETRY_STEPS.has(step.action) && previous !== undefined ? previous.split('|')[0] :
-    [step.item, step.resource, step.block, step.entity, step.action].find(Boolean) || '');
-  // Unless it is what was asked for: "get me 256 cobblestone" is nothing
-  // but dug rock, and was judged stuck after five minutes of it.
-  const wanted = new Set([goal.item, goal.material, step.item, step.drops, ...(goal.tasks || []).map(t => t.item)].filter(Boolean));
-  const items = bot.inventory.items().filter(i => wanted.has(i.name) || !FILLER.test(i.name)).map(i => `${i.name}:${i.count}`).sort().join(',');
-  return `${phase}|${items}`;
-}
-// Time the watchdog should not count, because something else had the bot: a
-// night sealed in a shelter, a fight, a detour. The window is moved on by
-// that much rather than restarted on any gap, which also restarted it
-// across every forty-second persist, so an error, a persist and the same
-// error again was never seen at all. A new run of the goal (a resume)
-// starts a fresh window.
-function excuseWatch(goal, ms) { if (goal.progressWatch && ms > 0) goal.progressWatch.at += ms; }
-function freshWatch(goal) { if (goal.progressWatch) { delete goal.progressWatch.key; } }
-
-async function progressWatchdog(bot, task, goal, save) {
-  if (bot.game?.gameMode === 'creative') return false;
-  // The area covered over the window, not the displacement: a shuffle
-  // fourteen blocks back and forth along a ledge resets a displacement
-  // check every pass and never looks stuck.
-  const now = Date.now(), here = bot.entity.position.clone();
-  const key = progressKey(bot, goal, goal.progressWatch?.key);
-  const fresh = () => ({ at: now, key, box: { minX: here.x, maxX: here.x, minY: here.y, maxY: here.y, minZ: here.z, maxZ: here.z } });
-  const watch = goal.progressWatch ||= { ...fresh(), strikes: 0 };
-  if (key !== watch.key) { Object.assign(watch, fresh(), { strikes: 0 }); return false; }
-  const b = watch.box ||= fresh().box;
-  b.minX = Math.min(b.minX, here.x); b.maxX = Math.max(b.maxX, here.x); b.minY = Math.min(b.minY, here.y); b.maxY = Math.max(b.maxY, here.y); b.minZ = Math.min(b.minZ, here.z); b.maxZ = Math.max(b.maxZ, here.z);
-  if (now - watch.at < WATCH_MS) return false;
-  const extent = Math.max(b.maxX - b.minX, b.maxZ - b.minZ, (b.maxY - b.minY) / 2);
-  if (extent >= WATCH_BLOCKS * 2) { Object.assign(watch, fresh(), { strikes: 0 }); return false; }
-  watch.strikes++; Object.assign(watch, fresh(), { strikes: watch.strikes });
-  const resource = goal.step?.block || goal.step?.resource || goal.step?.drops || goal.step?.entity || 'that';
+// What a stalled step leaves behind that would send it straight back to
+// where it stalled: the current shaft, search and surface return, the
+// mining sites' work positions, the hunt's marks, a fortress face.
+function looseEnds(goal, now = Date.now()) {
   delete goal.tunnel; delete goal.search; delete goal.surfaceReturn;
   if (goal.miningSites) for (const site of Object.values(goal.miningSites)) { delete site.workPosition; site.rejoinBlockedUntil = now + 600000; }
   if (goal.mobHunt) { attemptsFor(goal).clearAction('hunt_target'); delete goal.mobHunt.stalking; }
   if (goal.fortressSearch) {
     delete goal.fortressSearch.target;
-    // Stuck at a fortress face: that face is shunned, the sweep meets the
-    // structure somewhere else.
     const found = goal.fortressSearch.found;
     if (found) { (goal.fortressSearch.shunned ||= []).push({ x: found.x, z: found.z, until: now + 600000 }); delete goal.fortressSearch.found; }
   }
-  goal.lastStallAt = now; save();
-  bot.chat?.(watch.strikes === 1 ? `I've been stuck around here for five minutes on ${String(resource).replaceAll('_', ' ')}. Trying something different.`
-    : watch.strikes === 2 ? "Still stuck. Striking out somewhere new." : "Still stuck. Heading home to reset.");
-  try {
-    if (watch.strikes === 2) {
-      const angle = Math.random() * Math.PI * 2;
-      const target = here.floored().offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
-      goal.step = { action: 'strike_out', target: { ...target } }; save();
-      await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 });
-    } else if (watch.strikes >= 3) {
-      const home = goal.survival?.home;
-      if (home?.origin && dimension(bot) === 'overworld') {
-        goal.step = { action: 'return_home', origin: home.origin, distance: Math.round(here.distanceTo(new Vec3(home.origin.x, home.origin.y, home.origin.z))) }; save();
-        await navigate(bot, task, new goals.GoalNear(home.origin.x, home.origin.y + 1, home.origin.z, 4), { timeoutMs: 120000, stallMs: 15000 });
-      } else {
-        const angle = Math.random() * Math.PI * 2;
-        const target = here.floored().offset(Math.round(Math.cos(angle) * 48), 0, Math.round(Math.sin(angle) * 48));
-        goal.step = { action: 'strike_out', target: { ...target } }; save();
-        await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 60000, stallMs: 8000 });
-      }
-      watch.strikes = 0;
-    }
-  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-  return true;
+  goal.lastStallAt = now;
+}
+
+// A stall (stillness.js) is answered one way, whatever stalled, in order:
+// the same thing done differently, then something else useful for a
+// while, then the rung left for later. A survival action that stalled is
+// refused by the survival layer for ten minutes (Survival.report), which
+// falls through to its next answer; nothing more is needed here.
+const thingOf = key => key.replace(/^\w+:/, '').replace(/:/g, ' ').replaceAll('_', ' ');
+async function answerStall(bot, task, goal, save, stall, { client, survival, onStep = () => {}, idle = false, now = Date.now() } = {}) {
+  const stats = survival?.state || goal.survival || goal;
+  const thing = thingOf(stall.key);
+  if (stall.layer === 'survival') {
+    recordStill(stats, stall.key, STALL_MS, { now, detour: 'refused' }); save();
+    if (stall.strikes === 1) bot.chat?.(`${thing[0].toUpperCase()}${thing.slice(1)} isn't getting me anywhere. Something else, then.`);
+    return;
+  }
+  looseEnds(goal, now);
+  if (stall.strikes === 1 && !idle) {
+    recordStill(stats, stall.key, STALL_MS, { now, detour: 'differently' });
+    goal.search = turnSearch(goal.search);
+    // A mine moves on from this patch of the resource and says so;
+    // anything else says it once here.
+    const mine = [goal.step, goal.lastStruggleStep].find(step => step?.action === 'mine' && step.block);
+    if (mine) {
+      const step = goal.step; goal.step = mine;
+      try { await moveOnFromResource(bot, task, goal, save); }
+      catch (e) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(e.name)) throw e; }
+      finally { if (goal.step === mine) goal.step = step; }
+    } else bot.chat?.(`I'm getting nowhere with the ${thing}. Trying another way.`);
+    save(); return;
+  }
+  const rung = goal.rungTime?.phase;
+  if (stall.strikes >= 3 && rung && DEFERRABLE.has(rung)) {
+    setAside(goal, 'rung', rung, `stalled ${stall.strikes} times in ten minutes`, RUNG_WAIT_MS); delete goal.rungTime;
+    bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
+    save(); return;
+  }
+  await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now });
 }
 
 async function maintainPickaxe(bot, task, goal, save) {
@@ -2492,7 +2459,9 @@ async function tryRecovery(adviser, task, goal, save) {
 async function inCatch(task, goal, fn) {
   try { return await fn(); }
   catch (err) {
-    task.check();
+    // A stall raised meanwhile is the loop's to answer, next tick.
+    if (err.name === 'Stalled') return true;
+    try { task.check(); } catch (e) { if (e.name === 'Stalled') return true; throw e; }
     if (['NeedsAir', 'NeedsSafety'].includes(err.name)) return true;
     noteError(goal, err);
     return false;
@@ -2662,28 +2631,16 @@ async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acqu
 }
 
 
-// Standing still is a bug (see stillness.js). What to do instead: work that
-// can be done from here, Jev's pick, each bounded to three minutes, after
-// which the stalled work gets its turn again. A detour that fails rests
-// for five minutes, and a rung that keeps stalling is set aside like one
-// that ran over its budget.
+// Something else useful from here, the second answer to a stall (see
+// stillness.js): work that can be done from here, Jev's pick, bounded to
+// three minutes, after which the stalled work gets its turn again. A
+// detour that fails rests for five minutes.
 const DETOUR_MS = 180000, DETOUR_REST_MS = 300000;
 const USEFUL_ORES = ['coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
   'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_copper_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore',
   'nether_quartz_ore', 'nether_gold_ore', 'ancient_debris'];
-async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, now = Date.now() } = {}) {
-  const ms = stillFor(bot, now), reason = stillReason(goal, now);
-  // The next twenty seconds belong to the detour, whatever it turns out to be.
-  markActivity(bot, 'detour');
-  const rung = goal.rungTime?.phase;
-  if (rung && DEFERRABLE.has(rung)) {
-    const stalls = goal.rungStalls ||= {};
-    stalls[rung] = [...(stalls[rung] || []).filter(t => now - t < 600000), now];
-    if (stalls[rung].length >= 3) {
-      setAside(goal, 'rung', rung, 'stalled three times in ten minutes', RUNG_WAIT_MS); delete stalls[rung]; delete goal.rungTime;
-      bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
-    }
-  }
+async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now() } = {}) {
+  const ms = STALL_MS;
   const deadline = now + DETOUR_MS;
   const bounded = Object.create(task);
   // A detour answers to threats like any work: one that shows ends it and
@@ -2715,17 +2672,10 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     // A step a pass, yielding between: a failed step returns at once, and
     // this loop without a pause spun the event loop until the bot, unable
     // to move or surface for air, drowned in its own mine.
-    // Stuck is six passes that neither moved the bot nor mined anything.
-    // Counting failed steps missed it: every third failure turned the mine
-    // and reset the count, so only the three-minute cap ever ended a detour.
+    // A mine that goes nowhere is the stall rule's to end (stillness.js).
     async () => {
-      let idle = 0, at = bot.entity.position.clone(), mined = survival.state.nightMine?.mined || 0;
       while (await survival.nightMine(bounded, scratch, save)) {
         bounded.check();
-        const moved = bot.entity.position.distanceTo(at) > 0.5, dug = (survival.state.nightMine?.mined || 0) > mined;
-        idle = moved || dug ? 0 : idle + 1;
-        at = bot.entity.position.clone(); mined = survival.state.nightMine?.mined || 0;
-        if (idle >= 6) throw new Error(`The night mine is not getting anywhere: ${survival.state.nightMine?.lastError || 'no progress'}`);
         await new Promise(resolve => setTimeout(resolve, 50));
       }
     });
@@ -2760,7 +2710,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   try {
     if (!client || options.length === 1) await tree[options[0]].run();
     else await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `Standing still for ${Math.round(ms / 1000)} seconds on ${reason.replace(/^\w+:/, '').replaceAll('_', ' ')}. Choose something useful to do from here for a few minutes; the stalled work gets its turn again afterwards.` }, 'stillness_detour');
-  } finally { goal.step = step; markActivity(bot, 'detour'); save(); }
+  } finally { goal.step = step; save(); }
   return true;
 }
 
@@ -2930,9 +2880,14 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
   recallWorkstations(bot, goal);
   recoveryAdviser ||= createRecoveryAdviser(bot, decisionClient);
   let failures = 0;
-  watchActivity(bot); markActivity(bot, 'start');
+  watchStalls(bot, () => goal); task.stallCheck = () => checkStall(bot);
+  try {
   while (!until()) {
-    task.interruptCheck = undefined; task.check(); updateDigCapabilities(bot);
+    task.interruptCheck = undefined;
+    // A stall is answered first, before anything can throw it again.
+    const stall = takeStall(bot);
+    if (stall) { await inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep, idle: true })); failures = 0; save(); onStep(goal); continue; }
+    task.check(); updateDigCapabilities(bot);
     try {
       if (goal.recoveryAdvice?.active) {
         await maintainVitals(bot, task);
@@ -2941,15 +2896,13 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       await keepRoom(bot, task, goal);
       noticeVillage(bot, goal, save);
       noticeLandmarks(bot, goal, save);
-      if (stillFor(bot) >= STILL_MS && !permittedWait(bot, goal)) {
-        await breakStillness(bot, task, goal, save, { client: decisionClient, survival, onStep });
-        failures = 0; save(); onStep(goal); continue;
-      }
       const acted = await survival.step(task, goal, save, onStep) || await lootNearby(bot, task, goal, save, lootActions());
       if (!acted) await idleWork(bot, task, goal, save, decisionClient, onStep);
       failures = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); narrate(bot, goal);
     } catch (err) {
-      task.interruptCheck = undefined; task.check();
+      task.interruptCheck = undefined;
+      if (err.name === 'Stalled' || bot._stalls?.stall) continue;
+      task.check();
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) failures++;
       noteError(goal, err); save(); onStep(goal);
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) recoveryAdviser.recordFailure(goal, err);
@@ -2957,8 +2910,9 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       // Survival never gives up either: shake loose, back off, go again.
       if (failures >= 5) { await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { backoffMs })); failures = 0; continue; }
     } finally { task.interruptCheck = undefined; }
-    for (let n = 0; n < 10; n++) { task.check(); await sleep(100); }
+    for (let n = 0; n < 10 && !bot._stalls?.stall; n++) { task.check(); await sleep(100); }
   }
+  } finally { if (bot._stalls) bot._stalls.goalOf = null; task.stallCheck = undefined; }
   return { ok: true, goal };
 }
 
@@ -2973,7 +2927,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
   recoveryAdviser ||= createRecoveryAdviser(bot, decisionClient);
   goal.status = 'running'; goal.failures = 0; goal.stalls = 0; save();
   const stopObserving = goal.kind === 'win' ? watchGameProgress(bot, goal, save) : () => {};
-  watchActivity(bot); markActivity(bot, 'start'); freshWatch(goal);
+  watchStalls(bot, () => goal); task.stallCheck = () => checkStall(bot);
   try {
   // The loop yields to the event loop every pass and never spins: a step
   // that returns without waiting on anything real (a synchronous throw
@@ -2990,6 +2944,13 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       await new Promise(resolve => setTimeout(resolve, 250));
     }
     task.interruptCheck = undefined;
+    // A stall (stillness.js) is answered first, before anything can throw
+    // it again: the same thing differently, something else, or later.
+    const stall = takeStall(bot);
+    if (stall) {
+      await inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep }));
+      goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
+    }
     task.check();
     updateDigCapabilities(bot);
     // Every tick starts with the configured movement policy: leaked
@@ -3011,16 +2972,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // A requested, equipped encounter can approach its selected mob. All
       // other survival work keeps the ordinary hostile-avoidance policy.
       const endTask = goal.kind === 'win' && dimension(bot) === 'end';
-      if (!endTask && stillFor(bot) >= STILL_MS && !permittedWait(bot, goal)) {
-        const detourFrom = Date.now();
-        await inCatch(task, goal, () => breakStillness(bot, task, goal, save, { client: decisionClient, survival, onStep }));
-        excuseWatch(goal, Date.now() - detourFrom);
-        onStep(goal); continue;
-      }
-      const huntFrom = Date.now();
       if (!endTask && await huntObserved(bot, task, activeWork, saveWork, { navigate }, decisionClient)) {
-        // A fight is not being stuck: its time is excused like survival's.
-        excuseWatch(goal, Date.now() - huntFrom);
         goal.failures = 0; goal.stalls = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); continue;
       }
       if (goal.recoveryAdvice?.active) {
@@ -3030,9 +2982,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // End combat owns eating and arena escape. Overworld nighttime shelter
       // choices are invalid in the End, where the dragon can destroy them.
       await keepRoom(bot, task, goal);
-      const survivalFrom = Date.now();
       if (!endTask && await survival.step(task, activeWork, saveWork, () => onStep(goal))) {
-        excuseWatch(goal, Date.now() - survivalFrom);
         goal.stalls = 0; goal.failures = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); continue;
       }
       task.interruptCheck = bot.game.gameMode === 'creative' || endTask ? undefined : () => checkThreats(bot);
@@ -3047,7 +2997,6 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (goal.kind === 'win' && !endTask && await inCatch(task, goal, () => lootNearby(bot, task, goal, save, lootActions()))) { goal.stalls = 0; save(); onStep(goal); continue; }
       // Work starts on dry ground. A crafting table placed from a pool under
       // the base failed and failed, the bot bobbing for air in between.
-      if (!endTask && await progressWatchdog(bot, task, goal, save)) { onStep(goal); continue; }
       const feetBlock = typeof bot.blockAt === 'function' ? bot.blockAt(bot.entity.position.floored()) : null;
       if (!endTask && feetBlock?.name && swimmableWater(feetBlock)) {
         try { if (!dryStanding(bot, bot.entity.position) && await reachShore(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; } }
@@ -3104,6 +3053,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (goal.stalls > 30) throw new Blocked(`No measurable progress on ${JSON.stringify(goal.step)}`);
     } catch (err) {
       task.interruptCheck = undefined;
+      if (err.name === 'Stalled' || bot._stalls?.stall) continue;
       task.check();
       noteError(goal, err);
       if (err.name === 'DesignRepair') { save(); onStep(goal); continue; }
@@ -3148,7 +3098,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
   goal.status = 'blocked'; goal.lastError = 'Action budget reached'; save();
   bot.chat('This is taking a while. I saved our progress. Say "Jev resume" to keep going.');
   return { ok: false, reason: goal.lastError, goal };
-  } finally { stopObserving(); }
+  } finally { stopObserving(); if (bot._stalls) bot._stalls.goalOf = null; task.stallCheck = undefined; }
 }
 
 // Placement in Creative consumes no inventory. Observe the actual construction
@@ -3158,4 +3108,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { logInView, patrolChoice, maintainBlocks, workstation, noteError, localBatch, smelt, turnSearch, searchFor, excuseWatch, freshWatch, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, progressWatchdog };
+module.exports = { logInView, patrolChoice, maintainBlocks, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds };

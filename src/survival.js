@@ -2,6 +2,7 @@
 const { move } = require('./motion');
 const { makeRoom } = require('./inventory-tidy');
 const { attemptsFor, setAside, isSetAside, failedWithin, watch, unwatch } = require('./progress');
+const { HOLDS, EMERGENCIES, refused } = require('./stillness');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { threats, immediateThreat, checkThreats, hunted, claimed, hostileEntities } = require('./danger');
@@ -293,6 +294,12 @@ class Survival {
   }
 
   report(goal, save, action) {
+    // An action that stalled (stillness.js) is refused for ten minutes and
+    // the layer falls through to its next answer. Never a wait worth
+    // making, nor a way out of danger.
+    if (!HOLDS.has(action.action) && !EMERGENCIES.has(action.action) && refused(this, `survival:${action.action}`)) {
+      throw Object.assign(new Error(`${action.action.replaceAll('_', ' ')} is set aside: it stalled`), { name: 'SetAside' });
+    }
     goal.survivalAction = { ...action, at: new Date().toISOString() }; save();
     this.bot._survivalReportedAt = Date.now(); this.bot._survivalGoal = goal;
   }
@@ -1416,6 +1423,11 @@ class Survival {
   }
 
   async step(task, goal, save, onStep = () => {}) {
+    try { return await this.stepOnce(task, goal, save, onStep); }
+    catch (err) { if (err.name === 'SetAside') return false; throw err; }
+  }
+
+  async stepOnce(task, goal, save, onStep) {
     const bot = this.bot;
     goal.survival = this.state;
     task.interruptCheck = undefined;
@@ -1503,26 +1515,10 @@ class Survival {
         // Nothing watching: the night is spent working, not waiting. The
         // pocket is the mouth of a mine, and a tunnel in rock is as closed
         // as the pocket was.
-        // Mined out of and sealed again three times in two minutes is a
-        // pocket the mine cannot leave: on a hillside the first step is
-        // into the open, the shelter fills it, and the mine digs it again,
-        // every two seconds. That pocket is waited in tonight instead.
-        const here = `${refuge.origin.x},${refuge.origin.y},${refuge.origin.z}`;
-        const starts = (this.state.pocketStarts || []).filter(s => s.at > Date.now() - 120000 && s.pocket === here);
-        if (starts.length >= 3 && !isSetAside(this, 'night_mine', here)) setAside(this, 'night_mine', here, 'the pocket was dug out of and resealed three times in two minutes', 600000);
-        // Counted only when the mine dug: a try the mine declined (no room,
-        // nothing in reach) is not a dig-out, and counting those set the mine
-        // aside at y 23 under solid rock, where nothing ever resealed.
-        if (!watcher && !watched && !isSetAside(this, 'night_mine', here)) {
-          if (await this.nightMine(task, goal, save)) {
-            // And only when the step opened the pocket: a mine that digs
-            // down or inward keeps it sealed, and counting each of its steps
-            // set the mine aside after three blocks (the replay run, three
-            // "dig-outs" 1.4 seconds apart, then the night spent waiting).
-            if (!shelter.sealed(bot, refuge)) this.state.pocketStarts = [...starts, { pocket: here, at: Date.now() }];
-            onStep(goal); return true;
-          }
-        }
+        // A mine that only digs its way out of the pocket and is sealed back
+        // in (a hillside) goes nowhere; the stall rule sets it aside and the
+        // night is waited out here instead (stillness.js).
+        if (!watcher && !watched && !refused(this, 'survival:night_mine') && await this.nightMine(task, goal, save)) { onStep(goal); return true; }
         await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter');

@@ -123,45 +123,6 @@ test('a sound pickaxe beside the worn one needs no spare', async () => {
   assert.notEqual(goal.step.item, 'stone_pickaxe');
 });
 
-test('the progress watchdog counts five quiet minutes as stuck, whatever the steps say, and drops the shaft', async () => {
-  const { progressWatchdog } = require('../src/work');
-  const bot = fixture({ stone_pickaxe: 1 }); const said = []; bot.chat = line => said.push(line);
-  const goal = { kind: 'win', step: { action: 'tunnel', resource: 'fortress' }, tunnel: { steps: 400 }, miningSites: { 'nether:fortress': { workPosition: { x: 1, y: 2, z: 3 } } } };
-  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), false, 'the first look only starts the clock');
-  goal.progressWatch.at -= 6 * 60 * 1000;
-  bot.entity.position = new Vec3(14.5, 64, 0.5); await progressWatchdog(bot, new Task('watch'), goal, () => {}).catch(() => {});
-  goal.progressWatch.at -= 6 * 60 * 1000;
-  bot.entity.position = new Vec3(3.5, 64, 3.5);
-  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), true, 'five minutes within a fourteen-block shuffle is stuck');
-  assert.equal(goal.tunnel, undefined); assert.equal(goal.miningSites['nether:fortress'].workPosition, undefined);
-  assert.match(said[0], /stuck around here for five minutes/);
-  goal.progressWatch.at -= 6 * 60 * 1000;
-  bot.entity.position = new Vec3(40.5, 64, 3.5);
-  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), false, 'covering forty blocks in the window is progress');
-  assert.equal(goal.progressWatch.strikes, 0);
-});
-
-test('the watchdog excuses time survival had the bot, sees persist loops, and dug rock or a retry step is not progress', async () => {
-  const { progressWatchdog, excuseWatch, freshWatch } = require('../src/work');
-  const bot = fixture({ stone_pickaxe: 1 }); bot.chat = () => {};
-  const goal = { kind: 'obtain', step: { action: 'tunnel', resource: 'diamond_ore' } };
-  await progressWatchdog(bot, new Task('watch'), goal, () => {});
-  const started = goal.progressWatch.at;
-  bot.inventory.items().push({ name: 'cobblestone', count: 12 });
-  goal.step = { action: 'persist', attempt: 1 };
-  await progressWatchdog(bot, new Task('watch'), goal, () => {});
-  assert.equal(goal.progressWatch.at, started, 'cobblestone from the shaft and a persist step keep the same window');
-  // A night in a shelter: survival had the bot, and that time is excused.
-  goal.progressWatch.at -= 6 * 60 * 1000; excuseWatch(goal, 6 * 60 * 1000);
-  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), false, 'a night sheltered is not a stall');
-  // A persist loop: forty seconds between looks, and five minutes of it strikes.
-  goal.progressWatch.at -= 6 * 60 * 1000;
-  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), true, 'an error, a persist and the same error again is seen');
-  // A resume starts a fresh window.
-  goal.progressWatch.at -= 6 * 60 * 1000; freshWatch(goal);
-  assert.equal(await progressWatchdog(bot, new Task('watch'), goal, () => {}), false);
-});
-
 test('persist turns each resource\'s search heading instead of resetting it to the name-hash one', () => {
   const { turnSearch } = require('../src/work');
   const turned = turnSearch({ oak_log: { attempts: 40, frontier: { heading: 7, legs: 5, target: { x: 1 } } }, animals: { attempts: 3 } });
@@ -201,17 +162,6 @@ test('entering a portal stops inside it and stands still, instead of walking thr
   assert.equal(bot.entity.position.floored().z, -1, 'and it is standing in the portal, not past it');
   assert.equal(bot.game.dimension, 'overworld');
   assert.equal(controls.forward, false);
-});
-
-test('rock that was asked for is progress: a cobblestone request is not judged stuck for digging cobblestone', async () => {
-  const { progressWatchdog } = require('../src/work');
-  const bot = fixture({ stone_pickaxe: 1 }); bot.chat = () => {};
-  const goal = { kind: 'obtain', item: 'cobblestone', count: 256, step: { action: 'mine', drops: 'cobblestone' } };
-  await progressWatchdog(bot, new Task('watch'), goal, () => {});
-  const before = goal.progressWatch.key;
-  bot.inventory.items().push({ name: 'cobblestone', count: 12 });
-  await progressWatchdog(bot, new Task('watch'), goal, () => {});
-  assert.notEqual(goal.progressWatch.key, before, 'the pile growing is a change, and starts a new window');
 });
 
 test('a furnace batch saved in the Overworld is parked in the Nether, not a wall every step runs into, and comes back at home', () => {
