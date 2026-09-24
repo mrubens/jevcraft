@@ -341,7 +341,7 @@ test('an obstructed ascent can retreat down its existing stair without excavatin
   assert.equal(bot.pathfinder.movements.canDig, true);
 });
 
-test('deep surface recovery excavates one supported step at a time and preserves the mining worksite', async () => {
+test('deep surface recovery excavates supported steps, several a call, and preserves the mining worksite', async () => {
   const { bot } = world(), changed = new Map();
   bot.entity.position = new Vec3(0.5, 16, 0.5);
   bot.registry = require('minecraft-data')('26.1');
@@ -363,12 +363,13 @@ test('deep surface recovery excavates one supported step at a time and preserves
         changed.set(`${p}`, 'air'); digCount++;
       },
       navigate: async (_bot, _task, target) => {
-        assert.equal(target.y, start.y + 1);
+        assert.equal(target.y, bot.entity.position.floored().y + 1, 'each stair one block up from where the bot stands');
         assert.equal(bot.blockAt(new Vec3(target.x, target.y - 1, target.z)).name, 'stone');
         bot.entity.position = new Vec3(target.x + 0.5, target.y, target.z + 0.5);
       },
     });
-    assert.equal(bot.entity.position.y, start.y + 1);
+    // Several stairs a call now, each one supported.
+    assert(bot.entity.position.y > start.y);
     for (const [key, value] of Object.entries(before)) assert.deepEqual(bot.pathfinder.movements[key], value);
     assert.equal(goal.tunnel, mining);
     assert.equal(goal.tunnel.steps, 35);

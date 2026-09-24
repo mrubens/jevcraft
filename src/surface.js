@@ -225,13 +225,23 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       // Stair choices already rise or stay level. Keep the three-block local
       // retreat allowance so an obstructed step can back out along the stairs
       // we just excavated, rather than forbidding its only dry escape.
-      try { await tunnelStep(bot, task, ascentGoal, record, target, { dig: actions.dig, navigate: actions.navigate || navigate }); }
-      catch (err) {
-        // Higher ground that cannot be reached is not the way out: the
-        // ravine rule demanded y 70 of a bot sealed in its own pocket on a
-        // hillside at 66, and kept it digging at the hill all day.
-        if (err.name === 'StaircaseStalled') { state.heading = ((state.heading || 0) + 1) % 8; delete state.target; delete state.minimumY; state.ascent = { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} }; save(); }
-        throw err;
+      // Six stairs a call, as on the way down (work.js tunnelOrSetAside):
+      // one a call climbed trial 10's bot a block every six seconds, the step
+      // names flipping between the stair and the work that wanted the
+      // surface (2026-09-24). A later stair's failure ends the run for now.
+      for (let n = 0; n < 6; n++) {
+        const before = bot.entity.position.clone();
+        try { await tunnelStep(bot, task, ascentGoal, record, target, { dig: actions.dig, navigate: actions.navigate || navigate }); }
+        catch (err) {
+          if (n > 0 && !['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) break;
+          // Higher ground that cannot be reached is not the way out: the
+          // ravine rule demanded y 70 of a bot sealed in its own pocket on a
+          // hillside at 66, and kept it digging at the hill all day.
+          if (err.name === 'StaircaseStalled') { state.heading = ((state.heading || 0) + 1) % 8; delete state.target; delete state.minimumY; state.ascent = { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} }; save(); }
+          throw err;
+        }
+        task.check();
+        if (surfaceReturnComplete(bot, goal) || bot.entity.position.distanceTo(before) < 0.5) break;
       }
       if (surfaceReturnComplete(bot, goal)) { delete goal.surfaceReturn; save(); }
       return;
