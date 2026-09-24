@@ -91,7 +91,11 @@ Jev answers three kinds of question: a **Choice** among options code lists, a **
 | Several outputs are named | For each catalog branch, whether it holds one of the requested outputs; then coverage, quantity and recipient per item | Nouls, then Choices | Builds the combined plan; incomplete coverage asks the player |
 | A memory request | What operation it is, which saved entry it means, which verbatim span is the place name, which observed position is "here" | Choices over spans | Saves, recalls, forgets, or walks. Jev cannot invent a name or a coordinate |
 | A step needs materials | Which **source** to work: sources differ in block, count within reach, distance and climb | Choice per tree level | Picks the nearest block inside the chosen source. A single feasible option is never sent to Jev |
-| Dusk or hunger while working | Continue the request, secure a shelter, or forage; and which forage option | Choice | Eating carried food and air are rules in code, not choices |
+| Dusk or hunger while working | Continue the request (at night: stay up), walk home to the bed, secure a shelter, or forage; and which forage option | Choice | Eating carried food and air are rules in code, not choices |
+| Night | How to shelter (the saved shelter, a room at a site, a pocket here, a shaft, a mine); once sealed in, whether to stay, leave, go to bed, open the wall on a watching mob, or mine; which ore the night mine goes for, or a torch in the tunnel | Choices | Each option carries its distance, the blocks it needs against those carried, and whether it is dark enough for monsters |
+| Hostile mobs close | The stance: fight, pillar, dig into a wall, seal in, run, shoot, charge the shooters, dance with a creeper, or leave them be and keep working | Choice | Told what the fight would cost *this* bot: each mob's hit after its armour, swings to kill with its weapon, and the health to kill them all. The swing at arm's length and the shield against an arrow already in flight stay reflexes |
+| The work gets nowhere | Try it another way, leave the step for later, or a detour, after forty-five seconds without progress or five failures | Choice | The stall detector is code; the answer is Jev's, told how many times and why |
+| Between steps | Whether to make a spare pickaxe or top up wood and blocks now; how much of a vein to take; what to do while the furnace cooks; what to drop when the pockets are full; where the home goes; which chore before bed | Choices | Each option says what is carried and what it is for |
 | A build request | Whether it continues a standing structure and where it goes; in template mode, which style, floors, size and material | Choices | The generative designer draws custom shapes; templates need no generation |
 | A design comes back | Whether the validated design answers the request in kind, scale and material | Noul | A poor fit goes back to the designer with Jev's verdict as feedback, before hours of placing blocks |
 | Something keeps failing | Which code-checked recovery action is most likely to unblock the original request | Choice | Executes it under a budget. An unsure Jev does nothing from the advice |
@@ -106,7 +110,7 @@ The one place a generative model is used, optionally, through OpenRouter and onl
 
 If Jev cannot be reached (the service is down, a request times out), the bot does not stop. The same decision tree is walked with a code default, shelter before food before the request and otherwise the first option listed, the decision is recorded as a *code default*, and the bot says so once in chat and once more when Jev is back. The Observatory shows those decisions in their own colour, so an outage is visible rather than silent.
 
-Two design rules run through all of it. **Jev chooses, code enumerates**: the model never sees an option code did not construct and check, so it cannot invent a coordinate, a command or a quantity. **Confidence is a second axis**: the answer says what, the probability says whether to act, and thresholds scale with what a mistake would cost.
+Two design rules run through all of it. **Jev chooses, code enumerates**: the model never sees an option code did not construct and check, so it cannot invent a coordinate, a command or a quantity. **Judgments are Jev's, with the facts**: when the bot plays, a tactical or strategic choice is put to Jev as options with the numbers that bear on it, not decided by a hand-written rule, and Jev's pick is taken at any confidence; code keeps the mechanics, what is possible now, and reflexes faster than a question. Where a person is on the other end (a chat request, a server command, a build that would replace something), confidence is a second axis: below the bar the bot asks instead of acting. The [rule audit](docs/rule-audit.md) lists what has been handed to Jev and what code still decides.
 
 ## Talking to Jev
 
@@ -257,9 +261,10 @@ The application is CommonJS JavaScript. The main pieces are:
 | Area | Entry points |
 | --- | --- |
 | Connection, chat, and persistence | `index.js`, `src/session.js`, `src/objectives.js` |
-| Jev questions and catalog routing | `src/typesafe.js`, `src/catalog.js`, `src/decisions.js`, `src/decision-options.js` |
+| Jev questions and catalog routing | `src/decisions/` (every question Jev is asked), `src/typesafe.js`, `src/catalog.js`, `src/decision-options.js` |
 | Recipes, combined tasks, and execution | `src/knowledge.js`, `src/batch-plan.js`, `src/item-bundle.js`, `src/work.js` |
-| Survival, travel, and recovery | `src/survival.js`, `src/movement.js`, `src/boats.js`, `src/recovery-adviser.js` |
+| Survival, travel, and recovery | `src/survival.js`, `src/stillness.js` (the stall rule), `src/combat-estimate.js`, `src/torches.js`, `src/movement.js`, `src/boats.js`, `src/recovery-adviser.js` |
+| Beating the game | `src/game-progress.js` (the ladder), `src/strategy.js` (which rung next), `src/dream.js` |
 | Schematics, design review, and viewer | `src/designer.js`, `src/design-review.js`, `src/harness/`, `public/harness/` |
 
 Run the local checks without a Minecraft server or API key:
@@ -291,6 +296,13 @@ MC_HOST=127.0.0.1 MC_PORT=25579 MC_VERSION=26.1 npm run accept -- build a house
 ```
 
 The acceptance runner requires an explicit isolated port, a separate bot identity, and writes evidence under `artifacts/`. A controlled fixture passing is not proof that the same task works from an empty inventory in a natural world.
+
+Two harnesses measure the bot playing on its own:
+
+- **First-days trials** (`scripts/first-days.js`) start a fresh Normal world, let the bot play the first three in-game days toward beating the game, and audit the run from its flight recording: no deaths, no step retried in a loop, never standing still for over a minute outside a shelter, and iron tools, iron armour, a shield, a bed and a home. The trials and what each one taught are written up in [docs/trial-notes.md](docs/trial-notes.md).
+- **The combat arena** (`scripts/arena.js`) spawns known mobs beside the bot in known gear and measures damage taken, time to kill and deaths per drill, with the stance question asked of Jev (`ARENA_JEV=1`) or answered by the code's fallback.
+
+Both need their own disposable server; see [scripts/README.md](scripts/README.md).
 
 Contributions are most useful when they turn a concrete gameplay failure into a small reproducible test and an improvement to a general capability. See [CONTRIBUTING.md](CONTRIBUTING.md) for the two design rules, what to include with each kind of change, and how the evals fit in. Review Observatory recordings before sharing them: they can contain chat, player names, and world coordinates. Unit tests run on every push and pull request; the live Jev evals run on `main` when the repository has a TypeSafe key configured.
 

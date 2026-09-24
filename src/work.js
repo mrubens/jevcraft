@@ -2813,7 +2813,7 @@ function sideTrips(bot, goal, client) {
     says: "I'll shear these sheep", run: (b, t, g, sv) => shearing.shearSheep(b, t, g, sv, { navigate, acquireStep }) };
   // The table itself, as soon as there is something to spend it on: made
   // only in the last preparations before the End, it was never made at all
-  // in two runs, and the lapis went to the chest (the user's daughter,
+  // in two runs, and the lapis went to the chest (a watcher,
   // 2026-09-24: lapis is for enchanting).
   const { tableNear } = require('./enchanting');
   if (!tableNear(bot, goal) && countOf(bot, 'diamond') >= 2 && countOf(bot, 'lapis_lazuli') >= 3 && (bot.experience?.level ?? 0) >= 5 &&

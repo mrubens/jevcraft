@@ -30,8 +30,8 @@ const piglinsWithin = (bot, p, r) => Object.values(bot.entities || {}).some(e =>
 const IRON_WANTED = 32;
 const ironShort = bot => countOf(bot, 'raw_iron') + countOf(bot, 'iron_ingot') < IRON_WANTED;
 // Lapis too, while fewer than sixteen are carried: it is what an enchant
-// costs, and the End is fought better in enchanted gear (the user's
-// daughter, 2026-09-24).
+// costs, and the End is fought better in enchanted gear (a watcher,
+// 2026-09-24).
 const LAPIS_WANTED = 16;
 const lapisShort = bot => countOf(bot, 'lapis_lazuli') < LAPIS_WANTED;
 const shortage = (bot, candidate) => {

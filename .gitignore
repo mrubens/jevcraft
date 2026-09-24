@@ -26,3 +26,7 @@ artifacts/
 .clean-run/
 .geyser/
 .test-endgame/
+
+# Local tooling and logs
+.claude/
+logs/

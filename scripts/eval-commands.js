@@ -11,9 +11,9 @@ const cases = [
   ['Jev please make it daytime', /^\/time set (?:minecraft:)?day$/],
   ['Jev turn it to night', /^\/time set (?:minecraft:)?night$/],
   ['Jev can you stop the rain?', /^\/weather clear$/],
-  ['Jev teleport me to you', /^\/teleport DoloresDoodle (Jev|@s)$/],
-  ['Jev teleport yourself to me', /^\/teleport (?:(?:Jev|@s) )?DoloresDoodle$/],
-  ['Jev put me in creative mode', /^\/gamemode creative DoloresDoodle$/],
+  ['Jev teleport me to you', /^\/teleport Steve (Jev|@s)$/],
+  ['Jev teleport yourself to me', /^\/teleport (?:(?:Jev|@s) )?Steve$/],
+  ['Jev put me in creative mode', /^\/gamemode creative Steve$/],
   ['Jev set the difficulty to peaceful', /^\/difficulty peaceful$/],
   ['Jev enable keep inventory when we die', /^\/gamerule (?:minecraft:)?(?:keep_inventory|keepInventory) true$/],
   ['Jev summon a cow at my position', /^\/summon (?:minecraft:)?cow 10 64 20$/],
@@ -25,12 +25,12 @@ server.once('spawn', async () => {
     await new Promise(resolve => setTimeout(resolve, 500));
     if (server.commandTree.nodes.length < 100) throw new Error('TreeProbe needs temporary OP for the full command catalog');
     const bot = { username: 'Jev', registry: server.registry, commandTree: server.commandTree,
-      players: { Jev: { entity: { position: new Vec3(0, 64, 0) } }, DoloresDoodle: { entity: { position: new Vec3(10, 64, 20) } }, Alex: {} },
+      players: { Jev: { entity: { position: new Vec3(0, 64, 0) } }, Steve: { entity: { position: new Vec3(10, 64, 20) } }, Alex: {} },
       tabComplete: (...args) => server.tabComplete(...args) };
     const client = new TypeSafe();
     for (const [request, expected] of cases) {
       try {
-        const result = await classifyCommand(client, bot, request, 'DoloresDoodle');
+        const result = await classifyCommand(client, bot, request, 'Steve');
         const pass = expected.test(result.command);
         results.push({ request, pass, expected: expected.source, result });
         console.log(JSON.stringify({ request, pass, command: result.command, latencyMs: result.latencyMs }));

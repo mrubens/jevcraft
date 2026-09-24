@@ -4,15 +4,19 @@ The aim is a useful Minecraft companion: describe an outcome, and Jev works towa
 
 These are development priorities, not release dates. Existing capabilities and setup instructions are in the [README](README.md).
 
-## First: a more reliable companion
+## Now: the first three days, played by Jev
 
-- **Finish combined tasks efficiently.** Strengthen shared material planning, inventory reservations, furnace recovery, and delivery across long requests. Chest delivery now provides a verified fallback when a direct handoff is difficult, including saved deposit checkpoints and protection for requested crafting materials. Continue checking it during longer natural requests.
-- **Keep moving in natural terrain.** Improve swimming, shore exits, uneven footing, cave access, and getting off scaffolding. Detect a failed approach and try a different one before repeating it.
-- **Recover without losing the request.** Improve tool replacement, food preparation, death recovery, and resuming after a disconnect. Make blockers specific enough for a player to understand and help with.
-- **Keep shelter plans reachable.** Ground-level replanning and carried-wood supplies now let the preserved natural run `mu8yf4yy` finish a shelter, wait for dawn and resume its request. Continue checking shelter access and food preparation during longer natural journeys; the full request and day/night endurance check remain separate acceptance milestones.
-- **Verify fresh Survival endurance.** Shore recovery, boat bends, shelter escape, close-range retreat and short mining passages pass their mechanics tests. Fresh Normal run `mu94ua4p` gathered 16 cobblestone but could not reach a throwing position beside its recipient on a tree canopy. Chest fallback passes isolated Survival mechanics tests; a new uninterrupted natural two-cycle trial is still required. Earlier resumed delivery checks remain separate from acceptance.
-- **Make interruptions predictable.** Keep stop responsive during travel, model calls, crafting, and construction. Preserve the useful parts of a task when it is paused or replaced.
-- **Keep chat brief and useful.** Report meaningful changes and explain problems in everyday language; keep detailed diagnostics in the Observatory.
+- **Pass the first-days audit on two fresh worlds in a row.** No deaths, no step retried in a loop, never standing still outside a shelter, and iron tools, iron armour, a shield, a bed and a home within three in-game days (`scripts/first-days.js`). The best trials reach everything but the armour; [trial notes](docs/trial-notes.md) record each run.
+- **Hand the remaining judgments to Jev.** The [rule audit](docs/rule-audit.md) lists the choices code still makes (when a hunt is worth starting, what a trip away from home needs, whether to go back for dropped items). Each becomes options with the facts, and a code default only for when Jev cannot be reached.
+- **Give Jev better facts.** Most bad choices in the trials were a missing fact, not a missing rule: that the furnace cooks on its own, that dawn had come, what a fight would cost this bot. Keep measuring (the arena, the trials) and put the measurements in the questions.
+
+## Alongside: a more reliable companion
+
+- **Finish combined tasks efficiently.** Shared material planning, inventory reservations, furnace recovery, and verified delivery across long requests, with the chest as a fallback when a handoff is difficult.
+- **Keep moving in natural terrain.** Swimming, shore exits, uneven footing, cave access, and getting off scaffolding; a failed approach is tried a different way before it is repeated.
+- **Recover without losing the request.** Tool replacement, food, death recovery, and resuming after a disconnect, with blockers specific enough for a player to help with.
+- **Make interruptions predictable.** Stop stays responsive during travel, model calls, crafting and construction, and the useful parts of a paused task are kept.
+- **Keep chat brief and useful.** Meaningful changes and plain-language problems in chat; the detail in the Observatory.
 
 Success looks like an ordinary play session in which Jev completes multi-item requests, survives routine interruptions, and resumes without repeating work or requiring a restart.
 
@@ -34,7 +38,7 @@ Success looks like Jev finding supplies beyond the immediate area, returning rel
 - **Defeat the dragon and return alive.** Handle crystals, combat, food, falls, and the exit portal as one continuous objective.
 - **Verify the whole run independently.** Complete a fresh natural Normal-difficulty run from empty inventory, without item grants, teleports, Creative mode, privileged locating, or manual gameplay assistance. Individual mechanics tests do not satisfy this milestone.
 
-## Alongside the gameplay work
+## Throughout: tooling and upkeep
 
 - **Easier setup:** clearer configuration, connection diagnostics, and contributor instructions.
 - **Repeatable validation:** automated checks and reproducible isolated gameplay fixtures, with failures that are easy to inspect.

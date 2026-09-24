@@ -3,11 +3,11 @@
 // survival state the stillness rule writes (src/stillness.js).
 //
 //   node scripts/stillness-report.js                  # the dream run on 25579
-//   node scripts/stillness-report.js 127_0_0_1-25579-Jev
+//   node scripts/stillness-report.js 127_0_0_1-25580-Jev
 const fs = require('fs');
 const path = require('path');
 
-const identity = process.argv[2] || '127_0_0_1-25579-Jev';
+const identity = process.argv[2] || '127_0_0_1-25580-Jev';
 const file = path.join(__dirname, '..', '.bot-state', `${identity}-survival.json`);
 const state = JSON.parse(fs.readFileSync(file, 'utf8'));
 const stats = state.stillness;

@@ -28,7 +28,9 @@ const serverDir = path.join(__dirname, '..', '.test-endgame');
 const consolePath = path.join(serverDir, 'console.in');
 const serverLog = path.join(serverDir, 'logs', 'latest.log');
 const username = process.env.ENDGAME_USER || 'EndgameJev';
-const audience = process.env.ARENA_WATCHER || 'DoloresDoodle';
+// A player to put in Spectator on the bot, if one is named in the environment.
+require('../src/env').loadEnv();
+const audience = process.env.ARENA_WATCHER || '';
 const drills = process.argv.slice(2).length ? process.argv.slice(2) : ['stronghold'];
 const id = Date.now().toString(36), directory = path.join(__dirname, '..', 'artifacts', `endgame-${id}`);
 const statePath = path.join(__dirname, '..', 'artifacts', 'endgame-state.json');
@@ -217,14 +219,14 @@ bot.once('spawn', async () => {
     configureMovements(bot);
     // A run that ended mid-air (the dragon's knockback) rejoins there: slow
     // falling for the setup, or the next drill dies before its first step.
-    await commands([`op ${username}`, `effect give ${username} minecraft:slow_falling 8 0 true`, 'difficulty normal', `gamemode spectator ${audience}`]);
+    await commands([`op ${username}`, `effect give ${username} minecraft:slow_falling 8 0 true`, 'difficulty normal', ...(audience ? [`gamemode spectator ${audience}`] : [])]);
     for (const name of drills) {
       if (!DRILLS[name]) throw new Error(`Unknown drill ${name}`);
       died = false;
       log({ drill: name });
       const result = await DRILLS[name](task);
       log({ result });
-      await commands([`spectate ${username} ${audience}`]);
+      if (audience) await commands([`spectate ${username} ${audience}`]);
     }
     bot.quit(); setTimeout(() => process.exit(0), 500);
   } catch (err) {

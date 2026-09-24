@@ -28,7 +28,9 @@ const repeats = Number(process.env.TERRAIN_REPEATS || 2);
 const names = process.argv.slice(2);
 const selected = names.length ? names.map(name => terrainDrill(name) || (() => { throw new Error(`Unknown terrain drill ${name}`); })()) : TERRAIN;
 const username = process.env.TERRAIN_USER || 'TerrainJev';
-const audience = process.env.ARENA_WATCHER || 'DoloresDoodle';
+// A player to put in Spectator on the bot, if one is named in the environment.
+require('../src/env').loadEnv();
+const audience = process.env.ARENA_WATCHER || '';
 const id = Date.now().toString(36);
 const directory = path.join(__dirname, '..', 'artifacts', `terrain-${id}`);
 fs.mkdirSync(directory, { recursive: true });
@@ -231,7 +233,7 @@ async function runDrill(d, attempt) {
   if (d.bulk) { const lines = buildCommands(d); for (let i = 0; i < lines.length; i += 40) { fs.writeFileSync(consolePath, lines.slice(i, i + 40).join('\n') + '\n'); await sleep(300); } await sleep(1500); }
   else await commands(buildCommands(d));
   await commands(placeCommands(username, d));
-  await commands([`gamemode spectator ${audience}`, `spectate ${username} ${audience}`]);
+  if (audience) await commands([`gamemode spectator ${audience}`, `spectate ${username} ${audience}`]);
   const dimension = d.dimension === 'the_nether' ? 'nether' : 'overworld';
   await waitFor(task, () => String(bot.game.dimension).includes(dimension) && bot.entity.position.distanceTo(vec(d.start)) < 3, 30000);
   await bot.waitForChunksToLoad();

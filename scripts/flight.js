@@ -13,7 +13,7 @@ const directory = path.join(__dirname, '..', '.bot-state', 'flight');
 const args = process.argv.slice(2);
 // Newest by time, not by name: two bots share the directory, and the name
 // that sorts last is the last label, not the latest run. --label narrows it.
-const labelAt = args.indexOf('--label'), label = labelAt >= 0 ? args[labelAt + 1] : '127_0_0_1-25579-Jev';
+const labelAt = args.indexOf('--label'), label = labelAt >= 0 ? args[labelAt + 1] : '127_0_0_1-25580-Jev';
 const files = fs.existsSync(directory) ? fs.readdirSync(directory).filter(f => f.endsWith('.jsonl') && f.startsWith(`${label}-`))
   .sort((a, b) => fs.statSync(path.join(directory, a)).mtimeMs - fs.statSync(path.join(directory, b)).mtimeMs) : [];
 if (!files.length) { console.log('No flight records yet.'); process.exit(0); }

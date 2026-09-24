@@ -39,7 +39,9 @@ const selected = names.length ? names.map(name => {
 const id = Date.now().toString(36);
 // A stable name so a watching player's `/spectate` survives every restart.
 const username = process.env.ARENA_USER || 'ArenaJev';
-const audience = process.env.ARENA_WATCHER || 'DoloresDoodle';
+// A player to put in Spectator on the bot, if one is named in the environment.
+require('../src/env').loadEnv();
+const audience = process.env.ARENA_WATCHER || '';
 const directory = path.join(__dirname, '..', 'artifacts', `arena-${id}`);
 fs.mkdirSync(directory, { recursive: true });
 const log = entry => {
@@ -131,7 +133,7 @@ async function runDrill(d, attempt) {
   // Put the watcher back on the bot's shoulder: the reset crossed dimensions
   // and a spectator left behind sees an empty room. Harmless when nobody is
   // watching; the server just reports no such player.
-  await commands([`gamemode spectator ${audience}`, `execute in minecraft:the_nether run tp ${audience} ${d.at[0].join(' ')}`, `spectate ${username} ${audience}`]);
+  if (audience) await commands([`gamemode spectator ${audience}`, `execute in minecraft:the_nether run tp ${audience} ${d.at[0].join(' ')}`, `spectate ${username} ${audience}`]);
   // The teleport crosses dimensions, so wait for the bot to land on its mark
   // with the kit on before anything is summoned.
   await waitFor(task, () => String(bot.game.dimension).includes('nether') &&
@@ -267,7 +269,7 @@ bot.once('spawn', async () => {
     const activate = bot.activateItem.bind(bot);
     bot.activateItem = (offHand, ...rest) => { if (run && offHand) run.shieldRaises++; return activate(offHand, ...rest); };
 
-    await commands([`op ${username}`, `op ${audience}`]);
+    await commands([`op ${username}`, ...(audience ? [`op ${audience}`] : [])]);
     await commands(sessionSetup());
     for (const arena of ['holding', ...new Set(selected.map(d => d.arena))]) { await commands(arenaBuild(arena)); await sleep(1200); }
     log({ phase: 'arena ready', drills: selected.map(d => d.name), repeats, directory, server: `127.0.0.1:${port}` });

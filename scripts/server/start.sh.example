@@ -1,0 +1,17 @@
+#!/bin/sh
+# A disposable Minecraft 26.1 server for the trials, drills and controlled
+# tests. Copy into a server folder (for example .clean-run/ for the
+# first-days trials) as start.sh, beside a vanilla or Fabric 26.1 server jar.
+#
+# Commands reach the server console through a named pipe, which is how the
+# scripts stage worlds and stop the server:
+#   echo "<command>" > console.in
+#
+# server.properties for a first-days trial: server-port=25581,
+# online-mode=false, difficulty=normal, gamemode=survival, spawn-protection=0.
+# The bot is never an operator in a trial.
+cd "$(dirname "$0")" || exit 1
+JAVA=${JAVA:-java}
+JAR=${SERVER_JAR:-server.jar}
+[ -p console.in ] || mkfifo console.in
+tail -f console.in | exec "$JAVA" -Xms1G -Xmx2G -jar "$JAR" nogui "$@"
