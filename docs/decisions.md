@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-64 questions: 16 decision trees and 48 batched questions.
+65 questions: 17 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -44,6 +44,24 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `village_food` | obtain_food | take ripe crops and hay from a remembered village | a village with crops or hay is remembered within reach |
 | `search_food` | obtain_food | walk to another dry area to look for animals | none of the other food options is feasible |
 | `return_for_food` | obtain_food | go back through the portal for food | off the Overworld, where nothing is safe to eat |
+
+### `pocket_next`
+
+**Sealed in a pocket: stay, leave, go to the bed, open the wall on a watcher, or mine the night away?**
+
+- When: Each survival step inside a sealed pocket, unless a mob is inside or at arm's length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.
+- Decision tree, choice; stakes medium; ledger kind `survival`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/survival.js (stepOnce: the pocket)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `go_to_bed` | root | open the pocket and go to the bed | bedtime, with the base bed near (on the surface or within ten blocks of its level) or a bed carried on the surface |
+| `open_on_watcher` | root | open the wall toward the watching mob and fight it | a mob within four and a half blocks and a sword or axe carried |
+| `night_mine` | root | mine from the pocket through the night | night and nothing watching; it stays in the pocket when no mine can be dug from here |
+| `stay` | root | stay in the pocket | always |
+| `leave` | root | open the pocket and go back to work | always |
 
 ### `evening_chore`
 

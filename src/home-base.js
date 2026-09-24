@@ -297,6 +297,10 @@ function plotStatus(bot, home) {
   for (const p of plot) {
     const ground = bot.blockAt(pos(p)), crop = bot.blockAt(pos(p).offset(0, 1, 0));
     if (!ground || !crop) { status.unloaded.push(p); continue; }
+    // A cell the hoe would not turn, twice, from beside it, waits twenty
+    // minutes: trial 24's bot tried one cell for ninety seconds and failed
+    // the audit standing beside the plot (2026-09-24).
+    if (ground.name !== 'farmland' && TILLABLE.has(ground.name) && home.plot?.stubborn?.[`${p.x},${p.y},${p.z}`] > Date.now()) { status.blocked.push(p); continue; }
     if (ground.name !== 'farmland') { (TILLABLE.has(ground.name) ? status.untilled : status.blocked).push(p); continue; }
     if (crop.name === 'wheat') (cropAge(crop) >= 7 ? status.grown : status.growing).push(p);
     else if (clear(crop)) status.bare.push(p);
@@ -501,7 +505,17 @@ async function tillPlot(bot, task, goal, save, home, actions) {
     if (!block || !TILLABLE.has(block.name)) continue;
     await bot.lookAt(pos(p).offset(0.5, 1, 0.5), true);
     await bot.activateBlock(block, new Vec3(0, 1, 0));
-    if (await waitFor(task, () => bot.blockAt(pos(p))?.name === 'farmland')) tilled++;
+    if (await waitFor(task, () => bot.blockAt(pos(p))?.name === 'farmland')) { tilled++; continue; }
+    // Not turned from where it stood: once more from right beside it, then
+    // the cell waits and the rest of the plot goes on.
+    try { await actions.navigate(bot, task, new goals.GoalNear(p.x, p.y + 1, p.z, 1), { timeoutMs: 8000, stallMs: 3000 }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+    const again = bot.blockAt(pos(p));
+    if (again && TILLABLE.has(again.name)) {
+      await bot.lookAt(pos(p).offset(0.5, 1, 0.5), true);
+      await bot.activateBlock(again, new Vec3(0, 1, 0));
+      if (await waitFor(task, () => bot.blockAt(pos(p))?.name === 'farmland')) { tilled++; continue; }
+    }
+    (home.plot.stubborn ||= {})[`${p.x},${p.y},${p.z}`] = Date.now() + 20 * 60 * 1000; save();
   }
   if (!tilled) throw new Error('No plot cell became farmland');
   home.plot.tilledAt = new Date().toISOString(); save();

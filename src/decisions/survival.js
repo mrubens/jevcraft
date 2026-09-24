@@ -39,6 +39,24 @@ define({
   ungated: 'Jev\'s pick is taken at any confidence: the choice is asked again at the next survival step, so a close call costs one step; the safety order answers only when Jev cannot be reached',
 });
 
+// Sealed in a pocket: stay, leave, go to bed, open on a watcher, or mine.
+define({
+  id: 'pocket_next', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Sealed in a pocket: stay, leave, go to the bed, open the wall on a watcher, or mine the night away?',
+  trigger: 'Each survival step inside a sealed pocket, unless a mob is inside or at arm\'s length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.',
+  source: 'src/survival.js (stepOnce: the pocket)',
+  options: [
+    { key: 'go_to_bed', label: 'open the pocket and go to the bed', when: 'bedtime, with the base bed near (on the surface or within ten blocks of its level) or a bed carried on the surface', level: 'root' },
+    { key: 'open_on_watcher', label: 'open the wall toward the watching mob and fight it', when: 'a mob within four and a half blocks and a sword or axe carried', level: 'root' },
+    { key: 'night_mine', label: 'mine from the pocket through the night', when: 'night and nothing watching; it stays in the pocket when no mine can be dug from here', level: 'root' },
+    { key: 'stay', label: 'stay in the pocket', when: 'always', level: 'root' },
+    { key: 'leave', label: 'open the pocket and go back to work', when: 'always', level: 'root' },
+  ],
+  instructions: { task: 'The bot is sealed in a small pocket. Choose what to do next.', guidance: 'Use the time of day, health, food, armour and the mobs about (distance, in sight, whether they shoot). Mobs spawn in the dark and cave mobs do not burn at dawn. A pocket is safe but gains nothing; health comes back while fed. watchedForSeconds is how long a mob has kept watch.' },
+  // Without Jev, the old order, worked out by the caller.
+  fallback: (children, path, context = {}) => children[context.rule] ? context.rule : children.stay ? 'stay' : Object.keys(children)[0],
+});
+
 // At home before bedtime: a chore, or wait for the bed.
 define({
   id: 'evening_chore', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'low', tree: true,

@@ -1148,7 +1148,7 @@ test('mining steps that keep the pocket sealed are not dig-outs: the night mine 
   const { isSetAside } = require('../src/progress');
   const origin = new Vec3(0, 30, 0), blocks = new Map();
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20,
-    time: { timeOfDay: 16000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    registry: require('minecraft-data')('26.1'), time: { timeOfDay: 16000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
     inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] },
     blockAt: p => ({ name: blocks.get(`${p}`) || (p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'air' : 'stone'), boundingBox: blocks.get(`${p}`) === 'air' || p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'empty' : 'block', position: p }),
     world: { raycast: () => null } });
@@ -1160,6 +1160,24 @@ test('mining steps that keep the pocket sealed are not dig-outs: the night mine 
   for (let i = 0; i < 4; i++) { try { await survival.step(new Task('night'), { kind: 'win' }, () => {}); } catch (_) { /* other branches */ } }
   assert(steps >= 3, `the mine ran (${steps})`);
   assert(!isSetAside(survival, 'night_mine', `${origin.x},${origin.y},${origin.z}`), 'not counted as dig-outs');
+});
+
+test('sealed in at night, what next is Jev\'s (stay, leave, mine), and the choice holds', async () => {
+  const origin = new Vec3(0, 30, 0);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 16000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ name: p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'air' : 'stone', boundingBox: p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'empty' : 'block', position: p }),
+    world: { raycast: () => null } });
+  const survival = new Survival(bot, {}, { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld' }] }, client: { systemOne: async () => ({}) } });
+  const asked = [], waits = [];
+  survival.decide = async (task, goal, save, { id, tree }) => { asked.push([id, Object.keys(tree).sort()]); return { path: ['stay'], stale: false }; };
+  survival.wait = async () => { waits.push(1); };
+  survival.nightMine = async () => assert.fail('Jev chose to stay');
+  await survival.step(new Task('night'), { kind: 'win' }, () => {});
+  await survival.step(new Task('night'), { kind: 'win' }, () => {});
+  assert.deepEqual(asked, [['pocket_next', ['leave', 'night_mine', 'stay']]]);
+  assert.equal(waits.length, 2, 'the stay held for the next step without a second question');
 });
 
 test('with the night planned for a shelter, a bed in sight does not keep the night mine shut', () => {

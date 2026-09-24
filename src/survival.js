@@ -1208,11 +1208,13 @@ class Survival {
     return true;
   }
 
-  async openOnWatcher(task, goal, save, refuge, watcher) {
+  // Chosen by Jev, the creeper, health and the other mobs about were its to
+  // weigh; reach, a blade and digging are what make it possible.
+  async openOnWatcher(task, goal, save, refuge, watcher, { chosen = false } = {}) {
     const bot = this.bot;
-    if (watcher.distance > 4.5 || watcher.entity.name === 'creeper' || (bot.health ?? 20) < 16 || typeof this.actions.dig !== 'function') return false;
+    if (watcher.distance > 4.5 || typeof this.actions.dig !== 'function') return false;
     if (!/_(sword|axe)$/.test(defenseWeapon(bot)?.name || '')) return false;
-    if (threats(bot, 16).filter(t => t.entity !== watcher.entity).length > 1) return false;
+    if (!chosen && (watcher.entity.name === 'creeper' || (bot.health ?? 20) < 16 || threats(bot, 16).filter(t => t.entity !== watcher.entity).length > 1)) return false;
     const feet = bot.entity.position.floored(), at = watcher.entity.position;
     const dx = at.x - (feet.x + 0.5), dz = at.z - (feet.z + 0.5);
     const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
@@ -1687,43 +1689,61 @@ class Survival {
       // of a loop: out, a two-minute walk in the dark, a new pocket, and two
       // minutes later out again, all night. From a pocket, a failed route
       // waits ten minutes like a failed sleep does.
-      const homeBed = sleepable(bot) && !watched && !sleepWaiting(this) && !failedWithin(this, 'bed_route', 'home', 600000) && bedToSleepIn(bot, goal);
-      const shallow = homeBed && (surfaceObserver(bot)(bot.entity.position) || Math.abs(homeBed.foot.y - bot.entity.position.y) <= 10) ||
+      const homeBed = sleepable(bot) && !sleepWaiting(this) && !failedWithin(this, 'bed_route', 'home', 600000) && bedToSleepIn(bot, goal);
+      const bedNear = homeBed && (surfaceObserver(bot)(bot.entity.position) || Math.abs(homeBed.foot.y - bot.entity.position.y) <= 10) ||
         // A bed in the pack is a bed too. A fight pocket dug at dusk held the
         // bot until dawn, eleven minutes behind a wall, with a bed on its back.
-        (!homeBed && bot.game?.dimension === 'overworld' && sleepable(bot) && !watched && !sleepWaiting(this) && bedCarried(bot) && surfaceObserver(bot)(bot.entity.position));
-      if (shallow) { delete this.state.watchedSince; await this.leave(task, goal, save, refuge, 'Off to bed.'); }
-      else if ((shelterNeeded(bot) || watched) && !outwaited) {
-        // Say who is keeping the bot in, and whether the hunt had claimed it:
-        // a wait with no named reason cost an hour of guessing.
-        const watcher = threats(bot).find(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity));
-        const hunt = bot._huntingEntity;
-        // One mob at the wall and the bot armed and whole: the wall toward it
-        // is opened and the fight rules take it. A skeleton at three blocks
-        // kept the pocket shut from midnight to dawn, the night mine off.
-        // Inside the pocket with the bot, or at arm's length through a gap:
-        // fought, not waited out. The clean run sealed itself in with a
-        // skeleton at 0.3 blocks and "waited for it to leave" for eighteen
-        // minutes, arrows piling up at its feet (2026-09-24).
-        if (watcher && (watcher.distance < 2.5 || canStrike(bot, watcher.entity))) {
-          this.report(goal, save, { action: 'fight_in_pocket', target: watcher.entity.name, distance: Number(watcher.distance.toFixed(1)), health: bot.health });
-          await defendNearby(bot, task, goal, save);
-          for (let n = 0; n < 5; n++) { task.check(); await sleep(100); }
-          onStep(goal); return true;
-        }
-        if (watcher && await this.openOnWatcher(task, goal, save, refuge, watcher)) { onStep(goal); return true; }
-        // Nothing watching: the night is spent working, not waiting. The
-        // pocket is the mouth of a mine, and a tunnel in rock is as closed
-        // as the pocket was.
-        // A mine that only digs its way out of the pocket and is sealed back
-        // in (a hillside) goes nowhere; the stall rule sets it aside and the
-        // night is waited out here instead (stillness.js).
-        if (!watcher && !watched && !refused(this, 'survival:night_mine') && await this.nightMine(task, goal, save)) { onStep(goal); return true; }
-        await this.wait(task, goal, save, watcher
-          ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
-          : 'Waiting for daylight inside the verified shelter');
+        (!homeBed && bot.game?.dimension === 'overworld' && sleepable(bot) && !sleepWaiting(this) && bedCarried(bot) && surfaceObserver(bot)(bot.entity.position));
+      // Say who is keeping the bot in, and whether the hunt had claimed it:
+      // a wait with no named reason cost an hour of guessing.
+      const watcher = threats(bot).find(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity));
+      const hunt = bot._huntingEntity;
+      // Inside the pocket with the bot, or at arm's length through a gap:
+      // fought, not waited out (a reflex). The clean run sealed itself in
+      // with a skeleton at 0.3 blocks and "waited for it to leave" for
+      // eighteen minutes, arrows piling up at its feet (2026-09-24).
+      if (watcher && (watcher.distance < 2.5 || canStrike(bot, watcher.entity))) {
+        this.report(goal, save, { action: 'fight_in_pocket', target: watcher.entity.name, distance: Number(watcher.distance.toFixed(1)), health: bot.health });
+        await defendNearby(bot, task, goal, save);
+        for (let n = 0; n < 5; n++) { task.check(); await sleep(100); }
+        onStep(goal); return true;
       }
-      else { delete this.state.watchedSince; await this.leave(task, goal, save, refuge); }
+      // What next in the pocket is Jev's: stay, leave, go to bed, open the
+      // wall on a watcher, or mine the night away. Held ninety seconds for
+      // the same watcher and the same night.
+      const night = shelterNeeded(bot);
+      const who = watcher ? `the ${watcher.entity.name.replaceAll('_', ' ')} ${Math.round(watcher.distance)} blocks off${watcher.visible ? ', in sight' : ''}` : null;
+      const options = {};
+      if (bedNear) options.go_to_bed = { description: `Open the pocket and go to the bed${homeBed ? ` ${Math.round(homeBed.foot.distanceTo(bot.entity.position))} blocks away` : ' in the pack'}; the night passes in seconds.${who ? ` Outside is ${who}.` : ''}`,
+        run: async () => { delete this.state.watchedSince; await this.leave(task, goal, save, refuge, 'Off to bed.'); return true; } };
+      if (watcher && watcher.distance <= 4.5 && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && typeof this.actions.dig === 'function')
+        options.open_on_watcher = { description: `Open the wall toward ${who} and fight it at the gap.${watcher.entity.name === 'creeper' ? ' A creeper at the gap goes off.' : ''}`,
+          run: () => this.openOnWatcher(task, goal, save, refuge, watcher, { chosen: true }) };
+      if (night && !watcher && !refused(this, 'survival:night_mine'))
+        options.night_mine = { description: 'Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too.', run: () => this.nightMine(task, goal, save) };
+      options.stay = { description: night ? `Stay in the pocket until daylight${who ? `; ${who} is outside` : ''}.` : `Stay in the pocket${who ? ` while ${who} is outside` : ''}${(bot.health ?? 20) < 20 ? ', healing' : ''}.`,
+        run: async () => { await this.wait(task, goal, save, watcher
+          ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
+          : 'Waiting for daylight inside the verified shelter'); return true; } };
+      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.`,
+        run: async () => { delete this.state.watchedSince; await this.leave(task, goal, save, refuge); return true; } };
+      // Without Jev, the old order.
+      const rule = bedNear && !watched ? 'go_to_bed' : (night || watched) && !outwaited
+        ? (options.open_on_watcher && (bot.health ?? 20) >= 16 && watcher.entity.name !== 'creeper' && threats(bot, 16).filter(t => t.entity !== watcher.entity).length <= 1 ? 'open_on_watcher' : options.night_mine && !watched ? 'night_mine' : 'stay')
+        : 'leave';
+      const key = `${watcher?.entity.name || ''}|${night}|${!!bedNear}|${Object.keys(options).sort().join(',')}`;
+      const held = this.state.pocketPlan?.key === key && this.state.pocketPlan.until > Date.now() && options[this.state.pocketPlan.choice] ? this.state.pocketPlan.choice : null;
+      let choice = held;
+      if (!choice) {
+        const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
+        const decision = await this.decide(task, goal, save, { id: 'pocket_next', tree, context: { rule },
+          state: { timeOfDay: bot.time?.timeOfDay, night, health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
+            threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity) })) } });
+        if (decision.stale) { onStep(goal); return true; }
+        choice = decision.path.at(-1);
+        this.state.pocketPlan = { choice, key, until: Date.now() + 90000 };
+      }
+      if (!(await options[choice].run())) { delete this.state.pocketPlan; await options.stay.run(); }
       onStep(goal); return true;
     }
     if (!shelterNeeded(bot)) delete this.state.nightMine;

@@ -185,7 +185,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const mine = [goal.step, goal.lastStruggleStep].find(step => step?.action === 'mine' && step.block);
   if (!idle) answers.differently = { description: mine
     ? `Keep at the ${thing} another way: leave this patch of ${String(mine.block).replaceAll('_', ' ')} for one further off.`
-    : `Keep at the ${thing} another way: the search turns to a heading not tried, and the shaft or site it was using is dropped.`,
+    : `Keep at the ${thing} another way: step eight blocks off to fresh ground and come at it again from there; the search turns to a heading not tried, and the shaft or site it was using is dropped.`,
   run: async () => {
     // A search is turned, not dropped: an empty search re-derives its
     // heading from the resource's name, which pointed the bot straight back
@@ -199,7 +199,18 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       const step = goal.step; goal.step = mine;
       try { await moveOnFromResource(bot, task, goal, save); }
       finally { if (goal.step === mine) goal.step = step; }
-    } else bot.chat?.(`I'm getting nowhere with the ${thing}. Trying another way.`);
+    } else {
+      bot.chat?.(`I'm getting nowhere with the ${thing}. Trying another way.`);
+      // Another way starts from somewhere else: the same spot is the same
+      // attempt. Trial 24 answered a stalled plot by turning a search it
+      // was not using, and stood by the same cell until the audit failed it.
+      const turn = goal.survival || goal;
+      const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; turn.detourHeading = heading;
+      const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
+      const target = here.offset(Math.round(Math.cos(angle) * 8), 0, Math.round(Math.sin(angle) * 8));
+      try { await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 2), { timeoutMs: 15000, stallMs: 5000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+    }
   } };
   const rung = goal.rungTime?.phase;
   if (rung && DEFERRABLE.has(rung)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.`,
