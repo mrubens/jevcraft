@@ -1709,3 +1709,21 @@ test('how the night is sheltered is Jev\'s pick, run and held for the night with
   assert(asked[0][1].includes('seal_here') && asked[0][1].includes('shaft_pocket'), asked[0][1].join(','));
   assert.deepEqual(ran, ['shaft', 'shaft'], 'held');
 });
+
+test('the night mine\'s next ore is Jev\'s pick of the nearest of each kind, copper included with its use said; without Jev, not copper', async () => {
+  const registry = require('minecraft-data')('26.1');
+  const ores = { '3,39,0': 'copper_ore', '6,39,0': 'iron_ore', '4,39,0': 'copper_ore' };
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld' }, entities: {}, entity: { position: new Vec3(0.5, 40, 0.5) },
+    inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }], emptySlotCount: () => 10, slots: [] },
+    findBlocks: ({ matching }) => Object.keys(ores).filter(k => matching.includes(registry.blocksByName[ores[k]].id)).map(k => new Vec3(...k.split(',').map(Number))),
+    blockAt: p => ({ name: ores[`${p.x},${p.y},${p.z}`] || 'stone', boundingBox: 'block', position: p }) });
+  const survival = new Survival(bot, {}, {});
+  assert.equal((await survival.nightTarget(new Task('night'), {}, () => {}, new Vec3(0, 40, 0))).name, 'iron_ore', 'no Jev: the nearest the ladder uses');
+  survival.client = { systemOne: async () => ({}) };
+  let tree;
+  survival.decide = async (task, goal, save, q) => { tree = q.tree; return { path: ['ore_0'], stale: false }; };
+  const pick = await survival.nightTarget(new Task('night'), {}, () => {}, new Vec3(0, 40, 0));
+  assert.equal(pick.name, 'copper_ore', 'Jev\'s pick stands');
+  assert.equal(Object.keys(tree).length, 3, 'one of each kind, and the branch');
+  assert.match(tree.ore_0.description, /nothing on the ladder wants it/);
+});

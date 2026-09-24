@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-68 questions: 20 decision trees and 48 batched questions.
+69 questions: 21 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -80,6 +80,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `night_mine` | root | mine from the pocket through the night | night and nothing watching; it stays in the pocket when no mine can be dug from here |
 | `stay` | root | stay in the pocket | always |
 | `leave` | root | open the pocket and go back to work | always |
+
+### `night_mine_target`
+
+**Mining through the night: which ore next, or a branch deeper?**
+
+- When: Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed.
+- Decision tree, choice; stakes low; ledger kind `mining`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/survival.js (nightMine, nightTarget)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `ore_\d+` (pattern) | root | dig to this ore | the nearest of its kind, with its distance, what is carried and what it is for |
+| `branch` | root | dig a branch down and along | always |
 
 ### `evening_chore`
 

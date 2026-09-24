@@ -44,10 +44,33 @@ function firmStep(bot, p) {
 // it: a tunnel up toward an ore in the roof is a tunnel toward the surface.
 // Not copper: nothing on the ladder wants it, and trial 20's stone pickaxe
 // wore out on fifty-seven of it and left the bot without one (2026-09-24).
-const NIGHT_ORES = new Set(['coal_ore', 'iron_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
+// (Jev may still choose it: nightTarget offers every kind, copper's use said.)
+const NIGHT_ORES = new Set(['coal_ore', 'iron_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore', 'copper_ore', 'deepslate_copper_ore',
   'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore', 'deepslate_emerald_ore']);
+// What each ore gives and what it is for, said to Jev with the choice.
+const ORE_YIELD = { coal: ['coal', 'fuel for every smelt, and torches'], iron: ['raw_iron', 'tools, armour, a shield and a bucket'], copper: ['raw_copper', 'nothing on the ladder wants it'],
+  gold: ['raw_gold', 'golden boots for the Nether'], redstone: ['redstone', 'nothing on the ladder wants it'], lapis: ['lapis_lazuli', 'enchanting'],
+  diamond: ['diamond', 'the best tools and armour'], emerald: ['emerald', 'trading with villagers'] };
+const oreKind = name => (/(?:deepslate_)?(\w+?)_ore$/.exec(name || '') || [])[1];
+// The nearest of each kind of ore the night mine could go for: dry, not
+// above the feet (a tunnel up is a tunnel toward the surface), in the
+// working depth, and not a target that failed lately.
+function nightOreChoices(bot, feet, attempts) {
+  const names = Object.keys(bot.registry?.blocksByName || {}).filter(n => ORE_YIELD[oreKind(n)] && /_ore$/.test(n));
+  const ids = names.map(name => bot.registry.blocksByName[name].id);
+  const found = bot.findBlocks?.({ matching: ids, maxDistance: 24, count: 64 }) || [];
+  const wet = q => [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]]
+    .some(([x, y, z]) => /water|lava|bubble_column|kelp|seagrass/.test(bot.blockAt(q.offset(x, y, z))?.name || ''));
+  const byKind = new Map();
+  for (const q of found.filter(q => q.y <= feet.y + 1 && q.y >= -48 && !attempts?.resting('night_mine', q) && !wet(q)).sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))) {
+    const name = bot.blockAt(q)?.name, kind = oreKind(name);
+    if (kind && !byKind.has(kind)) byKind.set(kind, { position: q, name, kind });
+  }
+  return [...byKind.values()];
+}
+// Without Jev: the nearest of the ores the ladder uses (not copper).
 function nightOre(bot, feet, attempts) {
-  const ids = [...NIGHT_ORES].map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
+  const ids = [...NIGHT_ORES].filter(name => !/copper/.test(name)).map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
   const found = bot.findBlocks?.({ matching: ids, maxDistance: 24, count: 32 }) || [];
   // Not ore touching water or lava. The staircase will not open a cell onto
   // a liquid, so every step toward such an ore is refused but the sideways
@@ -1532,6 +1555,25 @@ class Survival {
     return true;
   }
 
+  // Which ore the night mine goes for, or a branch deeper: Jev's, with each
+  // kind's distance, what is carried and what it is for. Without Jev, the
+  // nearest of the kinds the ladder uses.
+  async nightTarget(task, goal, save, feet) {
+    const bot = this.bot;
+    const choices = nightOreChoices(bot, feet, attemptsFor(this));
+    if (!choices.length) return null;
+    if (!this.client) return nightOre(bot, feet, attemptsFor(this));
+    const tree = Object.fromEntries(choices.map((c, i) => { const [item, use] = ORE_YIELD[c.kind];
+      return [`ore_${i}`, { description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).` }]; }));
+    tree.branch = { description: 'Dig a branch down to a working depth and along it, looking for ore on the way.' };
+    const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree, context: {},
+      state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
+    if (decision.stale) return null;
+    if (decision.fallback) return nightOre(bot, feet, attemptsFor(this));
+    const pick = decision.path.at(-1);
+    return pick === 'branch' ? null : choices[Number(pick.slice(4))] || null;
+  }
+
   async nightMine(task, goal, save) {
     const bot = this.bot;
     if (!this.canNightMine(goal)) return false;
@@ -1575,7 +1617,7 @@ class Survival {
       // Every direction looks solid from inside a pocket (its own walls), so
       // no heading check tells the hillside from the hill.
       if (atSurface && !mine.sunkAt && await this.shaftPocket(task, goal, save)) { mine.sunkAt = Date.now(); save(); return true; }
-      const ore = !atSurface && nightOre(bot, feet, attemptsFor(this));
+      const ore = !atSurface && await this.nightTarget(task, goal, save, feet);
       if (ore) { target = ore.position; mine.targetOre = ore.name; }
       else {
         // No ore in reach of the eye: a branch, down to a working depth

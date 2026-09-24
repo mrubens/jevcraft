@@ -75,6 +75,20 @@ define({
   fallback: (children, path, context = {}) => children[context.rule] ? context.rule : children.stay ? 'stay' : Object.keys(children)[0],
 });
 
+// The night mine's next target.
+define({
+  id: 'night_mine_target', area: 'survival', kind: 'mining', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'Mining through the night: which ore next, or a branch deeper?',
+  trigger: 'Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed.',
+  source: 'src/survival.js (nightMine, nightTarget)',
+  options: [
+    { pattern: 'ore_\\d+', label: 'dig to this ore', when: 'the nearest of its kind, with its distance, what is carried and what it is for', level: 'root', dynamic: true },
+    { key: 'branch', label: 'dig a branch down and along', when: 'always', level: 'root' },
+  ],
+  instructions: { task: 'The bot is mining through the night from its shelter. Choose the next target.', guidance: 'Each ore says how far it is, how much of what it gives is carried, and what that is for. A pickaxe wears a use a block. The player wants the bot never to stand idle when useful work is in reach.' },
+  fallback: children => Object.keys(children).find(k => k !== 'branch') || 'branch',
+});
+
 // At home before bedtime: a chore, or wait for the bed.
 define({
   id: 'evening_chore', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'low', tree: true,
