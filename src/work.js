@@ -2572,7 +2572,10 @@ async function netherStep(bot, task, goal, save) {
 }
 
 function createSurvival(bot, options) {
-  return new Survival(bot, { acquireStep, dig, place, navigate, explore, returnOverworld: returnFromNether, surfaceStep }, options);
+  // planFor: what making an item from the pockets would take, for the
+  // pocket's "work here" option (smelting and crafting only).
+  const planFor = (b, item, count, goal) => catalogPlan(b, item, count, planningInventory(b), goal);
+  return new Survival(bot, { acquireStep, dig, place, navigate, explore, returnOverworld: returnFromNether, surfaceStep, planFor }, options);
 }
 
 async function returnFromNether(bot, task, goal, save) {

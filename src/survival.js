@@ -1307,6 +1307,23 @@ class Survival {
     return true;
   }
 
+  // The ladder's next item, when it can be made from the pockets by smelting
+  // and crafting alone.
+  benchWork(goal) {
+    if (typeof this.actions.planFor !== 'function' || typeof this.actions.acquireStep !== 'function') return null;
+    let stage;
+    try { stage = require('./game-progress').nextGameStage(this.bot, goal); } catch (_) { return null; }
+    if (!stage || !['acquire', 'acquire_set'].includes(stage.action)) return null;
+    const items = stage.items || (stage.item ? [stage.item] : []);
+    for (const item of items) {
+      const count = stage.action === 'acquire_set' ? 1 : (stage.count || 1);
+      let plan;
+      try { plan = this.actions.planFor(this.bot, item, count, goal); } catch (_) { continue; }
+      if (plan?.length && plan.every(st => st.action === 'smelt' || st.action === 'craft')) return { item, count, plan };
+    }
+    return null;
+  }
+
   // Chosen by Jev, the creeper, health and the other mobs about were its to
   // weigh; reach, a blade and digging are what make it possible.
   async openOnWatcher(task, goal, save, refuge, watcher, { chosen = false } = {}) {
@@ -1852,6 +1869,12 @@ class Survival {
           run: () => this.openOnWatcher(task, goal, save, refuge, watcher, { chosen: true }) };
       if (night && !watcher && !refused(this, 'survival:night_mine'))
         options.night_mine = { description: 'Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too.', run: () => this.nightMine(task, goal, save) };
+      // Work that needs no walking: the ladder's next item made from what is
+      // carried. Trial 30 sat out its second night in a pocket with 29 raw
+      // iron, coal and a furnace in its pack, the armour the one thing left.
+      const bench = !watcher && goal.kind === 'win' && this.benchWork(goal);
+      if (bench) options.work_here = { description: `Stay in the pocket and make the ${bench.item.replaceAll('_', ' ')} here: everything it needs is carried (${bench.plan.map(st => `${st.action} ${st.count || 1} ${String(st.item || '').replaceAll('_', ' ')}`).join(', then ')}). The furnace and the table go into the wall; the pocket stays shut.`,
+        run: async () => { this.report(goal, save, { action: 'work_in_pocket', item: bench.item }); await this.actions.acquireStep(bot, task, bench.item, bench.count, goal, save); return true; } };
       options.stay = { description: night ? `Stay in the pocket until daylight${who ? `; ${who} is outside` : ''}.` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${(bot.health ?? 20) < 20 ? ', healing' : ''}.`,
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`

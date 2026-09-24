@@ -67,6 +67,7 @@ define({
     { key: 'go_to_bed', label: 'open the pocket and go to the bed', when: 'bedtime, with the base bed near (on the surface or within ten blocks of its level) or a bed carried on the surface', level: 'root' },
     { key: 'open_on_watcher', label: 'open the wall toward the watching mob and fight it', when: 'a mob within four and a half blocks and a sword or axe carried', level: 'root' },
     { key: 'night_mine', label: 'mine from the pocket through the night', when: 'night and nothing watching; it stays in the pocket when no mine can be dug from here', level: 'root' },
+    { key: 'work_here', label: 'stay and make the ladder\'s next item in the pocket', when: 'on the game ladder, nothing watching, and the next item can be made from what is carried by smelting and crafting alone', level: 'root' },
     { key: 'stay', label: 'stay in the pocket', when: 'always', level: 'root' },
     { key: 'leave', label: 'open the pocket and go back to work', when: 'always', level: 'root' },
   ],

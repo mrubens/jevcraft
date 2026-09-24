@@ -1748,3 +1748,20 @@ test('in a dark tunnel with torches, lighting it is one of Jev\'s night-mine opt
   assert.deepEqual(result, { lit: true });
   assert.equal(placed.length, 1); assert.equal(placed[0][1], 'torch');
 });
+
+test('sealed in with the next item makeable from the pockets, working here is on offer and runs the ladder\'s step', async () => {
+  const origin = new Vec3(0, 30, 0);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 16000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'raw_iron', count: 29 }, { name: 'coal', count: 30 }, { name: 'furnace', count: 1 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ name: p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'air' : 'stone', boundingBox: p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'empty' : 'block', position: p }),
+    world: { raycast: () => null } });
+  const acquired = [];
+  const survival = new Survival(bot, { acquireStep: async (b, t, item, count) => { acquired.push([item, count]); }, planFor: () => [] }, { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld' }] }, client: { systemOne: async () => ({}) } });
+  survival.benchWork = () => ({ item: 'iron_helmet', count: 1, plan: [{ action: 'smelt', item: 'iron_ingot', count: 5 }, { action: 'craft', item: 'iron_helmet', count: 1 }] });
+  let offered;
+  survival.decide = async (task, goal, save, { tree }) => { offered = tree; return { path: ['work_here'], stale: false }; };
+  await survival.step(new Task('night'), { kind: 'win' }, () => {});
+  assert.match(offered.work_here.description, /make the iron helmet here.*smelt 5 iron ingot, then craft 1 iron helmet/);
+  assert.deepEqual(acquired, [['iron_helmet', 1]]);
+});
