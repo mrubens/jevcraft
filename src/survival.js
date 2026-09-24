@@ -41,8 +41,10 @@ function firmStep(bot, p) {
 }
 // Ore worth a night's digging, nearest first, below the bot or level with
 // it: a tunnel up toward an ore in the roof is a tunnel toward the surface.
-const NIGHT_ORES = new Set(['coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
-  'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_copper_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore', 'deepslate_emerald_ore']);
+// Not copper: nothing on the ladder wants it, and trial 20's stone pickaxe
+// wore out on fifty-seven of it and left the bot without one (2026-09-24).
+const NIGHT_ORES = new Set(['coal_ore', 'iron_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
+  'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore', 'deepslate_emerald_ore']);
 function nightOre(bot, feet, attempts) {
   const ids = [...NIGHT_ORES].map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
   const found = bot.findBlocks?.({ matching: ids, maxDistance: 24, count: 32 }) || [];
@@ -1411,7 +1413,10 @@ class Survival {
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'night_pickaxe', make, err, 600000); }
         return true;
       }
-      if (!best) return false;
+      // No spare to be made: the last uses are kept for the way out and for
+      // the morning, not spent on the night's ore. Trial 20 mined its only
+      // stone pickaxe to nothing and could not dig out of its own shaft.
+      return false;
     }
     const feet = bot.entity.position.floored();
     const mine = this.state.nightMine ||= { startedAt: Date.now(), origin: { ...feet }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };

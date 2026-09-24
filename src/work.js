@@ -1066,8 +1066,9 @@ function localBatch(bot, goal, save = () => {}) {
   return goal.smelting || null;
 }
 
-const WAIT_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'copper_ore', 'lapis_ore', 'redstone_ore', 'diamond_ore',
-  'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_copper_ore', 'deepslate_lapis_ore', 'deepslate_redstone_ore', 'deepslate_diamond_ore'];
+// Not copper (see survival.js NIGHT_ORES).
+const WAIT_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'lapis_ore', 'redstone_ore', 'diamond_ore',
+  'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_lapis_ore', 'deepslate_redstone_ore', 'deepslate_diamond_ore'];
 async function smelt(bot, task, step, goal, save = () => {}) {
   task.check();
   const pending = localBatch(bot, goal, save);
@@ -2771,8 +2772,9 @@ async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acqu
 // three minutes, after which the stalled work gets its turn again. A
 // detour that fails rests for five minutes.
 const DETOUR_MS = 180000, DETOUR_REST_MS = 300000;
-const USEFUL_ORES = ['coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
-  'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_copper_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore',
+// Not copper (see survival.js NIGHT_ORES).
+const USEFUL_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
+  'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore',
   'nether_quartz_ore', 'nether_gold_ore', 'ancient_debris'];
 async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now() } = {}) {
   const ms = STALL_MS;
