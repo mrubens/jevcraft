@@ -402,6 +402,11 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
       const now = Date.now();
       bot._shortWalks = [...(bot._shortWalks || []).filter(t => now - t < 60000), now];
       if (bot._shortWalks.length >= 3 && bot.pathfinder?.movements?.allowGapJumps) { bot._gapJumpsOffUntil = now + 5 * 60000; bot._shortWalks = []; }
+      // The pathfinder resolves its goto on an empty path, whatever the
+      // search found: that is no route from here, not a walk cut short, and
+      // the two want different answers (trial 3 persisted ten times on
+      // "ended before reaching", sealed in its own pocket 16 blocks from home).
+      if (!latestRoute?.path?.length && latestRoute?.status !== 'success') throw Object.assign(new Error(`No route from here to the destination (${latestRoute?.status || 'no search'})`), { name: 'NoRoute' });
       throw new Error('Navigation ended before reaching the destination');
     }
   } catch (err) {

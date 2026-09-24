@@ -109,6 +109,7 @@ function friendlyProblem(error) {
   if (/food|hungry|hunger/i.test(text)) return 'I need some food before I can keep going.';
   if (/tool|pickaxe|durability/i.test(text)) return 'I need the right tool before I can keep going.';
   if (/find|search|explor/i.test(text)) return 'I haven\'t found it yet. We may need to look farther away.';
+  if (/^No route from here/.test(text)) return 'I can\'t find a way there from here.';
   if (/route|path|reach|standing|navigation|stair|surface|obstruct|place|support/i.test(text)) return 'I can\'t reach a safe spot to do that yet.';
   // Whole words: "lapis" has "api" in it, and a stash error listing lapis
   // lazuli told the player seven times that Jev could not think.

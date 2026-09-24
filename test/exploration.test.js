@@ -119,7 +119,7 @@ test('an empty path resolving successfully is not accepted as arrival', async ()
   const bot = { entity: { position: new Vec3(0, 64, 0) }, pathfinder: {
     goto: async () => {}, setGoal: () => { stopped = true; },
   } };
-  await assert.rejects(navigate(bot, new Task('test', 'test'), new goals.GoalBlock(10, 64, 0)), /before reaching/);
+  await assert.rejects(navigate(bot, new Task('test', 'test'), new goals.GoalBlock(10, 64, 0)), /before reaching|No route/);
   assert(stopped);
 });
 
