@@ -430,7 +430,11 @@ class Survival {
     if (creeperClose(danger) || danger.some(t => t.distance <= 3 && !shooter(t.entity))) return false;
     const shooters = danger.filter(t => t.visible && shooter(t.entity) && t.distance <= 16);
     const ground = shooters.filter(t => GROUND_SHOOTERS.has(t.entity.name)).sort((a, b) => a.distance - b.distance);
-    if (!ground.length || ground.length !== shooters.length || shooters.length > 3 || (shooters.length > 1 && bot.health < 10)) return false;
+    // As measured: from dry, firm footing, at full-ish health for more than
+    // one. The dream run charged three from a river at ten health and stood
+    // in the water, shot, for thirty-seven seconds (2026-09-24).
+    if (!ground.length || ground.length !== shooters.length || shooters.length > 3 || (shooters.length > 1 && bot.health < 14)) return false;
+    if (bot.entity.isInWater || inWater(bot) || bot.entity.onGround === false) return false;
     let target = ground[0];
     const shielded = bot.inventory.slots?.[45]?.name === 'shield';
     let e = target.entity;
@@ -438,14 +442,19 @@ class Survival {
       distance: Number(target.distance.toFixed(1)), health: bot.health });
     if (bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand');
     const end = Date.now() + 12000 * Math.min(3, ground.length);
+    // Three seconds without getting nearer and the charge is not working.
+    let best = Infinity, bestAt = Date.now();
     try {
       while (Date.now() < end && bot.health >= 4) {
+        const gap = bot.entity.position.distanceTo(e.position);
+        if (gap < best - 0.5) { best = gap; bestAt = Date.now(); }
+        else if (Date.now() - bestAt > 3000 && !canStrike(bot, e)) break;
         task.check(); checkAir(bot);
         // The one down, the next: nearest of the others still in sight.
         if (bot.entities[e.id] !== e || e.isValid === false) {
           const next = threats(bot).filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16).sort((a, b) => a.distance - b.distance)[0];
           if (!next) break;
-          target = next; e = next.entity;
+          target = next; e = next.entity; best = Infinity; bestAt = Date.now();
         }
         if (threats(bot).some(t => t.entity !== e && ((t.distance <= 3 && !shooter(t.entity)) || (t.entity.name === 'creeper' && t.distance <= 5)))) break;
         await bot.lookAt(e.position.offset(0, 1.5, 0), true);

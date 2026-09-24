@@ -711,6 +711,17 @@ test('with a sword a lone skeleton is run at and struck, not shot at or hidden f
   assert(!events.includes('draw'), 'no bow at eight blocks with a sword and a shield');
 });
 
+test('no charge from the water or at half health against more than one', async () => {
+  const wet = archerFixture({ sword: true, shield: false });
+  wet.bot.entity.isInWater = true;
+  await wet.controller.step(wet.task, wet.goal, () => {}).catch(() => {});
+  assert.notEqual(wet.goal.survivalAction?.action, 'close_on_shooter', 'a river is no place to run from');
+  const tired = archerFixture({ sword: true, shield: false, health: 10 });
+  tired.bot.entities[18] = { id: 18, name: 'skeleton', position: new Vec3(6.5, 64, 6.5), width: .6, height: 1.99, isValid: true };
+  await tired.controller.step(tired.task, tired.goal, () => {}).catch(() => {});
+  assert.notEqual(tired.goal.survivalAction?.action, 'close_on_shooter', 'two at ten health is not the measured case');
+});
+
 test('two skeletons are run at one after the other when health allows', async () => {
   const { bot, events, controller, task, goal } = archerFixture({ sword: true, shield: false });
   bot.entities[18] = { id: 18, name: 'skeleton', position: new Vec3(6.5, 64, 6.5), width: .6, height: 1.99, isValid: true };
