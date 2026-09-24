@@ -1,6 +1,6 @@
-# JevBot
+# jev-craft
 
-A Minecraft companion you talk to in game chat, built to show what a [System One](https://docs.typesafe.ai/concepts/system-one) model is good at. Ask Jev to gather supplies, build something, find a biome, or follow you on an adventure. Every judgment the bot makes about what you meant and what to do next is a typed answer from [TypeSafe's Jev](https://typesafe.ai/), with a probability attached, and every one is logged with the options it was chosen from.
+Jev is a Minecraft companion you talk to in game chat, built to show what a [System One](https://docs.typesafe.ai/concepts/system-one) model is good at. Ask Jev to gather supplies, build something, find a biome, or follow you on an adventure. Every judgment the bot makes about what you meant and what to do next is a typed answer from [TypeSafe's Jev](https://typesafe.ai/), with a probability attached, and every one is logged with the options it was chosen from.
 
 **Experimental, targeting Minecraft Java Edition 26.1.** Gathering, building, exploration, and survival support work; difficult terrain and long tasks can still need help. Fully autonomous game completion is a development goal, not a finished capability.
 
@@ -8,7 +8,7 @@ A Minecraft companion you talk to in game chat, built to show what a [System One
 
 ## Why this project exists
 
-Most "AI plays Minecraft" bots hand a large language model the whole problem and parse whatever prose comes back. JevBot does the opposite. Code owns Minecraft: recipes, movement, inventory, safety, and the checks that work is actually finished. Jev is asked only the questions code cannot answer, and it answers with a typed choice and how sure it is, in a few hundred milliseconds:
+Most "AI plays Minecraft" bots hand a large language model the whole problem and parse whatever prose comes back. jev-craft does the opposite. Code owns Minecraft: recipes, movement, inventory, safety, and the checks that work is actually finished. Jev is asked only the questions code cannot answer, and it answers with a typed choice and how sure it is, in a few hundred milliseconds:
 
 - *Is this message for me, and what does it want?*
 - *Which of these catalog items did the player mean?*
@@ -39,8 +39,8 @@ You need:
 ### 1. Install
 
 ```sh
-git clone https://github.com/mrubens/jevcraft.git
-cd jevcraft
+git clone https://github.com/mrubens/jev-craft.git
+cd jev-craft
 npm ci
 cp .env.example .env
 ```
@@ -295,7 +295,7 @@ Both need their own disposable server; see [scripts/README.md](scripts/README.md
 
 Contributions are most useful when they turn a concrete gameplay failure into a small reproducible test and an improvement to a general capability. See [CONTRIBUTING.md](CONTRIBUTING.md) for the two design rules, what to include with each kind of change, and how the evals fit in. Review flight recordings and logs before sharing them: they can contain chat, player names, and world coordinates. Unit tests run on every push and pull request; the live Jev evals run on `main` when the repository has a TypeSafe key configured.
 
-JevBot is released under the [MIT License](LICENSE).
+jev-craft is released under the [MIT License](LICENSE).
 
 ## Current limitations
 

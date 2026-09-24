@@ -1,6 +1,6 @@
 # Contributing
 
-JevBot exists to show what a System One model is good at, so the most useful contributions are the ones that keep the line between Jev and code sharp. Read [How Jev thinks](docs/how-jev-thinks.md) first; it is short and it is the design.
+jev-craft exists to show what a System One model is good at, so the most useful contributions are the ones that keep the line between Jev and code sharp. Read [How Jev thinks](docs/how-jev-thinks.md) first; it is short and it is the design.
 
 ## The two rules
 

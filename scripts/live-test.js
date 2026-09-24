@@ -1,7 +1,7 @@
 'use strict';
 
 // Drive the live bot end to end by joining a second bot that plays the part of
-// a human typing in chat. Prints what JevBot says and where it goes, so a real
+// a human typing in chat. Prints what Jev says and where it goes, so a real
 // behavioural failure is visible without a Minecraft client open.
 //
 //   node scripts/live-test.js "chop some trees" "come here"

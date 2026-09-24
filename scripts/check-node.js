@@ -14,7 +14,7 @@ if (!Number.isInteger(required)) {
   process.exit(1);
 }
 if (current < required) {
-  console.error(`JevBot needs Node ${required} or newer. This is ${process.version}.`);
+  console.error(`Jev needs Node ${required} or newer. This is ${process.version}.`);
   console.error('Install a supported Node (for example: nvm install 22 && nvm use), then run npm ci again.');
   process.exit(1);
 }
