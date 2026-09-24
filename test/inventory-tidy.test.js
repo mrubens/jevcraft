@@ -140,3 +140,17 @@ test('short of the block reserve by day, the bot tops it up: cobblestone with a 
   await maintainBlocks(bot, { check() {} }, goal, () => {}).catch(() => {});
   assert.equal(goal.step.item, 'netherrack');
 });
+
+test('short of blocks with Jev asked, now or later is its choice; "carry on" holds five minutes', async () => {
+  const { upkeepStep } = require('../src/work');
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(Object.keys(questions.branch_0.criteria).sort()); return { answers: { branch_0: { choice: 'carry_on', confidence: 0.7 } } }; } };
+  const bot = { game: { gameMode: 'survival', dimension: 'overworld' }, time: { timeOfDay: 3000 }, entity: { isInWater: false, position: new (require('vec3').Vec3)(0, 64, 0) },
+    registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'dirt', count: 4 }, { name: 'oak_log', count: 4 }] }, health: 20, food: 20 };
+  const goal = { kind: 'win', step: { action: 'mine', block: 'iron_ore' } };
+  assert.equal(await upkeepStep(bot, { check() {} }, goal, () => {}, client), false, 'carried on');
+  assert.deepEqual(asked[0], ['block_reserve', 'carry_on']);
+  assert.equal(goal.step.block, 'iron_ore', 'the work step is kept');
+  assert.equal(await upkeepStep(bot, { check() {} }, goal, () => {}, client), false);
+  assert.equal(asked.length, 1, 'held: not asked again within five minutes');
+});

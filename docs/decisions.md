@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-60 questions: 12 decision trees and 48 batched questions.
+61 questions: 13 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -119,6 +119,23 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `source_[a-z_]+_-?\d+_-?\d+_-?\d+` (pattern) | step | work this source | reachable blocks of the resource grouped by block and place, up to four, none set aside |
 | `find_resource` | step | search for a reachable source | a mine step with no reachable source |
 | `execute_recipe` | step | carry out the recipe step | a non-mining step |
+
+### `upkeep`
+
+**Something the bot keeps in its pockets is running short (a spare pickaxe, wood, building blocks): see to it now, or carry on?**
+
+- When: Between work steps, when a pickaxe is nearly worn with the makings of a spare carried, fewer than three logs' worth of wood are carried, or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes.
+- Decision tree, choice; stakes low; ledger kind `upkeep`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (upkeepStep)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `spare_pickaxe` | root | make a spare stone pickaxe now | every pickaxe carried has under twenty-four uses left and cobblestone and sticks (or wood) are carried |
+| `wood_reserve` | root | cut a few logs now | on the game ladder, fewer than three logs' worth of wood carried, in the Overworld |
+| `block_reserve` | root | gather building blocks now | on the game ladder, fewer than sixteen building blocks carried |
+| `carry_on` | root | carry on and see to it later | always; asked again in five minutes |
 
 ### `opportunistic_ore`
 

@@ -211,11 +211,13 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled });
 }
 
-async function maintainPickaxe(bot, task, goal, save) {
+const spareDue = bot => {
   if (bot.game?.gameMode === 'creative') return false;
   const pickaxes = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name));
-  if (!pickaxes.length || pickaxes.some(i => remainingUses(bot, i) >= SPARE_PICKAXE_DURABILITY)) return false;
-  if (!sparePickaxeMaterials(bot)) return false;
+  return pickaxes.length > 0 && pickaxes.every(i => remainingUses(bot, i) < SPARE_PICKAXE_DURABILITY) && sparePickaxeMaterials(bot);
+};
+async function maintainPickaxe(bot, task, goal, save) {
+  if (!spareDue(bot)) return false;
   if (!(goal.spareAnnouncedAt > Date.now() - 10 * 60 * 1000)) { goal.spareAnnouncedAt = Date.now(); bot.chat('My pickaxe is nearly done. Making a spare before it goes.'); }
   await acquireStep(bot, task, 'stone_pickaxe', countOf(bot, 'stone_pickaxe') + 1, goal, save);
   return true;
@@ -226,29 +228,63 @@ async function maintainPickaxe(bot, task, goal, save) {
 // Nether. Never in water or at night on the surface, and a gather that
 // fails rests ten minutes.
 const WOOD_RESERVE = 3;
-async function maintainBlocks(bot, task, goal, save) {
-  if (bot.game?.gameMode === 'creative') return false;
+const woodUnits = bot => bot.inventory.items().reduce((n, i) => n + (/_log$|_stem$/.test(i.name) ? i.count : /_planks$/.test(i.name) ? i.count / 4 : i.name === 'stick' ? i.count / 8 : 0), 0);
+const reserveWeather = bot => bot.game?.gameMode !== 'creative' && !bot.entity?.isInWater && !(bot.game?.dimension === 'overworld' && shelterNeeded(bot));
+// Wood too, three logs' worth: the sticks for a pickaxe and a table. Worn
+// pickaxes and no wood had the bot climbing out of its night mine by hand,
+// a block every twenty-three seconds for four minutes.
+const woodDue = (bot, goal) => reserveWeather(bot) && woodUnits(bot) < WOOD_RESERVE && /overworld/.test(String(bot.game?.dimension || 'overworld')) && !isSetAside(goal, 'block_reserve', 'wood');
+const blocksDue = (bot, goal) => { const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy'); return reserveWeather(bot) && blockStock(bot) < BLOCK_RESERVE && !isSetAside(goal, 'block_reserve', 'gather'); };
+async function gatherWood(bot, task, goal, save) {
+  const have = woodUnits(bot);
+  const species = (bot._catalogObservation?.nearby || []).find(name => /_log$/.test(name)) || 'oak_log';
+  goal.step = { action: 'wood_reserve', item: species, have }; save();
+  try { await acquireStep(bot, task, species, countOf(bot, species) + Math.ceil(WOOD_RESERVE + 1 - have), goal, save); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'block_reserve', 'wood', err, 600000); }
+  return true;
+}
+async function gatherBlocks(bot, task, goal, save) {
   const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy');
-  if (bot.entity?.isInWater || (bot.game?.dimension === 'overworld' && shelterNeeded(bot))) return false;
-  // Wood too, three logs' worth: the sticks for a pickaxe and a table. Worn
-  // pickaxes and no wood had the bot climbing out of its night mine by
-  // hand, a block every twenty-three seconds for four minutes.
-  const woodUnits = bot.inventory.items().reduce((n, i) => n + (/_log$|_stem$/.test(i.name) ? i.count : /_planks$/.test(i.name) ? i.count / 4 : i.name === 'stick' ? i.count / 8 : 0), 0);
-  if (woodUnits < WOOD_RESERVE && /overworld/.test(String(bot.game?.dimension || 'overworld')) && !isSetAside(goal, 'block_reserve', 'wood')) {
-    const species = (bot._catalogObservation?.nearby || []).find(name => /_log$/.test(name)) || 'oak_log';
-    goal.step = { action: 'wood_reserve', item: species, have: woodUnits }; save();
-    try { await acquireStep(bot, task, species, countOf(bot, species) + Math.ceil(WOOD_RESERVE + 1 - woodUnits), goal, save); }
-    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'block_reserve', 'wood', err, 600000); }
-    return true;
-  }
   const have = blockStock(bot);
-  if (have >= BLOCK_RESERVE || isSetAside(goal, 'block_reserve', 'gather')) return false;
   const nether = /nether/.test(String(bot.game?.dimension || ''));
   const item = nether ? 'netherrack' : pickaxeTier(bot) >= 1 ? 'cobblestone' : 'dirt';
   goal.step = { action: 'block_reserve', item, have }; save();
   try { await acquireStep(bot, task, item, countOf(bot, item) + (BLOCK_RESERVE - have), goal, save); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'block_reserve', 'gather', err, 600000); }
   return true;
+}
+// Without Jev, the reserves in the old order: wood, then blocks.
+async function maintainBlocks(bot, task, goal, save) {
+  if (woodDue(bot, goal)) return gatherWood(bot, task, goal, save);
+  if (blocksDue(bot, goal)) return gatherBlocks(bot, task, goal, save);
+  return false;
+}
+
+// Upkeep: a spare pickaxe before the one in hand wears out, and the wood and
+// blocks a night or a climb needs. Whether now is the time is Jev's: it is
+// asked when one falls short, with what is carried, and "carry on" holds
+// for five minutes. Without Jev, the old order: pickaxe, wood, blocks.
+const UPKEEP_HOLD_MS = 5 * 60 * 1000;
+async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
+  const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy');
+  const options = {};
+  const worn = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name.replaceAll('_', ' ')} (${remainingUses(bot, i)} uses left)`);
+  if (spareDue(bot)) options.spare_pickaxe = { description: `Make a stone pickaxe now, a spare: the pickaxes carried are nearly worn out (${worn.join(', ')}), and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.`, run: () => maintainPickaxe(bot, task, goal, save) };
+  if (goal.kind === 'win' && woodDue(bot, goal)) options.wood_reserve = { description: `Cut a few logs now: ${Math.floor(woodUnits(bot) * 10) / 10} logs' worth of wood carried, and ${WOOD_RESERVE} make the sticks for a pickaxe and a crafting table wherever the bot is.`, run: () => gatherWood(bot, task, goal, save) };
+  if (goal.kind === 'win' && blocksDue(bot, goal)) options.block_reserve = { description: `Gather building blocks now: ${blockStock(bot)} carried, and ${BLOCK_RESERVE} seal a pocket for the night or tower out of a hole.`, run: () => gatherBlocks(bot, task, goal, save) };
+  const due = Object.keys(options);
+  if (!due.length) return false;
+  const keys = due.sort().join(',');
+  if (goal.upkeepHold?.keys === keys && goal.upkeepHold.until > Date.now()) return false;
+  if (!client) return options[due.includes('spare_pickaxe') ? 'spare_pickaxe' : due.includes('wood_reserve') ? 'wood_reserve' : due[0]].run();
+  options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes.`,
+    run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS }; save(); } };
+  const step = goal.step;
+  let chosen = null;
+  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, run: async () => { chosen = k; await o.run(); } }]));
+  try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: 'Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.' }, 'upkeep'); }
+  finally { if (chosen === 'carry_on') goal.step = step; }
+  return chosen !== null && chosen !== 'carry_on';
 }
 
 async function prepareExpeditionStep(bot, task, goal, save) {
@@ -3140,8 +3176,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (!endTask) {
         await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
       }
-      if (!endTask && await maintainPickaxe(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; }
-      if (!endTask && goal.kind === 'win' && await maintainBlocks(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; }
+      if (!endTask && await upkeepStep(bot, task, goal, save, decisionClient, onStep)) { goal.stalls = 0; save(); onStep(goal); continue; }
       // A structure's chest within reach is opened as a rule (looting.js).
       if (goal.kind === 'win' && !endTask && await inCatch(task, goal, () => lootNearby(bot, task, goal, save, lootActions()))) { goal.stalls = 0; save(); onStep(goal); continue; }
       // Work starts on dry ground. A crafting table placed from a pool under
@@ -3254,4 +3289,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { logInView, patrolChoice, maintainBlocks, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { logInView, patrolChoice, maintainBlocks, upkeepStep, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

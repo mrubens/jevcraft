@@ -141,6 +141,23 @@ define({
   }, { ...options, none: 'None of the offered actions addresses the recorded failure.' }),
 });
 
+// Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
+define({
+  id: 'upkeep', area: 'resources', kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'Something the bot keeps in its pockets is running short (a spare pickaxe, wood, building blocks): see to it now, or carry on?',
+  trigger: 'Between work steps, when a pickaxe is nearly worn with the makings of a spare carried, fewer than three logs\' worth of wood are carried, or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes.',
+  source: 'src/work.js (upkeepStep)',
+  options: [
+    { key: 'spare_pickaxe', label: 'make a spare stone pickaxe now', when: 'every pickaxe carried has under twenty-four uses left and cobblestone and sticks (or wood) are carried', level: 'root' },
+    { key: 'wood_reserve', label: 'cut a few logs now', when: 'on the game ladder, fewer than three logs\' worth of wood carried, in the Overworld', level: 'root' },
+    { key: 'block_reserve', label: 'gather building blocks now', when: 'on the game ladder, fewer than sixteen building blocks carried', level: 'root' },
+    { key: 'carry_on', label: 'carry on and see to it later', when: 'always; asked again in five minutes', level: 'root' },
+  ],
+  instructions: workInstructions('Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work; each option says what is carried and what it is for.'),
+  // Without Jev, the old order.
+  fallback: children => ['spare_pickaxe', 'wood_reserve', 'block_reserve'].find(k => children[k]) || 'carry_on',
+});
+
 // Short detours along the way: bounded, optional, and never at the cost of
 // the main request. An error or a five-second timeout is swallowed.
 define({
