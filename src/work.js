@@ -12,7 +12,7 @@ const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
 const { reservedForConstruction, portalSiteClear, selectPortalSite, portalSupports } = require('./build-sites');
 const { updateDigCapabilities } = require('./movement');
-const { resourceTunnelStep, tunnelStep, staircaseResting } = require('./tunneling');
+const { resourceTunnelStep, tunnelStep, staircaseResting, safeExcavation } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard, safeFood } = require('./vitals');
 const { decide } = require('./decisions');
 const { Survival, inWater, lavaExit, shelterNeeded } = require('./survival');
@@ -488,6 +488,30 @@ async function tunnelOrSetAside(bot, task, goal, save, target, resource, ore = n
   }
 }
 
+// Leaving where the bot stands is always allowed: walled in on every side
+// (last night's pocket in the rock), a doorway two high is dug toward where
+// it is going, and the search surveys from outside. Trial 16 sat seven
+// minutes in its sealed pocket with an iron pickaxe, every search failing
+// for want of walkable ground, rung after rung set aside (2026-09-24).
+async function breakOut(bot, task, toward) {
+  const feet = bot.entity.position.floored();
+  const open = d => [0, 1].every(dy => dryPassable(bot.blockAt(feet.plus(d).offset(0, dy, 0))));
+  const sides = faces.slice(1, 5);
+  if (sides.some(open)) return false;
+  const aim = toward ? new Vec3(toward.x - feet.x, 0, toward.z - feet.z) : new Vec3(1, 0, 0);
+  const order = [...sides].sort((a, b) => b.dot(aim) - a.dot(aim));
+  for (const d of order) {
+    const cells = [0, 1].map(dy => feet.plus(d).offset(0, dy, 0));
+    const floor = bot.blockAt(feet.plus(d).offset(0, -1, 0));
+    if (floor?.boundingBox !== 'block' || /lava|water/.test(floor.name)) continue;
+    if (cells.some(c => !air(bot.blockAt(c)) && (!bot.blockAt(c)?.diggable || !safeExcavation(bot, c)))) continue;
+    for (const c of cells) if (!air(bot.blockAt(c))) await dig(bot, task, c, { requireDrops: false });
+    await navigate(bot, task, new goals.GoalBlock(cells[0].x, cells[0].y, cells[0].z), { timeoutMs: 5000, stallMs: 2500 });
+    return true;
+  }
+  return false;
+}
+
 async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfaceResource(resource), frontier = surfaceOnly } = {}) {
   if (surfaceOnly && !surfaceReturnComplete(bot, goal)) {
     await surfaceStep(bot, task, goal, save);
@@ -608,6 +632,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
     }
     if (!destination && await descendCanopy(bot, task, goal, save)) return;
     if (!destination && await descendPillar(bot, task, goal, save)) return;
+    if (!destination && !surfaceOnly && await breakOut(bot, task, target)) return;
     if (!destination) { search.leg++; save(); throw new Error(`No reachable surveyed ground while searching for ${resource}`); }
     search.visited[key(destination)] = (search.visited[key(destination)] || 0) + 1;
     save();
@@ -3214,4 +3239,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { logInView, patrolChoice, maintainBlocks, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds };
+module.exports = { logInView, patrolChoice, maintainBlocks, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
