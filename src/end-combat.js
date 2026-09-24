@@ -258,6 +258,15 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       const at = await pourAtFeet(bot, check);
       if (at) { state.water = { at: { ...at }, poured: Date.now() }; state.pours = (state.pours || 0) + 1; goal.step = { action: 'end_water', against: 'enderman', at: { ...at } }; save(); }
     }
+    // Two or more turned, or one with the health low: the pocket two high
+    // they cannot follow into (end-pocket.js), not the sword.
+    const { endPocket, angryEndermen } = require('./end-pocket');
+    const angry = angryEndermen(bot, 12, hostileEntities).filter(e => live(bot, e));
+    if (actions.dig && (angry.length >= 2 || (angry.length && bot.health < 10)) && !(state.pocketFailedAt > Date.now() - 20000)) {
+      try {
+        if (await endPocket(bot, task, { dig: actions.dig, check, hostileEntities, report: a => { goal.step = a; save(); } })) { state.pockets = (state.pockets || 0) + 1; save(); return; }
+      } catch (err) { if (['Cancelled', 'NeedsAir'].includes(err.name)) throw err; state.pocketFailedAt = Date.now(); save(); }
+    }
     const attacker = hostileEntities(bot, 6).find(e => live(bot, e));
     if (attacker && sword) {
       goal.step = { action: 'end_defend', target: attacker.name, distance: Math.round(attacker.position.distanceTo(bot.entity.position) * 10) / 10 }; save();
