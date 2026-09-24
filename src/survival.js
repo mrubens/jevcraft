@@ -287,6 +287,20 @@ class Survival {
         // Say what was going on, once in a while, so it can be found.
         const now = Date.now();
         bot._hurtTimes = [...(bot._hurtTimes || []).filter(t => now - t < 15000), now];
+        // Hit twice in four seconds with no survival action in three: the
+        // turn is held by a step that is not looking (a crafting window, a
+        // dig, a walk). Trial 29's night mine stopped to craft a pickaxe at
+        // y -9 and a zombie took it from twenty to nothing in seven seconds.
+        // The walk, the dig and any window are stopped, and the step's next
+        // check unwinds to the survival layer, where the stance is chosen.
+        if (bot._hurtTimes.filter(t => now - t < 4000).length >= 2 && !(bot._survivalReportedAt > now - 3000) && !(bot._threatAbortAt > now - 5000) && (bot.health ?? 0) > 0) {
+          bot._threatAbortAt = now; bot._threatAbort = true;
+          try { bot.stopDigging?.(); } catch (_) { /* not digging */ }
+          try { bot.pathfinder?.setGoal?.(null); } catch (_) { /* not walking */ }
+          try { bot.clearControlStates?.(); } catch (_) { /* nothing held */ }
+          try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow); } catch (_) { /* no window */ }
+          console.log(`[hurt] hit twice with no survival response (health ${Math.round(bot.health)}): the step is stopped for the survival layer`);
+        }
         if (bot._hurtTimes.length >= 3 && !(bot._survivalReportedAt > now - 15000) && !(bot._silentHurtLoggedAt > now - 30000)) {
           bot._silentHurtLoggedAt = now;
           const { threats: seen, immediateThreat: urgent, hunted, combatTarget } = require('./danger');

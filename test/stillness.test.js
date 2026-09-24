@@ -245,3 +245,21 @@ test('low on air with no rescue under way, the step is stopped once and unwinds 
   const surfacing = { oxygenLevel: 6, _survivalGoal: { survivalAction: { action: 'surface', at: new Date().toISOString() } }, pathfinder: { setGoal: () => assert.fail('the rescue is not stopped') } };
   airWatch(surfacing); assert.equal(surfacing._airAbort, undefined);
 });
+
+test('hit twice with no survival response, the held step is stopped and unwinds to the survival layer', () => {
+  const { EventEmitter } = require('node:events');
+  const { Survival } = require('../src/survival');
+  const { checkStall } = require('../src/stillness');
+  let stopped = 0, closed = 0;
+  const bot = Object.assign(new EventEmitter(), { entity: { id: 1, position: new (require('vec3').Vec3)(0, 64, 0) }, entities: {}, health: 14, game: { dimension: 'overworld' },
+    stopDigging: () => { stopped++; }, pathfinder: { setGoal: () => {} }, clearControlStates() {}, currentWindow: { id: 2 }, closeWindow: () => { closed++; }, inventory: { items: () => [] } });
+  new Survival(bot, {});
+  bot.emit('entityHurt', bot.entity);
+  assert.doesNotThrow(() => checkStall(bot), 'one hit is not yet a held turn');
+  bot.emit('entityHurt', bot.entity);
+  assert.equal(stopped, 1); assert.equal(closed, 1);
+  assert.throws(() => checkStall(bot), e => e.name === 'NeedsSafety');
+  bot._survivalReportedAt = Date.now(); bot._threatAbortAt = 0;
+  bot.emit('entityHurt', bot.entity); bot.emit('entityHurt', bot.entity);
+  assert.doesNotThrow(() => checkStall(bot), 'a fight the survival layer is answering is left alone');
+});

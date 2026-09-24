@@ -273,6 +273,11 @@ class Stalled extends Error {
 // Called from Task.check: a raised stall unwinds whatever is running.
 function checkStall(bot) {
   if (bot._airAbort) { bot._airAbort = false; const { NeedsAir } = require('./vitals'); throw new NeedsAir(); }
+  if (bot._threatAbort) {
+    bot._threatAbort = false;
+    const { NeedsSafety, threats } = require('./danger');
+    throw new NeedsSafety(threats(bot, 16)[0] || { entity: { name: 'something unseen' }, distance: 0 });
+  }
   const stall = bot._stalls?.stall; if (stall) throw new Stalled(stall);
 }
 // The loop takes the stall to answer it; nothing throws it again after.
