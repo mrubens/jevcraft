@@ -308,7 +308,7 @@ test('a bumpy site is levelled: a tree and a bump come out, a dip is filled with
   assert(goal.survival.home.levelledAt); assert.equal(stage.phase, 'home_bed');
 });
 
-test('a failed site search counts once per place, waits a minute between looks, and defers after three places', async () => {
+test('a failed site search counts once per place, waits a minute between looks, and after two places with no bucket takes a dry site', async () => {
   const w = world({});
   const { bot, actions } = w, goal = goalWith(bot);
   for (let z = -40; z <= 40; z++) for (let x = -40; x <= 40; x++) w.set(new Vec3(x, LEVEL, z), 'stone');
@@ -318,9 +318,12 @@ test('a failed site search counts once per place, waits a minute between looks, 
   assert.equal(home.homeStage(bot, goal), null, 'a minute off before the next look');
   require('../src/progress').attemptsFor(goal).clear('home_site', 'search');
   bot.entity.position = new Vec3(30.5, LEVEL + 1, 0.5); await assert.rejects(step(), /No level ground/);
-  bot.entity.position = new Vec3(30.5, LEVEL + 1, 30.5); await assert.rejects(step(), /No level ground/);
-  assert.equal(goal.survival.homeSearch.attempts, 3);
-  assert(require('../src/progress').attemptsFor(goal).entries['home_site:search'].until > Date.now() + 60000, 'deferred for longer than the minute between looks');
+  assert.equal(goal.survival.homeSearch.attempts, 2);
+  // Two places, no water and no bucket to carry any: the bed and the chest
+  // do not need a pond, so the site is taken dry and the pond waits.
+  require('../src/progress').attemptsFor(goal).clear('home_site', 'search');
+  bot.entity.position = new Vec3(30.5, LEVEL + 1, 30.5); await step();
+  assert(goal.survival.home?.origin, 'a home site, dry');
 });
 
 test('tilling clears leaf litter off a plot cell first', async () => {

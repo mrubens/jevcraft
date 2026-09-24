@@ -204,7 +204,7 @@ function siteFits(bot, goal, site) {
 // The nearest level, tillable shore to the anchor that fits the whole
 // layout. Water is scanned around the anchor, not the bot, so a base is
 // chosen once per world and does not drift with where the bot happens to be.
-function chooseBaseSite(bot, goal, { radius = SITE_RADIUS } = {}) {
+function chooseBaseSite(bot, goal, { radius = SITE_RADIUS, dryOk = false } = {}) {
   const anchor = baseAnchor(bot, goal);
   const waterId = bot.registry.blocksByName.water?.id;
   if (waterId === undefined) return null;
@@ -235,7 +235,11 @@ function chooseBaseSite(bot, goal, { radius = SITE_RADIUS } = {}) {
   // No pond within reach, but a bucket of water in the pockets is a pond
   // anywhere: a one-block hole beside the plot, filled once. The run's
   // home search failed four times on a mountain top with a full bucket.
-  if (!countOf(bot, 'water_bucket')) return null;
+  // With no bucket at all, after looks in two places (dryOk), the site is
+  // taken dry: trial 10's search failed on a mountain with the bed and the
+  // chest in the pack, its bucket rung set aside, for want of water the bed
+  // and the chest do not need; the pond waits for its bucket.
+  if (!countOf(bot, 'water_bucket') && !dryOk) return null;
   const groundIds = [...TILLABLE].map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
   // One candidate per column, the surface: a thousand-block scan of
   // grass and dirt finds cave floors and the same slope over and over.
@@ -773,7 +777,8 @@ async function homeStep(bot, task, goal, save, stage, actions) {
   task.check(); checkAir(bot);
   const survival = goal.survival;
   if (stage.action === 'choose_site') {
-    const site = chooseBaseSite(bot, goal);
+    const site = chooseBaseSite(bot, goal) ||
+      (survival.homeSearch?.attempts >= 2 && !countOf(bot, 'bucket') && !countOf(bot, 'water_bucket') ? chooseBaseSite(bot, goal, { dryOk: true }) : null);
     if (!site && countOf(bot, 'bucket') && !countOf(bot, 'water_bucket')) {
       // No pond here, but an empty bucket: fill it wherever water is and
       // the next attempt can put the pond beside the plot.
