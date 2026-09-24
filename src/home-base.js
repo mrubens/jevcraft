@@ -778,7 +778,10 @@ async function homeStep(bot, task, goal, save, stage, actions) {
   const survival = goal.survival;
   if (stage.action === 'choose_site') {
     const site = chooseBaseSite(bot, goal) ||
-      (survival.homeSearch?.attempts >= 2 && !countOf(bot, 'bucket') && !countOf(bot, 'water_bucket') ? chooseBaseSite(bot, goal, { dryOk: true }) : null);
+      // Two places looked at and still no water: the site is taken dry,
+      // an empty bucket or not (trial 10 went after cave water with one and
+      // ran out of trial). The pond is the water phase's, later.
+      (survival.homeSearch?.attempts >= 2 && !countOf(bot, 'water_bucket') ? chooseBaseSite(bot, goal, { dryOk: true }) : null);
     if (!site && countOf(bot, 'bucket') && !countOf(bot, 'water_bucket')) {
       // No pond here, but an empty bucket: fill it wherever water is and
       // the next attempt can put the pond beside the plot.
