@@ -223,6 +223,7 @@ function watchStalls(bot, goalOf) {
     // work: said with what the bot was on, so the next one is found by name
     // and not by a server dropping the bot (the home-site fit, 2026-09-24).
     if (late > 3000) console.log(`[blocked] ${Math.round(late / 1000)}s on ${stalls.goalOf ? actionOf(stalls.goalOf() || {}, now).key : 'nothing'}`);
+    airWatch(bot, now);
     const goal = stalls.goalOf?.();
     if (!goal || stalls.stall || bot.game?.gameMode === 'creative' || /end/.test(String(bot.game?.dimension || ''))) return;
     try {
@@ -233,6 +234,25 @@ function watchStalls(bot, goalOf) {
   stalls.timer.unref?.();
   return stalls;
 }
+// Air runs out on a clock, and a step waiting on something (a furnace, a
+// walk that went nowhere) checks it only when it next looks up: trial 26's
+// bot stood seventeen seconds under water beside a furnace and drowned with
+// its air at nothing and no rescue begun. Low on air and nothing surfacing,
+// the walk and any open window are stopped and the next check of the step
+// unwinds it to the loop, whose survival layer swims up. Once, then again
+// only if five seconds pass without a rescue.
+function airWatch(bot, now = Date.now()) {
+  if ((bot.oxygenLevel ?? 20) > 10) return;
+  const recent = bot._survivalGoal?.survivalAction;
+  if (recent?.action === 'surface' && now - Date.parse(recent.at || 0) < 8000) return;
+  if (bot._airAbortAt > now - 5000) return;
+  bot._airAbortAt = now; bot._airAbort = true;
+  try { bot.pathfinder?.setGoal?.(null); } catch (_) { /* nothing to stop */ }
+  try { bot.clearControlStates?.(); } catch (_) { /* nothing held */ }
+  try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow); } catch (_) { /* no window */ }
+  console.log(`[air] ${bot.oxygenLevel} air and no rescue under way: the step is stopped for the survival layer`);
+}
+
 function unwatchStalls(bot) { if (bot._stalls?.timer) { clearInterval(bot._stalls.timer); delete bot._stalls.timer; } }
 
 function raise(bot, goal, seen, now = Date.now()) {
@@ -251,7 +271,10 @@ class Stalled extends Error {
   constructor(stall) { super(`Stalled: ${stall.why}`); this.name = 'Stalled'; this.stall = stall; }
 }
 // Called from Task.check: a raised stall unwinds whatever is running.
-function checkStall(bot) { const stall = bot._stalls?.stall; if (stall) throw new Stalled(stall); }
+function checkStall(bot) {
+  if (bot._airAbort) { bot._airAbort = false; const { NeedsAir } = require('./vitals'); throw new NeedsAir(); }
+  const stall = bot._stalls?.stall; if (stall) throw new Stalled(stall);
+}
 // The loop takes the stall to answer it; nothing throws it again after.
 function takeStall(bot) { const stall = bot._stalls?.stall; if (stall) delete bot._stalls.stall; return stall || null; }
 // The survival layer asks before it starts an action: one that stalled is
@@ -271,5 +294,5 @@ function recordStill(state, reason, ms, { now = Date.now(), detour } = {}) {
   return bucket;
 }
 
-module.exports = { STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
+module.exports = { airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
   Stalled, checkStall, takeStall, refused, recordStill };

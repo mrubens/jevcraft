@@ -293,14 +293,16 @@ function homeDistance(bot, home) {
 
 function plotStatus(bot, home) {
   const { plot } = layout(home);
-  const status = { untilled: [], bare: [], growing: [], grown: [], blocked: [], unloaded: [] };
+  const status = { untilled: [], bare: [], growing: [], grown: [], blocked: [], unloaded: [], waiting: [] };
   for (const p of plot) {
     const ground = bot.blockAt(pos(p)), crop = bot.blockAt(pos(p).offset(0, 1, 0));
     if (!ground || !crop) { status.unloaded.push(p); continue; }
     // A cell the hoe would not turn, twice, from beside it, waits twenty
     // minutes: trial 24's bot tried one cell for ninety seconds and failed
-    // the audit standing beside the plot (2026-09-24).
-    if (ground.name !== 'farmland' && TILLABLE.has(ground.name) && home.plot?.stubborn?.[`${p.x},${p.y},${p.z}`] > Date.now()) { status.blocked.push(p); continue; }
+    // the audit standing beside the plot (2026-09-24). Waiting, not blocked:
+    // blocked cells reopen the base for repair, and trial 26 went back to
+    // repair four such cells, round and round, for ten minutes.
+    if (ground.name !== 'farmland' && TILLABLE.has(ground.name) && home.plot?.stubborn?.[`${p.x},${p.y},${p.z}`] > Date.now()) { status.waiting.push(p); continue; }
     if (ground.name !== 'farmland') { (TILLABLE.has(ground.name) ? status.untilled : status.blocked).push(p); continue; }
     if (crop.name === 'wheat') (cropAge(crop) >= 7 ? status.grown : status.growing).push(p);
     else if (clear(crop)) status.bare.push(p);

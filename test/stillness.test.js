@@ -232,3 +232,16 @@ test('the Nether food gate never waits: a rested search is taken up again, and t
   assert.equal(await gate(bot, new Task('gate'), goal, () => {}), true, 'with something, and twenty minutes with no more, the crossing goes with what there is');
   assert.equal(goal.survival.progress['food_gate:nether'], undefined, 'and the gate is done with');
 });
+
+test('low on air with no rescue under way, the step is stopped once and unwinds to the survival layer', () => {
+  const { airWatch, checkStall } = require('../src/stillness');
+  let stopped = 0, closed = 0;
+  const bot = { oxygenLevel: 8, pathfinder: { setGoal: g => { if (g === null) stopped++; } }, clearControlStates() {}, currentWindow: { id: 3 }, closeWindow: () => { closed++; } };
+  airWatch(bot);
+  assert.equal(stopped, 1); assert.equal(closed, 1);
+  assert.throws(() => checkStall(bot), e => e.name === 'NeedsAir', 'the next check unwinds the step');
+  assert.doesNotThrow(() => checkStall(bot), 'once');
+  airWatch(bot); assert.equal(stopped, 1, 'not again within five seconds');
+  const surfacing = { oxygenLevel: 6, _survivalGoal: { survivalAction: { action: 'surface', at: new Date().toISOString() } }, pathfinder: { setGoal: () => assert.fail('the rescue is not stopped') } };
+  airWatch(surfacing); assert.equal(surfacing._airAbort, undefined);
+});

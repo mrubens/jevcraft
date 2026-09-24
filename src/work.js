@@ -1338,7 +1338,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       const plan = await whileCooking(bot, task, goal, save, { cooking: cooking(), oreInReach, walkTarget, what: String(step.from || step.item).replace(/_/g, ' '), count: needed - taken });
       const allow = key => !plan || plan === key;
       while (taken < needed) {
-        task.check();
+        task.check(); checkAir(bot);
         if (Date.now() > deadline) throw new Error(`Smelting ${step.item} timed out`);
         await collect();
         if (taken < needed) await fuel();
@@ -2873,7 +2873,9 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   const bounded = Object.create(task);
   // A detour answers to threats like any work: one that shows ends it and
   // hands the tick to the survival layer.
-  bounded.check = () => { task.check(); checkThreats(bot); if (Date.now() >= deadline) throw Object.assign(new Error('The detour has had its time'), { name: 'DetourBudget' }); };
+  // And to air: a detour to smelt for experience walked into water and
+  // stood waiting on its furnace while the air ran out (trial 26).
+  bounded.check = () => { task.check(); checkThreats(bot); checkAir(bot); if (Date.now() >= deadline) throw Object.assign(new Error('The detour has had its time'), { name: 'DetourBudget' }); };
   // Its own goal. Run on the player's, a cook cut off at three minutes left
   // a saved furnace batch that the request then had to finish, and search
   // and source state leaked the same way. It shares the world's knowledge

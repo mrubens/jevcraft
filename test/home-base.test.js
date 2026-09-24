@@ -435,3 +435,14 @@ test('with torches carried and dark ground around home, lighting it is a chore o
   assert(chores.light_home, Object.keys(chores).join(','));
   assert.match(chores.light_home.description, /dark enough for monsters to spawn.*does not drive off/);
 });
+
+test('a plot cell the hoe would not turn waits: it is neither tilled again nor sent for repair', async () => {
+  const w = await establishedHome(), { bot, goal, layout } = w;
+  const cell = layout.plot[0];
+  w.set(new Vec3(cell.x, cell.y, cell.z), 'grass_block');
+  goal.survival.home.plot.stubborn = { [`${cell.x},${cell.y},${cell.z}`]: Date.now() + 60000 };
+  const status = home.plotStatus(bot, goal.survival.home);
+  assert(status.waiting.some(p => p.x === cell.x && p.z === cell.z));
+  assert(!status.untilled.some(p => p.x === cell.x && p.z === cell.z) && !status.blocked.some(p => p.x === cell.x && p.z === cell.z));
+  assert.notEqual(home.homeStage(bot, goal)?.action, 'repair_plot', 'no repair for a waiting cell');
+});
