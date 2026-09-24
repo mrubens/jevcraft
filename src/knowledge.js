@@ -117,8 +117,17 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
   // These costs rank real acquisition methods; they do not authorize actions.
   // Evaluate the recipe graph in bounded passes instead of recursively
   // expanding every repeated ingredient/alternative on the game event loop.
+  // Unpacking (one ingot into nine nuggets, a block into nine ingots) is
+  // left out of the estimate: with three ingots carried at no cost, nuggets
+  // looked free by unpacking them, the fourth ingot was planned from nine
+  // nuggets, and those nuggets could only be mined as nether gold ore, in
+  // the Overworld (the dream run's golden boots, 2026-09-23). Acquiring
+  // still unpacks what is carried.
+  const packs = new Set(Object.entries(data.recipes).flatMap(([output, recipes]) => recipes
+    .map(r => slots(r).flat()).filter(inputs => new Set(inputs).size === 1).map(inputs => `${inputs[0]}>${output}`)));
+  const unpacking = (output, recipe) => { const inputs = slots(recipe).flat(); return recipe.count > 1 && new Set(inputs).size === 1 && packs.has(`${output}>${inputs[0]}`); };
   const costRecipes = Object.entries(data.recipes).flatMap(([output, recipes]) =>
-    recipes.map(recipe => ({ output, slots: slots(recipe), count: recipe.count })));
+    recipes.filter(recipe => !unpacking(output, recipe)).map(recipe => ({ output, slots: slots(recipe), count: recipe.count })));
   function estimate(name) {
     if (!estimates) {
       let costs = {};
