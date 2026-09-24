@@ -115,6 +115,15 @@ function botPid() {
 
 async function start(world) {
   if (!/^[a-z0-9-]+$/.test(world || '')) throw new Error('A world name of lowercase letters, digits and dashes');
+  // A watchdog that restarts a quiet bot leaves the trial's bot alone while
+  // this runs: stopping the old server quiets the recording, and one started
+  // a bot on the old state in the middle of trial 30's start.
+  const starting = BOT_PID.replace(/\.pid$/, '.starting');
+  fs.mkdirSync(path.dirname(starting), { recursive: true }); fs.writeFileSync(starting, `${process.pid}\n`);
+  try { await startTrial(world); } finally { fs.rmSync(starting, { force: true }); }
+}
+
+async function startTrial(world) {
   const props = path.join(SERVER, 'server.properties');
   const server = pid(25581), bot = botPid();
   if (bot) { process.kill(Number(bot)); await sleep(3000); }
