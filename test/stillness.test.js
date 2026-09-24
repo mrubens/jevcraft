@@ -86,6 +86,11 @@ test('the action is the survival layer\'s while it is recent, else the step; a r
   assert.equal(stillReason({ step: { action: 'return_to_mine', resource: 'stone' } }, now), 'step:stone');
   assert.equal(stillReason({ step: { action: 'move_on', resource: 'stone' } }, now), 'step:stone');
   assert.equal(stillReason({ step: { action: 'detour', choice: 'look_around' } }, now), 'step:detour:look_around');
+  // On the game ladder, the rung: the plot's repair and its tilling are one piece of work.
+  const ladder = { kind: 'win', rungTime: { phase: 'home_plot' } };
+  assert.equal(stillReason({ ...ladder, step: { action: 'repair_plot', cells: 1 } }, now), 'step:rung:home_plot');
+  assert.equal(stillReason({ ...ladder, step: { action: 'till', cell: { x: 1, y: 2, z: 3 } } }, now), 'step:rung:home_plot');
+  assert.equal(stillReason({ ...ladder, step: { action: 'detour', choice: 'mine_nearby' } }, now), 'step:detour:mine_nearby', 'a detour is its own');
   assert.deepEqual(actionOf({ step: { action: 'reach_shore', destination: { x: 1, y: 63, z: 2 } } }, now).target, { x: 1, y: 63, z: 2 });
 });
 

@@ -11,6 +11,18 @@ function reservedForConstruction(goal, p) {
   if (bounds && p.x >= bounds.min.x - 2 && p.x <= bounds.max.x + 2 && p.z >= bounds.min.z - 2 && p.z <= bounds.max.z + 2 && p.y >= bounds.min.y - 1) return true;
   const house = goal.blueprint?.origin;
   if (house && Math.abs(p.x - house.x) <= 3 && Math.abs(p.z - house.z) <= 4 && p.y >= house.y - 4) return true;
+  // The home base: its plot, pen and bed footprint, and three blocks under
+  // it, so no staircase undermines the plot. Trial 19's mine went down from
+  // the base through the plot, and the plot's repair and tilling flipped
+  // from the tunnel below it until the audit called the loop (2026-09-24).
+  // The base's own work digs there by hand, not by this rule.
+  const home = goal.survival?.home;
+  if (home?.origin && home.direction) {
+    const o = home.origin, d = home.direction, a = { x: -d.z, z: d.x };
+    const corners = [[-1, -3], [-1, 3], [8, -3], [8, 3]].map(([u, v]) => ({ x: o.x + d.x * u + a.x * v, z: o.z + d.z * u + a.z * v }));
+    const xs = corners.map(c => c.x), zs = corners.map(c => c.z);
+    if (p.x >= Math.min(...xs) && p.x <= Math.max(...xs) && p.z >= Math.min(...zs) && p.z <= Math.max(...zs) && p.y >= o.y - 3 && p.y <= o.y + 4) return true;
+  }
   const portal = goal.portalFrame?.origin;
   return Boolean(portal && p.x >= portal.x - 1 && p.x <= portal.x + 4 &&
     Math.abs(p.z - portal.z) <= 2 && p.y >= portal.y - 4);

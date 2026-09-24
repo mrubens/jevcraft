@@ -50,3 +50,12 @@ test('portal resume preserves owned anchors and an unloaded frame before any obs
     assert.deepEqual(goal.portalFrame, frame, loaded ? 'Owned temporary anchor is construction progress' : 'Unloaded cells are not evidence of an empty frame');
   }
 });
+
+test('the home base is reserved from digging, three blocks under it too, and nowhere else', () => {
+  const { reservedForConstruction } = require('../src/build-sites');
+  const goal = { survival: { home: { origin: { x: 10, y: 64, z: 10 }, direction: { x: 1, z: 0 } } } };
+  assert.equal(reservedForConstruction(goal, { x: 12, y: 64, z: 11 }), true, 'a plot cell');
+  assert.equal(reservedForConstruction(goal, { x: 12, y: 61, z: 11 }), true, 'three under the plot: no staircase undermines it');
+  assert.equal(reservedForConstruction(goal, { x: 12, y: 60, z: 11 }), false, 'deeper is open rock');
+  assert.equal(reservedForConstruction(goal, { x: 30, y: 64, z: 30 }), false, 'away from the base');
+});

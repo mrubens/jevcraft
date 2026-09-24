@@ -112,7 +112,14 @@ function actionOf(goal, now = Date.now()) {
   if (RETRY_STEPS.has(step?.action) && goal?.lastStruggleStep) step = goal.lastStruggleStep;
   if (!step?.action) return { key: 'step:none', layer: 'work', name: 'none', target: null, item: null };
   const item = step.item || step.drops || null;
-  const purpose = step.block || step.resource || item || (step.choice ? `${step.action}:${step.choice}` : step.action);
+  // On the game ladder the purpose is the rung: every step under it (the
+  // repair and the tilling of one plot, the mining and smelting for one set
+  // of armour) is one piece of work, which is getting somewhere or is not.
+  // Keyed by step, trial 19's plot repair and tilling split their time
+  // between two keys and neither stalled, flipping every second and a half
+  // until the audit called the loop (2026-09-24). A detour is its own.
+  const rung = goal?.kind === 'win' && step.action !== 'detour' ? goal.rungTime?.phase || goal.gameProgress?.phase : null;
+  const purpose = rung ? `rung:${rung}` : step.block || step.resource || item || (step.choice ? `${step.action}:${step.choice}` : step.action);
   return { key: `step:${purpose}`, layer: 'work', name: step.action,
     target: P(step.target) || P(step.destination) || P(step.to) || P(step.cell) || P(step.portal), item };
 }

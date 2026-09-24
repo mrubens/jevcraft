@@ -169,7 +169,7 @@ function looseEnds(goal, now = Date.now()) {
 // while, then the rung left for later. A survival action that stalled is
 // refused by the survival layer for ten minutes (Survival.report), which
 // falls through to its next answer; nothing more is needed here.
-const thingOf = key => key.replace(/^\w+:/, '').replace(/:/g, ' ').replaceAll('_', ' ');
+const thingOf = key => key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:/g, ' ').replaceAll('_', ' ');
 async function answerStall(bot, task, goal, save, stall, { client, survival, onStep = () => {}, idle = false, now = Date.now() } = {}) {
   const stats = survival?.state || goal.survival || goal;
   const thing = thingOf(stall.key);

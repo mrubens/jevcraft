@@ -170,7 +170,9 @@ function siteWork(bot, goal, site, { strict = true } = {}) {
     if (!ground || !above || !head || !below) return strict ? null : { digs, fills, unloaded: true };
     if ([-1, 0, 1, 2, 3].some(dy => built.has(`${p.x},${p.y + dy},${p.z}`))) { if (unfit() === null) return null; continue; }
     if ([ground, above, head, below].some(liquid)) { if (unfit() === null) return null; continue; }
-    if (strict && reservedForConstruction(goal, pos(p).offset(0, 1, 0))) return null;
+    // Reserved for anything but this home: its own footprint is reserved
+    // from other digging (build-sites.js), not from its own levelling.
+    if (strict && reservedForConstruction({ ...goal, survival: { ...goal.survival, home: undefined } }, pos(p).offset(0, 1, 0))) return null;
     const isPlot = plotKeys.has(`${p.x},${p.z}`);
     if (ground.boundingBox === 'block') {
       // Standing higher: whatever is solid in the two cells above comes out.
