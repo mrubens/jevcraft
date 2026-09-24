@@ -96,6 +96,13 @@ function compatibilityPlugin(bot) {
     }
     bot.oxygenLevel = ownOxygen;
   });
+  // A new body has full air, and the server does not say so (it sends the
+  // air only when it changes). Drowned once, the clean run came back with
+  // a reading of none that never moved, and "came up for air" standing on
+  // grass for four minutes (2026-09-24 01:31).
+  const refill = () => { ownOxygen = 20; bot.oxygenLevel = 20; };
+  bot.on?.('respawn', refill);
+  bot.on?.('spawn', refill);
 }
 
 function fixPathfinderResults() {

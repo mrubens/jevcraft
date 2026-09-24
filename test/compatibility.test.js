@@ -160,3 +160,18 @@ test('walking into a wall keeps the server-sized player outside its collision bo
   fixPlayerDimensions(custom);
   assert.deepEqual(custom, { playerHalfWidth: 0.4, playerHeight: 2 });
 });
+
+test('a new body after a drowning has full air, though the server never says so', () => {
+  const { EventEmitter } = require('node:events');
+  const { compatibilityPlugin } = require('../src/compatibility');
+  const bot = Object.assign(new EventEmitter(), { _client: new EventEmitter(), entity: { id: 10 }, registry: require('prismarine-registry')('26.1') });
+  const key = bot.registry.entitiesByName.player.metadataKeys.indexOf('air_supply');
+  compatibilityPlugin(bot);
+  bot._client.emit('entity_metadata', { entityId: 10, metadata: [{ key, value: 0 }] });
+  assert.equal(bot.oxygenLevel, 0);
+  bot.emit('respawn');
+  assert.equal(bot.oxygenLevel, 20);
+  // Another entity's metadata does not bring the old reading back.
+  bot._client.emit('entity_metadata', { entityId: 99, metadata: [{ key, value: 6000 }] });
+  assert.equal(bot.oxygenLevel, 20);
+});
