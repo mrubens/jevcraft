@@ -2582,6 +2582,10 @@ function sideTrips(bot, goal, client) {
   const cached = require('./field-cache').nearCache(bot, goal, 512);
   if (cached && cached.distance > 48) trips.fetch_cache = { description: `Walk ${Math.round(cached.distance)} blocks back to the chest left before an earlier trip and take its things back (${Object.entries(cached.cache.contents).filter(([, n]) => n > 0).slice(0, 5).map(([k, n]) => `${n} ${k.replaceAll('_', ' ')}`).join(', ')}).`,
     says: "I'll fetch my things from the chest I left", run: (b, t, g, sv) => require('./field-cache').emptyCache(b, t, g, sv, homeActions(), cached.cache) };
+  // Wool for beds: one to sleep in and four for the dragon (shearing.js).
+  const shearing = require('./shearing');
+  if (shearing.shearReady(bot, goal)) trips.shear_sheep = { description: `Shear the sheep in view (${shearing.woollySheep(bot, goal, 24).length} with wool, ${shearing.woolTotal(bot)} wool carried): three wool a bed, beds to sleep in and to blow up in the End, and the sheep grow it back.`,
+    says: "I'll shear these sheep", run: (b, t, g, sv) => shearing.shearSheep(b, t, g, sv, { navigate, acquireStep }) };
   // The table itself, as soon as there is something to spend it on: made
   // only in the last preparations before the End, it was never made at all
   // in two runs, and the lapis went to the chest (the user's daughter,

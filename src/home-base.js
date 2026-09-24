@@ -655,6 +655,13 @@ async function buildPen(bot, task, goal, save, home, actions) {
 // the chase and the wool is picked up beside the meat.
 async function gatherWool(bot, task, goal, save, home, actions) {
   const before = woolCarried(bot).total;
+  // Shears first, when carried or two ingots make a pair: three wool a
+  // sheep, and the sheep is still there for the next bed.
+  const shearing = require('./shearing');
+  if (shearing.canShear(bot) && shearing.woollySheep(bot, goal).length) {
+    try { if (await shearing.shearSheep(bot, task, goal, save, { navigate: actions.navigate, acquireStep: actions.acquireStep, want: before + 3 })) return; }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
   const sheep = Object.values(bot.entities).filter(e => e.name === 'sheep' && e.isValid !== false && !isBaby(bot, e) && e.position.distanceTo(bot.entity.position) < 48)
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
   goal.step = { action: 'gather_wool', target: sheep ? plain(sheep.position.floored()) : null, carried: before }; save();

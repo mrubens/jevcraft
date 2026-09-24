@@ -96,6 +96,7 @@ define({
     { key: 'loot', label: 'open the chests of a remembered structure', when: 'by day, health fourteen or more and hunger twelve or more, with an unlooted ruined portal, dungeon, temple or mineshaft within 256 blocks', level: 'root' },
     { key: 'trade', label: 'trade at a remembered village', when: 'by day and fit, with a village remembered and something to sell or spend', level: 'root' },
     { key: 'enchant', label: 'enchant gear at the enchanting table', when: 'by day and fit, with a table known, lapis carried, level five or more and gear unenchanted', level: 'root' },
+    { key: 'shear_sheep', label: 'shear the sheep in view', when: 'shears carried, a sheep with wool within twenty-four blocks, fewer than fifteen wool carried, in the Overworld', level: 'root' },
     { key: 'enchanting_table', label: 'make an enchanting table', when: 'no table known, two diamonds and three lapis carried, level five or more, obsidian carried or a diamond pickaxe, and gear unenchanted', level: 'root' },
   ],
   instructions: workInstructions('On the way to beating the game, several things are open. Which should the bot do next? The ladder\'s next step is a sensible default; choose another step or a side trip when it serves the run better now (a chest that holds what the step is digging for, levels that should go on the sword before the fights, a step that has stalled).'),
