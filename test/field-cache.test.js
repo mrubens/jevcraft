@@ -40,7 +40,7 @@ test('five hundred blocks from home, the valuables go into a chest on the spot b
   const container = chests(w);
   assert.equal(await cache.cacheValuables(w.bot, new Task('win'), w.goal, w.save, w.actions), true);
   const stored = Object.fromEntries(container.map(i => [i.name, i.count]));
-  assert.equal(stored.diamond, 3); assert.equal(stored.raw_iron, 40); assert.equal(stored.lapis_lazuli, 20); assert.equal(stored.iron_ingot, 4, 'eight ingots stay for a tool');
+  assert.equal(stored.diamond, 3); assert.equal(stored.raw_iron, 40); assert.equal(stored.lapis_lazuli, 4, 'sixteen lapis stay for an enchant'); assert.equal(stored.iron_ingot, 4, 'eight ingots stay for a tool');
   assert(!stored.cooked_beef && !stored.cobblestone && !stored.diamond_pickaxe, 'food, stone and tools go with the bot');
   assert.equal(w.goal.caches.length, 1); assert.equal(w.goal.caches[0].contents.raw_iron, 40);
   assert.match(w.said[0], /in a chest here before the Nether/);

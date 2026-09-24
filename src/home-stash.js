@@ -67,7 +67,7 @@ const SPARE_KIT = Object.freeze([
 // replacement tool where there is no ore.
 const VALUABLES = Object.freeze({
   diamond: bot => countOf(bot, 'diamond_pickaxe') ? 0 : Infinity, emerald: 0, gold_ingot: 0, raw_gold: 0, raw_iron: 0,
-  iron_ingot: 8, copper_ingot: 0, lapis_lazuli: 0, amethyst_shard: 0, netherite_ingot: 0, netherite_scrap: 0,
+  iron_ingot: 8, copper_ingot: 0, lapis_lazuli: 16, amethyst_shard: 0, netherite_ingot: 0, netherite_scrap: 0,
 });
 
 // Keepsakes: useless now, precious later. String and feathers are a bow

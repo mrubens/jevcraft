@@ -28,10 +28,16 @@ const piglinsWithin = (bot, p, r) => Object.values(bot.entities || {}).some(e =>
 // was never in doubt. Iron is every tool, armour piece and bucket.
 const IRON_WANTED = 32;
 const ironShort = bot => countOf(bot, 'raw_iron') + countOf(bot, 'iron_ingot') < IRON_WANTED;
+// Lapis too, while fewer than sixteen are carried: it is what an enchant
+// costs, and the End is fought better in enchanted gear (the user's
+// daughter, 2026-09-24).
+const LAPIS_WANTED = 16;
+const lapisShort = bot => countOf(bot, 'lapis_lazuli') < LAPIS_WANTED;
 const neededByRule = (bot, candidate) => (candidate.resource === 'coal' && fuelCarried(bot) < FUEL_UNITS_WANTED) ||
   (candidate.resource === 'gold_nugget' && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED) ||
   (candidate.resource === 'diamond' && countOf(bot, 'diamond') < 64) ||
-  (candidate.resource === 'raw_iron' && ironShort(bot));
+  (candidate.resource === 'raw_iron' && ironShort(bot)) ||
+  (candidate.resource === 'lapis_lazuli' && lapisShort(bot));
 
 function opportunityCandidates(bot, goal, primary, { radius = LIMITS.radius } = {}) {
   if (!bot.registry?.blocksArray || !bot.findBlocks || bot.health < 16 || bot.food < 14 || bot.game?.gameMode === 'creative' || !dryStanding(bot, bot.entity.position) || immediateThreat(bot)) return [];
@@ -134,8 +140,8 @@ const shortOfPearls = bot => !!bot.inventory?.items && /nether/.test(String(bot.
 // Diamonds the same way, on any walk in any dimension.
 const DIAMOND_ORES = ['diamond_ore', 'deepslate_diamond_ore'];
 const passingKinds = bot => [...(shortOfPearls(bot) ? ['nether_gold_ore'] : []), ...(countOf(bot, 'diamond') < 64 ? DIAMOND_ORES : []),
-  ...(ironShort(bot) ? ['iron_ore', 'deepslate_iron_ore'] : [])];
-const passingResource = c => c.resource === 'diamond' || c.resource === 'raw_iron' || (c.resource === 'gold_nugget' && /nether/.test(String(c.block || '')));
+  ...(ironShort(bot) ? ['iron_ore', 'deepslate_iron_ore'] : []), ...(lapisShort(bot) ? ['lapis_ore', 'deepslate_lapis_ore'] : [])];
+const passingResource = c => c.resource === 'diamond' || c.resource === 'raw_iron' || c.resource === 'lapis_lazuli' || (c.resource === 'gold_nugget' && /nether/.test(String(c.block || '')));
 function goldInPassing(bot, goal, now = Date.now()) {
   if (!bot.inventory?.items || now - (bot._goldLookAt || 0) < 500) return false;
   const kinds = passingKinds(bot);

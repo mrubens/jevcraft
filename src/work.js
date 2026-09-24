@@ -2582,6 +2582,21 @@ function sideTrips(bot, goal, client) {
   const cached = require('./field-cache').nearCache(bot, goal, 512);
   if (cached && cached.distance > 48) trips.fetch_cache = { description: `Walk ${Math.round(cached.distance)} blocks back to the chest left before an earlier trip and take its things back (${Object.entries(cached.cache.contents).filter(([, n]) => n > 0).slice(0, 5).map(([k, n]) => `${n} ${k.replaceAll('_', ' ')}`).join(', ')}).`,
     says: "I'll fetch my things from the chest I left", run: (b, t, g, sv) => require('./field-cache').emptyCache(b, t, g, sv, homeActions(), cached.cache) };
+  // The table itself, as soon as there is something to spend it on: made
+  // only in the last preparations before the End, it was never made at all
+  // in two runs, and the lapis went to the chest (the user's daughter,
+  // 2026-09-24: lapis is for enchanting).
+  const { tableNear } = require('./enchanting');
+  if (!tableNear(bot, goal) && countOf(bot, 'diamond') >= 2 && countOf(bot, 'lapis_lazuli') >= 3 && (bot.experience?.level ?? 0) >= 5 &&
+      (countOf(bot, 'obsidian') >= 4 || countOf(bot, 'diamond_pickaxe') > 0) && enchantable(bot).length) {
+    trips.enchanting_table = { description: `Make an enchanting table: the two diamonds carried, four obsidian and a book from leather and paper, then enchant the ${enchantable(bot)[0].item.name.replaceAll('_', ' ')} with the ${bot.experience?.level} levels and ${countOf(bot, 'lapis_lazuli')} lapis carried.`,
+      says: "I'll make an enchanting table",
+      run: async (b, t, g, sv) => {
+        for (let i = 0; i < 60 && !countOf(b, 'enchanting_table'); i++) { t.check(); if (await acquireStep(b, t, 'enchanting_table', 1, g, sv)) break; }
+        if (!countOf(b, 'enchanting_table')) throw new Error('The enchanting table is not made yet');
+        if (enchantReady(b, g)) await enchantStep(b, t, g, sv, { workstation });
+      } };
+  }
   if (enchantReady(bot, goal)) trips.enchant = { description: `Enchant the ${enchantable(bot)[0].item.name.replaceAll('_', ' ')} at the enchanting table with ${bot.experience?.level} levels and the lapis carried: Sharpness, Protection or Power for the fights ahead.`,
     says: `I'll enchant my ${enchantable(bot)[0].item.name.replaceAll('_', ' ')}`,
     run: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) };

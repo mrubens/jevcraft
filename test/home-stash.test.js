@@ -288,7 +288,7 @@ test('the chest holds a stack of the bulk things at most: 216 coal and 103 raw i
   const full = byItem(stash.stashDeposits(bot, holding({ coal: 216, raw_iron: 103, lapis_lazuli: 99 }), { valuables: true }));
   assert.equal(full.coal, undefined); assert.equal(full.raw_iron, undefined); assert.equal(full.lapis_lazuli, undefined);
   const some = byItem(stash.stashDeposits(bot, holding({ coal: 40, raw_iron: 50 }), { valuables: true }));
-  assert.equal(some.coal, 24, 'up to a stack of coal in the chest'); assert.equal(some.raw_iron, 14); assert.equal(some.lapis_lazuli, 30);
+  assert.equal(some.coal, 24, 'up to a stack of coal in the chest'); assert.equal(some.raw_iron, 14); assert.equal(some.lapis_lazuli, 14, 'sixteen stay in the pockets for enchanting');
 });
 
 test('a full chest does not hold up the Nether: nothing fits, no second chest can go, and the trip goes on', async () => {
@@ -363,7 +363,7 @@ test('at home past the ladder, valuables go in before any later stage, not only 
   assert.equal(await gameStep(bot, new Task('win'), goal, save, handlers), false);
   assert.deepEqual(ran, [], `the stash came before ${stage}`);
   const stored = chest.stored();
-  assert.equal(stored.diamond, 5); assert.equal(stored.lapis_lazuli, 60); assert(stored.raw_iron >= 28, JSON.stringify(stored));
+  assert.equal(stored.diamond, 5); assert.equal(stored.lapis_lazuli, 44); assert(stored.raw_iron >= 28, JSON.stringify(stored));
   assert(!stored.blaze_rod && !stored.ender_pearl, 'the supplies the eyes need stay in the pockets');
   await gameStep(bot, new Task('win'), goal, save, handlers);
   assert.deepEqual(ran, [stage]);
