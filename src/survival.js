@@ -417,25 +417,36 @@ class Survival {
   // it behind the shield (dead in five seconds), and 0 to 2 sprinting at it
   // with a stone sword and no shield (dead in four). The first trials'
   // skeleton deaths were the per-arrow block and pockets built under fire.
-  // Only a lone one (no other shooter within twelve), armed, at six health
-  // or more, with no melee mob at arm's length and no creeper close; ground
-  // that is not firm ahead is held behind the shield, if there is one.
+  // Two at once the same way: standing, 16.3 in twenty seconds; running at
+  // the nearer and then the other, none, both dead in eight seconds (trial
+  // 8's bot was shot dead walking away from a pair, 2026-09-24). Up to three,
+  // armed, at six health for one and ten for more, with no melee mob at
+  // arm's length and no creeper close; ground that is not firm ahead is held
+  // behind the shield, if there is one.
   async closeOnShooter(task, goal, save, danger) {
     const bot = this.bot;
     const weapon = defenseWeapon(bot);
     if (!/_(sword|axe)$/.test(weapon?.name || '') || bot.health < 6) return false;
     if (creeperClose(danger) || danger.some(t => t.distance <= 3 && !shooter(t.entity))) return false;
-    const shooters = danger.filter(t => t.visible && shooter(t.entity));
-    const target = shooters.filter(t => GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16).sort((a, b) => a.distance - b.distance)[0];
-    if (!target || shooters.some(t => t !== target && t.distance <= 12)) return false;
-    const e = target.entity, shielded = bot.inventory.slots?.[45]?.name === 'shield';
+    const shooters = danger.filter(t => t.visible && shooter(t.entity) && t.distance <= 16);
+    const ground = shooters.filter(t => GROUND_SHOOTERS.has(t.entity.name)).sort((a, b) => a.distance - b.distance);
+    if (!ground.length || ground.length !== shooters.length || shooters.length > 3 || (shooters.length > 1 && bot.health < 10)) return false;
+    let target = ground[0];
+    const shielded = bot.inventory.slots?.[45]?.name === 'shield';
+    let e = target.entity;
     this.report(goal, save, { action: 'close_on_shooter', entity: e.name, target: { x: Math.floor(e.position.x), y: Math.floor(e.position.y), z: Math.floor(e.position.z) },
       distance: Number(target.distance.toFixed(1)), health: bot.health });
     if (bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand');
-    const end = Date.now() + 12000;
+    const end = Date.now() + 12000 * Math.min(3, ground.length);
     try {
-      while (Date.now() < end && bot.entities[e.id] === e && e.isValid !== false && bot.health >= 4) {
+      while (Date.now() < end && bot.health >= 4) {
         task.check(); checkAir(bot);
+        // The one down, the next: nearest of the others still in sight.
+        if (bot.entities[e.id] !== e || e.isValid === false) {
+          const next = threats(bot).filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16).sort((a, b) => a.distance - b.distance)[0];
+          if (!next) break;
+          target = next; e = next.entity;
+        }
         if (threats(bot).some(t => t.entity !== e && ((t.distance <= 3 && !shooter(t.entity)) || (t.entity.name === 'creeper' && t.distance <= 5)))) break;
         await bot.lookAt(e.position.offset(0, 1.5, 0), true);
         if (canStrike(bot, e)) {

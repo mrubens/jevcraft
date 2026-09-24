@@ -460,8 +460,24 @@ function searchFor(goal, resource, here) {
 // run persisted nineteen times at "the staircase toward (-625, 28, 308) is
 // set aside". The ore, and what is within four blocks of it, rests twenty
 // minutes, and the step returns for the next choice.
+// Stairs are taken several at a time, not one between searches: trial 8
+// dug one stair, searched every candidate again (seconds each time), chose
+// another ore thirty blocks off, and dug the next stair, flipping between
+// the two steps a dozen times a minute (2026-09-24). Six stairs, or until
+// the target is close or a stair gets nowhere.
+const STAIRS_AT_A_TIME = 6;
 async function tunnelOrSetAside(bot, task, goal, save, target, resource, ore = null) {
-  try { await resourceTunnelStep(bot, task, goal, save, target, resource, { dig, navigate }); }
+  try {
+    for (let i = 0; i < STAIRS_AT_A_TIME; i++) {
+      const before = bot.entity.position.clone();
+      // A later stair that fails ends the run for now; the next call meets
+      // it afresh. Only the first stair's failure is this call's.
+      try { await resourceTunnelStep(bot, task, goal, save, target, resource, { dig, navigate }); }
+      catch (err) { if (i === 0 || ['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; break; }
+      task.check();
+      if (bot.entity.position.distanceTo(target) <= 4 || bot.entity.position.distanceTo(before) < 0.5) break;
+    }
+  }
   catch (err) {
     if (err.name !== 'StaircaseStalled') throw err;
     const at = ore || target;

@@ -3,6 +3,7 @@
 // 2026-09-24: no shield 17.7, per-arrow block 16.3, shield held 0 (no kill),
 // bow with cover 15.8 to 17.5 (no kill), advance behind the shield 2 (dead in 5 s),
 // sprint at it with a stone sword and no shield 0 to 2 (dead in 4 s).
+// PAIR=1, two skeletons: standing 16.3; charging the nearer, then the other, 0 (both dead in 8 s).
 //   NODE_PATH=node_modules node scripts/shield-probe.js [none|deflect|held|bow|advance|charge]
 const mineflayer = require('mineflayer'); const fs = require('fs'); const { Vec3 } = require('vec3');
 const B = require('path').join(__dirname, '..');
@@ -24,11 +25,12 @@ async function round(label, stance) {
   say(`effect give ${NAME} minecraft:instant_health 1 5 true`); say(`effect give ${NAME} minecraft:saturation 1 5 true`);
   await sleep(2500);
   say(`execute in ${D} run summon minecraft:skeleton ${SKEL.join(' ')} {PersistenceRequired:1b}`);
+  if (process.env.PAIR) say(`execute in ${D} run summon minecraft:skeleton ${STAND[0] + 7} 77 ${STAND[2] + 5} {PersistenceRequired:1b}`);
   await sleep(500);
   const start = bot.health; let hits = 0, lowest = bot.health; const onHurt = () => { if (bot.health < lowest) hits++; lowest = Math.min(lowest, bot.health); };
   bot.on('health', onHurt);
   const end = Date.now() + 20000, task = new Task('probe');
-  const skel = () => Object.values(bot.entities).find(e => e.name === 'skeleton');
+  const skel = () => Object.values(bot.entities).filter(e => e.name === 'skeleton').sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
   if (stance === 'held') bot.activateItem(true);
   let killedAt = null;
   while (Date.now() < end && bot.health > 4) {

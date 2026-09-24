@@ -652,9 +652,9 @@ function archerFixture({ health = 20, client, sword = false, shield = true, lone
   const skeleton = { id: 7, name: 'skeleton', position: new Vec3(10.5, 64, .5), width: .6, height: 1.99, isValid: true };
   const arrows = { name: 'arrow', count: 8 }, events = [], destination = new Vec3(-8, 64, 0);
   const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
-    // Not lone: a second skeleton behind the first, so the stance is asked
-    // rather than a run at the nearest.
-    entity: { position: new Vec3(.5, 64, .5) }, entities: { 7: skeleton, ...(lone ? {} : { 17: { id: 17, name: 'skeleton', position: new Vec3(11.5, 64, 4.5), width: .6, height: 1.99, isValid: true } }) }, health, food: 20, oxygenLevel: 20, quickBarSlot: 0,
+    // Not lone: a blaze behind the skeleton. A flying shooter is not run at
+    // (only ground ones are), so the stance is asked.
+    entity: { position: new Vec3(.5, 64, .5) }, entities: { 7: skeleton, ...(lone ? {} : { 17: { id: 17, name: 'blaze', position: new Vec3(11.5, 64, 4.5), width: .6, height: 1.8, isValid: true } }) }, health, food: 20, oxygenLevel: 20, quickBarSlot: 0,
     time: { timeOfDay: 6000 }, inventory: { items: () => [...(sword ? [{ name: 'iron_sword' }] : []), { name: 'bow', count: 1, durabilityUsed: 0 }, arrows], slots: shield ? { 45: { name: 'shield' } } : {} },
     world: { raycast: () => null },
     blockAt: p => ({ position: p.floored(), name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }),
@@ -693,7 +693,7 @@ test('Jev is offered the shot, the retreat and, with blocks in the pack, a pocke
   bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
   assert(await controller.step(task, goal, () => {}));
   assert.deepEqual(Object.keys(asked.questions.branch_0.criteria).sort(), ['dig_in', 'retreat', 'shoot_17', 'shoot_7']);
-  assert.deepEqual(asked.state.threats, [{ name: 'skeleton', distance: 10, shoots: true }, { name: 'skeleton', distance: 12, shoots: true }]); assert.equal(asked.state.arrowsCarried, 8);
+  assert.deepEqual(asked.state.threats, [{ name: 'skeleton', distance: 10, shoots: true }, { name: 'blaze', distance: 12, shoots: true }]); assert.equal(asked.state.arrowsCarried, 8);
   assert.deepEqual(events, ['navigate'], 'the retreat ran and nothing was drawn');
   assert.equal(goal.survivalAction.action, 'escape_threat');
 });
@@ -709,6 +709,18 @@ test('with a sword a lone skeleton is run at and struck, not shot at or hidden f
   assert.equal(goal.survivalAction.action, 'close_on_shooter');
   assert(events.includes('attack'), events.join(','));
   assert(!events.includes('draw'), 'no bow at eight blocks with a sword and a shield');
+});
+
+test('two skeletons are run at one after the other when health allows', async () => {
+  const { bot, events, controller, task, goal } = archerFixture({ sword: true, shield: false });
+  bot.entities[18] = { id: 18, name: 'skeleton', position: new Vec3(6.5, 64, 6.5), width: .6, height: 1.99, isValid: true };
+  bot.setControlState = () => {}; bot.clearControlStates = () => {};
+  const at = () => Object.values(bot.entities).filter(e => e.name === 'skeleton' && e.isValid).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
+  bot.lookAt = async () => { const e = at(); if (e && bot.entity.position.distanceTo(e.position) > 2.5) bot.entity.position = e.position.offset(-1.5, 0, 0); };
+  bot.blockAt = p => ({ position: p, name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' });
+  bot.attack = target => { events.push(`attack ${target.id}`); target.isValid = false; delete bot.entities[target.id]; };
+  assert(await controller.step(task, goal, () => {}));
+  assert.deepEqual(events.filter(e => e.startsWith('attack')).sort(), ['attack 18', 'attack 7']);
 });
 
 test('hurt, or with a zombie closing, the bow stays in the pack and the escape rules take over', async () => {
@@ -731,7 +743,7 @@ test('with encounter judgments on, Jev picks the stance once and it holds; unsur
     assert(await controller.step(task, goal, () => {}));
     assert.equal(goal.decisions.at(-1).id, 'encounter_stance');
     assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['fight', 'pillar', 'retreat', 'seal', 'shoot_17', 'shoot_7']);
-    assert.deepEqual(calls[0].state.threats, [{ name: 'skeleton', distance: 10, shoots: true, visible: true }, { name: 'skeleton', distance: 11.7, shoots: true, visible: true }]);
+    assert.deepEqual(calls[0].state.threats, [{ name: 'skeleton', distance: 10, shoots: true, visible: true }, { name: 'blaze', distance: 11.7, shoots: true, visible: true }]);
     assert.deepEqual(events, ['navigate'], 'the retreat ran');
     bot.entity.position = new Vec3(.5, 64, .5);
     await controller.step(task, goal, () => {});
