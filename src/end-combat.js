@@ -370,7 +370,11 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // crystal's blast): hold with the sword out for them to come, and the
     // next step looks again. The no-progress budget still bounds it. As Blocked
     // it ended the rehearsal with the dragon at 148 of 200.
-    if (!Object.keys(tree).length && !safe && unsafeBecause(bot, bot.entity.position).every(r => !/ender_dragon|end_crystal|area_effect_cloud|dragon_fireball/.test(r))) {
+    // The dragon close with no surveyed way out holds the same way: it flies
+    // on in seconds. Down in the exit portal's basin with the dragon over it,
+    // the fresh-End rehearsal (2026-09-24) called that Blocked a minute in,
+    // five crystals down, which in the run would end the fight.
+    if (!Object.keys(tree).length && !safe) {
       state.heldForMobs = { at: Date.now(), unsafe: unsafeBecause(bot, bot.entity.position).slice(0, 6) }; save();
       goal.step = { action: 'end_hold', unsafe: state.heldForMobs.unsafe }; save();
       await defendHere(1000); return;
