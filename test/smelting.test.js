@@ -300,3 +300,33 @@ test('a long batch is not stood beside: an ore further off is walked to and dug 
   assert(walks.some(g => g instanceof goals.GoalGetToBlock && g.x === 10), 'walked to the ore');
   assert.equal(ingots, 6);
 });
+
+test('while a long batch cooks the bot goes out once, mines on from ore to ore, and comes back once', { timeout: 8000 }, async () => {
+  const { goals } = require('mineflayer-pathfinder');
+  let ingots = 0, raw = 12, loaded = 0, dug = 0;
+  const walks = [], visited = new Set();
+  const furnace = {
+    // Cooked by the time the bot is back from its outing.
+    outputItem: () => walks.includes('GoalNear') && loaded ? { name: 'iron_ingot', count: loaded } : null,
+    takeOutput: async () => { ingots += loaded; loaded = 0; },
+    inputItem: () => (loaded && !walks.includes('GoalNear') ? { name: 'raw_iron', count: loaded } : null), fuelItem: () => ({ name: 'coal', count: 1 }), fuel: .5,
+    putInput: async (type, meta, count) => { raw -= count; loaded += count; }, putFuel: async () => {}, close: () => {},
+  };
+  const ores = [new Vec3(10, 64, 0), new Vec3(12, 64, 2)], furnaceAt = new Vec3(1, 64, 0);
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) }, entities: {},
+    inventory: { items: () => [...(raw ? [{ name: 'raw_iron', count: raw }] : []), ...(ingots ? [{ name: 'iron_ingot', count: ingots }] : []), { name: 'coal', count: 8 }], emptySlotCount: () => 20 },
+    registry: { blocksByName: { furnace: { id: 1 }, coal_ore: { id: 7 } }, itemsByName: { raw_iron: { id: 5 }, coal: { id: 6 } } },
+    findBlocks: ({ matching }) => matching.includes(7) ? ores.filter(o => !visited.has(`${o}`)) : [furnaceAt],
+    blockAt: p => ores.some((o, i) => i >= dug && o.equals(p)) ? { name: 'coal_ore', position: p, diggable: true, boundingBox: 'block' } : ores.some(o => o.equals(p)) ? { name: 'air', position: p, boundingBox: 'empty' } : { name: 'furnace', position: p },
+    canDigBlock: () => true, dig: async () => { dug++; }, stopDigging() {},
+    world: { raycast: () => ({ position: furnaceAt }) },
+    pathfinder: { movements: {}, setGoal: () => {}, goto: async g => { walks.push(g.constructor.name); if (g instanceof goals.GoalGetToBlock) { visited.add(`${new Vec3(g.x, g.y, g.z)}`); bot.entity.position = new Vec3(g.x - 1, 64, g.z); } else bot.entity.position = new Vec3(0, 64, 0); } },
+    openFurnace: async () => furnace,
+  };
+  await smelt(bot, new Task('smelt', 'test'), { item: 'iron_ingot', from: 'raw_iron', count: 12, fuelItem: 'coal' }, {});
+  assert.equal(ingots, 12);
+  const back = walks.filter(w => w === 'GoalNear').length, out = walks.filter(w => w === 'GoalGetToBlock').length;
+  assert.equal(out, 2, `both ores in one outing: ${walks}`);
+  assert.equal(back, 1, `one walk back to the furnace: ${walks}`);
+});

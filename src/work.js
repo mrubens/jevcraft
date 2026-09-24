@@ -1142,15 +1142,26 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           furnace = await bot.openFurnace(block);
           continue;
         }
-        const far = spare && waitDigs < 12 && cooking() >= 30000 && walkTarget();
+        let far = spare && waitDigs < 12 && cooking() >= 30000 && walkTarget();
         if (far) {
-          waitDigs++;
           furnace.close();
-          if (goal) { goal.step = { ...goal.step, whileCooking: { block: bot.blockAt(far)?.name, at: { x: far.x, y: far.y, z: far.z } } }; save(); }
-          try {
-            await navigate(bot, task, new goals.GoalGetToBlock(far.x, far.y, far.z), { timeoutMs: 15000, stallMs: 5000 });
-            await dig(bot, task, far, { requireDrops: false });
-          } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (goal) setAside(goal, 'reach', far, err.message, 300000); }
+          // Out once, and on from one block to the next nearest while the
+          // batch has time left, then back once: back to the furnace after
+          // every block read as the bot going round in circles (the user,
+          // 2026-09-24).
+          const back = Date.now() + cooking() - 10000;
+          // Said, since the furnace cannot be seen: a bot walking off from
+          // one looked lost (the user, 2026-09-24).
+          const cookingWhat = String(step.from || step.item).replace(/_/g, ' ');
+          bot.chat?.(`${needed - taken} ${cookingWhat} in the furnace, about ${Math.max(1, Math.round(cooking() / 60000))} minute${cooking() >= 90000 ? 's' : ''}. Mining the ${String(bot.blockAt(far)?.name || 'ore').replace(/_/g, ' ')} nearby meanwhile.`);
+          for (let n = 0; far && n < 12 && Date.now() < back && free() >= 2; n++, far = walkTarget()) {
+            waitDigs++;
+            if (goal) { goal.step = { ...goal.step, whileCooking: { block: bot.blockAt(far)?.name, at: { x: far.x, y: far.y, z: far.z }, n } }; save(); }
+            try {
+              await navigate(bot, task, new goals.GoalGetToBlock(far.x, far.y, far.z), { timeoutMs: 15000, stallMs: 5000 });
+              await dig(bot, task, far, { requireDrops: false });
+            } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (goal) setAside(goal, 'reach', far, err.message, 300000); }
+          }
           try { await navigate(bot, task, new goals.GoalNear(block.position.x, block.position.y, block.position.z, 3), { timeoutMs: 20000, stallMs: 6000 }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
           furnace = await bot.openFurnace(block);
