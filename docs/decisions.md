@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-63 questions: 15 decision trees and 48 batched questions.
+64 questions: 16 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -44,6 +44,26 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `village_food` | obtain_food | take ripe crops and hay from a remembered village | a village with crops or hay is remembered within reach |
 | `search_food` | obtain_food | walk to another dry area to look for animals | none of the other food options is feasible |
 | `return_for_food` | obtain_food | go back through the portal for food | off the Overworld, where nothing is safe to eat |
+
+### `evening_chore`
+
+**Home before bedtime: which chore now (the stash, the wheat, the farm, the cows, the plot), or wait for the bed?**
+
+- When: At home within six blocks of the bed, from the walk-home hour until bedtime, with a chore on offer; waiting, once chosen, holds until a new chore appears.
+- Decision tree, choice; stakes low; ledger kind `survival`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/survival.js (step), src/home-base.js (homeChores), src/home-stash.js (stashChores)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `stock_stash` | root | put spares in the chest | spares are carried |
+| `harvest_and_bake` | root | harvest the ripe wheat and bake bread | enough ripe or carried wheat for a loaf |
+| `tend_farm` | root | till, harvest or plant the plot | the plot needs work |
+| `breed_cows` | root | breed the cows in the pen | two adults, two wheat, and the cooldown past |
+| `grow_plot` | root | mark the plot to grow by a column | the home is complete and the plot has not grown yet |
+| `wait_for_bedtime` | root | wait by the bed for bedtime | always |
+| `[a-z_]+` (pattern) | root | another home chore | offered by the stash or the home |
 
 ## combat
 

@@ -1766,10 +1766,9 @@ class Survival {
       // see why.
       const attempts = attemptsFor(this);
       const chores = Object.fromEntries(Object.entries(homeChores(bot, goal)).filter(([key]) => !attempts.resting('chore', key)));
-      const chore = ['stock_stash', 'harvest_and_bake', 'tend_farm', 'breed_cows'].map(k => chores[k]).find(Boolean) || Object.values(chores)[0];
       const home = homeOf(bot, goal);
-      if (chore) {
-        const key = Object.keys(chores).find(k => chores[k] === chore);
+      // Which chore, or none, is Jev's; without Jev, the old order.
+      const tree = Object.fromEntries(Object.entries(chores).map(([key, chore]) => [key, { description: chore.description, run: async () => {
         this.report(goal, save, { action: 'evening_chore', chore: key });
         const started = Date.now();
         try {
@@ -1783,12 +1782,20 @@ class Survival {
           attempts.fail('chore', key, err, { restMs: 120000 }); save();
           console.log(`[chore] ${key} failed: ${err.message}`);
         }
-      } else if (home?.completedAt && !home.plotWide) {
-        home.plotWide = true; save();
-        this.report(goal, save, { action: 'grow_plot' });
-      } else {
-        this.report(goal, save, { action: 'wait_for_bedtime', ticks: SLEEP_FROM - bot.time.timeOfDay });
-        for (let i = 0; i < 10; i++) { task.check(); await sleep(100); }
+      } }]));
+      if (home?.completedAt && !home.plotWide) tree.grow_plot = { description: 'Mark the home plot to grow by a column tomorrow: more wheat, more bread.', run: async () => { home.plotWide = true; save(); this.report(goal, save, { action: 'grow_plot' }); } };
+      tree.wait_for_bedtime = { description: `Wait by the bed for bedtime, ${Math.max(0, SLEEP_FROM - bot.time.timeOfDay)} ticks off (about ${Math.round(Math.max(0, SLEEP_FROM - bot.time.timeOfDay) / 20)} seconds).`,
+        run: async () => { this.report(goal, save, { action: 'wait_for_bedtime', ticks: SLEEP_FROM - bot.time.timeOfDay }); for (let i = 0; i < 10; i++) { task.check(); await sleep(100); } } };
+      const keys = Object.keys(tree);
+      // Waiting chosen is held until bedtime or a new chore appears.
+      const waiting = this.state.eveningWait?.keys === keys.join(',') && this.state.eveningWait.day === Math.floor((bot.time?.age ?? 0) / 24000);
+      if (keys.length === 1 || waiting) await tree.wait_for_bedtime.run();
+      else {
+        const decision = await this.decide(task, goal, save, { id: 'evening_chore', tree, state: { timeOfDay: bot.time.timeOfDay, sleepPossibleFrom: SLEEP_FROM, health: bot.health, food: bot.food } });
+        if (!decision.stale) {
+          if (decision.path.at(-1) === 'wait_for_bedtime') this.state.eveningWait = { keys: keys.join(','), day: Math.floor((bot.time?.age ?? 0) / 24000) };
+          await decision.action.run();
+        }
       }
       onStep(goal); return true;
     }

@@ -39,6 +39,25 @@ define({
   ungated: 'Jev\'s pick is taken at any confidence: the choice is asked again at the next survival step, so a close call costs one step; the safety order answers only when Jev cannot be reached',
 });
 
+// At home before bedtime: a chore, or wait for the bed.
+define({
+  id: 'evening_chore', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'Home before bedtime: which chore now (the stash, the wheat, the farm, the cows, the plot), or wait for the bed?',
+  trigger: 'At home within six blocks of the bed, from the walk-home hour until bedtime, with a chore on offer; waiting, once chosen, holds until a new chore appears.',
+  source: 'src/survival.js (step), src/home-base.js (homeChores), src/home-stash.js (stashChores)',
+  options: [
+    { key: 'stock_stash', label: 'put spares in the chest', when: 'spares are carried', level: 'root' },
+    { key: 'harvest_and_bake', label: 'harvest the ripe wheat and bake bread', when: 'enough ripe or carried wheat for a loaf', level: 'root' },
+    { key: 'tend_farm', label: 'till, harvest or plant the plot', when: 'the plot needs work', level: 'root' },
+    { key: 'breed_cows', label: 'breed the cows in the pen', when: 'two adults, two wheat, and the cooldown past', level: 'root' },
+    { key: 'grow_plot', label: 'mark the plot to grow by a column', when: 'the home is complete and the plot has not grown yet', level: 'root' },
+    { key: 'wait_for_bedtime', label: 'wait by the bed for bedtime', when: 'always', level: 'root' },
+    { pattern: '[a-z_]+', label: 'another home chore', when: 'offered by the stash or the home', level: 'root', dynamic: true },
+  ],
+  instructions: { task: 'The bot is at home and bedtime is near. Choose a chore to do before it, or wait by the bed.', guidance: 'Each chore says what it does and what it is for. Bread and a stocked chest are tomorrow\'s food and kit.' },
+  fallback: children => ['stock_stash', 'harvest_and_bake', 'tend_farm', 'breed_cows'].find(k => children[k]) || Object.keys(children).find(k => k !== 'wait_for_bedtime') || 'wait_for_bedtime',
+});
+
 // A shooter in view and a bow in the pack: shoot, retreat or dig in.
 define({
   id: 'ranged_response', area: 'combat', kind: 'survival', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
