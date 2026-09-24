@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-65 questions: 17 decision trees and 48 batched questions.
+66 questions: 18 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -44,6 +44,24 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `village_food` | obtain_food | take ripe crops and hay from a remembered village | a village with crops or hay is remembered within reach |
 | `search_food` | obtain_food | walk to another dry area to look for animals | none of the other food options is feasible |
 | `return_for_food` | obtain_food | go back through the portal for food | off the Overworld, where nothing is safe to eat |
+
+### `shelter_method`
+
+**A shelter for the night: the saved one, a room at a site, a pocket here, a shaft pocket, or a mine?**
+
+- When: When a shelter is chosen for the night (secure_shelter) and none is under way; held for the night, and asked again when the chosen way fails (it rests three minutes).
+- Decision tree, choice; stakes medium; ledger kind `survival`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/survival.js (refugeStep)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `saved_shelter` | root | go back to the saved shelter and seal it | a shelter is remembered with a route to it and dry below |
+| `build_at_site` | root | build a small room at a dry site | a dry site within reach has a route to it |
+| `seal_here` | root | seal a pocket where the bot stands | always (with too few blocks it digs in instead) |
+| `shaft_pocket` | root | dig straight down and cap it | always; fails where the ground cannot be dug |
+| `night_mine` | root | dig a mine from here for the night | a pickaxe (or one can be made), health ten or more, nothing watching |
 
 ### `pocket_next`
 

@@ -931,6 +931,19 @@ class Survival {
   // and the dream run spent a whole night failing to path to it. One that
   // cannot be reached is set aside for a while so a pocket can be sealed
   // where the bot stands.
+  // The ways that are not a room: a pocket here, a shaft, a mine.
+  async shelterBy(task, goal, save, method) {
+    const bot = this.bot;
+    if (method === 'seal_here') return this.sealHere(task, goal, save, threats(bot).filter(t => t.visible));
+    if (method === 'shaft_pocket') return this.shaftPocket(task, goal, save);
+    if (method === 'night_mine') {
+      if (!this.canNightMine(goal)) return false;
+      this.state.nightMine ||= { startedAt: Date.now(), origin: { ...bot.entity.position.floored() }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };
+      return this.nightMine(task, goal, save);
+    }
+    return false;
+  }
+
   async reachableRefuge(task, goal, save, refuge) {
     const bot = this.bot;
     if (!refuge || shelter.inside(bot, refuge)) return refuge;
@@ -945,7 +958,12 @@ class Survival {
 
   // True when it did something toward a shelter; false when there is none
   // to be had here for now (the caller then leaves the tick to the work).
-  async refugeStep(task, goal, save) {
+  // How the night is sheltered is Jev's: the saved shelter, a room built at
+  // a site, a pocket sealed where the bot stands, a shaft pocket dug down,
+  // or a mine. Chosen once and held for the night; a way that fails rests
+  // three minutes and the question is asked again. With `method`, the
+  // caller has already chosen (the emergency beside a prepared site).
+  async refugeStep(task, goal, save, { method: given = null } = {}) {
     const bot = this.bot;
     if (isSetAside(this, 'refuge', 'anywhere')) return false;
     if (await reachShore(bot, task, goal, save, { move: this.actions.navigate })) return true;
@@ -954,46 +972,77 @@ class Survival {
     // outside it: the night mine had nowhere to go there, and the bot waited
     // two nights in it. A dry site is looked for first (shelterSites).
     if (refuge && refuge.kind !== 'house' && !shelter.inside(bot, refuge) && shelter.wetBelow(bot, pos(refuge.origin)) > 0) refuge = null;
-    if (!refuge) {
+    const plan = this.state.nightPlan;
+    let method = given || (plan?.method && !isSetAside(this, 'shelter_method', plan.method) ? plan.method : null);
+    // A room already begun or chosen goes on without a question.
+    if (!method && refuge && shelter.inside(bot, refuge)) method = 'saved_shelter';
+    let site = null;
+    if (!method || (method === 'build_at_site' && !refuge)) {
       // Beside a lava lake nothing within twelve blocks has a safe shell;
       // look further before giving the night up as unsafe.
-      let sites = shelter.shelterSites(bot, goal);
-      if (!sites.length) sites = shelter.shelterSites(bot, goal, 32);
-      // Six sites, a little over half a second each: at a hundred and fifty
-      // milliseconds every survey from a hollow eleven blocks under the
-      // surface timed out, and the dream run retried the whole list for
-      // seven attempts at dusk.
-      let site;
-      for (const p of sites.slice(0, 6)) {
-        if ((await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalBlock(p.x, p.y, p.z), 600)).status === 'success') { site = p; break; }
+      if (!refuge) {
+        let sites = shelter.shelterSites(bot, goal);
+        if (!sites.length) sites = shelter.shelterSites(bot, goal, 32);
+        // Six sites, a little over half a second each: at a hundred and fifty
+        // milliseconds every survey from a hollow eleven blocks under the
+        // surface timed out, and the dream run retried the whole list for
+        // seven attempts at dusk.
+        for (const p of sites.slice(0, 6)) {
+          if ((await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalBlock(p.x, p.y, p.z), 600)).status === 'success') { site = p; break; }
+        }
       }
-      // No site to walk to: the night is spent sealed in where the bot
-      // stands, as the unreachable-shelter rule above intends.
-      if (!site && await this.sealHere(task, goal, save, threats(bot).filter(t => t.visible))) return true;
-      // No site, no blocks: straight down into rock and a block over the
-      // head, the player's way on a sand island at dusk.
-      if (!site && await this.shaftPocket(task, goal, save)) return true;
-      // No site and no blocks, but a pickaxe: into the ground. A staircase
-      // into rock is a shelter and a mine at once. The dream run came back
-      // from the Nether at dusk with one netherrack and an iron pickaxe, and
-      // failed to find a shelter site every eight seconds on the savanna.
-      if (!site && this.canNightMine(goal)) {
-        this.state.nightMine ||= { startedAt: Date.now(), origin: { ...bot.entity.position.floored() }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };
-        if (await this.nightMine(task, goal, save)) return true;
-      }
-      // Nowhere, nothing to build with, no ground to dig: failing that every
-      // tick was trial 9's loop at minute ten, with no wood yet to make any
-      // of it possible (2026-09-24). It rests three minutes and the work
-      // goes on, which is what finds the wood.
-      if (!site) {
-        setAside(this, 'refuge', 'anywhere', 'no reachable site, no blocks and no ground to dig', 180000);
+    }
+    if (!method) {
+      const stock = shelter.materialStock(bot);
+      const options = {};
+      const resting = key => isSetAside(this, 'shelter_method', key);
+      if (refuge && !resting('saved_shelter')) options.saved_shelter = { description: `Go back to the ${refuge.verifiedAt ? 'shelter used before' : 'shelter begun before'}, ${Math.round(pos(refuge.origin).distanceTo(bot.entity.position))} blocks away, and seal it: ${shelter.missingShell(bot, refuge).length} blocks to place, ${stock} carried.` };
+      if (site && !resting('build_at_site')) { const need = shelter.missingShell(bot, { origin: site }).length;
+        options.build_at_site = { description: `Build a small room at a dry site ${Math.round(site.distanceTo(bot.entity.position))} blocks away: ${need} blocks to place, ${stock} carried${stock < need + 4 ? ', the rest gathered first' : ''}. A room is kept and can be used again on later nights.` }; }
+      if (!resting('seal_here')) options.seal_here = { description: stock >= 12 ? `Seal a two-block pocket around the bot where it stands with the ${stock} blocks carried; quick, and kept for later nights.` : `Dig into the ground where the bot stands and close it over (${stock} blocks carried, too few for a pocket on open ground).` };
+      if (!resting('shaft_pocket')) options.shaft_pocket = { description: 'Dig two or three blocks straight down here and cap it with one block: the fewest blocks, done in seconds.' };
+      if (this.canNightMine(goal) && !resting('night_mine')) options.night_mine = { description: 'Dig a mine from here for the night: a staircase into the rock is shelter and a mine at once, and gains ore while the night passes.' };
+      if (!Object.keys(options).length) {
+        // Nowhere, nothing to build with, no ground to dig: failing that every
+        // tick was trial 9's loop at minute ten, with no wood yet to make any
+        // of it possible (2026-09-24). It rests three minutes and the work
+        // goes on, which is what finds the wood.
+        setAside(this, 'refuge', 'anywhere', 'no way to shelter here', 180000);
         delete this.state.nightPlan;
-        this.report(goal, save, { action: 'no_shelter_here', reason: 'no reachable site, no blocks and no ground to dig' });
+        this.report(goal, save, { action: 'no_shelter_here', reason: 'no way to shelter here' });
         return false;
       }
+      const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
+      const decision = Object.keys(tree).length === 1 ? { path: [Object.keys(tree)[0]] }
+        : await this.decide(task, goal, save, { id: 'shelter_method', tree, state: { timeOfDay: bot.time?.timeOfDay, health: bot.health, food: bot.food, buildingBlocks: stock,
+          underground: !surfaceObserver(bot)(bot.entity.position), pickaxe: bot.inventory.items().find(i => /_pickaxe$/.test(i.name))?.name || null,
+          nearbyThreats: threats(bot).filter(t => t.distance < 24).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance) })) } });
+      if (decision.stale) return true;
+      method = decision.path.at(-1);
+      this.state.nightPlan = { ...(plan || { plan: 'shelter' }), until: Date.now() + 120000, method };
+      save();
+      // Without Jev, the old cascade in one tick: each way in order until one
+      // works (a pocket, a shaft, a mine), the room last as before.
+      if (!this.client || decision.fallback) {
+        for (const key of ['seal_here', 'shaft_pocket', 'night_mine'].filter(k => options[k] && !['saved_shelter', 'build_at_site'].includes(method))) {
+          if (await this.shelterBy(task, goal, save, key)) { this.state.nightPlan.method = key; save(); return true; }
+          setAside(this, 'shelter_method', key, 'did not work here', 180000);
+        }
+        if (!['saved_shelter', 'build_at_site'].includes(method)) {
+          setAside(this, 'refuge', 'anywhere', 'no way to shelter here', 180000); delete this.state.nightPlan;
+          this.report(goal, save, { action: 'no_shelter_here', reason: 'no way to shelter here' });
+          return false;
+        }
+      }
+    }
+    const failed = why => { setAside(this, 'shelter_method', method, why, 180000); if (this.state.nightPlan?.method === method) delete this.state.nightPlan.method; save(); return true; };
+    if (['seal_here', 'shaft_pocket', 'night_mine'].includes(method)) return (await this.shelterBy(task, goal, save, method)) || failed(`${method.replaceAll('_', ' ')} did not work here`);
+    if (method === 'build_at_site' && !refuge) {
+      if (!site) return failed('no dry site within reach');
       refuge = { origin: { ...site }, dimension: bot.game.dimension, createdAt: new Date().toISOString() };
       this.state.shelters.push(refuge); save();
     }
+    if (!refuge) return failed('the saved shelter is out of reach');
     const missing = shelter.missingShell(bot, refuge);
     const stock = shelter.materialStock(bot);
     // Navigation can consume scaffold blocks or clear natural walls. Keep a
@@ -1023,7 +1072,8 @@ class Survival {
       // twenty-eight. Two or three down into dirt or rock and a block over
       // the head, before a trip for blocks (the dream run gathered dirt one
       // block at a time on open grass at night and a creeper found it).
-      if (!shelter.inside(bot, refuge) && await this.shaftPocket(task, goal, save)) return;
+      // Without Jev only: a room Jev chose knowing the count is built.
+      if (!this.client && !shelter.inside(bot, refuge) && await this.shaftPocket(task, goal, save)) return;
       this.report(goal, save, { action: 'gather_shelter_materials', need: required, carried: stock, origin: refuge.origin });
       task.interruptCheck = () => checkThreats(bot);
       try {
@@ -1764,7 +1814,7 @@ class Survival {
       // third death was six zombies in the shell cells and a bot placing
       // blocks against them until its health ran out.
       const adjacent = threats(bot).some(t => t.visible && t.distance <= 2.2);
-      if (!adjacent && refuge && pos(refuge.origin).distanceTo(bot.entity.position) < 3 && shelter.materialStock(bot) >= shelter.missingShell(bot, refuge).length) await this.refugeStep(task, goal, save);
+      if (!adjacent && refuge && pos(refuge.origin).distanceTo(bot.entity.position) < 3 && shelter.materialStock(bot) >= shelter.missingShell(bot, refuge).length) await this.refugeStep(task, goal, save, { method: 'saved_shelter' });
       else await this.flee(task, goal, save);
       onStep(goal); return true;
     }

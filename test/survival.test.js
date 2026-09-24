@@ -1690,3 +1690,22 @@ test('hit by a blaze with none in sight, the nearest blaze is the one: seen, as 
   bot._hurtBy = { blaze: Date.now() - 10000 };
   assert.equal(threats(bot)[0].visible, false, 'an old hit names nobody');
 });
+
+test('how the night is sheltered is Jev\'s pick, run and held for the night without a second question', async () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 13000 }, entity: { position: new Vec3(0.5, 64, 0.5) }, inventory: { items: () => [{ name: 'cobblestone', count: 20 }], slots: [] },
+    blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), world: { raycast: () => null }, pathfinder: { movements: {} } });
+  const controller = new Survival(bot, {}, { state: { shelters: [] }, client: { systemOne: async () => ({}) } });
+  const sites = shelter.shelterSites; shelter.shelterSites = () => [];
+  const asked = [], ran = [];
+  controller.decide = async (task, goal, save, { id, tree }) => { asked.push([id, Object.keys(tree).sort()]); return { path: ['shaft_pocket'], stale: false }; };
+  controller.shaftPocket = async () => { ran.push('shaft'); return true; };
+  controller.sealHere = async () => assert.fail('Jev chose the shaft');
+  try {
+    assert.equal(await controller.refugeStep(new Task('dusk'), {}, () => {}), true);
+    assert.equal(await controller.refugeStep(new Task('dusk'), {}, () => {}), true);
+  } finally { shelter.shelterSites = sites; }
+  assert.equal(asked.length, 1); assert.equal(asked[0][0], 'shelter_method');
+  assert(asked[0][1].includes('seal_here') && asked[0][1].includes('shaft_pocket'), asked[0][1].join(','));
+  assert.deepEqual(ran, ['shaft', 'shaft'], 'held');
+});

@@ -39,6 +39,24 @@ define({
   ungated: 'Jev\'s pick is taken at any confidence: the choice is asked again at the next survival step, so a close call costs one step; the safety order answers only when Jev cannot be reached',
 });
 
+// How the night is sheltered, once a shelter is the answer.
+define({
+  id: 'shelter_method', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'A shelter for the night: the saved one, a room at a site, a pocket here, a shaft pocket, or a mine?',
+  trigger: 'When a shelter is chosen for the night (secure_shelter) and none is under way; held for the night, and asked again when the chosen way fails (it rests three minutes).',
+  source: 'src/survival.js (refugeStep)',
+  options: [
+    { key: 'saved_shelter', label: 'go back to the saved shelter and seal it', when: 'a shelter is remembered with a route to it and dry below', level: 'root' },
+    { key: 'build_at_site', label: 'build a small room at a dry site', when: 'a dry site within reach has a route to it', level: 'root' },
+    { key: 'seal_here', label: 'seal a pocket where the bot stands', when: 'always (with too few blocks it digs in instead)', level: 'root' },
+    { key: 'shaft_pocket', label: 'dig straight down and cap it', when: 'always; fails where the ground cannot be dug', level: 'root' },
+    { key: 'night_mine', label: 'dig a mine from here for the night', when: 'a pickaxe (or one can be made), health ten or more, nothing watching', level: 'root' },
+  ],
+  instructions: { task: 'Night is coming and the bot will shelter. Choose how.', guidance: 'Each option says its distance and the blocks it needs against those carried. Placing a block takes about a second, gathering more takes minutes; mobs spawn in the dark; a room or pocket is kept for later nights.' },
+  // Without Jev, the old order.
+  fallback: children => ['saved_shelter', 'build_at_site', 'seal_here', 'shaft_pocket', 'night_mine'].find(k => children[k]) || Object.keys(children)[0],
+});
+
 // Sealed in a pocket: stay, leave, go to bed, open on a watcher, or mine.
 define({
   id: 'pocket_next', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
