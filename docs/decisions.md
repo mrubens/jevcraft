@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-67 questions: 19 decision trees and 48 batched questions.
+68 questions: 20 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -205,6 +205,23 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `drop_\d+` (pattern) | root | drop this stack | any stack but the item the room is for and what the work in hand uses |
 | `none` | root | drop nothing and go without | always |
+
+### `while_cooking`
+
+**A furnace batch is cooking: dig what is in reach, walk to an ore or tree nearby, dig stone, or wait by the furnace?**
+
+- When: Once a smelting batch, when it takes twenty seconds or more and something besides waiting is possible.
+- Decision tree, choice; stakes low; ledger kind `smelting`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (smelt, whileCooking)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `dig_in_reach` | root | dig the ore within arm's reach | an ore within reach of where the bot stands |
+| `mine_nearby` | root | walk to an ore or tree nearby and dig | an ore within sixteen blocks, or a log while fewer than sixteen are carried, and thirty seconds or more of cooking |
+| `dig_stone` | root | dig the stone around the furnace | fewer than sixty-four cobblestone carried |
+| `wait_here` | root | stand by the furnace | always |
 
 ### `upkeep`
 

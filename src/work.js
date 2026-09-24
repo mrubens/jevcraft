@@ -1158,6 +1158,28 @@ function localBatch(bot, goal, save = () => {}) {
 // Not copper (see survival.js NIGHT_ORES).
 const WAIT_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'lapis_ore', 'redstone_ore', 'diamond_ore',
   'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_lapis_ore', 'deepslate_redstone_ore', 'deepslate_diamond_ore'];
+// While a batch cooks: dig what is in arm's reach, walk to an ore or a tree
+// nearby, dig the stone around, or stand by the furnace. Asked once a batch
+// of Jev; null (no Jev, or nothing to weigh) keeps the order in smelt.
+async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTarget, what, count }) {
+  const client = task.opportunityClient;
+  if (!client || cooking < 20000) return null;
+  const seconds = Math.round(cooking / 1000);
+  const tree = {};
+  const near = oreInReach();
+  if (near) tree.dig_in_reach = { description: `Dig the ${String(bot.blockAt(near)?.name || 'ore').replaceAll('_', ' ')} within arm's reach of the furnace, and any more there.` };
+  const far = cooking >= 30000 && walkTarget();
+  if (far) tree.mine_nearby = { description: `Walk to the ${String(bot.blockAt(far)?.name || 'block').replaceAll('_', ' ')} ${Math.round(far.distanceTo(bot.entity.position))} blocks off and dig it and the next nearest, back before the batch is done.` };
+  if (countOf(bot, 'cobblestone') < 64) tree.dig_stone = { description: `Dig the stone around the furnace (${countOf(bot, 'cobblestone')} cobblestone carried): tools, a furnace and walls want it.` };
+  tree.wait_here = { description: `Stand by the furnace for the ${seconds} seconds the ${count} ${what} take. The furnace cooks on its own whether or not the bot stands by it; standing gains nothing meanwhile.` };
+  if (Object.keys(tree).length < 2) return null;
+  try {
+    const decision = await decide('while_cooking', { client, bot, task, goal, save, tree, state: { cooking: `${count} ${what}`, seconds, inventoryFreeSlots: bot.inventory.emptySlotCount?.() ?? null, timeOfDay: bot.time?.timeOfDay } });
+    if (decision.stale || decision.fallback) return null;
+    return decision.path.at(-1);
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return null; }
+}
+
 async function smelt(bot, task, step, goal, save = () => {}) {
   task.check();
   const pending = localBatch(bot, goal, save);
@@ -1311,6 +1333,10 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         return logs < 16 ? find(bot, LOGS, 16, 16).filter(p => p.y <= bot.entity.position.y + 3).find(ok) : null;
       };
       const cooking = () => (needed - taken) * 10000;
+      // What to do while it cooks is Jev's, asked once a batch; without Jev,
+      // each in turn as below.
+      const plan = await whileCooking(bot, task, goal, save, { cooking: cooking(), oreInReach, walkTarget, what: String(step.from || step.item).replace(/_/g, ' '), count: needed - taken });
+      const allow = key => !plan || plan === key;
       while (taken < needed) {
         task.check();
         if (Date.now() > deadline) throw new Error(`Smelting ${step.item} timed out`);
@@ -1318,7 +1344,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         if (taken < needed) await fuel();
         // Only with a slot to spare: the dug ore takes one, the ingots another.
         const spare = taken < needed && Date.now() < deadline - 15000 && (needed - taken) >= 2 && free() >= 2;
-        const ore = spare && waitDigs < 6 && oreInReach();
+        const ore = spare && allow('dig_in_reach') && waitDigs < 6 && oreInReach();
         if (ore) {
           waitDigs++;
           furnace.close();
@@ -1327,7 +1353,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           furnace = await bot.openFurnace(block);
           continue;
         }
-        let far = spare && waitDigs < 12 && cooking() >= 30000 && walkTarget();
+        let far = spare && allow('mine_nearby') && waitDigs < 12 && cooking() >= 30000 && walkTarget();
         if (far) {
           furnace.close();
           // Out once, and on from one block to the next nearest while the
@@ -1358,7 +1384,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         // 12 stood eighty seconds by thirty-two copper, the coal it named
         // out of reach (2026-09-24).
         const feet = bot.entity.position.floored();
-        const rock = spare && waitDigs < 24 && countOf(bot, 'cobblestone') < 64 &&
+        const rock = spare && allow('dig_stone') && waitDigs < 24 && countOf(bot, 'cobblestone') < 64 &&
           find(bot, ['stone', 'deepslate', 'andesite', 'diorite', 'granite', 'tuff'], 5, 24)
             .filter(q => q.y >= feet.y && !q.equals(block.position.offset(0, -1, 0)) && bot.canDigBlock?.(bot.blockAt(q)) && !isSetAside(goal || {}, 'reach', q))[0];
         if (rock) {
@@ -3328,4 +3354,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

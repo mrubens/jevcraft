@@ -181,3 +181,16 @@ test('full pockets: which stack goes is Jev\'s, told what each is; "none" goes w
   assert.equal(await makeRoom(bot, pick('drop_1'), 'raw_iron'), true);
   assert.deepEqual(tossed, ['dirt'], 'Jev\'s pick went');
 });
+
+test('while a batch cooks, what the bot does is Jev\'s, asked once; without Jev, the order in smelt', async () => {
+  const { whileCooking } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  const bot = { inventory: { items: () => [{ name: 'cobblestone', count: 10 }], emptySlotCount: () => 10 }, entity: { position: new Vec3(0, 64, 0) }, time: { timeOfDay: 4000 },
+    blockAt: () => ({ name: 'iron_ore' }) };
+  const args = { cooking: 200000, oreInReach: () => new Vec3(1, 64, 0), walkTarget: () => new Vec3(10, 64, 0), what: 'raw iron', count: 20 };
+  assert.equal(await whileCooking(bot, { check() {} }, {}, () => {}, args), null, 'no Jev: the order in smelt');
+  let offered;
+  const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'mine_nearby', confidence: 0.5 } } }; } } };
+  assert.equal(await whileCooking(bot, task, {}, () => {}, args), 'mine_nearby');
+  assert.match(offered.wait_here, /200 seconds.*cooks on its own/);
+});
