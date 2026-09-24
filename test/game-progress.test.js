@@ -199,3 +199,18 @@ test('with blaze rods in hand the armour lost in a death is still made again bef
   bot.inventory.items = () => GEAR.filter(i => i.name !== 'bucket' && i.name !== 'water_bucket').concat({ name: 'blaze_rod', count: 7 });
   assert.equal(nextGameStage(bot, goal).action, 'enter_nether', 'a missing bucket is not the fighting kit and waits');
 });
+
+test('the bed and the armour can be left for later when they failed twice; the tools before them cannot', () => {
+  const { bot, goal } = fixture(); observeProgress(bot, goal);
+  const { setAside } = require('../src/progress');
+  bot.inventory.items = () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'iron_sword', count: 1 }, { name: 'shield', count: 1 }, { name: 'water_bucket', count: 1 }];
+  assert.equal(nextGameStage(bot, goal).phase, 'bed');
+  goal.survival = {}; setAside(goal, 'rung', 'bed', 'failed twice without progress', 1800000);
+  const next = nextGameStage(bot, goal).phase;
+  assert.notEqual(next, 'bed', 'the bed waits');
+  setAside(goal, 'rung', next, 'failed twice without progress', 1800000);
+  assert.notEqual(nextGameStage(bot, goal).phase, next, 'and so can the rung after it');
+  bot.inventory.items = () => [];
+  setAside(goal, 'rung', 'stone_pickaxe', 'failed twice', 1800000);
+  assert.match(nextGameStage(bot, goal).phase, /pickaxe|log|wood|table/, 'the first tools are not skipped: everything after needs them');
+});

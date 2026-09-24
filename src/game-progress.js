@@ -155,7 +155,10 @@ function ladderRung(bot, goal, waiting) {
   // Once the base's bed is claimed the rung is met: the carried one became
   // that bed, and a second sheep hunt before the plot and the pen is a
   // delay for a bed that far trips seldom get to use.
-  if (!carried.some(n => /_bed$/.test(n)) && !goal.survival?.home?.bed?.claimedAt && !isSetAside(goal, 'bed_search', 'wool')) {
+  // The bed, the home and the armour can each be left for later (a rung
+  // that failed twice without progress, work.js persist): nothing after them
+  // needs them to start. The tools before them cannot.
+  if (!carried.some(n => /_bed$/.test(n)) && !goal.survival?.home?.bed?.claimedAt && !isSetAside(goal, 'bed_search', 'wool') && ready({ phase: 'bed' })) {
     const wool = woolCarried(bot);
     if (wool.count >= 3) return { phase: 'bed', action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
     // A remembered village with beds is a walk of known length; a sheep
@@ -173,7 +176,7 @@ function ladderRung(bot, goal, waiting) {
   // distance away. The walkthrough order every speedrunner keeps: iron
   // tools, then a base and a bed, then the mine.
   const home = homeStage(bot, goal);
-  if (home) return { ...home, action: 'home', home };
+  if (home && ready({ phase: home.phase })) return { ...home, action: 'home', home };
   // Armour is four rungs, not one label. The Nether trip needs all of it,
   // and each piece is a visible step rather than "reach the Nether" for an
   // hour while twenty-four ingots accumulate.
@@ -185,7 +188,8 @@ function ladderRung(bot, goal, waiting) {
   const missing = ['helmet', 'chestplate', 'leggings', 'boots']
     .filter(piece => !worn.some(name => (/^(iron|diamond|netherite)_/.test(name) || (piece === 'boots' && name === 'golden_boots')) && name.endsWith(`_${piece}`)))
     .map(piece => `iron_${piece}`);
-  if (missing.length) return { phase: missing.length === 4 ? 'iron_armour' : `iron_${missing[0].replace('iron_', '')}`, action: 'acquire_set', item: missing[0], items: missing, count: missing.length };
+  const armourPhase = missing.length === 4 ? 'iron_armour' : `iron_${missing[0]?.replace('iron_', '')}`;
+  if (missing.length && ready({ phase: armourPhase })) return { phase: missing.length === 4 ? 'iron_armour' : `iron_${missing[0].replace('iron_', '')}`, action: 'acquire_set', item: missing[0], items: missing, count: missing.length };
   if (!carried.includes('golden_boots') && ready({ phase: 'golden_boots' })) return { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   // Most of the run's deaths were arrows: skeletons in the caves, crossbow
   // piglins in the Nether, and a bot that could only answer at arm's length.

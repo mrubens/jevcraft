@@ -2421,6 +2421,14 @@ async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } 
     bot.chat?.(`${friendlyProblem(err)} I'll keep trying${goal.struggles > 1 ? ` (attempt ${goal.struggles})` : ''}.`);
   }
   goal.step = { action: 'persist', attempt: goal.struggles, problem: err.message }; save(); onStep(goal);
+  // Failing is getting nowhere, answered the way a stall is (stillness.js):
+  // the first time differently (below), the second time later. A rung that
+  // failed twice without progress is not tried a third time the same way.
+  const rung = goal.rungTime?.phase;
+  if (goal.struggles >= 2 && rung && !isSetAside(goal, 'rung', rung)) {
+    setAside(goal, 'rung', rung, `failed twice without progress: ${err.message}`, RUNG_WAIT_MS); delete goal.rungTime;
+    bot.chat?.(`The ${rung.replaceAll('_', ' ')} isn't working out from here. I'll come back to it.`);
+  }
   const survivalOnly = e => { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(e.name)) throw e; };
   try { await shakeLoose(bot, task, Date.now() + 25000, { guard: () => checkThreats(bot) }); } catch (e) { survivalOnly(e); }
   if (goal.lastStruggleStep?.action === 'mine' || goal.step?.action === 'mine') {
