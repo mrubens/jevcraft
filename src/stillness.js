@@ -53,7 +53,7 @@ const HOLDS = new Set(['hold_bunker', 'hold_defensive_position', 'fight', 'block
 // Emergencies end when the danger does; a rule that set aside the way out
 // of lava would be the death of the bot.
 const EMERGENCIES = new Set(['leave_lava', 'leave_lava_edge', 'escape_threat', 'eat', 'dig_out_of_block', 'creeper_back_off',
-  'creeper_close_in', 'fight_in_pocket', 'shoot', 'charge', 'off_the_edge', 'surface_for_air', 'swim_up', 'breathe']);
+  'creeper_close_in', 'fight_in_pocket', 'shoot', 'charge', 'off_the_edge', 'surface', 'swim_up']);
 // Goals whose whole point is to be near a player who may be standing still.
 const COMPANY = new Set(['follow', 'come']);
 // The retry steps are not actions of their own: their time is the time of

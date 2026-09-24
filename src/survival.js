@@ -1514,9 +1514,22 @@ class Survival {
     for (let i = 0; i < 50; i++) { task.check(); await sleep(100); }
   }
 
+  // A survival action that fails is answered as a stall is: it rests three
+  // minutes and the tick goes to the work. Thrown on into the loop it became
+  // a persist, and the same branch ran again: trial 11's shaft pocket on a
+  // sand island, five times (2026-09-24), as trial 9's shelter search before
+  // it. Air, danger, cancellation and stalls go on up as always.
   async step(task, goal, save, onStep = () => {}) {
     try { return await this.stepOnce(task, goal, save, onStep); }
-    catch (err) { if (err.name === 'SetAside') return false; throw err; }
+    catch (err) {
+      if (err.name === 'SetAside') return false;
+      if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
+      const recent = goal.survivalAction, name = recent?.action;
+      if (!name || EMERGENCIES.has(name) || Date.now() - Date.parse(recent.at || 0) > 60000) throw err;
+      setAside(this, 'act', `survival:${name}`, err.message, 180000); save();
+      console.log(`[survival] ${name} failed and rests three minutes: ${err.message}`);
+      return false;
+    }
   }
 
   async stepOnce(task, goal, save, onStep) {

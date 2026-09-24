@@ -114,7 +114,10 @@ async function straightUp(bot, task, { maxMs = 8000 } = {}) {
   try {
     while ((bot.oxygenLevel ?? 20) < 20 || headSubmerged(bot)) {
       task.check();
-      if (Date.now() >= deadline) throw new Error('No way up to air found: dug and swam straight up for eight seconds');
+      // Worded to match the minute's pause after a failed swim (maintainVitals
+      // looks for "breathable air"): unmatched, it ran every tick with the air
+      // bar full in trial 11's flooded shaft (2026-09-24).
+      if (Date.now() >= deadline) throw new Error('No way up to breathable air found: dug and swam straight up for eight seconds');
       const above = bot.blockAt(bot.entity.position.offset(0, 2, 0).floored());
       if (above && above.boundingBox === 'block' && above.diggable && !/bedrock/.test(above.name)) {
         bot.clearControlStates();
