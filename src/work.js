@@ -248,7 +248,10 @@ async function prepareExpeditionStep(bot, task, goal, save) {
   // set aside as fruitless, the prep goes on with what is carried rather
   // than waiting on a hunt nobody is making.
   const reservePaused = isSetAside(goal, 'food_search', 'stock');
-  if (bot.game.difficulty && bot.game.difficulty !== 'peaceful' && foodSupply(bot) < 12 && !reservePaused) {
+  // Not for the game ladder: it stocks food at the Nether crossing itself
+  // (food_reserve), and waiting here held trial 18's bot off every rung for
+  // twenty minutes of a land with few animals (2026-09-24).
+  if (goal.kind !== 'win' && bot.game.difficulty && bot.game.difficulty !== 'peaceful' && foodSupply(bot) < 12 && !reservePaused) {
     goal.step = { action: 'prepare_expedition_food', carriedFoodPoints: foodSupply(bot), requiredFoodPoints: 12 };
     save(); return false;
   }
