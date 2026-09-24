@@ -334,6 +334,8 @@ The pair passes for the first time, and the wall swarm brings rods home for the 
 
 140. *Arrived, on farmland.* The dream run stood on its own plot for seven minutes failing to plant (108 "navigation ended before reaching the destination", persist, shake loose, again). Farmland is a block less a sixteenth: the feet floor into it, and `navigate` judged arrival with the floored position, so a walk to the next seed cell that the pathfinder had already finished was "short" every time. Arrival is now judged from the cell the bot stands in (one above a partial block it is standing on, as the pathfinder itself starts), and the home steps do not walk at all when the cell is already within reach. Slabs, soul sand and paths had the same trap.
 
+141. *The fourth gold ingot.* Rebuilding golden boots with three ingots in the pockets, the dream run spent eight minutes looking for nether gold ore in the Overworld. The planner's cost estimate counts carried items as free, and unpacking a carried ingot into nine nuggets made nuggets cost one each: the fourth ingot was planned as nine nuggets on a crafting table, and nuggets can only be mined as nether gold ore. The estimate now leaves out unpacking recipes (one item into many of an item that packs back into it); acquiring still unpacks what is carried. The fourth ingot is gold ore and a smelt. Also: a craft that made nothing (ingredients left on the cursor, both runs every ten minutes or so) is clicked once more before the step fails.
+
 **Still open.**
 
 9. *Three runs is too thin for a damage median.* `hoglin_single` measured 8.8, then 5.6, then 13.0 across iterations with no change aimed at it. Treat a single-drill damage move under about five points as noise, or raise the repeat count before believing it.
