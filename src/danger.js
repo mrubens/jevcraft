@@ -133,7 +133,12 @@ function immediateThreat(bot) {
   // Another of the kind being fought never ends the fight: the hunt's own
   // crowd rule decides how many blazes are too many.
   const kin = t => fighting && t.entity.name === bot._combatEncounter.target?.name;
-  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible && !kin(t) && !hunted(bot, t.entity) &&
+  // Mobs Jev chose to leave be (the keep_working stance): not a threat for
+  // the time it gave them, unless one comes within three blocks or a hit
+  // lands.
+  const waved = !hurt && bot._wavedOff?.until > Date.now() ? bot._wavedOff.ids : null;
+  const leftBe = t => !!waved && waved.includes(t.entity.id) && t.distance > 3;
+  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) &&
     t.distance <= (shooter(t.entity) ? (fighting ? 8 : hurt ? 32 : 16) : (fighting ? 5 : 8)));
 }
 

@@ -753,7 +753,7 @@ test('Jev picks the stance once and it holds; unsure, its pick still stands', as
   bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
   assert(await controller.step(task, goal, () => {}));
   assert.equal(goal.decisions.at(-1).id, 'encounter_stance');
-  assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['charge_shooter', 'fight', 'pillar', 'retreat', 'seal', 'shoot_17', 'shoot_7']);
+  assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['charge_shooter', 'fight', 'keep_working', 'pillar', 'retreat', 'seal', 'shoot_17', 'shoot_7']);
   assert.deepEqual(calls[0].state.threats, [{ name: 'skeleton', distance: 10, shoots: true, visible: true }, { name: 'blaze', distance: 11.7, shoots: true, visible: true }]);
   assert.deepEqual(events, ['navigate'], 'the retreat ran');
   bot.entity.position = new Vec3(.5, 64, .5);
@@ -1566,6 +1566,20 @@ test('the walk to bed stops when the bot is hurt on the way, for the threat rule
   await assert.rejects(survival.sleepStep(new Task('test', 'sleep'), goal, () => {}), /Trouble on the way to bed/);
   assert.equal(walks, 1);
   assert.equal(goal.survivalAction.action, 'sleep_interrupted');
+});
+
+test('mobs Jev leaves be are no threat to the work for fifteen seconds, unless one comes within three blocks or a hit lands', () => {
+  const { immediateThreat } = require('../src/danger');
+  const zombie = { id: 3, name: 'zombie', type: 'hostile', position: new Vec3(8.5, 64, .5), height: 1.95, width: .6, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entity: { position: new Vec3(.5, 64, .5) },
+    entities: { 3: zombie }, registry: require('minecraft-data')('26.1'), world: { raycast: () => null }, health: 20 });
+  assert(immediateThreat(bot), 'a zombie at eight is a threat');
+  bot._wavedOff = { ids: [3], until: Date.now() + 15000 };
+  assert.equal(immediateThreat(bot), undefined, 'left be');
+  zombie.position = new Vec3(3, 64, .5);
+  assert(immediateThreat(bot), 'within three it is a threat again');
+  zombie.position = new Vec3(8.5, 64, .5); bot._recentHurtAt = Date.now();
+  assert(immediateThreat(bot), 'a hit ends it');
 });
 
 test('at dusk with the bed at home forty blocks off, the walk home is Jev\'s option; once chosen it is held, not asked again', async () => {

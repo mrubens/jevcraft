@@ -65,7 +65,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `encounter_stance`
 
-**Hostile mobs are on the bot: fight here, go up, dig into the wall, seal in, run, shoot, charge the shooters, or dance with the creeper?**
+**Hostile mobs are near the bot: fight here, go up, dig into the wall, seal in, run, shoot, charge the shooters, dance with the creeper, or leave them be and keep working?**
 
 - When: An encounter the reflexes (the swing at arm's length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible (one is taken without asking); held while the same kinds of mob are about, for fifteen seconds, and until health falls by six. Off with JEV_ENCOUNTERS=0.
 - Decision tree, choice; stakes high; ledger kind `combat`
@@ -81,6 +81,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `seal` | root | seal a pocket and wait | four or more building blocks are carried |
 | `charge_shooter` | root | run at the ground shooters one after another and strike | skeletons, strays, bogged, pillagers or witches in view within sixteen, a sword or axe carried, not in water |
 | `creeper_dance` | root | hit the creeper and back out of its blast, again and again | a creeper within six, a sword or axe carried, no drop or lava to back into |
+| `keep_working` | root | carry on with the work and leave the mobs be for fifteen seconds | nothing within three blocks; ends early when one comes within three or lands a hit |
 | `retreat` | root | run for footing out of reach and sight | always |
 | `shoot_\d+` (pattern) | root | shoot this mob with the bow | a bow, arrows and a clear arrow path (up to two targets) |
 
