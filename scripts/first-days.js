@@ -75,8 +75,11 @@ function verdict(trial, { now = Date.now() } = {}) {
     if (span > 60000) pacing.push(`${Math.round(span / 1000)} s at ${a.pacing[i].at} (${a.pacing[i].step || '-'})`);
     i = j;
   }
-  const last = [...a.frames].reverse().find(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
-  const m = milestones(last?.snapshot, state);
+  // The pockets and what is worn, each from the latest frame that has it:
+  // heartbeats now carry the pockets but not the equipment, and the latest
+  // frame with pockets read a shield in the off-hand as no shield (trial 19).
+  const latest = key => [...a.frames].reverse().find(f => f.snapshot?.[key] && typeof f.snapshot[key] === 'object')?.snapshot?.[key];
+  const m = milestones({ inventory: latest('inventory'), equipment: latest('equipment') }, state);
   const missing = ['iron_pickaxe', 'iron_sword', 'iron_armour', 'shield', 'bed', 'home'].filter(k => !m[k]);
   const done = to - from >= DAYS_MS;
   const reasons = [...(deaths.size ? [`${deaths.size} death(s)`] : []), ...loops.map(l => `loop: ${l}`), ...still.map(s => `still: ${s}`),
