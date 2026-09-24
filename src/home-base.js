@@ -706,6 +706,9 @@ async function gatherWool(bot, task, goal, save, home, actions) {
     !isSetAside(goal, 'wool_sheep', e.uuid || e.id))
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
   goal.step = { action: 'gather_wool', target: sheep ? plain(sheep.position.floored()) : null, carried: before }; save();
+  // How long, and how far, without a sheep in sight (strategy.js says it).
+  if (sheep) delete goal.woolSearch;
+  else goal.woolSearch ||= { since: Date.now(), from: plain(bot.entity.position.floored()) };
   if (!sheep) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   const where = sheep.position.clone();
   // A sheep that could not be had rests; the next try is another sheep, not

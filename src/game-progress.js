@@ -100,7 +100,10 @@ function preparationStage(bot, goal = {}) {
 // else is left, so nothing on this list is ever skipped on the way to the
 // Nether. Pickaxes and armour are not on it: nothing after them works
 // without them.
-const DEFERRABLE = new Set(['shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword']);
+// The bed too: nothing after it needs it to start, and on a savanna with no
+// sheep trial 25 walked five hundred blocks for wool with the iron pickaxe
+// never on offer (2026-09-24).
+const DEFERRABLE = new Set(['bed', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword']);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
   const waiting = new Set(Object.keys(attemptsFor(goal).of('rung', now)));

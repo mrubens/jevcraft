@@ -29,6 +29,8 @@ const fatal = err => ['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name
 const label = phase => phase.replaceAll('_', ' ');
 
 const RUNG_WHY = {
+  bed: 'a night slept passes in seconds and sets the spawn point; three wool from sheep, or a bed from a village',
+  iron_pickaxe: 'mines the iron for armour and the diamonds past it',
   shield: 'blocks arrows and creeper blasts; the fights ahead are easier behind one',
   iron_sword: 'kills faster than stone',
   bucket: 'water for lava, falls and the End portal room',
@@ -38,10 +40,19 @@ const RUNG_WHY = {
   diamond_sword: 'ends a blaze or a piglin in two swings',
 };
 
-function rungOption(rung, first) {
+// How a search for the rung is going, said with it: minutes alone did not
+// tell Jev that no sheep had been seen in five hundred blocks.
+function searchSoFar(bot, goal, rung) {
+  const search = rung.action === 'gather_wool' && goal.woolSearch;
+  if (!search) return '';
+  const minutes = Math.round((Date.now() - search.since) / 60000);
+  const blocks = Math.round(Math.hypot(bot.entity.position.x - search.from.x, bot.entity.position.z - search.from.z));
+  return ` Searching for sheep for ${minutes} minute${minutes === 1 ? '' : 's'}, ${blocks} blocks from where the search began, none seen yet.`;
+}
+function rungOption(rung, first, bot, goal) {
   const what = rung.item ? `${rung.count > 1 ? `${rung.count} ` : ''}${label(rung.item)}` : label(rung.phase);
   const why = RUNG_WHY[rung.phase];
-  return { description: `${first ? 'The ladder\'s next step: ' : 'Do this step first, ahead of the ladder\'s order: '}get ${what}${why ? ` (${why})` : ''}.`, rung, fallback: first };
+  return { description: `${first ? 'The ladder\'s next step: ' : 'Do this step first, ahead of the ladder\'s order: '}get ${what}${why ? ` (${why})` : ''}.${bot && goal ? searchSoFar(bot, goal, rung) : ''}`, rung, fallback: first };
 }
 
 // The options now, keyed for the decision tree. Only in the Overworld on
@@ -50,7 +61,7 @@ function strategyOptions(bot, goal, stage, sides = {}) {
   if (bot.game?.gameMode !== 'survival' || dimension(bot) !== 'overworld') return null;
   const rungs = openRungs(bot, goal);
   const options = {};
-  if (rungs.length && rungs[0].phase === stage.phase) rungs.forEach((rung, i) => { options[`rung_${rung.phase}`] = rungOption(rung, i === 0); });
+  if (rungs.length && rungs[0].phase === stage.phase) rungs.forEach((rung, i) => { options[`rung_${rung.phase}`] = rungOption(rung, i === 0, bot, goal); });
   // Past the preparation ladder (pearls, the stronghold, the crossing): the
   // ladder's stage and the side trips. The dream run spent an afternoon
   // walking about after endermen with an ancient city never looked for.
