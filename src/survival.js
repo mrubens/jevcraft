@@ -30,7 +30,10 @@ const { NETHER_FOOD_POINTS, KIT_FOOD_POINTS } = require('./home-stash');
 // Lava within two blocks sideways or one below: a knockback lands in it.
 // A cell the bot can step into without falling or burning: solid under it,
 // room for its body, and no lava beside.
-const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'pillager']);
+// A witch too: it throws from where it stands and drinks to heal, so it is
+// closed on, not waited out behind a wall (trial 7's bot walled off from
+// one five times and was poisoned to death between).
+const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch']);
 function firmStep(bot, p) {
   if (!p) return false;
   const floor = bot.blockAt(p.offset(0, -1, 0)), body = [bot.blockAt(p), bot.blockAt(p.offset(0, 1, 0))];
@@ -1515,6 +1518,13 @@ class Survival {
       if (!last || last.x !== f.x || last.y !== f.y || last.z !== f.z) this.state.lastDry = { x: f.x, y: f.y, z: f.z, dimension: String(bot.game?.dimension || '') };
     }
     await maintainVitals(bot, task, action => this.report(goal, save, action));
+    // The mob hitting the bot comes first, before a bed, a pocket, a chore
+    // or anything else: trial 7's bot lay down to sleep beside a zombie
+    // villager and was hit five times trying, then walled itself in with it
+    // (2026-09-24). A mob that does not shoot, at arm's length and in sight
+    // or in reach of the sword, is the fight-or-flee rules' before anything.
+    const atArm = threats(bot).filter(t => t.distance <= 3 && !shooter(t.entity) && (t.visible || canStrike(bot, t.entity)));
+    if (atArm.length && !claimed(bot, atArm[0].entity)) { await this.flee(task, goal, save); onStep(goal); return true; }
     const refuge = this.currentShelter();
     if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) {
       delete this.state.trappedSince;

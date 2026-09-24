@@ -1336,6 +1336,21 @@ test('short of blocks for the room on open grass, the bot digs a shaft pocket in
   assert.equal(placed.get(`${new Vec3(0, 62, 0)}`), 'dirt', 'capped with a block of dirt');
 });
 
+test('a zombie at arm\'s length comes before the bed: it is fought, not slept beside', async () => {
+  const swung = [];
+  const zombie = { id: 3, name: 'zombie', type: 'hostile', position: new Vec3(1.8, 64, 0.5), height: 1.95, width: 0.6, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20, oxygenLevel: 20,
+    entity: { id: 1, position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, entities: { 3: zombie }, registry: require('minecraft-data')('26.1'), time: { timeOfDay: 13000 },
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'white_bed', count: 1 }], slots: {} }, heldItem: null,
+    blockAt: p => ({ position: p, name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }), world: { raycast: () => null },
+    equip: async item => { bot.heldItem = item; }, unequip: async () => {}, lookAt: async () => {}, attack: e => swung.push(e.name),
+    pathfinder: { setGoal() {}, movements: {} }, clearControlStates() {}, setControlState() {}, activateItem() {}, deactivateItem() {}, findBlocks: () => [], chat() {} });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const goal = {};
+  assert(await survival.step(new Task('night'), goal, () => {}));
+  assert.deepEqual(swung, ['zombie'], `struck, not slept beside (${goal.survivalAction?.action})`);
+});
+
 test('with a creeper close no pillar, pocket or bunker is offered: it walks underneath and goes off', () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, health: 3.2, food: 10, entities: {},
     entity: { position: new Vec3(0.5, 64, 0.5) }, registry: require('minecraft-data')('26.1'),
