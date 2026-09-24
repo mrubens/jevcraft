@@ -12,7 +12,7 @@ test('approaching a foundation moves off its top before digging', async () => {
   const bot = { game: { gameMode: 'creative' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true },
     inventory: { items: () => [] },
     blockAt: p => ({ position: p, type: p.y === 63 && !(removed && p.equals(target)) ? 1 : 0,
-      name: p.y === 63 && !(removed && p.equals(target)) ? 'grass_block' : 'air', boundingBox: p.y === 63 ? 'block' : 'empty', diggable: true, digTime: () => 100 }),
+      name: p.y === 63 && !(removed && p.equals(target)) ? 'grass_block' : p.y < 63 ? 'magma_block' : 'air', boundingBox: p.y <= 63 ? 'block' : 'empty', diggable: true, digTime: () => 100 }),
     canDigBlock: b => b.position.distanceTo(bot.entity.position) < 5,
     pathfinder: { setGoal: () => {}, goto: async goal => {
       routes++;
@@ -495,4 +495,23 @@ test('a pillar raised on purpose is not taken back down by the pillar descent', 
     dig: async () => { dug++; }, pathfinder: { setGoal() {} } };
   assert.equal(await descendPillar(bot, new Task('down'), {}, () => {}), false);
   assert.equal(dug, 0);
+});
+
+test('a floor block beside the feet with a cave under it is not dug; with rock under it, it is', async () => {
+  // Trial 4: coal in the floor one block over, a ten-block cave beneath it.
+  const feet = new Vec3(0, 58, 0), ore = new Vec3(1, 57, 0);
+  const make = caveBelow => {
+    let removed = false;
+    const bot = { game: { gameMode: 'survival' }, entity: { position: feet.offset(0.5, 0, 0.5), onGround: true }, inventory: { items: () => [] }, canDigBlock: () => true,
+      blockAt: p => p.equals(ore) ? { position: p, type: removed ? 0 : 1, name: removed ? 'air' : 'coal_ore', diggable: true, boundingBox: removed ? 'empty' : 'block', digTime: () => 100 }
+        : p.x === 1 && p.z === 0 && p.y < 57 && caveBelow ? { position: p, name: 'air', boundingBox: 'empty', type: 0 }
+        : p.y >= 58 ? { position: p, name: 'air', boundingBox: 'empty', type: 0 }
+        : { position: p, name: 'stone', boundingBox: 'block', type: 3, diggable: true },
+      dig: async () => { removed = true; }, pathfinder: { setGoal() {}, goto: async () => {} } };
+    return bot;
+  };
+  await assert.rejects(dig(make(true), new Task('pit'), ore, { requireDrops: false }), /open a drop beside the feet/);
+  const rock = make(false);
+  await dig(rock, new Task('floor'), ore, { requireDrops: false });
+  assert.equal(rock.blockAt(ore).name, 'air');
 });

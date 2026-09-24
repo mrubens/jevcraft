@@ -285,6 +285,19 @@ function safeDropBelow(bot, p) {
     !['sand', 'gravel'].includes(under.name);
 }
 
+// A floor block beside the feet with open air under it is a pit once it is
+// dug, and the next step goes into it: trial 4 took a coal ore out of the
+// floor it was standing by, the cave below it was ten blocks deep and
+// floored with dripstone, and the fall killed it (2026-09-24). A player
+// does not open a hole they have not looked into; the ore is left.
+function opensPit(bot, p) {
+  const here = bot.entity.position, feetY = Math.floor(here.y);
+  if (p.y >= feetY || p.y < feetY - 2) return false;
+  if (Math.hypot(p.x + 0.5 - here.x, p.z + 0.5 - here.z) > 2.5) return false;
+  const under = bot.blockAt(p.offset(0, -1, 0)), deeper = bot.blockAt(p.offset(0, -2, 0));
+  return !!under && under.boundingBox !== 'block' && (!deeper || deeper.boundingBox !== 'block');
+}
+
 async function stepOff(bot, task, p) {
   const feet = bot.entity.position.floored();
   if (feet.x !== p.x || feet.z !== p.z || Math.abs(feet.y - p.y) > 1) return;
@@ -317,6 +330,7 @@ async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops
   if (p.equals(supportCell(bot.entity.position))) await stepOff(bot, task, p);
   block = bot.blockAt(p);
   if (p.equals(supportCell(bot.entity.position)) && !safeDropBelow(bot, p)) throw new Error('Refusing to dig directly beneath feet');
+  if (opensPit(bot, p)) throw new Error('Refusing to open a drop beside the feet');
   if (requiredTool || enchantment) {
     const remaining = item => (bot.registry.itemsByName[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
     const tool = bot.inventory.items().filter(item => (!requiredTool || item.name === requiredTool) && remaining(item) >= minimumToolDurability &&
@@ -874,6 +888,22 @@ async function workstation(bot, task, name, goal) {
     if (air(bot.blockAt(q)) && bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block') {
       await place(bot, task, q, name); p = q;
       rememberWorkstation(bot, goal, name, q);
+    }
+  }
+  // Walled in (the bottom of a one-block shaft): a notch is cut in the wall
+  // at foot or head height and the station goes in it, as a player would.
+  // Trial 4 looked for an open cell six times over at the foot of its own
+  // shaft, which had none (2026-09-24).
+  if (!p) {
+    const notch = [0, 1].flatMap(dy => faces.slice(1, 5).map(d => o.plus(d).offset(0, dy, 0))).find(q => {
+      const b = bot.blockAt(q);
+      return b?.boundingBox === 'block' && b.diggable && !reservedForConstruction(goal, q) && bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block' &&
+        !faces.some(f => /lava|water/.test(bot.blockAt(q.plus(f))?.name || ''));
+    });
+    if (notch) {
+      await dig(bot, task, notch, { requireDrops: false });
+      await place(bot, task, notch, name); p = notch;
+      rememberWorkstation(bot, goal, name, notch);
     }
   }
   if (!p) throw new Error(`No place for ${name}`);
