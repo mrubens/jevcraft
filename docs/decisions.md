@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-69 questions: 21 decision trees and 48 batched questions.
+70 questions: 22 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -240,6 +240,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `mine_nearby` | root | walk to an ore or tree nearby and dig | an ore within sixteen blocks, or a log while fewer than sixteen are carried, and thirty seconds or more of cooking |
 | `dig_stone` | root | dig the stone around the furnace | fewer than sixty-four cobblestone carried |
 | `wait_here` | root | stand by the furnace | always |
+
+### `dug_into_liquid`
+
+**Water or lava ran into a block the bot just dug: plug the gap, or carry on?**
+
+- When: After a dig beside water or lava, when the liquid is seen in the dug cell, the bot is on dry ground, and a building block is carried.
+- Decision tree, choice; stakes medium; ledger kind `mining`
+- Bar: none: a plug is one block, taken back up as easily; the choice is asked again at the next leak
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (dig, leakResponse)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `plug` | root | put a block back in the gap | a building block is carried |
+| `carry_on` | root | leave it running and carry on | always |
 
 ### `upkeep`
 

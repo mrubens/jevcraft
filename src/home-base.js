@@ -654,7 +654,7 @@ async function pourWater(bot, task, goal, save, home, actions) {
     await bot.lookAt(over.offset(0.5, 0.5, 0.5), true); bot.activateItem(); bot.deactivateItem?.();
     await waitFor(task, () => bot.blockAt(over)?.name !== 'water', 2500);
   }
-  if (bot.blockAt(w)?.boundingBox === 'block') await actions.dig(bot, task, w, { requireDrops: false });
+  if (bot.blockAt(w)?.boundingBox === 'block') await actions.dig(bot, task, w, { requireDrops: false, plug: false });
   const bucket = bot.inventory.items().find(i => i.name === 'water_bucket');
   if (!bucket) throw new Error('No water bucket for the home pond');
   await equip(bot, 'water_bucket'); task.check();

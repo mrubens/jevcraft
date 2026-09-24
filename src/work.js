@@ -375,7 +375,7 @@ async function stepOff(bot, task, p) {
   await navigate(bot, task, new goals.GoalBlock(exit.x, exit.y, exit.z));
 }
 
-async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops = true, minimumToolDurability = 8 } = {}) {
+async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops = true, minimumToolDurability = 8, plug = true } = {}) {
   task.check(); checkAir(bot);
   if (done?.()) return;
   let block = bot.blockAt(p);
@@ -401,8 +401,58 @@ async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops
     await bot.equip(tool, 'hand');
   } else await equipBestTool(bot, block);
   if (requireDrops && bot.game?.gameMode !== 'creative' && block.harvestTools && !block.harvestTools[bot.heldItem?.type]) throw new Error(`Missing harvest tool for ${block.name}`);
+  // Water or lava beside the block, and the bot on dry ground: if it runs
+  // into the gap, whether to put a block back is Jev's (leakResponse).
+  const LIQUID = /^(water|lava|flowing_water|flowing_lava|bubble_column)$/;
+  const leaks = plug && !bot.entity?.isInWater && [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]].some(([x, y, z]) => LIQUID.test(bot.blockAt(p.offset(x, y, z))?.name || ''));
   await digWithAirGuard(bot, task, block);
   await waitFor(task, () => bot.blockAt(p)?.type !== block.type);
+  if (leaks) await leakResponse(bot, task, p, LIQUID);
+}
+
+// Liquid ran into a cell the bot dug: plug it with a carried block, or carry
+// on. Jev's choice, asked once the liquid is seen in the gap; without Jev
+// the gap is plugged.
+async function leakResponse(bot, task, p, LIQUID, { placer = place } = {}) {
+  const { buildingMaterials } = require('./shelter');
+  for (const ms of [300, 700]) {
+    await sleep(ms);
+    const liquid = bot.blockAt(p)?.name || '';
+    if (!LIQUID.test(liquid)) continue;
+    const material = bot.inventory.items().find(i => buildingMaterials.has(i.name));
+    if (!material) return false;
+    const client = task.opportunityClient;
+    if (client) {
+      const kind = /lava/.test(liquid) ? 'lava' : 'water';
+      const carried = bot.inventory.items().filter(i => buildingMaterials.has(i.name)).reduce((n, i) => n + i.count, 0);
+      const tree = {
+        plug: { description: `Put a ${material.name.replaceAll('_', ' ')} back in the gap and stop the ${kind} (${carried} building blocks carried).${kind === 'lava' ? ' Lava sets the bot alight and burns what it touches.' : ' Water that keeps running floods the tunnel and pushes the bot about.'}` },
+        carry_on: { description: `Leave the ${kind} running and carry on digging.` },
+      };
+      try {
+        const decision = await require('./decisions').decide('dug_into_liquid', { client, bot, task, tree, state: { liquid: kind, position: { x: p.x, y: p.y, z: p.z }, inWater: !!bot.entity?.isInWater, health: bot.health } });
+        if (!decision.fallback && !decision.stale && decision.path.at(-1) === 'carry_on') return false;
+      } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+    return plugLeak(bot, task, p, LIQUID, { placer });
+  }
+  return false;
+}
+
+// A block back into a dug cell that liquid has run into (the plug option).
+// Five ticks is how long water takes to flow one block; lava is slower, so
+// the look is twice.
+async function plugLeak(bot, task, p, LIQUID = /^(water|lava|flowing_water|flowing_lava|bubble_column)$/, { placer = place } = {}) {
+  const { buildingMaterials } = require('./shelter');
+  for (const ms of [300, 700]) {
+    await sleep(ms);
+    if (!LIQUID.test(bot.blockAt(p)?.name || '')) continue;
+    const material = bot.inventory.items().find(i => buildingMaterials.has(i.name))?.name;
+    if (!material) return false;
+    try { await placer(bot, task, p, material); console.log(`[leak] plugged the gap at ${p} with ${material}`); return true; }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return false; }
+  }
+  return false;
 }
 
 async function syncPlacementInventory(bot, task) {
@@ -3359,4 +3409,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

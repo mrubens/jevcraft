@@ -515,3 +515,36 @@ test('a floor block beside the feet with a cave under it is not dug; with rock u
   await dig(rock, new Task('floor'), ore, { requireDrops: false });
   assert.equal(rock.blockAt(ore).name, 'air');
 });
+
+test('water that runs into a dug cell is plugged with a carried block; a cell that stays dry is left', async () => {
+  const { plugLeak } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  const p = new Vec3(3, 40, 0);
+  let name = 'water';
+  const bot = { blockAt: () => ({ name }), inventory: { items: () => [{ name: 'cobblestone', count: 12 }] } };
+  const placed = [];
+  const placer = async (b, t, at, material) => { placed.push([`${at}`, material]); name = material; };
+  assert.equal(await plugLeak(bot, { check() {} }, p, undefined, { placer }), true);
+  assert.deepEqual(placed, [[`${p}`, 'cobblestone']]);
+  name = 'air'; placed.length = 0;
+  assert.equal(await plugLeak(bot, { check() {} }, p, undefined, { placer }), false);
+  assert.deepEqual(placed, [], 'nothing ran in, nothing placed');
+});
+
+test('whether to plug water that ran into a dug cell is Jev\'s; without Jev it is plugged', async () => {
+  const { leakResponse } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  const LIQUID = /^(water|lava|flowing_water|flowing_lava|bubble_column)$/;
+  const p = new Vec3(3, 40, 0);
+  let name = 'water';
+  const bot = { blockAt: () => ({ name }), inventory: { items: () => [{ name: 'cobblestone', count: 12 }] }, entity: { isInWater: false }, health: 20 };
+  const placed = [];
+  const placer = async (b, t, at, material) => { placed.push(material); name = material; };
+  let offered;
+  const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'carry_on', confidence: 0.6 } } }; } } };
+  assert.equal(await leakResponse(bot, task, p, LIQUID, { placer }), false, 'Jev chose to carry on');
+  assert.match(offered.plug, /stop the water \(12 building blocks carried\)/);
+  assert.deepEqual(placed, []);
+  assert.equal(await leakResponse(bot, { check() {} }, p, LIQUID, { placer }), true, 'no Jev: plugged');
+  assert.deepEqual(placed, ['cobblestone']);
+});

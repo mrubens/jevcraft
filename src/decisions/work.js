@@ -201,6 +201,21 @@ define({
   fallback: children => ['dig_in_reach', 'mine_nearby', 'dig_stone'].find(k => children[k]) || 'wait_here',
 });
 
+// Dug into water or lava.
+define({
+  id: 'dug_into_liquid', area: 'resources', kind: 'mining', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Water or lava ran into a block the bot just dug: plug the gap, or carry on?',
+  trigger: 'After a dig beside water or lava, when the liquid is seen in the dug cell, the bot is on dry ground, and a building block is carried.',
+  source: 'src/work.js (dig, leakResponse)',
+  ungated: 'a plug is one block, taken back up as easily; the choice is asked again at the next leak',
+  options: [
+    { key: 'plug', label: 'put a block back in the gap', when: 'a building block is carried', level: 'root' },
+    { key: 'carry_on', label: 'leave it running and carry on', when: 'always', level: 'root' },
+  ],
+  instructions: workInstructions('The bot just dug a block and water or lava has run into the gap. Choose whether to plug it with a carried block or carry on digging.'),
+  fallback: () => 'plug',
+});
+
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
   id: 'upkeep', area: 'resources', kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
