@@ -1521,3 +1521,22 @@ test('respawned with nothing at night, the bot digs down into dirt by hand and c
     entity: { position: new Vec3(0.5, 63, 0.5) }, inventory: { items: () => [], slots: {} } }), actions, { state: { shelters: [] } });
   assert.equal(await stone.shaftPocket(new Task('night'), {}, () => {}), false);
 });
+
+test('no charge up or down a fortress, or from an edge; a charge walks without digging or towering', async () => {
+  const blocks = new Map();
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 65, 0.5) }, entities: {}, health: 20,
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, pathfinder: { movements: { canDig: true, allow1by1towers: true, maxDropDown: 4 } },
+    blockAt: p => { const f = p.floored(); const name = blocks.get(`${f}`) || (f.y < 65 ? 'nether_bricks' : 'air'); return { name, position: f, boundingBox: name === 'air' ? 'empty' : 'block' }; } });
+  const seen = [];
+  const survival = new Survival(bot, { navigate: async () => { seen.push({ ...bot.pathfinder.movements }); } });
+  survival.report = () => {};
+  const skeleton = y => ({ entity: { name: 'wither_skeleton', position: new Vec3(6.5, y, 0.5), height: 2.4 }, distance: 6 });
+  assert.equal(await survival.charge(new Task('fortress'), {}, () => {}, skeleton(69), false), false, 'four blocks up: no charge');
+  // An edge beside the bot: a bridge one block wide.
+  for (let y = 30; y < 65; y++) blocks.set(`${new Vec3(0, y, 1)}`, 'air');
+  assert.equal(await survival.charge(new Task('fortress'), {}, () => {}, skeleton(65), false), false, 'from an edge: no charge');
+  blocks.clear();
+  await survival.charge(new Task('fortress'), {}, () => {}, skeleton(65), false);
+  assert.deepEqual(seen, [{ canDig: false, allow1by1towers: false, maxDropDown: 2 }]);
+  assert.deepEqual(bot.pathfinder.movements, { canDig: true, allow1by1towers: true, maxDropDown: 4 }, 'restored');
+});

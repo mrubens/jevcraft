@@ -17,14 +17,14 @@ test('with room to spare nothing is dropped; when crowded, surplus stone goes bi
   assert.deepEqual(await tidyInventory(b, null), []);
   b.inventory.emptySlotCount = () => 1;
   const dropped = await tidyInventory(b, null);
-  assert.equal(dropped[0].name, 'cobblestone'); assert.equal(dropped[0].count, 744 - 192);
+  assert.equal(dropped[0].name, 'cobblestone'); assert.equal(dropped[0].count, 744 - 64);
   assert(b.tossed.every(([name]) => !['iron_sword', 'coal', 'oak_log', 'stone_pickaxe'].includes(name)), 'tools, fuel and wood are kept');
 });
 
 test('the surplus table caps the junk a miner accumulates and keeps two of each workstation', () => {
   const b = bot({ cobblestone: 100, granite: 13, furnace: 7, crafting_table: 2, leaf_litter: 16, raw_copper: 32, diamond: 3 }, 0);
   const over = Object.fromEntries(surplus(b).map(s => [s.name, s.count]));
-  assert.deepEqual(over, { granite: 13, furnace: 5, leaf_litter: 16, raw_copper: 16 });
+  assert.deepEqual(over, { cobblestone: 36, granite: 13, furnace: 5, raw_copper: 16 }, 'a stack of cobblestone is enough; leaf litter is fuel now');
 });
 
 test('force drops everything over the cap regardless of room', async () => {

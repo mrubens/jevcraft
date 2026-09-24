@@ -96,4 +96,33 @@ function mobSources() {
   }
   return sources;
 }
-module.exports = { handlers, combatGear, armorSlots, durable, carriedEquipment, equipped, readyEquipment, kitReady, mobSources, observedDead, SHOOTERS, shooter, FIGHT_FLOOR, fitToFight, hasFood };
+// The best armour carried is worn, always. The dream run took its spare
+// iron set out of the stash after a death and walked about with it in its
+// pockets: the kit was worn only by the check before a crossing, and a
+// skeleton or two found it in the meantime (2026-09-24). Golden boots on the
+// feet in the Nether, where they keep piglins neutral.
+const ARMOUR_TIER = { netherite: 6, diamond: 5, iron: 4, turtle: 4, chainmail: 3, golden: 2, leather: 1 };
+const PIECES = { head: 'helmet', torso: 'chestplate', legs: 'leggings', feet: 'boots' };
+async function wearBestArmour(bot) {
+  if (typeof bot.equip !== 'function' || !bot.inventory?.items) return 0;
+  const nether = /nether/.test(String(bot.game?.dimension || ''));
+  const tier = (name, slot) => {
+    const m = new RegExp(`^(\\w+?)_${PIECES[slot]}$`).exec(name || '') || (slot === 'head' && name === 'turtle_helmet' ? [0, 'turtle'] : null);
+    if (!m) return -1;
+    if (slot === 'feet' && nether && name === 'golden_boots') return 100;
+    return ARMOUR_TIER[m[1]] ?? 0;
+  };
+  let changed = 0;
+  for (const slot of Object.keys(PIECES)) {
+    const worn = bot.inventory.slots?.[armorSlots[slot]];
+    const best = bot.inventory.items().filter(i => tier(i.name, slot) >= 0 && durable(bot.registry, i))
+      .sort((a, b) => tier(b.name, slot) - tier(a.name, slot))[0];
+    if (!best || (worn && tier(worn.name, slot) >= tier(best.name, slot))) continue;
+    try { await bot.equip(best, slot); changed++; } catch (_) { /* worn at the next step */ }
+  }
+  const shield = bot.inventory.items().find(i => i.name === 'shield' && durable(bot.registry, i));
+  if (shield && !bot.inventory.slots?.[armorSlots['off-hand']]) { try { await bot.equip(shield, 'off-hand'); changed++; } catch (_) { /* next step */ } }
+  return changed;
+}
+
+module.exports = { wearBestArmour, handlers, combatGear, armorSlots, durable, carriedEquipment, equipped, readyEquipment, kitReady, mobSources, observedDead, SHOOTERS, shooter, FIGHT_FLOOR, fitToFight, hasFood };

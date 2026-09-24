@@ -8,9 +8,9 @@
 // Wheat seeds are kept up to a stack: clearing grass is how the home plot
 // gets planted, and tossing them was how the plot stayed bare.
 const SURPLUS = Object.freeze({
-  cobblestone: 192, cobbled_deepslate: 64, dirt: 32, gravel: 16, sand: 0, red_sand: 0,
+  cobblestone: 64, cobbled_deepslate: 64, dirt: 32, gravel: 16, sand: 0, red_sand: 0,
   diorite: 0, andesite: 0, granite: 0, tuff: 0, calcite: 0, netherrack: 128,
-  leaf_litter: 0, short_grass: 0, seagrass: 0, kelp: 0, wheat_seeds: 32, raw_copper: 16, copper_ingot: 16,
+  leaf_litter: 32, short_grass: 0, seagrass: 0, kelp: 0, wheat_seeds: 32, raw_copper: 16, copper_ingot: 16,
   furnace: 2, crafting_table: 2, snowball: 0, ice: 0, clay_ball: 0, flint: 8,
 });
 const FREE_SLOTS = 4;
@@ -122,7 +122,7 @@ async function tidyInventory(bot, task, { force = false, away = null, keep } = {
 // seeds go last, whole, when nothing else is left.
 const nether = bot => /nether/.test(String(bot.game?.dimension || ''));
 const EXPENDABLE = [
-  ['dirt', 0], ['gravel', 0], [/_sapling$/, 0], ['nether_brick_fence', 0], ['leaf_litter', 0], ['short_grass', 0],
+  ['dirt', 0], ['gravel', 0], [/_sapling$/, 0], ['nether_brick_fence', 0], ['leaf_litter', 16], ['short_grass', 0],
   ['nether_wart', 0], ['egg', 0], ['poisonous_potato', 0], ['spider_eye', 0],
   ['netherrack', bot => nether(bot) ? 32 : 0], ['cobbled_deepslate', 0], ['cobblestone', 64], ['soul_sand', 0], ['nether_bricks', 0],
   ['wheat_seeds', 8], ['raw_copper', 0], ['copper_ingot', 0], ['rotten_flesh', 0], ['wheat_seeds', 0],

@@ -1292,6 +1292,18 @@ async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY,
   const step = plan[0];
   if (!step) throw new Error(`No progress step for ${item}`);
   if (minimumMiningY !== undefined && step.action === 'mine') step.minimumY = minimumMiningY;
+  // An axe before the trees, when the pockets can make one without mining
+  // anything: the logs came off with the diamond sword in hand, two of its
+  // uses a log and no faster than a fist (the user, 2026-09-24).
+  if (step.action === 'mine' && /_log$/.test(step.block || '') && (step.count || 1) >= 2 && item !== 'stone_axe' &&
+      !bot.inventory.items().some(i => /_axe$/.test(i.name)) && bot.game?.gameMode !== 'creative' && !isSetAside(goal, 'axe', 'stone')) {
+    let axePlan = null;
+    try { axePlan = catalogPlan(bot, 'stone_axe', 1, available, goal); } catch (_) { axePlan = null; }
+    if (axePlan?.length && axePlan.every(s => s.action === 'craft')) {
+      try { await acquireStep(bot, task, 'stone_axe', 1, goal, save); return false; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'axe', 'stone', err.message, 600000); save(); }
+    }
+  }
   await executeAcquisition(bot, task, step, goal, save);
   return false;
 }

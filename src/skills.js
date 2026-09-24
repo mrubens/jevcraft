@@ -442,6 +442,13 @@ async function equipBestTool(bot, block) {
   const best = cheapestTool(bot, block);
   if (best && (!bot.heldItem || bot.heldItem.type !== best.type || bot.heldItem.slot !== best.slot)) {
     await bot.equip(best, 'hand');
+    return;
+  }
+  // Nothing digs this faster than a fist: a sword or tool still in hand from
+  // the last fight is put away rather than worn down for nothing.
+  const held = bot.heldItem;
+  if (!best && held && bot.registry?.itemsByName?.[held.name]?.maxDurability && typeof bot.unequip === 'function') {
+    try { await bot.unequip('hand'); } catch (_) { /* dug with it, then */ }
   }
 }
 

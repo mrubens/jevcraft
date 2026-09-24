@@ -1074,10 +1074,19 @@ class Survival {
   async charge(task, goal, save, nearest, pack) {
     const bot = this.bot;
     if (pack || bot.health < 12 || nearest.distance > 8 || canStrike(bot, nearest.entity) || lavaBeside(bot, nearest.entity.position.floored())) return false;
+    // Level ground only, and not from an edge: charging a wither skeleton
+    // four blocks up a Nether fortress, the dream run's floor went from
+    // under it and it fell thirty blocks (2026-09-24 01:39). The charge
+    // neither digs, towers nor drops more than two on its way.
+    const feet = bot.entity.position.floored(), t = nearest.entity.position;
+    if (Math.abs(t.y - bot.entity.position.y) > 2 || besideDrop(bot, feet)) return false;
     this.report(goal, save, { action: 'charge', target: nearest.entity.name, distance: Number(nearest.distance.toFixed(1)) });
-    const t = nearest.entity.position;
+    const movements = bot.pathfinder?.movements;
+    const kept = movements && { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, maxDropDown: movements.maxDropDown };
+    if (movements) Object.assign(movements, { canDig: false, allow1by1towers: false, maxDropDown: Math.min(2, movements.maxDropDown ?? 2) });
     try { await this.actions.navigate(bot, task, new goals.GoalNear(t.x, t.y, t.z, 1), { timeoutMs: 4000, stallMs: 2000 }); }
     catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
+    finally { if (movements) Object.assign(movements, kept); }
     await defendNearby(bot, task, goal, save);
     return true;
   }

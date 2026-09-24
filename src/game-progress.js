@@ -331,6 +331,7 @@ async function gameStep(bot, task, goal, save, actions) {
   task.check();
   if (bot.game.gameMode !== 'survival') throw Object.assign(new Error('The game-completion task requires Survival mode'), { name: 'Blocked' });
   const progress = observeProgress(bot, goal);
+  await require('./mob-policy').wearBestArmour(bot);
   let stage = nextGameStage(bot, goal);
   // Back for what the last death dropped, before anything else: close to
   // the respawn its drops have five minutes (corpse-run.js).
