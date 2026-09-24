@@ -120,3 +120,13 @@ test('a fortress chest is opened in the Nether only with no piglin in sight; a v
   const village = world({ '105,64,100': 'chest' }, { position: new Vec3(100, 64, 100) }).bot;
   assert.equal(lootableChests(village, { villages: [{ x: 100, y: 64, z: 100, dimension: 'overworld' }] }).length, 1);
 });
+
+test('a structure buried far below is not "two blocks away": it waits until the bot is down at its depth', () => {
+  const { bot } = world({}, { position: new Vec3(0.5, 63, 0.5) });
+  const goal = { landmarks: [{ kind: 'mineshaft', x: -1, y: 16, z: 1, dimension: 'overworld' }, { kind: 'dungeon', x: 60, y: 58, z: 0, dimension: 'overworld' }] };
+  const offered = unlootedLandmarks(bot, goal);
+  assert.deepEqual(offered.map(o => o.landmark.kind), ['dungeon'], 'the mineshaft forty-seven blocks down is not offered from the surface');
+  bot.entity.position = new Vec3(0.5, 20, 0.5);
+  assert.equal(unlootedLandmarks(bot, goal)[0].landmark.kind, 'mineshaft', 'down at its depth, it is');
+  assert.equal(unlootedLandmarks(bot, goal)[0].distance, 4);
+});

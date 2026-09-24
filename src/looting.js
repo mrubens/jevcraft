@@ -201,16 +201,23 @@ function unlootedLandmarks(bot, goal, reach = 256) {
   const here = bot.entity?.position;
   if (!here) return [];
   return (goal.landmarks || []).filter(l => LOOTABLE.includes(l.kind) && !['nether_fortress', 'ancient_city', 'trial_chambers', 'bastion'].includes(l.kind) && !l.lootedAt && sameDimension(bot, l) &&
-    !isSetAside(goal, 'landmark_trip', `${l.kind}:${l.x},${l.z}`))
-    .map(landmark => ({ landmark, distance: Math.round(Math.hypot(landmark.x - here.x, landmark.z - here.z)) }))
+    !isSetAside(goal, 'landmark_trip', `${l.kind}:${l.x},${l.z}`) && atLevel(l, here))
+    .map(landmark => ({ landmark, distance: Math.round(Math.hypot(landmark.x - here.x, landmark.y - here.y, landmark.z - here.z)) }))
     .filter(l => l.distance <= reach).sort((a, b) => a.distance - b.distance);
 }
+// Near the bot's own height: a mineshaft forty-seven blocks under the base
+// was "two blocks away" by the map, and the walk there, which judges only
+// the map, stopped on the grass above a dungeon and looted nothing (the
+// user, 2026-09-24: "there is no mineshaft ... it just runs around"). A
+// buried one is offered once the bot is down at its depth.
+const LOOT_LEVEL = 12;
+const atLevel = (l, here) => l.y === undefined || Math.abs(l.y - here.y) <= LOOT_LEVEL;
 
 // The idle trip: walk to the nearest such structure and open what is there.
 // A structure stood at with no chest found is done.
 async function lootStep(bot, task, goal, save, actions) {
   const exploration = require('./exploration');
-  const arrived = await exploration.goToLandmark(bot, task, goal, save, LOOTABLE, { navigate: actions.navigate, reach: 256, arrive: 10, filter: l => !l.lootedAt });
+  const arrived = await exploration.goToLandmark(bot, task, goal, save, LOOTABLE, { navigate: actions.navigate, reach: 256, arrive: 10, filter: l => !l.lootedAt && atLevel(l, bot.entity.position) });
   if (!arrived) return false;
   if (await lootNearby(bot, task, goal, save, actions)) return true;
   if (!lootableChests(bot, goal, { reach: 32 }).length && !lootableMinecarts(bot, goal, { reach: MINESHAFT_REACH }).length) { arrived.lootedAt = Date.now(); save(); }

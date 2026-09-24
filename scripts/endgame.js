@@ -192,7 +192,8 @@ const DRILLS = {
       log({ result: entered });
       if (!entered.pass) return { drill: 'dragon', pass: false, skipped: 'could not enter the End' };
     }
-    await kit([['arrow', 64], ['arrow', 64]]);
+    // ENDGAME_BEDS=4 carries beds for the perched head (bed-bomb.js).
+    await kit([['arrow', 64], ['arrow', 64], ...(process.env.ENDGAME_BEDS ? [['white_bed', Number(process.env.ENDGAME_BEDS)]] : [])]);
     const goal = { kind: 'win', request: 'endgame rehearsal', gameProgress: { version: 1, milestones: { nether_entered: { at: 1 }, end_entered: { at: Date.now() } } } };
     const handlers = gameHandlers(bot, client);
     // Truth from the server, asked every twenty seconds.
@@ -205,7 +206,7 @@ const DRILLS = {
     killed = await dragonKilled();
     const combat = goal.endCombat || {};
     return { drill: 'dragon', pass: killed && !died, died, dragonsInView: await countInEnd('ender_dragon'), crystalsBefore: before, crystalsAfter: await countInEnd('end_crystal'),
-      destroyed: (combat.destroyedCrystals || []).length, shots: (combat.shots || []).length, arrowsLeft: countOf(bot, 'arrow'), ...outcome };
+      destroyed: (combat.destroyedCrystals || []).length, shots: (combat.shots || []).length, arrowsLeft: countOf(bot, 'arrow'), beds: combat.beds || [], ...outcome };
   },
 };
 
