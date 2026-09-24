@@ -1486,6 +1486,16 @@ class Survival {
         // One mob at the wall and the bot armed and whole: the wall toward it
         // is opened and the fight rules take it. A skeleton at three blocks
         // kept the pocket shut from midnight to dawn, the night mine off.
+        // Inside the pocket with the bot, or at arm's length through a gap:
+        // fought, not waited out. The clean run sealed itself in with a
+        // skeleton at 0.3 blocks and "waited for it to leave" for eighteen
+        // minutes, arrows piling up at its feet (2026-09-24).
+        if (watcher && (watcher.distance < 2.5 || canStrike(bot, watcher.entity))) {
+          this.report(goal, save, { action: 'fight_in_pocket', target: watcher.entity.name, distance: Number(watcher.distance.toFixed(1)), health: bot.health });
+          await defendNearby(bot, task, goal, save);
+          for (let n = 0; n < 5; n++) { task.check(); await sleep(100); }
+          onStep(goal); return true;
+        }
         if (watcher && await this.openOnWatcher(task, goal, save, refuge, watcher)) { onStep(goal); return true; }
         // Nothing watching: the night is spent working, not waiting. The
         // pocket is the mouth of a mine, and a tunnel in rock is as closed

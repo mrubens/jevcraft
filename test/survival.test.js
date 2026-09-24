@@ -441,6 +441,13 @@ test('a sealed-in bot leaves at dawn despite mobs behind rock, and stays for one
   const watching = make(origin.offset(15, 0, 0), true);
   await watching.survival.step(new Task('dawn'), {}, () => {});
   assert.deepEqual(watching.actions, ['wait'], 'one with a line of sight does');
+  // One inside the pocket with the bot is fought, not waited out.
+  const inside = make(origin.offset(0.7, 0, 0.6), true);
+  Object.assign(inside.survival.bot, { pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, equip: async () => {}, attack() {}, heldItem: null });
+  const goal = {};
+  await inside.survival.step(new Task('night'), goal, () => {});
+  assert(!inside.actions.includes('wait'), `not waited out: ${inside.actions}`);
+  assert.equal(goal.survivalAction?.action, 'fight_in_pocket');
 });
 
 test('a pocket sealed in a staircase is left through the closure the bot placed', async () => {
