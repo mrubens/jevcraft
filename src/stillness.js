@@ -193,6 +193,17 @@ function watchStalls(bot, goalOf) {
       return result;
     }, { _stallMarked: true });
   }
+  // A block used with an item (a hoe on the plot, seeds on farmland) is work
+  // on the world too: trial 12's tilling was stalled for want of it. The
+  // same block used again is not new (a chest opened twice).
+  if (typeof bot.activateBlock === 'function' && !bot.activateBlock._stallMarked) {
+    const activate = bot.activateBlock.bind(bot);
+    bot.activateBlock = Object.assign(async (block, ...rest) => {
+      const result = await activate(block, ...rest);
+      if (block?.position) stalls.marks.push(block.position);
+      return result;
+    }, { _stallMarked: true });
+  }
   stalls.timer = setInterval(() => {
     const now = Date.now(), dt = Math.min(now - last, 5000); last = now;
     const goal = stalls.goalOf?.();
