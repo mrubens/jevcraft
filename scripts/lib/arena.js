@@ -80,7 +80,7 @@ const DRILLS = Object.freeze([
     at: [[2047.5, 77, 2003.5], [2049.5, 77, 2003.5]], seconds: 60, expect: { deaths: 0, cleared: true, damage: 16 },
     why: 'Two in a corridor: the second arrives while the first is still swinging.' },
   { name: 'fortress_mix', mode: 'defend', entity: ['wither_skeleton', 'blaze', 'blaze'], count: 3, arena: 'room', stand: 'open',
-    at: [[2014.5, 77, 2010.5], [2020.5, 80, 2010.5], [2020.5, 80, 2013.5]], seconds: 60, expect: { deaths: 0, damage: 16 },
+    at: [[2012.5, 77, 2010.5], [2017.5, 80, 2010.5], [2017.5, 80, 2013.5]], seconds: 60, expect: { deaths: 0, damage: 16 },
     why: 'The dream run, 2026-09-24 00:07: a wither skeleton at arm\'s length and two blazes behind it; it sealed a pocket while the sword swung and went from 19 to none in five seconds.' },
   { name: 'cave_trio', mode: 'defend', entity: ['skeleton', 'zombie', 'zombie'], count: 3, arena: 'corridor', stand: 'open',
     at: [[2049.5, 77, 2003.5], [2046.5, 77, 2003.5], [2045.5, 77, 2003.5]], seconds: 60, expect: { deaths: 0, damage: 14 },
