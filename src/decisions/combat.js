@@ -21,12 +21,12 @@ define({
   ungated: 'every target offered already passed canBegin and isolated; a close call between fighting and leaving it is a preference, and the outage default is the same nearest target',
 });
 
-// Out of danger first, then the crystals that heal the dragon, then the
-// head within reach, then an arrow, then a better position, then a watch.
+// Out of danger first, then the crystals that heal the dragon, then a bed
+// by the perched head, then the head within reach, then an arrow, then a better position, then a watch.
 function endFallback(safe) {
   return children => {
     const keys = Object.keys(children), find = test => keys.find(test);
-    return (!safe && find(k => k.startsWith('move_'))) || find(k => k.startsWith('crystal_')) || find(k => k === 'strike_head') ||
+    return (!safe && find(k => k.startsWith('move_'))) || find(k => k.startsWith('crystal_')) || find(k => k === 'bed_bomb') || find(k => k === 'strike_head') ||
       find(k => k === 'shoot_dragon') || find(k => k.startsWith('move_')) || keys[0];
   };
 }
@@ -39,6 +39,7 @@ define({
   options: [
     { pattern: 'crystal_\\d+', label: 'shoot this healing crystal', when: 'in view with a solved arrow path and not missed repeatedly', level: 'root', dynamic: true },
     { key: 'shoot_dragon', label: 'shoot the flying dragon', when: 'a bow, arrows and a clear trajectory', level: 'root' },
+    { key: 'bed_bomb', label: 'blow a bed beside the perched dragon\'s head', when: 'the dragon perched, a bed carried, health fourteen or more, and a trench line within twelve blocks', level: 'root' },
     { key: 'strike_head', label: 'strike the perched dragon\'s head', when: 'the head is within sword reach', level: 'root' },
     { pattern: 'move_[a-z0-9_,.:-]+', label: 'move along this checked route', when: 'a safe surveyed route toward a crystal, the dragon or away from danger', level: 'root', dynamic: true },
     { key: 'observe', label: 'wait one second and watch', when: 'on a safe spot with the dragon in view, fewer than five idle watches in a row', level: 'root' },

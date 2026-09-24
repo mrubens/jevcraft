@@ -4,8 +4,8 @@ const registry = require('prismarine-registry')('26.1');
 const { Task } = require('../src/skills');
 const { prepareEndSupplies } = require('../src/end-supplies');
 function fixture() {
-  const slots = [], items = ['iron_sword', 'iron_pickaxe', 'bow', 'arrow', 'cobblestone', 'cooked_beef', 'water_bucket', 'water_bucket'].map(name => ({ name,
-    count: ({ arrow: 192, cobblestone: 64, cooked_beef: 8 })[name] || 1, durabilityUsed: 0 }));
+  const slots = [], items = ['iron_sword', 'iron_pickaxe', 'bow', 'arrow', 'cobblestone', 'cooked_beef', 'water_bucket', 'water_bucket', 'white_bed'].map(name => ({ name,
+    count: ({ arrow: 192, cobblestone: 64, cooked_beef: 8, white_bed: 4 })[name] || 1, durabilityUsed: 0 }));
   for (const [slot, name] of [[5, 'iron_helmet'], [6, 'iron_chestplate'], [7, 'iron_leggings'], [8, 'iron_boots'], [45, 'shield']]) slots[slot] = { name, count: 1, durabilityUsed: 0 };
   const bot = { registry, health: 20, food: 20, oxygenLevel: 20, inventory: { slots, items: () => items }, heldItem: items[0] };
   return { bot, items, goal: {}, task: new Task('End supplies') };
@@ -26,4 +26,16 @@ test('End preparation acquires a new bow when worn and requires real arrow, brid
     if (missing === 'cooked_beef') { assert.deepEqual(calls, []); assert.equal(goal.preparingEnd, true); }
     if (!missing) assert.equal(goal.preparingEnd, undefined);
   }
+});
+
+test('four beds for the End: made from carried wool, and given up after twenty minutes of trying', async () => {
+  const { bot, items, goal, task } = fixture();
+  items.find(i => i.name === 'white_bed').count = 2;
+  items.push({ name: 'black_wool', count: 3 });
+  const calls = [];
+  assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, { acquireStep: async (b, t, name, count) => calls.push({ name, count }) }), false);
+  assert.deepEqual(calls, [{ name: 'black_bed', count: 1 }]);
+  goal.endBeds.startedAt = Date.now() - 21 * 60000;
+  items.pop();
+  assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, { acquireStep: async () => assert.fail('no more bed hunting') }), true);
 });

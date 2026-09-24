@@ -404,6 +404,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `crystal_\d+` (pattern) | root | shoot this healing crystal | in view with a solved arrow path and not missed repeatedly |
 | `shoot_dragon` | root | shoot the flying dragon | a bow, arrows and a clear trajectory |
+| `bed_bomb` | root | blow a bed beside the perched dragon's head | the dragon perched, a bed carried, health fourteen or more, and a trench line within twelve blocks |
 | `strike_head` | root | strike the perched dragon's head | the head is within sword reach |
 | `move_[a-z0-9_,.:-]+` (pattern) | root | move along this checked route | a safe surveyed route toward a crystal, the dragon or away from danger |
 | `observe` | root | wait one second and watch | on a safe spot with the dragon in view, fewer than five idle watches in a row |

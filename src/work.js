@@ -2816,7 +2816,7 @@ function gameHandlers(bot, decisionClient) {
         strategy: (bot, task, goal, save, stage) => strategyStep(bot, task, goal, save, stage, { client: decisionClient, decide, sides: sideTrips(bot, goal, decisionClient) }),
         acquireStep, acquireSetStep, enter_nether: netherStep, return_overworld: returnFromNether,
         enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate }),
-        fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate }, decisionClient),
+        fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate, dig }, decisionClient),
         exit_end: (bot, task, goal, save) => exitEnd(bot, task, goal, save, { navigate }),
         prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
         // Two steaks was the whole larder for the first Nether trip. The

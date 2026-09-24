@@ -317,6 +317,18 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         bot.attack(fresh); for (let n = 0; n < 8; n++) { check(); await sleep(100); }
       } };
     }
+    // A bed beside the perched head (bed-bomb.js): the heaviest blow, from a
+    // trench that keeps the blast off the bot.
+    const { bedPlan, bedBomb, bedsCarried } = require('./bed-bomb');
+    if (safe && head && actions.dig && bedsCarried(bot) > 0 && bot.health >= 14) {
+      const plan = bedPlan(bot, head.position);
+      if (plan && plan.walk <= 12) tree.bed_bomb = {
+        description: { action: 'Lay a bed beside the perched dragon\'s head and blow it from a trench one block deep: the heaviest blow available, about five health to the bot', bedsCarried: bedsCarried(bot), walk: Number(plan.walk.toFixed(1)) },
+        run: async () => {
+          const exploded = await bedBomb(bot, task, plan, { navigate: actions.navigate, dig: actions.dig, stillPerched: () => live(bot, dragon) && perched(bot, dragon) });
+          (state.beds ||= []).push({ at: new Date().toISOString(), exploded, dragonHealth: metadata(bot, dragon, 'health') ?? null, health: bot.health }); save();
+        } };
+    }
     const unresolved = Object.values(state.knownCrystals).filter(e => e.status === 'unresolved');
     const remembered = unresolved.sort((a, b) => vector(a.position).distanceTo(bot.entity.position) - vector(b.position).distanceTo(bot.entity.position))[0];
     const focus = crystals[0] || (remembered && { name: 'unresolved_crystal_location', position: vector(remembered.position) }) ||

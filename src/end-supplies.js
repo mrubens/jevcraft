@@ -8,6 +8,7 @@ const { checkThreats } = require('./danger');
 // Two water buckets: one for a landing after the dragon's knockback, one
 // poured against an enderman (end-combat.js). With one, the enderman took
 // the bucket and the next knockback had nothing to land in.
+const END_BEDS = 4, END_BED_MS = 20 * 60000;
 async function prepareEndSupplies(bot, task, goal, save, actions) {
   task.check(); goal.preparingEnd = true; save();
   if (!await prepareCombatGear(bot, task, goal, save, actions)) return false;
@@ -18,6 +19,24 @@ async function prepareEndSupplies(bot, task, goal, save, actions) {
     if (ready) continue;
     goal.step = { action: 'prepare_end_supplies', item, count }; save();
     await actions.acquireStep(bot, task, item, count + (['bow', 'iron_pickaxe'].includes(item) ? countOf(bot, item) : 0), goal, save);
+    return false;
+  }
+  // Beds: in the End a bed explodes when slept in, and one beside the
+  // perched dragon's head is the heaviest blow the bot can deal
+  // (bed-bomb.js). Four, from carried wool, shearing for more; twenty
+  // minutes at it at most, then the fight goes on with the bow.
+  const beds = bot.inventory.items().filter(i => /_bed$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  goal.endBeds ||= { startedAt: Date.now() };
+  if (beds < END_BEDS && Date.now() - goal.endBeds.startedAt < END_BED_MS) {
+    const { woolCarried } = require('./home-base');
+    const shearing = require('./shearing');
+    const wool = woolCarried(bot);
+    goal.step = { action: 'prepare_end_supplies', item: 'bed', count: END_BEDS, carried: beds, wool: wool.total }; save();
+    if (wool.count >= 3) { await actions.acquireStep(bot, task, `${wool.colour}_bed`, countOf(bot, `${wool.colour}_bed`) + 1, goal, save); return false; }
+    if (shearing.canShear(bot) && shearing.woollySheep(bot, goal).length) {
+      await shearing.shearSheep(bot, task, goal, save, { navigate: actions.navigate, acquireStep: actions.acquireStep, want: wool.total + 3 }); return false;
+    }
+    await actions.acquireStep(bot, task, 'white_bed', countOf(bot, 'white_bed') + 1, goal, save);
     return false;
   }
   // An enchanting table before the End, and whatever the levels will buy on
@@ -39,4 +58,4 @@ async function prepareEndSupplies(bot, task, goal, save, actions) {
   }
   delete goal.preparingEnd; save(); return true;
 }
-module.exports = { prepareEndSupplies };
+module.exports = { prepareEndSupplies, END_BEDS };
