@@ -1371,16 +1371,19 @@ test('a zombie at arm\'s length comes before the bed: it is fought, not slept be
   assert.deepEqual(swung, ['zombie'], `struck, not slept beside (${goal.survivalAction?.action})`);
 });
 
-test('with a creeper close no pillar, pocket or bunker is offered; at arm\'s length they are, with what building costs', () => {
+test('with a creeper close or a mob at arm\'s length, building is still offered, with what it costs; the creeper dance is offered', () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, health: 3.2, food: 10, entities: {},
     entity: { position: new Vec3(0.5, 64, 0.5) }, registry: require('minecraft-data')('26.1'),
     inventory: { items: () => [{ name: 'diamond_sword' }, { name: 'cobblestone', count: 64 }], slots: {} },
-    blockAt: p => ({ position: p, name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }), world: { raycast: () => null } });
+    blockAt: p => ({ position: p, name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }), world: { raycast: () => null }, findBlocks: () => [] });
   const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
   const t = (name, distance) => ({ entity: { name, position: new Vec3(distance, 64, 0), height: 1.7 }, distance, visible: true });
-  const withCreeper = Object.keys(survival.stanceOptions(new Task('x'), {}, () => {}, [t('creeper', 4)], false));
-  assert(!withCreeper.includes('pillar') && !withCreeper.includes('seal') && !withCreeper.includes('bunker'), withCreeper.join(','));
-  assert(withCreeper.includes('retreat'));
+  // At 3.2 health too: health is in the state for Jev to weigh, not a
+  // reason to hide a stance.
+  const withCreeper = survival.stanceOptions(new Task('x'), {}, () => {}, [t('creeper', 4)], false);
+  assert(withCreeper.creeper_dance && withCreeper.fight && withCreeper.retreat, Object.keys(withCreeper).join(','));
+  assert.match(withCreeper.seal.description, /creeper is 4 blocks off/);
+  assert.match(withCreeper.pillar.description, /goes off/);
   const withZombie = Object.keys(survival.stanceOptions(new Task('x'), {}, () => {}, [t('zombie', 4)], false));
   assert(withZombie.includes('pillar'), 'a zombie is climbed away from');
   // At arm's length building is still Jev's to choose; the description says

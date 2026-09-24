@@ -10,11 +10,12 @@ const { supportCell } = require('./terrain');
 const LIMITS = Object.freeze({ radius: 6, routeSteps: 10, durationMs: 12000, primarySteps: 3 });
 const pos = p => new Vec3(p.x, p.y, p.z);
 
-// Fuel is a rule, not a judgment. Every smelt on the ladder burns
-// something, and underground the something is the planks that the next
-// pickaxe needs. The dream run walked past coal ore with no fuel in the
-// pockets while Jev, asked about "surplus", chose to continue; coal within
-// reach while the fuel is short is taken without asking.
+// What the bot is short of, said to Jev with the ore. Every smelt on the
+// ladder burns something, and underground the something is the planks that
+// the next pickaxe needs. The dream run walked past coal ore with no fuel in
+// the pockets while Jev, asked about "surplus" and told nothing of the
+// shortage, chose to continue. Now it is asked whenever a short ore is in
+// reach, with the shortage in the option; without Jev the ore is taken.
 const FUEL_UNITS_WANTED = 8;
 const fuelCarried = bot => bot.inventory.items().reduce((n, i) => n + (i.name === 'coal' || i.name === 'charcoal' ? i.count : i.name === 'coal_block' ? i.count * 9 : 0), 0);
 // Gold in the Nether is pearls: nine ingots a pearl bartered with piglins
@@ -33,11 +34,15 @@ const ironShort = bot => countOf(bot, 'raw_iron') + countOf(bot, 'iron_ingot') <
 // daughter, 2026-09-24).
 const LAPIS_WANTED = 16;
 const lapisShort = bot => countOf(bot, 'lapis_lazuli') < LAPIS_WANTED;
-const neededByRule = (bot, candidate) => (candidate.resource === 'coal' && fuelCarried(bot) < FUEL_UNITS_WANTED) ||
-  (candidate.resource === 'gold_nugget' && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED) ||
-  (candidate.resource === 'diamond' && countOf(bot, 'diamond') < 64) ||
-  (candidate.resource === 'raw_iron' && ironShort(bot)) ||
-  (candidate.resource === 'lapis_lazuli' && lapisShort(bot));
+const shortage = (bot, candidate) => {
+  if (candidate.resource === 'coal' && fuelCarried(bot) < FUEL_UNITS_WANTED) return `short of fuel: ${fuelCarried(bot)} smelts carried, ${FUEL_UNITS_WANTED} wanted, and without it the next smelt burns the planks a pickaxe needs`;
+  if (candidate.resource === 'gold_nugget' && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED) return `short of pearls: ${countOf(bot, 'ender_pearl')} of ${PEARLS_WANTED}; nine gold ingots barter a pearl from piglins`;
+  if (candidate.resource === 'diamond' && countOf(bot, 'diamond') < 64) return 'diamonds: the best tools and armour, and rare';
+  if (candidate.resource === 'raw_iron' && ironShort(bot)) return `short of iron: ${countOf(bot, 'raw_iron') + countOf(bot, 'iron_ingot')} of ${IRON_WANTED}; every tool, armour piece, shield and bucket`;
+  if (candidate.resource === 'lapis_lazuli' && lapisShort(bot)) return `short of lapis: ${countOf(bot, 'lapis_lazuli')} of ${LAPIS_WANTED}; enchanting costs it`;
+  return null;
+};
+const neededByRule = (bot, candidate) => !!shortage(bot, candidate);
 
 function opportunityCandidates(bot, goal, primary, { radius = LIMITS.radius } = {}) {
   if (!bot.registry?.blocksArray || !bot.findBlocks || bot.health < 16 || bot.food < 14 || bot.game?.gameMode === 'creative' || !dryStanding(bot, bot.entity.position) || immediateThreat(bot)) return [];
@@ -70,10 +75,11 @@ function opportunityCandidates(bot, goal, primary, { radius = LIMITS.radius } = 
 async function opportunisticMining(bot, task, goal, save, primary, { navigate, dig, radius = LIMITS.radius, only = null }, client = task.opportunityClient) {
   if (goal.kind === 'find') return false;
   const state = goal.opportunistic ||= { primarySteps: 0, history: [], skipped: {} };
-  const asking = ++state.primarySteps % LIMITS.primarySteps === 0 && !!client;
   const all = opportunityCandidates(bot, goal, primary, { radius }).filter(c => !only || only(c));
   const needed = all.filter(c => neededByRule(bot, c));
-  const candidates = needed.length ? needed : asking ? all : [];
+  // Asked every third step, and at once when a short ore is in reach.
+  const asking = !!client && (++state.primarySteps % LIMITS.primarySteps === 0 || needed.length > 0);
+  const candidates = asking ? all : needed;
   if (!candidates.length) return false;
   const start = bot.entity.position.clone();
   const movement = bot.pathfinder.movements, previous = { canDig: movement.canDig, scafoldingBlocks: movement.scafoldingBlocks,
@@ -92,9 +98,10 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
       }
     }
     if (!choices.length) return false;
-    const response = needed.length ? { answers: { opportunity: { choice: 'ore_0', rule: 'fuel' } } } : await require('./decisions').ask(client, { state: { request: goal.request, primary, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
+    const firstShort = choices.findIndex(c => neededByRule(bot, c));
+    const response = !asking ? { answers: { opportunity: { choice: `ore_${Math.max(0, firstShort)}`, rule: 'no Jev: a short ore is taken' } } } : await require('./decisions').ask(client, { state: { request: goal.request, primary, health: bot.health, food: bot.food, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
       limits: LIMITS, candidates: choices.map(({ standing, ...c }) => ({ ...c, distance: c.position.distanceTo(start) })) },
-    questions: { opportunity: ['opportunistic_ore', { options: Object.fromEntries(choices.map((c, i) => [`ore_${i}`, `${c.block}: yields ${c.resource}; already carrying ${c.carried}; ${c.routeSteps} walking steps away.`])) }] },
+    questions: { opportunity: ['opportunistic_ore', { options: Object.fromEntries(choices.map((c, i) => [`ore_${i}`, `${c.block}: yields ${c.resource}; already carrying ${c.carried}; ${c.routeSteps} walking steps away.${shortage(bot, c) ? ` ${shortage(bot, c)[0].toUpperCase()}${shortage(bot, c).slice(1)}.` : ''}`])) }] },
     signal: AbortSignal.timeout(5000) });
     task.check();
     const selected = response.answers?.opportunity?.choice;

@@ -166,6 +166,20 @@ test('a stalled mine moves on from this patch and keeps its step: no step-less m
   assert.equal(goal.step, step, `the mine step is back: ${JSON.stringify(goal.step)}`);
 });
 
+test('with Jev asked, how to answer a stall is its choice: another way, the rung for later, or a detour, with the strikes as a fact', async () => {
+  const { answerStall } = require('../src/work');
+  const { isSetAside } = require('../src/progress');
+  const asked = [];
+  const client = { systemOne: async ({ state, questions }) => { asked.push({ state, criteria: Object.keys(questions.branch_0.criteria) }); return { answers: { branch_0: { choice: 'set_aside_rung', confidence: 0.4 } } }; } };
+  const bot = Object.assign(botAt(0.5, 64, 0.5), { registry, health: 20, food: 20, findBlocks: () => [], blockAt: () => ({ name: 'air', boundingBox: 'empty' }),
+    time: { timeOfDay: 1000 }, game: { dimension: 'overworld' }, pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, chat() {} });
+  const goal = { kind: 'win', survival: {}, step: { action: 'craft', item: 'shield' }, rungTime: { phase: 'shield' } };
+  await answerStall(bot, new Task('stall'), goal, () => {}, { key: 'step:rung:shield', layer: 'work', strikes: 1 }, { client }).catch(() => {});
+  assert(asked[0].criteria.includes('differently') && asked[0].criteria.includes('set_aside_rung'), asked[0].criteria.join(','));
+  assert.equal(asked[0].state.stalled.strikes, 1);
+  assert(isSetAside(goal, 'rung', 'shield'), 'Jev\'s pick ran at the first stall, unsure or not');
+});
+
 test('seconds stalled are kept per hour and per reason, for the notes to read back', () => {
   const state = {}, now = Date.parse('2026-09-22T19:30:00Z');
   recordStill(state, 'step:stock_food_for_nether', 25000, { now, detour: 'look_around' });

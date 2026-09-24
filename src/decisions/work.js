@@ -104,17 +104,26 @@ define({
 });
 define({
   id: 'stillness_detour', area: 'idle', kind: 'idle', primitive: 'choice', stakes: 'low', tree: true,
-  question: 'The bot has stood still twenty seconds: what useful thing should it do from here for a few minutes?',
-  trigger: 'Twenty seconds without movement, digging, pickup, fighting or healing, outside a permitted wait; a single option is taken without asking.',
-  source: 'src/work.js (breakStillness), src/stillness.js (the rule)',
+  question: 'The work has got nowhere for forty-five seconds: keep at it another way, leave its rung for later, or do something useful from here for a few minutes?',
+  trigger: 'A stall (src/stillness.js): forty-five seconds on one action without new ground, a gain, a block changed or getting nearer, outside a permitted wait; a single option is taken without asking.',
+  source: 'src/work.js (answerStall, breakStillness), src/stillness.js (the rule)',
   options: [
+    { key: 'differently', label: 'keep at the stalled work another way', when: 'work stalled (not idle time): a mine leaves this patch of the resource, anything else turns its search', level: 'root' },
+    { key: 'set_aside_rung', label: 'leave the stalled rung for thirty minutes', when: 'the stall is on a game-ladder rung that can wait', level: 'root' },
     { key: 'night_mine', label: 'dig a mine from here for the night', when: 'night in the Overworld, a pickaxe, health ten or more and nothing watching', level: 'root' },
     { key: 'mine_nearby', label: 'dig a useful ore in view', when: 'an ore within sixteen blocks with no lava beside it', level: 'root' },
-    { key: 'look_around', label: 'walk twenty-four blocks somewhere new', when: 'by day in the Overworld', level: 'root' },
+    { key: 'look_around', label: 'walk twenty-four blocks somewhere new', when: 'by day in the Overworld, or when nothing else is on offer', level: 'root' },
     ...IDLE_OPTIONS.filter(o => o.key !== 'long_game').map(o => ({ ...o, when: `by day in the Overworld, and ${o.when}`, level: 'root' })),
   ],
-  instructions: workInstructions('The bot has been standing still. Choose something useful to do from here for a few minutes; the stalled work gets its turn again afterwards.'),
-  fallback: firstOption,
+  instructions: workInstructions('The bot\'s work has stopped getting anywhere. `stalled` says what stalled and how many times in ten minutes. Choose: keep at it another way, leave its rung for later, or something useful from here for a few minutes, after which the stalled work gets its turn again. The same answer twice running seldom unsticks it.'),
+  // Without Jev, the order the rule kept: another way first, the rung left
+  // at the third stall, a detour otherwise.
+  fallback: (children, path, context = {}) => {
+    const strikes = context.stalled?.strikes ?? 2;
+    if (strikes === 1 && children.differently) return 'differently';
+    if (strikes >= 3 && children.set_aside_rung) return 'set_aside_rung';
+    return Object.keys(children).find(k => !['differently', 'set_aside_rung'].includes(k)) || Object.keys(children)[0];
+  },
 });
 
 // Recovery after repeated failure: Jev picks among bounded options the code
@@ -137,10 +146,10 @@ define({
 define({
   id: 'opportunistic_ore', area: 'resources', kind: 'mining', primitive: 'choice', stakes: 'low',
   question: 'An ore is within six blocks along the way: take a short detour for it, or carry on?',
-  trigger: 'Every third mining or tunnelling step with a useful ore in reach (coal while fuel is short, and nether gold while pearls are short, are taken by rule without asking).',
+  trigger: 'Every third mining or tunnelling step with a useful ore in reach, and at once when an ore the bot is short of is in reach (coal, iron, lapis, diamonds, nether gold for pearls); the shortage is said in the option. Without Jev a short ore is taken.',
   source: 'src/opportunistic-mining.js (opportunityCandidates)',
   unreachable: 'no detour: an error or a five-second timeout is swallowed and the main step carries on',
-  build: ({ options }) => require('../typesafe').choice('Standing instruction: collect useful ores noticed along the way, even when they are not ingredients for the current request. These candidates already pass strict checks for tools, safe access, inventory room, a six-block radius and a twelve-second detour. Prefer picking up a scarce valuable resource such as diamonds, emeralds or needed iron; return to the main request immediately afterward. Choose continue for low-value surplus or if the player explicitly said no detours/only the requested item. Asking for coal alone does NOT forbid grabbing a nearby diamond.', {
+  build: ({ options }) => require('../typesafe').choice('Standing instruction: collect useful ores noticed along the way, even when they are not ingredients for the current request. These candidates already pass strict checks for tools, safe access, inventory room, a six-block radius and a twelve-second detour. Prefer picking up a scarce valuable resource such as diamonds, emeralds or needed iron, and what an option says the bot is short of; return to the main request immediately afterward. Choose continue for low-value surplus or if the player explicitly said no detours/only the requested item. Asking for coal alone does NOT forbid grabbing a nearby diamond.', {
     ...options, continue: 'Keep working on the requested task without a detour.',
   }),
 });

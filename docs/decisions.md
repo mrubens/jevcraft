@@ -64,9 +64,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `encounter_stance`
 
-**Hostile mobs are on the bot: fight here, go up, dig into the wall, seal in, run, or shoot?**
+**Hostile mobs are on the bot: fight here, go up, dig into the wall, seal in, run, shoot, charge the shooters, or dance with the creeper?**
 
-- When: An encounter the reflexes (the swing at arm's length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible; held while the same kinds of mob are about, for fifteen seconds, and until health falls by six. Off with JEV_ENCOUNTERS=0.
+- When: An encounter the reflexes (the swing at arm's length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible (one is taken without asking); held while the same kinds of mob are about, for fifteen seconds, and until health falls by six. Off with JEV_ENCOUNTERS=0.
 - Decision tree, choice; stakes high; ledger kind `combat`
 - Bar: none: Jev's pick is taken at any confidence: a stance is held fifteen seconds and asked again when health falls by six, so a close call is soon corrected; the encounter rules answer only when Jev cannot be reached
 - Jev unreachable: stops: no safe default
@@ -74,13 +74,14 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `fight` | root | fight where the bot stands | a sword, axe or trident is carried and health is eight or more |
+| `fight` | root | fight where the bot stands | a sword, axe or trident is carried |
 | `pillar` | root | go two blocks up and fight from there | two scaffold blocks carried and three clear blocks overhead |
-| `bunker` | root | dig into the nearby wall and fight at the doorway | a wall is near and health is ten or more |
+| `bunker` | root | dig into the nearby wall and fight at the doorway | a wall is near that digs in three seconds |
 | `seal` | root | seal a pocket and wait | four or more building blocks are carried |
-| `charge_shooter` | root | run at the ground shooters one after another and strike | one to three skeletons, strays, bogged, pillagers or witches in view within sixteen, a blade carried, health six or more, not in water |
+| `charge_shooter` | root | run at the ground shooters one after another and strike | skeletons, strays, bogged, pillagers or witches in view within sixteen, a sword or axe carried, not in water |
+| `creeper_dance` | root | hit the creeper and back out of its blast, again and again | a creeper within six, a sword or axe carried, no drop or lava to back into |
 | `retreat` | root | run for footing out of reach and sight | always |
-| `shoot_\d+` (pattern) | root | shoot this mob with the bow | health eight or more, nothing that bites within three blocks, and a clear arrow path (up to two targets) |
+| `shoot_\d+` (pattern) | root | shoot this mob with the bow | a bow, arrows and a clear arrow path (up to two targets) |
 
 ### `hunt_target`
 
@@ -121,7 +122,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **An ore is within six blocks along the way: take a short detour for it, or carry on?**
 
-- When: Every third mining or tunnelling step with a useful ore in reach (coal while fuel is short, and nether gold while pearls are short, are taken by rule without asking).
+- When: Every third mining or tunnelling step with a useful ore in reach, and at once when an ore the bot is short of is in reach (coal, iron, lapis, diamonds, nether gold for pearls); the shortage is said in the option. Without Jev a short ore is taken.
 - Batched question, choice; stakes low; ledger kind `mining`
 - Bar: none
 - Jev unreachable: no detour: an error or a five-second timeout is swallowed and the main step carries on
@@ -314,19 +315,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `stillness_detour`
 
-**The bot has stood still twenty seconds: what useful thing should it do from here for a few minutes?**
+**The work has got nowhere for forty-five seconds: keep at it another way, leave its rung for later, or do something useful from here for a few minutes?**
 
-- When: Twenty seconds without movement, digging, pickup, fighting or healing, outside a permitted wait; a single option is taken without asking.
+- When: A stall (src/stillness.js): forty-five seconds on one action without new ground, a gain, a block changed or getting nearer, outside a permitted wait; a single option is taken without asking.
 - Decision tree, choice; stakes low; ledger kind `idle`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
-- Options built in: src/work.js (breakStillness), src/stillness.js (the rule)
+- Options built in: src/work.js (answerStall, breakStillness), src/stillness.js (the rule)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
+| `differently` | root | keep at the stalled work another way | work stalled (not idle time): a mine leaves this patch of the resource, anything else turns its search |
+| `set_aside_rung` | root | leave the stalled rung for thirty minutes | the stall is on a game-ladder rung that can wait |
 | `night_mine` | root | dig a mine from here for the night | night in the Overworld, a pickaxe, health ten or more and nothing watching |
 | `mine_nearby` | root | dig a useful ore in view | an ore within sixteen blocks with no lava beside it |
-| `look_around` | root | walk twenty-four blocks somewhere new | by day in the Overworld |
+| `look_around` | root | walk twenty-four blocks somewhere new | by day in the Overworld, or when nothing else is on offer |
 | `cook_food` | root | cook the raw food carried | by day in the Overworld, and raw meat is carried |
 | `stone_tools` | root | make stone tools | by day in the Overworld, and a stone pickaxe, axe or sword is missing |
 | `stock_wood` | root | stock up to sixteen logs | by day in the Overworld, and fewer than sixteen logs are carried and a tree is in view |

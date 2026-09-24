@@ -14,7 +14,7 @@ const { reservedForConstruction, portalSiteClear, selectPortalSite, portalSuppor
 const { updateDigCapabilities } = require('./movement');
 const { resourceTunnelStep, tunnelStep, staircaseResting, safeExcavation } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard, safeFood } = require('./vitals');
-const { decide } = require('./decisions');
+const { decide, question } = require('./decisions');
 const { Survival, inWater, lavaExit, shelterNeeded } = require('./survival');
 const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
 const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, rememberSource, committedSource } = require('./decision-options');
@@ -164,11 +164,13 @@ function looseEnds(goal, now = Date.now()) {
   goal.lastStallAt = now;
 }
 
-// A stall (stillness.js) is answered one way, whatever stalled, in order:
-// the same thing done differently, then something else useful for a
-// while, then the rung left for later. A survival action that stalled is
-// refused by the survival layer for ten minutes (Survival.report), which
-// falls through to its next answer; nothing more is needed here.
+// A stall (stillness.js) is answered by Jev, whatever stalled: the same
+// thing done differently, the rung left for later, or something else useful
+// from here for a while (breakStillness), with how many times it has stalled
+// as a fact. Without Jev, in that order by strikes. A survival action that
+// stalled is refused by the survival layer for ten minutes
+// (Survival.report), which falls through to its next answer; nothing more
+// is needed here.
 const thingOf = key => key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:/g, ' ').replaceAll('_', ' ');
 async function answerStall(bot, task, goal, save, stall, { client, survival, onStep = () => {}, idle = false, now = Date.now() } = {}) {
   const stats = survival?.state || goal.survival || goal;
@@ -179,27 +181,34 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     return;
   }
   looseEnds(goal, now);
-  if (stall.strikes === 1 && !idle) {
-    recordStill(stats, stall.key, STALL_MS, { now, detour: 'differently' });
+  const answers = {};
+  const mine = [goal.step, goal.lastStruggleStep].find(step => step?.action === 'mine' && step.block);
+  if (!idle) answers.differently = { description: mine
+    ? `Keep at the ${thing} another way: leave this patch of ${String(mine.block).replaceAll('_', ' ')} for one further off.`
+    : `Keep at the ${thing} another way: the search turns to a heading not tried, and the shaft or site it was using is dropped.`,
+  run: async () => {
+    // A search is turned, not dropped: an empty search re-derives its
+    // heading from the resource's name, which pointed the bot straight back
+    // along the route it had turned away from.
     goal.search = turnSearch(goal.search);
+    // After failures, first out of whatever it is wedged in.
+    if (stall.error) await shakeLoose(bot, task, Date.now() + 25000, { guard: () => checkThreats(bot) });
     // A mine moves on from this patch of the resource and says so;
     // anything else says it once here.
-    const mine = [goal.step, goal.lastStruggleStep].find(step => step?.action === 'mine' && step.block);
     if (mine) {
       const step = goal.step; goal.step = mine;
       try { await moveOnFromResource(bot, task, goal, save); }
-      catch (e) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(e.name)) throw e; }
       finally { if (goal.step === mine) goal.step = step; }
     } else bot.chat?.(`I'm getting nowhere with the ${thing}. Trying another way.`);
-    save(); return;
-  }
+  } };
   const rung = goal.rungTime?.phase;
-  if (stall.strikes >= 3 && rung && DEFERRABLE.has(rung)) {
-    setAside(goal, 'rung', rung, `stalled ${stall.strikes} times in ten minutes`, RUNG_WAIT_MS); delete goal.rungTime;
-    bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
-    save(); return;
-  }
-  await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now });
+  if (rung && DEFERRABLE.has(rung)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.`,
+    run: async () => {
+      setAside(goal, 'rung', rung, `stalled ${stall.strikes} times in ten minutes`, RUNG_WAIT_MS); delete goal.rungTime;
+      bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
+    } };
+  const stalled = { what: thing, strikes: stall.strikes, ...(stall.error ? { failure: stall.error } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}) };
+  await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled });
 }
 
 async function maintainPickaxe(bot, task, goal, save) {
@@ -1674,7 +1683,7 @@ async function decideAction(bot, task, goal, save, client, onStep, tree, context
   const state = { ...observation, ...context };
   const fingerprint = () => decisionFingerprint(bot, { inventory: planningInventory, immediateThreat, needsAir });
   const initial = fingerprint();
-  const decision = await decide(id, { client, bot, task, goal, save, tree, state, isFresh: () => fingerprint() === initial });
+  const decision = await decide(id, { client, bot, task, goal, save, tree, state, context: state, isFresh: () => fingerprint() === initial });
   onStep(goal);
   if (decision.stale) return false;
   try { await decision.action.run(); }
@@ -2507,47 +2516,23 @@ const turnSearch = search => Object.fromEntries(Object.entries(search || {})
   .map(([resource, entry]) => [resource, Number.isInteger(entry.frontier?.heading)
     ? { attempts: 0, frontier: { heading: (entry.frontier.heading + 1) % 8, legs: 0 } }
     : { attempts: 0, origin: entry.origin, leg: (entry.leg || 0) + 1 }]));
-async function persist(bot, task, goal, save, err, onStep, { backoffMs = 3000 } = {}) {
+// Failing again and again is getting nowhere, and is answered the way a
+// stall is (answerStall): Jev chooses another way, the rung for later, or a
+// detour, with the failure and how many times it has come as facts.
+async function persist(bot, task, goal, save, err, onStep, { client, survival } = {}) {
   goal.struggles = (goal.struggles || 0) + 1;
   goal.lastStruggle = { at: new Date().toISOString(), error: err.message, from: goal.lastErrorFrom };
-  // A clean search, but not the heading that just failed: an empty search
-  // re-derives its heading from the resource's name, which pointed the bot
-  // straight back along the route it had turned away from.
-  // Headings live per resource (goal.search[resource].frontier); reading
-  // one off goal.search itself found nothing, and every persist reset the
-  // search to the heading derived from the resource's name.
-  goal.search = turnSearch(goal.search);
   if (goal.struggles === 1 || goal.struggles % 5 === 0) {
     bot.chat?.(`${friendlyProblem(err)} I'll keep trying${goal.struggles > 1 ? ` (attempt ${goal.struggles})` : ''}.`);
   }
+  const failed = goal.lastStruggleStep || goal.step;
+  const key = `step:${failed?.block || failed?.item || failed?.action || 'none'}`;
   goal.step = { action: 'persist', attempt: goal.struggles, problem: err.message }; save(); onStep(goal);
-  // Failing is getting nowhere, answered the way a stall is (stillness.js):
-  // the first time differently (below), the second time later. A rung that
-  // failed twice without progress is not tried a third time the same way.
-  const rung = goal.rungTime?.phase;
-  if (goal.struggles >= 2 && rung && !isSetAside(goal, 'rung', rung)) {
-    setAside(goal, 'rung', rung, `failed twice without progress: ${err.message}`, RUNG_WAIT_MS); delete goal.rungTime;
-    bot.chat?.(`The ${rung.replaceAll('_', ' ')} isn't working out from here. I'll come back to it.`);
+  try { await answerStall(bot, task, goal, save, { key, layer: 'work', strikes: goal.struggles, error: err.message }, { client, survival, onStep }); }
+  finally {
+    if (goal.step?.action === 'persist') goal.step = failed;
+    goal.failures = 0; goal.stalls = 0; attemptsFor(goal).clearAction('option'); delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal);
   }
-  const survivalOnly = e => { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(e.name)) throw e; };
-  try { await shakeLoose(bot, task, Date.now() + 25000, { guard: () => checkThreats(bot) }); } catch (e) { survivalOnly(e); }
-  if (goal.lastStruggleStep?.action === 'mine' || goal.step?.action === 'mine') {
-    // On the goal itself: on a copy, set-asides written to a list the copy
-    // had just created were lost with it.
-    const step = goal.step;
-    goal.step = goal.lastStruggleStep || goal.step;
-    try { await moveOnFromResource(bot, task, goal, save); } catch (e) { survivalOnly(e); } finally { goal.step = step; }
-  }
-  // Fifteen seconds at most: a bot standing still for a minute reads as
-  // frozen to anyone watching, and the pause is guarded against threats
-  // anyway.
-  const pause = Math.min(15000, backoffMs * 2 ** Math.min(goal.struggles - 1, 5));
-  const end = Date.now() + pause;
-  // The pause watches for threats like any other wait: the sixth death was
-  // a skeleton walking up during a sixty-second back-off. A threat ends the
-  // pause with NeedsSafety, which the loop hands to the survival layer.
-  while (Date.now() < end) { task.check(); checkAir(bot); checkThreats(bot); await sleep(100); }
-  goal.failures = 0; goal.stalls = 0; attemptsFor(goal).clearAction('option'); delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal);
 }
 
 function createRecoveryAdviser(bot, client) {
@@ -2781,7 +2766,7 @@ const DETOUR_MS = 180000, DETOUR_REST_MS = 300000;
 const USEFUL_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
   'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore',
   'nether_quartz_ore', 'nether_gold_ore', 'ancient_debris'];
-async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now() } = {}) {
+async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now(), answers = {}, stalled = null } = {}) {
   const ms = STALL_MS;
   const deadline = now + DETOUR_MS;
   const bounded = Object.create(task);
@@ -2808,6 +2793,9 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
       }
     } };
   };
+  // The stalled work's own answers (answerStall): done differently, or its
+  // rung left for later. They run on the player's goal, not the scratch one.
+  for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run);
   const overworld = dimension(bot) === 'overworld';
   const dark = overworld && bot.time?.timeOfDay >= DAY.DUSK;
   if (survival?.canNightMine?.(goal)) offer('night_mine', 'Dig a mine from here for the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter.',
@@ -2845,7 +2833,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // Nothing else on offer: a walk to new ground, dusk or not, rather than
   // standing where the work stalled. Trial 17, a desert at dusk with no wood
   // and so no tools, had no detour at all and stood a minute (2026-09-24).
-  if (!Object.keys(tree).length && overworld) {
+  if (!Object.keys(tree).some(key => !answers[key]) && overworld) {
     const turn = goal.survival || scratch;
     const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; turn.detourHeading = heading;
     const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
@@ -2860,9 +2848,17 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   save();
   if (!options.length) return false;
   const step = goal.step;
+  const what = reason.replace(/^\w+:/, '').replace(/^rung:/, '').replaceAll('_', ' ');
+  const context = { situation: stalled?.failure
+    ? `${what} keeps failing (${stalled.failure}), round ${stalled.strikes} of failures. Choose: keep at it another way, leave it for later, or something useful from here for a few minutes.`
+    : stalled
+    ? `${Math.round(ms / 1000)} seconds on ${what} without getting anywhere, ${stalled.strikes === 1 ? 'the first time' : `${stalled.strikes} times in ten minutes`}. Choose: keep at it another way, leave it for later, or something useful from here for a few minutes.`
+    : `Standing still for ${Math.round(ms / 1000)} seconds on ${what}. Choose something useful to do from here for a few minutes; the stalled work gets its turn again afterwards.`,
+  ...(stalled ? { stalled } : {}) };
   try {
-    if (!client || options.length === 1) await tree[options[0]].run();
-    else await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `Standing still for ${Math.round(ms / 1000)} seconds on ${reason.replace(/^\w+:/, '').replaceAll('_', ' ')}. Choose something useful to do from here for a few minutes; the stalled work gets its turn again afterwards.` }, 'stillness_detour');
+    if (options.length === 1) await tree[options[0]].run();
+    else if (!client) await tree[question('stillness_detour').fallback(tree, [], context)].run();
+    else await decideAction(bot, task, goal, save, client, onStep, tree, context, 'stillness_detour');
   } finally { goal.step = step; save(); }
   return true;
 }
@@ -3061,7 +3057,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) recoveryAdviser.recordFailure(goal, err);
       if (failures >= 3 && await inCatch(task, goal, () => tryRecovery(recoveryAdviser, task, goal, save))) { failures = 0; continue; }
       // Survival never gives up either: shake loose, back off, go again.
-      if (failures >= 5) { await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { backoffMs })); failures = 0; continue; }
+      if (failures >= 5) { await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival })); failures = 0; continue; }
     } finally { task.interruptCheck = undefined; }
     for (let n = 0; n < 10 && !bot._stalls?.stall; n++) { task.check(); await sleep(100); }
   }
@@ -3223,11 +3219,6 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (!parked && (err.name === 'Blocked' || goal.failures >= 3) && await inCatch(task, goal, () => tryRecovery(recoveryAdviser, task, goal, save))) {
         goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
       }
-      // No adviser, or none that could help: a resource that keeps failing
-      // here is abandoned for elsewhere before the failure budget runs out.
-      if (goal.failures >= 3 && err.name !== 'Blocked' && await inCatch(task, goal, () => moveOnFromResource(bot, task, goal, save))) {
-        goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
-      }
       // Parked, not retried: a request no survival route can serve, or a
       // state only the player can settle (items dropped for them whose
       // pickup nobody saw). The regex is the old list; `needsPlayer` is
@@ -3243,7 +3234,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         // The step that failed, not the last retry: a step that throws
         // before it names itself leaves the retry's name on the goal.
         if (goal.step?.action !== 'persist') goal.lastStruggleStep = goal.step;
-        await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { backoffMs }));
+        await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival }));
         continue;
       }
       await sleep(300);

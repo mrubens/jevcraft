@@ -317,8 +317,10 @@ class Survival {
     // cannot throw the bot out of. Fighting, pillaring and stepping away on
     // the ledge by the live run's Nether portal each ended thirty blocks down,
     // three deaths in five minutes. The reserve always has the blocks.
+    // With Jev asked, the drop is a fact on the stance question instead.
+    const jev = encounterJudgments(this);
     const tossers = heavyHitters(threats(bot), 6);
-    if (tossers.length && dropWithin(bot, bot.entity.position.floored(), 3) && !creeperClose(threats(bot)) && shelter.materialStock(bot) >= 4) {
+    if (!jev && tossers.length && dropWithin(bot, bot.entity.position.floored(), 3) && !creeperClose(threats(bot)) && shelter.materialStock(bot) >= 4) {
       this.report(goal, save, { action: 'seal_on_ledge', threats: tossers.map(t => t.entity.name), health: bot.health });
       if (await this.sealHere(task, goal, save, threats(bot).filter(t => t.visible))) return;
     }
@@ -347,12 +349,12 @@ class Survival {
       this.report(goal, save, { action: 'block_shot', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
       return;
     }
-    // A creeper is fought the player's way before anything is decided.
-    if (await this.creeperDance(task, goal, save, danger, swung)) return;
     // The stance is Jev's. The rules below answer only when Jev cannot be
     // reached, is switched off (JEV_ENCOUNTERS=0), or every stance has just
     // failed.
-    if (encounterJudgments(this) && await this.stanceStep(task, goal, save, danger, swung)) return;
+    if (jev && await this.stanceStep(task, goal, save, danger, swung)) return;
+    // The rule: a creeper is fought the player's way.
+    if (await this.creeperDance(task, goal, save, danger, swung)) return;
     if (!swung && await this.closeOnShooter(task, goal, save, danger)) return;
     // A mob at arm's length is fought, swing after swing, while health holds:
     // a route search between swings is seconds of free hits, and nothing
@@ -424,17 +426,21 @@ class Survival {
   // armed, at six health for one and ten for more, with no melee mob at
   // arm's length and no creeper close; ground that is not firm ahead is held
   // behind the shield, if there is one.
-  async closeOnShooter(task, goal, save, danger) {
+  // Chosen by Jev, only what makes the charge possible is checked (a blade,
+  // ground shooters in view, dry firm footing); health and the other mobs
+  // about were Jev's to weigh.
+  async closeOnShooter(task, goal, save, danger, { chosen = false } = {}) {
     const bot = this.bot;
     const weapon = defenseWeapon(bot);
-    if (!/_(sword|axe)$/.test(weapon?.name || '') || bot.health < 6) return false;
-    if (creeperClose(danger) || danger.some(t => t.distance <= 3 && !shooter(t.entity))) return false;
+    if (!/_(sword|axe)$/.test(weapon?.name || '')) return false;
+    if (!chosen && (bot.health < 6 || creeperClose(danger) || danger.some(t => t.distance <= 3 && !shooter(t.entity)))) return false;
     const shooters = danger.filter(t => t.visible && shooter(t.entity) && t.distance <= 16);
     const ground = shooters.filter(t => GROUND_SHOOTERS.has(t.entity.name)).sort((a, b) => a.distance - b.distance);
+    if (!ground.length) return false;
     // As measured: from dry, firm footing, at full-ish health for more than
     // one. The dream run charged three from a river at ten health and stood
     // in the water, shot, for thirty-seven seconds (2026-09-24).
-    if (!ground.length || ground.length !== shooters.length || shooters.length > 3 || (shooters.length > 1 && bot.health < 14)) return false;
+    if (!chosen && (ground.length !== shooters.length || shooters.length > 3 || (shooters.length > 1 && bot.health < 14))) return false;
     // A charge that could not get going rests: re-chosen every tick, trial
     // 21's bot raised its shield for a moment a tick and stood forty seconds
     // under a skeleton's arrows across uneven ground (2026-09-24).
@@ -448,9 +454,12 @@ class Survival {
     if (bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand');
     const end = Date.now() + 12000 * Math.min(3, ground.length);
     // Three seconds without getting nearer and the charge is not working.
+    // Chosen, six health lost hands the encounter back to Jev.
     let best = Infinity, bestAt = Date.now();
+    const startHealth = bot.health;
+    const going = () => chosen ? bot.health > startHealth - 6 : bot.health >= 4;
     try {
-      while (Date.now() < end && bot.health >= 4) {
+      while (Date.now() < end && going()) {
         const gap = bot.entity.position.distanceTo(e.position);
         if (gap < best - 0.5) { best = gap; bestAt = Date.now(); }
         else if (Date.now() - bestAt > 3000 && !canStrike(bot, e)) { setAside(this, 'close_on_shooter', 'here', 'three seconds without getting nearer', 15000); return false; }
@@ -489,16 +498,19 @@ class Survival {
   // seconds, walled itself in with it outside, and one blast took twelve
   // health through iron. Only armed, at eight health or more, with no other
   // mob within five blocks and no drop within two for the knockback.
-  async creeperDance(task, goal, save, danger, swung) {
+  async creeperDance(task, goal, save, danger, swung, { chosen = false } = {}) {
     const bot = this.bot;
     const creeper = danger.find(t => t.entity.name === 'creeper' && t.distance <= 6);
     if (!creeper) return false;
     const armed = /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '');
     const feet = bot.entity.position.floored();
+    // Backing out blind is only safe with no drop or lava behind.
+    if (!armed || dropWithin(bot, feet, 2) || lavaBeside(bot, feet)) return false;
     // Other creepers are the same dance, the nearest hit and all of them
     // backed from; any other mob close is not (the pair drill: 11 damage
-    // while a second creeper kept the dance off).
-    if (!armed || (bot.health ?? 20) < 8 || danger.some(t => t.entity.name !== 'creeper' && t.distance <= 5) || dropWithin(bot, feet, 2) || lavaBeside(bot, feet)) return false;
+    // while a second creeper kept the dance off). Chosen, that was Jev's to
+    // weigh.
+    if (!chosen && ((bot.health ?? 20) < 8 || danger.some(t => t.entity.name !== 'creeper' && t.distance <= 5))) return false;
     const e = creeper.entity;
     const creepers = danger.filter(t => t.entity.name === 'creeper').map(t => t.entity);
     const look = e.position.offset(0, 1, 0);
@@ -553,38 +565,51 @@ class Survival {
     // Building costs a second or so a block: said to Jev with the options
     // below rather than decided for it by hiding them.
     const buildCost = armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the blocks go down.' : '';
-    if (armed && bot.health >= 8) options.fight = { description: 'Fight here: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet.',
+    // A creeper close walks up to a pillar or a pocket and goes off, and a
+    // pocket is not closed before the blast (the live run, 17:16, at three
+    // health): said, not decided by hiding the options.
+    const creeper = danger.find(t => t.entity.name === 'creeper' && t.distance <= 7);
+    const creeperNote = creeper ? ` A creeper is ${Math.round(creeper.distance)} blocks off: it walks up to whatever is built and goes off, and a pocket is not closed before the blast.` : '';
+    if (armed) options.fight = { description: 'Fight here: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet.',
       run: async () => {
         if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); if (!swung) await defendNearby(bot, task, goal, save); return true; }
-        return this.charge(task, goal, save, nearest, false);
+        if (await this.charge(task, goal, save, nearest, false, { chosen: true })) return true;
+        // No level way to it: the fight is held here, facing it, and the
+        // swing takes it when it comes into reach. Not a stance that failed.
+        this.report(goal, save, { action: 'fight', threats: [nearest.entity.name], health: bot.health, stance: true, stand: true });
+        await bot.lookAt?.(nearest.entity.position.offset(0, 1, 0), true);
+        await sleep(250);
+        return true;
       } };
     // Already up is the stance held, not a stance that failed: read as a
     // failure it was asked again every tick, a hundred and twenty times in
     // three hoglin drills.
     const up = this.state.pillar && feet.y >= this.state.pillar.y + 2 && Math.hypot(feet.x - this.state.pillar.x, feet.z - this.state.pillar.z) < 1;
-    // Not with a creeper close: it walks under the pillar and goes off (the
-    // live run, 17:16, at three health).
-    if (((scaffold >= 2 && headroom) || up) && !creeperClose(danger)) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost),
+    if ((scaffold >= 2 && headroom) || up) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote,
       run: async () => up || this.pillarFrom(task, goal, save, danger) };
     // A bunker that is quick to dig: three seconds of digging under fire is
     // the most it is worth (bunker.js bunkerDigMs).
-    if (bot.health >= 10 && !creeperClose(danger) && nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.' + buildCost,
+    if (nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.' + buildCost + creeperNote,
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
-    if (shelter.materialStock(bot) >= 4 && !creeperClose(danger)) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + buildCost,
+    if (shelter.materialStock(bot) >= 4) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + buildCost + creeperNote,
       run: () => this.sealHere(task, goal, save, danger) };
     // The charge at a few ground shooters, where it can be run.
     const ground = danger.filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16);
-    if (ground.length && ground.length <= 3 && armed && bot.health >= 6 && !inWater(bot) && !isSetAside(this, 'close_on_shooter', 'here')) options.charge_shooter = {
-      description: `Run at the ${ground.map(t => t.entity.name).join(', ')} (nearest ${Math.round(ground[0].distance)} blocks) and strike, one after another, over ground checked firm; gives way if it cannot get nearer.`,
-      run: () => this.closeOnShooter(task, goal, save, danger) };
+    if (ground.length && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && !inWater(bot) && !isSetAside(this, 'close_on_shooter', 'here')) options.charge_shooter = {
+      description: `Run at the ${ground.map(t => t.entity.name).join(', ')} (nearest ${Math.round(ground[0].distance)} blocks) and strike, one after another, over ground checked firm; gives way if it cannot get nearer, and hands back after six health lost.`,
+      run: () => this.closeOnShooter(task, goal, save, danger, { chosen: true }) };
+    // A creeper the player's way: hit, back out of the blast, hit again.
+    // Possible with a blade and no drop or lava to back into.
+    const feetDrop = dropWithin(bot, feet, 2) || lavaBeside(bot, feet);
+    if (danger.some(t => t.entity.name === 'creeper' && t.distance <= 6) && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && !feetDrop) options.creeper_dance = {
+      description: 'Hit the creeper, back out of its blast while the knockback puts its fuse out, and close in to hit again when it comes on; other creepers are backed from the same way, other mobs are not watched.',
+      run: () => this.creeperDance(task, goal, save, danger, swung, { chosen: true }) };
     options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.',
       run: () => this.runAway(task, goal, save, danger) };
-    if (bot.health >= 8 && !armsLength) {
-      for (const t of shotTargets(bot, danger).slice(0, 2)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.`,
-        run: async () => { await this.shootAt(task, goal, save, t); return true; } };
-    }
+    for (const t of shotTargets(bot, danger).slice(0, 2)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : ''),
+      run: async () => { await this.shootAt(task, goal, save, t); return true; } };
     return options;
   }
 
@@ -610,6 +635,7 @@ class Survival {
       const armour = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
       const state = { health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
+        dropWithinThreeBlocks: dropWithin(bot, bot.entity.position.floored(), 3),
         threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), visible: t.visible })),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health } : null };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
@@ -1192,9 +1218,10 @@ class Survival {
   // One mob, closed on so the fight rule can swing. Out of the sword's reach
   // is the test, not "beyond 3.2": between the two the bot neither swung
   // nor charged.
-  async charge(task, goal, save, nearest, pack) {
+  // Chosen by Jev (the fight stance), health and the pack were its to weigh.
+  async charge(task, goal, save, nearest, pack, { chosen = false } = {}) {
     const bot = this.bot;
-    if (pack || bot.health < 12 || nearest.distance > 8 || canStrike(bot, nearest.entity) || lavaBeside(bot, nearest.entity.position.floored())) return false;
+    if ((!chosen && (pack || bot.health < 12)) || nearest.distance > 8 || canStrike(bot, nearest.entity) || lavaBeside(bot, nearest.entity.position.floored())) return false;
     // Level ground only, and not from an edge: charging a wither skeleton
     // four blocks up a Nether fortress, the dream run's floor went from
     // under it and it fell thirty blocks (2026-09-24 01:39). The charge
