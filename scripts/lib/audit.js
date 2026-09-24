@@ -111,7 +111,12 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
   for (let i = 0; i + 6 < changes.length; i++) {
     const win = changes.slice(i, i + 7);
     const names = new Set(win.map(c => c.a));
-    if (names.size === 2 && win[6].t - win[0].t <= 60000) { flips.push({ from: win[0].t, to: win[6].t, between: [...names].join(' <-> '), at: pos(win[0].s) }); i += 6; }
+    // Not a loop when it got somewhere: a tunnel toward an ore and the dig
+    // at its end trade names every few seconds while the shaft advances
+    // (trial 7: sixteen blocks in the minute). Over five blocks covered, or
+    // something worth keeping gained, is progress under two names.
+    const covered = Math.max(...win.map(c => dist(c.s.position, win[0].s.position)));
+    if (names.size === 2 && win[6].t - win[0].t <= 60000 && covered < 5 && !gained(win[0].t, win[6].t)) { flips.push({ from: win[0].t, to: win[6].t, between: [...names].join(' <-> '), at: pos(win[0].s) }); i += 6; }
   }
 
   // Retry loops: "persist" steps and repeated problems, by problem text.
