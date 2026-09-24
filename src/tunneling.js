@@ -253,7 +253,10 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
   }
   const floor = bot.blockAt(choice.destination.offset(0, -1, 0));
   if (dangerous(floor) || floor.boundingBox !== 'block') throw new Error('Staircase footing changed during excavation');
-  await navigate(bot, task, new goals.GoalBlock(choice.destination.x, choice.destination.y, choice.destination.z));
+  // One block away: walked in seconds or not at all. At the default fifteen
+  // seconds without movement, and a recovery try after, a stair that could not
+  // be stepped onto cost thirty seconds a time in trial 16 (2026-09-24).
+  await navigate(bot, task, new goals.GoalBlock(choice.destination.x, choice.destination.y, choice.destination.z), { timeoutMs: 6000, stallMs: 2500 });
   tunnel.workPosition = { ...bot.entity.position.floored() };
   tunnel.dimension = bot.game?.dimension;
   save();
