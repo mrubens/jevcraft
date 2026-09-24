@@ -501,7 +501,15 @@ async function tillPlot(bot, task, goal, save, home, actions) {
     // A hoe only turns ground with nothing above it: leaf litter and grass
     // on the cell held the plot up for three tries a cell.
     const cover = bot.blockAt(pos(p).offset(0, 1, 0));
-    if (cover && cover.name !== 'air' && cover.name !== 'cave_air') await actions.dig(bot, task, pos(p).offset(0, 1, 0), { requireDrops: false });
+    // Water over a cell (the pond poured beside it, run over) is no cover a
+    // hoe can clear, and digging it never ends: trial 28 stood forty-four
+    // seconds on one cell. It waits with the cells the hoe would not turn.
+    const stuck = () => { (home.plot.stubborn ||= {})[`${p.x},${p.y},${p.z}`] = Date.now() + 20 * 60 * 1000; save(); };
+    if (cover && (/water|lava|bubble_column/.test(cover.name) || (cover.boundingBox === 'block' && cover.diggable === false))) { stuck(); continue; }
+    if (cover && cover.name !== 'air' && cover.name !== 'cave_air') {
+      try { await actions.dig(bot, task, pos(p).offset(0, 1, 0), { requireDrops: false }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; stuck(); continue; }
+    }
     await bot.equip(hoe, 'hand');
     const block = bot.blockAt(pos(p));
     if (!block || !TILLABLE.has(block.name)) continue;
@@ -517,7 +525,7 @@ async function tillPlot(bot, task, goal, save, home, actions) {
       await bot.activateBlock(again, new Vec3(0, 1, 0));
       if (await waitFor(task, () => bot.blockAt(pos(p))?.name === 'farmland')) { tilled++; continue; }
     }
-    (home.plot.stubborn ||= {})[`${p.x},${p.y},${p.z}`] = Date.now() + 20 * 60 * 1000; save();
+    stuck();
   }
   if (!tilled) throw new Error('No plot cell became farmland');
   home.plot.tilledAt = new Date().toISOString(); save();
@@ -632,16 +640,29 @@ async function levelSite(bot, task, goal, save, home, actions) {
 async function pourWater(bot, task, goal, save, home, actions) {
   const w = pos(home.water);
   goal.step = { action: 'pour_water', at: home.water }; save();
-  await actions.navigate(bot, task, new goals.GoalNear(w.x, w.y + 1, w.z, 2), { timeoutMs: 20000, stallMs: 5000 });
-  if (bot.blockAt(w)?.name === 'water') { home.pouredAt = new Date().toISOString(); save(); return; }
+  // Right beside the hole, looking steeply into it: from two blocks off the
+  // bucket's aim grazed the ground beside the hole, the water landed a block
+  // up and ran over the plot, and the hole filled from the spill so the pour
+  // looked done (trial 28: a flooded plot cell the hoe stood over).
+  await actions.navigate(bot, task, new goals.GoalNear(w.x, w.y + 1, w.z, 1), { timeoutMs: 20000, stallMs: 5000 });
+  const spill = () => [[1, 0], [-1, 0], [0, 1], [0, -1], [0, 0]].map(([x, z]) => w.offset(x, 1, z)).find(q => /^water$/.test(bot.blockAt(q)?.name || ''));
+  if (bot.blockAt(w)?.name === 'water' && !spill()) { home.pouredAt = new Date().toISOString(); save(); return; }
+  // Water above the ground is taken back up in the bucket before anything else.
+  const over = spill();
+  if (over && countOf(bot, 'bucket')) {
+    await equip(bot, 'bucket'); task.check();
+    await bot.lookAt(over.offset(0.5, 0.5, 0.5), true); bot.activateItem(); bot.deactivateItem?.();
+    await waitFor(task, () => bot.blockAt(over)?.name !== 'water', 2500);
+  }
   if (bot.blockAt(w)?.boundingBox === 'block') await actions.dig(bot, task, w, { requireDrops: false });
   const bucket = bot.inventory.items().find(i => i.name === 'water_bucket');
   if (!bucket) throw new Error('No water bucket for the home pond');
   await equip(bot, 'water_bucket'); task.check();
-  await bot.lookAt(w.offset(0.5, 0, 0.5), true); task.check();
+  await bot.lookAt(w.offset(0.5, 0.05, 0.5), true); task.check();
   bot.activateItem();
   try { await waitFor(task, () => bot.blockAt(w)?.name === 'water', 2500); } finally { bot.deactivateItem?.(); }
   if (bot.blockAt(w)?.name !== 'water') throw new Error('The water did not land in the hole beside the plot');
+  if (spill()) throw new Error('The water spilled over the ground beside the hole; taking it back up next');
   home.pouredAt = new Date().toISOString(); save();
 }
 
