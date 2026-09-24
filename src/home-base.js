@@ -206,7 +206,9 @@ function siteFits(bot, goal, site) {
 // The nearest level, tillable shore to the anchor that fits the whole
 // layout. Water is scanned around the anchor, not the bot, so a base is
 // chosen once per world and does not drift with where the bot happens to be.
-function chooseBaseSite(bot, goal, { radius = SITE_RADIUS, dryOk = false } = {}) {
+// With `several`, up to four sites at least eight blocks apart, the flat ones
+// first, for Jev to choose among (homeStep); otherwise the first of them.
+function chooseBaseSite(bot, goal, { radius = SITE_RADIUS, dryOk = false, several = false } = {}) {
   const anchor = baseAnchor(bot, goal);
   const waterId = bot.registry.blocksByName.water?.id;
   if (waterId === undefined) return null;
@@ -216,8 +218,10 @@ function chooseBaseSite(bot, goal, { radius = SITE_RADIUS, dryOk = false } = {})
     .sort((a, b) => a.distanceTo(point) - b.distanceTo(point));
   // The nearest site that needs the least levelling: a flat one is taken as
   // soon as it is seen, a bumpy one only when nothing flatter is close.
+  const want = several ? 4 : 1;
+  const apart = (a, list) => list.every(b => Math.hypot(a.origin.x - b.origin.x, a.origin.z - b.origin.z) >= 8);
   const fit = (cells, extra = {}) => {
-    let best = null;
+    const flat = [], bumpy = [];
     for (const w of cells) for (const d of DIRECTIONS) {
       const a = { x: -d.z, z: d.x };
       for (const shift of [0, -1, 1, -2, 2]) {
@@ -226,11 +230,18 @@ function chooseBaseSite(bot, goal, { radius = SITE_RADIUS, dryOk = false } = {})
         const work = siteWork(bot, goal, site);
         if (!work) continue;
         const cost = work.digs.length + work.fills.length + w.distanceTo(point) / 16;
-        if (work.digs.length + work.fills.length === 0) return { ...site, work, anchor };
-        if (!best || cost < best.cost) best = { ...site, work, anchor, cost };
+        if (work.digs.length + work.fills.length === 0) {
+          if (apart(site, flat)) flat.push({ ...site, work, anchor });
+          if (flat.length >= want) return several ? flat : flat[0];
+          continue;
+        }
+        bumpy.push({ ...site, work, anchor, cost });
       }
     }
-    return best && (({ cost, ...site }) => site)(best);
+    const rest = [];
+    for (const b of bumpy.sort((x, y) => x.cost - y.cost)) if (apart(b, [...flat, ...rest])) { const { cost, ...site } = b; rest.push(site); if (flat.length + rest.length >= want) break; }
+    const sites = [...flat, ...rest].slice(0, want);
+    return several ? (sites.length ? sites : null) : sites[0] || null;
   };
   // The nearest sixty-four candidates, not all of them: each is fitted in
   // twenty placements of a sixty-three-cell footprint, and four thousand
@@ -781,16 +792,36 @@ async function bake(bot, task, goal, save, actions) {
   return true;
 }
 
+// Where home goes, of the sites found: Jev's, with each one's distance, the
+// levelling it needs and its water. Without Jev, the first (the nearest
+// flat one).
+async function pickHomeSite(bot, task, goal, save, sites) {
+  const client = task.opportunityClient;
+  if (!client || sites.length < 2) return sites[0];
+  const here = bot.entity.position;
+  const tree = Object.fromEntries(sites.map((site, i) => {
+    const levelling = site.work.digs.length + site.work.fills.length;
+    const distance = Math.round(Math.hypot(site.origin.x - here.x, site.origin.z - here.z));
+    return [`site_${i}`, { description: `A site ${distance} blocks away${site.anchor?.kind && site.anchor.kind !== 'here' ? ` near the remembered ${site.anchor.kind}` : ''}: ${levelling ? `${levelling} blocks to dig or fill to level it` : 'level already'}, ${site.pourWater ? 'no water beside it (a bucket is poured into a hole for the plot)' : 'beside natural water for the plot and the pond'}.` }];
+  }));
+  try {
+    const { decide } = require('./decisions');
+    const decision = await decide('home_site', { client, bot, task, goal, save, tree, state: { position: plain(here.floored()), sites: sites.length, timeOfDay: bot.time?.timeOfDay } });
+    return sites[Number(/^site_(\d+)$/.exec(decision.path.at(-1) || '')?.[1] ?? 0)] || sites[0];
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return sites[0]; }
+}
+
 // One step of the home rung.
 async function homeStep(bot, task, goal, save, stage, actions) {
   task.check(); checkAir(bot);
   const survival = goal.survival;
   if (stage.action === 'choose_site') {
-    const site = chooseBaseSite(bot, goal) ||
+    const sites = chooseBaseSite(bot, goal, { several: true }) ||
       // Two places looked at and still no water: the site is taken dry,
       // an empty bucket or not (trial 10 went after cave water with one and
       // ran out of trial). The pond is the water phase's, later.
-      (survival.homeSearch?.attempts >= 2 && !countOf(bot, 'water_bucket') ? chooseBaseSite(bot, goal, { dryOk: true }) : null);
+      (survival.homeSearch?.attempts >= 2 && !countOf(bot, 'water_bucket') ? chooseBaseSite(bot, goal, { dryOk: true, several: true }) : null);
+    const site = sites && await pickHomeSite(bot, task, goal, save, sites);
     if (!site && countOf(bot, 'bucket') && !countOf(bot, 'water_bucket')) {
       // No pond here, but an empty bucket: fill it wherever water is and
       // the next attempt can put the pond beside the plot.

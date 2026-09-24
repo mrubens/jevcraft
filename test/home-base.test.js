@@ -412,3 +412,19 @@ test('a landmark is walked to at its depth, not to the grass over it', async () 
   assert.equal(goals[0].y, 30, 'the goal has the dungeon\'s depth');
   assert.equal(goals[0].constructor.name, 'GoalNear');
 });
+
+test('with two ponds in reach, where home goes is Jev\'s pick of the sites found; without Jev, the nearest', async () => {
+  const near = pond(20, 0), far = pond(-40, 0);
+  const { bot } = world({ ponds: [near, far] });
+  const goal = goalWith(bot, { portals: [{ x: 0, y: LEVEL + 1, z: 0, dimension: 'overworld' }] });
+  const sites = home.chooseBaseSite(bot, goal, { several: true });
+  assert(sites.length >= 2, `several sites: ${sites.length}`);
+  assert(sites.every((a, i) => sites.every((b, j) => i === j || Math.hypot(a.origin.x - b.origin.x, a.origin.z - b.origin.z) >= 8)), 'eight blocks apart');
+  assert.deepEqual(sites[0].origin, home.chooseBaseSite(bot, goal).origin, 'the first is the one the rule took');
+  let offered;
+  const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'site_1', confidence: 0.5 } } }; } };
+  goal.survival.homeSearch = undefined;
+  await home.homeStep(bot, Object.assign(new Task('home'), { opportunityClient: client }), goal, () => {}, { action: 'choose_site' }, {});
+  assert.match(offered.site_0, /blocks away/);
+  assert.deepEqual(goal.survival.home.origin, sites[1].origin, 'Jev\'s pick');
+});

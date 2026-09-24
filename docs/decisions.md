@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-62 questions: 14 decision trees and 48 batched questions.
+63 questions: 15 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -425,6 +425,22 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: 0.6: unsure, or none, nothing is done from the advice
 - Jev unreachable: the failure goes on to persist (a clean slate and a backoff)
 - Options built in: src/recovery-options.js (the options), src/recovery-adviser.js (askJev)
+
+## home
+
+### `home_site`
+
+**Of the sites found for the home base, which should it be?**
+
+- When: The home rung's site step, when two or more sites fit the layout (up to four, eight blocks apart, the level ones first).
+- Decision tree, choice; stakes low; ledger kind `home`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/home-base.js (chooseBaseSite, pickHomeSite)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `site_\d+` (pattern) | root | build the home here | the whole layout fits, with its distance, levelling and water said |
 
 ## endgame
 

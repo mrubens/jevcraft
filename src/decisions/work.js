@@ -155,6 +155,19 @@ define({
   fallback: () => 'take_more',
 });
 
+// Where the home base goes.
+define({
+  id: 'home_site', area: 'home', kind: 'home', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'Of the sites found for the home base, which should it be?',
+  trigger: 'The home rung\'s site step, when two or more sites fit the layout (up to four, eight blocks apart, the level ones first).',
+  source: 'src/home-base.js (chooseBaseSite, pickHomeSite)',
+  options: [
+    { pattern: 'site_\\d+', label: 'build the home here', when: 'the whole layout fits, with its distance, levelling and water said', level: 'root', dynamic: true },
+  ],
+  instructions: workInstructions('Choose where the home base goes: the bed, a chest, a small farm plot with water, and an animal pen. Each site says how far it is, how much levelling it needs and where its water comes from. Home is walked back to every evening.'),
+  fallback: firstOption,
+});
+
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
   id: 'upkeep', area: 'resources', kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
