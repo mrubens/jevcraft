@@ -1219,6 +1219,23 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           furnace = await bot.openFurnace(block);
           continue;
         }
+        // Nothing to walk to, or none of it reachable: the stone in arm's
+        // reach, at the feet or above and never the furnace's own footing,
+        // while the stack is short. Cooking time is not standing time: trial
+        // 12 stood eighty seconds by thirty-two copper, the coal it named
+        // out of reach (2026-09-24).
+        const feet = bot.entity.position.floored();
+        const rock = spare && waitDigs < 24 && countOf(bot, 'cobblestone') < 64 &&
+          find(bot, ['stone', 'deepslate', 'andesite', 'diorite', 'granite', 'tuff'], 5, 24)
+            .filter(q => q.y >= feet.y && !q.equals(block.position.offset(0, -1, 0)) && bot.canDigBlock?.(bot.blockAt(q)) && !isSetAside(goal || {}, 'reach', q))[0];
+        if (rock) {
+          waitDigs++;
+          furnace.close();
+          try { await dig(bot, task, rock, { requireDrops: false }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (goal) setAside(goal, 'reach', rock, err.message, 120000); }
+          furnace = await bot.openFurnace(block);
+          continue;
+        }
         if (taken < needed) await sleep(250);
       }
     }
