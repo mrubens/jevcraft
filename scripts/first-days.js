@@ -94,6 +94,17 @@ function verdict(trial, { now = Date.now() } = {}) {
     pass: done && !reasons.length, failedAlready: reasons.some(r => !r.startsWith('missing')), reasons, milestones: m, missing };
 }
 
+// Whoever watches in Spectator sees in the dark: a datapack in the new
+// world gives night vision to spectators each tick. Only spectators: the
+// bot plays in Survival and gets nothing (no cheats, the audit's rule).
+function spectatorNightVision(worldDir) {
+  const pack = path.join(worldDir, 'datapacks', 'spectator-night-vision');
+  const write = (file, text) => { fs.mkdirSync(path.dirname(path.join(pack, file)), { recursive: true }); fs.writeFileSync(path.join(pack, file), text); };
+  write('pack.mcmeta', JSON.stringify({ pack: { description: 'Night vision for spectators watching a trial', min_format: 101, max_format: 101 } }, null, 2));
+  write('data/trial/function/spectators.mcfunction', 'effect give @a[gamemode=spectator] minecraft:night_vision infinite 0 true\n');
+  write('data/minecraft/tags/function/tick.json', JSON.stringify({ values: ['trial:spectators'] }, null, 2));
+}
+
 async function start(world) {
   if (!/^[a-z0-9-]+$/.test(world || '')) throw new Error('A world name of lowercase letters, digits and dashes');
   const props = path.join(SERVER, 'server.properties');
@@ -109,6 +120,7 @@ async function start(world) {
   }
   if (pid(25581)) throw new Error('The old server is still on 25581; nothing was started');
   fs.writeFileSync(props, fs.readFileSync(props, 'utf8').replace(/^level-name=.*$/m, `level-name=${world}`));
+  spectatorNightVision(path.join(SERVER, world));
   spawn('sh', ['start.sh'], { cwd: SERVER, detached: true, stdio: 'ignore' }).unref();
   for (let i = 0; i < 120 && !pid(25581); i++) await sleep(1000);
   const log = () => { try { return fs.readFileSync(path.join(SERVER, 'logs', 'latest.log'), 'utf8'); } catch (_) { return ''; } };
@@ -152,4 +164,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(err => { console.error(err.message); process.exit(1); });
-module.exports = { milestones, verdict, PAST_ARMOUR };
+module.exports = { milestones, verdict, PAST_ARMOUR, spectatorNightVision };
