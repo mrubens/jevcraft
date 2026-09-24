@@ -204,7 +204,10 @@ async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs 
     await bot.lookAt?.(cell.offset(dx + 0.5, 1.62, dz + 0.5), true);
     bot.setControlState?.('jump', true); bot.setControlState?.('forward', true);
     const end = Date.now() + settleMs;
-    while (Date.now() < end) { await sleep(50); task.check(); guard?.(); if (moved()) break; }
+    // Every wait watches the air: sand dug from over the head in a desert
+    // fell into its place, and trial 9's bot suffocated here for twelve
+    // seconds while the loop watched only for mobs (2026-09-24).
+    while (Date.now() < end) { await sleep(50); task.check(); checkAir(bot); guard?.(); if (moved()) break; }
     bot.clearControlStates?.();
     return moved();
   };
@@ -214,7 +217,10 @@ async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs 
     const order = DIRECTIONS.map(d => ({ d, r: random() })).sort((a, b) => a.r - b.r).map(({ d }) => d);
     // Stage 1: soft blocks on the body, then a jump and a step each way.
     stage = 1;
-    for (const [dx, dy, dz] of [[0, 1, 0], [0, 0, 0], [0, 2, 0]]) { const b = at(dx, dy, dz); if (softOrLeaves(b) && breakable(bot, b)) await dig(b); }
+    // Not a block with sand or gravel over it: the column comes down into
+    // the hole, onto the head.
+    const falls = (dx, dy, dz) => /^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$/.test(at(dx, dy + 1, dz)?.name || '');
+    for (const [dx, dy, dz] of [[0, 1, 0], [0, 0, 0], [0, 2, 0]]) { const b = at(dx, dy, dz); if (softOrLeaves(b) && breakable(bot, b) && !(dy >= 1 && falls(dx, dy, dz))) await dig(b); }
     for (const [dx, dz] of order) {
       if (Date.now() >= until) break;
       task.check(); checkAir(bot);
