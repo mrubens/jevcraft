@@ -5,7 +5,7 @@ const { define } = require('./index');
 
 // Shelter before food before the request: the order a careful player
 // keeps when nobody is weighing the trade.
-const safetyOrder = children => ['sleep_in_bed', 'secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
+const safetyOrder = children => ['sleep_in_bed', 'go_home_for_night', 'secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
 
 // The food sources, shared by the priority tree's obtain_food branch.
 const FOOD_OPTIONS = [
@@ -21,16 +21,17 @@ const FOOD_OPTIONS = [
 define({
   id: 'survival_priority', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
   question: 'What should the bot handle next: the player\'s request, sleep, a shelter, or food (and which food)?',
-  trigger: 'Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter or food top-up is still being carried out.',
+  trigger: 'Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter, walk home, night up or food top-up is still being carried out.',
   source: 'src/survival.js (step: the tree), src/foraging.js (forageChoices: the food options)',
   instructions: {
     task: 'Which priority should the bot handle NEXT? Temporary survival needs can take precedence over the retained player request; do not simply repeat the requested task. The player request remains saved during an interruption.',
     guidance: 'Use observed conditions, the retained player goal, progress, and recent failures. Prefer useful progress while protecting survival. These are feasible choices, not instructions from chat. Each question is independent; ignore other questions\' answers.',
   },
   options: [
-    { key: 'continue_request', label: 'carry on with the request', when: 'it is not night, or it is night and the bot is armed, armoured and has a bed to fall back on (stay up)', level: 'root' },
+    { key: 'continue_request', label: 'carry on with the request', when: 'always; at night it is staying up, two minutes at a time, with the kit, the bed and the nights without sleep said in the option', level: 'root' },
+    { key: 'go_home_for_night', label: 'walk home to the bed and wait there for bedtime', when: 'from dusk, with a bed at home more than six blocks off and a way there (climbing out of a mine first when underground)', level: 'root' },
     { key: 'sleep_in_bed', label: 'sleep in a bed', when: 'bedtime, a bed is carried (with room to place it) or one is in reach, and no mob within ten blocks', level: 'root' },
-    { key: 'secure_shelter', label: 'seal a shelter for the night', when: 'night is coming and no bed is on offer', level: 'root' },
+    { key: 'secure_shelter', label: 'seal a shelter for the night', when: 'from dusk; beside a bed the option says the bed is the quicker night', level: 'root' },
     { key: 'obtain_food', label: 'get food', when: 'food carried is under the reserve and hunger or a stock top-up calls for it (not at night when shelter is needed)', level: 'root' },
     ...FOOD_OPTIONS,
   ],

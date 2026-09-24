@@ -411,6 +411,33 @@ class Survival {
     await this.escape(task, goal, save, danger, armed);
   }
 
+  // Home for the night: out of the shaft by the stairs it dug, then over the
+  // ground to the bed.
+  async goHomeForNight(task, goal, save, homeBed, underground) {
+    const bot = this.bot;
+    this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });
+    // Out of the shaft by the stairs it dug, then home over the ground:
+    // a path search from the bottom of a mine to a bed timed out. A
+    // stumble on the stairs is retried next tick; only the walk itself
+    // failing sets the bed aside, and only for two minutes.
+    if (underground && this.actions.surfaceStep) {
+      try { await this.actions.surfaceStep(bot, task, goal, save); }
+      catch (err) {
+        task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+        // A climb that fails every tick is not a way home: sixteen blocks
+        // under the bed the dream run tried it once a second, reporting
+        // nothing. Three failures in a minute set the walk aside, and the
+        // night is spent the other ways (a pocket, the mine).
+        const now = Date.now();
+        this.state.surfaceFailures = [...(this.state.surfaceFailures || []).filter(t => now - t < 60000), now];
+        if (this.state.surfaceFailures.length >= 3) { setAside(this, 'surface_home', 'here', err, 600000); this.state.surfaceFailures = []; this.report(goal, save, { action: 'surface_home_set_aside', reason: err.message }); }
+      }
+    } else if (bot.time.timeOfDay < SLEEP_FROM) {
+      try { await this.actions.navigate(bot, task, new goals.GoalNear(homeBed.foot.x, homeBed.foot.y, homeBed.foot.z, 3), { timeoutMs: 60000, stallMs: 8000, sprint: true }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'bed_route', 'home', err, 120000); }
+    }
+  }
+
   // A lone shooter on the ground, the player's way: run at it and hit it.
   // Measured in the arena (2026-09-24, scripts/shield-probe.js), one
   // skeleton eight blocks off, twenty seconds a stance: 17.7 damage standing,
@@ -1757,39 +1784,18 @@ class Survival {
       }
       onStep(goal); return true;
     }
-    const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && !immediateThreat(bot) && (underground || !routeBlocked);
-    const walkStart = homeBed && homeBed.foot.distanceTo(bot.entity.position) > 96 ? DAY.WALK_HOME_FAR : DAY.WALK_HOME;
-    if (homeWalk && (bot.time.timeOfDay >= walkStart || underground) && !sleepWaiting(this) && !isSetAside(this, 'surface_home', 'here')) {
-      this.report(goal, save, { action: 'go_home_for_night', distance: Math.round(homeBed.foot.distanceTo(bot.entity.position)), underground });
-      // Out of the shaft by the stairs it dug, then home over the ground:
-      // a path search from the bottom of a mine to a bed timed out. A
-      // stumble on the stairs is retried next tick; only the walk itself
-      // failing sets the bed aside, and only for two minutes.
-      if (underground && this.actions.surfaceStep) {
-        try { await this.actions.surfaceStep(bot, task, goal, save); }
-        catch (err) {
-          task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-          // A climb that fails every tick is not a way home: sixteen blocks
-          // under the bed the dream run tried it once a second, reporting
-          // nothing. Three failures in a minute set the walk aside, and the
-          // night is spent the other ways (a pocket, the mine).
-          const now = Date.now();
-          this.state.surfaceFailures = [...(this.state.surfaceFailures || []).filter(t => now - t < 60000), now];
-          if (this.state.surfaceFailures.length >= 3) { setAside(this, 'surface_home', 'here', err, 600000); this.state.surfaceFailures = []; this.report(goal, save, { action: 'surface_home_set_aside', reason: err.message }); }
-        }
-      } else if (bot.time.timeOfDay < SLEEP_FROM) {
-        try { await this.actions.navigate(bot, task, new goals.GoalNear(homeBed.foot.x, homeBed.foot.y, homeBed.foot.z, 3), { timeoutMs: 60000, stallMs: 8000, sprint: true }); }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'bed_route', 'home', err, 120000); }
-      }
-      if (underground || bot.time.timeOfDay < SLEEP_FROM) { onStep(goal); return true; }
-    }
+    // The walk home for the night is Jev's to choose (go_home_for_night
+    // below); once chosen it is held, not asked again every tick.
+    const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && (underground || !routeBlocked) &&
+      !sleepWaiting(this) && !isSetAside(this, 'surface_home', 'here');
+    const heldPlan = this.state.nightPlan?.until > Date.now() ? this.state.nightPlan : null;
+    if (homeWalk && heldPlan?.plan === 'home') { heldPlan.until = Date.now() + 120000; await this.goHomeForNight(task, goal, save, homeBed, underground); onStep(goal); return true; }
     const plan = this.state.nightPlan?.until > Date.now() ? this.state.nightPlan : null;
     const stayingUp = plan?.plan === 'stay_up';
     // Before bedtime, a bed anywhere in reach (a walk that just failed
     // included) means no sealing in yet: the walk is retried in two minutes
     // and the shelter thirty blocks from the bed was the worse night.
-    const bedInReach = (!!bed || !!homeBed) && bot.game.dimension === 'overworld';
-    const needsShelter = shelterNeeded(bot) && !(bedInReach && bot.time.timeOfDay < SLEEP_FROM) && !stayingUp;
+    const needsShelter = shelterNeeded(bot) && !stayingUp;
     // A shelter once chosen is a plan, not a question for every tick: the
     // second run climbed its shaft for a shelter, was asked again at the
     // top, went back down to the mine, and was asked again at the bottom.
@@ -1843,7 +1849,8 @@ class Survival {
       health: bot.health, food: bot.food, safeFoodCarried: !!chooseFood(bot),
       survivalFacts: { difficulty: bot.game.difficulty, hostileMobsSpawnAtNight: true,
         nightStartsAt: DAY.NIGHT, dawnAt: DAY.DAWN, daylightTicksRemaining: Math.max(0, DAY.NIGHT - bot.time.timeOfDay),
-        bedCarried: !!bed, homeBedNearby: !!homeBed, sleepPossibleFrom: SLEEP_FROM, armedAndArmoured: kitReady(bot),
+        bedCarried: !!bed, homeBedNearby: !!homeBed, homeBedDistance: homeBed ? Math.round(homeBed.foot.distanceTo(bot.entity.position)) : null, underground,
+        sleepPossibleFrom: SLEEP_FROM, armedAndArmoured: kitReady(bot), nightsWithoutSleepTooMany: !!this.sleepDebt(),
         shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null },
       recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot),
       foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: desiredFood, hungerMaximum: 20, starvationAt: 0,
@@ -1852,19 +1859,27 @@ class Survival {
     // Phantoms come for a player who has not slept in three nights. After
     // two nights awake (sealed in, night mining, staying up), staying up is
     // off the table while a bed is on offer.
-    const canStayUp = night(bot) && needsShelter && bedReady && armed && !this.sleepDebt();
-    const tree = (night(bot) && needsShelter && !canStayUp) || (expeditionFood && needsFood) ? {} : {
-      continue_request: { description: canStayUp ? 'Stay up tonight, armed and armoured, and keep working the request outside: spiders and the other night mobs are what a hunt for string needs, and the bed is one action away whenever the night has nothing more to give. Two minutes at a time, then this question again.'
+    // At night carrying on is staying up, two minutes at a time; whether the
+    // kit, the bed and the nights without sleep make that wise is Jev's to
+    // weigh from the facts.
+    const stayUp = night(bot) && needsShelter;
+    const tree = {
+      continue_request: { description: stayUp
+        ? `Stay up and keep working the request outside in the dark, two minutes at a time. Hostile mobs spawn around the bot all night; it is ${armed ? 'armed and armoured' : 'not armed and armoured'}${bedReady ? ', and the bed is one action away' : ', and there is no bed to fall back on'}.${this.sleepDebt() ? ' It has not slept for two nights: phantoms come for a player on the third.' : ''}`
         : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
-        run: async () => { if (canStayUp) { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up' }); } } },
+        run: async () => { if (stayUp) { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up', armed }); } } },
     };
+    if (homeWalk) {
+      const distance = Math.round(homeBed.foot.distanceTo(bot.entity.position));
+      tree.go_home_for_night = { description: `Walk home to the bed ${distance} blocks away${underground ? ', climbing out of the mine first' : ''}, about ${Math.round(distance / 4.3)} seconds at a walk, and wait there for bedtime (sleep is possible from ${SLEEP_FROM}; it is ${Math.round(bot.time.timeOfDay)} now). Held until the bot is there.`,
+        run: async () => { this.state.nightPlan = { plan: 'home', until: Date.now() + 120000 }; await this.goHomeForNight(task, goal, save, homeBed, underground); } };
+    }
     // Sleep is an option where the bed fits: two level cells beside the
     // feet. In a one-wide shaft it is not, and the shelter path digs in.
     if (needsShelter && bedReady && sleepable(bot) && ((homeBed && !underground) || bedSite(bot)) && !threats(bot).some(t => t.distance < 10)) tree.sleep_in_bed = { description: homeBed?.observed && !bed ? `Walk to the bed ${Math.round(homeBed.foot.distanceTo(bot.entity.position))} blocks away and sleep in it. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.` : 'Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.', run: () => this.sleepStep(task, goal, save) };
-    // A bed within reach makes a shelter the worse answer in every case, so
-    // it is not offered beside one: the question that remains at night is
-    // sleep or stay up, which is the one worth asking.
-    if (needsShelter && !tree.sleep_in_bed) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.',
+    // Beside a bed a shelter is the worse answer, and the option says so
+    // rather than being hidden.
+    if (needsShelter) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.' + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
     if (needsFood && !(night(bot) && needsShelter)) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
       children: offWorld && this.actions.returnOverworld ? { return_for_food: { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked; nothing here is safe to eat.',

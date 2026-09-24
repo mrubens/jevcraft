@@ -24,7 +24,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **What should the bot handle next: the player's request, sleep, a shelter, or food (and which food)?**
 
-- When: Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter or food top-up is still being carried out.
+- When: Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter, walk home, night up or food top-up is still being carried out.
 - Decision tree, choice; stakes high; ledger kind `survival`
 - Bar: none: Jev's pick is taken at any confidence: the choice is asked again at the next survival step, so a close call costs one step; the safety order answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -32,9 +32,10 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `continue_request` | root | carry on with the request | it is not night, or it is night and the bot is armed, armoured and has a bed to fall back on (stay up) |
+| `continue_request` | root | carry on with the request | always; at night it is staying up, two minutes at a time, with the kit, the bed and the nights without sleep said in the option |
+| `go_home_for_night` | root | walk home to the bed and wait there for bedtime | from dusk, with a bed at home more than six blocks off and a way there (climbing out of a mine first when underground) |
 | `sleep_in_bed` | root | sleep in a bed | bedtime, a bed is carried (with room to place it) or one is in reach, and no mob within ten blocks |
-| `secure_shelter` | root | seal a shelter for the night | night is coming and no bed is on offer |
+| `secure_shelter` | root | seal a shelter for the night | from dusk; beside a bed the option says the bed is the quicker night |
 | `obtain_food` | root | get food | food carried is under the reserve and hunger or a stock top-up calls for it (not at night when shelter is needed) |
 | `cook_[a-z_]+` (pattern) | obtain_food | cook a carried ingredient | raw food and fuel are carried; the output is safe food |
 | `prepare_hunting_sword` | obtain_food | make a wooden sword to hunt with | animals are in view and no weapon is carried |

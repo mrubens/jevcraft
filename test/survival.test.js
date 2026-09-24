@@ -808,7 +808,7 @@ test('a sleep the server confirms late still counts: the clock decides, not mine
   assert.equal(survival.state.sleepFailedAt, undefined);
 });
 
-test('at night with a bed and full kit the choices are sleep, shelter, or stay up; without the kit, no staying up', async () => {
+test('at night with a bed the choices are sleep, stay up, or shelter, the shelter told the bed is quicker; in a shaft, no sleep', async () => {
   const { Survival } = require('../src/survival');
   const seen = [];
   const client = { systemOne: async () => { throw new Error('offline'); } };
@@ -823,7 +823,7 @@ test('at night with a bed and full kit the choices are sleep, shelter, or stay u
   survival.decide = async (task, goal, save, { id, tree }) => { seen.push(Object.keys(tree).sort()); const key = question(id).fallback(tree, []); return { path: [key], action: tree[key], stale: false }; };
   survival.sleepStep = async () => { seen.push('slept'); };
   await survival.step(new Task('test', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
-  assert.deepEqual(seen, [['continue_request', 'sleep_in_bed'], 'slept'], 'with a bed at hand, shelter is not on the list');
+  assert.deepEqual(seen, [['continue_request', 'secure_shelter', 'sleep_in_bed'], 'slept'], 'with a bed at hand, the fallback sleeps');
   // In a one-wide shaft the bed does not fit, so sleep is not on the list.
   const shaft = make([{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }]);
   shaft.blockAt = p => ({ name: p.y < 64 || (p.x !== 0 || p.z !== 0) ? 'stone' : 'air', boundingBox: p.y < 64 || (p.x !== 0 || p.z !== 0) ? 'block' : 'empty', position: p });
@@ -1090,7 +1090,7 @@ test('a reserve top-up once chosen is held: "get food or carry on" is not asked 
   assert(offered.slice(1).every(keys => !keys.includes('continue_request')), `then held: ${JSON.stringify(offered)}`);
 });
 
-test('after two nights awake, staying up is off the table while a bed is on offer: phantoms come on the third', async () => {
+test('after two nights awake, staying up says phantoms come on the third; it is still Jev\'s to weigh', async () => {
   const { Survival, SLEEP_DEBT_TICKS } = require('../src/survival');
   const seen = [];
   const make = () => Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000, age: 100000 },
@@ -1099,13 +1099,14 @@ test('after two nights awake, staying up is off the table while a bed is on offe
     blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
   const bot = make();
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => ({}) } });
-  survival.decide = async (task, goal, save, { tree }) => { seen.push(Object.keys(tree).sort()); return { path: ['sleep_in_bed'], action: { run: async () => {} }, stale: false }; };
+  survival.decide = async (task, goal, save, { tree }) => { seen.push(tree); return { path: ['sleep_in_bed'], action: { run: async () => {} }, stale: false }; };
   survival.sleepStep = async () => {};
   await survival.step(new Task('t', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
   bot.time.age += SLEEP_DEBT_TICKS + 1;
   await survival.step(new Task('t', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
-  assert.deepEqual(seen[0], ['continue_request', 'sleep_in_bed'], 'rested: staying up is a choice');
-  assert.equal(seen.length, 1, 'two nights awake: only the bed, taken without asking');
+  assert.doesNotMatch(seen[0].continue_request.description, /phantoms/, 'rested: nothing to warn of');
+  assert.match(seen[1].continue_request.description, /phantoms come for a player on the third/);
+  assert(seen[1].sleep_in_bed, 'the bed is on offer beside it');
 });
 
 test('with no shelter site that can be walked to, the night is sealed in where the bot stands', async () => {
@@ -1565,6 +1566,28 @@ test('the walk to bed stops when the bot is hurt on the way, for the threat rule
   await assert.rejects(survival.sleepStep(new Task('test', 'sleep'), goal, () => {}), /Trouble on the way to bed/);
   assert.equal(walks, 1);
   assert.equal(goal.survivalAction.action, 'sleep_interrupted');
+});
+
+test('at dusk with the bed at home forty blocks off, the walk home is Jev\'s option; once chosen it is held, not asked again', async () => {
+  const { Survival } = require('../src/survival');
+  const { layout } = require('../src/home-base');
+  const home = { version: 1, dimension: 'overworld', origin: { x: 0, y: 63, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 63, z: 0 }, bed: { placedAt: 'now', claimedAt: 'now' }, plot: {}, pen: {} };
+  const { bed } = layout(home);
+  const blocks = new Map([[`${new Vec3(bed.foot.x, bed.foot.y, bed.foot.z)}`, 'white_bed'], [`${new Vec3(bed.head.x, bed.head.y, bed.head.z)}`, 'white_bed']]);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 10000 },
+    entity: { position: new Vec3(40.5, 64, 0.5) }, health: 20, food: 20, oxygenLevel: 20, isSleeping: false, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
+  const goal = { kind: 'win', request: 'beat the game', survival: { home } };
+  let walks = 0; const asked = [];
+  const survival = new Survival(bot, { navigate: async () => { walks++; } }, { state: goal.survival, client: { systemOne: async () => ({}) } });
+  survival.decide = async (task, g, save, { tree }) => { asked.push(Object.keys(tree).sort()); return { path: ['go_home_for_night'], action: tree.go_home_for_night, stale: false }; };
+  await survival.step(new Task('dusk'), goal, () => {});
+  assert(asked[0].includes('go_home_for_night') && asked[0].includes('continue_request') && asked[0].includes('secure_shelter'), asked[0].join(','));
+  assert.equal(walks, 1);
+  await survival.step(new Task('dusk'), goal, () => {});
+  assert.equal(asked.length, 1, 'held: the walk goes on without a second question');
+  assert.equal(walks, 2);
 });
 
 test('respawned with nothing at night, the bot digs down into dirt by hand and caps it with the dirt', async () => {
