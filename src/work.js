@@ -656,10 +656,16 @@ async function workSource(bot, task, step, goal, save, source) {
       // iron and eleven stood in the wall, eight of them behind the three
       // in view when the source was chosen. The stash keeps the surplus.
       const ore = /_ore$/.test(source.block) || source.block === 'ancient_debris';
-      const wanted = () => /_log$/.test(source.block) ? countOf(bot, step.drops) < 8 : ore ? countOf(bot, step.drops) < 32 : countOf(bot, step.drops) < before + (step.count || 1);
+      // Stone is taken by the couple of dozen while the face is at hand: the
+      // first trials remade their kit after a death three cobblestone at a
+      // time, climbing to the surface for a log between each (2026-09-24),
+      // when the pickaxe, sword, axe and furnace want two dozen between them.
+      const rock = /^(cobblestone|cobbled_deepslate)$/.test(step.drops);
+      const wanted = () => /_log$/.test(source.block) ? countOf(bot, step.drops) < 8 : ore ? countOf(bot, step.drops) < 32
+        : rock ? countOf(bot, step.drops) < Math.max(24, before + (step.count || 1)) : countOf(bot, step.drops) < before + (step.count || 1);
       for (let extra = 0; extra < 24 && wanted(); extra++) {
         let next = nearestRemaining(bot, source);
-        if ((!next || next.distanceTo(bot.entity.position) > 6) && ore) {
+        if ((!next || next.distanceTo(bot.entity.position) > 6) && (ore || rock)) {
           const here = bot.entity.position;
           next = (await miningCandidates(bot, task, step, goal)).filter(p => p.distanceTo(here) <= 6).sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0] || null;
         }
