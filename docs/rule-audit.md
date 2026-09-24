@@ -56,6 +56,18 @@ choose. Line numbers are as of commit 27ef475.
   shaft, mine), held for the night.
 - 70e8da0: the food search always offered; an animal near a hostile is
   offered with the distance said.
+- 486352f: `inventory_drop` (which stack goes when the pockets are full).
+- ca3edd0, 9afdcd7: `while_cooking`; the player's wish that the bot not
+  stand idle is said in every work question. Probed: a 200-second iron
+  batch went from waiting (0.56) to digging the ore in reach (0.59) once
+  the options said the furnace cooks on its own.
+- 1feba58: the pocket question is told dawn from night and what the work
+  outside waits on. Probed: at dawn with nothing watching, leave (0.65).
+- 9b7735f: the bed may wait its turn, and its option says how the sheep
+  search is going. Probed: twelve minutes and 480 blocks with none seen,
+  Jev explores for a village (0.61).
+- 68984f7: `night_mine_target` (the nearest of each ore, copper included
+  with its use said, or a branch).
 
 The gates that remain are all on player-facing questions (intake, commands,
 builds, memory, dream): below the bar the bot asks the player, which is Jev's
@@ -77,14 +89,11 @@ uncertainty put to a person, not a rule choosing.
 ### Night and shelter (every tick of every night)
 | Where | Rule | Proposal |
 |---|---|---|
-| survival.js:46, 57, 1422, 1465 | Night-mine ores, depth, and when a pickaxe is replaced | New `night_mine_target`, with uses left as a fact |
 
 ### Work (every mining step, every stall)
 | Where | Rule | Proposal |
 |---|---|---|
-| stillness.js:244 | A stalled survival action is refused for ten minutes | Keep it offered with the stall as a fact |
 | work.js:874 | Three missed candidates, then explore | Back to `resource_source` with the misses as facts |
-| work.js:1204-1283 | What to do while cooking (ore list, stone, logs) | New `while_cooking` decision reusing the detour options |
 | work.js:245-271, 2876 | Expedition readiness and Nether food gates | New `expedition_readiness` decision |
 | work.js:2776 | Detour ores: a fixed list, only the first found offered | One option per ore found, with need as a fact |
 | game-progress.js:142, 166, 207, 282 | Tool wear counts as missing; village bed before sheep; the bow only at night; the pearl-source order | Facts and options on `win_strategy` |
@@ -94,14 +103,15 @@ uncertainty put to a person, not a rule choosing.
 |---|---|---|
 | home-base.js:337-423 | Home stages in a fixed order after the bed | New `home_step` decision |
 | home-base.js:381, 680 | Wool means killing the nearest sheep | Options: kill, craft shears, village bed |
-| inventory-tidy.js:10-129 | What is thrown out when pockets are full | New `inventory_drop` decision |
 | home-stash.js:49-225 | What the chest and pockets keep | Deposit bundles as options |
 | vitals.js:206-214 | When to eat, and not with a mob within 5 | Low value; an `eat` stance option when hurt with food carried |
 | corpse-run.js:18-78 | Which items are worth a trip, and when it is safe to go | New `corpse_run` decision |
 
 ## Kept as code
 
-Air and drowning (vitals, surface.js), the swing at arm's length and the shield
+The survival layer's refusal of an action that just stalled (stillness.js
+`refused`): a loop-breaker, not a choice; every question still offers the
+rest. Air and drowning (vitals, surface.js), the swing at arm's length and the shield
 against an arrow already in flight (faster than a question), off a ledge when a
 mob is close, lava-edge checks, pathing, the stall detector itself, set-aside
 bookkeeping, layout and levelling, and wearing the best armour (dominant, not a
