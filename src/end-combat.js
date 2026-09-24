@@ -253,12 +253,9 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       else if (countOf(bot, 'water_bucket')) delete state.water;
       save();
     }
-    const turned = hostileEntities(bot, 12).find(e => live(bot, e) && e.name === 'enderman');
-    if (turned && !state.water) {
-      const at = await pourAtFeet(bot, check);
-      if (at) { state.water = { at: { ...at }, poured: Date.now() }; state.pours = (state.pours || 0) + 1; goal.step = { action: 'end_water', against: 'enderman', at: { ...at } }; save(); }
-    }
-    // Two or more turned, or one with the health low: the pocket two high
+    // Two or more turned, or one with the health low: the pocket two high,
+    // before any water goes down (poured first, it ran into the shaft and the
+    // cap sealed the bot in to drown: the rehearsal, 2026-09-24).
     // they cannot follow into (end-pocket.js), not the sword.
     const { endPocket, angryEndermen } = require('./end-pocket');
     const angry = angryEndermen(bot, 12, hostileEntities).filter(e => live(bot, e));
@@ -266,6 +263,11 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       try {
         if (await endPocket(bot, task, { dig: actions.dig, check, hostileEntities, report: a => { goal.step = a; save(); } })) { state.pockets = (state.pockets || 0) + 1; save(); return; }
       } catch (err) { if (['Cancelled', 'NeedsAir'].includes(err.name)) throw err; state.pocketFailedAt = Date.now(); save(); }
+    }
+    const turned = hostileEntities(bot, 12).find(e => live(bot, e) && e.name === 'enderman');
+    if (turned && !state.water) {
+      const at = await pourAtFeet(bot, check);
+      if (at) { state.water = { at: { ...at }, poured: Date.now() }; state.pours = (state.pours || 0) + 1; goal.step = { action: 'end_water', against: 'enderman', at: { ...at } }; save(); }
     }
     const attacker = hostileEntities(bot, 6).find(e => live(bot, e));
     if (attacker && sword) {

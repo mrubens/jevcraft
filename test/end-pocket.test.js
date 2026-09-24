@@ -39,3 +39,10 @@ test('no pocket over the void or with nothing to cap it', () => {
   v.bot.blockAt = p => ({ name: p.y === 60 ? 'end_stone' : 'air', position: p.floored(), boundingBox: p.y === 60 ? 'block' : 'empty' });
   assert.equal(pocketPlan(v.bot), null);
 });
+
+test('no pocket with water poured beside it: it would run in under the cap', () => {
+  const w = platform();
+  const inner = w.bot.blockAt;
+  w.bot.blockAt = p => { const f = p.floored(); return f.x === 1 && f.y === 61 && f.z === 0 ? { name: 'water', position: f, boundingBox: 'empty' } : inner(p); };
+  assert.equal(pocketPlan(w.bot), null);
+});

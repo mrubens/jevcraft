@@ -23,6 +23,8 @@ function pocketPlan(bot) {
   const cells = [1, 2, 3].map(d => feet.offset(0, -d, 0));
   if (!cells.every(c => /^(end_stone|cobblestone|stone|dirt|netherrack)$/.test(bot.blockAt(c)?.name || ''))) return null;
   if (!solid(bot.blockAt(feet.offset(0, -DEPTH - 1, 0)))) return null;
+  // No water about the top of the shaft: it would run in under the cap.
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) if (/water/.test(bot.blockAt(feet.offset(dx, dy, dz))?.name || '')) return null;
   // The cap goes in the top cell, placed against its side walls.
   const top = cells[0];
   const walls = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => top.offset(dx, 0, dz)).filter(p => solid(bot.blockAt(p)));
@@ -46,7 +48,8 @@ async function endPocket(bot, task, { dig, check = () => task.check(), hostileEn
   await bot.placeBlock(wall, plan.top.minus(plan.wall));
   if (!solid(bot.blockAt(plan.top))) throw new Error('The pocket would not close');
   const started = Date.now();
-  while (Date.now() - started < waitMs && angryEndermen(bot, CALM, hostileEntities).length) { check(); await sleep(500); }
+  const { headSubmerged } = require('./vitals');
+  while (Date.now() - started < waitMs && angryEndermen(bot, CALM, hostileEntities).length && !headSubmerged(bot)) { check(); await sleep(500); }
   report({ action: 'end_pocket_leave', waited: Math.round((Date.now() - started) / 1000), health: bot.health });
   // Out: the cap dug, and up the shaft on placed blocks.
   await dig(bot, task, plan.top, { requireDrops: false });
