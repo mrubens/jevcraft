@@ -141,7 +141,11 @@ function look(bot, goal, { now = Date.now(), dt = TICK_MS } = {}) {
   if (newGround(stalls, here, now)) progress = true;
   // Something new: the action's own item, or anything worth keeping.
   for (const i of bot.inventory?.items?.() || []) {
-    const counts = action.item ? i.name === action.item : !FILLER.test(i.name);
+    // Anything worth keeping, and the action's own item even when it is rock:
+    // an iron helmet is got by way of ore, coal and ingots, and a stall rule
+    // that counted only helmets moved trial 10's bot on from its furnace
+    // with thirteen iron cooking (2026-09-24).
+    const counts = i.name === action.item || !FILLER.test(i.name);
     if (!counts) continue;
     r.now ||= {}; r.now[i.name] = (r.now[i.name] || 0) + i.count;
   }

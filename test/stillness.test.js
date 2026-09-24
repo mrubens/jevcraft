@@ -54,6 +54,17 @@ test('a slow walk in a straight line is new ground; the same trip back and forth
   assert(later.idle >= STALL_MS, 'a stone face and a food drop twenty blocks apart, again and again, is pacing');
 });
 
+test('the way to the thing counts: ingots on the way to a helmet are progress, rock is not', () => {
+  const items = [], bot = botAt(0.5, 64, 0.5, items);
+  const goal = { step: { action: 'acquire_set', item: 'iron_helmet' } };
+  const t0 = Date.now();
+  looks(bot, goal, 30, { at: t0 });
+  items.push(stack('cobblestone', 5));
+  assert.equal(look(bot, goal, { now: t0 + 31000 }).progress, false, 'rock dug on the way is not');
+  items.push(stack('iron_ingot', 3));
+  assert.equal(look(bot, goal, { now: t0 + 32000 }).progress, true, 'the ingots are');
+});
+
 test('nearer the action\'s own target is progress, in three dimensions', () => {
   const bot = botAt(0.5, 30, 0.5);
   const goal = { step: { action: 'go_to_landmark', target: { x: 0, y: 60, z: 0 } } };
