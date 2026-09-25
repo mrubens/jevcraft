@@ -170,3 +170,24 @@ test('no jump across a gap and up a block, and gap jumps rest after walks keep e
   bot._gapJumpsOffUntil = Date.now() + 60000;
   assert.deepEqual(jumps(movement, gapWorld()), [], 'resting after short walks');
 });
+
+test('a water column is swum up where it comes out into air within twenty blocks, and not where it does not', () => {
+  // The arena, 2026-09-25: a twelve-block waterfall the physics climbed in six seconds was "no path".
+  const bot = botFixture(), Block = require('prismarine-block')(bot.registry);
+  let top = 80;
+  bot.blockAt = point => {
+    const p = point.floored();
+    const name = p.x === 0 && p.z === 0 && p.y >= 70 && p.y < top ? 'water' : p.x === 0 && p.z === 0 && p.y >= top ? 'air' : 'stone';
+    const block = Block.fromStateId(bot.registry.blocksByName[name].defaultState); block.position = p; return block;
+  };
+  const movement = configureMovements(bot); movement.canDig = false; movement.allow1by1towers = false;
+  const up = () => { const n = []; movement.getMoveUp({ x: 0, y: 70, z: 0, remainingBlocks: 0 }, n); return n; };
+  assert.equal(up().length, 1, 'air ten blocks up: swum up');
+  assert.equal(up()[0].y, 71);
+  top = 95;
+  assert.equal(up().length, 0, 'twenty-five blocks of water: not planned');
+  top = 200;
+  bot.blockAt = point => { const p = point.floored(); const name = p.x === 0 && p.z === 0 && p.y >= 70 && p.y < 80 ? 'water' : 'stone';
+    const block = Block.fromStateId(bot.registry.blocksByName[name].defaultState); block.position = p; return block; };
+  assert.equal(up().length, 0, 'water to a stone ceiling: not planned');
+});

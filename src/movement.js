@@ -110,6 +110,22 @@ class SurvivalMovements extends Movements {
     if (cost <= 100) neighbors.push(new Move(above.position.x, above.position.y, above.position.z, node.remainingBlocks, cost, [], []));
   }
 
+  // Up a water column, as a player swims up a waterfall or a flooded shaft:
+  // the upstream graph has no upward move in water at all, so a waterfall
+  // the physics climbs in six seconds was "no path" (the arena, 2026-09-25).
+  // Only where the column comes out into air within twenty blocks: about
+  // six seconds at the three and a half a second measured, well inside a
+  // breath of fifteen.
+  getMoveUp(node, neighbors) {
+    if (!swimmableWater(this.getBlock(node, 0, 0, 0))) return super.getMoveUp(node, neighbors);
+    const open = b => b.safe && !b.liquid;
+    if (!(swimmableWater(this.getBlock(node, 0, 1, 0)) || open(this.getBlock(node, 0, 1, 0)))) return;
+    let n = 1;
+    while (n <= 20 && swimmableWater(this.getBlock(node, 0, n, 0))) n++;
+    if (n > 20 || !open(this.getBlock(node, 0, n, 0))) return;
+    neighbors.push(new Move(node.x, node.y + 1, node.z, node.remainingBlocks, 1 + this.liquidCost, [], []));
+  }
+
   getMoveDiagonal(node, direction, neighbors) {
     // Diagonal jumps and swimming corners can look traversable to the graph
     // while the full player body catches the adjacent wall. Route those moves
