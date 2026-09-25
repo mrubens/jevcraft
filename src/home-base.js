@@ -348,8 +348,9 @@ function woodSpecies(bot) {
   return seen && bot.registry.itemsByName[`${seen}_fence`] ? seen : 'oak';
 }
 
-// The home rung, one bounded step at a time, read off the world: bed
-// first (it is what a death costs), then the plot, then the pen. A base
+// The home rung, one bounded step at a time, read off the world: the
+// stash chest and the bed first (they are what a death costs), then the
+// plot, then the pen. A base
 // needs a survival layer and the Overworld; anything else has no rung.
 function homeStage(bot, goal, { now = Date.now() } = {}) {
   const survival = goal.survival;
@@ -391,6 +392,17 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
     }
     home.levelledAt = new Date(now).toISOString();
   }
+  // The stash chest, where the bed goes: what a death would drop goes in
+  // it, and the respawn starts from it. Eight planks, placed once, and
+  // before the bed: trial 32 found no sheep all night, had no bed, and so
+  // had no chest to leave anything in either.
+  const chest = stash.stashStatus(bot, home);
+  if (!chest.loaded) return { phase: 'home_stash', action: 'return_home' };
+  if (!chest.placed) {
+    if (home.stash?.position) stash.forgetChest(home);
+    return countOf(bot, 'chest') ? { phase: 'home_stash', action: 'place_chest' } : { phase: 'home_stash', action: 'acquire', item: 'chest', count: 1 };
+  }
+  if (!home.stash?.position) home.stash = { ...home.stash, position: plain(chest.at), placedAt: new Date(now).toISOString(), contents: home.stash?.contents || {} };
   if (!bed.claimed) {
     if (bed.placed) return { phase: 'home_bed', action: 'claim_bed' };
     const carried = bedCarried(bot);
@@ -399,15 +411,6 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
     if (wool.count >= 3) return { phase: 'home_bed', action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
     return { phase: 'home_bed', action: 'gather_wool', count: 3 - wool.count };
   }
-  // The stash chest beside the bed: the bed is what a death costs, the
-  // chest is what the respawn starts with. Eight planks, placed once.
-  const chest = stash.stashStatus(bot, home);
-  if (!chest.loaded) return { phase: 'home_stash', action: 'return_home' };
-  if (!chest.placed) {
-    if (home.stash?.position) stash.forgetChest(home);
-    return countOf(bot, 'chest') ? { phase: 'home_stash', action: 'place_chest' } : { phase: 'home_stash', action: 'acquire', item: 'chest', count: 1 };
-  }
-  if (!home.stash?.position) home.stash = { ...home.stash, position: plain(chest.at), placedAt: new Date(now).toISOString(), contents: home.stash?.contents || {} };
   // A poured pond comes before the plot: the farmland is hydrated by it.
   if (home.pourWater) {
     const w = bot.blockAt(pos(home.water));

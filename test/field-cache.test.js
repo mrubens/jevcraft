@@ -67,3 +67,16 @@ test('on the way back the cache is emptied into the pockets', async () => {
   assert.equal(container.length, 0);
   assert.equal(cache.nearCache(w.bot, w.goal), null, 'an empty cache is not visited again');
 });
+
+test('away from home, a chest here is on offer before any risk, when there is something to leave and the wood for a chest', async () => {
+  const rich = await farFromHome([['gold_ingot', 3], ['raw_iron', 20], ['oak_planks', 8], ['cobblestone', 64]]);
+  const offer = cache.cacheOffer(rich.bot, rich.goal);
+  assert.match(offer.what, /3 gold ingot/); assert.match(offer.what, /20 raw iron/);
+  assert.equal(offer.chest, 'a chest made from eight planks');
+  const poor = await farFromHome([['diamond', 3], ['cobblestone', 64]]);
+  assert.equal(cache.cacheOffer(poor.bot, poor.goal), null, 'no chest and no wood for one');
+  const empty = await farFromHome([['oak_planks', 8], ['cobblestone', 64]]);
+  assert.equal(cache.cacheOffer(empty.bot, empty.goal), null, 'nothing worth leaving');
+  const home = await establishedHome({ items: [['diamond', 3], ['chest', 1]] });
+  assert.equal(cache.cacheOffer(home.bot, home.goal), null, 'home\'s chest is in reach');
+});

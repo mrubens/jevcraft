@@ -115,10 +115,12 @@ function walk(tree, fallback) {
 // and it cost seven minutes of a run with nothing to show.
 const GAMEPLAY_AREAS = new Set(['combat', 'endgame', 'home', 'idle', 'resources', 'strategy', 'survival']);
 const REAL_TIME = 'The player counts real time: a Minecraft day is twenty real minutes and a night about seven. Minutes spent waiting, hiding, or redoing what a death lost are the cost that counts, and the player minds a death less than a night idled.';
-function withRealTime(spec) {
+const RISK = 'riskNow is how likely a death is now (the mobs about, what fighting them all here would cost, whether more spawn around, whether health comes back); deathWouldCost is what a death now would lose.';
+function withRealTime(spec, state = {}) {
   if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
   const { task, guidance = '' } = spec.instructions;
-  return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}` };
+  const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
+  return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${risk}` };
 }
 
 class NoSafeDefault extends Error {
@@ -146,7 +148,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     const stopThinking = spec.thinking && bot ? require('../speech').thinking(bot) : () => {};
     try {
       decision = await decideTree(client, { state, tree, signal: controller.signal, fallback, kind: spec.kind,
-        rootInstructions: withRealTime(spec), isFresh });
+        rootInstructions: withRealTime(spec, state), isFresh });
     } catch (err) {
       if (!fallback && !controller.signal.aborted && err.name === 'TypeSafeError') throw new NoSafeDefault(id, err.message);
       throw err;

@@ -95,6 +95,7 @@ function strategyState(bot, goal, stage, options) {
     note: 'minutesOnLadderNext is how long the ladder\'s next step has been worked on without finishing; this is asked again every twenty of them. Another open step can go first. Nothing skipped here is skipped for good: every step is done before the Nether.',
     timeOfDay: t, daylightMinutesRemaining: Math.round(Math.max(0, DAY.DUSK - t) / 1200 * 10) / 10,
     ...(require('./exploration').biomeView(bot) || {}),
+    riskNow: require('./risk').riskNow(bot), deathWouldCost: require('./risk').deathCost(bot, goal),
     health: bot.health, food: bot.food, experienceLevel: bot.experience?.level ?? 0,
     inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
     deaths: (goal.survival?.deaths || []).length,

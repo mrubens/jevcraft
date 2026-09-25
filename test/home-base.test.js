@@ -52,7 +52,7 @@ test('the site is the level shore nearest the first remembered portal, never on 
   assert(other && (other.direction.x !== 1), `the shore facing the cliff was passed over: ${JSON.stringify(other?.direction)}`);
 });
 
-test('the home rung runs bed, stash, plot then pen, each step read off the world, and ends when all four stand', async () => {
+test('the home rung runs stash, bed, plot then pen, each step read off the world, and ends when all four stand', async () => {
   const w = world({ ponds: [pond(20, 0)], items: [['oak_log', 8]] });
   const { bot, give, actions } = w, goal = goalWith(bot, { portals: [{ x: 0, y: LEVEL + 1, z: 0, dimension: 'overworld' }] }), task = new Task('home'), save = () => {};
   const stage = () => home.homeStage(bot, goal);
@@ -61,6 +61,12 @@ test('the home rung runs bed, stash, plot then pen, each step read off the world
   await step();
   assert(goal.survival.home, 'the site is persisted in the shared survival state');
   assert.equal(goal.step.action, 'home_site'); assert.equal(goal.step.anchor, 'portal');
+  // Stash: a chest where the bed goes, before the bed, placed once and remembered.
+  assert.deepEqual(stage(), { phase: 'home_stash', action: 'acquire', item: 'chest', count: 1 });
+  give('chest', 1); assert.deepEqual(stage(), { phase: 'home_stash', action: 'place_chest' });
+  await step();
+  assert.equal(bot.blockAt(new Vec3(home.layout(goal.survival.home).chest.x, LEVEL + 1, home.layout(goal.survival.home).chest.z)).name, 'chest');
+  assert.deepEqual(goal.survival.home.stash.position, home.layout(goal.survival.home).chest); assert.deepEqual(goal.survival.home.stash.contents, {});
   // Bed: wool, then the bed item, then placing it, then using it.
   assert.deepEqual(stage(), { phase: 'home_bed', action: 'gather_wool', count: 3 });
   give('white_wool', 2); assert.equal(stage().count, 1);
@@ -72,12 +78,6 @@ test('the home rung runs bed, stash, plot then pen, each step read off the world
   assert.equal(stage().action, 'claim_bed');
   await step();
   assert.match(goal.survival.home.bed.evidence, /set_spawn/); assert(goal.survival.home.bed.claimedAt);
-  // Stash: a chest beside the bed, placed once and remembered.
-  assert.deepEqual(stage(), { phase: 'home_stash', action: 'acquire', item: 'chest', count: 1 });
-  give('chest', 1); assert.deepEqual(stage(), { phase: 'home_stash', action: 'place_chest' });
-  await step();
-  assert.equal(bot.blockAt(new Vec3(home.layout(goal.survival.home).chest.x, LEVEL + 1, home.layout(goal.survival.home).chest.z)).name, 'chest');
-  assert.deepEqual(goal.survival.home.stash.position, home.layout(goal.survival.home).chest); assert.deepEqual(goal.survival.home.stash.contents, {});
   // Plot: a hoe, tilling, seeds, planting.
   assert.deepEqual(stage(), { phase: 'home_plot', action: 'acquire', item: 'wooden_hoe', count: 1 });
   give('wooden_hoe', 1); assert.deepEqual(stage(), { phase: 'home_plot', action: 'till', cells: 9 });
@@ -285,7 +285,7 @@ test('the base anchors on the surface above a near portal, and on the bot when t
   assert(home.chooseBaseSite(bot, deepNear), 'a site is found around the surface anchor');
 });
 
-test('a bumpy site is levelled: a tree and a bump come out, a dip is filled with dirt, then the bed goes down', async () => {
+test('a bumpy site is levelled: a tree and a bump come out, a dip is filled with dirt, then the chest goes down', async () => {
   const w = world({ items: [['water_bucket', 1], ['white_bed', 1], ['chest', 1], ['oak_log', 8], ['dirt', 8]] });
   const { bot, actions } = w, goal = goalWith(bot), task = new Task('home'), save = () => {};
   // No pond: a bucket site on flat ground has no work. Put a bump, a tree and a dip on the flat.
@@ -305,7 +305,7 @@ test('a bumpy site is levelled: a tree and a bump come out, a dip is filled with
   await home.homeStep(bot, task, goal, save, stage, actions);
   assert.deepEqual(home.siteWork(bot, goal, goal.survival.home), { digs: [], fills: [] }, 'level after the step');
   stage = home.homeStage(bot, goal);
-  assert(goal.survival.home.levelledAt); assert.equal(stage.phase, 'home_bed');
+  assert(goal.survival.home.levelledAt); assert.equal(stage.phase, 'home_stash');
 });
 
 test('a failed site search counts once per place, waits a minute between looks, and after two places with no bucket takes a dry site', async () => {

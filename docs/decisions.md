@@ -39,6 +39,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `obtain_food` | root | get food | food carried is under the reserve and hunger or a stock top-up calls for it (not at night when shelter is needed) |
 | `hunt_[a-z_]+` (pattern) | root | go out and hunt this kind of mob for its drops | at night in the Overworld where staying up is on offer, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back |
 | `stash_valuables` | root | put the valuables in the stash chest first | at night where staying up is on offer, a stash chest within 128 blocks and valuables carried |
+| `cache_valuables` | root | put a chest down here for the valuables | at night where staying up is on offer, home's chest out of reach, valuables carried, and a chest or the wood for one |
 | `cook_[a-z_]+` (pattern) | obtain_food | cook a carried ingredient | raw food and fuel are carried; the output is safe food |
 | `prepare_hunting_sword` | obtain_food | make a wooden sword to hunt with | animals are in view and no weapon is carried |
 | `hunt_\d+` (pattern) | obtain_food | hunt this animal | an adult food animal in view is reachable on safe surface ground; the nearest hostile to it is said |
@@ -83,6 +84,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `work_here` | root | stay and make the ladder's next item in the pocket | on the game ladder, nothing watching, and the next item can be made from what is carried by smelting and crafting alone |
 | `hunt_[a-z_]+` (pattern) | root | open the pocket and hunt this kind of mob for its drops | night, nothing watching, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back |
 | `stash_valuables` | root | open the pocket and put the valuables in the stash chest | night, nothing watching, a stash chest within 128 blocks and valuables carried |
+| `cache_valuables` | root | open the pocket and put a chest down outside for the valuables | night, nothing watching, home's chest out of reach, valuables carried, and a chest or the wood for one |
 | `stay` | root | stay in the pocket | always |
 | `leave` | root | open the pocket and go back to work | always |
 
@@ -478,6 +480,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `breed_sheep` | root | breed two sheep | two adult sheep near and two wheat carried |
 | `breed_chickens` | root | breed two chickens | two adult chickens near and two seeds carried |
 | `fetch_cache` | root | fetch the things left in a field cache | a full field cache between 48 and 512 blocks away |
+| `cache_valuables` | root | leave the valuables in a chest here | in the Overworld, home's chest out of reach, valuables carried, and a chest or the wood for one |
 | `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | in the Overworld, another biome twenty-four or more blocks off (the nearest four), said with what it holds |
 | `deep_dark` | root | an expedition to the deep dark | in the Overworld with an iron pickaxe or better, healthy and fed, no warden rest, and no city already done |
 | `trade` | root | trade at a remembered village | a village is remembered within 256 blocks and emeralds or spare items to sell are carried |
@@ -519,6 +522,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `breed_sheep` | root | breed two sheep | by day in the Overworld, and two adult sheep near and two wheat carried |
 | `breed_chickens` | root | breed two chickens | by day in the Overworld, and two adult chickens near and two seeds carried |
 | `fetch_cache` | root | fetch the things left in a field cache | by day in the Overworld, and a full field cache between 48 and 512 blocks away |
+| `cache_valuables` | root | leave the valuables in a chest here | by day in the Overworld, and in the Overworld, home's chest out of reach, valuables carried, and a chest or the wood for one |
 | `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | by day in the Overworld, and in the Overworld, another biome twenty-four or more blocks off (the nearest four), said with what it holds |
 | `deep_dark` | root | an expedition to the deep dark | by day in the Overworld, and in the Overworld with an iron pickaxe or better, healthy and fed, no warden rest, and no city already done |
 | `trade` | root | trade at a remembered village | by day in the Overworld, and a village is remembered within 256 blocks and emeralds or spare items to sell are carried |
@@ -549,6 +553,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `trial_chambers` | root | an expedition to the trial chambers | in the Overworld with an iron pickaxe or better, healthy and fed, and the chambers not already done |
 | `explore` | root | explore the nearest unexplored area | in the Overworld with an unexplored area within 512 blocks of home |
 | `fetch_cache` | root | fetch the things left in a field cache | a chest left before an earlier trip, full, between 48 and 512 blocks away |
+| `cache_valuables` | root | leave the valuables in a chest here | by day and fit, home's chest out of reach, valuables carried, and a chest or the wood for one |
 | `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | by day and fit, another biome twenty-four or more blocks off in the Overworld (the nearest four), said with what it holds, and the walk there and back fits in the daylight left |
 | `tame_wolf` | root | tame a wolf | a wild adult wolf in view, bones carried, fewer than two tamed, in the Overworld |
 | `breed_sheep` | root | breed two sheep | two adult sheep within sixteen blocks, two wheat carried, none bred in five minutes |

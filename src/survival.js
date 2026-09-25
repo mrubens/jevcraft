@@ -740,7 +740,7 @@ class Survival {
         estimate: fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
           armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health } : null,
-        deathWouldCost: this.deathCost(goal) };
+        riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal) };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
       let decision;
       try {
@@ -1620,34 +1620,7 @@ class Survival {
   // What a death now would cost, for every choice that risks one: the gear
   // and valuables that would drop where the bot falls, the walk back to
   // them from where it would respawn before they vanish, and the levels.
-  deathCost(goal) {
-    const bot = this.bot;
-    const { VALUABLES } = require('./home-stash');
-    const words = n => n.replaceAll('_', ' ');
-    const items = bot.inventory.items();
-    const worn = [5, 6, 7, 8, 45].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean).map(words);
-    const gear = [...new Set(items.filter(i => /_(pickaxe|sword|axe|shovel|helmet|chestplate|leggings|boots)$|^(bow|crossbow|shield|shears|flint_and_steel|bucket|water_bucket|lava_bucket|bed)$|_bed$/.test(i.name)).map(i => words(i.name)))];
-    const valuables = {};
-    for (const i of items) if (Object.hasOwn(VALUABLES, i.name)) valuables[words(i.name)] = (valuables[words(i.name)] || 0) + i.count;
-    const here = bot.entity.position;
-    const bed = this.state.respawn && bot.game?.dimension === 'overworld' ? pos(this.state.respawn) : null;
-    const spawn = bed || (bot.spawnPoint && bot.game?.dimension === 'overworld' ? bot.spawnPoint : null);
-    const stash = homeOf(bot, goal)?.stash?.position;
-    return {
-      dropsWorn: worn, dropsGear: gear, dropsValuables: valuables,
-      otherStacks: items.length - items.filter(i => Object.hasOwn(VALUABLES, i.name) || gear.includes(words(i.name))).length,
-      respawnAt: bed ? 'the bed slept in last' : 'the world spawn', walkBackBlocks: spawn ? Math.round(spawn.distanceTo(here)) : null,
-      levelsLost: bot.experience?.level ?? 0,
-      // Real minutes the run spent making what would drop, from the ladder's
-      // clocks: the steps whose item is carried or worn.
-      realMinutesToMakeAgain: Object.fromEntries(Object.entries(goal.rungClocks || {})
-        .filter(([phase, clock]) => clock.activeMs >= 60000 && [...worn, ...gear].some(n => n === words(phase) || (/ armou?r$/.test(words(phase)) && n.startsWith(words(phase).replace(/armou?r$/, '')) && /(helmet|chestplate|leggings|boots)$/.test(n))))
-        .map(([phase, clock]) => [words(phase), Math.round(clock.activeMs / 60000)])),
-      realSecondsToWalkBack: spawn ? Math.round(spawn.distanceTo(here) / 4.3) : null,
-      stashChestBlocks: stash ? Math.round(pos(stash).distanceTo(here)) : null,
-      note: 'Everything carried drops where the bot dies and vanishes five minutes later; the walk back from the respawn point is the only way to get it again.',
-    };
-  }
+  deathCost(goal) { return require('./risk').deathCost(this.bot, goal, this.state); }
   // The same, said in a sentence with an option.
   atRisk(goal) {
     const cost = this.deathCost(goal);
@@ -1657,6 +1630,16 @@ class Survival {
 
   // The valuables into the stash chest first, when there is one and
   // something worth putting in it.
+  // Out of reach of home, a chest put down here instead (field-cache.js).
+  cacheOption(goal) {
+    const bot = this.bot;
+    if (typeof this.actions.cacheHere !== 'function') return null;
+    const offer = require('./field-cache').cacheOffer(bot, goal);
+    if (!offer) return null;
+    return { description: `Put ${offer.chest} down here and leave the valuables in it (${offer.what}): home's chest is out of reach, and a death tonight would drop them. They are taken back passing by.`,
+      run: async (task, goal, save) => { await this.actions.cacheHere(bot, task, goal, save, 'the night'); return true; } };
+  }
+
   stashOption(goal) {
     const bot = this.bot;
     const stash = homeOf(bot, goal)?.stash?.position;
@@ -1772,7 +1755,7 @@ class Survival {
     tree.branch = { description: 'Dig a branch down to a working depth and along it, looking for ore on the way.' };
     if (dark.length) tree.light_tunnel = { description: `Put a torch in the tunnel here: ${dark.length} cells around the bot are dark enough for monsters to spawn in, and light stops them (${countOf(bot, 'torch')} torches carried).` };
     const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree, context: {},
-      state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
+      state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
     if (decision.stale) return null;
     if (decision.fallback) return nightOre(bot, feet, attemptsFor(this));
     const pick = decision.path.at(-1);
@@ -2048,6 +2031,8 @@ class Survival {
         run: async () => { this.state.nightPlan = { plan: 'hunt', kind: o.kind, until: Date.now() + 120000, startHealth: bot.health }; await this.leave(task, goal, save, refuge, `Out to hunt ${o.kind.replaceAll('_', ' ')}s.`, { past: true }); return true; } };
       const stash = night && !watcher && this.stashOption(goal);
       if (stash) options.stash_valuables = { description: stash.description, run: async () => { await this.leave(task, goal, save, refuge, 'To the chest.', { past: true }); return stash.run(task, goal, save); } };
+      const cache = night && !watcher && !stash && this.cacheOption(goal);
+      if (cache) options.cache_valuables = { description: `Open the pocket and ${cache.description.charAt(0).toLowerCase()}${cache.description.slice(1)}`, run: async () => { await this.leave(task, goal, save, refuge, 'Leaving my valuables in a chest.', { past: true }); return cache.run(task, goal, save); } };
       options.stay = { description: night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes with nothing gained${who ? `; ${who} is outside` : ''}.` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${(bot.health ?? 20) < 20 ? ', healing' : ''}.`,
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
@@ -2068,7 +2053,7 @@ class Survival {
             workWaiting: goal.rungTime?.phase || goal.step?.item || goal.step?.block || goal.request || null,
             stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor),
             inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
-            deathWouldCost: this.deathCost(goal),
+            riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal),
             health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
             threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity) })) } });
         if (decision.stale) { onStep(goal); return true; }
@@ -2215,7 +2200,7 @@ class Survival {
     const stockPaused = isSetAside(this, 'food_search', 'stock', now);
     const needsFood = foodSupply(bot) < desiredFood && (hungry || (stockDriven && !stockPaused));
     if (!needsShelter && !needsFood) return false;
-    const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay, deathWouldCost: this.deathCost(goal),
+    const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal),
       ...(require('./exploration').biomeView(bot) || {}),
       playerUrgency: goal.urgency ? { level: goal.urgency.level, meaning: 'How much the wording of the request pressed for speed: relaxed, ordinary or pressed. Pressure is a reason to keep working while it is still safe, never a reason to skip shelter once night is close.' } : undefined,
       health: bot.health, food: bot.food, safeFoodCarried: !!chooseFood(bot),
@@ -2246,6 +2231,8 @@ class Survival {
         run: async () => { this.state.nightPlan = { plan: 'hunt', kind: o.kind, until: Date.now() + 120000, startHealth: bot.health }; this.report(goal, save, { action: 'night_hunt_chosen', kind: o.kind }); } };
       const stash = this.stashOption(goal);
       if (stash) tree.stash_valuables = { description: stash.description, run: () => stash.run(task, goal, save) };
+      const cache = !stash && this.cacheOption(goal);
+      if (cache) tree.cache_valuables = { description: cache.description, run: () => cache.run(task, goal, save) };
     }
     if (homeWalk) {
       const distance = Math.round(homeBed.foot.distanceTo(bot.entity.position));

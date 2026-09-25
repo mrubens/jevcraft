@@ -54,6 +54,21 @@ function chestCell(bot) {
   return cells.sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))[0] || null;
 }
 
+// Whether a chest here is on offer before any risk (a night hunt, an
+// expedition, a mine): home's chest out of reach, valuables carried, and a
+// chest carried or the wood for one. What would go in it, or null. The
+// Nether crossing's cache, made general (the user's suggestion, 2026-09-25).
+function cacheOffer(bot, goal, now = Date.now()) {
+  if (!overworld(bot) || !homeTooFar(bot, goal) || isSetAside(goal, 'field_cache', 'here', now)) return null;
+  const moves = cacheDeposits(bot);
+  if (!moves.some(m => m.valuable)) return null;
+  const wood = bot.inventory.items().reduce((n, i) => n + (/_planks$/.test(i.name) ? i.count : /_(log|wood|stem)$/.test(i.name) ? i.count * 4 : 0), 0);
+  if (!countOf(bot, 'chest') && wood < 8) return null;
+  const counts = {};
+  for (const m of moves) counts[m.item] = (counts[m.item] || 0) + m.count;
+  return { moves, what: Object.entries(counts).map(([n, c]) => `${c} ${n.replaceAll('_', ' ')}`).join(', '), chest: countOf(bot, 'chest') ? 'the chest carried' : 'a chest made from eight planks' };
+}
+
 // Before the crossing. True when there is nothing to leave or no need of a
 // cache (home is in reach: the home stash takes them), or after one was
 // filled, so the crossing is not held up either way; a failure rests.
@@ -114,4 +129,4 @@ async function emptyCache(bot, task, goal, save, actions, cache) {
   return true;
 }
 
-module.exports = { REACH, cacheValuables, cacheDeposits, chestCell, nearCache, emptyCache, homeTooFar };
+module.exports = { REACH, cacheOffer, cacheValuables, cacheDeposits, chestCell, nearCache, emptyCache, homeTooFar };

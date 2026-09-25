@@ -1743,6 +1743,7 @@ function decisionObservation(bot, goal) {
     dimension: bot.game.dimension, position: { ...bot.entity.position.floored() },
     daylight: bot.time?.timeOfDay < DAY.DARK ? 'day' : bot.time?.timeOfDay < DAY.DAWN ? 'night' : 'dawn',
     ...(require('./exploration').biomeView(bot) || {}),
+    ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot), deathWouldCost: require('./risk').deathCost(bot, goal) } : {}),
     nearbyThreats: Object.values(bot.entities || {}).filter(e => hostiles.has(e.name) && e.position.distanceTo(bot.entity.position) < 24)
       .map(e => ({ id: e.id, name: e.name, distance: Math.round(e.position.distanceTo(bot.entity.position)) })),
     recentFailures: attemptsFor(goal).of('option'),
@@ -2629,7 +2630,10 @@ function createSurvival(bot, options) {
   // stashTrip: the valuables into the home's stash chest, for the night
   // hunt's "stash first" option.
   const stashTrip = (b, t, g, sv) => stashValuables(b, t, g, sv, homeActions());
-  return new Survival(bot, { acquireStep, dig, place, navigate, explore, returnOverworld: returnFromNether, surfaceStep, planFor, stashTrip }, options);
+  // cacheHere: the valuables into a chest put down on the spot, when home's
+  // chest is out of reach.
+  const cacheHere = (b, t, g, sv, reason) => require('./field-cache').cacheValuables(b, t, g, sv, homeActions(), { reason });
+  return new Survival(bot, { acquireStep, dig, place, navigate, explore, returnOverworld: returnFromNether, surfaceStep, planFor, stashTrip, cacheHere }, options);
 }
 
 async function returnFromNether(bot, task, goal, save) {
@@ -2796,6 +2800,7 @@ function idleOptions(bot, goal) {
   if (sides.trade) options.trade = sides.trade;
   for (const key of ['deep_dark', 'trial_chambers', 'fetch_cache', 'tame_wolf', 'breed_sheep', 'breed_chickens']) if (sides[key]) options[key] = sides[key];
   for (const key of Object.keys(sides).filter(k => k.startsWith('travel_'))) options[key] = sides[key];
+  if (sides.cache_valuables) options.cache_valuables = sides.cache_valuables;
   // Experience for enchanting: the ingots taken out of a furnace give it,
   // and the raw ore is carried and stashed by the stack. Only while there is
   // gear to enchant and the level is under thirty, so it is never ground for
@@ -2861,6 +2866,11 @@ function sideTrips(bot, goal, client) {
         b2.chat?.(`In the ${b.biome.replaceAll('_', ' ')} now.`);
       } };
   }
+  // A chest here for the valuables, before whatever comes next: home's
+  // chest out of reach, and a death would drop them (field-cache.js).
+  const cache = require('./field-cache').cacheOffer(bot, goal);
+  if (cache) trips.cache_valuables = { description: `Put ${cache.chest} down here and leave the valuables in it (${cache.what}): home's chest is out of reach, and a death on what comes next would drop them. They are taken back passing by.`,
+    says: "I'll leave my valuables in a chest here", run: (b, t, g, sv) => require('./field-cache').cacheValuables(b, t, g, sv, homeActions(), { reason: 'what comes next' }) };
   // Animals: a wolf tamed with bones, sheep and chickens bred in the field
   // (wolves.js, breeding.js).
   const wolves = require('./wolves'), breeding = require('./breeding');
