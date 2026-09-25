@@ -313,3 +313,46 @@ test('a batch of the step\'s own cooking is not a stall for as long as it takes'
   assert.equal(permittedWait(bot, { smelting: { count: 24, startedAt: now - 60000 } }, now), 'a batch cooking');
   assert.equal(permittedWait(bot, { smelting: { count: 2, startedAt: now - 60000 } }, now), null, 'two items are long done');
 });
+
+test('two steps handing the turn back and forth are a stall as it happens, before the audit fails the trial; progress under two names is not', () => {
+  // mid-110-d: tunnel and retreat_from_tunnel; mid-110-a: make_obsidian and tunnel; trial 115: return_home and a detour.
+  const { flipWatch } = require('../src/stillness');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0.5, 20, 0.5) }, inventory: { items: () => [{ name: 'cobblestone', count: 30 }] } };
+  const goal = {};
+  let t = 1_000_000, raised = null;
+  for (const [i, a] of ['tunnel', 'retreat_from_tunnel', 'tunnel', 'retreat_from_tunnel', 'tunnel'].entries()) {
+    goal.step = { action: a }; bot.entity.position = new Vec3(0.5 + (i % 2) * 2, 20, 0.5);
+    raised = flipWatch(bot, goal, t += 4000) || raised;
+  }
+  assert(raised, 'raised on the fifth change');
+  assert.match(raised.why, /turning between tunnel and retreat from tunnel 4 times in 16 seconds/);
+  assert.equal(bot._stalls.stall.why, raised.why);
+  // A shaft that advances while two names trade places is not a flip.
+  const walker = { entity: { position: new Vec3(0.5, 20, 0.5) }, inventory: { items: () => [] } }, g2 = {};
+  let r2 = null;
+  for (const [i, a] of ['tunnel', 'collect', 'tunnel', 'collect', 'tunnel'].entries()) {
+    g2.step = { action: a }; walker.entity.position = new Vec3(0.5 + i * 2, 20 - i, 0.5);
+    r2 = flipWatch(walker, g2, t += 3000) || r2;
+  }
+  assert.equal(r2, null);
+  // Nor one that gains something worth keeping.
+  const miner = { entity: { position: new Vec3(0.5, 20, 0.5) }, inventory: { items: () => [{ name: 'raw_iron', count: n }] } }, g3 = {};
+  let n = 0, r3 = null;
+  for (const a of ['mine', 'collect', 'mine', 'collect', 'mine']) { g3.step = { action: a }; n++; r3 = flipWatch(miner, g3, t += 3000) || r3; }
+  assert.equal(r3, null);
+});
+
+test('the survival layer turning between leaving a shelter and digging in is a flip too; a fight and a raised shield are one fight', () => {
+  const { flipWatch } = require('../src/stillness');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0.5, 100, 0.5) }, inventory: { items: () => [] } };
+  let t = 2_000_000, raised = null;
+  const goal = { step: { action: 'mine' } };
+  for (const a of ['leave_shelter', 'dig_in', 'leave_shelter', 'dig_in', 'leave_shelter']) { t += 2000; goal.survivalAction = { action: a, at: new Date(t).toISOString() }; raised = flipWatch(bot, goal, t) || raised; }
+  assert.match(raised?.why || '', /turning between leave shelter and dig in/);
+  const fighter = { entity: { position: new Vec3(0.5, 100, 0.5) }, inventory: { items: () => [] } }, g2 = { step: { action: 'mine' } };
+  let r2 = null;
+  for (const a of ['fight', 'block_shot', 'fight', 'block_shot', 'fight']) { t += 2000; g2.survivalAction = { action: a, at: new Date(t).toISOString() }; r2 = flipWatch(fighter, g2, t) || r2; }
+  assert.equal(r2, null);
+});

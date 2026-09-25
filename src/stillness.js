@@ -237,6 +237,7 @@ function watchStalls(bot, goalOf) {
     try {
       const seen = look(bot, goal, { now, dt });
       if (seen && seen.idle >= STALL_MS) raise(bot, goal, seen, now);
+      else flipWatch(bot, goal, now);
     } catch (err) { console.log(`[stall] look failed: ${err.message}`); }
   }, TICK_MS);
   stalls.timer.unref?.();
@@ -263,16 +264,52 @@ function airWatch(bot, now = Date.now()) {
 
 function unwatchStalls(bot) { if (bot._stalls?.timer) { clearInterval(bot._stalls.timer); delete bot._stalls.timer; } }
 
-function raise(bot, goal, seen, now = Date.now()) {
+function raise(bot, goal, seen, now = Date.now(), because = null) {
   const { record: r, action } = seen;
   r.idle = 0; r.blocks = {};
   r.strikes = [...r.strikes.filter(t => now - t < MEMORY_MS), now];
-  const why = `${Math.round(STALL_MS / 1000)} seconds on ${action.key.replace(/^\w+:/, '').replaceAll('_', ' ')} without getting anywhere`;
+  const why = because || `${Math.round(STALL_MS / 1000)} seconds on ${action.key.replace(/^\w+:/, '').replaceAll('_', ' ')} without getting anywhere`;
   const { setAside } = require('./progress');
   setAside(goal, 'act', action.key, why, MEMORY_MS);
   bot._stalls.stall = { key: action.key, layer: action.layer, name: action.name, why, strikes: r.strikes.length, at: now };
   console.log(`[stall] ${action.key}: strike ${r.strikes.length} (${why})`);
   return bot._stalls.stall;
+}
+
+// Two steps handing the turn back and forth is a stall however busy each
+// looks: a staircase and its retreat, obsidian and its tunnel, the walk home
+// and a detour each traded names every few seconds until the audit failed
+// the trial for it, one pair at a time (2026-09-25). The audit's own test,
+// looked at as it happens and a little sooner: five changes between the
+// same two steps inside forty-five seconds, the bot never more than five
+// blocks from where they began nor three from it at the end, and nothing
+// worth keeping gained. Raised as a stall of the step in hand, so the loop
+// answers it the way it answers any other: another way, a detour, or the
+// step set aside, Jev's choice with the flip said.
+const FLIP_CHANGES = 5, FLIP_MS = 45000;
+function worth(bot) { return (bot.inventory?.items?.() || []).filter(i => !FILLER.test(i.name)).reduce((n, i) => n + i.count, 0); }
+function flipWatch(bot, goal, now = Date.now()) {
+  const stalls = bot._stalls ||= { records: {}, marks: [] };
+  // The survival layer's turns too (actionOf): mid-110-e left its shelter
+  // and dug in again every two seconds for twenty seconds before it opened
+  // the pocket to a creeper. Two fight moves trading places (a fight and a
+  // raised shield) are one fight, and not counted.
+  const action = actionOf(goal, now), a = action.name === 'none' ? null : action.name, here = bot.entity?.position;
+  if (!a || !here) return null;
+  const changes = stalls.changes ||= [];
+  if (changes.at(-1)?.a !== a) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot) });
+  while (changes.length > FLIP_CHANGES) changes.shift();
+  if (changes.length < FLIP_CHANGES) return null;
+  const first = changes[0], names = new Set(changes.map(c => c.a));
+  const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
+  if (names.size !== 2 || now - first.t > FLIP_MS) return null;
+  if ([...names].every(n => HOLDS.has(n) || EMERGENCIES.has(n))) return null;
+  if (Math.max(...changes.map(c => dist(c.p, first.p)), dist(here, first.p)) >= 5 || dist(here, first.p) >= 3) return null;
+  if (worth(bot) > first.worth) return null;
+  const pair = [...names].map(n => n.replaceAll('_', ' ')).join(' and ');
+  const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
+  stalls.changes = [];
+  return raise(bot, goal, { record, action }, now, `turning between ${pair} ${FLIP_CHANGES - 1} times in ${Math.round((now - first.t) / 1000)} seconds without getting anywhere`);
 }
 
 // Where the bot has been, and on what, for every choice to see: a loop is
@@ -340,5 +377,5 @@ function recordStill(state, reason, ms, { now = Date.now(), detour } = {}) {
   return bucket;
 }
 
-module.exports = { noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
+module.exports = { flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
   Stalled, checkStall, takeStall, refused, recordStill };
