@@ -114,3 +114,20 @@ test('a fight held facing a mob that does not come is given up after eight secon
   assert.equal(await fight.run(), false, 'eight seconds and no nearer: the stance failed');
   assert.equal(immediateThreat(bot), undefined, 'left be while it lands nothing');
 });
+
+test('a golden apple carried is offered in a fight, and not at full health', () => {
+  // Trial 81: died to a spider with a golden apple from the dungeon chest in its pack.
+  const { Survival } = require('../src/survival');
+  const { Vec3 } = require('vec3');
+  const spider = { id: 4, name: 'spider', position: new Vec3(1.5, 64, 0), height: 0.9, isValid: true };
+  const items = [{ name: 'golden_apple', count: 1 }];
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 4: spider }, time: { timeOfDay: 18000 }, game: { dimension: 'overworld' },
+    world: { raycast: () => null }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }),
+    pathfinder: { movements: {} }, inventory: { items: () => items, slots: [] }, on() {}, health: 7 };
+  const survival = new Survival(bot, {});
+  const danger = [{ entity: spider, distance: 1.1, visible: true }];
+  const options = survival.stanceOptions({ check() {} }, {}, () => {}, danger, false);
+  assert.match(options.eat_golden_apple?.description || '', /four extra health as absorption/);
+  bot.health = 20;
+  assert.equal(survival.stanceOptions({ check() {} }, {}, () => {}, danger, false).eat_golden_apple, undefined);
+});

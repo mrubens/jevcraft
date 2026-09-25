@@ -171,7 +171,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `fight` | root | fight where the bot stands | a sword, axe or trident is carried |
+| `fight` | root | fight where the bot stands | always, with bare hands when no sword, axe or trident is carried |
+| `eat_golden_apple` | root | eat a golden apple now | a golden or enchanted golden apple is carried and health is below full |
 | `pillar` | root | go two blocks up and fight from there | two scaffold blocks carried and three clear blocks overhead |
 | `bunker` | root | dig into the nearby wall and fight at the doorway | a wall is near that digs in three seconds |
 | `seal` | root | seal a pocket and wait | four or more building blocks are carried |

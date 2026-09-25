@@ -732,6 +732,19 @@ class Survival {
         this.report(goal, save, { action: 'keep_working', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
         return true;
       } };
+    // A golden apple carried is what a fight at low health is kept for:
+    // trial 81 took one from a dungeon chest in its first minute and died to
+    // a spider two minutes later with it still in the pack, never offered.
+    const apple = bot.inventory.items().find(i => i.name === 'enchanted_golden_apple') || bot.inventory.items().find(i => i.name === 'golden_apple');
+    if (apple && bot.health < 20) options.eat_golden_apple = {
+      description: apple.name === 'enchanted_golden_apple'
+        ? `Eat the enchanted golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then sixteen extra health as absorption, strong regeneration for twenty seconds and resistance for five minutes. Worth more later in the game than any other food.`
+        : `Eat the golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds. Eight gold ingots and an apple to make another.`,
+      run: async () => {
+        this.report(goal, save, { action: 'eat', item: apple.name, food: bot.food, health: bot.health, stance: true });
+        try { await bot.equip(apple, 'hand'); await bot.consume(); return true; }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+      } };
     options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.',
       run: () => this.runAway(task, goal, save, danger) };
     for (const t of shotTargets(bot, danger).slice(0, 2)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : ''),
