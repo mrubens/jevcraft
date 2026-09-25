@@ -1312,8 +1312,92 @@ async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTa
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return null; }
 }
 
+// More furnaces for a big batch, as a player does: twenty-four raw iron is
+// four minutes in one furnace and eighty seconds in three. Trial 85 put all
+// twenty-four in one at minute 43 and had its armour too late. Up to two
+// furnaces beside the one in use, each loaded with a share and its fuel and
+// left to cook, recorded on the goal so a restart still collects them; the
+// main furnace takes the rest as before.
+async function loadSideFurnaces(bot, task, goal, save, main, { item, from, fuelItem, total }) {
+  if (!goal || total < 16 || bot.game?.gameMode === 'creative') return 0;
+  const furnaces = Math.min(3, Math.floor(total / 8)), extra = furnaces - 1;
+  if (extra < 1) return 0;
+  const fuel = [fuelItem, ...CARRIED_FUELS].find(n => isFuel(n) && countOf(bot, n) >= fuelUnits(n, total));
+  if (!fuel) return 0;
+  const share = Math.floor(total / furnaces);
+  const stone = countOf(bot, 'cobblestone') + countOf(bot, 'cobbled_deepslate') + countOf(bot, 'blackstone');
+  if (countOf(bot, 'furnace') < extra && stone < 8 * (extra - countOf(bot, 'furnace'))) return 0;
+  const step = goal.step;
+  try {
+    if (countOf(bot, 'furnace') < extra) await acquireStep(bot, task, 'furnace', extra, goal, save);
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return 0; }
+  finally { goal.step = step; }
+  let loaded = 0;
+  const o = bot.entity.position.floored(), taken = [main.position];
+  for (let n = 0; n < extra && countOf(bot, 'furnace') > 0 && countOf(bot, from) >= share; n++) {
+    let cell = null;
+    for (const dy of [0, 1, -1]) for (let dx = -2; dx <= 2 && !cell; dx++) for (let dz = -2; dz <= 2 && !cell; dz++) {
+      const q = o.offset(dx, dy, dz);
+      if ((dx || dz) && !taken.some(t => t.equals(q)) && !hitboxIntrudes(bot, q) && openForStation(bot, q)) cell = q;
+    }
+    if (!cell) break;
+    try {
+      await place(bot, task, cell, 'furnace');
+      rememberWorkstation(bot, goal, 'furnace', cell); taken.push(cell);
+      const block = bot.blockAt(cell);
+      const furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
+      try {
+        await furnace.putInput(bot.registry.itemsByName[from].id, null, share);
+        await furnace.putFuel(bot.registry.itemsByName[fuel].id, null, fuelUnits(fuel, share));
+      } finally { furnace.close(); }
+      if (bot._syncWindow) await bot._syncWindow(bot.inventory);
+      (goal.smeltingSides ||= []).push({ position: { x: cell.x, y: cell.y, z: cell.z }, dimension: dimension(bot), item, from, count: share, at: Date.now() });
+      loaded += share; save();
+    } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; break; }
+  }
+  return loaded;
+}
+
+// The side furnaces' output, taken when the main batch is done (they cook
+// alongside it, so are done too), and the furnaces taken back up.
+async function collectSideFurnaces(bot, task, goal, save, item) {
+  const sides = (goal?.smeltingSides || []).filter(s => s.item === item && s.dimension === dimension(bot));
+  for (const side of sides) {
+    task.check();
+    const p = pos(side.position);
+    const forget = () => { goal.smeltingSides = (goal.smeltingSides || []).filter(s => s !== side); save(); };
+    if (bot.blockAt(p) && bot.blockAt(p).name !== 'furnace') { forget(); continue; }
+    try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 30000, stallMs: 8000 }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
+    const block = bot.blockAt(p);
+    if (block?.name !== 'furnace') { forget(); continue; }
+    const furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
+    let empty = false;
+    try {
+      const deadline = Math.max(Date.now() + 5000, side.at + side.count * 10000 + 15000);
+      while (Date.now() < deadline && furnace.inputItem() && (furnace.outputItem()?.count || 0) < side.count) { task.check(); checkAir(bot); await sleep(500); }
+      if (furnace.outputItem()) await furnace.takeOutput();
+      empty = !furnace.inputItem() && !furnace.outputItem();
+    } finally {
+      try { if (bot._syncWindow) await bot._syncWindow(furnace); } finally { furnace.close(); }
+    }
+    if (bot._syncWindow) await bot._syncWindow(bot.inventory);
+    // Empty now: taken back up for the next time.
+    if (empty) {
+      try { await dig(bot, task, p); forgetWorkstation(bot, goal, `furnace:${p}`); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+    forget();
+  }
+}
+
 async function smelt(bot, task, step, goal, save = () => {}) {
   task.check();
+  // Side furnaces from a batch that was cut short are emptied first; the
+  // plan is made again from what that brings.
+  if (!goal?.smelting && (goal?.smeltingSides || []).some(s => s.item === step.item && s.dimension === dimension(bot))) {
+    await collectSideFurnaces(bot, task, goal, save, step.item);
+    return;
+  }
   const pending = localBatch(bot, goal, save);
   const plannedFuel = pending?.fuelItem || step.fuelItem || 'oak_planks';
   if (!isFuel(plannedFuel)) throw new Blocked(`I can't use ${plannedFuel.replaceAll('_', ' ')} as furnace fuel`);
@@ -1359,7 +1443,8 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   // minutes on four ingots). The planner gathers the rest and smelts it as a
   // batch of its own, at whatever furnace is nearest then.
   const carriedInput = countOf(bot, step.from);
-  const needed = Math.min(pending ? pending.targetInventory - before : (carriedInput > 0 ? Math.min(step.count, carriedInput) : step.count), 64);
+  let needed = Math.min(pending ? pending.targetInventory - before : (carriedInput > 0 ? Math.min(step.count, carriedInput) : step.count), 64);
+  if (!pending && carriedInput >= needed) needed -= await loadSideFurnaces(bot, task, goal, save, block, { item: step.item, from: step.from, fuelItem: plannedFuel, total: needed });
   if (goal && !pending) {
     goal.smelting = { item: step.item, from: step.from, fuelItem: plannedFuel, position: { ...block.position }, dimension: dimension(bot), targetInventory: before + needed, count: needed, startedAt: Date.now() };
     save();
@@ -1570,6 +1655,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   }
   await waitFor(task, () => countOf(bot, step.item) >= before + needed, 4000, awaitedItem(bot, step.item, before + needed, 'smelting'));
   if (goal) { delete goal.smelting; save(); }
+  await collectSideFurnaces(bot, task, goal, save, step.item);
   // A furnace the bot placed goes with it when it is travelling, like a
   // crafting table does. Leaving one behind at every camp cost the dream run
   // a cobblestone trip for each meal it cooked.
