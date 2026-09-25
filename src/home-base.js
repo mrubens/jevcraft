@@ -731,8 +731,13 @@ async function buildPen(bot, task, goal, save, home, actions) {
 async function searchForSheep(bot, task, goal, save, actions) {
   const search = goal.woolSearch ||= { since: Date.now(), from: plain(bot.entity.position.floored()) };
   const held = search.toward;
-  if (held && Math.hypot(held.x - bot.entity.position.x, held.z - bot.entity.position.z) > 12) {
-    try { await actions.navigate(bot, task, new goals.GoalNearXZ(held.x, held.z, 8), { timeoutMs: 60000, stallMs: 8000 }); return; }
+  // A flock is walked to where it was, height and all: seen from a mine
+  // below, "back to the sheep" by x and z alone ended under them sixty
+  // blocks down, found none within reach, and forgot them (trial 70).
+  const off = held && (held.y != null ? bot.entity.position.distanceTo(new Vec3(held.x, held.y, held.z)) : Math.hypot(held.x - bot.entity.position.x, held.z - bot.entity.position.z));
+  if (held && off > 12) {
+    const goal = held.y != null ? new goals.GoalNear(held.x, held.y, held.z, 6) : new goals.GoalNearXZ(held.x, held.z, 8);
+    try { await actions.navigate(bot, task, goal, { timeoutMs: 60000, stallMs: 8000 }); return; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; delete search.toward; save(); return; }
   }
   // Arrived where a flock was seen and none is in view (gatherWool looked):
@@ -747,7 +752,7 @@ async function searchForSheep(bot, task, goal, save, actions) {
   const string = countOf(bot, 'string'), short = Math.max(0, 3 - woolCarried(bot).total);
   const fromString = Math.min(Math.floor(string / 4), short);
   const flocksKnown = require('./sightings').sighted(bot, goal, 'sheep').filter(s => s.distance > 32);
-  if (!client && flocksKnown.length) { search.toward = { x: flocksKnown[0].x, z: flocksKnown[0].z, seen: true }; save(); return; }
+  if (!client && flocksKnown.length) { search.toward = { x: flocksKnown[0].x, y: flocksKnown[0].y, z: flocksKnown[0].z, seen: true }; save(); return; }
   if (!client || (!nearby.length && !fromString && !flocksKnown.length)) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   const minutes = Math.round((Date.now() - search.since) / 60000);
   // Flocks seen earlier and out of view now (sightings.js).
@@ -769,7 +774,7 @@ async function searchForSheep(bot, task, goal, save, actions) {
   }
   const flock = /^seen_(\d+)$/.exec(pick || '') && flocks[Number(pick.slice(5))];
   if (flock) {
-    search.toward = { x: flock.x, z: flock.z, seen: true }; save();
+    search.toward = { x: flock.x, y: flock.y, z: flock.z, seen: true }; save();
     bot.chat?.(`Back to the sheep I saw ${flock.distance} blocks ${flock.direction}.`);
     return;
   }

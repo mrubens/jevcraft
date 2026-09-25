@@ -36,3 +36,17 @@ test('with no sheep in view, the search offers the flock seen earlier, and Jev\'
   assert.match(offered.seen_0, /3 sheep seen 5 minutes ago, 160 blocks east/);
   assert.deepEqual({ x: goal.woolSearch.toward.x, z: goal.woolSearch.toward.z }, { x: 100, z: 5 });
 });
+
+test('under a flock seen from a mine, the bot has not arrived: it goes to the sheep, height and all, and does not forget them', async () => {
+  // Trial 70: "back to the sheep" by x and z ended sixty blocks under them, none in reach, and the flock was forgotten.
+  const { gatherWool } = require('../src/home-base');
+  const bot = { entity: { position: new Vec3(100.5, 12, 5.5) }, game: { dimension: 'overworld' }, entities: {}, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [], slots: [] }, blockAt: () => null, chat() {} };
+  const flock = { x: 100, y: 72, z: 5, count: 3, at: Date.now() - 60000, dimension: 'overworld' };
+  const goal = { sightings: { sheep: [flock] }, woolSearch: { since: Date.now(), from: { x: 0, y: 70, z: 0 }, toward: { x: 100, y: 72, z: 5, seen: true } } };
+  let went;
+  await gatherWool(bot, { check() {} }, goal, () => {}, null, { navigate: async (b, t, g) => { went = g; }, explore: async () => { throw new Error('explored instead'); } });
+  assert(went, 'walked on toward the flock');
+  assert.equal(went.y, 72, 'to the height the sheep were seen at');
+  assert.equal(goal.sightings.sheep.length, 1, 'the flock is not forgotten from underneath it');
+});
