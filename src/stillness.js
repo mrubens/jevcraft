@@ -226,6 +226,7 @@ function watchStalls(bot, goalOf) {
   stalls.timer = setInterval(() => {
     const now = Date.now(), late = now - last - TICK_MS, dt = Math.min(now - last, 5000); last = now;
     noteTrail(bot, stalls.goalOf?.(), now);
+    try { require('./sightings').noteSightings(bot, stalls.goalOf?.(), now); } catch (_) { /* a look missed */ }
     // A look that comes seconds late is the event loop held by synchronous
     // work: said with what the bot was on, so the next one is found by name
     // and not by a server dropping the bot (the home-site fit, 2026-09-24).

@@ -51,7 +51,8 @@ function searchSoFar(bot, goal, rung) {
   if (!search) return '';
   const minutes = Math.round((Date.now() - search.since) / 60000);
   const blocks = Math.round(Math.hypot(bot.entity.position.x - search.from.x, bot.entity.position.z - search.from.z));
-  return ` Searching for sheep for ${minutes} minute${minutes === 1 ? '' : 's'}, ${blocks} blocks from where the search began, none seen yet.`;
+  const flocks = require('./sightings').sighted(bot, goal, 'sheep');
+  return ` Searching for sheep for ${minutes} minute${minutes === 1 ? '' : 's'}, ${blocks} blocks from where the search began, ${flocks.length ? `and ${flocks.slice(0, 2).map(s => s.says).join('; ')}` : 'none seen yet'}.`;
 }
 // What the step takes from the pockets as they are, when a planner is
 // given: trial 43 carried sixty-one raw iron and two hundred coal, was

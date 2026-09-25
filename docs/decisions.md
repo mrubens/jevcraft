@@ -280,7 +280,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `sheep_search`
 
-**No sheep in view for the bed's wool: which nearby biome to look in, explore on from here, or craft wool from string carried?**
+**No sheep in view for the bed's wool: which nearby biome to look in, back to sheep seen earlier, explore on from here, or craft wool from string carried?**
 
 - When: Gathering wool with no sheep in view and another biome within the loaded area; the pick holds until the bot is there or the walk fails.
 - Decision tree, choice; stakes low; ledger kind `explore`
@@ -291,6 +291,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `biome_\d+` (pattern) | root | walk to this biome and look there | a biome other than the one underfoot, twenty-four or more blocks off, with its distance, direction and what it holds |
+| `seen_\d+` (pattern) | root | walk back to sheep seen earlier | a flock seen in the last half hour, now out of view, with how many, how long ago, its distance and direction |
 | `explore_here` | root | explore on from here | always |
 | `craft_from_string` | root | craft wool from the string carried | four or more string carried and wool still wanted |
 

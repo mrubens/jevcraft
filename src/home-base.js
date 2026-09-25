@@ -735,6 +735,9 @@ async function searchForSheep(bot, task, goal, save, actions) {
     try { await actions.navigate(bot, task, new goals.GoalNearXZ(held.x, held.z, 8), { timeoutMs: 60000, stallMs: 8000 }); return; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; delete search.toward; save(); return; }
   }
+  // Arrived where a flock was seen and none is in view (gatherWool looked):
+  // it has moved on, and the place is not offered again.
+  if (held?.seen && goal.sightings?.sheep) goal.sightings.sheep = goal.sightings.sheep.filter(s => Math.hypot(s.x - held.x, s.z - held.z) > 24);
   delete search.toward;
   const exploration = require('./exploration');
   const view = exploration.biomeView(bot);
@@ -743,20 +746,31 @@ async function searchForSheep(bot, task, goal, save, actions) {
   // String carried is wool too: four string a white wool.
   const string = countOf(bot, 'string'), short = Math.max(0, 3 - woolCarried(bot).total);
   const fromString = Math.min(Math.floor(string / 4), short);
-  if (!client || (!nearby.length && !fromString)) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
+  const flocksKnown = require('./sightings').sighted(bot, goal, 'sheep').filter(s => s.distance > 32);
+  if (!client && flocksKnown.length) { search.toward = { x: flocksKnown[0].x, z: flocksKnown[0].z, seen: true }; save(); return; }
+  if (!client || (!nearby.length && !fromString && !flocksKnown.length)) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   const minutes = Math.round((Date.now() - search.since) / 60000);
+  // Flocks seen earlier and out of view now (sightings.js).
+  const flocks = require('./sightings').sighted(bot, goal, 'sheep').filter(s => s.distance > 32).slice(0, 3);
   const tree = Object.fromEntries(nearby.map((b, i) => [`biome_${i}`, { description: `Walk to ${b.says} and look for sheep there.` }]));
+  flocks.forEach((s, i) => { tree[`seen_${i}`] = { description: `Walk back to where ${s.says}; sheep wander, but not far.` }; });
   tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.` };
   if (fromString) tree.craft_from_string = { description: `Craft ${fromString} white wool from ${fromString * 4} of the ${string} string carried (four string a wool); ${short} wool still wanted for the bed. String also makes bows.` };
   let pick = null;
   try {
     const decision = await require('./decisions').decide('sheep_search', { client, bot, task, goal, save, tree,
-      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, stringCarried: string } });
+      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, stringCarried: string } });
     if (!decision.stale && !decision.fallback) pick = decision.path.at(-1);
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   if (pick === 'craft_from_string') {
     bot.chat?.(`Making wool from string.`);
     await actions.acquireStep(bot, task, 'white_wool', countOf(bot, 'white_wool') + fromString, goal, save);
+    return;
+  }
+  const flock = /^seen_(\d+)$/.exec(pick || '') && flocks[Number(pick.slice(5))];
+  if (flock) {
+    search.toward = { x: flock.x, z: flock.z, seen: true }; save();
+    bot.chat?.(`Back to the sheep I saw ${flock.distance} blocks ${flock.direction}.`);
     return;
   }
   const chosen = /^biome_(\d+)$/.exec(pick || '') && nearby[Number(pick.slice(6))];
