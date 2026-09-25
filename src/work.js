@@ -256,7 +256,11 @@ async function maintainPickaxe(bot, task, goal, save) {
 // pickaxe is: cobblestone with a pickaxe, dirt without, netherrack in the
 // Nether. Never in water or at night on the surface, and a gather that
 // fails rests ten minutes.
-const WOOD_RESERVE = 3;
+// Six: three pickaxes and a table. With three, the midgame trials wore
+// through their pickaxes deep in the mine and spent eighty-four of two
+// hundred and twenty minutes climbing to the surface for wood, some of it
+// by hand (2026-09-25).
+const WOOD_RESERVE = 6;
 const woodUnits = bot => bot.inventory.items().reduce((n, i) => n + (/_log$|_stem$/.test(i.name) ? i.count : /_planks$/.test(i.name) ? i.count / 4 : i.name === 'stick' ? i.count / 8 : 0), 0);
 const reserveWeather = bot => bot.game?.gameMode !== 'creative' && !bot.entity?.isInWater && !(bot.game?.dimension === 'overworld' && shelterNeeded(bot));
 // Wood too, three logs' worth: the sticks for a pickaxe and a table. Worn
@@ -299,7 +303,11 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   const options = {};
   const worn = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name.replaceAll('_', ' ')} (${remainingUses(bot, i)} uses left)`);
   if (spareDue(bot)) options.spare_pickaxe = { description: `Make a stone pickaxe now, a spare: the pickaxes carried are nearly worn out (${worn.join(', ')}), and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.`, run: () => maintainPickaxe(bot, task, goal, save) };
-  if (goal.kind === 'win' && woodDue(bot, goal)) options.wood_reserve = { description: `Cut a few logs now: ${Math.floor(woodUnits(bot) * 10) / 10} logs' worth of wood carried, and ${WOOD_RESERVE} make the sticks for a pickaxe and a crafting table wherever the bot is.`, run: () => gatherWood(bot, task, goal, save) };
+  // Where the bot is decides what running short costs: at the trees it is a
+  // minute's cutting; in the mine it is the climb out, and back.
+  const depth = (() => { const f = bot.entity?.position?.floored?.(); if (!f || typeof bot.blockAt !== 'function') return 0; for (let dy = 1; dy <= 80; dy++) { const b = bot.blockAt(f.offset(0, dy, 0)); if (!b) return 0; if (b.name === 'grass_block' || b.name === 'dirt' && dy > 1) return dy; } return 80; })();
+  const where = depth >= 8 ? ` The bot is about ${depth} blocks under the surface: with no wood when a pickaxe wears out down here, the way to more is a climb of ${depth} blocks, and back down.` : ' Trees are within reach up here; in a mine, with no wood when a pickaxe wears out, the way to more is the climb out.';
+  if (goal.kind === 'win' && woodDue(bot, goal)) options.wood_reserve = { description: `Cut a few logs now: ${Math.floor(woodUnits(bot) * 10) / 10} logs' worth of wood carried, and ${WOOD_RESERVE} make the sticks for three pickaxes and a crafting table wherever the bot is.${where} The pickaxes carried: ${worn.join(', ') || 'none'}.`, run: () => gatherWood(bot, task, goal, save) };
   if (goal.kind === 'win' && blocksDue(bot, goal)) options.block_reserve = { description: `Gather building blocks now: ${blockStock(bot)} carried, and ${BLOCK_RESERVE} seal a pocket for the night or tower out of a hole.`, run: () => gatherBlocks(bot, task, goal, save) };
   const due = Object.keys(options);
   if (!due.length) return false;

@@ -130,7 +130,7 @@ test('short of the block reserve by day, the bot tops it up: cobblestone with a 
   const { maintainBlocks } = require('../src/work');
   const got = [];
   const bot = { game: { gameMode: 'survival', dimension: 'overworld' }, time: { timeOfDay: 3000 }, entity: { isInWater: false, position: { x: 0, y: 64, z: 0 } },
-    registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'dirt', count: 4 }, { name: 'oak_log', count: 4 }] } };
+    registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'dirt', count: 4 }, { name: 'oak_log', count: 8 }] } };
   const goal = { kind: 'win' };
   // acquireStep is the real planner; stand it in by watching the step the upkeep records.
   await maintainBlocks(bot, { check() {} }, goal, () => {}).catch(() => {});
@@ -146,7 +146,7 @@ test('short of blocks with Jev asked, now or later is its choice; "carry on" hol
   const asked = [];
   const client = { systemOne: async ({ questions }) => { asked.push(Object.keys(questions.branch_0.criteria).sort()); return { answers: { branch_0: { choice: 'carry_on', confidence: 0.7 } } }; } };
   const bot = { game: { gameMode: 'survival', dimension: 'overworld' }, time: { timeOfDay: 3000 }, entity: { isInWater: false, position: new (require('vec3').Vec3)(0, 64, 0) },
-    registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'dirt', count: 4 }, { name: 'oak_log', count: 4 }] }, health: 20, food: 20 };
+    registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'dirt', count: 4 }, { name: 'oak_log', count: 8 }] }, health: 20, food: 20 };
   const goal = { kind: 'win', step: { action: 'mine', block: 'iron_ore' } };
   assert.equal(await upkeepStep(bot, { check() {} }, goal, () => {}, client), false, 'carried on');
   assert.deepEqual(asked[0], ['block_reserve', 'carry_on']);
@@ -221,4 +221,18 @@ test('with no way to throw given, a stack is thrown along the most open way, not
   assert.deepEqual({ ...openDirection(bot), open: undefined }, { x: -1, z: 0, open: undefined });
   await faceAway(bot);
   assert(bot.looked.x < bot.entity.position.x - 2 && Math.abs(bot.looked.z - bot.entity.position.z) < 0.1, `thrown down the tunnel: ${bot.looked}`);
+});
+
+test('short of wood in a mine, the reserve is offered with what running out costs down there', async () => {
+  // The midgame trials spent 84 of 220 minutes climbing to the surface, much of it for wood.
+  const { upkeepStep } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  let offered;
+  const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'carry_on', confidence: 0.7 } } }; } };
+  const bot = { game: { gameMode: 'survival', dimension: 'overworld' }, time: { timeOfDay: 3000 }, entity: { isInWater: false, position: new Vec3(0.5, 20, 0.5) },
+    registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1, durabilityUsed: 100 }, { name: 'cobblestone', count: 64 }, { name: 'oak_log', count: 2 }] }, health: 20, food: 20,
+    blockAt: p => ({ position: p, name: p.y === 63 ? 'grass_block' : p.y > 63 ? 'air' : 'stone' }) };
+  await upkeepStep(bot, { check() {} }, { kind: 'win', step: { action: 'mine', block: 'iron_ore' } }, () => {}, client);
+  assert.match(offered.wood_reserve, /2 logs' worth .* 6 make the sticks for three pickaxes/);
+  assert.match(offered.wood_reserve, /about 43 blocks under the surface: .* a climb of 43 blocks/);
 });
