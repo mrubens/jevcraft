@@ -240,12 +240,22 @@ async function forageChoices(bot, task, goal, save, actions, state) {
       } };
   });
   // Always on offer: the animals in view may be the wrong ones to go for.
-  choices.search_food = {
+  // Unless it has just found nowhere to walk: mid-92-d stood on a lily pad
+  // in the open sea with no dry ground within the search's forty-eight
+  // blocks, and chose the search three hundred and eighty-five times in
+  // eight minutes, each failing at once (2026-09-25). Rested two minutes
+  // then, so the other ways (a boat, a herd seen) are chosen instead.
+  const { isSetAside, setAside } = require('./progress');
+  if (!isSetAside(goal, 'forage', 'search_food')) choices.search_food = {
     description: 'Walk to another observed dry area to search for passive animals; avoid remembered failed targets.',
     run: async () => {
       goal.survivalAction = { action: 'search_food', at: new Date().toISOString() }; save();
       task.interruptCheck = () => checkThreats(bot);
       try { await actions.explore(bot, task, goal, save, 'food animals', { surfaceOnly: true }); }
+      catch (err) {
+        if (/No reachable surveyed ground/.test(err.message || '')) { setAside(goal, 'forage', 'search_food', 'no dry ground to walk to within forty-eight blocks', 120000); save(); }
+        throw err;
+      }
       finally { task.interruptCheck = undefined; }
     },
   };

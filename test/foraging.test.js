@@ -167,3 +167,15 @@ test('rabbit hunt verifies real meat pickup and exposes its catalog cooking depe
   assert(plan.some(step => step.item === 'furnace'));
   assert.equal(foodSupply(bot), 3, 'An unexecuted cooking plan creates no food');
 });
+
+test('a search that finds no dry ground to walk to is rested, so it is not chosen again at once', async () => {
+  // mid-92-d: on a lily pad in the open sea, "search for animals" chosen 385 times in eight minutes, failing at once each time.
+  const bot = fixture([]);
+  bot.time = { timeOfDay: 6000 };
+  const goal = {};
+  const actions = { explore: async () => { throw new Error('No reachable surveyed ground while searching for food animals'); } };
+  const first = await forageChoices(bot, new Task('food'), goal, () => {}, actions, {});
+  await assert.rejects(first.search_food.run(), /No reachable surveyed ground/);
+  const again = await forageChoices(bot, new Task('food'), goal, () => {}, actions, {});
+  assert.equal(again.search_food, undefined, 'rested after finding nowhere to walk');
+});
