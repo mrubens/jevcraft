@@ -66,7 +66,9 @@ function digSeconds(bot, block) {
   for (const type of tools) { try { best = Math.min(best, block.digTime(type, false, wet, floating, [], bot.entity?.effects || {})); } catch (_) { /* not for this tool */ } }
   return Number.isFinite(best) ? best / 1000 : null;
 }
-function airRoute(bot) {
+// `closed` names cells a swimmer was held out of on the way (see
+// surfaceForAir): the search goes round them.
+function airRoute(bot, closed = new Set()) {
   const start = bot.entity.position.floored();
   const open = b => swimmableWater(b) || b && ['air', 'cave_air', 'void_air'].includes(b.name);
   const water = p => swimmableWater(bot.blockAt(p));
@@ -86,23 +88,31 @@ function airRoute(bot) {
     frontier.sort((a, b) => a.cost - b.cost);
     const { p, path, cost } = frontier.shift();
     if (cost > (best.get(`${p}`) ?? Infinity)) continue;
-    if (open(bot.blockAt(p)) && open(bot.blockAt(p.offset(0, 1, 0))) && !water(p.offset(0, 1, 0)) &&
+    if (!closed.has(`${p}`) && open(bot.blockAt(p)) && open(bot.blockAt(p.offset(0, 1, 0))) && !water(p.offset(0, 1, 0)) &&
       (water(p) || bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block')) return path.length ? path : [p];
     for (const d of directions) {
       const next = p.plus(d);
       if (next.y - start.y > 20 || next.y < start.y - 4 || Math.abs(next.x - start.x) > 8 || Math.abs(next.z - start.z) > 8) continue;
+      if (closed.has(`${next}`)) continue;
       const feet = clear(next), head = clear(next.offset(0, 1, 0));
       if (feet == null || head == null) continue;
+      // A block with a collision box is in the way however quickly it comes
+      // away, and is named to be dug: mid-92-b's way to air went up through
+      // a lily pad, which breaks at a touch and so cost nothing and was
+      // named as nothing, and its underside held the head a tenth under the
+      // surface until the bot drowned pressing jump into it (2026-09-25).
+      const inWay = (q, t) => t > 0 || (!open(bot.blockAt(q)) && bot.blockAt(q)?.boundingBox === 'block');
+      const feetDug = inWay(next, feet), headDug = inWay(next.offset(0, 1, 0), head);
       // Through air only where there is water about or ground within three
       // below: a step into a cave is a short drop, off a cliff is not.
-      const dug = feet > 0 || head > 0;
+      const dug = feetDug || headDug;
       const ground = [1, 2, 3].some(dy => bot.blockAt(next.offset(0, -dy, 0))?.boundingBox === 'block');
       if (!dug && !water(next) && !water(next.offset(0, 1, 0)) && !water(next.offset(0, -1, 0)) && !ground && d.y >= 0) continue;
       const total = cost + STEP_S + feet + head;
       if (total >= (best.get(`${next}`) ?? Infinity)) continue;
       best.set(`${next}`, total);
       const cell = next.clone();
-      cell.digs = [feet > 0 && next, head > 0 && next.offset(0, 1, 0)].filter(Boolean);
+      cell.digs = [feetDug && next, headDug && next.offset(0, 1, 0)].filter(Boolean);
       frontier.push({ p: next, path: [...path, cell], cost: total });
     }
   }
@@ -112,10 +122,21 @@ function airRoute(bot) {
 async function surfaceForAir(bot, task, onAction = () => {}) {
   onAction({ action: 'surface', oxygen: bot.oxygenLevel });
   bot.pathfinder.setGoal(null); bot.stopDigging(); bot.clearControlStates();
-  const route = airRoute(bot);
+  const closed = new Set();
+  let route = airRoute(bot, closed);
   if (!route) return straightUp(bot, task);
   const deadline = Date.now() + 15000;
   let index = 0;
+  // Air comes before anything, and a swimmer held still is spending it for
+  // nothing: mid-92-b pressed jump into a lily pad the way to air went
+  // through, not a hair of movement for thirteen seconds, and drowned
+  // (2026-09-25). Whatever holds it (a block the search misread, a boat, a
+  // current), a second with no ground gained and no air back closes the cell
+  // it was making for, and the way is found again from where it is; with
+  // none left, straight up, digging.
+  const STILL_MS = 1000;
+  const mark = () => ({ at: Date.now(), p: bot.entity.position.clone(), air: bot.oxygenLevel });
+  let last = mark();
   try {
     // A reconnect starts with a full client air bar even when the saved player
     // is underwater. Require actual breathable headroom as well as full air.
@@ -127,13 +148,25 @@ async function surfaceForAir(bot, task, onAction = () => {}) {
       for (const cell of route[index].digs || []) {
         const block = bot.blockAt(cell);
         if (!block || block.boundingBox !== 'block') continue;
-        // Let go and sink onto the floor: a dig afloat takes five times as long.
+        // Let go and sink onto the floor: a dig afloat takes five times as
+        // long. Not for one that comes away at a touch (a lily pad).
         bot.clearControlStates();
-        for (let i = 0; i < 12 && !bot.entity.onGround; i++) { task.check(); await sleep(50); }
+        if (!(digSeconds(bot, block) < 0.5)) for (let i = 0; i < 12 && !bot.entity.onGround; i++) { task.check(); await sleep(50); }
         try { await require('./skills').equipBestTool(bot, block); } catch (_) { /* the hand, then */ }
         await bot.lookAt(cell.offset(0.5, 0.5, 0.5), true);
         try { await bot.dig(block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
         task.check();
+        last = mark();
+      }
+      // Still with the eyes out of the water is breathing, not stuck.
+      if (p.distanceTo(last.p) > 0.15 || bot.oxygenLevel > last.air || !headSubmerged(bot)) last = mark();
+      else if (Date.now() - last.at > STILL_MS) {
+        closed.add(`${route[index]}`);
+        onAction({ action: 'surface', oxygen: bot.oxygenLevel, heldOutOf: { x: route[index].x, y: route[index].y, z: route[index].z } });
+        bot.clearControlStates();
+        route = airRoute(bot, closed); index = 0; last = mark();
+        if (!route) return await straightUp(bot, task);
+        continue;
       }
       const target = route[index].offset(0.5, 0, 0.5);
       const horizontal = Math.hypot(target.x - p.x, target.z - p.z);
