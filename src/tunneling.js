@@ -208,7 +208,7 @@ class StaircaseStalled extends Error {
 const area = t => ({ x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 });
 const staircaseResting = (goal, target) => isSetAside(goal, 'staircase', area(target));
 
-async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false }) {
+async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false, within = null }) {
   if (staircaseResting(goal, target)) throw new StaircaseStalled(target, attemptsFor(goal).why('staircase', area(target)));
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
@@ -290,7 +290,12 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
     save();
     throw new Error(`The staircase toward ${target} is not gaining on it; starting round ${tunnel.rounds + 1}`);
   }
-  goal.step = { action: 'tunnel', target: { ...target }, destination: { ...choice.destination }, steps: tunnel.steps };
+  // A tunnel dug inside another step (obsidian's walk to lava) is that
+  // step's phase: named 'tunnel' in turn with 'make_obsidian', the two
+  // flipped every few seconds while the shaft went down a block at a time,
+  // and mid-110-a failed on the loop (2026-09-25).
+  const tunnelling = { target: { ...target }, destination: { ...choice.destination }, steps: tunnel.steps };
+  goal.step = within ? { ...within, phase: 'tunnel', ...tunnelling } : { action: 'tunnel', ...tunnelling };
   save();
   for (const p of choice.clear) {
     // Gravel can fall into a cleared headspace. Recheck it before entering.

@@ -157,7 +157,7 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   const remembered = works.lastPour && at(works.lastPour);
   const dest = spots[0]?.feet || (nearest ? nearest.plus(UP) : remembered || here.floored().offset(24, LAVA_DEPTH - here.floored().y, 0));
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
-  await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate });
+  await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
 }
 
 module.exports = { makeObsidian, poolSurface, pourSpots, safeCrust, pour, sourceLava, LAVA_DEPTH };

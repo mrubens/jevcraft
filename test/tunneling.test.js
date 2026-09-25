@@ -60,6 +60,19 @@ test('staircase descends beside the bot without digging beneath its feet', async
   assert.equal(goal.tunnel.steps, 1);
 });
 
+test('a staircase dug within another step keeps that step\'s name, the tunnel as its phase', async () => {
+  // mid-110-a: "make_obsidian" and "tunnel" in turn every few seconds down the shaft, and the audit called the loop.
+  const bot = world();
+  const within = { action: 'make_obsidian', item: 'obsidian', count: 10, phase: 'reach_lava' };
+  const goal = { step: within };
+  await tunnelStep(bot, new Task('test', 'descend'), goal, () => {}, new Vec3(5, 60, 0), { within,
+    dig: async (_bot, _task, p) => { bot.blocks.set(`${p}`, { name: 'air', boundingBox: 'empty', position: p }); },
+    navigate: async (_bot, _task, target) => { bot.entity.position = new Vec3(target.x + 0.5, target.y, target.z + 0.5); } });
+  assert.equal(goal.step.action, 'make_obsidian');
+  assert.equal(goal.step.phase, 'tunnel');
+  assert.equal(goal.step.item, 'obsidian');
+});
+
 test('a forest staircase descends through grass and leaf litter without treating vegetation as a wall', async () => {
   for (const name of ['leaf_litter', 'short_grass', 'tall_grass', 'fern']) {
     const bot = world(), feet = bot.entity.position.floored(), dug = [];
