@@ -431,7 +431,7 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   }
   if (inPowderSnow(bot)) { await outOfPowderSnow(bot, task, onAction); task.check(); }
   if (inFire(bot)) { await outOfFire(bot, task, onAction); task.check(); }
-  if (onFire(bot) && !inFire(bot) && !/lava/.test(bot.blockAt(bot.entity.position.floored())?.name || '')) { await douse(bot, task, onAction); task.check(); }
+  if (onFire(bot) && !inFire(bot) && !require('./terrain').bodyInLava(bot)) { await douse(bot, task, onAction); task.check(); }
   if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
     try { await surfaceForAir(bot, task, onAction); delete bot._surfaceFailedAt; }
     catch (err) { if (err.name !== 'Cancelled' && /breathable air/.test(err.message)) bot._surfaceFailedAt = Date.now(); throw err; }

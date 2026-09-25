@@ -1999,3 +1999,13 @@ test('the pickaxe uses kept for the climb out grow with the rock over the head',
   assert.equal(usesToClimbOut(at(60, 62)), 24, 'near the surface, the old floor of twenty-four');
   assert.equal(usesToClimbOut(at(24, 64)), 2 * 40 + 16, 'forty blocks down, two digs a block and a margin');
 });
+
+test('lava is found anywhere the body is, a thin flow at the edge of the box included, as the game counts it', () => {
+  // mid-83-b: the edge of a flow beside the feet, missed by the one-cell check, burned it from 18 to 2.7 health.
+  const { inLava } = require('../src/survival');
+  const lavaAt = cell => ({ entity: { position: new Vec3(256.75, -23, -84.5), isInLava: false, width: 0.6, height: 1.8 },
+    blockAt: p => ({ position: p, name: p.x === cell.x && p.y === cell.y && p.z === cell.z ? 'lava' : 'air' }) });
+  assert.equal(inLava(lavaAt(new Vec3(257, -23, -85))), true, 'the neighbouring cell the box leans into');
+  assert.equal(inLava(lavaAt(new Vec3(255, -23, -85))), false, 'a cell the body does not touch');
+  assert.equal(inLava(lavaAt(new Vec3(256, -22, -85))), true, 'at the head');
+});

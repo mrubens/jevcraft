@@ -73,4 +73,25 @@ function dropWithin(bot, feet, radius = 3) {
 // Mobs whose hit throws the body blocks, not a step.
 const KNOCKBACK = new Set(['hoglin', 'zoglin', 'ravager', 'iron_golem', 'warden']);
 
-module.exports = { besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+// Lava anywhere the body is, as the game counts it: every cell the player's
+// box touches, whatever the lava's level. The physics' own flag shrinks the
+// box by a tenth at the sides and four tenths at each end, and the check
+// here was the one cell at the middle of the feet: mid-83-b stood in the
+// edge of a flow while making obsidian, lost two health every half second
+// for three and a half seconds as "defend" and "step out of water", and
+// left the lava at 2.7 health, too late (2026-09-25).
+function bodyInLava(bot) {
+  const p = bot.entity?.position;
+  if (!p) return false;
+  if (bot.entity.isInLava) return true;
+  const w = (bot.entity.width ?? 0.6) / 2 - 0.001, h = bot.entity.height ?? 1.8;
+  const cells = new Set();
+  for (const x of [p.x - w, p.x + w]) for (const z of [p.z - w, p.z + w]) for (const y of [p.y + 0.001, p.y + h / 2, p.y + h - 0.001]) cells.add(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`);
+  for (const key of cells) {
+    const [x, y, z] = key.split(',').map(Number);
+    if (/^(flowing_)?lava$/.test(bot.blockAt?.(new (require('vec3').Vec3)(x, y, z))?.name || '')) return true;
+  }
+  return false;
+}
+
+module.exports = { bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
