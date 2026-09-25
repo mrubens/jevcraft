@@ -122,6 +122,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `tend_farm` | root | till, harvest or plant the plot | the plot needs work |
 | `breed_cows` | root | breed the cows in the pen | two adults, two wheat, and the cooldown past |
 | `light_home` | root | put torches where monsters could spawn around home | ground around home is dark and torches are carried or can be made |
+| `wall_home` | root | build a wall two blocks high round home, with a door by the bed | the bed and the chest are down and home is not walled yet |
 | `grow_plot` | root | mark the plot to grow by a column | the home is complete and the plot has not grown yet |
 | `wait_for_bedtime` | root | wait by the bed for bedtime | always |
 | `[a-z_]+` (pattern) | root | another home chore | offered by the stash or the home |
@@ -525,7 +526,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `lure_cows` | root | lead loose cows into the home pen | the pen has fewer than two cows and cows are in view |
 | `fetch_cows` | root | walk to cows seen earlier and lead two back to the pen | the pen has fewer than two cows, none in view, wheat carried, and cows remembered within 160 blocks |
 | `stock_stash` | root | put spares in the stash chest | the stash chest is within reach and spares are carried |
-| `light_home` | root | put torches where monsters could spawn around home | the home stands, ground around it is dark, and torches are carried or can be made |
+| `light_home` | root | put torches where monsters could spawn around home | the bed and the chest are down, ground around home is dark, and torches are carried or can be made |
+| `wall_home` | root | build a wall two blocks high round home, with a door by the bed | the bed and the chest are down and home is not walled yet |
 | `long_game` | root | work toward beating the game | the dream is to beat the game and its ladder is not complete |
 
 ### `stillness_detour`
@@ -570,7 +572,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `lure_cows` | root | lead loose cows into the home pen | by day in the Overworld, and the pen has fewer than two cows and cows are in view |
 | `fetch_cows` | root | walk to cows seen earlier and lead two back to the pen | by day in the Overworld, and the pen has fewer than two cows, none in view, wheat carried, and cows remembered within 160 blocks |
 | `stock_stash` | root | put spares in the stash chest | by day in the Overworld, and the stash chest is within reach and spares are carried |
-| `light_home` | root | put torches where monsters could spawn around home | by day in the Overworld, and the home stands, ground around it is dark, and torches are carried or can be made |
+| `light_home` | root | put torches where monsters could spawn around home | by day in the Overworld, and the bed and the chest are down, ground around home is dark, and torches are carried or can be made |
+| `wall_home` | root | build a wall two blocks high round home, with a door by the bed | by day in the Overworld, and the bed and the chest are down and home is not walled yet |
 
 ## strategy
 

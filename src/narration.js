@@ -49,7 +49,7 @@ const SURVIVAL = {
     (goal, action) => (action.distance ?? 99) > 24 ? "Getting late. I'm heading home." : null,
     (goal, action) => (action.distance ?? 99) > 24 ? 'Home to bed before the monsters come out.' : null],
   wait_for_bedtime: ['Home before dark. Just waiting for bedtime now.', 'Made it home. Bed soon.', "Home! I'll wait here till it's dark enough to sleep."],
-  evening_chore: (goal, action) => `Home before dark, so I'll ${({ stock_stash: 'stock the chest', harvest_and_bake: 'harvest and bake some bread', tend_farm: 'tend the field', breed_cows: 'breed the cows', light_home: 'put some torches up' })[action.chore] || 'do a chore'} before bed.`,
+  evening_chore: (goal, action) => `Home before dark, so I'll ${({ stock_stash: 'stock the chest', harvest_and_bake: 'harvest and bake some bread', tend_farm: 'tend the field', breed_cows: 'breed the cows', light_home: 'put some torches up', wall_home: 'put a wall round home' })[action.chore] || 'do a chore'} before bed.`,
   grow_plot: ['Home before dark. I could use a bigger field; one more row tomorrow.', "I'll make the field a row bigger tomorrow."],
   sleep_failed: (goal, action) => `I can't sleep: ${String(action.reason || '').replace(/^The server refused the sleep: /, '').replaceAll('_', ' ').replace(/^block\.minecraft\./, '')}.`,
   stay_up: ["I'm staying up tonight. There's work I can do in the dark.", 'No sleep for me tonight. Too much to do.', "I'll pull an all-nighter."],
@@ -153,6 +153,7 @@ function stepVariants(goal, step) {
     case 'lure_cows': return ['Come on, cows, into the pen!', "Here, cows! This way."];
     case 'breed_cows': return ["I'm breeding the cows.", 'Some wheat for the cows. Baby cows soon!'];
     case 'take_steak': return "I'll take a steak from the pen.";
+    case 'wall_home': return ["I'm putting a wall round home. No more creepers at my bed!", 'Walling home in, with a door.'];
     case 'place_chest': return ["I'm putting a chest by the bed for spare gear.", 'A chest by the bed, for my spares.'];
     case 'stock_stash': return ["I'm stocking the chest with spares.", 'Putting spares in the chest.'];
     case 'restock': return ["I'm grabbing my spare gear from the chest.", 'Restocking from my chest.'];

@@ -83,7 +83,7 @@ const goalWith = (bot, extra = {}) => ({ kind: 'win', request: 'beat the game', 
 
 // A finished base: claimed bed, planted plot, fenced pen and a chest beside
 // the bed. Growth takes in-game time, so the plot is tended on return visits.
-async function establishedHome({ items = [['wooden_hoe', 1]], chest = true } = {}) {
+async function establishedHome({ items = [['wooden_hoe', 1]], chest = true, walled = true } = {}) {
   const w = world({ ponds: [pond(20, 0)], items });
   const goal = goalWith(w.bot, { portals: [{ x: 0, y: LEVEL + 1, z: 0, dimension: 'overworld' }] }), task = new Task('home'), save = () => {};
   const site = home.chooseBaseSite(w.bot, goal);
@@ -94,6 +94,8 @@ async function establishedHome({ items = [['wooden_hoe', 1]], chest = true } = {
   if (chest) { w.set(l.chest, 'chest'); h.stash = { position: { ...l.chest }, placedAt: '2026-09-21T00:00:00Z', contents: {} }; }
   for (const f of l.pen.fences) w.set(f, 'oak_fence'); w.set(l.pen.gate, 'oak_fence_gate', { open: false });
   h.plot.plantedAt = new Date().toISOString(); h.plot.checkedAt = h.plot.plantedAt;
+  // The wall round home is its own option (home-wall.js); most tests are of the rest.
+  if (walled) h.walledAt = '2026-09-21T00:00:00Z';
   return { ...w, goal, task, save, home: h, layout: l };
 }
 

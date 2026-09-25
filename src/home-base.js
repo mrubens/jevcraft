@@ -1062,9 +1062,11 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
   if (!complete && !begun) return {};
   const distance = Math.round(homeDistance(bot, home));
   if (distance > HOME_REACH) return {};
+  // A wall round home, from the bed and the chest on (home-wall.js).
+  const wall = require('./home-wall').wallOption(bot, goal, home);
   if (!complete) {
     const light = plotStatus(bot, home).unloaded.length ? null : lightHomeOption(bot, home, now);
-    return light ? { light_home: light } : {};
+    return { ...(light ? { light_home: light } : {}), ...(wall ? { wall_home: wall } : {}) };
   }
   const options = {}, plot = plotStatus(bot, home), pen = penStatus(bot, home), wheat = countOf(bot, 'wheat'), seeds = countOf(bot, 'wheat_seeds');
   const far = plot.unloaded.length > 0;
@@ -1087,6 +1089,7 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
   if (!far) {
     const light = lightHomeOption(bot, home, now);
     if (light) options.light_home = light;
+    if (wall) options.wall_home = wall;
   }
   // Spares for the chest beside the bed, whenever the pockets have any.
   Object.assign(options, stash.stashChores(bot, goal));

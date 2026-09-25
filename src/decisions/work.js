@@ -34,7 +34,8 @@ const IDLE_OPTIONS = [
   { key: 'lure_cows', label: 'lead loose cows into the home pen', when: 'the pen has fewer than two cows and cows are in view' },
   { key: 'fetch_cows', label: 'walk to cows seen earlier and lead two back to the pen', when: 'the pen has fewer than two cows, none in view, wheat carried, and cows remembered within 160 blocks' },
   { key: 'stock_stash', label: 'put spares in the stash chest', when: 'the stash chest is within reach and spares are carried' },
-  { key: 'light_home', label: 'put torches where monsters could spawn around home', when: 'the home stands, ground around it is dark, and torches are carried or can be made' },
+  { key: 'light_home', label: 'put torches where monsters could spawn around home', when: 'the bed and the chest are down, ground around home is dark, and torches are carried or can be made' },
+  { key: 'wall_home', label: 'build a wall two blocks high round home, with a door by the bed', when: 'the bed and the chest are down and home is not walled yet' },
   { key: 'long_game', label: 'work toward beating the game', when: 'the dream is to beat the game and its ladder is not complete' },
 ];
 
