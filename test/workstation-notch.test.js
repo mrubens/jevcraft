@@ -33,3 +33,15 @@ test('walled in at the foot of a shaft, the table goes in a notch cut in the wal
     .find(p => bot.blockAt(p).name === 'crafting_table');
   assert(notch, `a table stands in the wall (${placed?.message || 'placed'})`);
 });
+
+test('on snowy plains, where every cell at the feet is a snow layer over grass, the table goes onto the snow', async () => {
+  // Trial 40: "No place for crafting_table" forty times in a minute.
+  const { bot, world } = shaft();
+  const registry = bot.registry;
+  const set = (p, name) => world.setBlockStateId(p, registry.blocksByName[name].defaultState);
+  for (let x = -4; x <= 4; x++) for (let z = -4; z <= 4; z++) { set(new Vec3(x, 63, z), 'grass_block'); set(new Vec3(x, 64, z), 'snow'); for (let y = 65; y <= 70; y++) set(new Vec3(x, y, z), 'air'); }
+  set(new Vec3(0, 64, 0), 'air');
+  const placed = await workstation(bot, new Task('table'), 'crafting_table', {}).catch(err => err);
+  const at = [...Array(25).keys()].map(i => new Vec3(i % 5 - 2, 64, Math.floor(i / 5) - 2)).find(p => bot.blockAt(p).name === 'crafting_table');
+  assert(at, `a table stands where the snow was (${placed?.message || 'placed'})`);
+});

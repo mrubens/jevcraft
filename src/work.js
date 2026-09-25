@@ -492,6 +492,18 @@ async function nudgeClear(bot, task, p) {
     until: () => !hitboxIntrudes(bot, p) });
 }
 
+// What a placed block replaces, as the game does: cover on the ground.
+const GROUND_COVER = new Set(['water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'leaf_litter', 'dead_bush', 'seagrass', 'vine', 'short_dry_grass', 'tall_dry_grass', 'bush', 'firefly_bush']);
+// A cell a workstation can go in: open or only covered, over a full block.
+// In snowy plains every cell at the feet is a snow layer over grass, and
+// trial 40 found "no place for crafting_table" forty times in a minute.
+const openForStation = (bot, q) => {
+  const at = bot.blockAt(q);
+  if (!(air(at) || (GROUND_COVER.has(at?.name) && at.name !== 'water'))) return false;
+  const under = bot.blockAt(q.offset(0, -1, 0));
+  return under?.boundingBox === 'block' && under.name !== 'snow';
+};
+
 // Mineflayer yaw for looking toward each horizontal facing (0 is north, -z).
 const PLACEMENT_YAW = { north: 0, west: Math.PI / 2, south: Math.PI, east: -Math.PI / 2 };
 async function place(bot, task, p, material, { face, properties, stay = false } = {}) {
@@ -510,7 +522,7 @@ async function place(bot, task, p, material, { face, properties, stay = false } 
   if (isDoor(material) && !air(bot.blockAt(p.offset(0, 1, 0)))) throw new Error(`A door needs room for its top half at ${p}`);
   // Ground cover is replaced by a placed block, the way the game does it:
   // leaf litter on the chest cell held up the whole base.
-  if (!air(bot.blockAt(p)) && !['water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'leaf_litter', 'dead_bush', 'seagrass', 'vine'].includes(bot.blockAt(p)?.name)) {
+  if (!air(bot.blockAt(p)) && !GROUND_COVER.has(bot.blockAt(p)?.name)) {
     throw new Error(`Placement obstructed by ${bot.blockAt(p)?.name} at ${p}`);
   }
   await stepOff(bot, task, p);
@@ -1132,7 +1144,7 @@ async function workstation(bot, task, name, goal) {
   for (const dy of [0, -1, 1, -2, 2]) for (let dx = -2; dx <= 2 && !p; dx++) for (let dz = -2; dz <= 2 && !p; dz++) {
     if (!dx && !dz) continue;
     const q = o.offset(dx, dy, dz);
-    if (air(bot.blockAt(q)) && bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block') {
+    if (openForStation(bot, q)) {
       await place(bot, task, q, name); p = q;
       rememberWorkstation(bot, goal, name, q);
     }
