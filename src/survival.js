@@ -38,7 +38,7 @@ const { NETHER_FOOD_POINTS, KIT_FOOD_POINTS } = require('./home-stash');
 // A witch too: it throws from where it stands and drinks to heal, so it is
 // closed on, not waited out behind a wall (trial 7's bot walled off from
 // one five times and was poisoned to death between).
-const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch']);
+const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pillager', 'witch']);
 function firmStep(bot, p) {
   if (!p) return false;
   const floor = bot.blockAt(p.offset(0, -1, 0)), body = [bot.blockAt(p), bot.blockAt(p.offset(0, 1, 0))];

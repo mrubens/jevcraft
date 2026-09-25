@@ -82,7 +82,7 @@ function hasFood(bot) {
 function fitToFight(bot) {
   return (bot.health ?? 20) >= FIGHT_FLOOR && (bot.food ?? 20) >= FIGHT_FLOOR && kitReady(bot) && ((bot.food ?? 20) >= 18 || hasFood(bot));
 }
-const SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch', 'blaze', 'ghast', 'breeze']);
+const SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pillager', 'witch', 'blaze', 'ghast', 'breeze']);
 const shooter = entity => SHOOTERS.has(entity?.name) || (entity?.name === 'piglin' && entity.heldItem?.name === 'crossbow');
 
 function mobSources() {

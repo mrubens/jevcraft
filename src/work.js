@@ -1925,7 +1925,7 @@ async function buildHouseStep(bot, task, goal, save) {
 }
 
 function decisionObservation(bot, goal) {
-  const hostiles = new Set(['zombie', 'husk', 'drowned', 'skeleton', 'stray', 'creeper', 'spider', 'cave_spider', 'witch', 'pillager', 'phantom']);
+  const hostiles = new Set(['zombie', 'zombie_villager', 'husk', 'drowned', 'skeleton', 'stray', 'bogged', 'parched', 'creeper', 'spider', 'cave_spider', 'witch', 'pillager', 'phantom']);
   return {
     playerRequest: goal.request, retainedGoal: goal.kind,
     playerUrgency: goal.urgency?.level,

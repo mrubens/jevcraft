@@ -4,7 +4,10 @@ const { handlers, kitReady, observedDead, shooter, fitToFight } = require('./mob
 
 // The Nether's own mobs were missing: a magma cube killed the dream run in
 // two seconds while the bot searched for blazes, and nothing fled or swung.
-const hostileNames = new Set(['zombie', 'husk', 'drowned', 'skeleton', 'stray', 'bogged', 'creeper', 'spider',
+// Every mob the game calls hostile, the neutral ones (endermen, zombified
+// piglins) left to provoked(): trial 104 was killed by a zombie villager
+// that was not on this list, hit five times with no threat in sight.
+const hostileNames = new Set(['zombie', 'zombie_villager', 'husk', 'drowned', 'skeleton', 'stray', 'bogged', 'parched', 'creeper', 'spider', 'vex', 'illusioner', 'guardian', 'elder_guardian', 'creaking',
   'cave_spider', 'witch', 'pillager', 'vindicator', 'evoker', 'ravager', 'phantom', 'blaze', 'wither_skeleton', 'hoglin', 'zoglin',
   'magma_cube', 'slime', 'ghast', 'piglin', 'piglin_brute', 'silverfish', 'endermite', 'warden', 'breeze']);
 

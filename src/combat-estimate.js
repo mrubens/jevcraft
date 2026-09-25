@@ -20,7 +20,7 @@ const WALK = 4; // blocks a second, closing on a mob
 const MOBS = {
   zombie: { hit: 3, health: 20 }, husk: { hit: 3, health: 20 }, drowned: { hit: 3, health: 20 }, zombie_villager: { hit: 3, health: 20 },
   spider: { hit: 2, health: 16 }, cave_spider: { hit: 2, health: 12, note: 'poisons' },
-  skeleton: { hit: 3, health: 20, shoots: true }, stray: { hit: 3, health: 20, shoots: true, note: 'slows' }, bogged: { hit: 3, health: 16, shoots: true, note: 'poisons' },
+  skeleton: { hit: 3, health: 20, shoots: true }, stray: { hit: 3, health: 20, shoots: true, note: 'slows' }, parched: { hit: 3, health: 20, shoots: true }, bogged: { hit: 3, health: 16, shoots: true, note: 'poisons' },
   pillager: { hit: 4, health: 24, shoots: true }, witch: { hit: 6, health: 26, shoots: true, note: 'potions' },
   creeper: { hit: 22, health: 20, note: 'the hit is its blast, once, at point blank' },
   enderman: { hit: 7, health: 40 }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16 },

@@ -8,7 +8,7 @@ const FLESH = { items: ['rotten_flesh', 'iron_ingot', 'carrot', 'potato'], drops
 const STRING = { items: ['string', 'spider_eye'], drops: 'up to two string, now and then a spider eye', for: 'four string craft a white wool (three wool a bed), and string makes bows' };
 const MOB_DROPS = {
   spider: STRING, cave_spider: STRING,
-  skeleton: BONES, stray: BONES, bogged: BONES,
+  skeleton: BONES, stray: BONES, bogged: BONES, parched: BONES,
   zombie: FLESH, husk: FLESH, zombie_villager: FLESH,
   drowned: { items: ['rotten_flesh', 'copper_ingot', 'trident'], drops: 'rotten flesh, now and then a copper ingot', for: 'rotten flesh is food in a pinch that may bring on hunger' },
   creeper: { items: ['gunpowder'], drops: 'up to two gunpowder', for: 'TNT and fireworks; no step on the ladder needs it' },
