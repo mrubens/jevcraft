@@ -1217,11 +1217,18 @@ async function craft(bot, task, step, goal) {
       await waitFor(task, made, 4000, awaitedItem(bot, step.item, before + recipe.result.count * (n + 1), `crafting${table ? ' at a table' : ''}, twice`));
     }
   }
-  if (table && !goal?.holdWorkstation && (goal?.expeditionReady || goal?.preparingExpedition) && bot._ownedWorkstations?.has(`crafting_table:${table.position}`)) {
+  // Its own table comes back into the pack when it is the only one: trials
+  // 47 and 51 left theirs where they were used, wore out the last pickaxe
+  // underground, and with forty-four iron ingots could make nothing, with
+  // no table and no wood for one.
+  if (table && !goal?.holdWorkstation && (goal?.expeditionReady || goal?.preparingExpedition || !countOf(bot, 'crafting_table')) && bot._ownedWorkstations?.has(`crafting_table:${table.position}`)) {
     const count = countOf(bot, 'crafting_table');
-    await dig(bot, task, table.position);
-    await navigate(bot, task, new goals.GoalNear(table.position.x, table.position.y, table.position.z, 1));
-    await waitFor(task, () => countOf(bot, 'crafting_table') > count);
+    // Best effort: the craft is made whether or not the table comes back.
+    try {
+      await dig(bot, task, table.position);
+      await navigate(bot, task, new goals.GoalNear(table.position.x, table.position.y, table.position.z, 1));
+      await waitFor(task, () => countOf(bot, 'crafting_table') > count, 4000, () => 'the crafting table picked back up');
+    } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
     forgetWorkstation(bot, goal, `crafting_table:${table.position}`);
   }
 }
