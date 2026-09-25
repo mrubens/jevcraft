@@ -175,3 +175,20 @@ test('a new body after a drowning has full air, though the server never says so'
   bot._client.emit('entity_metadata', { entityId: 99, metadata: [{ key, value: 6000 }] });
   assert.equal(bot.oxygenLevel, 20);
 });
+
+test('a position set against a wall is taken out of a hairline overlap with it, and a clear one is left alone', () => {
+  // Trial 87: at exactly x.3 beside stone the float-widened body overlapped it
+  // by a hundred-millionth, every move was corrected back, and the bot drowned.
+  const { clearHairlineOverlap } = require('../src/compatibility');
+  const { Vec3 } = require('vec3');
+  const bot = { physics: { playerHalfWidth: Math.fround(0.6) / 2, playerHeight: Math.fround(1.8) },
+    entity: { position: new Vec3(307.3, 14.2, 139.3) },
+    blockAt: p => ({ boundingBox: (p.x === 306 || p.z === 138) ? 'block' : 'empty' }) };
+  assert.equal(clearHairlineOverlap(bot), true);
+  const hw = bot.physics.playerHalfWidth, p = bot.entity.position;
+  assert(p.x - hw >= 307, 'clear of the wall at x 306');
+  assert(p.z - hw >= 139, 'clear of the rock at z 138');
+  assert(Math.abs(p.x - 307.3) < 1e-5 && Math.abs(p.z - 139.3) < 1e-5, 'moved by next to nothing');
+  const open = { ...bot, entity: { position: new Vec3(307.5, 14.2, 139.5) } };
+  assert.equal(clearHairlineOverlap(open), false);
+});

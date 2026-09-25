@@ -23,6 +23,30 @@ function fixPlayerDimensions(physics) {
   if (physics?.playerHeight === 1.8) physics.playerHeight = Math.fround(1.8);
 }
 
+// A position set by the server (a teleport, a correction) can leave the
+// float-widened body a hundred-millionth of a block inside a wall beside it:
+// at exactly x.3 against stone, every move the physics made from there was
+// corrected back, twenty times a second, and the bot hung in the water
+// where it was until it drowned (trial 87, reproduced on the arena server:
+// at x.3 it could not sink, at x.31 it could). Out of any overlap under a
+// millionth of a block, after each position the server sets.
+function clearHairlineOverlap(bot) {
+  const p = bot.entity?.position, hw = bot.physics?.playerHalfWidth, h = bot.physics?.playerHeight;
+  if (!p || !hw || !h || typeof bot.blockAt !== 'function') return false;
+  const solid = (x, y, z) => bot.blockAt(new (require('vec3').Vec3)(x, y, z))?.boundingBox === 'block';
+  const ys = []; for (let y = Math.floor(p.y); y <= Math.floor(p.y + h - 1e-9); y++) ys.push(y);
+  let moved = false;
+  for (const [axis, other] of [['x', 'z'], ['z', 'x']]) {
+    const spanOther = []; for (let o = Math.floor(p[other] - hw); o <= Math.floor(p[other] + hw - 1e-9); o++) spanOther.push(o);
+    const at = (a, y, o) => axis === 'x' ? solid(a, y, o) : solid(o, y, a);
+    const low = p[axis] - hw, lowEdge = Math.ceil(low);
+    if (lowEdge - low > 0 && lowEdge - low < 1e-6 && ys.some(y => spanOther.some(o => at(lowEdge - 1, y, o)))) { p[axis] += lowEdge - low + 1e-7; moved = true; }
+    const high = p[axis] + hw, highEdge = Math.floor(high);
+    if (high - highEdge > 0 && high - highEdge < 1e-6 && ys.some(y => spanOther.some(o => at(highEdge, y, o)))) { p[axis] -= high - highEdge + 1e-7; moved = true; }
+  }
+  return moved;
+}
+
 // Mineflayer's window sync clicks the window and waits for the server to send
 // its contents again, twenty seconds at most, checking nothing. A window
 // already closed never answers: trial 31's smelting synced its furnace after
@@ -71,6 +95,7 @@ function compatibilityPlugin(bot) {
     }
   });
   bot.once?.('spawn', () => fixPlayerDimensions(bot.physics));
+  bot.on?.('forcedMove', () => { try { clearHairlineOverlap(bot); } catch (_) { /* no world yet */ } });
   const commandFields = bot.registry?.protocol?.play?.toServer?.types?.packet_client_command?.[1];
   const command = Array.isArray(commandFields) && commandFields.find(f => f.name === 'actionId');
   if (typeof bot._client.write === 'function') {
@@ -153,4 +178,4 @@ function fixPathfinderResults() {
   AStar.prototype[patched] = true;
 }
 
-module.exports = { boundSyncWindow, fixMiningMaterials, compatibilityPlugin, fixPathfinderResults, fixPlayerDimensions };
+module.exports = { clearHairlineOverlap, boundSyncWindow, fixMiningMaterials, compatibilityPlugin, fixPathfinderResults, fixPlayerDimensions };

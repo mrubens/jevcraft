@@ -137,10 +137,19 @@ async function surfaceForAir(bot, task, onAction = () => {}) {
       }
       const target = route[index].offset(0.5, 0, 0.5);
       const horizontal = Math.hypot(target.x - p.x, target.z - p.z);
-      if (horizontal < 0.35 && p.y >= target.y - 0.2 && index < route.length - 1) { index++; continue; }
+      // A cell lower than the swimmer is sunk to, not swum over: trial 87's
+      // way to air went down a block under a low ceiling and up again, and
+      // the swimmer, holding jump the whole time and counting the lower
+      // cell reached from above it, floated against the ceiling and drowned.
+      // The feet held at the cell's own height, within a tenth: under a
+      // low ceiling a tenth too high is a head against the rock.
+      const lower = target.y < p.y - 0.1;
+      const reached = horizontal < 0.35 && Math.abs(p.y - target.y) <= 0.3;
+      if (reached && index < route.length - 1) { index++; continue; }
       if (horizontal > 0.2) await bot.lookAt(new Vec3(target.x, p.y + 1.62, target.z), true);
-      bot.setControlState('forward', horizontal > 0.2);
-      bot.setControlState('jump', bot.entity.isInWater || p.y < target.y);
+      bot.setControlState('forward', horizontal > 0.2 && !(lower && p.y - target.y > 0.4));
+      bot.setControlState('jump', !lower && p.y < target.y + 0.05 && (bot.entity.isInWater || p.y < target.y));
+      bot.setControlState('sneak', lower && !!bot.entity.isInWater);
       await sleep(50);
     }
     task.check();
