@@ -77,6 +77,24 @@ function opensOnto(view, beyond) {
   return `past it is more ${n.replaceAll('_', ' ')}`;
 }
 
+// The fall under an opened cell, down to the next solid block or water:
+// a dig down or to the side was told what it opened onto and nothing of
+// the drop past it (the decision audit, 2026-09-25). A fall of more than
+// three blocks hurts, a point a block past three.
+function dropBelow(view, cell, { reach = 24, extra = 0 } = {}) {
+  let n = 0;
+  for (; n < reach; n++) {
+    const name = view.name(cell.offset(0, -n - 1, 0));
+    if (name == null) return n ? `a drop of ${n}+ blocks under it, the rest not loaded` : null;
+    if (isWater(name)) return n ? `a drop of ${n} block${n === 1 ? '' : 's'} into water under it` : null;
+    if (!open(name)) break;
+  }
+  if (!n) return null;
+  if (n >= reach) return `no floor within ${reach} blocks under it: a fall that costs ${reach + extra - 3} health or more`;
+  const fall = n + extra;
+  return `a drop of ${n} block${n === 1 ? '' : 's'} under it${fall > 3 ? `: falling ${fall} blocks costs about ${fall - 3} health` : ''}`;
+}
+
 // Every single move from here, each with its facts. `goal` is 'dry' (out
 // of water onto solid ground) or 'sky' (open sky over dry ground).
 function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null } = {}) {
@@ -122,7 +140,8 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       if (!solid(name) || !natural.test(name)) continue;
       const seconds = digSeconds(name, view, inWater);
       if (seconds == null) continue;
-      moves.push({ key: `dig_${dir}_${part}`, does: `Dig the ${name.replaceAll('_', ' ')} ${dir}, at ${part === 'over' ? 'the level over the head' : `${part} height`} (about ${seconds} s).`, kind: 'dig', cell, effects: [opensOnto(view, cell.plus(d)), ...digEffects(view, cell, feet)] });
+      const drop = part !== 'over' && (part === 'feet' || open(view.name(level))) ? dropBelow(view, level) : null;
+      moves.push({ key: `dig_${dir}_${part}`, does: `Dig the ${name.replaceAll('_', ' ')} ${dir}, at ${part === 'over' ? 'the level over the head' : `${part} height`} (about ${seconds} s).`, kind: 'dig', cell, effects: [opensOnto(view, cell.plus(d)), ...(drop ? [drop] : []), ...digEffects(view, cell, feet)] });
     }
     // A block placed into water or air beside, at the feet: a step at the
     // waterline, or a wall.
@@ -144,7 +163,8 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   const floor = feet.plus(DOWN), floorName = view.name(floor);
   if (!inWater && solid(floorName) && natural.test(floorName) && !isWater(view.name(floor.plus(DOWN))) && !isLava(view.name(floor.plus(DOWN)))) {
     const seconds = digSeconds(floorName, view, false);
-    if (seconds != null) moves.push({ key: 'dig_down', does: `Dig the ${floorName.replaceAll('_', ' ')} underfoot and drop a block (about ${seconds} s).`, kind: 'dig', cell: floor, effects: digEffects(view, floor) });
+    const drop = dropBelow(view, floor, { extra: 1 });
+    if (seconds != null) moves.push({ key: 'dig_down', does: `Dig the ${floorName.replaceAll('_', ' ')} underfoot and drop a block (about ${seconds} s).`, kind: 'dig', cell: floor, effects: [opensOnto(view, floor.plus(DOWN)), ...(drop ? [drop] : []), ...digEffects(view, floor)] });
   }
   // 'away': off a spot every walk failed from, onto dry ground eight blocks off.
   const done = goal === 'dry' ? dryFooting(view, feet)
@@ -251,6 +271,8 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const decision = await decide('unstuck_move', { client, bot, task, goal, save, tree,
       // Breath, in seconds: a full bar is fifteen under water.
       state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6), health: bot.health, food: bot.food,
+        // The mobs about while it works free, seen or not (the decision audit).
+        threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(),
         ...(here.inWater ? { breathSecondsLeft: Math.round((bot.oxygenLevel ?? 20) * 0.75) } : {}) } });
     if (decision.stale) continue;
     const m = moves.find(x => x.key === decision.path.at(-1));
@@ -269,4 +291,4 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   return false;
 }
 
-module.exports = { liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+module.exports = { dropBelow, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

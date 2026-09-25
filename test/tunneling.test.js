@@ -556,13 +556,14 @@ test('whether to plug water that ran into a dug cell is Jev\'s; without Jev it i
   const LIQUID = /^(water|lava|flowing_water|flowing_lava|bubble_column)$/;
   const p = new Vec3(3, 40, 0);
   let name = 'water';
-  const bot = { blockAt: () => ({ name }), inventory: { items: () => [{ name: 'cobblestone', count: 12 }] }, entity: { isInWater: false }, health: 20 };
+  const bot = { blockAt: () => ({ name }), inventory: { items: () => [{ name: 'cobblestone', count: 12 }] }, entity: { isInWater: false, position: new Vec3(2.5, 39, 0.5) }, health: 20, oxygenLevel: 20 };
   const placed = [];
   const placer = async (b, t, at, material) => { placed.push(material); name = material; };
   let offered;
   const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'carry_on', confidence: 0.6 } } }; } } };
   assert.equal(await leakResponse(bot, task, p, LIQUID, { placer }), false, 'Jev chose to carry on');
   assert.match(offered.plug, /stop the water \(12 building blocks carried\)/);
+  assert.match(offered.carry_on, /It is at head height, 1 block off: water at head height takes the air/, 'where the water is (the decision audit)');
   assert.deepEqual(placed, []);
   assert.equal(await leakResponse(bot, { check() {} }, p, LIQUID, { placer }), true, 'no Jev: plugged');
   assert.deepEqual(placed, ['cobblestone']);

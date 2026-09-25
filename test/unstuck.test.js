@@ -24,6 +24,18 @@ test('in a pool under a stone lid, the moves say the lid can be dug and the clim
   assert.match(describeMove(climb), /Climb out of the water onto the block east.*ends on dry ground/);
 });
 
+test('a dig down or to the side says the drop past it and what the fall costs (the decision audit)', () => {
+  // A cave six blocks under the floor, and a ravine beside at the feet.
+  const cells = { '0,71,0': 'air', '0,72,0': 'air' };
+  for (let y = 64; y <= 69; y++) cells[`0,${y},0`] = 'air';
+  for (let y = 66; y <= 70; y++) cells[`1,${y},0`] = 'air';
+  const moves = localMoves(view(cells), new Vec3(0, 71, 0)).moves;
+  const down = moves.find(m => m.key === 'dig_down');
+  assert.match(describeMove(down), /it opens onto open air; a drop of 6 blocks under it: falling 7 blocks costs about 4 health/);
+  const east = moves.find(m => m.key === 'dig_east_feet');
+  assert.match(describeMove(east), /a drop of 5 blocks under it: falling 5 blocks costs about 2 health/);
+});
+
 test('digging under sand says it will fall onto the head, and a pillar is offered only with blocks and headroom', () => {
   const cells = { '0,71,0': 'air', '0,72,0': 'air', '0,73,0': 'sand', '0,74,0': 'sand', '0,75,0': 'sand' };
   const feet = new Vec3(0, 71, 0);

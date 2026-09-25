@@ -454,12 +454,19 @@ async function leakResponse(bot, task, p, LIQUID, { placer = place } = {}) {
     if (client) {
       const kind = /lava/.test(liquid) ? 'lava' : 'water';
       const carried = bot.inventory.items().filter(i => buildingMaterials.has(i.name)).reduce((n, i) => n + i.count, 0);
+      // Where the liquid is from the bot, and what it is doing to it now
+      // (the decision audit, 2026-09-25): water over the head drowns, lava
+      // at the feet burns.
+      const feet = bot.entity.position.floored(), dy = p.y - feet.y, off = Math.round(p.distanceTo(feet.offset(0, 1, 0)) * 10) / 10;
+      const where = dy >= 2 ? 'above the head' : dy === 1 ? 'at head height' : dy === 0 ? 'at the feet' : 'below the feet';
+      const burning = !!(bot.entity?.metadata?.[0] & 1);
       const tree = {
         plug: { description: `Put a ${material.name.replaceAll('_', ' ')} back in the gap and stop the ${kind} (${carried} building blocks carried).${kind === 'lava' ? ' Lava sets the bot alight and burns what it touches.' : ' Water that keeps running floods the tunnel and pushes the bot about.'}` },
-        carry_on: { description: `Leave the ${kind} running and carry on digging.` },
+        carry_on: { description: `Leave the ${kind} running and carry on digging. It is ${where}, ${off} block${off === 1 ? '' : 's'} off${kind === 'lava' ? (burning ? '; the bot is on fire now' : '') : dy >= 1 ? ': water at head height takes the air' : ''}.` },
       };
       try {
-        const decision = await require('./decisions').decide('dug_into_liquid', { client, bot, task, tree, state: { liquid: kind, position: { x: p.x, y: p.y, z: p.z }, inWater: !!bot.entity?.isInWater, health: bot.health } });
+        const decision = await require('./decisions').decide('dug_into_liquid', { client, bot, task, tree, state: { liquid: kind, position: { x: p.x, y: p.y, z: p.z }, inWater: !!bot.entity?.isInWater, health: bot.health,
+          liquidIs: { where, blocksOff: off }, ...(kind === 'lava' ? { onFire: burning } : { breathSecondsLeft: Math.round((bot.oxygenLevel ?? 20) * 0.75) }) } });
         if (!decision.fallback && !decision.stale && decision.path.at(-1) === 'carry_on') return false;
       } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
