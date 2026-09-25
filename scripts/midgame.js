@@ -1,0 +1,162 @@
+'use strict';
+// The midgame, judged. The user's goal (2026-09-25): Jev, starting from a
+// world past the first three days, reaches the Nether, a fortress, six blaze
+// rods and twelve ender pearls with no deaths and no loops, on two worlds in
+// a row.
+//
+//   node scripts/midgame.js start mid-110-a .clean-run-25582/first-days-110 .bot-state/archive-127_0_0_1-25582-Jev-1790359748711
+//   node scripts/midgame.js verdict
+//   node scripts/midgame.js status
+//
+// The world is a copy of one a first-days trial passed on, as that trial
+// left it (the server saved it when the next trial stopped it), and the bot
+// resumes from that trial's own saved state (the archive first-days.js made
+// when it started the next trial on that server). Nothing is given: the bot
+// carries what it carried, remembers what it remembered, and is not an
+// operator. MIDGAME_PORT picks the server, as FIRST_DAYS_PORT does.
+// A trial passes once all four are reached with no death and no loop before
+// then; it fails on a death, a loop, or MIDGAME_HOURS (default 3) without
+// all four.
+const fs = require('fs');
+const path = require('path');
+const { execSync, spawn } = require('child_process');
+const { analyse } = require('./lib/audit');
+const { spectatorNightVision } = require('./first-days');
+
+const ROOT = path.join(__dirname, '..');
+const PORT = Number(process.env.MIDGAME_PORT || 25582);
+const SERVER = path.join(ROOT, PORT === 25581 ? '.clean-run' : `.clean-run-${PORT}`);
+const STATE = path.join(ROOT, '.bot-state');
+const IDENTITY = `127_0_0_1-${PORT}-Jev`;
+const LOG = path.join(ROOT, 'artifacts', 'midgame-trials.json');
+const LIMIT_MS = Number(process.env.MIDGAME_HOURS || 3) * 3600000;
+const BLAZE_RODS = 6, PEARLS = 12;
+const trials = () => { try { return JSON.parse(fs.readFileSync(LOG, 'utf8')); } catch (_) { return []; } };
+const saveTrials = t => { fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.writeFileSync(LOG, JSON.stringify(t, null, 2)); };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const pid = port => { try { return execSync(`lsof -tiTCP:${port} -sTCP:LISTEN`).toString().trim().split('\n')[0] || null; } catch (_) { return null; } };
+const alive = p => { try { process.kill(Number(p), 0); return true; } catch (_) { return false; } };
+
+// What the frames show, each counted once reached: the Nether by the
+// dimension the bot stood in; a fortress by walking in one (the sweep's
+// "walking" leg) or by a blaze rod in hand, which only a fortress gives;
+// rods as rods, powder (two a rod) and eyes (one powder each) together;
+// pearls as pearls and eyes.
+const MILESTONES = ['nether', 'fortress', 'blaze_rods', 'ender_pearls'];
+function counts(inventory = {}) {
+  const n = k => Number(inventory[k] || 0);
+  return { rods: n('blaze_rod') + n('blaze_powder') / 2 + n('ender_eye') / 2, pearls: n('ender_pearl') + n('ender_eye') };
+}
+function reached(frames) {
+  const at = {}, best = { rods: 0, pearls: 0 };
+  const mark = (k, t) => { if (!(k in at)) at[k] = t; };
+  for (const f of frames) {
+    const s = f.snapshot || {};
+    if (/nether/.test(String(s.dimension || ''))) mark('nether', f.t);
+    const step = s.goal?.step || s.step;
+    if (step?.action === 'find_fortress' && step.walking) mark('fortress', f.t);
+    if (s.inventory && typeof s.inventory === 'object') {
+      const c = counts(s.inventory);
+      best.rods = Math.max(best.rods, c.rods); best.pearls = Math.max(best.pearls, c.pearls);
+      if (c.rods >= 1) mark('fortress', f.t);
+      if (c.rods >= BLAZE_RODS) mark('blaze_rods', f.t);
+      if (c.pearls >= PEARLS) mark('ender_pearls', f.t);
+    }
+  }
+  return { at, best };
+}
+
+function verdict(trial, { now = Date.now() } = {}) {
+  const from = Date.parse(trial.startedAt), to = Math.min(now, from + LIMIT_MS);
+  const a = analyse({ identity: IDENTITY, from, to });
+  if (!a) return { pass: false, reasons: ['no flight frames in the trial window'] };
+  const { at, best } = reached(a.frames);
+  const all = MILESTONES.every(k => k in at);
+  const doneAt = all ? Math.max(...MILESTONES.map(k => at[k])) : null;
+  // Deaths and loops count up to the moment the last milestone came.
+  const until = doneAt ?? to;
+  const deaths = [];
+  for (const t of a.deaths.map(d => d.t).filter(t => t <= until).sort((x, y) => x - y)) if (!deaths.some(d => Math.abs(d - t) < 10000)) deaths.push(t);
+  const loops = [...Object.entries(a.problems).filter(([, v]) => v.count >= 3 && (v.first ?? 0) <= until).map(([p, v]) => `${v.count}× ${p.slice(0, 120)}`),
+    ...a.flips.filter(f => (f.from ?? 0) <= until).map(f => `flipping ${f.between}`)];
+  const minute = t => Math.round((t - from) / 60000);
+  const timedOut = !all && to - from >= LIMIT_MS;
+  const reasons = [...(deaths.length ? [`${deaths.length} death(s)`] : []), ...loops.map(l => `loop: ${l}`),
+    ...(timedOut ? MILESTONES.filter(k => !(k in at)).map(k => `missing after ${LIMIT_MS / 3600000} hours: ${k}`) : [])];
+  return { world: trial.world, source: trial.source, from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
+    pass: all && !reasons.length, done: all || timedOut || reasons.length > 0, failedAlready: reasons.length > 0, reasons,
+    reachedAtMinute: Object.fromEntries(Object.entries(at).map(([k, t]) => [k, minute(t)])), most: { blazeRods: best.rods, enderPearls: best.pearls } };
+}
+
+const BOT_PID = path.join(STATE, 'pids', `127.0.0.1-${PORT}-Jev.pid`);
+const botPid = () => { try { const p = fs.readFileSync(BOT_PID, 'utf8').trim(); if (p && alive(p)) return p; } catch (_) {} return null; };
+
+async function start(world, source, archive) {
+  if (!/^[a-z0-9-]+$/.test(world || '')) throw new Error('A world name of lowercase letters, digits and dashes');
+  const src = path.resolve(ROOT, source || ''), arc = path.resolve(ROOT, archive || '');
+  if (!fs.existsSync(path.join(src, 'level.dat'))) throw new Error(`No saved world at ${source}`);
+  const saved = fs.existsSync(arc) && fs.readdirSync(arc).filter(f => /-Jev(-[a-z-]+)?\.json$/.test(f));
+  if (!saved?.length) throw new Error(`No bot state in ${archive}`);
+  if (fs.existsSync(path.join(SERVER, world))) throw new Error(`${world} already exists on ${PORT}`);
+  const starting = BOT_PID.replace(/\.pid$/, '.starting');
+  fs.mkdirSync(path.dirname(starting), { recursive: true }); fs.writeFileSync(starting, `${process.pid}\n`);
+  try {
+    const server = pid(PORT), bot = botPid();
+    if (bot) { process.kill(Number(bot)); await sleep(3000); }
+    if (server) {
+      fs.writeFileSync(path.join(SERVER, 'console.in'), 'stop\n');
+      for (let i = 0; i < 60 && alive(server); i++) await sleep(1000);
+      if (alive(server)) { process.kill(Number(server), 'SIGTERM'); for (let i = 0; i < 20 && alive(server); i++) await sleep(1000); }
+      if (alive(server)) { process.kill(Number(server), 'SIGKILL'); await sleep(2000); }
+    }
+    if (pid(PORT)) throw new Error(`The old server is still on ${PORT}; nothing was started`);
+    // The world as the first-days trial left it, copied: the source stays.
+    fs.cpSync(src, path.join(SERVER, world), { recursive: true });
+    fs.rmSync(path.join(SERVER, world, 'session.lock'), { force: true });
+    spectatorNightVision(path.join(SERVER, world));
+    const props = path.join(SERVER, 'server.properties');
+    fs.writeFileSync(props, fs.readFileSync(props, 'utf8').replace(/^level-name=.*$/m, `level-name=${world}`));
+    spawn('sh', ['start.sh'], { cwd: SERVER, detached: true, stdio: 'ignore' }).unref();
+    for (let i = 0; i < 120 && !pid(PORT); i++) await sleep(1000);
+    const log = () => { try { return fs.readFileSync(path.join(SERVER, 'logs', 'latest.log'), 'utf8'); } catch (_) { return ''; } };
+    for (let i = 0; i < 60 && !log().includes(`Preparing level "${world}"`); i++) await sleep(1000);
+    if (!log().includes(`Preparing level "${world}"`)) throw new Error(`The server on ${PORT} did not load ${world}`);
+    for (let i = 0; i < 20; i++) { const other = botPid(); if (!other) break; process.kill(Number(other), 'SIGKILL'); await sleep(1500); }
+    // This server's state set aside; the source trial's state in its place,
+    // under this server's name.
+    const aside = path.join(STATE, `archive-${IDENTITY}-${Date.now()}`);
+    fs.mkdirSync(aside, { recursive: true });
+    for (const f of fs.readdirSync(STATE).filter(f => f.startsWith(IDENTITY) && f.endsWith('.json'))) fs.renameSync(path.join(STATE, f), path.join(aside, f));
+    for (const f of saved) fs.copyFileSync(path.join(arc, f), path.join(STATE, f.replace(/^127_0_0_1-\d+-Jev/, IDENTITY)));
+    const out = fs.openSync(path.join(ROOT, 'artifacts', `midgame-${world}.log`), 'a');
+    const child = spawn(process.execPath, ['index.js'], { cwd: ROOT, detached: true, stdio: ['ignore', out, out],
+      env: { ...process.env, MC_HOST: '127.0.0.1', MC_PORT: String(PORT), MC_USERNAME: 'Jev', RECOVERY_ADVISER: 'jev', JEV_ENCOUNTERS: '1' } });
+    child.unref();
+    for (let i = 0; i < 30 && !botPid(); i++) await sleep(1000);
+    if (String(botPid()) !== String(child.pid)) throw new Error(`The trial's bot is not the one just started (${botPid()} vs ${child.pid})`);
+    const all = trials();
+    all.push({ world, port: PORT, source, archive, startedAt: new Date().toISOString() });
+    saveTrials(all);
+    console.log(`Midgame trial ${world} (from ${source}) started at ${all.at(-1).startedAt}; at most ${LIMIT_MS / 3600000} hours.`);
+  } finally { fs.rmSync(starting, { force: true }); }
+}
+
+async function main() {
+  const [cmd, ...args] = process.argv.slice(2);
+  if (cmd === 'start') return start(...args);
+  const all = trials();
+  if (cmd === 'status') { console.log(JSON.stringify(all, null, 2)); return; }
+  if (cmd === 'verdict') {
+    const trial = all.filter(t => t.port === PORT).at(-1);
+    if (!trial) throw new Error(`No midgame trial started on ${PORT}`);
+    const v = verdict(trial);
+    const latest = trials(), mine = latest.find(t => t.world === trial.world && t.startedAt === trial.startedAt);
+    if (mine) { mine.verdict = v; saveTrials(latest); }
+    console.log(JSON.stringify(v, null, 2));
+    return;
+  }
+  console.log('midgame.js start <world> <source world dir> <state archive dir> | verdict | status');
+}
+
+if (require.main === module) main().catch(err => { console.error(err.message); process.exit(1); });
+module.exports = { reached, counts, verdict, MILESTONES };
