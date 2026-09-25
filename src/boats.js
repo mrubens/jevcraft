@@ -246,7 +246,11 @@ async function boatTravelStep(bot, task, goal, save, destination, actions, clien
   if (state.declinedArea === area && state.declinedUntil > Date.now()) return false;
   try {
     if (!state.preparing) {
+      // The swim the boat would save, said as time (the decision audit,
+      // 2026-09-25): a swimmer goes about two blocks a second, and drowned
+      // come up at night.
       const response = await chooseBoat(client, { request: goal.request, waterBlocks: trip.length, progressBlocks: trip.progress,
+        swimSecondsWithoutBoat: Math.round(trip.length / 2), timeOfDay: bot.time?.timeOfDay, threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(),
         carriedBoat: bot.inventory.items().find(i => boatItem(i.name))?.name || null,
         inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])), safeShoreAtBothEnds: true });
       task.check(); state.decision = { at: new Date().toISOString(), ...response.answers.travel }; save();

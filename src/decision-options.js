@@ -45,9 +45,28 @@ function resourceSources(bot, candidates, { radius = 6, limit = 4, failures = {}
     if (failed.some(f => f.block === block && blocks.some(p => p.distanceTo(f.seed) <= radius))) continue;
     blocks.sort((a, b) => a.distanceTo(origin) - b.distanceTo(origin));
     sources.push({ key, block, blocks, description: { block, blocksWithinReach: blocks.length,
-      distance: Math.round(seed.distanceTo(origin)), elevationChange: seed.y - Math.floor(origin.y) } });
+      distance: Math.round(seed.distanceTo(origin)), elevationChange: seed.y - Math.floor(origin.y), ...sourceSurroundings(bot, seed) } });
   }
   return sources;
+}
+
+// What is about a source: lava or water within two blocks of it, and the
+// nearest hostile mob to it, seen or not (the decision audit, 2026-09-25).
+function sourceSurroundings(bot, p) {
+  const out = {};
+  let lava = false, water = false;
+  for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++) {
+    const name = bot.blockAt(p.offset(dx, dy, dz))?.name || '';
+    if (/lava/.test(name)) lava = true; else if (/^water$|bubble_column/.test(name)) water = true;
+  }
+  if (lava) out.lavaWithinTwoBlocks = true;
+  if (water) out.waterWithinTwoBlocks = true;
+  try {
+    const near = require('./danger').threats(bot, 48).map(t => ({ name: t.entity.name, distance: Math.round(t.entity.position.distanceTo(p)), visible: t.visible }))
+      .filter(h => h.distance <= 24).sort((a, b) => a.distance - b.distance)[0];
+    if (near) out.nearestHostileToIt = near;
+  } catch (_) { /* no entities to read */ }
+  return out;
 }
 
 // The block to work on inside a chosen source: the nearest one that is still
@@ -91,4 +110,4 @@ function setAsideSource(goal, source, why = 'the source could not be worked') {
   for (const p of source.blocks) setAside(goal, 'reach', p, why, FAILURE_TTL_MS);
 }
 
-module.exports = { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, failedSeeds, rememberSource, committedSource, FAILURE_TTL_MS };
+module.exports = { sourceSurroundings, resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, failedSeeds, rememberSource, committedSource, FAILURE_TTL_MS };

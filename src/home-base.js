@@ -989,7 +989,8 @@ async function pickHomeSite(bot, task, goal, save, sites) {
   }));
   try {
     const { decide } = require('./decisions');
-    const decision = await decide('home_site', { client, bot, task, goal, save, tree, state: { position: plain(here.floored()), sites: sites.length, timeOfDay: bot.time?.timeOfDay } });
+    const decision = await decide('home_site', { client, bot, task, goal, save, tree, state: { position: plain(here.floored()), sites: sites.length, timeOfDay: bot.time?.timeOfDay,
+      threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(), riskNow: (() => { try { return require('./risk').riskNow(bot); } catch (_) { return null; } })() } });
     return sites[Number(/^site_(\d+)$/.exec(decision.path.at(-1) || '')?.[1] ?? 0)] || sites[0];
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return sites[0]; }
 }

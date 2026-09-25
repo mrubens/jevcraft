@@ -17,6 +17,16 @@ test('blocks of one tree become one source; Jev is offered sources that differ, 
   assert.equal(nearestRemaining(bot, sources[0]).y, 64);
 });
 
+test('a source says lava or water beside it and the nearest hostile to it (the decision audit)', () => {
+  const bot = world([[3, 40, 0, 'iron_ore'], [4, 40, 1, 'lava'], [20, 40, 0, 'coal_ore']]);
+  bot.entities = { 7: { id: 7, name: 'creeper', position: new Vec3(24, 40, 0), height: 1.7, isValid: true } };
+  bot.entity.position = new Vec3(0.5, 40, 0.5);
+  const [iron, coal] = resourceSources(bot, [new Vec3(3, 40, 0), new Vec3(20, 40, 0)]);
+  assert.equal(iron.description.lavaWithinTwoBlocks, true);
+  assert.equal(coal.description.lavaWithinTwoBlocks, undefined);
+  assert.deepEqual(coal.description.nearestHostileToIt, { name: 'creeper', distance: 4, visible: true });
+});
+
 test('a source that failed moments ago is not offered again, and a vanished source is reported', () => {
   const bot = world([[3, 64, 0, 'oak_log'], [20, 64, 0, 'oak_log']]);
   const now = Date.now();

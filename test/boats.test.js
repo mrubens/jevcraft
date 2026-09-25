@@ -103,7 +103,8 @@ test('paddling stops after a server correction, changed water or cancellation du
 test('an interrupted crossing is not spent from the boat failure budget', async () => {
   const { boatTravelStep } = require('../src/boats');
   const registry = require('minecraft-data')('26.1');
-  const client = { systemOne: async () => ({ answers: { travel: { choice: 'boat' } } }) };
+  const states = [];
+  const client = { systemOne: async ({ state }) => { states.push(state); return { answers: { travel: { choice: 'boat' } } }; } };
   const prepared = bot => { bot.registry = registry; bot.inventory = { items: () => [] }; return bot; };
   const destination = new Vec3(48.5, 65, .5);
 
@@ -132,6 +133,8 @@ test('an interrupted crossing is not spent from the boat failure budget', async 
   assert.equal(goal.boatTravel.failures, 2);
   assert(require('../src/progress').attemptsFor(goal).entries['boat:crossing'].until > Date.now() + 20 * 60000, 'two failures rest boats for half an hour');
   assert.equal(await boatTravelStep(prepared(lake(200)), task, goal, () => {}, destination, { acquireStep }, client), false);
+  // The decision audit: the swim a boat would save, as time.
+  assert(states.length && states.every(s => s.swimSecondsWithoutBoat === Math.round(s.waterBlocks / 2)), JSON.stringify(states[0]));
 });
 
 test('carried boats are reused and crafting chooses wood already in inventory', () => {

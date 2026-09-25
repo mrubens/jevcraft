@@ -1030,7 +1030,10 @@ async function moreOfSource(bot, task, goal, save, step, source, cap) {
   };
   try {
     const decision = await decide('gather_more', { client, bot, task, goal, save, tree, context: {},
-      state: { step: { action: step.action, item: step.drops || step.block, asked: step.count || 1 }, carried: countOf(bot, step.drops), cap, request: goal.request, rung: goal.rungTime?.phase || null } });
+      state: { step: { action: step.action, item: step.drops || step.block, asked: step.count || 1 }, carried: countOf(bot, step.drops), cap, request: goal.request, rung: goal.rungTime?.phase || null,
+        // What staying at the source risks (the decision audit, 2026-09-25).
+        timeOfDay: bot.time?.timeOfDay, threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(), riskNow: (() => { try { return require('./risk').riskNow(bot); } catch (_) { return null; } })(),
+        ...(source.blocks?.[0] ? require('./decision-options').sourceSurroundings(bot, source.blocks[0]) : {}) } });
     return decision.stale || decision.path.at(-1) !== 'enough';
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return true; }
 }
@@ -1345,7 +1348,8 @@ async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTa
   for (const key of spent) delete tree[key];
   if (Object.keys(tree).length < 2) return null;
   try {
-    const decision = await decide('while_cooking', { client, bot, task, goal, save, tree, state: { cooking: `${count} ${what}`, seconds, inventoryFreeSlots: bot.inventory.emptySlotCount?.() ?? null, timeOfDay: bot.time?.timeOfDay } });
+    const decision = await decide('while_cooking', { client, bot, task, goal, save, tree, state: { cooking: `${count} ${what}`, seconds, inventoryFreeSlots: bot.inventory.emptySlotCount?.() ?? null, timeOfDay: bot.time?.timeOfDay,
+      threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(), riskNow: (() => { try { return require('./risk').riskNow(bot); } catch (_) { return null; } })() } });
     if (decision.stale || decision.fallback) return null;
     return decision.path.at(-1);
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return null; }

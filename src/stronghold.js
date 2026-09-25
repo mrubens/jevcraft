@@ -130,7 +130,9 @@ async function walkBearing(bot, task, goal, save, target, actions, client) {
     // estimate (the stronghold_waypoint question, decisions/travel.js).
     const decision = await decide('stronghold_waypoint', { client, bot, task, goal, save, tree, interrupt: () => checkThreats(bot),
       state: { request: goal.request, task: 'Follow observed Eyes of Ender', target,
-        latestBearing: search.bearings.at(-1), estimatedTargetIsUnverified: true, health: bot.health, food: bot.food },
+        latestBearing: search.bearings.at(-1), estimatedTargetIsUnverified: true, health: bot.health, food: bot.food,
+        // The time and the risk, as other walks say them (the decision audit).
+        timeOfDay: bot.time?.timeOfDay, riskNow: (() => { try { return require('./risk').riskNow(bot); } catch (_) { return null; } })() },
       isFresh: () => bot.game.dimension === dimension && bot.entity.position.distanceTo(origin) < 1 });
     if (!decision.stale) await decision.action.run();
   } finally { surface.restore(); }
