@@ -62,3 +62,18 @@ test('the mob being fought stays in view for a few seconds when it steps below a
   bot._struck.at = Date.now() - 9000;
   assert.equal(threats(bot, 8)[0].visible, false, 'not for good');
 });
+
+test('a mob seen close a moment ago stays a threat when it drops out of view for a look', () => {
+  // Trial 65: the creeper at four blocks hid for one look and the stance was asked again without it.
+  const { threats } = require('../src/danger');
+  const { Vec3 } = require('vec3');
+  const creeper = { id: 3, name: 'creeper', position: new Vec3(4, 64, 0), height: 1.7, isValid: true };
+  let blocked = false;
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, entities: { 3: creeper }, time: { timeOfDay: 18000 }, game: {},
+    world: { raycast: () => blocked ? { position: new Vec3(2, 64, 0), intersect: new Vec3(2, 64.5, 0) } : null } };
+  assert.equal(threats(bot, 16)[0].visible, true);
+  blocked = true;
+  assert.equal(threats(bot, 16)[0].visible, true, 'hidden for a look, still counted');
+  bot._seenClose.set(3, Date.now() - 4000);
+  assert.equal(threats(bot, 16)[0].visible, false, 'not for good');
+});

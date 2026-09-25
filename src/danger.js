@@ -76,7 +76,7 @@ function threats(bot, radius = 24) {
       return !hit || eye.distanceTo(hit.intersect || hit.position) >= eye.distanceTo(target) - 0.5;
     };
     const visible = [Math.min(height, 1.6), height / 2, 0.15].some(dy => clear(entity.position.offset(0, dy, 0)));
-    return { entity, distance, visible };
+    return { entity, distance, visible, sighted: visible };
   }).sort((a, b) => a.distance - b.distance);
   // Hit by a kind of mob a moment ago and none of that kind in sight: the
   // nearest one is the one, as a player turning to the fire knows. Fire in
@@ -95,6 +95,17 @@ function threats(bot, radius = 24) {
   // sight under the lip, and was hit four times before it looked again.
   const struck = bot._struck && now - bot._struck.at < 8000 && list.find(t => t.entity.id === bot._struck.id && t.distance <= 6);
   if (struck && !struck.visible) Object.assign(struck, { visible: true, attributed: true });
+  // A mob seen close a moment ago is still there when a stair edge or a
+  // zombie in front hides it for a look: trial 65's creeper dropped out of
+  // view for one look at four blocks, the stance was asked again without
+  // it (a pillar), and again when it came back; four stances in five
+  // seconds, none carried through, and the blast.
+  const seen = bot._seenClose ||= new Map();
+  for (const t of list) {
+    if (t.sighted && t.distance <= 8) seen.set(t.entity.id, now);
+    else if (!t.visible && t.distance <= 8 && now - (seen.get(t.entity.id) || 0) < 3000) Object.assign(t, { visible: true, remembered: true });
+  }
+  if (seen.size > 64) for (const [id, at] of seen) if (now - at > 3000) seen.delete(id);
   return list;
 }
 
