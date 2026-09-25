@@ -282,7 +282,8 @@ function checkStall(bot) {
   if (bot._airAbort) { const { NeedsAir } = require('./vitals'); throw new NeedsAir(); }
   if (bot._threatAbort) {
     const { NeedsSafety, threats } = require('./danger');
-    throw new NeedsSafety(threats(bot, 16)[0] || { entity: { name: 'something unseen' }, distance: 0 });
+    let near = null; try { near = threats(bot, 16)[0]; } catch (_) { /* no entities yet */ }
+    throw new NeedsSafety(near || { entity: { name: 'something unseen' }, distance: 0 });
   }
   const stall = bot._stalls?.stall; if (stall) throw new Stalled(stall);
 }

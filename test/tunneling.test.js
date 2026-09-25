@@ -564,3 +564,23 @@ test('a window is opened only in reach, and a wait for it answers the task and g
   await assert.rejects(openWindow(bot, { check() {} }, never, { timeoutMs: 200, what: 'the chest' }), /the chest did not open/);
   assert.equal(await openWindow(bot, { check() {} }, async () => 'window', { block: { position: new Vec3(2, 64, 0) } }), 'window');
 });
+
+test('a window sync is bounded: a closed window is not waited on, a silent server is given up in two seconds, and a watchdog stops it at once', async () => {
+  const { boundSyncWindow } = require('../src/compatibility');
+  const never = () => new Promise(() => {});
+  const inventory = { id: 0 }, furnace = { id: 7 };
+  let calls = 0;
+  const bot = { inventory, currentWindow: null, _syncWindow: () => { calls++; return never(); } };
+  boundSyncWindow(bot);
+  let started = Date.now();
+  await bot._syncWindow(furnace);
+  assert(Date.now() - started < 50 && calls === 0, 'the furnace window is shut: nothing to sync');
+  started = Date.now();
+  await bot._syncWindow(inventory);
+  const waited = Date.now() - started;
+  assert(waited >= 1900 && waited < 2600, `given up in about two seconds, not twenty (${waited}ms)`);
+  bot.currentWindow = furnace; bot._threatAbort = true;
+  started = Date.now();
+  await assert.rejects(bot._syncWindow(furnace), e => e.name === 'NeedsSafety');
+  assert(Date.now() - started < 200, 'the watchdog reaches it');
+});

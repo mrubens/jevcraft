@@ -23,7 +23,35 @@ function fixPlayerDimensions(physics) {
   if (physics?.playerHeight === 1.8) physics.playerHeight = Math.fround(1.8);
 }
 
+// Mineflayer's window sync clicks the window and waits for the server to send
+// its contents again, twenty seconds at most, checking nothing. A window
+// already closed never answers: trial 31's smelting synced its furnace after
+// the window shut and stood, unchecked for ten seconds, while a zombie killed
+// it (reproduced on its world). A closed window has nothing to sync; any
+// sync is given up after two seconds (it is best effort), and at once when
+// a watchdog has stopped the step (stillness.js, survival.js).
+function boundSyncWindow(bot) {
+  const original = bot._syncWindow;
+  if (typeof original !== 'function' || original._bounded) return;
+  const bounded = async window => {
+    if (window && window !== bot.inventory && window !== bot.currentWindow) return;
+    let settled = false, failure = null;
+    original(window).then(() => { settled = true; }, err => { settled = true; failure = err; });
+    const end = Date.now() + 2000;
+    while (!settled && Date.now() < end) {
+      if (bot._threatAbort) { const { NeedsSafety, threats } = require('./danger'); let near = null; try { near = threats(bot, 16)[0]; } catch (_) { /* no entities yet */ } throw new NeedsSafety(near || { entity: { name: 'something unseen' }, distance: 0 }); }
+      if (bot._airAbort) { const { NeedsAir } = require('./vitals'); throw new NeedsAir(); }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    if (failure && !/did not fire within timeout/.test(failure.message)) throw failure;
+  };
+  bounded._bounded = true;
+  bot._syncWindow = bounded;
+}
+
 function compatibilityPlugin(bot) {
+  boundSyncWindow(bot);
+  bot.once?.('spawn', () => boundSyncWindow(bot));
   require('./flight').installFlight(bot);
   require('./block-search').installBlockSearch(bot);
   require('./furnace-properties').installFurnaceProperties(bot);
@@ -125,4 +153,4 @@ function fixPathfinderResults() {
   AStar.prototype[patched] = true;
 }
 
-module.exports = { fixMiningMaterials, compatibilityPlugin, fixPathfinderResults, fixPlayerDimensions };
+module.exports = { boundSyncWindow, fixMiningMaterials, compatibilityPlugin, fixPathfinderResults, fixPlayerDimensions };
