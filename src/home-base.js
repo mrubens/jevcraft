@@ -460,9 +460,22 @@ async function standAt(bot, task, actions, p, range = 0) {
   await actions.navigate(bot, task, goal, { timeoutMs: 30000, stallMs: 8000 });
 }
 
+// With no path (seventeen blocks under home in its own mine, trial 115 was
+// told "no path" twenty-five times and flipped between the walk and a
+// detour until the audit called the loop), the way is dug: a stretch of
+// tunnel or a pillar toward home, then the walk again.
+const NO_PATH = /No route|No path|noPath|did not reach|timed out|Timeout/i;
 async function goHome(bot, task, goal, save, home, actions) {
-  goal.step = { action: 'return_home', origin: home.origin, distance: Math.round(homeDistance(bot, home)) }; save();
-  await actions.navigate(bot, task, new goals.GoalNear(home.origin.x, home.origin.y + 1, home.origin.z, 4), { timeoutMs: 120000, stallMs: 15000 });
+  const at = new Vec3(home.origin.x, home.origin.y + 1, home.origin.z);
+  for (let round = 0; ; round++) {
+    goal.step = { action: 'return_home', origin: home.origin, distance: Math.round(homeDistance(bot, home)), ...(round ? { digging: round } : {}) }; save();
+    try { await actions.navigate(bot, task, new goals.GoalNear(at.x, at.y, at.z, 4), { timeoutMs: 120000, stallMs: 15000 }); return; }
+    catch (err) {
+      task.check();
+      if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) || !actions.tunnel || round >= 12 || !NO_PATH.test(err.message)) throw err;
+    }
+    await actions.tunnel(bot, task, goal, save, at, 'home');
+  }
 }
 
 async function equip(bot, name) {

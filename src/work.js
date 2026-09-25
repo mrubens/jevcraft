@@ -2826,7 +2826,7 @@ function createSurvival(bot, options) {
   // cacheHere: the valuables into a chest put down on the spot, when home's
   // chest is out of reach.
   const cacheHere = (b, t, g, sv, reason) => require('./field-cache').cacheValuables(b, t, g, sv, homeActions(), { reason });
-  return new Survival(bot, { acquireStep, dig, place, navigate, explore, returnOverworld: returnFromNether, surfaceStep, planFor, stashTrip, cacheHere }, options);
+  return new Survival(bot, { acquireStep, dig, place, navigate, explore, returnOverworld: returnFromNether, surfaceStep, planFor, stashTrip, cacheHere, tunnel: tunnelToward }, options);
 }
 
 async function returnFromNether(bot, task, goal, save) {
@@ -3278,7 +3278,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
 
 // What the home base needs from the executor: travel, placing, digging,
 // the planner for anything craftable, and a search for sheep or cows.
-const homeActions = () => ({ acquireStep, navigate, place, dig, explore });
+const homeActions = () => ({ acquireStep, navigate, place, dig, explore, tunnel: tunnelToward });
 
 // Two steaks was the whole larder for the first Nether trip. The survival
 // layer's stock-driven search fills the reserve; a search it has set aside

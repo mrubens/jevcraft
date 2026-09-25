@@ -522,3 +522,17 @@ test('a night shell left on the pen gate\'s stand is dug away when the pen is bu
   await buildPen(bot, { check() {} }, {}, () => {}, home, { dig: async (b, t, p) => { dug.push(key(p)); blocks.delete(key(p)); }, place: async () => {} });
   assert.deepEqual(dug, [key(pen.gateStand)], 'the stray on the stand, and nothing else');
 });
+
+test('with no path home from a mine under it, the way home is dug a stretch at a time and walked again', async () => {
+  // Trial 115: seventeen blocks under home, "no path" twenty-five times and a loop between the walk and a detour.
+  const { goHome } = require('../src/home-base');
+  const home = { origin: { x: 0, y: 63, z: 0 }, direction: { x: 1, z: 0 } };
+  const bot = { entity: { position: new Vec3(1.5, 46, 2.5) }, game: { dimension: 'overworld' } };
+  let walks = 0; const dug = [];
+  const actions = { navigate: async () => { walks++; if (walks < 3) throw new Error('No route from here to the destination (noPath)'); },
+    tunnel: async (b, t, g, s, target, key) => { dug.push([target.y, key]); } };
+  await goHome(bot, new Task('home'), {}, () => {}, home, actions);
+  assert.equal(walks, 3);
+  assert.deepEqual(dug, [[64, 'home'], [64, 'home']]);
+  await assert.rejects(goHome(bot, new Task('home'), {}, () => {}, home, { navigate: async () => { throw new Error('No path to the goal!'); } }), /No path/, 'without a way to dig, the failure is the walk\'s');
+});
