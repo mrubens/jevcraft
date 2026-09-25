@@ -16,7 +16,11 @@ const faces = [...directions, new Vec3(0, 1, 0), new Vec3(0, -1, 0)];
 // Natural terrain, plus the blocks the bot lays itself: a dig-in's
 // cobblestone across the stairs is not a wall to retreat from, it is
 // yesterday's shelter. Registered builds stay protected by reservation.
-const natural = /^(stone|deepslate|granite|diorite|andesite|tuff|dirt|grass_block|gravel|sand|cobblestone|cobbled_deepslate|netherrack|soul_sand|soul_soil|basalt|blackstone|nether_bricks|nether_brick_fence|nether_brick_stairs|nether_brick_slab|nether_brick_wall|end_stone)$|_ore$/;
+// Ground as the world makes it. Sandstone was missing, and trial 32's bot
+// sat under a beach at y 57 with every step up "sandstone in the way",
+// pacing one block and back until the audit called it a loop (2026-09-25):
+// deserts, beaches, badlands and caves are made of these too.
+const natural = /^(stone|deepslate|granite|diorite|andesite|tuff|calcite|dripstone_block|smooth_basalt|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|grass_block|mud|clay|moss_block|gravel|sand|red_sand|sandstone|red_sandstone|terracotta|(white|orange|yellow|red|brown|light_gray)_terracotta|snow_block|cobblestone|cobbled_deepslate|netherrack|soul_sand|soul_soil|basalt|blackstone|nether_bricks|nether_brick_fence|nether_brick_stairs|nether_brick_slab|nether_brick_wall|end_stone)$|_ore$/;
 const dangerous = block => !block || ['lava', 'water', 'fire', 'magma_block', 'powder_snow'].includes(block.name);
 const falling = block => block && (['sand', 'red_sand', 'gravel'].includes(block.name) || block.name.endsWith('_concrete_powder'));
 
@@ -207,10 +211,29 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
   // closer and a filter is why; a travelling shaft still goes round.
   const closer = choice && choice.destination.distanceTo(target) < bot.entity.position.floored().distanceTo(target) - 0.1;
   if (strict && !closer && options.blocked && Object.keys(options.blocked).length) throw new NoSafeWay(target, options.blocked);
+  // No step at all, and the retreat did not move the bot either: that is a
+  // staircase getting nowhere too. The live replay of trial 32 sat one block
+  // below a beach, every step up filtered out, and returned at once five
+  // times a second for two minutes, the landing chosen again each time.
   if (!choice) {
-    await retreatForTunnel(bot, task, goal, save, { navigate });
+    const before = bot.entity.position.clone();
+    let stuck = null;
+    try { await retreatForTunnel(bot, task, goal, save, { navigate }); }
+    catch (err) { if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; stuck = err; }
+    if (bot.entity.position.distanceTo(before) >= 0.5) { tunnel.noWay = 0; if (stuck) throw stuck; return; }
+    tunnel.noWay = (tunnel.noWay || 0) + 1;
+    if (tunnel.noWay >= 3) {
+      tunnel.noWay = 0;
+      const why = `no safe step toward it (${Object.entries(options.blocked || {}).map(([k, n]) => `${k} ${n}`).join(', ') || 'nothing open'})`;
+      setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
+      save();
+      throw new StaircaseStalled(target, why);
+    }
+    save();
+    if (stuck) throw stuck;
     return;
   }
+  tunnel.noWay = 0;
   noteProgress(tunnel, target, bot.entity.position.distanceTo(target));
   tunnel.visited[`${choice.destination}`] = (tunnel.visited[`${choice.destination}`] || 0) + 1;
   tunnel.steps++;

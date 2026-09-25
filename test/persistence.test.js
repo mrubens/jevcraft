@@ -99,3 +99,25 @@ test('shake loose never digs while submerged: it swims up and returns', async ()
   assert(controls.some(([n, on]) => n === 'jump' && on), 'swims up');
   assert(controls.some(([n, on]) => n === 'jump' && !on), 'and lets go of the key');
 });
+
+test('a watchdog\'s threat signal, still held when the step\'s error is caught, hands the turn to the survival layer and does not end the goal', async () => {
+  // Trial 32, 01:19: hit twice in four seconds at four health, the hurt
+  // watchdog set its flag; the step threw, and the check at the top of the
+  // loop's catch threw the held signal again, out of the loop. The goal
+  // ended "stuck" and the bot stood still until the trial was over.
+  const { checkStall } = require('../src/stillness');
+  const { NeedsSafety } = require('../src/danger');
+  const { bot, goal, task } = fixture();
+  task.stallCheck = () => checkStall(bot);
+  let calls = 0;
+  const survival = { state: goal.survival, step: async () => {
+    calls++;
+    if (calls === 1) { bot._threatAbort = true; bot._threatAbortAt = Date.now(); throw new NeedsSafety({ entity: { name: 'zombie' }, distance: 2 }); }
+    // The survival layer's turn clears what the watchdogs held (stepOnce).
+    bot._threatAbort = false;
+    return true;
+  } };
+  const result = await runGoal(bot, task, goal, { save() {} }, { survival, maxSteps: 4, backoffMs: 1 });
+  assert.equal(result.reason, 'Action budget reached', `ended: ${result.reason || JSON.stringify(result)}`);
+  assert(calls >= 2, 'the survival layer had its turn after the signal');
+});

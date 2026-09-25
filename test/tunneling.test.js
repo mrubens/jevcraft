@@ -584,3 +584,23 @@ test('a window sync is bounded: a closed window is not waited on, a silent serve
   await assert.rejects(bot._syncWindow(furnace), e => e.name === 'NeedsSafety');
   assert(Date.now() - started < 200, 'the watchdog reaches it');
 });
+
+test('a staircase climbs through sandstone, and a landing with no step at all is set aside, not asked again every call', async () => {
+  // Trial 32: under a beach, sandstone every way up. It was "sandstone in
+  // the way" for every step, and the bot paced one block and back.
+  const sandy = world();
+  const solid = { name: 'sandstone', diggable: true, boundingBox: 'block', harvestTools: { 1: true } };
+  sandy.blockAt = p => sandy.blocks.get(`${p}`) || { ...solid, position: p };
+  const up = stairOptions(sandy, {}, new Vec3(6, 76, 0));
+  assert(up.length && up[0].destination.y === 71, 'a step up through sandstone');
+  // Boxed in by what cannot be dug, and the retreat cannot move the bot:
+  // the third call gives the landing up.
+  const stuck = world(), feet = stuck.entity.position.floored();
+  stuck.blockAt = p => p.equals(feet) || p.equals(feet.offset(0, 1, 0)) ? { name: 'air', position: p, boundingBox: 'empty' }
+    : { name: 'bedrock', position: p, diggable: false, boundingBox: 'block' };
+  stuck.pathfinder = { movements: {}, setGoal() {} }; stuck.entities = {}; stuck.registry = require('minecraft-data')('26.1'); stuck.findBlocks = () => [];
+  const goal = {}, target = new Vec3(6, 76, 0), actions = { dig: async () => {}, navigate: async () => { throw new Error('no route'); } };
+  for (let n = 0; n < 2; n++) await assert.rejects(tunnelStep(stuck, new Task('stuck'), goal, () => {}, target, actions), /No existing dry route/);
+  await assert.rejects(tunnelStep(stuck, new Task('stuck'), goal, () => {}, target, actions), { name: 'StaircaseStalled' });
+  await assert.rejects(tunnelStep(stuck, new Task('stuck'), goal, () => {}, target, actions), { name: 'StaircaseStalled' }, 'the landing rests');
+});

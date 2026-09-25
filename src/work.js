@@ -2744,12 +2744,23 @@ async function tryRecovery(adviser, task, goal, save) {
 // with "say resume". Moving on from a resource ended the dream run that way
 // when its exploration step found no dry route. A failed handler is a
 // failed step, and the loop's own persistence deals with it.
+// The loop's own check, where a caught error is being handled: a watchdog's
+// signal held for the survival layer (air, a threat) or a stall is the
+// loop's to answer on its next turn, not a reason to leave the loop. Thrown
+// from the check in the catch, trial 32's held threat signal ended the goal
+// as "stuck" at 01:19, and the bot stood still until the trial was over.
+// A cancellation still ends it.
+function loopCheck(task) {
+  try { task.check(); return null; }
+  catch (err) { if (['NeedsAir', 'NeedsSafety', 'Stalled'].includes(err.name)) return err; throw err; }
+}
+
 async function inCatch(task, goal, fn) {
   try { return await fn(); }
   catch (err) {
     // A stall raised meanwhile is the loop's to answer, next tick.
     if (err.name === 'Stalled') return true;
-    try { task.check(); } catch (e) { if (e.name === 'Stalled') return true; throw e; }
+    if (loopCheck(task)) return true;
     if (['NeedsAir', 'NeedsSafety'].includes(err.name)) return true;
     noteError(goal, err);
     return false;
@@ -3217,7 +3228,8 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
     // A stall is answered first, before anything can throw it again.
     const stall = takeStall(bot);
     if (stall) { await inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep, idle: true })); failures = 0; save(); onStep(goal); continue; }
-    task.check(); updateDigCapabilities(bot);
+    if (loopCheck(task)) { await inCatch(task, goal, () => survival.step(task, goal, save, onStep)); save(); onStep(goal); continue; }
+    updateDigCapabilities(bot);
     try {
       if (goal.recoveryAdvice?.active) {
         await maintainVitals(bot, task);
@@ -3232,7 +3244,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
     } catch (err) {
       task.interruptCheck = undefined;
       if (err.name === 'Stalled' || bot._stalls?.stall) continue;
-      task.check();
+      if (loopCheck(task)) { noteError(goal, err); save(); onStep(goal); continue; }
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) failures++;
       noteError(goal, err); save(); onStep(goal);
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) recoveryAdviser.recordFailure(goal, err);
@@ -3240,7 +3252,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       // Survival never gives up either: shake loose, back off, go again.
       if (failures >= 5) { await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival })); failures = 0; continue; }
     } finally { task.interruptCheck = undefined; }
-    for (let n = 0; n < 10 && !bot._stalls?.stall; n++) { task.check(); await sleep(100); }
+    for (let n = 0; n < 10 && !bot._stalls?.stall; n++) { if (loopCheck(task)) break; await sleep(100); }
   }
   } finally { if (bot._stalls) bot._stalls.goalOf = null; task.stallCheck = undefined; }
   return { ok: true, goal };
@@ -3281,7 +3293,8 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       await inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep }));
       goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
     }
-    task.check();
+    // A signal the watchdogs hold for the survival layer: its turn now.
+    if (loopCheck(task)) { await inCatch(task, goal, () => survival.step(task, goal, save, () => onStep(goal))); save(); onStep(goal); continue; }
     updateDigCapabilities(bot);
     // Every tick starts with the configured movement policy: leaked
     // restrictions from a step that threw are not carried into the next.
@@ -3383,7 +3396,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     } catch (err) {
       task.interruptCheck = undefined;
       if (err.name === 'Stalled' || bot._stalls?.stall) continue;
-      task.check();
+      if (loopCheck(task)) { noteError(goal, err); save(); onStep(goal); continue; }
       noteError(goal, err);
       if (err.name === 'DesignRepair') { save(); onStep(goal); continue; }
       if (err.name === 'NeedsAir' || err.name === 'NeedsSafety') { save(); onStep(goal); continue; }

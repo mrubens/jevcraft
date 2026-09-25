@@ -155,7 +155,11 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
   const ordinary = { canDig: movements.canDig, scafoldingBlocks: movements.scafoldingBlocks, allow1by1towers: movements.allow1by1towers };
   // First try existing exits without spending the very ingredients needed to
   // replace a tool. Explicit staircase recovery owns any necessary excavation.
-  Object.assign(movements, { canDig: false, scafoldingBlocks: [], allow1by1towers: false });
+  // A pillar of dirt or other stone that makes no tool is an existing exit
+  // too: trial 32's bot wandered under a beach for minutes, beside the shaft
+  // it had come down by, open to the sky, with dirt in its pockets.
+  const TOOL_STONE = new Set(['cobblestone', 'cobbled_deepslate', 'blackstone'].map(n => bot.registry?.itemsByName?.[n]?.id));
+  Object.assign(movements, { canDig: false, scafoldingBlocks: (ordinary.scafoldingBlocks || []).filter(id => !TOOL_STONE.has(id)), allow1by1towers: true });
   movements.allowedPosition = p => p.y >= start.y - 3 && (!previous || previous(p));
   const state = goal.surfaceReturn ||= { attempts: 0, visited: {} };
   try {
@@ -186,7 +190,8 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
     const checked = new Set();
     // Retry complete exit routes periodically as the staircase opens up.
     // Repeating twelve expensive searches at every one-block step stalls work.
-    for (const target of !state.ascent || state.ascent.steps % 8 === 0 ? candidates : []) {
+    // A staircase call that did not move the bot re-reads the routes too.
+    for (const target of !state.ascent || state.ascent.steps % 8 === 0 || state.still ? candidates : []) {
       if (checked.has(key(target))) continue;
       checked.add(key(target));
       if (checked.size > 12) break;
@@ -243,6 +248,7 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
         task.check();
         if (surfaceReturnComplete(bot, goal) || bot.entity.position.distanceTo(before) < 0.5) break;
       }
+      state.still = bot.entity.position.distanceTo(start.offset(0.5, 0, 0.5)) < 1;
       if (surfaceReturnComplete(bot, goal)) { delete goal.surfaceReturn; save(); }
       return;
     }
