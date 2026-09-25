@@ -128,6 +128,14 @@ function hunted(bot, entity) {
   return !!hunt && hunt.name === entity.name && hunt.until > Date.now() && fitToFight(bot);
 }
 
+// The kind Jev chose to hunt tonight (survival.js huntStep): closed on and
+// struck by the hunt, not fled from or bunkered against. Any other mob that
+// comes is still the encounter's.
+function nightHunted(bot, entity) {
+  const hunt = bot._nightHunt;
+  return !!hunt && hunt.until > Date.now() && entity?.name === hunt.name;
+}
+
 function immediateThreat(bot) {
   const fighting = inEncounter(bot), hurt = bot._recentHurtAt > Date.now() - 4000;
   // Another of the kind being fought never ends the fight: the hunt's own
@@ -138,7 +146,7 @@ function immediateThreat(bot) {
   // lands.
   const waved = !hurt && bot._wavedOff?.until > Date.now() ? bot._wavedOff.ids : null;
   const leftBe = t => !!waved && waved.includes(t.entity.id) && t.distance > 3;
-  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) &&
+  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) && !nightHunted(bot, t.entity) &&
     t.distance <= (shooter(t.entity) ? (fighting ? 8 : hurt ? 32 : 16) : (fighting ? 5 : 8)));
 }
 
@@ -182,4 +190,4 @@ function checkThreats(bot) {
   if (threat) throw new NeedsSafety(threat);
 }
 
-module.exports = { hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };
+module.exports = { nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };

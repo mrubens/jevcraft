@@ -2626,7 +2626,10 @@ function createSurvival(bot, options) {
   // planFor: what making an item from the pockets would take, for the
   // pocket's "work here" option (smelting and crafting only).
   const planFor = (b, item, count, goal) => catalogPlan(b, item, count, planningInventory(b), goal);
-  return new Survival(bot, { acquireStep, dig, place, navigate, explore, returnOverworld: returnFromNether, surfaceStep, planFor }, options);
+  // stashTrip: the valuables into the home's stash chest, for the night
+  // hunt's "stash first" option.
+  const stashTrip = (b, t, g, sv) => stashValuables(b, t, g, sv, homeActions());
+  return new Survival(bot, { acquireStep, dig, place, navigate, explore, returnOverworld: returnFromNether, surfaceStep, planFor, stashTrip }, options);
 }
 
 async function returnFromNether(bot, task, goal, save) {

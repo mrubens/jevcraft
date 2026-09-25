@@ -221,14 +221,15 @@ define({
 // Where to look for sheep, for a bed.
 define({
   id: 'sheep_search', area: 'resources', kind: 'explore', primitive: 'choice', stakes: 'low', tree: true,
-  question: 'No sheep in view for the bed\'s wool: which nearby biome to look in, or explore on from here?',
+  question: 'No sheep in view for the bed\'s wool: which nearby biome to look in, explore on from here, or craft wool from string carried?',
   trigger: 'Gathering wool with no sheep in view and another biome within the loaded area; the pick holds until the bot is there or the walk fails.',
   source: 'src/home-base.js (searchForSheep), src/exploration.js (biomeView)',
   options: [
     { pattern: 'biome_\\d+', label: 'walk to this biome and look there', when: 'a biome other than the one underfoot, twenty-four or more blocks off, with its distance, direction and what it holds', level: 'root', dynamic: true },
     { key: 'explore_here', label: 'explore on from here', when: 'always', level: 'root' },
+    { key: 'craft_from_string', label: 'craft wool from the string carried', when: 'four or more string carried and wool still wanted', level: 'root' },
   ],
-  instructions: workInstructions('The bot needs wool for a bed and no sheep are in view. Choose where to look. The biome underfoot and those about are in the state with their distance and direction.'),
+  instructions: workInstructions('The bot needs wool for a bed and no sheep are in view. Choose where to look, or make the wool from string carried. The biome underfoot and those about are in the state with their distance and direction.'),
   fallback: () => 'explore_here',
 });
 

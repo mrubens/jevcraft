@@ -731,16 +731,25 @@ async function searchForSheep(bot, task, goal, save, actions) {
   const view = exploration.biomeView(bot);
   const client = task.opportunityClient;
   const nearby = exploration.biomeTrips(bot, { limit: 6 });
-  if (!client || !nearby.length) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
+  // String carried is wool too: four string a white wool.
+  const string = countOf(bot, 'string'), short = Math.max(0, 3 - woolCarried(bot).total);
+  const fromString = Math.min(Math.floor(string / 4), short);
+  if (!client || (!nearby.length && !fromString)) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   const minutes = Math.round((Date.now() - search.since) / 60000);
   const tree = Object.fromEntries(nearby.map((b, i) => [`biome_${i}`, { description: `Walk to ${b.says} and look for sheep there.` }]));
   tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.` };
+  if (fromString) tree.craft_from_string = { description: `Craft ${fromString} white wool from ${fromString * 4} of the ${string} string carried (four string a wool); ${short} wool still wanted for the bed. String also makes bows.` };
   let pick = null;
   try {
     const decision = await require('./decisions').decide('sheep_search', { client, bot, task, goal, save, tree,
-      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), searchingMinutes: minutes, woolCarried: woolCarried(bot).total } });
+      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, stringCarried: string } });
     if (!decision.stale && !decision.fallback) pick = decision.path.at(-1);
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  if (pick === 'craft_from_string') {
+    bot.chat?.(`Making wool from string.`);
+    await actions.acquireStep(bot, task, 'white_wool', countOf(bot, 'white_wool') + fromString, goal, save);
+    return;
+  }
   const chosen = /^biome_(\d+)$/.exec(pick || '') && nearby[Number(pick.slice(6))];
   if (!chosen) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   search.toward = { x: chosen.x, z: chosen.z, biome: chosen.biome }; save();

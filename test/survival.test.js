@@ -1765,3 +1765,32 @@ test('sealed in with the next item makeable from the pockets, working here is on
   assert.match(offered.work_here.description, /make the iron helmet here.*smelt 5 iron ingot, then craft 1 iron helmet/);
   assert.deepEqual(acquired, [['iron_helmet', 1]]);
 });
+
+test('a night hunt is offered for each kind of mob about, with its drops, its cost and what a death would drop', () => {
+  const registry = require('prismarine-registry')('26.1');
+  const item = (name, count, slot) => ({ name, count, slot, type: registry.itemsByName[name].id });
+  const items = [item('stone_sword', 1, 36), item('iron_ingot', 5, 10), item('dirt', 20, 11)];
+  const slots = []; slots[6] = item('iron_chestplate', 1, 6);
+  const mob = (id, name, x) => ({ id, name, position: new Vec3(x, 64, 0), height: 1.8, isValid: true });
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
+    entity: { position: new Vec3(0, 64, 0) }, entities: { 1: mob(1, 'spider', 10), 2: mob(2, 'spider', 14), 3: mob(3, 'zombie', 20), 4: mob(4, 'pig', 5), 5: mob(5, 'spider', 40) },
+    health: 20, food: 20, experience: { level: 3 }, spawnPoint: new Vec3(0, 64, 100), time: { timeOfDay: 15000 },
+    inventory: { items: () => items, slots }, world: { raycast: () => null }, blockAt: () => null });
+  const survival = new Survival(bot, {});
+  const options = survival.huntOptions({});
+  assert.deepEqual(Object.keys(options).sort(), ['hunt_spider', 'hunt_zombie']);
+  assert.match(options.hunt_spider.description, /spiders \(2 within thirty-two blocks, nearest 10\)/);
+  assert.match(options.hunt_spider.description, /string.*white wool/);
+  assert.match(options.hunt_spider.description, /stone sword and 1 piece of armour: about [\d.]+ seconds/);
+  assert.match(options.hunt_spider.description, /iron chestplate, stone sword, 5 iron ingot\), 100 blocks from where the bot would respawn/);
+  const cost = survival.deathCost({});
+  assert.deepEqual(cost.dropsValuables, { 'iron ingot': 5 });
+  assert.equal(cost.respawnAt, 'the world spawn');
+  assert.equal(cost.walkBackBlocks, 100);
+  assert.equal(cost.levelsLost, 3);
+  assert.equal(cost.otherStacks, 1);
+  assert.equal(cost.realSecondsToWalkBack, 23);
+  // The real minutes that went into what would drop, from the ladder's clocks.
+  const made = survival.deathCost({ rungClocks: { iron_armour: { activeMs: 600000 }, shield: { activeMs: 240000 }, stone_pickaxe: { activeMs: 30000 } } });
+  assert.deepEqual(made.realMinutesToMakeAgain, { 'iron armour': 10 });
+});

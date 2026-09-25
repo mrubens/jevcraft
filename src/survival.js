@@ -5,7 +5,7 @@ const { attemptsFor, setAside, isSetAside, failedWithin, watch, unwatch } = requ
 const { HOLDS, EMERGENCIES, refused } = require('./stillness');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { threats, immediateThreat, checkThreats, hunted, claimed, hostileEntities } = require('./danger');
+const { threats, immediateThreat, checkThreats, hunted, claimed, hostileEntities, nightHunted } = require('./danger');
 const shelter = require('./shelter');
 const { decide } = require('./decisions');
 const { maintainVitals, chooseFood, checkAir } = require('./vitals');
@@ -187,6 +187,8 @@ const { SLEEP_FROM, SLEEP_UNTIL } = DAY;
 // Whether a failed sleep is still being waited out. Older saved state has
 // only the time of the failure, which waits the full ten minutes.
 const sleepWaiting = holder => isSetAside(holder, 'sleep', 'bed');
+// Real minutes until dawn: what a night waited out costs the run.
+const minutesToDawn = bot => Math.round(((DAY.DAWN - (bot.time?.timeOfDay ?? 0) + 24000) % 24000) / 1200);
 const sleepable = bot => bot.time?.timeOfDay >= SLEEP_FROM && bot.time.timeOfDay <= SLEEP_UNTIL;
 // Three cells in a line: where the bot stands, the bed's foot, its head.
 // Level floor under both bed cells, air at feet and head height.
@@ -737,7 +739,8 @@ class Survival {
         // kill with its weapon, and what fighting all of them here costs.
         estimate: fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
           armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health }),
-        previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health } : null };
+        previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health } : null,
+        deathWouldCost: this.deathCost(goal) };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
       let decision;
       try {
@@ -1439,7 +1442,7 @@ class Survival {
     return true;
   }
 
-  async leave(task, goal, save, refuge, reason) {
+  async leave(task, goal, save, refuge, reason, { past = false } = {}) {
     const bot = this.bot;
     // "Morning. Back to it." only when it is morning; a shelter left at
     // night for the bed, or with mobs outwaited, says so.
@@ -1448,7 +1451,9 @@ class Survival {
     // Not the quarry, for a bot fit to fight it: the exit had to be twenty
     // blocks from every blaze, beside a spawner that is never true, so the
     // bot decided to leave and then refused every door for twenty minutes.
-    const danger = threats(bot).filter(t => (t.visible || t.distance < 6) && !claimed(bot, t.entity));
+    // Going out for the mobs (a hunt) or past them (to the chest): no exit
+    // is refused for them.
+    const danger = past ? [] : threats(bot).filter(t => (t.visible || t.distance < 6) && !claimed(bot, t.entity));
     const formal = shelter.exits(bot, refuge).filter(exit => danger.every(t => t.entity.position.distanceTo(exit.outside) > 20));
     // A pocket sealed in a staircase has no two-block exit: its door is the
     // closure the bot placed, and the way on is dug from there.
@@ -1572,11 +1577,155 @@ class Survival {
     if (!slept) throw new Error(this.state.lastSleepError || 'The night did not pass in bed');
     attemptsFor(this).clear('sleep', 'bed'); delete this.state.nightPlan;
     this.state.sleptAtAge = worldAge(bot);
+    // A night in the home's bed sets the respawn point there; a carried bed
+    // is picked up again, and the respawn goes back to the world's spawn.
+    this.state.respawn = placed ? { x: site.foot.x, y: site.foot.y, z: site.foot.z, dimension: 'overworld' } : null;
     this.report(goal, save, { action: 'leave_shelter', reason: 'Morning. Back to it.' });
   }
 
   // Ticks awake since the last sleep, counted from the first time the bot
   // looked if it has never slept. Two in-game days is the limit.
+  // The night's hunt: one option for each kind of mob about whose drops are
+  // worth something, with what it drops, what that is for, what one costs
+  // to kill with this weapon and armour, and what a death would drop. Jev's
+  // to weigh against a pocket, a mine or the bed.
+  huntOptions(goal) {
+    const bot = this.bot;
+    if (bot.game?.dimension !== 'overworld' && !/overworld/.test(String(bot.game?.dimension || ''))) return {};
+    const { MOB_DROPS } = require('./mob-drops');
+    const here = bot.entity.position;
+    const kinds = new Map();
+    for (const e of Object.values(bot.entities || {})) {
+      if (!MOB_DROPS[e.name] || e.isValid === false || !e.position) continue;
+      const distance = e.position.distanceTo(here);
+      if (distance > 32 || isSetAside(this, 'night_hunt', e.name)) continue;
+      const kind = kinds.get(e.name) || { count: 0, nearest: null };
+      kind.count++;
+      if (!kind.nearest || distance < kind.nearest.distance) kind.nearest = { entity: e, distance };
+      kinds.set(e.name, kind);
+    }
+    const weapon = defenseWeapon(bot)?.name || null, armour = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
+    const risk = this.atRisk(goal);
+    const options = {};
+    for (const [name, kind] of kinds) {
+      const drops = MOB_DROPS[name], label = name.replaceAll('_', ' ');
+      const one = fightEstimate({ threats: [{ name, distance: kind.nearest.distance, shoots: shooter(kind.nearest.entity), visible: true }], armour, weapon, health: bot.health }).fightHere;
+      options[`hunt_${name}`] = {
+        description: `Go out and hunt the ${label}${kind.count > 1 ? `s (${kind.count} within thirty-two blocks, nearest ${Math.round(kind.nearest.distance)})` : ` ${Math.round(kind.nearest.distance)} blocks off`} for two minutes, others met on the way fought as they come, and pick up what they drop: ${drops.drops} (${drops.for}), and experience. One ${label} with ${weapon ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands'}${armour.length ? ` and ${armour.length} piece${armour.length === 1 ? "" : "s"} of armour` : ' and no armour'}: about ${one.seconds} seconds and ${one.damageTaken} damage, from ${Math.round(bot.health)} health. ${risk}`,
+        kind: name };
+    }
+    return options;
+  }
+
+  // What a death now would cost, for every choice that risks one: the gear
+  // and valuables that would drop where the bot falls, the walk back to
+  // them from where it would respawn before they vanish, and the levels.
+  deathCost(goal) {
+    const bot = this.bot;
+    const { VALUABLES } = require('./home-stash');
+    const words = n => n.replaceAll('_', ' ');
+    const items = bot.inventory.items();
+    const worn = [5, 6, 7, 8, 45].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean).map(words);
+    const gear = [...new Set(items.filter(i => /_(pickaxe|sword|axe|shovel|helmet|chestplate|leggings|boots)$|^(bow|crossbow|shield|shears|flint_and_steel|bucket|water_bucket|lava_bucket|bed)$|_bed$/.test(i.name)).map(i => words(i.name)))];
+    const valuables = {};
+    for (const i of items) if (Object.hasOwn(VALUABLES, i.name)) valuables[words(i.name)] = (valuables[words(i.name)] || 0) + i.count;
+    const here = bot.entity.position;
+    const bed = this.state.respawn && bot.game?.dimension === 'overworld' ? pos(this.state.respawn) : null;
+    const spawn = bed || (bot.spawnPoint && bot.game?.dimension === 'overworld' ? bot.spawnPoint : null);
+    const stash = homeOf(bot, goal)?.stash?.position;
+    return {
+      dropsWorn: worn, dropsGear: gear, dropsValuables: valuables,
+      otherStacks: items.length - items.filter(i => Object.hasOwn(VALUABLES, i.name) || gear.includes(words(i.name))).length,
+      respawnAt: bed ? 'the bed slept in last' : 'the world spawn', walkBackBlocks: spawn ? Math.round(spawn.distanceTo(here)) : null,
+      levelsLost: bot.experience?.level ?? 0,
+      // Real minutes the run spent making what would drop, from the ladder's
+      // clocks: the steps whose item is carried or worn.
+      realMinutesToMakeAgain: Object.fromEntries(Object.entries(goal.rungClocks || {})
+        .filter(([phase, clock]) => clock.activeMs >= 60000 && [...worn, ...gear].some(n => n === words(phase) || (/ armou?r$/.test(words(phase)) && n.startsWith(words(phase).replace(/armou?r$/, '')) && /(helmet|chestplate|leggings|boots)$/.test(n))))
+        .map(([phase, clock]) => [words(phase), Math.round(clock.activeMs / 60000)])),
+      realSecondsToWalkBack: spawn ? Math.round(spawn.distanceTo(here) / 4.3) : null,
+      stashChestBlocks: stash ? Math.round(pos(stash).distanceTo(here)) : null,
+      note: 'Everything carried drops where the bot dies and vanishes five minutes later; the walk back from the respawn point is the only way to get it again.',
+    };
+  }
+  // The same, said in a sentence with an option.
+  atRisk(goal) {
+    const cost = this.deathCost(goal);
+    const listed = [...cost.dropsWorn, ...cost.dropsGear, ...Object.entries(cost.dropsValuables).map(([n, c]) => `${c} ${n}`)].join(', ');
+    return `A death drops everything carried where it happens${listed ? ` (${listed})` : ''}, ${cost.walkBackBlocks != null ? `${cost.walkBackBlocks} blocks from where the bot would respawn` : 'far from where the bot would respawn'}, and it vanishes in five minutes${cost.stashChestBlocks != null ? `; the stash chest is ${cost.stashChestBlocks} blocks off` : '; there is no stash chest'}.`;
+  }
+
+  // The valuables into the stash chest first, when there is one and
+  // something worth putting in it.
+  stashOption(goal) {
+    const bot = this.bot;
+    const stash = homeOf(bot, goal)?.stash?.position;
+    if (!stash || typeof this.actions.stashTrip !== 'function' || isSetAside(this, 'night_stash', 'chest')) return null;
+    const { VALUABLES } = require('./home-stash');
+    const carried = bot.inventory.items().filter(i => Object.hasOwn(VALUABLES, i.name));
+    if (!carried.length) return null;
+    const far = Math.round(pos(stash).distanceTo(bot.entity.position));
+    if (far > 128) return null;
+    return { description: `Walk ${far} blocks to the stash chest and put the valuables carried in it (${carried.map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`).join(', ')}), so a death later tonight does not drop them.`,
+      run: async (task, goal, save) => {
+        try { await this.actions.stashTrip(bot, task, goal, save); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'night_stash', 'chest', err, 300000); }
+        return true;
+      } };
+  }
+
+  // One step of the night hunt Jev chose: the nearest of the kind, closed
+  // on over level ground and struck; its drops picked up once it is down.
+  // Two minutes, then Jev is asked again with the night as it is by then;
+  // six health lost hands back sooner.
+  async huntStep(task, goal, save) {
+    const bot = this.bot, plan = this.state.nightPlan;
+    const { MOB_DROPS } = require('./mob-drops');
+    const drops = MOB_DROPS[plan.kind];
+    const end = why => { this.report(goal, save, { action: 'hunt_over', kind: plan.kind, kills: plan.kills || 0, why }); delete this.state.nightPlan; delete bot._nightHunt; save(); return false; };
+    if (!drops) return end('nothing known of it');
+    if ((bot.health ?? 20) <= (plan.startHealth ?? 20) - 6) return end('six health lost');
+    // The last one is down: what it dropped, before the next.
+    const last = plan.targetId != null && bot.entities[plan.targetId];
+    if (plan.targetId != null && (!last || last.isValid === false)) {
+      plan.kills = (plan.kills || 0) + 1;
+      const origin = plan.lastAt ? pos(plan.lastAt) : bot.entity.position.clone();
+      delete plan.targetId;
+      const { collectNearbyDrops } = require('./drop-collection');
+      for (const item of drops.items) {
+        try { await collectNearbyDrops(bot, task, item, { origin, radius: 8, timeoutMs: 4000, move: this.actions.navigate }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      }
+      save(); return true;
+    }
+    const here = bot.entity.position;
+    const target = Object.values(bot.entities).filter(e => e.name === plan.kind && e.isValid !== false && e.position && e.position.distanceTo(here) <= 32 && !(plan.skip || []).includes(e.id))
+      .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here))[0];
+    if (!target) return end(`no ${plan.kind.replaceAll('_', ' ')} within thirty-two blocks`);
+    bot._nightHunt = { name: plan.kind, until: plan.until };
+    plan.targetId = target.id; plan.lastAt = { x: target.position.x, y: target.position.y, z: target.position.z };
+    this.report(goal, save, { action: 'night_hunt', target: plan.kind, distance: Number(target.position.distanceTo(here).toFixed(1)), kills: plan.kills || 0, health: bot.health });
+    if (canStrike(bot, target)) {
+      await bot.lookAt(target.position.offset(0, (target.height || 1.8) / 2, 0), true);
+      if (!(await defendNearby(bot, task, goal, save))) await sleep(100);
+      return true;
+    }
+    // Closed on without digging or towering: a mob that cannot be walked to
+    // is left for another after three tries.
+    const movements = bot.pathfinder?.movements;
+    const kept = movements && { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers };
+    if (movements) Object.assign(movements, { canDig: false, allow1by1towers: false });
+    const before = target.position.distanceTo(here);
+    try { await this.actions.navigate(bot, task, new goals.GoalFollow(target, 1.5), { timeoutMs: 4000, stallMs: 2000, stopWhen: () => canStrike(bot, target) || target.isValid === false }); }
+    catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+    finally { if (movements) Object.assign(movements, kept); }
+    if (target.isValid !== false && target.position.distanceTo(bot.entity.position) >= before - 0.5 && !canStrike(bot, target)) {
+      plan.misses = { ...(plan.misses || {}), [target.id]: (plan.misses?.[target.id] || 0) + 1 };
+      if (plan.misses[target.id] >= 3) { plan.skip = [...(plan.skip || []), target.id]; delete plan.targetId; }
+    }
+    return true;
+  }
+
   sleepDebt() {
     const age = worldAge(this.bot);
     if (!Number.isFinite(age)) return false;
@@ -1820,7 +1969,7 @@ class Survival {
     // villager and was hit five times trying, then walled itself in with it
     // (2026-09-24). A mob that does not shoot, at arm's length and in sight
     // or in reach of the sword, is the fight-or-flee rules' before anything.
-    const atArm = threats(bot).filter(t => t.distance <= 3 && !shooter(t.entity) && (t.visible || canStrike(bot, t.entity)));
+    const atArm = threats(bot).filter(t => t.distance <= 3 && !shooter(t.entity) && (t.visible || canStrike(bot, t.entity)) && !nightHunted(bot, t.entity));
     if (atArm.length && !claimed(bot, atArm[0].entity)) { await this.flee(task, goal, save); onStep(goal); return true; }
     const refuge = this.currentShelter();
     if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) {
@@ -1893,7 +2042,13 @@ class Survival {
       const bench = !watcher && goal.kind === 'win' && this.benchWork(goal);
       if (bench) options.work_here = { description: `Stay in the pocket and make the ${bench.item.replaceAll('_', ' ')} here: everything it needs is carried (${bench.plan.map(st => `${st.action} ${st.count || 1} ${String(st.item || '').replaceAll('_', ' ')}`).join(', then ')}). The furnace and the table go into the wall; the pocket stays shut.`,
         run: async () => { this.report(goal, save, { action: 'work_in_pocket', item: bench.item }); await this.actions.acquireStep(bot, task, bench.item, bench.count, goal, save); return true; } };
-      options.stay = { description: night ? `Stay in the pocket until daylight${who ? `; ${who} is outside` : ''}.` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${(bot.health ?? 20) < 20 ? ', healing' : ''}.`,
+      // Out to hunt, or the valuables to the chest first (a death drops
+      // everything carried): at night with nothing watching.
+      if (night && !watcher) for (const [key, o] of Object.entries(this.huntOptions(goal))) options[key] = { description: o.description,
+        run: async () => { this.state.nightPlan = { plan: 'hunt', kind: o.kind, until: Date.now() + 120000, startHealth: bot.health }; await this.leave(task, goal, save, refuge, `Out to hunt ${o.kind.replaceAll('_', ' ')}s.`, { past: true }); return true; } };
+      const stash = night && !watcher && this.stashOption(goal);
+      if (stash) options.stash_valuables = { description: stash.description, run: async () => { await this.leave(task, goal, save, refuge, 'To the chest.', { past: true }); return stash.run(task, goal, save); } };
+      options.stay = { description: night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes with nothing gained${who ? `; ${who} is outside` : ''}.` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${(bot.health ?? 20) < 20 ? ', healing' : ''}.`,
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };
@@ -1913,6 +2068,7 @@ class Survival {
             workWaiting: goal.rungTime?.phase || goal.step?.item || goal.step?.block || goal.request || null,
             stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor),
             inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
+            deathWouldCost: this.deathCost(goal),
             health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
             threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity) })) } });
         if (decision.stale) { onStep(goal); return true; }
@@ -1922,6 +2078,10 @@ class Survival {
       if (!(await options[choice].run())) { delete this.state.pocketPlan; await options.stay.run(); }
       onStep(goal); return true;
     }
+    // The hunt Jev chose for the night, while it holds.
+    const hunt = this.state.nightPlan?.plan === 'hunt' ? this.state.nightPlan : null;
+    if (hunt && (hunt.until < Date.now() || !shelterNeeded(bot))) { delete this.state.nightPlan; delete bot._nightHunt; }
+    else if (hunt && await this.huntStep(task, goal, save)) { onStep(goal); return true; }
     if (!shelterNeeded(bot)) delete this.state.nightMine;
     else if (this.state.nightMine && !immediateThreat(bot) && !surfaceObserver(bot)(bot.entity.position.offset(0, 1, 0)) &&
         await this.nightMine(task, goal, save)) { onStep(goal); return true; }
@@ -2006,7 +2166,7 @@ class Survival {
     // Before bedtime, a bed anywhere in reach (a walk that just failed
     // included) means no sealing in yet: the walk is retried in two minutes
     // and the shelter thirty blocks from the bed was the worse night.
-    const needsShelter = shelterNeeded(bot) && !stayingUp;
+    const needsShelter = shelterNeeded(bot) && !stayingUp && plan?.plan !== 'hunt';
     // A shelter once chosen is a plan, not a question for every tick: the
     // second run climbed its shaft for a shelter, was asked again at the
     // top, went back down to the mine, and was asked again at the bottom.
@@ -2055,7 +2215,7 @@ class Survival {
     const stockPaused = isSetAside(this, 'food_search', 'stock', now);
     const needsFood = foodSupply(bot) < desiredFood && (hungry || (stockDriven && !stockPaused));
     if (!needsShelter && !needsFood) return false;
-    const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay,
+    const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay, deathWouldCost: this.deathCost(goal),
       ...(require('./exploration').biomeView(bot) || {}),
       playerUrgency: goal.urgency ? { level: goal.urgency.level, meaning: 'How much the wording of the request pressed for speed: relaxed, ordinary or pressed. Pressure is a reason to keep working while it is still safe, never a reason to skip shelter once night is close.' } : undefined,
       health: bot.health, food: bot.food, safeFoodCarried: !!chooseFood(bot),
@@ -2081,6 +2241,12 @@ class Survival {
         : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
         run: async () => { if (stayUp) { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up', armed }); } } },
     };
+    if (stayUp) {
+      for (const [key, o] of Object.entries(this.huntOptions(goal))) tree[key] = { description: o.description,
+        run: async () => { this.state.nightPlan = { plan: 'hunt', kind: o.kind, until: Date.now() + 120000, startHealth: bot.health }; this.report(goal, save, { action: 'night_hunt_chosen', kind: o.kind }); } };
+      const stash = this.stashOption(goal);
+      if (stash) tree.stash_valuables = { description: stash.description, run: () => stash.run(task, goal, save) };
+    }
     if (homeWalk) {
       const distance = Math.round(homeBed.foot.distanceTo(bot.entity.position));
       tree.go_home_for_night = { description: `Walk home to the bed ${distance} blocks away${underground ? ', climbing out of the mine first' : ''}, about ${Math.round(distance / 4.3)} seconds at a walk, and wait there for bedtime (sleep is possible from ${SLEEP_FROM}; it is ${Math.round(bot.time.timeOfDay)} now). Held until the bot is there.`,
@@ -2091,7 +2257,7 @@ class Survival {
     if (needsShelter && bedReady && sleepable(bot) && ((homeBed && !underground) || bedSite(bot)) && !threats(bot).some(t => t.distance < 10)) tree.sleep_in_bed = { description: homeBed?.observed && !bed ? `Walk to the bed ${Math.round(homeBed.foot.distanceTo(bot.entity.position))} blocks away and sleep in it. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.` : 'Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.', run: () => this.sleepStep(task, goal, save) };
     // Beside a bed a shelter is the worse answer, and the option says so
     // rather than being hidden.
-    if (needsShelter) tree.secure_shelter = { description: 'Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved.' + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
+    if (needsShelter) tree.secure_shelter = { description: `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off; in the shelter it can mine or wait.` + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
     if (needsFood && !(night(bot) && needsShelter)) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
       children: offWorld && this.actions.returnOverworld ? { return_for_food: { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked; nothing here is safe to eat.',

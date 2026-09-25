@@ -22,7 +22,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `survival_priority`
 
-**What should the bot handle next: the player's request, sleep, a shelter, or food (and which food)?**
+**What should the bot handle next: the player's request, sleep, a shelter, a night hunt, the valuables to the chest, or food (and which food)?**
 
 - When: Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter, walk home, night up or food top-up is still being carried out.
 - Decision tree, choice; stakes high; ledger kind `survival`
@@ -37,6 +37,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `sleep_in_bed` | root | sleep in a bed | bedtime, a bed is carried (with room to place it) or one is in reach, and no mob within ten blocks |
 | `secure_shelter` | root | seal a shelter for the night | from dusk; beside a bed the option says the bed is the quicker night |
 | `obtain_food` | root | get food | food carried is under the reserve and hunger or a stock top-up calls for it (not at night when shelter is needed) |
+| `hunt_[a-z_]+` (pattern) | root | go out and hunt this kind of mob for its drops | at night in the Overworld where staying up is on offer, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back |
+| `stash_valuables` | root | put the valuables in the stash chest first | at night where staying up is on offer, a stash chest within 128 blocks and valuables carried |
 | `cook_[a-z_]+` (pattern) | obtain_food | cook a carried ingredient | raw food and fuel are carried; the output is safe food |
 | `prepare_hunting_sword` | obtain_food | make a wooden sword to hunt with | animals are in view and no weapon is carried |
 | `hunt_\d+` (pattern) | obtain_food | hunt this animal | an adult food animal in view is reachable on safe surface ground; the nearest hostile to it is said |
@@ -65,7 +67,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `pocket_next`
 
-**Sealed in a pocket: stay, leave, go to the bed, open the wall on a watcher, or mine the night away?**
+**Sealed in a pocket: stay, leave, go to the bed, open the wall on a watcher, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
 
 - When: Each survival step inside a sealed pocket, unless a mob is inside or at arm's length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.
 - Decision tree, choice; stakes medium; ledger kind `survival`
@@ -79,6 +81,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `open_on_watcher` | root | open the wall toward the watching mob and fight it | a mob within four and a half blocks and a sword or axe carried |
 | `night_mine` | root | mine from the pocket through the night | night and nothing watching; it stays in the pocket when no mine can be dug from here |
 | `work_here` | root | stay and make the ladder's next item in the pocket | on the game ladder, nothing watching, and the next item can be made from what is carried by smelting and crafting alone |
+| `hunt_[a-z_]+` (pattern) | root | open the pocket and hunt this kind of mob for its drops | night, nothing watching, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back |
+| `stash_valuables` | root | open the pocket and put the valuables in the stash chest | night, nothing watching, a stash chest within 128 blocks and valuables carried |
 | `stay` | root | stay in the pocket | always |
 | `leave` | root | open the pocket and go back to work | always |
 
@@ -258,7 +262,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `sheep_search`
 
-**No sheep in view for the bed's wool: which nearby biome to look in, or explore on from here?**
+**No sheep in view for the bed's wool: which nearby biome to look in, explore on from here, or craft wool from string carried?**
 
 - When: Gathering wool with no sheep in view and another biome within the loaded area; the pick holds until the bot is there or the walk fails.
 - Decision tree, choice; stakes low; ledger kind `explore`
@@ -270,6 +274,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `biome_\d+` (pattern) | root | walk to this biome and look there | a biome other than the one underfoot, twenty-four or more blocks off, with its distance, direction and what it holds |
 | `explore_here` | root | explore on from here | always |
+| `craft_from_string` | root | craft wool from the string carried | four or more string carried and wool still wanted |
 
 ### `upkeep`
 

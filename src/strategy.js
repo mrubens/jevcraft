@@ -29,7 +29,7 @@ const fatal = err => ['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name
 const label = phase => phase.replaceAll('_', ' ');
 
 const RUNG_WHY = {
-  bed: 'a night slept passes in seconds and sets the spawn point; three wool from sheep, or a bed from a village',
+  bed: 'a night slept passes in seconds and sets the spawn point; three wool from sheep or crafted from spiders\' string (four string a wool), or a bed from a village',
   iron_pickaxe: 'mines the iron for armour and the diamonds past it',
   home_water: 'the pond that waters the plot',
   home_plot: 'wheat for bread, tomorrow\'s food',

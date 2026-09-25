@@ -110,6 +110,17 @@ function walk(tree, fallback) {
   }
 }
 
+// Every choice about playing the game is told what the player counts:
+// real minutes. A night hidden in a pocket was weighed as safe and free,
+// and it cost seven minutes of a run with nothing to show.
+const GAMEPLAY_AREAS = new Set(['combat', 'endgame', 'home', 'idle', 'resources', 'strategy', 'survival']);
+const REAL_TIME = 'The player counts real time: a Minecraft day is twenty real minutes and a night about seven. Minutes spent waiting, hiding, or redoing what a death lost are the cost that counts, and the player minds a death less than a night idled.';
+function withRealTime(spec) {
+  if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
+  const { task, guidance = '' } = spec.instructions;
+  return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}` };
+}
+
 class NoSafeDefault extends Error {
   constructor(id, reason) { super(`${id}: Jev is unreachable (${reason}) and this decision has no safe default`); this.name = 'Blocked'; }
 }
@@ -135,7 +146,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     const stopThinking = spec.thinking && bot ? require('../speech').thinking(bot) : () => {};
     try {
       decision = await decideTree(client, { state, tree, signal: controller.signal, fallback, kind: spec.kind,
-        rootInstructions: spec.instructions, isFresh });
+        rootInstructions: withRealTime(spec), isFresh });
     } catch (err) {
       if (!fallback && !controller.signal.aborted && err.name === 'TypeSafeError') throw new NoSafeDefault(id, err.message);
       throw err;
