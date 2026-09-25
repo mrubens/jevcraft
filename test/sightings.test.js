@@ -99,7 +99,8 @@ test('with no sheep about and cobwebs in view, cutting them for string is Jev\'s
   const bot = { entity: { position: new Vec3(0.5, 30, 0.5) }, game: { dimension: 'overworld' }, entities: {}, registry,
     inventory: { items: () => items, slots: [] }, chat() {},
     blockAt: p => ({ name: names.get(`${p.floored()}`) || 'air', position: p }),
-    findBlocks: ({ matching }) => matching === registry.blocksByName.cobweb.id ? webs.filter(p => names.has(`${p}`)) : [] };
+    time: { timeOfDay: 14000 },
+    findBlocks: ({ matching }) => matching === registry.blocksByName.cobweb.id ? webs.filter(p => names.has(`${p}`)) : matching === registry.blocksByName.spawner.id ? [new Vec3(7, 29, 0)] : [] };
   const goal = {};
   let offered, state;
   const task = { check() {}, opportunityClient: { systemOne: async ({ questions, state: s }) => { offered = questions.branch_0.criteria; state = s; return { answers: { branch_0: { choice: 'cut_cobwebs', confidence: 0.7 } } }; } } };
@@ -108,5 +109,9 @@ test('with no sheep about and cobwebs in view, cutting them for string is Jev\'s
     dig: async (b, t, p) => { cut.push(`${p}`); names.delete(`${p}`); items.find(i => i.name === 'string').count++; } });
   assert.match(offered.cut_cobwebs, /3 cobwebs .* each drops a string, four string craft a wool, 10 string still wanted/);
   assert.match(JSON.stringify(state), /igloo/);
+  // The decision audit: a spawner among the webs, the dark on a walk, and the time in the state.
+  assert.match(offered.cut_cobwebs, /A mob spawner is among them/);
+  assert.match(offered.explore_here, /It is dark: mobs spawn along the way/);
+  assert.equal(state.timeOfDay, 14000);
   assert.equal(cut.length, 3, 'all three cut: ten were wanted');
 });

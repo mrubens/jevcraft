@@ -243,4 +243,4 @@ async function lootStep(bot, task, goal, save, actions) {
   return false;
 }
 
-module.exports = { LOOTABLE, wanted, structureOf, trapped, lootableChests, lootableMinecarts, lootChest, lootMinecart, lootNearby, lootStep, unlootedLandmarks, markLandmarkLooted, phraseTaken };
+module.exports = { LOOTABLE, wanted, structureOf, trapped, lootableChests, lootableMinecarts, lootChest, lootMinecart, lootNearby, lootStep, unlootedLandmarks, markLandmarkLooted, phraseTaken, spawnerNear };

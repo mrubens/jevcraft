@@ -6,6 +6,7 @@ const { reservedForConstruction } = require('./build-sites');
 const { checkAir } = require('./vitals');
 const { checkThreats } = require('./danger');
 const { countOf } = require('./skills');
+const { DAY } = require('./day');
 const stash = require('./home-stash');
 const { knownVillages, BED_REACH } = require('./villages');
 
@@ -791,15 +792,26 @@ async function searchForSheep(bot, task, goal, save, actions) {
   const minutes = Math.round((Date.now() - search.since) / 60000);
   // Flocks seen earlier and out of view now (sightings.js).
   const flocks = require('./sightings').sighted(bot, goal, 'sheep').filter(s => s.distance > 32).slice(0, 3);
-  const tree = Object.fromEntries(nearby.map((b, i) => [`biome_${i}`, { description: `Walk to ${b.says} and look for sheep there.` }]));
-  flocks.forEach((s, i) => { tree[`seen_${i}`] = { description: `Walk back to where ${s.says}; sheep wander, but not far.` }; });
-  tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.` };
-  if (webs.length >= 2 && stringWanted) tree.cut_cobwebs = { description: `Cut the ${webs.length} cobwebs within ${Math.round(Math.max(...webs.map(p => p.distanceTo(bot.entity.position))))} blocks with the sword: each drops a string, four string craft a wool, ${stringWanted} string still wanted for the bed (${string} carried).` };
+  // Each walk's time against the day, and what the cobwebs are in: a
+  // mineshaft's webs are round a cave spider spawner as often as not (the
+  // decision audit, 2026-09-25).
+  const tod = bot.time?.timeOfDay ?? 6000;
+  const walk = d => { const s = Math.round(d / 4.3); return ` About ${s} seconds at a walk${tod >= DAY.DARK && tod < DAY.DAWN ? ', in the dark: mobs spawn along the way' : tod + s * 20 >= DAY.DARK && tod < DAY.DARK ? ', arriving after dark' : ''}.`; };
+  const tree = Object.fromEntries(nearby.map((b, i) => [`biome_${i}`, { description: `Walk to ${b.says} and look for sheep there.${walk(b.distance)}` }]));
+  flocks.forEach((s, i) => { tree[`seen_${i}`] = { description: `Walk back to where ${s.says}; sheep wander, but not far.${walk(s.distance)}` }; });
+  tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.${tod >= DAY.DARK && tod < DAY.DAWN ? ' It is dark: mobs spawn along the way.' : ''}` };
+  if (webs.length >= 2 && stringWanted) {
+    const nearWeb = [...webs].sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
+    const webDy = Math.round(nearWeb.y - bot.entity.position.y);
+    const spawner = require('./looting').spawnerNear(bot, nearWeb, 12);
+    tree.cut_cobwebs = { description: `Cut the ${webs.length} cobwebs within ${Math.round(Math.max(...webs.map(p => p.distanceTo(bot.entity.position))))} blocks with the sword: each drops a string, four string craft a wool, ${stringWanted} string still wanted for the bed (${string} carried).${Math.abs(webDy) >= 3 ? ` The nearest is ${Math.abs(webDy)} blocks ${webDy > 0 ? 'up' : 'down'}.` : ''}${spawner ? ' A mob spawner is among them: it keeps making mobs while the bot is near.' : ''}` };
+  }
   if (fromString) tree.craft_from_string = { description: `Craft ${fromString} white wool from ${fromString * 4} of the ${string} string carried (four string a wool); ${short} wool still wanted for the bed. String also makes bows.` };
   let pick = null;
   try {
     const decision = await require('./decisions').decide('sheep_search', { client, bot, task, goal, save, tree,
       state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, stringCarried: string,
+        timeOfDay: tod, ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot) } : {}),
         withoutSheep: 'Four string craft a white wool, twelve a bed\'s three: spiders drop up to two string each (they come out at night), and cobwebs cut with a sword drop one (abandoned mineshafts are full of them). An igloo, in snowy plains and taiga, always has a bed in it, and so do most village houses. Phantoms only come after three nights without sleep.' } });
     if (!decision.stale && !decision.fallback) pick = decision.path.at(-1);
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
