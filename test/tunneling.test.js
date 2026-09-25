@@ -318,8 +318,13 @@ test('a dug-in pocket at the bot\'s feet does not reserve the stairs out of it',
   bot.game = { gameMode: 'survival', difficulty: 'normal' }; bot.registry = require('minecraft-data')('26.1'); bot.entities = {}; bot.world = { raycast: () => null };
   const goal = { survival: { shelters: [{ origin: { x: 0, y: 70, z: 0 }, dimension: 'overworld', emergency: true }] } };
   assert(stairOptions(bot, goal, new Vec3(0, 60, 0)).length >= 1, 'an emergency pocket is not construction');
+  // A planned shelter is kept from other digs, but not from the bot inside
+  // it on its way out: mid-87-a sealed itself into one and every step out
+  // was "a building in the way" (2026-09-25).
   goal.survival.shelters[0].emergency = false;
-  assert.equal(stairOptions(bot, goal, new Vec3(0, 60, 0)).length, 0, 'a planned shelter still is');
+  assert(stairOptions(bot, goal, new Vec3(0, 60, 0)).length >= 1, 'the bot in a planned shelter can dig out of it');
+  goal.survival.shelters[0].origin = { x: 0, y: 70, z: 3 };
+  assert(stairOptions(bot, goal, new Vec3(0, 60, 6)).every(c => Math.abs(c.destination.z - 3) > 2 || c.destination.y < 68), 'another shelter nearby is still kept');
 });
 
 test('a shaft dug at a mob goes toward it, where a travelling shaft would be turned away', () => {

@@ -164,7 +164,7 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
       if (dangerous(cell)) { why = 'lava or water in the way'; return false; }
       if (passable(cell)) return true;
       if (!natural.test(cell.name) || !cell.diggable) { why = `${cell.name.replaceAll('_', ' ')} in the way`; return false; }
-      if (reservedForConstruction(goal, p)) { why = 'a building in the way'; return false; }
+      if (reservedForConstruction(goal, p, { from: feet })) { why = 'a building in the way'; return false; }
       if (!safeExcavation(bot, p)) { why = 'water or lava behind the rock'; return false; }
       if (byHand || !cell.harvestTools || bot.inventory.items().some(i => cell.harvestTools[i.type])) return true;
       why = `no tool for ${cell.name.replaceAll('_', ' ')}`; return false;

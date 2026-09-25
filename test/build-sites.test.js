@@ -59,3 +59,12 @@ test('the home base is reserved from digging, three blocks under it too, and now
   assert.equal(reservedForConstruction(goal, { x: 12, y: 60, z: 11 }), false, 'deeper is open rock');
   assert.equal(reservedForConstruction(goal, { x: 30, y: 64, z: 30 }), false, 'away from the base');
 });
+
+test('a saved shelter is not a wall around the bot standing in it, only around others', () => {
+  const goal = { survival: { shelters: [{ origin: { x: 385, y: 35, z: -139 }, dimension: 'overworld' }] } };
+  const step = new Vec3(386, 36, -139);
+  assert(reservedForConstruction(goal, step), 'from outside, the shell is kept');
+  assert(!reservedForConstruction(goal, step, { from: new Vec3(386, 35, -139) }), 'from inside, the way out is open');
+  const house = { survival: { shelters: [{ kind: 'house', origin: { x: 385, y: 35, z: -139 } }] } };
+  assert(reservedForConstruction(house, step, { from: new Vec3(386, 35, -139) }), 'a house is never dug through');
+});
