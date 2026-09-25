@@ -726,7 +726,9 @@ class Survival {
     // Possible with a blade and no drop or lava to back into.
     const feetDrop = dropWithin(bot, feet, 2) || lavaBeside(bot, feet);
     if (danger.some(t => t.entity.name === 'creeper' && t.distance <= 6) && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && !feetDrop) options.creeper_dance = {
-      description: 'Hit the creeper, back out of its blast while the knockback puts its fuse out, and close in to hit again when it comes on; other creepers are backed from the same way, other mobs are not watched.',
+      // What a blast costs, said: trial 114 danced at twelve health with no
+      // armour and a zombie beside it, and one blast was all of it.
+      description: `Hit the creeper, back out of its blast while the knockback puts its fuse out, and close in to hit again when it comes on; other creepers are backed from the same way, other mobs are not watched. A blast at arm's length takes up to twenty-two health without armour, about half that in iron; the bot has ${Math.round(bot.health)} health and ${[5, 6, 7, 8].filter(slot => bot.inventory.slots?.[slot]).length} pieces of armour on.`,
       run: () => this.creeperDance(task, goal, save, danger, swung, { chosen: true }) };
     // Leave them be: the work goes on, and they are a threat again when one
     // comes within three blocks or lands a hit, or after fifteen seconds.

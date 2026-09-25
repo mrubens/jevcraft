@@ -148,6 +148,12 @@ test('a swing jumps for a critical hit when it safely can, and swings plainly un
   assert.equal(await strike(low.bot, new Task('plain'), low.zombie), 'plain');
   const edge = make(p => (p.y < 10 && p.z >= 0) ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' });
   assert.equal(critReady(edge.bot, edge.zombie), false, 'not with a drop beside it');
+  // Trial 114: jumped for a crit on a zombie with a creeper under four blocks off, and was blown up mid-jump.
+  const withCreeper = make();
+  withCreeper.bot.entities[2] = { id: 2, name: 'creeper', position: new Vec3(-3, 10, 0.5), isValid: true };
+  assert.equal(critReady(withCreeper.bot, withCreeper.zombie), false, 'not with a creeper close');
+  withCreeper.bot.entities[2].position = new Vec3(-8, 10, 0.5);
+  assert.equal(critReady(withCreeper.bot, withCreeper.zombie), true, 'a creeper eight blocks off is not close');
   const c = make(); c.zombie.name = 'creeper';
   assert.equal(critReady(c.bot, c.zombie), false, 'never at a creeper');
 });

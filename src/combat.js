@@ -98,6 +98,11 @@ function critReady(bot, target) {
   // zoglin, which throw what they hit into the air: in the arena the jump
   // took 15.2 damage from a hoglin against 9.6 for plain swings.
   if (!e?.onGround || e.isInWater || e.isInLava || NO_CRIT.has(target?.name)) return false;
+  // Nor at anything with a creeper close: the jump holds the bot in the air
+  // for most of a second it needs for backing off. Trial 114 jumped for a
+  // crit on a zombie with a creeper under four blocks off and was blown up
+  // from twelve health mid-jump.
+  if (Object.values(bot.entities || {}).some(c => c.name === 'creeper' && c.isValid !== false && c.position && c.position.distanceTo(e.position) <= 5)) return false;
   if (bot.getControlState ? bot.getControlState('sprint') : bot.controlState?.sprint) return false;
   const feet = e.position.floored();
   const head = bot.blockAt?.(feet.offset(0, 2, 0));
