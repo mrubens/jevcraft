@@ -83,3 +83,14 @@ test('trial chambers: a trial spawner or vault marks them, a dropped key is pick
   assert.deepEqual([used.x, used.y, used.z], [6, -30, 2]);
   assert.equal(await dd.expeditionStep(b, new Task('tc'), goal, () => {}, actions, 'trial_chambers') === 'vault', false, 'a vault opened once is not opened again');
 });
+
+test('a barrel of a trial chamber that cannot be got to rests after two tries, and the next is taken', async () => {
+  // Trial 39: a barrel in a wall of tuff bricks and copper, no path in,
+  // walked at until the audit failed the trial.
+  const b = bot({ y: -10, blocks: { '20,-10,1': 'barrel', '24,-10,6': 'barrel' } });
+  const goal = { landmarks: [{ kind: 'trial_chambers', x: 20, y: -10, z: 1, dimension: 'overworld' }], expeditions: { trial_chambers: { heading: 0, legs: 1, legFails: 0, foundAt: 'x' } } };
+  const went = [];
+  const actions = { navigate: async (bb, t, g) => { went.push(`${g.x},${g.z}`); }, tunnel: async () => {}, dig: async () => {}, loot: async () => false };
+  for (let n = 0; n < 3; n++) await dd.expeditionStep(b, new Task('tc'), goal, () => {}, actions, 'trial_chambers');
+  assert.deepEqual(went, ['20,1', '20,1', '24,6'], 'twice at the walled barrel, then the other');
+});

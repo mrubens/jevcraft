@@ -120,7 +120,16 @@ async function expeditionStep(bot, task, goal, save, actions, kind = 'deep_dark'
       return 'done';
     }
     goal.step = { action: kind, phase: 'site', target: { x: target.x, y: target.y, z: target.z } }; save();
-    await approach(bot, task, state, save, target, actions, next ? 2 : 6);
+    const got = await approach(bot, task, state, save, target, actions, next ? 2 : 6);
+    // A container that cannot be got to rests after two tries, and the next
+    // one is taken: trial 39 walked at a barrel built into a trial chamber's
+    // wall of tuff bricks and copper, no path in, for as long as the audit
+    // allowed.
+    if (next && !got) {
+      const key = `${next.x},${next.y},${next.z}`, misses = state.chestMisses ||= {};
+      if ((misses[key] = (misses[key] || 0) + 1) >= 2) { setAside(goal, 'loot_chest', key, 'no way to it', 20 * 60000); delete misses[key]; }
+      save();
+    }
     return 'city';
   }
   const [dx, dz] = HEADINGS[state.heading % 4];
