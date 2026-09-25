@@ -236,3 +236,20 @@ test('short of wood in a mine, the reserve is offered with what running out cost
   assert.match(offered.wood_reserve, /2 logs' worth .* 6 make the sticks for three pickaxes/);
   assert.match(offered.wood_reserve, /about 43 blocks under the surface: .* a climb of 43 blocks/);
 });
+
+test('making room, Jev sees junk and surplus first and marked, and what going without costs the step in hand', async () => {
+  // mid-83-a: thirty-six slots of coal, dripstone and petals; "drop nothing" chosen five times, told only "go without the cobblestone".
+  const { makeRoom } = require('../src/inventory-tidy');
+  let items = [];
+  const add = (name, count) => { const it = registry.itemsByName[name]; while (count > 0) { const k = Math.min(count, it.stackSize); items.push({ name, count: k, type: it.id, stackSize: it.stackSize }); count -= k; } };
+  add('iron_pickaxe', 1); add('diamond_sword', 1); add('coal', 242); add('pink_petals', 8); add('pointed_dripstone', 29); add('dripstone_block', 64); add('raw_iron', 63);
+  while (items.length < 36) add('white_wool', 1) || items.push({ name: `lapis_lazuli`, count: 64, type: registry.itemsByName.lapis_lazuli.id, stackSize: 64 });
+  let offered;
+  const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'none', confidence: 0.6 } } }; } };
+  const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {} };
+  await makeRoom(bot, { check() {}, opportunityClient: client }, 'cobblestone', { purpose: 'the step in hand (8 cobblestone for the reach nether step)' });
+  const keys = Object.keys(offered);
+  assert.match(offered.drop_0, /(pink petals|pointed dripstone|dripstone block|coal).*(no use on the way|more than the)/);
+  assert.match(offered.none, /go without the cobblestone: the step in hand \(8 cobblestone for the reach nether step\) cannot go on without it/);
+  assert(keys.some(k => /coal.*more than the \d+ worth keeping/.test(offered[k])), 'surplus coal marked');
+});

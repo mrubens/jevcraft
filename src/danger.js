@@ -64,6 +64,15 @@ function hostileEntities(bot, radius = 24) {
 }
 
 const ATTRIBUTE_MS = 5000;
+// The mobs about that a list built from those in sight leaves out, said:
+// every stance was told of the visible ones only, and a creeper behind a
+// corner was in no option (the decision audit, 2026-09-25).
+function unseenNote(bot, shown = [], radius = 16) {
+  const ids = new Set(shown.map(t => t.entity?.id));
+  const hidden = threats(bot, radius).filter(t => !ids.has(t.entity.id) && !t.visible).slice(0, 4);
+  if (!hidden.length) return '';
+  return ` Out of sight but about: ${hidden.map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}.`;
+}
 function threats(bot, radius = 24) {
   const position = bot.entity.position;
   const list = hostileEntities(bot, radius).map(entity => {
@@ -213,4 +222,4 @@ function checkThreats(bot) {
   if (threat) throw new NeedsSafety(threat);
 }
 
-module.exports = { nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };
+module.exports = { unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };

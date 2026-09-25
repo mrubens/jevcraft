@@ -190,7 +190,13 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     active = session;
     session.promise = runGoal(bot, task, goal, workStore, {
       decisionClient: routed, survival,
-      onStep: g => { console.log(JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g); },
+      onStep: g => {
+        console.log(JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g);
+        // Every step change, not only the one a second the supervisor sees:
+        // mid-110-f's staircase and retreat traded seven times in eight
+        // seconds, between its looks, and the audit caught what it did not.
+        try { if (bot.game?.gameMode !== 'creative') require('./stillness').flipWatch(bot, g); } catch (_) { /* a look missed */ }
+      },
     }).catch(err => {
       // A threat or a breath that escaped the goal's own loop is the moment,
       // not the goal: the dream run was parked "blocked" on "Threat nearby:

@@ -159,14 +159,25 @@ const blockStock = bot => bot.inventory.items().filter(i => BUILDING.test(i.name
 // (the only pickaxe, part of the block reserve, what the work in hand is
 // for), and "nothing" (go without what the room was for). Up to three
 // stacks a time. Without Jev, the order below.
-async function jevMakesRoom(bot, task, name, keep) {
+// Decorative finds with no use on the way to the dragon, said as such.
+const NO_USE = /^(pink_petals|.*_tulip|dandelion|poppy|allium|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|lily_pad|sunflower|lilac|rose_bush|peony|.*_mushroom|pointed_dripstone|dripstone_block|leaf_litter|short_grass|fern|dead_bush|sugar_cane|bamboo|cactus|.*_carpet|.*_dye)$/;
+async function jevMakesRoom(bot, task, name, keep, purpose = null) {
   const client = task?.opportunityClient;
   if (!client) return null;
   const { decide } = require('./decisions');
   for (let round = 0; round < 3 && !roomFor(bot, name); round++) {
     const counts = {};
     for (const i of bot.inventory.items()) counts[i.name] = (counts[i.name] || 0) + i.count;
-    const stacks = bot.inventory.items().filter(i => i.name !== name && !keep.has(i.name));
+    // What has no use, and what is over its keeping cap, first: with
+    // thirty-six slots full of coal, dripstone and petals, mid-83-a was
+    // offered them among its tools and chose to drop nothing five times,
+    // told only "go without the cobblestone" (2026-09-25).
+    // Coal is never tossed by the tidy (kit), but past two stacks it is said:
+    // mid-83-a carried four, and two smelt a hundred and twenty-eight things.
+    const cap = n => SURPLUS[n] ?? (n === 'coal' ? 128 : undefined);
+    const over = n => cap(n) !== undefined && counts[n] > cap(n);
+    const stacks = bot.inventory.items().filter(i => i.name !== name && !keep.has(i.name))
+      .sort((a, b) => (NO_USE.test(b.name) || over(b.name) ? 1 : 0) - (NO_USE.test(a.name) || over(a.name) ? 1 : 0));
     if (!stacks.length) return false;
     const kind = n => (TOOL.test(n) && n.match(TOOL)[1]) || null;
     const tree = {};
@@ -176,9 +187,11 @@ async function jevMakesRoom(bot, task, name, keep) {
       if (k && !bot.inventory.items().some(i => i !== stack && kind(i.name) === k)) notes.push(`the only ${k}`);
       if (BUILDING.test(stack.name) && blockStock(bot) - stack.count < BLOCK_RESERVE) notes.push(`part of the ${BLOCK_RESERVE}-block reserve for pillars, walls and pockets`);
       if (bot.registry?.foodsByName?.[stack.name]) notes.push('food');
+      if (NO_USE.test(stack.name)) notes.push('no use on the way to the dragon');
+      if (over(stack.name)) notes.push(`more than the ${cap(stack.name)} worth keeping`);
       tree[`drop_${n}`] = { description: `Drop ${stack.count} ${stack.name.replaceAll('_', ' ')} (${counts[stack.name]} carried in all)${notes.length ? `: ${notes.join('; ')}` : ''}.`, stack };
     });
-    tree.none = { description: `Drop nothing and go without the ${name.replaceAll('_', ' ')}.` };
+    tree.none = { description: `Drop nothing and go without the ${name.replaceAll('_', ' ')}${purpose ? `: ${purpose} cannot go on without it, and fails and is tried again` : ''}.` };
     let decision;
     try {
       decision = await decide('inventory_drop', { client, bot, task, tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description }])),
@@ -198,10 +211,10 @@ async function jevMakesRoom(bot, task, name, keep) {
   return roomFor(bot, name);
 }
 
-async function makeRoom(bot, task, name, { keep = new Set(), away = null } = {}) {
+async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpose = null } = {}) {
   if (roomFor(bot, name)) return true;
   await faceAway(bot, away);
-  const chosen = await jevMakesRoom(bot, task, name, keep);
+  const chosen = await jevMakesRoom(bot, task, name, keep, purpose);
   if (chosen !== null) return chosen;
   // Junk before tools: with forty-six nether brick fences in the pockets the
   // tidy threw out the stone pickaxe first, and the ladder, counting the

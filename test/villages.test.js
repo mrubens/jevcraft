@@ -155,7 +155,7 @@ test('a remembered village within reach is a forage option: ripe crops are taken
   assert.equal((await forageChoices(bot, task, goalWith(bot), save, actions, {})).village_food, undefined, 'no village remembered, no option');
   const choices = await forageChoices(bot, task, goal, save, actions, {});
   assert(choices.village_food, 'the village is on offer');
-  assert.deepEqual({ ...choices.village_food.description, action: undefined }, { action: undefined, distance: 40, ripeCrops: 3, hayBales: 3, villageLoaded: true });
+  assert.deepEqual({ ...choices.village_food.description, action: undefined }, { action: undefined, distance: 40, ripeCrops: 3, hayBales: 3, villageLoaded: true, walkSeconds: 9, healthNow: 20 });
   assert(choices.search_food, 'a search is on offer beside the village, for Jev to weigh');
   await choices.village_food.run();
   assert.equal(goal.survivalAction.action, 'village_food');

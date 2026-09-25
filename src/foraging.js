@@ -179,10 +179,21 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   // Bread and steak at the base are a reserve within reach: when the base
   // is close enough, walking home replaces the wander for animals, and it
   // stands beside any hunt that is actually in view for Jev to weigh.
+  // A walk for food, said with its time, the dark and whether health comes
+  // back meanwhile (the decision audit): mid-110-e's walk to remembered
+  // cows at seven health, hunger sixteen, at night met a skeleton and two
+  // zombies on the way.
+  const { DAY } = require('./day');
+  const walkFacts = distance => {
+    const seconds = Math.round(distance / 4.3), tod = bot.time?.timeOfDay ?? 6000;
+    const dark = tod >= DAY.DARK && tod < DAY.DAWN;
+    return { walkSeconds: seconds, ...(dark ? { dark: 'night: mobs spawn along the way' } : tod + seconds * 20 >= DAY.DARK && tod < DAY.DARK ? { dark: 'arrives after dark' } : {}),
+      healthNow: Math.round(bot.health ?? 20), ...((bot.food ?? 20) < 18 ? { healing: `none meanwhile: hunger ${bot.food}, below eighteen` } : {}) };
+  };
   const home = homeFood(bot, goal);
   if (home) choices.go_home_for_food = {
     description: { action: 'Walk back to the home base and eat from its stores: harvest the ripe wheat and bake bread, or take a steak from the cow pen (the breeding pair is kept).',
-      distance: home.distance, loavesAvailable: home.loaves, steaksAvailable: home.steaks, plotLoaded: !home.unloaded },
+      distance: home.distance, loavesAvailable: home.loaves, steaksAvailable: home.steaks, plotLoaded: !home.unloaded, ...walkFacts(home.distance) },
     run: async () => {
       goal.survivalAction = { action: 'go_home_for_food', distance: home.distance, at: new Date().toISOString() }; save();
       task.interruptCheck = () => checkThreats(bot);
@@ -197,7 +208,7 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   const village = villageFood(bot, goal);
   if (village) choices.village_food = {
     description: { action: 'Walk to the remembered village and take what is ripe from its farms (wheat, carrots, potatoes, putting the seed back) and a hay bale or two, then bake bread from the wheat. The villagers keep their houses and their bell.',
-      distance: village.distance, ripeCrops: village.ripeCrops, hayBales: village.hayBales, villageLoaded: village.loaded },
+      distance: village.distance, ripeCrops: village.ripeCrops, hayBales: village.hayBales, villageLoaded: village.loaded, ...walkFacts(village.distance) },
     run: async () => {
       goal.survivalAction = { action: 'village_food', distance: village.distance, at: new Date().toISOString() }; save();
       task.interruptCheck = () => checkThreats(bot);
@@ -211,7 +222,7 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   const herds = ['cow', 'sheep'].flatMap(kind => sightings.sighted(bot, goal, kind).filter(s => s.distance > 32 && s.distance <= 192).map(s => ({ kind, s })))
     .sort((a, b) => a.s.distance - b.s.distance).slice(0, 3);
   herds.forEach(({ kind, s }, i) => {
-    choices[`seen_food_${i}`] = { description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo },
+    choices[`seen_food_${i}`] = { description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo, ...walkFacts(s.distance) },
       run: async () => {
         goal.survivalAction = { action: 'search_food', toward: { x: s.x, y: s.y, z: s.z }, animal: kind, at: new Date().toISOString() }; save();
         task.interruptCheck = () => checkThreats(bot);

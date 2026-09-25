@@ -1858,6 +1858,8 @@ test('a night hunt is offered for each kind of mob about, with its drops, its co
   assert.match(options.hunt_spider.description, /string.*white wool/);
   assert.match(options.hunt_spider.description, /stone sword and 1 piece of armour: about [\d.]+ seconds/);
   assert.match(options.hunt_spider.description, /iron chestplate, stone sword, 5 iron ingot\), 100 blocks from where the bot would respawn/);
+  // The decision audit: what else is out there (mid-110-c's cave had a witch, skeletons and creepers).
+  assert.match(options.hunt_spider.description, /Also within thirty-two blocks: 1 other hostile mob \(zombie\)/);
   const cost = survival.deathCost({});
   assert.deepEqual(cost.dropsValuables, { 'iron ingot': 5 });
   assert.equal(cost.respawnAt, 'the world spawn');

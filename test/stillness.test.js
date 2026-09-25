@@ -356,3 +356,14 @@ test('the survival layer turning between leaving a shelter and digging in is a f
   for (const a of ['fight', 'block_shot', 'fight', 'block_shot', 'fight']) { t += 2000; g2.survivalAction = { action: a, at: new Date(t).toISOString() }; r2 = flipWatch(fighter, g2, t) || r2; }
   assert.equal(r2, null);
 });
+
+test('a step flipping under a recent survival action is still caught: the two are watched apart', () => {
+  // mid-110-f: tunnel and retreat traded seven times in eight seconds.
+  const { flipWatch } = require('../src/stillness');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0.5, 58, 0.5) }, inventory: { items: () => [] } };
+  let t = 3_000_000, raised = null;
+  const goal = { survivalAction: { action: 'return_to_surface', at: new Date(t).toISOString() } };
+  for (const a of ['tunnel', 'retreat_from_tunnel', 'tunnel', 'retreat_from_tunnel', 'tunnel']) { t += 1200; goal.step = { action: a }; goal.survivalAction.at = new Date(t).toISOString(); raised = flipWatch(bot, goal, t) || raised; }
+  assert.match(raised?.why || '', /turning between tunnel and retreat from tunnel 4 times in 5 seconds/);
+});

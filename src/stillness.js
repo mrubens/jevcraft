@@ -290,26 +290,34 @@ const FLIP_CHANGES = 5, FLIP_MS = 45000;
 function worth(bot) { return (bot.inventory?.items?.() || []).filter(i => !FILLER.test(i.name)).reduce((n, i) => n + i.count, 0); }
 function flipWatch(bot, goal, now = Date.now()) {
   const stalls = bot._stalls ||= { records: {}, marks: [] };
-  // The survival layer's turns too (actionOf): mid-110-e left its shelter
-  // and dug in again every two seconds for twenty seconds before it opened
-  // the pocket to a creeper. Two fight moves trading places (a fight and a
-  // raised shield) are one fight, and not counted.
-  const action = actionOf(goal, now), a = action.name === 'none' ? null : action.name, here = bot.entity?.position;
-  if (!a || !here) return null;
-  const changes = stalls.changes ||= [];
-  if (changes.at(-1)?.a !== a) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot) });
-  while (changes.length > FLIP_CHANGES) changes.shift();
-  if (changes.length < FLIP_CHANGES) return null;
-  const first = changes[0], names = new Set(changes.map(c => c.a));
-  const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
-  if (names.size !== 2 || now - first.t > FLIP_MS) return null;
-  if ([...names].every(n => HOLDS.has(n) || EMERGENCIES.has(n))) return null;
-  if (Math.max(...changes.map(c => dist(c.p, first.p)), dist(here, first.p)) >= 5 || dist(here, first.p) >= 3) return null;
-  if (worth(bot) > first.worth) return null;
-  const pair = [...names].map(n => n.replaceAll('_', ' ')).join(' and ');
-  const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
-  stalls.changes = [];
-  return raise(bot, goal, { record, action }, now, `turning between ${pair} ${FLIP_CHANGES - 1} times in ${Math.round((now - first.t) / 1000)} seconds without getting anywhere`);
+  const here = bot.entity?.position;
+  if (!here || !goal) return null;
+  // The work step and the survival layer's action each kept apart: a recent
+  // survival action names what the bot is doing (actionOf), and would hide
+  // a step flipping under it. mid-110-e left its shelter and dug in again
+  // every two seconds for twenty seconds before it opened the pocket to a
+  // creeper.
+  const recent = goal.survivalAction?.action && now - Date.parse(goal.survivalAction.at || 0) < 8000 ? goal.survivalAction.action : null;
+  for (const [layer, a] of [['work', goal.step?.action], ['survival', recent]]) {
+    if (!a) continue;
+    const changes = (stalls.changes ||= {})[layer] ||= [];
+    if (changes.at(-1)?.a !== a) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot) });
+    while (changes.length > FLIP_CHANGES) changes.shift();
+    if (changes.length < FLIP_CHANGES) continue;
+    const first = changes[0], names = new Set(changes.map(c => c.a));
+    const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
+    if (names.size !== 2 || now - first.t > FLIP_MS) continue;
+    // Two fight moves trading places (a fight and a raised shield) are one fight.
+    if ([...names].every(n => HOLDS.has(n) || EMERGENCIES.has(n))) continue;
+    if (Math.max(...changes.map(c => dist(c.p, first.p)), dist(here, first.p)) >= 5 || dist(here, first.p) >= 3) continue;
+    if (worth(bot) > first.worth) continue;
+    const pair = [...names].map(n => n.replaceAll('_', ' ')).join(' and ');
+    const action = actionOf(goal, now);
+    const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
+    stalls.changes = {};
+    return raise(bot, goal, { record, action }, now, `turning between ${pair} ${FLIP_CHANGES - 1} times in ${Math.round((now - first.t) / 1000)} seconds without getting anywhere`);
+  }
+  return null;
 }
 
 // Where the bot has been, and on what, for every choice to see: a loop is

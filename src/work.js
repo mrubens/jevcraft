@@ -1024,7 +1024,7 @@ async function mine(bot, task, step, goal, save, selected) {
   }
   // Mining with no slot for the drop digs ore for the ground to keep.
   if (step.drops && bot.game?.gameMode !== 'creative' && !roomFor(bot, step.drops)) {
-    if (!await makeRoom(bot, task, step.drops, { keep: new Set([goal.item, step.item].filter(Boolean)) })) throw new Error(`No room in my pockets for ${step.drops.replaceAll('_', ' ')}`);
+    if (!await makeRoom(bot, task, step.drops, { keep: new Set([goal.item, step.item].filter(Boolean)), purpose: `the step in hand (${step.count || ''} ${step.drops.replaceAll('_', ' ')}${goal.gameProgress?.phase ? ` for the ${goal.gameProgress.phase.replaceAll('_', ' ')} step` : ''})` })) throw new Error(`No room in my pockets for ${step.drops.replaceAll('_', ' ')}`);
   }
   const surface = surfaceOnly ? surfaceMovement(bot) : null;
   try {
@@ -1933,7 +1933,6 @@ async function buildHouseStep(bot, task, goal, save) {
 }
 
 function decisionObservation(bot, goal) {
-  const hostiles = new Set(['zombie', 'zombie_villager', 'husk', 'drowned', 'skeleton', 'stray', 'bogged', 'parched', 'creeper', 'spider', 'cave_spider', 'witch', 'pillager', 'phantom']);
   return {
     playerRequest: goal.request, retainedGoal: goal.kind,
     playerUrgency: goal.urgency?.level,
@@ -1945,8 +1944,10 @@ function decisionObservation(bot, goal) {
     ...(require('./exploration').biomeView(bot) || {}),
     ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot), deathWouldCost: require('./risk').deathCost(bot, goal) } : {}),
     recentPositions: require('./stillness').recentPositions(bot),
-    nearbyThreats: Object.values(bot.entities || {}).filter(e => hostiles.has(e.name) && e.position.distanceTo(bot.entity.position) < 24)
-      .map(e => ({ id: e.id, name: e.name, distance: Math.round(e.position.distanceTo(bot.entity.position)) })),
+    // The danger list's own mobs, seen or not (the decision audit): a list
+    // of its own here left out every Nether mob, and the work in a fortress
+    // read "no threats".
+    nearbyThreats: (() => { try { return require('./danger').threats(bot, 24).map(t => ({ id: t.entity.id, name: t.entity.name, distance: Math.round(t.distance), visible: t.visible, shoots: require('./combat').shooter(t.entity) })); } catch (_) { return []; } })(),
     recentFailures: attemptsFor(goal).of('option'),
   };
 }
