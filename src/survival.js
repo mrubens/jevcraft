@@ -1432,7 +1432,7 @@ class Survival {
     for (let y = start.y - 1; y >= bottom.y; y--) {
       task.check(); checkAir(bot);
       const c = new Vec3(start.x, y, start.z);
-      if (bot.blockAt(c)?.boundingBox === 'block') await this.actions.dig(bot, task, c, { requireDrops: false });
+      if (bot.blockAt(c)?.boundingBox === 'block') await this.actions.dig(bot, task, c, { requireDrops: false, dropInto: true });
       for (let i = 0; i < 20 && bot.entity.position.y > y + 0.1; i++) { task.check(); await sleep(50); }
     }
     // One block over the head: whatever solid block the pockets hold now,

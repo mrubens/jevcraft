@@ -240,22 +240,42 @@ test('with no pickaxe, a staircase through stone exists only for an exit being d
   assert(byHand.some(c => c.destination.y === bot.entity.position.floored().y + 1), 'and it climbs');
 });
 
-test('the block underfoot can be dug as a one-block drop onto solid ground, never over a hole or lava', async () => {
+test('the block underfoot is dug from beside it; a one-block drop only when the dig asks for one, never over a hole or beside lava', async () => {
   const feet = new Vec3(0, 64, 0), ore = feet.offset(0, -1, 0);
-  const make = under => {
+  const make = (under, side = 'stone') => {
     let removed = false;
     const bot = { game: { gameMode: 'survival' }, entity: { position: feet.offset(0.5, 0, 0.5), onGround: true }, inventory: { items: () => [] }, canDigBlock: () => true,
       blockAt: p => p.equals(ore) ? { position: p, type: removed ? 0 : 1, name: removed ? 'air' : 'diamond_ore', diggable: true, boundingBox: removed ? 'empty' : 'block', digTime: () => 100 }
         : p.equals(ore.offset(0, -1, 0)) ? { position: p, name: under, boundingBox: under === 'air' ? 'empty' : 'block', type: 2 }
+        : p.y === ore.y ? { position: p, name: side, boundingBox: side === 'lava' ? 'empty' : 'block', type: 4, diggable: side !== 'lava' }
         : { position: p, name: 'stone', boundingBox: 'block', type: 3, diggable: true },
       dig: async () => { removed = true; }, pathfinder: { setGoal() {}, goto: async () => {} } };
     return bot;
   };
+  // Walled in with nowhere to step: an ordinary dig refuses rather than drop.
+  const walled = make('stone');
+  await assert.rejects(dig(walled, new Task('mine'), ore, { requireDrops: false }), /beneath feet|footing/);
+  assert.equal(walled.blockAt(ore).name, 'diamond_ore');
   const stone = make('stone');
-  await dig(stone, new Task('drop'), ore, { requireDrops: false });
+  await dig(stone, new Task('drop'), ore, { requireDrops: false, dropInto: true });
   assert.equal(stone.blockAt(ore).name, 'air');
-  await assert.rejects(dig(make('air'), new Task('hole'), ore, { requireDrops: false }), /beneath feet|footing/);
-  await assert.rejects(dig(make('lava'), new Task('lava'), ore, { requireDrops: false }), /beneath feet|footing/);
+  await assert.rejects(dig(make('air'), new Task('hole'), ore, { requireDrops: false, dropInto: true }), /beneath feet|footing/);
+  await assert.rejects(dig(make('lava'), new Task('lava'), ore, { requireDrops: false, dropInto: true }), /beneath feet|footing/);
+  await assert.rejects(dig(make('stone', 'lava'), new Task('lava beside'), ore, { requireDrops: false, dropInto: true }), /beneath feet|footing/);
+});
+
+test('the block underfoot is dug from a cell beside when there is one', async () => {
+  const feet = new Vec3(0, 64, 0), ore = feet.offset(0, -1, 0), aside = feet.offset(1, 0, 0);
+  let removed = false;
+  const bot = { game: { gameMode: 'survival' }, entity: { position: feet.offset(0.5, 0, 0.5), onGround: true }, inventory: { items: () => [] }, canDigBlock: () => true,
+    blockAt: p => p.equals(ore) ? { position: p, type: removed ? 0 : 1, name: removed ? 'air' : 'iron_ore', diggable: true, boundingBox: removed ? 'empty' : 'block', digTime: () => 100 }
+      : (p.equals(aside) || p.equals(aside.offset(0, 1, 0)) || p.equals(feet) || p.equals(feet.offset(0, 1, 0))) ? { position: p, name: 'air', boundingBox: 'empty', type: 0 }
+      : { position: p, name: 'stone', boundingBox: 'block', type: 3, diggable: true },
+    dig: async () => { removed = true; },
+    pathfinder: { setGoal() {}, goto: async g => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } } };
+  await dig(bot, new Task('mine'), ore, { requireDrops: false });
+  assert.equal(bot.blockAt(ore).name, 'air');
+  assert.deepEqual(bot.entity.position.floored(), aside, 'stood beside the hole, not in it');
 });
 
 test('a body leaning into the target cell is detected, and clear once it stands centred', () => {

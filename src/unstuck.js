@@ -212,7 +212,7 @@ async function perform(bot, task, m, { dig }) {
       until: () => { const f = bot.entity.position.floored(); return m.key === 'swim_up' ? f.y >= to.y : f.x === to.x && f.z === to.z && f.y >= to.y - (to.y < feet.y ? 3 : 0) && (bot.entity.onGround || isWater(bot.blockAt(f)?.name)); } });
     return;
   }
-  if (m.kind === 'dig') { await dig(bot, task, m.cell, { requireDrops: false }); return; }
+  if (m.kind === 'dig') { await dig(bot, task, m.cell, { requireDrops: false, dropInto: m.key === 'dig_down' }); return; }
   if (m.kind === 'place') {
     await equipBlock(m.block);
     const faces = [DOWN, ...Object.values(DIRS)].map(f => [m.cell.plus(f), f.scaled(-1)]);

@@ -372,8 +372,11 @@ const awaitedItem = (bot, item, want, context) => () => `${item.replaceAll('_', 
 // in a shaft with no side to step to. Anything deeper or molten is not.
 function safeDropBelow(bot, p) {
   const under = bot.blockAt(p.offset(0, -1, 0));
+  // Lava beside the cell dropped into runs into it with the bot standing
+  // there: the drop was checked below and never beside.
+  const beside = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => /^(lava|fire|soul_fire)$/.test(bot.blockAt(p.offset(x, 0, z))?.name || ''));
   return under?.boundingBox === 'block' && !['lava', 'magma_block', 'cactus', 'fire'].includes(under.name) &&
-    !['sand', 'gravel'].includes(under.name);
+    !['sand', 'gravel'].includes(under.name) && !beside;
 }
 
 // A floor block beside the feet with open air under it is a pit once it is
@@ -389,10 +392,15 @@ function opensPit(bot, p) {
   return !!under && under.boundingBox !== 'block' && (!deeper || deeper.boundingBox !== 'block');
 }
 
-async function stepOff(bot, task, p) {
+// The block underfoot is dug from beside it, as a player does: a night
+// mine took a vein straight down under its own feet, one block and one drop
+// at a time (mid-87-a, 2026-09-25), and the user watching called it dicey.
+// Only a dig that looked down the column first (a shaft pocket, Jev's own
+// "dig down") drops into it.
+async function stepOff(bot, task, p, { dropInto = false } = {}) {
   const feet = bot.entity.position.floored();
   if (feet.x !== p.x || feet.z !== p.z || Math.abs(feet.y - p.y) > 1) return;
-  if (p.y === feet.y - 1 && safeDropBelow(bot, p)) return;
+  if (p.y === feet.y - 1 && dropInto && safeDropBelow(bot, p)) return;
   // Stepping aside needs somewhere to stand, unless the bot is flying: high on
   // a tower every neighbouring cell is open air, which is a floor for a
   // hovering worker and a dead end for a walking one.
@@ -404,13 +412,13 @@ async function stepOff(bot, task, p) {
   await navigate(bot, task, new goals.GoalBlock(exit.x, exit.y, exit.z));
 }
 
-async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops = true, minimumToolDurability = 8, plug = true } = {}) {
+async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops = true, minimumToolDurability = 8, plug = true, dropInto = false } = {}) {
   task.check(); checkAir(bot);
   if (done?.()) return;
   let block = bot.blockAt(p);
   if (air(block)) return;
   if (!block?.diggable) throw new Error(`Cannot dig ${block?.name || 'unloaded block'}`);
-  if (p.equals(supportCell(bot.entity.position))) await stepOff(bot, task, p);
+  if (p.equals(supportCell(bot.entity.position))) await stepOff(bot, task, p, { dropInto });
   if (!bot.canDigBlock(block)) {
     await navigate(bot, task, new goals.GoalGetToBlock(p.x, p.y, p.z), { stopWhen: done });
   }
@@ -418,9 +426,9 @@ async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops
   if (done?.()) return;
   // A route to a ground block may end on top of it. Recheck after travel as
   // well as before it; move aside before replacing a foundation cell.
-  if (p.equals(supportCell(bot.entity.position))) await stepOff(bot, task, p);
+  if (p.equals(supportCell(bot.entity.position))) await stepOff(bot, task, p, { dropInto });
   block = bot.blockAt(p);
-  if (p.equals(supportCell(bot.entity.position)) && !safeDropBelow(bot, p)) throw new Error('Refusing to dig directly beneath feet');
+  if (p.equals(supportCell(bot.entity.position)) && !(dropInto && safeDropBelow(bot, p))) throw new Error('Refusing to dig directly beneath feet');
   if (opensPit(bot, p)) throw new Error('Refusing to open a drop beside the feet');
   if (requiredTool || enchantment) {
     const remaining = item => (bot.registry.itemsByName[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
