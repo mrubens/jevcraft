@@ -28,11 +28,14 @@ const PORT = Number(process.env.MIDGAME_PORT || 25582);
 const SERVER = path.join(ROOT, PORT === 25581 ? '.clean-run' : `.clean-run-${PORT}`);
 const STATE = path.join(ROOT, '.bot-state');
 const IDENTITY = `127_0_0_1-${PORT}-Jev`;
-const LOG = path.join(ROOT, 'artifacts', 'midgame-trials.json');
+// One file a trial: three trials started at once each read one shared log,
+// added themselves and wrote it back, and the last write left only its own
+// entry (2026-09-25); the others were never judged.
+const LOG_DIR = path.join(ROOT, 'artifacts', 'midgame');
 const LIMIT_MS = Number(process.env.MIDGAME_HOURS || 3) * 3600000;
 const BLAZE_RODS = 6, PEARLS = 12;
-const trials = () => { try { return JSON.parse(fs.readFileSync(LOG, 'utf8')); } catch (_) { return []; } };
-const saveTrials = t => { fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.writeFileSync(LOG, JSON.stringify(t, null, 2)); };
+const trials = () => { try { return fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.json')).map(f => JSON.parse(fs.readFileSync(path.join(LOG_DIR, f), 'utf8'))).sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)); } catch (_) { return []; } };
+const saveTrial = t => { fs.mkdirSync(LOG_DIR, { recursive: true }); fs.writeFileSync(path.join(LOG_DIR, `${t.world}.json`), JSON.stringify(t, null, 2)); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pid = port => { try { return execSync(`lsof -tiTCP:${port} -sTCP:LISTEN`).toString().trim().split('\n')[0] || null; } catch (_) { return null; } };
 const alive = p => { try { process.kill(Number(p), 0); return true; } catch (_) { return false; } };
@@ -134,10 +137,9 @@ async function start(world, source, archive) {
     child.unref();
     for (let i = 0; i < 30 && !botPid(); i++) await sleep(1000);
     if (String(botPid()) !== String(child.pid)) throw new Error(`The trial's bot is not the one just started (${botPid()} vs ${child.pid})`);
-    const all = trials();
-    all.push({ world, port: PORT, source, archive, startedAt: new Date().toISOString() });
-    saveTrials(all);
-    console.log(`Midgame trial ${world} (from ${source}) started at ${all.at(-1).startedAt}; at most ${LIMIT_MS / 3600000} hours.`);
+    const trial = { world, port: PORT, source, archive, startedAt: new Date().toISOString() };
+    saveTrial(trial);
+    console.log(`Midgame trial ${world} (from ${source}) started at ${trial.startedAt}; at most ${LIMIT_MS / 3600000} hours.`);
   } finally { fs.rmSync(starting, { force: true }); }
 }
 
@@ -150,8 +152,7 @@ async function main() {
     const trial = all.filter(t => t.port === PORT).at(-1);
     if (!trial) throw new Error(`No midgame trial started on ${PORT}`);
     const v = verdict(trial);
-    const latest = trials(), mine = latest.find(t => t.world === trial.world && t.startedAt === trial.startedAt);
-    if (mine) { mine.verdict = v; saveTrials(latest); }
+    saveTrial({ ...trial, verdict: v });
     console.log(JSON.stringify(v, null, 2));
     return;
   }
