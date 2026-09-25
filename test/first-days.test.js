@@ -64,3 +64,20 @@ test('each milestone keeps the time it was first reached; the home its own saved
   assert.equal(m.at.bed, t0 + 30 * 60000);
   assert.equal(m.at.home, t0 + 40 * 60000, 'the later of the bed claimed and the stash placed');
 });
+
+test('steps trading names while the bot moves on are not a loop; the same trade in one place is', () => {
+  // Trial 84: a tunnel toward iron traded names with each block's cobblestone pickup, advancing a block each time.
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const { analyse } = require('../scripts/lib/audit');
+  const run = advance => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flight-'));
+    const t0 = Date.parse('2026-09-25T11:22:00.000Z');
+    const lines = [];
+    for (let i = 0; i < 14; i++) lines.push(JSON.stringify({ kind: 'observation', at: new Date(t0 + i * 1500).toISOString(),
+      snapshot: { position: { x: 76.5, y: 91, z: 31.5 + (advance ? i * 0.5 : (i % 2) * 0.5) }, step: { action: i % 2 ? 'collect_nearby_resource' : 'tunnel' }, inventory: { cobblestone: 10 + i } } }));
+    fs.writeFileSync(path.join(dir, 'bot-2026-09-25T11-21-00-000Z.jsonl'), lines.join('\n') + '\n');
+    return analyse({ identity: 'bot', from: t0 - 1000, to: t0 + 30000, dir }).flips.length;
+  };
+  assert.equal(run(true), 0, 'advancing: not a loop');
+  assert(run(false) >= 1, 'in one place: a loop');
+});

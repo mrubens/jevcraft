@@ -126,7 +126,12 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
     // (trial 7: sixteen blocks in the minute). Over five blocks covered, or
     // something worth keeping gained, is progress under two names.
     const covered = Math.max(...win.map(c => dist(c.s.position, win[0].s.position)));
-    if (names.size === 2 && win[6].t - win[0].t <= 60000 && covered < 5 && !gained(win[0].t, win[6].t)) { flips.push({ from: win[0].t, to: win[6].t, between: [...names].join(' <-> '), at: pos(win[0].s) }); i += 6; }
+    // Nor when it ends somewhere else: trial 84's tunnel toward iron traded
+    // names with the pickup of each block's cobblestone every second or two
+    // while it advanced a block each time, five blocks in sixteen seconds,
+    // and was failed as a loop. A loop comes back to where it was.
+    const movedOn = dist(win[6].s.position, win[0].s.position) >= 3;
+    if (names.size === 2 && win[6].t - win[0].t <= 60000 && covered < 5 && !movedOn && !gained(win[0].t, win[6].t)) { flips.push({ from: win[0].t, to: win[6].t, between: [...names].join(' <-> '), at: pos(win[0].s) }); i += 6; }
   }
 
   // Retry loops: "persist" steps and repeated problems, by problem text.
