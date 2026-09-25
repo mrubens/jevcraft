@@ -147,7 +147,19 @@ async function takeVillageBed(bot, task, goal, save, village, actions) {
   goal.step = { action: 'village_bed', village: { x: village.x, z: village.z }, beds: village.beds }; save();
   await walkToVillage(bot, task, village, actions);
   const here = bot.entity.position;
+  // Never the bed on the home's own bed cells: trial 84's home stood in a
+  // village, its bed was taken back as a village bed and placed again eight
+  // times in eight seconds, and the audit called the loop.
+  const own = (() => {
+    try {
+      const base = require('./home-base'), home = base.homeOf(bot, goal);
+      if (!home) return [];
+      const { bed } = base.layout(home);
+      return [bed.foot, bed.head].map(pos);
+    } catch (_) { return []; }
+  })();
   const halves = findAll(bot, bedNames(bot), { radius: VILLAGE_RADIUS, count: 128, point: pos(village.bell || village) })
+    .filter(p => !own.some(o => o.equals(p)))
     .sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
   if (!halves.length) {
     village.beds = 0; delete goal.villageBed; save();

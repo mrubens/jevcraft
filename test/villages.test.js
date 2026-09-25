@@ -177,3 +177,18 @@ test('a remembered village within reach is a forage option: ripe crops are taken
   const g3 = goalWith(empty.bot, { villages: [{ ...c3, dimension: 'overworld', seenAt: 1, bell: c3, beds: 1, hay: 3 }] });
   assert.equal((await forageChoices(empty.bot, task, g3, save, empty.actions, {})).village_food, undefined, 'read off the world when loaded, not off memory');
 });
+
+test('the bed on the home\'s own bed cells is never taken as a village bed', async () => {
+  // Trial 84: the home stood in a village; its bed was taken as a village bed and placed again eight times in eight seconds.
+  const w = world({ items: [['stone_pickaxe', 1], ['stone_sword', 1]] }), { bot, actions } = w, task = new Task('bed'), save = () => {};
+  const centre = village(w, { x: 40, beds: 0 });
+  const goal = goalWith(bot, { villages: [{ ...centre, dimension: 'overworld', seenAt: 1, bell: centre, beds: 1, hay: 3 }] });
+  goal.survival ||= {};
+  goal.survival.home = { origin: { x: 40, y: LEVEL, z: 6 }, direction: { x: 1, z: 0 }, water: { x: 39, y: LEVEL, z: 6 }, bed: {}, pen: {} };
+  const { bed } = home.layout(goal.survival.home);
+  w.set(new Vec3(bed.foot.x, bed.foot.y, bed.foot.z), 'white_bed', { part: 'foot' });
+  w.set(new Vec3(bed.head.x, bed.head.y, bed.head.z), 'white_bed', { part: 'head' });
+  let dug = 0; actions.dig = async () => { dug++; };
+  await assert.rejects(villages.takeVillageBed(bot, task, goal, save, goal.villages[0], actions), /No bed left in the village/);
+  assert.equal(dug, 0, 'the home\'s bed stays where it is');
+});
