@@ -114,3 +114,13 @@ test('a set is offered by its name and pieces, with what it takes from the pocke
   const mining = rungOption(armour, false, { entity: { position: { x: 0, y: 0, z: 0 } } }, {}, () => [{ action: 'mine', item: 'raw_iron', count: 24 }]).description;
   assert.doesNotMatch(mining, /no gathering/);
 });
+
+test('the home steps say what a home is for, as the other steps do', () => {
+  // Trial 72: "get home site" and nothing more, beside options that each said what they were worth.
+  const { rungOption } = require('../src/strategy');
+  const bot = { entity: { position: { x: 0, y: 0, z: 0 } } };
+  for (const phase of ['home_site', 'home_level', 'home_stash', 'home_bed']) {
+    const d = rungOption({ phase, action: phase }, true, bot, {}).description;
+    assert.match(d, /\((the|a) /, `${phase}: ${d}`);
+  }
+});

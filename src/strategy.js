@@ -32,6 +32,13 @@ const RUNG_WHY = {
   bed: 'a night slept passes in seconds and sets the spawn point; three wool from sheep or crafted from spiders\' string (four string a wool), or a bed from a village',
   iron_pickaxe: 'mines the iron for armour and the diamonds past it',
   iron_armour: 'a helmet, chestplate, leggings and boots, twenty-four ingots in all; worn, they take about a third or more off every hit',
+  // What a home is for, said with its steps: offered as "get home site"
+  // and nothing more beside options that each said what they were worth,
+  // trial 72 put it off to its last half hour.
+  home_site: 'the base\'s place, picked beside water on flat ground: the bed, a chest and a plot go there, and each trip starts and ends at it',
+  home_level: 'the base\'s ground made level so the bed, the chest and the plot fit',
+  home_stash: 'a chest at the base: what is left in it does not drop on a death',
+  home_bed: 'the bed placed at the base and slept in: the spawn point is home, and each night there passes in seconds',
   home_water: 'the pond that waters the plot',
   home_plot: 'wheat for bread, tomorrow\'s food',
   home_pen: 'cows kept for steak and leather',
