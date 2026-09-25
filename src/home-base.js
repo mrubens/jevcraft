@@ -713,6 +713,12 @@ async function buildPen(bot, task, goal, save, home, actions) {
   const species = woodSpecies(bot), fence = `${species}_fence`, gate = `${species}_fence_gate`;
   const status = penStatus(bot, home);
   goal.step = { action: 'build_pen', fences: status.missingFences.length, gate: status.gateMissing }; save();
+  // A night shell left on the site comes off the gate and the cell before
+  // it, as it does off the bed's and the chest's: trial 74's pocket beside
+  // the plot left cobblestone, planks and dirt on the gate's stand, the pen
+  // could not be got into, and "no route" came seventy-seven times.
+  const up = p => ({ x: p.x, y: p.y + 1, z: p.z });
+  await clearStray(bot, task, actions, [pen.gate, up(pen.gate), pen.gateStand, up(pen.gateStand)]);
   const carriedFence = bot.inventory.items().find(i => /_fence$/.test(i.name))?.name || fence;
   for (const p of status.missingFences) { task.check(); checkAir(bot); checkThreats(bot); await actions.place(bot, task, pos(p), carriedFence); }
   if (status.gateMissing) {

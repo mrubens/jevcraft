@@ -468,3 +468,21 @@ test('a stone that went into a plot cell after it was dug (a plug, a step out of
   await home.homeStep(bot, task, goal, save, { phase: 'home_level', action: 'level_site' }, actions);
   assert.equal(bot.blockAt(new Vec3(plotCell.x, plotCell.y, plotCell.z)).name, 'dirt');
 });
+
+test('a night shell left on the pen gate\'s stand is dug away when the pen is built', async () => {
+  // Trial 74: the pocket beside the plot left cobblestone on the gate's stand, and "no route" seventy-seven times.
+  const { buildPen, layout } = require('../src/home-base');
+  const { Vec3 } = require('vec3');
+  const home = { origin: { x: 0, y: 64, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 64, z: 0 }, bed: {}, pen: {} };
+  const { pen } = layout(home);
+  const key = p => `${p.x},${p.y},${p.z}`;
+  const blocks = new Map();
+  for (const f of pen.fences) blocks.set(key(f), 'oak_fence');
+  blocks.set(key(pen.gate), 'oak_fence_gate');
+  blocks.set(key(pen.gateStand), 'cobblestone');
+  const bot = { entity: { position: new Vec3(0.5, 65, 0.5) }, inventory: { items: () => [{ name: 'oak_planks', count: 4 }] }, registry: require('minecraft-data')('26.1'),
+    blockAt: p => { const n = blocks.get(key(p)) || 'air'; return { name: n, position: p, boundingBox: n === 'air' ? 'empty' : 'block', getProperties: () => ({ open: false }) }; } };
+  const dug = [];
+  await buildPen(bot, { check() {} }, {}, () => {}, home, { dig: async (b, t, p) => { dug.push(key(p)); blocks.delete(key(p)); }, place: async () => {} });
+  assert.deepEqual(dug, [key(pen.gateStand)], 'the stray on the stand, and nothing else');
+});
