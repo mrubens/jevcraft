@@ -62,3 +62,29 @@ test('a flock the bot cannot walk to is forgotten, not chosen again at once', as
   assert.equal(goal.sightings.sheep.length, 0, 'forgotten');
   assert.equal(goal.woolSearch.toward, undefined);
 });
+
+test('cows, pigs and chickens are remembered too, counted as known, and a herd not reached is forgotten', async () => {
+  // The user: "remember the animals", so the last two cows are known to be the last two.
+  const { noteSightings, known, walkToSighting, sighted } = require('../src/sightings');
+  const cow = (id, x) => ({ id, name: 'cow', position: new Vec3(x, 64, 0), isValid: true });
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, game: { dimension: 'overworld' }, entities: { 1: cow(1, 100), 2: cow(2, 103) } };
+  const goal = {};
+  noteSightings(bot, goal, Date.now());
+  assert.equal(goal.sightings.cow[0].count, 2);
+  bot.entities = {}; bot.entity.position = new Vec3(-20, 64, 0);
+  assert.deepEqual(known(bot, goal, 'cow'), { inView: 0, rememberedAway: 2, total: 2 });
+  const [herd] = sighted(bot, goal, 'cow');
+  const reached = await walkToSighting(bot, { check() {} }, goal, () => {}, 'cow', herd, async () => { throw new Error('No path to the goal'); });
+  assert.equal(reached, false);
+  assert.equal(goal.sightings.cow.length, 0, 'forgotten when it cannot be walked to');
+});
+
+test('the food choices offer a herd seen earlier, and a hunt says how many of its kind are known', async () => {
+  const { forageChoices } = require('../src/foraging');
+  const reg = require('minecraft-data')('26.1');
+  const bot = { registry: reg, entity: { position: new Vec3(0, 64, 0) }, game: { dimension: 'overworld' }, entities: {}, time: { timeOfDay: 4000 },
+    inventory: { items: () => [] }, blockAt: () => null, findBlocks: () => [], pathfinder: { movements: {} } };
+  const goal = { sightings: { cow: [{ x: 90, y: 64, z: 0, count: 3, at: Date.now() - 120000, dimension: 'overworld' }] } };
+  const choices = await forageChoices(bot, { check() {} }, goal, () => {}, { navigate: async () => {} }, {});
+  assert.match(choices.seen_food_0?.description?.action || '', /3 cow seen 2 minutes ago, 90 blocks east/);
+});

@@ -14,6 +14,7 @@ const FOOD_OPTIONS = [
   { pattern: 'hunt_\\d+', label: 'hunt this animal', when: 'an adult food animal in view is reachable on safe surface ground; the nearest hostile to it is said', level: 'obtain_food', dynamic: true },
   { key: 'go_home_for_food', label: 'walk home and eat from its stores', when: 'the base has bread, ripe wheat or a cow to spare within reach', level: 'obtain_food' },
   { key: 'village_food', label: 'take ripe crops and hay from a remembered village', when: 'a village with crops or hay is remembered within reach', level: 'obtain_food' },
+  { pattern: 'seen_food_\\d+', label: 'walk back to animals seen earlier', when: 'a herd of cows, pigs, chickens or sheep seen in the last half hour, now out of view, 32 to 192 blocks off (the nearest three)', level: 'obtain_food', dynamic: true },
   { key: 'search_food', label: 'walk to another dry area to look for animals', when: 'always', level: 'obtain_food' },
   { key: 'return_for_food', label: 'go back through the portal for food', when: 'off the Overworld, where nothing is safe to eat', level: 'obtain_food' },
 ];

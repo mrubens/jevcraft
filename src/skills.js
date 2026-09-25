@@ -288,8 +288,11 @@ function goalGuardPlugin(bot) {
   bot.pathfinder.setGoal = (goal, dynamic) => setGoal.call(bot.pathfinder, wholeGoal(goal), dynamic);
 }
 
-async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false } = {}) {
+async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false } = {}) {
   task.check();
+  // Where the bot is going, kept for the shore rule (shore.js): out of the
+  // water on the side it was heading for, not back where it went in.
+  if (!shore && Number.isFinite(goal?.x) && Number.isFinite(goal?.z)) bot._heading = { x: goal.x, z: goal.z, at: Date.now() };
   if (require('./flight').canFly(bot)) return require('./flight').flyNavigate(bot, task, goal, { timeoutMs, stallMs, stopWhen });
   // A stopped trip can leave our empty boat underfoot. Clear only that owned
   // boat before player physics attempts to walk through its solid hull.

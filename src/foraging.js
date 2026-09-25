@@ -157,6 +157,9 @@ async function forageChoices(bot, task, goal, save, actions, state) {
       ? `Raw ${raw} can poison; it must be cooked before eating.` : `Raw ${raw} is safe to eat, and worth much more cooked.`}`,
       animal: target.name, position: { ...target.position.floored() }, distance: Math.round(target.position.distanceTo(bot.entity.position)),
       availableWeapon: bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name))?.name || 'bare hands', food: item, needsCooking,
+      // How many of this kind are known about: in view, and remembered out of
+      // view within 128 (sightings.js). Two cows are a pen's breeding pair.
+      sameKindKnown: (() => { const k = require('./sightings').known(bot, goal, target.name); return { ...k, note: k.total <= 2 ? `killing it leaves ${k.total - 1} ${target.name.replaceAll('_', ' ')} known nearby; a pen needs two to breed` : undefined }; })(),
       // Said, not filtered: an animal near a hostile was dropped from the list.
       nearestHostileToIt: (() => { const d = threats(bot).map(t => ({ name: t.entity.name, distance: Math.round(t.entity.position.distanceTo(target.position)) })).sort((a, b) => a.distance - b.distance)[0]; return d && d.distance <= 32 ? d : null; })() },
     valid: () => bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) === item && target.position.distanceTo(observed) < 2,
@@ -201,6 +204,20 @@ async function forageChoices(bot, task, goal, save, actions, state) {
       finally { task.interruptCheck = undefined; }
     },
   };
+  // Herds seen earlier and out of view now (sightings.js): a walk of known
+  // length, where the search is a wander.
+  const sightings = require('./sightings');
+  const herds = ['cow', 'pig', 'chicken', 'sheep'].flatMap(kind => sightings.sighted(bot, goal, kind).filter(s => s.distance > 32 && s.distance <= 192).map(s => ({ kind, s })))
+    .sort((a, b) => a.s.distance - b.s.distance).slice(0, 3);
+  herds.forEach(({ kind, s }, i) => {
+    choices[`seen_food_${i}`] = { description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo },
+      run: async () => {
+        goal.survivalAction = { action: 'search_food', toward: { x: s.x, y: s.y, z: s.z }, animal: kind, at: new Date().toISOString() }; save();
+        task.interruptCheck = () => checkThreats(bot);
+        try { await sightings.walkToSighting(bot, task, goal, save, kind, s, actions.navigate); }
+        finally { task.interruptCheck = undefined; }
+      } };
+  });
   // Always on offer: the animals in view may be the wrong ones to go for.
   choices.search_food = {
     description: 'Walk to another observed dry area to search for passive animals; avoid remembered failed targets.',

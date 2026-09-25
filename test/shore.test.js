@@ -237,3 +237,16 @@ test('half a minute in the water in one place, the way out is worked one move at
     assert.equal(called, null);
   } finally { unstuck.workFree = real; delete require.cache[require.resolve('../src/shore')]; }
 });
+
+test('a swim on purpose toward somewhere far is left alone by the shore rule; a still or sunk one is not', () => {
+  // Trial 94: swimming for the sheep on the next island, pulled back to the shore it left three times.
+  const { crossingWater } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  const now = Date.now();
+  const bot = { entity: { position: new Vec3(20.5, 62.1, 0.5), eyeHeight: 1.62 }, oxygenLevel: 20, _heading: { x: 80, z: 0, at: now - 5000 },
+    blockAt: p => ({ name: p.y <= 62 ? 'water' : 'air', getProperties: () => ({ level: 0 }) }) };
+  assert.equal(crossingWater(bot, now), true, 'headed sixty blocks off, head up, air full');
+  assert.equal(crossingWater({ ...bot, _heading: { x: 80, z: 0, at: now - 30000 } }, now), false, 'no fresh heading');
+  assert.equal(crossingWater({ ...bot, _heading: { x: 25, z: 0, at: now } }, now), false, 'nearly there');
+  assert.equal(crossingWater({ ...bot, oxygenLevel: 15 }, now), false, 'losing air');
+});

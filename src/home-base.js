@@ -1085,6 +1085,13 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
       options.lure_cows = { description: `Lead ${Math.min(loose, 2 - pen.cows)} of the ${loose} cows in view into the home pen with wheat; the pen holds ${pen.cows} so far and needs two to breed.`,
         run: (b, t, g, s, a) => lureCows(b, t, g, s, home, a) };
     }
+    // None in view, but a herd remembered (sightings.js): walked to, and two
+    // led back with the wheat.
+    const herd = !loose && pen.cows < 2 && wheat >= 1 && require('./sightings').sighted(bot, goal, 'cow').find(s => s.count >= 1 && s.distance <= 160);
+    if (herd) {
+      options.fetch_cows = { description: `Walk to where ${herd.says} and lead ${2 - pen.cows} back into the home pen with wheat; the pen holds ${pen.cows} and needs two to breed. About ${Math.round(herd.distance * 2 / 4)} seconds of walking there and back, slower with cows.`,
+        run: async (b, t, g, s, a) => { if (await require('./sightings').walkToSighting(b, t, g, s, 'cow', herd, a.navigate)) await lureCows(b, t, g, s, home, a); } };
+    }
   }
   return options;
 }

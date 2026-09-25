@@ -1,11 +1,13 @@
 'use strict';
-// Where animals were seen, kept for when they are wanted. The bot sees a
+// Where animals were seen, kept for when they are wanted: sheep for the
+// bed's wool, cows, pigs and chickens for food and the pen (the user,
+// 2026-09-25: "remember the animals"). The bot sees a
 // flock of sheep a hundred blocks off while it mines or walks, and until
 // now forgot it the moment the flock was out of view: trial 60 came to its
 // bed forty-five minutes in with fourteen sheep a hundred and some blocks
 // away, and was told "none seen yet". Noted every fifteen seconds with the
 // trail (stillness.js), a flock to a place, for half an hour.
-const KINDS = ['sheep'];
+const KINDS = ['sheep', 'cow', 'pig', 'chicken'];
 const FLOCK = 24;
 const KEEP_MS = 30 * 60000;
 const EVERY_MS = 15000;
@@ -45,4 +47,25 @@ function sighted(bot, goal, kind, now = Date.now()) {
   }).sort((a, b) => a.distance - b.distance);
 }
 
-module.exports = { noteSightings, sighted, KINDS };
+// How many of a kind the bot knows of within reach: in view now, and in
+// flocks remembered and out of view. Said beside a hunt, so the last two
+// cows are known to be the last two.
+function known(bot, goal, kind, reach = 128) {
+  const here = bot.entity.position;
+  const inView = Object.values(bot.entities || {}).filter(e => e.name === kind && e.isValid !== false && e.position && e.position.distanceTo(here) <= reach).length;
+  const away = sighted(bot, goal, kind).filter(s => s.distance > 48 && s.distance <= reach).reduce((n, s) => n + s.count, 0);
+  return { inView, rememberedAway: away, total: inView + away };
+}
+
+// Walk back to a flock; one not reached, or reached and gone, is forgotten.
+async function walkToSighting(bot, task, goal, save, kind, s, navigate) {
+  const { goals } = require('mineflayer-pathfinder');
+  const forget = () => { if (goal.sightings?.[kind]) goal.sightings[kind] = goal.sightings[kind].filter(f => Math.hypot(f.x - s.x, f.z - s.z) > 24); save(); };
+  try { await navigate(bot, task, new goals.GoalNear(s.x, s.y, s.z, 6), { timeoutMs: 90000, stallMs: 10000 }); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; forget(); return false; }
+  const there = Object.values(bot.entities || {}).some(e => e.name === kind && e.isValid !== false && e.position?.distanceTo(bot.entity.position) < 32);
+  if (!there) forget();
+  return there;
+}
+
+module.exports = { noteSightings, sighted, known, walkToSighting, KINDS };

@@ -3019,6 +3019,18 @@ function idleOptions(bot, goal) {
 
 // The trips worth making from wherever the bot is, each already checked
 // feasible: shared by idle work and the strategy on the way to the dragon.
+// Swimming on purpose: headed somewhere more than sixteen blocks off in the
+// last twenty seconds, the head above water and the air full. The shore
+// rule leaves such a swim alone; trial 94 swam for the sheep on the next
+// island and was pulled back to the shore it left, three times in ninety
+// seconds, the rule taking the nearest dry ground each time the walk paused.
+function crossingWater(bot, now = Date.now()) {
+  const h = bot._heading, p = bot.entity?.position;
+  if (!h || !p || now - h.at > 20000 || Math.hypot(h.x - p.x, h.z - p.z) <= 16) return false;
+  if ((bot.oxygenLevel ?? 20) < 20) return false;
+  try { return !require('./vitals').headSubmerged(bot); } catch (_) { return false; }
+}
+
 function sideTrips(bot, goal, client) {
   const trips = {};
   // Looting: the nearest remembered ruined portal, dungeon or temple whose
@@ -3540,7 +3552,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // Work starts on dry ground. A crafting table placed from a pool under
       // the base failed and failed, the bot bobbing for air in between.
       const feetBlock = typeof bot.blockAt === 'function' ? bot.blockAt(bot.entity.position.floored()) : null;
-      if (!endTask && feetBlock?.name && swimmableWater(feetBlock)) {
+      if (!endTask && feetBlock?.name && swimmableWater(feetBlock) && !crossingWater(bot)) {
         try { if (!dryStanding(bot, bot.entity.position) && await reachShore(bot, task, goal, save, { client: decisionClient, dig })) { goal.stalls = 0; save(); onStep(goal); continue; } }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       }
@@ -3647,4 +3659,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

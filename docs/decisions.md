@@ -45,6 +45,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `hunt_\d+` (pattern) | obtain_food | hunt this animal | an adult food animal in view is reachable on safe surface ground; the nearest hostile to it is said |
 | `go_home_for_food` | obtain_food | walk home and eat from its stores | the base has bread, ripe wheat or a cow to spare within reach |
 | `village_food` | obtain_food | take ripe crops and hay from a remembered village | a village with crops or hay is remembered within reach |
+| `seen_food_\d+` (pattern) | obtain_food | walk back to animals seen earlier | a herd of cows, pigs, chickens or sheep seen in the last half hour, now out of view, 32 to 192 blocks off (the nearest three) |
 | `search_food` | obtain_food | walk to another dry area to look for animals | always |
 | `return_for_food` | obtain_food | go back through the portal for food | off the Overworld, where nothing is safe to eat |
 
@@ -522,6 +523,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `tend_farm` | root | tend the home plot | the home plot needs tilling, planting or a look |
 | `breed_cows` | root | breed the cows in the home pen | two adult cows are penned and wheat is carried |
 | `lure_cows` | root | lead loose cows into the home pen | the pen has fewer than two cows and cows are in view |
+| `fetch_cows` | root | walk to cows seen earlier and lead two back to the pen | the pen has fewer than two cows, none in view, wheat carried, and cows remembered within 160 blocks |
 | `stock_stash` | root | put spares in the stash chest | the stash chest is within reach and spares are carried |
 | `light_home` | root | put torches where monsters could spawn around home | the home stands, ground around it is dark, and torches are carried or can be made |
 | `long_game` | root | work toward beating the game | the dream is to beat the game and its ladder is not complete |
@@ -566,6 +568,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `tend_farm` | root | tend the home plot | by day in the Overworld, and the home plot needs tilling, planting or a look |
 | `breed_cows` | root | breed the cows in the home pen | by day in the Overworld, and two adult cows are penned and wheat is carried |
 | `lure_cows` | root | lead loose cows into the home pen | by day in the Overworld, and the pen has fewer than two cows and cows are in view |
+| `fetch_cows` | root | walk to cows seen earlier and lead two back to the pen | by day in the Overworld, and the pen has fewer than two cows, none in view, wheat carried, and cows remembered within 160 blocks |
 | `stock_stash` | root | put spares in the stash chest | by day in the Overworld, and the stash chest is within reach and spares are carried |
 | `light_home` | root | put torches where monsters could spawn around home | by day in the Overworld, and the home stands, ground around it is dark, and torches are carried or can be made |
 
