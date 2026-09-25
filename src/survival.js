@@ -738,6 +738,11 @@ class Survival {
         if (await this.charge(task, goal, save, nearest, false, { chosen: true })) return true;
         // Out of reach, and the charge showed it: a stance that failed.
         if (bot._unreachable?.until > Date.now() && bot._unreachable.ids.includes(nearest.entity.id)) return false;
+        // A shooter does not come into reach: held, the fight stood in its
+        // fire. mid-100-e held one at eleven blocks from 5.9 health to 4 and
+        // chose a pocket too late (2026-09-25). Not taken, so the stance is
+        // asked again without it.
+        if (shooter(nearest.entity) && !danger.some(inReach)) return false;
         // No level way to it: the fight is held here, facing it, and the
         // swing takes it when it comes into reach. Not a stance that failed,
         // unless it does not come: trial 73 held a fight at a creeper that
