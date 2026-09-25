@@ -445,8 +445,15 @@ class Survival {
     const close = threats(bot).filter(t => t.distance <= 8);
     const heavy = heavyHitters(threats(bot), 10).length > 0;
     const feet = bot.entity.position.floored();
-    if ((close.length || heavy) && (heavy ? dropWithin(bot, feet, 3) : besideDrop(bot, feet)) && !isSetAside(this, 'firm_ground', 'here')) {
-      const cell = (heavy && firmGround(bot, 8, { margin: 3 })) || firmGround(bot);
+    // A deep drop two blocks off is the edge too, with a mob close: an
+    // arrow's knockback and a step of the fight carried mid-100-d two blocks
+    // and down a twenty-one-block shaft (2026-09-25). Deep is half the
+    // health or more from the fall, or lava; the ground moved to is three
+    // blocks from it.
+    const deep = require('./terrain').dropNear(bot, feet, 2);
+    const deadly = !!deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2);
+    if ((close.length || heavy) && (heavy ? dropWithin(bot, feet, 3) : besideDrop(bot, feet) || deadly) && !isSetAside(this, 'firm_ground', 'here')) {
+      const cell = ((heavy || deadly) && firmGround(bot, 8, { margin: 3 })) || firmGround(bot);
       if (cell) {
         this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, threats: close.map(t => t.entity.name) });
         try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 3000, stallMs: 1500 }); return; }
@@ -722,7 +729,10 @@ class Survival {
     const unseen = require('./danger').unseenNote(bot, danger);
     const nearestCreeper = nearest?.entity.name === 'creeper' ? ` The nearest is a creeper ${Math.round(nearest.distance)} blocks off: closing on it is walking into its fuse.` : '';
     const creeperBlast = Math.round(Number(/about ([\d.]+)/.exec(cost.creeper || '')?.[1] || 22));
-    options.fight = { description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}.${creeperCount ? ` Not counted there: ${creeperCount === 1 ? 'the creeper' : `each of the ${creeperCount} creepers`}, whose blast at arm's length takes up to ${creeperBlast} health after the armour worn${creeperBlast >= bot.health ? ', more than the bot has' : ''}.` : ''}${nearestCreeper}${unseen}`,
+    // The drop beside the bot, measured, on every stance that stays or moves
+    // on this ground (mid-100-d, 2026-09-25).
+    const edge = require('./terrain').dropNote(require('./terrain').dropNear(bot, feet, 3), bot.health);
+    options.fight = { description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}.${creeperCount ? ` Not counted there: ${creeperCount === 1 ? 'the creeper' : `each of the ${creeperCount} creepers`}, whose blast at arm's length takes up to ${creeperBlast} health after the armour worn${creeperBlast >= bot.health ? ', more than the bot has' : ''}.` : ''}${nearestCreeper}${unseen}${edge}`,
       run: async () => {
         if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); await this.swingFor(task, goal, save); return true; }
         if (await this.charge(task, goal, save, nearest, false, { chosen: true })) return true;
@@ -766,7 +776,7 @@ class Survival {
     // The charge at a few ground shooters, where it can be run.
     const ground = danger.filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16);
     if (ground.length && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && !inWater(bot) && !isSetAside(this, 'close_on_shooter', 'here')) options.charge_shooter = {
-      description: `Run at the ${ground.map(t => t.entity.name).join(', ')} (nearest ${Math.round(ground[0].distance)} blocks) and strike, one after another, over ground checked firm; gives way if it cannot get nearer, and hands back after six health lost.`,
+      description: `Run at the ${ground.map(t => t.entity.name).join(', ')} (nearest ${Math.round(ground[0].distance)} blocks) and strike, one after another, over ground checked firm; gives way if it cannot get nearer, and hands back after six health lost.${edge}`,
       run: () => this.closeOnShooter(task, goal, save, danger, { chosen: true }) };
     // A creeper the player's way: hit, back out of the blast, hit again.
     // Possible with a blade and no drop or lava to back into.
@@ -774,11 +784,11 @@ class Survival {
     if (danger.some(t => t.entity.name === 'creeper' && t.distance <= 6) && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && !feetDrop) options.creeper_dance = {
       // What a blast costs, said: trial 114 danced at twelve health with no
       // armour and a zombie beside it, and one blast was all of it.
-      description: `Hit the creeper, back out of its blast while the knockback puts its fuse out, and close in to hit again when it comes on; other creepers are backed from the same way, other mobs are not watched. A blast at arm's length takes up to twenty-two health without armour, about half that in iron; the bot has ${Math.round(bot.health)} health and ${[5, 6, 7, 8].filter(slot => bot.inventory.slots?.[slot]).length} pieces of armour on.`,
+      description: `Hit the creeper, back out of its blast while the knockback puts its fuse out, and close in to hit again when it comes on; other creepers are backed from the same way, other mobs are not watched. A blast at arm's length takes up to twenty-two health without armour, about half that in iron; the bot has ${Math.round(bot.health)} health and ${[5, 6, 7, 8].filter(slot => bot.inventory.slots?.[slot]).length} pieces of armour on.${edge}`,
       run: () => this.creeperDance(task, goal, save, danger, swung, { chosen: true }) };
     // Leave them be: the work goes on, and they are a threat again when one
     // comes within three blocks or lands a hit, or after fifteen seconds.
-    if (!danger.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work and leave these mobs be for fifteen seconds (nearest ${Math.round(danger[0].distance)} blocks). The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? ' A creeper at three blocks is already lighting, and its blast reaches about five.' : ''}${unseen}`,
+    if (!danger.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work and leave these mobs be for fifteen seconds (nearest ${Math.round(danger[0].distance)} blocks). The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? ' A creeper at three blocks is already lighting, and its blast reaches about five.' : ''}${unseen}${edge}`,
       run: async () => {
         bot._wavedOff = { ids: danger.map(t => t.entity.id), until: Date.now() + 15000 };
         this.report(goal, save, { action: 'keep_working', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
@@ -799,7 +809,7 @@ class Survival {
       } };
     options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + (creeperCount ? ' Creepers and spiders follow a running player.' : '') + NO_ROUTE_YET + unseen,
       run: () => this.runAway(task, goal, save, danger) };
-    for (const t of shotTargets(bot, danger).slice(0, 2)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : ''),
+    for (const t of shotTargets(bot, danger).slice(0, 2)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
     return options;
   }
@@ -832,7 +842,7 @@ class Survival {
       const armour = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
       const state = { health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
-        dropWithinThreeBlocks: dropWithin(bot, bot.entity.position.floored(), 3),
+        dropWithinThreeBlocks: require('./terrain').dropNear(bot, bot.entity.position.floored(), 3) || false,
         darkHere: darkHere(bot),
         threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), visible: t.visible })),
         // This bot's numbers: each mob's hit after its armour, swings to

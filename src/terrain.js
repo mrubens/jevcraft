@@ -70,6 +70,44 @@ function dropWithin(bot, feet, radius = 3) {
   }
   return false;
 }
+// The deepest drop within `radius` along a clear line, measured: how far
+// off, how far the fall is (to the first solid block, or to lava or water),
+// and what it costs. "A drop within three blocks" was all Jev was told when
+// mid-100-d fought a skeleton two blocks from a twenty-one-block shaft; the
+// arrow's knockback put it down the shaft from 18.6 health to 0.6.
+function dropNear(bot, feet, radius = 3, deepest = 48) {
+  const open = c => { const b = bot.blockAt(c), head = bot.blockAt(c.offset(0, 1, 0)); return !!b && b.boundingBox !== 'block' && (!head || head.boundingBox !== 'block'); };
+  let worst = null;
+  for (const [dx, dz] of AROUND) {
+    for (let r = 1; r <= radius; r++) {
+      const c = feet.offset(dx * r, 0, dz * r);
+      if (dropAt(bot, c)) {
+        let fall = 0, into = 'ground';
+        for (let dy = 1; dy <= deepest; dy++) {
+          const under = bot.blockAt(c.offset(0, -dy, 0));
+          if (!under) { fall = deepest; into = 'unknown'; break; }
+          if (under.name === 'lava') { fall = dy - 1; into = 'lava'; break; }
+          if (under.name === 'water') { fall = dy - 1; into = 'water'; break; }
+          if (under.boundingBox === 'block') { fall = dy - 1; break; }
+          fall = dy;
+        }
+        const damage = into === 'water' ? 0 : Math.max(0, fall - 3);
+        if (!worst || damage > worst.damage || (damage === worst.damage && r < worst.blocksAway)) worst = { blocksAway: r, fallBlocks: fall, into, damage };
+        break;
+      }
+      if (!open(c)) break;
+    }
+  }
+  return worst;
+}
+// Said in a stance option: what the drop beside the bot costs a body
+// knocked or stepped into it, at the health it has.
+function dropNote(drop, health) {
+  if (!drop || (drop.into !== 'lava' && drop.damage < 1)) return '';
+  const end = drop.into === 'lava' ? 'into lava' : drop.damage >= (health ?? 20) ? `about ${drop.damage} health from the fall, more than the ${Math.round(health ?? 20)} the bot has` : `about ${drop.damage} of the bot's ${Math.round(health ?? 20)} health from the fall`;
+  return ` A drop of ${drop.fallBlocks} blocks is ${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off: a hit's knockback or a step back over it is ${end}.`;
+}
+
 // Mobs whose hit throws the body blocks, not a step.
 const KNOCKBACK = new Set(['hoglin', 'zoglin', 'ravager', 'iron_golem', 'warden']);
 
@@ -94,4 +132,4 @@ function bodyInLava(bot) {
   return false;
 }
 
-module.exports = { bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { dropNear, dropNote, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

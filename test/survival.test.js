@@ -2009,3 +2009,38 @@ test('lava is found anywhere the body is, a thin flow at the edge of the box inc
   assert.equal(inLava(lavaAt(new Vec3(255, -23, -85))), false, 'a cell the body does not touch');
   assert.equal(inLava(lavaAt(new Vec3(256, -22, -85))), true, 'at the head');
 });
+
+test('a drop beside a stance is measured and said with what the fall costs at this health', () => {
+  // mid-100-d: told only "a drop within three blocks", it fought a skeleton two blocks from a twenty-one-block shaft and fell from 18.6 to 0.6.
+  const { dropNear, dropNote } = require('../src/terrain');
+  const feet = new Vec3(0, 24, 0);
+  const bot = { blockAt: p => ({ position: p, name: p.x === 2 && p.z === 0 && p.y > 2 ? 'air' : p.y >= 24 ? 'air' : 'stone', boundingBox: (p.x === 2 && p.z === 0 && p.y > 2) || p.y >= 24 ? 'empty' : 'block' }) };
+  const drop = dropNear(bot, feet, 3);
+  assert.deepEqual(drop, { blocksAway: 2, fallBlocks: 21, into: 'ground', damage: 18 });
+  assert.match(dropNote(drop, 18.6), /A drop of 21 blocks is 2 blocks off: .* about 18 of the bot's 19 health/);
+  assert.match(dropNote(drop, 10), /more than the 10 the bot has/);
+  assert.equal(dropNote({ blocksAway: 1, fallBlocks: 3, into: 'ground', damage: 0 }, 20), '', 'a step down is not said');
+});
+
+test('with a skeleton close, a deadly drop two blocks off is the edge: the bot steps back to ground three blocks from it', async () => {
+  // mid-100-d: a skeleton two blocks from a twenty-one-block shaft; its knockback and the fight put the bot down it.
+  const world = p => {
+    const x = Math.floor(p.x), y = Math.floor(p.y);
+    if (x >= 6 && y > 42) return { position: p, name: 'air', boundingBox: 'empty' };
+    if (y <= 63) return { position: p, name: 'stone', boundingBox: 'block' };
+    return { position: p, name: 'air', boundingBox: 'empty' };
+  };
+  const moved = [];
+  const skeleton = { id: 4, name: 'skeleton', type: 'hostile', position: new Vec3(0.5, 64, 0.5), height: 1.99, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 18.6, food: 17,
+    entity: { position: new Vec3(4.5, 64, 0.5), onGround: true }, entities: { 4: skeleton }, time: { timeOfDay: 14000 },
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, world: { raycast: () => null }, blockAt: world,
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {} });
+  const { besideDrop } = require('../src/terrain');
+  assert.equal(besideDrop(bot, new Vec3(4, 64, 0)), false, 'the next cell is floor: the old rule saw no edge');
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { moved.push({ x: g.x, y: g.y, z: g.z }); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('shaft'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'off_the_edge');
+  assert(moved[0].x <= 2, `to x ${moved[0]?.x}: three blocks from the shaft at x 6`);
+});
