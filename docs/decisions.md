@@ -246,7 +246,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `drop_\d+` (pattern) | root | drop this stack | any stack but the item the room is for and what the work in hand uses |
+| `drop` | root | drop a stack (which one is asked beside it) | any stack can go |
+| `drop_\d+` (pattern) | drop | drop this stack | any stack but the item the room is for and what the work in hand uses |
 | `none` | root | drop nothing and go without | always |
 
 ### `while_cooking`

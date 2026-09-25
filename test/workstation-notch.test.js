@@ -60,3 +60,15 @@ test('an open cell beyond the wall is not a place for the table: it goes in a no
     .find(p => bot.blockAt(p).name === 'crafting_table');
   assert(notch, 'in the wall beside the bot');
 });
+
+test('sealed in a saved shelter, the table goes in a notch in its own wall; another shelter\'s wall is left alone', async () => {
+  // mid-87-b: a pocket saved as a shelter reserved its own walls, and the
+  // table had "no place" two hundred times from inside it (2026-09-25).
+  const walls = [new Vec3(1, 64, 0), new Vec3(-1, 64, 0), new Vec3(0, 64, 1), new Vec3(0, 64, -1), new Vec3(1, 65, 0), new Vec3(-1, 65, 0), new Vec3(0, 65, 1), new Vec3(0, 65, -1)];
+  const own = shaft();
+  await workstation(own.bot, new Task('table'), 'crafting_table', { survival: { shelters: [{ origin: { x: 0, y: 64, z: 0 } }] } }).catch(() => {});
+  assert(walls.some(p => own.bot.blockAt(p).name === 'crafting_table'), 'in the wall of the shelter it stands in');
+  const other = shaft();
+  const err = await workstation(other.bot, new Task('table'), 'crafting_table', { survival: { shelters: [{ origin: { x: 0, y: 64, z: 3 } }] } }).catch(e => e);
+  assert(!walls.filter(p => p.z >= 1).some(p => other.bot.blockAt(p).name === 'crafting_table'), `not in the wall toward the other shelter (${err?.message || 'placed'})`);
+});

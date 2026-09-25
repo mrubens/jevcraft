@@ -215,10 +215,22 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null) 
       tree[`drop_${n}`] = { description: `Drop ${stack.count} ${stack.name.replaceAll('_', ' ')} (${counts[stack.name]} carried in all)${notes.length ? `: ${notes.join('; ')}` : ''}.`, stack };
     });
     const unlisted = stacks.length - Math.min(stacks.length, 24);
-    tree.none = { description: `Drop nothing and go without the ${name.replaceAll('_', ' ')}${purpose ? `: ${purpose} cannot go on without it, and fails and is tried again` : ''}.${unlisted ? ` ${unlisted} more stack${unlisted === 1 ? ' is' : 's are'} carried and not listed here.` : ''}` };
+    tree.none = { description: `Drop nothing and go without the ${name.replaceAll('_', ' ')}${purpose ? `: ${purpose} cannot go on without it, and fails and is tried again` : ''}.${NO_USE.test(name) ? ` The ${name.replaceAll('_', ' ')} itself has no use on the way to the dragon.` : ''}${unlisted ? ` ${unlisted} more stack${unlisted === 1 ? ' is' : 's are'} carried and not listed here.` : ''}` };
+    // Two questions, asked together: whether to drop anything, and which
+    // stack if so. Asked as one, the stacks split the vote: mid-83-b's
+    // pointed dripstone, dripstone and mushroom took 0.15, 0.14 and 0.05,
+    // "nothing" 0.24 won, and a stone pickaxe went uncrafted for want of a
+    // slot, again and again (2026-09-25).
+    const drops = Object.entries(tree).filter(([k]) => k !== 'none');
+    const junk = drops.filter(([, o]) => NO_USE.test(o.stack.name) || over(o.stack.name)).length;
+    const asked = {
+      drop: { description: `Drop one stack to make room for the ${name.replaceAll('_', ' ')}: ${drops.length} stacks to choose from${junk ? `, ${junk} of them with no use on the way to the dragon or more than is worth keeping` : ', none of them without a use: each is gear, food or material the run needs'}. Which one is the next question.`,
+        children: Object.fromEntries(drops.map(([k, o]) => [k, { description: o.description }])) },
+      none: { description: tree.none.description },
+    };
     let decision;
     try {
-      decision = await decide('inventory_drop', { client, bot, task, tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description }])),
+      decision = await decide('inventory_drop', { client, bot, task, tree: asked,
         state: { roomFor: name, carriedKinds: Object.keys(counts).length, freeSlots: bot.inventory.emptySlotCount?.() ?? 0, keeping: [...keep],
           ...(goal?.step ? { stepInHand: goal.step } : {}), ...(unlisted ? { stacksNotListed: unlisted } : {}) } });
     } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return null; }

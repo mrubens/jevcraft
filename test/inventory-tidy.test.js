@@ -173,7 +173,8 @@ test('full pockets: which stack goes is Jev\'s, told what each is; "none" goes w
   const bot = { registry, inventory: { items: () => items, emptySlotCount: () => (items.length < 3 ? 1 : 0) }, entity: { position: { x: 0, y: 64, z: 0 } },
     tossStack: async stack => { tossed.push(stack.name); items = items.filter(i => i !== stack); } };
   let offered;
-  const pick = choice => ({ check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: typeof choice === 'function' ? choice(offered) : choice, confidence: 0.6 } } }; } } });
+  // Two questions, asked together: drop anything (branch_0), and which stack (branch_1).
+  const pick = choice => ({ check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria }; return { answers: { branch_0: { choice: choice === 'none' ? 'none' : 'drop', confidence: 0.6 }, branch_1: { choice: choice === 'none' ? 'drop_0' : choice, confidence: 0.6 } } }; } } });
   assert.equal(await makeRoom(bot, pick('none'), 'raw_iron'), false, 'Jev chose to go without');
   assert.deepEqual(tossed, []);
   assert.match(offered.drop_0, /the only pickaxe/);
@@ -250,7 +251,7 @@ test('making room, Jev sees junk and surplus first and marked, and what going wi
   add('iron_pickaxe', 1); add('diamond_sword', 1); add('coal', 242); add('pink_petals', 8); add('pointed_dripstone', 29); add('dripstone_block', 64); add('raw_iron', 63);
   while (items.length < 36) add('white_wool', 1) || items.push({ name: `lapis_lazuli`, count: 64, type: registry.itemsByName.lapis_lazuli.id, stackSize: 64 });
   let offered;
-  const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'none', confidence: 0.6 } } }; } };
+  const client = { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria }; return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_0', confidence: 0.6 } } }; } };
   const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {} };
   await makeRoom(bot, { check() {}, opportunityClient: client }, 'cobblestone', { purpose: 'the step in hand (8 cobblestone for the reach nether step)' });
   const keys = Object.keys(offered);
@@ -266,7 +267,7 @@ test('making room says the only food, the only weapon, the water bucket, the val
   add('diamond_sword', 1); add('bread', 3); add('water_bucket', 1); add('diamond', 2); add('coal', 20);
   while (items.length < 36) add('white_wool', 1);
   let offered, state;
-  const client = { systemOne: async ({ questions, state: s }) => { offered = Object.values(questions.branch_0.criteria); state = s; return { answers: { branch_0: { choice: 'none', confidence: 0.6 } } }; } };
+  const client = { systemOne: async ({ questions, state: s }) => { offered = Object.values({ ...questions.branch_0.criteria, ...questions.branch_1.criteria }); state = s; return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_0', confidence: 0.6 } } }; } };
   const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {} };
   const goal = { kind: 'obtain', step: { action: 'smelt', item: 'iron_ingot', fuel: 'coal' } };
   await makeRoom(bot, { check() {}, opportunityClient: client }, 'raw_iron', { goal });
@@ -278,4 +279,23 @@ test('making room says the only food, the only weapon, the water bucket, the val
   assert.match(said, /20 coal.*needed by the step in hand/);
   assert.match(said, /\d+ more stacks are carried and not listed here/);
   assert.deepEqual(state.stepInHand, goal.step);
+});
+
+test('making room asks whether to drop anything apart from which stack, so junk stacks do not split the vote against "none"', async () => {
+  // mid-83-b: dripstone 0.15, pointed dripstone 0.14, a mushroom 0.05, "none" 0.24; nothing was dropped and a stone pickaxe went uncrafted.
+  const { makeRoom } = require('../src/inventory-tidy');
+  let items = [];
+  const add = (name, count) => { const it = registry.itemsByName[name]; items.push({ name, count, type: it.id, stackSize: it.stackSize }); };
+  add('dripstone_block', 17); add('pointed_dripstone', 5); add('red_mushroom', 1);
+  while (items.length < 36) add('white_wool', 1);
+  let asked;
+  const client = { systemOne: async ({ questions }) => { asked = questions; return { answers: { branch_0: { choice: 'drop', confidence: 0.87 }, branch_1: { choice: 'drop_1', confidence: 0.3 } } }; } };
+  const tossed = [];
+  const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {},
+    tossStack: async st => { tossed.push(st.name); items = items.filter(i => i !== st); } };
+  assert.equal(await makeRoom(bot, { check() {}, opportunityClient: client }, 'stone_pickaxe'), true);
+  assert.deepEqual(Object.keys(asked.branch_0.criteria).sort(), ['drop', 'none']);
+  assert.match(asked.branch_0.criteria.drop, /3 of them with no use on the way to the dragon/);
+  assert.equal(tossed.length, 1);
+  assert(/dripstone|mushroom/.test(tossed[0]), `a junk stack went: ${tossed[0]}`);
 });

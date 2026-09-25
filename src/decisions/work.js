@@ -187,7 +187,8 @@ define({
   source: 'src/inventory-tidy.js (makeRoom, jevMakesRoom)',
   ungated: 'dropped stacks lie where they fell and can be picked up again; the only-tool and block-reserve facts are said in each option',
   options: [
-    { pattern: 'drop_\\d+', label: 'drop this stack', when: 'any stack but the item the room is for and what the work in hand uses', level: 'root', dynamic: true },
+    { key: 'drop', label: 'drop a stack (which one is asked beside it)', when: 'any stack can go', level: 'root' },
+    { pattern: 'drop_\\d+', label: 'drop this stack', when: 'any stack but the item the room is for and what the work in hand uses', level: 'drop', dynamic: true },
     { key: 'none', label: 'drop nothing and go without', when: 'always', level: 'root' },
   ],
   instructions: workInstructions('The pockets are full and the work needs room for `roomFor`. Choose a stack to drop, or none. Each option says how much of it is carried and whether it is the only tool of its kind, food, or part of the block reserve.'),

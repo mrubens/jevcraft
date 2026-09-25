@@ -1226,12 +1226,15 @@ async function workstation(bot, task, name, goal) {
   }
   // Walled in (the bottom of a one-block shaft): a notch is cut in the wall
   // at foot or head height and the station goes in it, as a player would.
+  // The wall of a saved shelter the bot stands in too: the station fills
+  // the notch, so the shell stays whole, and mid-87-b asked for a place
+  // for its table two hundred times from inside one (2026-09-25).
   // Trial 4 looked for an open cell six times over at the foot of its own
   // shaft, which had none (2026-09-24).
   if (!p) {
     const notch = [0, 1].flatMap(dy => faces.slice(1, 5).map(d => o.plus(d).offset(0, dy, 0))).find(q => {
       const b = bot.blockAt(q);
-      return b?.boundingBox === 'block' && b.diggable && !reservedForConstruction(goal, q) && bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block' &&
+      return b?.boundingBox === 'block' && b.diggable && !reservedForConstruction(goal || {}, q, { from: o }) && bot.blockAt(q.offset(0, -1, 0))?.boundingBox === 'block' &&
         !faces.some(f => /lava|water/.test(bot.blockAt(q.plus(f))?.name || ''));
     });
     if (notch) {
