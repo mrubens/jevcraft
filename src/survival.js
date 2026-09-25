@@ -658,7 +658,7 @@ class Survival {
     const creeper = danger.find(t => t.entity.name === 'creeper' && t.distance <= 7);
     const creeperNote = creeper ? ` A creeper is ${Math.round(creeper.distance)} blocks off: it walks up to whatever is built and goes off, and a pocket is not closed before the blast.` : '';
     const cost = fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
-      armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health }).fightHere;
+      armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere;
     if (armed) options.fight = { description: `Fight here: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}.`,
       run: async () => {
         if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); if (!swung) await defendNearby(bot, task, goal, save); return true; }
@@ -738,7 +738,7 @@ class Survival {
         // This bot's numbers: each mob's hit after its armour, swings to
         // kill with its weapon, and what fighting all of them here costs.
         estimate: fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
-          armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health }),
+          armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health } : null,
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
@@ -1612,7 +1612,7 @@ class Survival {
     const options = {};
     for (const [name, kind] of kinds) {
       const drops = MOB_DROPS[name], label = name.replaceAll('_', ' ');
-      const one = fightEstimate({ threats: [{ name, distance: kind.nearest.distance, shoots: shooter(kind.nearest.entity), visible: true }], armour, weapon, health: bot.health }).fightHere;
+      const one = fightEstimate({ threats: [{ name, distance: kind.nearest.distance, shoots: shooter(kind.nearest.entity), visible: true }], armour, weapon, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere;
       options[`hunt_${name}`] = {
         description: `Go out and hunt the ${label}${kind.count > 1 ? `s (${kind.count} within thirty-two blocks, nearest ${Math.round(kind.nearest.distance)})` : ` ${Math.round(kind.nearest.distance)} blocks off`} for two minutes, others met on the way fought as they come, and pick up what they drop: ${drops.drops} (${drops.for}), and experience. One ${label} with ${weapon ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands'}${armour.length ? ` and ${armour.length} piece${armour.length === 1 ? "" : "s"} of armour` : ' and no armour'}: about ${one.seconds} seconds and ${one.damageTaken} damage, from ${Math.round(bot.health)} health. ${risk}`,
         kind: name };

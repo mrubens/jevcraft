@@ -24,7 +24,7 @@ test('three zombies against a stone sword and no armour cost more than eight hea
 
 test('the arena cave trio comes out near what it measured (about five, with a shield)', () => {
   const e = fightEstimate({ threats: [{ name: 'zombie', distance: 3, visible: true }, { name: 'zombie', distance: 4, visible: true }, { name: 'skeleton', distance: 5, shoots: true, visible: true }],
-    armour: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'golden_boots'], weapon: 'diamond_sword', health: 20 });
+    armour: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'golden_boots'], weapon: 'diamond_sword', health: 20, shield: true });
   assert(e.fightHere.damageTaken > 4 && e.fightHere.damageTaken < 10, JSON.stringify(e.fightHere));
 });
 
@@ -32,4 +32,11 @@ test('a shooter out of sight costs nothing while it is fought for; a creeper\'s 
   const e = fightEstimate({ threats: [{ name: 'skeleton', distance: 10, shoots: true, visible: false }, { name: 'creeper', distance: 5, visible: true }], weapon: 'iron_sword' });
   assert.equal(e.fightHere.damageTaken, 0);
   assert.match(e.fightHere.creeper, /goes off for about 22/);
+});
+
+test('a skeleton is not a quick kill: it backs off after each hit and shoots while it is closed on', () => {
+  // Trial 44 was told 2.5 seconds and 1.3 damage; it lost fourteen health in six seconds.
+  const e = fightEstimate({ threats: [{ name: 'skeleton', distance: 4.3, shoots: true, visible: true }], weapon: 'stone_sword', health: 9.2 });
+  assert(e.fightHere.damageTaken >= 6, JSON.stringify(e.fightHere));
+  assert(e.fightHere.healthAfter < 4, 'at nine health it is close to fatal');
 });

@@ -14,6 +14,7 @@
 // with gold boots, a diamond sword): estimated about 8 damage in 6 seconds,
 // measured 4.9 to 5.5 in 7 (with a shield raised between swings).
 const STRUCK = 1 / 3;
+const WALK = 4; // blocks a second, closing on a mob
 
 // Damage per hit on Normal, and health.
 const MOBS = {
@@ -57,15 +58,21 @@ const round = (n, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
 
 // threats: [{ name, distance, shoots, visible }]; armour: piece names worn;
 // weapon: the item name or null.
-function fightEstimate({ threats, armour = [], weapon = null, health = 20 }) {
+function fightEstimate({ threats, armour = [], weapon = null, health = 20, shield = false }) {
   const worn = armourOf(armour);
   const [damage, rate] = WEAPONS[weapon] || FIST;
   const mobs = threats.map(t => {
     const m = MOBS[t.name];
     if (!m) return null;
     const hitsToKill = Math.ceil(m.health / damage);
-    return { name: t.name, distance: t.distance, shoots: !!(m.shoots || t.shoots), visible: t.visible !== false,
-      hitsBot: round(afterArmour(m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(hitsToKill / rate), ...(m.note ? { note: m.note } : {}) };
+    const shoots = !!(m.shoots || t.shoots);
+    // A shooter backs off after each hit and is closed on again: twice the
+    // swinging time, and the walk to it first. Trial 44 was told a skeleton
+    // took 2.5 seconds and 1.3 damage; it took fourteen health in six
+    // seconds without falling, and Jev, told otherwise, fought on at two.
+    const seconds = shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill / rate;
+    return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false,
+      hitsBot: round(afterArmour(m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(m.note ? { note: m.note } : {}) };
   }).filter(Boolean);
   // Fighting here: nearest first; every mob still standing hits meanwhile,
   // biters once a second at arm's length, shooters every two seconds in
@@ -74,7 +81,11 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20 }) {
   let taken = 0, seconds = 0;
   for (let i = 0; i < order.length; i++) {
     const t = order[i].secondsToKill;
-    const perSecond = order.slice(i).reduce((s, m, j) => s + (m.name === 'creeper' ? 0 : (j === 0 ? STRUCK : 1) * (m.shoots ? (m.visible ? m.hitsBot / 2 : 0) : m.hitsBot)), 0);
+    // The one being struck hits back a third as often if it bites; a shooter
+    // being closed on shoots as ever.
+    // A shield on the arm takes about half of the arrows (raised between
+    // swings and against each shot seen coming).
+    const perSecond = order.slice(i).reduce((s, m, j) => s + (m.name === 'creeper' ? 0 : (j === 0 && !m.shoots ? STRUCK : 1) * (m.shoots ? (m.visible ? m.hitsBot / 2 * (shield ? 0.5 : 1) : 0) : m.hitsBot)), 0);
     taken += perSecond * t; seconds += t;
   }
   const creepers = order.filter(m => m.name === 'creeper');
