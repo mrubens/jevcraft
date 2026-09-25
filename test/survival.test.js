@@ -1898,3 +1898,16 @@ test('a seal pass whose placements keep failing ends after three, and says why',
   assert.equal(tries, 3, 'three tries, not the whole shell');
   assert.match(survival.state.lastSealError, /Timed out/);
 });
+
+test('a survival action the stall supervisor set aside on the goal is refused when it is next reported; a hold is not', () => {
+  // mid-92-c: return_to_surface and dig_in traded once a second; forty-four stalls raised, none refused.
+  const { setAside } = require('../src/progress');
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0, 64, 0) }, entities: {} });
+  const survival = new Survival(bot, {});
+  const goal = {};
+  setAside(goal, 'act', 'survival:return_to_surface', 'turning between return to surface and dig in', 600000);
+  assert.throws(() => survival.report(goal, () => {}, { action: 'return_to_surface' }), { name: 'SetAside' });
+  setAside(goal, 'act', 'survival:dig_in', 'x', 600000);
+  survival.report(goal, () => {}, { action: 'dig_in' });
+  assert.equal(goal.survivalAction.action, 'dig_in');
+});

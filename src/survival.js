@@ -371,7 +371,12 @@ class Survival {
     // An action that stalled (stillness.js) is refused for ten minutes and
     // the layer falls through to its next answer. Never a wait worth
     // making, nor a way out of danger.
-    if (!HOLDS.has(action.action) && !EMERGENCIES.has(action.action) && refused(this, `survival:${action.action}`)) {
+    // Refused where the supervisor set it aside too, which is the goal: a
+    // flip raised forty-four times in mid-92-c (return to the surface and
+    // dig in, once a second at the surface with a spider coming) was set
+    // aside on the goal and never refused here (2026-09-25).
+    const key = `survival:${action.action}`;
+    if (!HOLDS.has(action.action) && !EMERGENCIES.has(action.action) && (refused(this, key) || refused(goal, key))) {
       throw Object.assign(new Error(`${action.action.replaceAll('_', ' ')} is set aside: it stalled`), { name: 'SetAside' });
     }
     goal.survivalAction = { ...action, at: new Date().toISOString() }; save();
