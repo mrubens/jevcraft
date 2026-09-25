@@ -22,3 +22,12 @@ test('an arrow is blocked when nothing is at arm\'s length, and not with a zombi
   assert.equal(meleeClose(cornered), true);
   assert.equal(await deflect(cornered, new Task('guard'), { holdMs: 50 }), false, 'the zombie hitting the bot comes before the skeleton shooting at it');
 });
+
+test('an arrow stuck in the ground is not a shot: the shield comes up for a still one only in its first second', async () => {
+  // Trial 62: fifty-five seconds of shield raised at misses lying round its feet.
+  const stuck = { id: 10, name: 'arrow', position: new Vec3(1.5, 14.1, 2.5), velocity: new Vec3(0, 0, 0), isValid: true };
+  const bot = fixture({ 1: mob(1, 'skeleton', 0.5, 12.5), 10: stuck });
+  assert.equal(await deflect(bot, new Task('guard'), { holdMs: 50 }), true, 'just seen, it may be one whose velocity has not arrived');
+  stuck._seenAt = Date.now() - 5000;
+  assert.equal(await deflect(bot, new Task('guard'), { holdMs: 50 }), false, 'still after five seconds: stuck in the ground');
+});

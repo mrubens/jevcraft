@@ -27,8 +27,12 @@ function incoming(bot, { reach = REACH } = {}) {
     if (distance > reach) return false;
     const velocity = entity.velocity;
     // A projectile whose velocity has not arrived yet still counts when it
-    // is already in the bot's lap.
-    if (!velocity || Math.abs(velocity.x) + Math.abs(velocity.y) + Math.abs(velocity.z) < 0.05) return distance < 6;
+    // is already in the bot's lap, for its first second in view. After
+    // that a still arrow is one stuck in the ground, and it stays a minute:
+    // trial 62 held its shield up fifty-five seconds at the misses lying
+    // round its feet, and never got to answer the skeleton or the creeper.
+    entity._seenAt ||= Date.now();
+    if (!velocity || Math.abs(velocity.x) + Math.abs(velocity.y) + Math.abs(velocity.z) < 0.05) return distance < 6 && Date.now() - entity._seenAt < 1000;
     return entity.position.plus(velocity).distanceTo(eye) < distance;
   }).sort((a, b) => a.position.distanceTo(eye) - b.position.distanceTo(eye));
 }
