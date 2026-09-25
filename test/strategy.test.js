@@ -137,3 +137,14 @@ test('the home steps say what a home is for, as the other steps do', () => {
     assert.match(d, /\((the|a) /, `${phase}: ${d}`);
   }
 });
+
+test('a bed searched for with no sheep seen is offered with the other ways as they stand: string carried, spiders, cobwebs, a known igloo', () => {
+  // Trial 113: "none seen yet" forty-three minutes running in snow, and the bed was never chosen.
+  const { rungOption } = require('../src/strategy');
+  const bot = { entity: { position: { x: 0, y: 64, z: 0 } }, game: { dimension: 'overworld' }, entities: {}, inventory: { items: () => [{ name: 'string', count: 5 }] } };
+  const goal = { woolSearch: { since: Date.now() - 20 * 60000, from: { x: 0, z: 0 } }, landmarks: [{ kind: 'igloo', dimension: 'overworld', x: 60, y: 64, z: 80, beds: 1 }] };
+  const d = rungOption({ phase: 'bed', action: 'gather_wool', count: 3 }, true, bot, goal).description;
+  assert.match(d, /none seen yet\. Without sheep: 5 string carried of the twelve/);
+  assert.match(d, /spiders drop up to two each/);
+  assert.match(d, /an igloo with a bed 100 blocks away/);
+});

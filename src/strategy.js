@@ -60,7 +60,13 @@ function searchSoFar(bot, goal, rung) {
   const minutes = Math.round((Date.now() - search.since) / 60000);
   const blocks = Math.round(Math.hypot(bot.entity.position.x - search.from.x, bot.entity.position.z - search.from.z));
   const flocks = require('./sightings').sighted(bot, goal, 'sheep');
-  return ` Searching for sheep for ${minutes} minute${minutes === 1 ? '' : 's'}, ${blocks} blocks from where the search began, ${flocks.length ? `and ${flocks.slice(0, 2).map(s => s.says).join('; ')}` : 'none seen yet'}.`;
+  // Without sheep, the other ways, as they stand: trial 113 was offered
+  // "none seen yet" forty-three minutes running in snow, chose every other
+  // step instead, and never had a bed.
+  const string = (bot.inventory?.items?.() || []).filter(i => i.name === 'string').reduce((n, i) => n + i.count, 0);
+  const igloo = require('./exploration').knownLandmarks(bot, goal, 'igloo').find(l => l.landmark.beds > 0);
+  const others = flocks.length ? '' : ` Without sheep: ${string} string carried of the twelve a bed's wool takes (spiders drop up to two each and come out at night; cobwebs cut with a sword drop one)${igloo ? `, and an igloo with a bed ${igloo.distance} blocks away` : ''}.`;
+  return ` Searching for sheep for ${minutes} minute${minutes === 1 ? '' : 's'}, ${blocks} blocks from where the search began, ${flocks.length ? `and ${flocks.slice(0, 2).map(s => s.says).join('; ')}` : 'none seen yet'}.${others}`;
 }
 // What the step takes from the pockets as they are, when a planner is
 // given: trial 43 carried sixty-one raw iron and two hundred coal, was
