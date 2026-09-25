@@ -637,3 +637,16 @@ test('from a jungle canopy the stairs dig down through the leaves and drop the l
   assert(down.length, 'a step down through the leaves');
   assert(down.some(o => o.clear.some(c => bot.blockAt(c).name === 'jungle_leaves')), 'leaves are dug');
 });
+
+test('a staircase that only backs off, however far each retreat walks, is set aside after four with no step between', async () => {
+  // mid-110-d, mid-100-b: back off a flooded stair, no step at the dry cell, back off again; the audit called the flip.
+  const bot = { registry: require('minecraft-data')('26.1'), game: { difficulty: 'normal', dimension: 'overworld' }, entity: { position: new Vec3(0.5, 60, 0.5) },
+    blockAt: p => ({ position: p, name: [60, 61].includes(p.y) && p.x === Math.floor(bot.entity.position.x) && p.z === 0 ? 'air' : 'bedrock', boundingBox: [60, 61].includes(p.y) && p.x === Math.floor(bot.entity.position.x) && p.z === 0 ? 'empty' : 'block', diggable: false }),
+    findBlocks: () => [], pathfinder: { movements: {} } };
+  const goal = {}; let retreats = 0;
+  const retreat = async () => { retreats++; bot.entity.position = new Vec3(retreats % 2 ? 3.5 : 0.5, 60, 0.5); };
+  const step = () => tunnelStep(bot, new Task('stair'), goal, () => {}, new Vec3(20, 40, 0), { dig: async () => {}, navigate: async () => {}, retreat });
+  for (let i = 0; i < 3; i++) await step();
+  await assert.rejects(step(), err => err.name === 'StaircaseStalled' || /backed off four times/.test(err.message));
+  assert.equal(retreats, 4);
+});

@@ -208,7 +208,7 @@ class StaircaseStalled extends Error {
 const area = t => ({ x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 });
 const staircaseResting = (goal, target) => isSetAside(goal, 'staircase', area(target));
 
-async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false, within = null }) {
+async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false, within = null, retreat = retreatForTunnel }) {
   if (staircaseResting(goal, target)) throw new StaircaseStalled(target, attemptsFor(goal).why('staircase', area(target)));
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
@@ -233,9 +233,21 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
   if (!choice) {
     const before = bot.entity.position.clone();
     let stuck = null;
-    try { await retreatForTunnel(bot, task, goal, save, { navigate }); }
+    try { await retreat(bot, task, goal, save, { navigate }); }
     catch (err) { if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; stuck = err; }
-    if (bot.entity.position.distanceTo(before) >= 0.5) { tunnel.noWay = 0; if (stuck) throw stuck; return; }
+    // Retreats with no step between are the staircase getting nowhere too,
+    // however far each one walks: mid-110-d and mid-100-b backed off a
+    // flooded stair to a dry cell, found no step there either, backed off
+    // again, and the audit called the flip between the two (2026-09-25).
+    tunnel.retreatsWithoutStep = (tunnel.retreatsWithoutStep || 0) + 1;
+    if (tunnel.retreatsWithoutStep >= 4) {
+      tunnel.retreatsWithoutStep = 0; tunnel.noWay = 0;
+      const why = `backed off four times with no step toward it between (${Object.entries(options.blocked || {}).map(([k, n]) => `${k} ${n}`).join(', ') || 'nothing open'})`;
+      setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
+      save();
+      throw new StaircaseStalled(target, why);
+    }
+    if (bot.entity.position.distanceTo(before) >= 0.5) { tunnel.noWay = 0; save(); if (stuck) throw stuck; return; }
     tunnel.noWay = (tunnel.noWay || 0) + 1;
     if (tunnel.noWay >= 3) {
       tunnel.noWay = 0;
@@ -248,7 +260,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
     if (stuck) throw stuck;
     return;
   }
-  tunnel.noWay = 0;
+  tunnel.noWay = 0; tunnel.retreatsWithoutStep = 0;
   noteProgress(tunnel, target, bot.entity.position.distanceTo(target));
   tunnel.visited[`${choice.destination}`] = (tunnel.visited[`${choice.destination}`] || 0) + 1;
   tunnel.steps++;
