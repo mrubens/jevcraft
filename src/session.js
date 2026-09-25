@@ -22,7 +22,7 @@ const { statusMessage } = require('./status');
 const { bundleSummary } = require('./item-bundle');
 const { friendlyProblem, intakeProblem, recoveryHint, quietRepeats, thinking } = require('./speech');
 const { withRequestSignal } = require('./typesafe');
-const { suspendPrevious, resumeSaved } = require('./suspended-tasks');
+const { suspendPrevious, resumeSaved, waitingCleared } = require('./suspended-tasks');
 const { CompanionMemory, position } = require('./memory');
 const { BuildRegistry, resolveBuildContinuation } = require('./builds');
 const { nextDreamRequest, shouldLaunchDream, DREAMS, FAILED_LAUNCH_MS } = require('./dream');
@@ -284,6 +284,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
       bot.chat("I'm back! I'll look after myself while I wait for your next task."); return;
     }
+    delete saved.waitingOn;
     if (saved.kind === 'build' && !saved.design) saved.designAttempts = 0;
     if (saved !== current) bot.chat(`Back to your earlier task: ${saved.request}.`);
     launch(saved);
@@ -298,7 +299,20 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // not at all.
   const clarifying = new Map();
 
+  // A build parked on a block someone else put on its site is taken up
+  // again by itself once that block is gone (siteChanged in work.js).
+  let waitCheckedAt = 0;
   const idleTimer = setInterval(() => {
+    const now = Date.now();
+    if (ready && !pendingRequests && !launchingDream && (!active || active.idle) && now - waitCheckedAt > 5000) {
+      waitCheckedAt = now;
+      const saved = resumeSaved(store.read());
+      if (waitingCleared(bot, saved)) {
+        bot.chat(`The ${String(saved.waitingOn.name).replaceAll('_', ' ')} is gone. Back to building!`);
+        resume().catch(err => console.error(err));
+        return;
+      }
+    }
     if (ready && !active && !launchingDream && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
   }, 500);
 

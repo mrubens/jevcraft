@@ -44,4 +44,15 @@ function resumeSaved(saved, { currentOnly = false } = {}) {
   return saved;
 }
 
-module.exports = { suspendPrevious, resumeSaved };
+// A request parked on a block that only a player can move (a build site's
+// stranger block) is ready again once that block is something else. Unloaded,
+// or in another dimension, it is not known to be gone.
+function waitingCleared(bot, goal) {
+  const w = goal?.status === 'blocked' && goal.waitingOn;
+  if (!w || String(bot.game?.dimension || 'overworld') !== (w.dimension || 'overworld')) return false;
+  const { Vec3 } = require('vec3');
+  const block = bot.blockAt?.(new Vec3(w.x, w.y, w.z));
+  return !!block && block.name !== w.name;
+}
+
+module.exports = { suspendPrevious, resumeSaved, waitingCleared };

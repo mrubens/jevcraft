@@ -12,7 +12,7 @@ const REPLAN = /building site changed/i;
 const SWAY = [-.55, .35, -.15, .7, .1, -.4];
 function recoveryHint(error) {
   return REPLAN.test(String(error?.message || error || ''))
-    ? 'Ask me to build it again and I will pick a fresh spot.'
+    ? (error?.waitOn ? "Break it and I'll carry on by myself, or ask me to build it again and I'll pick a fresh spot." : 'Ask me to build it again and I will pick a fresh spot.')
     : 'Say "Jev resume" to try again.';
 }
 
@@ -99,7 +99,11 @@ function friendlyProblem(error) {
   const text = String(error?.message || error || '');
   if (/silk touch/i.test(text)) return 'I need a tool with Silk Touch to pick up that block.';
   if (/That place is in the /i.test(text)) return text;
-  if (REPLAN.test(text)) return 'Something new is in the way where I planned to build, so that plan no longer fits.';
+  if (REPLAN.test(text)) {
+    const w = error?.waitOn;
+    const thing = String(w?.name || 'block').replaceAll('_', ' ');
+    return w ? `There's ${/^[aeiou]/.test(thing) ? 'an' : 'a'} ${thing} at ${w.x}, ${w.y}, ${w.z} where I'm building, and I didn't put it there.` : 'Something new is in the way where I planned to build, so that plan no longer fits.';
+  }
   if (/No supported survival acquisition|bedrock/i.test(text)) return 'I don\'t know a way to get that in Survival.';
   if (/Chest handover is unconfirmed/i.test(text)) return text;
   if (/chest.*(?:lid|open)|free block near you for a chest/i.test(text)) return text;

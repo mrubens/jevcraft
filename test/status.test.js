@@ -118,3 +118,19 @@ test('an error that lists lapis lazuli is not an outage: "lapis" is not "API"', 
   assert.doesNotMatch(friendlyProblem(new Error('No measurable progress on {"items":[{"item":"lapis_lazuli","count":64}]}')), /trouble thinking/);
   assert.match(friendlyProblem(new Error('TypeSafe request timed out')), /trouble thinking/);
 });
+
+test('a build waiting on a stranger\'s block says what and where, once, and is ready again once the block is gone', () => {
+  const { friendlyProblem, recoveryHint } = require('../src/speech');
+  const { waitingCleared } = require('../src/suspended-tasks');
+  const err = Object.assign(new Error('The building site changed at (53, 70, -80); preserving the unexpected oak_slab. Clear it or request a new build'),
+    { name: 'Blocked', needsPlayer: true, waitOn: { x: 53, y: 70, z: -80, name: 'oak_slab', dimension: 'overworld' } });
+  assert.equal(`${friendlyProblem(err)} ${recoveryHint(err)}`, "There's an oak slab at 53, 70, -80 where I'm building, and I didn't put it there. Break it and I'll carry on by myself, or ask me to build it again and I'll pick a fresh spot.");
+  let name = 'oak_slab';
+  const bot = { game: { dimension: 'overworld' }, blockAt: () => ({ name }) };
+  const goal = { status: 'blocked', waitingOn: err.waitOn };
+  assert.equal(waitingCleared(bot, goal), false, 'still there');
+  name = 'air';
+  assert.equal(waitingCleared(bot, goal), true, 'broken: ready again');
+  assert.equal(waitingCleared({ ...bot, game: { dimension: 'the_nether' } }, goal), false, 'not known from another dimension');
+  assert.equal(waitingCleared(bot, { ...goal, status: 'running' }), false);
+});

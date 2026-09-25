@@ -98,7 +98,13 @@ test('the executor does not silently accept or overwrite a player-rotated stair'
   for (const p of blocks) set(new Vec3(p.x, p.y, p.z), p.material, p.properties);
   set(new Vec3(0, 64, 0), 'oak_stairs', { facing: 'west', half: 'bottom' });
   const blueprint = { origin: { x: 0, y: 63, z: 0 }, blocks, empty: [], initialBlocks: {} };
-  await assert.rejects(designedBuildStep(bot, new Task('protect changed stair'), { design, blueprint }, () => {}, null), /preserving the unexpected oak_stairs/);
+  await assert.rejects(designedBuildStep(bot, new Task('protect changed stair'), { design, blueprint }, () => {}, null), err => {
+    // Waiting on the player, with the block to watch: the Creative bot retried an oak slab 5,630 times.
+    assert.match(err.message, /preserving the unexpected oak_stairs/);
+    assert.equal(err.needsPlayer, true);
+    assert.deepEqual({ ...err.waitOn, dimension: undefined }, { x: 0, y: 64, z: 0, name: 'oak_stairs', dimension: undefined });
+    return true;
+  });
   assert.equal(bot.listenerCount('blockPlaced'), 0);
 });
 

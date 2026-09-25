@@ -94,6 +94,16 @@ function noteError(goal, err) {
 }
 
 class Blocked extends Error { constructor(message) { super(message); this.name = 'Blocked'; } }
+// A block on the building site the bot did not put there is someone's, and
+// only a player can say it may go. Waiting on the player, not retried: the
+// Creative bot tried an oak slab in its chicken house 5,630 times over a day
+// and a half, saying so every seventy-five seconds (2026-09-25). The block
+// is watched, and the build goes on by itself once it is gone.
+function siteChanged(bot, p) {
+  const name = bot.blockAt(p)?.name;
+  return Object.assign(new Blocked(`The building site changed at ${p}; preserving the unexpected ${name}. Clear it or request a new build`),
+    { needsPlayer: true, waitOn: { x: p.x, y: p.y, z: p.z, name, dimension: String(bot.game?.dimension || 'overworld') } });
+}
 
 function inventory(bot) {
   return bot.inventory.items().reduce((o, i) => { o[i.name] = (o[i.name] || 0) + i.count; return o; }, {});
@@ -2263,7 +2273,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     const block = bot.blockAt(pos(p));
     return block && !canClearSchematicBlock(blueprint, goal.buildOwned, block);
   });
-  if (changed) throw new Blocked(`The building site changed at ${pos(changed)}; preserving the unexpected ${bot.blockAt(pos(changed)).name}. Clear it or request a new build`);
+  if (changed) throw siteChanged(bot, pos(changed));
   // Recover our own wrongly oriented piece before gathering another copy.
   // This also repairs a door whose server-created upper half is missing.
   const repairs = missing.filter(p => bot.blockAt(pos(p))?.name === p.material)
@@ -2419,7 +2429,7 @@ async function prepareBuildTerrain(bot, task, goal, save) {
   const toClear = terrain.clear.filter(p => !air(bot.blockAt(pos(p))));
   const toFill = terrain.fill.filter(p => !matchesBuildBlock(bot.blockAt(pos(p)), p));
   for (const p of [...toClear, ...toFill]) if (!canClearSchematicBlock(blueprint, goal.buildOwned, bot.blockAt(pos(p))))
-    throw new Blocked(`The building site changed at ${pos(p)}; preserving the unexpected ${bot.blockAt(pos(p))?.name}. Clear it or request a new build`);
+    throw siteChanged(bot, pos(p));
   if (!toClear.length && !toFill.length) {
     terrain.prepared = true; terrain.preparedAt = new Date().toISOString(); save(); return;
   }
@@ -3631,7 +3641,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (err.name === 'Blocked' && (err.needsPlayer || IMPOSSIBLE.test(err.message))) {
         // Impossible is final and resume passes over it; waiting on the
         // player is not, and "Jev resume" takes it up again.
-        goal.status = 'blocked'; if (!err.needsPlayer) goal.impossible = true; save();
+        goal.status = 'blocked'; if (!err.needsPlayer) goal.impossible = true;
+        if (err.waitOn) goal.waitingOn = { ...err.waitOn, since: new Date().toISOString() };
+        save();
         bot.chat(`${friendlyProblem(err)} I saved our progress. ${recoveryHint(err)}`);
         return { ok: false, reason: err.message, goal };
       }
