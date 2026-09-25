@@ -1237,8 +1237,11 @@ class Survival {
     if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) { refuge.verifiedAt = new Date().toISOString(); save(); return true; }
     // A pass that closed nothing is not a pocket: saying it was sent the
     // caller straight back here, fourteen times a second, all evening.
-    if (cells.length && shelter.missingShell(bot, refuge).length >= cells.length) {
-      setAside(this, 'seal_here', `${origin}`, `${cells.length} cells of the shell would not take a block`, 60000); save();
+    // Nor is one with nothing to close and the bot still not sealed in: trial
+    // 38 stood ninety-eight seconds at a shell with no missing cells, told
+    // "sealed" twenty times a second, and the audit failed it.
+    if (shelter.missingShell(bot, refuge).length >= cells.length) {
+      setAside(this, 'seal_here', `${origin}`, cells.length ? `${cells.length} cells of the shell would not take a block` : 'the shell is whole and the bot is not sealed in it', 60000); save();
       return false;
     }
     return true;

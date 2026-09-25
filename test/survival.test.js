@@ -1794,3 +1794,17 @@ test('a night hunt is offered for each kind of mob about, with its drops, its co
   const made = survival.deathCost({ rungClocks: { iron_armour: { activeMs: 600000 }, shield: { activeMs: 240000 }, stone_pickaxe: { activeMs: 30000 } } });
   assert.deepEqual(made.realMinutesToMakeAgain, { 'iron armour': 10 });
 });
+
+test('a whole shell the bot is not sealed in is not reported sealed, and is not sealed again twenty times a second', async () => {
+  // Trial 38: no cell of the shell missing, the pocket not sealed (a block
+  // in the bot's own space), "sealed" returned every pass for 98 seconds.
+  const { origin, blocks, bot } = sandFloorPocket();
+  blocks.set(`${origin.offset(0, 1, 0)}`, 'cobweb');
+  let placed = 0;
+  const survival = new Survival(bot, { place: async () => { placed++; }, navigate: async () => {} });
+  const goal = {};
+  assert.deepEqual(shelter.missingShell(bot, { origin, dimension: 'overworld' }), []);
+  assert.equal(await survival.sealHere(new Task('night'), goal, () => {}, []), false);
+  assert.equal(await survival.sealHere(new Task('night'), goal, () => {}, []), false, 'set aside: not tried again straight away');
+  assert.equal(placed, 0);
+});
