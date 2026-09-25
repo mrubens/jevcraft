@@ -1221,8 +1221,18 @@ class Survival {
           (threat ? Math.hypot(p.x - threat.entity.position.x, p.z - threat.entity.position.z) * 10 : 0) + p.y - refuge.origin.y;
       return rank(a) - rank(b);
     });
+    // Twenty seconds for the pass: trial 75 stood fifty-three seconds in one
+    // on a hillside by a flooded shaft, a block now and then, never sealed,
+    // and the audit failed it. A pass that runs out ends, and the place is
+    // set aside for a minute so the next answer is another one.
+    const passEnds = Date.now() + 20000;
     for (const p of blocks) {
       task.check(); checkAir(bot);
+      if (Date.now() > passEnds) {
+        setAside(this, 'seal_here', `${pos(refuge.origin)}`, 'the pocket took more than twenty seconds to seal', 60000);
+        this.report(goal, save, { action: 'seal_failed', at: { ...refuge.origin }, error: 'twenty seconds and not sealed' }); save();
+        return;
+      }
       const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
       if (!material) throw new Error('Shelter material inventory changed before sealing');
       // Snow/vegetation is being cleared to seal a room, not harvested. A
@@ -1283,8 +1293,10 @@ class Survival {
     // Three placements that fail in a row end the pass: trial 53 spent fifty
     // seconds in one, each block of the shell failing slowly and silently.
     let failedInRow = 0;
+    const passEnds = Date.now() + 20000;
     for (const p of cells) {
       task.check();
+      if (Date.now() > passEnds) { this.report(goal, save, { action: 'seal_failed', at: { ...origin }, error: 'twenty seconds and not sealed' }); break; }
       const name = material(); if (!name) break;
       if (danger.some(t => t.entity.position.floored().equals(p))) continue;
       try { await this.actions.place(bot, task, p, name, { stay }); failedInRow = 0; }

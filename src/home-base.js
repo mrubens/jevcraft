@@ -736,9 +736,16 @@ async function searchForSheep(bot, task, goal, save, actions) {
   // blocks down, found none within reach, and forgot them (trial 70).
   const off = held && (held.y != null ? bot.entity.position.distanceTo(new Vec3(held.x, held.y, held.z)) : Math.hypot(held.x - bot.entity.position.x, held.z - bot.entity.position.z));
   if (held && off > 12) {
-    const goal = held.y != null ? new goals.GoalNear(held.x, held.y, held.z, 6) : new goals.GoalNearXZ(held.x, held.z, 8);
-    try { await actions.navigate(bot, task, goal, { timeoutMs: 60000, stallMs: 8000 }); return; }
-    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; delete search.toward; save(); return; }
+    const target = held.y != null ? new goals.GoalNear(held.x, held.y, held.z, 6) : new goals.GoalNearXZ(held.x, held.z, 8);
+    try { await actions.navigate(bot, task, target, { timeoutMs: 60000, stallMs: 8000 }); return; }
+    catch (err) {
+      task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+      // A flock that cannot be walked to is not offered again: kept, it was
+      // chosen again at once, four times a second, and the chat of it got the
+      // bot kicked from the server (trial 76).
+      if (held.seen && goal.sightings?.sheep) goal.sightings.sheep = goal.sightings.sheep.filter(s => Math.hypot(s.x - held.x, s.z - held.z) > 24);
+      delete search.toward; save(); return;
+    }
   }
   // Arrived where a flock was seen and none is in view (gatherWool looked):
   // it has moved on, and the place is not offered again.
