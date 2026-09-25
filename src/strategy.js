@@ -123,7 +123,56 @@ function rungTakes(bot, goal, rung, planFor) {
   const byAction = {};
   for (const st of steps) { const k = `${st.action} ${words(st.item || st.block || st.mob)}`; byAction[k] = (byAction[k] || 0) + (st.count || 1); }
   const list = Object.entries(byAction).map(([k, n]) => { const [action, ...rest] = k.split(' '); return `${action.replaceAll('_', ' ')} ${n} ${rest.join(' ')}`; }).join(', ');
-  return ` From the pockets as they are it takes: ${list}${gather.length ? '' : ' (all of it from what is carried: no gathering)'}.${oreFacts(bot, goal, steps)}`;
+  return ` From the pockets as they are it takes: ${list}${gather.length ? '' : ' (all of it from what is carried: no gathering)'}.${oreFacts(bot, goal, steps)}${pickaxeLeft(bot, planSpends(steps))}`;
+}
+
+// What a plan uses up, net: what its steps consume less what they make.
+function planSpends(steps) {
+  const net = {};
+  for (const st of steps) {
+    for (const [k, n] of Object.entries(st.consumes || {})) net[k] = (net[k] || 0) + n;
+    for (const [k, n] of Object.entries(st.produces || {})) net[k] = (net[k] || 0) - n;
+  }
+  return Object.fromEntries(Object.entries(net).filter(([, n]) => n > 0));
+}
+// What spending wood, sticks or iron leaves for the next pickaxe, said with
+// any option that spends them (the decision audit, from two midgame
+// trials): mid-100-c spent its last three logs on a chest in a cave at
+// y -16, and mid-87-a its twenty-four ingots and its sticks on armour; each
+// pickaxe broke underground with nothing to make another, and each climbed
+// out by hand for some forty minutes. Digging up by hand was measured in
+// both at about five blocks in 2.3 minutes.
+const HAND_BLOCKS_PER_MINUTE = 2;
+function pickaxeLeft(bot, spends = {}) {
+  const WOOD = /_log$|_stem$|_planks$|^stick$/, HEAD = /^(iron_ingot|cobblestone|cobbled_deepslate|blackstone)$/;
+  if (!Object.keys(spends).some(k => WOOD.test(k) || k === 'iron_ingot') || !bot?.inventory?.items) return '';
+  const stock = {};
+  for (const i of bot.inventory.items()) stock[i.name] = (stock[i.name] || 0) + i.count;
+  for (const [k, n] of Object.entries(spends)) stock[k] = Math.max(0, (stock[k] || 0) - n);
+  const sum = re => Object.entries(stock).filter(([k]) => re.test(k)).reduce((n, [, c]) => n + c, 0);
+  const logs = sum(/_log$|_stem$/), planks = sum(/_planks$/), sticks = stock.stick || 0, ingots = stock.iron_ingot || 0, cobble = sum(/^(cobblestone|cobbled_deepslate|blackstone)$/);
+  const sticksOk = sticks >= 2 || planks >= 2 || logs >= 1, headOk = ingots >= 3 || cobble >= 3;
+  const uses = i => (bot.registry?.itemsByName?.[i.name]?.maxDurability ?? Infinity) - (i.durabilityUsed || 0);
+  const picks = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `the ${i.name.replaceAll('_', ' ')} (${Number.isFinite(uses(i)) ? `${uses(i)} uses left` : 'uses unknown'})`);
+  let depth = null;
+  try { if (typeof bot.blockAt === 'function' && bot.entity?.position) depth = require('./surface').climbToSurface(bot, bot.entity.position); } catch (_) { depth = null; }
+  const { WOOD_RESERVE } = require('./work');
+  const wood = Math.floor((logs + planks / 4 + sticks / 8) * 10) / 10;
+  const none = !sticksOk ? 'no sticks can be made' : !headOk ? 'no pickaxe head can be made (3 ingots or 3 cobblestone)' : '';
+  return ` It leaves ${logs} logs, ${planks} planks, ${sticks} sticks and ${ingots} iron ingots (${wood} logs' worth of wood of the ${WOOD_RESERVE} kept for pickaxes and a table); a new pickaxe takes 2 sticks and 3 ingots or 3 cobblestone${none ? `, and ${none} from what is left` : ', and that is left'}. Pickaxes carried: ${picks.join(', ') || 'none'}.${depth >= 8 ? ` The bot is about ${depth} blocks under the surface${none ? `: when the last pickaxe breaks, none can be made down here, and the way up is dug by hand at about ${HAND_BLOCKS_PER_MINUTE} blocks a minute (about ${Math.round(depth / HAND_BLOCKS_PER_MINUTE)} minutes)` : ''}.` : ''}`;
+}
+
+// Where a home step is done, from where the bot is (the decision audit,
+// mid-100-c): "a chest at the base" was chosen in a cave seventy blocks
+// under home, the chest made there from the last logs.
+function homeWhere(bot, goal, rung) {
+  const home = goal?.survival?.home;
+  if (!/^home_/.test(rung.phase) || rung.phase === 'home_site' || !home?.origin || !bot?.entity?.position) return '';
+  let at = home.origin;
+  try { if (rung.phase === 'home_stash') at = require('./home-base').layout(home).chest || at; } catch (_) { at = home.origin; }
+  const here = bot.entity.position, d = Math.round(Math.hypot(at.x + 0.5 - here.x, at.y - here.y, at.z + 0.5 - here.z)), dy = Math.round(at.y - here.y), flat = Math.hypot(at.x + 0.5 - here.x, at.z + 0.5 - here.z);
+  const made = rung.item ? ` The ${label(rung.item)} is made from the pockets where the bot stands, then carried there.` : '';
+  return ` It is done at the base${rung.phase === 'home_stash' ? ', the chest going by the bed' : ''}: ${d} blocks from here${Math.abs(dy) >= 3 ? `, ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}${flat > 6 ? `, about ${Math.round(flat / 4.3)} seconds at a walk${Math.abs(dy) >= 3 ? ' and the climb besides' : ''}` : ''}.${made}`;
 }
 function rungOption(rung, first, bot, goal, planFor = null) {
   const what = rung.items?.length > 1 ? `${label(rung.phase)} (${rung.items.map(label).join(', ')})` : rung.item ? `${rung.count > 1 ? `${rung.count} ` : ''}${label(rung.item)}` : label(rung.phase);
@@ -132,7 +181,7 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   const clock = goal?.rungClocks?.[rung.phase];
   const spent = clock?.activeMs >= 60000 ? ` Worked on for ${Math.round(clock.activeMs / 60000)} minutes so far.` : '';
   const without = WITHOUT[piece] ? ` Until it is done, ${WITHOUT[piece]}.` : '';
-  return { description: `${first ? 'The ladder\'s next step: ' : 'Do this step first, ahead of the ladder\'s order: '}get ${what}${why ? ` (${why})` : ''}.${bot && goal ? searchSoFar(bot, goal, rung) : ''}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
+  return { description: `${first ? 'The ladder\'s next step: ' : 'Do this step first, ahead of the ladder\'s order: '}get ${what}${why ? ` (${why})` : ''}.${bot && goal ? searchSoFar(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
 }
 
 // The options now, keyed for the decision tree. Only in the Overworld on
@@ -212,4 +261,4 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   return { ran: true };
 }
 
-module.exports = { rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };
+module.exports = { pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };

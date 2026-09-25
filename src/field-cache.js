@@ -66,7 +66,16 @@ function cacheOffer(bot, goal, now = Date.now()) {
   if (!countOf(bot, 'chest') && wood < 8) return null;
   const counts = {};
   for (const m of moves) counts[m.item] = (counts[m.item] || 0) + m.count;
-  return { moves, what: Object.entries(counts).map(([n, c]) => `${c} ${n.replaceAll('_', ' ')}`).join(', '), chest: countOf(bot, 'chest') ? 'the chest carried' : 'a chest made from eight planks' };
+  // The wood a chest made here uses, planks first, then logs, and four more
+  // for a table when none is carried: said with the offer as what it leaves
+  // for the next pickaxe (the decision audit, mid-100-c).
+  const spends = {};
+  if (!countOf(bot, 'chest')) {
+    let need = 8 + (countOf(bot, 'crafting_table') ? 0 : 4);
+    for (const i of bot.inventory.items().filter(i => /_planks$/.test(i.name))) { const n = Math.min(need, i.count); if (n) spends[i.name] = (spends[i.name] || 0) + n; need -= n; }
+    for (const i of bot.inventory.items().filter(i => /_(log|stem)$/.test(i.name))) { const n = Math.min(Math.ceil(need / 4), i.count); if (n) spends[i.name] = (spends[i.name] || 0) + n; need -= n * 4; }
+  }
+  return { moves, spends, what: Object.entries(counts).map(([n, c]) => `${c} ${n.replaceAll('_', ' ')}`).join(', '), chest: countOf(bot, 'chest') ? 'the chest carried' : 'a chest made from eight planks' };
 }
 
 // Before the crossing. True when there is nothing to leave or no need of a

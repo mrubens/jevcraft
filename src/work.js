@@ -35,7 +35,7 @@ const { noticeLandmarks, unexploredArea, explorationSummary, summaryText, explor
 const { lootNearby, lootStep, unlootedLandmarks } = require('./looting');
 const { enchantReady, enchantStep, enchantable } = require('./enchanting');
 const { tradeWorthwhile, tradeStep } = require('./trading');
-const { strategyStep, rungTakes } = require('./strategy');
+const { strategyStep, rungTakes, pickaxeLeft } = require('./strategy');
 const { openChest } = require('./chest-delivery');
 const { barterStep, gatherBastionGold } = require('./bartering');
 const { descendPillar, pillarUp, pillarSite } = require('./pillar-recovery');
@@ -305,9 +305,18 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   if (spareDue(bot)) options.spare_pickaxe = { description: `Make a stone pickaxe now, a spare: the pickaxes carried are nearly worn out (${worn.join(', ')}), and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.`, run: () => maintainPickaxe(bot, task, goal, save) };
   // Where the bot is decides what running short costs: at the trees it is a
   // minute's cutting; in the mine it is the climb out, and back.
-  const depth = (() => { const f = bot.entity?.position?.floored?.(); if (!f || typeof bot.blockAt !== 'function') return 0; for (let dy = 1; dy <= 80; dy++) { const b = bot.blockAt(f.offset(0, dy, 0)); if (!b) return 0; if (b.name === 'grass_block' || b.name === 'dirt' && dy > 1) return dy; } return 80; })();
-  const where = depth >= 8 ? ` The bot is about ${depth} blocks under the surface: with no wood when a pickaxe wears out down here, the way to more is a climb of ${depth} blocks, and back down.` : ' Trees are within reach up here; in a mine, with no wood when a pickaxe wears out, the way to more is the climb out.';
-  if (goal.kind === 'win' && woodDue(bot, goal)) options.wood_reserve = { description: `Cut a few logs now: ${Math.floor(woodUnits(bot) * 10) / 10} logs' worth of wood carried, and ${WOOD_RESERVE} make the sticks for three pickaxes and a crafting table wherever the bot is.${where} The pickaxes carried: ${worn.join(', ') || 'none'}.`, run: () => gatherWood(bot, task, goal, save) };
+  // The depth is to open sky over the column (surface.js), not to the
+  // first grass or dirt, which a cave floor above or a sand desert got
+  // wrong; and the trees are looked for, not assumed (the decision audit,
+  // 2026-09-25).
+  const where = () => {
+    const depth = (() => { if (!bot.entity?.position || typeof bot.blockAt !== 'function') return 0; try { return require('./surface').climbToSurface(bot, bot.entity.position) ?? 0; } catch (_) { return 0; } })();
+    if (depth >= 8) return ` The bot is about ${depth} blocks under the surface: choosing this now means that climb now (roughly ${require('./surface').climbMinutes(depth)} minutes with a pickaxe), and back down; with no wood when a pickaxe wears out down here, the climb is by hand at about two blocks a minute.`;
+    let treeNear = null;
+    try { treeNear = typeof bot.findBlocks === 'function' ? find(bot, bot.registry.blocksArray.filter(b => /_log$|_stem$/.test(b.name)).map(b => b.name), 48, 1)[0] : null; } catch (_) { treeNear = null; }
+    return treeNear ? ` A tree is ${Math.round(treeNear.distanceTo(bot.entity.position))} blocks away.` : ' No tree is in view from here.';
+  };
+  if (goal.kind === 'win' && woodDue(bot, goal)) options.wood_reserve = { description: `Cut a few logs now: ${Math.floor(woodUnits(bot) * 10) / 10} logs' worth of wood carried, and ${WOOD_RESERVE} make the sticks for three pickaxes and a crafting table wherever the bot is.${where()} The pickaxes carried: ${worn.join(', ') || 'none'}.`, run: () => gatherWood(bot, task, goal, save) };
   if (goal.kind === 'win' && blocksDue(bot, goal)) options.block_reserve = { description: `Gather building blocks now: ${blockStock(bot)} carried, and ${BLOCK_RESERVE} seal a pocket for the night or tower out of a hole.`, run: () => gatherBlocks(bot, task, goal, save) };
   const due = Object.keys(options);
   if (!due.length) return false;
@@ -3134,7 +3143,7 @@ function sideTrips(bot, goal, client) {
   // A chest here for the valuables, before whatever comes next: home's
   // chest out of reach, and a death would drop them (field-cache.js).
   const cache = require('./field-cache').cacheOffer(bot, goal);
-  if (cache) trips.cache_valuables = { description: `Put ${cache.chest} down here and leave the valuables in it (${cache.what}): home's chest is out of reach, and a death on what comes next would drop them. They are taken back passing by.`,
+  if (cache) trips.cache_valuables = { description: `Put ${cache.chest} down here and leave the valuables in it (${cache.what}): home's chest is out of reach, and a death on what comes next would drop them. They are taken back passing by.${pickaxeLeft(bot, cache.spends)}`,
     says: "I'll leave my valuables in a chest here", run: (b, t, g, sv) => require('./field-cache').cacheValuables(b, t, g, sv, homeActions(), { reason: 'what comes next' }) };
   // Animals: a wolf tamed with bones, sheep and chickens bred in the field
   // (wolves.js, breeding.js).
@@ -3708,4 +3717,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

@@ -231,10 +231,15 @@ test('short of wood in a mine, the reserve is offered with what running out cost
   const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'carry_on', confidence: 0.7 } } }; } };
   const bot = { game: { gameMode: 'survival', dimension: 'overworld' }, time: { timeOfDay: 3000 }, entity: { isInWater: false, position: new Vec3(0.5, 20, 0.5) },
     registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1, durabilityUsed: 100 }, { name: 'cobblestone', count: 64 }, { name: 'oak_log', count: 2 }] }, health: 20, food: 20,
-    blockAt: p => ({ position: p, name: p.y === 63 ? 'grass_block' : p.y > 63 ? 'air' : 'stone' }) };
+    blockAt: p => ({ position: p, name: p.y === 63 ? 'grass_block' : p.y > 63 ? 'air' : 'stone', boundingBox: p.y > 63 ? 'empty' : 'block' }) };
   await upkeepStep(bot, { check() {} }, { kind: 'win', step: { action: 'mine', block: 'iron_ore' } }, () => {}, client);
   assert.match(offered.wood_reserve, /2 logs' worth .* 6 make the sticks for three pickaxes/);
-  assert.match(offered.wood_reserve, /about 43 blocks under the surface: .* a climb of 43 blocks/);
+  assert.match(offered.wood_reserve, /about 44 blocks under the surface: choosing this now means that climb now \(roughly 2 minutes with a pickaxe\)/);
+  // On the surface the trees are looked for, not assumed (the decision audit).
+  bot.entity.position = new Vec3(0.5, 64, 0.5);
+  bot.findBlocks = () => [new Vec3(12, 64, 0)];
+  await upkeepStep(bot, { check() {} }, { kind: 'win', step: { action: 'mine', block: 'iron_ore' } }, () => {}, client);
+  assert.match(offered.wood_reserve, /A tree is 12 blocks away/);
 });
 
 test('making room, Jev sees junk and surplus first and marked, and what going without costs the step in hand', async () => {

@@ -1830,7 +1830,7 @@ class Survival {
     if (typeof this.actions.cacheHere !== 'function') return null;
     const offer = require('./field-cache').cacheOffer(bot, goal);
     if (!offer) return null;
-    return { description: `Put ${offer.chest} down here and leave the valuables in it (${offer.what}): home's chest is out of reach, and a death tonight would drop them. They are taken back passing by.`,
+    return { description: `Put ${offer.chest} down here and leave the valuables in it (${offer.what}): home's chest is out of reach, and a death tonight would drop them. They are taken back passing by.${require('./strategy').pickaxeLeft(bot, offer.spends)}`,
       run: async (task, goal, save) => { await this.actions.cacheHere(bot, task, goal, save, 'the night'); return true; } };
   }
 

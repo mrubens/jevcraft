@@ -149,6 +149,45 @@ test('a bed searched for with no sheep seen is offered with the other ways as th
   assert.match(d, /an igloo with a bed 100 blocks away/);
 });
 
+// A cave at y -16 under a surface at y 54: stone above the bot, air below
+// the sky line.
+function caveBot(items) {
+  const reg = require('minecraft-data')('26.1');
+  return { registry: reg, game: { dimension: 'overworld', minY: -64, height: 384 }, entity: { position: new Vec3(0.5, -16, 0.5) }, entities: {},
+    inventory: { items: () => items.map(([name, count, used]) => ({ name, count, ...(used ? { durabilityUsed: used } : {}) })) },
+    blockAt: p => ({ name: p.y > 54 || (p.y >= -16 && p.y <= -15) ? 'air' : 'stone', boundingBox: p.y > 54 || (p.y >= -16 && p.y <= -15) ? 'empty' : 'block' }) };
+}
+
+test('a rung that spends the last wood says what it leaves for the next pickaxe, and a home step where it is done (mid-100-c)', () => {
+  // mid-100-c: seventy blocks under home, the last three logs went on a
+  // chest; the iron pickaxe broke twelve minutes later, and the climb was by hand.
+  const { rungOption } = require('../src/strategy');
+  const { batchPlan } = require('../src/batch-plan');
+  const registry = require('minecraft-data')('26.1');
+  const bot = caveBot([['oak_log', 3], ['iron_pickaxe', 1, 56], ['iron_ingot', 3]]);
+  const home = { version: 1, dimension: 'overworld', origin: { x: 0, y: 54, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 54, z: 0 }, bed: {}, plot: {}, pen: {} };
+  const planFor = (b, item, count) => batchPlan(registry, [{ item, count }], { oak_log: 3, iron_pickaxe: 1, iron_ingot: 3 }, { nearby: ['stone'], tools: [{ name: 'iron_pickaxe', enchantments: [] }], equipment: [], dimension: 'overworld' }).steps;
+  const d = rungOption({ phase: 'home_stash', action: 'home', item: 'chest', count: 1, home: { phase: 'home_stash', action: 'acquire', item: 'chest' } }, true, bot, { survival: { home } }, planFor).description;
+  assert.match(d, /It is done at the base, the chest going by the bed: \d+ blocks from here, 71 blocks up\./);
+  assert.match(d, /The chest is made from the pockets where the bot stands, then carried there/);
+  assert.match(d, /It leaves 0 logs, 0 planks, 0 sticks and 3 iron ingots/);
+  assert.match(d, /and no sticks can be made from what is left\. Pickaxes carried: the iron pickaxe \(194 uses left\)/);
+  assert.match(d, /about 71 blocks under the surface: when the last pickaxe breaks, none can be made down here, and the way up is dug by hand at about 2 blocks a minute \(about 36 minutes\)/);
+});
+
+test('a rung that spends the ingots and sticks says a pickaxe can no longer be made (mid-87-a)', () => {
+  // mid-87-a: twenty-four ingots and the sticks on armour, the last iron pickaxe broke at y 17.
+  const { rungOption, pickaxeLeft } = require('../src/strategy');
+  const bot = caveBot([['iron_ingot', 24], ['stick', 3], ['oak_planks', 2], ['iron_pickaxe', 1, 209]]);
+  const armour = { phase: 'iron_armour', action: 'acquire_set', item: 'iron_helmet', items: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], count: 4 };
+  const planFor = () => [['iron_helmet', 5], ['iron_chestplate', 8], ['iron_leggings', 7], ['iron_boots', 4]].map(([item, n]) => ({ action: 'craft', item, count: 1, consumes: { iron_ingot: n }, produces: { [item]: 1 } }));
+  const d = rungOption(armour, true, bot, {}, planFor).description;
+  assert.match(d, /It leaves 0 logs, 2 planks, 3 sticks and 0 iron ingots/);
+  assert.match(d, /no pickaxe head can be made \(3 ingots or 3 cobblestone\) from what is left\. Pickaxes carried: the iron pickaxe \(41 uses left\)/);
+  assert.match(d, /the way up is dug by hand/);
+  assert.equal(pickaxeLeft(bot, { cobblestone: 4 }), '', 'nothing a pickaxe needs spent: nothing said');
+});
+
 test('a rung that mines says where the ore lies and what going without costs; the pearls say what they are for (the decision audit)', () => {
   const { rungOption } = require('../src/strategy');
   const bot = { entity: { position: new Vec3(0, 64, 0) } };
