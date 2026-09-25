@@ -1031,11 +1031,18 @@ class Survival {
   // hitting once a second (the replay of trial 57's ledge).
   async swingFor(task, goal, save, ms = 1000) {
     const bot = this.bot;
+    let swung = false;
     for (const until = Date.now() + ms; Date.now() < until;) {
       task.check(); checkAir(bot);
       // A creeper is hit and backed from (creeperDance), not stood at.
-      if (threats(bot, 5).some(t => t.entity.name === 'creeper')) return;
-      if (!await defendNearby(bot, task, goal, save)) await sleep(100);
+      // Where the dance cannot run (no blade, a drop behind) the chosen
+      // fight still swings: handed straight back, trial 99's bare-handed
+      // fight with a creeper at arm's length ran twenty times a second and
+      // struck nothing.
+      const close = threats(bot, 5);
+      if (close.some(t => t.entity.name === 'creeper') && await this.creeperDance(task, goal, save, close, swung, { chosen: true })) { swung = false; continue; }
+      swung = await defendNearby(bot, task, goal, save);
+      if (!swung) await sleep(100);
     }
   }
 

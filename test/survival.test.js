@@ -559,6 +559,26 @@ test('with lava beside it and a mob coming, the bot leaves the lava edge before 
   assert.equal(lavaBeside(bot, bot.entity.position.floored()), false, 'and it lands clear of the lava');
 });
 
+test('a fight chosen bare-handed against a creeper at arm\'s length swings at it: trial 99 held that fight twenty times a second doing nothing', async () => {
+  const { Survival } = require('../src/survival');
+  const feet = new Vec3(0, 10, 0);
+  const creeper = { id: 1, name: 'creeper', type: 'hostile', position: new Vec3(1.5, 10, 0.5), height: 1.7, width: 0.6, isValid: true, metadata: [] };
+  const attacks = [];
+  const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 }, entity: { position: feet.offset(0.5, 0, 0.5), velocity: new Vec3(0, 0, 0), onGround: true }, entities: { 1: creeper },
+    health: 10, food: 20, oxygenLevel: 20, time: { timeOfDay: 2000 }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'cobblestone', count: 64 }], slots: {} }, world: { raycast: () => null },
+    heldItem: null, equip: async item => { bot.heldItem = item; }, unequip: async () => {}, lookAt: async () => {}, attack: t => attacks.push(t.name),
+    clearControlStates() {}, setControlState() {}, on() {}, removeListener() {},
+    blockAt: p => ({ name: p.y < 10 ? 'stone' : 'air', boundingBox: p.y < 10 ? 'block' : 'empty', position: p }),
+    findBlocks: () => [], pathfinder: { movements: {}, setGoal() {} } };
+  const survival = new Survival(bot, { navigate: async () => {} }, { state: {} });
+  bot._defenseAttackAt = 0;
+  const started = Date.now();
+  await survival.swingFor(new Task('fight'), {}, () => {}, 300);
+  assert.deepEqual(attacks.slice(0, 1), ['creeper'], 'the chosen fight swings at the creeper');
+  assert(Date.now() - started >= 250, 'and holds for its time rather than handing straight back');
+});
+
 test('a mob at arm\'s length is fought swing after swing, with no route search between and no sealing against it', async () => {
   const { Survival } = require('../src/survival');
   const feet = new Vec3(0, 10, 0);
