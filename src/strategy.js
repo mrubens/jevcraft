@@ -209,6 +209,11 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   if (daylight && fit && !toolless) for (const [key, side] of Object.entries(sides)) {
     if (side && !isSetAside(goal, 'strategy_side', key) && fits(side)) options[key] = { description: side.description, says: side.says, run: side.run, side: true };
   }
+  // Work that needs no walk or daylight (smelting the ore carried) is on
+  // offer at any hour while nothing is on the bot.
+  if (!immediateThreat(bot)) for (const [key, side] of Object.entries(sides)) {
+    if (side?.anyTime && !options[key] && !isSetAside(goal, 'strategy_side', key)) options[key] = { description: side.description, says: side.says, run: side.run, side: true };
+  }
   return Object.keys(options).length > 1 ? options : null;
 }
 

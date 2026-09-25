@@ -74,6 +74,21 @@ test('stone tools that spend the last sticks say so, for the next pickaxe (mid-8
   assert.match(options.stone_tools.description, /It leaves 0 logs, 0 planks, 0 sticks and 0 iron ingots .*and no sticks can be made from what is left\. Pickaxes carried: the wooden pickaxe \(59 uses left\)/);
 });
 
+test('the raw ore carried can be smelted as a strategy option at any hour, with its time and what ingots are for (mid-87-a)', () => {
+  // mid-87-a carried 84 raw iron and 161 coal for an hour, smelting three at a time.
+  const { sideTrips } = require('../src/work');
+  const { strategyOptions } = require('../src/strategy');
+  const { bot, goal } = fixture([['raw_iron', 64], ['raw_iron', 20], ['coal', 64], ['coal', 64], ['coal', 33], ['iron_pickaxe', 1], ['iron_ingot', 2]]);
+  bot.inventory.slots = {};
+  const smelt = sideTrips(bot, goal, null).smelt_stock;
+  assert.match(smelt.description, /84 raw iron, with the coal carried, at the nearest furnace and 2 more set beside it: about 4\.7 minutes at ten seconds an item shared across 3 furnaces/);
+  assert.match(smelt.description, /three a pickaxe.*Raw ore and ingots drop alike on a death\. Now: 2 iron ingots in hand; pickaxes carried: the iron pickaxe \(250 uses left\)/);
+  bot.time.timeOfDay = 15000;
+  const options = strategyOptions(bot, { ...goal, kind: 'win' }, { phase: 'obtain_ender_pearls', action: 'pearl_patrol' }, { smelt_stock: smelt });
+  assert(options?.smelt_stock, 'offered at night too');
+  assert.equal(sideTrips(fixture([['raw_iron', 7], ['coal', 8]]).bot, goal, null).smelt_stock, undefined, 'under eight raw ore it is not a batch');
+});
+
 test('choosing the long game runs the next rung of the beat-the-game ladder', async () => {
   const { bot, goal, task } = fixture([['white_bed', 1], ['stone_pickaxe', 1], ['stone_axe', 1], ['stone_sword', 1], ['oak_log', 16]]);
   const ran = [];

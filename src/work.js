@@ -3107,6 +3107,27 @@ function sideTrips(bot, goal, client) {
       says: 'I\'ll go trade at the village', walkBlocks: village?.distance,
       run: (b, t, g, sv) => tradeStep(b, t, g, sv, { navigate, decide, client: client || t.opportunityClient }) };
   }
+  // The raw ore carried, smelted all at once: mid-87-a carried eighty-four
+  // raw iron and a hundred and sixty coal for over an hour, smelted three
+  // at a time for whatever the next rung asked, and had no ingots each time
+  // a pickaxe broke underground (the decision audit, 2026-09-25). Offered
+  // with what it takes and gives; any time of day, a furnace being shelter
+  // enough for the minutes it takes.
+  const rawIron = countOf(bot, 'raw_iron'), rawGold = countOf(bot, 'raw_gold'), raw = rawIron + rawGold;
+  const smeltFuel = raw >= 8 ? CARRIED_FUELS.find(n => isFuel(n) && countOf(bot, n) >= fuelUnits(n, raw)) : null;
+  if (smeltFuel) {
+    const furnaces = raw >= 16 ? Math.min(3, Math.floor(raw / 8)) : 1;
+    const minutes = Math.round(raw * 10 / furnaces / 6) / 10;
+    const uses = i => (bot.registry?.itemsByName?.[i.name]?.maxDurability ?? 0) - (i.durabilityUsed || 0);
+    const picks = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `the ${i.name.replaceAll('_', ' ')} (${uses(i)} uses left)`);
+    const list = [rawIron && `${rawIron} raw iron`, rawGold && `${rawGold} raw gold`].filter(Boolean).join(' and ');
+    trips.smelt_stock = { description: `Smelt the raw ore carried into ingots now: ${list}, with the ${smeltFuel.replaceAll('_', ' ')} carried, at the nearest furnace${furnaces > 1 ? ` and ${furnaces - 1} more set beside it` : ''}: about ${minutes} minutes at ten seconds an item${furnaces > 1 ? ` shared across ${furnaces} furnaces` : ''}. Iron ingots are three a pickaxe, one a shield, three a bucket, twenty-four a set of armour; gold is four for golden boots. Raw ore and ingots drop alike on a death. Now: ${countOf(bot, 'iron_ingot')} iron ingots in hand; pickaxes carried: ${picks.join(', ') || 'none'}.`,
+      says: "I'll smelt the ore I'm carrying", anyTime: true,
+      run: async (b, t, g, sv) => {
+        if (countOf(b, 'raw_iron')) await acquireStep(b, t, 'iron_ingot', countOf(b, 'iron_ingot') + countOf(b, 'raw_iron'), g, sv);
+        if (countOf(b, 'raw_gold')) await acquireStep(b, t, 'gold_ingot', countOf(b, 'gold_ingot') + countOf(b, 'raw_gold'), g, sv);
+      } };
+  }
   // Enchanting: a table carried, in view or remembered, lapis in hand, five
   // levels or more, and gear still plain (enchanting.js).
   // The bold trips underground, packed light (deep-dark.js, trip-kit.js):

@@ -606,6 +606,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `trade` | root | trade at a remembered village | by day and fit, with a village remembered and something to sell or spend |
 | `enchant` | root | enchant gear at the enchanting table | by day and fit, with a table known, lapis carried, level five or more and gear unenchanted |
 | `shear_sheep` | root | shear the sheep in view | shears carried, a sheep with wool within twenty-four blocks, fewer than fifteen wool carried, in the Overworld |
+| `smelt_stock` | root | smelt the raw ore carried into ingots | at any hour, eight or more raw iron or gold carried and the fuel for all of it |
 | `enchanting_table` | root | make an enchanting table | no table known, two diamonds and three lapis carried, level five or more, obsidian carried or a diamond pickaxe, and gear unenchanted |
 
 ## recovery
