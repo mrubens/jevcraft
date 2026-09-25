@@ -70,6 +70,7 @@ const SURVIVAL = {
   wall_off: "I'm cornered, so I'm walling the tunnel shut.",
   no_shelter_here: "There's nowhere to shelter and nothing to build with. I'll keep going and keep my eyes open.",
   leave_lava_edge: ['Whoa, lava! Backing away from that first.', 'Too close to the lava. Stepping back.', "Hot hot hot! Away from the lava."],
+  douse: ['Still burning! Water on my feet.', 'Hiss! Putting myself out with the bucket.'],
   out_of_fire: ["Ahh, I'm on fire! Getting out of it!", 'Ow ow ow, fire! Running!', "I'm burning! Out, out, out!"],
   return_to_surface: ["I'm heading back up to the surface.", 'Up I go, back to daylight.', 'Climbing back up top.'],
   recover_items: ["I'm going back for the stuff I dropped.", 'My things are still over there. Going to get them.'],

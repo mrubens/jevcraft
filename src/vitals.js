@@ -304,6 +304,32 @@ async function outOfFire(bot, task, onAction = () => {}) {
   return !inFire(bot);
 }
 
+// Burning with no fire about (lava sets a body burning for a quarter of a
+// minute after it is left): water puts it out, as a player pours the bucket
+// at their feet and takes it back. mid-110-b stepped into the lava pool it
+// was getting obsidian from, got out, and burned from thirteen health to two
+// standing beside it with a water bucket in its pack (2026-09-25).
+async function douse(bot, task, onAction = () => {}) {
+  const bucket = bot.inventory.items().find(i => i.name === 'water_bucket');
+  if (!bucket || /nether/.test(String(bot.game?.dimension || ''))) return false;
+  const feet = bot.entity.position.floored(), below = feet.offset(0, -1, 0);
+  if (bot.blockAt(below)?.boundingBox !== 'block' || !['air', 'cave_air'].includes(bot.blockAt(feet)?.name)) return false;
+  onAction({ action: 'douse', health: bot.health });
+  await bot.equip(bucket, 'hand'); task.check();
+  await bot.lookAt(below.offset(0.5, 1, 0.5), true);
+  bot.activateItem();
+  for (let n = 0; n < 20 && onFire(bot); n++) { await sleep(50); task.check(); }
+  // The water back into the bucket, for the next time and the obsidian.
+  const empty = bot.inventory.items().find(i => i.name === 'bucket');
+  if (empty && bot.blockAt(feet)?.name === 'water') {
+    await bot.equip(empty, 'hand'); task.check();
+    await bot.lookAt(feet.offset(0.5, 0.9, 0.5), true);
+    bot.activateItem();
+    await sleep(150);
+  }
+  return !onFire(bot);
+}
+
 function safeFood(bot, item) { return !!bot.registry.foodsByName?.[item.name] && !unsafeFoods.has(item.name); }
 
 // Food with a Hunger side effect and nothing worse. The effect costs well
@@ -372,6 +398,7 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   }
   if (inPowderSnow(bot)) { await outOfPowderSnow(bot, task, onAction); task.check(); }
   if (inFire(bot)) { await outOfFire(bot, task, onAction); task.check(); }
+  if (onFire(bot) && !inFire(bot) && !/lava/.test(bot.blockAt(bot.entity.position.floored())?.name || '')) { await douse(bot, task, onAction); task.check(); }
   if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
     try { await surfaceForAir(bot, task, onAction); delete bot._surfaceFailedAt; }
     catch (err) { if (err.name !== 'Cancelled' && /breathable air/.test(err.message)) bot._surfaceFailedAt = Date.now(); throw err; }
@@ -410,4 +437,4 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   return true;
 }
 
-module.exports = { inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
+module.exports = { douse, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };

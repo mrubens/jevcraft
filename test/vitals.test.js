@@ -301,3 +301,22 @@ test('in burning grass, the way out is to the nearest cell two blocks clear of a
   bot.entity.position = new Vec3(10.5, 60, 0.5);
   assert.equal(inFire(bot), false, 'burning out with no fire near is left to burn out');
 });
+
+test('burning with no fire about and a water bucket carried, the bucket is poured at the feet and taken back', async () => {
+  // mid-110-b: out of the lava it was getting obsidian from, burned from thirteen health to two with a water bucket in its pack.
+  const { douse } = require('../src/vitals');
+  const { Task } = require('../src/skills');
+  const names = new Map();
+  const items = [{ name: 'water_bucket', count: 1 }];
+  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5), metadata: [1] }, health: 12, inventory: { items: () => items },
+    blockAt: p => { const n = names.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'); return { name: n, position: p, boundingBox: n === 'stone' ? 'block' : 'empty' }; },
+    equip: async item => { bot.held = item.name; }, lookAt: async () => {},
+    activateItem: () => {
+      if (bot.held === 'water_bucket') { names.set(`${new Vec3(0, 64, 0)}`, 'water'); bot.entity.metadata[0] = 0; items[0] = { name: 'bucket', count: 1 }; }
+      else if (bot.held === 'bucket') { names.delete(`${new Vec3(0, 64, 0)}`); items[0] = { name: 'water_bucket', count: 1 }; }
+    } };
+  assert.equal(await douse(bot, new Task('burn')), true);
+  assert.equal(items[0].name, 'water_bucket', 'the water taken back');
+  bot.game.dimension = 'the_nether'; bot.entity.metadata[0] = 1;
+  assert.equal(await douse(bot, new Task('burn')), false, 'water boils away in the Nether');
+});
