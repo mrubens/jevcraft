@@ -767,7 +767,13 @@ class Survival {
     // Every stance that failed in the last twenty seconds, so two that fail
     // are not tried turn about.
     const failed = [].concat(this.state.stanceFailed || []).filter(f => f.kinds === kinds && Date.now() - f.at < 20000);
-    for (const f of failed) delete options[f.choice];
+    // Except a fight that failed for want of reach, once a mob is at reach:
+    // trial 106's charge could not climb the stairs to a zombie at three
+    // and a half blocks, the zombie came down to one, and with the fight
+    // set aside the bot was offered a pillar, a retreat and a pocket in a
+    // one-wide staircase, and died from fifteen health in nine seconds.
+    const atReach = danger.some(t => !shooter(t.entity) && (t.distance <= 3.2 || (t.entity.position && canStrike(bot, t.entity))));
+    for (const f of failed) if (!(f.choice === 'fight' && atReach)) delete options[f.choice];
     if (!Object.keys(options).length) return false;
     const held = this.state.stance;
     const holding = held && held.kinds === kinds && Date.now() - held.at < 15000 && bot.health > held.health - 6;

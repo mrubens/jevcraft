@@ -1575,6 +1575,22 @@ test('a stance that failed is not offered again against the same mobs for twenty
   assert(!trees[1].includes('pillar'), `the failed pillar was not offered again: ${trees[1]}`);
 });
 
+test('a fight that failed for want of reach is offered again once the mob is at reach', async () => {
+  // Trial 106: the charge could not climb the stairs to the zombie; it came down to one block, and the bot was offered no fight.
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, health: 12, food: 20,
+    inventory: { items: () => [], slots: {} }, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const trees = [];
+  survival.stanceOptions = () => ({ fight: { description: 'fight', run: async () => true }, pillar: { description: 'up', run: async () => true }, retreat: { description: 'away', run: async () => true } });
+  survival.decide = async (task, goal, save, q) => { trees.push(Object.keys(q.tree)); return { path: ['retreat'] }; };
+  survival.state.stanceFailed = [{ choice: 'fight', kinds: 'zombie', at: Date.now() }];
+  await survival.stanceStep(new Task('stairs'), {}, () => {}, [{ entity: { name: 'zombie' }, distance: 5 }], false);
+  assert(!trees[0].includes('fight'), 'still out of reach: not again yet');
+  delete survival.state.stance;
+  await survival.stanceStep(new Task('stairs'), {}, () => {}, [{ entity: { name: 'zombie' }, distance: 1 }], false);
+  assert(trees[1].includes('fight'), `at reach: the fight is back: ${trees[1]}`);
+});
+
 test('cornered with a wither skeleton at arm\'s length and blazes behind it, the bot fights instead of sealing', async () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, health: 19,
     inventory: { items: () => [{ name: 'iron_sword' }, { name: 'netherrack', count: 40 }], slots: {} }, heldItem: { name: 'iron_sword' },
