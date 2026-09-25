@@ -45,7 +45,7 @@ function latestFlight(port) {
 const DEATH = /Jev (was|died|burned|drowned|fell|blew|hit the ground|froze|suffocated|starved|tried|withered|went up)/;
 function serverLog(port) {
   const lines = tail(path.join(serverDir(port), 'logs', 'latest.log'), 131072);
-  const chat = lines.filter(l => l.includes('<Jev>')).slice(-4).map(l => ({ at: l.slice(1, 9), text: l.replace(/^.*<Jev> /, '') }));
+  const chat = lines.filter(l => l.includes('<Jev>')).slice(-40).map(l => ({ at: l.slice(1, 9), text: l.replace(/^.*<Jev> /, '') }));
   const deaths = lines.filter(l => DEATH.test(l)).map(l => ({ at: l.slice(1, 9), text: l.replace(/^.*\]: /, '') }));
   return { chat, deaths };
 }
@@ -88,7 +88,7 @@ main{display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr;gap:8px
 .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}.bar i{display:block;height:100%}
 .row{display:flex;gap:10px;flex-wrap:wrap}.pill{padding:1px 7px;border-radius:9px;background:var(--line)}
 .ok{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}.nether{color:var(--nether)}
-.chat{margin-top:auto;border-top:1px solid var(--line);padding-top:6px}.chat div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;border-top:1px solid var(--line);padding-top:6px}.chat div{flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style></head><body><main id="g"></main>
 <script>
 const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
