@@ -105,7 +105,10 @@ function preparationStage(bot, goal = {}) {
 // never on offer (2026-09-24).
 // And the home's pond, plot and pen: the armour does not need them, and a
 // plot that would not till held trial 28's ladder short of the armour.
-const DEFERRABLE = new Set(['bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword']);
+// The rest of the home too (its site, levelling, chest and bed): trial 39
+// placed its bed and could not walk back to claim it, and the bed's step
+// held the armour off the ladder with ninety-three raw iron in the pack.
+const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword']);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
   const waiting = new Set(Object.keys(attemptsFor(goal).of('rung', now)));
