@@ -77,12 +77,33 @@ function crowded(bot) {
 // away from where the work is heading (or behind the way the bot faces),
 // upward so it carries, and out of reach: the day audit's cobblestone went
 // 189, 64, 125 at one crafting table, and 128, 64, 128 at a furnace.
+// The way with the most open air at head height, so a thrown stack flies
+// clear: thrown along the way it faced, in a one-wide tunnel at diamond
+// depth, the stack hit the wall, dropped at the feet and was picked up
+// again two seconds later, and mid-92-a failed on "no room in my pockets
+// for diamond" three times over (2026-09-25).
+function openDirection(bot) {
+  if (typeof bot.blockAt !== 'function') return null;
+  const feet = bot.entity.position.floored();
+  let best = null;
+  for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    let open = 0;
+    for (let k = 1; k <= 6; k++) {
+      const b = bot.blockAt(feet.offset(x * k, 1, z * k));
+      if (!b || b.boundingBox !== 'empty') break;
+      open = k;
+    }
+    if (!best || open > best.open) best = { x, z, open };
+  }
+  return best && best.open >= 2 ? best : null;
+}
+
 async function faceAway(bot, away) {
   if (typeof bot.lookAt !== 'function' || !bot.entity?.position) return;
   const here = bot.entity.position;
   let d;
   if (away && Number.isFinite(away.x)) d = { x: here.x - away.x, z: here.z - away.z };
-  else { const yaw = bot.entity.yaw || 0; d = { x: Math.sin(yaw), z: Math.cos(yaw) }; }
+  else d = openDirection(bot) || (() => { const yaw = bot.entity.yaw || 0; return { x: Math.sin(yaw), z: Math.cos(yaw) }; })();
   const norm = Math.hypot(d.x, d.z) || 1;
   try { await bot.lookAt(here.offset(d.x / norm * 4, 2.2, d.z / norm * 4), true); } catch (_) {}
 }
@@ -203,4 +224,4 @@ async function makeRoom(bot, task, name, { keep = new Set(), away = null } = {})
   return roomFor(bot, name);
 }
 
-module.exports = { makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };
+module.exports = { openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };

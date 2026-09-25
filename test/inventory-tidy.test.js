@@ -209,3 +209,16 @@ test('a one-ingot batch is asked about too, and a walk is offered only where the
   await whileCooking(bot, task, {}, () => {}, { ...args, walkTarget: () => new Vec3(6, 64, 0), cooking: 20000 });
   assert(offered.mine_nearby, 'six blocks does');
 });
+
+test('with no way to throw given, a stack is thrown along the most open way, not into the tunnel wall to land at the feet', async () => {
+  // mid-92-a: the dirt thrown for a diamond's slot hit the wall and was picked up again, three times over.
+  const { faceAway, openDirection } = require('../src/inventory-tidy');
+  const { Vec3 } = require('vec3');
+  // A tunnel running west (-x) from the bot, rock everywhere else.
+  const bot = { entity: { position: new Vec3(0.5, -59, 0.5), yaw: 0 },
+    blockAt: p => ({ position: p, boundingBox: p.z === 0 && p.x <= 0 && p.x >= -8 && [-59, -58].includes(p.y) ? 'empty' : 'block' }),
+    lookAt: async p => { bot.looked = p; } };
+  assert.deepEqual({ ...openDirection(bot), open: undefined }, { x: -1, z: 0, open: undefined });
+  await faceAway(bot);
+  assert(bot.looked.x < bot.entity.position.x - 2 && Math.abs(bot.looked.z - bot.entity.position.z) < 0.1, `thrown down the tunnel: ${bot.looked}`);
+});
