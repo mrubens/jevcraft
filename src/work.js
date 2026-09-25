@@ -3060,6 +3060,22 @@ function sideTrips(bot, goal, client) {
         b2.chat?.(`In the ${b.biome.replaceAll('_', ' ')} now.`);
       } };
   }
+  // Copper armour before the iron, where nothing is worn yet (2026's copper
+  // age): the copper a cave shows makes a set of ten armour points, a zombie's
+  // three down to two, for the half hour before the iron armour. Most of the
+  // deaths before the iron were with nothing on (trials 65, 70, 90). Offered,
+  // not ruled: what it takes is said, and the iron armour replaces it when
+  // made (mob-policy.js wears the best carried).
+  const wornAny = [5, 6, 7, 8].some(slot => bot.inventory.slots?.[slot]);
+  const carriedArmour = bot.inventory.items().some(i => /_(helmet|chestplate|leggings|boots)$/.test(i.name));
+  const pick = bot.inventory.items().find(i => /^(stone|copper|iron|diamond|netherite)_pickaxe$/.test(i.name));
+  if (/overworld/.test(String(bot.game?.dimension || '')) && !wornAny && !carriedArmour && pick) {
+    const pieces = ['copper_helmet', 'copper_chestplate', 'copper_leggings', 'copper_boots'];
+    const ingots = countOf(bot, 'copper_ingot'), raw = countOf(bot, 'raw_copper');
+    const seen = find(bot, ['copper_ore', 'deepslate_copper_ore'], 32, 1)[0];
+    trips.copper_armour = { description: `Copper armour first: a helmet, chestplate, leggings and boots, twenty-four copper ingots (${ingots} carried, ${raw} raw copper)${seen ? `, copper ore in view ${Math.round(seen.distanceTo(bot.entity.position))} blocks off` : ', no copper ore in view'}; copper ore gives two to five raw copper a block. Worn, ten armour points: a zombie's hit of three comes down to two, a skeleton's arrow of four to under three, until the iron armour (fifteen points) replaces it. Nothing is worn now.`,
+      says: "I'll make copper armour first", run: async (b, t, g, sv) => { await acquireSetStep(b, t, pieces.filter(item => !countOf(b, item)), g, sv); await require('./mob-policy').wearBestArmour(b); } };
+  }
   // A chest here for the valuables, before whatever comes next: home's
   // chest out of reach, and a death would drop them (field-cache.js).
   const cache = require('./field-cache').cacheOffer(bot, goal);
@@ -3631,4 +3647,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

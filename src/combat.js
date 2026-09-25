@@ -57,7 +57,7 @@ async function shoot(bot, task, target, { guard, threatCheck, chargeMs = 1100, c
 // are conservative equipment/cooldown policies, not predicted damage values.
 function defenseWeapon(bot) {
   const classes = { sword: 500, axe: 450, trident: 480, pickaxe: 200, shovel: 180 };
-  const materials = ['wooden', 'golden', 'stone', 'iron', 'diamond', 'netherite'];
+  const materials = ['wooden', 'golden', 'stone', 'copper', 'iron', 'diamond', 'netherite'];
   const rank = item => {
     if (item.name === 'trident') return classes.trident;
     const parts = item.name.split('_'), kind = parts.at(-1);

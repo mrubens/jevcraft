@@ -101,7 +101,9 @@ function mobSources() {
 // pockets: the kit was worn only by the check before a crossing, and a
 // skeleton or two found it in the meantime (2026-09-24). Golden boots on the
 // feet in the Nether, where they keep piglins neutral.
-const ARMOUR_TIER = { netherite: 6, diamond: 5, iron: 4, turtle: 4, chainmail: 3, golden: 2, leather: 1 };
+// Copper (2026's copper age): ten points a set, between leather's seven and
+// gold's eleven, and more durable than either.
+const ARMOUR_TIER = { netherite: 6, diamond: 5, iron: 4, turtle: 4, chainmail: 3, golden: 2, copper: 1.5, leather: 1 };
 const PIECES = { head: 'helmet', torso: 'chestplate', legs: 'leggings', feet: 'boots' };
 async function wearBestArmour(bot) {
   if (typeof bot.equip !== 'function' || !bot.inventory?.items) return 0;

@@ -131,3 +131,33 @@ test('a golden apple carried is offered in a fight, and not at full health', () 
   bot.health = 20;
   assert.equal(survival.stanceOptions({ check() {} }, {}, () => {}, danger, false).eat_golden_apple, undefined);
 });
+
+test('copper armour: its points in the estimate, worn over nothing and under iron, and offered only with nothing on', async () => {
+  const { afterArmour, armourOf } = require('../src/combat-estimate');
+  const set = ['copper_helmet', 'copper_chestplate', 'copper_leggings', 'copper_boots'];
+  assert.equal(armourOf(set).points, 10);
+  assert(Math.abs(afterArmour(3, armourOf(set)) - 1.98) < 0.01, 'a zombie\'s three comes to about two');
+  const { wearBestArmour } = require('../src/mob-policy');
+  const worn = {};
+  const items = [{ name: 'copper_chestplate', type: 1 }, { name: 'iron_chestplate', type: 2 }, { name: 'copper_helmet', type: 3 }];
+  const bot = { registry: require('minecraft-data')('26.1'), inventory: { items: () => items, slots: {} }, game: { dimension: 'overworld' },
+    equip: async (item, slot) => { worn[slot] = item.name; bot.inventory.slots[{ head: 5, torso: 6, legs: 7, feet: 8 }[slot]] = item; } };
+  await wearBestArmour(bot);
+  assert.equal(worn.torso, 'iron_chestplate', 'iron over copper');
+  assert.equal(worn.head, 'copper_helmet', 'copper over nothing');
+});
+
+test('copper armour is offered as a side trip with a stone pickaxe and nothing worn, and not once anything is worn', () => {
+  const { sideTrips } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  const reg = require('minecraft-data')('26.1');
+  const slots = {};
+  const bot = { registry: reg, game: { dimension: 'overworld' }, entity: { position: new Vec3(0, 40, 0) }, entities: {},
+    inventory: { items: () => [{ name: 'stone_pickaxe', count: 1, type: reg.itemsByName.stone_pickaxe.id }, { name: 'raw_copper', count: 7 }], slots },
+    findBlocks: ({ matching }) => matching.includes(reg.blocksByName.copper_ore.id) ? [new Vec3(5, 40, 0)] : [], blockAt: () => null };
+  const goal = {};
+  const offered = sideTrips(bot, goal, null).copper_armour;
+  assert.match(offered?.description || '', /twenty-four copper ingots \(0 carried, 7 raw copper\), copper ore in view 5 blocks off/);
+  slots[6] = { name: 'iron_chestplate' };
+  assert.equal(sideTrips(bot, goal, null).copper_armour, undefined, 'something worn: not offered');
+});
