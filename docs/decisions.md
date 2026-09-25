@@ -250,7 +250,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **A furnace batch is cooking: dig what is in reach, walk to an ore or tree nearby, dig stone, or wait by the furnace?**
 
-- When: Once a smelting batch, when it takes twenty seconds or more and something besides waiting is possible.
+- When: Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible.
 - Decision tree, choice; stakes low; ledger kind `smelting`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -259,7 +259,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `dig_in_reach` | root | dig the ore within arm's reach | an ore within reach of where the bot stands |
-| `mine_nearby` | root | walk to an ore or tree nearby and dig | an ore within sixteen blocks, or a log while fewer than sixteen are carried, and thirty seconds or more of cooking |
+| `mine_nearby` | root | walk to an ore or tree nearby and dig | an ore within sixteen blocks, or a log while fewer than sixteen are carried, and the walk there and back fits in the cooking |
 | `dig_stone` | root | dig the stone around the furnace | fewer than sixty-four cobblestone carried |
 | `wait_here` | root | stand by the furnace | always |
 

@@ -194,3 +194,18 @@ test('while a batch cooks, what the bot does is Jev\'s, asked once; without Jev,
   assert.equal(await whileCooking(bot, task, {}, () => {}, args), 'mine_nearby');
   assert.match(offered.wait_here, /200 seconds.*cooks on its own/);
 });
+
+test('a one-ingot batch is asked about too, and a walk is offered only where there and back fits in the cooking', async () => {
+  // Trial 46: one ingot, then two, stood out at the furnace, seventy-five seconds on one spot.
+  const { whileCooking } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  const bot = { inventory: { items: () => [{ name: 'cobblestone', count: 10 }], emptySlotCount: () => 10 }, entity: { position: new Vec3(0, 64, 0) }, time: { timeOfDay: 4000 },
+    blockAt: () => ({ name: 'iron_ore' }) };
+  let offered;
+  const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'dig_stone', confidence: 0.5 } } }; } } };
+  const args = { cooking: 10000, oreInReach: () => null, walkTarget: () => new Vec3(30, 64, 0), what: 'raw iron', count: 1 };
+  assert.equal(await whileCooking(bot, task, {}, () => {}, args), 'dig_stone');
+  assert(!offered.mine_nearby, 'thirty blocks there and back does not fit in ten seconds');
+  await whileCooking(bot, task, {}, () => {}, { ...args, walkTarget: () => new Vec3(6, 64, 0), cooking: 20000 });
+  assert(offered.mine_nearby, 'six blocks does');
+});

@@ -1257,14 +1257,18 @@ const WAIT_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'lapis_ore', 'redstone_or
 // nearby, dig the stone around, or stand by the furnace. Asked once a batch
 // of Jev; null (no Jev, or nothing to weigh) keeps the order in smelt.
 async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTarget, what, count }) {
+  // From one item up: trial 46 stood by its furnace for a one-ingot batch,
+  // crafted, and stood again for a two-ingot one, seventy-five seconds on
+  // one spot, each batch under the twenty seconds this once needed.
   const client = task.opportunityClient;
-  if (!client || cooking < 20000) return null;
+  if (!client || cooking < 8000) return null;
   const seconds = Math.round(cooking / 1000);
   const tree = {};
   const near = oreInReach();
   if (near) tree.dig_in_reach = { description: `Dig the ${String(bot.blockAt(near)?.name || 'ore').replaceAll('_', ' ')} within arm's reach of the furnace, and any more there.` };
-  const far = cooking >= 30000 && walkTarget();
-  if (far) tree.mine_nearby = { description: `Walk to the ${String(bot.blockAt(far)?.name || 'block').replaceAll('_', ' ')} ${Math.round(far.distanceTo(bot.entity.position))} blocks off and dig it and the next nearest, back before the batch is done.` };
+  // A walk only where there and back fits in the cooking, at a walk.
+  const far = walkTarget(), fits = far && far.distanceTo(bot.entity.position) * 2 / 4.3 * 1000 + 4000 <= cooking ? far : null;
+  if (fits) tree.mine_nearby = { description: `Walk to the ${String(bot.blockAt(fits)?.name || 'block').replaceAll('_', ' ')} ${Math.round(fits.distanceTo(bot.entity.position))} blocks off and dig it and the next nearest, back before the batch is done.` };
   if (countOf(bot, 'cobblestone') < 64) tree.dig_stone = { description: `Dig the stone around the furnace (${countOf(bot, 'cobblestone')} cobblestone carried): tools, a furnace and walls want it.` };
   tree.wait_here = { description: `Stand by the furnace for the ${seconds} seconds the ${count} ${what} take. The furnace cooks on its own whether or not the bot stands by it; standing gains nothing meanwhile.` };
   if (Object.keys(tree).length < 2) return null;

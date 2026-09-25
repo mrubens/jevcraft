@@ -194,11 +194,11 @@ define({
 define({
   id: 'while_cooking', area: 'resources', kind: 'smelting', primitive: 'choice', stakes: 'low', tree: true,
   question: 'A furnace batch is cooking: dig what is in reach, walk to an ore or tree nearby, dig stone, or wait by the furnace?',
-  trigger: 'Once a smelting batch, when it takes twenty seconds or more and something besides waiting is possible.',
+  trigger: 'Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible.',
   source: 'src/work.js (smelt, whileCooking)',
   options: [
     { key: 'dig_in_reach', label: 'dig the ore within arm\'s reach', when: 'an ore within reach of where the bot stands', level: 'root' },
-    { key: 'mine_nearby', label: 'walk to an ore or tree nearby and dig', when: 'an ore within sixteen blocks, or a log while fewer than sixteen are carried, and thirty seconds or more of cooking', level: 'root' },
+    { key: 'mine_nearby', label: 'walk to an ore or tree nearby and dig', when: 'an ore within sixteen blocks, or a log while fewer than sixteen are carried, and the walk there and back fits in the cooking', level: 'root' },
     { key: 'dig_stone', label: 'dig the stone around the furnace', when: 'fewer than sixty-four cobblestone carried', level: 'root' },
     { key: 'wait_here', label: 'stand by the furnace', when: 'always', level: 'root' },
   ],
