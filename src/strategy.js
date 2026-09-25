@@ -50,7 +50,44 @@ const RUNG_WHY = {
   bow: 'answers skeletons, blazes and the dragon\'s crystals from range',
   arrows: 'the bow is nothing without them',
   diamond_sword: 'ends a blaze or a piglin in two swings',
+  // The rest of the ladder, said as the others are (the decision audit,
+  // 2026-09-25).
+  stone_pickaxe: 'mines stone, coal and iron ore; a wooden one mines only stone and coal, and slowly',
+  stone_sword: 'five damage a swing against a fist\'s one: a zombie in four swings, not twenty punches',
+  furnace: 'smelts ore into ingots and cooks raw meat; eight cobblestone',
+  torches: 'light where monsters would spawn: a lit tunnel or home stays clear at night',
+  obtain_ender_pearls: 'ender pearls and blaze powder make the eyes that find the stronghold and fill the End portal',
+  pearl_patrol: 'endermen drop the pearls; they come out on the surface at night and are fought with a sword, not stared at',
 };
+// What going on without the step costs, where it is simple to say.
+const WITHOUT = {
+  stone_pickaxe: 'no stone, coal or iron can be mined',
+  stone_sword: 'every fight is with bare hands',
+  bed: 'each night is spent awake, walled in or fighting, and a death respawns at the world spawn',
+  iron_pickaxe: 'no diamond, gold or redstone can be mined',
+  shield: 'every arrow and every creeper blast lands in full',
+  iron_armour: 'every hit lands on what is worn now',
+  bucket: 'there is no water for fire, lava or a fall',
+  golden_boots: 'every piglin in the Nether attacks on sight',
+  bow: 'shooters are answered only by closing on them',
+  arrows: 'the bow cannot shoot',
+  home_bed: 'a death respawns far from home',
+};
+// Where each ore lies, said with a step that mines it.
+const ORE_DEPTH = { coal: [0, 95, 95], iron: [-24, 56, 16], copper: [-16, 112, 48], gold: [-64, 32, -16], redstone: [-64, 15, -59], lapis: [-64, 64, 0], diamond: [-64, 16, -59], emerald: [-16, 256, 100] };
+const oreOf = name => (/^(?:raw_)?(?:deepslate_)?(coal|iron|copper|gold|redstone|lapis|diamond|emerald)(?:_ore|_lazuli)?$/.exec(String(name || '')) || [])[1];
+function oreFacts(bot, goal, steps) {
+  const kinds = [...new Set(steps.filter(st => st.action === 'mine').map(st => oreOf(st.item || st.block)).filter(Boolean))];
+  const y = Math.floor(bot.entity?.position?.y ?? 64);
+  return kinds.map(kind => {
+    const [from, to, most] = ORE_DEPTH[kind];
+    const names = [`${kind}_ore`, `deepslate_${kind}_ore`];
+    let known = null;
+    try { known = require('./resource-observation').knownResourceLocations(bot, goal, names)[0]; } catch (_) { /* no memory */ }
+    const where = y > to ? `${y - most} blocks below here` : y < from ? `${most - y} blocks above here` : 'here, at this depth';
+    return ` ${kind[0].toUpperCase()}${kind.slice(1)} ore lies between y ${from} and ${to}, most around y ${most}: ${where}${known ? `; some was seen ${Math.round(known.distanceTo(bot.entity.position))} blocks away` : ''}.`;
+  }).join('');
+}
 
 // How a search for the rung is going, said with it: minutes alone did not
 // tell Jev that no sheep had been seen in five hundred blocks.
@@ -86,12 +123,16 @@ function rungTakes(bot, goal, rung, planFor) {
   const byAction = {};
   for (const st of steps) { const k = `${st.action} ${words(st.item || st.block || st.mob)}`; byAction[k] = (byAction[k] || 0) + (st.count || 1); }
   const list = Object.entries(byAction).map(([k, n]) => { const [action, ...rest] = k.split(' '); return `${action.replaceAll('_', ' ')} ${n} ${rest.join(' ')}`; }).join(', ');
-  return ` From the pockets as they are it takes: ${list}${gather.length ? '' : ' (all of it from what is carried: no gathering)'}.`;
+  return ` From the pockets as they are it takes: ${list}${gather.length ? '' : ' (all of it from what is carried: no gathering)'}.${oreFacts(bot, goal, steps)}`;
 }
 function rungOption(rung, first, bot, goal, planFor = null) {
   const what = rung.items?.length > 1 ? `${label(rung.phase)} (${rung.items.map(label).join(', ')})` : rung.item ? `${rung.count > 1 ? `${rung.count} ` : ''}${label(rung.item)}` : label(rung.phase);
-  const why = RUNG_WHY[rung.phase];
-  return { description: `${first ? 'The ladder\'s next step: ' : 'Do this step first, ahead of the ladder\'s order: '}get ${what}${why ? ` (${why})` : ''}.${bot && goal ? searchSoFar(bot, goal, rung) : ''}${rungTakes(bot, goal, rung, planFor)}`, rung, fallback: first };
+  const piece = /^iron_(helmet|chestplate|leggings|boots)$/.test(rung.phase) ? 'iron_armour' : rung.phase;
+  const why = RUNG_WHY[rung.phase] || RUNG_WHY[piece];
+  const clock = goal?.rungClocks?.[rung.phase];
+  const spent = clock?.activeMs >= 60000 ? ` Worked on for ${Math.round(clock.activeMs / 60000)} minutes so far.` : '';
+  const without = WITHOUT[piece] ? ` Until it is done, ${WITHOUT[piece]}.` : '';
+  return { description: `${first ? 'The ladder\'s next step: ' : 'Do this step first, ahead of the ladder\'s order: '}get ${what}${why ? ` (${why})` : ''}.${bot && goal ? searchSoFar(bot, goal, rung) : ''}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
 }
 
 // The options now, keyed for the decision tree. Only in the Overworld on
@@ -104,7 +145,7 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   // Past the preparation ladder (pearls, the stronghold, the crossing): the
   // ladder's stage and the side trips. The dream run spent an afternoon
   // walking about after endermen with an ancient city never looked for.
-  else if (LATER.has(stage.action) || stage.phase === 'obtain_ender_pearls') options[`stage_${stage.phase}`] = { description: `The ladder's next step: ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.`, stage, fallback: true };
+  else if (LATER.has(stage.action) || stage.phase === 'obtain_ender_pearls') options[`stage_${stage.phase}`] = { description: `The ladder's next step: ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase] ? ` It is for this: ${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase]}.` : ''}`, stage, fallback: true };
   else return null;
   const t = bot.time?.timeOfDay ?? 0;
   const daylight = t < DAY.DUSK;
@@ -171,4 +212,4 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   return { ran: true };
 }
 
-module.exports = { RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };
+module.exports = { rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };

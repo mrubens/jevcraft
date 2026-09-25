@@ -148,3 +148,17 @@ test('a bed searched for with no sheep seen is offered with the other ways as th
   assert.match(d, /spiders drop up to two each/);
   assert.match(d, /an igloo with a bed 100 blocks away/);
 });
+
+test('a rung that mines says where the ore lies and what going without costs; the pearls say what they are for (the decision audit)', () => {
+  const { rungOption } = require('../src/strategy');
+  const bot = { entity: { position: new Vec3(0, 64, 0) } };
+  const d = rungOption({ phase: 'iron_pickaxe', action: 'acquire', item: 'iron_pickaxe', count: 1 }, true, bot, { rungClocks: { iron_pickaxe: { activeMs: 5 * 60000 } } },
+    () => [{ action: 'mine', item: 'iron_ore', count: 3 }, { action: 'smelt', item: 'iron_ingot', count: 3 }]).description;
+  assert.match(d, /Iron ore lies between y -24 and 56, most around y 16: 48 blocks below here/);
+  assert.match(d, /Worked on for 5 minutes so far/);
+  assert.match(d, /Until it is done, no diamond, gold or redstone can be mined/);
+  assert.match(rungOption({ phase: 'stone_pickaxe', action: 'acquire', item: 'stone_pickaxe' }, true, bot, {}).description, /\(mines stone, coal and iron ore/);
+  const { bot: b2, goal } = fixture([]);
+  const options = strategyOptions(b2, goal, { phase: 'obtain_ender_pearls', action: 'pearl_patrol', item: 'ender_pearl', count: 12 }, { trade: { description: 'x', walkBlocks: 10 } });
+  assert.match(options.stage_obtain_ender_pearls.description, /endermen drop the pearls/);
+});

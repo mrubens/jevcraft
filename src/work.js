@@ -35,7 +35,7 @@ const { noticeLandmarks, unexploredArea, explorationSummary, summaryText, explor
 const { lootNearby, lootStep, unlootedLandmarks } = require('./looting');
 const { enchantReady, enchantStep, enchantable } = require('./enchanting');
 const { tradeWorthwhile, tradeStep } = require('./trading');
-const { strategyStep } = require('./strategy');
+const { strategyStep, rungTakes } = require('./strategy');
 const { openChest } = require('./chest-delivery');
 const { barterStep, gatherBastionGold } = require('./bartering');
 const { descendPillar, pillarUp, pillarSite } = require('./pillar-recovery');
@@ -3011,8 +3011,8 @@ function idleOptions(bot, goal) {
     const target = unexploredArea(bot, goal, { home });
     if (target) {
       const known = explorationSummary(goal);
-      options.explore = { description: `Explore: walk to the nearest unexplored area (${target.fromHere} blocks away) and see what is there. Known so far: ${summaryText(known)}. Villages mean beds, food and trades; a ruined portal or a surface lava pool means obsidian; dungeons, mineshafts and temples mean chests.`,
-        run: (b, t, g, sv) => exploreStep(b, t, g, sv, { navigate, home, noticeVillage }) };
+      options.explore = { description: `Explore: walk to the nearest unexplored area (${target.fromHere} blocks away) and see what is there. Known so far: ${summaryText(known)}. Villages mean beds, food and trades; a ruined portal or a surface lava pool means obsidian; dungeons, mineshafts and temples mean chests.${tripTime(bot, target.fromHere)}`,
+        walkBlocks: target.fromHere, run: (b, t, g, sv) => exploreStep(b, t, g, sv, { navigate, home, noticeVillage }) };
     }
   }
   const sides = sideTrips(bot, goal);
@@ -3057,18 +3057,35 @@ function crossingWater(bot, now = Date.now()) {
   try { return !require('./vitals').headSubmerged(bot); } catch (_) { return false; }
 }
 
+// A trip's walk against the daylight left, said with it (the decision
+// audit, 2026-09-25): the loot, trade, explore and cache trips said how far
+// and nothing of whether the day would last.
+function tripTime(bot, blocks) {
+  if (!Number.isFinite(blocks)) return '';
+  const there = Math.round(blocks * 2 / 4.3), t = bot.time?.timeOfDay ?? 0;
+  if (!/overworld/.test(String(bot.game?.dimension || 'overworld'))) return ` About ${there} seconds there and back at a walk.`;
+  const light = Math.max(0, Math.round((DAY.DUSK - t) / 20));
+  return ` About ${there} seconds there and back at a walk; ${light} seconds of daylight left${there > light ? ': it would end after dusk' : ''}.`;
+}
+
 function sideTrips(bot, goal, client) {
   const trips = {};
   // Looting: the nearest remembered ruined portal, dungeon or temple whose
   // chests have not been opened.
   const unlooted = unlootedLandmarks(bot, goal)[0];
-  if (unlooted) trips.loot = { description: `Loot: walk ${unlooted.distance} blocks to the ${unlooted.landmark.kind.replaceAll('_', ' ')} and open its chests. Ruined portals hold gold, obsidian and flint and steel; dungeons and temples iron, gold, bread and now and then diamonds; a mineshaft's chests ride in minecarts, with rails, iron, gold and bread, and its cobwebs are string.`,
+  // Underground, a dungeon's spawner and a mineshaft's cave spiders are
+  // said (the decision audit).
+  const below = unlooted && ['dungeon', 'mineshaft'].includes(unlooted.landmark.kind) ? ` It is underground at y ${Math.round(unlooted.landmark.y ?? bot.entity.position.y)}${unlooted.landmark.kind === 'dungeon' ? ', and its spawner keeps making mobs until it is broken or lit' : ', and a cave spider spawner is common in one'}.` : '';
+  if (unlooted) trips.loot = { description: `Loot: walk ${unlooted.distance} blocks to the ${unlooted.landmark.kind.replaceAll('_', ' ')} and open its chests. Ruined portals hold gold, obsidian and flint and steel; dungeons and temples iron, gold, bread and now and then diamonds; a mineshaft's chests ride in minecarts, with rails, iron, gold and bread, and its cobwebs are string.${below}${tripTime(bot, unlooted.distance)}`,
     says: `I'll loot the ${unlooted.landmark.kind.replaceAll('_', ' ')} ${unlooted.distance} blocks away`, walkBlocks: unlooted.distance,
     run: (b, t, g, sv) => lootStep(b, t, g, sv, lootActions()) };
   // Trading: a village remembered and something to sell or spend (trading.js).
-  if (tradeWorthwhile(bot, goal)) trips.trade = { description: 'Trade at the remembered village: read the villagers\' offers, sell spare coal, sticks, wheat and the like for emeralds, and buy what the run needs (ender pearls, arrows, a bow, better armour or tools, food).',
-    says: 'I\'ll go trade at the village',
-    run: (b, t, g, sv) => tradeStep(b, t, g, sv, { navigate, decide, client: client || t.opportunityClient }) };
+  if (tradeWorthwhile(bot, goal)) {
+    const village = require('./villages').knownVillages(bot, goal, 256)[0];
+    trips.trade = { description: `Trade at the remembered village${village ? ` ${village.distance} blocks away` : ''}: read the villagers' offers, sell spare coal, sticks, wheat and the like for emeralds, and buy what the run needs (ender pearls, arrows, a bow, better armour or tools, food).${tripTime(bot, village?.distance)}`,
+      says: 'I\'ll go trade at the village', walkBlocks: village?.distance,
+      run: (b, t, g, sv) => tradeStep(b, t, g, sv, { navigate, decide, client: client || t.opportunityClient }) };
+  }
   // Enchanting: a table carried, in view or remembered, lapis in hand, five
   // levels or more, and gear still plain (enchanting.js).
   // The bold trips underground, packed light (deep-dark.js, trip-kit.js):
@@ -3085,13 +3102,13 @@ function sideTrips(bot, goal, client) {
   if (/overworld/.test(String(bot.game?.dimension || ''))) {
     const home = goal.survival?.home?.origin;
     const target = unexploredArea(bot, goal, { home });
-    if (target) trips.explore = { description: `Explore: walk to the nearest unexplored area (${target.fromHere} blocks away) and see what is there. Known so far: ${summaryText(explorationSummary(goal))}. Villages mean beds, food and trades; temples, shipwrecks and ruined portals mean chests.`,
-      says: "I'll go exploring", run: (b, t, g, sv) => exploreStep(b, t, g, sv, { navigate, home, noticeVillage }) };
+    if (target) trips.explore = { description: `Explore: walk to the nearest unexplored area (${target.fromHere} blocks away) and see what is there. Known so far: ${summaryText(explorationSummary(goal))}. Villages mean beds, food and trades; temples, shipwrecks and ruined portals mean chests.${tripTime(bot, target.fromHere)}`,
+      says: "I'll go exploring", walkBlocks: target.fromHere, run: (b, t, g, sv) => exploreStep(b, t, g, sv, { navigate, home, noticeVillage }) };
   }
   // Another biome in view, with what it holds (biomes.js): the ground
   // underfoot decides what a step can find, and a desert has no sheep.
   for (const b of require('./exploration').biomeTrips(bot)) {
-    trips[`travel_${b.biome}`] = { description: `Travel: walk to ${b.says} and carry on from there.`,
+    trips[`travel_${b.biome}`] = { description: `Travel: walk to ${b.says} and carry on from there.${tripTime(bot, b.distance)}`,
       says: `I'll head to the ${b.biome.replaceAll('_', ' ')} to the ${b.direction}`, walkBlocks: b.distance,
       run: async (b2, t) => {
         await navigate(b2, t, new goals.GoalNearXZ(b.x, b.z, 8), { timeoutMs: Math.max(60000, b.distance * 500), stallMs: 8000, sprint: true });
@@ -3131,8 +3148,8 @@ function sideTrips(bot, goal, client) {
   // A cache from an earlier trip, far enough off that passing will not
   // bring it back: fetch it.
   const cached = require('./field-cache').nearCache(bot, goal, 512);
-  if (cached && cached.distance > 48) trips.fetch_cache = { description: `Walk ${Math.round(cached.distance)} blocks back to the chest left before an earlier trip and take its things back (${Object.entries(cached.cache.contents).filter(([, n]) => n > 0).slice(0, 5).map(([k, n]) => `${n} ${k.replaceAll('_', ' ')}`).join(', ')}).`,
-    says: "I'll fetch my things from the chest I left", run: (b, t, g, sv) => require('./field-cache').emptyCache(b, t, g, sv, homeActions(), cached.cache) };
+  if (cached && cached.distance > 48) trips.fetch_cache = { description: `Walk ${Math.round(cached.distance)} blocks back to the chest left before an earlier trip and take its things back (${Object.entries(cached.cache.contents).filter(([, n]) => n > 0).slice(0, 5).map(([k, n]) => `${n} ${k.replaceAll('_', ' ')}`).join(', ')}).${tripTime(bot, Math.round(cached.distance))}`,
+    says: "I'll fetch my things from the chest I left", walkBlocks: Math.round(cached.distance), run: (b, t, g, sv) => require('./field-cache').emptyCache(b, t, g, sv, homeActions(), cached.cache) };
   // Wool for beds: one to sleep in and four for the dragon (shearing.js).
   const shearing = require('./shearing');
   if (shearing.shearReady(bot, goal)) trips.shear_sheep = { description: `Shear the sheep in view (${shearing.woollySheep(bot, goal, 24).length} with wool, ${shearing.woolTotal(bot)} wool carried): three wool a bed, beds to sleep in and to blow up in the End, and the sheep grow it back.`,
@@ -3144,7 +3161,11 @@ function sideTrips(bot, goal, client) {
   const { tableNear } = require('./enchanting');
   if (!tableNear(bot, goal) && countOf(bot, 'diamond') >= 2 && countOf(bot, 'lapis_lazuli') >= 3 && (bot.experience?.level ?? 0) >= 5 &&
       (countOf(bot, 'obsidian') >= 4 || countOf(bot, 'diamond_pickaxe') > 0) && enchantable(bot).length) {
-    trips.enchanting_table = { description: `Make an enchanting table: the two diamonds carried, four obsidian and a book from leather and paper, then enchant the ${enchantable(bot)[0].item.name.replaceAll('_', ' ')} with the ${bot.experience?.level} levels and ${countOf(bot, 'lapis_lazuli')} lapis carried.`,
+    trips.enchanting_table = { description: `Make an enchanting table: the two diamonds carried, four obsidian and a book from leather and paper, then enchant the ${enchantable(bot)[0].item.name.replaceAll('_', ' ')} with the ${bot.experience?.level} levels and ${countOf(bot, 'lapis_lazuli')} lapis carried.${
+      // What the table takes from the pockets as they are, as a rung says
+      // it (the decision audit, 2026-09-25): the book alone is a cow hunt
+      // and three sugar cane.
+      rungTakes(bot, goal, { item: 'enchanting_table', count: 1 }, (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g))}`,
       says: "I'll make an enchanting table",
       run: async (b, t, g, sv) => {
         for (let i = 0; i < 60 && !countOf(b, 'enchanting_table'); i++) { t.check(); if (await acquireStep(b, t, 'enchanting_table', 1, g, sv)) break; }

@@ -46,6 +46,28 @@ test('idle work stays off at night, in Creative, when hurt, or when there is not
   assert.equal(await idleWork(creative.bot, creative.task, creative.goal, () => {}, { systemOne: async () => assert.fail('creative needs nothing') }), false);
 });
 
+test('a loot trip says its walk against the daylight left, and a dungeon its depth and spawner (the decision audit)', () => {
+  const { sideTrips } = require('../src/work');
+  const bot = { registry: require('minecraft-data')('26.1'), game: { dimension: 'overworld' }, time: { timeOfDay: 8000 }, entity: { position: new Vec3(0, 40, 0) }, entities: {},
+    inventory: { items: () => [], slots: {} }, findBlocks: () => [], blockAt: () => null };
+  const goal = { landmarks: [{ kind: 'dungeon', dimension: 'overworld', x: 100, y: 38, z: 0 }] };
+  const loot = sideTrips(bot, goal, null).loot;
+  assert.match(loot.description, /underground at y 38, and its spawner keeps making mobs/);
+  assert.match(loot.description, /About 47 seconds there and back at a walk; 75 seconds of daylight left\./);
+  bot.time.timeOfDay = 9000;
+  assert.match(sideTrips(bot, goal, null).loot.description, /25 seconds of daylight left: it would end after dusk/);
+});
+
+test('the enchanting table trip says what it takes from the pockets (the decision audit)', () => {
+  const { sideTrips } = require('../src/work');
+  const reg = require('minecraft-data')('26.1');
+  const items = [['diamond', 2], ['lapis_lazuli', 3], ['obsidian', 4], ['iron_sword', 1], ['book', 1]].map(([name, count]) => ({ name, count, type: reg.itemsByName[name].id }));
+  const bot = { registry: reg, game: { dimension: 'overworld', gameMode: 'survival' }, time: { timeOfDay: 3000 }, experience: { level: 5 }, entity: { position: new Vec3(0, 64, 0) }, entities: {},
+    inventory: { items: () => items, slots: {} }, findBlocks: () => [], blockAt: () => null };
+  const table = sideTrips(bot, {}, null).enchanting_table;
+  assert.match(table.description, /From the pockets as they are it takes: .*craft 1 crafting table, craft 1 enchanting table\./);
+});
+
 test('choosing the long game runs the next rung of the beat-the-game ladder', async () => {
   const { bot, goal, task } = fixture([['white_bed', 1], ['stone_pickaxe', 1], ['stone_axe', 1], ['stone_sword', 1], ['oak_log', 16]]);
   const ran = [];
