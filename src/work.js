@@ -500,11 +500,21 @@ const GROUND_COVER = new Set(['water', 'short_grass', 'tall_grass', 'fern', 'lar
 // A cell a workstation can go in: open or only covered, over a full block.
 // In snowy plains every cell at the feet is a snow layer over grass, and
 // trial 40 found "no place for crafting_table" forty times in a minute.
+// And in sight from the eyes: sealed in a night pocket, trial 68 put its
+// table in an open cell two blocks off on the far side of the pocket's
+// wall, and "I can't reach the crafting table I placed" every three
+// seconds for two minutes.
 const openForStation = (bot, q) => {
   const at = bot.blockAt(q);
   if (!(air(at) || (GROUND_COVER.has(at?.name) && at.name !== 'water'))) return false;
   const under = bot.blockAt(q.offset(0, -1, 0));
-  return under?.boundingBox === 'block' && under.name !== 'snow';
+  if (!(under?.boundingBox === 'block' && under.name !== 'snow')) return false;
+  if (typeof bot.world?.raycast !== 'function') return true;
+  const eye = bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0), centre = q.offset(0.5, 0.5, 0.5);
+  const dir = centre.minus(eye), d = dir.norm();
+  if (d < 0.5) return true;
+  const hit = bot.world.raycast(eye, dir.scaled(1 / d), d);
+  return !hit || eye.distanceTo(hit.intersect || hit.position) >= d - 0.6;
 };
 
 // Mineflayer yaw for looking toward each horizontal facing (0 is north, -z).

@@ -45,3 +45,18 @@ test('on snowy plains, where every cell at the feet is a snow layer over grass, 
   const at = [...Array(25).keys()].map(i => new Vec3(i % 5 - 2, 64, Math.floor(i / 5) - 2)).find(p => bot.blockAt(p).name === 'crafting_table');
   assert(at, `a table stands where the snow was (${placed?.message || 'placed'})`);
 });
+
+test('an open cell beyond the wall is not a place for the table: it goes in a notch the bot can reach', async () => {
+  // Trial 68: sealed in a night pocket, the table went into a cave cell two
+  // blocks off through the wall, and "I can't reach the crafting table I
+  // placed" every three seconds for two minutes.
+  const { bot, world } = shaft();
+  const set = (p, name) => world.setBlockStateId(p, bot.registry.blocksByName[name].defaultState);
+  set(new Vec3(-2, 64, 0), 'air'); set(new Vec3(-2, 65, 0), 'air');
+  assert.equal(typeof bot.world.raycast, 'function', 'the fixture world can be seen through');
+  await workstation(bot, new Task('table'), 'crafting_table', {}).catch(() => {});
+  assert.notEqual(bot.blockAt(new Vec3(-2, 64, 0)).name, 'crafting_table', 'not behind the wall');
+  const notch = [new Vec3(1, 64, 0), new Vec3(-1, 64, 0), new Vec3(0, 64, 1), new Vec3(0, 64, -1), new Vec3(1, 65, 0), new Vec3(-1, 65, 0), new Vec3(0, 65, 1), new Vec3(0, 65, -1)]
+    .find(p => bot.blockAt(p).name === 'crafting_table');
+  assert(notch, 'in the wall beside the bot');
+});
