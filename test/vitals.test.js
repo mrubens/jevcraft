@@ -283,3 +283,21 @@ test('in a drift of powder snow, the way out is dug through it to the nearest ce
   bot.entity.position = new Vec3(10.5, 60, 0.5);
   assert.equal(inPowderSnow(bot), false);
 });
+
+test('in burning grass, the way out is to the nearest cell two blocks clear of any fire, and water counts', () => {
+  // Trial 101: stood in a forest fire from twenty health to nothing, mining the tree.
+  const { inFire, fireRoute } = require('../src/vitals');
+  const fire = new Set(['0,60,0', '1,60,0', '0,60,1', '-1,60,0', '0,60,-1', '1,60,1']);
+  const name = p => p.y < 60 ? 'grass_block' : fire.has(`${p.x},${p.y},${p.z}`) ? 'fire' : 'air';
+  const bot = { entity: { position: new Vec3(0.5, 60, 0.5), metadata: [1] }, blockAt: p => { const n = name(p); return { name: n, position: p, boundingBox: n === 'grass_block' ? 'block' : 'empty' }; } };
+  assert.equal(inFire(bot), true);
+  const route = fireRoute(bot);
+  assert(route && route.length, 'a way out');
+  const end = route.at(-1);
+  for (const k of fire) { const [x, , z] = k.split(',').map(Number); assert(Math.max(Math.abs(x - end.x), Math.abs(z - end.z)) > 2, `clear of the fire at ${k}: ${end}`); }
+  assert.equal(route.filter(p => name(p) === 'fire').length, 1, 'ringed by fire, through one cell of it');
+  fire.delete('1,60,0');
+  assert(fireRoute(bot).every(p => name(p) !== 'fire'), 'with a gap, round the flames');
+  bot.entity.position = new Vec3(10.5, 60, 0.5);
+  assert.equal(inFire(bot), false, 'burning out with no fire near is left to burn out');
+});

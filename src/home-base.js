@@ -1032,11 +1032,40 @@ function homeDarkness(bot, home, now = Date.now()) {
 const torchMakings = bot => (countOf(bot, 'coal') + countOf(bot, 'charcoal')) > 0 &&
   (countOf(bot, 'stick') > 0 || bot.inventory.items().some(i => /_planks$|_log$/.test(i.name)));
 
+// Light: torches where monsters could spawn around home, when some are
+// carried or can be made. Offered from the bed and the chest on, not only
+// once the plot and the pen are done: trial 98's chest, on a dark
+// mountainside with no torch near it, was blown up by a creeper before the
+// home was finished (2026-09-25). A chest lost is said with it.
+function lightHomeOption(bot, home, now) {
+  const { dark, plan } = homeDarkness(bot, home, now);
+  const carried = countOf(bot, 'torch');
+  if (!plan.length || !(carried || torchMakings(bot))) return null;
+  const lost = home.stash?.lostAt && !home.stash?.position ? ` The chest by the bed was found gone ${Math.max(1, Math.round((now - Date.parse(home.stash.lostAt)) / 60000))} minutes ago: a creeper that walks up in the dark and goes off takes the blocks around it.` : '';
+  return {
+    description: `Put ${plan.length} torch${plan.length === 1 ? '' : 'es'} around home: ${dark} spots between the bed, the plot and the pen are dark enough for monsters to spawn, and light stops them spawning (it does not drive off those already there). ${carried} torches carried${carried < plan.length ? '; the rest made from coal and sticks first' : ''}.${lost}`,
+    run: async (b, t, g, s, a) => {
+      if (countOf(b, 'torch') < plan.length) await a.acquireStep(b, t, 'torch', Math.ceil(plan.length / 4) * 4, g, s);
+      if (homeDistance(b, home) > 8) await goHome(b, t, g, s, home, a);
+      g.step = { action: 'light_home', torches: plan.length }; s();
+      const placed = await require('./torches').placeTorches(b, t, a, plan, { max: plan.length });
+      darkAtHome.delete(`${home.origin.x},${home.origin.y},${home.origin.z}`);
+      if (!placed) throw new Error('No torch went down around home');
+    } };
+}
+
 function homeChores(bot, goal, { now = Date.now() } = {}) {
   const home = homeOf(bot, goal);
-  if (!home || !(home.completedAt || homeComplete(bot, goal))) return {};
+  if (!home) return {};
+  const complete = home.completedAt || homeComplete(bot, goal);
+  const begun = home.bed?.placedAt && (home.stash?.position || home.stash?.lostAt);
+  if (!complete && !begun) return {};
   const distance = Math.round(homeDistance(bot, home));
   if (distance > HOME_REACH) return {};
+  if (!complete) {
+    const light = plotStatus(bot, home).unloaded.length ? null : lightHomeOption(bot, home, now);
+    return light ? { light_home: light } : {};
+  }
   const options = {}, plot = plotStatus(bot, home), pen = penStatus(bot, home), wheat = countOf(bot, 'wheat'), seeds = countOf(bot, 'wheat_seeds');
   const far = plot.unloaded.length > 0;
   const stale = far && now - Date.parse(home.plot.checkedAt || home.plot.plantedAt || 0) > 20 * 60 * 1000;
@@ -1055,21 +1084,9 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
         home.plot.checkedAt = new Date().toISOString(); s();
       } };
   }
-  // Light: torches where monsters could spawn around home, when some are
-  // carried or can be made.
   if (!far) {
-    const { dark, plan } = homeDarkness(bot, home, now);
-    const carried = countOf(bot, 'torch');
-    if (plan.length && (carried || torchMakings(bot))) options.light_home = {
-      description: `Put ${plan.length} torch${plan.length === 1 ? '' : 'es'} around home: ${dark} spots between the bed, the plot and the pen are dark enough for monsters to spawn, and light stops them spawning (it does not drive off those already there). ${carried} torches carried${carried < plan.length ? '; the rest made from coal and sticks first' : ''}.`,
-      run: async (b, t, g, s, a) => {
-        if (countOf(b, 'torch') < plan.length) await a.acquireStep(b, t, 'torch', Math.ceil(plan.length / 4) * 4, g, s);
-        if (homeDistance(b, home) > 8) await goHome(b, t, g, s, home, a);
-        g.step = { action: 'light_home', torches: plan.length }; s();
-        const placed = await require('./torches').placeTorches(b, t, a, plan, { max: plan.length });
-        darkAtHome.delete(`${home.origin.x},${home.origin.y},${home.origin.z}`);
-        if (!placed) throw new Error('No torch went down around home');
-      } };
+    const light = lightHomeOption(bot, home, now);
+    if (light) options.light_home = light;
   }
   // Spares for the chest beside the bed, whenever the pockets have any.
   Object.assign(options, stash.stashChores(bot, goal));

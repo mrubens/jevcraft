@@ -239,6 +239,74 @@ async function outOfPowderSnow(bot, task, onAction = () => {}) {
   return !inPowderSnow(bot);
 }
 
+// Fire: trial 101 walked to an oak by the lava pool it had found, the
+// forest caught, and it stood in the burning grass from twenty health to
+// nothing in twenty seconds, mining the tree, with nothing answering the
+// hurt (2026-09-25). In fire, or burning with fire beside it, the bot gets
+// to the nearest cell two blocks clear of any fire, or into water, which
+// puts it out; burning with no fire near, it burns out in a few seconds.
+const FIRE = new Set(['fire', 'soul_fire']);
+const onFire = bot => !!(bot.entity?.metadata?.[0] & 1);
+function fireNear(bot, p, r) {
+  for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) for (let dy = -1; dy <= 2; dy++) if (FIRE.has(bot.blockAt?.(p.offset(dx, dy, dz))?.name)) return true;
+  return false;
+}
+function inFire(bot) {
+  const feet = bot.entity?.position?.floored();
+  if (!feet) return false;
+  if ([0, 1].some(dy => FIRE.has(bot.blockAt?.(feet.offset(0, dy, 0))?.name))) return true;
+  return onFire(bot) && fireNear(bot, feet, 1);
+}
+// A way round the flames first; ringed by them, a way through (a player
+// runs through a block of fire rather than stand in one).
+function fireRoute(bot) { return fireRouteThrough(bot, false) || fireRouteThrough(bot, true); }
+function fireRouteThrough(bot, throughFire) {
+  const start = bot.entity.position.floored();
+  const clear = b => b && b.boundingBox === 'empty' && (throughFire || !FIRE.has(b.name)) && b.name !== 'lava';
+  const water = p => bot.blockAt(p)?.name === 'water';
+  const floor = p => { const b = bot.blockAt(p.offset(0, -1, 0)); return b && (b.boundingBox === 'block' || b.name === 'water') && !['lava', 'magma_block'].includes(b.name); };
+  const dirs = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+  const queue = [{ p: start, path: [] }], seen = new Set([`${start}`]);
+  for (let i = 0; i < queue.length && i < 4096; i++) {
+    const { p, path } = queue[i];
+    if (path.length && (water(p) || !fireNear(bot, p, 2))) return path;
+    for (const d of dirs) for (const dy of [0, 1, -1]) {
+      const next = p.plus(d).offset(0, dy, 0);
+      if (seen.has(`${next}`) || next.distanceTo(start) > 12) continue;
+      if (!(clear(bot.blockAt(next)) || water(next)) || !clear(bot.blockAt(next.offset(0, 1, 0))) || !(water(next) || floor(next))) continue;
+      // A step up needs the head room over the cell left.
+      if (dy === 1 && !clear(bot.blockAt(p.offset(0, 2, 0)))) continue;
+      seen.add(`${next}`);
+      queue.push({ p: next, path: [...path, next] });
+    }
+  }
+  return null;
+}
+async function outOfFire(bot, task, onAction = () => {}) {
+  const route = fireRoute(bot);
+  onAction({ action: 'out_of_fire', steps: route?.length ?? null, health: bot.health });
+  if (!route) return false;
+  // Walked cell by cell on the keys: the path search will not start from
+  // a cell of fire or cross one, and handed the route it returned at once
+  // (the arena: burned in place three times out of three).
+  bot.pathfinder?.setGoal?.(null);
+  try {
+    for (const cell of route) {
+      const target = cell.offset(0.5, 0, 0.5);
+      for (const until = Date.now() + 1500; Date.now() < until;) {
+        task.check();
+        const here = bot.entity.position;
+        if (Math.hypot(target.x - here.x, target.z - here.z) < 0.35 && Math.abs(here.y - cell.y) < 0.6) break;
+        await bot.lookAt(target.offset(0, 1.6, 0), true);
+        bot.setControlState('forward', true); bot.setControlState('sprint', true);
+        bot.setControlState('jump', cell.y > Math.floor(here.y + 0.01));
+        await sleep(50);
+      }
+    }
+  } finally { for (const k of ['forward', 'sprint', 'jump']) bot.setControlState(k, false); }
+  return !inFire(bot);
+}
+
 function safeFood(bot, item) { return !!bot.registry.foodsByName?.[item.name] && !unsafeFoods.has(item.name); }
 
 // Food with a Hunger side effect and nothing worse. The effect costs well
@@ -306,6 +374,7 @@ async function maintainVitals(bot, task, onAction = () => {}) {
     task.check();
   }
   if (inPowderSnow(bot)) { await outOfPowderSnow(bot, task, onAction); task.check(); }
+  if (inFire(bot)) { await outOfFire(bot, task, onAction); task.check(); }
   if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
     try { await surfaceForAir(bot, task, onAction); delete bot._surfaceFailedAt; }
     catch (err) { if (err.name !== 'Cancelled' && /breathable air/.test(err.message)) bot._surfaceFailedAt = Date.now(); throw err; }
@@ -344,4 +413,4 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   return true;
 }
 
-module.exports = { inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
+module.exports = { inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };

@@ -436,6 +436,21 @@ test('with torches carried and dark ground around home, lighting it is a chore o
   assert.match(chores.light_home.description, /dark enough for monsters to spawn.*does not drive off/);
 });
 
+test('lighting home is on offer from the bed and the chest on, before the plot and the pen, and a lost chest is said with it', async () => {
+  // Trial 98: a creeper blew up the chest by the bed on a dark mountainside; the torches were offered only once the whole home was done.
+  const w = await establishedHome({ items: [['torch', 8]], chest: false }), { bot, goal } = w;
+  const h = goal.survival.home;
+  h.bed.placedAt = '2026-09-21T00:00:00Z';
+  h.completedAt = null; h.pen = {}; h.plot = {};
+  for (const p of w.layout.pen.fences) w.set(p, 'air'); w.set(w.layout.pen.gate, 'air');
+  for (const p of w.layout.plot) { w.set(p, 'grass_block'); w.set(new Vec3(p.x, p.y + 1, p.z), 'air'); }
+  assert.deepEqual(Object.keys(home.homeChores(bot, goal)), [], 'no chest yet, nothing begun');
+  h.stash = { contents: {}, lostAt: new Date(Date.now() - 3 * 60000).toISOString() };
+  const chores = home.homeChores(bot, goal);
+  assert.deepEqual(Object.keys(chores), ['light_home']);
+  assert.match(chores.light_home.description, /chest by the bed was found gone 3 minutes ago/);
+});
+
 test('a plot cell the hoe would not turn waits: it is neither tilled again nor sent for repair', async () => {
   const w = await establishedHome(), { bot, goal, layout } = w;
   const cell = layout.plot[0];

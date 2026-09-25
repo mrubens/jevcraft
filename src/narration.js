@@ -51,6 +51,7 @@ const SURVIVAL = {
   wall_off: 'Cornered, so I\'m walling the tunnel shut.',
   no_shelter_here: 'Nowhere to shelter here and nothing to build one with. I\'ll keep going and keep watch.',
   leave_lava_edge: 'Getting away from the lava before anything else.',
+  out_of_fire: "Ahh, I'm on fire! Getting out of it.",
   return_to_surface: 'Heading back up to the surface.',
   recover_items: "Going back for the things I dropped.",
   gather_food: (goal, action) => `Getting something to eat first${action.item ? `: ${name(action.item)}` : ''}.`,
