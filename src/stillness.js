@@ -88,6 +88,12 @@ function permittedWait(bot, goal, now = Date.now()) {
   // A bundle's step is its child's, wrapped.
   const action = goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action;
   if (HOLDS.has(action)) return action;
+  // A batch of the step's own in the furnace, for as long as it takes: the
+  // furnace is getting somewhere while the bot mines nearby. Trial 51's
+  // twenty-four iron for the armour was called stalled at forty-five
+  // seconds, the answer was more smelting, and that was called stalled too.
+  const batch = goal?.smelting;
+  if (batch?.startedAt && now < batch.startedAt + (batch.count || 1) * 10000 + 20000) return 'a batch cooking';
   // Waiting for health, hurt and fed: fine while it is coming back.
   if (['recover_before_combat', 'recover_before_nether'].includes(action) && (bot.health ?? 20) < 20 && (bot.food ?? 20) >= 18) return 'recovering';
   return null;

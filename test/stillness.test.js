@@ -281,3 +281,12 @@ test('where the bot has been lately is kept every fifteen seconds for three minu
   assert.equal(trail.places.at(-1).doing, 'ascend_to_surface');
   assert.equal(trail.places[0].secondsAgo, 180);
 });
+
+test('a batch of the step\'s own cooking is not a stall for as long as it takes', () => {
+  // Trial 51: twenty-four iron for the armour, called stalled at forty-five seconds.
+  const { permittedWait } = require('../src/stillness');
+  const bot = { entity: { position: { x: 0, y: 64, z: 0 } }, entities: {} };
+  const now = Date.now();
+  assert.equal(permittedWait(bot, { smelting: { count: 24, startedAt: now - 60000 } }, now), 'a batch cooking');
+  assert.equal(permittedWait(bot, { smelting: { count: 2, startedAt: now - 60000 } }, now), null, 'two items are long done');
+});

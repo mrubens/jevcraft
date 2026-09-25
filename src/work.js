@@ -1337,7 +1337,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   const carriedInput = countOf(bot, step.from);
   const needed = Math.min(pending ? pending.targetInventory - before : (carriedInput > 0 ? Math.min(step.count, carriedInput) : step.count), 64);
   if (goal && !pending) {
-    goal.smelting = { item: step.item, from: step.from, fuelItem: plannedFuel, position: { ...block.position }, dimension: dimension(bot), targetInventory: before + needed, count: needed };
+    goal.smelting = { item: step.item, from: step.from, fuelItem: plannedFuel, position: { ...block.position }, dimension: dimension(bot), targetInventory: before + needed, count: needed, startedAt: Date.now() };
     save();
   }
   // The same for the furnace's output, before the window opens.
