@@ -26,11 +26,12 @@ test('stone is dug with the cheapest pickaxe that harvests it; the iron pickaxe 
   await equipBestTool(bot, diamondOre); assert.equal(bot.equipped.name, 'iron_pickaxe');
 });
 
-test('when any tool will do, the fastest still wins, with the lower tier on a tie and the fresher tool after that', async () => {
+test('when any tool will do, the fastest still wins, with the lower tier on a tie and the more worn tool after that', async () => {
   let bot = fixture(['wooden_shovel', 'iron_shovel']);
   await equipBestTool(bot, dirt); assert.equal(bot.equipped.name, 'iron_shovel');
   bot = fixture(['stone_pickaxe', 'stone_pickaxe']); bot.inventory.items()[0].durabilityUsed = 100;
-  await equipBestTool(bot, stone); assert.equal(bot.equipped.slot, 37, 'the fresher of two equal tools');
+  // Trial 43: the fresher was always taken, and five iron pickaxes piled up.
+  await equipBestTool(bot, stone); assert.equal(bot.equipped.slot, 36, 'the more worn of two equal tools is used up first');
 });
 
 test('the pathfinder digs with the same policy: stone with the stone pickaxe, never the iron', async () => {

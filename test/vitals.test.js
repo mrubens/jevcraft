@@ -174,7 +174,7 @@ test('near-broken tools are not counted as a usable planned supply', () => {
   assert.equal(stock.length, 2);
 });
 
-test('a worn pickaxe does not satisfy acquisition and the replacement is equipped', async () => {
+test('a worn pickaxe does not satisfy acquisition, and it is used up before the replacement', async () => {
   const { acquireStep } = require('../src/work');
   const { equipBestTool, pickaxeTier } = require('../src/skills');
   const worn = { name: 'stone_pickaxe', type: 1, count: 1, durabilityUsed: 130, slot: 36 };
@@ -189,7 +189,10 @@ test('a worn pickaxe does not satisfy acquisition and the replacement is equippe
   bot.heldItem = worn;
   bot.equip = async item => { bot.heldItem = item; };
   await equipBestTool(bot, { digTime: type => type === 1 ? 100 : 1000 });
-  assert.equal(bot.heldItem.slot, fresh.slot);
+  assert.equal(bot.heldItem.slot, worn.slot, 'the worn one first; the replacement is the spare');
+  stock = [fresh];
+  await equipBestTool(bot, { digTime: type => type === 1 ? 100 : 1000 });
+  assert.equal(bot.heldItem.slot, fresh.slot, 'and the replacement once it has gone');
 });
 
 test('with nothing else to eat, rotten flesh is eaten when it is the way back to regeneration', () => {

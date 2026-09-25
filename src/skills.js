@@ -445,9 +445,13 @@ function cheapestTool(bot, block) {
   for (const item of bot.inventory.items()) {
     const time = block.digTime(item.type, false, false, false, [], {});
     if (time >= handTime || !harvests(item)) continue;
+    // Of two of a tier, the more worn is used up first, and the spare stays
+    // whole: the fresher one was taken, so a worn pickaxe was never finished,
+    // the ladder made another each time the one in hand wore down, and trial
+    // 43 carried five iron pickaxes, fifteen ingots its armour went without.
     const better = !best ? true
-      : needsTool ? (TOOL_TIER(item) < TOOL_TIER(best) || (TOOL_TIER(item) === TOOL_TIER(best) && remaining(item) > remaining(best)))
-        : (time < bestTime || (time === bestTime && (TOOL_TIER(item) < TOOL_TIER(best) || (TOOL_TIER(item) === TOOL_TIER(best) && remaining(item) > remaining(best)))));
+      : needsTool ? (TOOL_TIER(item) < TOOL_TIER(best) || (TOOL_TIER(item) === TOOL_TIER(best) && remaining(item) < remaining(best)))
+        : (time < bestTime || (time === bestTime && (TOOL_TIER(item) < TOOL_TIER(best) || (TOOL_TIER(item) === TOOL_TIER(best) && remaining(item) < remaining(best)))));
     if (better) { bestTime = time; best = item; }
   }
   return best;
