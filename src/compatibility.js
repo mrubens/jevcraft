@@ -79,6 +79,8 @@ function compatibilityPlugin(bot) {
   require('./flight').installFlight(bot);
   require('./block-search').installBlockSearch(bot);
   require('./furnace-properties').installFurnaceProperties(bot);
+  // Never a chicken or a pig (protected-animals.js): every swing passes here.
+  require('./protected-animals').installGuard(bot);
   fixPlayerDimensions(bot.physics);
   // Modern set_passengers names the VEHICLE and its remaining passengers.
   // Mineflayer only removes our mount when entityId is -1 (never sent here).

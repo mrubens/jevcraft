@@ -122,7 +122,7 @@ const CRIT_MISS_MS = 8000;
 const BYSTANDERS = new Set(['zombified_piglin', 'piglin', 'enderman']);
 function bystanders(bot, target) {
   const { provoked } = require('./danger');
-  return Object.values(bot.entities || {}).filter(e => BYSTANDERS.has(e.name) && e !== target && e.isValid !== false && e.position &&
+  return Object.values(bot.entities || {}).filter(e => (BYSTANDERS.has(e.name) || require('./protected-animals').isProtected(e)) && e !== target && e.isValid !== false && e.position &&
     target.position && e.position.distanceTo(target.position) <= 2.5 && !provoked(bot, e));
 }
 async function strike(bot, task, target) {

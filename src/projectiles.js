@@ -96,6 +96,11 @@ async function shootBow(bot, task, target, { guard = () => {}, threatCheck = che
   check();
   const bow = bot.inventory.items().find(i => i.name === 'bow' && (i.durabilityUsed || 0) < bot.registry.itemsByName.bow.maxDurability - 1);
   if (!bow || countOf(bot, 'arrow') < 1) throw new Error('A usable bow and carried arrows are required');
+  // Never with a chicken or a pig near the line (protected-animals.js).
+  const { isProtected, nearShot, ProtectedAnimal } = require('./protected-animals');
+  if (isProtected(target)) throw new ProtectedAnimal(`Never a ${target.name}: the shot was not taken`);
+  const inLine = nearShot(bot, target);
+  if (inLine.length) throw new ProtectedAnimal(`A ${inLine[0].name} is near the line of the shot: not taken`);
   if (!aimAtEntity(bot, target, motion())) throw new Error('No clear observed arrow trajectory to this target');
   bot.pathfinder.setGoal(null); bot.clearControlStates(); await bot.equip(bow, 'hand'); check();
   let drawing = false, released = false, arrow, ambiguous = false;

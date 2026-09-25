@@ -190,10 +190,10 @@ test('an isolated sheep or chicken in view with its drop short is offered to Jev
   const lamb = { id: 11, name: 'sheep', isValid: true, position: new Vec3(2.5, 70, .5), metadata: [] };
   lamb.metadata[registry.entitiesByName.sheep.metadataKeys.indexOf('baby')] = true;
   bot.entities = { 9: sheep, 10: chicken, 11: lamb };
-  assert.deepEqual(animalCandidates(bot, {}).map(c => [c.animal, c.label, c.carried, c.wanted]), [['sheep', 'wool', 0, 3], ['chicken', 'feathers', 0, 4]], 'the lamb is not a candidate');
+  assert.deepEqual(animalCandidates(bot, {}).map(c => [c.animal, c.label, c.carried, c.wanted]), [['sheep', 'wool', 0, 3]], 'the lamb is not a candidate, and a chicken never is');
   assert.equal(animalCandidates(bot, {})[0].entity, sheep);
   bot.inventory.items = () => [{ name: 'white_wool', count: 3 }, { name: 'feather', count: 1 }];
-  assert.deepEqual(animalCandidates(bot, {}).map(c => c.animal), ['chicken'], 'three wool is enough for a bed');
+  assert.deepEqual(animalCandidates(bot, {}).map(c => c.animal), [], 'three wool is enough for a bed');
   bot.inventory.items = () => [];
   bot.health = 8; assert.equal(animalCandidates(bot, {}).length, 0); bot.health = 20;
   // Not every step is a question: the first two pass, the third asks, and continue is remembered for those animals.
@@ -206,16 +206,16 @@ test('an isolated sheep or chicken in view with its drop short is offered to Jev
   for (let i = 0; i < 2; i++) assert.equal(await opportunisticPickups(bot, new Task('logs'), goal, () => {}, goal.step, actions, client), false);
   assert.equal(asked.length, 0);
   assert.equal(await opportunisticPickups(bot, new Task('logs'), goal, () => {}, goal.step, actions, client), false, 'Jev chose to continue');
-  assert.deepEqual(asked, [['animal_0', 'animal_1', 'continue']]); assert.deepEqual(hunted, []);
-  assert(goal.opportunistic.skipped['mob:9'] && goal.opportunistic.skipped['mob:10'], 'the animals Jev passed on are not asked about again for a while');
+  assert.deepEqual(asked, [['animal_0', 'continue']]); assert.deepEqual(hunted, []);
+  assert(goal.opportunistic.skipped['mob:9'], 'the animal Jev passed on is not asked about again for a while');
   goal.opportunistic.skipped = {}; goal.opportunistic.pickupSteps = 2;
   assert.equal(await opportunisticPickups(bot, new Task('logs'), goal, () => {}, goal.step, actions, client), true, 'the sheep chase gathered wool');
   assert.deepEqual(hunted, ['sheep']); assert.equal(goal.step.action, 'mine', 'the mine step came back');
   assert.deepEqual(goal.opportunistic.history.at(-1), { ...goal.opportunistic.history.at(-1), kind: 'animal', animal: 'sheep', resource: 'wool', pickedUp: 2 });
-  // With wool in hand the chicken is next, through the mob hunt with a feather target, and the hunt state is cleaned up after.
+  // A chicken alone in view is never chased (the user, 2026-09-25: never hurt a chicken).
   goal.opportunistic.pickupSteps = 2; bot.entities = { 10: chicken };
-  assert.equal(await opportunisticPickups(bot, new Task('logs'), goal, () => {}, goal.step, actions, client), true);
-  assert.deepEqual(observed, [{ item: 'feather', entity: 'chicken', targetCount: 4 }]); assert.equal(goal.mobHunt, undefined);
+  assert.equal(await opportunisticPickups(bot, new Task('logs'), goal, () => {}, goal.step, actions, client), false);
+  assert.deepEqual(observed, []);
   // No client: no question, no chase.
   goal.opportunistic.pickupSteps = 2; bot.inventory.items = () => [];
   assert.equal(await opportunisticPickups(bot, new Task('logs'), goal, () => {}, goal.step, actions, null), false);

@@ -54,10 +54,11 @@ test('the exact supported vanilla mob loot tables extend the Eyes of Ender recip
   assert.throws(() => planCatalog(registry, 'bedrock', 1), /No supported survival acquisition/);
 });
 
-test('string comes from a spider and feathers from a chicken, so a bow and arrows plan without a cobweb or a tripwire', () => {
+test('string comes from a spider and arrows from skeletons (never a chicken), so a bow and arrows plan without a cobweb or a tripwire', () => {
   const sources = knowledge(registry).mobSources;
   assert.equal(sources.string[0].entity, 'spider'); assert(!sources.string[0].requiresPlayerKill, 'string drops however the spider dies');
-  assert.equal(sources.feather[0].entity, 'chicken'); assert(sources.feather[0].passive);
+  assert.equal(sources.feather, undefined, 'no chicken is hunted for feathers (the user, 2026-09-25)');
+  assert.equal(sources.arrow[0].entity, 'skeleton');
   assert(!knowledge(registry).sources.string.some(s => s.block === 'tripwire'), 'tripwire is placed string, never a deposit');
   const bow = planCatalog(registry, 'bow', 1, { stick: 3, crafting_table: 1 });
   assert.deepEqual(bow.map(s => [s.action, s.entity || s.item, s.count]).slice(-2), [['hunt_mob', 'spider', 3], ['craft', 'bow', 1]]);
@@ -65,32 +66,29 @@ test('string comes from a spider and feathers from a chicken, so a bow and arrow
   const seen = planCatalog(registry, 'bow', 1, { stick: 3, crafting_table: 1 }, { nearby: ['cobweb'] });
   assert(seen.some(s => s.action === 'mine' && s.block === 'cobweb') && !seen.some(s => s.action === 'hunt_mob'), 'a cobweb in view beats the hunt');
   const arrows = planCatalog(registry, 'arrow', 16, { stick: 4, crafting_table: 1 });
-  assert.deepEqual(arrows.map(s => [s.action, s.entity || s.block || s.item, s.count]), [['mine', 'gravel', 4], ['hunt_mob', 'chicken', 4], ['craft', 'arrow', 16]]);
-  assert(!arrows.some(s => /sword|helmet|chestplate|leggings|boots|shield/.test(s.item || '')), 'a chicken needs no armour');
+  assert.deepEqual(arrows.filter(s => s.action === 'hunt_mob').map(s => s.entity), ['skeleton']);
+  assert(!arrows.some(s => s.entity === 'chicken'));
 });
 
-test('a chicken is chased with the best carried weapon, no armour, no shield and a flock around it', async () => {
-  const { bot, task, target, goal, slots, controls, attacks } = fixture('chicken');
-  for (const slot of [5, 6, 7, 8, 36, 45]) slots[slot] = null;
-  slots[10] = { name: 'stone_sword', count: 1, slot: 10, durabilityUsed: 0 }; slots[11] = { name: 'wooden_axe', count: 1, slot: 11, durabilityUsed: 0 };
-  bot.entities[8] = { id: 8, name: 'chicken', position: target.position.offset(1, 0, 0), width: .4, height: .7, isValid: true };
-  bot.health = 12; bot.food = 8;
-  assert(!readyEquipment(bot)); assert(isolated(bot, target));
-  const requests = [];
-  await prepareMobHunt(bot, task, { entity: 'chicken', item: 'feather', count: 2 }, goal, () => {}, { acquireStep: async (_b, _t, item) => requests.push(item), explore: async () => {} });
-  assert.deepEqual(requests, [], 'no armour is fetched for a chicken');
-  assert.equal(goal.mobHunt.targetCount, 2);
-  bot.attack = entity => {
-    attacks.push(entity); bot.emit('entityDead', entity); delete bot.entities[entity.id];
-    bot.entities[9] = { id: 9, name: 'item', position: target.position.clone(), getDroppedItem: () => ({ name: 'feather', count: 1 }) };
-  };
-  const result = await fightForDrop(bot, task, target, goal, () => {}, { navigate: async () => { slots[12] = { name: 'feather', count: 1, slot: 12 }; delete bot.entities[9]; } });
-  assert.equal(bot.heldItem.name, 'stone_sword'); assert.deepEqual(attacks, [target]);
-  assert.equal(result.outcome, 'pickup_confirmed'); assert.deepEqual(controls, [], 'no shield to raise');
-  assert.equal(bot._combatEncounter, undefined);
-  const spider = { ...target, id: 13, name: 'spider' }; bot.entities[13] = spider;
-  assert.equal(hostileEntities(bot).length, 0, 'a spider by day is neutral');
-  assert(!isolated(bot, spider), 'a spider still wants the room a sweep needs');
+test('a chicken or a pig is never struck: the swing is refused, and a sword swing that would sweep one is refused too', () => {
+  // The user, 2026-09-25: "never hurt a chicken", "or a pig".
+  const { installGuard } = require('../src/protected-animals');
+  const { Vec3 } = require('vec3');
+  const struck = [];
+  const bot = { entity: { position: new Vec3(0, 64, 0), onGround: true }, heldItem: { name: 'iron_sword' }, controlState: {}, entities: {}, attack: t => struck.push(t.name) };
+  const chicken = { id: 1, name: 'chicken', position: new Vec3(1.5, 64, 0), isValid: true }, pig = { id: 2, name: 'pig', position: new Vec3(0, 64, 1.5), isValid: true };
+  const zombie = { id: 3, name: 'zombie', position: new Vec3(2, 64, 0), isValid: true };
+  bot.entities = { 1: chicken, 2: pig, 3: zombie };
+  installGuard(bot);
+  assert.throws(() => bot.attack(chicken), { name: 'ProtectedAnimal' });
+  assert.throws(() => bot.attack(pig), { name: 'ProtectedAnimal' });
+  assert.throws(() => bot.attack(zombie), /sweep/, 'the chicken beside the zombie would be swept');
+  bot.heldItem = { name: 'iron_axe' };
+  bot.attack(zombie);
+  assert.deepEqual(struck, ['zombie'], 'an axe does not sweep');
+  bot.heldItem = { name: 'iron_sword' }; bot.entity.onGround = false;
+  bot.attack(zombie);
+  assert.deepEqual(struck, ['zombie', 'zombie'], 'a falling (critical) hit does not sweep');
 });
 
 test('two blazes off one spawner are each a fight: the crowd rule counts kin, the sweep rule counts other kinds', () => {

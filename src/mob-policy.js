@@ -10,7 +10,8 @@ const vanilla = require('../data/vanilla-26.1.json');
 // passive, so the hunt needs no armour, shield or isolation.
 const handlers = {
   blaze: { item: 'blaze_rod', dimension: 'nether', ranged: true }, enderman: { item: 'ender_pearl' },
-  spider: { item: 'string', cost: 16 }, chicken: { item: 'feather', passive: true },
+  // Never a chicken (protected-animals.js): arrows come off skeletons.
+  spider: { item: 'string', cost: 16 }, skeleton: { item: 'arrow', ranged: true },
   // Leather for a book, and a book for the enchanting table: the only other
   // way the planner knew was rabbit hide, which no action gathers.
   cow: { item: 'leather', passive: true },

@@ -63,21 +63,13 @@ test('carried raw chicken exposes catalog cooking and plans real furnace, tool a
   assert.equal(foodSupply(bot), 0, 'Planning cooking must not count unmade food');
 });
 
-test('chicken hunting requires actual ingredient pickup and does not claim edible food', async () => {
-  for (const pickedUp of [true, false]) {
-    const items = [], bot = fixture(items), goal = {};
-    const chicken = { id: 1, name: 'chicken', height: 0.7, position: new Vec3(2, 64, 0.5), isValid: true };
-    bot.entities[1] = chicken;
-    bot.attack = () => { chicken.isValid = false; if (pickedUp) items.push({ name: 'chicken', count: 1 }); };
-    assert((await forageChoices(bot, new Task('test', 'choices'), goal, () => {}, {}, {})).hunt_1);
-    const attempt = hunt(bot, new Task('test', 'hunt'), chicken, {}, goal, () => {});
-    if (pickedUp) {
-      await attempt;
-      assert.equal(goal.survivalAction.count, 1);
-      assert.equal(goal.survivalAction.needsCooking, true);
-      assert.equal(goal.survivalAction.foodPointsGained, 0);
-    } else await assert.rejects(attempt, /No food ingredient pickup confirmed/);
-  }
+test('a chicken or a pig in view is never offered as food', async () => {
+  // The user, 2026-09-25: "never hurt a chicken", "or a pig".
+  const items = [], bot = fixture(items), goal = {};
+  bot.entities[1] = { id: 1, name: 'chicken', height: 0.7, position: new Vec3(2, 64, 0.5), isValid: true };
+  bot.entities[2] = { id: 2, name: 'pig', height: 0.9, position: new Vec3(3, 64, 0.5), isValid: true };
+  const choices = await forageChoices(bot, new Task('test', 'choices'), goal, () => {}, {}, {});
+  assert(!Object.keys(choices || {}).some(k => /^hunt_/.test(k)), JSON.stringify(Object.keys(choices || {})));
 });
 
 test('food surveys continue partial paths and keep only completed surface routes', async () => {

@@ -29,7 +29,6 @@ const woolCarried = bot => require('./home-base').woolCarried(bot).total;
 // The animals worth a short chase, and what makes them worth it.
 const ANIMALS = Object.freeze({
   sheep: { label: 'wool', wanted: 3, carried: woolCarried, drops: name => /_wool$/.test(name) },
-  chicken: { label: 'feathers', item: 'feather', wanted: 4, carried: bot => countOf(bot, 'feather'), drops: name => name === 'feather' },
 });
 
 const skippedRecently = (goal, key) => goal.opportunistic?.skipped?.[key] > Date.now() - RECENT_MS;

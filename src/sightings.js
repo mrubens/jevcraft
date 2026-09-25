@@ -7,7 +7,8 @@
 // bed forty-five minutes in with fourteen sheep a hundred and some blocks
 // away, and was told "none seen yet". Noted every fifteen seconds with the
 // trail (stillness.js), a flock to a place, for half an hour.
-const KINDS = ['sheep', 'cow', 'pig', 'chicken'];
+// Chickens and pigs are never food (protected-animals.js), so not noted.
+const KINDS = ['sheep', 'cow'];
 const FLOCK = 24;
 const KEEP_MS = 30 * 60000;
 const EVERY_MS = 15000;

@@ -69,7 +69,7 @@ with zipfile.ZipFile(jar) as archive:
     # Preserve the exact loot rules for the mob acquisition handlers. Random
     # counts remain random; the executor must verify actual inventory pickup.
     entity_loot = {entity: json.loads(archive.read(f'data/minecraft/loot_table/entities/{entity}.json'))
-                   for entity in ['blaze', 'enderman', 'spider', 'cow', 'mooshroom', 'pig', 'sheep', 'chicken', 'rabbit']}
+                   for entity in ['blaze', 'enderman', 'spider', 'skeleton', 'cow', 'mooshroom', 'pig', 'sheep', 'chicken', 'rabbit']}
     special = {}
     ordinary_self = set()
     for name in archive.namelist():

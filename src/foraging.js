@@ -15,7 +15,8 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // comes from the same server recipe catalog used for requested items.
 // These land animals share the surface chase handler. Other food-bearing mobs
 // (fish, hostile mobs) need their own mechanics before becoming candidates.
-const landPrey = new Set(['cow', 'mooshroom', 'pig', 'sheep', 'chicken', 'rabbit']);
+// No chickens and no pigs: never hurt (protected-animals.js).
+const landPrey = new Set(['cow', 'mooshroom', 'sheep', 'rabbit']);
 function preyFood(bot, entity) {
   if (!landPrey.has(entity.name)) return undefined;
   const keys = bot.registry.entitiesByName[entity.name]?.metadataKeys || [];
@@ -207,7 +208,7 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   // Herds seen earlier and out of view now (sightings.js): a walk of known
   // length, where the search is a wander.
   const sightings = require('./sightings');
-  const herds = ['cow', 'pig', 'chicken', 'sheep'].flatMap(kind => sightings.sighted(bot, goal, kind).filter(s => s.distance > 32 && s.distance <= 192).map(s => ({ kind, s })))
+  const herds = ['cow', 'sheep'].flatMap(kind => sightings.sighted(bot, goal, kind).filter(s => s.distance > 32 && s.distance <= 192).map(s => ({ kind, s })))
     .sort((a, b) => a.s.distance - b.s.distance).slice(0, 3);
   herds.forEach(({ kind, s }, i) => {
     choices[`seen_food_${i}`] = { description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo },
