@@ -674,7 +674,19 @@ class Survival {
         // Out of reach, and the charge showed it: a stance that failed.
         if (bot._unreachable?.until > Date.now() && bot._unreachable.ids.includes(nearest.entity.id)) return false;
         // No level way to it: the fight is held here, facing it, and the
-        // swing takes it when it comes into reach. Not a stance that failed.
+        // swing takes it when it comes into reach. Not a stance that failed,
+        // unless it does not come: trial 73 held a fight at a creeper that
+        // stayed six blocks off for three minutes, beside a drop, and nothing
+        // else was done. Eight seconds without it a block nearer and it is
+        // left be like one a charge could not reach.
+        const held = this.state.standing;
+        if (!held || held.id !== nearest.entity.id) this.state.standing = { id: nearest.entity.id, since: Date.now(), distance: nearest.distance };
+        else if (nearest.distance < held.distance - 1) Object.assign(held, { since: Date.now(), distance: nearest.distance });
+        else if (Date.now() - held.since > 8000) {
+          delete this.state.standing;
+          bot._unreachable = { ids: [...new Set([...(bot._unreachable?.until > Date.now() ? bot._unreachable.ids : []), nearest.entity.id])], until: Date.now() + 20000 };
+          return false;
+        }
         this.report(goal, save, { action: 'fight', threats: [nearest.entity.name], health: bot.health, stance: true, stand: true });
         await bot.lookAt?.(nearest.entity.position.offset(0, 1, 0), true);
         await sleep(250);

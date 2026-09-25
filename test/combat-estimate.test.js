@@ -96,3 +96,21 @@ test('a charge that cannot get to the mob fails, and that mob is left be while i
   bot._recentHurtAt = Date.now();
   assert.equal(immediateThreat(bot)?.entity, zombie, 'until it lands a hit');
 });
+
+test('a fight held facing a mob that does not come is given up after eight seconds, and the mob is left be', async () => {
+  // Trial 73: three minutes facing a creeper that stayed six blocks off.
+  const { Survival } = require('../src/survival');
+  const { immediateThreat } = require('../src/danger');
+  const { Vec3 } = require('vec3');
+  const creeper = { id: 8, name: 'creeper', position: new Vec3(6, 67, 0), height: 1.7, isValid: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 8: creeper }, time: { timeOfDay: 18000 }, game: { dimension: 'overworld' },
+    world: { raycast: () => null }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }),
+    pathfinder: { movements: {} }, inventory: { items: () => [{ name: 'iron_sword', type: 1 }], slots: [] }, on() {}, health: 20, lookAt: async () => {} };
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const danger = [{ entity: creeper, distance: 6.3, visible: true }];
+  const fight = survival.stanceOptions({ check() {} }, {}, () => {}, danger, false).fight;
+  assert.equal(await fight.run(), true, 'held while it may yet come');
+  survival.state.standing.since = Date.now() - 9000;
+  assert.equal(await fight.run(), false, 'eight seconds and no nearer: the stance failed');
+  assert.equal(immediateThreat(bot), undefined, 'left be while it lands nothing');
+});

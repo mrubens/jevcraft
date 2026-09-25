@@ -165,7 +165,7 @@ function immediateThreat(bot) {
   // And mobs a charge could not reach (survival.js charge), while they
   // land nothing: they cannot reach the bot either.
   const unreachable = !hurt && bot._unreachable?.until > Date.now() ? bot._unreachable.ids : [];
-  const leftBe = t => (!!waved && waved.includes(t.entity.id) && t.distance > 3) || (unreachable.includes(t.entity.id) && t.distance > 2);
+  const leftBe = t => (!!waved && waved.includes(t.entity.id) && t.distance > 3) || (unreachable.includes(t.entity.id) && t.distance > (t.entity.name === 'creeper' ? 5 : 2));
   return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) && !nightHunted(bot, t.entity) &&
     t.distance <= (shooter(t.entity) ? (fighting ? 8 : hurt ? 32 : 16) : (fighting ? 5 : 8)));
 }
