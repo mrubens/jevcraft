@@ -2246,7 +2246,12 @@ class Survival {
       // carried. Trial 30 sat out its second night in a pocket with 29 raw
       // iron, coal and a furnace in its pack, the armour the one thing left.
       const bench = !watcher && goal.kind === 'win' && this.benchWork(goal);
-      if (bench) options.work_here = { description: `Stay in the pocket and make the ${bench.item.replaceAll('_', ' ')} here: everything it needs is carried (${bench.plan.map(st => `${st.action} ${st.count || 1} ${String(st.item || '').replaceAll('_', ' ')}`).join(', then ')}). The furnace and the table go into the wall; the pocket stays shut.`,
+      if (bench) options.work_here = { description: `Stay in the pocket and make the ${bench.item.replaceAll('_', ' ')} here: everything it needs is carried (${bench.plan.map(st => `${st.action} ${st.count || 1} ${String(st.item || '').replaceAll('_', ' ')}`).join(', then ')}). The furnace and the table go into the wall; the pocket stays shut.${(() => {
+        // How long it takes against the night left (the decision audit,
+        // 2026-09-25): ten seconds a smelt.
+        const smelts = bench.plan.filter(st => st.action === 'smelt').reduce((n, st) => n + (st.count || 1), 0);
+        return `${smelts ? ` About ${Math.round(smelts * 10 / 60 * 10) / 10} minutes of smelting (${smelts} at ten seconds each).` : ' Crafting only: a few seconds.'}${night ? ` About ${minutesToDawn(bot)} real minutes to dawn.` : ''}`;
+      })()}`,
         run: async () => { this.report(goal, save, { action: 'work_in_pocket', item: bench.item }); await this.actions.acquireStep(bot, task, bench.item, bench.count, goal, save); return true; } };
       // Out to hunt, or the valuables to the chest first (a death drops
       // everything carried): at night with nothing watching.

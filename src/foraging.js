@@ -8,7 +8,7 @@ const { surveyRoute } = require('./skills');
 const { homeFood, eatFromHome } = require('./home-base');
 const { villageFood, eatFromVillage } = require('./villages');
 const { makeRoom } = require('./inventory-tidy');
-const { strike } = require('./combat');
+const { strike, shooter } = require('./combat');
 const vanilla = require('../data/vanilla-26.1.json');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Raw chicken is an ingredient, never edible reserve. Its cooking dependency
@@ -162,7 +162,16 @@ async function forageChoices(bot, task, goal, save, actions, state) {
       // view within 128 (sightings.js). Two cows are a pen's breeding pair.
       sameKindKnown: (() => { const k = require('./sightings').known(bot, goal, target.name); return { ...k, note: k.total <= 2 ? `killing it leaves ${k.total - 1} ${target.name.replaceAll('_', ' ')} known nearby; a pen needs two to breed` : undefined }; })(),
       // Said, not filtered: an animal near a hostile was dropped from the list.
-      nearestHostileToIt: (() => { const d = threats(bot).map(t => ({ name: t.entity.name, distance: Math.round(t.entity.position.distanceTo(target.position)) })).sort((a, b) => a.distance - b.distance)[0]; return d && d.distance <= 32 ? d : null; })() },
+      // Every hostile near the animal, not only near the bot (the decision
+      // audit, 2026-09-25): threats(bot) looked twenty-four blocks from the
+      // bot, and a creeper beyond the animal was never said.
+      ...(() => {
+        const near = threats(bot, 56).map(t => ({ t, distance: t.entity.position.distanceTo(target.position) })).filter(h => h.distance <= 32).sort((a, b) => a.distance - b.distance);
+        if (!near.length) return { nearestHostileToIt: null };
+        return { nearestHostileToIt: { name: near[0].t.entity.name, distance: Math.round(near[0].distance) },
+          hostilesWithin32OfIt: { count: near.length, kinds: [...new Set(near.map(h => h.t.entity.name))], creepers: near.filter(h => h.t.entity.name === 'creeper').length,
+            shooters: near.filter(h => shooter(h.t.entity)).length, outOfSight: near.filter(h => !h.t.visible).length } };
+      })() },
     valid: () => bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) === item && target.position.distanceTo(observed) < 2,
     run: async () => {
       goal.survivalAction = { action: 'gather_food', animal: target.name, position: { ...target.position }, at: new Date().toISOString() }; save();

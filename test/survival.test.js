@@ -1917,6 +1917,7 @@ test('sealed in with the next item makeable from the pockets, working here is on
   survival.decide = async (task, goal, save, { tree }) => { offered = tree; return { path: ['work_here'], stale: false }; };
   await survival.step(new Task('night'), { kind: 'win' }, () => {});
   assert.match(offered.work_here.description, /make the iron helmet here.*smelt 5 iron ingot, then craft 1 iron helmet/);
+  assert.match(offered.work_here.description, /About 0.8 minutes of smelting \(5 at ten seconds each\)\. About 6 real minutes to dawn/);
   assert.deepEqual(acquired, [['iron_helmet', 1]]);
 });
 

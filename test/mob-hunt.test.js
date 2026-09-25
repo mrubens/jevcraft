@@ -234,6 +234,8 @@ test('Jev selects a feasible observed target; stale model decisions cannot start
   const client = { systemOne: async ({ state, questions }) => {
     modelCalls++; assert.equal(state.resource, 'blaze_rod');
     assert(questions.branch_0.criteria.hunt_7); assert(questions.branch_0.criteria.defer);
+    // The decision audit: the one fight's cost is on the option, the risk in the state.
+    assert(questions.branch_0.criteria.hunt_7.fight.hitsBot > 0 && questions.branch_0.criteria.hunt_7.fight.seconds > 0, JSON.stringify(questions.branch_0.criteria.hunt_7)); assert(state.riskNow);
     target.position.x += 5;
     return { answers: { branch_0: { choice: 'hunt_7' } } };
   } };

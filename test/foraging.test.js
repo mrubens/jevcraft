@@ -18,6 +18,17 @@ function fixture(items = []) {
   };
 }
 
+test('a hunt names every hostile near the animal, a creeper beyond it too (the decision audit)', async () => {
+  const bot = fixture([{ name: 'stone_sword', count: 1 }]);
+  bot.time = { timeOfDay: 6000 };
+  bot.entities[1] = { id: 1, name: 'rabbit', position: new Vec3(-3, 64, .5), isValid: true };
+  // Twenty-seven blocks past the rabbit, thirty from the bot: beyond the old look.
+  bot.entities[2] = { id: 2, name: 'creeper', position: new Vec3(-30, 64, .5), height: 1.7, isValid: true };
+  const choices = await forageChoices(bot, new Task('food'), {}, () => {}, {}, {});
+  assert.deepEqual(choices.hunt_1.description.nearestHostileToIt, { name: 'creeper', distance: 27 });
+  assert.equal(choices.hunt_1.description.hostilesWithin32OfIt.creepers, 1);
+});
+
 test('raw chicken is carried ingredient evidence, never edible reserve', () => {
   const items = [{ name: 'chicken', count: 16 }], bot = fixture(items);
   assert.equal(foodSupply(bot), 0); assert.equal(chooseFood(bot), undefined);

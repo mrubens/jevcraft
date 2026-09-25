@@ -8,7 +8,8 @@ const { canStrike, defenseWeapon, bowReady, shoot, strike } = require('./combat'
 const { deflect } = require('./projectile-guard');
 const { aimAtEntity } = require('./projectiles');
 const { dryStanding } = require('./mining-access');
-const { dryBodySpace, damagingTerrain, supportCell } = require('./terrain');
+const { dryBodySpace, damagingTerrain, supportCell, dropWithin } = require('./terrain');
+const { fightEstimate } = require('./combat-estimate');
 const { checkAir } = require('./vitals');
 const { surveyRoute, countOf } = require('./skills');
 const { collectNearbyDrops } = require('./drop-collection');
@@ -333,18 +334,30 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     try {
       if (!canStrike(bot, target) && !await combatRoute(bot, task, target, movement)) continue;
       positions.set(target.id, target.position.clone());
+      // What this one fight costs, and what is beside the mob (the decision
+      // audit, 2026-09-25): a hoglin's toss or a blaze's knockback beside
+      // lava or a drop is the fall, not the fight.
+      const distance = target.position.distanceTo(bot.entity.position);
+      const one = fightEstimate({ threats: [{ name: target.name, distance, shoots: shooter(target), visible: true }], armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean),
+        weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
+      const mob = one.mobs[0];
+      const at = target.position.floored();
+      const lavaNear = require('./survival').lavaBeside(bot, at), dropNear = dropWithin(bot, at, 3);
       tree[`hunt_${target.id}`] = { description: { action: handler.passive ? 'Chase this observed animal and strike it with what is carried, then verify item pickup.' :
         handler.ranged && bowReady(bot) ? 'Fight this observed isolated mob: arrows from range while it is in view, then the sword, shield and armor up close; verify item pickup.' :
         'Fight this observed isolated mob with carried armor, sword and shield, then verify item pickup.',
-        entity: target.name, position: { ...target.position }, distance: target.position.distanceTo(bot.entity.position),
-        item: state.item, randomDrop: true }, run: () => fightForDrop(bot, task, target, goal, save, actions) };
+        entity: target.name, position: { ...target.position }, distance,
+        item: state.item, randomDrop: true,
+        ...(mob && !handler.passive ? { fight: { hitsBot: mob.hitsBot, seconds: one.fightHere.seconds, damageTaken: one.fightHere.damageTaken, healthAfter: one.fightHere.healthAfter, ...(mob.note ? { note: mob.note } : {}) } } : {}),
+        ...(lavaNear ? { lavaNearIt: 'lava within two blocks of it: a knockback there lands in it' } : {}),
+        ...(dropNear ? { dropNearIt: 'a drop within three blocks of it' } : {}) }, run: () => fightForDrop(bot, task, target, goal, save, actions) };
     } finally { movement.restore(); restore(); }
   }
   if (!Object.keys(tree).length) return false;
   tree.defer = { description: 'Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.', run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000); save();
   } };
-  const snapshot = { request: goal.request, resource: state.item, need: state.targetCount - countOf(bot, state.item), health: bot.health, food: bot.food, dimension: dimension(bot) };
+  const snapshot = { request: goal.request, resource: state.item, need: state.targetCount - countOf(bot, state.item), health: bot.health, food: bot.food, dimension: dimension(bot), riskNow: require('./risk').riskNow(bot) };
   let decision;
   {
     // Fresh means the fight is still the one Jev was shown. Health equal to
