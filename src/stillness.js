@@ -219,6 +219,7 @@ function watchStalls(bot, goalOf) {
   }
   stalls.timer = setInterval(() => {
     const now = Date.now(), late = now - last - TICK_MS, dt = Math.min(now - last, 5000); last = now;
+    noteTrail(bot, stalls.goalOf?.(), now);
     // A look that comes seconds late is the event loop held by synchronous
     // work: said with what the bot was on, so the next one is found by name
     // and not by a server dropping the bot (the home-site fit, 2026-09-24).
@@ -267,6 +268,32 @@ function raise(bot, goal, seen, now = Date.now()) {
   return bot._stalls.stall;
 }
 
+// Where the bot has been, and on what, for every choice to see: a loop is
+// plain in its own footprints (the user's suggestion, 2026-09-25). One
+// place every fifteen seconds, the last three minutes.
+const TRAIL_EVERY_MS = 15000, TRAIL_KEEP = 12;
+function noteTrail(bot, goal, now = Date.now()) {
+  const trail = bot._trail ||= [];
+  if (trail.length && now - trail.at(-1).at < TRAIL_EVERY_MS) return;
+  const p = bot.entity?.position;
+  if (!p) return;
+  const doing = goal?.survivalAction && now - Date.parse(goal.survivalAction.at || 0) < 20000 ? goal.survivalAction.action : goal?.step?.action;
+  trail.push({ at: now, x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), doing: doing || null });
+  if (trail.length > TRAIL_KEEP) trail.splice(0, trail.length - TRAIL_KEEP);
+}
+// The trail as the state says it: oldest first, how long ago, and how far
+// the bot has got from where the trail begins.
+function recentPositions(bot, now = Date.now()) {
+  const trail = bot._trail || [];
+  if (!trail.length) return null;
+  const p = bot.entity.position.floored(), first = trail[0];
+  return {
+    every: 'fifteen seconds', minutes: Math.round((now - first.at) / 6000) / 10,
+    furthestFromNowBlocks: Math.round(Math.max(...trail.map(t => Math.hypot(t.x - p.x, t.y - p.y, t.z - p.z)))),
+    places: trail.map(t => ({ secondsAgo: Math.round((now - t.at) / 1000), x: t.x, y: t.y, z: t.z, doing: t.doing })),
+  };
+}
+
 class Stalled extends Error {
   constructor(stall) { super(`Stalled: ${stall.why}`); this.name = 'Stalled'; this.stall = stall; }
 }
@@ -306,5 +333,5 @@ function recordStill(state, reason, ms, { now = Date.now(), detour } = {}) {
   return bucket;
 }
 
-module.exports = { airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
+module.exports = { noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
   Stalled, checkStall, takeStall, refused, recordStill };

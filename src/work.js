@@ -1744,6 +1744,7 @@ function decisionObservation(bot, goal) {
     daylight: bot.time?.timeOfDay < DAY.DARK ? 'day' : bot.time?.timeOfDay < DAY.DAWN ? 'night' : 'dawn',
     ...(require('./exploration').biomeView(bot) || {}),
     ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot), deathWouldCost: require('./risk').deathCost(bot, goal) } : {}),
+    recentPositions: require('./stillness').recentPositions(bot),
     nearbyThreats: Object.values(bot.entities || {}).filter(e => hostiles.has(e.name) && e.position.distanceTo(bot.entity.position) < 24)
       .map(e => ({ id: e.id, name: e.name, distance: Math.round(e.position.distanceTo(bot.entity.position)) })),
     recentFailures: attemptsFor(goal).of('option'),

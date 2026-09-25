@@ -267,3 +267,17 @@ test('hit twice with no survival response, the held step is stopped and unwinds 
   bot.emit('entityHurt', bot.entity); bot.emit('entityHurt', bot.entity);
   assert.doesNotThrow(() => checkStall(bot), 'a fight the survival layer is answering is left alone');
 });
+
+test('where the bot has been lately is kept every fifteen seconds for three minutes, with what it was doing', () => {
+  const { noteTrail, recentPositions } = require('../src/stillness');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) } };
+  const goal = { step: { action: 'ascend_to_surface' } };
+  let t = 1_000_000;
+  for (let i = 0; i < 20; i++) { bot.entity.position = new Vec3(i % 2 ? 1.5 : 0.5, 57, 0.5); noteTrail(bot, goal, t); noteTrail(bot, goal, t + 5000); t += 15000; }
+  const trail = recentPositions(bot, t);
+  assert.equal(trail.places.length, 12, 'three minutes of places, one each fifteen seconds');
+  assert.equal(trail.furthestFromNowBlocks, 1, 'a loop: never more than a block from here');
+  assert.equal(trail.places.at(-1).doing, 'ascend_to_surface');
+  assert.equal(trail.places[0].secondsAgo, 180);
+});

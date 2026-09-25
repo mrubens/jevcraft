@@ -116,11 +116,13 @@ function walk(tree, fallback) {
 const GAMEPLAY_AREAS = new Set(['combat', 'endgame', 'home', 'idle', 'resources', 'strategy', 'survival']);
 const REAL_TIME = 'The player counts real time: a Minecraft day is twenty real minutes and a night about seven. Minutes spent waiting, hiding, or redoing what a death lost are the cost that counts, and the player minds a death less than a night idled.';
 const RISK = 'riskNow is how likely a death is now (the mobs about, what fighting them all here would cost, whether more spawn around, whether health comes back); deathWouldCost is what a death now would lose.';
+const TRAIL = 'recentPositions is where the bot has been over the last few minutes, fifteen seconds apart, and what it was doing: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 function withRealTime(spec, state = {}) {
   if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
   const { task, guidance = '' } = spec.instructions;
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
-  return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${risk}` };
+  const trail = state?.recentPositions ? ` ${TRAIL}` : '';
+  return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${risk}${trail}` };
 }
 
 class NoSafeDefault extends Error {

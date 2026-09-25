@@ -96,6 +96,7 @@ function strategyState(bot, goal, stage, options) {
     timeOfDay: t, daylightMinutesRemaining: Math.round(Math.max(0, DAY.DUSK - t) / 1200 * 10) / 10,
     ...(require('./exploration').biomeView(bot) || {}),
     riskNow: require('./risk').riskNow(bot), deathWouldCost: require('./risk').deathCost(bot, goal),
+    recentPositions: require('./stillness').recentPositions(bot),
     health: bot.health, food: bot.food, experienceLevel: bot.experience?.level ?? 0,
     inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
     deaths: (goal.survival?.deaths || []).length,

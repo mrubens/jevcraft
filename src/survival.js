@@ -740,7 +740,7 @@ class Survival {
         estimate: fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
           armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health } : null,
-        riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal) };
+        riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
       let decision;
       try {
@@ -1755,7 +1755,7 @@ class Survival {
     tree.branch = { description: 'Dig a branch down to a working depth and along it, looking for ore on the way.' };
     if (dark.length) tree.light_tunnel = { description: `Put a torch in the tunnel here: ${dark.length} cells around the bot are dark enough for monsters to spawn in, and light stops them (${countOf(bot, 'torch')} torches carried).` };
     const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree, context: {},
-      state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
+      state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
     if (decision.stale) return null;
     if (decision.fallback) return nightOre(bot, feet, attemptsFor(this));
     const pick = decision.path.at(-1);
@@ -2053,7 +2053,7 @@ class Survival {
             workWaiting: goal.rungTime?.phase || goal.step?.item || goal.step?.block || goal.request || null,
             stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor),
             inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
-            riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal),
+            riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
             health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
             threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity) })) } });
         if (decision.stale) { onStep(goal); return true; }
@@ -2200,7 +2200,7 @@ class Survival {
     const stockPaused = isSetAside(this, 'food_search', 'stock', now);
     const needsFood = foodSupply(bot) < desiredFood && (hungry || (stockDriven && !stockPaused));
     if (!needsShelter && !needsFood) return false;
-    const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal),
+    const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
       ...(require('./exploration').biomeView(bot) || {}),
       playerUrgency: goal.urgency ? { level: goal.urgency.level, meaning: 'How much the wording of the request pressed for speed: relaxed, ordinary or pressed. Pressure is a reason to keep working while it is still safe, never a reason to skip shelter once night is close.' } : undefined,
       health: bot.health, food: bot.food, safeFoodCarried: !!chooseFood(bot),
