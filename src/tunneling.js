@@ -19,8 +19,10 @@ const faces = [...directions, new Vec3(0, 1, 0), new Vec3(0, -1, 0)];
 // Ground as the world makes it. Sandstone was missing, and trial 32's bot
 // sat under a beach at y 57 with every step up "sandstone in the way",
 // pacing one block and back until the audit called it a loop (2026-09-25):
-// deserts, beaches, badlands and caves are made of these too.
-const natural = /^(stone|deepslate|granite|diorite|andesite|tuff|calcite|dripstone_block|smooth_basalt|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|grass_block|mud|clay|moss_block|gravel|sand|red_sand|sandstone|red_sandstone|terracotta|(white|orange|yellow|red|brown|light_gray)_terracotta|snow_block|cobblestone|cobbled_deepslate|netherrack|soul_sand|soul_soil|basalt|blackstone|nether_bricks|nether_brick_fence|nether_brick_stairs|nether_brick_slab|nether_brick_wall|end_stone)$|_ore$/;
+// deserts, beaches, badlands and caves are made of these too. And leaves:
+// trial 56 stood on a jungle canopy at y 79, every step down "jungle leaves
+// in the way", and paced on the leaves until the audit called it a loop.
+const natural = /^(stone|deepslate|granite|diorite|andesite|tuff|calcite|dripstone_block|smooth_basalt|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|grass_block|mud|clay|moss_block|gravel|sand|red_sand|sandstone|red_sandstone|terracotta|(white|orange|yellow|red|brown|light_gray)_terracotta|snow_block|cobblestone|cobbled_deepslate|netherrack|soul_sand|soul_soil|basalt|blackstone|nether_bricks|nether_brick_fence|nether_brick_stairs|nether_brick_slab|nether_brick_wall|end_stone)$|_ore$|_leaves$/;
 const dangerous = block => !block || ['lava', 'water', 'fire', 'magma_block', 'powder_snow'].includes(block.name);
 const falling = block => block && (['sand', 'red_sand', 'gravel'].includes(block.name) || block.name.endsWith('_concrete_powder'));
 
@@ -132,9 +134,20 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
   const here = feet.distanceTo(target), blocked = {};
   const block = (destination, why) => { if (destination.distanceTo(target) < here - 0.1) blocked[why] = (blocked[why] || 0) + 1; };
   for (const d of directions) for (const height of heights) {
-    const destination = feet.plus(d).offset(0, height, 0);
+    let destination = feet.plus(d).offset(0, height, 0);
+    // A drop of up to three onto solid ground, where the cell has no floor:
+    // under a jungle canopy the leaves end in air above the ground, and
+    // trial 56 could go no further down than the leaves.
+    let dropTo = null;
+    if (height <= 0 && passable(bot.blockAt(destination.offset(0, -1, 0))) && !dangerous(bot.blockAt(destination.offset(0, -1, 0)))) {
+      for (let n = 2; n <= 4; n++) {
+        const below = bot.blockAt(destination.offset(0, -n, 0));
+        if (!below || dangerous(below)) break;
+        if (below.boundingBox === 'block') { if (!falling(below)) dropTo = destination.offset(0, -n + 1, 0); break; }
+      }
+    }
     if (hostiles && !safeFromHostiles(bot, destination.offset(0.5, 0, 0.5), Array.isArray(hostiles) ? hostiles : undefined)) { block(destination, 'a hostile'); continue; }
-    const floor = bot.blockAt(destination.offset(0, -1, 0));
+    const floor = bot.blockAt((dropTo || destination).offset(0, -1, 0));
     if (dangerous(floor) || falling(floor) || floor.boundingBox !== 'block') { block(destination, dangerous(floor) ? 'lava or water underfoot' : 'no floor'); continue; }
     if (bot.pathfinder?.movements?.allowedPosition && !bot.pathfinder.movements.allowedPosition(destination)) { block(destination, 'a forbidden cell'); continue; }
     const clear = [];
@@ -166,7 +179,9 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
     // is the only score that means anything for an approach.
     const score = approach ? destination.distanceTo(target) + (dy > 0 && height === 0 ? 0.5 : 0)
       : destination.distanceTo(target) + visits * 16 + (dy > 0 && height === 0 ? 4 : 0);
-    choices.push({ destination, clear, score });
+    // A drop lands below the cell it steps into; scored where it lands.
+    if (dropTo) choices.push({ destination: dropTo, clear, score: score - (destination.distanceTo(target) - dropTo.distanceTo(target)), drop: destination.y - dropTo.y });
+    else choices.push({ destination, clear, score });
   }
   const sorted = choices.sort((a, b) => a.score - b.score);
   sorted.blocked = blocked;

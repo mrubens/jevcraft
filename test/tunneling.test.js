@@ -604,3 +604,17 @@ test('a staircase climbs through sandstone, and a landing with no step at all is
   await assert.rejects(tunnelStep(stuck, new Task('stuck'), goal, () => {}, target, actions), { name: 'StaircaseStalled' });
   await assert.rejects(tunnelStep(stuck, new Task('stuck'), goal, () => {}, target, actions), { name: 'StaircaseStalled' }, 'the landing rests');
 });
+
+test('from a jungle canopy the stairs dig down through the leaves and drop the last blocks to the ground', () => {
+  // Trial 56: every step down "jungle leaves in the way", paced on the canopy.
+  const bot = world(), feet = bot.entity.position.floored();
+  // Leaves two deep under the bot, then three of air, then the ground.
+  bot.blockAt = p => {
+    const dy = p.y - feet.y;
+    const name = dy >= 0 ? 'air' : dy >= -2 ? 'jungle_leaves' : dy >= -4 ? 'air' : 'grass_block';
+    return { name, position: p, diggable: true, boundingBox: name === 'air' ? 'empty' : 'block', harvestTools: undefined };
+  };
+  const down = stairOptions(bot, {}, feet.offset(8, -12, 0));
+  assert(down.length, 'a step down through the leaves');
+  assert(down.some(o => o.clear.some(c => bot.blockAt(c).name === 'jungle_leaves')), 'leaves are dug');
+});
