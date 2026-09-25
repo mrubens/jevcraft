@@ -72,6 +72,46 @@ function biomeNear(bot, name, { reach = 128, step = 16 } = {}) {
   }
   return best ? at(best.p, { biome: true }) : null;
 }
+// The biome under the bot, and the others within the loaded area with their
+// distance and direction: what lives where is Jev's to know (sheep graze in
+// plains and meadows, not deserts), so the questions carry it. Sampled on a
+// thirty-two block grid, looked at once every ten seconds.
+const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+const biomeName = (bot, b) => b?.biome ? String(bot.registry?.biomes?.[b.biome.id]?.name || b.biome.name || '').replace('minecraft:', '') || null : null;
+const biomeViews = new WeakMap();
+function biomeView(bot, { reach = 128, step = 32, now = Date.now() } = {}) {
+  const cached = biomeViews.get(bot);
+  if (cached && now - cached.at < 10000) return cached.view;
+  const here = bot.entity?.position?.floored?.();
+  if (!here || typeof bot.blockAt !== 'function') return null;
+  const nearest = new Map();
+  for (let dx = -reach; dx <= reach; dx += step) for (let dz = -reach; dz <= reach; dz += step) {
+    const name = biomeName(bot, bot.blockAt(here.offset(dx, 0, dz)));
+    if (!name) continue;
+    const d = Math.round(Math.hypot(dx, dz));
+    if (!nearest.has(name) || d < nearest.get(name).distance) nearest.set(name, { biome: name, distance: d, direction: d ? COMPASS[((Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) % 8) + 8) % 8] : 'here', x: here.x + dx, z: here.z + dz });
+  }
+  const current = biomeName(bot, bot.blockAt(here));
+  // What each holds, from the game's tables (biomes.js).
+  const { biomeFacts } = require('./biomes');
+  const has = name => { const facts = biomeFacts(name); return facts ? { has: facts } : {}; };
+  const view = { biome: current, ...(biomeFacts(current) ? { biomeHas: biomeFacts(current) } : {}),
+    biomesNearby: [...nearest.values()].filter(b => b.biome !== current).sort((a, b) => a.distance - b.distance).slice(0, 6).map(b => ({ ...b, ...has(b.biome) })) };
+  biomeViews.set(bot, { at: now, view });
+  return view;
+}
+
+// The biomes worth a walk from here: another biome, far enough off that
+// the walk takes the bot somewhere new, nearest first, each said with what
+// it holds. A general side trip (work.js sideTrips) and the wool search's
+// choice (home-base.js) are built from them.
+function biomeTrips(bot, { min = 24, limit = 4 } = {}) {
+  const view = biomeView(bot);
+  if (!view || !/overworld/.test(String(bot.game?.dimension || 'overworld'))) return [];
+  return view.biomesNearby.filter(b => b.distance >= min).slice(0, limit)
+    .map(b => ({ ...b, says: `the ${b.biome.replaceAll('_', ' ')} ${b.distance} blocks ${b.direction}${b.has ? ` (${b.has})` : ''}` }));
+}
+
 const DETECTORS = [
   { kind: 'ruined_portal', dimension: 'overworld', same: 24, detect: bot => {
     const found = find(bot, ['crying_obsidian', 'obsidian']);
@@ -304,4 +344,4 @@ function foundEntries(known = {}) {
     dimension: l.dimension, firstAt: l.firstAt }));
 }
 
-module.exports = { foundEntries, goToLandmark, foundSentence, AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };
+module.exports = { biomeView, biomeTrips, foundEntries, goToLandmark, foundSentence, AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };

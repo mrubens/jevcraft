@@ -281,3 +281,22 @@ test('a stalled swimmer recenters within its observed water cell once before ret
   assert.equal(attempts, 2); assert.equal(recoveries, 1);
   assert.equal(bot.entity.position.y, 59.2); assert(Object.values(controls).every(value => !value));
 });
+
+test('biomes about are shown with what they hold, and those far enough off are trips', () => {
+  const { biomeView, biomeTrips } = require('../src/exploration');
+  const registry = require('minecraft-data')('26.1');
+  const id = name => Object.values(registry.biomes).find(b => b.name === name).id;
+  // Desert here, plains to the north (negative z), ocean close by to the east.
+  const biomeAt = p => p.z <= -64 ? 'plains' : p.x >= 32 && p.x < 64 && Math.abs(p.z) < 32 ? 'ocean' : 'desert';
+  const bot = { registry, game: { dimension: 'minecraft:overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) },
+    blockAt: p => ({ biome: { id: id(biomeAt(p)) } }) };
+  const view = biomeView(bot, { now: 1 });
+  assert.equal(view.biome, 'desert');
+  assert.match(view.biomeHas, /no trees/);
+  const plains = view.biomesNearby.find(b => b.biome === 'plains');
+  assert.equal(plains.direction, 'north');
+  assert.match(plains.has, /sheep/);
+  const trips = biomeTrips(bot);
+  assert.deepEqual(trips.map(t => t.biome), ['ocean', 'plains']);
+  assert.match(trips[1].says, /^the plains 64 blocks north \(.*sheep/);
+});

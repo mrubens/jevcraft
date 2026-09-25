@@ -1742,6 +1742,7 @@ function decisionObservation(bot, goal) {
       injured: bot.health < 20, hungerAllowsNaturalHealing: bot.food >= 18, safeFoodCarried: !!chooseFood(bot) },
     dimension: bot.game.dimension, position: { ...bot.entity.position.floored() },
     daylight: bot.time?.timeOfDay < DAY.DARK ? 'day' : bot.time?.timeOfDay < DAY.DAWN ? 'night' : 'dawn',
+    ...(require('./exploration').biomeView(bot) || {}),
     nearbyThreats: Object.values(bot.entities || {}).filter(e => hostiles.has(e.name) && e.position.distanceTo(bot.entity.position) < 24)
       .map(e => ({ id: e.id, name: e.name, distance: Math.round(e.position.distanceTo(bot.entity.position)) })),
     recentFailures: attemptsFor(goal).of('option'),
@@ -2791,6 +2792,7 @@ function idleOptions(bot, goal) {
   if (sides.loot) options.loot = sides.loot;
   if (sides.trade) options.trade = sides.trade;
   for (const key of ['deep_dark', 'trial_chambers', 'fetch_cache', 'tame_wolf', 'breed_sheep', 'breed_chickens']) if (sides[key]) options[key] = sides[key];
+  for (const key of Object.keys(sides).filter(k => k.startsWith('travel_'))) options[key] = sides[key];
   // Experience for enchanting: the ingots taken out of a furnace give it,
   // and the raw ore is carried and stashed by the stack. Only while there is
   // gear to enchant and the level is under thirty, so it is never ground for
@@ -2845,6 +2847,16 @@ function sideTrips(bot, goal, client) {
     const target = unexploredArea(bot, goal, { home });
     if (target) trips.explore = { description: `Explore: walk to the nearest unexplored area (${target.fromHere} blocks away) and see what is there. Known so far: ${summaryText(explorationSummary(goal))}. Villages mean beds, food and trades; temples, shipwrecks and ruined portals mean chests.`,
       says: "I'll go exploring", run: (b, t, g, sv) => exploreStep(b, t, g, sv, { navigate, home, noticeVillage }) };
+  }
+  // Another biome in view, with what it holds (biomes.js): the ground
+  // underfoot decides what a step can find, and a desert has no sheep.
+  for (const b of require('./exploration').biomeTrips(bot)) {
+    trips[`travel_${b.biome}`] = { description: `Travel: walk to ${b.says} and carry on from there.`,
+      says: `I'll head to the ${b.biome.replaceAll('_', ' ')} to the ${b.direction}`, walkBlocks: b.distance,
+      run: async (b2, t) => {
+        await navigate(b2, t, new goals.GoalNearXZ(b.x, b.z, 8), { timeoutMs: Math.max(60000, b.distance * 500), stallMs: 8000, sprint: true });
+        b2.chat?.(`In the ${b.biome.replaceAll('_', ' ')} now.`);
+      } };
   }
   // Animals: a wolf tamed with bones, sheep and chickens bred in the field
   // (wolves.js, breeding.js).

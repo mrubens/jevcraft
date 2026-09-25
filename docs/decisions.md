@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-70 questions: 22 decision trees and 48 batched questions.
+71 questions: 23 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -256,6 +256,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `plug` | root | put a block back in the gap | a building block is carried |
 | `carry_on` | root | leave it running and carry on | always |
 
+### `sheep_search`
+
+**No sheep in view for the bed's wool: which nearby biome to look in, or explore on from here?**
+
+- When: Gathering wool with no sheep in view and another biome within the loaded area; the pick holds until the bot is there or the walk fails.
+- Decision tree, choice; stakes low; ledger kind `explore`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/home-base.js (searchForSheep), src/exploration.js (biomeView)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `biome_\d+` (pattern) | root | walk to this biome and look there | a biome other than the one underfoot, twenty-four or more blocks off, with its distance, direction and what it holds |
+| `explore_here` | root | explore on from here | always |
+
 ### `upkeep`
 
 **Something the bot keeps in its pockets is running short (a spare pickaxe, wood, building blocks): see to it now, or carry on?**
@@ -458,6 +473,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `breed_sheep` | root | breed two sheep | two adult sheep near and two wheat carried |
 | `breed_chickens` | root | breed two chickens | two adult chickens near and two seeds carried |
 | `fetch_cache` | root | fetch the things left in a field cache | a full field cache between 48 and 512 blocks away |
+| `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | in the Overworld, another biome twenty-four or more blocks off (the nearest four), said with what it holds |
 | `deep_dark` | root | an expedition to the deep dark | in the Overworld with an iron pickaxe or better, healthy and fed, no warden rest, and no city already done |
 | `trade` | root | trade at a remembered village | a village is remembered within 256 blocks and emeralds or spare items to sell are carried |
 | `torches` | root | craft torches | coal is carried and fewer than eight torches |
@@ -498,6 +514,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `breed_sheep` | root | breed two sheep | by day in the Overworld, and two adult sheep near and two wheat carried |
 | `breed_chickens` | root | breed two chickens | by day in the Overworld, and two adult chickens near and two seeds carried |
 | `fetch_cache` | root | fetch the things left in a field cache | by day in the Overworld, and a full field cache between 48 and 512 blocks away |
+| `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | by day in the Overworld, and in the Overworld, another biome twenty-four or more blocks off (the nearest four), said with what it holds |
 | `deep_dark` | root | an expedition to the deep dark | by day in the Overworld, and in the Overworld with an iron pickaxe or better, healthy and fed, no warden rest, and no city already done |
 | `trade` | root | trade at a remembered village | by day in the Overworld, and a village is remembered within 256 blocks and emeralds or spare items to sell are carried |
 | `torches` | root | craft torches | by day in the Overworld, and coal is carried and fewer than eight torches |
@@ -527,6 +544,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `trial_chambers` | root | an expedition to the trial chambers | in the Overworld with an iron pickaxe or better, healthy and fed, and the chambers not already done |
 | `explore` | root | explore the nearest unexplored area | in the Overworld with an unexplored area within 512 blocks of home |
 | `fetch_cache` | root | fetch the things left in a field cache | a chest left before an earlier trip, full, between 48 and 512 blocks away |
+| `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | by day and fit, another biome twenty-four or more blocks off in the Overworld (the nearest four), said with what it holds, and the walk there and back fits in the daylight left |
 | `tame_wolf` | root | tame a wolf | a wild adult wolf in view, bones carried, fewer than two tamed, in the Overworld |
 | `breed_sheep` | root | breed two sheep | two adult sheep within sixteen blocks, two wheat carried, none bred in five minutes |
 | `breed_chickens` | root | breed two chickens | two adult chickens within sixteen blocks, two seeds carried, none bred in five minutes |

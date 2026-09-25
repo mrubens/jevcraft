@@ -22,6 +22,7 @@ const IDLE_OPTIONS = [
   { key: 'breed_sheep', label: 'breed two sheep', when: 'two adult sheep near and two wheat carried' },
   { key: 'breed_chickens', label: 'breed two chickens', when: 'two adult chickens near and two seeds carried' },
   { key: 'fetch_cache', label: 'fetch the things left in a field cache', when: 'a full field cache between 48 and 512 blocks away' },
+  { pattern: 'travel_[a-z_]+', label: 'walk to a nearby biome', when: 'in the Overworld, another biome twenty-four or more blocks off (the nearest four), said with what it holds', dynamic: true },
   { key: 'deep_dark', label: 'an expedition to the deep dark', when: 'in the Overworld with an iron pickaxe or better, healthy and fed, no warden rest, and no city already done' },
   { key: 'trade', label: 'trade at a remembered village', when: 'a village is remembered within 256 blocks and emeralds or spare items to sell are carried' },
   { key: 'torches', label: 'craft torches', when: 'coal is carried and fewer than eight torches' },
@@ -90,6 +91,7 @@ define({
     { key: 'trial_chambers', label: 'an expedition to the trial chambers', when: 'in the Overworld with an iron pickaxe or better, healthy and fed, and the chambers not already done', level: 'root' },
     { key: 'explore', label: 'explore the nearest unexplored area', when: 'in the Overworld with an unexplored area within 512 blocks of home', level: 'root' },
     { key: 'fetch_cache', label: 'fetch the things left in a field cache', when: 'a chest left before an earlier trip, full, between 48 and 512 blocks away', level: 'root' },
+    { pattern: 'travel_[a-z_]+', label: 'walk to a nearby biome', when: 'by day and fit, another biome twenty-four or more blocks off in the Overworld (the nearest four), said with what it holds, and the walk there and back fits in the daylight left', level: 'root', dynamic: true },
     { key: 'tame_wolf', label: 'tame a wolf', when: 'a wild adult wolf in view, bones carried, fewer than two tamed, in the Overworld', level: 'root' },
     { key: 'breed_sheep', label: 'breed two sheep', when: 'two adult sheep within sixteen blocks, two wheat carried, none bred in five minutes', level: 'root' },
     { key: 'breed_chickens', label: 'breed two chickens', when: 'two adult chickens within sixteen blocks, two seeds carried, none bred in five minutes', level: 'root' },
@@ -214,6 +216,20 @@ define({
   ],
   instructions: workInstructions('The bot just dug a block and water or lava has run into the gap. Choose whether to plug it with a carried block or carry on digging.'),
   fallback: () => 'plug',
+});
+
+// Where to look for sheep, for a bed.
+define({
+  id: 'sheep_search', area: 'resources', kind: 'explore', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'No sheep in view for the bed\'s wool: which nearby biome to look in, or explore on from here?',
+  trigger: 'Gathering wool with no sheep in view and another biome within the loaded area; the pick holds until the bot is there or the walk fails.',
+  source: 'src/home-base.js (searchForSheep), src/exploration.js (biomeView)',
+  options: [
+    { pattern: 'biome_\\d+', label: 'walk to this biome and look there', when: 'a biome other than the one underfoot, twenty-four or more blocks off, with its distance, direction and what it holds', level: 'root', dynamic: true },
+    { key: 'explore_here', label: 'explore on from here', when: 'always', level: 'root' },
+  ],
+  instructions: workInstructions('The bot needs wool for a bed and no sheep are in view. Choose where to look. The biome underfoot and those about are in the state with their distance and direction.'),
+  fallback: () => 'explore_here',
 });
 
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.

@@ -2040,6 +2040,7 @@ class Survival {
     const needsFood = foodSupply(bot) < desiredFood && (hungry || (stockDriven && !stockPaused));
     if (!needsShelter && !needsFood) return false;
     const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay,
+      ...(require('./exploration').biomeView(bot) || {}),
       playerUrgency: goal.urgency ? { level: goal.urgency.level, meaning: 'How much the wording of the request pressed for speed: relaxed, ordinary or pressed. Pressure is a reason to keep working while it is still safe, never a reason to skip shelter once night is close.' } : undefined,
       health: bot.health, food: bot.food, safeFoodCarried: !!chooseFood(bot),
       survivalFacts: { difficulty: bot.game.difficulty, hostileMobsSpawnAtNight: true,

@@ -715,6 +715,38 @@ async function buildPen(bot, task, goal, save, home, actions) {
 
 // Wool comes off a sheep the same way mutton does; the foraging hunt does
 // the chase and the wool is picked up beside the meat.
+// No sheep in view: where to look is Jev's, told the biome underfoot and the
+// ones about with their distance and direction (sheep graze plains, meadows
+// and forests, not deserts or oceans), beside exploring on from here. The
+// pick holds until the bot is there or the walk fails. Without Jev, explore.
+async function searchForSheep(bot, task, goal, save, actions) {
+  const search = goal.woolSearch ||= { since: Date.now(), from: plain(bot.entity.position.floored()) };
+  const held = search.toward;
+  if (held && Math.hypot(held.x - bot.entity.position.x, held.z - bot.entity.position.z) > 12) {
+    try { await actions.navigate(bot, task, new goals.GoalNearXZ(held.x, held.z, 8), { timeoutMs: 60000, stallMs: 8000 }); return; }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; delete search.toward; save(); return; }
+  }
+  delete search.toward;
+  const exploration = require('./exploration');
+  const view = exploration.biomeView(bot);
+  const client = task.opportunityClient;
+  const nearby = exploration.biomeTrips(bot, { limit: 6 });
+  if (!client || !nearby.length) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
+  const minutes = Math.round((Date.now() - search.since) / 60000);
+  const tree = Object.fromEntries(nearby.map((b, i) => [`biome_${i}`, { description: `Walk to ${b.says} and look for sheep there.` }]));
+  tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.` };
+  let pick = null;
+  try {
+    const decision = await require('./decisions').decide('sheep_search', { client, bot, task, goal, save, tree,
+      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), searchingMinutes: minutes, woolCarried: woolCarried(bot).total } });
+    if (!decision.stale && !decision.fallback) pick = decision.path.at(-1);
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  const chosen = /^biome_(\d+)$/.exec(pick || '') && nearby[Number(pick.slice(6))];
+  if (!chosen) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
+  search.toward = { x: chosen.x, z: chosen.z, biome: chosen.biome }; save();
+  bot.chat?.(`No sheep here. Trying the ${chosen.biome.replaceAll('_', ' ')} to the ${chosen.direction}.`);
+}
+
 async function gatherWool(bot, task, goal, save, home, actions) {
   const before = woolCarried(bot).total;
   // Shears first, when carried or two ingots make a pair: three wool a
@@ -732,7 +764,7 @@ async function gatherWool(bot, task, goal, save, home, actions) {
   // How long, and how far, without a sheep in sight (strategy.js says it).
   if (sheep) delete goal.woolSearch;
   else goal.woolSearch ||= { since: Date.now(), from: plain(bot.entity.position.floored()) };
-  if (!sheep) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
+  if (!sheep) { await searchForSheep(bot, task, goal, save, actions); return; }
   const where = sheep.position.clone();
   // A sheep that could not be had rests; the next try is another sheep, not
   // the nearest one again.
