@@ -82,6 +82,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     if (!attempts && exit && exit.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) <= 3.5) {
       goal.step = { action: 'reach_shore', from: { ...bot.entity.position }, destination: { ...exit }, climb: true };
       goal.survivalAction = { action: 'reach_shore', at: new Date().toISOString() }; save();
+      await clearHeadroom(bot, task);
       await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'out of the water onto the nearest dry cell',
         look: exit.offset(0.5, 1, 0.5), maxMs: 2500, tick: 50, until: () => bot.entity.onGround && !inWater(bot) });
       if (!inWater(bot)) { state.landed = { position: { ...bot.entity.position }, at: new Date().toISOString(), climbed: true }; save(); return true; }
@@ -138,12 +139,32 @@ async function stepOut(bot, task, goal, save) {
       await bot.placeBlock(bot.blockAt(anchor[0]), anchor[1]);
     } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; continue; }
     if (bot.blockAt(cell)?.boundingBox !== 'block') continue;
+    await clearHeadroom(bot, task);
     await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'onto the block placed at the waterline',
       look: cell.offset(0.5, 1.2, 0.5), maxMs: 2000, tick: 50, until: () => bot.entity.onGround && !inWater(bot) });
     (goal.shoreRecovery ||= {}).stepped = { at: new Date().toISOString(), at_cell: { ...cell } }; save();
     return !inWater(bot);
   }
   return false;
+}
+
+// Room over the head to climb out. Out of water onto a bank a block up,
+// the game lifts a swimmer only with room above: trial 33's bot trod water
+// in the one open cell of an underground pool, stone at the top of its head,
+// and swam against the bank for two minutes; ReproJev, put in the same
+// pool, stopped at the same spot to the hundredth. The block over the head
+// is dug first, when it is quick and has nothing liquid above it.
+async function clearHeadroom(bot, task) {
+  const feet = bot.entity.position.floored();
+  const over = bot.blockAt(feet.offset(0, 2, 0));
+  if (!over || over.boundingBox !== 'block' || !over.diggable || /bed$|chest|furnace|bedrock|obsidian/.test(over.name)) return false;
+  if (/water|lava/.test(bot.blockAt(feet.offset(0, 3, 0))?.name || '') || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => /lava/.test(bot.blockAt(feet.offset(x, 2, z))?.name || ''))) return false;
+  const { equipBestTool } = require('./skills');
+  const { digWithAirGuard } = require('./vitals');
+  try { await equipBestTool(bot, over); } catch (_) { /* the hand, then */ }
+  try { await digWithAirGuard(bot, task, over); }
+  catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+  return bot.blockAt(feet.offset(0, 2, 0))?.boundingBox !== 'block';
 }
 
 const NOTCH_DIG_MS = 4000;
@@ -201,6 +222,7 @@ async function notchOut(bot, task, goal, save) {
       catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
       finally { bot.setControlState?.('jump', false); }
     }
+    await clearHeadroom(bot, task);
     await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'onto the step cut into the bank',
       look: body.offset(0.5, 0.5, 0.5), maxMs: 2500, tick: 50, until: () => bot.entity.onGround && !inWater(bot) });
     if (!inWater(bot)) { (goal.shoreRecovery ||= {}).notched = { at: new Date().toISOString(), step: { ...step } }; save(); return true; }
@@ -394,4 +416,4 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   return before - flat() >= 4 || !!goal.step.landInView;
 }
 
-module.exports = { reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView, ownGround };
+module.exports = { clearHeadroom, reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView, ownGround };

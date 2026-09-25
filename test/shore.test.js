@@ -195,3 +195,22 @@ test('an oak log remembered across the water is swum for before the land walked'
   assert.match(bot.said[0], /oak log I saw/);
   assert.deepEqual(goal.step.toward, { x: -100, z: 60 });
 });
+
+test('with stone at the top of the head in the water, the block over the head is dug before climbing out', async () => {
+  // Trial 33: the one open cell of an underground pool, the ceiling at the
+  // top of the head; the game gives no lift onto the bank without room.
+  const { clearHeadroom } = require('../src/shore');
+  const { bot, dug } = pool();
+  const over = bot.entity.position.floored().offset(0, 2, 0);
+  const inner = bot.blockAt;
+  bot.blockAt = p => { const f = p.floored(); return f.equals(over) && !dug.has(`${f.x},${f.y},${f.z}`) ? { position: f, name: 'granite', boundingBox: 'block', diggable: true } : inner(p); };
+  bot.oxygenLevel = 20; bot.digTime = () => 500; bot.canDigBlock = () => true;
+  assert.equal(await clearHeadroom(bot, new Task('pool')), true);
+  assert(dug.has(`${over.x},${over.y},${over.z}`), 'the block over the head is dug');
+  // Water or lava over it is left alone.
+  const { bot: wet } = pool();
+  const top = wet.entity.position.floored();
+  const innerWet = wet.blockAt;
+  wet.blockAt = p => { const f = p.floored(); return f.equals(top.offset(0, 2, 0)) ? { position: f, name: 'granite', boundingBox: 'block', diggable: true } : f.equals(top.offset(0, 3, 0)) ? { position: f, name: 'water', boundingBox: 'empty' } : innerWet(p); };
+  assert.equal(await clearHeadroom(wet, new Task('pool')), false);
+});
