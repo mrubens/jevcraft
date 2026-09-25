@@ -3183,7 +3183,8 @@ function patrolChoice(bot, trips) {
 function gameHandlers(bot, decisionClient) {
   return {
         // Which open rung, or a side trip, next: Jev's choice (strategy.js).
-        strategy: (bot, task, goal, save, stage) => strategyStep(bot, task, goal, save, stage, { client: decisionClient, decide, sides: sideTrips(bot, goal, decisionClient) }),
+        strategy: (bot, task, goal, save, stage) => strategyStep(bot, task, goal, save, stage, { client: decisionClient, decide, sides: sideTrips(bot, goal, decisionClient),
+          planFor: (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g) }),
         acquireStep, acquireSetStep, enter_nether: netherStep, return_overworld: returnFromNether,
         enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate }),
         fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate, dig }, decisionClient),

@@ -31,6 +31,7 @@ const label = phase => phase.replaceAll('_', ' ');
 const RUNG_WHY = {
   bed: 'a night slept passes in seconds and sets the spawn point; three wool from sheep or crafted from spiders\' string (four string a wool), or a bed from a village',
   iron_pickaxe: 'mines the iron for armour and the diamonds past it',
+  iron_armour: 'a helmet, chestplate, leggings and boots, twenty-four ingots in all; worn, they take about a third or more off every hit',
   home_water: 'the pond that waters the plot',
   home_plot: 'wheat for bread, tomorrow\'s food',
   home_pen: 'cows kept for steak and leather',
@@ -52,19 +53,39 @@ function searchSoFar(bot, goal, rung) {
   const blocks = Math.round(Math.hypot(bot.entity.position.x - search.from.x, bot.entity.position.z - search.from.z));
   return ` Searching for sheep for ${minutes} minute${minutes === 1 ? '' : 's'}, ${blocks} blocks from where the search began, none seen yet.`;
 }
-function rungOption(rung, first, bot, goal) {
-  const what = rung.item ? `${rung.count > 1 ? `${rung.count} ` : ''}${label(rung.item)}` : label(rung.phase);
+// What the step takes from the pockets as they are, when a planner is
+// given: trial 43 carried sixty-one raw iron and two hundred coal, was
+// offered the armour as "get 4 iron helmet" with nothing said of what it
+// would take, and went looking for a bed.
+function rungTakes(bot, goal, rung, planFor) {
+  if (!planFor || !bot) return '';
+  const items = rung.items || (rung.item ? [rung.item] : []);
+  const steps = [];
+  for (const item of items) {
+    try { for (const st of planFor(bot, item, rung.items ? 1 : (rung.count || 1), goal) || []) steps.push(st); }
+    catch (_) { return ''; }
+  }
+  if (!steps.length) return '';
+  const words = s => String(s || '').replaceAll('_', ' ');
+  const gather = steps.filter(st => /mine|hunt|fill|explore/.test(st.action));
+  const byAction = {};
+  for (const st of steps) { const k = `${st.action} ${words(st.item || st.block || st.mob)}`; byAction[k] = (byAction[k] || 0) + (st.count || 1); }
+  const list = Object.entries(byAction).map(([k, n]) => { const [action, ...rest] = k.split(' '); return `${action.replaceAll('_', ' ')} ${n} ${rest.join(' ')}`; }).join(', ');
+  return ` From the pockets as they are it takes: ${list}${gather.length ? '' : ' (all of it from what is carried: no gathering)'}.`;
+}
+function rungOption(rung, first, bot, goal, planFor = null) {
+  const what = rung.items?.length > 1 ? `${label(rung.phase)} (${rung.items.map(label).join(', ')})` : rung.item ? `${rung.count > 1 ? `${rung.count} ` : ''}${label(rung.item)}` : label(rung.phase);
   const why = RUNG_WHY[rung.phase];
-  return { description: `${first ? 'The ladder\'s next step: ' : 'Do this step first, ahead of the ladder\'s order: '}get ${what}${why ? ` (${why})` : ''}.${bot && goal ? searchSoFar(bot, goal, rung) : ''}`, rung, fallback: first };
+  return { description: `${first ? 'The ladder\'s next step: ' : 'Do this step first, ahead of the ladder\'s order: '}get ${what}${why ? ` (${why})` : ''}.${bot && goal ? searchSoFar(bot, goal, rung) : ''}${rungTakes(bot, goal, rung, planFor)}`, rung, fallback: first };
 }
 
 // The options now, keyed for the decision tree. Only in the Overworld on
 // the preparation ladder with more than one thing to do.
-function strategyOptions(bot, goal, stage, sides = {}) {
+function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   if (bot.game?.gameMode !== 'survival' || dimension(bot) !== 'overworld') return null;
   const rungs = openRungs(bot, goal);
   const options = {};
-  if (rungs.length && rungs[0].phase === stage.phase) rungs.forEach((rung, i) => { options[`rung_${rung.phase}`] = rungOption(rung, i === 0, bot, goal); });
+  if (rungs.length && rungs[0].phase === stage.phase) rungs.forEach((rung, i) => { options[`rung_${rung.phase}`] = rungOption(rung, i === 0, bot, goal, planFor); });
   // Past the preparation ladder (pearls, the stronghold, the crossing): the
   // ladder's stage and the side trips. The dream run spent an afternoon
   // walking about after endermen with an ancient city never looked for.
@@ -104,8 +125,8 @@ function strategyState(bot, goal, stage, options) {
   };
 }
 
-async function strategyStep(bot, task, goal, save, stage, { client, decide, sides = {}, now = Date.now } = {}) {
-  const options = strategyOptions(bot, goal, stage, sides);
+async function strategyStep(bot, task, goal, save, stage, { client, decide, sides = {}, planFor = null, now = Date.now } = {}) {
+  const options = strategyOptions(bot, goal, stage, sides, planFor);
   if (!options) { delete goal.strategy; return null; }
   const keys = Object.keys(options).sort().join(',');
   const held = goal.strategy;
@@ -135,4 +156,4 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   return { ran: true };
 }
 
-module.exports = { RUNG_WHY, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };
+module.exports = { RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };

@@ -100,3 +100,17 @@ test('no side trip while the next step is a basic tool', () => {
   const options = strategyOptions(bot, goal, { phase: 'stone_pickaxe', action: 'acquire' }, sides);
   assert(!options || !options.loot, 'the pickaxe first');
 });
+
+test('a set is offered by its name and pieces, with what it takes from the pockets, and "no gathering" when the pockets hold it all', () => {
+  // Trial 43: sixty-one raw iron carried, the armour offered as "get 4 iron helmet".
+  const { rungOption } = require('../src/strategy');
+  const armour = { phase: 'iron_armour', action: 'acquire_set', item: 'iron_helmet', items: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], count: 4 };
+  const planFor = (b, item) => [{ action: 'smelt', item: 'iron_ingot', count: item === 'iron_chestplate' ? 8 : 5 }, { action: 'craft', item, count: 1 }];
+  const d = rungOption(armour, false, { entity: { position: { x: 0, y: 0, z: 0 } } }, {}, planFor).description;
+  assert.match(d, /get iron armour \(iron helmet, iron chestplate, iron leggings, iron boots\)/);
+  assert.match(d, /twenty-four ingots/);
+  assert.match(d, /smelt 23 iron ingot, craft 1 iron helmet/);
+  assert.match(d, /no gathering/);
+  const mining = rungOption(armour, false, { entity: { position: { x: 0, y: 0, z: 0 } } }, {}, () => [{ action: 'mine', item: 'raw_iron', count: 24 }]).description;
+  assert.doesNotMatch(mining, /no gathering/);
+});
