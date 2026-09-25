@@ -231,7 +231,12 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}.`,
     run: () => require('./unstuck').workFree(bot, task, goal, save, { client, dig, aim: terrain }) };
   const rung = goal.rungTime?.phase;
-  if (rung && DEFERRABLE.has(rung)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.`,
+  // What the rung is for and what half an hour without it costs (the
+  // decision audit, 2026-09-25).
+  const { RUNG_WHY, WITHOUT } = require('./strategy');
+  const piece = /^iron_(helmet|chestplate|leggings|boots)$/.test(rung || '') ? 'iron_armour' : rung;
+  const rungWhy = rung ? RUNG_WHY[rung] || RUNG_WHY[piece] : null;
+  if (rung && DEFERRABLE.has(rung)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}`,
     run: async () => {
       setAside(goal, 'rung', rung, `stalled ${stall.strikes} times in ten minutes`, RUNG_WAIT_MS); delete goal.rungTime;
       bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
@@ -3279,7 +3284,14 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // the walls of the lava sea.
   const ore = find(bot, USEFUL_ORES, 16, 8).map(p => ({ p, name: bot.blockAt(p)?.name }))
     .filter(o => o.name && ![[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]].some(([x, y, z]) => /lava/.test(bot.blockAt(o.p.offset(x, y, z))?.name || '')))[0];
-  if (ore) offer('mine_nearby', `Dig the ${ore.name.replaceAll('_', ' ')} ${Math.round(ore.p.distanceTo(bot.entity.position))} blocks away.`,
+  // Where the ore is and what is beside it, and what a walk meets (the
+  // decision audit, 2026-09-25).
+  const SIDES = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]];
+  const oreDy = ore ? ore.p.y - bot.entity.position.floored().y : 0;
+  const oreBeside = ore ? `${Math.abs(oreDy) >= 2 ? ` It is ${Math.abs(oreDy)} blocks ${oreDy > 0 ? 'up' : 'down'}.` : ''}${SIDES.some(([x, y, z]) => /^(air|cave_air)$/.test(bot.blockAt(ore.p.offset(x, y, z))?.name || '')) ? ' It is in the wall of an open space: reaching it opens onto whatever is in there.' : ''}${SIDES.some(([x, y, z]) => /water/.test(bot.blockAt(ore.p.offset(x, y, z))?.name || '')) ? ' Water is beside it.' : ''}` : '';
+  const sky = bot.blockAt(bot.entity.position.floored())?.skyLight;
+  const walkRisk = dark ? ' It is dusk or night: mobs spawn on open ground along the way.' : Number.isFinite(sky) && sky < 8 ? ' Underground: mobs spawn wherever it is dark along the way.' : '';
+  if (ore) offer('mine_nearby', `Dig the ${ore.name.replaceAll('_', ' ')} ${Math.round(ore.p.distanceTo(bot.entity.position))} blocks away.${oreBeside}`,
     () => dig(bot, bounded, ore.p, {}));
   // A walk to see what is there is an Overworld thing by day; in the Nether
   // twenty-four blocks in a straight line is a walk to the lava sea.
@@ -3289,7 +3301,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; turn.detourHeading = heading;
     const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
     const target = here.offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
-    offer('look_around', 'Walk about twenty-four blocks in a direction not tried lately and see what is there: animals, trees, ore in a cliff, a better way on.',
+    offer('look_around', `Walk about twenty-four blocks in a direction not tried lately and see what is there: animals, trees, ore in a cliff, a better way on.${walkRisk}`,
       () => navigate(bot, bounded, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 }));
   }
   // Nothing else on offer: a walk to new ground, dusk or not, rather than
@@ -3300,7 +3312,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; turn.detourHeading = heading;
     const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
     const target = here.offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
-    offer('look_around', 'Walk about twenty-four blocks in a direction not tried lately: nothing else can be done from here.',
+    offer('look_around', `Walk about twenty-four blocks in a direction not tried lately: nothing else can be done from here.${walkRisk}`,
       () => navigate(bot, bounded, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 }));
   }
   const options = Object.keys(tree);

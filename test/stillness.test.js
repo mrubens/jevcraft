@@ -170,13 +170,14 @@ test('with Jev asked, how to answer a stall is its choice: another way, the rung
   const { answerStall } = require('../src/work');
   const { isSetAside } = require('../src/progress');
   const asked = [];
-  const client = { systemOne: async ({ state, questions }) => { asked.push({ state, criteria: Object.keys(questions.branch_0.criteria) }); return { answers: { branch_0: { choice: 'set_aside_rung', confidence: 0.4 } } }; } };
+  const client = { systemOne: async ({ state, questions }) => { asked.push({ state, criteria: Object.keys(questions.branch_0.criteria), described: questions.branch_0.criteria }); return { answers: { branch_0: { choice: 'set_aside_rung', confidence: 0.4 } } }; } };
   const bot = Object.assign(botAt(0.5, 64, 0.5), { registry, health: 20, food: 20, findBlocks: () => [], blockAt: () => ({ name: 'air', boundingBox: 'empty' }),
     time: { timeOfDay: 1000 }, game: { dimension: 'overworld' }, pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, chat() {} });
   const goal = { kind: 'win', survival: {}, step: { action: 'craft', item: 'shield' }, rungTime: { phase: 'shield' } };
   await answerStall(bot, new Task('stall'), goal, () => {}, { key: 'step:rung:shield', layer: 'work', strikes: 1 }, { client }).catch(() => {});
   assert(asked[0].criteria.includes('differently') && asked[0].criteria.includes('set_aside_rung'), asked[0].criteria.join(','));
   assert.equal(asked[0].state.stalled.strikes, 1);
+  assert.match(asked[0].described.set_aside_rung, /It is for this: blocks arrows.*For those thirty minutes, every arrow and every creeper blast lands in full/, 'what the rung is for and going without it costs (the decision audit)');
   assert(isSetAside(goal, 'rung', 'shield'), 'Jev\'s pick ran at the first stall, unsure or not');
 });
 
@@ -206,6 +207,23 @@ test('something else useful from here, and the stalled step is kept', async () =
   assert.equal(goal.step.action, 'stock_food_for_nether', 'the stalled step is back when the detour ends');
   const hour = Object.values(goal.survival.stillness.hours)[0];
   assert.equal(hour.stalls, 1); assert(hour.byReason['step:stock_food_for_nether'] >= 20);
+});
+
+test('a detour underground says where the ore is and what is beside it, and that the dark spawns mobs on a walk (the decision audit)', async () => {
+  const { breakStillness } = require('../src/work');
+  const ore = new Vec3(3, 37, 0);
+  const stacks = [{ name: 'stone_pickaxe', count: 1, type: registry.itemsByName.stone_pickaxe.id }, { name: 'stone_axe', count: 1, type: registry.itemsByName.stone_axe.id }, { name: 'stone_sword', count: 1, type: registry.itemsByName.stone_sword.id }];
+  const bot = Object.assign(new EventEmitter(), { registry, inventory: Object.assign(new EventEmitter(), { items: () => stacks }), game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
+    entity: { id: 1, position: new Vec3(0.5, 40, 0.5) }, health: 20, food: 20, entities: {}, time: { timeOfDay: 3000 },
+    findBlocks: ({ matching }) => matching.includes(registry.blocksByName.iron_ore.id) ? [ore] : [],
+    blockAt: p => { const f = p.floored(); const name = f.equals(ore) ? 'iron_ore' : f.equals(ore.offset(0, 1, 0)) || (f.x === 0 && f.z === 0 && f.y >= 40 && f.y <= 41) ? 'cave_air' : 'stone'; return { name, boundingBox: /air/.test(name) ? 'empty' : 'block', position: f, skyLight: 0 }; },
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, chat() {} });
+  const goal = { kind: 'win', step: { action: 'mine' }, survival: {} };
+  let offered;
+  const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; throw new Error('offline'); } };
+  await breakStillness(bot, new Task('still'), goal, () => {}, { client, survival: { state: goal.survival, canNightMine: () => false }, reason: 'step:mine' }).catch(() => {});
+  assert.match(offered.mine_nearby, /It is 3 blocks down\. It is in the wall of an open space/);
+  assert.match(offered.look_around, /Underground: mobs spawn wherever it is dark along the way/);
 });
 
 test('the Nether food gate never waits: a rested search is taken up again, and twenty minutes lets the crossing go', async () => {
