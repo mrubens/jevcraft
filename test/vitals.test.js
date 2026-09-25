@@ -268,3 +268,18 @@ test('the way to air can be through a block dug quickly: sideways out of a flood
   assert(route.at(-1).x >= 2, 'ends in the cave');
   assert(!dug.includes('(0, 43, 0)'), 'not the lid under the lake');
 });
+
+test('in a drift of powder snow, the way out is dug through it to the nearest cell clear of it with a floor', () => {
+  // Trial 89: spawned in powder snow four deep, took it for a roof, and froze to death.
+  const { inPowderSnow, snowRoute } = require('../src/vitals');
+  const name = p => p.y < 60 ? 'stone' : (Math.abs(p.x) <= 3 && Math.abs(p.z) <= 3 && p.y <= 63) ? 'powder_snow' : 'air';
+  const bot = { entity: { position: new Vec3(0.5, 60, 0.5) }, blockAt: p => { const n = name(p); return { name: n, position: p, boundingBox: n === 'stone' ? 'block' : 'empty' }; } };
+  assert.equal(inPowderSnow(bot), true);
+  const route = snowRoute(bot);
+  assert(route && route.length, 'a way out');
+  const end = route.at(-1);
+  assert.equal(name(end), 'air'); assert.equal(name(end.offset(0, 1, 0)), 'air');
+  assert.equal(route.length, 4, 'four cells to the edge of the drift');
+  bot.entity.position = new Vec3(10.5, 60, 0.5);
+  assert.equal(inPowderSnow(bot), false);
+});

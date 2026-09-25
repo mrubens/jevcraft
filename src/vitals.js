@@ -175,6 +175,61 @@ async function straightUp(bot, task, { maxMs = 8000 } = {}) {
   } finally { bot.clearControlStates(); }
 }
 
+// In powder snow: the bot sinks into it, and after seven seconds inside it
+// freezes, a point every two seconds. Trial 89 spawned in a drift four deep,
+// read the snow over its head as a roof, tried to dig out as from a mine,
+// and froze to death in under a minute. The way out is the nearest cell
+// with no powder snow at the feet or the head and a floor under it, the
+// snow on the way dug (a hand takes it in a moment), then walked to.
+const POWDER = 'powder_snow';
+function inPowderSnow(bot) {
+  const feet = bot.entity?.position?.floored();
+  return !!feet && [0, 1].some(dy => bot.blockAt?.(feet.offset(0, dy, 0))?.name === POWDER);
+}
+function snowRoute(bot) {
+  const start = bot.entity.position.floored();
+  const clearOrSnow = b => b && (b.boundingBox === 'empty' || b.name === POWDER) && !/lava|water|fire/.test(b.name);
+  const out = p => [0, 1].every(dy => { const b = bot.blockAt(p.offset(0, dy, 0)); return b && b.boundingBox === 'empty' && b.name !== POWDER && !/lava|water|fire/.test(b.name); }) &&
+    bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block' && bot.blockAt(p.offset(0, -1, 0))?.name !== POWDER;
+  const dirs = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, 1, 0)];
+  const queue = [{ p: start, path: [] }], seen = new Set([`${start}`]);
+  for (let i = 0; i < queue.length && i < 2048; i++) {
+    const { p, path } = queue[i];
+    if (path.length && out(p)) return path;
+    for (const d of dirs) {
+      const next = p.plus(d);
+      if (seen.has(`${next}`) || next.distanceTo(start) > 8) continue;
+      seen.add(`${next}`);
+      if (!clearOrSnow(bot.blockAt(next)) || !clearOrSnow(bot.blockAt(next.offset(0, 1, 0)))) continue;
+      // Down only onto something: a drift over a drop is not the way out.
+      if (d.y === 0 && bot.blockAt(next.offset(0, -1, 0))?.boundingBox !== 'block' && bot.blockAt(next.offset(0, -1, 0))?.name !== POWDER) continue;
+      queue.push({ p: next, path: [...path, next] });
+    }
+  }
+  return null;
+}
+async function outOfPowderSnow(bot, task, onAction = () => {}) {
+  const route = snowRoute(bot);
+  onAction({ action: 'out_of_powder_snow', steps: route?.length ?? null });
+  if (!route) return false;
+  for (const cell of route) {
+    for (const c of [cell, cell.offset(0, 1, 0)]) {
+      task.check();
+      const b = bot.blockAt(c);
+      if (b?.name !== POWDER) continue;
+      await bot.lookAt(c.offset(0.5, 0.5, 0.5), true);
+      try { await bot.dig(b, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
+    }
+  }
+  // Also what the bot stands in now, feet and head.
+  const feet = bot.entity.position.floored();
+  for (const c of [feet, feet.offset(0, 1, 0)]) { const b = bot.blockAt(c); if (b?.name === POWDER) { try { await bot.dig(b, true); } catch (err) { if (err.name === 'Cancelled') throw err; } } }
+  const end = route.at(-1);
+  const { goals } = require('mineflayer-pathfinder');
+  try { await bot.pathfinder.goto(new goals.GoalBlock(end.x, end.y, end.z)); } catch (err) { if (err.name === 'Cancelled') throw err; }
+  return !inPowderSnow(bot);
+}
+
 function safeFood(bot, item) { return !!bot.registry.foodsByName?.[item.name] && !unsafeFoods.has(item.name); }
 
 // Food with a Hunger side effect and nothing worse. The effect costs well
@@ -241,6 +296,7 @@ async function maintainVitals(bot, task, onAction = () => {}) {
     try { await bot.dig(block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
     task.check();
   }
+  if (inPowderSnow(bot)) { await outOfPowderSnow(bot, task, onAction); task.check(); }
   if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
     try { await surfaceForAir(bot, task, onAction); delete bot._surfaceFailedAt; }
     catch (err) { if (err.name !== 'Cancelled' && /breathable air/.test(err.message)) bot._surfaceFailedAt = Date.now(); throw err; }
@@ -279,4 +335,4 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   return true;
 }
 
-module.exports = { lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
+module.exports = { inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
