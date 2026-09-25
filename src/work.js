@@ -178,7 +178,8 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // Stuck in the terrain (in water, or under cover on the way up): worked
   // free one move at a time, Jev choosing each (unstuck.js). Trials 32 and
   // 33 each stalled here in a trap the escape routines had no answer for.
-  const terrain = client && bot.game?.gameMode === 'survival' && require('./unstuck').aimFor(bot);
+  const walksFailing = /navigation timed out|without reaching new ground|No route|noPath/i.test(`${stall.error || ''} ${goal.lastError || ''}`);
+  const terrain = client && bot.game?.gameMode === 'survival' && require('./unstuck').aimFor(bot, { walksFailing });
   if (stall.layer === 'survival') {
     recordStill(stats, stall.key, STALL_MS, { now, detour: terrain ? 'work_free' : 'refused' }); save();
     if (terrain) { await inCatch(task, goal, () => require('./unstuck').workFree(bot, task, goal, save, { client, dig })); return; }
@@ -646,7 +647,27 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
     const angle = (search.leg % 8) * Math.PI / 4;
     const radius = 24 * (1 + Math.floor(search.leg / 8));
     let target = pos(search.origin).offset(Math.round(Math.cos(angle) * radius), 0, Math.round(Math.sin(angle) * radius));
-    if (frontier) target = explorationTarget(search, resource, bot.entity.position);
+    if (frontier) {
+      // A new heading is Jev's: each way with the biomes that way, water,
+      // trees seen, and how often this search went that way. Trial 35's
+      // search for wood turned at every third walk that met water and
+      // circled a desert coast for eight minutes.
+      const state = search.frontier, held = state?.target;
+      const needs = !state || !held || Math.hypot(bot.entity.position.x - held.x, bot.entity.position.z - held.z) < 24 || search.walksWithoutProgress >= 3;
+      const client = task.opportunityClient;
+      if (needs && client && typeof bot.blockAt === 'function') {
+        const { biomeRay, headingFacts, surfaceRay, HEADINGS } = require('./exploration');
+        const legs = state?.legsByHeading || {};
+        const tree = Object.fromEntries(HEADINGS.map((h, i) => [`heading_${h.replace('-', '_')}`, { description: `Head ${h}: ${headingFacts(biomeRay(bot, i), surfaceRay(bot, i))}.${legs[i] ? ` Already searched ${h} ${legs[i] === 1 ? 'once' : `${legs[i]} times`} in this search, and found none that way.` : ''}` }]));
+        try {
+          const decision = await decide('search_heading', { client, bot, task, goal, save, tree,
+            state: { resource: LOG.test(resource) ? 'wood (any log)' : resource.replaceAll('_', ' '), biome: require('./exploration').biomeView(bot)?.biome, searchLegs: search.attempts,
+              legsThatWay: Object.fromEntries(Object.entries(legs).map(([i, n]) => [HEADINGS[i], n])) } });
+          if (!decision.stale && !decision.fallback) (search.frontier ||= { heading: 0, legs: 0 }).chosen = HEADINGS.indexOf(decision.path.at(-1).slice(8).replace('_', '-'));
+        } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      }
+      target = explorationTarget(search, resource, bot.entity.position);
+    }
     // Any wood is wood: a search for oak walked a hundred and twenty-eight
     // legs past spruce and birch in trial 9 and reached dusk with no tools
     // (2026-09-24). The log step takes whatever wood is in view (logInView).
@@ -668,6 +689,11 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
     if (observed.length) {
       target = observed[0];
       search.observedTarget = { ...target };
+    }
+    // Walks that got nowhere on the chosen heading, water across it: swim.
+    if (frontier && !observed.length && (search.walksWithoutProgress || 0) >= 2 && search.frontier?.heading != null) {
+      try { if (await require('./exploration').swimAcross(bot, task, goal, save, search.frontier.heading)) { search.walksWithoutProgress = 0; search.progressLeg = null; save(); return; } }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
     if (surfaceOnly && await boatTravelStep(bot, task, goal, save, target, { acquireStep })) return;
     // Nothing but sea and islets about: swim for the land remembered, or for

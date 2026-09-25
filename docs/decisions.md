@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-72 questions: 24 decision trees and 48 batched questions.
+73 questions: 25 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -294,6 +294,20 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `explore_here` | root | explore on from here | always |
 | `craft_from_string` | root | craft wool from the string carried | four or more string carried and wool still wanted |
 
+### `search_heading`
+
+**Searching for a resource with none in view: which way to head?**
+
+- When: A surface search (logs, sand, clay and the like) that needs a new heading: at its start, when a leg is walked, or after three walks that got nowhere. The heading is held until then; the leg is up to 512 blocks.
+- Decision tree, choice; stakes low; ledger kind `explore`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (explore), src/exploration.js (biomeRay)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `heading_(east\|south_east\|south\|south_west\|west\|north_west\|north\|north_east)` (pattern) | root | head this way | always; each says the biomes that way and how often this search went that way |
+
 ### `upkeep`
 
 **Something the bot keeps in its pockets is running short (a spare pickaxe, wood, building blocks): see to it now, or carry on?**
@@ -523,7 +537,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `differently` | root | keep at the stalled work another way | work stalled (not idle time): a mine leaves this patch of the resource, anything else turns its search |
 | `set_aside_rung` | root | leave the stalled rung for thirty minutes | the stall is on a game-ladder rung that can wait |
-| `work_free` | root | work free of the terrain one move at a time | the bot is in water, or under cover on the way up (src/unstuck.js); each move is then Jev's (unstuck_move) |
+| `work_free` | root | work free of the terrain one move at a time | the bot is in water, under cover on the way up, or where every walk has failed (src/unstuck.js); each move is then Jev's (unstuck_move) |
 | `night_mine` | root | dig a mine from here for the night | night in the Overworld, a pickaxe and nothing watching |
 | `mine_nearby` | root | dig a useful ore in view | an ore within sixteen blocks with no lava beside it |
 | `look_around` | root | walk twenty-four blocks somewhere new | by day in the Overworld, or when nothing else is on offer |

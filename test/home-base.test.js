@@ -446,3 +446,25 @@ test('a plot cell the hoe would not turn waits: it is neither tilled again nor s
   assert(!status.untilled.some(p => p.x === cell.x && p.z === cell.z) && !status.blocked.some(p => p.x === cell.x && p.z === cell.z));
   assert.notEqual(home.homeStage(bot, goal)?.action, 'repair_plot', 'no repair for a waiting cell');
 });
+
+test('a stone that went into a plot cell after it was dug (a plug, a step out of the water) is dug out again before the dirt goes in', async () => {
+  // Trial 36: "placement obstructed by cobblestone" twenty times at one
+  // plot cell beside the pond.
+  const w = world({ items: [['water_bucket', 1], ['white_bed', 1], ['chest', 1], ['oak_log', 8], ['dirt', 8], ['cobblestone', 8]] });
+  const { bot, actions } = w, goal = goalWith(bot), task = new Task('home'), save = () => {};
+  const flat = home.chooseBaseSite(bot, goal);
+  const plotCell = home.layout(flat).plot[0];
+  // The plot cell is stone (it will be dug and filled with dirt), and the dig
+  // is answered by a plug: the next look finds cobblestone there again once.
+  w.set(new Vec3(plotCell.x, plotCell.y, plotCell.z), 'stone');
+  const work = home.siteWork(bot, goal, flat);
+  home.establishHome(goal, { ...flat, work });
+  const dig = actions.dig; let plugged = false;
+  actions.dig = async (b, t, p, o) => { await dig(b, t, p, o); if (!plugged && p.x === plotCell.x && p.y === plotCell.y && p.z === plotCell.z) { plugged = true; w.set(p, 'cobblestone'); } };
+  // As the real placement does: an occupied cell is refused.
+  const place = actions.place;
+  actions.place = async (b, t, p, m, o) => { const at = b.blockAt(p); if (at && at.boundingBox === 'block') throw new Error(`Placement obstructed by ${at.name} at ${p}`); return place(b, t, p, m, o); };
+  bot.entity.position = new Vec3(flat.origin.x + 0.5, flat.origin.y + 1, flat.origin.z + 0.5);
+  await home.homeStep(bot, task, goal, save, { phase: 'home_level', action: 'level_site' }, actions);
+  assert.equal(bot.blockAt(new Vec3(plotCell.x, plotCell.y, plotCell.z)).name, 'dirt');
+});

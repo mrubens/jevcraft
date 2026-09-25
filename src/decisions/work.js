@@ -115,7 +115,7 @@ define({
   options: [
     { key: 'differently', label: 'keep at the stalled work another way', when: 'work stalled (not idle time): a mine leaves this patch of the resource, anything else turns its search', level: 'root' },
     { key: 'set_aside_rung', label: 'leave the stalled rung for thirty minutes', when: 'the stall is on a game-ladder rung that can wait', level: 'root' },
-    { key: 'work_free', label: 'work free of the terrain one move at a time', when: 'the bot is in water, or under cover on the way up (src/unstuck.js); each move is then Jev\'s (unstuck_move)', level: 'root' },
+    { key: 'work_free', label: 'work free of the terrain one move at a time', when: 'the bot is in water, under cover on the way up, or where every walk has failed (src/unstuck.js); each move is then Jev\'s (unstuck_move)', level: 'root' },
     { key: 'night_mine', label: 'dig a mine from here for the night', when: 'night in the Overworld, a pickaxe and nothing watching', level: 'root' },
     { key: 'mine_nearby', label: 'dig a useful ore in view', when: 'an ore within sixteen blocks with no lava beside it', level: 'root' },
     { key: 'look_around', label: 'walk twenty-four blocks somewhere new', when: 'by day in the Overworld, or when nothing else is on offer', level: 'root' },
@@ -234,6 +234,22 @@ define({
   ],
   instructions: workInstructions('The bot needs wool for a bed and no sheep are in view. Choose where to look, or make the wool from string carried. The biome underfoot and those about are in the state with their distance and direction.'),
   fallback: () => 'explore_here',
+});
+
+// Which way a search for a resource heads when none is in view: each of
+// the eight headings with the biomes that way, as far as the world is
+// loaded, and how often this search has gone that way already.
+define({
+  id: 'search_heading', area: 'resources', kind: 'explore', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'Searching for a resource with none in view: which way to head?',
+  trigger: 'A surface search (logs, sand, clay and the like) that needs a new heading: at its start, when a leg is walked, or after three walks that got nowhere. The heading is held until then; the leg is up to 512 blocks.',
+  source: 'src/work.js (explore), src/exploration.js (biomeRay)',
+  options: [
+    { pattern: 'heading_(east|south_east|south|south_west|west|north_west|north|north_east)', label: 'head this way', when: 'always; each says the biomes that way and how often this search went that way', level: 'root', dynamic: true },
+  ],
+  instructions: workInstructions('The bot is searching for `resource` and none is in view. Choose which way to head. Each heading lists the biomes that way as far as the world is loaded, with what each holds; the search walks up to 512 blocks that way, beyond what is known. `legsThatWay` counts the legs of this search already walked that way, and a walk that met water or cliffs turns the search.'),
+  // Without Jev, the turn the explorer always made.
+  fallback: children => Object.keys(children)[0],
 });
 
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.

@@ -68,7 +68,11 @@ function explorationTarget(search, resource, position) {
   const state = search.frontier;
   const target = state.target && point(state.target);
   if (!target || Math.hypot(position.x - target.x, position.z - target.z) < 24 || search.walksWithoutProgress >= 3) {
-    if (target && search.walksWithoutProgress >= 3) state.heading = (state.heading + 1) % 8;
+    // A heading Jev chose (work.js explore) is taken as it is; without one,
+    // the turn the explorer always made.
+    if (state.chosen != null) { state.heading = state.chosen; delete state.chosen; }
+    else if (target && search.walksWithoutProgress >= 3) state.heading = (state.heading + 1) % 8;
+    (state.legsByHeading ||= {})[state.heading] = (state.legsByHeading[state.heading] || 0) + 1;
     const angle = state.heading * Math.PI / 4;
     state.target = { x: Math.round(position.x + Math.cos(angle) * 512), y: position.y, z: Math.round(position.z + Math.sin(angle) * 512) };
     state.legs++; search.walksWithoutProgress = 0; delete search.progressLeg;

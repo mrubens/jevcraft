@@ -60,13 +60,14 @@ function digEffects(view, cell, bot = null) {
 
 // Every single move from here, each with its facts. `goal` is 'dry' (out
 // of water onto solid ground) or 'sky' (open sky over dry ground).
-function localMoves(view, feet, { goal = 'sky', visits = {}, target = null } = {}) {
+function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null } = {}) {
   const moves = [];
   const inWater = isWater(view.name(feet));
   const headroom = open(view.name(feet.offset(0, 2, 0))) && !isWater(view.name(feet.offset(0, 2, 0)));
   const where = p => {
     const facts = { endsAt: { x: p.x, y: p.y, z: p.z }, rises: p.y - feet.y, dryFooting: dryFooting(view, p), openSkyAbove: skyAbove(view, p), atSurface: atSurface(view, p), timesStoodThere: visits[`${p}`] || 0 };
     if (target) facts.blocksToTarget = Math.round(p.distanceTo(target));
+    if (from) facts.blocksFromStart = Math.round(Math.hypot(p.x - from.x, p.z - from.z));
     return facts;
   };
   const standable = p => open(view.name(p)) && open(view.name(p.plus(UP))) && !isLava(view.name(p)) && !isLava(view.name(p.plus(UP)));
@@ -113,7 +114,10 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null } = {
     const seconds = digSeconds(floorName, view, false);
     if (seconds != null) moves.push({ key: 'dig_down', does: `Dig the ${floorName.replaceAll('_', ' ')} underfoot and drop a block (about ${seconds} s).`, kind: 'dig', cell: floor, effects: digEffects(view, floor) });
   }
-  const done = goal === 'dry' ? dryFooting(view, feet) : dryFooting(view, feet) && atSurface(view, feet);
+  // 'away': off a spot every walk failed from, onto dry ground eight blocks off.
+  const done = goal === 'dry' ? dryFooting(view, feet)
+    : goal === 'away' ? dryFooting(view, feet) && !!from && Math.hypot(feet.x - from.x, feet.z - from.z) >= 8
+      : dryFooting(view, feet) && atSurface(view, feet);
   return { moves, done, here: { feet: { x: feet.x, y: feet.y, z: feet.z }, inWater, headroomToRise: headroom, dryFooting: dryFooting(view, feet), openSkyAbove: skyAbove(view, feet), atSurface: atSurface(view, feet) } };
 }
 
@@ -128,6 +132,7 @@ function describeMove(m) {
     else if (m.openSkyAbove) facts.push('ends under open sky, in a hole');
     if (m.timesStoodThere) facts.push(`stood there ${m.timesStoodThere} time${m.timesStoodThere > 1 ? 's' : ''} already`);
     if (m.blocksToTarget != null) facts.push(`${m.blocksToTarget} blocks from the target after`);
+    if (m.blocksFromStart != null) facts.push(`${m.blocksFromStart} blocks from where it got stuck`);
   }
   return `${m.does}${facts.length ? ` ${facts.join('; ')}.` : ''}`;
 }
@@ -142,7 +147,7 @@ function liveView(bot) {
 
 // Where the bot has to get: out of water onto dry ground, or up to the
 // surface. Null where it is neither in water nor under cover.
-function aimFor(bot) {
+function aimFor(bot, { walksFailing = false } = {}) {
   const view = liveView(bot), feet = bot.entity.position.floored();
   if (isWater(view.name(feet))) return { goal: 'dry', aim: 'out of the water onto dry ground' };
   // Below the surface as the rest of the bot judges it (surface.js): at
@@ -150,6 +155,10 @@ function aimFor(bot) {
   // a hole.
   const surface = require('./surface');
   if (surface.hasSurface(bot) && !surface.surfaceObserver(bot)(bot.entity.position) && !atSurface(view, feet)) return { goal: 'sky', aim: 'up to dry ground at the surface' };
+  // On the surface with every walk failing from here: trial 34 stood six
+  // minutes in an alcove on a mountainside, a cliff on the open side, every
+  // route out needing a dig or a climb a walk will not make.
+  if (walksFailing) return { goal: 'away', aim: 'off this spot, onto dry ground at least eight blocks away', from: { x: feet.x, y: feet.y, z: feet.z } };
   return null;
 }
 
@@ -191,14 +200,14 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   const { decide } = require('./decisions');
   const fatal = err => ['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name);
   const record = goal.unstuck = { aim: aim.aim, since: new Date().toISOString(), moves: [], visits: {} };
-  bot.chat?.(`Stuck. Working my way ${aim.goal === 'dry' ? 'out of the water' : 'up'} one move at a time.`);
+  bot.chat?.(`Stuck. Working my way ${aim.goal === 'dry' ? 'out of the water' : aim.goal === 'away' ? 'off this spot' : 'up'} one move at a time.`);
   let still = 0;
   for (let n = 0; n < maxMoves; n++) {
     task.check();
     const feet = bot.entity.position.floored();
     record.visits[`${feet}`] = (record.visits[`${feet}`] || 0) + 1;
     const view = liveView(bot);
-    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits });
+    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null });
     const surfaced = aim.goal === 'sky' && here.dryFooting && require('./surface').surfaceObserver(bot)(bot.entity.position);
     if (done || surfaced) { record.out = true; save(); return true; }
     if (!moves.length) return false;

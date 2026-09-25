@@ -632,6 +632,12 @@ async function levelSite(bot, task, goal, save, home, actions) {
   for (const f of work.fills) {
     task.check(); checkAir(bot); checkThreats(bot);
     const item = f.item === 'dirt' || !countOf(bot, 'cobblestone') ? 'dirt' : 'cobblestone';
+    // The wrong block in a cell being filled comes out first, not plugged
+    // again: trial 36's plot cell beside the pond was dug, the water came in,
+    // a stone went in to plug it or to step out on, and the dirt met
+    // "placement obstructed" twenty times until the audit failed the trial.
+    const there = bot.blockAt(pos(f));
+    if (there?.boundingBox === 'block' && there.name !== item && diggable(there)) await actions.dig(bot, task, pos(f), { requireDrops: false, plug: false });
     await actions.place(bot, task, pos(f), item);
   }
   save();

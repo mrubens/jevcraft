@@ -33,3 +33,15 @@ test('digging under sand says it will fall onto the head, and a pillar is offere
   cells['0,73,0'] = 'air';
   assert(localMoves(view(cells, { carried: { dirt: 4 } }), feet).moves.some(m => m.key === 'pillar'));
 });
+
+test('stuck on the surface, the moves say how far each ends from where the bot got stuck, and eight blocks off is out', () => {
+  const { localMoves } = require('../src/unstuck');
+  // An alcove: stone all round but a way west along a ledge.
+  const cells = {};
+  for (let x = -12; x <= 0; x++) { cells[`${x},70,0`] = 'air'; cells[`${x},71,0`] = 'air'; }
+  const from = new Vec3(0, 70, 0);
+  const west = localMoves(view(cells), from, { goal: 'away', from }).moves.find(m => m.key === 'step_west');
+  assert.equal(west.blocksFromStart, 1);
+  assert.equal(localMoves(view(cells), new Vec3(-8, 70, 0), { goal: 'away', from }).done, true);
+  assert.equal(localMoves(view(cells), new Vec3(-7, 70, 0), { goal: 'away', from }).done, false);
+});

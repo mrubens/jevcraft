@@ -1,4 +1,5 @@
 'use strict';
+const { Vec3 } = require('vec3');
 // Knowing what is around: which parts of the world the bot has been
 // through, and what it found there. The player asked for exploring as a
 // way to spend spare daylight, because a village (beds, food, trades) or a
@@ -99,6 +100,104 @@ function biomeView(bot, { reach = 128, step = 32, now = Date.now() } = {}) {
     biomesNearby: [...nearest.values()].filter(b => b.biome !== current).sort((a, b) => a.distance - b.distance).slice(0, 6).map(b => ({ ...b, ...has(b.biome) })) };
   biomeViews.set(bot, { at: now, view });
   return view;
+}
+
+// What lies each way: the biomes along a heading, sampled every sixteen
+// blocks as far as the world is loaded, run together into stretches, each
+// with what it holds. For choosing which way to search: trial 35's search
+// for wood circled a desert coast for eight minutes, turning away from
+// water at every third walk, with badlands and land beyond to the south-west.
+const HEADINGS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+function biomeRay(bot, heading, { reach = 128, step = 16 } = {}) {
+  const here = bot.entity?.position?.floored?.();
+  if (!here || typeof bot.blockAt !== 'function') return [];
+  const angle = heading * Math.PI / 4, stretches = [];
+  for (let d = step; d <= reach; d += step) {
+    const b = bot.blockAt(here.offset(Math.round(Math.cos(angle) * d), 0, Math.round(Math.sin(angle) * d)));
+    const name = biomeName(bot, b);
+    if (!name) break;
+    const last = stretches.at(-1);
+    if (last?.biome === name) last.to = d;
+    else stretches.push({ biome: name, from: d, to: d });
+  }
+  const { biomeFacts } = require('./biomes');
+  return stretches.map(s => ({ ...s, ...(biomeFacts(s.biome) ? { has: biomeFacts(s.biome) } : {}) }));
+}
+
+// The ground itself along a heading: at each sample, whether the top of
+// the ground is water. Biomes miss a desert lake: trial 35's heading north
+// read "desert all the way" across forty blocks of water.
+function surfaceRay(bot, heading, { reach = 128, step = 4 } = {}) {
+  const here = bot.entity?.position?.floored?.();
+  if (!here || typeof bot.blockAt !== 'function') return [];
+  const angle = heading * Math.PI / 4, out = [];
+  for (let d = step; d <= reach; d += step) {
+    const x = here.x + Math.round(Math.cos(angle) * d), z = here.z + Math.round(Math.sin(angle) * d);
+    let top = null;
+    for (let y = here.y + 24; y >= here.y - 24; y--) {
+      const b = bot.blockAt(new Vec3(x, y, z));
+      if (!b) break;
+      if (!/^(air|cave_air|void_air|short_grass|tall_grass|fern|dead_bush|short_dry_grass|tall_dry_grass|snow|.*_flower)$/.test(b.name)) { top = b; break; }
+    }
+    if (!top) break;
+    out.push({ d, x, z, y: top.position.y, water: /water|seagrass|kelp/.test(top.name) });
+  }
+  return out;
+}
+// The first water along a heading and the land past it, from the ground.
+function waterAhead(ray) {
+  const wet = ray.find(r => r.water);
+  if (!wet) return null;
+  const across = ray.find(r => r.d > wet.d && !r.water);
+  const last = ray.filter(r => r.d < (across?.d ?? Infinity) && r.water).at(-1);
+  return { from: wet.d, to: last?.d ?? wet.d, landAt: across || null };
+}
+
+// A heading said for a choice: the biomes that way, where water starts and
+// whether land comes again past it, and whether trees were seen that way.
+const WATER_BIOME = /ocean|river/;
+function headingFacts(stretches, ground = null) {
+  if (!stretches.length) return 'nothing loaded that way';
+  const words = n => n.replaceAll('_', ' ');
+  const trees = stretches.find(st => st.has && !/no trees/.test(st.has) && /trees|bamboo|mangroves/.test(st.has));
+  // The ground's own water where it was sampled; the biomes' otherwise.
+  let water;
+  if (ground?.length) {
+    const w = waterAhead(ground);
+    water = w ? `water on the ground from ${w.from} to ${w.to} blocks${w.landAt ? `, land again past it at ${w.landAt.d} (a swim of about ${w.to - w.from + 4})` : ' to the edge of what is loaded'}` : `dry ground all the way to ${ground.at(-1).d} blocks`;
+  } else {
+    const wet = stretches.find(st => WATER_BIOME.test(st.biome));
+    const past = wet && stretches.find(st => st.from > wet.to && !WATER_BIOME.test(st.biome));
+    water = wet ? `water from ${wet.from} blocks${past ? `, land again past it at ${past.from}` : ' to the edge of what is loaded'}` : `land all the way to ${stretches.at(-1).to} blocks`;
+  }
+  return `${stretches.map(st => words(st.biome)).join(', then ')}; ${water}; ${trees ? `trees in the ${words(trees.biome)} from ${trees.from} blocks` : 'no trees in any biome seen that way'}`;
+}
+
+// Across water that lies along the chosen heading, to the land past it:
+// the surface search walks only on dry ground, and every way out of trial
+// 35's desert crossed a river, a lake or the sea.
+async function swimAcross(bot, task, goal, save, heading) {
+  const { move } = require('./motion');
+  const { checkAir } = require('./vitals');
+  const ahead = waterAhead(surfaceRay(bot, heading, { reach: 96, step: 2 }));
+  if (!ahead || ahead.from > 32 || !ahead.landAt) return false;
+  const angle = heading * Math.PI / 4, start = bot.entity.position.clone();
+  const along = () => (bot.entity.position.x - start.x) * Math.cos(angle) + (bot.entity.position.z - start.z) * Math.sin(angle);
+  const land = ahead.landAt;
+  goal.step = { action: 'swim_across', heading: HEADINGS[heading], water: { from: ahead.from, to: ahead.to }, land: { x: land.x, z: land.z } }; save();
+  bot.chat?.(`Water to the ${HEADINGS[heading]}. Swimming across it, about ${ahead.to - ahead.from + 4} blocks.`);
+  const water = () => /water/.test(bot.blockAt(bot.entity.position.floored())?.name || '');
+  let stuck = 0;
+  for (let n = 0; n < 40; n++) {
+    task.check(); checkAir(bot);
+    if (along() >= land.d - 1 && !water() && bot.entity.onGround) return true;
+    const was = along();
+    await move(bot, task, { label: 'swim_across', keys: ['forward', 'jump'], sneak: false, why: 'across the water on the chosen heading',
+      look: new Vec3(land.x + 0.5, Math.max(land.y + 1.6, bot.entity.position.y + 1.2), land.z + 0.5), maxMs: 2000, tick: 50,
+      until: () => along() >= land.d - 1 && !water() && bot.entity.onGround });
+    if (along() - was < 0.8) { if (++stuck >= 3) return along() > 4; } else stuck = 0;
+  }
+  return along() > 4;
 }
 
 // The biomes worth a walk from here: another biome, far enough off that
@@ -346,4 +445,4 @@ function foundEntries(known = {}) {
     dimension: l.dimension, firstAt: l.firstAt }));
 }
 
-module.exports = { biomeView, biomeTrips, foundEntries, goToLandmark, foundSentence, AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };
+module.exports = { biomeView, biomeTrips, biomeRay, headingFacts, surfaceRay, waterAhead, swimAcross, HEADINGS, foundEntries, goToLandmark, foundSentence, AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };
