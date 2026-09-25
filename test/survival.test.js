@@ -1200,6 +1200,23 @@ test('sealed in at night, what next is Jev\'s (stay, leave, mine), and the choic
   assert.equal(waits.length, 2, 'the stay held for the next step without a second question');
 });
 
+test('sealed in, the mobs the wall hides are named in the choice to leave', async () => {
+  // mid-110-e: opened its pocket for the bed with a creeper ten blocks off it had not been told of, and was blown up.
+  const origin = new Vec3(0, 30, 0);
+  const creeper = { id: 7, name: 'creeper', type: 'hostile', position: new Vec3(10.5, 30, 0.5), height: 1.7, width: 0.6, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: { 7: creeper }, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 16000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ name: p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'air' : 'stone', boundingBox: p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'empty' : 'block', position: p }),
+    world: { raycast: (from) => ({ intersect: from.offset(0.6, 0, 0) }) } });
+  const survival = new Survival(bot, {}, { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld' }] }, client: { systemOne: async () => ({}) } });
+  let leave;
+  survival.decide = async (task, goal, save, { id, tree }) => { if (id === 'pocket_next') leave = tree.leave?.description; return { path: ['stay'], stale: false }; };
+  survival.wait = async () => {};
+  await survival.step(new Task('night'), { kind: 'win' }, () => {});
+  assert.match(leave || '', /past a creeper 10 blocks off \(heard, not seen: the wall is between\)/);
+});
+
 test('with the night planned for a shelter, a bed in sight does not keep the night mine shut', () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20,
     time: { timeOfDay: 16000 }, entity: { position: new Vec3(0.5, 30, 0.5) },

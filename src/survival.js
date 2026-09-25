@@ -2136,7 +2136,13 @@ class Survival {
       // wall on a watcher, or mine the night away. Held ninety seconds for
       // the same watcher and the same night.
       const night = shelterNeeded(bot);
-      const who = watcher ? `the ${watcher.entity.name.replaceAll('_', ' ')} ${Math.round(watcher.distance)} blocks off${watcher.visible ? ', in sight' : ''}` : null;
+      // And what is about that the wall hides: inside a sealed pocket nothing
+      // is in sight, and mid-110-e opened its pocket for the bed with a
+      // creeper ten blocks off it had not been told of, and was blown up
+      // from twenty health in iron (2026-09-25).
+      const about = threats(bot, 16).filter(t => t.entity !== watcher?.entity).slice(0, 4);
+      const hidden = about.length ? `${about.map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}${about.some(t => !t.visible) ? ' (heard, not seen: the wall is between)' : ''}` : '';
+      const who = watcher ? `the ${watcher.entity.name.replaceAll('_', ' ')} ${Math.round(watcher.distance)} blocks off${watcher.visible ? ', in sight' : ''}${hidden ? `, and ${hidden}` : ''}` : hidden || null;
       const options = {};
       if (bedNear) options.go_to_bed = { description: `Open the pocket and go to the bed${homeBed ? ` ${Math.round(homeBed.foot.distanceTo(bot.entity.position))} blocks away` : ' in the pack'}; the night passes in seconds.${who ? ` Outside is ${who}.` : ''}`,
         run: async () => { delete this.state.watchedSince; await this.leave(task, goal, save, refuge, 'Off to bed.'); return true; } };
