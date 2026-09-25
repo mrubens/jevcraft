@@ -290,20 +290,14 @@ async function outOfFire(bot, task, onAction = () => {}) {
   // a cell of fire or cross one, and handed the route it returned at once
   // (the arena: burned in place three times out of three).
   bot.pathfinder?.setGoal?.(null);
-  try {
-    for (const cell of route) {
-      const target = cell.offset(0.5, 0, 0.5);
-      for (const until = Date.now() + 1500; Date.now() < until;) {
-        task.check();
-        const here = bot.entity.position;
-        if (Math.hypot(target.x - here.x, target.z - here.z) < 0.35 && Math.abs(here.y - cell.y) < 0.6) break;
-        await bot.lookAt(target.offset(0, 1.6, 0), true);
-        bot.setControlState('forward', true); bot.setControlState('sprint', true);
-        bot.setControlState('jump', cell.y > Math.floor(here.y + 0.01));
-        await sleep(50);
-      }
-    }
-  } finally { for (const k of ['forward', 'sprint', 'jump']) bot.setControlState(k, false); }
+  const { move } = require('./motion');
+  for (const cell of route) {
+    const target = cell.offset(0.5, 0, 0.5);
+    const there = () => { const here = bot.entity.position; return Math.hypot(target.x - here.x, target.z - here.z) < 0.35 && Math.abs(here.y - cell.y) < 0.6; };
+    const up = cell.y > Math.floor(bot.entity.position.y + 0.01);
+    await move(bot, task, { label: 'out_of_fire', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'running out of fire',
+      look: target.offset(0, 1.6, 0), maxMs: 1500, tick: 50, until: there });
+  }
   return !inFire(bot);
 }
 
