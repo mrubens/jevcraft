@@ -12,9 +12,20 @@ const { move: motion } = require('./motion');
 
 // Shelter construction needs dry ground before it can choose a local site.
 // A failed crossing may leave that ground farther away than the shelter scan.
-async function reachShore(bot, task, goal, save, { move = navigate, surface = floatAfterBoat } = {}) {
+async function reachShore(bot, task, goal, save, { move = navigate, surface = floatAfterBoat, client = null, dig = null } = {}) {
   task.check();
-  if (dryStanding(bot, bot.entity.position) || !swimmableWater(bot.blockAt(bot.entity.position.floored()))) return false;
+  if (dryStanding(bot, bot.entity.position) || !swimmableWater(bot.blockAt(bot.entity.position.floored()))) { if (goal.shoreRecovery) delete goal.shoreRecovery.inWaterSince; return false; }
+  // Half a minute in the water in one place and the escapes below are not
+  // working: out one move at a time, each Jev's (unstuck.js). Trial 41 went
+  // round the shore, the dig to it, the surface for air and the step out
+  // for two minutes in a hole by its mine, none of them failing long enough
+  // for the stall rule to call on anything else.
+  const wet = goal.shoreRecovery ||= { failures: {} }, here = bot.entity.position.floored();
+  if (!wet.inWaterSince || !wet.wetArea || Math.hypot(here.x - wet.wetArea.x, here.z - wet.wetArea.z) > 12) { wet.inWaterSince = Date.now(); wet.wetArea = { x: here.x, z: here.z }; }
+  if (client && dig && Date.now() - wet.inWaterSince > 30000) {
+    wet.inWaterSince = Date.now();
+    if (await require('./unstuck').workFree(bot, task, goal, save, { client, dig, aim: { goal: 'dry', aim: 'out of the water onto dry ground' } })) return true;
+  }
   if (bot.vehicle) await leaveBoat(bot);
   if (bot._ownedBoats?.size) await clearOwnedBoatAtFeet(bot, task);
   const start = bot.entity.position.floored();

@@ -1027,7 +1027,7 @@ class Survival {
   async refugeStep(task, goal, save, { method: given = null } = {}) {
     const bot = this.bot;
     if (isSetAside(this, 'refuge', 'anywhere')) return false;
-    if (await reachShore(bot, task, goal, save, { move: this.actions.navigate })) return true;
+    if (await reachShore(bot, task, goal, save, { move: this.actions.navigate, client: this.client, dig: this.actions.dig })) return true;
     let refuge = await this.reachableRefuge(task, goal, save, this.currentShelter());
     // Last night's pocket beside a flooded cave is not gone back to from
     // outside it: the night mine had nowhere to go there, and the bot waited

@@ -214,3 +214,26 @@ test('with stone at the top of the head in the water, the block over the head is
   wet.blockAt = p => { const f = p.floored(); return f.equals(top.offset(0, 2, 0)) ? { position: f, name: 'granite', boundingBox: 'block', diggable: true } : f.equals(top.offset(0, 3, 0)) ? { position: f, name: 'water', boundingBox: 'empty' } : innerWet(p); };
   assert.equal(await clearHeadroom(wet, new Task('pool')), false);
 });
+
+test('half a minute in the water in one place, the way out is worked one move at a time', async () => {
+  // Trial 41: two minutes round the shore escapes in a hole by its mine.
+  const unstuck = require('../src/unstuck');
+  const real = unstuck.workFree;
+  let called = null;
+  unstuck.workFree = async (bot, task, goal, save, opts) => { called = opts.aim; return true; };
+  try {
+    delete require.cache[require.resolve('../src/shore')];
+    const { reachShore } = require('../src/shore');
+    const { bot } = pool();
+    bot.findBlocks = () => []; bot.pathfinder = { movements: { allowedPosition: () => true }, setGoal() {} }; bot.clearControlStates = () => {};
+    const f = bot.entity.position.floored();
+    const goal = { shoreRecovery: { failures: {}, inWaterSince: Date.now() - 31000, wetArea: { x: f.x, z: f.z } } };
+    assert.equal(await reachShore(bot, new Task('pool'), goal, () => {}, { client: {}, dig: async () => {}, surface: async () => {} }), true);
+    assert.equal(called?.goal, 'dry');
+    // Not before the half minute.
+    called = null;
+    const fresh = { shoreRecovery: { failures: {}, inWaterSince: Date.now() - 5000, wetArea: { x: f.x, z: f.z } } };
+    await reachShore(bot, new Task('pool'), fresh, () => {}, { client: {}, dig: async () => {}, surface: async () => {} }).catch(() => {});
+    assert.equal(called, null);
+  } finally { unstuck.workFree = real; delete require.cache[require.resolve('../src/shore')]; }
+});

@@ -3387,7 +3387,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // the base failed and failed, the bot bobbing for air in between.
       const feetBlock = typeof bot.blockAt === 'function' ? bot.blockAt(bot.entity.position.floored()) : null;
       if (!endTask && feetBlock?.name && swimmableWater(feetBlock)) {
-        try { if (!dryStanding(bot, bot.entity.position) && await reachShore(bot, task, goal, save)) { goal.stalls = 0; save(); onStep(goal); continue; } }
+        try { if (!dryStanding(bot, bot.entity.position) && await reachShore(bot, task, goal, save, { client: decisionClient, dig })) { goal.stalls = 0; save(); onStep(goal); continue; } }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       }
       const needsSupplies = !goal.expeditionReady && (
