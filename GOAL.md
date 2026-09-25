@@ -12,6 +12,6 @@ It is also a companion: chat requests ("Jev build a house", "get me 32 purple co
 
 ## Where it stands
 
-The current milestone is the first three in-game days done well, measured by `scripts/first-days.js` on two fresh worlds in a row: no deaths, no step retried in a loop, never standing still or pacing for over a minute outside a shelter or bed, and iron tools, iron armour, a shield, a bed and a home. The best trials so far reach everything but the armour within half an hour; [docs/trial-notes.md](docs/trial-notes.md) records every trial and what it changed.
+The current milestone is the first three in-game days done well, measured by `scripts/first-days.js` on two fresh worlds in a row: no deaths, no step retried in a loop, never standing still or pacing for over a minute outside a shelter or bed, and iron tools, iron armour, a shield, a bed and a home. Trial 50 (2026-09-25) was the first to pass, with every milestone and nothing failed; the goal asks for two in a row. [docs/trial-notes.md](docs/trial-notes.md) records every trial and what it changed.
 
 Earlier companion milestones (the house, the concrete delivery and two full day/night cycles from empty natural starts; stop, status, resume and restart) have passed; a fresh natural run to the Nether and the full game remain open. The [roadmap](ROADMAP.md) has the order of work.
