@@ -91,6 +91,13 @@ function reached(frames, state) {
 // and are reported, not failed on their own (the user, 2026-09-25).
 const TARGET_MS = Number(process.env.FIRST_DAYS_TARGET_MIN || 45) * 60000;
 
+function keepEarliest(m, prior = {}, from = 0) {
+  for (const [k, t] of Object.entries(prior || {})) {
+    if (MILESTONES.includes(k) && Number.isFinite(t) && t >= from) { m[k] = true; m.at[k] = Math.min(m.at[k] ?? Infinity, t); }
+  }
+  return m;
+}
+
 function verdict(trial, { now = Date.now() } = {}) {
   const from = Date.parse(trial.startedAt), to = Math.min(now, from + DAYS_MS);
   const a = analyse({ identity: IDENTITY, from, to });
@@ -123,6 +130,11 @@ function verdict(trial, { now = Date.now() } = {}) {
   // heartbeats now carry the pockets but not the equipment, and the latest
   // frame with pockets read a shield in the off-hand as no shield (trial 19).
   const m = reached(a.frames, state);
+  // The earliest time each was reached, kept from the verdicts before: the
+  // saved home keeps only its latest times, and a bed claimed again at
+  // bedtime moved trial 83's home from minute 41 to minute 47, past the
+  // deadline, between one verdict and the next.
+  keepEarliest(m, trial.verdict?.reachedAt, from);
   const byTarget = k => m[k] && (m.at[k] == null || m.at[k] <= from + TARGET_MS);
   const missing = MILESTONES.filter(k => !byTarget(k));
   const done = to - from >= DAYS_MS, pastTarget = to - from >= TARGET_MS;
@@ -132,7 +144,7 @@ function verdict(trial, { now = Date.now() } = {}) {
   const notes = [...still.map(s => `still: ${s}`), ...pacing.map(p => `pacing: ${p}`)];
   return { world: trial.world, from: new Date(from).toISOString(), to: new Date(to).toISOString(), minutes: Math.round((to - from) / 60000), done,
     pass: done && !reasons.length, failedAlready: reasons.length > 0, reasons, notes,
-    reachedAtMinute: Object.fromEntries(Object.entries(m.at).map(([k, t]) => [k, minute(t)])), milestones: m, missing };
+    reachedAt: { ...m.at }, reachedAtMinute: Object.fromEntries(Object.entries(m.at).map(([k, t]) => [k, minute(t)])), milestones: m, missing };
 }
 
 // Whoever watches in Spectator sees in the dark: a datapack in the new
@@ -227,4 +239,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(err => { console.error(err.message); process.exit(1); });
-module.exports = { milestones, reached, verdict, PAST_ARMOUR, spectatorNightVision };
+module.exports = { milestones, reached, keepEarliest, verdict, PAST_ARMOUR, spectatorNightVision };

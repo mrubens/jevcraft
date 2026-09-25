@@ -81,3 +81,17 @@ test('steps trading names while the bot moves on are not a loop; the same trade 
   assert.equal(run(true), 0, 'advancing: not a loop');
   assert(run(false) >= 1, 'in one place: a loop');
 });
+
+test('a milestone reached earlier is kept at its first time when the saved home moves it later', () => {
+  // Trial 83: home at minute 41, then the bed claimed again at bedtime read as minute 47.
+  const { reached, keepEarliest } = require('../scripts/first-days');
+  const t0 = Date.parse('2026-09-25T11:04:00Z');
+  const later = { survival: { home: { bed: { claimedAt: new Date(t0 + 47 * 60000).toISOString() }, stash: { position: {}, placedAt: new Date(t0 + 40 * 60000).toISOString() } } } };
+  const m = reached([], later);
+  assert.equal(m.at.home, t0 + 47 * 60000, 'on its own, the saved home says 47');
+  keepEarliest(m, { home: t0 + 41 * 60000, iron_pickaxe: t0 + 13 * 60000 }, t0);
+  assert.equal(m.at.home, t0 + 41 * 60000, 'the verdict before saw it at 41');
+  assert.equal(m.iron_pickaxe, true);
+  keepEarliest(m, { home: t0 - 60000 }, t0);
+  assert.equal(m.at.home, t0 + 41 * 60000, 'a time from before the trial is ignored');
+});
