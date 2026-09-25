@@ -1039,7 +1039,13 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
   if (!candidates.length) {
     if (step.depth !== null && step.depth !== undefined) {
       const names = step.sources || Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
-      const ore = find(bot, names, 64, 16).find(p => safeFromHostiles(bot, p) && !isSetAside(goal, 'reach', p));
+      // The ore already tunnelled toward is kept while it is there and not
+      // set aside; the nearest changes with every step down, and trial 54
+      // turned between iron ores all round it for two minutes.
+      const found = find(bot, names, 64, 16).filter(p => safeFromHostiles(bot, p) && !isSetAside(goal, 'reach', p));
+      const held = goal.tunnelOre && found.find(p => p.x === goal.tunnelOre.x && p.y === goal.tunnelOre.y && p.z === goal.tunnelOre.z);
+      const ore = held || found[0];
+      if (ore) goal.tunnelOre = { x: ore.x, y: ore.y, z: ore.z }; else delete goal.tunnelOre;
       const target = ore || bot.entity.position.floored().offset(24, step.depth - bot.entity.position.floored().y, 0);
       await tunnelOrSetAside(bot, task, goal, save, target, step.block, ore);
     } else await explore(bot, task, goal, save, step.block);
