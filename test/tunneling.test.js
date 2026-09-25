@@ -427,8 +427,14 @@ test('a staircase stepping between two cells ends its round within a few steps, 
   const goal = { tunnel: { entrance: { x: 0, y: 70, z: 0 }, steps: 20, target: { x: 90, y: 70, z: 0 }, best: 10, sinceBest: 9, visited: {} } };
   // Every way on already walked four times: the pacing is seen now.
   for (const x of [-1, 0, 1]) for (const z of [-1, 0, 1]) for (const y of [69, 70]) goal.tunnel.visited[`(${x}, ${y}, ${z})`] = 4;
-  await assert.rejects(tunnelStep(bot, new Task('pace'), goal, () => {}, target, { dig, navigate }), /not gaining on it/);
-  assert.equal(goal.tunnel.staleRounds, 1);
+  // Pacing where the round began (trial 64, an air pocket in a flooded
+  // cave): no new round in the same cells; the ore is set aside at once.
+  await assert.rejects(tunnelStep(bot, new Task('pace'), goal, () => {}, target, { dig, navigate }), e => e.name === 'StaircaseStalled' && /same few cells/.test(e.message));
+  // Pacing a long way from where the round began: a new round from here.
+  const later = { tunnel: { ...goal.tunnel, entrance: { x: -30, y: 70, z: 0 }, best: 10, sinceBest: 9, staleRounds: 0, visited: {} } };
+  for (const x of [-1, 0, 1]) for (const z of [-1, 0, 1]) for (const y of [69, 70]) later.tunnel.visited[`(${x}, ${y}, ${z})`] = 4;
+  await assert.rejects(tunnelStep(bot, new Task('pace'), later, () => {}, target, { dig, navigate }), /not gaining on it/);
+  assert.equal(later.tunnel.staleRounds, 1);
 });
 
 test('pinned below two skeletons at full health, the staircase claims them and climbs toward them; hurt, it does not', () => {

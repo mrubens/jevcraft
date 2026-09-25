@@ -77,3 +77,22 @@ test('a mob seen close a moment ago stays a threat when it drops out of view for
   bot._seenClose.set(3, Date.now() - 4000);
   assert.equal(threats(bot, 16)[0].visible, false, 'not for good');
 });
+
+test('a charge that cannot get to the mob fails, and that mob is left be while it lands nothing', async () => {
+  // Trial 66: "going for" a zombie in a mineshaft twenty times a second for 159 s, neither able to reach the other.
+  const { Survival } = require('../src/survival');
+  const { immediateThreat } = require('../src/danger');
+  const { Vec3 } = require('vec3');
+  const zombie = { id: 5, name: 'zombie', position: new Vec3(5, 64, 0), height: 1.95, isValid: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 5: zombie }, time: { timeOfDay: 18000 }, game: { dimension: 'overworld' },
+    world: { raycast: () => null }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }),
+    pathfinder: { movements: {} }, inventory: { items: () => [], slots: [] }, on() {}, health: 20 };
+  const survival = new Survival(bot, { navigate: async () => { throw new Error('No path to the goal'); } });
+  const threat = { entity: zombie, distance: 4.5, visible: true };
+  assert.equal(immediateThreat(bot)?.entity, zombie, 'a zombie in view is a threat');
+  const charged = await survival.charge({ check() {} }, {}, () => {}, threat, false, { chosen: true });
+  assert.equal(charged, false, 'got nowhere: not a charge');
+  assert.equal(immediateThreat(bot), undefined, 'out of reach both ways: left be');
+  bot._recentHurtAt = Date.now();
+  assert.equal(immediateThreat(bot)?.entity, zombie, 'until it lands a hit');
+});

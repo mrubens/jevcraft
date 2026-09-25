@@ -671,6 +671,8 @@ class Survival {
       run: async () => {
         if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); await this.swingFor(task, goal, save); return true; }
         if (await this.charge(task, goal, save, nearest, false, { chosen: true })) return true;
+        // Out of reach, and the charge showed it: a stance that failed.
+        if (bot._unreachable?.until > Date.now() && bot._unreachable.ids.includes(nearest.entity.id)) return false;
         // No level way to it: the fight is held here, facing it, and the
         // swing takes it when it comes into reach. Not a stance that failed.
         this.report(goal, save, { action: 'fight', threats: [nearest.entity.name], health: bot.health, stance: true, stand: true });
@@ -1446,9 +1448,20 @@ class Survival {
     const movements = bot.pathfinder?.movements;
     const kept = movements && { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, maxDropDown: movements.maxDropDown };
     if (movements) Object.assign(movements, { canDig: false, allow1by1towers: false, maxDropDown: Math.min(2, movements.maxDropDown ?? 2) });
+    const from = bot.entity.position.clone();
+    let failed = false;
     try { await this.actions.navigate(bot, task, new goals.GoalNear(t.x, t.y, t.z, 1), { timeoutMs: 4000, stallMs: 2000 }); }
-    catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
+    catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; failed = true; }
     finally { if (movements) Object.assign(movements, kept); }
+    // A charge that went nowhere is not a charge: trial 66 "went for" a
+    // zombie in a mineshaft twenty times a second for two and a half
+    // minutes, the way to it failing at once each time, neither of them
+    // able to reach the other. The mob is out of reach for twenty seconds
+    // (danger.js), and the caller takes its next answer.
+    if (failed && bot.entity.position.distanceTo(from) < 1 && !canStrike(bot, nearest.entity)) {
+      bot._unreachable = { ids: [...new Set([...(bot._unreachable?.until > Date.now() ? bot._unreachable.ids : []), nearest.entity.id])], until: Date.now() + 20000 };
+      return false;
+    }
     await defendNearby(bot, task, goal, save);
     return true;
   }

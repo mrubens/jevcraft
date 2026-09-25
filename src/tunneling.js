@@ -264,6 +264,18 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
   // as long as the forty-eight steps lasted, and three rounds of that is
   // a hundred and forty-four.
   const pacing = tunnel.sinceBest >= 8 && tunnel.visited[`${choice.destination}`] >= 4;
+  // Pacing where the round began: the next round would start in the same
+  // few cells and pace them again. Trial 64 was in an air pocket in an
+  // underground lake, every way down water; three rounds of that were
+  // fifty seconds and a loop, when the first had already shown it.
+  const entrance = tunnel.entrance && new Vec3(tunnel.entrance.x, tunnel.entrance.y, tunnel.entrance.z);
+  if (pacing && entrance && entrance.distanceTo(bot.entity.position.floored()) <= 3) {
+    const why = `paced the same few cells round where the round began, ${Math.round(tunnel.best ?? bot.entity.position.distanceTo(target))} blocks from it`;
+    Object.assign(tunnel, { staleRounds: 0, visited: {} }); delete tunnel.best;
+    setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
+    save();
+    throw new StaircaseStalled(target, why);
+  }
   if (tunnel.sinceBest >= 48 || pacing) {
     tunnel.staleRounds = (tunnel.staleRounds || 0) + 1;
     Object.assign(tunnel, { entrance: { ...bot.entity.position.floored() }, steps: 0, retreats: 0, retreatVisited: {}, rounds: (tunnel.rounds || 0) + 1, sinceBest: 0 });
