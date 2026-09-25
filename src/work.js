@@ -1278,7 +1278,7 @@ const WAIT_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'lapis_ore', 'redstone_or
 // While a batch cooks: dig what is in arm's reach, walk to an ore or a tree
 // nearby, dig the stone around, or stand by the furnace. Asked once a batch
 // of Jev; null (no Jev, or nothing to weigh) keeps the order in smelt.
-async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTarget, what, count }) {
+async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTarget, what, count, spent = [] }) {
   // From one item up: trial 46 stood by its furnace for a one-ingot batch,
   // crafted, and stood again for a two-ingot one, seventy-five seconds on
   // one spot, each batch under the twenty seconds this once needed.
@@ -1293,6 +1293,7 @@ async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTa
   if (fits) tree.mine_nearby = { description: `Walk to the ${String(bot.blockAt(fits)?.name || 'block').replaceAll('_', ' ')} ${Math.round(fits.distanceTo(bot.entity.position))} blocks off and dig it and the next nearest, back before the batch is done.` };
   if (countOf(bot, 'cobblestone') < 64) tree.dig_stone = { description: `Dig the stone around the furnace (${countOf(bot, 'cobblestone')} cobblestone carried): tools, a furnace and walls want it.` };
   tree.wait_here = { description: `Stand by the furnace for the ${seconds} seconds the ${count} ${what} take. The furnace cooks on its own whether or not the bot stands by it; standing gains nothing meanwhile.` };
+  for (const key of spent) delete tree[key];
   if (Object.keys(tree).length < 2) return null;
   try {
     const decision = await decide('while_cooking', { client, bot, task, goal, save, tree, state: { cooking: `${count} ${what}`, seconds, inventoryFreeSlots: bot.inventory.emptySlotCount?.() ?? null, timeOfDay: bot.time?.timeOfDay } });
@@ -1437,7 +1438,9 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       // Ten seconds an item is time the bot stood beside the furnace (the
       // day audit's minute and a half): an ore within arm's reach is dug
       // meanwhile, from where it stands, the furnace shut and opened again.
-      let waitDigs = 0;
+      // Each way of spending the wait has its own budget, so a walk that
+      // used its turns does not use up the stone's too.
+      const done = { dig_in_reach: 0, mine_nearby: 0, dig_stone: 0 };
       const oreInReach = () => find(bot, WAIT_ORES, 5, 12).find(p => miningReach(bot, bot.entity.position, p) && bot.canDigBlock?.(bot.blockAt(p)) &&
         !isSetAside(goal || {}, 'reach', p) && safeFromHostiles(bot, p));
       // Further off, walked to and back while a long batch cooks: an ore
@@ -1446,9 +1449,11 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       // run stood by its furnace for four minutes of them with nothing in
       // arm's reach (the user: "he's not doing anything").
       const LOGS = Object.keys(bot.registry.blocksByName).filter(n => /_log$/.test(n) && !/stripped/.test(n));
+      // Further still while more than a minute of it is left: whether the
+      // walk there and back fits is weighed where it is offered.
       const walkTarget = () => {
         const ok = p => !isSetAside(goal || {}, 'reach', p) && safeFromHostiles(bot, p);
-        const ore = find(bot, WAIT_ORES, 16, 16).find(ok);
+        const ore = find(bot, WAIT_ORES, cooking() >= 60000 ? 32 : 16, 16).find(ok);
         if (ore) return ore;
         const logs = bot.inventory.items().filter(i => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0);
         return logs < 16 ? find(bot, LOGS, 16, 16).filter(p => p.y <= bot.entity.position.y + 3).find(ok) : null;
@@ -1456,7 +1461,13 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       const cooking = () => (needed - taken) * 10000;
       // What to do while it cooks is Jev's, asked once a batch; without Jev,
       // each in turn as below.
-      const plan = await whileCooking(bot, task, goal, save, { cooking: cooking(), oreInReach, walkTarget, what: String(step.from || step.item).replace(/_/g, ' '), count: needed - taken });
+      // A choice that has run out (no more ore in walking distance, its
+      // turns used) is asked again among what is left, not stood out: trial
+      // 55 walked to eleven ores for a twenty-four-iron batch, then stood by
+      // the furnace ninety seconds with stone all round it.
+      const ask = spent => whileCooking(bot, task, goal, save, { cooking: cooking(), oreInReach, walkTarget, what: String(step.from || step.item).replace(/_/g, ' '), count: needed - taken, spent });
+      let plan = await ask([]);
+      const spent = [];
       const allow = key => !plan || plan === key;
       while (taken < needed) {
         task.check(); checkAir(bot);
@@ -1465,16 +1476,16 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         if (taken < needed) await fuel();
         // Only with a slot to spare: the dug ore takes one, the ingots another.
         const spare = taken < needed && Date.now() < deadline - 15000 && (needed - taken) >= 2 && free() >= 2;
-        const ore = spare && allow('dig_in_reach') && waitDigs < 6 && oreInReach();
+        const ore = spare && allow('dig_in_reach') && done.dig_in_reach < 6 && oreInReach();
         if (ore) {
-          waitDigs++;
+          done.dig_in_reach++;
           furnace.close();
           try { await dig(bot, task, ore, { requireDrops: false }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (goal) setAside(goal, 'reach', ore, err.message, 120000); }
           furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
           continue;
         }
-        let far = spare && allow('mine_nearby') && waitDigs < 12 && cooking() >= 30000 && walkTarget();
+        let far = spare && allow('mine_nearby') && done.mine_nearby < 24 && cooking() >= 30000 && walkTarget();
         if (far) {
           furnace.close();
           // Out once, and on from one block to the next nearest while the
@@ -1487,7 +1498,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           const cookingWhat = String(step.from || step.item).replace(/_/g, ' ');
           bot.chat?.(`${needed - taken} ${cookingWhat} in the furnace, about ${Math.max(1, Math.round(cooking() / 60000))} minute${cooking() >= 90000 ? 's' : ''}. Mining the ${String(bot.blockAt(far)?.name || 'ore').replace(/_/g, ' ')} nearby meanwhile.`);
           for (let n = 0; far && n < 12 && Date.now() < back && free() >= 2; n++, far = walkTarget()) {
-            waitDigs++;
+            done.mine_nearby++;
             if (goal) { goal.step = { ...goal.step, whileCooking: { block: bot.blockAt(far)?.name, at: { x: far.x, y: far.y, z: far.z }, n } }; save(); }
             try {
               await navigate(bot, task, new goals.GoalGetToBlock(far.x, far.y, far.z), { timeoutMs: 15000, stallMs: 5000 });
@@ -1505,17 +1516,18 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         // 12 stood eighty seconds by thirty-two copper, the coal it named
         // out of reach (2026-09-24).
         const feet = bot.entity.position.floored();
-        const rock = spare && allow('dig_stone') && waitDigs < 24 && countOf(bot, 'cobblestone') < 64 &&
+        const rock = spare && allow('dig_stone') && done.dig_stone < 40 && countOf(bot, 'cobblestone') < 64 &&
           find(bot, ['stone', 'deepslate', 'andesite', 'diorite', 'granite', 'tuff'], 5, 24)
             .filter(q => q.y >= feet.y && !q.equals(block.position.offset(0, -1, 0)) && bot.canDigBlock?.(bot.blockAt(q)) && !isSetAside(goal || {}, 'reach', q))[0];
         if (rock) {
-          waitDigs++;
+          done.dig_stone++;
           furnace.close();
           try { await dig(bot, task, rock, { requireDrops: false }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (goal) setAside(goal, 'reach', rock, err.message, 120000); }
           furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
           continue;
         }
+        if (plan && plan !== 'wait_here' && cooking() >= 8000) { spent.push(plan); plan = await ask(spent); continue; }
         if (taken < needed) await sleep(250);
       }
     }

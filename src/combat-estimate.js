@@ -35,7 +35,9 @@ const WEAPONS = {
   wooden_axe: [7, 0.8], golden_axe: [7, 1], stone_axe: [9, 0.8], iron_axe: [9, 0.9], diamond_axe: [9, 1], netherite_axe: [10, 1],
   trident: [9, 1.1],
 };
-const FIST = [1, 4];
+// Bare hands recharge in a quarter second, but a mob struck cannot be hurt
+// again for half a second: two hits a second land, not four.
+const FIST = [1, 2];
 // Armour points and toughness per piece.
 const ARMOUR = {
   leather_helmet: [1, 0], leather_chestplate: [3, 0], leather_leggings: [2, 0], leather_boots: [1, 0],

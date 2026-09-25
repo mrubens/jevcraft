@@ -89,6 +89,12 @@ function threats(bot, radius = 24) {
     const attacker = list.find(t => t.entity.name === kind);
     if (attacker) Object.assign(attacker, { visible: true, attributed: true });
   }
+  // The mob being fought is not forgotten when it steps below a ledge's
+  // edge: in the replay of trial 57's ledge the bot turned to building a
+  // shelter with the zombie it had been punching three blocks off, out of
+  // sight under the lip, and was hit four times before it looked again.
+  const struck = bot._struck && now - bot._struck.at < 8000 && list.find(t => t.entity.id === bot._struck.id && t.distance <= 6);
+  if (struck && !struck.visible) Object.assign(struck, { visible: true, attributed: true });
   return list;
 }
 

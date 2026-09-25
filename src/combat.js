@@ -159,7 +159,9 @@ async function defendNearby(bot, task, goal, save) {
   let threat = strikeTarget(bot);
   if (!threat) return false;
   const weapon = defenseWeapon(bot), kind = weapon?.name.split('_').at(-1);
-  const cooldown = ({ sword: 700, axe: 1300, pickaxe: 950, shovel: 1200, trident: 1000 })[kind] || 300;
+  // Bare hands: a mob struck is unhurt for half a second after, so a punch
+  // sooner is wasted (the ledge replay landed every other one at 300 ms).
+  const cooldown = ({ sword: 700, axe: 1300, pickaxe: 950, shovel: 1200, trident: 1000 })[kind] || 500;
   const remaining = cooldown - (Date.now() - (bot._defenseAttackAt || 0));
   if (remaining > 0) {
     // Keep trying to retreat from a creeper between knockback attempts.
@@ -176,7 +178,8 @@ async function defendNearby(bot, task, goal, save) {
   await bot.lookAt(target.position.offset(0, (target.height || 1.8) / 2, 0), true);
   task.check(); checkAir(bot);
   if (bot.entities[target.id] !== target || target.isValid === false || strikeTarget(bot)?.entity !== target) return false;
-  const swing = await strike(bot, task, target); bot._defenseAttackAt = Date.now();
+  const swing = await strike(bot, task, target); bot._defenseAttackAt = bot._threatResponseAt = Date.now();
+  bot._struck = { id: target.id, at: bot._defenseAttackAt };
   // The shield comes up for the cooldown between swings: a wither skeleton
   // took twenty health in six seconds of unguarded swordplay. Not against
   // a creeper, which is struck and backed away from.

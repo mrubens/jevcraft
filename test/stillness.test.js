@@ -263,9 +263,32 @@ test('hit twice with no survival response, the held step is stopped and unwinds 
   assert.throws(() => checkStall(bot), e => e.name === 'NeedsSafety');
   assert.throws(() => checkStall(bot), e => e.name === 'NeedsSafety', 'held until the survival layer runs');
   bot._threatAbort = false; // the survival layer ran
-  bot._survivalReportedAt = Date.now(); bot._threatAbortAt = 0;
+  bot._threatResponseAt = Date.now(); bot._threatAbortAt = 0;
   bot.emit('entityHurt', bot.entity); bot.emit('entityHurt', bot.entity);
   assert.doesNotThrow(() => checkStall(bot), 'a fight the survival layer is answering is left alone');
+});
+
+test('one hit by a hostile mob stops a held step, and leaving the mobs be is not an answer to them', () => {
+  // Trial 57, replayed on its ledge: told to keep working, the bot dug stone
+  // by hand for its shelter while a zombie hit it five times.
+  const { EventEmitter } = require('node:events');
+  const { Vec3 } = require('vec3');
+  const { Survival } = require('../src/survival');
+  const { checkStall } = require('../src/stillness');
+  let stopped = 0;
+  const zombie = { id: 7, name: 'zombie', position: new Vec3(1, 64, 0), isValid: true };
+  const bot = Object.assign(new EventEmitter(), { entity: { id: 1, position: new Vec3(0, 64, 0) }, entities: { 7: zombie }, health: 17, game: { dimension: 'overworld' }, time: { timeOfDay: 18000 },
+    stopDigging: () => { stopped++; }, pathfinder: { setGoal: () => {} }, clearControlStates() {}, inventory: { items: () => [] } });
+  const survival = new Survival(bot, {});
+  survival.report({}, () => {}, { action: 'keep_working', threats: ['zombie'], stance: true });
+  survival.report({}, () => {}, { action: 'gather_shelter_materials', need: 19 });
+  bot.emit('entityHurt', bot.entity, zombie);
+  assert.equal(stopped, 1, 'the dig is stopped at the first hit');
+  assert.throws(() => checkStall(bot), e => e.name === 'NeedsSafety');
+  bot._threatAbort = false; bot._threatAbortAt = 0;
+  survival.report({}, () => {}, { action: 'hold_defensive_position', threats: ['zombie'] });
+  bot.emit('entityHurt', bot.entity, zombie);
+  assert.equal(stopped, 1, 'a hold is an answer to the mob');
 });
 
 test('where the bot has been lately is kept every fifteen seconds for three minutes, with what it was doing', () => {

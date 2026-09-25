@@ -309,13 +309,18 @@ class Survival {
         // y -9 and a zombie took it from twenty to nothing in seven seconds.
         // The walk, the dig and any window are stopped, and the step's next
         // check unwinds to the survival layer, where the stance is chosen.
-        if (bot._hurtTimes.filter(t => now - t < 4000).length >= 2 && !(bot._survivalReportedAt > now - 3000) && !(bot._threatAbortAt > now - 5000) && (bot.health ?? 0) > 0) {
+        // Once, when a hostile mob landed it. A survival action counts only
+        // if it answers the mobs: trial 57 was told to keep working, went
+        // on digging stone by hand for its shelter, and was hit five times
+        // before anything looked up (the arena replay of its ledge).
+        const byMob = source && require('./danger').hostileEntities(bot, 8).includes(source);
+        if (bot._hurtTimes.filter(t => now - t < 4000).length >= (byMob ? 1 : 2) && !(bot._threatResponseAt > now - 3000) && !(bot._threatAbortAt > now - 5000) && (bot.health ?? 0) > 0) {
           bot._threatAbortAt = now; bot._threatAbort = true;
           try { bot.stopDigging?.(); } catch (_) { /* not digging */ }
           try { bot.pathfinder?.setGoal?.(null); } catch (_) { /* not walking */ }
           try { bot.clearControlStates?.(); } catch (_) { /* nothing held */ }
           try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow); } catch (_) { /* no window */ }
-          console.log(`[hurt] hit twice with no survival response (health ${Math.round(bot.health)}): the step is stopped for the survival layer ${JSON.stringify({
+          console.log(`[hurt] hit with no survival response (health ${Math.round(bot.health)}): the step is stopped for the survival layer ${JSON.stringify({
             sinceCheckMs: bot._lastCheckAt ? now - bot._lastCheckAt : null, digging: bot.targetDigBlock?.name || null, window: bot.currentWindow?.type ?? null,
             pathing: bot.pathfinder?.isMoving?.() ?? null, step: bot._survivalGoal?.step?.action || null })}`);
         }
@@ -367,6 +372,9 @@ class Survival {
     }
     goal.survivalAction = { ...action, at: new Date().toISOString() }; save();
     this.bot._survivalReportedAt = Date.now(); this.bot._survivalGoal = goal;
+    // An answer to the mobs about, as the hurt listener counts one: leaving
+    // them be is not.
+    if (action.threats && action.action !== 'keep_working') this.bot._threatResponseAt = Date.now();
   }
 
   async flee(task, goal, save) {
@@ -659,9 +667,9 @@ class Survival {
     const creeperNote = creeper ? ` A creeper is ${Math.round(creeper.distance)} blocks off: it walks up to whatever is built and goes off, and a pocket is not closed before the blast.` : '';
     const cost = fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere;
-    if (armed) options.fight = { description: `Fight here: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}.`,
+    options.fight = { description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}.`,
       run: async () => {
-        if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); if (!swung) await defendNearby(bot, task, goal, save); return true; }
+        if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); await this.swingFor(task, goal, save); return true; }
         if (await this.charge(task, goal, save, nearest, false, { chosen: true })) return true;
         // No level way to it: the fight is held here, facing it, and the
         // swing takes it when it comes into reach. Not a stance that failed.
@@ -880,7 +888,14 @@ class Survival {
     const bot = this.bot;
     lowerShield(bot);
     this.report(goal, save, { action: 'escape_threat', threats: danger.map(t => ({ name: t.entity.name, distance: t.distance })) });
-    if (await this.runAway(task, goal, save, danger)) return;
+    // No route away from here a moment ago is no route now: the search is
+    // a second of route surveys, and in the replay of trial 57's ledge each
+    // one was a second without a swing while a zombie hit.
+    const here = bot.entity.position.floored(), none = this.state.noRoute;
+    if (!(none && Date.now() - none.at < 5000 && here.distanceTo(pos(none)) < 1.5)) {
+      if (await this.runAway(task, goal, save, danger)) { delete this.state.noRoute; return; }
+      this.state.noRoute = { x: here.x, y: here.y, z: here.z, at: Date.now() };
+    }
     const movements = bot.pathfinder.movements;
     const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
     Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
@@ -965,8 +980,25 @@ class Survival {
       }
       this.report(goal, save, { action: 'hold_defensive_position', threats: danger.map(t => t.entity.name),
         reason: 'No safe retreat; defend visible hostiles that enter reach' });
-      for (let n = 0; n < 2; n++) { task.check(); checkAir(bot); await sleep(100); }
+      // Held for a second, swinging at whatever comes into reach, bare
+      // hands or not: a hold that only waited let trial 57's zombie take
+      // twenty health with no swing between its hits.
+      await this.swingFor(task, goal, save);
     } finally { Object.assign(movements, previous); bot.clearControlStates(); }
+  }
+
+  // Swing after swing at whatever is in reach, for a second, before the
+  // next look round: one swing a tick, with a tick's half second of checks
+  // between, was a bare-handed bot punching once a second against a zombie
+  // hitting once a second (the replay of trial 57's ledge).
+  async swingFor(task, goal, save, ms = 1000) {
+    const bot = this.bot;
+    for (const until = Date.now() + ms; Date.now() < until;) {
+      task.check(); checkAir(bot);
+      // A creeper is hit and backed from (creeperDance), not stood at.
+      if (threats(bot, 5).some(t => t.entity.name === 'creeper')) return;
+      if (!await defendNearby(bot, task, goal, save)) await sleep(100);
+    }
   }
 
   // Two blocks straight up, where the head room allows and blocks are

@@ -40,3 +40,25 @@ test('a skeleton is not a quick kill: it backs off after each hit and shoots whi
   assert(e.fightHere.damageTaken >= 6, JSON.stringify(e.fightHere));
   assert(e.fightHere.healthAfter < 4, 'at nine health it is close to fatal');
 });
+
+test('bare hands land two hits a second, not four: a zombie takes ten seconds and about half the health', () => {
+  // A mob struck is unhurt for half a second after. Told five seconds and
+  // five damage, a bare-handed fight looked cheap; the ledge replay of trial
+  // 57 lost one in three at about that pace.
+  const fight = fightEstimate({ threats: [{ name: 'zombie', distance: 2, shoots: false, visible: true }], weapon: null, health: 20 }).fightHere;
+  assert.equal(fight.seconds, 10);
+  assert(fight.damageTaken >= 8, `took ${fight.damageTaken}`);
+});
+
+test('the mob being fought stays in view for a few seconds when it steps below a ledge\'s edge', () => {
+  const { threats } = require('../src/danger');
+  const { Vec3 } = require('vec3');
+  const zombie = { id: 9, name: 'zombie', position: new Vec3(2, 63, 0), height: 1.95, isValid: true };
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, entities: { 9: zombie }, time: { timeOfDay: 18000 }, game: {},
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0), intersect: new Vec3(1, 64.5, 0) }) } };
+  assert.equal(threats(bot, 8)[0].visible, false, 'behind the lip');
+  bot._struck = { id: 9, at: Date.now() };
+  assert.equal(threats(bot, 8)[0].visible, true, 'the one just punched');
+  bot._struck.at = Date.now() - 9000;
+  assert.equal(threats(bot, 8)[0].visible, false, 'not for good');
+});
