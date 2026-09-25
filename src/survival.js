@@ -1983,7 +1983,7 @@ class Survival {
     const bot = this.bot;
     if (!this.canNightMine(goal)) return false;
     // Ore dug with no free slot stays on the floor of the tunnel.
-    if (bot.game?.gameMode !== 'creative' && !((bot.inventory.emptySlotCount?.() ?? 1) > 0) && !await makeRoom(bot, task, 'raw_iron')) return false;
+    if (bot.game?.gameMode !== 'creative' && !((bot.inventory.emptySlotCount?.() ?? 1) > 0) && !await makeRoom(bot, task, 'raw_iron', { goal })) return false;
     // A pickaxe about to go is replaced from the pockets before the next
     // step: the daytime spare rule never runs inside the mine, and the dream
     // run wore an iron pickaxe from twenty-two uses to none in eighteen

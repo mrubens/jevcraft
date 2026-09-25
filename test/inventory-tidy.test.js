@@ -258,3 +258,24 @@ test('making room, Jev sees junk and surplus first and marked, and what going wi
   assert.match(offered.none, /go without the cobblestone: the step in hand \(8 cobblestone for the reach nether step\) cannot go on without it/);
   assert(keys.some(k => /coal.*more than the \d+ worth keeping/.test(offered[k])), 'surplus coal marked');
 });
+
+test('making room says the only food, the only weapon, the water bucket, the valuables, what the step needs, and the stacks not listed (the decision audit)', async () => {
+  const { makeRoom } = require('../src/inventory-tidy');
+  const items = [];
+  const add = (name, count) => { const it = registry.itemsByName[name]; items.push({ name, count, type: it.id, stackSize: it.stackSize }); };
+  add('diamond_sword', 1); add('bread', 3); add('water_bucket', 1); add('diamond', 2); add('coal', 20);
+  while (items.length < 36) add('white_wool', 1);
+  let offered, state;
+  const client = { systemOne: async ({ questions, state: s }) => { offered = Object.values(questions.branch_0.criteria); state = s; return { answers: { branch_0: { choice: 'none', confidence: 0.6 } } }; } };
+  const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {} };
+  const goal = { kind: 'obtain', step: { action: 'smelt', item: 'iron_ingot', fuel: 'coal' } };
+  await makeRoom(bot, { check() {}, opportunityClient: client }, 'raw_iron', { goal });
+  const said = offered.join('\n');
+  assert.match(said, /diamond sword.*the only weapon/);
+  assert.match(said, /bread.*the only food carried/);
+  assert.match(said, /water bucket.*breaks a fall/);
+  assert.match(said, /2 diamond.*a valuable/);
+  assert.match(said, /20 coal.*needed by the step in hand/);
+  assert.match(said, /\d+ more stacks are carried and not listed here/);
+  assert.deepEqual(state.stepInHand, goal.step);
+});

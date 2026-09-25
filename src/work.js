@@ -1045,7 +1045,7 @@ async function mine(bot, task, step, goal, save, selected) {
   }
   // Mining with no slot for the drop digs ore for the ground to keep.
   if (step.drops && bot.game?.gameMode !== 'creative' && !roomFor(bot, step.drops)) {
-    if (!await makeRoom(bot, task, step.drops, { keep: new Set([goal.item, step.item].filter(Boolean)), purpose: `the step in hand (${step.count || ''} ${step.drops.replaceAll('_', ' ')}${goal.gameProgress?.phase ? ` for the ${goal.gameProgress.phase.replaceAll('_', ' ')} step` : ''})` })) throw new Error(`No room in my pockets for ${step.drops.replaceAll('_', ' ')}`);
+    if (!await makeRoom(bot, task, step.drops, { goal, keep: new Set([goal.item, step.item].filter(Boolean)), purpose: `the step in hand (${step.count || ''} ${step.drops.replaceAll('_', ' ')}${goal.gameProgress?.phase ? ` for the ${goal.gameProgress.phase.replaceAll('_', ' ')} step` : ''})` })) throw new Error(`No room in my pockets for ${step.drops.replaceAll('_', ' ')}`);
   }
   const surface = surfaceOnly ? surfaceMovement(bot) : null;
   try {

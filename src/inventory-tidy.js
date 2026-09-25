@@ -161,7 +161,7 @@ const blockStock = bot => bot.inventory.items().filter(i => BUILDING.test(i.name
 // stacks a time. Without Jev, the order below.
 // Decorative finds with no use on the way to the dragon, said as such.
 const NO_USE = /^(pink_petals|.*_tulip|dandelion|poppy|allium|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|lily_pad|sunflower|lilac|rose_bush|peony|.*_mushroom|pointed_dripstone|dripstone_block|leaf_litter|short_grass|fern|dead_bush|sugar_cane|bamboo|cactus|.*_carpet|.*_dye)$/;
-async function jevMakesRoom(bot, task, name, keep, purpose = null) {
+async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null) {
   const client = task?.opportunityClient;
   if (!client) return null;
   const { decide } = require('./decisions');
@@ -180,22 +180,47 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null) {
       .sort((a, b) => (NO_USE.test(b.name) || over(b.name) ? 1 : 0) - (NO_USE.test(a.name) || over(a.name) ? 1 : 0));
     if (!stacks.length) return false;
     const kind = n => (TOOL.test(n) && n.match(TOOL)[1]) || null;
+    // What each stack is to the work in hand and the ladder's next step,
+    // and the stacks that matter most when gone: the only food, the only
+    // weapon, the water bucket, the valuables (the decision audit,
+    // 2026-09-25).
+    const needed = new Set();
+    for (const st of [goal?.step, goal?.step?.detail].filter(Boolean)) for (const k of ['item', 'drops', 'block', 'input', 'fuel']) if (typeof st[k] === 'string') needed.add(st[k]);
+    let nextRung = null;
+    try {
+      const stage = goal?.kind === 'win' ? require('./game-progress').nextGameStage(bot, goal) : null;
+      if (stage?.item) {
+        const { catalogPlan, planningInventory } = require('./work');
+        for (const st of catalogPlan(bot, stage.item, stage.count || 1, planningInventory(bot), goal) || []) for (const k of Object.keys(st.consumes || {})) needed.add(`rung:${k}`);
+        nextRung = stage.phase;
+      }
+    } catch (_) { nextRung = null; }
+    const food = n => !!bot.registry?.foodsByName?.[n];
+    const weapon = n => /_(sword|axe)$|^(bow|crossbow|trident)$/.test(n);
+    const { VALUABLES } = require('./home-stash');
     const tree = {};
     stacks.slice(0, 24).forEach((stack, n) => {
       const notes = [];
       const k = kind(stack.name);
       if (k && !bot.inventory.items().some(i => i !== stack && kind(i.name) === k)) notes.push(`the only ${k}`);
       if (BUILDING.test(stack.name) && blockStock(bot) - stack.count < BLOCK_RESERVE) notes.push(`part of the ${BLOCK_RESERVE}-block reserve for pillars, walls and pockets`);
-      if (bot.registry?.foodsByName?.[stack.name]) notes.push('food');
+      if (food(stack.name)) notes.push(bot.inventory.items().some(i => i !== stack && food(i.name)) ? 'food' : 'the only food carried');
+      if (weapon(stack.name) && !bot.inventory.items().some(i => i !== stack && weapon(i.name))) notes.push('the only weapon');
+      if (stack.name === 'water_bucket') notes.push('the water bucket: breaks a fall, puts out fire, turns lava to stone');
+      if (Object.hasOwn(VALUABLES, stack.name)) notes.push('a valuable');
+      if (needed.has(stack.name)) notes.push('needed by the step in hand');
+      else if (needed.has(`rung:${stack.name}`)) notes.push(`needed by the ladder's next step (${nextRung.replaceAll('_', ' ')})`);
       if (NO_USE.test(stack.name)) notes.push('no use on the way to the dragon');
       if (over(stack.name)) notes.push(`more than the ${cap(stack.name)} worth keeping`);
       tree[`drop_${n}`] = { description: `Drop ${stack.count} ${stack.name.replaceAll('_', ' ')} (${counts[stack.name]} carried in all)${notes.length ? `: ${notes.join('; ')}` : ''}.`, stack };
     });
-    tree.none = { description: `Drop nothing and go without the ${name.replaceAll('_', ' ')}${purpose ? `: ${purpose} cannot go on without it, and fails and is tried again` : ''}.` };
+    const unlisted = stacks.length - Math.min(stacks.length, 24);
+    tree.none = { description: `Drop nothing and go without the ${name.replaceAll('_', ' ')}${purpose ? `: ${purpose} cannot go on without it, and fails and is tried again` : ''}.${unlisted ? ` ${unlisted} more stack${unlisted === 1 ? ' is' : 's are'} carried and not listed here.` : ''}` };
     let decision;
     try {
       decision = await decide('inventory_drop', { client, bot, task, tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description }])),
-        state: { roomFor: name, carriedKinds: Object.keys(counts).length, freeSlots: bot.inventory.emptySlotCount?.() ?? 0, keeping: [...keep] } });
+        state: { roomFor: name, carriedKinds: Object.keys(counts).length, freeSlots: bot.inventory.emptySlotCount?.() ?? 0, keeping: [...keep],
+          ...(goal?.step ? { stepInHand: goal.step } : {}), ...(unlisted ? { stacksNotListed: unlisted } : {}) } });
     } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return null; }
     if (decision.stale) continue;
     // Jev unreachable: the tidy's own order.
@@ -211,10 +236,10 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null) {
   return roomFor(bot, name);
 }
 
-async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpose = null } = {}) {
+async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpose = null, goal = null } = {}) {
   if (roomFor(bot, name)) return true;
   await faceAway(bot, away);
-  const chosen = await jevMakesRoom(bot, task, name, keep, purpose);
+  const chosen = await jevMakesRoom(bot, task, name, keep, purpose, goal);
   if (chosen !== null) return chosen;
   // Junk before tools: with forty-six nether brick fences in the pockets the
   // tidy threw out the stone pickaxe first, and the ladder, counting the

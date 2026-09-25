@@ -60,7 +60,7 @@ async function hunt(bot, task, target, actions, goal, save) {
     if (!item) throw new Error(`Food target ${target.name} is not an eligible passive adult`);
     // No slot for the meat is no reason to kill: make room first, and if
     // there is none to make, say so rather than leave another carcass.
-    if (!await makeRoom(bot, task, item, { away: target.position })) throw new Error(`No room in my pockets for ${item.replaceAll('_', ' ')}`);
+    if (!await makeRoom(bot, task, item, { goal, away: target.position })) throw new Error(`No room in my pockets for ${item.replaceAll('_', ' ')}`);
     const before = count(bot, item), foodBefore = foodSupply(bot);
     const deadline = Date.now() + 45000;
     const weapon = bot.inventory.items().filter(i => /_(sword|axe)$/.test(i.name))
