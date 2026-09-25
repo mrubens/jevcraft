@@ -291,9 +291,12 @@ async function outOfFire(bot, task, onAction = () => {}) {
   // (the arena: burned in place three times out of three).
   bot.pathfinder?.setGoal?.(null);
   const { move } = require('./motion');
-  for (const cell of route) {
+  for (const [i, cell] of route.entries()) {
     const target = cell.offset(0.5, 0, 0.5);
-    const there = () => { const here = bot.entity.position; return Math.hypot(target.x - here.x, target.z - here.z) < 0.35 && Math.abs(here.y - cell.y) < 0.6; };
+    // At a sprint the cells on the way are passed through, not stood on:
+    // held to a third of a block, each one overshot and was turned back to.
+    const near = i === route.length - 1 ? 0.45 : 0.8;
+    const there = () => { const here = bot.entity.position; return Math.hypot(target.x - here.x, target.z - here.z) < near && Math.abs(here.y - cell.y) < 0.6; };
     const up = cell.y > Math.floor(bot.entity.position.y + 0.01);
     await move(bot, task, { label: 'out_of_fire', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'running out of fire',
       look: target.offset(0, 1.6, 0), maxMs: 1500, tick: 50, until: there });

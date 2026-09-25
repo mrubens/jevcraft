@@ -357,12 +357,34 @@ function restockStage(bot, goal, wants = [], { now = Date.now() } = {}) {
   return { phase: 'home_restock', action: 'restock', items: moves };
 }
 
+// Ground under the chest cell, laid from the bottom up where it is open:
+// trial 98's chest was blown up by a creeper and took the ground under it,
+// and "no adjacent solid anchor" came back three times from a cell with a
+// crater under it and water beside it (2026-09-25).
+async function groundUnder(bot, task, actions, cell) {
+  const { SCAFFOLD } = require('./pillar-recovery');
+  const open = [];
+  for (let dy = 1; dy <= 3; dy++) {
+    const b = bot.blockAt(cell.offset(0, -dy, 0));
+    if (!b || b.boundingBox === 'block') break;
+    open.push(cell.offset(0, -dy, 0));
+  }
+  if (!open.length) return;
+  if (bot.blockAt(cell.offset(0, -open.length - 1, 0))?.boundingBox !== 'block') throw new Error(`No ground within three blocks under the chest at ${cell}`);
+  for (const p of open.reverse()) {
+    const filler = bot.inventory.items().find(i => SCAFFOLD.includes(i.name));
+    if (!filler) throw new Error(`No block to lay under the chest at ${cell}`);
+    await actions.place(bot, task, p, filler.name);
+  }
+}
+
 async function placeStashChest(bot, task, goal, save, home, actions) {
   const { chest } = base().layout(home);
   goal.step = { action: 'place_chest', at: chest }; save();
   task.check(); checkAir(bot); checkThreats(bot);
   if (!isChest(bot.blockAt(pos(chest)))) {
     await base().clearStray(bot, task, actions, [chest, { x: chest.x, y: chest.y + 1, z: chest.z }]);
+    await groundUnder(bot, task, actions, pos(chest));
     await actions.place(bot, task, pos(chest), 'chest');
   }
   if (!isChest(bot.blockAt(pos(chest)))) throw new Error('The chest did not go beside the bed');

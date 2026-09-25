@@ -368,3 +368,15 @@ test('at home past the ladder, valuables go in before any later stage, not only 
   await gameStep(bot, new Task('win'), goal, save, handlers);
   assert.deepEqual(ran, [stage]);
 });
+
+test('a chest cell with a crater under it gets ground laid first, from the bottom up', async () => {
+  // Trial 98: a creeper blew up the chest and the ground under it; the chest came back "no adjacent solid anchor" three times.
+  const w = await establishedHome({ items: [['chest', 1], ['dirt', 8]], chest: false }), { bot, goal } = w;
+  const h = goal.survival.home, chest = w.layout.chest;
+  w.set(new Vec3(chest.x, chest.y - 1, chest.z), 'air'); w.set(new Vec3(chest.x, chest.y - 2, chest.z), 'air');
+  const placed = [];
+  const actions = { place: async (b, t, p, name) => { placed.push(`${name} ${p.y - chest.y}`); w.set(p, name); }, dig: async () => {} };
+  await stash.placeStashChest(bot, new Task('home'), goal, () => {}, h, actions);
+  assert.deepEqual(placed, ['dirt -2', 'dirt -1', 'chest 0']);
+  assert(h.stash.position);
+});
