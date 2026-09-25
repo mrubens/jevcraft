@@ -9,6 +9,7 @@ const { idleOptions, idleWork } = require('../src/work');
 const { forageChoices } = require('../src/foraging');
 const { surplus } = require('../src/inventory-tidy');
 const { stepLine } = require('../src/narration');
+require('../src/narration').setRandom(() => 0);
 const { LEVEL, registry, world, pond, goalWith, establishedHome } = require('./fixtures/home-world');
 
 test('the layout puts every plot cell within reach of the water, the bed beside it and a gated pen behind', () => {
@@ -240,8 +241,8 @@ test('wheat seeds are kept for the plot, and the new phases each have one line',
   const bot = { inventory: { items: () => [{ name: 'wheat_seeds', count: 20 }, { name: 'wheat', count: 10 }, { name: 'bread', count: 4 }] } };
   assert.deepEqual(surplus(bot), []);
   const goal = {};
-  for (const [step, pattern] of [[{ action: 'home_site', origin: { x: 21, y: 63, z: 0 } }, /home base beside the water at 21, 0/], [{ action: 'till' }, /Tilling/], [{ action: 'plant' }, /Planting wheat/],
-    [{ action: 'harvest' }, /Harvesting/], [{ action: 'claim_bed' }, /respawn at home/], [{ action: 'build_pen' }, /Fencing/], [{ action: 'lure_cows' }, /Leading cows/],
+  for (const [step, pattern] of [[{ action: 'home_site', origin: { x: 21, y: 63, z: 0 } }, /by the water at 21, 0 will be home/], [{ action: 'till' }, /tilling the field/], [{ action: 'plant' }, /planting wheat/],
+    [{ action: 'harvest' }, /Harvest time/], [{ action: 'claim_bed' }, /wake up here/], [{ action: 'build_pen' }, /fencing in a pen/], [{ action: 'lure_cows' }, /into the pen/],
     [{ action: 'idle', choice: 'tend_farm' }, /tend the farm/], [{ action: 'idle', choice: 'breed_cows' }, /breed the cows/], [{ action: 'game_progression', phase: 'home_bed' }, /home bed/]]) {
     assert.match(stepLine(goal, step), pattern);
   }

@@ -328,8 +328,9 @@ function noticeLandmarks(bot, goal, save, { now = Date.now(), every = 30, moved 
     const { landmark, isNew } = rememberLandmark(goal, detector.kind, where, place, now);
     found.push(landmark);
     if (isNew) {
-      goal.survivalAction = { action: 'landmark_found', kind: detector.kind, position: { x: landmark.x, y: landmark.y, z: landmark.z }, at: new Date(now).toISOString() };
-      bot.chat?.(`Found a ${phrase(detector.kind)} at ${landmark.x}, ${landmark.z}${detail(landmark)}.`);
+      // Said once, in Jev's voice, by the narration: it was said twice,
+      // "Found a lava pool at..." and then "Found something worth remembering".
+      goal.survivalAction = { action: 'landmark_found', kind: detector.kind, what: `${phrase(detector.kind)} at ${landmark.x}, ${landmark.z}${detail(landmark)}`, position: { x: landmark.x, y: landmark.y, z: landmark.z }, at: new Date(now).toISOString() };
     }
   }
   if (found.length || newArea) save();

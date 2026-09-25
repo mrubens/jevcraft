@@ -8,6 +8,7 @@ const home = require('../src/home-base');
 const { preparationStage, gameStep } = require('../src/game-progress');
 const { forageChoices } = require('../src/foraging');
 const { narrate } = require('../src/narration');
+require('../src/narration').setRandom(() => 0);
 const { LEVEL, world, pond, goalWith } = require('./fixtures/home-world');
 
 // A village on the flat world: a bell, hay stacked beside it, beds in
@@ -51,7 +52,7 @@ test('a village is remembered once, announced once, and a second look from the f
   assert.deepEqual(goal.villages[0], { x: 30, y: LEVEL + 1, z: 0, dimension: 'overworld', seenAt: 1000, bell: { x: 30, y: LEVEL + 1, z: 0 }, beds: 2, hay: 3 });
   assert.equal(found, goal.villages[0]); assert(saves > 0);
   assert.equal(goal.survivalAction.action, 'village_found');
-  assert.equal(narrate(bot, goal, { now: 5000 }), "There's a village here. Worth remembering.");
+  assert.equal(narrate(bot, goal, { now: 5000 }), "Ooh, a village! I'll remember this spot.");
   assert.equal(narrate(bot, goal, { now: 10000 }), null, 'said once');
   // The next twenty-nine steps standing still do not look again.
   bot.findBlocks = () => assert.fail('scanned again without moving');

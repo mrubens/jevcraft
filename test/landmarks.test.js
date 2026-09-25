@@ -37,8 +37,12 @@ test('landmarks are noticed by their own blocks, remembered once, and said once'
   assert.equal(goal.landmarks[0].obsidian, 2);
   noticeLandmarks(bot, goal, () => {}, { force: true });
   assert.equal(goal.landmarks.length, 1, 'the same portal is not a second one');
-  assert.equal(bot.said.length, 1);
-  assert.match(bot.said[0], /ruined portal at 20, 20 \(2 obsidian\)/);
+  // Said by the narration, in Jev's voice, from the action: once, not twice.
+  assert.equal(bot.said.length, 0);
+  assert.match(goal.survivalAction.what, /ruined portal at 20, 20 \(2 obsidian\)/);
+  const { narrate, setRandom } = require('../src/narration'); setRandom(() => 0);
+  const said = [];
+  assert.match(narrate({ chat: l => said.push(l) }, goal, { now: 1000 }), /^Ooh, a ruined portal at 20, 20 \(2 obsidian\)! I'll remember that\.$/);
   assert.equal(knownLandmarks(bot, goal, 'ruined_portal')[0].distance, 14);
   assert.deepEqual(explorationSummary(goal).landmarks, { ruined_portal: 1 });
 });

@@ -7,6 +7,7 @@ const stash = require('../src/home-stash');
 const home = require('../src/home-base');
 const { preparationStage, nextGameStage, gameStep } = require('../src/game-progress');
 const { stepLine, narrate, MIN_GAP_MS } = require('../src/narration');
+require('../src/narration').setRandom(() => 0);
 const { idleOptions } = require('../src/work');
 const { LEVEL, registry, world, establishedHome } = require('./fixtures/home-world');
 
@@ -239,18 +240,18 @@ test('the idle loop offers stocking the stash beside the farm chores, and each s
   const w = await establishedHome({ items: [['stone_pickaxe', 1], ['stone_pickaxe', 1], ['oak_log', 20]] });
   const options = idleOptions(w.bot, { ...w.goal, kind: 'survive' });
   assert.match(options.stock_stash.description, /kit: 1 stone pickaxe, 8 oak log, and to keep for later: 4 oak log/, 'the chest holds eight kit logs and the four over eight as a keepsake');
-  for (const [step, pattern] of [[{ action: 'place_chest' }, /chest beside the bed/], [{ action: 'stock_stash' }, /Stocking the stash chest/], [{ action: 'restock' }, /spare kit out of the stash/],
-    [{ action: 'stash_valuables' }, /valuables in the stash chest while I am home/], [{ action: 'idle', choice: 'stock_stash' }, /stock the stash chest/], [{ action: 'game_progression', phase: 'home_restock' }, /home restock/]]) {
+  for (const [step, pattern] of [[{ action: 'place_chest' }, /chest by the bed/], [{ action: 'stock_stash' }, /stocking the chest/], [{ action: 'restock' }, /spare gear from the chest/],
+    [{ action: 'stash_valuables' }, /valuables in the chest while I'm home/], [{ action: 'idle', choice: 'stock_stash' }, /stock the stash chest/], [{ action: 'game_progression', phase: 'home_restock' }, /home restock/]]) {
     assert.match(stepLine({}, step), pattern);
   }
   const said = [], bot = { chat: line => said.push(line) };
   const goal = { kind: 'win', step: { action: 'restock', items: [{ item: 'iron_pickaxe', count: 1 }] } };
   let now = 1000;
-  assert.equal(narrate(bot, goal, { now }), 'Taking my spare kit out of the stash chest.');
+  assert.equal(narrate(bot, goal, { now }), "I'm grabbing my spare gear from the chest.");
   goal.step = { action: 'restock', items: [{ item: 'oak_log', count: 8 }] };
   assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), null, 'the same phase with different items is not said again');
   goal.step = { action: 'stock_stash', items: [] };
-  assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), 'Stocking the stash chest with spares.');
+  assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), "I'm stocking the chest with spares.");
   goal.step = { action: 'stock_stash', items: [{ item: 'bread', count: 2 }] };
   assert.equal(narrate(bot, goal, { now: now += MIN_GAP_MS }), null);
   assert.equal(said.length, 2);
