@@ -53,8 +53,14 @@ function digEffects(view, cell, bot = null) {
   for (let y = 1; y <= 8 && falls(view.name(cell.offset(0, y, 0))); y++) fallen++;
   if (fallen) effects.push(`${fallen} block${fallen > 1 ? 's' : ''} of ${view.name(cell.offset(0, 1, 0)).replaceAll('_', ' ')} above would fall into it${bot && cell.x === bot.x && cell.z === bot.z && cell.y > bot.y ? ', onto the bot\'s head' : ''}`);
   const touching = [UP, ...Object.values(DIRS)].map(d => view.name(cell.plus(d)));
-  if (touching.some(isLava)) effects.push('lava beside it would flow in');
-  else if (touching.some(isWater)) effects.push('water beside it would flow in');
+  // Over the bot's head, what flows in comes down on it: trial 77 dug up
+  // out of the top of its own pillar shaft into rock with water beside it,
+  // told only that the water "would flow in", and the water filled the
+  // shaft it stood in.
+  const overhead = bot && cell.x === bot.x && cell.z === bot.z && cell.y > bot.y;
+  const shaft = overhead && [bot, bot.plus(UP)].every(c => Object.values(DIRS).every(d => solid(view.name(c.plus(d)))));
+  if (touching.some(isLava)) effects.push(overhead ? 'lava beside it would pour down onto the bot' : 'lava beside it would flow in');
+  else if (touching.some(isWater)) effects.push(overhead ? `water beside it would pour down onto the bot${shaft ? ' and fill the one-block shaft it stands in, with no way to swim out' : ''}` : 'water beside it would flow in');
   return effects;
 }
 
@@ -82,6 +88,16 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     // Under water, whether the head comes up into air there: trial 63
     // swam up into a flooded cell under a stone lid and drowned.
     if (inWater) facts.breathes = !isWater(view.name(p.plus(UP))) && open(view.name(p.plus(UP)));
+    // Under water there, how far up the air is, or that the water runs to a
+    // ceiling: trial 77 swam up a column flooded to the rock, "up" being
+    // the aim, and drowned at the top of it.
+    if (isWater(view.name(p.plus(UP)))) {
+      let n = 2;
+      while (n < 24 && isWater(view.name(p.offset(0, n, 0)))) n++;
+      const top = view.name(p.offset(0, n, 0));
+      facts.airUp = top != null && open(top) && !isWater(top) ? n : null;
+      facts.ceilingUp = facts.airUp == null && top != null ? n : null;
+    }
     if (target) facts.blocksToTarget = Math.round(p.distanceTo(target));
     if (from) facts.blocksFromStart = Math.round(Math.hypot(p.x - from.x, p.z - from.z));
     return facts;
@@ -146,6 +162,8 @@ function describeMove(m) {
     if (m.dryFooting) facts.push('ends on dry ground');
     if (m.breathes === true) facts.push('the head comes out into air there');
     else if (m.breathes === false) facts.push('the head is still under water there');
+    if (m.airUp != null) facts.push(`air ${m.airUp} blocks straight up from there`);
+    else if (m.ceilingUp != null) facts.push(`water up to a ceiling ${m.ceilingUp} blocks up from there: no air that way`);
     if (m.atSurface) facts.push('ends at the surface');
     else if (m.openSkyAbove) facts.push('ends under open sky, in a hole');
     if (m.timesStoodThere) facts.push(`stood there ${m.timesStoodThere} time${m.timesStoodThere > 1 ? 's' : ''} already`);

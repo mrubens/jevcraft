@@ -45,3 +45,27 @@ test('stuck on the surface, the moves say how far each ends from where the bot g
   assert.equal(localMoves(view(cells), new Vec3(-8, 70, 0), { goal: 'away', from }).done, true);
   assert.equal(localMoves(view(cells), new Vec3(-7, 70, 0), { goal: 'away', from }).done, false);
 });
+
+test('under water, a move says whether there is air up the column or only water to a ceiling', () => {
+  // Trial 77: swam up a column flooded to the rock and drowned at the top of it.
+  const { localMoves, describeMove } = require('../src/unstuck');
+  const { Vec3 } = require('vec3');
+  const column = new Set(); for (let y = 10; y <= 16; y++) column.add(`0,${y},0`);
+  const view = { name: p => (p.x === 0 && p.z === 0 && column.has(`0,${p.y},0`)) ? 'water' : 'stone', carried: {}, pickaxe: 'stone_pickaxe' };
+  const { moves } = localMoves(view, new Vec3(0, 10, 0), { goal: 'sky' });
+  const up = moves.find(m => m.key === 'swim_up');
+  assert.match(describeMove(up), /water up to a ceiling \d+ blocks up from there: no air that way/);
+  column.delete('0,16,0');
+  const view2 = { ...view, name: p => p.x === 0 && p.z === 0 && p.y === 16 ? 'air' : view.name(p) };
+  const up2 = localMoves(view2, new Vec3(0, 10, 0), { goal: 'sky' }).moves.find(m => m.key === 'swim_up');
+  assert.match(describeMove(up2), /air 5 blocks straight up from there/);
+});
+
+test('digging up with water beside the block says the water pours down, and fills a one-block shaft', () => {
+  // Trial 77: dug up out of its own pillar shaft into rock beside water; told only "would flow in".
+  const { localMoves, describeMove } = require('../src/unstuck');
+  const { Vec3 } = require('vec3');
+  const view = { name: p => (p.x === 0 && p.z === 0 && (p.y === 10 || p.y === 11)) ? 'air' : (p.x === 1 && p.z === 0 && p.y === 12) ? 'water' : 'stone', carried: {}, pickaxe: 'stone_pickaxe' };
+  const up = localMoves(view, new Vec3(0, 10, 0), { goal: 'sky' }).moves.find(m => m.key === 'dig_up');
+  assert.match(describeMove(up), /water beside it would pour down onto the bot and fill the one-block shaft it stands in/);
+});
