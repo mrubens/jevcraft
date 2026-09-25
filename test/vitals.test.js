@@ -320,3 +320,108 @@ test('burning with no fire about and a water bucket carried, the bucket is poure
   bot.game.dimension = 'the_nether'; bot.entity.metadata[0] = 1;
   assert.equal(await douse(bot, new Task('burn')), false, 'water boils away in the Nether');
 });
+
+// The pond mid-92-b drowned in (2026-09-25), as the region file has it:
+// x -113 to -104 along each row, z 78 to 85 down the rows. o a lily pad,
+// ~ still water, f falling water, s seagrass, , grass, d dirt, v vine.
+const POND_92B = {
+  64: ['..........', '..........', '........v.', '.......vvv', '......v...', '......v...', '..........', '......v...'],
+  63: ['.o..o.....', '..........', '..........', '....o.....', ',.....v...', ',,,...v...', ',,,,......', ',,,,......'],
+  62: ['~~,,s~~~~~', '~,,,,s~~~~', '~,,,~~s~~~', ',,,,~~~~~~', 'd,,,~~~~~~', 'ddd~~ss~~~', 'dddd~~,,~~', 'dddds,,,~~'],
+  61: ['dddds~~~~~', 'ddddds~~~~', 'dddddds~~~', 'ddd.fdd~~~', 'ddddfddddd', 'ddddfddddd', 'dddddddddd', 'dddddddddd'],
+  60: ['ddddd~~~~~', 'dddddd~~~~', 'ddddddd~~~', 'ddddfdd~~d', 'ddddfddddd', 'ddddfddddd', 'dddddddddd', 'dddddddddd'],
+};
+function pondBot({ start = new Vec3(-108.5, 61.2, 81.5) } = {}) {
+  const mcData = require('minecraft-data')('26.1'), Block = require('prismarine-block')('26.1');
+  const { swimmableWater } = require('../src/terrain');
+  const names = { '.': 'air', o: 'lily_pad', '~': 'water', f: 'water', s: 'seagrass', ',': 'grass_block', d: 'dirt', v: 'vine' };
+  const dug = new Set(), cache = new Map();
+  const blockAt = q => {
+    const p = q.floored(), k = `${p}`;
+    if (!cache.has(k)) {
+      const c = POND_92B[p.y]?.[p.z - 78]?.[p.x + 113];
+      const name = dug.has(k) ? 'air' : c ? names[c] : p.y < 60 ? 'dirt' : 'air';
+      const b = Block.fromStateId(mcData.blocksByName[name].defaultState + (c === 'f' ? 8 : 0), 0);
+      b.position = p; cache.set(k, b);
+    }
+    return cache.get(k);
+  };
+  const solid = b => b.boundingBox === 'block';
+  const pick = { name: 'diamond_pickaxe', type: mcData.itemsByName.diamond_pickaxe.id };
+  const controls = {}; let look = null, ticks = 0;
+  // Where the flight record has it: afloat at y 61.2 in the falling column,
+  // the top of its head against the lily pad's underside at y 63.
+  const bot = { oxygenLevel: 12, entity: { position: start.clone(), eyeHeight: 1.62, isInWater: true, onGround: false, effects: {} },
+    inventory: { items: () => [pick] }, blockAt, dug, controls,
+    pathfinder: { setGoal() {} }, stopDigging() {}, clearControlStates() { for (const k in controls) controls[k] = false; },
+    setControlState(key, value) { controls[key] = value; }, lookAt: async p => { look = p; }, equip: async () => {},
+    dig: async block => { const k = `${block.position}`; dug.add(k); cache.delete(k); } };
+  // A swimmer's physics, twenty times a second: jump rises, sneak sinks, and
+  // nothing held sinks slowly; a collision box over the head (a lily pad's
+  // is at the bottom of its cell) is a ceiling, one under the feet a floor.
+  // Forward swims toward where the bot last looked if the body fits there.
+  // Air goes a point every fifteen ticks with the eyes under, and comes
+  // back a point a tick above.
+  const fits = (x, y, z) => { for (let cy = Math.floor(y); cy <= Math.floor(y + 1.79); cy++) if (solid(blockAt(new Vec3(x, cy, z)))) return false; return true; };
+  const tick = setInterval(() => {
+    const p = bot.entity.position;
+    const vy = controls.jump ? 0.15 : controls.sneak ? -0.15 : -0.03;
+    let top = Infinity, bottom = -Infinity;
+    for (let cy = Math.floor(p.y) + 1; cy <= Math.floor(p.y + 1.8) + 1; cy++) {
+      const b = blockAt(new Vec3(p.x, cy, p.z));
+      if (solid(b)) { top = cy + (b.shapes?.[0]?.[1] ?? 0); break; }
+    }
+    if (solid(blockAt(new Vec3(p.x, p.y - 0.01, p.z)))) bottom = Math.floor(p.y - 0.01) + 1;
+    p.y = Math.max(bottom, Math.min(top - 1.8, p.y + vy));
+    if (controls.forward && look) {
+      const dx = look.x - p.x, dz = look.z - p.z, d = Math.hypot(dx, dz);
+      if (d > 0.01) { const s = Math.min(0.15, d), nx = p.x + dx / d * s, nz = p.z + dz / d * s; if (fits(nx, p.y, nz)) { p.x = nx; p.z = nz; } }
+    }
+    bot.entity.onGround = p.y === bottom;
+    bot.entity.isInWater = swimmableWater(blockAt(p)) || swimmableWater(blockAt(p.offset(0, 1, 0)));
+    ticks++;
+    if (headSubmerged(bot)) { if (ticks % 15 === 0) bot.oxygenLevel = Math.max(0, bot.oxygenLevel - 1); }
+    else bot.oxygenLevel = Math.min(20, bot.oxygenLevel + 1);
+  }, 50);
+  bot.stop = () => clearInterval(tick);
+  return bot;
+}
+
+test('under a lily pad, the way to air digs the pad or swims round it, and is never held against it', async () => {
+  // mid-92-b came up a flooded shaft into a pond under a lily pad. The way to
+  // air went up through the pad: a block that comes away at a touch, so it
+  // cost the search nothing and was named as nothing to dig. Its underside
+  // held the head a tenth under the surface, and the bot pressed jump into
+  // it for thirteen seconds and drowned (2026-09-25).
+  const bot = pondBot();
+  try {
+    assert.equal(headSubmerged(bot), true, 'the eyes are under the surface');
+    const route = airRoute(bot);
+    assert(route, 'a way to air');
+    for (const cell of route) for (const p of [cell, cell.offset(0, 1, 0)]) {
+      const b = bot.blockAt(p);
+      if (b.boundingBox === 'block') assert((cell.digs || []).some(d => d.equals(p)), `the ${b.name} at ${p} is dug, not swum through`);
+    }
+    const task = new Task('test', 'surface'), started = Date.now();
+    const limit = setTimeout(() => task.cancel(), 8000);
+    try { await surfaceForAir(bot, task); } finally { clearTimeout(limit); }
+    assert.equal(headSubmerged(bot), false, 'the head out of the water');
+    assert(Date.now() - started < 3000, `in a moment, not ${Date.now() - started} ms`);
+    assert.deepEqual([...bot.dug], ['(-109, 63, 81)'], 'the pad, and nothing else');
+  } finally { bot.stop(); }
+});
+
+test('a swimmer that stops getting anywhere on its way to air takes another way at once', async () => {
+  // The same pond, with the route made blind to the pad (as it was): the
+  // swimmer, held still under something the search did not see, must not
+  // spend its air pressing into it. mid-92-b held jump thirteen seconds.
+  const bot = pondBot(), task = new Task('test', 'surface'), started = Date.now();
+  const real = bot.blockAt, pad = new Vec3(-109, 63, 81);
+  let blind = true;
+  // What the bot reads; the physics still has the pad stop the head.
+  bot.blockAt = p => blind && p.floored().equals(pad) ? { ...real(p), name: 'air', boundingBox: 'empty' } : real(p);
+  const limit = setTimeout(() => task.cancel(), 8000);
+  try { await surfaceForAir(bot, task); } finally { blind = false; clearTimeout(limit); bot.stop(); }
+  assert.equal(headSubmerged(bot), false, 'the head out of the water');
+  assert(Date.now() - started < 5000, `in a few seconds, not ${Date.now() - started} ms`);
+});

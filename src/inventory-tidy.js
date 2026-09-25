@@ -226,6 +226,7 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null) 
     // Jev unreachable: the tidy's own order.
     if (decision.fallback) return null;
     const pick = decision.path.at(-1);
+    console.log(`[room] for ${name}: Jev chose ${pick}${tree[pick]?.stack ? ` (${tree[pick].stack.count} ${tree[pick].stack.name})` : ''}`);
     if (pick === 'none') return false;
     const stack = tree[pick]?.stack;
     if (!stack) return null;
@@ -233,7 +234,10 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null) 
     try { await (bot.tossStack ? bot.tossStack(stack) : bot.toss(stack.type, null, stack.count)); }
     catch (err) { task?.check?.(); return null; }
   }
-  return roomFor(bot, name);
+  // Three rounds and still no room, without Jev ever saying "nothing": the
+  // tidy's own order, not "no room". mid-79-a's diamond was refused four
+  // times, half a second a time, nothing thrown (2026-09-25).
+  return roomFor(bot, name) || null;
 }
 
 async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpose = null, goal = null } = {}) {
