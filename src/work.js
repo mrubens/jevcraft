@@ -342,6 +342,9 @@ async function waitFor(task, predicate, timeout = 4000, what = null) {
   while (Date.now() < end) { task.check(); if (predicate()) return; await sleep(100); }
   let detail = '';
   try { detail = what ? `: ${what()}` : ''; } catch (_) { /* best effort */ }
+  // Without a `what`, the caller: a bare timeout at crafting cost trials
+  // 43, 46 and 48 nine seconds a time, and nothing said which wait it was.
+  if (!detail) { const at = (new Error().stack || '').split('\n')[2]?.trim().replace(/^at /, '').replace(/\(.*\/(src\/[^)]+)\)/, '($1)'); if (at) detail = ` (in ${at})`; }
   throw new Error(`Timed out waiting for world/inventory update${detail}`);
 }
 const awaitedItem = (bot, item, want, context) => () => `${item.replaceAll('_', ' ')} after ${context} (have ${countOf(bot, item)} of ${want}, ${bot.inventory.emptySlotCount?.() ?? '?'} free slots${bot.inventory.selectedItem ? `, cursor ${bot.inventory.selectedItem.name}` : ''})`;
