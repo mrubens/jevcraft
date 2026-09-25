@@ -702,7 +702,13 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       if (shaft) observed.push(new Vec3(shaft.x, shaft.y, shaft.z));
     }
     if (observed.length) {
-      target = observed[0];
+      // The ore already chosen is kept while it is still there to be had:
+      // the nearest changes with every step, and trial 52 turned between two
+      // iron ores east and west of it at each call, paced four blocks of
+      // shore for a minute, and the staircase, its target always new, never
+      // counted itself stuck.
+      const kept = search.observedTarget && observed.find(p => p.x === search.observedTarget.x && p.y === search.observedTarget.y && p.z === search.observedTarget.z);
+      target = kept || observed[0];
       search.observedTarget = { ...target };
     }
     // Walks that got nowhere on the chosen heading, water across it: swim.

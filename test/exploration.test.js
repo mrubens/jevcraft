@@ -300,3 +300,24 @@ test('biomes about are shown with what they hold, and those far enough off are t
   assert.deepEqual(trips.map(t => t.biome), ['ocean', 'plains']);
   assert.match(trips[1].says, /^the plains 64 blocks north \(.*sheep/);
 });
+
+test('an ore chosen for the search is kept while it is there, not swapped for whichever is nearest after each step', async () => {
+  // Trial 52: two iron ores east and west of it, the nearer one taken at
+  // each call, four blocks of shore paced for a minute.
+  const registry = require('minecraft-data')('26.1');
+  const west = new Vec3(-4, 40, 0), east = new Vec3(4, 40, 0);
+  const iron = registry.blocksByName.iron_ore.id;
+  const bot = {
+    entity: { position: new Vec3(-0.5, 64, 0) }, registry,
+    blockAt: p => ({ name: (p.equals(west) || p.equals(east)) ? 'iron_ore' : 'air', position: p }),
+    findBlocks: ({ matching }) => matching.includes(iron) ? [west, east] : [],
+    pathfinder: { goto: async () => {}, setGoal: () => {} },
+  };
+  const goal = {};
+  await explore(bot, new Task('test', 'search'), goal, () => {}, 'iron_ore', { surfaceOnly: false }).catch(() => {});
+  const first = goal.search.iron_ore.observedTarget;
+  // A step toward the other side: the other ore is now the nearer.
+  bot.entity.position = first.x < 0 ? new Vec3(2, 64, 0) : new Vec3(-2, 64, 0);
+  await explore(bot, new Task('test', 'search'), goal, () => {}, 'iron_ore', { surfaceOnly: false }).catch(() => {});
+  assert.deepEqual(goal.search.iron_ore.observedTarget, first);
+});
