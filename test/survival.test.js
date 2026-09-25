@@ -1911,3 +1911,11 @@ test('a survival action the stall supervisor set aside on the goal is refused wh
   survival.report(goal, () => {}, { action: 'dig_in' });
   assert.equal(goal.survivalAction.action, 'dig_in');
 });
+
+test('the pickaxe uses kept for the climb out grow with the rock over the head', () => {
+  const { usesToClimbOut } = require('../src/survival');
+  const at = (feetY, topY) => ({ entity: { position: new Vec3(0.5, feetY, 0.5) },
+    blockAt: p => ({ position: p, boundingBox: p.y <= topY ? 'block' : 'empty', name: p.y <= topY ? 'stone' : 'air' }) });
+  assert.equal(usesToClimbOut(at(60, 62)), 24, 'near the surface, the old floor of twenty-four');
+  assert.equal(usesToClimbOut(at(24, 64)), 2 * 40 + 16, 'forty blocks down, two digs a block and a margin');
+});

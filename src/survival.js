@@ -88,7 +88,10 @@ function rockHolds(bot, feet, attempts) {
   const pick = Object.keys(PICK_TIER).find(k => PICK_TIER[k] === tier);
   const mines = Object.keys(ORE_TIER).filter(k => ORE_TIER[k] <= tier), not = Object.keys(ORE_TIER).filter(k => ORE_TIER[k] > tier);
   const seen = nightOreChoices(bot, feet, attempts).map(c => `${c.kind} ${Math.round(c.position.distanceTo(feet))} blocks off`);
-  return `${seen.length ? `Ore in view: ${seen.join(', ')}.` : 'No ore in view from here; a branch finds it in the rock.'} The ${pick} pickaxe carried mines ${mines.join(', ')} ore${not.length ? `; ${not.join(', ')} need a better one` : ''}.`;
+  const uses = Math.max(0, ...bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => remainingUses(bot, i)));
+  const keep = usesToClimbOut(bot);
+  const wear = Number.isFinite(uses) ? ` The best pickaxe has ${uses} uses left; about ${keep} of them are the climb back out from here, and the mine stops when it gets down to that.` : '';
+  return `${seen.length ? `Ore in view: ${seen.join(', ')}.` : 'No ore in view from here; a branch finds it in the rock.'} The ${pick} pickaxe carried mines ${mines.join(', ')} ore${not.length ? `; ${not.join(', ')} need a better one` : ''}.${wear}`;
 }
 // Without Jev: the nearest of the ores the ladder uses (not copper).
 function nightOre(bot, feet, attempts) {
@@ -266,6 +269,21 @@ const emptySite = (bot, refuge) => refuge.kind !== 'house' && !refuge.verifiedAt
 // Night-mine tools: the uses left on a pickaxe, and the one the pockets
 // can make now (iron before stone), with sticks or planks and a table carried.
 const PICKAXE_SPARE_USES = 24;
+// The uses the climb out takes: about two digs for every block of rock over
+// the head, a staircase's step and its headroom, and a margin. Twenty-four
+// was kept at any depth, and mid-87-a stopped mining forty blocks down with
+// that many left, wore through them on the stairs and dug the last
+// twenty-four blocks by hand, at two a minute (2026-09-25).
+function usesToClimbOut(bot) {
+  const feet = bot.entity.position.floored();
+  let top = feet.y;
+  for (let y = feet.y + 2; y <= Math.min(feet.y + 200, 319); y++) {
+    const b = bot.blockAt(new Vec3(feet.x, y, feet.z));
+    if (!b) break;
+    if (b.boundingBox === 'block') top = y;
+  }
+  return Math.max(PICKAXE_SPARE_USES, 2 * (top - feet.y) + 16);
+}
 function remainingUses(bot, item) {
   const max = bot.registry?.itemsByName?.[item.name]?.maxDurability;
   return max ? max - (item.durabilityUsed || 0) : Infinity;
@@ -1927,7 +1945,7 @@ class Survival {
     // seconds with seventeen ingots and a crafting table carried, then
     // sealed itself in for the night with nothing to dig with.
     const best = Math.max(0, ...bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => remainingUses(bot, i)));
-    if (best < PICKAXE_SPARE_USES && this.actions.acquireStep) {
+    if (best < usesToClimbOut(bot) && this.actions.acquireStep) {
       const make = pickaxeCraftable(bot);
       if (make && !isSetAside(this, 'night_pickaxe', make)) {
         this.report(goal, save, { action: 'craft_pickaxe', item: make, remaining: best });
@@ -2434,4 +2452,4 @@ class Survival {
   }
 }
 
-module.exports = { SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
