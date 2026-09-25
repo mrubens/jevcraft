@@ -144,6 +144,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   const saveGoal = goal => { if (!ended) { memory.recordGoal(goal, bot); world.harvest(goal); store.save(goal); } };
   const workStore = { save: goal => { saveGoal(goal); saveSurvival(); } };
   let active = null;
+  // A goal going again after a threat escaped its loop (launch's catch).
+  let relaunching = false;
   let pending = Promise.resolve();
   let generation = 0;
   let requestController = new AbortController();
@@ -190,6 +192,18 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       decisionClient: routed, survival,
       onStep: g => { console.log(JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g); },
     }).catch(err => {
+      // A threat or a breath that escaped the goal's own loop is the moment,
+      // not the goal: the dream run was parked "blocked" on "Threat nearby:
+      // something unseen at 0 blocks" and stood idle for sixteen hours
+      // (2026-09-25). It goes again in a few seconds, from where it is.
+      // Five in a minute is not a moment, and is parked as before.
+      const recent = (goal.relaunches || []).filter(t => Date.now() - t < 60000);
+      if (['NeedsSafety', 'NeedsAir'].includes(err.name) && recent.length < 5) {
+        goal.relaunches = [...recent, Date.now()]; goal.lastError = err.message; saveGoal(goal);
+        observation?.sample('error', { message: err.message, relaunch: true }, goal);
+        session.relaunch = true;
+        return;
+      }
       if (err.name !== 'Cancelled') {
         goal.status = 'blocked'; goal.lastError = err.message; saveGoal(goal);
         observation?.sample('error', { message: err.message }, goal);
@@ -197,6 +211,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       }
     }).finally(() => {
       if (active === session) active = null;
+      if (session.relaunch) {
+        relaunching = true;
+        setTimeout(() => { relaunching = false; if (!ended && !active) launch(goal); }, 1500);
+        return;
+      }
       if (!goal.dream && ['complete', 'blocked'].includes(goal.status)) ledger.close(goal.ledgerRun, goal.status);
     });
   }
@@ -313,7 +332,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         return;
       }
     }
-    if (ready && !active && !launchingDream && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
+    if (ready && !active && !relaunching && !launchingDream && !pendingRequests && !survival.state.paused && !survival.state.idleBlocked) launchIdle();
   }, 500);
 
   bot._client.on('playerChat', data => {
