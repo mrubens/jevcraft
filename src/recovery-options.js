@@ -44,7 +44,13 @@ async function recoveryOptions(bot, task, goal, actions) {
     } catch (_) {}
   }
   if (bot.game.dimension === 'overworld' && !surfaceReturnComplete(bot, goal)) {
-    add('Return toward the observed surface using inspected routes or an explicit staircase; pause the current worksite.', { kind: 'surface' });
+    // How far up, and how long (the decision audit, 2026-09-25): the
+    // midgame trials spent 84 of 220 minutes climbing out.
+    const { climbToSurface, climbMinutes } = require('./surface');
+    const up = climbToSurface(bot, bot.entity.position);
+    const pick = bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
+    const climb = up == null ? ' How far up the sky is is not known from here.' : up > 0 ? ` About ${up} blocks up to open sky: roughly ${pick ? `${climbMinutes(up)} minutes by staircase with a pickaxe` : `${Math.round(up / 2)} minutes by hand, with no pickaxe`}.` : '';
+    add(`Return toward the observed surface using inspected routes or an explicit staircase; pause the current worksite.${climb}`, { kind: 'surface' });
   }
   // The option that changes the situation when every footing nearby has
   // already been tried: stop working this deposit and go find another.
@@ -73,10 +79,15 @@ async function recoveryOptions(bot, task, goal, actions) {
       if (++checked > 16 || selected >= 6) break;
       const route = await surveyRoute(bot, task, movement, new goals.GoalBlock(p.x, p.y, p.z), 150);
       if (route.status !== 'success' || route.path.some(n => !policy.allowed(n) || n.toBreak?.length || n.toPlace?.length)) continue;
-      add('Move to this observed dry footing, then retry the original work from a different approach.', { kind: 'relocate', position: { ...p } }); selected++;
+      // Which footing, and whether it is somewhere already tried: the
+      // relocations all read the same, and Jev could not tell one from
+      // another (the decision audit, 2026-09-25).
+      const dy = p.y - origin.y, before = (bot._trail || []).filter(t => Math.hypot(t.x - p.x, t.y - p.y, t.z - p.z) <= 1.5).length;
+      const where = ` It is at ${p.x}, ${p.y}, ${p.z}, ${Math.round(p.distanceTo(origin))} blocks away${dy ? `, ${Math.abs(dy)} block${Math.abs(dy) === 1 ? '' : 's'} ${dy > 0 ? 'up' : 'down'}` : ''}${before ? `; the bot stood there ${before === 1 ? 'once' : `${before} times`} in the last few minutes` : ''}.`;
+      add(`Move to this observed dry footing, then retry the original work from a different approach.${where}`, { kind: 'relocate', position: { ...p } }); selected++;
       if ((goal.survival?.shelters?.length || /shelter|refuge/.test(goal.survivalAction?.action || '')) &&
         /shelter|refuge|navigation|path/i.test(goal.lastError || '') && shelter.safeSite(bot, p, goal)) {
-        add('Use this reachable supported site for the next shelter attempt; preserve existing structures.', { kind: 'shelter', position: { ...p } });
+        add(`Use this reachable supported site for the next shelter attempt; preserve existing structures.${where}`, { kind: 'shelter', position: { ...p } });
       }
     }
   } finally { policy.restore(); Object.assign(movement, previous); }

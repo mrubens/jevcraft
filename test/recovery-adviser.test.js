@@ -146,16 +146,31 @@ test('recovery catalog derives recipe alternatives and rechecks routes before mo
     return choices.filter(p => !useExtraInfo || useExtraInfo(bot.blockAt(p)));
   };
   bot.pathfinder.getPathTo = () => ({ status: routeOpen ? 'success' : 'noPath', path: [new Vec3(3, 64, 0)] });
+  bot._trail = [{ x: 3, y: 64, z: 0, at: Date.now() - 30000 }];
   const actions = { catalogPlan, planningInventory, navigate: async () => { moved = true; } };
   const before = { ...bot.pathfinder.movements };
   const observed = await recoveryOptions(bot, task, goal, actions);
   assert(observed.context.recipeAlternatives.red_dye.includes('poppy'));
   assert(observed.options.some(o => o.kind === 'acquire' && o.item === 'poppy'));
   const move = observed.options.find(o => o.kind === 'relocate'); assert(move);
+  assert.match(move.description, /It is at 3, 64, 0, \d+ blocks away; the bot stood there once in the last few minutes/, 'which footing, and that it was tried (the decision audit)');
   assert.equal(bot.pathfinder.movements.canDig, before.canDig);
   routeOpen = false;
   await assert.rejects(executeRecoveryOption(bot, task, goal, () => {}, move, actions), /route is no longer/);
   assert(!moved); assert.equal(bot.pathfinder.movements.canDig, before.canDig);
+});
+
+test('the way back to the surface says how far up and how long, by staircase or by hand (the decision audit)', async () => {
+  const { recoveryOptions } = require('../src/recovery-options');
+  const { catalogPlan, planningInventory } = require('../src/work');
+  const { bot, goal, task } = fixture();
+  bot.entity.position = new Vec3(0.5, 30, 0.5);
+  bot.game.minY = 0; bot.game.height = 100;
+  bot.blockAt = p => ({ name: p.y < 64 && !(p.y >= 30 && p.y <= 31 && p.x === 0 && p.z === 0) ? 'stone' : 'air', position: p, boundingBox: p.y < 64 && !(p.y >= 30 && p.y <= 31 && p.x === 0 && p.z === 0) ? 'block' : 'empty' });
+  bot.findBlocks = () => [];
+  const observed = await recoveryOptions(bot, task, goal, { catalogPlan, planningInventory });
+  const up = observed.options.find(o => o.kind === 'surface');
+  assert.match(up.description, /About 34 blocks up to open sky: roughly 17 minutes by hand, with no pickaxe/);
 });
 
 test('pending recovery defers to immediate safety and failed actions do not replace the player objective', async () => {
