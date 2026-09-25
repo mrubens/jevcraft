@@ -692,7 +692,14 @@ class Survival {
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
-    if (shelter.materialStock(bot) >= 4) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + buildCost + creeperNote,
+    // The race a pocket is: blocks to place against the nearest biter's
+    // walk. Trial 70 chose to seal with four zombies coming, the nearest six
+    // blocks off, told nothing of either, and went from twelve to nothing
+    // with the pocket half built.
+    const biter = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper').sort((x, y) => x.distance - y.distance)[0];
+    const shellCells = (() => { try { return shelter.missingShell(bot, { origin: { x: feet.x, y: feet.y, z: feet.z } }).length; } catch (_) { return null; } })();
+    const race = shellCells != null ? ` About ${shellCells} block${shellCells === 1 ? '' : 's'} to place here, some ${Math.round(shellCells * 0.5)} seconds of building${biter ? `; the nearest ${biter.entity.name.replaceAll('_', ' ')}, ${Math.round(biter.distance)} blocks off, can be at the bot in about ${Math.max(0, Math.round((biter.distance - 1.5) / 3))} seconds` : ''}.` : '';
+    if (shelter.materialStock(bot) >= 4) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote,
       run: () => this.sealHere(task, goal, save, danger) };
     // The charge at a few ground shooters, where it can be run.
     const ground = danger.filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16);
