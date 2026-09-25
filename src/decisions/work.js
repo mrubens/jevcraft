@@ -236,6 +236,7 @@ define({
     { pattern: 'seen_\\d+', label: 'walk back to sheep seen earlier', when: 'a flock seen in the last half hour, now out of view, with how many, how long ago, its distance and direction', level: 'root', dynamic: true },
     { key: 'explore_here', label: 'explore on from here', when: 'always', level: 'root' },
     { key: 'craft_from_string', label: 'craft wool from the string carried', when: 'four or more string carried and wool still wanted', level: 'root' },
+    { key: 'cut_cobwebs', label: 'cut the cobwebs in view with the sword for string', when: 'a sword carried, two or more cobwebs within thirty-two blocks, and string still wanted for the bed', level: 'root' },
   ],
   instructions: workInstructions('The bot needs wool for a bed and no sheep are in view. Choose where to look, or make the wool from string carried. The biome underfoot and those about are in the state with their distance and direction, and `sheepSeenEarlier` lists flocks the bot saw and walked on from.'),
   fallback: () => 'explore_here',

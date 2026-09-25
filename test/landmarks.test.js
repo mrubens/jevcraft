@@ -142,3 +142,26 @@ test('the bot\'s own portal is not a ruined portal', () => {
   noticeLandmarks(world(blocks), goal, () => {}, { force: true });
   assert.equal((goal.landmarks || []).length, 0);
 });
+
+test('an igloo is a bed among snow blocks, remembered with its bed, and the bed rung takes it when no village bed is known', () => {
+  // The user, 2026-09-25, on what players do without sheep: an igloo always has a bed.
+  const blocks = { '30,64,30': 'red_bed', '31,64,30': 'red_bed' };
+  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) if (Math.abs(dx) === 3 || Math.abs(dz) === 3) for (const dy of [0, 1]) blocks[`${30 + dx},${64 + dy},${30 + dz}`] = 'snow_block';
+  const bot = world(blocks), goal = {};
+  noticeLandmarks(bot, goal, () => {}, { force: true });
+  const igloo = knownLandmarks(bot, goal, 'igloo')[0];
+  assert(igloo, JSON.stringify(goal.landmarks));
+  assert.equal(igloo.landmark.beds, 1);
+  const { villageBedRung } = require('../src/villages');
+  const rung = villageBedRung(bot, goal);
+  assert.equal(rung.action, 'village_bed');
+  assert.equal(rung.village.igloo, true);
+  const { stepLine, setRandom } = require('../src/narration'); setRandom(() => 0);
+  assert.match(stepLine({}, { action: 'village_bed', village: { x: 30, z: 30, igloo: true } }), /igloo at 30, 30, and igloos always have a bed/);
+  rung.village.beds = 0;
+  assert.equal(villageBedRung(bot, goal), null, 'taken: not offered again');
+  // A bed on open ground is no igloo.
+  const plain = world({ '30,64,30': 'red_bed', '31,64,30': 'red_bed' }), g2 = {};
+  noticeLandmarks(plain, g2, () => {}, { force: true });
+  assert.equal(knownLandmarks(plain, g2, 'igloo').length, 0);
+});

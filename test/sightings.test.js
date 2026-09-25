@@ -88,3 +88,25 @@ test('the food choices offer a herd seen earlier, and a hunt says how many of it
   const choices = await forageChoices(bot, { check() {} }, goal, () => {}, { navigate: async () => {} }, {});
   assert.match(choices.seen_food_0?.description?.action || '', /3 cow seen 2 minutes ago, 90 blocks east/);
 });
+
+test('with no sheep about and cobwebs in view, cutting them for string is Jev\'s option, told what string makes; picked, the webs are cut', async () => {
+  // The user, 2026-09-25: what players do without sheep. Four string a wool; cobwebs cut with a sword drop one.
+  const { gatherWool } = require('../src/home-base');
+  const registry = require('minecraft-data')('26.1');
+  const webs = [new Vec3(5, 30, 0), new Vec3(6, 30, 1), new Vec3(8, 30, 0)];
+  const names = new Map(webs.map(p => [`${p}`, 'cobweb']));
+  const items = [{ name: 'stone_sword', count: 1 }, { name: 'string', count: 2 }];
+  const bot = { entity: { position: new Vec3(0.5, 30, 0.5) }, game: { dimension: 'overworld' }, entities: {}, registry,
+    inventory: { items: () => items, slots: [] }, chat() {},
+    blockAt: p => ({ name: names.get(`${p.floored()}`) || 'air', position: p }),
+    findBlocks: ({ matching }) => matching === registry.blocksByName.cobweb.id ? webs.filter(p => names.has(`${p}`)) : [] };
+  const goal = {};
+  let offered, state;
+  const task = { check() {}, opportunityClient: { systemOne: async ({ questions, state: s }) => { offered = questions.branch_0.criteria; state = s; return { answers: { branch_0: { choice: 'cut_cobwebs', confidence: 0.7 } } }; } } };
+  const cut = [];
+  await gatherWool(bot, task, goal, () => {}, null, { explore: async () => assert.fail('explored'), navigate: async () => {},
+    dig: async (b, t, p) => { cut.push(`${p}`); names.delete(`${p}`); items.find(i => i.name === 'string').count++; } });
+  assert.match(offered.cut_cobwebs, /3 cobwebs .* each drops a string, four string craft a wool, 10 string still wanted/);
+  assert.match(JSON.stringify(state), /igloo/);
+  assert.equal(cut.length, 3, 'all three cut: ten were wanted');
+});

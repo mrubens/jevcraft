@@ -114,7 +114,10 @@ function knownVillages(bot, goal, reach = Infinity) {
 function villageBedRung(bot, goal, { now = Date.now() } = {}) {
   if (isSetAside(goal, 'village_bed', 'any', now)) return null;
   const near = knownVillages(bot, goal, BED_REACH).find(({ village }) => village.beds > 0);
-  return near ? { phase: 'bed', action: 'village_bed', village: near.village, distance: near.distance } : null;
+  if (near) return { phase: 'bed', action: 'village_bed', village: near.village, distance: near.distance };
+  // An igloo remembered with its bed still in it, taken the same way.
+  const igloo = require('./exploration').knownLandmarks(bot, goal, 'igloo', BED_REACH).find(({ landmark }) => landmark.beds > 0);
+  return igloo ? { phase: 'bed', action: 'village_bed', village: igloo.landmark, distance: igloo.distance } : null;
 }
 
 async function walkToVillage(bot, task, village, actions, range = 6) {
@@ -144,7 +147,7 @@ async function takeVillageBed(bot, task, goal, save, village, actions) {
   attempt.attempts++;
   if (attempt.attempts > 3) { delete goal.villageBed; setAside(goal, 'village_bed', 'any', 'not reached in three tries', RETRY_MS); save(); throw new Error('The village bed was not reached in three tries; back to the sheep for now'); }
   const before = bedsCarried(bot);
-  goal.step = { action: 'village_bed', village: { x: village.x, z: village.z }, beds: village.beds }; save();
+  goal.step = { action: 'village_bed', village: { x: village.x, z: village.z, ...(village.igloo ? { igloo: true } : {}) }, beds: village.beds }; save();
   await walkToVillage(bot, task, village, actions);
   const here = bot.entity.position;
   // Never the bed on the home's own bed cells: trial 84's home stood in a
@@ -163,10 +166,10 @@ async function takeVillageBed(bot, task, goal, save, village, actions) {
     .sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
   if (!halves.length) {
     village.beds = 0; delete goal.villageBed; save();
-    throw new Error('No bed left in the village');
+    throw new Error(village.igloo ? 'No bed left in the igloo' : 'No bed left in the village');
   }
   const target = halves[0];
-  goal.step = { action: 'village_bed', village: { x: village.x, z: village.z }, bed: plain(target) }; save();
+  goal.step = { action: 'village_bed', village: { x: village.x, z: village.z, ...(village.igloo ? { igloo: true } : {}) }, bed: plain(target) }; save();
   checkThreats(bot);
   await actions.dig(bot, task, target, { requireDrops: false, done: () => !isBed(bot.blockAt(target)) });
   await collectDrops(bot, task, actions, target, bedNames(bot), () => bedsCarried(bot) > before, 4);

@@ -768,20 +768,33 @@ async function searchForSheep(bot, task, goal, save, actions) {
   const fromString = Math.min(Math.floor(string / 4), short);
   const flocksKnown = require('./sightings').sighted(bot, goal, 'sheep').filter(s => s.distance > 32);
   if (!client && flocksKnown.length) { search.toward = { x: flocksKnown[0].x, y: flocksKnown[0].y, z: flocksKnown[0].z, seen: true }; save(); return; }
-  if (!client || (!nearby.length && !fromString && !flocksKnown.length)) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
+  // Cobwebs cut with a sword drop a string each: an abandoned mineshaft is
+  // full of them, and night mining walks into one often enough.
+  const sword = bot.inventory.items().some(i => /_sword$/.test(i.name));
+  const webId = bot.registry.blocksByName.cobweb?.id;
+  const webs = sword && webId != null && bot.findBlocks ? bot.findBlocks({ matching: webId, maxDistance: 32, count: 48 }) : [];
+  const stringWanted = Math.max(0, short * 4 - string);
+  if (!client || (!nearby.length && !fromString && !flocksKnown.length && !(webs.length >= 2 && stringWanted))) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   const minutes = Math.round((Date.now() - search.since) / 60000);
   // Flocks seen earlier and out of view now (sightings.js).
   const flocks = require('./sightings').sighted(bot, goal, 'sheep').filter(s => s.distance > 32).slice(0, 3);
   const tree = Object.fromEntries(nearby.map((b, i) => [`biome_${i}`, { description: `Walk to ${b.says} and look for sheep there.` }]));
   flocks.forEach((s, i) => { tree[`seen_${i}`] = { description: `Walk back to where ${s.says}; sheep wander, but not far.` }; });
   tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.` };
+  if (webs.length >= 2 && stringWanted) tree.cut_cobwebs = { description: `Cut the ${webs.length} cobwebs within ${Math.round(Math.max(...webs.map(p => p.distanceTo(bot.entity.position))))} blocks with the sword: each drops a string, four string craft a wool, ${stringWanted} string still wanted for the bed (${string} carried).` };
   if (fromString) tree.craft_from_string = { description: `Craft ${fromString} white wool from ${fromString * 4} of the ${string} string carried (four string a wool); ${short} wool still wanted for the bed. String also makes bows.` };
   let pick = null;
   try {
     const decision = await require('./decisions').decide('sheep_search', { client, bot, task, goal, save, tree,
-      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, stringCarried: string } });
+      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, stringCarried: string,
+        withoutSheep: 'Four string craft a white wool, twelve a bed\'s three: spiders drop up to two string each (they come out at night), and cobwebs cut with a sword drop one (abandoned mineshafts are full of them). An igloo, in snowy plains and taiga, always has a bed in it, and so do most village houses. Phantoms only come after three nights without sleep.' } });
     if (!decision.stale && !decision.fallback) pick = decision.path.at(-1);
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  if (pick === 'cut_cobwebs') {
+    bot.chat?.("Cobwebs! Each one's a string, and string makes wool.");
+    await cutCobwebs(bot, task, goal, save, actions, webs, stringWanted);
+    return;
+  }
   if (pick === 'craft_from_string') {
     bot.chat?.(`Making wool from string.`);
     await actions.acquireStep(bot, task, 'white_wool', countOf(bot, 'white_wool') + fromString, goal, save);
@@ -797,6 +810,27 @@ async function searchForSheep(bot, task, goal, save, actions) {
   if (!chosen) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   search.toward = { x: chosen.x, z: chosen.z, biome: chosen.biome }; save();
   bot.chat?.(`No sheep here. Trying the ${chosen.biome.replaceAll('_', ' ')} to the ${chosen.direction}.`);
+}
+
+// Nearest cobweb first, cut with the sword (the best tool for it), and the
+// string picked up, until enough for the bed or none left in reach.
+async function cutCobwebs(bot, task, goal, save, actions, webs, wanted) {
+  const target = countOf(bot, 'string') + wanted;
+  const sorted = [...webs].sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+  goal.step = { action: 'cut_cobwebs', webs: sorted.length, wanted }; save();
+  let cut = 0;
+  for (const p of sorted) {
+    task.check();
+    if (countOf(bot, 'string') >= target) break;
+    if (bot.blockAt(p)?.name !== 'cobweb') continue;
+    try {
+      await actions.dig(bot, task, p, { requireDrops: false });
+      cut++;
+      const drop = Object.values(bot.entities).find(e => e.getDroppedItem?.()?.name === 'string' && e.position.distanceTo(p) < 4);
+      if (drop) { const d = drop.position.floored(); await actions.navigate(bot, task, new goals.GoalNear(d.x, d.y, d.z, 0.5), { timeoutMs: 6000, stallMs: 2500 }); }
+    } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
+  if (!cut) throw new Error('No cobweb could be cut');
 }
 
 async function gatherWool(bot, task, goal, save, home, actions) {

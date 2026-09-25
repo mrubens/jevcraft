@@ -214,6 +214,14 @@ function biomeTrips(bot, { min = 24, limit = 4 } = {}) {
 }
 
 const DETECTORS = [
+  // An igloo always has a bed in it: in the snowy plains and taiga, where
+  // there are no sheep, it is the bed (trial 107 found none, the user asked
+  // what players do without sheep, 2026-09-25). A bed among snow blocks.
+  { kind: 'igloo', dimension: 'overworld', same: 16, detect: bot => {
+    const beds = find(bot, bot.registry.blocksArray.filter(b => /_bed$/.test(b.name)).map(b => b.name), 48, 16);
+    const bed = beds.find(p => { let snow = 0; for (let dx = -4; dx <= 4; dx++) for (let dy = -1; dy <= 3; dy++) for (let dz = -4; dz <= 4; dz++) if (bot.blockAt(p.offset(dx, dy, dz))?.name === 'snow_block') snow++; return snow >= 12; });
+    return bed && at(bed, { beds: 1, igloo: true });
+  } },
   { kind: 'ruined_portal', dimension: 'overworld', same: 24, detect: bot => {
     const found = find(bot, ['crying_obsidian', 'obsidian']);
     const sign = found.find(p => bot.blockAt(p)?.name === 'crying_obsidian' || near(bot, p, ['netherrack', 'magma_block']));

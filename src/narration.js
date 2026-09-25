@@ -140,7 +140,8 @@ function stepVariants(goal, step) {
     case 'return_home': return ["I'm heading home.", 'Back home I go.'];
     case 'gather_wool': return ['I need wool for a bed. Where are the sheep?', 'Sheep, where are you? I need wool for a bed.'];
     case 'explore': return step.target ? [`I'm going to see what's over at ${step.target.x}, ${step.target.z}.`, `Wonder what's at ${step.target.x}, ${step.target.z}. Let's find out.`] : "I'm going exploring.";
-    case 'village_bed': return step.village ? `I'm off to the village at ${step.village.x}, ${step.village.z} for a bed.` : "I'm off to the village for a bed.";
+    case 'village_bed': return step.village?.igloo ? [`There's an igloo at ${step.village.x}, ${step.village.z}, and igloos always have a bed. Going to get it!`, `Igloo at ${step.village.x}, ${step.village.z}. There's a bed in there for me.`]
+      : step.village ? `I'm off to the village at ${step.village.x}, ${step.village.z} for a bed.` : "I'm off to the village for a bed.";
     case 'village_harvest': return `I'll take the ripe ${name(step.crop)} from the village farm.`;
     case 'village_hay': return "I'll take a hay bale for bread.";
     case 'place_bed': return ["I'm putting my bed down at home.", 'Setting up my bed.'];
@@ -153,6 +154,7 @@ function stepVariants(goal, step) {
     case 'lure_cows': return ['Come on, cows, into the pen!', "Here, cows! This way."];
     case 'breed_cows': return ["I'm breeding the cows.", 'Some wheat for the cows. Baby cows soon!'];
     case 'take_steak': return "I'll take a steak from the pen.";
+    case 'cut_cobwebs': return ['Snip snip. Cobwebs into string.', 'Cutting cobwebs for string.'];
     case 'wall_home': return ["I'm putting a wall round home. No more creepers at my bed!", 'Walling home in, with a door.'];
     case 'place_chest': return ["I'm putting a chest by the bed for spare gear.", 'A chest by the bed, for my spares.'];
     case 'stock_stash': return ["I'm stocking the chest with spares.", 'Putting spares in the chest.'];

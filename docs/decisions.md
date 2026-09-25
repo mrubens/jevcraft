@@ -297,6 +297,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `seen_\d+` (pattern) | root | walk back to sheep seen earlier | a flock seen in the last half hour, now out of view, with how many, how long ago, its distance and direction |
 | `explore_here` | root | explore on from here | always |
 | `craft_from_string` | root | craft wool from the string carried | four or more string carried and wool still wanted |
+| `cut_cobwebs` | root | cut the cobwebs in view with the sword for string | a sword carried, two or more cobwebs within thirty-two blocks, and string still wanted for the bed |
 
 ### `search_heading`
 
