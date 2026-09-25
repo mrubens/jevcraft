@@ -241,3 +241,30 @@ test('suffocating with the head in gravel, the block is dug before anything else
   assert.deepEqual(dug, ['(0, 36, 0)']);
   assert.equal(actions[0], 'dig_out_of_block');
 });
+
+test('the way to air can be through a block dug quickly: sideways out of a flooded column under a lake, not up into it', () => {
+  // Trial 63: a water column under a dripstone lid with a lake over it, and
+  // two pointed dripstones between the bot and a dry cave. The only rule
+  // left was to dig straight up, into the lake.
+  const mcData = require('minecraft-data')('26.1'), Block = require('prismarine-block')('26.1');
+  const make = name => Block.fromStateId(mcData.blocksByName[name].defaultState, 0);
+  const world = (x, y, z) => {
+    if (x === 0 && z === 0 && y >= 40 && y <= 42) return 'water';
+    if (x === 0 && z === 0 && y === 43) return 'dripstone_block';
+    if (x >= -1 && x <= 1 && z >= -1 && z <= 1 && y >= 44 && y <= 49) return 'water';
+    if (x === 1 && z === 0 && (y === 40 || y === 41)) return 'pointed_dripstone';
+    if (x >= 2 && x <= 5 && z === 0 && y >= 39 && y <= 41) return 'air';
+    return 'stone';
+  };
+  const blocks = new Map();
+  const blockAt = p => { const k = `${p.x},${p.y},${p.z}`; if (!blocks.has(k)) { const b = make(world(p.x, p.y, p.z)); b.position = p; blocks.set(k, b); } return blocks.get(k); };
+  const stonePick = { name: 'stone_pickaxe', type: mcData.itemsByName.stone_pickaxe.id };
+  const bot = { entity: { position: new Vec3(0.5, 40.4, 0.5), isInWater: true, onGround: false, effects: {} }, oxygenLevel: 14,
+    inventory: { items: () => [stonePick] }, blockAt };
+  const route = airRoute(bot);
+  assert(route, 'a way out');
+  const dug = route.flatMap(c => (c.digs || []).map(d => `${d}`));
+  assert(dug.every(d => /^\(1, 4[01], 0\)$/.test(d)), `digs only the pointed dripstone: ${dug}`);
+  assert(route.at(-1).x >= 2, 'ends in the cave');
+  assert(!dug.includes('(0, 43, 0)'), 'not the lid under the lake');
+});

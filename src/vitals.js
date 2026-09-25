@@ -48,30 +48,62 @@ async function digWithAirGuard(bot, task, block) {
   task.check(); checkAir(bot);
 }
 
-// Search body-sized spaces for breathable air. Unlike jumping in place, this
-// can leave an underwater overhang. No excavation or block placement is used.
+// Search body-sized spaces for breathable air, the quickest way there: a
+// step through water or air is about 0.4 s, and a block in the way costs
+// the time to dig it with the fastest tool carried, as the game reckons it
+// under water. Trial 63 drowned a pointed dripstone's width from a dry cave:
+// water and air alone found no way, and the straight dig up broke into the
+// lake over its head. A block dug is named on the route cell (`digs`).
+const STEP_S = 0.4, DIG_MAX_S = 4;
+function digSeconds(bot, block) {
+  if (!block || typeof block.digTime !== 'function' || block.diggable === false || /bedrock|lava|obsidian/.test(block.name)) return null;
+  const tools = [null, ...new Set((bot.inventory?.items?.() || []).filter(i => /_(pickaxe|shovel|axe)$/.test(i.name)).map(i => i.type))];
+  // A swimmer with a floor under it sinks to stand and dig: five times
+  // quicker than digging afloat.
+  const below = bot.entity?.position && bot.blockAt?.(bot.entity.position.floored().offset(0, -1, 0));
+  const wet = !!bot.entity?.isInWater, floating = !bot.entity?.onGround && below?.boundingBox !== 'block';
+  let best = Infinity;
+  for (const type of tools) { try { best = Math.min(best, block.digTime(type, false, wet, floating, [], bot.entity?.effects || {})); } catch (_) { /* not for this tool */ } }
+  return Number.isFinite(best) ? best / 1000 : null;
+}
 function airRoute(bot) {
   const start = bot.entity.position.floored();
-  const passable = p => {
-    const b = bot.blockAt(p);
-    return swimmableWater(b) || b && ['air', 'cave_air', 'void_air'].includes(b.name);
-  };
+  const open = b => swimmableWater(b) || b && ['air', 'cave_air', 'void_air'].includes(b.name);
   const water = p => swimmableWater(bot.blockAt(p));
-  const queue = [{ p: start, path: [] }];
-  const seen = new Set([`${start}`]);
-  const directions = [new Vec3(0, 1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
-  for (let i = 0; i < queue.length && i < 4096; i++) {
-    const { p, path } = queue[i];
-    if (passable(p.offset(0, 1, 0)) && !water(p.offset(0, 1, 0)) &&
+  // Seconds to make a cell passable: 0 open, the dig time for a block that
+  // comes away quickly and brings nothing down, null otherwise.
+  const clear = p => {
+    const b = bot.blockAt(p);
+    if (open(b)) return 0;
+    if (/sand|gravel|concrete_powder/.test(b?.name || '')) return null;
+    const t = digSeconds(bot, b);
+    return t != null && t <= DIG_MAX_S ? t : null;
+  };
+  const directions = [new Vec3(0, 1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, -1, 0)];
+  const frontier = [{ p: start, path: [], cost: 0 }];
+  const best = new Map([[`${start}`, 0]]);
+  for (let n = 0; frontier.length && n < 4096; n++) {
+    frontier.sort((a, b) => a.cost - b.cost);
+    const { p, path, cost } = frontier.shift();
+    if (cost > (best.get(`${p}`) ?? Infinity)) continue;
+    if (open(bot.blockAt(p)) && open(bot.blockAt(p.offset(0, 1, 0))) && !water(p.offset(0, 1, 0)) &&
       (water(p) || bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block')) return path.length ? path : [p];
     for (const d of directions) {
       const next = p.plus(d);
-      if (seen.has(`${next}`) || next.y - start.y > 20 || Math.abs(next.x - start.x) > 8 || Math.abs(next.z - start.z) > 8) continue;
-      seen.add(`${next}`);
-      if (!passable(next) || !passable(next.offset(0, 1, 0))) continue;
-      if (!water(next) && !water(next.offset(0, 1, 0)) && !water(next.offset(0, -1, 0)) &&
-        bot.blockAt(next.offset(0, -1, 0))?.boundingBox !== 'block') continue;
-      queue.push({ p: next, path: [...path, next] });
+      if (next.y - start.y > 20 || next.y < start.y - 4 || Math.abs(next.x - start.x) > 8 || Math.abs(next.z - start.z) > 8) continue;
+      const feet = clear(next), head = clear(next.offset(0, 1, 0));
+      if (feet == null || head == null) continue;
+      // Through air only where there is water about or ground within three
+      // below: a step into a cave is a short drop, off a cliff is not.
+      const dug = feet > 0 || head > 0;
+      const ground = [1, 2, 3].some(dy => bot.blockAt(next.offset(0, -dy, 0))?.boundingBox === 'block');
+      if (!dug && !water(next) && !water(next.offset(0, 1, 0)) && !water(next.offset(0, -1, 0)) && !ground && d.y >= 0) continue;
+      const total = cost + STEP_S + feet + head;
+      if (total >= (best.get(`${next}`) ?? Infinity)) continue;
+      best.set(`${next}`, total);
+      const cell = next.clone();
+      cell.digs = [feet > 0 && next, head > 0 && next.offset(0, 1, 0)].filter(Boolean);
+      frontier.push({ p: next, path: [...path, cell], cost: total });
     }
   }
   return null;
@@ -91,6 +123,18 @@ async function surfaceForAir(bot, task, onAction = () => {}) {
       task.check();
       if (Date.now() >= deadline) throw new Error('Could not reach breathable air along the observed swimming route');
       const p = bot.entity.position;
+      // A block in the way on the route is dug when the bot is beside it.
+      for (const cell of route[index].digs || []) {
+        const block = bot.blockAt(cell);
+        if (!block || block.boundingBox !== 'block') continue;
+        // Let go and sink onto the floor: a dig afloat takes five times as long.
+        bot.clearControlStates();
+        for (let i = 0; i < 12 && !bot.entity.onGround; i++) { task.check(); await sleep(50); }
+        try { await require('./skills').equipBestTool(bot, block); } catch (_) { /* the hand, then */ }
+        await bot.lookAt(cell.offset(0.5, 0.5, 0.5), true);
+        try { await bot.dig(block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
+        task.check();
+      }
       const target = route[index].offset(0.5, 0, 0.5);
       const horizontal = Math.hypot(target.x - p.x, target.z - p.z);
       if (horizontal < 0.35 && p.y >= target.y - 0.2 && index < route.length - 1) { index++; continue; }

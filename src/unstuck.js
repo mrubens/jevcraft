@@ -58,6 +58,19 @@ function digEffects(view, cell, bot = null) {
   return effects;
 }
 
+// What a dug cell opens onto: the cell past it, the way the dig goes. The
+// digs round trial 63's bot all said "water beside it would flow in", the
+// same for the one that opened onto a dry cave and the one under a lake;
+// Jev dug up into the lake and the bot drowned.
+function opensOnto(view, beyond) {
+  const n = view.name(beyond);
+  if (n == null) return 'what is past it is not loaded';
+  if (isLava(n)) return 'it opens onto lava';
+  if (isWater(n)) return 'it opens onto water';
+  if (open(n)) return 'it opens onto open air';
+  return `past it is more ${n.replaceAll('_', ' ')}`;
+}
+
 // Every single move from here, each with its facts. `goal` is 'dry' (out
 // of water onto solid ground) or 'sky' (open sky over dry ground).
 function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null } = {}) {
@@ -66,6 +79,9 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   const headroom = open(view.name(feet.offset(0, 2, 0))) && !isWater(view.name(feet.offset(0, 2, 0)));
   const where = p => {
     const facts = { endsAt: { x: p.x, y: p.y, z: p.z }, rises: p.y - feet.y, dryFooting: dryFooting(view, p), openSkyAbove: skyAbove(view, p), atSurface: atSurface(view, p), timesStoodThere: visits[`${p}`] || 0 };
+    // Under water, whether the head comes up into air there: trial 63
+    // swam up into a flooded cell under a stone lid and drowned.
+    if (inWater) facts.breathes = !isWater(view.name(p.plus(UP))) && open(view.name(p.plus(UP)));
     if (target) facts.blocksToTarget = Math.round(p.distanceTo(target));
     if (from) facts.blocksFromStart = Math.round(Math.hypot(p.x - from.x, p.z - from.z));
     return facts;
@@ -90,7 +106,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       if (!solid(name) || !natural.test(name)) continue;
       const seconds = digSeconds(name, view, inWater);
       if (seconds == null) continue;
-      moves.push({ key: `dig_${dir}_${part}`, does: `Dig the ${name.replaceAll('_', ' ')} ${dir}, at ${part === 'over' ? 'the level over the head' : `${part} height`} (about ${seconds} s).`, kind: 'dig', cell, effects: digEffects(view, cell, feet) });
+      moves.push({ key: `dig_${dir}_${part}`, does: `Dig the ${name.replaceAll('_', ' ')} ${dir}, at ${part === 'over' ? 'the level over the head' : `${part} height`} (about ${seconds} s).`, kind: 'dig', cell, effects: [opensOnto(view, cell.plus(d)), ...digEffects(view, cell, feet)] });
     }
     // A block placed into water or air beside, at the feet: a step at the
     // waterline, or a wall.
@@ -103,7 +119,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   const over = feet.offset(0, 2, 0), overName = view.name(over);
   if (solid(overName) && natural.test(overName)) {
     const seconds = digSeconds(overName, view, inWater);
-    if (seconds != null) moves.push({ key: 'dig_up', does: `Dig the ${overName.replaceAll('_', ' ')} over the head (about ${seconds} s).`, kind: 'dig', cell: over, effects: digEffects(view, over, feet) });
+    if (seconds != null) moves.push({ key: 'dig_up', does: `Dig the ${overName.replaceAll('_', ' ')} over the head (about ${seconds} s).`, kind: 'dig', cell: over, effects: [opensOnto(view, over.plus(UP)), ...digEffects(view, over, feet)] });
   }
   if (inWater && isWater(view.name(feet.plus(UP)))) moves.push({ key: 'swim_up', does: 'Swim up a block.', kind: 'move', to: feet.plus(UP), ...where(feet.plus(UP)) });
   const block = PLACEABLE.find(n => (view.carried?.[n] || 0) > 0);
@@ -118,7 +134,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   const done = goal === 'dry' ? dryFooting(view, feet)
     : goal === 'away' ? dryFooting(view, feet) && !!from && Math.hypot(feet.x - from.x, feet.z - from.z) >= 8
       : dryFooting(view, feet) && atSurface(view, feet);
-  return { moves, done, here: { feet: { x: feet.x, y: feet.y, z: feet.z }, inWater, headroomToRise: headroom, dryFooting: dryFooting(view, feet), openSkyAbove: skyAbove(view, feet), atSurface: atSurface(view, feet) } };
+  return { moves, done, here: { feet: { x: feet.x, y: feet.y, z: feet.z }, inWater, headInWater: isWater(view.name(feet.plus(UP))), headroomToRise: headroom, dryFooting: dryFooting(view, feet), openSkyAbove: skyAbove(view, feet), atSurface: atSurface(view, feet) } };
 }
 
 // The moves as Jev is shown them: one option each, with its facts.
@@ -128,6 +144,8 @@ function describeMove(m) {
   if (m.to) {
     facts.push(m.rises > 0 ? `rises ${m.rises}` : m.rises < 0 ? `goes down ${-m.rises}` : 'same level');
     if (m.dryFooting) facts.push('ends on dry ground');
+    if (m.breathes === true) facts.push('the head comes out into air there');
+    else if (m.breathes === false) facts.push('the head is still under water there');
     if (m.atSurface) facts.push('ends at the surface');
     else if (m.openSkyAbove) facts.push('ends under open sky, in a hole');
     if (m.timesStoodThere) facts.push(`stood there ${m.timesStoodThere} time${m.timesStoodThere > 1 ? 's' : ''} already`);
@@ -213,7 +231,9 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     if (!moves.length) return false;
     const tree = Object.fromEntries(moves.map(m => [m.key, { description: describeMove(m) }]));
     const decision = await decide('unstuck_move', { client, bot, task, goal, save, tree,
-      state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6), health: bot.health, food: bot.food } });
+      // Breath, in seconds: a full bar is fifteen under water.
+      state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6), health: bot.health, food: bot.food,
+        ...(here.inWater ? { breathSecondsLeft: Math.round((bot.oxygenLevel ?? 20) * 0.75) } : {}) } });
     if (decision.stale) continue;
     const m = moves.find(x => x.key === decision.path.at(-1));
     const before = bot.entity.position.clone(), blocks = m.cell ? bot.blockAt(m.cell)?.name : null;
