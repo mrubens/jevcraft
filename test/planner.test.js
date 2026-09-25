@@ -23,3 +23,19 @@ test('three ingots carried, the fourth for golden boots is smelted from gold ore
   assert.deepEqual(planCatalog(registry, 'gold_nugget', 9, { gold_ingot: 3 }).map(s => `${s.action}:${s.item}`), ['craft:gold_nugget']);
   assert.deepEqual(planCatalog(registry, 'iron_ingot', 9, { iron_block: 1 }).map(s => `${s.action}:${s.item}`), ['craft:iron_ingot']);
 });
+
+test('a table from two oak planks and five jungle logs is made of jungle planks, with no log to gather', () => {
+  // Trial 45: planned an oak log for the table's last two planks, took that
+  // for "no wood", and dug out of a mine by hand.
+  const registry = require('minecraft-data')('26.1');
+  const { Vec3 } = require('vec3');
+  const { catalogPlan, planningInventory } = require('../src/work');
+  const stock = { oak_planks: 2, jungle_log: 5, stick: 5, cobblestone: 64, iron_ingot: 6 };
+  const items = Object.entries(stock).map(([name, count], i) => ({ name, count, type: registry.itemsByName[name].id, slot: 9 + i, durabilityUsed: 0 }));
+  const bot = { registry, version: '26.1', game: { gameMode: 'survival', dimension: 'minecraft:overworld' }, entity: { position: new Vec3(0, 30, 0) }, inventory: { items: () => items, slots: [] }, blockAt: () => null, findBlocks: () => [], entities: {} };
+  for (const tool of ['stone_pickaxe', 'iron_pickaxe']) {
+    const plan = catalogPlan(bot, tool, 1, planningInventory(bot), {});
+    assert(!plan.some(st => st.action === 'mine'), `${tool}: ${JSON.stringify(plan.map(st => [st.action, st.item || st.block]))}`);
+    assert(plan.some(st => st.action === 'craft' && st.item === 'jungle_planks'));
+  }
+});

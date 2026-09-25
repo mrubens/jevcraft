@@ -167,6 +167,25 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
       ((have(a) > (counts[a] || 0) ? -100 : estimate(a)) - (have(b) > (counts[b] || 0) ? -100 : estimate(b))) ||
       preference(a) - preference(b) || a.localeCompare(b))[0];
   }
+  // How many of an item the pockets can make at once, one recipe deep:
+  // jungle planks from the jungle logs carried.
+  function makeableNow(name) {
+    let best = 0;
+    for (const recipe of data.recipes[name] || []) {
+      const uses = {};
+      let ok = true;
+      for (const alts of slots(recipe)) {
+        if (!alts) continue;
+        const carried = alts.filter(a => have(a) > 0).sort((a, b) => have(b) - have(a))[0];
+        if (!carried) { ok = false; break; }
+        uses[carried] = (uses[carried] || 0) + 1;
+      }
+      if (!ok || !Object.keys(uses).length) continue;
+      const times = Math.min(...Object.entries(uses).map(([a, n]) => Math.floor(have(a) / n)));
+      best = Math.max(best, times * recipe.count);
+    }
+    return best;
+  }
   function acquire(name, needed) {
     if (have(name) >= needed) return;
     if (++expansions > 4000) throw new PlanError(`Recipe search exceeded its bounded budget for ${item}`, item);
@@ -206,9 +225,21 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
           if (table) acquire('crafting_table', 1);
           const batches = Math.ceil((needed - have(name)) / recipe.count);
           const ingredients = {};
+          // Slots that take the same alternatives (any planks) are filled with
+          // one that covers them all from the pockets, carried or made there
+          // and then: trial 45 had two oak planks and five jungle logs, was
+          // planned an oak log for the table's other two, took that for "no
+          // wood", and dug out of a mine by hand for minutes.
+          const groups = {};
+          for (const alts of slots(recipe)) if (alts && alts.length > 1) groups[alts.join(',')] = (groups[alts.join(',')] || 0) + 1;
+          const fixed = {};
+          for (const [key, n] of Object.entries(groups)) {
+            const alts = key.split(',').filter(a => registry.itemsByName[a] && !visiting.has(a)), need = n * batches;
+            fixed[key] = alts.find(a => have(a) >= need) || alts.find(a => have(a) + makeableNow(a) >= need) || null;
+          }
           const pick = alts => {
             if (!alts) return null;
-            const selected = chooseIngredient(alts, ingredients);
+            const selected = (alts.length > 1 && fixed[alts.join(',')]) || chooseIngredient(alts, ingredients);
             if (!selected) throw new PlanError(`No supported ingredient for ${name}`, name);
             ingredients[selected] = (ingredients[selected] || 0) + 1;
             return selected;
