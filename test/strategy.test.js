@@ -105,7 +105,7 @@ test('a set is offered by its name and pieces, with what it takes from the pocke
   // Trial 43: sixty-one raw iron carried, the armour offered as "get 4 iron helmet".
   const { rungOption } = require('../src/strategy');
   const armour = { phase: 'iron_armour', action: 'acquire_set', item: 'iron_helmet', items: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], count: 4 };
-  const planFor = (b, item) => [{ action: 'smelt', item: 'iron_ingot', count: item === 'iron_chestplate' ? 8 : 5 }, { action: 'craft', item, count: 1 }];
+  const planFor = (b, items) => [{ action: 'smelt', item: 'iron_ingot', count: 23 }, ...items.map(({ item }) => ({ action: 'craft', item, count: 1 }))];
   const d = rungOption(armour, false, { entity: { position: { x: 0, y: 0, z: 0 } } }, {}, planFor).description;
   assert.match(d, /get iron armour \(iron helmet, iron chestplate, iron leggings, iron boots\)/);
   assert.match(d, /twenty-four ingots/);
@@ -113,6 +113,19 @@ test('a set is offered by its name and pieces, with what it takes from the pocke
   assert.match(d, /no gathering/);
   const mining = rungOption(armour, false, { entity: { position: { x: 0, y: 0, z: 0 } } }, {}, () => [{ action: 'mine', item: 'raw_iron', count: 24 }]).description;
   assert.doesNotMatch(mining, /no gathering/);
+});
+
+test('a set is planned against the pockets once, not a piece at a time: eleven raw iron is not four pieces of armour', () => {
+  // Trial 94: each piece fit in eleven raw iron, and the four were offered as "no gathering".
+  const { rungOption } = require('../src/strategy');
+  const { batchPlan } = require('../src/batch-plan');
+  const registry = require('minecraft-data')('26.1');
+  const armour = { phase: 'iron_armour', action: 'acquire_set', item: 'iron_helmet', items: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], count: 4 };
+  const stock = { raw_iron: 11, coal: 64, furnace: 1, crafting_table: 1, iron_pickaxe: 1 };
+  const planFor = (b, item, count) => (Array.isArray(item) ? batchPlan(registry, item, stock, { nearby: ['iron_ore', 'stone'], tools: [{ name: 'iron_pickaxe', enchantments: [] }], equipment: [], dimension: 'overworld' }).steps : assert.fail('planned a piece at a time'));
+  const d = rungOption(armour, false, { entity: { position: { x: 0, y: 0, z: 0 } } }, {}, planFor).description;
+  assert.match(d, /mine 13 iron ore, smelt 24 iron ingot/);
+  assert.doesNotMatch(d, /no gathering/);
 });
 
 test('the home steps say what a home is for, as the other steps do', () => {

@@ -67,13 +67,13 @@ function searchSoFar(bot, goal, rung) {
 // offered the armour as "get 4 iron helmet" with nothing said of what it
 // would take, and went looking for a bed.
 function rungTakes(bot, goal, rung, planFor) {
-  if (!planFor || !bot) return '';
-  const items = rung.items || (rung.item ? [rung.item] : []);
-  const steps = [];
-  for (const item of items) {
-    try { for (const st of planFor(bot, item, rung.items ? 1 : (rung.count || 1), goal) || []) steps.push(st); }
-    catch (_) { return ''; }
-  }
+  if (!planFor || !bot || !(rung.items || rung.item)) return '';
+  // A set is planned as one batch against the one pair of pockets: planned
+  // a piece at a time, trial 94's eleven raw iron covered each piece and the
+  // four were offered as "no gathering" for twenty-four ingots.
+  let steps;
+  try { steps = [...(planFor(bot, rung.items ? rung.items.map(item => ({ item, count: 1 })) : rung.item, rung.count || 1, goal) || [])]; }
+  catch (_) { return ''; }
   if (!steps.length) return '';
   const words = s => String(s || '').replaceAll('_', ' ');
   const gather = steps.filter(st => /mine|hunt|fill|explore/.test(st.action));

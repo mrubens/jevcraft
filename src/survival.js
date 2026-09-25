@@ -500,7 +500,11 @@ class Survival {
         this.state.surfaceFailures = [...(this.state.surfaceFailures || []).filter(t => now - t < 60000), now];
         if (this.state.surfaceFailures.length >= 3) { setAside(this, 'surface_home', 'here', err, 600000); this.state.surfaceFailures = []; this.report(goal, save, { action: 'surface_home_set_aside', reason: err.message }); }
       }
-    } else if (bot.time.timeOfDay < SLEEP_FROM) {
+    } else {
+      // At any hour: the held walk comes here every tick, and one that waited
+      // for dusk did nothing after bedtime. Trial 94 held it thirty blocks
+      // from its bed twenty times a second for the night, the sleep option
+      // never offered (2026-09-25).
       try { await this.actions.navigate(bot, task, new goals.GoalNear(homeBed.foot.x, homeBed.foot.y, homeBed.foot.z, 3), { timeoutMs: 60000, stallMs: 8000, sprint: true }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'bed_route', 'home', err, 120000); }
     }

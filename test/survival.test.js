@@ -1626,6 +1626,25 @@ test('at dusk with the bed at home forty blocks off, the walk home is Jev\'s opt
   assert.equal(walks, 2);
 });
 
+test('a walk home held past bedtime still walks: trial 94 held it thirty blocks off and did nothing twenty times a second', async () => {
+  const { Survival } = require('../src/survival');
+  const { layout } = require('../src/home-base');
+  const home = { version: 1, dimension: 'overworld', origin: { x: 0, y: 63, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 63, z: 0 }, bed: { placedAt: 'now', claimedAt: 'now' }, plot: {}, pen: {} };
+  const { bed } = layout(home);
+  const blocks = new Map([[`${new Vec3(bed.foot.x, bed.foot.y, bed.foot.z)}`, 'white_bed'], [`${new Vec3(bed.head.x, bed.head.y, bed.head.z)}`, 'white_bed']]);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000 },
+    entity: { position: new Vec3(30.5, 64, 0.5) }, health: 20, food: 20, oxygenLevel: 20, isSleeping: false, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
+  const goal = { kind: 'win', request: 'beat the game', survival: { home } };
+  let walks = 0;
+  const survival = new Survival(bot, { navigate: async () => { walks++; } }, { state: goal.survival, client: { systemOne: async () => ({}) } });
+  survival.state.nightPlan = { plan: 'home', until: Date.now() + 120000 };
+  survival.decide = async () => assert.fail('held, not asked');
+  await survival.step(new Task('night'), goal, () => {});
+  assert.equal(walks, 1, 'the held walk home walks after bedtime too');
+});
+
 test('respawned with nothing at night, the bot digs down into dirt by hand and caps it with the dirt', async () => {
   const { Survival } = require('../src/survival');
   const registry = require('minecraft-data')('26.1'), Block = require('prismarine-block')(registry);
