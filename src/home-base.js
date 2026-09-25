@@ -1138,6 +1138,7 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
   } else if ((!far && (plot.grown.length || plot.untilled.length || (plot.bare.length && seeds > 0))) || stale) {
     options.tend_farm = { description: far ? `Walk back to the home plot (${distance} blocks away) and see how the wheat is doing; it was last checked a while ago.`
       : `Tend the home plot (${distance} blocks away): ${plot.grown.length} ripe, ${plot.growing.length} growing, ${plot.bare.length} bare, ${plot.untilled.length} untilled.`,
+      walkSeconds: Math.round(distance * 2 / 4.3),
       run: async (b, t, g, s, a) => {
         if (homeDistance(b, home) > 6 || plotStatus(b, home).unloaded.length) await goHome(b, t, g, s, home, a);
         const status = plotStatus(b, home);
@@ -1170,7 +1171,7 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
     // led back with the wheat.
     const herd = !loose && pen.cows < 2 && wheat >= 1 && require('./sightings').sighted(bot, goal, 'cow').find(s => s.count >= 1 && s.distance <= 160);
     if (herd) {
-      options.fetch_cows = { description: `Walk to where ${herd.says} and lead ${2 - pen.cows} back into the home pen with wheat; the pen holds ${pen.cows} and needs two to breed. About ${Math.round(herd.distance * 2 / 4)} seconds of walking there and back, slower with cows.`,
+      options.fetch_cows = { description: `Walk to where ${herd.says} and lead ${2 - pen.cows} back into the home pen with wheat; the pen holds ${pen.cows} and needs two to breed. About ${Math.round(herd.distance * 2 / 4)} seconds of walking there and back, slower with cows.`, walkSeconds: Math.round(herd.distance * 2 / 4),
         run: async (b, t, g, s, a) => { if (await require('./sightings').walkToSighting(b, t, g, s, 'cow', herd, a.navigate)) await lureCows(b, t, g, s, home, a); } };
     }
   }

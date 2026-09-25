@@ -536,3 +536,21 @@ test('with no path home from a mine under it, the way home is dug a stretch at a
   assert.deepEqual(dug, [[64, 'home'], [64, 'home']]);
   await assert.rejects(goHome(bot, new Task('home'), {}, () => {}, home, { navigate: async () => { throw new Error('No path to the goal!'); } }), /No path/, 'without a way to dig, the failure is the walk\'s');
 });
+
+test('an evening chore whose walk runs past dark says so, with the risk in the state (the decision audit)', async () => {
+  const { Survival } = require('../src/survival');
+  const w = await establishedHome();
+  w.give('wheat', 2);
+  w.bot.time = { timeOfDay: 11500, age: 100000 };
+  w.bot.entity.position = new Vec3(w.layout.bed.foot.x + 2.5, w.layout.bed.foot.y, w.layout.bed.foot.z + 0.5);
+  Object.assign(w.bot, { health: 20, food: 20, oxygenLevel: 20, world: { raycast: () => null } });
+  w.goal.sightings = { cow: [{ x: w.bot.entity.position.x + 100, y: w.bot.entity.position.y, z: w.bot.entity.position.z, count: 3, at: Date.now() - 60000, dimension: 'overworld' }] };
+  assert.equal(home.homeChores(w.bot, w.goal).fetch_cows?.walkSeconds, 50);
+  const survival = new Survival(w.bot, w.actions, { state: w.goal.survival, client: { systemOne: async () => ({}) } });
+  let asked;
+  survival.decide = async (task, goal, save, q) => { asked = q; return { stale: true, path: [] }; };
+  await survival.step(new Task('dusk'), w.goal, () => {});
+  assert.equal(asked?.id, 'evening_chore', asked?.id);
+  assert.match(asked.tree.fetch_cows.description, /Back after dark \(12000\): mobs spawn on the way back/);
+  assert(asked.state.riskNow && Array.isArray(asked.state.threats));
+});

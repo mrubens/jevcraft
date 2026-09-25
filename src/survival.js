@@ -2337,7 +2337,10 @@ class Survival {
       const chores = Object.fromEntries(Object.entries(homeChores(bot, goal)).filter(([key]) => !attempts.resting('chore', key)));
       const home = homeOf(bot, goal);
       // Which chore, or none, is Jev's; without Jev, the old order.
-      const tree = Object.fromEntries(Object.entries(chores).map(([key, chore]) => [key, { description: chore.description, run: async () => {
+      // A chore whose walk runs past dark says so (the decision audit,
+      // 2026-09-25): the cows fetched at dusk come back in the dark.
+      const late = chore => chore.walkSeconds && bot.time.timeOfDay + chore.walkSeconds * 20 >= DAY.DARK ? ` Back after dark (${DAY.DARK}): mobs spawn on the way back.` : '';
+      const tree = Object.fromEntries(Object.entries(chores).map(([key, chore]) => [key, { description: chore.description + late(chore), run: async () => {
         this.report(goal, save, { action: 'evening_chore', chore: key });
         const started = Date.now();
         try {
@@ -2360,7 +2363,8 @@ class Survival {
       const waiting = this.state.eveningWait?.keys === keys.join(',') && this.state.eveningWait.day === Math.floor((bot.time?.age ?? 0) / 24000);
       if (keys.length === 1 || waiting) await tree.wait_for_bedtime.run();
       else {
-        const decision = await this.decide(task, goal, save, { id: 'evening_chore', tree, state: { timeOfDay: bot.time.timeOfDay, sleepPossibleFrom: SLEEP_FROM, health: bot.health, food: bot.food } });
+        const decision = await this.decide(task, goal, save, { id: 'evening_chore', tree, state: { timeOfDay: bot.time.timeOfDay, sleepPossibleFrom: SLEEP_FROM, health: bot.health, food: bot.food,
+          riskNow: require('./risk').riskNow(bot), threats: threats(bot, 32).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })) } });
         if (!decision.stale) {
           if (decision.path.at(-1) === 'wait_for_bedtime') this.state.eveningWait = { keys: keys.join(','), day: Math.floor((bot.time?.age ?? 0) / 24000) };
           await decision.action.run();
