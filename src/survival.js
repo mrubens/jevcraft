@@ -1227,12 +1227,19 @@ class Survival {
     // Beside a drop the bot does not move to place: what it can reach from
     // where it stands, and nothing else (place's `stay`).
     const stay = dropWithin(bot, origin, 2);
+    // Three placements that fail in a row end the pass: trial 53 spent fifty
+    // seconds in one, each block of the shell failing slowly and silently.
+    let failedInRow = 0;
     for (const p of cells) {
       task.check();
       const name = material(); if (!name) break;
       if (danger.some(t => t.entity.position.floored().equals(p))) continue;
-      try { await this.actions.place(bot, task, p, name, { stay }); }
-      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+      try { await this.actions.place(bot, task, p, name, { stay }); failedInRow = 0; }
+      catch (err) {
+        task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err;
+        this.state.lastSealError = err.message;
+        if (++failedInRow >= 3) { this.report(goal, save, { action: 'seal_failed', at: { ...origin }, error: err.message.slice(0, 160) }); break; }
+      }
     }
     if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) { refuge.verifiedAt = new Date().toISOString(); save(); return true; }
     // A pass that closed nothing is not a pocket: saying it was sent the

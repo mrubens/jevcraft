@@ -1808,3 +1808,16 @@ test('a whole shell the bot is not sealed in is not reported sealed, and is not 
   assert.equal(await survival.sealHere(new Task('night'), goal, () => {}, []), false, 'set aside: not tried again straight away');
   assert.equal(placed, 0);
 });
+
+test('a seal pass whose placements keep failing ends after three, and says why', async () => {
+  // Trial 53: fifty seconds in one pass, every block of the shell failing.
+  const { origin, bot } = sandFloorPocket();
+  const blocks = new Map();
+  bot.blockAt = p => { const name = blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'); return { name, position: p, boundingBox: name === 'air' ? 'empty' : 'block' }; };
+  let tries = 0;
+  const survival = new Survival(bot, { place: async () => { tries++; throw new Error('Timed out waiting for world/inventory update'); }, navigate: async () => {} });
+  const goal = {};
+  assert.equal(await survival.sealHere(new Task('night'), goal, () => {}, []), false);
+  assert.equal(tries, 3, 'three tries, not the whole shell');
+  assert.match(survival.state.lastSealError, /Timed out/);
+});
