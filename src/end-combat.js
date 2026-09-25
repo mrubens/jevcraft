@@ -95,6 +95,33 @@ async function takeWaterBack(bot, check, at) {
   return false;
 }
 
+// How near the island's edge a point is: the nearest column within `reach`
+// with nothing under it for forty blocks, the void. And the endermen near
+// the straight line to it. Said with each move (the decision audit,
+// 2026-09-25): a knockback at the edge is the whole run.
+function voidEdge(bot, p, reach = 8) {
+  for (let r = 1; r <= reach; r++) {
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const x = Math.floor(p.x) + dx * r, z = Math.floor(p.z) + dz * r;
+      let floor = false, loaded = true;
+      for (let y = Math.floor(p.y); y >= Math.floor(p.y) - 40; y--) {
+        const b = bot.blockAt(new Vec3(x, y, z));
+        if (!b) { loaded = false; break; }
+        if (b.boundingBox === 'block') { floor = true; break; }
+      }
+      if (loaded && !floor) return r;
+    }
+  }
+  return null;
+}
+function endermenNearRoute(bot, from, to, width = 6) {
+  const d = to.minus(from), len2 = d.dot(d) || 1;
+  return Object.values(bot.entities || {}).filter(e => e.name === 'enderman' && live(bot, e) && e.position).filter(e => {
+    const t = Math.max(0, Math.min(1, e.position.minus(from).dot(d) / len2));
+    return e.position.distanceTo(from.plus(d.scaled(t))) <= width;
+  }).length;
+}
+
 // Why a point is not safe, for the record when nothing can be done.
 function unsafeBecause(bot, p, hazards = endHazards(bot)) {
   const out = [];
@@ -320,7 +347,8 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     }
     const head = dragon && perchedHead(bot, dragon);
     if (safe && head && canStrike(bot, head) && bot.inventory.items().some(i => /_sword$/.test(i.name) && durable(bot.registry, i))) {
-      tree.strike_head = { description: 'Strike the reachable head of the perched dragon with the carried sword', run: async () => {
+      const edge = voidEdge(bot, bot.entity.position);
+      tree.strike_head = { description: `Strike the reachable head of the perched dragon with the carried sword${edge ? `: the void is ${edge} block${edge === 1 ? '' : 's'} from where the bot stands, and the dragon's wing throws a player` : ''}`, run: async () => {
         const sword = bot.inventory.items().find(i => /_sword$/.test(i.name) && durable(bot.registry, i));
         await bot.equip(sword, 'hand'); check();
         const fresh = perchedHead(bot, dragon);
@@ -356,7 +384,8 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         position: { ...route.p }, visits: state.visits[route.key] || 0, target: focus?.name,
         clearCrystalShot: focus?.name === 'end_crystal' ? route.clearCrystalShot : undefined,
         targetDistance: route.targetDistance, currentTargetDistance: focus?.position?.distanceTo(bot.entity.position),
-        desiredHorizontalRange: route.desiredHorizontalRange }, run: async () => {
+        desiredHorizontalRange: route.desiredHorizontalRange,
+        voidEdgeBlocks: voidEdge(bot, vector(route.p)), endermenNearRoute: endermenNearRoute(bot, bot.entity.position, vector(route.p)) }, run: async () => {
         state.visits[route.key] = (state.visits[route.key] || 0) + 1; save();
         const initiallySafe = safeEndPoint(bot, bot.entity.position);
         // A walk stops for a mob at arm's length: the recorded rehearsal
@@ -428,4 +457,4 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
   }
 }
 
-module.exports = { endFallback, metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };
+module.exports = { voidEdge, endermenNearRoute, endFallback, metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };

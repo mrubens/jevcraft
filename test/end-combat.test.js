@@ -298,3 +298,14 @@ test('a screaming enderman that has not come near nor hurt the bot is not its en
   bot.entities[8].position = new Vec3(15, 64, .5); bot._hurtBy = { enderman: Date.now() };
   assert.deepEqual(hostileEntities(bot, 64).map(e => e.id), [8], 'and after it hurt the bot');
 });
+
+test('a move in the End says how near the void its destination is and the endermen by the way (the decision audit)', () => {
+  const { voidEdge, endermenNearRoute } = require('../src/end-combat');
+  // An island of end stone ten blocks across, the void past it.
+  const bot = { entities: {}, blockAt: p => ({ name: Math.abs(p.x) <= 5 && Math.abs(p.z) <= 5 && p.y <= 63 && p.y >= 55 ? 'end_stone' : 'air', boundingBox: Math.abs(p.x) <= 5 && Math.abs(p.z) <= 5 && p.y <= 63 && p.y >= 55 ? 'block' : 'empty' }) };
+  assert.equal(voidEdge(bot, new Vec3(3.5, 64, 0.5)), 3);
+  assert.equal(voidEdge(bot, new Vec3(0.5, 64, 0.5), 4), null, 'the middle is more than four from the edge');
+  bot.entities[9] = { id: 9, name: 'enderman', position: new Vec3(8, 64, 2), isValid: true };
+  assert.equal(endermenNearRoute(bot, new Vec3(0, 64, 0), new Vec3(10, 64, 0)), 1);
+  assert.equal(endermenNearRoute(bot, new Vec3(0, 64, 0), new Vec3(-10, 64, 0)), 0);
+});
