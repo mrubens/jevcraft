@@ -10,7 +10,10 @@
 //   node scripts/first-days.js status                # the trial log
 //
 // The clean server is .clean-run on 25581; the bot is the one whose pid is
-// in .bot-state/pids/127.0.0.1-25581-Jev.pid. A trial is sixty minutes of wall clock from the bot's first join:
+// in .bot-state/pids/127.0.0.1-25581-Jev.pid. More trial servers run side by
+// side, each a copy in .clean-run-<port>, chosen with FIRST_DAYS_PORT:
+//   FIRST_DAYS_PORT=25582 node scripts/first-days.js start first-days-40
+// A trial is sixty minutes of wall clock from the bot's first join:
 // three days of twenty minutes. Nothing in the game is touched but the
 // world's name; Jev is not an operator.
 const fs = require('fs');
@@ -19,9 +22,10 @@ const { execSync, spawn } = require('child_process');
 const { analyse } = require('./lib/audit');
 
 const ROOT = path.join(__dirname, '..');
-const SERVER = path.join(ROOT, '.clean-run');
+const PORT = Number(process.env.FIRST_DAYS_PORT || 25581);
+const SERVER = path.join(ROOT, PORT === 25581 ? '.clean-run' : `.clean-run-${PORT}`);
 const STATE = path.join(ROOT, '.bot-state');
-const IDENTITY = '127_0_0_1-25581-Jev';
+const IDENTITY = `127_0_0_1-${PORT}-Jev`;
 const LOG = path.join(ROOT, 'artifacts', 'first-days-trials.json');
 const DAYS_MS = 60 * 60000;
 const trials = () => { try { return JSON.parse(fs.readFileSync(LOG, 'utf8')); } catch (_) { return []; } };
@@ -107,10 +111,10 @@ function spectatorNightVision(worldDir) {
 
 // The trial's bot, by the pid file index.js writes. A bot started before
 // the pid files (it served a viewer on port 3044) is found by that port.
-const BOT_PID = path.join(STATE, 'pids', '127.0.0.1-25581-Jev.pid');
+const BOT_PID = path.join(STATE, 'pids', `127.0.0.1-${PORT}-Jev.pid`);
 function botPid() {
   try { const p = fs.readFileSync(BOT_PID, 'utf8').trim(); if (p && alive(p)) return p; } catch (_) {}
-  return pid(3044);
+  return PORT === 25581 ? pid(3044) : null;
 }
 
 async function start(world) {
@@ -125,7 +129,7 @@ async function start(world) {
 
 async function startTrial(world) {
   const props = path.join(SERVER, 'server.properties');
-  const server = pid(25581), bot = botPid();
+  const server = pid(PORT), bot = botPid();
   if (bot) { process.kill(Number(bot)); await sleep(3000); }
   if (server) {
     fs.writeFileSync(path.join(SERVER, 'console.in'), 'stop\n');
@@ -135,14 +139,14 @@ async function startTrial(world) {
     if (alive(server)) { process.kill(Number(server), 'SIGTERM'); for (let i = 0; i < 20 && alive(server); i++) await sleep(1000); }
     if (alive(server)) { process.kill(Number(server), 'SIGKILL'); await sleep(2000); }
   }
-  if (pid(25581)) throw new Error('The old server is still on 25581; nothing was started');
+  if (pid(PORT)) throw new Error(`The old server is still on ${PORT}; nothing was started`);
   fs.writeFileSync(props, fs.readFileSync(props, 'utf8').replace(/^level-name=.*$/m, `level-name=${world}`));
   spectatorNightVision(path.join(SERVER, world));
   spawn('sh', ['start.sh'], { cwd: SERVER, detached: true, stdio: 'ignore' }).unref();
-  for (let i = 0; i < 120 && !pid(25581); i++) await sleep(1000);
+  for (let i = 0; i < 120 && !pid(PORT); i++) await sleep(1000);
   const log = () => { try { return fs.readFileSync(path.join(SERVER, 'logs', 'latest.log'), 'utf8'); } catch (_) { return ''; } };
   for (let i = 0; i < 60 && !log().includes(`Preparing level "${world}"`); i++) await sleep(1000);
-  if (!log().includes(`Preparing level "${world}"`)) throw new Error(`The server on 25581 did not load ${world}`);
+  if (!log().includes(`Preparing level "${world}"`)) throw new Error(`The server on ${PORT} did not load ${world}`);
   // A watchdog that restarts a silent bot may have started one on the old
   // state while the server was down (trial 2 ran on the old state that way):
   // no bot at all before the state is archived.
@@ -154,12 +158,12 @@ async function startTrial(world) {
   fs.writeFileSync(path.join(STATE, `${IDENTITY}-dream.json`), JSON.stringify({ version: 1, dream: 'beat_the_game', setBy: 'TestPlayer', setAt: new Date().toISOString() }));
   const out = fs.openSync(process.env.FIRST_DAYS_LOG || path.join(ROOT, 'artifacts', `first-days-${world}.log`), 'a');
   const child = spawn(process.execPath, ['index.js'], { cwd: ROOT, detached: true, stdio: ['ignore', out, out],
-    env: { ...process.env, MC_HOST: '127.0.0.1', MC_PORT: '25581', MC_USERNAME: 'Jev', RECOVERY_ADVISER: 'jev', JEV_ENCOUNTERS: '1' } });
+    env: { ...process.env, MC_HOST: '127.0.0.1', MC_PORT: String(PORT), MC_USERNAME: 'Jev', RECOVERY_ADVISER: 'jev', JEV_ENCOUNTERS: '1' } });
   child.unref();
   for (let i = 0; i < 30 && !botPid(); i++) await sleep(1000);
   if (String(botPid()) !== String(child.pid)) throw new Error(`The trial's bot is not the one just started (${botPid()} vs ${child.pid}); start again`);
   const all = trials();
-  all.push({ world, startedAt: new Date().toISOString() });
+  all.push({ world, port: PORT, startedAt: new Date().toISOString() });
   saveTrials(all);
   console.log(`Trial on ${world} started at ${all.at(-1).startedAt}; verdict from ${new Date(Date.now() + DAYS_MS).toISOString()}.`);
 }
@@ -170,10 +174,15 @@ async function main() {
   const all = trials();
   if (cmd === 'status') { console.log(JSON.stringify(all, null, 2)); return; }
   if (cmd === 'verdict') {
-    const trial = all.at(-1);
-    if (!trial) throw new Error('No trial started');
+    // This server's latest trial: the ones before ports were written down
+    // were all on 25581.
+    const trial = all.filter(t => (t.port || 25581) === PORT).at(-1);
+    if (!trial) throw new Error(`No trial started on ${PORT}`);
     const v = verdict(trial);
-    trial.verdict = v; saveTrials(all);
+    // Read again before writing: another server's trial may have started
+    // since, and its entry is not to be lost.
+    const latest = trials(), mine = latest.find(t => t.world === trial.world && t.startedAt === trial.startedAt);
+    if (mine) { mine.verdict = v; saveTrials(latest); }
     console.log(JSON.stringify(v, null, 2));
     return;
   }

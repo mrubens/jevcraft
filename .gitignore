@@ -24,6 +24,7 @@ artifacts/
 .test-acceptance/
 .test-replay/
 .clean-run/
+.clean-run-*/
 .geyser/
 .test-endgame/
 
