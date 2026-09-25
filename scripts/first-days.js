@@ -57,6 +57,40 @@ function milestones(snapshot, state) {
   };
 }
 
+// Each milestone counts once it has been reached at any time in the trial,
+// not only if it is still held at the end (the user, 2026-09-25): trial 79
+// had everything by minute 34 and wore its iron pickaxe out at minute 50.
+// Frame by frame, the pockets and what is worn each from the latest frame
+// that has them (heartbeats carry the pockets and not the equipment).
+// With it, when each was first reached (m.at, milliseconds): the bed and
+// the home from the saved home's own times where the frames do not say.
+const MILESTONES = ['iron_pickaxe', 'iron_sword', 'iron_armour', 'shield', 'bed', 'home'];
+function reached(frames, state) {
+  let inventory = null, equipment = null;
+  const m = milestones({}, state), at = {};
+  const home = state?.survival?.home, time = iso => (iso ? Date.parse(iso) : NaN);
+  if (m.bed && Number.isFinite(time(home?.bed?.claimedAt))) at.bed = time(home.bed.claimedAt);
+  if (m.home) {
+    const t = Number.isFinite(time(home?.completedAt)) ? time(home.completedAt) : Math.max(time(home?.bed?.claimedAt), time(home?.stash?.placedAt));
+    if (Number.isFinite(t)) at.home = t;
+  }
+  for (const f of frames) {
+    if (f.snapshot?.inventory && typeof f.snapshot.inventory === 'object') inventory = f.snapshot.inventory;
+    if (f.snapshot?.equipment && typeof f.snapshot.equipment === 'object') equipment = f.snapshot.equipment;
+    if (!inventory && !equipment) continue;
+    // The frames say what was carried and worn; the bed claimed and the
+    // home come from the saved home above, not from every frame.
+    const now = milestones({ inventory: inventory || {}, equipment: equipment || {} }, {});
+    for (const k of MILESTONES) if (now[k] && !(at[k] <= f.t)) { m[k] = true; if (Number.isFinite(f.t)) at[k] = Math.min(at[k] ?? Infinity, f.t); }
+  }
+  m.at = at;
+  return m;
+}
+// The items are wanted by this minute; the day's other rules hold for the
+// whole sixty. Standing still and pacing cost time and so count against it,
+// and are reported, not failed on their own (the user, 2026-09-25).
+const TARGET_MS = Number(process.env.FIRST_DAYS_TARGET_MIN || 45) * 60000;
+
 function verdict(trial, { now = Date.now() } = {}) {
   const from = Date.parse(trial.startedAt), to = Math.min(now, from + DAYS_MS);
   const a = analyse({ identity: IDENTITY, from, to });
@@ -88,14 +122,17 @@ function verdict(trial, { now = Date.now() } = {}) {
   // The pockets and what is worn, each from the latest frame that has it:
   // heartbeats now carry the pockets but not the equipment, and the latest
   // frame with pockets read a shield in the off-hand as no shield (trial 19).
-  const latest = key => [...a.frames].reverse().find(f => f.snapshot?.[key] && typeof f.snapshot[key] === 'object')?.snapshot?.[key];
-  const m = milestones({ inventory: latest('inventory'), equipment: latest('equipment') }, state);
-  const missing = ['iron_pickaxe', 'iron_sword', 'iron_armour', 'shield', 'bed', 'home'].filter(k => !m[k]);
-  const done = to - from >= DAYS_MS;
-  const reasons = [...(deaths.size ? [`${deaths.size} death(s)`] : []), ...loops.map(l => `loop: ${l}`), ...still.map(s => `still: ${s}`),
-    ...pacing.map(p => `pacing: ${p}`), ...(done ? missing.map(k => `missing: ${k}`) : [])];
+  const m = reached(a.frames, state);
+  const byTarget = k => m[k] && (m.at[k] == null || m.at[k] <= from + TARGET_MS);
+  const missing = MILESTONES.filter(k => !byTarget(k));
+  const done = to - from >= DAYS_MS, pastTarget = to - from >= TARGET_MS;
+  const minute = t => Math.round((t - from) / 60000);
+  const reasons = [...(deaths.size ? [`${deaths.size} death(s)`] : []), ...loops.map(l => `loop: ${l}`),
+    ...(pastTarget ? missing.map(k => `missing by minute ${TARGET_MS / 60000}: ${k}${m[k] && m.at[k] ? ` (reached at minute ${minute(m.at[k])})` : ''}`) : [])];
+  const notes = [...still.map(s => `still: ${s}`), ...pacing.map(p => `pacing: ${p}`)];
   return { world: trial.world, from: new Date(from).toISOString(), to: new Date(to).toISOString(), minutes: Math.round((to - from) / 60000), done,
-    pass: done && !reasons.length, failedAlready: reasons.some(r => !r.startsWith('missing')), reasons, milestones: m, missing };
+    pass: done && !reasons.length, failedAlready: reasons.length > 0, reasons, notes,
+    reachedAtMinute: Object.fromEntries(Object.entries(m.at).map(([k, t]) => [k, minute(t)])), milestones: m, missing };
 }
 
 // Whoever watches in Spectator sees in the dark: a datapack in the new
@@ -190,4 +227,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(err => { console.error(err.message); process.exit(1); });
-module.exports = { milestones, verdict, PAST_ARMOUR, spectatorNightVision };
+module.exports = { milestones, reached, verdict, PAST_ARMOUR, spectatorNightVision };

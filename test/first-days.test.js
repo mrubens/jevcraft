@@ -36,3 +36,31 @@ test('pacing is a minute of walking back and forth that gains nothing; the same 
   assert(a.pacing[0].from < t0 + 60000, 'the empty-handed minute, not the one that made a pickaxe');
   fs.rmSync(dir, { recursive: true });
 });
+
+test('a milestone counts once reached at any time in the trial: a pickaxe worn out later is still reached', () => {
+  // Trial 79: everything by minute 34, the iron pickaxe worn out at minute 50.
+  const { reached } = require('../scripts/first-days');
+  const frames = [
+    { snapshot: { inventory: { iron_pickaxe: 1, iron_sword: 1, shield: 1 }, equipment: { head: 'iron_helmet', torso: 'iron_chestplate', legs: 'iron_leggings', feet: 'iron_boots' } } },
+    { snapshot: { inventory: { stone_pickaxe: 1, iron_sword: 1, shield: 1 } } },
+  ];
+  const m = reached(frames, { survival: { home: { bed: { claimedAt: 'x' }, stash: { position: {} } } } });
+  assert.deepEqual(['iron_pickaxe', 'iron_sword', 'iron_armour', 'shield', 'bed', 'home'].filter(k => !m[k]), []);
+  const never = reached([{ snapshot: { inventory: { stone_pickaxe: 1 } } }], {});
+  assert.equal(never.iron_pickaxe, false, 'never had one: not reached');
+});
+
+test('each milestone keeps the time it was first reached; the home its own saved times', () => {
+  const { reached } = require('../scripts/first-days');
+  const t0 = Date.parse('2026-09-25T10:00:00Z');
+  const frames = [
+    { t: t0 + 5 * 60000, snapshot: { inventory: { stone_pickaxe: 1 } } },
+    { t: t0 + 20 * 60000, snapshot: { inventory: { iron_pickaxe: 1 } } },
+    { t: t0 + 50 * 60000, snapshot: { inventory: { stone_pickaxe: 1 } } },
+  ];
+  const state = { survival: { home: { bed: { claimedAt: new Date(t0 + 30 * 60000).toISOString() }, stash: { position: {}, placedAt: new Date(t0 + 40 * 60000).toISOString() } } } };
+  const m = reached(frames, state);
+  assert.equal(m.at.iron_pickaxe, t0 + 20 * 60000, 'first reached at minute 20, worn out by 50');
+  assert.equal(m.at.bed, t0 + 30 * 60000);
+  assert.equal(m.at.home, t0 + 40 * 60000, 'the later of the bed claimed and the stash placed');
+});
