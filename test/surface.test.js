@@ -427,3 +427,14 @@ test('a thin cobblestone lid with sky above it is dug straight up, not searched 
   assert.deepEqual(dug, [67, 68]);
   assert.equal(goal.surfaceReturn, undefined, 'standing on grass under open sky is the surface');
 });
+
+test('the climb to open sky is counted from the column, canopies ignored (the decision audit)', () => {
+  const { climbToSurface, climbMinutes } = require('../src/surface');
+  const { bot, blocks } = world();
+  blocks.set('(0, 70, 0)', 'oak_leaves');
+  assert.equal(climbToSurface(bot, new Vec3(0.5, 64, 0.5)), 0, 'under a tree is on the surface');
+  assert.equal(climbToSurface(bot, new Vec3(0.5, 30, 0.5)), 34);
+  assert.equal(climbMinutes(34), 2);
+  bot.blockAt = () => null;
+  assert.equal(climbToSurface(bot, new Vec3(0.5, 30, 0.5)), null, 'unloaded');
+});

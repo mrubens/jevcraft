@@ -42,6 +42,26 @@ const { NETHER_FOOD_POINTS, KIT_FOOD_POINTS } = require('./home-stash');
 // climb, endermen teleport, witches throw up, a blast reaches (the audit).
 const REACH_UP = { spider: 'climbs', cave_spider: 'climbs', enderman: 'teleports', witch: 'throws potions up', creeper: 'goes off at the foot and the blast reaches' };
 const climbers = danger => { const kinds = [...new Set(danger.map(t => t.entity.name).filter(n => REACH_UP[n]))]; return kinds.length ? ` Two up does not stop ${kinds.map(n => `a ${n.replaceAll('_', ' ')} (${REACH_UP[n]})`).join(' or ')}.` : ''; };
+// A retreat's footing is found when it runs, not before (runAway): said, so
+// the run is not read as a known safe place (the decision audit, 2026-09-25).
+const NO_ROUTE_YET = ' No route is checked yet: where it ends, how high and how lit, is found as it runs.';
+// The race a pocket is: blocks to place against the nearest biter's walk.
+// Trial 70 chose to seal with four zombies coming, the nearest six blocks
+// off, told nothing of either, and went from twelve to nothing with the
+// pocket half built.
+function pocketRace(bot, danger) {
+  const feet = bot.entity.position.floored();
+  const biter = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper').sort((x, y) => x.distance - y.distance)[0];
+  const shellCells = (() => { try { return shelter.missingShell(bot, { origin: { x: feet.x, y: feet.y, z: feet.z } }).length; } catch (_) { return null; } })();
+  return shellCells != null ? ` About ${shellCells} block${shellCells === 1 ? '' : 's'} to place here, some ${Math.round(shellCells * 0.5)} seconds of building${biter ? `; the nearest ${biter.entity.name.replaceAll('_', ' ')}, ${Math.round(biter.distance)} blocks off${biter.visible === false ? ' and out of sight' : ''}, can be at the bot in about ${Math.max(0, Math.round((biter.distance - 1.5) / 3))} seconds` : ''}.` : '';
+}
+// A creeper close walks up to a pillar or a pocket and goes off, and a
+// pocket is not closed before the blast (the live run, 17:16, at three
+// health): said, not decided by hiding the options.
+function creeperNoteFor(danger) {
+  const creeper = danger.filter(t => t.entity.name === 'creeper' && t.distance <= 7).sort((a, b) => a.distance - b.distance)[0];
+  return creeper ? ` A creeper is ${Math.round(creeper.distance)} blocks off${creeper.visible === false ? ', out of sight' : ''}: it walks up to whatever is built and goes off, and a pocket is not closed before the blast.` : '';
+}
 const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pillager', 'witch']);
 function firmStep(bot, p) {
   if (!p) return false;
@@ -668,11 +688,7 @@ class Survival {
     // Building costs a second or so a block: said to Jev with the options
     // below rather than decided for it by hiding them.
     const buildCost = armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the blocks go down.' : '';
-    // A creeper close walks up to a pillar or a pocket and goes off, and a
-    // pocket is not closed before the blast (the live run, 17:16, at three
-    // health): said, not decided by hiding the options.
-    const creeper = danger.find(t => t.entity.name === 'creeper' && t.distance <= 7);
-    const creeperNote = creeper ? ` A creeper is ${Math.round(creeper.distance)} blocks off: it walks up to whatever is built and goes off, and a pocket is not closed before the blast.` : '';
+    const creeperNote = creeperNoteFor(danger);
     const cost = fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere;
     // The estimate leaves creepers out of its numbers (a blast is once, not
@@ -720,13 +736,7 @@ class Survival {
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
-    // The race a pocket is: blocks to place against the nearest biter's
-    // walk. Trial 70 chose to seal with four zombies coming, the nearest six
-    // blocks off, told nothing of either, and went from twelve to nothing
-    // with the pocket half built.
-    const biter = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper').sort((x, y) => x.distance - y.distance)[0];
-    const shellCells = (() => { try { return shelter.missingShell(bot, { origin: { x: feet.x, y: feet.y, z: feet.z } }).length; } catch (_) { return null; } })();
-    const race = shellCells != null ? ` About ${shellCells} block${shellCells === 1 ? '' : 's'} to place here, some ${Math.round(shellCells * 0.5)} seconds of building${biter ? `; the nearest ${biter.entity.name.replaceAll('_', ' ')}, ${Math.round(biter.distance)} blocks off, can be at the bot in about ${Math.max(0, Math.round((biter.distance - 1.5) / 3))} seconds` : ''}.` : '';
+    const race = pocketRace(bot, danger);
     const nightLong = shelterNeeded(bot) ? ` At night the mobs outside do not lose interest: about ${minutesToDawn(bot)} real minutes to dawn.` : '';
     if (shelter.materialStock(bot) >= 4) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + nightLong + unseen,
       run: () => this.sealHere(task, goal, save, danger) };
@@ -764,7 +774,7 @@ class Survival {
         try { await bot.equip(apple, 'hand'); await bot.consume(); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
       } };
-    options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + (creeperCount ? ' Creepers and spiders follow a running player.' : '') + unseen,
+    options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + (creeperCount ? ' Creepers and spiders follow a running player.' : '') + NO_ROUTE_YET + unseen,
       run: () => this.runAway(task, goal, save, danger) };
     for (const t of shotTargets(bot, danger).slice(0, 2)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : ''),
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
@@ -842,12 +852,22 @@ class Survival {
     const targets = shotTargets(bot, danger).slice(0, 3);
     if (!targets.length) return false;
     const tree = {};
-    for (const t of targets) tree[`shoot_${t.entity.id}`] = { description: { action: 'Shoot this mob with the bow from where the bot stands. It is in clear view at bow range and shoots back; each arrow takes about a second to draw, standing still.',
+    // What the shot, the run and the pocket each risk, said (the decision
+    // audit, 2026-09-25): a creeper closing while the bow draws, the mobs
+    // the list in view leaves out, and the pocket no longer hidden when a
+    // creeper is near but offered with what a creeper does to one.
+    const unseen = require('./danger').unseenNote(bot, danger);
+    const creeper = danger.filter(t => t.entity.name === 'creeper' && t.distance <= 7).sort((a, b) => a.distance - b.distance)[0];
+    const creeperShot = creeper ? ` A creeper is ${Math.round(creeper.distance)} blocks off: it closes while the bow draws, and its blast reaches about five.` : '';
+    for (const t of targets) tree[`shoot_${t.entity.id}`] = { description: { action: 'Shoot this mob with the bow from where the bot stands. It is in clear view at bow range and shoots back; each arrow takes about a second to draw, standing still.' + creeperShot + unseen,
       entity: t.entity.name, distance: Math.round(t.distance), arrowsCarried: countOf(bot, 'arrow') }, run: () => this.shootAt(task, goal, save, t) };
-    tree.retreat = { description: 'Run for footing out of its range and out of its sight; the mob keeps shooting while the bot runs.', run: () => this.escape(task, goal, save, danger, armed) };
-    if (shelter.materialStock(bot) >= 12 && !creeperClose(danger)) tree.dig_in = { description: 'Seal a two-block pocket where the bot stands and wait for it to lose interest.', run: () => this.sealHere(task, goal, save, danger) };
+    tree.retreat = { description: 'Run for footing out of its range and out of its sight; the mob keeps shooting while the bot runs.' + NO_ROUTE_YET + unseen, run: () => this.escape(task, goal, save, danger, armed) };
+    if (shelter.materialStock(bot) >= 12) tree.dig_in = { description: 'Seal a two-block pocket where the bot stands and wait for it to lose interest.' + (creeper ? ` A creeper ${Math.round(creeper.distance)} blocks off walks up to a pocket and goes off before it closes.` : '') + unseen, run: () => this.sealHere(task, goal, save, danger) };
+    const about = [...danger];
+    for (const t of threats(bot, 16)) if (!about.some(a => a.entity.id === t.entity.id)) about.push(t);
     const state = { health: bot.health, food: bot.food, arrowsCarried: countOf(bot, 'arrow'), recentSurvivalAction: goal.survivalAction,
-      threats: danger.map(t => ({ name: t.entity.name, distance: Math.round(t.distance), shoots: shooter(t.entity) })) };
+      threats: about.sort((a, b) => a.distance - b.distance).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), shoots: shooter(t.entity), visible: t.visible !== false })),
+      riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal) };
     const decision = await this.decide(task, goal, save, { id: 'ranged_response', state, tree, context: { health: bot.health },
       isFresh: () => Math.abs(bot.health - state.health) < 4 && targets.some(t => bot.entities[t.entity.id] === t.entity && t.entity.isValid !== false) });
     if (decision.stale) return true;
@@ -1155,11 +1175,27 @@ class Survival {
       const stock = shelter.materialStock(bot);
       const options = {};
       const resting = key => isSetAside(this, 'shelter_method', key);
-      if (refuge && !resting('saved_shelter')) options.saved_shelter = { description: `Go back to the ${refuge.verifiedAt ? 'shelter used before' : 'shelter begun before'}, ${Math.round(pos(refuge.origin).distanceTo(bot.entity.position))} blocks away, and seal it: ${shelter.missingShell(bot, refuge).length} blocks to place, ${stock} carried.` };
+      // What each way risks, said (the decision audit, 2026-09-25): the walk
+      // to a room with its time against the dark and the mobs about the
+      // place, the pocket's race with every mob about, seen or not, and
+      // whether a shaft has a dry column to go down at all.
+      const about = threats(bot, 64);
+      const walkTo = dest => {
+        const distance = dest.distanceTo(bot.entity.position), seconds = Math.round(distance / 4.3), tod = bot.time?.timeOfDay ?? 6000;
+        const there = about.filter(t => t.entity.position.distanceTo(dest) <= 16);
+        const dark = tod >= DAY.DARK && tod < DAY.DAWN ? ' It is dark already: mobs spawn along the way.' : tod + seconds * 20 >= DAY.DARK ? ' It arrives after dark.' : '';
+        return ` About ${seconds} seconds at a walk.${dark}${there.length ? ` Within sixteen blocks of it now: ${there.slice(0, 4).map(t => `a ${t.entity.name.replaceAll('_', ' ')}`).join(', ')}${there.some(t => t.entity.name === 'creeper') ? ' (a creeper among them)' : ''}.` : ''}`;
+      };
+      if (refuge && !resting('saved_shelter')) options.saved_shelter = { description: `Go back to the ${refuge.verifiedAt ? 'shelter used before' : 'shelter begun before'}, ${Math.round(pos(refuge.origin).distanceTo(bot.entity.position))} blocks away, and seal it: ${shelter.missingShell(bot, refuge).length} blocks to place, ${stock} carried.${shelter.inside(bot, refuge) ? '' : walkTo(pos(refuge.origin))}` };
       if (site && !resting('build_at_site')) { const need = shelter.missingShell(bot, { origin: site }).length;
-        options.build_at_site = { description: `Build a small room at a dry site ${Math.round(site.distanceTo(bot.entity.position))} blocks away: ${need} blocks to place, ${stock} carried${stock < need + 4 ? ', the rest gathered first' : ''}. A room is kept and can be used again on later nights.` }; }
-      if (!resting('seal_here')) options.seal_here = { description: stock >= 12 ? `Seal a two-block pocket around the bot where it stands with the ${stock} blocks carried; quick, and kept for later nights.` : `Dig into the ground where the bot stands and close it over (${stock} blocks carried, too few for a pocket on open ground).` };
-      if (!resting('shaft_pocket')) options.shaft_pocket = { description: 'Dig two or three blocks straight down here and cap it with one block: the fewest blocks, done in seconds.' };
+        options.build_at_site = { description: `Build a small room at a dry site ${Math.round(site.distanceTo(bot.entity.position))} blocks away: ${need} blocks to place, ${stock} carried${stock < need + 4 ? ', the rest gathered first' : ''}. A room is kept and can be used again on later nights.${walkTo(site)}` }; }
+      const near = about.filter(t => t.distance <= 24);
+      if (!resting('seal_here')) options.seal_here = { description: (stock >= 12 ? `Seal a two-block pocket around the bot where it stands with the ${stock} blocks carried; quick, and kept for later nights.` : `Dig into the ground where the bot stands and close it over (${stock} blocks carried, too few for a pocket on open ground).`) + pocketRace(bot, near) + creeperNoteFor(near) };
+      if (!resting('shaft_pocket')) {
+        const column = this.shaftColumn();
+        const found = column.bottom ? ` A dry column is found${column.start.equals(bot.entity.position.floored()) ? ' underfoot' : ` ${Math.round(column.start.distanceTo(bot.entity.position))} blocks over`}: ${column.start.y - column.bottom.y} blocks down.` : ` ${column.none.charAt(0).toUpperCase()}${column.none.slice(1)}; chosen, it fails and the question comes again.`;
+        options.shaft_pocket = { description: 'Dig two or three blocks straight down here and cap it with one block: the fewest blocks, done in seconds.' + found };
+      }
       if (this.canNightMine(goal) && !resting('night_mine')) options.night_mine = { description: 'Dig a mine from here for the night: a staircase into the rock is shelter and a mine at once, and gains ore while the night passes.' };
       if (!Object.keys(options).length) {
         // Nowhere, nothing to build with, no ground to dig: failing that every
@@ -1175,7 +1211,8 @@ class Survival {
       const decision = Object.keys(tree).length === 1 ? { path: [Object.keys(tree)[0]] }
         : await this.decide(task, goal, save, { id: 'shelter_method', tree, state: { timeOfDay: bot.time?.timeOfDay, health: bot.health, food: bot.food, buildingBlocks: stock, darkHere: darkHere(bot), torches: countOf(bot, 'torch'),
           underground: !surfaceObserver(bot)(bot.entity.position), pickaxe: bot.inventory.items().find(i => /_pickaxe$/.test(i.name))?.name || null,
-          nearbyThreats: threats(bot).filter(t => t.distance < 24).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance) })) } });
+          nearbyThreats: threats(bot).filter(t => t.distance < 24).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })),
+          riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal) } });
       if (decision.stale) return true;
       method = decision.path.at(-1);
       this.state.nightPlan = { ...(plan || { plan: 'shelter' }), until: Date.now() + 120000, method };
@@ -1374,6 +1411,19 @@ class Survival {
   async shaftPocket(task, goal, save) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function' || typeof this.actions.dig !== 'function') return false;
+    const column = this.shaftColumn(), spot = column.spot, here = bot.entity.position.floored();
+    if (column.resting) return false;
+    const { start = null, bottom = null } = column;
+    if (!bottom) { setAside(this, 'shaft_pocket', spot, 'no dry rock straight down within four blocks', 600000); return false; }
+    return this.digShaft(task, goal, save, { start, bottom, spot, here });
+  }
+
+  // The dry column a shaft pocket would go down, found without digging:
+  // { start, bottom } or { none: why }. Asked when the shelter question is
+  // built too, so the shaft is offered with the depth found or the reason
+  // there is none (the decision audit, 2026-09-25).
+  shaftColumn() {
+    const bot = this.bot;
     // No pickaxe (respawned with nothing, at night, beside the mobs that
     // killed it: the clean run died there a second time gathering dirt for
     // a shelter): the shaft still goes down where every block in it digs by
@@ -1382,7 +1432,7 @@ class Survival {
     const handSoft = b => !!b && (typeof b.digTime === 'function' ? b.digTime(null, false, false, false, [], {}) <= 1000 : /^(dirt|grass_block|podzol|mycelium|coarse_dirt|rooted_dirt|mud|clay|moss_block)$/.test(b.name));
     // Set aside by the column stood on, not for the whole world.
     const spot = `${bot.entity.position.floored().x},${bot.entity.position.floored().z}`;
-    if (isSetAside(this, 'shaft_pocket', spot)) return false;
+    if (isSetAside(this, 'shaft_pocket', spot)) return { none: 'a shaft failed on this spot a short while ago', resting: true, spot };
     const wet = c => /water|lava/.test(bot.blockAt(c)?.name || '');
     const sides = c => [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)].map(d => c.plus(d));
     // The shelter's own test, but for the one cell over the head, which the
@@ -1411,13 +1461,16 @@ class Survival {
     const columns = [here];
     for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) if (dx || dz) columns.push(here.offset(dx, 0, dz));
     columns.sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
-    let start = null, bottom = null;
     for (const top of columns) {
       if (!shelter.replaceable(bot.blockAt(top)) || !shelter.replaceable(bot.blockAt(top.offset(0, 1, 0)))) continue;
       const found = columnBottom(top);
-      if (found) { start = top; bottom = found; break; }
+      if (found) return { start: top, bottom: found, spot };
     }
-    if (!bottom) { setAside(this, 'shaft_pocket', spot, 'no dry rock straight down within four blocks', 600000); return false; }
+    return { none: `no dry column here: every one within four blocks meets water, lava or bedrock${pick ? '' : ', or rock too hard to dig by hand,'} before it is walled in, twelve blocks down at most`, spot };
+  }
+
+  async digShaft(task, goal, save, { start, bottom, spot, here }) {
+    const bot = this.bot;
     if (!start.equals(here)) {
       try { await this.actions.navigate(bot, task, new goals.GoalBlock(start.x, start.y, start.z), { timeoutMs: 8000, stallMs: 3000 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
@@ -1790,7 +1843,10 @@ class Survival {
     if (!carried.length) return null;
     const far = Math.round(pos(stash).distanceTo(bot.entity.position));
     if (far > 128) return null;
-    return { description: `Walk ${far} blocks to the stash chest and put the valuables carried in it (${carried.map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`).join(', ')}), so a death later tonight does not drop them.`,
+    // The walk's time and the dark on the way (the decision audit,
+    // 2026-09-25).
+    const dark = require('./day').dark(bot) ? ' It is dark: mobs spawn along the way.' : '';
+    return { description: `Walk ${far} blocks to the stash chest and put the valuables carried in it (${carried.map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`).join(', ')}), so a death later tonight does not drop them. About ${Math.round(far / 4.3)} seconds each way at a walk.${dark}`,
       run: async (task, goal, save) => {
         try { await this.actions.stashTrip(bot, task, goal, save); }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'night_stash', 'chest', err, 300000); }
@@ -1894,9 +1950,21 @@ class Survival {
     const dark = this.client && countOf(bot, 'torch') ? darkCells(bot, groundCells(bot, feet, 3)).filter(c => !c.equals(feet)) : [];
     if (!choices.length && !dark.length) return null;
     if (!this.client) return nightOre(bot, feet, attemptsFor(this));
+    // Where each ore lies and what is beside it, and where a branch goes
+    // (the decision audit, 2026-09-25): an ore in a cave wall opens the
+    // tunnel onto the cave's mobs, and lava two blocks off is one misstep.
+    // Ore touching water or lava is not in the list: the staircase will not
+    // open a cell onto a liquid, so it cannot be reached at all.
+    const around = (q, r, re) => { for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) if (re.test(bot.blockAt(q.offset(dx, dy, dz))?.name || '')) return true; return false; };
+    const oreFacts = q => {
+      const dy = q.y - feet.y;
+      const open = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]].some(([x, y, z]) => /^(air|cave_air)$/.test(bot.blockAt(q.offset(x, y, z))?.name || ''));
+      return ` ${dy ? `${Math.abs(dy)} block${Math.abs(dy) === 1 ? '' : 's'} ${dy > 0 ? 'up' : 'down'}` : 'level with the feet'}.${open ? ' It is in the wall of an open space: digging to it opens the tunnel onto whatever is in there.' : ''}${around(q, 2, /^lava$/) ? ' Lava within two blocks of it.' : ''}${around(q, 2, /^water$/) ? ' Water within two blocks of it.' : ''}`;
+    };
     const tree = Object.fromEntries(choices.map((c, i) => { const [item, use] = ORE_YIELD[c.kind];
-      return [`ore_${i}`, { description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).` }]; }));
-    tree.branch = { description: 'Dig a branch down to a working depth and along it, looking for ore on the way.' };
+      return [`ore_${i}`, { description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).${oreFacts(c.position)}` }]; }));
+    const branchY = Math.max(feet.y - 10, 16);
+    tree.branch = { description: `Dig a branch down to a working depth and along it, looking for ore on the way: ${branchY < feet.y ? `down to y ${branchY}, ${feet.y - branchY} blocks below here` : branchY > feet.y ? `up to y ${branchY}, ${branchY - feet.y} blocks above here` : `level, at y ${branchY}`}, then twenty-four blocks along.` };
     if (dark.length) tree.light_tunnel = { description: `Put a torch in the tunnel here: ${dark.length} cells around the bot are dark enough for monsters to spawn in, and light stops them (${countOf(bot, 'torch')} torches carried).` };
     const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree, context: {},
       state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
@@ -2375,9 +2443,14 @@ class Survival {
     // kit, the bed and the nights without sleep make that wise is Jev's to
     // weigh from the facts.
     const stayUp = night(bot) && needsShelter;
+    // The mobs about now, seen or not, and whether health comes back,
+    // beside staying up (the decision audit, 2026-09-25).
+    const about = state.riskNow.hostilesWithin;
+    const nowAbout = about.count ? ` Within ${about.blocks} blocks now: ${about.count} hostile mob${about.count === 1 ? '' : 's'}${about.count > about.inSight ? `, ${about.count - about.inSight} of them out of sight` : ''}${about.kinds.includes('creeper') ? ', creepers among them' : ''}.` : '';
+    const healing = (bot.food ?? 20) >= 18 ? '' : ` Health does not come back meanwhile: hunger ${bot.food}, below eighteen.`;
     const tree = {
       continue_request: { description: stayUp
-        ? `Stay up and keep working the request outside in the dark, two minutes at a time. Hostile mobs spawn around the bot all night; it is ${armed ? 'armed and armoured' : 'not armed and armoured'}${bedReady ? ', and the bed is one action away' : ', and there is no bed to fall back on'}.${this.sleepDebt() ? ' It has not slept for two nights: phantoms come for a player on the third.' : ''}`
+        ? `Stay up and keep working the request outside in the dark, two minutes at a time. Hostile mobs spawn around the bot all night; it is ${armed ? 'armed and armoured' : 'not armed and armoured'}${bedReady ? ', and the bed is one action away' : ', and there is no bed to fall back on'}.${this.sleepDebt() ? ' It has not slept for two nights: phantoms come for a player on the third.' : ''}${nowAbout}${healing}`
         : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
         run: async () => { if (stayUp) { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up', armed }); } } },
     };
@@ -2391,17 +2464,32 @@ class Survival {
     }
     if (homeWalk) {
       const distance = Math.round(homeBed.foot.distanceTo(bot.entity.position));
-      tree.go_home_for_night = { description: `Walk home to the bed ${distance} blocks away${underground ? ', climbing out of the mine first' : ''}, about ${Math.round(distance / 4.3)} seconds at a walk, and wait there for bedtime (sleep is possible from ${SLEEP_FROM}; it is ${Math.round(bot.time.timeOfDay)} now). Held until the bot is there.`,
+      // The climb out and when the walk arrives against nightfall (the
+      // decision audit, 2026-09-25).
+      const { climbToSurface, climbMinutes } = require('./surface');
+      const climb = underground ? climbToSurface(bot, bot.entity.position) : 0;
+      const seconds = Math.round(distance / 4.3) + (climb || 0) * 3;
+      const arrives = Math.round(bot.time.timeOfDay + seconds * 20);
+      const arrival = arrives >= DAY.NIGHT ? `arriving about ${arrives % 24000}, after nightfall at ${DAY.NIGHT}` : `arriving about ${arrives}, before nightfall at ${DAY.NIGHT}`;
+      tree.go_home_for_night = { description: `Walk home to the bed ${distance} blocks away${underground ? `, climbing out of the mine first (${climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known'})` : ''}, about ${Math.round(distance / 4.3)} seconds at a walk, ${arrival}, and wait there for bedtime (sleep is possible from ${SLEEP_FROM}; it is ${Math.round(bot.time.timeOfDay)} now). Held until the bot is there.`,
         run: async () => { this.state.nightPlan = { plan: 'home', until: Date.now() + 120000 }; await this.goHomeForNight(task, goal, save, homeBed, underground); } };
     }
     // Sleep is an option where the bed fits: two level cells beside the
     // feet. In a one-wide shaft it is not, and the shelter path digs in.
-    if (needsShelter && bedReady && sleepable(bot) && ((homeBed && !underground) || bedSite(bot)) && !threats(bot).some(t => t.distance < 10)) tree.sleep_in_bed = { description: homeBed?.observed && !bed ? `Walk to the bed ${Math.round(homeBed.foot.distanceTo(bot.entity.position))} blocks away and sleep in it. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.` : 'Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.', run: () => this.sleepStep(task, goal, save) };
+    if (needsShelter && bedReady && sleepable(bot) && ((homeBed && !underground) || bedSite(bot)) && !threats(bot).some(t => t.distance < 10)) {
+      // The walk to the bed and the monsters about it, seen or not: sleep is
+      // refused while any is within eight blocks (the decision audit).
+      const walk = homeBed ? Math.round(homeBed.foot.distanceTo(bot.entity.position)) : 0;
+      const byBed = homeBed ? threats(bot, 48).filter(t => t.entity.position.distanceTo(homeBed.foot) <= 8 && Math.abs(t.entity.position.y - homeBed.foot.y) <= 5).length : 0;
+      tree.sleep_in_bed = { description: homeBed && !bed ? `Walk to the bed ${walk} blocks away (about ${Math.round(walk / 4.3)} seconds) and sleep in it. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${byBed ? ` ${byBed} monster${byBed === 1 ? ' is' : 's are'} within eight blocks of the bed now: sleep is refused while any are.` : ''}` : 'Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.', run: () => this.sleepStep(task, goal, save) };
+    }
     // Beside a bed a shelter is the worse answer, and the option says so
     // rather than being hidden.
     if (needsShelter) tree.secure_shelter = { description: `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off; in the shelter it can mine or wait.` + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
-    if (needsFood && !(night(bot) && needsShelter)) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.',
+    // At night too, with what it risks said, not hidden (the decision
+    // audit, 2026-09-25): hungry in the dark, the food was never offered.
+    if (needsFood) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.' + (night(bot) && needsShelter ? ` Night: mobs spawn on the way; hunger ${bot.food}, starvation at 0.` : ''),
       children: offWorld && this.actions.returnOverworld ? { return_for_food: { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked; nothing here is safe to eat.',
         run: async () => { goal.survivalAction = { action: 'return_for_food', at: new Date().toISOString() }; save(); await this.actions.returnOverworld(bot, task, goal, save); } } }
         : await forageChoices(bot, task, goal, save, this.actions, this.state) };

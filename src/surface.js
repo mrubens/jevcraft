@@ -28,6 +28,25 @@ function surfaceObserver(bot) {
   };
 }
 
+// How many blocks up to open sky over a point's column (canopies ignored,
+// as above): 0 on the surface, null where the column is not loaded. Said
+// with the choices that mean a climb out (the decision audit, 2026-09-25):
+// the midgame trials spent 84 of 220 minutes climbing out of the mine.
+function climbToSurface(bot, point) {
+  const minimum = bot.game?.minY ?? -64, maximum = minimum + (bot.game?.height ?? 384);
+  const x = Math.floor(point.x), z = Math.floor(point.z);
+  for (let y = maximum - 1; y >= minimum; y--) {
+    const block = bot.blockAt(new Vec3(x, y, z));
+    if (!block) return null;
+    if (/_leaves$|_log$|_wood$/.test(block.name)) continue;
+    if (block.boundingBox === 'block' || swimmableWater(block) || ['lava', 'bubble_column', 'powder_snow'].includes(block.name)) return Math.max(0, y + 1 - Math.floor(point.y));
+  }
+  return 0;
+}
+// A climb out by staircase, roughly: two blocks dug and a step for each
+// block up, some three seconds a block with a stone pickaxe.
+const climbMinutes = blocks => Math.max(1, Math.round(blocks * 3 / 60));
+
 function surfaceMovement(bot) {
   const movements = bot.pathfinder.movements;
   const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers,
@@ -299,4 +318,4 @@ function lidExit(bot, { origin = bot.entity.position.floored(), maxHeight = 3 } 
   return lid;
 }
 
-module.exports = { lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };
+module.exports = { climbToSurface, climbMinutes, lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };

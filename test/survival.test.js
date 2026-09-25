@@ -715,9 +715,32 @@ test('Jev is offered the shot, the retreat and, with blocks in the pack, a pocke
   bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
   try { assert(await controller.step(task, goal, () => {})); } finally { delete process.env.JEV_ENCOUNTERS; }
   assert.deepEqual(Object.keys(asked.questions.branch_0.criteria).sort(), ['dig_in', 'retreat', 'shoot_17', 'shoot_7']);
-  assert.deepEqual(asked.state.threats, [{ name: 'skeleton', distance: 10, shoots: true }, { name: 'blaze', distance: 12, shoots: true }]); assert.equal(asked.state.arrowsCarried, 8);
+  assert.deepEqual(asked.state.threats, [{ name: 'skeleton', distance: 10, shoots: true, visible: true }, { name: 'blaze', distance: 12, shoots: true, visible: true }]); assert.equal(asked.state.arrowsCarried, 8);
+  assert(asked.state.riskNow && asked.state.deathWouldCost, 'the risk and what a death costs are in the state');
+  assert.match(asked.questions.branch_0.criteria.retreat, /No route is checked yet/);
   assert.deepEqual(events, ['navigate'], 'the retreat ran and nothing was drawn');
   assert.equal(goal.survivalAction.action, 'escape_threat');
+});
+
+test('the ranged question offers the pocket with a creeper near, and says what the creeper and the mobs out of sight do', async () => {
+  // The decision audit (2026-09-25): the pocket was hidden with a creeper
+  // within seven blocks; now it is offered, with what a creeper does to it.
+  let asked;
+  const client = { systemOne: async ({ state, questions }) => { asked = { state, questions }; return { answers: { branch_0: { choice: 'retreat' } } }; } };
+  const { bot, controller, task, goal } = archerFixture({ client, sword: true, shield: false });
+  bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
+  bot.entities[30] = { id: 30, name: 'creeper', position: new Vec3(-4.5, 64, .5), width: .6, height: 1.7, isValid: true };
+  bot.entities[31] = { id: 31, name: 'zombie', position: new Vec3(.5, 64, 12.5), width: .6, height: 1.95, isValid: true };
+  const { threats } = require('../src/danger');
+  bot.world.raycast = (from, dir, range) => dir.z > 0.9 ? { position: from.offset(0, 0, 2).floored(), intersect: from.offset(0, 0, 2) } : null;
+  const danger = threats(bot, 32).filter(t => t.visible);
+  controller.escape = async () => {};
+  await controller.rangedChoice(task, goal, () => {}, danger, true);
+  const c = asked.questions.branch_0.criteria;
+  assert.match(c.dig_in, /creeper 5 blocks off walks up to a pocket and goes off before it closes/);
+  assert.match(c.shoot_7.action, /creeper is 5 blocks off: it closes while the bow draws/);
+  assert.match(c.retreat, /Out of sight but about: a zombie 12 blocks off/);
+  assert(asked.state.threats.some(t => t.name === 'zombie' && t.visible === false), JSON.stringify(asked.state.threats));
 });
 
 test('with a sword a lone skeleton is run at and struck, not shot at or hidden from', async () => {
@@ -1129,6 +1152,24 @@ test('after two nights awake, staying up says phantoms come on the third; it is 
   assert(seen[1].sleep_in_bed, 'the bed is on offer beside it');
 });
 
+test('hungry at night, food is offered with the dark said, and staying up names the mobs out of sight (the decision audit)', async () => {
+  const { Survival } = require('../src/survival');
+  let tree;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, time: { timeOfDay: 14000, age: 100000 },
+    entities: { 50: { id: 50, name: 'creeper', position: new Vec3(12.5, 64, 0.5), height: 1.7, isValid: true } },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 14, food: 6, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, pathfinder: { movements: {}, setGoal() {} },
+    blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], chat() {},
+    // Behind a hill: nothing is in sight.
+    world: { raycast: from => ({ position: from.floored(), intersect: from }) } });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client: { systemOne: async () => ({}) } });
+  survival.decide = async (task, goal, save, q) => { tree = q.tree; return { path: ['secure_shelter'], action: { run: async () => {} }, stale: false }; };
+  await survival.step(new Task('t', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert.match(tree.obtain_food.description, /Night: mobs spawn on the way; hunger 6, starvation at 0/);
+  assert.match(tree.continue_request.description, /1 hostile mob, 1 of them out of sight, creepers among them/);
+  assert.match(tree.continue_request.description, /Health does not come back meanwhile: hunger 6/);
+});
+
 test('with no shelter site that can be walked to, the night is sealed in where the bot stands', async () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: {}, entity: { position: new Vec3(0.5, 47, 0.5) },
     inventory: { items: () => [{ name: 'cobblestone', count: 64 }] }, blockAt: p => ({ name: p.y < 47 ? 'stone' : 'air', boundingBox: p.y < 47 ? 'block' : 'empty' }),
@@ -1447,6 +1488,7 @@ test('with a creeper close or a mob at arm\'s length, building is still offered,
   // Trial 118: two creepers and a spider, no armour, twelve health, told only the fight's "6.7 damage".
   assert.match(withCreeper.fight.description, /Not counted there: the creeper, whose blast at arm's length takes up to 22 health after the armour worn, more than the bot has/);
   assert.match(withCreeper.creeper_dance.description, /up to twenty-two health without armour/);
+  assert.match(withCreeper.retreat.description, /No route is checked yet/);
   const withZombie = Object.keys(survival.stanceOptions(new Task('x'), {}, () => {}, [t('zombie', 4)], false));
   assert(withZombie.includes('pillar'), 'a zombie is climbed away from');
   // At arm's length building is still Jev's to choose; the description says
@@ -1673,13 +1715,37 @@ test('at dusk with the bed at home forty blocks off, the walk home is Jev\'s opt
   const goal = { kind: 'win', request: 'beat the game', survival: { home } };
   let walks = 0; const asked = [];
   const survival = new Survival(bot, { navigate: async () => { walks++; } }, { state: goal.survival, client: { systemOne: async () => ({}) } });
-  survival.decide = async (task, g, save, { tree }) => { asked.push(Object.keys(tree).sort()); return { path: ['go_home_for_night'], action: tree.go_home_for_night, stale: false }; };
+  let described;
+  survival.decide = async (task, g, save, { tree }) => { described = tree.go_home_for_night.description; asked.push(Object.keys(tree).sort()); return { path: ['go_home_for_night'], action: tree.go_home_for_night, stale: false }; };
   await survival.step(new Task('dusk'), goal, () => {});
   assert(asked[0].includes('go_home_for_night') && asked[0].includes('continue_request') && asked[0].includes('secure_shelter'), asked[0].join(','));
+  assert.match(described, /arriving about 10\d\d\d, before nightfall at 11500/, 'when the walk arrives (the decision audit)');
   assert.equal(walks, 1);
   await survival.step(new Task('dusk'), goal, () => {});
   assert.equal(asked.length, 1, 'held: the walk goes on without a second question');
   assert.equal(walks, 2);
+});
+
+test('the bed at home is offered with its walk and the monsters beside it that refuse sleep (the decision audit)', async () => {
+  const { Survival } = require('../src/survival');
+  const { layout } = require('../src/home-base');
+  const home = { version: 1, dimension: 'overworld', origin: { x: 0, y: 63, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 63, z: 0 }, bed: { placedAt: 'now', claimedAt: 'now' }, plot: {}, pen: {} };
+  const { bed } = layout(home);
+  const blocks = new Map([[`${new Vec3(bed.foot.x, bed.foot.y, bed.foot.z)}`, 'white_bed'], [`${new Vec3(bed.head.x, bed.head.y, bed.head.z)}`, 'white_bed']]);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, time: { timeOfDay: 13000 },
+    entities: { 60: { id: 60, name: 'zombie', position: new Vec3(-5.5, 64, -3.5), height: 1.95, isValid: true } },
+    entity: { position: new Vec3(5.5, 64, -2.5) }, health: 20, food: 20, oxygenLevel: 20, isSleeping: false, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
+  const goal = { kind: 'win', request: 'beat the game', survival: { home } };
+  const survival = new Survival(bot, { navigate: async () => {} }, { state: goal.survival, client: { systemOne: async () => ({}) } });
+  let tree;
+  survival.decide = async (task, g, save, q) => { tree ||= q.tree; return { path: ['secure_shelter'], action: { run: async () => {} }, stale: false }; };
+  survival.sleepStep = async () => {};
+  await survival.step(new Task('night'), goal, () => {});
+  assert(tree?.sleep_in_bed, tree && Object.keys(tree).join(','));
+  assert.match(tree.sleep_in_bed.description, /Walk to the bed 5 blocks away \(about 1 seconds\)/);
+  assert.match(tree.sleep_in_bed.description, /1 monster is within eight blocks of the bed now: sleep is refused while any are/);
 });
 
 test('a walk home held past bedtime still walks: trial 94 held it thirty blocks off and did nothing twenty times a second', async () => {
@@ -1777,7 +1843,9 @@ test('how the night is sheltered is Jev\'s pick, run and held for the night with
   const controller = new Survival(bot, {}, { state: { shelters: [] }, client: { systemOne: async () => ({}) } });
   const sites = shelter.shelterSites; shelter.shelterSites = () => [];
   const asked = [], ran = [];
-  controller.decide = async (task, goal, save, { id, tree }) => { asked.push([id, Object.keys(tree).sort()]); return { path: ['shaft_pocket'], stale: false }; };
+  let seen;
+  bot.entities[40] = { id: 40, name: 'zombie', position: new Vec3(6.5, 64, 0.5), height: 1.95, isValid: true };
+  controller.decide = async (task, goal, save, { id, tree, state }) => { seen = { tree, state }; asked.push([id, Object.keys(tree).sort()]); return { path: ['shaft_pocket'], stale: false }; };
   controller.shaftPocket = async () => { ran.push('shaft'); return true; };
   controller.sealHere = async () => assert.fail('Jev chose the shaft');
   try {
@@ -1787,11 +1855,17 @@ test('how the night is sheltered is Jev\'s pick, run and held for the night with
   assert.equal(asked.length, 1); assert.equal(asked[0][0], 'shelter_method');
   assert(asked[0][1].includes('seal_here') && asked[0][1].includes('shaft_pocket'), asked[0][1].join(','));
   assert.deepEqual(ran, ['shaft', 'shaft'], 'held');
+  // The decision audit: the shaft's column is looked for before it is
+  // offered, the pocket's race is with every mob about, and the risk is in
+  // the state.
+  assert.match(seen.tree.shaft_pocket.description, /No dry column here: .*rock too hard to dig by hand.*; chosen, it fails/, 'no pickaxe, and stone underfoot');
+  assert.match(seen.tree.seal_here.description, /the nearest zombie, 6 blocks off, can be at the bot in about 2 seconds/);
+  assert(seen.state.riskNow && seen.state.deathWouldCost);
 });
 
 test('the night mine\'s next ore is Jev\'s pick of the nearest of each kind, copper included with its use said; without Jev, not copper', async () => {
   const registry = require('minecraft-data')('26.1');
-  const ores = { '3,39,0': 'copper_ore', '6,39,0': 'iron_ore', '4,39,0': 'copper_ore' };
+  const ores = { '3,39,0': 'copper_ore', '6,39,0': 'iron_ore', '4,39,0': 'copper_ore', '8,39,0': 'lava' };
   const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld' }, entities: {}, entity: { position: new Vec3(0.5, 40, 0.5) },
     inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }], emptySlotCount: () => 10, slots: [] },
     findBlocks: ({ matching }) => Object.keys(ores).filter(k => matching.includes(registry.blocksByName[ores[k]].id)).map(k => new Vec3(...k.split(',').map(Number))),
@@ -1805,6 +1879,11 @@ test('the night mine\'s next ore is Jev\'s pick of the nearest of each kind, cop
   assert.equal(pick.name, 'copper_ore', 'Jev\'s pick stands');
   assert.equal(Object.keys(tree).length, 3, 'one of each kind, and the branch');
   assert.match(tree.ore_0.description, /nothing on the ladder wants it/);
+  // The decision audit: where each ore lies, what is beside it, and where the branch goes.
+  assert.match(tree.ore_0.description, /1 block down\./);
+  assert.match(tree.ore_1.description, /Lava within two blocks of it/);
+  assert.doesNotMatch(tree.ore_0.description, /Lava/);
+  assert.match(tree.branch.description, /down to y 30, 10 blocks below here/);
 });
 
 test('in a dark tunnel with torches, lighting it is one of Jev\'s night-mine options, and a torch goes down when chosen', async () => {

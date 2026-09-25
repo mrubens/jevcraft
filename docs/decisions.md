@@ -36,7 +36,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `go_home_for_night` | root | walk home to the bed and wait there for bedtime | from dusk, with a bed at home more than six blocks off and a way there (climbing out of a mine first when underground) |
 | `sleep_in_bed` | root | sleep in a bed | bedtime, a bed is carried (with room to place it) or one is in reach, and no mob within ten blocks |
 | `secure_shelter` | root | seal a shelter for the night | from dusk; beside a bed the option says the bed is the quicker night |
-| `obtain_food` | root | get food | food carried is under the reserve and hunger or a stock top-up calls for it (not at night when shelter is needed) |
+| `obtain_food` | root | get food | food carried is under the reserve and hunger or a stock top-up calls for it (at night with the spawning and the hunger said) |
 | `hunt_[a-z_]+` (pattern) | root | go out and hunt this kind of mob for its drops | at night in the Overworld where staying up is on offer, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back |
 | `stash_valuables` | root | put the valuables in the stash chest first | at night where staying up is on offer, a stash chest within 128 blocks and valuables carried |
 | `cache_valuables` | root | put a chest down here for the valuables | at night where staying up is on offer, home's chest out of reach, valuables carried, and a chest or the wood for one |
