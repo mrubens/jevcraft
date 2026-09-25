@@ -1726,7 +1726,10 @@ class Survival {
   canNightMine(goal) {
     const bot = this.bot;
     if (bot.game?.dimension !== 'overworld' || !shelterNeeded(bot) || bot.game.difficulty === 'peaceful') return false;
-    if ((bot.health ?? 20) < 10 || immediateThreat(bot)) return false;
+    // Health is Jev's to weigh (riskNow, deathWouldCost), not a floor here:
+    // trial 34 sat a night in a pocket at seven health with nothing to eat,
+    // Jev choosing the mine every five seconds and this refusing it.
+    if (immediateThreat(bot)) return false;
     // Not with anything watching: the same test the pocket uses to stay shut.
     if (threats(bot).some(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity))) return false;
     if (!bot.inventory.items().some(i => /_pickaxe$/.test(i.name)) && !pickaxeCraftable(bot)) return false;
@@ -2017,7 +2020,7 @@ class Survival {
       if (watcher && watcher.distance <= 4.5 && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && typeof this.actions.dig === 'function')
         options.open_on_watcher = { description: `Open the wall toward ${who} and fight it at the gap.${watcher.entity.name === 'creeper' ? ' A creeper at the gap goes off.' : ''}`,
           run: () => this.openOnWatcher(task, goal, save, refuge, watcher, { chosen: true }) };
-      if (night && !watcher && !refused(this, 'survival:night_mine'))
+      if (night && !watcher && !refused(this, 'survival:night_mine') && this.canNightMine(goal))
         options.night_mine = { description: `Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too. ${rockHolds(bot, bot.entity.position.floored(), attemptsFor(this))}`, run: () => this.nightMine(task, goal, save) };
       // Work that needs no walking: the ladder's next item made from what is
       // carried. Trial 30 sat out its second night in a pocket with 29 raw

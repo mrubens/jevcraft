@@ -1,0 +1,135 @@
+'use strict';
+// Getting unstuck, one move at a time, chosen by Jev. The escape routines
+// grew one per trap (a step placed at the waterline, a notch cut in the
+// bank, a staircase, a lid dug, a pillar), each with its own order and its
+// own give-up rule. Here the code lists the single moves possible from
+// where the bot stands, each with what the code can work out about it
+// (what would be dug, what would fall or flow in, whether it gains height,
+// whether it ends on dry ground or under open sky, how often the bot has
+// stood there), and Jev picks the next one. The code does it, looks again,
+// and asks again.
+//
+// It works on a view of the world rather than the bot, so a replay of a
+// trap and the live bot use the same moves:
+//   view.name(p)      the block name at p (a Vec3)
+//   view.carried      { item: count }
+//   view.pickaxe      the best pickaxe carried, or null
+const { Vec3 } = require('vec3');
+const { natural } = require('./tunneling');
+
+const DIRS = { north: new Vec3(0, 0, -1), east: new Vec3(1, 0, 0), south: new Vec3(0, 0, 1), west: new Vec3(-1, 0, 0) };
+const UP = new Vec3(0, 1, 0), DOWN = new Vec3(0, -1, 0);
+const OPEN = /^(air|cave_air|void_air|short_grass|tall_grass|fern|large_fern|dead_bush|snow|leaf_litter|torch|wall_torch|.*_flower|dandelion|poppy|vine|glow_lichen)$/;
+const isWater = n => /^(water|bubble_column|kelp|kelp_plant|seagrass|tall_seagrass)$/.test(n || '');
+const isLava = n => /lava/.test(n || '');
+const falls = n => /^(sand|red_sand|gravel)$|_concrete_powder$/.test(n || '');
+const open = n => OPEN.test(n || '') || isWater(n);
+const solid = n => !!n && !open(n) && !isLava(n);
+const PLACEABLE = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack', 'andesite', 'diorite', 'granite', 'tuff', 'stone', 'deepslate', 'sandstone', 'gravel', 'sand'];
+const ORE = /_ore$/;
+// Stone and ore take a pickaxe; the rest comes away in the hand.
+function digSeconds(name, view, inWater) {
+  const stony = /stone|deepslate|granite|diorite|andesite|tuff|calcite|terracotta|basalt|netherrack/.test(name) || ORE.test(name);
+  if (stony && !view.pickaxe) return null;
+  const s = stony ? (view.pickaxe === 'wooden_pickaxe' ? 1.2 : 0.6) : 0.5;
+  return Math.round(s * (inWater ? 5 : 1) * 10) / 10;
+}
+
+// Open sky over a cell: nothing but open blocks up to the top of the view.
+function skyAbove(view, p, reach = 40) {
+  for (let y = 1; y <= reach; y++) { const n = view.name(p.offset(0, y, 0)); if (n == null) return true; if (!open(n) || isWater(n)) return false; }
+  return true;
+}
+const dryFooting = (view, feet) => !isWater(view.name(feet)) && solid(view.name(feet.plus(DOWN)));
+// At the surface, not at the bottom of a hole: open sky here, and a cell
+// beside at the same level open to the sky too.
+const atSurface = (view, feet) => skyAbove(view, feet) && Object.values(DIRS).some(d => open(view.name(feet.plus(d))) && !isWater(view.name(feet.plus(d))) && skyAbove(view, feet.plus(d)));
+
+// What digging a cell would do, besides open it: sand or gravel over it
+// comes down, and water or lava beside or over it flows in.
+function digEffects(view, cell, bot = null) {
+  const effects = [];
+  let fallen = 0;
+  for (let y = 1; y <= 8 && falls(view.name(cell.offset(0, y, 0))); y++) fallen++;
+  if (fallen) effects.push(`${fallen} block${fallen > 1 ? 's' : ''} of ${view.name(cell.offset(0, 1, 0)).replaceAll('_', ' ')} above would fall into it${bot && cell.x === bot.x && cell.z === bot.z && cell.y > bot.y ? ', onto the bot\'s head' : ''}`);
+  const touching = [UP, ...Object.values(DIRS)].map(d => view.name(cell.plus(d)));
+  if (touching.some(isLava)) effects.push('lava beside it would flow in');
+  else if (touching.some(isWater)) effects.push('water beside it would flow in');
+  return effects;
+}
+
+// Every single move from here, each with its facts. `goal` is 'dry' (out
+// of water onto solid ground) or 'sky' (open sky over dry ground).
+function localMoves(view, feet, { goal = 'sky', visits = {}, target = null } = {}) {
+  const moves = [];
+  const inWater = isWater(view.name(feet));
+  const headroom = open(view.name(feet.offset(0, 2, 0))) && !isWater(view.name(feet.offset(0, 2, 0)));
+  const where = p => {
+    const facts = { endsAt: { x: p.x, y: p.y, z: p.z }, rises: p.y - feet.y, dryFooting: dryFooting(view, p), openSkyAbove: skyAbove(view, p), atSurface: atSurface(view, p), timesStoodThere: visits[`${p}`] || 0 };
+    if (target) facts.blocksToTarget = Math.round(p.distanceTo(target));
+    return facts;
+  };
+  const standable = p => open(view.name(p)) && open(view.name(p.plus(UP))) && !isLava(view.name(p)) && !isLava(view.name(p.plus(UP)));
+  for (const [dir, d] of Object.entries(DIRS)) {
+    const level = feet.plus(d);
+    // A walk or a swim to the next cell at the same level, dropping at most
+    // three onto something solid.
+    if (standable(level)) {
+      let land = level;
+      for (let n = 0; n < 3 && !isWater(view.name(land)) && open(view.name(land.plus(DOWN))) && !isLava(view.name(land.plus(DOWN))); n++) land = land.plus(DOWN);
+      if (isWater(view.name(land)) || solid(view.name(land.plus(DOWN)))) moves.push({ key: `step_${dir}`, does: `${inWater ? 'Swim' : 'Walk'} one block ${dir}${land.y < feet.y ? `, dropping ${feet.y - land.y}` : ''}.`, kind: 'move', to: land, ...where(land) });
+    }
+    // Up a block onto the next cell: the cell over the head must be open to
+    // rise into, out of water too (the game lifts a swimmer only then).
+    const up = level.plus(UP);
+    if (headroom && solid(view.name(level)) && standable(up)) moves.push({ key: `climb_${dir}`, does: `${inWater ? 'Climb out of the water' : 'Jump up'} onto the block ${dir}.`, kind: 'move', to: up, ...where(up) });
+    // A block dug beside: at the feet, at the head, or one over (for a climb).
+    for (const [part, cell] of [['feet', level], ['head', level.plus(UP)], ['over', level.offset(0, 2, 0)]]) {
+      const name = view.name(cell);
+      if (!solid(name) || !natural.test(name)) continue;
+      const seconds = digSeconds(name, view, inWater);
+      if (seconds == null) continue;
+      moves.push({ key: `dig_${dir}_${part}`, does: `Dig the ${name.replaceAll('_', ' ')} ${dir}, at ${part === 'over' ? 'the level over the head' : `${part} height`} (about ${seconds} s).`, kind: 'dig', cell, effects: digEffects(view, cell, feet) });
+    }
+    // A block placed into water or air beside, at the feet: a step at the
+    // waterline, or a wall.
+    const block = PLACEABLE.find(n => (view.carried?.[n] || 0) > 0);
+    if (block && open(view.name(level)) && [DOWN, ...Object.values(DIRS)].some(f => solid(view.name(level.plus(f))))) {
+      moves.push({ key: `place_${dir}`, does: `Put a ${block.replaceAll('_', ' ')} into the ${isWater(view.name(level)) ? 'water' : 'space'} ${dir}, at the feet: a step up${inWater ? ' out of the water' : ''}.`, kind: 'place', cell: level, block });
+    }
+  }
+  // Straight up: dig what is over the head, swim up, or pillar.
+  const over = feet.offset(0, 2, 0), overName = view.name(over);
+  if (solid(overName) && natural.test(overName)) {
+    const seconds = digSeconds(overName, view, inWater);
+    if (seconds != null) moves.push({ key: 'dig_up', does: `Dig the ${overName.replaceAll('_', ' ')} over the head (about ${seconds} s).`, kind: 'dig', cell: over, effects: digEffects(view, over, feet) });
+  }
+  if (inWater && isWater(view.name(feet.plus(UP)))) moves.push({ key: 'swim_up', does: 'Swim up a block.', kind: 'move', to: feet.plus(UP), ...where(feet.plus(UP)) });
+  const block = PLACEABLE.find(n => (view.carried?.[n] || 0) > 0);
+  if (block && !inWater && headroom && solid(view.name(feet.plus(DOWN)))) moves.push({ key: 'pillar', does: `Jump and put a ${block.replaceAll('_', ' ')} under the feet: up a block where it stands.`, kind: 'pillar', block, to: feet.plus(UP), ...where(feet.plus(UP)) });
+  // Down: dig the floor, when not over water or lava.
+  const floor = feet.plus(DOWN), floorName = view.name(floor);
+  if (!inWater && solid(floorName) && natural.test(floorName) && !isWater(view.name(floor.plus(DOWN))) && !isLava(view.name(floor.plus(DOWN)))) {
+    const seconds = digSeconds(floorName, view, false);
+    if (seconds != null) moves.push({ key: 'dig_down', does: `Dig the ${floorName.replaceAll('_', ' ')} underfoot and drop a block (about ${seconds} s).`, kind: 'dig', cell: floor, effects: digEffects(view, floor) });
+  }
+  const done = goal === 'dry' ? dryFooting(view, feet) : dryFooting(view, feet) && atSurface(view, feet);
+  return { moves, done, here: { feet: { x: feet.x, y: feet.y, z: feet.z }, inWater, headroomToRise: headroom, dryFooting: dryFooting(view, feet), openSkyAbove: skyAbove(view, feet), atSurface: atSurface(view, feet) } };
+}
+
+// The moves as Jev is shown them: one option each, with its facts.
+function describeMove(m) {
+  const facts = [];
+  if (m.effects?.length) facts.push(m.effects.join('; '));
+  if (m.to) {
+    facts.push(m.rises > 0 ? `rises ${m.rises}` : m.rises < 0 ? `goes down ${-m.rises}` : 'same level');
+    if (m.dryFooting) facts.push('ends on dry ground');
+    if (m.atSurface) facts.push('ends at the surface');
+    else if (m.openSkyAbove) facts.push('ends under open sky, in a hole');
+    if (m.timesStoodThere) facts.push(`stood there ${m.timesStoodThere} time${m.timesStoodThere > 1 ? 's' : ''} already`);
+    if (m.blocksToTarget != null) facts.push(`${m.blocksToTarget} blocks from the target after`);
+  }
+  return `${m.does}${facts.length ? ` ${facts.join('; ')}.` : ''}`;
+}
+
+module.exports = { localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-71 questions: 23 decision trees and 48 batched questions.
+72 questions: 24 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -64,7 +64,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `build_at_site` | root | build a small room at a dry site | a dry site within reach has a route to it |
 | `seal_here` | root | seal a pocket where the bot stands | always (with too few blocks it digs in instead) |
 | `shaft_pocket` | root | dig straight down and cap it | always; fails where the ground cannot be dug |
-| `night_mine` | root | dig a mine from here for the night | a pickaxe (or one can be made), health ten or more, nothing watching |
+| `night_mine` | root | dig a mine from here for the night | a pickaxe (or one can be made) and nothing watching; health is Jev's to weigh |
 
 ### `pocket_next`
 
@@ -80,7 +80,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `go_to_bed` | root | open the pocket and go to the bed | bedtime, with the base bed near (on the surface or within ten blocks of its level) or a bed carried on the surface |
 | `open_on_watcher` | root | open the wall toward the watching mob and fight it | a mob within four and a half blocks and a sword or axe carried |
-| `night_mine` | root | mine from the pocket through the night | night and nothing watching; it stays in the pocket when no mine can be dug from here |
+| `night_mine` | root | mine from the pocket through the night | night, nothing watching, and a pickaxe carried or makeable (no health floor: Jev weighs the risk); it stays in the pocket when no mine can be dug from here |
 | `work_here` | root | stay and make the ladder's next item in the pocket | on the game ladder, nothing watching, and the next item can be made from what is carried by smelting and crafting alone |
 | `hunt_[a-z_]+` (pattern) | root | open the pocket and hunt this kind of mob for its drops | night, nothing watching, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back |
 | `stash_valuables` | root | open the pocket and put the valuables in the stash chest | night, nothing watching, a stash chest within 128 blocks and valuables carried |
@@ -124,6 +124,22 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `grow_plot` | root | mark the plot to grow by a column | the home is complete and the plot has not grown yet |
 | `wait_for_bedtime` | root | wait by the bed for bedtime | always |
 | `[a-z_]+` (pattern) | root | another home chore | offered by the stash or the home |
+
+### `unstuck_move`
+
+**Stuck: which single move next (walk, climb, dig, place a block, pillar, swim up)?**
+
+- When: Prototype: a replay of a trap, each move asked in turn until the bot is where it needs to be or the moves run out.
+- Decision tree, choice; stakes medium; ledger kind `survival`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/unstuck.js (localMoves)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `(step\|climb\|place)_(north\|east\|south\|west)` (pattern) | root | walk, climb or place a block that way | the cells that way allow it |
+| `dig_(north\|east\|south\|west)_(feet\|head\|over)` (pattern) | root | dig the block that way | a natural block there, and a tool for it if it needs one |
+| `dig_up\|dig_down\|swim_up\|pillar` (pattern) | root | dig over the head or underfoot, swim up, or pillar | what is over the head or underfoot allows it |
 
 ## combat
 
@@ -507,7 +523,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `differently` | root | keep at the stalled work another way | work stalled (not idle time): a mine leaves this patch of the resource, anything else turns its search |
 | `set_aside_rung` | root | leave the stalled rung for thirty minutes | the stall is on a game-ladder rung that can wait |
-| `night_mine` | root | dig a mine from here for the night | night in the Overworld, a pickaxe, health ten or more and nothing watching |
+| `night_mine` | root | dig a mine from here for the night | night in the Overworld, a pickaxe and nothing watching |
 | `mine_nearby` | root | dig a useful ore in view | an ore within sixteen blocks with no lava beside it |
 | `look_around` | root | walk twenty-four blocks somewhere new | by day in the Overworld, or when nothing else is on offer |
 | `cook_food` | root | cook the raw food carried | by day in the Overworld, and raw meat is carried |

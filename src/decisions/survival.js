@@ -53,7 +53,7 @@ define({
     { key: 'build_at_site', label: 'build a small room at a dry site', when: 'a dry site within reach has a route to it', level: 'root' },
     { key: 'seal_here', label: 'seal a pocket where the bot stands', when: 'always (with too few blocks it digs in instead)', level: 'root' },
     { key: 'shaft_pocket', label: 'dig straight down and cap it', when: 'always; fails where the ground cannot be dug', level: 'root' },
-    { key: 'night_mine', label: 'dig a mine from here for the night', when: 'a pickaxe (or one can be made), health ten or more, nothing watching', level: 'root' },
+    { key: 'night_mine', label: 'dig a mine from here for the night', when: 'a pickaxe (or one can be made) and nothing watching; health is Jev\'s to weigh', level: 'root' },
   ],
   instructions: { task: 'Night is coming and the bot will shelter. Choose how.', guidance: 'Each option says its distance and the blocks it needs against those carried. Placing a block takes about a second, gathering more takes minutes; mobs spawn in the dark (darkHere says where the bot stands is dark enough); a room or pocket is kept for later nights.' },
   // Without Jev, the old order.
@@ -69,7 +69,7 @@ define({
   options: [
     { key: 'go_to_bed', label: 'open the pocket and go to the bed', when: 'bedtime, with the base bed near (on the surface or within ten blocks of its level) or a bed carried on the surface', level: 'root' },
     { key: 'open_on_watcher', label: 'open the wall toward the watching mob and fight it', when: 'a mob within four and a half blocks and a sword or axe carried', level: 'root' },
-    { key: 'night_mine', label: 'mine from the pocket through the night', when: 'night and nothing watching; it stays in the pocket when no mine can be dug from here', level: 'root' },
+    { key: 'night_mine', label: 'mine from the pocket through the night', when: 'night, nothing watching, and a pickaxe carried or makeable (no health floor: Jev weighs the risk); it stays in the pocket when no mine can be dug from here', level: 'root' },
     { key: 'work_here', label: 'stay and make the ladder\'s next item in the pocket', when: 'on the game ladder, nothing watching, and the next item can be made from what is carried by smelting and crafting alone', level: 'root' },
     { pattern: 'hunt_[a-z_]+', label: 'open the pocket and hunt this kind of mob for its drops', when: 'night, nothing watching, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back', level: 'root', dynamic: true },
     { key: 'stash_valuables', label: 'open the pocket and put the valuables in the stash chest', when: 'night, nothing watching, a stash chest within 128 blocks and valuables carried', level: 'root' },
@@ -164,3 +164,20 @@ define({
 });
 
 module.exports = { safetyOrder, FOOD_OPTIONS };
+
+// Getting unstuck one move at a time (src/unstuck.js): the moves possible
+// from where the bot stands, each with what the code works out about it.
+// A prototype, run on replays of the traps that stalled trials 32 and 33.
+define({
+  id: 'unstuck_move', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Stuck: which single move next (walk, climb, dig, place a block, pillar, swim up)?',
+  trigger: 'Prototype: a replay of a trap, each move asked in turn until the bot is where it needs to be or the moves run out.',
+  source: 'src/unstuck.js (localMoves)',
+  options: [
+    { pattern: '(step|climb|place)_(north|east|south|west)', label: 'walk, climb or place a block that way', when: 'the cells that way allow it', level: 'root', dynamic: true },
+    { pattern: 'dig_(north|east|south|west)_(feet|head|over)', label: 'dig the block that way', when: 'a natural block there, and a tool for it if it needs one', level: 'root', dynamic: true },
+    { pattern: 'dig_up|dig_down|swim_up|pillar', label: 'dig over the head or underfoot, swim up, or pillar', when: 'what is over the head or underfoot allows it', level: 'root', dynamic: true },
+  ],
+  instructions: { task: 'The bot is stuck and has to get somewhere: `aim` says where. Choose the next single move.', guidance: 'Each move says what it does and what the code has worked out about the result: what digging would bring down or let in, whether the move rises, whether it ends on dry ground or under open sky, and whether the bot has stood there before. `here` is where the bot stands now; `recentMoves` are the moves already made and what each did. A move that changed nothing last time will change nothing again.' },
+  fallback: children => Object.keys(children)[0],
+});

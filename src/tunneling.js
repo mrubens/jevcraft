@@ -378,4 +378,4 @@ async function retreatForTunnel(bot, task, goal, save, { navigate }) {
   } finally { Object.assign(movement, previous); }
 }
 
-module.exports = { NoSafeWay, StaircaseStalled, staircaseResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { natural, NoSafeWay, StaircaseStalled, staircaseResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };

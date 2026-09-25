@@ -108,7 +108,9 @@ function biomeView(bot, { reach = 128, step = 32, now = Date.now() } = {}) {
 function biomeTrips(bot, { min = 24, limit = 4 } = {}) {
   const view = biomeView(bot);
   if (!view || !/overworld/.test(String(bot.game?.dimension || 'overworld'))) return [];
-  return view.biomesNearby.filter(b => b.distance >= min).slice(0, limit)
+  // Not the cave biomes: sampled at the feet they are underground, and trial
+  // 34 set off for the dripstone caves with its bed still to make.
+  return view.biomesNearby.filter(b => b.distance >= min && !/^(dripstone_caves|lush_caves|deep_dark)$/.test(b.biome)).slice(0, limit)
     .map(b => ({ ...b, says: `the ${b.biome.replaceAll('_', ' ')} ${b.distance} blocks ${b.direction}${b.has ? ` (${b.has})` : ''}` }));
 }
 
