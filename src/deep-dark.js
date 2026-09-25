@@ -50,10 +50,31 @@ const LOOT_LINES = {
   deep_dark: 'Its chests hold enchanted books, diamond gear, echo shards and enchanted golden apples, worth a lot for the End fight.',
   trial_chambers: 'Trial spawners send waves of mobs; beating a wave drops a trial key, and a key opens a vault of loot (diamonds, enchanted books, a heavy core); the corridors have chests too.',
 };
-function describe(goal, kind = 'deep_dark') {
+function describe(goal, kind = 'deep_dark', bot = null) {
   const x = EXPEDITIONS[kind], s = peek(goal, kind);
   const site = (goal.landmarks || []).find(l => l.kind === x.landmark && !l.lootedAt);
-  const risk = x.warden ? 'Wardens live there: never fight one, leave if one shows.' : 'The waves are real fights; the bot packs light first, so dying costs little.';
+  // The climb, the warden's hit and a death's cost as they stand, not
+  // "dying costs little" (the decision audit, 2026-09-25): the kit is
+  // packed light only when the trip starts, and what is carried now is
+  // what a death would drop.
+  let facts = '';
+  if (bot?.entity?.position) {
+    const y = Math.floor(bot.entity.position.y), down = y - (site?.y ?? x.depth);
+    const { climbMinutes } = require('./surface');
+    if (down > 0) facts += ` Y ${site?.y ?? x.depth} is ${down} blocks below here: roughly ${climbMinutes(down)} minutes of staircase down and as long back up, or about ${Math.round(down / 2)} minutes up by hand if the pickaxe gives out.`;
+    if (x.warden) {
+      const { afterArmour, armourOf, MOBS } = require('./combat-estimate');
+      const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+      const hit = Math.round(afterArmour(MOBS.warden.hit, armourOf(worn)));
+      facts += ` A warden's hit takes about ${hit} health after the armour worn, from ${Math.round(bot.health ?? 20)}${hit >= (bot.health ?? 20) ? ': one hit kills' : ''}.`;
+    }
+    try {
+      const cost = require('./risk').deathCost(bot, goal);
+      const listed = [...cost.dropsWorn, ...cost.dropsGear, ...Object.entries(cost.dropsValuables).map(([n, c]) => `${c} ${n}`)];
+      facts += ` A death there drops what is carried then${listed.length ? ` (now: ${listed.slice(0, 8).join(', ')}${listed.length > 8 ? ', and more' : ''})` : ''}, ${cost.walkBackBlocks != null ? `${cost.walkBackBlocks} blocks and more from where the bot would respawn` : 'far from where the bot would respawn'}; the kit is packed light before the trip starts.`;
+    } catch (_) { /* no inventory to read */ }
+  }
+  const risk = (x.warden ? 'Wardens live there: never fight one, leave if one shows.' : 'The waves are real fights.') + facts;
   if (site) return `The ${x.site} is known at ${site.x}, ${site.y}, ${site.z}: go back down and through it. ${LOOT_LINES[kind]} ${risk}`;
   if (s?.legs) return `Go on with the expedition to ${x.label}: ${s.legs} legs swept at depth so far, no ${x.site} yet. ${LOOT_LINES[kind]} ${risk}`;
   return `Expedition to ${x.label}: pack light, dig a staircase down to y ${x.depth} and sweep for the ${x.site}. ${LOOT_LINES[kind]} ${risk}`;

@@ -62,6 +62,12 @@ test('while the ladder walks about after endermen, Jev is offered the deep dark 
   const options = strategyOptions(b, goal, stage, { deep_dark: { description: dd.describe(goal), run: async () => {} } });
   assert.deepEqual(Object.keys(options).sort(), ['deep_dark', 'stage_obtain_ender_pearls']);
   assert(options.stage_obtain_ender_pearls.fallback, 'the ladder stays the fallback');
+  // The decision audit: the climb, the warden's hit and what a death drops, as they stand.
+  const d = dd.describe(goal, 'deep_dark', b);
+  assert.match(d, /Y -52 is 116 blocks below here: roughly 6 minutes of staircase down and as long back up, or about 58 minutes up by hand/);
+  assert.match(d, /A warden's hit takes about \d+ health after the armour worn, from 20/);
+  assert.match(d, /A death there drops what is carried then \(now: .*diamond pickaxe/);
+  assert.doesNotMatch(d, /dying costs little/);
 });
 
 test('trial chambers: a trial spawner or vault marks them, a dropped key is picked up, and a key opens a vault', async () => {

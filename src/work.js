@@ -3112,7 +3112,7 @@ function sideTrips(bot, goal, client) {
     loot: (b2, t2, g2, sv2) => lootNearby(b2, t2, g2, sv2, lootActions()),
     notice: (b2, g2, sv2) => noticeLandmarks(b2, g2, sv2, { force: true }) };
   for (const [kind, says] of [['deep_dark', "I'll go looking for an ancient city in the deep dark"], ['trial_chambers', "I'll go looking for trial chambers"]]) {
-    if (expeditions.expeditionReady(bot, goal, kind)) trips[kind] = { description: expeditions.describe(goal, kind), says,
+    if (expeditions.expeditionReady(bot, goal, kind)) trips[kind] = { description: expeditions.describe(goal, kind, bot), says,
       run: (b, t, g, sv) => expeditions.expeditionTrip(b, t, g, sv, tripActions, kind) };
   }
   // The surface, walked for what it has: villages, temples, portals.
