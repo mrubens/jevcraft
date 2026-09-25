@@ -111,3 +111,23 @@ test('the plan makes obsidian from lava with a diamond pickaxe and a water bucke
   const observed = planCatalog(registry, 'obsidian', 2, { diamond_pickaxe: 1, water_bucket: 1 }, { nearby: ['obsidian'] });
   assert.equal(observed.at(-1).action, 'make_obsidian', 'an observed deposit goes through the same step, which mines only crust with no lava against it');
 });
+
+test('a crust whose dig is refused is set aside, not tried again next round', async () => {
+  // mid-83-c: "Refusing to open a drop beside the feet" thrown out of the step, the same crust every round, a loop at minute 67.
+  const { bot } = world({ pool: [0, 1, 2].flatMap(x => [0, 1, 2].map(z => [x, z, 'obsidian'])) });
+  bot.world = { raycast: () => null };
+  const dug = [];
+  const actions = {
+    navigate: async () => {}, approachDryMining: async () => {}, collectNearbyDrops: async () => {}, resourceTunnelStep: async () => {}, acquireStep: async () => {},
+    dig: async (b, t, p) => { dug.push(`${p}`); throw new Error('Refusing to open a drop beside the feet'); },
+  };
+  const goal = {};
+  const step = { action: 'make_obsidian', item: 'obsidian', count: 4 };
+  await makeObsidian(bot, new Task('obsidian'), step, goal, () => {}, actions).catch(() => {});
+  const first = dug.length;
+  assert(first >= 1, 'a crust was tried');
+  const again = dug.slice();
+  dug.length = 0;
+  await makeObsidian(bot, new Task('obsidian'), step, goal, () => {}, actions).catch(() => {});
+  assert(!dug.some(p => again.includes(p)), `the refused crust is not tried again: ${dug.join(' ')}`);
+});

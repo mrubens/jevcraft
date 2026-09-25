@@ -109,7 +109,12 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
       goal.step = { ...step, phase: 'mine', position: { ...p } }; save();
       try { await approachDryMining(bot, task, p, { navigate, dig }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'crust', p, err, 300000); save(); continue; }
-      await dig(bot, task, p, { done: () => countOf(bot, 'obsidian') > before, requiredTool: 'diamond_pickaxe' });
+      // A dig refused (a pit it would open beside the feet, the ground
+      // changed since the crust was chosen) sets that crust aside too: thrown,
+      // it went back to the same crust every round, and mid-83-c's audit
+      // called the loop at minute 67 (2026-09-25).
+      try { await dig(bot, task, p, { done: () => countOf(bot, 'obsidian') > before, requiredTool: 'diamond_pickaxe' }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Blocked'].includes(err.name)) throw err; setAside(goal, 'crust', p, err, 300000); save(); continue; }
       await collectNearbyDrops(bot, task, 'obsidian', { before, origin: p, radius: 6, waitForSpawnMs: 1000, allowExcavation: true });
     }
     if (crust.some(p => !isSetAside(goal, 'crust', p))) return;
