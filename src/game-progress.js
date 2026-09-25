@@ -408,4 +408,27 @@ async function gameStep(bot, task, goal, save, actions) {
   return false;
 }
 
-module.exports = { timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };
+// The steps still open on the ladder, each with what making it takes from
+// the pockets as they are: said to Jev wherever it chooses how to spend
+// time, so a choice to wait is made knowing what waiting leaves undone. A
+// pocket sat out a night with a stone pickaxe and no iron, three of the
+// steps ahead waiting on iron, told only that the bed was next.
+function rungsAhead(bot, goal = {}, planFor = null) {
+  if (goal.kind !== 'win') return [];
+  let rungs;
+  try { rungs = openRungs(bot, goal); } catch (_) { return []; }
+  const words = s => String(s || '').replaceAll('_', ' ');
+  return rungs.slice(0, 4).map(rung => {
+    let takes = null;
+    if (planFor && rung.item) {
+      try {
+        const plan = planFor(bot, rung.item, rung.count || 1, goal);
+        if (plan?.length) takes = plan.map(st => `${st.action.replaceAll('_', ' ')} ${st.count || 1} ${words(st.item || st.block || st.mob)}`).join(', then ');
+      } catch (_) { /* no plan from here */ }
+    }
+    const why = require('./strategy').RUNG_WHY[rung.phase];
+    return { step: words(rung.phase), ...(why ? { for: why } : {}), ...(rung.item ? { item: `${rung.count > 1 ? `${rung.count} ` : ''}${words(rung.item)}` } : {}), ...(takes ? { takes } : {}) };
+  });
+}
+
+module.exports = { rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };

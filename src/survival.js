@@ -72,6 +72,20 @@ function nightOreChoices(bot, feet, attempts) {
   }
   return [...byKind.values()];
 }
+// What the rock about the bot holds, for a choice about mining it: the ore
+// in view with its distance, and which kinds the best pickaxe carried
+// mines. A pocket's "mine the night away" said only "toward ore in the
+// rock", and Jev sat the night out with iron wanted and a stone pickaxe.
+const PICK_TIER = { wooden: 1, golden: 1, stone: 2, iron: 3, diamond: 4, netherite: 5 };
+const ORE_TIER = { coal: 1, copper: 2, iron: 2, lapis: 2, gold: 3, redstone: 3, diamond: 3, emerald: 3 };
+function rockHolds(bot, feet, attempts) {
+  const tier = Math.max(0, ...bot.inventory.items().map(i => /^(\w+)_pickaxe$/.exec(i.name)).filter(Boolean).map(m => PICK_TIER[m[1]] || 0));
+  if (!tier) return 'No pickaxe is carried: stone and ore cannot be mined.';
+  const pick = Object.keys(PICK_TIER).find(k => PICK_TIER[k] === tier);
+  const mines = Object.keys(ORE_TIER).filter(k => ORE_TIER[k] <= tier), not = Object.keys(ORE_TIER).filter(k => ORE_TIER[k] > tier);
+  const seen = nightOreChoices(bot, feet, attempts).map(c => `${c.kind} ${Math.round(c.position.distanceTo(feet))} blocks off`);
+  return `${seen.length ? `Ore in view: ${seen.join(', ')}.` : 'No ore in view from here; a branch finds it in the rock.'} The ${pick} pickaxe carried mines ${mines.join(', ')} ore${not.length ? `; ${not.join(', ')} need a better one` : ''}.`;
+}
 // Without Jev: the nearest of the ores the ladder uses (not copper).
 function nightOre(bot, feet, attempts) {
   const ids = [...NIGHT_ORES].filter(name => !/copper/.test(name)).map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
@@ -1609,7 +1623,7 @@ class Survival {
     tree.branch = { description: 'Dig a branch down to a working depth and along it, looking for ore on the way.' };
     if (dark.length) tree.light_tunnel = { description: `Put a torch in the tunnel here: ${dark.length} cells around the bot are dark enough for monsters to spawn in, and light stops them (${countOf(bot, 'torch')} torches carried).` };
     const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree, context: {},
-      state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
+      state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
     if (decision.stale) return null;
     if (decision.fallback) return nightOre(bot, feet, attemptsFor(this));
     const pick = decision.path.at(-1);
@@ -1872,7 +1886,7 @@ class Survival {
         options.open_on_watcher = { description: `Open the wall toward ${who} and fight it at the gap.${watcher.entity.name === 'creeper' ? ' A creeper at the gap goes off.' : ''}`,
           run: () => this.openOnWatcher(task, goal, save, refuge, watcher, { chosen: true }) };
       if (night && !watcher && !refused(this, 'survival:night_mine'))
-        options.night_mine = { description: 'Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too.', run: () => this.nightMine(task, goal, save) };
+        options.night_mine = { description: `Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too. ${rockHolds(bot, bot.entity.position.floored(), attemptsFor(this))}`, run: () => this.nightMine(task, goal, save) };
       // Work that needs no walking: the ladder's next item made from what is
       // carried. Trial 30 sat out its second night in a pocket with 29 raw
       // iron, coal and a furnace in its pack, the armour the one thing left.
@@ -1897,6 +1911,8 @@ class Survival {
         const decision = await this.decide(task, goal, save, { id: 'pocket_next', tree, context: { rule },
           state: { timeOfDay: bot.time?.timeOfDay, night, daylight: night ? 'night' : (bot.time?.timeOfDay ?? 0) >= 22000 ? 'dawn: zombies and skeletons in the open burn once the sun is up' : 'day',
             workWaiting: goal.rungTime?.phase || goal.step?.item || goal.step?.block || goal.request || null,
+            stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor),
+            inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
             health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
             threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity) })) } });
         if (decision.stale) { onStep(goal); return true; }

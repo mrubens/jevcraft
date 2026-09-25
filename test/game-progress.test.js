@@ -219,3 +219,19 @@ test('the bed and the armour can be left for later when they failed twice; the t
   setAside(goal, 'rung', 'stone_pickaxe', 'failed twice', 1800000);
   assert.match(nextGameStage(bot, goal).phase, /pickaxe|log|wood|table/, 'the first tools are not skipped: everything after needs them');
 });
+
+test('the steps still open are said with what each is for and what it takes from the pockets', () => {
+  const { rungsAhead } = require('../src/game-progress');
+  const { catalogPlan, planningInventory } = require('../src/work');
+  const registry = require('minecraft-data')('26.1');
+  const inv = { stone_pickaxe: 1, furnace: 1, stick: 3, crafting_table: 1, dirt: 11, wooden_pickaxe: 1, stone_sword: 1, spruce_log: 9 };
+  const items = Object.entries(inv).map(([name, count], i) => ({ name, count, type: registry.itemsByName[name].id, slot: 9 + i, durabilityUsed: 0 }));
+  const bot = { registry, version: '26.1', game: { gameMode: 'survival', dimension: 'minecraft:overworld' }, time: { timeOfDay: 17000 }, entity: { position: new Vec3(0, 64, 0) },
+    entities: {}, inventory: { items: () => items, slots: [] }, blockAt: () => null, findBlocks: () => [], health: 20, food: 20 };
+  const planFor = (b, item, count, goal) => catalogPlan(b, item, count, planningInventory(b), goal);
+  const ahead = rungsAhead(bot, { kind: 'win', dream: 'beat_the_game' }, planFor);
+  assert.deepEqual(ahead.map(r => r.step), ['bed', 'iron pickaxe']);
+  assert.match(ahead[0].for, /wool/);
+  assert.match(ahead[1].takes, /^mine 3 iron ore.*smelt 3 iron ingot.*craft 1 iron pickaxe$/);
+  assert.deepEqual(rungsAhead(bot, { kind: 'request' }, planFor), []);
+});
