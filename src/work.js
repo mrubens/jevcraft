@@ -175,8 +175,13 @@ const thingOf = key => key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:
 async function answerStall(bot, task, goal, save, stall, { client, survival, onStep = () => {}, idle = false, now = Date.now() } = {}) {
   const stats = survival?.state || goal.survival || goal;
   const thing = thingOf(stall.key);
+  // Stuck in the terrain (in water, or under cover on the way up): worked
+  // free one move at a time, Jev choosing each (unstuck.js). Trials 32 and
+  // 33 each stalled here in a trap the escape routines had no answer for.
+  const terrain = client && bot.game?.gameMode === 'survival' && require('./unstuck').aimFor(bot);
   if (stall.layer === 'survival') {
-    recordStill(stats, stall.key, STALL_MS, { now, detour: 'refused' }); save();
+    recordStill(stats, stall.key, STALL_MS, { now, detour: terrain ? 'work_free' : 'refused' }); save();
+    if (terrain) { await inCatch(task, goal, () => require('./unstuck').workFree(bot, task, goal, save, { client, dig })); return; }
     if (stall.strikes === 1) bot.chat?.(`${thing[0].toUpperCase()}${thing.slice(1)} isn't getting me anywhere. Something else, then.`);
     return;
   }
@@ -212,6 +217,8 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
     }
   } };
+  if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}.`,
+    run: () => require('./unstuck').workFree(bot, task, goal, save, { client, dig, aim: terrain }) };
   const rung = goal.rungTime?.phase;
   if (rung && DEFERRABLE.has(rung)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.`,
     run: async () => {

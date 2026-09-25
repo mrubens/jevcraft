@@ -171,7 +171,7 @@ module.exports = { safetyOrder, FOOD_OPTIONS };
 define({
   id: 'unstuck_move', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Stuck: which single move next (walk, climb, dig, place a block, pillar, swim up)?',
-  trigger: 'Prototype: a replay of a trap, each move asked in turn until the bot is where it needs to be or the moves run out.',
+  trigger: 'A stall while the bot is in water, or under cover on the way up (the survival layer\'s stall, or the work stall\'s work_free answer): each move asked in turn until the bot is out, twenty-four moves pass, or four in a row change nothing.',
   source: 'src/unstuck.js (localMoves)',
   options: [
     { pattern: '(step|climb|place)_(north|east|south|west)', label: 'walk, climb or place a block that way', when: 'the cells that way allow it', level: 'root', dynamic: true },

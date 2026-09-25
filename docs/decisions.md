@@ -129,7 +129,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Stuck: which single move next (walk, climb, dig, place a block, pillar, swim up)?**
 
-- When: Prototype: a replay of a trap, each move asked in turn until the bot is where it needs to be or the moves run out.
+- When: A stall while the bot is in water, or under cover on the way up (the survival layer's stall, or the work stall's work_free answer): each move asked in turn until the bot is out, twenty-four moves pass, or four in a row change nothing.
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -523,6 +523,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `differently` | root | keep at the stalled work another way | work stalled (not idle time): a mine leaves this patch of the resource, anything else turns its search |
 | `set_aside_rung` | root | leave the stalled rung for thirty minutes | the stall is on a game-ladder rung that can wait |
+| `work_free` | root | work free of the terrain one move at a time | the bot is in water, or under cover on the way up (src/unstuck.js); each move is then Jev's (unstuck_move) |
 | `night_mine` | root | dig a mine from here for the night | night in the Overworld, a pickaxe and nothing watching |
 | `mine_nearby` | root | dig a useful ore in view | an ore within sixteen blocks with no lava beside it |
 | `look_around` | root | walk twenty-four blocks somewhere new | by day in the Overworld, or when nothing else is on offer |

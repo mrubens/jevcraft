@@ -132,4 +132,94 @@ function describeMove(m) {
   return `${m.does}${facts.length ? ` ${facts.join('; ')}.` : ''}`;
 }
 
-module.exports = { localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+// The live bot's view: the blocks it sees and what it carries.
+const PICKS = ['netherite_pickaxe', 'diamond_pickaxe', 'iron_pickaxe', 'stone_pickaxe', 'golden_pickaxe', 'wooden_pickaxe'];
+function liveView(bot) {
+  const carried = {};
+  for (const i of bot.inventory.items()) carried[i.name] = (carried[i.name] || 0) + i.count;
+  return { name: p => bot.blockAt(p)?.name ?? null, carried, pickaxe: PICKS.find(n => carried[n]) || null };
+}
+
+// Where the bot has to get: out of water onto dry ground, or up to the
+// surface. Null where it is neither in water nor under cover.
+function aimFor(bot) {
+  const view = liveView(bot), feet = bot.entity.position.floored();
+  if (isWater(view.name(feet))) return { goal: 'dry', aim: 'out of the water onto dry ground' };
+  // Below the surface as the rest of the bot judges it (surface.js): at
+  // the bottom of an open shaft the sky is in view and the bot is still in
+  // a hole.
+  const surface = require('./surface');
+  if (surface.hasSurface(bot) && !surface.surfaceObserver(bot)(bot.entity.position) && !atSurface(view, feet)) return { goal: 'sky', aim: 'up to dry ground at the surface' };
+  return null;
+}
+
+// One move, done on the live bot.
+async function perform(bot, task, m, { dig }) {
+  const { move } = require('./motion');
+  const feet = bot.entity.position.floored();
+  const inWater = isWater(bot.blockAt(feet)?.name);
+  const equipBlock = async name => { const item = bot.inventory.items().find(i => i.name === name); if (!item) throw new Error(`No ${name} carried`); await bot.equip(item, 'hand'); };
+  if (m.kind === 'move') {
+    const to = m.to, up = to.y > feet.y;
+    const keys = m.key === 'swim_up' ? ['jump'] : up || inWater ? ['forward', 'jump'] : ['forward'];
+    await move(bot, task, { label: `unstuck_${m.key}`, keys, sneak: false, why: `one move out of being stuck: ${m.key.replaceAll('_', ' ')}`,
+      look: to.offset(0.5, up ? 1.1 : 0.6, 0.5), maxMs: 2500, tick: 50,
+      until: () => { const f = bot.entity.position.floored(); return m.key === 'swim_up' ? f.y >= to.y : f.x === to.x && f.z === to.z && f.y >= to.y - (to.y < feet.y ? 3 : 0) && (bot.entity.onGround || isWater(bot.blockAt(f)?.name)); } });
+    return;
+  }
+  if (m.kind === 'dig') { await dig(bot, task, m.cell, { requireDrops: false }); return; }
+  if (m.kind === 'place') {
+    await equipBlock(m.block);
+    const faces = [DOWN, ...Object.values(DIRS)].map(f => [m.cell.plus(f), f.scaled(-1)]);
+    const anchor = faces.find(([p]) => solid(bot.blockAt(p)?.name));
+    if (!anchor) throw new Error('Nothing solid to place against');
+    await bot.placeBlock(bot.blockAt(anchor[0]), anchor[1]);
+    return;
+  }
+  if (m.kind === 'pillar') {
+    // One block of the pillar routine: the look down first, the block placed
+    // a tick after the feet clear the cell.
+    const placed = await require('./pillar-recovery').pillarUp(bot, task, feet.y + 1, { dig, maxBlocks: 1, threats: false });
+    if (!placed) throw new Error('The block did not go under the feet');
+  }
+}
+
+// Working free, Jev choosing each move: until the bot is where it has to
+// be, the moves run out, or four in a row change nothing.
+async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim = aimFor(bot) } = {}) {
+  if (!aim || !client) return false;
+  const { decide } = require('./decisions');
+  const fatal = err => ['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name);
+  const record = goal.unstuck = { aim: aim.aim, since: new Date().toISOString(), moves: [], visits: {} };
+  bot.chat?.(`Stuck. Working my way ${aim.goal === 'dry' ? 'out of the water' : 'up'} one move at a time.`);
+  let still = 0;
+  for (let n = 0; n < maxMoves; n++) {
+    task.check();
+    const feet = bot.entity.position.floored();
+    record.visits[`${feet}`] = (record.visits[`${feet}`] || 0) + 1;
+    const view = liveView(bot);
+    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits });
+    const surfaced = aim.goal === 'sky' && here.dryFooting && require('./surface').surfaceObserver(bot)(bot.entity.position);
+    if (done || surfaced) { record.out = true; save(); return true; }
+    if (!moves.length) return false;
+    const tree = Object.fromEntries(moves.map(m => [m.key, { description: describeMove(m) }]));
+    const decision = await decide('unstuck_move', { client, bot, task, goal, save, tree,
+      state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6), health: bot.health, food: bot.food } });
+    if (decision.stale) continue;
+    const m = moves.find(x => x.key === decision.path.at(-1));
+    const before = bot.entity.position.clone(), blocks = m.cell ? bot.blockAt(m.cell)?.name : null;
+    goal.step = { action: 'work_free', move: m.key, aim: aim.goal }; save();
+    let failure = null;
+    try { await perform(bot, task, m, { dig }); }
+    catch (err) { task.check(); if (fatal(err)) throw err; failure = err.message; }
+    const after = bot.entity.position.floored();
+    const changed = before.distanceTo(bot.entity.position) >= 0.5 || (m.cell && bot.blockAt(m.cell)?.name !== blocks);
+    still = changed ? 0 : still + 1;
+    record.moves.push({ move: m.key, result: failure ? `failed: ${failure}` : `${changed ? '' : 'nothing changed; '}now at ${after.x},${after.y},${after.z}` });
+    save();
+    if (still >= 4) return false;
+  }
+  return false;
+}
+
+module.exports = { liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
