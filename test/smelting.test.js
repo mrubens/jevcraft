@@ -366,3 +366,33 @@ test('a while-cooking choice that runs out is asked again among what is left, no
   assert(!asked[1].includes('mine_nearby'), 'the spent choice is not offered again');
   assert(opens >= 2, 'the stone was dug meanwhile (the furnace shut and opened again)');
 });
+
+test('while a long batch cooks and there is ore about, the walks go on: no count sends the bot back to stand', { timeout: 8000 }, async () => {
+  // Trial 67: twenty-four digs of budget used, back at the furnace with ore about and 97 s of iron to wait for.
+  const registry = require('minecraft-data')('26.1');
+  let loaded = 0, ingots = 0, walks = 0;
+  const started = Date.now();
+  const furnace = () => ({
+    outputItem: () => loaded && Date.now() - started > 2500 ? { name: 'iron_ingot', count: loaded } : null,
+    takeOutput: async () => { ingots += loaded; loaded = 0; },
+    inputItem: () => loaded ? { name: 'raw_iron', count: loaded } : null, fuelItem: () => ({ name: 'coal', count: 1 }), fuel: .5,
+    putInput: async (type, meta, count) => { loaded += count; }, putFuel: async () => {}, close: () => {},
+  });
+  const furnaceAt = new Vec3(1, 64, 0);
+  let next = 0; const dugOut = new Set();
+  const bot = {
+    registry, entity: { position: new Vec3(0, 64, 0) }, time: { timeOfDay: 4000 }, entities: {},
+    inventory: { items: () => [{ name: 'raw_iron', count: 8 - loaded - ingots }, { name: 'coal', count: 4 }, { name: 'cobblestone', count: 200 }, ...(ingots ? [{ name: 'iron_ingot', count: ingots }] : [])].filter(i => i.count), emptySlotCount: () => 20 },
+    findBlocks: ({ matching }) => matching.includes(registry.blocksByName.furnace.id) ? [furnaceAt]
+      : matching.includes(registry.blocksByName.iron_ore.id) ? [new Vec3(4 + (next % 6), 64, Math.floor(next / 6))] : [],
+    blockAt: p => p.equals(furnaceAt) ? { name: 'furnace', position: p } : { name: 'iron_ore', position: p, diggable: false },
+    canDigBlock: () => true, world: { raycast: () => ({ position: furnaceAt }) },
+    pathfinder: { movements: {}, goto: async g => { if (g.x !== undefined && !(g.x === 1 && g.z === 0)) { walks++; next++; } }, setGoal: () => {} },
+    openFurnace: async () => furnace(),
+  };
+  const task = new Task('smelt', 'test');
+  task.opportunityClient = { systemOne: async ({ questions }) => ({ answers: { branch_0: { choice: 'mine_nearby', confidence: 0.6 } } }) };
+  await smelt(bot, task, { item: 'iron_ingot', from: 'raw_iron', count: 8, fuelItem: 'coal' }, {});
+  assert.equal(ingots, 8);
+  assert(walks > 24, `walked to ${walks} ores`);
+});

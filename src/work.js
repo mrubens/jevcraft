@@ -1291,7 +1291,7 @@ async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTa
   // A walk only where there and back fits in the cooking, at a walk.
   const far = walkTarget(), fits = far && far.distanceTo(bot.entity.position) * 2 / 4.3 * 1000 + 4000 <= cooking ? far : null;
   if (fits) tree.mine_nearby = { description: `Walk to the ${String(bot.blockAt(fits)?.name || 'block').replaceAll('_', ' ')} ${Math.round(fits.distanceTo(bot.entity.position))} blocks off and dig it and the next nearest, back before the batch is done.` };
-  if (countOf(bot, 'cobblestone') < 64) tree.dig_stone = { description: `Dig the stone around the furnace (${countOf(bot, 'cobblestone')} cobblestone carried): tools, a furnace and walls want it.` };
+  if (countOf(bot, 'cobblestone') < 128) tree.dig_stone = { description: `Dig the stone around the furnace (${countOf(bot, 'cobblestone')} cobblestone carried): tools, a furnace and walls want it.` };
   tree.wait_here = { description: `Stand by the furnace for the ${seconds} seconds the ${count} ${what} take. The furnace cooks on its own whether or not the bot stands by it; standing gains nothing meanwhile.` };
   for (const key of spent) delete tree[key];
   if (Object.keys(tree).length < 2) return null;
@@ -1485,7 +1485,10 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
           continue;
         }
-        let far = spare && allow('mine_nearby') && done.mine_nearby < 24 && cooking() >= 30000 && walkTarget();
+        // No count on the walks: each trip is back before the batch is done,
+        // and a budget of twenty-four digs sent trial 67 back to its furnace
+        // with ore still about and ninety-seven seconds of iron to wait for.
+        let far = spare && allow('mine_nearby') && cooking() >= 30000 && walkTarget();
         if (far) {
           furnace.close();
           // Out once, and on from one block to the next nearest while the
@@ -1516,7 +1519,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         // 12 stood eighty seconds by thirty-two copper, the coal it named
         // out of reach (2026-09-24).
         const feet = bot.entity.position.floored();
-        const rock = spare && allow('dig_stone') && done.dig_stone < 40 && countOf(bot, 'cobblestone') < 64 &&
+        const rock = spare && allow('dig_stone') && done.dig_stone < 40 && countOf(bot, 'cobblestone') < 128 &&
           find(bot, ['stone', 'deepslate', 'andesite', 'diorite', 'granite', 'tuff'], 5, 24)
             .filter(q => q.y >= feet.y && !q.equals(block.position.offset(0, -1, 0)) && bot.canDigBlock?.(bot.blockAt(q)) && !isSetAside(goal || {}, 'reach', q))[0];
         if (rock) {
