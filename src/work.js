@@ -3003,7 +3003,10 @@ function idleOptions(bot, goal) {
   }
   const carried = bot.inventory.items().map(i => i.name);
   const missing = STONE_TOOLS.filter(tool => !carried.some(name => name.endsWith(tool.slice(5)) && toolTier(name) >= 2));
-  if (missing.length) options.stone_tools = { description: `Make ${missing.map(t => t.replaceAll('_', ' ')).join(', ')}: faster digging and a real weapon, from cobblestone and sticks.`, item: missing[0], count: 1 };
+  // What a craft leaves for the next pickaxe (the decision audit, from
+  // mid-87-a): sticks spent on a sword are sticks a pickaxe cannot have.
+  const leaves = outputs => { try { return pickaxeLeft(bot, require('./strategy').planSpends(catalogPlan(bot, outputs, null, stock, goal) || [])); } catch (_) { return ''; } };
+  if (missing.length) options.stone_tools = { description: `Make ${missing.map(t => t.replaceAll('_', ' ')).join(', ')}: faster digging and a real weapon, from cobblestone and sticks.${leaves(missing.map(item => ({ item, count: 1 })))}`, item: missing[0], count: 1 };
   const logs = Object.keys(stock).filter(n => n.endsWith('_log')).reduce((n, k) => n + stock[k], 0);
   if (logs < 16) {
     const nearby = find(bot, bot.registry.blocksArray.filter(b => /_log$/.test(b.name)).map(b => b.name), 32, 8);
@@ -3039,7 +3042,7 @@ function idleOptions(bot, goal) {
   if (rawOre && (bot.experience?.level ?? 0) < 30 && enchantable(bot).length) options.earn_xp = { description: `Earn experience for enchanting: smelt ${Math.min(rawOre[1], 32)} of the ${rawOre[1]} ${rawOre[0].replaceAll('_', ' ')} carried (level ${bot.experience?.level ?? 0} now; each level is a better enchant). The ingots are useful too.`,
     item: RAW_ORE[rawOre[0]], count: countOf(bot, RAW_ORE[rawOre[0]]) + Math.min(rawOre[1], 32) };
   if (sides.enchant) options.enchant = sides.enchant;
-  if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.`, item: 'torch', count: 4 };
+  if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.${leaves([{ item: 'torch', count: 4 }])}`, item: 'torch', count: 4 };
   // The standing dream. With nothing asked and nothing urgent, the next
   // rung of the beat-the-game ladder is on offer; it is a long walk from a
   // stone pickaxe to a dragon, and this is how the walk gets taken. Only

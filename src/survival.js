@@ -2250,7 +2250,7 @@ class Survival {
         // How long it takes against the night left (the decision audit,
         // 2026-09-25): ten seconds a smelt.
         const smelts = bench.plan.filter(st => st.action === 'smelt').reduce((n, st) => n + (st.count || 1), 0);
-        return `${smelts ? ` About ${Math.round(smelts * 10 / 60 * 10) / 10} minutes of smelting (${smelts} at ten seconds each).` : ' Crafting only: a few seconds.'}${night ? ` About ${minutesToDawn(bot)} real minutes to dawn.` : ''}`;
+        return `${smelts ? ` About ${Math.round(smelts * 10 / 60 * 10) / 10} minutes of smelting (${smelts} at ten seconds each).` : ' Crafting only: a few seconds.'}${night ? ` About ${minutesToDawn(bot)} real minutes to dawn.` : ''}${require('./strategy').pickaxeLeft(bot, require('./strategy').planSpends(bench.plan))}`;
       })()}`,
         run: async () => { this.report(goal, save, { action: 'work_in_pocket', item: bench.item }); await this.actions.acquireStep(bot, task, bench.item, bench.count, goal, save); return true; } };
       // Out to hunt, or the valuables to the chest first (a death drops

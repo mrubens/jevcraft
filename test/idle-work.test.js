@@ -68,6 +68,12 @@ test('the enchanting table trip says what it takes from the pockets (the decisio
   assert.match(table.description, /From the pockets as they are it takes: .*craft 1 crafting table, craft 1 enchanting table\./);
 });
 
+test('stone tools that spend the last sticks say so, for the next pickaxe (mid-87-a)', () => {
+  const { bot, goal } = fixture([['wooden_pickaxe', 1], ['stick', 5], ['cobblestone', 9], ['crafting_table', 1]]);
+  const options = idleOptions(bot, goal);
+  assert.match(options.stone_tools.description, /It leaves 0 logs, 0 planks, 0 sticks and 0 iron ingots .*and no sticks can be made from what is left\. Pickaxes carried: the wooden pickaxe \(59 uses left\)/);
+});
+
 test('choosing the long game runs the next rung of the beat-the-game ladder', async () => {
   const { bot, goal, task } = fixture([['white_bed', 1], ['stone_pickaxe', 1], ['stone_axe', 1], ['stone_sword', 1], ['oak_log', 16]]);
   const ran = [];
