@@ -2665,6 +2665,24 @@ class Survival {
       const last = this.state.lastDry;
       if (!last || last.x !== f.x || last.y !== f.y || last.z !== f.z) this.state.lastDry = { x: f.x, y: f.y, z: f.z, dimension: String(bot.game?.dimension || '') };
     }
+    // A ghast in sight and a drop that ends the bot beside it: off the edge
+    // first. Its fireball's blast throws a player, and mid-87-l, on a ledge
+    // at y 74 over the lava sea on a fortress leg, was hit from thirty
+    // blocks and thrown forty down into the lava (2026-09-26).
+    if (!(this.state.edgeTriedAt > Date.now() - 10000) && threats(bot, 64).some(t => t.entity.name === 'ghast' && t.visible)) {
+      const { dropNear } = require('./terrain');
+      const deep = dropNear(bot, bot.entity.position.floored(), 2);
+      if (deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) {
+        this.state.edgeTriedAt = Date.now();
+        const cell = firmGround(bot, 8, { margin: 3 });
+        if (cell) {
+          this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, from: 'ghast', drop: deep });
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          onStep(goal); return true;
+        }
+      }
+    }
     await maintainVitals(bot, task, action => this.report(goal, save, action));
     // Still in a block: nothing else this turn, the dig out comes again at
     // once. mid-79-c went on to craft its spare pickaxe under the gravel.
