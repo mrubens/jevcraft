@@ -18,7 +18,8 @@
 // A side trip runs once and rests ten minutes (thirty if it failed), so
 // the answer after it is asked again with the trip done.
 const { DAY } = require('./day');
-const { openRungs, dimension } = require('./game-progress');
+const { openRungs, dimension, carryBedRung } = require('./game-progress');
+const { woolCarried } = require('./home-base');
 const { setAside, isSetAside } = require('./progress');
 const { immediateThreat } = require('./danger');
 
@@ -184,6 +185,30 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   return { description: `${first ? 'The ladder\'s next step: ' : 'Do this step first, ahead of the ladder\'s order: '}get ${what}${why ? ` (${why})` : ''}.${bot && goal ? searchSoFar(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
 }
 
+// A second bed to carry, once the base's is claimed and none is in the
+// pockets (game-progress.js carryBedRung). The six midgame trials of
+// 2026-09-26 carried none after the home was built but one; the nights
+// underground were pockets and night mines, and the climbs back up were a
+// quarter of the trial time. What it buys and what it costs, with what is
+// in hand toward it; Jev's to weigh against the ladder's next step.
+function carryBedOption(bot, goal, planFor = null) {
+  const rung = carryBedRung(bot, goal);
+  if (!rung) return null;
+  const items = bot.inventory?.items?.() || [];
+  const have = re => items.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
+  const wool = woolCarried(bot), string = have(/^string$/), planks = have(/_planks$/), logs = have(/_log$|_stem$/);
+  let flocks = [];
+  try { flocks = require('./sightings').sighted(bot, goal, 'sheep'); } catch (_) { flocks = []; }
+  const sheep = Object.values(bot.entities || {}).filter(e => e.name === 'sheep' && e.isValid !== false && e.position?.distanceTo?.(bot.entity.position) < 48).length;
+  const where = rung.action === 'village_bed' ? ` A bed can be taken from the ${rung.village?.kind === 'igloo' ? 'igloo' : 'village'} ${rung.distance} blocks away.`
+    : rung.action === 'home' ? ' The chest at home holds what it takes.' : '';
+  const inHand = ` In hand: ${wool.total} wool (${wool.count >= 3 ? `three ${wool.colour.replaceAll('_', ' ')}: the bed is a craft` : 'three of one colour make the bed'}), ${string} string, ${planks} planks and ${logs} logs; ${sheep ? `${sheep} sheep in view` : flocks.length ? flocks[0].says : 'no sheep in view or remembered'}.`;
+  return {
+    description: `Make a second bed to carry, the base's staying where it is (three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed). It buys any night, anywhere: put down where the night comes, slept in and picked back up, the night passes in seconds, instead of about seven real minutes in a pocket or a night mine and the climb out after. A carried bed does not keep the spawn point; the base's does.${inHand}${where}${searchSoFar(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}`,
+    says: 'I\'ll make a second bed to carry', rung,
+  };
+}
+
 // The options now, keyed for the decision tree. Only in the Overworld on
 // the preparation ladder with more than one thing to do.
 function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
@@ -206,6 +231,9 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   // Not while the next step is a basic tool: Jev chose a dungeon over the
   // stone pickaxe it had none of.
   const toolless = rungs.length && /^(stone_pickaxe|stone_sword|iron_pickaxe)$/.test(rungs[0].phase);
+  // A bed to carry, at any hour: spiders' string is a night's wool.
+  const carryBed = !toolless && carryBedOption(bot, goal, planFor);
+  if (carryBed) options.carry_bed = carryBed;
   if (daylight && fit && !toolless) for (const [key, side] of Object.entries(sides)) {
     if (side && !isSetAside(goal, 'strategy_side', key) && fits(side)) options[key] = { description: side.description, says: side.says, run: side.run, side: true };
   }
@@ -247,7 +275,7 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     choice = decision.path.at(-1);
     goal.strategy = { choice, ladderNext: stage.phase, keys, at: now(), source: decision.fallback ? 'fallback' : 'jev' };
     save();
-    if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].side ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
+    if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].side || options[choice].says ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
   }
   const option = options[choice];
   if (option.stage) return null;
@@ -266,4 +294,4 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   return { ran: true };
 }
 
-module.exports = { pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };
+module.exports = { carryBedOption, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };
