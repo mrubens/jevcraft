@@ -586,3 +586,20 @@ test('an evening chore whose walk runs past dark says so, with the risk in the s
   assert.match(asked.tree.fetch_cows.description, /Back after dark \(12000\): mobs spawn on the way back/);
   assert(asked.state.riskNow && Array.isArray(asked.state.threats));
 });
+
+test('a plot cell over a hole is filled from the bottom up, not placed in the air', async () => {
+  // mid-236-a: a blast took the ground under a plot cell; "no adjacent solid anchor" two hundred and forty times.
+  const { repairPlot, layout } = require('../src/home-base');
+  const w = await establishedHome();
+  const plot = layout(w.goal.survival.home).plot;
+  const cell = plot[0];
+  const placed = [];
+  // The cell and the two under it are air.
+  const key = p => `${p.x},${p.y},${p.z}`;
+  const holes = new Set([key(cell), key({ ...cell, y: cell.y - 1 }), key({ ...cell, y: cell.y - 2 })]);
+  const inner = w.bot.blockAt.bind(w.bot);
+  w.bot.blockAt = p => holes.has(key(p)) ? { name: 'air', boundingBox: 'empty', position: p } : inner(p);
+  const actions = { ...w.actions, navigate: async () => {}, dig: async () => {}, place: async (b, t, p) => { placed.push(p.y); holes.delete(key(p)); } };
+  await repairPlot(w.bot, new Task('plot'), w.goal, () => {}, w.goal.survival.home, actions);
+  assert.deepEqual(placed.slice(0, 3), [cell.y - 2, cell.y - 1, cell.y]);
+});

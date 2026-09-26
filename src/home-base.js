@@ -499,8 +499,18 @@ async function repairPlot(bot, task, goal, save, home, actions) {
     else if (above && !['air', 'cave_air'].includes(above.name) && above.name !== 'wheat') await actions.dig(bot, task, pos(p).offset(0, 1, 0), { requireDrops: false });
     const ground = bot.blockAt(pos(p));
     if (ground && ground.name !== 'farmland' && !TILLABLE.has(ground.name)) {
-      await actions.dig(bot, task, pos(p), { requireDrops: false });
-      await actions.place(bot, task, pos(p), 'dirt');
+      if (ground.boundingBox === 'block') await actions.dig(bot, task, pos(p), { requireDrops: false });
+      // A cell over a hole is filled from the bottom up, as a player fills
+      // a crater: mid-236-a's plot cell had nothing beside or under it to
+      // place against (a blast had taken the ground), and "no adjacent solid
+      // anchor" came back two hundred and forty times (2026-09-26).
+      const column = [];
+      for (let q = pos(p); column.length < 6; q = q.offset(0, -1, 0)) {
+        const b = bot.blockAt(q);
+        if (b && b.boundingBox === 'block' && !q.equals(pos(p))) break;
+        column.unshift(q);
+      }
+      for (const q of column) await actions.place(bot, task, q, 'dirt');
     }
   }
   save();
