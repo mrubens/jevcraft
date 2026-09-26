@@ -2483,3 +2483,21 @@ test('out of lava the way out is never the cell the feet are in, and a cell with
   assert(!(out.x === 0 && out.z === 0), `not its own cell: ${out}`);
   assert(![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => blockAt(out.offset(x, 0, z)).name === 'lava'), `no lava beside it: ${out}`);
 });
+
+test('a priority choice that runs into a resting action rests with it and is left out of the question, Jev told why', async () => {
+  // first-days-213: secure_shelter chosen thirty times in five seconds, its sealing resting, each run refused at once.
+  const { question } = require('../src/decisions');
+  const { bot } = nookFixture({ open: p => p.x === 0 && p.z === 0 && p.y >= 30 });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } } });
+  const seen = [];
+  survival.decide = async (task, goal, save, { id, tree, state }) => { seen.push({ id, keys: Object.keys(tree).sort(), notNow: state.notNow });
+    const key = tree.secure_shelter ? 'secure_shelter' : question(id).fallback(tree, []); return { path: [key], action: tree[key], stale: false }; };
+  survival.refugeStep = async () => { throw Object.assign(new Error('seal shelter is set aside: Shelter verification failed'), { name: 'SetAside', until: Date.now() + 120000 }); };
+  survival.nookSleep = async () => {};
+  const goal = { kind: 'win', request: 'beat the game' };
+  await survival.step(new Task('night'), goal, () => {});
+  await survival.step(new Task('night'), goal, () => {});
+  assert(seen[0].keys.includes('secure_shelter'));
+  assert(!seen[1].keys.includes('secure_shelter'), 'not offered while it rests');
+  assert.match(seen[1].notNow.secure_shelter, /Shelter verification failed; back in about 1\d\d seconds/);
+});

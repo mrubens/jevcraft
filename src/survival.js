@@ -603,7 +603,8 @@ class Survival {
     // aside on the goal and never refused here (2026-09-25).
     const key = `survival:${action.action}`;
     if (!HOLDS.has(action.action) && !EMERGENCIES.has(action.action) && (refused(this, key) || refused(goal, key))) {
-      throw Object.assign(new Error(`${action.action.replaceAll('_', ' ')} is set aside: it stalled`), { name: 'SetAside' });
+      const entry = attemptsFor(this).of('act')[key] || attemptsFor(goal).of('act')[key];
+      throw Object.assign(new Error(`${action.action.replaceAll('_', ' ')} is set aside: ${entry?.why || 'it stalled'}`), { name: 'SetAside', until: entry?.until });
     }
     goal.survivalAction = { ...action, at: new Date().toISOString() }; save();
     this.bot._survivalReportedAt = Date.now(); this.bot._survivalGoal = goal;
@@ -3123,16 +3124,38 @@ class Survival {
     const foodPlan = this.state.foodPlan;
     if (foodPlan && (foodPlan.until < Date.now() || !needsFood || needsShelter || stockPaused)) delete this.state.foodPlan;
     if (this.state.foodPlan && tree.obtain_food) delete tree.continue_request;
+    // A choice whose way is resting is not a choice now: first-days-213
+    // chose secure_shelter thirty times in five seconds, its sealing resting
+    // after "Shelter verification failed", each run refused at once and the
+    // question asked again (2026-09-26). It rests as long as what it ran
+    // into, and Jev is told why.
+    const notNow = {};
+    for (const [key, entry] of Object.entries(attemptsFor(this).of('priority_option'))) {
+      if (!tree[key]) continue;
+      delete tree[key];
+      notNow[key] = `${entry.why}; back in about ${Math.max(1, Math.round((entry.until - Date.now()) / 1000))} seconds`;
+    }
+    if (Object.keys(notNow).length) state.notNow = notNow;
+    if (!Object.keys(tree).length) return false;
+    const runChosen = async (key, option) => {
+      try { await option.run(); }
+      catch (err) {
+        if (err.name !== 'SetAside') throw err;
+        setAside(this, 'priority_option', key, err.message, Math.max(1000, (err.until || Date.now() + 60000) - Date.now())); save();
+        return false;
+      }
+      return true;
+    };
     // One option is not a question. Jev was asked to pick the only shelter
     // on offer every night the bot could not stay up.
-    if (Object.keys(tree).length === 1 && !Object.values(tree)[0].children) { await Object.values(tree)[0].run(); onStep(goal); return true; }
+    if (Object.keys(tree).length === 1 && !Object.values(tree)[0].children) { const [key, only] = Object.entries(tree)[0]; await runChosen(key, only); onStep(goal); return true; }
     const decision = await this.decide(task, goal, save, { id: 'survival_priority', state, tree, interrupt: () => checkThreats(bot),
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);
     if (decision.stale) return true;
     if (decision.path[0] === 'obtain_food' && !hungry && !this.state.foodPlan) this.state.foodPlan = { until: Date.now() + 300000, at: new Date().toISOString() };
     if (decision.path[0] === 'continue_request') delete this.state.foodPlan;
-    await decision.action.run();
+    if (!await runChosen(decision.path[0], { run: () => decision.action.run() })) return false;
     return decision.path[0] !== 'continue_request';
   }
 }
