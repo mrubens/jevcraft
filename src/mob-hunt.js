@@ -17,6 +17,7 @@ const { decide } = require('./decisions');
 const { descendTo } = require('./descent');
 const { setAside, isSetAside, watch, unwatch } = require('./progress');
 const { bridgeTo } = require('./bridging');
+const { crossToward, nearer } = require('./nether-travel');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
@@ -459,9 +460,16 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   if (!canBegin(bot, handler) && !fitButFooting) {
     // Nothing to eat and hunger under eighteen means no regeneration: the
     // recovery never comes. Off the Overworld that is a trip back for food.
-    if (bot.food < 18 && !hasFood(bot) && dimension(bot) !== 'overworld' && actions.returnOverworld) {
+    // Unless Jev chose to go on in the Nether without going back (nether-
+    // travel.js keep_on): then the search goes on, and the fight waits for
+    // food. mid-211-c's way back was lost 250 blocks off (note 241).
+    const keepOn = isSetAside(goal, 'nether_return', 'food');
+    if (bot.food < 18 && !hasFood(bot) && dimension(bot) !== 'overworld' && actions.returnOverworld && !keepOn) {
       goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
       await actions.returnOverworld(bot, task, goal, save); return;
+    }
+    if (keepOn && bot.food < 18 && !hasFood(bot) && handler.dimension === 'nether' && dimension(bot) === 'nether' && actions.tunnel && !threats(bot, 16).some(t => t.visible)) {
+      await findFortressStep(bot, task, goal, save, actions); return;
     }
     goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: handler.passive ? 10 : 14, neededFood: handler.passive ? 6 : 14 }; save();
     // Hit while it waits, by something it cannot see, beside a drop that
@@ -476,6 +484,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
         const cell = firmGround(bot, 8, { margin: 3 });
         if (cell) {
           goal.step = { action: 'off_the_edge', to: { ...cell }, health: bot.health }; save();
+          require('./terrain').holdOffEdge(bot, bot.entity.position.floored(), threats(bot, 64).map(t => t.entity));
           try { await actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); return; }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
         }
@@ -897,24 +906,40 @@ async function findFortressStep(bot, task, goal, save, actions) {
     if (state.legFrom && Math.hypot(state.legFrom.x - here.x, state.legFrom.z - here.z) < 8) turnSweep(state);
     const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++; state.legSince = Date.now();
     state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) };
+    delete state.legBest;
   }
   goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();
   const leg = new Vec3(state.target.x, state.target.y, state.target.z);
   const flat = p => Math.hypot(leg.x - p.x, leg.z - p.z);
   const before = flat(here);
+  // Ground made on the leg is a new nearest approach to its end. A walk
+  // that went some way in and came back, or along a ledge, made none: mid-
+  // 215-d stood at y 95 with its leg's target a hundred blocks off and out
+  // of reach on foot (note 251, 2026-09-26).
+  const approach = { best: state.legBest };
+  const gained = () => { const made = nearer(approach, flat(bot.entity.position), before); state.legBest = approach.best; return made; };
   // The pathfinder first: it walks open ground, bridges and climbs where a
   // staircase can only dig. The tunnel takes over where it finds no way.
   if (actions.navigate) {
     try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 6), { timeoutMs: 30000, stallMs: 8000, stopWhen }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-    if (flat(bot.entity.position) < before - 6) { state.legFails = 0; return; }
+    if (gained()) { state.legFails = 0; return; }
   }
+  // No ground on foot in the Nether: straight on at this height, through
+  // the netherrack or over the air and lava on blocks laid ahead, as far as
+  // the cells ahead show it can go (nether-travel.js).
+  const crossed = await crossToward(bot, task, goal, save, leg, { what: 'the fortress search\'s leg' });
+  if (crossed.tried && gained()) { state.legFails = 0; return; }
+  if (crossed.survey?.stoppedBy) state.lastCrossStop = crossed.survey.stoppedBy;
   try { await actions.tunnel(bot, task, goal, save, leg, 'fortress'); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastLegError = err.message; }
-  if (flat(bot.entity.position) < before - 1.5) { state.legFails = 0; return; }
+  if (gained()) { state.legFails = 0; return; }
   // Four failures and twenty seconds: a leg whose every attempt fails at
   // once turned the compass four times in half a minute.
-  if (++state.legFails >= 4 && Date.now() - (state.legSince || 0) >= 20000) {
+  // Counted from nothing on a fresh search: incremented from undefined it
+  // was NaN, never four, and a leg that never once made ground never turned.
+  state.legFails = (state.legFails || 0) + 1;
+  if (state.legFails >= 4 && Date.now() - (state.legSince || 0) >= 20000) {
     // Short of blocks to cross with, back through the portal for more
     // (the crossing waits for two stacks): mid-87-k turned the sweep twelve
     // times on an island in the lava sea with eighteen (2026-09-26).

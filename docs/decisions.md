@@ -48,7 +48,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `village_food` | obtain_food | take ripe crops and hay from a remembered village | a village with crops or hay is remembered within reach |
 | `seen_food_\d+` (pattern) | obtain_food | walk back to animals seen earlier | a herd of cows, pigs, chickens or sheep seen in the last half hour, now out of view, 32 to 192 blocks off (the nearest three) |
 | `search_food` | obtain_food | walk to another dry area to look for animals | always |
-| `return_for_food` | obtain_food | go back through the portal for food | off the Overworld, where nothing is safe to eat |
+| `return_for_food` | obtain_food | go back through the portal for food | off the Overworld, unless Jev chose to go on in the Nether without it (keep_on, twenty minutes) |
+| `hoglin_food` | obtain_food | hunt a hoglin for porkchops | in the Nether, a hoglin in view or seen within 192 blocks; its drops, a one-hoglin fight estimate and the mobs about are said |
 
 ### `shelter_method`
 
@@ -655,6 +656,10 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `night_mine` | root | dig a mine from here for the night | night in the Overworld, a pickaxe and nothing watching |
 | `mine_nearby` | root | dig a useful ore in view | an ore within sixteen blocks with no lava beside it |
 | `look_around` | root | walk twenty-four blocks somewhere new | by day in the Overworld, or when nothing else is on offer |
+| `cross_toward` | root | tunnel or bridge straight toward where the stalled Nether work was going | in the Nether, a target known (the portal back, the fortress leg, the tunnel's end), and the cells ahead at this height let it come nearer: rock with no lava behind it, open air or lava to lay the blocks carried over (src/nether-travel.js) |
+| `hoglin_food` | root | hunt a hoglin for porkchops | in the Nether, hungry with nothing to eat or on the way back for food, and a hoglin in view or seen within 192 blocks |
+| `portal_here` | root | build a portal where the bot stands and go through | in the Nether on the way back (or hungry), ten obsidian, flint and steel or a fire charge, and three blocks for the lintel carried |
+| `keep_on` | root | go on in the Nether without going back for food | in the Nether, hungry with nothing to eat or on the way back for food; the trip back is left out for twenty minutes |
 | `cook_food` | root | cook the raw food carried | by day in the Overworld, and raw meat is carried |
 | `stone_tools` | root | make stone tools | by day in the Overworld, and a stone pickaxe, axe or sword is missing |
 | `stock_wood` | root | stock up to sixteen logs | by day in the Overworld, and fewer than sixteen logs are carried and a tree is in view |

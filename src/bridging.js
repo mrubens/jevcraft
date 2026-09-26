@@ -23,13 +23,79 @@ async function creepTo(bot, task, cell, ms = 2500) {
     until: () => { const p = bot.entity.position; return Math.hypot(p.x - centre.x, p.z - centre.z) < 0.35 && p.y < cell.y + 0.6 && p.y > cell.y - 0.6; } });
 }
 
+// Never into lava: a body cell that is lava or fire is not walked into,
+// and rock is dug only where nothing flows in behind it, as the staircase
+// digs (tunneling.js safeExcavation). The span dug through the wall of the
+// lava sea otherwise.
+const BURNS = /lava|fire/;
 async function clear(bot, task, p) {
   const block = bot.blockAt(p);
+  if (block && BURNS.test(block.name)) throw new Error(`Lava in the way at ${p}`);
   if (passable(block)) return;
   if (!block.diggable || !NATURAL.test(block.name)) throw new Error(`The span is blocked by ${block.name}`);
+  if (!require('./tunneling').safeExcavation(bot, p)) throw new Error(`Lava or water behind the ${block.name.replaceAll('_', ' ')} at ${p}`);
   await equipBestTool(bot, block); task.check();
   await bot.dig(block, true);
 }
+
+// The next cell of a straight crossing: along whichever axis has farther to
+// go, one block. The survey and the span take the same cells.
+function stepToward(here, target) {
+  const dx = target.x - here.x, dz = target.z - here.z;
+  if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1) return null;
+  return Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
+}
+
+// What a straight crossing at the feet's height toward `target` meets, cell
+// by cell, before it is walked: rock to dig (what is natural, with nothing
+// flowing behind it), open air or lava to lay a block over, and where it has
+// to stop (lava in the body's way, a block that is not dug, the blocks
+// carried running out). Up to `cells` cells.
+function surveyCrossing(bot, target, { cells = 32, blocks = null } = {}) {
+  const carried = blocks ?? blocksCarried(bot);
+  const start = bot.entity.position.floored();
+  const flat = p => Math.hypot(target.x - p.x, target.z - p.z);
+  const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, carried, stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 };
+  let here = start, digMs = 0;
+  for (let n = 0; n < cells; n++) {
+    const step = stepToward(here, target);
+    if (!step) { out.stoppedBy = null; break; }
+    const next = here.plus(step);
+    let why = null, dig = 0; const before = digMs;
+    for (const p of [next, next.offset(0, 1, 0)]) {
+      const b = bot.blockAt(p);
+      if (!b) { why = 'unloaded ground ahead'; break; }
+      if (BURNS.test(b.name)) { why = 'lava in the way'; break; }
+      if (passable(b)) continue;
+      if (!b.diggable || !NATURAL.test(b.name)) { why = `${b.name.replaceAll('_', ' ')} in the way`; break; }
+      if (!require('./tunneling').safeExcavation(bot, p)) { why = `lava or water behind the ${b.name.replaceAll('_', ' ')}`; break; }
+      dig++;
+      // With the tool the dig would take (skills.js cheapestTool).
+      if (typeof b.digTime === 'function' && bot.inventory?.items) { const tool = require('./skills').cheapestTool(bot, b); digMs += b.digTime(tool?.type ?? null, false, false, false, [], {}); }
+    }
+    const floor = bot.blockAt(next.offset(0, -1, 0));
+    const lay = !solid(floor);
+    if (!why && lay && out.bridge + 1 > carried) why = `out of blocks (${carried} carried)`;
+    if (why) { out.stoppedBy = why; digMs = before; break; }
+    out.cells++; out.dig += dig;
+    if (lay) { out.bridge++; if (lavaBelow(bot, next.offset(0, -1, 0))) out.overLava++; }
+    here = next;
+  }
+  out.end = here; out.digSeconds = Math.round(digMs / 100) / 10;
+  out.gain = Math.round((out.from - flat(here)) * 10) / 10;
+  return out;
+}
+// Lava is what lies under a laid block, below the open air: the lava sea.
+function lavaBelow(bot, p, deepest = 48) {
+  for (let dy = 0; dy <= deepest; dy++) {
+    const b = bot.blockAt(p.offset(0, -dy, 0));
+    if (!b) return false;
+    if (/lava/.test(b.name)) return true;
+    if (!passable(b)) return false;
+  }
+  return false;
+}
+const blocksCarried = bot => (bot.inventory?.items?.() || []).filter(i => MATERIALS.includes(i.name)).reduce((n, i) => n + i.count, 0);
 
 // Lay a level span toward `target` from where the bot stands, until beside
 // or above it, out of blocks, or `maxBlocks` placed. Returns the blocks laid.
@@ -45,21 +111,22 @@ function underFire(bot) {
   const { threats } = require('./danger'), { shooter } = require('./mob-policy');
   return threats(bot, SHOOTER_RANGE).find(t => t.visible && shooter(t.entity));
 }
-async function bridgeTo(bot, task, target, { maxBlocks = 64 } = {}) {
+// `maxSteps` cells at most: a crossing laid a stretch at a time, as far as
+// its survey saw.
+async function bridgeTo(bot, task, target, { maxBlocks = 64, maxSteps = maxBlocks * 2 } = {}) {
   bot.setControlState('sneak', true);
-  try { return await span(bot, task, target, maxBlocks); }
+  try { return await span(bot, task, target, maxBlocks, maxSteps); }
   finally { bot.setControlState('forward', false); bot.setControlState('sneak', false); }
 }
-async function span(bot, task, target, maxBlocks) {
+async function span(bot, task, target, maxBlocks, maxSteps) {
   let placed = 0;
-  for (let steps = 0; steps < maxBlocks * 2; steps++) {
+  for (let steps = 0; steps < maxSteps; steps++) {
     task.check();
     const fire = underFire(bot);
     if (fire) throw new Error(`Not bridging with a ${fire.entity.name} ${Math.round(fire.distance)} blocks off able to see me`);
     const here = bot.entity.position.floored();
-    const dx = target.x - here.x, dz = target.z - here.z;
-    if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1) return placed;
-    const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
+    const step = stepToward(here, target);
+    if (!step) return placed;
     const next = here.plus(step);
     // Standing squarely on the support block first: a placement from the
     // edge misses the face.
@@ -84,4 +151,4 @@ async function span(bot, task, target, maxBlocks) {
   return placed;
 }
 
-module.exports = { bridgeTo, underFire, MATERIALS };
+module.exports = { bridgeTo, underFire, surveyCrossing, stepToward, blocksCarried, MATERIALS };

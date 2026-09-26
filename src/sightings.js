@@ -8,7 +8,9 @@
 // away, and was told "none seen yet". Noted every fifteen seconds with the
 // trail (stillness.js), a flock to a place, for half an hour.
 // Chickens and pigs are never food (protected-animals.js), so not noted.
-const KINDS = ['sheep', 'cow'];
+// And hoglins, the Nether's meat, for when food is short there
+// (nether-travel.js).
+const KINDS = ['sheep', 'cow', 'hoglin'];
 const FLOCK = 24;
 const KEEP_MS = 30 * 60000;
 const EVERY_MS = 15000;

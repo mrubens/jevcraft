@@ -14,6 +14,9 @@ const MOB_DROPS = {
   creeper: { items: ['gunpowder'], drops: 'up to two gunpowder', for: 'TNT and fireworks; no step on the ladder needs it' },
   enderman: { items: ['ender_pearl'], drops: 'an ender pearl half the time', for: 'pearls and blaze powder make the eyes of ender that find and open the stronghold' },
   witch: { items: ['redstone', 'glowstone_dust', 'stick', 'sugar', 'glass_bottle', 'gunpowder', 'spider_eye'], drops: 'redstone, glowstone, sticks, sugar and bottles', for: 'potions and redstone later; nothing early' },
+  // The Nether's meat: the food there is (nether-travel.js). Raw porkchop is
+  // safe to eat.
+  hoglin: { items: ['porkchop', 'leather'], drops: 'two to four raw porkchops, now and then leather', for: 'food: raw porkchop is safe to eat, three hunger each, and in the Nether little else is' },
   slime: { items: ['slime_ball'], drops: 'slimeballs from the small ones', for: 'leads and sticky pistons' },
 };
 

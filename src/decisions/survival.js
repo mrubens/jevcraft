@@ -16,7 +16,8 @@ const FOOD_OPTIONS = [
   { key: 'village_food', label: 'take ripe crops and hay from a remembered village', when: 'a village with crops or hay is remembered within reach', level: 'obtain_food' },
   { pattern: 'seen_food_\\d+', label: 'walk back to animals seen earlier', when: 'a herd of cows, pigs, chickens or sheep seen in the last half hour, now out of view, 32 to 192 blocks off (the nearest three)', level: 'obtain_food', dynamic: true },
   { key: 'search_food', label: 'walk to another dry area to look for animals', when: 'always', level: 'obtain_food' },
-  { key: 'return_for_food', label: 'go back through the portal for food', when: 'off the Overworld, where nothing is safe to eat', level: 'obtain_food' },
+  { key: 'return_for_food', label: 'go back through the portal for food', when: 'off the Overworld, unless Jev chose to go on in the Nether without it (keep_on, twenty minutes)', level: 'obtain_food' },
+  { key: 'hoglin_food', label: 'hunt a hoglin for porkchops', when: 'in the Nether, a hoglin in view or seen within 192 blocks; its drops, a one-hoglin fight estimate and the mobs about are said', level: 'obtain_food' },
 ];
 
 define({

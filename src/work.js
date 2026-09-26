@@ -209,6 +209,9 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     if (stall.strikes === 1) bot.chat?.(`${thing[0].toUpperCase()}${thing.slice(1)} isn't getting me anywhere. Something else, then.`);
     return;
   }
+  // In the Nether, the answers that meet it, read before the loose ends
+  // are dropped (the leg's target among them): nether-travel.js.
+  const nether = require('./nether-travel').netherAnswers(bot, task, goal, save, { survival, actions: { navigate, portalHere } });
   looseEnds(goal, now);
   const answers = {};
   const mine = [goal.step, goal.lastStruggleStep].find(step => step?.action === 'mine' && step.block);
@@ -250,6 +253,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       setAside(goal, 'rung', rung, `stalled ${stall.strikes} times in ten minutes`, RUNG_WAIT_MS); delete goal.rungTime;
       bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
     } };
+  Object.assign(answers, nether);
   const stalled = { what: thing, strikes: stall.strikes, ...(stall.error ? { failure: stall.error } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}) };
   await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled });
 }
@@ -2793,8 +2797,20 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
     try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000 }); return true; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   } else if (!isSetAside(goal, 'portal_leg', pos(p))) {
-    if (await portalLeg(bot, task, p)) return true;
+    if (await portalLeg(bot, task, goal, p)) return true;
     setAside(goal, 'portal_leg', pos(p), 'a walk toward it made no ground', 120000); save();
+  }
+  // In the Nether, no ground on foot: straight at it at this height, through
+  // the netherrack or over the lava on blocks laid ahead, as far as the
+  // cells ahead show (nether-travel.js). mid-211-c's legs on foot and its
+  // staircase both failed 250 blocks from its portal, and nothing else was
+  // tried (note 241, 2026-09-26). The height is made up where it stands
+  // below the portal, by the pillar (tunnelToward).
+  if (where === 'nether') {
+    const { crossToward } = require('./nether-travel');
+    portalApproach(goal, p, bot.entity.position);
+    const crossed = await crossToward(bot, task, goal, save, pos(p), { what: 'the portal back' });
+    if (crossed.tried && portalApproach(goal, p, bot.entity.position)) return true;
   }
   // Farther off, a leg of the way on foot first: ninety-six blocks from
   // the portal the staircase was the only thing tried, and it went up and
@@ -2808,14 +2824,47 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
 }
 
 // Thirty-two blocks of the way by the pathfinder, which bridges and climbs
-// where a staircase can only dig. Six blocks gained is a leg that worked.
-async function portalLeg(bot, task, p) {
+// where a staircase can only dig. A leg that worked is a new nearest
+// approach to the portal, as for every walk: legs that each went some way
+// and came back never came nearer (note 252's landmark walks, 2026-09-26).
+async function portalLeg(bot, task, goal, p) {
   const here = bot.entity.position, flat = at => Math.hypot(p.x - at.x, p.z - at.z), before = flat(here);
+  portalApproach(goal, p, here);
   const step = Math.min(32, before - 8) / before;
   const leg = { x: here.x + (p.x - here.x) * step, z: here.z + (p.z - here.z) * step };
   try { await navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 4), { timeoutMs: 30000, stallMs: 8000, sprint: true }); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-  return flat(bot.entity.position) < before - 6;
+  return portalApproach(goal, p, bot.entity.position);
+}
+// The nearest the bot has come to a portal it is making for, kept per
+// portal; whether `at` is a new nearest by more than a block.
+function portalApproach(goal, p, at) {
+  const key = `${p.x},${p.y},${p.z}`;
+  const all = goal.portalApproach ||= {};
+  for (const k of Object.keys(all)) if (k !== key) delete all[k];
+  const record = all[key] ||= {};
+  return require('./nether-travel').nearer(record, Math.hypot(p.x - at.x, p.z - at.z));
+}
+
+// A portal of its own where the bot stands in the Nether, when the way back
+// to the one it came through is lost: the frame, from carried obsidian, lit
+// with a carried lighter (nether-travel.js portal_here). mid-211-c was 250
+// blocks from its portal with no way back, and never offered it (note 241).
+const cornerlessFrame = o => [
+  ...[1, 2].flatMap(x => [o.offset(x, 0, 0), o.offset(x, 4, 0)]),
+  ...[1, 2, 3].flatMap(y => [o.offset(0, y, 0), o.offset(3, y, 0)]),
+].sort((a, b) => a.y - b.y).map(p => ({ ...p }));
+async function portalHere(bot, task, goal, save) {
+  if (!goal.netherPortalFrame) {
+    const site = selectPortalSite(bot);
+    if (!site) throw new Blocked('No clear, level ground for a portal frame within reach');
+    const o = pos(site);
+    goal.netherPortalFrame = { origin: { ...o }, blocks: cornerlessFrame(o) }; save();
+  }
+  goal.step = { action: 'portal_here', origin: { ...goal.netherPortalFrame.origin } }; save();
+  if (!await buildPortalFrame(bot, task, goal, save, goal.netherPortalFrame)) return false;
+  delete goal.netherPortalFrame; save();
+  return true;
 }
 
 // A staircase needs a pickaxe; the planner offers no stone stair without
@@ -3000,13 +3049,17 @@ async function netherStep(bot, task, goal, save) {
     }
     const o = pos(site);
     // Minimal frame: two bottom/top blocks, three on each side, no corners.
-    goal.portalFrame = { origin: { ...o }, blocks: [
-      ...[1, 2].flatMap(x => [o.offset(x, 0, 0), o.offset(x, 4, 0)]),
-      ...[1, 2, 3].flatMap(y => [o.offset(0, y, 0), o.offset(3, y, 0)]),
-    ].sort((a, b) => a.y - b.y).map(p => ({ ...p })), ...(casting ? { axis: 'x', cast: true, castTemp: [] } : {}) };
+    goal.portalFrame = { origin: { ...o }, blocks: cornerlessFrame(o), ...(casting ? { axis: 'x', cast: true, castTemp: [] } : {}) };
     save();
   }
-  const frame = goal.portalFrame;
+  await buildPortalFrame(bot, task, goal, save, goal.portalFrame);
+  return false;
+}
+
+// A frame raised and lit, from its obsidian and a lighter: the Overworld's
+// portal, or one built where the bot stands in the Nether (nether-travel.js,
+// when the way back to the one it came through is lost).
+async function buildPortalFrame(bot, task, goal, save, frame) {
   const { frameCells, across } = require('./ruined-portal');
   const axis = frame.axis || 'x', cells = frameCells(frame.origin, axis);
   // A ruin's frame: what stands in its empty slots and inside it comes out
@@ -3072,7 +3125,7 @@ async function netherStep(bot, task, goal, save) {
   task.check();
   await bot.activateBlock(bot.blockAt(bottom), new Vec3(0, 1, 0));
   await waitFor(task, () => bot.blockAt(bottom.offset(0, 1, 0))?.name === 'nether_portal');
-  return false;
+  return true;
 }
 
 function createSurvival(bot, options) {
@@ -4045,4 +4098,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { ruinSays, portalMethod, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

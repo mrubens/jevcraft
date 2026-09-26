@@ -265,3 +265,47 @@ test('a diagonal corner over lava is no floor', () => {
   movement.getMoveDiagonal({ x: 0, y: 70, z: 0, remainingBlocks: 0 }, new Vec3(1, 0, 1), diagonal);
   assert.equal(diagonal.length, 0);
 });
+
+// A ledge over the lava sea: netherrack up to y 69 for z 0 to 2, and north
+// of it (z -1) open air down to lava at y 20.
+function ledgeFixture(dimension) {
+  const bot = botFixture(), Block = require('prismarine-block')(bot.registry);
+  bot.game.dimension = dimension; bot.health = 20;
+  bot.blockAt = point => {
+    const p = point.floored();
+    const blockName = p.y <= 20 ? 'lava' : p.y < 70 && p.z >= 0 && p.z <= 2 ? 'netherrack' : 'air';
+    const block = Block.fromStateId(bot.registry.blocksByName[blockName].defaultState); block.position = p; return block;
+  };
+  const movement = configureMovements(bot); movement.canDig = false;
+  return { bot, movement };
+}
+
+test('in the Nether a cell beside a drop into the lava sea costs more than one back from the edge', () => {
+  // mid-227-a and mid-227-b were routed along ledges high over the lava sea and went over (notes 217, 248).
+  const { movement } = ledgeFixture('the_nether');
+  const neighbors = movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
+  const edge = neighbors.find(p => p.x === 0 && p.z === 0 && p.y === 70), back = neighbors.find(p => p.x === -1 && p.z === 1 && p.y === 70);
+  assert(edge && back, 'both still walkable: a cost, not a ban');
+  assert(edge.cost > back.cost + 3, `the ledge costs more: ${edge.cost} against ${back.cost}`);
+  // In the Overworld the cost is left as it was.
+  const overworld = ledgeFixture('overworld').movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
+  assert.equal(overworld.find(p => p.x === 0 && p.z === 0 && p.y === 70).cost, overworld.find(p => p.x === -1 && p.z === 1 && p.y === 70).cost);
+});
+
+test('after a step back from the edge the route does not go back onto it while the mob is about', () => {
+  // mid-227-b stepped back from the ledge at the magma cubes, and the next route walked it back along the same edge (note 248).
+  const { holdOffEdge } = require('../src/terrain');
+  const { bot, movement } = ledgeFixture('the_nether');
+  const cube = { id: 7, name: 'magma_cube', position: new Vec3(40, 70, 1), isValid: true, height: 1 };
+  bot.entities = { 7: cube };
+  holdOffEdge(bot, new Vec3(0, 70, 0), [cube]);
+  let neighbors = movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
+  assert(!neighbors.some(p => p.x === 0 && p.z === 0 && p.y === 70), 'not back onto the edge cell it left');
+  assert(!neighbors.some(p => p.x === 1 && p.z === 0 && p.y === 70), 'nor the edge beside it');
+  assert(neighbors.some(p => p.x === -1 && p.z === 1 && p.y === 70), 'ground back from the edge is open');
+  // The cube gone, the edge is a route again (at its cost).
+  bot.entities = {}; movement._hostileObservation = null;
+  neighbors = movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
+  assert(neighbors.some(p => p.x === 0 && p.z === 0 && p.y === 70));
+  assert.equal(bot._edgeHold, undefined);
+});
