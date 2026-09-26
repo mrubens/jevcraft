@@ -523,6 +523,24 @@ test('a night shell left on the pen gate\'s stand is dug away when the pen is bu
   assert.deepEqual(dug, [key(pen.gateStand)], 'the stray on the stand, and nothing else');
 });
 
+test('a fence cell with a bump of ground in it has the ground dug before the fence goes in', async () => {
+  // first-days-224: the pen past the levelled footprint, a grass block in a fence cell, "placement obstructed" seven times.
+  const { buildPen, layout } = require('../src/home-base');
+  const home = { origin: { x: 0, y: 64, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 64, z: 0 }, bed: {}, pen: {} };
+  const { pen } = layout(home);
+  const key = p => `${p.x},${p.y},${p.z}`;
+  const blocks = new Map();
+  for (const f of pen.fences.slice(1)) blocks.set(key(f), 'oak_fence');
+  blocks.set(key(pen.gate), 'oak_fence_gate');
+  blocks.set(key(pen.fences[0]), 'grass_block');
+  const bot = { entity: { position: new Vec3(0.5, 65, 0.5) }, inventory: { items: () => [{ name: 'oak_fence', count: 4 }] }, registry: require('minecraft-data')('26.1'),
+    blockAt: p => { const n = blocks.get(key(p)) || 'air'; return { name: n, position: p, boundingBox: n === 'air' ? 'empty' : 'block', getProperties: () => ({ open: false }) }; } };
+  const dug = [], placed = [];
+  await buildPen(bot, { check() {} }, {}, () => {}, home, { dig: async (b, t, p) => { dug.push(key(p)); blocks.delete(key(p)); }, place: async (b, t, p) => { placed.push(key(p)); blocks.set(key(p), 'oak_fence'); } });
+  assert.deepEqual(dug, [key(pen.fences[0])]);
+  assert.deepEqual(placed, [key(pen.fences[0])]);
+});
+
 test('with no path home from a mine under it, the way home is dug a stretch at a time and walked again', async () => {
   // Trial 115: seventeen blocks under home, "no path" twenty-five times and a loop between the walk and a detour.
   const { goHome } = require('../src/home-base');

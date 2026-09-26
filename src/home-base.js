@@ -614,7 +614,11 @@ async function clearStray(bot, task, actions, cells) {
   for (const p of cells) {
     task.check();
     const block = bot.blockAt(pos(p));
-    if (block && block.boundingBox === 'block' && STRAY.has(block.name)) await actions.dig(bot, task, pos(p), { requireDrops: false });
+    // The ground too: the pen reaches past the levelled footprint, and
+    // first-days-224's fence cell held a bump of grass, "placement
+    // obstructed by grass_block" seven times (2026-09-26). A cell that must
+    // be empty has its natural block dug as a player would.
+    if (block && block.boundingBox === 'block' && (STRAY.has(block.name) || require('./tunneling').natural.test(block.name))) await actions.dig(bot, task, pos(p), { requireDrops: false });
   }
 }
 
