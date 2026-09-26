@@ -23,3 +23,13 @@ test('the risk of dying now is said from the mobs about, the fight they would be
   assert.match(hungry.healing, /^no healing/);
   assert.deepEqual(riskNow(botWith({ mobs: [['spider', 5], ['skeleton', 9]], time: 15000 })).hostilesWithin.kinds, ['spider', 'skeleton']);
 });
+
+test('fighting them all counts the shooters behind a wall: the fight is out among them', () => {
+  const wall = { raycast: (eye, dir, range) => ({ position: eye.offset(dir.x, dir.y, dir.z), intersect: eye.offset(dir.x, dir.y, dir.z) }) };
+  const mobs = [['skeleton', 7], ['skeleton', 11], ['skeleton', 11], ['zombie', 7]];
+  const open = riskNow(botWith({ mobs })), walled = riskNow({ ...botWith({ mobs }), world: wall });
+  assert.equal(walled.hostilesWithin.inSight, 0);
+  assert.equal(open.hostilesWithin.inSight, 4);
+  assert.deepEqual(walled.fightingAllHere, open.fightingAllHere);
+  assert.doesNotMatch(walled.level, /^low/);
+});
