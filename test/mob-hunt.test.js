@@ -680,3 +680,18 @@ test('a fortress leg begun again where the last began turns the sweep, however t
   const [a, b] = targets;
   assert.notDeepEqual(a, b, `a new heading, not the same leg again: ${a} then ${b}`);
 });
+
+test('a sweep with every leg failing and too few blocks to cross goes back through the portal for more', async () => {
+  // mid-87-k: on an island in the lava sea with eighteen blocks, twelve legs turned in four minutes.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  const bot = { registry, game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: {}, entity: { position: new Vec3(57.5, 32, 1.5) },
+    inventory: { items: () => [{ name: 'cobblestone', count: 7 }, { name: 'cobbled_deepslate', count: 11 }] },
+    findBlocks: () => [], blockAt: p => ({ name: p.y < 32 ? 'lava' : 'air', position: p, boundingBox: 'empty' }), world: { raycast: () => null }, chat() {} };
+  const goal = { fortressSearch: { axis: 1, legs: 9, legFails: 3, legSince: Date.now() - 60000, legFrom: { x: 57, z: 1 }, target: { x: 153, y: 40, z: 1 } } };
+  let back = 0;
+  const actions = { navigate: async () => {}, tunnel: async () => {}, returnOverworld: async () => { back++; } };
+  await findFortressStep(bot, new Task('fortress'), goal, () => {}, actions);
+  assert.equal(back, 1);
+});

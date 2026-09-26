@@ -889,6 +889,16 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // Four failures and twenty seconds: a leg whose every attempt fails at
   // once turned the compass four times in half a minute.
   if (++state.legFails >= 4 && Date.now() - (state.legSince || 0) >= 20000) {
+    // Short of blocks to cross with, back through the portal for more
+    // (the crossing waits for two stacks): mid-87-k turned the sweep twelve
+    // times on an island in the lava sea with eighteen (2026-09-26).
+    const blocks = bot.inventory.items().filter(i => /^(cobblestone|cobbled_deepslate|netherrack|blackstone|stone|deepslate|dirt)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+    if (blocks < 32 && actions.returnOverworld) {
+      turnSweep(state); save();
+      bot.chat?.(`Down to ${blocks} blocks and no way on. Back through the portal for more.`);
+      await actions.returnOverworld(bot, task, goal, save);
+      return;
+    }
     turnSweep(state); save();
     if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.('No way on in this direction. Turning the search.'); }
   }
