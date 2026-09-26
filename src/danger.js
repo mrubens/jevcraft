@@ -41,6 +41,21 @@ function provoked(bot, entity) {
   }
   return Object.hasOwn(GROUP_ANGER, entity.name) && bot._hurtBy?.[entity.name] > Date.now() - GROUP_ANGER[entity.name];
 }
+// Animals that hit a player unprovoked, now and then: a goat rams whoever
+// is near every half-minute to five minutes, a polar bear goes for one near
+// its cubs. One is the bot's threat when it has hurt the bot lately, or
+// when it is close and one hit, and the throw after it, would be all the
+// health left: first-days-210, at 0.7 health among goats on a mountain,
+// walked up to a rabbit beside two of them and was rammed to death
+// (2026-09-26); they were animals to every layer.
+const UNPROVOKED = { goat: 2, polar_bear: 6 };
+function unprovokedThreat(bot, entity) {
+  const hit = UNPROVOKED[entity.name];
+  if (hit === undefined) return false;
+  if (bot._hurtBy?.[entity.name] > Date.now() - 20000) return true;
+  const here = bot.entity?.position;
+  return !!here && !!entity.position && entity.position.distanceTo(here) <= 8 && (bot.health ?? 20) <= hit + 2;
+}
 const provokedEnderman = (bot, entity) => entity.name === 'enderman' && provoked(bot, entity);
 
 const wearingGold = bot => [5, 6, 7, 8].some(slot => /^golden_/.test(bot.inventory?.slots?.[slot]?.name || ''));
@@ -49,7 +64,7 @@ function hostileEntities(bot, radius = 24) {
   const position = bot.entity.position;
   const daytime = bot.time?.timeOfDay < DAY.DARK || bot.time?.timeOfDay >= DAY.DAWN;
   return Object.values(bot.entities || {}).filter(entity => {
-    if ((!hostileNames.has(entity.name) && !provoked(bot, entity)) || !entity.position || entity.isValid === false || observedDead(bot, entity)) return false;
+    if ((!hostileNames.has(entity.name) && !provoked(bot, entity) && !unprovokedThreat(bot, entity)) || !entity.position || entity.isValid === false || observedDead(bot, entity)) return false;
     // A spider turns by day when a spider hits the bot, not when anything
     // does: a fall or a fire set every spider in view back on it.
     if (entity.name === 'spider' && daytime && !(bot._hurtBy?.spider > Date.now() - 10000)) return false;

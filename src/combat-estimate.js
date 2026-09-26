@@ -35,6 +35,7 @@ const MOBS = {
   guardian: { hit: 6, health: 30, shoots: true, note: 'a laser' }, elder_guardian: { hit: 8, health: 80, shoots: true, note: 'a laser, and mining fatigue' },
   warden: { hit: 30, health: 500, note: 'never to be fought' }, creaking: { hit: 3, health: 1, note: 'cannot be hurt while its heart stands' },
   illusioner: { hit: 4, health: 32, shoots: true }, endermite: { hit: 2, health: 8 },
+  goat: { hit: 2, health: 10, note: 'rams now and then unprovoked, and throws the bot several blocks' }, polar_bear: { hit: 6, health: 30, note: 'goes for a player near its cubs' },
 };
 // Damage and swings a second.
 const WEAPONS = {
