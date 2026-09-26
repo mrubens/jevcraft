@@ -2660,7 +2660,12 @@ class Survival {
     // stock-driven search that finds nothing in five minutes is set aside for
     // twenty, and only real hunger forages meanwhile. The seventh climb spent
     // half an hour on a bare mountain searching for a chicken at full hunger.
-    const hungry = bot.food <= hungerTrigger;
+    // Hurt with hunger under eighteen and nothing to eat is hungry too: the
+    // health does not come back until something is eaten. mid-87-f waited
+    // six minutes at three health and sixteen hunger with no food carried,
+    // "recovering before combat", and a zombie ended it (2026-09-26).
+    const cannotHeal = !offWorld && (bot.health ?? 20) < 14 && bot.food < 18 && !chooseFood(bot);
+    const hungry = bot.food <= hungerTrigger || cannotHeal;
     const stockDriven = !offWorld && (goal.stockFood || expeditionFood || (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful'));
     const now = Date.now();
     // Stocked is stocked: the flag that asked for a reserve was never taken
