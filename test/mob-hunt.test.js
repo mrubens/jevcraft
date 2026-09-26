@@ -665,3 +665,18 @@ test('in the Nether short of pearls, with gold and a piglin in view, the ladder 
   bot.entities = {};
   assert.notEqual(nextGameStage(bot, goal).action, 'barter', 'no piglin in view: home to hunt');
 });
+
+test('a fortress leg begun again where the last began turns the sweep, however the step was cut short', async () => {
+  // mid-83-f: five legs south from one Nether spot, each cut short by the progress watch before its failures were counted.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const bot = { registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(12.5, 71, -171.5) }, findBlocks: () => [] };
+  const goal = {};
+  const targets = [];
+  const actions = { tunnel: async (b, t, g, s, target) => { targets.push([target.x, target.z]); } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  delete goal.fortressSearch.target; // the step cut short and started over, as the recovery does
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  const [a, b] = targets;
+  assert.notDeepEqual(a, b, `a new heading, not the same leg again: ${a} then ${b}`);
+});

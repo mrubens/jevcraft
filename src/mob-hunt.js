@@ -847,7 +847,13 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // A leg walked to its end: whatever was left behind may be seen again.
     if (state.target && !state.rememberedTarget) delete state.leaving;
     delete state.rememberedTarget;
+    // A leg begun again where the last one began got nowhere, however the
+    // step was cut short: mid-83-f began five legs south from one spot in
+    // the Nether, each ended by the progress watch before the leg counted
+    // its failures, and the audit called the loop (2026-09-26). Turned.
+    if (state.legFrom && Math.hypot(state.legFrom.x - here.x, state.legFrom.z - here.z) < 8) turnSweep(state);
     const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++; state.legSince = Date.now();
+    state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) };
   }
   goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();
   const leg = new Vec3(state.target.x, state.target.y, state.target.z);
