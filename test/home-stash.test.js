@@ -266,7 +266,7 @@ test('before the Nether a restock tops food up to the crossing reserve, not a da
   const day = beef(stashWithdrawals(bot, home, [], { foodPoints: KIT_FOOD_POINTS }));
   const nether = beef(stashWithdrawals(bot, home, [], { foodPoints: NETHER_FOOD_POINTS }));
   assert.equal(day, 2, 'a day: two steaks, sixteen points');
-  assert.equal(nether, 3, 'the Nether: three steaks, twenty-four points');
+  assert.equal(nether, 5, 'the Nether: five steaks, forty points');
 });
 
 test('a restock item set aside after a restock that changed nothing is not planned again', () => {

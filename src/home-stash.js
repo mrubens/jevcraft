@@ -222,7 +222,10 @@ function stashDeposits(bot, home, { valuables = false, items = bot.inventory.ite
 // the Nether needs twenty-four, and a restock that stopped at twelve sent
 // the bot hunting for cows that were not there, gave up, and walked into
 // the Nether with nothing, eight cooked beef left behind in the chest.
-const NETHER_FOOD_POINTS = 24;
+// Forty since: with twenty-four, mid-92-p wanted food three minutes after
+// reaching its fortress and mid-83-j went home hungry from its spawner
+// (2026-09-26); a blaze fight is paid for in hunger, healing back.
+const NETHER_FOOD_POINTS = 40;
 const foodTarget = goal => goal?.preparingNether ? NETHER_FOOD_POINTS : KIT_FOOD_POINTS;
 
 function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items(), foodPoints: target = KIT_FOOD_POINTS } = {}) {
