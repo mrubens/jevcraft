@@ -150,7 +150,30 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
     const diamond = bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
     const kinds = diamond ? ['ruined_portal', 'lava_pool'] : ['lava_pool'];
     const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, kinds, { navigate, filter: l => l.kind !== 'ruined_portal' || (l.obsidian || 0) > 0 });
-    if (arrived !== null) { if (arrived) { goal.step = { ...step, phase: 'at_landmark', kind: arrived.kind }; save(); } return; }
+    if (arrived !== null) {
+      if (!arrived) return;
+      goal.step = { ...step, phase: 'at_landmark', kind: arrived.kind }; save();
+      // At a ruined portal: its frame is the obsidian, mined where it
+      // stands. Only crust was mined here before, and a frame is not crust
+      // (air under it, often), so mid-79-d stood at one and "made obsidian"
+      // 673 times in two minutes, none of it mined (2026-09-26).
+      if (arrived.kind === 'ruined_portal') {
+        const id = bot.registry.blocksByName.obsidian?.id;
+        const frame = (id === undefined ? [] : bot.findBlocks({ matching: id, maxDistance: 16, count: 32 }))
+          .filter(p => !isSetAside(goal, 'crust', p)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+        if (!frame.length) { arrived.obsidian = 0; save(); return; }
+        for (const p of frame.slice(0, 4)) {
+          if (!wanted()) return;
+          task.check(); checkAir(bot); checkThreats(bot);
+          const before = countOf(bot, 'obsidian');
+          goal.step = { ...step, phase: 'mine_portal', position: { ...p } }; save();
+          try { await approachDryMining(bot, task, p, { navigate, dig }); await dig(bot, task, p, { done: () => countOf(bot, 'obsidian') > before, requiredTool: 'diamond_pickaxe' }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Blocked'].includes(err.name)) throw err; setAside(goal, 'crust', p, err, 300000); save(); continue; }
+          await collectNearbyDrops(bot, task, 'obsidian', { before, origin: p, radius: 6, waitForSpawnMs: 1000, allowExcavation: true });
+        }
+      }
+      return;
+    }
   }
   // No walkable way to a shore: dig toward one, or toward the nearest pool,
   // or down to where the lava lakes are. The staircase stops short of any

@@ -131,3 +131,23 @@ test('a crust whose dig is refused is set aside, not tried again next round', as
   await makeObsidian(bot, new Task('obsidian'), step, goal, () => {}, actions).catch(() => {});
   assert(!dug.some(p => again.includes(p)), `the refused crust is not tried again: ${dug.join(' ')}`);
 });
+
+test('at a ruined portal the frame is mined; with none left the portal is marked empty', async () => {
+  // mid-79-d: at a ruined portal, "making obsidian" 673 times in two minutes, the frame never mined.
+  const obsidianId = registry.blocksByName.obsidian.id;
+  const frame = [new Vec3(3, 65, 0), new Vec3(3, 66, 0)];
+  const items = [{ name: 'water_bucket', count: 1 }, { name: 'diamond_pickaxe', count: 1 }];
+  const bot = { registry, game: { gameMode: 'survival', difficulty: 'normal', dimension: 'overworld' }, entities: {}, entity: { position: new Vec3(0.5, 64, 0.5) },
+    inventory: { items: () => items }, world: { raycast: () => null },
+    blockAt: p => ({ name: frame.some(f => f.equals(p)) ? 'obsidian' : p.y < 64 ? 'stone' : 'air', position: p, boundingBox: frame.some(f => f.equals(p)) || p.y < 64 ? 'block' : 'empty' }),
+    findBlocks: ({ matching }) => matching === obsidianId ? frame.slice() : [],
+    pathfinder: { movements: {}, getPathTo: async () => ({ status: 'success', path: [] }) } };
+  const goal = { landmarks: [{ kind: 'ruined_portal', x: 2, y: 64, z: 0, dimension: 'overworld', obsidian: 6 }] };
+  const dug = [];
+  const actions = { navigate: async () => {}, approachDryMining: async () => {}, collectNearbyDrops: async () => {}, resourceTunnelStep: async () => {}, acquireStep: async () => {},
+    dig: async (b, t, p) => { dug.push(`${p}`); frame.splice(frame.findIndex(f => f.equals(p)), 1); items.push({ name: 'obsidian', count: 1 }); } };
+  await makeObsidian(bot, new Task('obsidian'), { action: 'make_obsidian', item: 'obsidian', count: 4 }, goal, () => {}, actions);
+  assert.equal(dug.length, 2, 'the frame mined');
+  await makeObsidian(bot, new Task('obsidian'), { action: 'make_obsidian', item: 'obsidian', count: 4 }, goal, () => {}, actions);
+  assert.equal(goal.landmarks[0].obsidian, 0, 'none left: the portal is marked empty');
+});
