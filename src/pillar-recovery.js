@@ -100,7 +100,10 @@ async function descendPillar(bot, task, goal, save, expected, { combat = false }
 // next cell up; the pathfinder takes over from wherever it stops.
 const SCAFFOLD = ['netherrack', 'cobblestone', 'cobbled_deepslate', 'dirt', 'nether_bricks', 'blackstone', 'basalt', 'stone', 'andesite', 'diorite', 'granite', 'tuff', 'soul_soil'];
 const DIGGABLE_ABOVE = /^(netherrack|stone|deepslate|cobblestone|cobbled_deepslate|dirt|gravel|sand|soul_sand|soul_soil|basalt|blackstone|andesite|diorite|granite|tuff|nether_bricks|glowstone|magma_block|crimson_nylium|warped_nylium|nether_quartz_ore|nether_gold_ore|.*_leaves)$/;
-async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = true } = {}) {
+// `canDig` says which blocks overhead may be dug: a climb out of the mine
+// passes its own test, the one its column was looked over by.
+const diggableAbove = block => DIGGABLE_ABOVE.test(block.name) && block.diggable;
+async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = true, canDig = diggableAbove } = {}) {
   const { move } = require('./motion');
   let placed = 0;
   while (bot.entity.position.y < targetY - 0.5 && placed < maxBlocks) {
@@ -115,7 +118,7 @@ async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = tru
     const passing = [feet.offset(0, 1, 0), head, head.offset(0, 1, 0)];
     if (passing.some(liquid) || passing.slice(0, 2).some(c => directions.some(d => liquid(c.plus(d))))) break;
     if (!dryPassable(above)) {
-      if (!DIGGABLE_ABOVE.test(above.name) || !above.diggable) break;
+      if (!canDig(above)) break;
       await dig(bot, task, head, { requireDrops: false });
       continue;
     }

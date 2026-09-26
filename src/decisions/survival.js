@@ -188,3 +188,20 @@ define({
   instructions: { task: 'The bot is stuck and has to get somewhere: `aim` says where. Choose the next single move.', guidance: 'Each move says what it does and what the code has worked out about the result: what digging would bring down or let in, whether the move rises, whether it ends on dry ground or under open sky, and whether the bot has stood there before. `here` is where the bot stands now; `recentMoves` are the moves already made and what each did. A move that changed nothing last time will change nothing again.' },
   fallback: children => Object.keys(children)[0],
 });
+
+// Climbing out of the mine by digging (src/surface.js): a staircase, or
+// straight up the column overhead. mid-72-b spent twenty-seven minutes
+// climbing, three digs a block of height, and went on by hand at over
+// twenty seconds a stair twice when the last pickaxe wore out on the way.
+define({
+  id: 'climb_out', area: 'survival', kind: 'mining', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Climbing out of the mine by digging: a staircase toward open ground, or straight up the column overhead?',
+  trigger: 'A climb to the surface with no dug way out found, when it starts digging; asked again when the pickaxes carried change, the column overhead opens or closes, or the column would not rise.',
+  source: 'src/surface.js (returnToSurface, chooseClimb, climbOptions)',
+  options: [
+    { key: 'staircase', label: 'dig a staircase up toward open ground', when: 'always', level: 'root' },
+    { key: 'straight_up', label: 'dig straight up, a block put under the feet at each step', when: 'the column to open sky has only natural ground to dig, nothing that falls or flows in or beside it, and a building block carried for every step up', level: 'root' },
+  ],
+  instructions: { task: 'The bot is underground and has to dig its way out to open sky. Choose how it climbs.', guidance: 'Each way says how many blocks it digs, how long it takes with the pickaxes carried, and what it leaves behind. A pickaxe wears a use for each block it digs; once the pickaxes are used up the rest is dug by hand, stone at seven and a half seconds a block. `pickaxes` lists what is carried and the uses left; `straightUpBlocked` says why the column overhead is not on offer, when it is not.' },
+  fallback: (children, path, context = {}) => children[context.quicker] ? context.quicker : Object.keys(children)[0],
+});

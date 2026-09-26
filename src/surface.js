@@ -1,9 +1,10 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { surveyRoute, navigate } = require('./skills');
+const { surveyRoute, navigate, cheapestTool } = require('./skills');
 const { safeFromHostiles } = require('./danger');
-const { tunnelStep, staircaseResting } = require('./tunneling');
+const { tunnelStep, staircaseResting, natural } = require('./tunneling');
+const { pillarUp, SCAFFOLD } = require('./pillar-recovery');
 const { dryPassable, dryLeaf, dryBodySpace, supportCell, swimmableWater } = require('./terrain');
 
 // Inspect loaded columns, ignoring tree canopies but not terrain, roofs or
@@ -46,6 +47,106 @@ function climbToSurface(bot, point) {
 // A climb out by staircase, roughly: two blocks dug and a step for each
 // block up, some three seconds a block with a stone pickaxe.
 const climbMinutes = blocks => Math.max(1, Math.round(blocks * 3 / 60));
+
+// What a climb costs, in digs and seconds, with what is carried. A stair up
+// digs three blocks (the one over the head, and the two it steps into) and
+// a stair across two; a climb straight up digs only the block over the head
+// and puts one under the feet. mid-72-b's staircases ran three seconds a
+// stair with a pickaxe and twenty-two to twenty-four by hand, which is these
+// figures: seven and a half seconds a block of stone by hand, a little over
+// a second a stair for the walking. Three digs a block of height also wore
+// the pickaxes out on the way up: two of mid-72-b's climbs went on by hand
+// from y 65 and y 58 after the last pickaxe broke on them (2026-09-26).
+const STAIR_STEP_SECONDS = 1.2, PILLAR_RISE_SECONDS = 1, HAND_STONE_SECONDS = 7.5, PICKAXE_STONE_SECONDS = 0.6;
+const falls = block => ['sand', 'red_sand', 'gravel'].includes(block?.name) || /_concrete_powder$/.test(block?.name || '');
+const liquid = block => /^(water|lava|bubble_column|flowing_water|flowing_lava)$/.test(block?.name || '') || [true, 'true'].includes(block?.getProperties?.().waterlogged);
+const AROUND = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+// A block a climb straight up may dig: ground as the world makes it, and
+// nothing that falls on the head once the block under it is gone.
+const climbable = block => natural.test(block.name) && !falls(block) && block.diggable !== false;
+
+function pickaxesCarried(bot) {
+  return bot.inventory?.items?.().filter(i => /_pickaxe$/.test(i.name)).map(i => {
+    const maximum = bot.registry?.itemsByName?.[i.name]?.maxDurability;
+    return { name: i.name, usesLeft: maximum ? Math.max(0, maximum - (i.durabilityUsed || 0)) : null };
+  }) || [];
+}
+// Seconds to dig a block with the tool the dig would take, and whether that
+// wears a pickaxe. Blocks without the game's dig times (a test's) count as
+// stone.
+function digSeconds(bot, block) {
+  if (typeof block?.digTime === 'function') {
+    const tool = cheapestTool(bot, block);
+    return { seconds: block.digTime(tool?.type ?? null, false, false, false, [], {}) / 1000, hand: block.digTime(null, false, false, false, [], {}) / 1000, wears: !!tool && /_pickaxe$/.test(tool.name) };
+  }
+  const pick = pickaxesCarried(bot).some(p => p.usesLeft !== 0);
+  return { seconds: pick ? PICKAXE_STONE_SECONDS : HAND_STONE_SECONDS, hand: HAND_STONE_SECONDS, wears: pick };
+}
+// The same climb straight up the column: one block dug a block of height.
+const climbStraightMinutes = (blocks, { pickaxe = false } = {}) =>
+  Math.max(1, Math.round(blocks * ((pickaxe ? PICKAXE_STONE_SECONDS : HAND_STONE_SECONDS) + PILLAR_RISE_SECONDS) / 60));
+// Digs that wear a pickaxe go by hand once its uses run out.
+function digTime(digs, cost, usesLeft) {
+  const worn = cost.wears ? Math.min(digs, usesLeft ?? digs) : digs;
+  return worn * cost.seconds + (digs - worn) * cost.hand;
+}
+
+// The column over the bot's head, looked over for a climb straight up to
+// open sky: every block in it dug from below, a block put under the feet at
+// each step up. Null when the bot is not under cover; otherwise the height,
+// the blocks to dig, or why the column cannot be climbed.
+function straightUpColumn(bot, origin = bot.entity.position.floored()) {
+  const up = climbToSurface(bot, origin);
+  if (!up) return null;
+  const top = origin.y + up, cells = [];
+  for (let y = origin.y + 1; y <= top + 1; y++) {
+    const c = new Vec3(origin.x, y, origin.z), block = bot.blockAt(c);
+    if (!block) return { up, blocked: 'not all of it is loaded' };
+    if (liquid(block) || AROUND.some(d => liquid(bot.blockAt(c.plus(d))))) return { up, blocked: 'water or lava in or beside it' };
+    if (falls(block)) return { up, blocked: `${block.name.replaceAll('_', ' ')} in it would fall on the head` };
+    if (dryPassable(block)) continue;
+    if (y === origin.y + 1 || !climbable(block)) return { up, blocked: `${block.name.replaceAll('_', ' ')} in the way` };
+    cells.push(block);
+  }
+  return { up, top, cells };
+}
+
+// The two ways out by digging, each with what it costs and leaves, for Jev.
+function climbOptions(bot, target, column, { landing = false } = {}) {
+  const feet = bot.entity.position.floored(), picks = pickaxesCarried(bot);
+  const usesLeft = picks.reduce((n, p) => n + (p.usesLeft ?? 64), 0);
+  const tools = picks.length ? picks.map(p => `${p.name.replaceAll('_', ' ')}${p.usesLeft != null ? ` (${p.usesLeft} uses left)` : ''}`).join(', ') : 'no pickaxe';
+  const duration = s => s < 90 ? `about ${Math.max(5, Math.round(s / 5) * 5)} seconds` : `about ${Math.round(s / 60)} minutes`;
+  const wearNote = (digs, wearing) => wearing && digs > usesLeft ? ` That is more digs than the ${usesLeft} uses the pickaxes have left: the rest by hand.` : '';
+  const options = {}, estimate = {};
+
+  // The staircase: to the landing it heads for, or, with none seen, up by
+  // the height of open sky over here.
+  const ground = bot.blockAt(feet.offset(0, -1, 0));
+  const stone = digSeconds(bot, ground?.boundingBox === 'block' && natural.test(ground.name) ? ground : null);
+  const rises = Math.max(1, landing ? target.y - feet.y : climbToSurface(bot, feet) || target.y - feet.y);
+  const across = landing ? Math.abs(target.x - feet.x) + Math.abs(target.z - feet.z) : rises;
+  const level = Math.max(0, across - rises), stairDigs = 3 * rises + 2 * level;
+  estimate.staircase = digTime(stairDigs, stone, usesLeft) + (rises + level) * STAIR_STEP_SECONDS;
+  const toward = landing ? `to the open ground seen at ${target.x}, ${target.y}, ${target.z}, ${rises} up and ${across} across` : `up toward open sky, about ${rises} blocks up (no open ground seen within reach to head for)`;
+  options.staircase = { description: `Dig a staircase ${toward}: about ${stairDigs} blocks dug, three for each block of height and two for each stair across, and ${rises + level} stairs walked; ${duration(estimate.staircase)} with ${picks.length ? 'the pickaxe' : 'bare hands'}.${wearNote(stairDigs, stone.wears)} The stairs stay open behind: a walk back down to this mine later.` };
+
+  if (column?.cells) {
+    const scaffold = bot.inventory?.items?.().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0) || 0;
+    const wearing = column.cells.filter(b => digSeconds(bot, b).wears).length;
+    let left = usesLeft, seconds = column.up * PILLAR_RISE_SECONDS;
+    for (const block of column.cells) { const cost = digSeconds(bot, block); seconds += !cost.wears ? cost.seconds : left > 0 ? (left--, cost.seconds) : cost.hand; }
+    const kinds = [...new Set(column.cells.map(b => b.name.replaceAll('_', ' ')))].slice(0, 4).join(', ');
+    if (scaffold < column.up) column = { ...column, blocked: `${scaffold} building blocks carried for the ${column.up} steps up` };
+    else {
+      estimate.straight_up = seconds;
+      options.straight_up = { description: `Dig straight up this column to open sky: ${column.up} blocks up, ${column.cells.length} blocks to dig${kinds ? ` (${kinds})` : ''}, a block put under the feet at each of the ${column.up} steps (${scaffold} building blocks carried); ${duration(seconds)} with ${picks.length ? 'the pickaxe' : 'bare hands'}.${wearNote(wearing, wearing > 0)} Nothing that falls or flows is in or beside the column. The column is filled behind with the blocks put down: no way back down is left.` };
+    }
+  }
+  const state = { blocksToOpenSky: climbToSurface(bot, feet), pickaxes: tools, pickaxeUsesLeft: usesLeft,
+    ...(column?.blocked ? { straightUpBlocked: column.blocked } : {}) };
+  return { options, estimate, state };
+}
 
 function surfaceMovement(bot) {
   const movements = bot.pathfinder.movements;
@@ -210,7 +311,10 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
     // Retry complete exit routes periodically as the staircase opens up.
     // Repeating twelve expensive searches at every one-block step stalls work.
     // A staircase call that did not move the bot re-reads the routes too.
-    for (const target of !state.ascent || state.ascent.steps % 8 === 0 || state.still ? candidates : []) {
+    // A climb straight up the column has none to find on the way: they were
+    // read when it began, and are read again if the column stops rising.
+    const climbing = state.climb?.method === 'straight_up';
+    for (const target of (!state.ascent && !climbing) || state.ascent?.steps % 8 === 0 || state.still ? candidates : []) {
       if (checked.has(key(target))) continue;
       checked.add(key(target));
       if (checked.size > 12) break;
@@ -235,6 +339,10 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       const target = open[0]?.clone() || (state.target ? new Vec3(state.target.x, state.target.y, state.target.z)
         : start.offset(Math.round(24 * Math.cos(heading)), 32, Math.round(24 * Math.sin(heading))));
       target.y = Math.max(target.y, start.y + 1);
+      // Which way to dig out is Jev's: a staircase, or straight up the
+      // column overhead, each said with what it costs and leaves.
+      const climb = await chooseClimb(bot, task, goal, save, state, target, { landing: !!open[0] });
+      if (climb.method === 'straight_up') { await climbStraightUp(bot, task, goal, save, state, climb.column, start, actions); return; }
       state.ascent ||= { entrance: { ...start }, steps: 0, visited: {} };
       // Keep the exit staircase separate from the suspended mining worksite.
       // The copy shares the goal's memory of failed attempts, or a
@@ -274,6 +382,41 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
     save();
     throw new Error(`No safe route from underground to an observed surface landing (${Math.min(checked.size, 12)} areas checked)`);
   } finally { movements.allowedPosition = previous; Object.assign(movements, ordinary); }
+}
+
+// How the climb digs its way: asked when it starts, and again when the
+// pickaxes carried change (one wearing out halfway up changes every cost)
+// or the column overhead stops being open. Without Jev, the quicker.
+async function chooseClimb(bot, task, goal, save, state, target, { landing = false } = {}) {
+  const feet = bot.entity.position.floored(), here = `${feet.x},${feet.z}`;
+  const tools = pickaxesCarried(bot).map(p => p.name).sort().join(',') || 'hand';
+  const column = state.climb?.failedColumn === here ? null : straightUpColumn(bot, feet);
+  const kept = state.climb?.method && state.climb.tools === tools && (state.climb.method !== 'straight_up' || column?.cells);
+  const offered = state.climb?.offered || [];
+  if (kept && !(column?.cells && !offered.includes('straight_up'))) return { method: state.climb.method, column };
+  const { options, estimate, state: facts } = climbOptions(bot, target, column, { landing });
+  // Asked again only when something new is on offer.
+  if (kept && Object.keys(options).every(k => offered.includes(k))) return { method: state.climb.method, column };
+  const quicker = Object.keys(estimate).sort((a, b) => estimate[a] - estimate[b])[0];
+  const decision = await require('./decisions').decide('climb_out', { client: task.opportunityClient, bot, task, goal, save, tree: options, state: facts, context: { quicker } });
+  const method = decision.path.at(-1);
+  state.climb = { method, tools, offered: Object.keys(options), ...(state.climb?.failedColumn ? { failedColumn: state.climb.failedColumn } : {}), estimate: Math.round(estimate[method] ?? 0), at: new Date().toISOString() };
+  save();
+  return { method, column };
+}
+
+// Up the column a few blocks a call, as the staircase goes six stairs a
+// call. A column that would not rise at all is not offered again here.
+async function climbStraightUp(bot, task, goal, save, state, column, start, { dig, pillar = pillarUp }) {
+  const feet = bot.entity.position.floored(), before = bot.entity.position.y;
+  goal.step = { action: 'ascend_to_surface', method: 'straight_up', from: { ...feet }, top: column.top };
+  goal.survivalAction = { action: 'return_to_surface', method: 'straight_up', from: { ...start }, top: column.top, at: new Date().toISOString() };
+  save();
+  await pillar(bot, task, Math.min(column.top, feet.y + 8), { dig, maxBlocks: 8, threats: false, canDig: climbable });
+  delete state.still;
+  if (bot.entity.position.y - before < 0.5) state.climb = { ...state.climb, method: null, failedColumn: `${feet.x},${feet.z}` };
+  if (surfaceReturnComplete(bot, goal)) delete goal.surfaceReturn;
+  save();
 }
 
 // Whether the way up from here can be dug without a tool. A shore under a
@@ -318,4 +461,4 @@ function lidExit(bot, { origin = bot.entity.position.floored(), maxHeight = 3 } 
   return lid;
 }
 
-module.exports = { climbToSurface, climbMinutes, lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };
+module.exports = { climbToSurface, climbMinutes, climbStraightMinutes, straightUpColumn, climbOptions, lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };

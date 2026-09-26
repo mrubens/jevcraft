@@ -316,7 +316,7 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   // 2026-09-25).
   const where = () => {
     const depth = (() => { if (!bot.entity?.position || typeof bot.blockAt !== 'function') return 0; try { return require('./surface').climbToSurface(bot, bot.entity.position) ?? 0; } catch (_) { return 0; } })();
-    if (depth >= 8) return ` The bot is about ${depth} blocks under the surface: choosing this now means that climb now (roughly ${require('./surface').climbMinutes(depth)} minutes with a pickaxe), and back down; with no wood when a pickaxe wears out down here, the climb is by hand at about two blocks a minute.`;
+    if (depth >= 8) return ` The bot is about ${depth} blocks under the surface: choosing this now means that climb now (roughly ${require('./surface').climbMinutes(depth)} minutes with a pickaxe), and back down; with no wood when a pickaxe wears out down here, the climb is by hand at about two blocks a minute by stairs, or seven straight up where the column overhead is open.`;
     let treeNear = null;
     try { treeNear = typeof bot.findBlocks === 'function' ? find(bot, bot.registry.blocksArray.filter(b => /_log$|_stem$/.test(b.name)).map(b => b.name), 48, 1)[0] : null; } catch (_) { treeNear = null; }
     return treeNear ? ` A tree is ${Math.round(treeNear.distanceTo(bot.entity.position))} blocks away.` : ' No tree is in view from here.';

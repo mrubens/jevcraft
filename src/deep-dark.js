@@ -60,8 +60,8 @@ function describe(goal, kind = 'deep_dark', bot = null) {
   let facts = '';
   if (bot?.entity?.position) {
     const y = Math.floor(bot.entity.position.y), down = y - (site?.y ?? x.depth);
-    const { climbMinutes } = require('./surface');
-    if (down > 0) facts += ` Y ${site?.y ?? x.depth} is ${down} blocks below here: roughly ${climbMinutes(down)} minutes of staircase down and as long back up, or about ${Math.round(down / 2)} minutes up by hand if the pickaxe gives out.`;
+    const { climbMinutes, climbStraightMinutes } = require('./surface');
+    if (down > 0) facts += ` Y ${site?.y ?? x.depth} is ${down} blocks below here: roughly ${climbMinutes(down)} minutes of staircase down and as long back up, or about ${Math.round(down / 2)} minutes up by hand if the pickaxe gives out (about ${climbStraightMinutes(down)} by hand straight up, where the column overhead is open).`;
     if (x.warden) {
       const { afterArmour, armourOf, MOBS } = require('./combat-estimate');
       const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);

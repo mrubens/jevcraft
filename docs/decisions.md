@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-73 questions: 25 decision trees and 48 batched questions.
+74 questions: 26 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -145,6 +145,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `(step\|climb\|place)_(north\|east\|south\|west)` (pattern) | root | walk, climb or place a block that way | the cells that way allow it |
 | `dig_(north\|east\|south\|west)_(feet\|head\|over)` (pattern) | root | dig the block that way | a natural block there, and a tool for it if it needs one |
 | `dig_up\|dig_down\|swim_up\|pillar` (pattern) | root | dig over the head or underfoot, swim up, or pillar | what is over the head or underfoot allows it |
+
+### `climb_out`
+
+**Climbing out of the mine by digging: a staircase toward open ground, or straight up the column overhead?**
+
+- When: A climb to the surface with no dug way out found, when it starts digging; asked again when the pickaxes carried change, the column overhead opens or closes, or the column would not rise.
+- Decision tree, choice; stakes medium; ledger kind `mining`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/surface.js (returnToSurface, chooseClimb, climbOptions)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `staircase` | root | dig a staircase up toward open ground | always |
+| `straight_up` | root | dig straight up, a block put under the feet at each step | the column to open sky has only natural ground to dig, nothing that falls or flows in or beside it, and a building block carried for every step up |
 
 ## combat
 

@@ -435,6 +435,121 @@ test('the climb to open sky is counted from the column, canopies ignored (the de
   assert.equal(climbToSurface(bot, new Vec3(0.5, 64, 0.5)), 0, 'under a tree is on the surface');
   assert.equal(climbToSurface(bot, new Vec3(0.5, 30, 0.5)), 34);
   assert.equal(climbMinutes(34), 2);
+  const { climbStraightMinutes } = require('../src/surface');
+  assert.equal(climbStraightMinutes(34), 5, 'by hand straight up: a block dug and a step a block of height');
+  assert.equal(climbStraightMinutes(34, { pickaxe: true }), 1);
   bot.blockAt = () => null;
   assert.equal(climbToSurface(bot, new Vec3(0.5, 30, 0.5)), null, 'unloaded');
+});
+
+// mid-72-b: the climbs out of the mine dug three blocks a block of height,
+// wore the last pickaxe out twice on the way, and went on by hand at over
+// twenty seconds a stair. Straight up the column is Jev's other way out.
+function shaft({ y = 40, items = [{ name: 'cobblestone', count: 64 }] } = {}) {
+  const { bot, blocks } = world();
+  bot.entity.position = new Vec3(0.5, y, 0.5);
+  bot.registry = require('minecraft-data')('26.1');
+  bot.game.dimension = 'overworld';
+  bot.inventory = { items: () => items };
+  bot.findBlocks = () => [];
+  bot.blockAt = p => {
+    const name = blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air');
+    return { name, position: p, diggable: true, boundingBox: ['air', 'water', 'lava'].includes(name) ? 'empty' : 'block' };
+  };
+  blocks.set(`${new Vec3(0, y, 0)}`, 'air'); blocks.set(`${new Vec3(0, y + 1, 0)}`, 'air');
+  return { bot, blocks };
+}
+
+test('the column overhead is looked over to open sky: what it digs, and what rules it out', () => {
+  const { straightUpColumn } = require('../src/surface');
+  const { bot, blocks } = shaft();
+  const column = straightUpColumn(bot);
+  assert.equal(column.up, 24); assert.equal(column.top, 64);
+  assert.equal(column.cells.length, 22, 'one block a step, the head cell already open');
+  for (const [cell, name, why] of [['(0, 50, 0)', 'gravel', /would fall/], ['(1, 45, 0)', 'water', /water or lava/], ['(0, 52, 0)', 'oak_log', /oak log in the way/], ['(0, 64, 0)', 'oak_log', /oak log in the way/]]) {
+    blocks.set(cell, name);
+    assert.match(straightUpColumn(bot).blocked, why, `${name} at ${cell}`);
+    blocks.delete(cell);
+  }
+  bot.entity.position = new Vec3(0.5, 64, 0.5);
+  assert.equal(straightUpColumn(bot), null, 'on the surface there is no column to climb');
+});
+
+test('the ways out say what they cost: by hand the stairs take three digs a block, straight up one', () => {
+  const { straightUpColumn, climbOptions } = require('../src/surface');
+  const { bot } = shaft();
+  const target = new Vec3(0, 64, 24);
+  const byHand = climbOptions(bot, target, straightUpColumn(bot));
+  assert.deepEqual(Object.keys(byHand.options).sort(), ['staircase', 'straight_up']);
+  assert.match(byHand.options.staircase.description, /72 blocks dug.*bare hands/);
+  assert.match(byHand.options.straight_up.description, /24 blocks up, 22 blocks to dig.*64 building blocks carried.*no way back down/);
+  assert(byHand.estimate.straight_up < byHand.estimate.staircase / 2, JSON.stringify(byHand.estimate));
+  // A pickaxe with twenty uses left: the stairs would wear it out halfway.
+  const pick = shaft({ items: [{ name: 'cobblestone', count: 64 }, { name: 'stone_pickaxe', type: bot.registry.itemsByName.stone_pickaxe.id, durabilityUsed: 111, count: 1 }] }).bot;
+  const worn = climbOptions(pick, target, straightUpColumn(pick));
+  assert.equal(worn.state.pickaxeUsesLeft, 20);
+  assert.match(worn.options.staircase.description, /more digs than the 20 uses the pickaxes have left/);
+  assert.match(worn.options.straight_up.description, /more digs than the 20 uses/, 'twenty-two blocks straight up outlast it too');
+  // Too few blocks to put under the feet: not on offer, and said why.
+  const few = shaft({ items: [{ name: 'cobblestone', count: 10 }] }).bot;
+  const short = climbOptions(few, target, straightUpColumn(few));
+  assert.deepEqual(Object.keys(short.options), ['staircase']);
+  assert.match(short.state.straightUpBlocked, /10 building blocks carried for the 24 steps up/);
+});
+
+test('without Jev the quicker way is taken: straight up, a few blocks a call, one dig a block, asked once', async () => {
+  const { bot, blocks } = shaft();
+  const goal = {}, dug = [], calls = [];
+  const dig = async (_bot, _task, p) => { dug.push(p.y); blocks.set(`${p}`, 'air'); };
+  // The pillar as the game does it: dig over the head, then up a block with
+  // one put under the feet.
+  const pillar = async (b, task, targetY, { dig, maxBlocks, canDig }) => {
+    calls.push({ targetY, maxBlocks });
+    for (let placed = 0; b.entity.position.y < targetY - 0.5 && placed < maxBlocks;) {
+      const feet = b.entity.position.floored(), above = b.blockAt(feet.offset(0, 2, 0));
+      if (above.boundingBox === 'block') { if (!canDig(above)) break; await dig(b, task, above.position); continue; }
+      blocks.set(`${feet}`, 'cobblestone'); b.entity.position = feet.offset(0.5, 1, 0.5); placed++;
+    }
+  };
+  for (let i = 0; i < 6 && !surfaceObserver(bot)(bot.entity.position); i++) {
+    await returnToSurface(bot, new Task('exit'), goal, () => {}, { dig, pillar, navigate: async () => assert.fail('no stairs walked') });
+  }
+  assert.equal(bot.entity.position.y, 64);
+  assert.equal(dug.length, 22, 'one dig a block of height');
+  assert.deepEqual(calls.map(c => c.targetY), [48, 56, 64]);
+  assert.equal(goal.surfaceReturn, undefined);
+  assert.equal(goal.step.method, 'straight_up');
+  const asked = goal.decisions.filter(d => d.id === 'climb_out');
+  assert.equal(asked.length, 1, 'asked when the climb began, not at every call');
+  assert.deepEqual(Object.keys(asked[0].options).sort(), ['staircase', 'straight_up']);
+  assert.deepEqual(asked[0].path, ['straight_up']);
+});
+
+test('a column that would not rise is not offered again there, and the climb goes on by the stairs', async () => {
+  const { bot, blocks } = shaft();
+  const goal = {};
+  const dig = async (_bot, _task, p) => { blocks.set(`${p}`, 'air'); };
+  let stairs = 0;
+  const actions = { dig, pillar: async () => {}, navigate: async (_bot, _task, g) => { stairs++; bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } };
+  await returnToSurface(bot, new Task('exit'), goal, () => {}, actions);
+  assert.equal(bot.entity.position.y, 40);
+  assert.equal(goal.surfaceReturn.climb.failedColumn, '0,0');
+  await returnToSurface(bot, new Task('exit'), goal, () => {}, actions);
+  assert(stairs > 0 && bot.entity.position.y > 40, 'the staircase takes over');
+  assert.equal(goal.surfaceReturn.climb.method, 'staircase');
+  // Out of that column, straight up is on offer again, and asked.
+  await returnToSurface(bot, new Task('exit'), goal, () => {}, actions);
+  const asked = goal.decisions.filter(d => d.id === 'climb_out');
+  assert.deepEqual(asked.map(d => d.path[0]), ['straight_up', 'staircase', 'straight_up']);
+});
+
+test('the climb is asked again when the pickaxes carried change', async () => {
+  const { bot, blocks } = shaft();
+  const goal = { surfaceReturn: { attempts: 0, visited: {}, climb: { method: 'staircase', tools: 'iron_pickaxe', offered: ['staircase', 'straight_up'] } } };
+  const dig = async (_bot, _task, p) => { blocks.set(`${p}`, 'air'); };
+  const pillar = async b => { b.entity.position = b.entity.position.offset(0, 1, 0); };
+  await returnToSurface(bot, new Task('exit'), goal, () => {}, { dig, pillar, navigate: async () => assert.fail('the stairs were chosen with a pickaxe') });
+  assert.equal(goal.surfaceReturn.climb.tools, 'hand');
+  assert.equal(goal.surfaceReturn.climb.method, 'straight_up');
+  assert.equal(bot.entity.position.y, 41);
 });

@@ -46,10 +46,11 @@ async function recoveryOptions(bot, task, goal, actions) {
   if (bot.game.dimension === 'overworld' && !surfaceReturnComplete(bot, goal)) {
     // How far up, and how long (the decision audit, 2026-09-25): the
     // midgame trials spent 84 of 220 minutes climbing out.
-    const { climbToSurface, climbMinutes } = require('./surface');
+    const { climbToSurface, climbMinutes, climbStraightMinutes } = require('./surface');
     const up = climbToSurface(bot, bot.entity.position);
     const pick = bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
-    const climb = up == null ? ' How far up the sky is is not known from here.' : up > 0 ? ` About ${up} blocks up to open sky: roughly ${pick ? `${climbMinutes(up)} minutes by staircase with a pickaxe` : `${Math.round(up / 2)} minutes by hand, with no pickaxe`}.` : '';
+    const straight = up > 0 ? `, or about ${climbStraightMinutes(up, { pickaxe: pick })} straight up where the column overhead is open` : '';
+    const climb = up == null ? ' How far up the sky is is not known from here.' : up > 0 ? ` About ${up} blocks up to open sky: roughly ${pick ? `${climbMinutes(up)} minutes by staircase with a pickaxe` : `${Math.round(up / 2)} minutes by hand, with no pickaxe`}${straight}.` : '';
     add(`Return toward the observed surface using inspected routes or an explicit staircase; pause the current worksite.${climb}`, { kind: 'surface' });
   }
   // The option that changes the situation when every footing nearby has
