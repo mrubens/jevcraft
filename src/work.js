@@ -48,7 +48,8 @@ const { fightEndStep } = require('./end-combat');
 const { exitEnd } = require('./end-exit');
 const { prepareEndSupplies } = require('./end-supplies');
 const { collectWater } = require('./water');
-const { makeObsidian } = require('./obsidian');
+const { makeObsidian, collectLava } = require('./obsidian');
+const { castFrame, castSays, plannedWalls } = require('./portal-cast');
 const { tidyInventory, roomFor, makeRoom, crowded } = require('./inventory-tidy');
 const { homeStep, homeChores , gatherWool, woolCarried } = require('./home-base');
 const { stashValuables, restockFromStash, NETHER_FOOD_POINTS } = require('./home-stash');
@@ -1939,6 +1940,7 @@ async function executeAcquisition(bot, task, step, goal, save) {
   else if (step.action === 'craft') await craft(bot, task, step, goal);
   else if (step.action === 'smelt') await smelt(bot, task, step, goal, save);
   else if (step.action === 'harden') await harden(bot, task, goal, save, step.item);
+  else if (step.action === 'fill_bucket' && step.item === 'lava_bucket') await collectLava(bot, task, step, goal, save, { navigate, dig, resourceTunnelStep });
   else if (step.action === 'fill_bucket') await collectWater(bot, task, goal, save, { navigate, explore });
   else if (step.action === 'make_obsidian') await makeObsidian(bot, task, step, goal, save, { navigate, dig, approachDryMining, collectNearbyDrops, resourceTunnelStep, acquireStep });
   else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep, navigate, dig, returnOverworld: returnFromNether,
@@ -2865,7 +2867,7 @@ async function portalMethod(bot, task, goal, save) {
   const { knownLandmarks } = require('./exploration');
   const diamondPickaxe = bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
   const method = goal.portalMethod;
-  if (method?.kind === 'build') return true;
+  if (method?.kind === 'build' || method?.kind === 'cast') return true;
   if (method?.kind === 'ruin') {
     const r = new Vec3(method.at.x, method.at.y ?? bot.entity.position.y, method.at.z);
     if (!bot.blockAt(r) || bot.entity.position.distanceTo(r) > 12) {
@@ -2885,22 +2887,40 @@ async function portalMethod(bot, task, goal, save) {
   }
   const ruins = knownLandmarks(bot, goal, 'ruined_portal', 512).filter(k => !k.landmark.noFrame).slice(0, 3);
   const client = task.opportunityClient;
-  if (!ruins.length || !client) { goal.portalMethod = { kind: 'build' }; save(); return true; }
+  // A frame of its own and one cast in place are always there to choose
+  // between, ruins or none.
+  if (!client) { goal.portalMethod = { kind: 'build' }; save(); return true; }
   const diamonds = countOf(bot, 'diamond'), obsidian = countOf(bot, 'obsidian');
+  const lighter = countOf(bot, 'flint_and_steel') + countOf(bot, 'fire_charge') > 0;
   const tree = {
     build_new: { description: `Build a portal frame of its own: ten obsidian (${obsidian} carried), lit with flint and steel. Obsidian is made by pouring water on lava and mined with a diamond pickaxe (${diamondPickaxe ? 'one carried' : `none carried; three diamonds make one, ${diamonds} carried`}), about ten seconds a block once at a lava pool.` },
+    cast_frame: { description: castSays({ obsidian, waterBucket: countOf(bot, 'water_bucket') > 0, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket'),
+      iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava: nearestLava(bot, goal) }) },
   };
   ruins.forEach((k, i) => {
     tree[`ruin_${i}`] = { description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) };
   });
   const decision = await decide('portal_method', { client, bot, task, goal, save, tree,
     state: { dimension: String(bot.game?.dimension || ''), obsidian, diamonds, diamondPickaxe, flintAndSteel: countOf(bot, 'flint_and_steel'), fireCharges: countOf(bot, 'fire_charge'),
+      buckets: countOf(bot, 'bucket'), waterBuckets: countOf(bot, 'water_bucket'), lavaBuckets: countOf(bot, 'lava_bucket'), ironIngots: countOf(bot, 'iron_ingot'),
       riskNow: require('./risk').riskNow(bot) } });
   if (decision.stale) return false;
   const pick = decision.fallback ? 'build_new' : decision.path.at(-1);
-  goal.portalMethod = pick === 'build_new' ? { kind: 'build' } : { kind: 'ruin', at: { x: ruins[Number(pick.slice(5))].landmark.x, y: ruins[Number(pick.slice(5))].landmark.y, z: ruins[Number(pick.slice(5))].landmark.z } };
+  if (pick === 'build_new' || pick === 'cast_frame') { goal.portalMethod = { kind: pick === 'build_new' ? 'build' : 'cast' }; save(); return true; }
+  const ruin = ruins[Number(pick.slice(5))].landmark;
+  goal.portalMethod = { kind: 'ruin', at: { x: ruin.x, y: ruin.y, z: ruin.z } };
   save();
-  return pick === 'build_new';
+  return false;
+}
+
+// The nearest lava the bot knows of, for the cast option's trips: a pool
+// loaded about it, or one remembered (exploration.js), not one spent.
+function nearestLava(bot, goal) {
+  const here = bot.entity.position;
+  const loaded = require('./obsidian').poolSurface(bot).map(p => ({ distance: Math.round(p.distanceTo(here)), how: 'in sight about here' }));
+  const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool').filter(k => !k.landmark.spent)
+    .map(k => ({ distance: k.distance, how: 'a lava pool remembered' }));
+  return [...loaded, ...known].sort((a, b) => a.distance - b.distance)[0] || null;
 }
 
 async function netherStep(bot, task, goal, save) {
@@ -2957,15 +2977,18 @@ async function netherStep(bot, task, goal, save) {
   // A frame with no placed blocks can be relocated when its original ground
   // was excavated. Once construction begins its coordinates stay fixed.
   if (goal.portalFrame && goal.portalFrame.blocks.every(p => bot.blockAt(pos(p)) && bot.blockAt(pos(p)).name !== 'obsidian') &&
-      !(goal.portalFrame.supports || []).some(p => bot.blockAt(pos(p))?.name === p.material) &&
+      ![...(goal.portalFrame.supports || []), ...(goal.portalFrame.castTemp || [])].some(p => bot.blockAt(pos(p))?.name === p.material) &&
       !portalSiteClear(bot, goal.portalFrame.origin)) { delete goal.portalFrame; save(); }
   if (!goal.portalFrame && !await portalMethod(bot, task, goal, save)) return false;
   if (!goal.portalFrame) {
+    // Cast in place (portal-cast.js), the obsidian is made in its slots.
+    const casting = goal.portalMethod?.kind === 'cast';
     if (!await acquireStep(bot, task, 'flint_and_steel', 1, goal, save)) return false;
-    if (!await acquireStep(bot, task, 'obsidian', 10, goal, save)) return false;
+    if (!casting && !await acquireStep(bot, task, 'obsidian', 10, goal, save)) return false;
     // Gather scaffolding before choosing the building site, so we never mine
-    // its foundations to obtain temporary supports.
-    if (!await preparePortalSupports(bot, task, goal, save, 3)) return false;
+    // its foundations to obtain temporary supports. A cast frame's are its
+    // lava's walls.
+    if (!await preparePortalSupports(bot, task, goal, save, casting ? plannedWalls() : 3)) return false;
     const site = selectPortalSite(bot);
     if (!site) {
       if (surfaceObserver(bot)(bot.entity.position)) await explore(bot, task, goal, save, 'portal site', { surfaceOnly: true });
@@ -2977,7 +3000,7 @@ async function netherStep(bot, task, goal, save) {
     goal.portalFrame = { origin: { ...o }, blocks: [
       ...[1, 2].flatMap(x => [o.offset(x, 0, 0), o.offset(x, 4, 0)]),
       ...[1, 2, 3].flatMap(y => [o.offset(0, y, 0), o.offset(3, y, 0)]),
-    ].sort((a, b) => a.y - b.y).map(p => ({ ...p })) };
+    ].sort((a, b) => a.y - b.y).map(p => ({ ...p })), ...(casting ? { axis: 'x', cast: true, castTemp: [] } : {}) };
     save();
   }
   const frame = goal.portalFrame;
@@ -2995,7 +3018,9 @@ async function netherStep(bot, task, goal, save) {
     }
   }
   const missing = frame.blocks.filter(p => bot.blockAt(pos(p))?.name !== 'obsidian');
-  if (missing.length) {
+  if (missing.length && frame.cast) {
+    if (!await castFrame(bot, task, goal, save, { navigate, place, dig, acquireStep })) return false;
+  } else if (missing.length) {
     if (!await acquireStep(bot, task, 'obsidian', missing.length, goal, save)) return false;
     // The cornerless frame still needs temporary placement anchors. The top
     // beam cannot be placed in midair: build its left corner after the column.
@@ -3018,6 +3043,20 @@ async function netherStep(bot, task, goal, save) {
     for (const p of missing) {
       if (p.y === o.y + 4 && air(bot.blockAt(scaffold[2]))) await anchor(scaffold[2]);
       await place(bot, task, pos(p), 'obsidian');
+    }
+  }
+  // A cast frame's temporary walls inside it and at its corners come out
+  // before lighting: the portal fills only an empty inside. The rest stand.
+  if (frame.cast) {
+    const inside = [...cells.interior, ...cells.corners];
+    for (const t of [...(frame.castTemp || [])]) {
+      const p = pos(t);
+      if (!inside.some(q => q.equals(p))) continue;
+      if (!air(bot.blockAt(p))) {
+        goal.step = { action: 'clear_cast_walls', at: { ...t }, block: bot.blockAt(p)?.name }; save();
+        await dig(bot, task, p, { requireDrops: false });
+      }
+      frame.castTemp = frame.castTemp.filter(q => !pos(q).equals(p)); save();
     }
   }
   // A fire charge lights a portal as flint and steel does, and a ruin's
@@ -3959,4 +3998,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { ruinSays, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { ruinSays, portalMethod, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

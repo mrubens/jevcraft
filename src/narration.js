@@ -116,7 +116,8 @@ function stepVariants(goal, step) {
     case 'smelt': { const what = some(step.count, step.item); return [`Smelting ${what}.`, `Into the furnace: ${what} coming up.`, `Firing up the furnace for ${what}.`]; }
     case 'harden': return "I'm hardening the concrete in water.";
     case 'make_obsidian': return `Water on lava: I'm making ${step.count ? `${step.count} ` : ''}obsidian.`;
-    case 'fill_bucket': return ["I'm fetching some water.", 'Filling up my bucket.'];
+    case 'fill_bucket': return step.item === 'lava_bucket' ? ["I'm fetching lava in a bucket.", 'Off to a lava pool with my buckets.'] : ["I'm fetching some water.", 'Filling up my bucket.'];
+    case 'cast_portal': return "Lava in, water on top: I'm casting the portal frame.";
     case 'hunt_mob': return [`I'm going after a ${name(step.entity)} for ${name(step.item)}.`, `Hunting a ${name(step.entity)}. I need ${name(step.item)}.`];
     case 'strike_out': return ["Nothing here. I'll try somewhere new.", 'Time to look somewhere else.'];
     case 'stock_food_for_nether': return "I'm stocking up on food before the Nether.";

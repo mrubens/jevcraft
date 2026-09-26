@@ -200,6 +200,13 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
         steps.push({ action: 'fill_bucket', item: name, count: missing, consumes: { bucket: missing }, produces: { water_bucket: missing } });
         add(name, missing);
       } });
+      // Lava the same way, from the edge of a pool: a portal frame cast in
+      // place is a lava bucket a block (portal-cast.js).
+      if (name === 'lava_bucket') methods.push({ cost: 8, run: () => {
+        consume('bucket', missing);
+        steps.push({ action: 'fill_bucket', item: name, count: missing, consumes: { bucket: missing }, produces: { lava_bucket: missing } });
+        add(name, missing);
+      } });
       // Ahead of mining a deposit, observed (5) or not (12): the lava step
       // mines any obsidian that has nothing molten against it, natural or
       // just made, and pours water where there is none. Plain ore mining

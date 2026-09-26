@@ -5,21 +5,26 @@ const { countOf, surveyRoute } = require('./skills');
 const { dryMiningPositions, miningReach, miningMovement, dryStanding } = require('./mining-access');
 const { checkThreats } = require('./danger');
 const { checkAir } = require('./vitals');
-const sourceWater = b => b?.name === 'water' && Number(b.getProperties?.().level ?? b.metadata ?? 0) === 0;
+const sourceOf = fluid => b => b?.name === fluid && Number(b.getProperties?.().level ?? b.metadata ?? 0) === 0;
+const sourceWater = sourceOf('water');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function fillWaterBucket(bot, task, position, { timeoutMs = 2500, guard = () => {} } = {}) {
+// An empty bucket used on a source: water, or lava for a portal frame cast
+// in place (portal-cast.js). The same aim and the same confirmation either
+// way: the bucket count changes or nothing happened.
+async function fillBucket(bot, task, position, { fluid = 'water', timeoutMs = 2500, guard = () => {} } = {}) {
   const check = () => { task.check(); checkAir(bot); guard(); };
+  const source = sourceOf(fluid), full = `${fluid}_bucket`;
   check();
-  if (!sourceWater(bot.blockAt(position))) throw new Error('Bucket filling requires an observed water source');
+  if (!source(bot.blockAt(position))) throw new Error(`Bucket filling requires an observed ${fluid} source`);
   const bucket = bot.inventory.items().find(i => i.name === 'bucket');
   if (!bucket) throw new Error('No empty bucket to fill');
-  const before = countOf(bot, 'water_bucket'), emptyBefore = countOf(bot, 'bucket');
+  const before = countOf(bot, full), emptyBefore = countOf(bot, 'bucket');
   await bot.equip(bucket, 'hand'); check();
   const checkReach = () => {
     const eye = bot.entity.position.offset(0, 1.62, 0), delta = position.offset(.5, .5, .5).minus(eye);
     const hit = bot.world.raycast(eye, delta.unit(), delta.norm());
-    if (delta.norm() > 4.5 || hit && eye.distanceTo(hit.intersect || hit.position) < delta.norm() - .1) throw new Error('Water source is outside visible interaction reach');
+    if (delta.norm() > 4.5 || hit && eye.distanceTo(hit.intersect || hit.position) < delta.norm() - .1) throw new Error(`${fluid[0].toUpperCase()}${fluid.slice(1)} source is outside visible interaction reach`);
   };
   checkReach();
   // Bucket use carries its rotation in use_item. Waiting for a smooth turn
@@ -27,18 +32,19 @@ async function fillWaterBucket(bot, task, position, { timeoutMs = 2500, guard = 
   // Aim immediately from the current position, as in the falling placement.
   await bot.lookAt(position.offset(.5, .5, .5), true); check();
   checkReach();
-  if (!sourceWater(bot.blockAt(position))) throw new Error('Water source changed before filling the bucket');
+  if (!source(bot.blockAt(position))) throw new Error(`${fluid[0].toUpperCase()}${fluid.slice(1)} source changed before filling the bucket`);
   bot.activateItem();
   try {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       check();
-      if (countOf(bot, 'water_bucket') === before + 1 && countOf(bot, 'bucket') === emptyBefore - 1) return;
+      if (countOf(bot, full) === before + 1 && countOf(bot, 'bucket') === emptyBefore - 1) return;
       await sleep(25);
     }
-    throw new Error('No water-bucket inventory conversion was confirmed');
+    throw new Error(`No ${fluid}-bucket inventory conversion was confirmed`);
   } finally { bot.deactivateItem(); }
 }
+const fillWaterBucket = (bot, task, position, options = {}) => fillBucket(bot, task, position, { ...options, fluid: 'water' });
 
 async function collectWater(bot, task, goal, save, { navigate, explore }) {
   task.check(); checkAir(bot); checkThreats(bot);
@@ -73,4 +79,4 @@ async function collectWater(bot, task, goal, save, { navigate, explore }) {
   } finally { movement.restore(); }
   await explore(bot, task, goal, save, 'water', { surfaceOnly: true });
 }
-module.exports = { sourceWater, fillWaterBucket, collectWater };
+module.exports = { sourceWater, fillBucket, fillWaterBucket, collectWater };
