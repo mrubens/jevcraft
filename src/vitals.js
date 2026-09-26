@@ -421,14 +421,38 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   // dig) never had a turn. After a failed swim, only low air sends it up
   // again for a minute.
   const lately = bot._surfaceFailedAt > Date.now() - 60000;
-  // Out of the block first: dug with the best tool carried, a few tries.
-  for (let tries = 0; tries < 4 && headInBlock(bot); tries++) {
+  // Out of the block first. A falling column refills the head's cell after
+  // every dig, so a step aside into open air beside the feet comes first, as
+  // a player steps out from under gravel; then the dig, as often as it takes.
+  // Nothing but a cancellation stops it: a creeper ten blocks off and the
+  // spare pickaxe each broke off the dig, four tries a time, while mid-79-c
+  // suffocated under gravel from nineteen health (2026-09-26).
+  if (headInBlock(bot)) {
+    const feet = bot.entity.position.floored();
+    const open = b => b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name);
+    const aside = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz))
+      .find(c => open(bot.blockAt(c)) && open(bot.blockAt(c.offset(0, 1, 0))) && bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' &&
+        !/^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$/.test(bot.blockAt(c.offset(0, 2, 0))?.name || ''));
+    if (aside) {
+      onAction({ action: 'dig_out_of_block', block: bot.blockAt(feet.offset(0, 1, 0))?.name, stepAside: { ...aside } });
+      try {
+        // Only a cancellation stops the step: the threat check would end it
+        // at the first creeper in view.
+        const only = { get cancelled() { return task.cancelled; }, label: task.label, check() { if (task.cancelled) throw new (require('./skills').Cancelled)(task.label); } };
+        await require('./motion').move(bot, only, { label: 'out_from_under', keys: ['forward'], sneak: false, why: 'stepping out from under a block over the head',
+          look: aside.offset(0.5, 1.6, 0.5), maxMs: 1200, tick: 50, until: () => !headInBlock(bot) || bot.entity.position.floored().equals(aside) });
+      } catch (err) { if (err.name === 'Cancelled') throw err; }
+    }
+  }
+  for (let tries = 0; tries < 12 && headInBlock(bot); tries++) {
+    if (task.cancelled) throw new (require('./skills').Cancelled)(task.label);
     const eye = bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0).floored(), block = bot.blockAt(eye);
     onAction({ action: 'dig_out_of_block', block: block.name, at: { ...eye } });
     try { await require('./skills').equipBestTool(bot, block); } catch (_) { /* the hand, then */ }
     try { await bot.dig(block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
-    task.check();
+    await sleep(150);
   }
+  task.check();
   if (inPowderSnow(bot)) { await outOfPowderSnow(bot, task, onAction); task.check(); }
   if (inFire(bot)) { await outOfFire(bot, task, onAction); task.check(); }
   if (onFire(bot) && !inFire(bot) && !require('./terrain').bodyInLava(bot)) { await douse(bot, task, onAction); task.check(); }

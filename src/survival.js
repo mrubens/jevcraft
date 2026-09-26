@@ -2344,6 +2344,9 @@ class Survival {
       if (!last || last.x !== f.x || last.y !== f.y || last.z !== f.z) this.state.lastDry = { x: f.x, y: f.y, z: f.z, dimension: String(bot.game?.dimension || '') };
     }
     await maintainVitals(bot, task, action => this.report(goal, save, action));
+    // Still in a block: nothing else this turn, the dig out comes again at
+    // once. mid-79-c went on to craft its spare pickaxe under the gravel.
+    if (require('./vitals').headInBlock(bot)) { onStep(goal); return true; }
     // The mob hitting the bot comes first, before a bed, a pocket, a chore
     // or anything else: trial 7's bot lay down to sleep beside a zombie
     // villager and was hit five times trying, then walled itself in with it

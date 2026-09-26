@@ -425,3 +425,15 @@ test('a swimmer that stops getting anywhere on its way to air takes another way 
   assert.equal(headSubmerged(bot), false, 'the head out of the water');
   assert(Date.now() - started < 5000, `in a few seconds, not ${Date.now() - started} ms`);
 });
+
+test('a falling gravel column is dug out as often as it refills', async () => {
+  // mid-79-c: four tries a time, broken off by a creeper at ten blocks and by the spare pickaxe, and it suffocated from nineteen health.
+  const { maintainVitals } = require('../src/vitals');
+  let column = 6, digs = 0;
+  const bot = { oxygenLevel: 20, health: 12, food: 20, entity: { position: new Vec3(0.5, 35, 0.5) }, inventory: { items: () => [] }, _recentHurtAt: Date.now(),
+    blockAt: p => ({ name: p.y === 36 && column > 0 ? 'gravel' : p.y < 35 ? 'air' : 'stone', position: p, boundingBox: (p.y === 36 && column > 0) || (p.y >= 35 && p.y !== 36) ? 'block' : 'empty' }),
+    dig: async () => { digs++; column--; }, equip: async () => {} };
+  // As the survival layer calls it: its own threat check is off (stepOnce).
+  await maintainVitals(bot, new Task('mine')).catch(() => {});
+  assert.equal(digs, 6, 'the whole column, not four');
+});
