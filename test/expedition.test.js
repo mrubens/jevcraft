@@ -231,3 +231,22 @@ test('the crossing waits for two stacks of blocks to bridge and pillar with', as
   assert.equal(entered, false, 'not through the portal with twenty blocks');
   assert(seen.includes('blocks_for_nether'), `the blocks come first: ${seen}`);
 });
+
+test('an item left in the crafting grid with the pockets full is put away after room is made', async () => {
+  // mid-83-k: logs and tables went into the grid with no room to come back, and it crafted seventeen tables.
+  const { settleCraftInventory } = require('../src/work');
+  const registry = require('minecraft-data')('26.1');
+  const slots = Array(46).fill(null);
+  for (let i = 9; i < 45; i++) slots[i] = { name: 'dirt', count: 64, type: registry.itemsByName.dirt.id, slot: i };
+  slots[2] = { name: 'acacia_log', count: 1, type: registry.itemsByName.acacia_log.id, slot: 2 };
+  const put = [];
+  const bot = { registry, game: { dimension: 'overworld', gameMode: 'survival' }, entity: { position: new Vec3(0, 64, 0) }, blockAt: () => null,
+    inventory: { slots, inventoryStart: 9, inventoryEnd: 45, items: () => slots.slice(9, 45).filter(Boolean), emptySlotCount: () => slots.slice(9, 45).filter(s => !s).length },
+    toss: async (type, meta, count) => { const i = slots.findIndex((s, n) => n >= 9 && s && s.type === type); if (i >= 0) slots[i] = null; },
+    tossStack: async item => { slots[item.slot] = null; },
+    look: async () => {}, lookAt: async () => {},
+    putAway: async slot => { const free = slots.findIndex((s, n) => n >= 9 && n < 45 && !s); if (free < 0) throw new Error('no room'); slots[free] = { ...slots[slot], slot: free }; slots[slot] = null; put.push(slot); } };
+  await settleCraftInventory(bot, new Task('craft'));
+  assert.deepEqual(put, [2]);
+  assert(bot.inventory.items().some(i => i.name === 'acacia_log'), 'the log is back in the pockets');
+});

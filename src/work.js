@@ -1324,9 +1324,16 @@ async function settleCraftInventory(bot, task) {
     await bot.putSelectedItemRange(bot.inventory.inventoryStart, bot.inventory.inventoryEnd, bot.inventory);
     if (bot._syncWindow) await bot._syncWindow(bot.inventory);
   }
+  // With the pockets full an item left in the grid has nowhere to go and
+  // stays there, out of the item list: mid-83-k's logs and tables went into
+  // the grid one by one and it crafted seventeen tables from logs it could
+  // no longer see, until the audit called the loop (2026-09-26). Room first.
   for (let slot = 1; slot <= 4; slot++) {
     task.check();
-    if (bot.inventory.slots?.[slot]) await bot.putAway(slot);
+    const item = bot.inventory.slots?.[slot];
+    if (!item) continue;
+    if (!roomFor(bot, item.name)) { try { await makeRoom(bot, task, item.name); } catch (err) { task.check(); } }
+    await bot.putAway(slot);
   }
   if (bot._syncWindow) await bot._syncWindow(bot.inventory);
   task.check();
@@ -3816,4 +3823,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
