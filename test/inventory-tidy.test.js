@@ -74,10 +74,10 @@ test('with every stack under its cap, room for food is made from the cheapest st
     toss: async () => { throw new Error('whole stacks only'); },
     tossStack: async item => { tossed.push(`${item.count} ${item.name}`); stacks.splice(stacks.indexOf(item), 1); free++; } };
   assert.equal(await makeRoom(b, null, 'mutton'), true);
-  assert.deepEqual(tossed, ['3 netherrack'], 'one small stack of the cheapest thing, nothing more');
+  assert.deepEqual(tossed, ['62 cobblestone'], 'in the Nether, cobblestone past its one stack, the smaller stack, nothing more');
   free = 0;
-  assert.equal(await makeRoom(b, null, 'mutton'), true);
-  assert.deepEqual(tossed, ['3 netherrack', '62 cobblestone'], 'netherrack is at its floor, so the smaller cobblestone goes next');
+  assert.equal(await makeRoom(b, null, 'mutton'), false, 'every stack at its floor now: past them it is Jev\'s choice, not the order\'s');
+  assert.deepEqual(tossed, ['62 cobblestone']);
   assert(stacks.some(s => s.name === 'coal') && stacks.some(s => s.name === 'raw_iron'));
 });
 

@@ -691,7 +691,13 @@ test('a sweep with every leg failing and too few blocks to cross goes back throu
     findBlocks: () => [], blockAt: p => ({ name: p.y < 32 ? 'lava' : 'air', position: p, boundingBox: 'empty' }), world: { raycast: () => null }, chat() {} };
   const goal = { fortressSearch: { axis: 1, legs: 9, legFails: 3, legSince: Date.now() - 60000, legFrom: { x: 57, z: 1 }, target: { x: 153, y: 40, z: 1 } } };
   let back = 0;
-  const actions = { navigate: async () => {}, tunnel: async () => {}, returnOverworld: async () => { back++; } };
+  let mined = 0;
+  const actions = { navigate: async () => {}, tunnel: async () => {}, acquireStep: async (b, t, item) => { mined++; assert.equal(item, 'netherrack'); if (mined > 1) throw new Error('No netherrack in reach'); }, returnOverworld: async () => { back++; } };
   await findFortressStep(bot, new Task('fortress'), goal, () => {}, actions);
-  assert.equal(back, 1);
+  assert.equal(mined, 1, 'netherrack first');
+  assert.equal(back, 0);
+  Object.assign(goal.fortressSearch, { legFails: 3, legSince: Date.now() - 60000, target: { x: 153, y: 40, z: 1 } });
+  await findFortressStep(bot, new Task('fortress'), goal, () => {}, actions);
+  assert.equal(mined, 2);
+  assert.equal(back, 1, 'none to be had: back through the portal');
 });

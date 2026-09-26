@@ -893,10 +893,20 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // (the crossing waits for two stacks): mid-87-k turned the sweep twelve
     // times on an island in the lava sea with eighteen (2026-09-26).
     const blocks = bot.inventory.items().filter(i => /^(cobblestone|cobbled_deepslate|netherrack|blackstone|stone|deepslate|dirt)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
-    if (blocks < 32 && actions.returnOverworld) {
+    // Netherrack first, where the Nether is made of it: mid-92-o, with
+    // thirty blocks, set off for its portal instead (2026-09-26).
+    if (blocks < 32 && (actions.acquireStep || actions.returnOverworld)) {
       turnSweep(state); save();
-      bot.chat?.(`Down to ${blocks} blocks and no way on. Back through the portal for more.`);
-      await actions.returnOverworld(bot, task, goal, save);
+      const rack = bot.inventory.items().filter(i => i.name === 'netherrack').reduce((n, i) => n + i.count, 0);
+      if (actions.acquireStep && !state.rackFailedAt) {
+        bot.chat?.(`Down to ${blocks} blocks and no way on. Mining netherrack to build with.`);
+        try { await actions.acquireStep(bot, task, 'netherrack', rack + 64, goal, save); return; }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.rackFailedAt = Date.now(); save(); }
+      }
+      if (actions.returnOverworld) {
+        bot.chat?.(`Down to ${blocks} blocks and no netherrack to be had. Back through the portal for more.`);
+        await actions.returnOverworld(bot, task, goal, save);
+      }
       return;
     }
     turnSweep(state); save();
