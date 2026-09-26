@@ -396,3 +396,24 @@ test('while a long batch cooks and there is ore about, the walks go on: no count
   assert.equal(ingots, 8);
   assert(walks > 24, `walked to ${walks} ores`);
 });
+
+test('side furnaces out of reach do not hold up a new batch, and are let go after three tries', { timeout: 5000 }, async () => {
+  // mid-87-e: two side furnaces sixty blocks under its pocket, gone back for and not reached on every smelt, 579 times.
+  let opened = 0;
+  const furnace = { outputItem: () => ({ name: 'iron_ingot', count: 1 }), takeOutput: async () => {}, close: () => {}, inputItem: () => null };
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) },
+    inventory: { items: () => [{ name: 'iron_ingot', count: opened ? 1 : 0 }].filter(i => i.count) },
+    registry: { blocksByName: { furnace: { id: 1 } } },
+    game: { dimension: 'overworld' },
+    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: p => ({ name: 'furnace', position: p }),
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+    pathfinder: { movements: {}, setGoal: () => {}, goto: async g => { if (g.y < 10) throw new Error('No path to the goal'); } },
+    openFurnace: async () => { opened++; return furnace; },
+  };
+  const goal = { smeltingSides: [{ position: { x: 0, y: 3, z: -60 }, dimension: 'overworld', item: 'iron_ingot', from: 'raw_iron', count: 11, at: Date.now() }] };
+  await smelt(bot, new Task('smelt', 'test'), { item: 'iron_ingot', from: 'raw_iron', count: 1 }, goal).catch(() => {});
+  assert(opened >= 1, 'the smelt went on at the furnace in reach');
+  for (let i = 0; i < 2; i++) await smelt(bot, new Task('smelt', 'test'), { item: 'iron_ingot', from: 'raw_iron', count: 1 }, goal).catch(() => {});
+  assert.equal(goal.smeltingSides.length, 0, 'let go after three failed walks');
+});

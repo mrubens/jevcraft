@@ -1422,7 +1422,14 @@ async function collectSideFurnaces(bot, task, goal, save, item) {
     const forget = () => { goal.smeltingSides = (goal.smeltingSides || []).filter(s => s !== side); save(); };
     if (bot.blockAt(p) && bot.blockAt(p).name !== 'furnace') { forget(); continue; }
     try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 30000, stallMs: 8000 }); }
-    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
+    catch (err) {
+      task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+      // Out of reach three times: left where it is, not gone back for on
+      // every smelt. mid-87-e's two were sixty blocks under its pocket.
+      side.unreachable = (side.unreachable || 0) + 1; save();
+      if (side.unreachable >= 3) forget();
+      continue;
+    }
     const block = bot.blockAt(p);
     if (block?.name !== 'furnace') { forget(); continue; }
     const furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
@@ -1448,9 +1455,15 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   task.check();
   // Side furnaces from a batch that was cut short are emptied first; the
   // plan is made again from what that brings.
-  if (!goal?.smelting && (goal?.smeltingSides || []).some(s => s.item === step.item && s.dimension === dimension(bot))) {
+  // Side furnaces out of reach do not hold up a new batch: collected, the
+  // plan is made again from what they brought; not, the smelt goes on here.
+  // mid-87-e went back for two sixty blocks below its pocket, failed to get
+  // there and smelted nothing, 579 times in a minute and a half (2026-09-26).
+  const sidesFor = () => (goal?.smeltingSides || []).filter(s => s.item === step.item && s.dimension === dimension(bot)).length;
+  if (!goal?.smelting && sidesFor()) {
+    const before = sidesFor(), had = countOf(bot, step.item);
     await collectSideFurnaces(bot, task, goal, save, step.item);
-    return;
+    if (sidesFor() < before || countOf(bot, step.item) > had) return;
   }
   const pending = localBatch(bot, goal, save);
   const plannedFuel = pending?.fuelItem || step.fuelItem || 'oak_planks';
