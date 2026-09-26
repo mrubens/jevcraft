@@ -224,6 +224,10 @@ test('a detour underground says where the ore is and what is beside it, and that
   await breakStillness(bot, new Task('still'), goal, () => {}, { client, survival: { state: goal.survival, canNightMine: () => false }, reason: 'step:mine' }).catch(() => {});
   assert.match(offered.mine_nearby, /It is 3 blocks down\. It is in the wall of an open space/);
   assert.match(offered.look_around, /Underground: mobs spawn wherever it is dark along the way/);
+  // mid-220-b chose "another way" sixteen times, never told it had.
+  goal.survival.detourLog = { 'step:mine': [{ choice: 'look_around', at: Date.now() - 60000 }, { choice: 'look_around', at: Date.now() - 30000 }] };
+  await breakStillness(bot, new Task('still'), goal, () => {}, { client, survival: { state: goal.survival, canNightMine: () => false }, reason: 'step:mine' }).catch(() => {});
+  assert.match(offered.look_around, /Chosen for this same stall 2 times in the last 30 minutes, and the work stood still again after each/);
 });
 
 test('the Nether food gate never waits: a rested search is taken up again, and twenty minutes lets the crossing go', async () => {

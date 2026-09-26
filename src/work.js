@@ -2153,6 +2153,9 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
 }
 
 // The work questions (decisions/work.js): which one is named by `id`.
+// How long a detour's record is kept for the stall it answered.
+const DETOUR_MEMORY_MS = 30 * 60000;
+
 async function decideAction(bot, task, goal, save, client, onStep, tree, context = {}, id = 'resource_source') {
   const observation = decisionObservation(bot, goal);
   const state = { ...observation, ...context };
@@ -3595,6 +3598,18 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     ? `${Math.round(ms / 1000)} seconds on ${what} without getting anywhere, ${stalled.strikes === 1 ? 'the first time' : `${stalled.strikes} times in ten minutes`}. Choose: keep at it another way, leave it for later, or something useful from here for a few minutes.`
     : `Standing still for ${Math.round(ms / 1000)} seconds on ${what}. Choose something useful to do from here for a few minutes; the stalled work gets its turn again afterwards.`,
   ...(stalled ? { stalled } : {}) };
+  // What each detour came to the last times this work stood still: chosen,
+  // and still again after. mid-220-b, on a beach at sea level taken for
+  // underground, chose "another way" sixteen times over, told each time
+  // only what it would do (2026-09-26).
+  const log = (stats.detourLog ||= {});
+  const tried = (log[reason] || []).filter(e => now - e.at < DETOUR_MEMORY_MS);
+  for (const key of options) {
+    const n = tried.filter(e => e.choice === key).length;
+    if (n) tree[key].description += ` Chosen for this same stall ${n} time${n === 1 ? '' : 's'} in the last ${Math.round(DETOUR_MEMORY_MS / 60000)} minutes, and the work stood still again after each.`;
+    const run = tree[key].run;
+    tree[key].run = (...args) => { log[reason] = [...tried, { choice: key, at: now }].slice(-20); return run(...args); };
+  }
   try {
     if (options.length === 1) await tree[options[0]].run();
     else if (!client) await tree[question('stillness_detour').fallback(tree, [], context)].run();
