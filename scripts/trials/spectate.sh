@@ -6,7 +6,7 @@
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 NAME=$1
 [ -n "$NAME" ] || { echo "usage: spectate.sh <player>"; exit 1; }
-seen() { grep -c "$NAME joined the game" "$1/logs/latest.log" 2>/dev/null || echo 0; }
+seen() { n=$(grep -c "$NAME joined the game" "$1/logs/latest.log" 2>/dev/null); echo "${n:-0}"; }
 while :; do
   for DIR in "$ROOT"/.clean-run "$ROOT"/.clean-run-*; do
     [ -p "$DIR/console.in" ] || continue
