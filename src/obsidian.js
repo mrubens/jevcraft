@@ -149,10 +149,15 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   if (!surface.length) {
     const diamond = bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
     const kinds = diamond ? ['ruined_portal', 'lava_pool'] : ['lava_pool'];
-    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, kinds, { navigate, filter: l => l.kind !== 'ruined_portal' || (l.obsidian || 0) > 0 });
+    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, kinds, { navigate, filter: l => l.kind === 'ruined_portal' ? (l.obsidian || 0) > 0 : !l.spent });
     if (arrived !== null) {
       if (!arrived) return;
       goal.step = { ...step, phase: 'at_landmark', kind: arrived.kind }; save();
+      // At a lava pool with no lava surface to pour on from here: it is
+      // spent (poured over already, or its lava not a pool to stand beside),
+      // or the step arrives at it again at once, every pass: mid-110-o "made
+      // obsidian" twenty-one times a second there (2026-09-26).
+      if (arrived.kind === 'lava_pool' && !poolSurface(bot).length) { arrived.spent = new Date().toISOString(); save(); return; }
       // At a ruined portal: its frame is the obsidian, mined where it
       // stands. Only crust was mined here before, and a frame is not crust
       // (air under it, often), so mid-79-d stood at one and "made obsidian"

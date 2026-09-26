@@ -151,3 +151,20 @@ test('at a ruined portal the frame is mined; with none left the portal is marked
   await makeObsidian(bot, new Task('obsidian'), { action: 'make_obsidian', item: 'obsidian', count: 4 }, goal, () => {}, actions);
   assert.equal(goal.landmarks[0].obsidian, 0, 'none left: the portal is marked empty');
 });
+
+test('at a lava pool with no lava to pour on, the pool is marked spent and not gone to again', async () => {
+  // mid-110-o: "made obsidian" twenty-one times a second at a lava pool with no lava surface in reach.
+  const items = [{ name: 'water_bucket', count: 1 }, { name: 'diamond_pickaxe', count: 1 }];
+  const bot = { registry, game: { gameMode: 'survival', difficulty: 'normal', dimension: 'overworld' }, entities: {}, entity: { position: new Vec3(0.5, 64, 0.5) },
+    inventory: { items: () => items }, world: { raycast: () => null },
+    blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }),
+    findBlocks: () => [], pathfinder: { movements: {}, getPathTo: async () => ({ status: 'success', path: [] }) } };
+  const goal = { landmarks: [{ kind: 'lava_pool', x: 2, y: 64, z: 0, dimension: 'overworld' }] };
+  let tunnels = 0;
+  const actions = { navigate: async () => {}, approachDryMining: async () => {}, collectNearbyDrops: async () => {}, resourceTunnelStep: async () => { tunnels++; }, acquireStep: async () => {}, dig: async () => {} };
+  const step = { action: 'make_obsidian', item: 'obsidian', count: 4 };
+  await makeObsidian(bot, new Task('obsidian'), step, goal, () => {}, actions);
+  assert(goal.landmarks[0].spent, 'the pool is marked spent');
+  await makeObsidian(bot, new Task('obsidian'), step, goal, () => {}, actions);
+  assert.equal(tunnels, 1, 'the next pass goes looking for lava instead');
+});
