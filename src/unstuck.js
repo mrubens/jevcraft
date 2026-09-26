@@ -265,8 +265,9 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   const record = goal.unstuck = prior ? { ...prior, moves: (prior.moves || []).slice(-24), visits: prior.visits || {} } : { aim: aim.aim, since: new Date().toISOString(), moves: [], visits: {} };
   bot.chat?.(`Stuck. Working my way ${aim.goal === 'dry' ? 'out of the water' : aim.goal === 'away' ? 'off this spot' : 'up'} one move at a time.`);
   let still = 0;
+  const { checkThreats } = require('./danger');
   for (let n = 0; n < maxMoves; n++) {
-    task.check();
+    task.check(); checkThreats(bot);
     const feet = bot.entity.position.floored();
     record.visits[`${feet}`] = (record.visits[`${feet}`] || 0) + 1;
     const view = liveView(bot);
@@ -287,8 +288,16 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const before = bot.entity.position.clone(), blocks = m.cell ? bot.blockAt(m.cell)?.name : null;
     goal.step = { action: 'work_free', move: m.key, aim: aim.goal }; save();
     let failure = null;
+    // A mob come close ends the spell for the survival layer, as it ends
+    // any work: mid-110-q climbed east out of a hole, one move at a time,
+    // while a creeper walked up to it, and was blown up from eighteen
+    // health in iron (2026-09-26). Checked before the move and through it.
+    checkThreats(bot);
+    const previousInterrupt = task.interruptCheck;
+    task.interruptCheck = () => { previousInterrupt?.(); checkThreats(bot); };
     try { await perform(bot, task, m, { dig }); }
     catch (err) { task.check(); if (fatal(err)) throw err; failure = err.message; }
+    finally { task.interruptCheck = previousInterrupt; }
     const after = bot.entity.position.floored();
     const changed = before.distanceTo(bot.entity.position) >= 0.5 || (m.cell && bot.blockAt(m.cell)?.name !== blocks);
     still = changed ? 0 : still + 1;

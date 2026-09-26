@@ -88,3 +88,17 @@ test('a move that already failed from this cell says so', () => {
   assert.doesNotMatch(describeMove(climb), /tried/);
   assert.match(describeMove({ ...climb, failedHere: 3 }), /tried from here 3 times already and it did not get there/);
 });
+
+test('working free stops for a mob come close: the survival layer answers it', async () => {
+  // mid-110-q climbed out of a hole one move at a time while a creeper walked up, and was blown up in iron.
+  const { workFree } = require('../src/unstuck');
+  const { Task } = require('../src/skills');
+  const creeper = { id: 5, name: 'creeper', type: 'hostile', position: new Vec3(3.5, 64, 0.5), height: 1.7, isValid: true };
+  const bot = { game: { gameMode: 'survival', difficulty: 'normal', dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 5: creeper },
+    world: { raycast: () => null }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }),
+    inventory: { items: () => [] }, chat() {} };
+  let asked = 0;
+  await assert.rejects(workFree(bot, new Task('free'), {}, () => {}, { client: { systemOne: async () => { asked++; return {}; } }, dig: async () => {}, aim: { goal: 'sky', aim: 'up' } }),
+    { name: 'NeedsSafety' });
+  assert.equal(asked, 0, 'no move asked for with the creeper there');
+});
