@@ -898,7 +898,7 @@ class Survival {
       run: () => this.creeperDance(task, goal, save, danger, swung, { chosen: true }) };
     // Leave them be: the work goes on, and they are a threat again when one
     // comes within three blocks or lands a hit, or after fifteen seconds.
-    if (!danger.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work and leave these mobs be for fifteen seconds (nearest ${Math.round(danger[0].distance)} blocks). The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? ' A creeper at three blocks is already lighting, and its blast reaches about five.' : ''}${unseen}${edge}${hitsLeft}`,
+    if (!danger.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work and leave these mobs be for fifteen seconds (nearest ${Math.round(danger[0].distance)} blocks). The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? ' A creeper at three blocks is already lighting, and its blast reaches about five.' : ''}${(() => { const shooting = (estimate.mobs || []).filter(m => m.shoots && m.visible); if (!shooting.length) return ''; const in15 = Math.round(shooting.reduce((n, m) => n + m.hitsBot / 2, 0) * 15); return ` The ${shooting.length === 1 ? shooting[0].name.replaceAll('_', ' ') : `${shooting.length} shooters`} in sight keep${shooting.length === 1 ? 's' : ''} shooting while the bot works: about ${in15} damage in the fifteen seconds, from ${Math.round(bot.health)} health${in15 >= bot.health ? ', more than the bot has' : ''}; the first hit ends it.`; })()}${unseen}${edge}${hitsLeft}`,
       run: async () => {
         bot._wavedOff = { ids: danger.map(t => t.entity.id), until: Date.now() + 15000 };
         this.report(goal, save, { action: 'keep_working', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
@@ -944,7 +944,11 @@ class Survival {
     for (const f of failed) if (!(f.choice === 'fight' && atReach)) delete options[f.choice];
     if (!Object.keys(options).length) return false;
     const held = this.state.stance;
-    const holding = held && held.kinds === kinds && Date.now() - held.at < 15000 && bot.health > held.health - 6;
+    // Leaving the mobs be ends at the first hit, as the option says: held
+    // until six health was gone, mid-92-g stood working in the Nether under
+    // skeletons from fifteen health to three (2026-09-26).
+    const hitSince = held?.choice === 'keep_working' && bot._recentHurtAt > held.at;
+    const holding = held && held.kinds === kinds && Date.now() - held.at < 15000 && bot.health > held.health - 6 && !hitSince;
     let choice = holding && options[held.choice] ? held.choice : null;
     // One stance possible is no choice: it is taken without asking.
     if (!choice && Object.keys(options).length === 1) choice = Object.keys(options)[0];
