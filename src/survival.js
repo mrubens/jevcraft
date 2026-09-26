@@ -69,7 +69,7 @@ function creeperNoteFor(danger) {
 const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pillager', 'witch']);
 // The stances that move the bot or keep its hands busy building, digging or
 // eating: a shield raised at each arrow stops them.
-const MOVING_STANCES = new Set(['retreat', 'seal', 'bunker', 'charge_shooter', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
+const MOVING_STANCES = new Set(['retreat', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
 // Two blocks up: from the pillar's report to two up took a second and a
 // half to two seconds in mid-92-e, mid-92-g and mid-110-k (2026-09-26).
 const PILLAR_SECONDS = 1.5;

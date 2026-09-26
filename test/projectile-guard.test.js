@@ -23,6 +23,15 @@ test('an arrow is blocked when nothing is at arm\'s length, and not with a zombi
   assert.equal(await deflect(cornered, new Task('guard'), { holdMs: 50 }), false, 'the zombie hitting the bot comes before the skeleton shooting at it');
 });
 
+test('a creeper that would light while the shield is held comes before the arrow', async () => {
+  // mid-226-b: the shield turned to a skeleton's arrows while a creeper four blocks off walked in.
+  const near = fixture({ 1: mob(1, 'skeleton', 0.5, 12.5), 2: mob(2, 'creeper', 4.5, 0.5), 9: arrow });
+  assert.equal(meleeClose(near), true);
+  assert.equal(await deflect(near, new Task('guard'), { holdMs: 700 }), false, 'the creeper walks to its lighting distance within the hold');
+  const far = fixture({ 1: mob(1, 'skeleton', 0.5, 12.5), 2: mob(2, 'creeper', 12.5, 0.5), 9: arrow });
+  assert.equal(meleeClose(far), false, 'twelve blocks off it is seconds from lighting');
+});
+
 test('an arrow stuck in the ground is not a shot: the shield comes up for a still one only in its first second', async () => {
   // Trial 62: fifty-five seconds of shield raised at misses lying round its feet.
   const stuck = { id: 10, name: 'arrow', position: new Vec3(1.5, 14.1, 2.5), velocity: new Vec3(0, 0, 0), isValid: true };

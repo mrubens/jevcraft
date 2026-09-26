@@ -44,17 +44,26 @@ function incoming(bot, { reach = REACH } = {}) {
 // The dream run died that way in a cave (2026-09-24): full iron, a shield,
 // its hand empty, turning to the skeleton's arrows every second while two
 // zombies beside it took it from twenty to nothing in fifty seconds.
+// A creeper's reach is its fuse: one that would walk to lighting distance
+// while the shield is held is at arm's length already. mid-226-b faced a
+// skeleton's arrows for three quarters of a second, two hundred times over,
+// with a creeper four blocks off and a dance chosen to meet it, and the
+// blast took seven health through iron; a second creeper took the rest
+// (2026-09-26).
 const MELEE_REACH = 3.5;
-function meleeClose(bot) {
+function meleeClose(bot, { holdMs = 700 } = {}) {
   try {
     const { threats } = require('./danger');
     const { shooter } = require('./combat');
-    return threats(bot, MELEE_REACH + 1).some(t => t.distance <= MELEE_REACH && !shooter(t.entity));
+    const { APPROACH, LIGHTS_AT } = require('./combat-estimate');
+    const creeperReach = LIGHTS_AT + APPROACH * holdMs / 1000;
+    return threats(bot, Math.max(MELEE_REACH, creeperReach) + 1).some(t =>
+      (t.distance <= MELEE_REACH && !shooter(t.entity)) || (t.entity.name === 'creeper' && t.distance <= creeperReach));
   } catch (_) { return false; }
 }
 
 async function deflect(bot, task, { holdMs = 700 } = {}) {
-  if (!shielded(bot) || meleeClose(bot)) return false;
+  if (!shielded(bot) || meleeClose(bot, { holdMs })) return false;
   const shot = incoming(bot)[0];
   if (!shot) return false;
   const deadline = Date.now() + holdMs;
