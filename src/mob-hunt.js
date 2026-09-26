@@ -146,7 +146,13 @@ function approaches(bot, target) {
   // a mob at all: the bot killed its blaze from the top of a pillar and
   // dropped twenty health's worth of blocks. Something overhead is reached
   // by standing under it.
-  if (t.y > bot.entity.position.y + 1.5) return [under];
+  // Standing under it only where the sword reaches up to it; from farther
+  // below, up to its floor by the ground there is (stairs, a slope; the
+  // combat movement builds no tower). mid-83-j sat six blocks under nine
+  // blazes, offered only the cell beneath them at its own level, and every
+  // hunt ended "No dry combat route" (2026-09-26).
+  const near = new goals.GoalNear(Math.floor(t.x), Math.round(t.y) - 1, Math.floor(t.z), 3);
+  if (t.y > bot.entity.position.y + 1.5) return t.y - bot.entity.position.y <= 4 ? [under, near] : [near, under];
   // Something below is reached by going down to it. Standing on a fortress
   // roof, the only goal offered was a point at the bot's own height, which
   // it was already standing on: the route "succeeded" without moving, so

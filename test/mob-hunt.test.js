@@ -573,8 +573,12 @@ test('something overhead is reached by standing under it, never by towering up t
   const { Vec3 } = require('vec3');
   const bot = { entity: { position: new Vec3(0.5, 77, 0.5) } };
   const overhead = approaches(bot, { position: new Vec3(6.5, 80, 0.5) });
-  assert.equal(overhead.length, 1, 'no follow goal for a flying target: a tower is a place to fall off');
-  assert.equal(overhead[0].y, 77, 'the goal keeps the bot at its own level');
+  assert(overhead.every(g => !g.entity), 'no follow goal for a flying target: a tower is a place to fall off');
+  assert.equal(overhead[0].y, 77, 'within the sword\'s reach up, under it at the bot\'s own level first');
+  // mid-83-j: six blocks under nine blazes, the cell beneath them was out of the sword's reach.
+  const high = approaches(bot, { position: new Vec3(6.5, 83, 0.5) });
+  assert.equal(high[0].y, 82, 'farther up, its own floor first, reached by the ground there');
+  assert.equal(high[1].y, 77);
   const level = approaches(bot, { position: new Vec3(6.5, 77, 0.5) });
   assert.equal(level.length, 2, 'a target on the ground is followed as usual, with the ground goal as fallback');
   // Standing on a fortress roof, a goal at the bot's own height is a goal it
