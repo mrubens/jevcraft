@@ -204,7 +204,18 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
   claim();
   task.interruptCheck = () => {
     claim();
-    previousInterrupt?.(); checkAir(bot); checkThreats(bot);
+    previousInterrupt?.(); checkAir(bot);
+    try { checkThreats(bot); }
+    catch (err) {
+      // Which mob ended the fight, and why it was not the fight's own kin
+      // (the diagnosis of mid-83-j's five-second fights, 2026-09-26).
+      if (err.name === 'NeedsSafety') {
+        const { immediateThreat, hunted } = require('./danger');
+        const t = immediateThreat(bot);
+        if (t) console.log(`[fight] ${target.name} fight ended by ${t.entity.name} ${t.entity.id} at ${t.distance.toFixed(2)} (visible ${t.visible}, hunted ${hunted(bot, t.entity)}, encounter ${bot._combatEncounter?.target?.name}/${Math.round(((bot._combatEncounter?.expiresAt || 0) - Date.now()) / 1000)}s, dim ${bot._combatEncounter?.dimension}/${bot.game?.dimension})`);
+      }
+      throw err;
+    }
     if (!ready() || !isolated(bot, target, handler)) throw new NeedsSafety({ entity: target, distance: target.position.distanceTo(bot.entity.position) });
     if (Date.now() >= deadline) throw new Error(`Timed out fighting ${target.name} after ${Math.round(timeoutMs / 1000)} seconds`);
     if (bot.entity.position.distanceTo(start) > 48) throw new Error(`${target.name} moved beyond the bounded combat area`);

@@ -40,7 +40,11 @@ const { NETHER_FOOD_POINTS, KIT_FOOD_POINTS } = require('./home-stash');
 // one five times and was poisoned to death between).
 // What reaches a player two blocks up, said beside the pillar: spiders
 // climb, endermen teleport, witches throw up, a blast reaches (the audit).
-const REACH_UP = { spider: 'climbs', cave_spider: 'climbs', enderman: 'teleports', witch: 'throws potions up', creeper: 'goes off at the foot and the blast reaches' };
+// A mob's swing reaches as high as it stands: a wither skeleton (2.4 tall)
+// hits a player two up, and mid-92-p pillared from one at twenty health
+// and was cut down in four blows while it placed the blocks (2026-09-26).
+const REACH_UP = { spider: 'climbs', cave_spider: 'climbs', enderman: 'teleports, and is tall enough to hit two up', witch: 'throws potions up', creeper: 'goes off at the foot and the blast reaches',
+  wither_skeleton: 'is tall enough to hit a player two up', ravager: 'is tall enough to hit two up', iron_golem: 'is tall enough to hit two up', warden: 'is tall enough to hit two up' };
 const climbers = danger => { const kinds = [...new Set(danger.map(t => t.entity.name).filter(n => REACH_UP[n]))]; return kinds.length ? ` Two up does not stop ${kinds.map(n => `a ${n.replaceAll('_', ' ')} (${REACH_UP[n]})`).join(' or ')}.` : ''; };
 // A retreat's footing is found when it runs, not before (runAway): said, so
 // the run is not read as a known safe place (the decision audit, 2026-09-25).
@@ -77,7 +81,7 @@ const BLOCK_SECONDS = 0.6, EAT_SECONDS = 1.6, SHAFT_BLOCK_SECONDS = 1;
 // made before the stance is asked, at most (scoutRetreat).
 const SPRINT = 5.6, SCOUT_MS = 300;
 // Walkers that still get at a player two blocks up.
-const CLIMBERS = new Set(['spider', 'cave_spider', 'enderman']);
+const CLIMBERS = new Set(['spider', 'cave_spider', 'enderman', 'wither_skeleton', 'ravager', 'iron_golem', 'warden']);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // "the spider, the zombie and 3 skeletons": the mobs of these kinds in `mobs`.
 function mobList(names, mobs) {
@@ -980,7 +984,7 @@ class Survival {
     // pillared at thirteen health with a creeper six blocks off and three
     // skeletons, told nothing of what that cost, and the blast was all of it.
     const pillarCost = stanceCost({ mobs, setup: up ? 0 : PILLAR_SECONDS, fight: { only: m => CLIMBERS.has(m.name) }, reaches: m => m.shoots || m.name === 'creeper', shield: shielded });
-    if ((scaffold >= 2 && headroom) || up) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote + climbers(danger) + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: 'Two up' }) + (edge && heavyHitters(danger, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
+    if ((scaffold >= 2 && headroom) || up) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote + climbers(danger) + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: 'Two up' }) + (edge && heavyHitters(danger, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
       run: async () => up || this.pillarFrom(task, goal, save, danger) };
     // Down off a pillar of the bot's own: stood on one, nothing else here
     // moves it (a route drops three blocks at most), and mid-83-e stood five

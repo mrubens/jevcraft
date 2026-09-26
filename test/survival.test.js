@@ -1538,6 +1538,9 @@ test('with a creeper close or a mob at arm\'s length, building is still offered,
   assert.match(withCreeper.retreat.description, /No route is checked yet/);
   const withZombie = Object.keys(survival.stanceOptions(new Task('x'), {}, () => {}, [t('zombie', 4)], false));
   assert(withZombie.includes('pillar'), 'a zombie is climbed away from');
+  // mid-92-p: pillared from a wither skeleton and was cut down in four blows.
+  const withWither = survival.stanceOptions(new Task('x'), {}, () => {}, [t('wither_skeleton', 6)], false);
+  assert.match(withWither.pillar.description, /Two up does not stop a wither skeleton \(is tall enough to hit a player two up\)/);
   // At arm's length building is still Jev's to choose; the description says
   // what it costs, the options are not hidden.
   const atArmsLength = survival.stanceOptions(new Task('x'), {}, () => {}, [t('zombie', 2), t('zombie', 2.8)], false);
