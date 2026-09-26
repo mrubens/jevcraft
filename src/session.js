@@ -52,6 +52,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   const connectedAt = Date.now();
   const closed = new Promise(resolve => { resolveClosed = resolve; });
   const bot = mineflayer.createBot({ ...config, respawn: false });
+  global.__jevBot = bot;
   bot.on('physicsTick', () => { if (!ended) observeAliveInventory(bot); });
   bot.on('handover', event => { if (!ended) console.log(JSON.stringify({ handover: event })); });
   for (const event of ['recovery_advice', 'recovery_result']) bot.on(event, data => {

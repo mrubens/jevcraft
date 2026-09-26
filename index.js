@@ -21,6 +21,21 @@ async function main() {
   // Which process is this bot: scripts stop a bot by its pid file.
   const pidFile = path.join(__dirname, '.bot-state', 'pids', `${label.replace(/[^\w.-]/g, '_')}.pid`);
   const fs = require('node:fs');
+  // The event loop held: mid-226-a's record went silent for twenty-three
+  // seconds on its way home, under water, and came back drowning with no
+  // breath (2026-09-26). Any stall of two seconds or more is said, with
+  // what the bot was doing, so the code that held it can be found.
+  let tickAt = Date.now();
+  setInterval(() => {
+    const lag = Date.now() - tickAt - 250;
+    if (lag >= 2000) {
+      const goal = global.__jevBot?._survivalGoal;
+      const what = { lagMs: lag, step: goal?.step?.action, survival: goal?.survivalAction?.action, at: new Date().toISOString() };
+      console.log(`[lag] event loop held ${(lag / 1000).toFixed(1)}s ${JSON.stringify(what)}`);
+      recorder?.record?.({ kind: 'lag', label: `event loop held ${(lag / 1000).toFixed(1)}s`, at: what.at, detail: what });
+    }
+    tickAt = Date.now();
+  }, 250).unref();
   fs.mkdirSync(path.dirname(pidFile), { recursive: true }); fs.writeFileSync(pidFile, `${process.pid}\n`);
   process.once('exit', () => { try { if (fs.readFileSync(pidFile, 'utf8').trim() === String(process.pid)) fs.unlinkSync(pidFile); } catch (_) {} });
   try {
