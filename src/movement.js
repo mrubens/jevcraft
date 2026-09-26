@@ -217,6 +217,11 @@ function configureMovements(bot) {
   // dirt, and the base's plot was retilled after every visit. Tilling and
   // planting stand beside the cell, so nothing needs to step on it.
   if (bot.registry.blocksByName.farmland) movement.blocksToAvoid.add(bot.registry.blocksByName.farmland.id);
+  // A portal is stepped into on purpose (work.js enterPortal walks up to it
+  // and steps in), never on the way somewhere else: mid-87-l's fortress
+  // search set out from beside its Nether portal, walked through the sheet
+  // and back, and crossed between the worlds every ten seconds (2026-09-26).
+  if (bot.registry.blocksByName.nether_portal) movement.blocksToAvoid.add(bot.registry.blocksByName.nether_portal.id);
   // The pathfinder pillars and bridges with dirt and cobblestone only. In
   // the Nether the pockets hold netherrack, and with the cobblestone spent
   // on one span the bot could neither climb to the fortress nor cross to

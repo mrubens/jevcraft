@@ -93,6 +93,19 @@ test('solid damaging floors are excluded even when the body space is air', () =>
   }
 });
 
+test('a portal is never walked through on the way somewhere else', () => {
+  // mid-87-l crossed between the worlds every ten seconds, its fortress search setting out through the sheet.
+  const bot = botFixture(), Block = require('prismarine-block')(bot.registry);
+  bot.blockAt = point => {
+    const p = point.floored(), blockName = p.y < 70 ? 'stone' : p.x === 1 && p.z === 0 && (p.y === 70 || p.y === 71) ? 'nether_portal' : 'air';
+    const block = Block.fromStateId(bot.registry.blocksByName[blockName].defaultState); block.position = p; return block;
+  };
+  const movement = configureMovements(bot); movement.canDig = false;
+  const neighbors = movement.getNeighbors({ x: 0, y: 70, z: 0, remainingBlocks: 0 });
+  assert(!neighbors.some(p => p.x === 1 && p.z === 0), 'not into the sheet');
+  assert(neighbors.some(p => p.x === -1 && p.z === 0));
+});
+
 test('a cell with lava beside it costs more than open ground', () => {
   // mid-92-o walked a soul sand shore on a fortress leg and drifted into the lava sea.
   const bot = botFixture(), Block = require('prismarine-block')(bot.registry);
