@@ -300,7 +300,11 @@ function lavaExit(bot, radius = 6, { water = false } = {}) {
   // Nether ledge's edge and over it, twenty blocks into the lava below
   // (2026-09-26).
   const edge = c => require('./terrain').besideDrop(bot, c) ? 4 : 0;
-  const cost = c => far(c) + (water ? lavaBy(c) : 0) + edge(c);
+  // A jump rises one block: a cell two up is out of reach from lava one
+  // deep. mid-230-d was steered at a ledge two above its feet, hopped in
+  // place five seconds and burned (2026-09-26).
+  const high = c => c.y > feet.y + 1 ? 8 : 0;
+  const cost = c => far(c) + (water ? lavaBy(c) : 0) + edge(c) + high(c);
   return cells.sort((a, b) => cost(a) - cost(b))[0] || null;
 }
 
@@ -2822,6 +2826,19 @@ class Survival {
       // never stand. The step with nothing to do returned at once, a
       // thousand times in four seconds, while the bot burned.
       const toward = exit ? exit.offset(0.5, 1, 0.5) : this.state.lastDry ? pos(this.state.lastDry).offset(0.5, 1, 0.5) : null;
+      // Out of reach of a jump: up on blocks placed underfoot, where the
+      // lava is, as a player pillars out of a pit.
+      const feetY = bot.entity.position.floored().y;
+      if (exit && exit.y > feetY + 1) {
+        const { pillarUp, SCAFFOLD } = require('./pillar-recovery');
+        if (bot.inventory.items().some(i => SCAFFOLD.includes(i.name))) {
+          bot._leavingLava = true;
+          try { await pillarUp(bot, task, exit.y, { dig: this.actions.dig, maxBlocks: exit.y - feetY, threats: false }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          finally { bot._leavingLava = false; }
+          if (!inLava(bot)) { onStep(goal); return true; }
+        }
+      }
       bot._leavingLava = true;
       try {
         await move(bot, task, { label: 'out_of_lava', keys: toward ? ['forward', 'jump'] : ['jump'], sneak: false,

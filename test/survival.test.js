@@ -1137,6 +1137,18 @@ test('out of lava, a cell with a floor all round comes before one on a ledge edg
   assert(exit.z >= 1, `not the edge row over the drop: ${exit}`);
 });
 
+test('out of lava, a cell a jump can reach comes before a nearer ledge two up', () => {
+  // mid-230-d: steered at a ledge two above its feet in a lava pit, it hopped in place and burned.
+  const { lavaExit } = require('../src/survival');
+  // Lava at (0,33,0); a ledge at y 35 one block north; floor at y 34 three blocks east.
+  const blockAt = p => (p.x === 0 && p.z === 0 && p.y === 33) ? { name: 'lava', boundingBox: 'empty', position: p }
+    : (p.x === 0 && p.z === -1 && p.y <= 34) ? { name: 'stone', boundingBox: 'block', position: p }
+    : (p.x >= 1 && p.y <= 33) || p.y <= 32 ? { name: 'stone', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  const bot = { entity: { position: new Vec3(0.5, 33.2, 0.5) }, blockAt };
+  const exit = lavaExit(bot, 6, { water: true });
+  assert(exit && exit.y <= 34, `within a jump: ${exit}`);
+});
+
 test('floating in water, the way out is dry ground with air above, never another water cell', () => {
   const { inWater, lavaExit } = require('../src/survival');
   const water = new Set(['0,10,0', '1,10,0', '0,10,1']);
