@@ -35,6 +35,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `continue_request` | root | carry on with the request | always; at night it is staying up, two minutes at a time, with the kit, the bed and the nights without sleep said in the option |
 | `go_home_for_night` | root | walk home to the bed and wait there for bedtime | from dusk, with a bed at home more than six blocks off and a way there (climbing out of a mine first when underground) |
 | `sleep_in_bed` | root | sleep in a bed | bedtime, a bed is carried (with room to place it) or one is in reach, and no mob within ten blocks |
+| `sleep_in_nook` | root | dig a bed nook beside the bot and sleep in the carried bed | bedtime, a bed carried, no two level cells beside the feet (a staircase, a shaft), two cells in a line that can be dug with their floor kept, no liquid beside and nothing that falls over them, and no mob within ten blocks; the monsters within eight blocks sideways and five up or down of the bed (vanilla refuses the sleep) are counted in the option |
 | `secure_shelter` | root | seal a shelter for the night | from dusk; beside a bed the option says the bed is the quicker night |
 | `obtain_food` | root | get food | food carried is under the reserve and hunger or a stock top-up calls for it (at night with the spawning and the hunger said) |
 | `hunt_[a-z_]+` (pattern) | root | go out and hunt this kind of mob for its drops | at night in the Overworld where staying up is on offer, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back |
@@ -51,7 +52,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `shelter_method`
 
-**A shelter for the night: the saved one, a room at a site, a pocket here, a shaft pocket, or a mine?**
+**A shelter for the night: the saved one, a room at a site, a pocket here, a shaft pocket, a mine, or the carried bed in a nook dug for it?**
 
 - When: When a shelter is chosen for the night (secure_shelter) and none is under way; held for the night, and asked again when the chosen way fails (it rests three minutes).
 - Decision tree, choice; stakes medium; ledger kind `survival`
@@ -66,10 +67,11 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `seal_here` | root | seal a pocket where the bot stands | always (with too few blocks it digs in instead) |
 | `shaft_pocket` | root | dig straight down and cap it | always; fails where the ground cannot be dug |
 | `night_mine` | root | dig a mine from here for the night | a pickaxe (or one can be made) and nothing watching; health is Jev's to weigh |
+| `bed_nook` | root | the carried bed in a nook dug beside the bot | a bed carried in the Overworld and a nook can be dug here: at bedtime it is dug and slept in now; before it, a pocket is sealed here and the nook, closed in rock, is dug out of its wall at bedtime and slept in (held, not asked again) |
 
 ### `pocket_next`
 
-**Sealed in a pocket: stay, leave, go to the bed, open the wall on a watcher, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
+**Sealed in a pocket: stay, leave, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
 
 - When: Each survival step inside a sealed pocket, unless a mob is inside or at arm's length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.
 - Decision tree, choice; stakes medium; ledger kind `survival`
@@ -80,6 +82,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `go_to_bed` | root | open the pocket and go to the bed | bedtime, with the base bed near (on the surface or within ten blocks of its level) or a bed carried on the surface |
+| `sleep_in_nook` | root | dig a bed nook out of the pocket's wall and sleep in the carried bed | bedtime, a bed carried, and a nook beside the bot closed in rock all round, so the pocket stays shut (its wall goes back after); taken without asking when the shelter method chosen tonight was the bed nook; the monsters within eight blocks sideways and five up or down of the bed are counted in the option |
 | `open_on_watcher` | root | open the wall toward the watching mob and fight it | a mob within four and a half blocks and a sword or axe carried |
 | `night_mine` | root | mine from the pocket through the night | night, nothing watching, and a pickaxe carried or makeable (no health floor: Jev weighs the risk); it stays in the pocket when no mine can be dug from here |
 | `work_here` | root | stay and make the ladder's next item in the pocket | on the game ladder, nothing watching, and the next item can be made from what is carried by smelting and crafting alone |
@@ -597,6 +600,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `explore` | root | explore the nearest unexplored area | in the Overworld with an unexplored area within 512 blocks of home |
 | `fetch_cache` | root | fetch the things left in a field cache | a chest left before an earlier trip, full, between 48 and 512 blocks away |
 | `cache_valuables` | root | leave the valuables in a chest here | by day and fit, home's chest out of reach, valuables carried, and a chest or the wood for one |
+| `carry_bed` | root | make a second bed to carry | at any hour in the Overworld, once the base's bed is claimed, with no bed carried, the wool search not set aside and the next step not a basic tool; said with what it buys (any night passes in seconds, instead of a pocket and the climb out) and what it costs (three wool from sheep or string, three planks) |
 | `copper_armour` | root | make copper armour first | in the Overworld with a stone pickaxe or better and no armour worn or carried |
 | `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | by day and fit, another biome twenty-four or more blocks off in the Overworld (the nearest four), said with what it holds, and the walk there and back fits in the daylight left |
 | `tame_wolf` | root | tame a wolf | a wild adult wolf in view, bones carried, fewer than two tamed, in the Overworld |

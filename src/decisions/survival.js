@@ -5,7 +5,7 @@ const { define } = require('./index');
 
 // Shelter before food before the request: the order a careful player
 // keeps when nobody is weighing the trade.
-const safetyOrder = children => ['sleep_in_bed', 'go_home_for_night', 'secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
+const safetyOrder = children => ['sleep_in_bed', 'sleep_in_nook', 'go_home_for_night', 'secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
 
 // The food sources, shared by the priority tree's obtain_food branch.
 const FOOD_OPTIONS = [
@@ -32,6 +32,7 @@ define({
     { key: 'continue_request', label: 'carry on with the request', when: 'always; at night it is staying up, two minutes at a time, with the kit, the bed and the nights without sleep said in the option', level: 'root' },
     { key: 'go_home_for_night', label: 'walk home to the bed and wait there for bedtime', when: 'from dusk, with a bed at home more than six blocks off and a way there (climbing out of a mine first when underground)', level: 'root' },
     { key: 'sleep_in_bed', label: 'sleep in a bed', when: 'bedtime, a bed is carried (with room to place it) or one is in reach, and no mob within ten blocks', level: 'root' },
+    { key: 'sleep_in_nook', label: 'dig a bed nook beside the bot and sleep in the carried bed', when: 'bedtime, a bed carried, no two level cells beside the feet (a staircase, a shaft), two cells in a line that can be dug with their floor kept, no liquid beside and nothing that falls over them, and no mob within ten blocks; the monsters within eight blocks sideways and five up or down of the bed (vanilla refuses the sleep) are counted in the option', level: 'root' },
     { key: 'secure_shelter', label: 'seal a shelter for the night', when: 'from dusk; beside a bed the option says the bed is the quicker night', level: 'root' },
     { key: 'obtain_food', label: 'get food', when: 'food carried is under the reserve and hunger or a stock top-up calls for it (at night with the spawning and the hunger said)', level: 'root' },
     { pattern: 'hunt_[a-z_]+', label: 'go out and hunt this kind of mob for its drops', when: 'at night in the Overworld where staying up is on offer, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back', level: 'root', dynamic: true },
@@ -46,7 +47,7 @@ define({
 // How the night is sheltered, once a shelter is the answer.
 define({
   id: 'shelter_method', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'A shelter for the night: the saved one, a room at a site, a pocket here, a shaft pocket, or a mine?',
+  question: 'A shelter for the night: the saved one, a room at a site, a pocket here, a shaft pocket, a mine, or the carried bed in a nook dug for it?',
   trigger: 'When a shelter is chosen for the night (secure_shelter) and none is under way; held for the night, and asked again when the chosen way fails (it rests three minutes).',
   source: 'src/survival.js (refugeStep)',
   options: [
@@ -55,20 +56,22 @@ define({
     { key: 'seal_here', label: 'seal a pocket where the bot stands', when: 'always (with too few blocks it digs in instead)', level: 'root' },
     { key: 'shaft_pocket', label: 'dig straight down and cap it', when: 'always; fails where the ground cannot be dug', level: 'root' },
     { key: 'night_mine', label: 'dig a mine from here for the night', when: 'a pickaxe (or one can be made) and nothing watching; health is Jev\'s to weigh', level: 'root' },
+    { key: 'bed_nook', label: 'the carried bed in a nook dug beside the bot', when: 'a bed carried in the Overworld and a nook can be dug here: at bedtime it is dug and slept in now; before it, a pocket is sealed here and the nook, closed in rock, is dug out of its wall at bedtime and slept in (held, not asked again)', level: 'root' },
   ],
   instructions: { task: 'Night is coming and the bot will shelter. Choose how.', guidance: 'Each option says its distance and the blocks it needs against those carried. Placing a block takes about a second, gathering more takes minutes; mobs spawn in the dark (darkHere says where the bot stands is dark enough); a room or pocket is kept for later nights.' },
   // Without Jev, the old order.
-  fallback: children => ['saved_shelter', 'build_at_site', 'seal_here', 'shaft_pocket', 'night_mine'].find(k => children[k]) || Object.keys(children)[0],
+  fallback: children => ['saved_shelter', 'build_at_site', 'seal_here', 'shaft_pocket', 'night_mine', 'bed_nook'].find(k => children[k]) || Object.keys(children)[0],
 });
 
 // Sealed in a pocket: stay, leave, go to bed, open on a watcher, or mine.
 define({
   id: 'pocket_next', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'Sealed in a pocket: stay, leave, go to the bed, open the wall on a watcher, mine the night away, hunt mobs for their drops, or take the valuables to the chest?',
+  question: 'Sealed in a pocket: stay, leave, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, mine the night away, hunt mobs for their drops, or take the valuables to the chest?',
   trigger: 'Each survival step inside a sealed pocket, unless a mob is inside or at arm\'s length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.',
   source: 'src/survival.js (stepOnce: the pocket)',
   options: [
     { key: 'go_to_bed', label: 'open the pocket and go to the bed', when: 'bedtime, with the base bed near (on the surface or within ten blocks of its level) or a bed carried on the surface', level: 'root' },
+    { key: 'sleep_in_nook', label: 'dig a bed nook out of the pocket\'s wall and sleep in the carried bed', when: 'bedtime, a bed carried, and a nook beside the bot closed in rock all round, so the pocket stays shut (its wall goes back after); taken without asking when the shelter method chosen tonight was the bed nook; the monsters within eight blocks sideways and five up or down of the bed are counted in the option', level: 'root' },
     { key: 'open_on_watcher', label: 'open the wall toward the watching mob and fight it', when: 'a mob within four and a half blocks and a sword or axe carried', level: 'root' },
     { key: 'night_mine', label: 'mine from the pocket through the night', when: 'night, nothing watching, and a pickaxe carried or makeable (no health floor: Jev weighs the risk); it stays in the pocket when no mine can be dug from here', level: 'root' },
     { key: 'work_here', label: 'stay and make the ladder\'s next item in the pocket', when: 'on the game ladder, nothing watching, and the next item can be made from what is carried by smelting and crafting alone', level: 'root' },

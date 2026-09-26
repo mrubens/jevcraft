@@ -201,3 +201,54 @@ test('a rung that mines says where the ore lies and what going without costs; th
   const options = strategyOptions(b2, goal, { phase: 'obtain_ender_pearls', action: 'pearl_patrol', item: 'ender_pearl', count: 12 }, { trade: { description: 'x', walkBlocks: 10 } });
   assert.match(options.stage_obtain_ender_pearls.description, /endermen drop the pearls/);
 });
+
+// Six midgame trials (2026-09-26): one of six carried a bed once the home's
+// was claimed, and the climbs back up after nights underground were 110 of
+// 408 minutes.
+function homeFixture(without = [], { items = [] } = {}) {
+  const f = fixture(['white_bed', ...without]);
+  const carried = f.bot.inventory.items().concat(items);
+  f.bot.inventory.items = () => carried;
+  f.bot.blockAt = () => null; // home is out of view: its steps are not reopened
+  f.goal.survival = { home: { version: 1, dimension: 'overworld', origin: { x: 400, y: 63, z: 0 }, direction: { x: 1, z: 0 }, water: { x: 399, y: 63, z: 0 },
+    bed: { placedAt: 'then', claimedAt: 'then' }, plot: {}, pen: {}, completedAt: 'then' } };
+  return f;
+}
+
+test('once the base\'s bed is claimed, a second bed to carry is Jev\'s option, with what it buys and what it costs', () => {
+  const { setAside } = require('../src/progress');
+  const { bot, goal } = homeFixture(['golden_boots', 'diamond_sword'], { items: [{ name: 'string', count: 5 }, { name: 'oak_planks', count: 8 }] });
+  const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
+  const options = strategyOptions(bot, goal, stage);
+  assert.deepEqual(Object.keys(options), ['rung_golden_boots', 'rung_diamond_sword', 'carry_bed']);
+  const d = options.carry_bed.description;
+  assert.match(d, /three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed/);
+  assert.match(d, /any night, anywhere: .*the night passes in seconds, instead of about seven real minutes in a pocket or a night mine and the climb out after/);
+  assert.match(d, /In hand: 0 wool \(three of one colour make the bed\), 5 string, 8 planks and 0 logs; no sheep in view or remembered/);
+  assert.equal(options.carry_bed.fallback, undefined, 'not the ladder\'s default');
+  assert.deepEqual(options.carry_bed.rung, { phase: 'carry_bed', action: 'gather_wool', count: 3 }, 'the wool the way the bed rung gathers it');
+  // Not with a bed in the pack, nor before the base's bed is claimed, nor with the wool search set aside.
+  assert.equal(strategyOptions(homeFixture(['golden_boots', 'diamond_sword'], { items: [{ name: 'red_bed', count: 1 }] }).bot, goal, stage).carry_bed, undefined);
+  const unclaimed = homeFixture(['golden_boots', 'diamond_sword']); delete unclaimed.goal.survival.home.bed.claimedAt;
+  const first = openRungs(unclaimed.bot, unclaimed.goal)[0];
+  assert.equal(first.phase, 'bed', 'the bed rung itself is the ladder\'s');
+  assert.equal(strategyOptions(unclaimed.bot, unclaimed.goal, first).carry_bed, undefined);
+  setAside(goal, 'bed_search', 'wool', 'ten minutes without finding a sheep', 20 * 60000);
+  assert.equal(strategyOptions(bot, goal, stage).carry_bed, undefined);
+});
+
+test('the second bed chosen, the ladder step makes it: three wool is a craft, fewer is the wool gathered as for the first bed', async () => {
+  const withWool = homeFixture(['golden_boots', 'diamond_sword'], { items: [{ name: 'white_wool', count: 3 }] });
+  const said = []; withWool.bot.chat = line => said.push(line);
+  const acquired = [];
+  await gameStep(withWool.bot, withWool.task, withWool.goal, () => {}, { acquireStep: async (b, t, item, count) => { acquired.push([item, count]); },
+    strategy: (b, t, g, sv, stage) => strategyStep(b, t, g, sv, stage, picking('carry_bed')) });
+  assert.deepEqual(acquired, [['white_bed', 1]]);
+  assert.equal(withWool.goal.gameProgress.phase, 'carry_bed');
+  assert.match(said[0], /Before the golden boots, I'll make a second bed to carry\./);
+  const without = homeFixture(['golden_boots', 'diamond_sword']);
+  const gathered = [];
+  await gameStep(without.bot, without.task, without.goal, () => {}, { acquireStep: async () => assert.fail('no wool yet'), gather_wool: async (b, t, g, sv, stage) => { gathered.push(stage.count); },
+    strategy: (b, t, g, sv, stage) => strategyStep(b, t, g, sv, stage, picking('carry_bed')) });
+  assert.deepEqual(gathered, [3]);
+});

@@ -96,6 +96,7 @@ define({
     { key: 'explore', label: 'explore the nearest unexplored area', when: 'in the Overworld with an unexplored area within 512 blocks of home', level: 'root' },
     { key: 'fetch_cache', label: 'fetch the things left in a field cache', when: 'a chest left before an earlier trip, full, between 48 and 512 blocks away', level: 'root' },
     { key: 'cache_valuables', label: 'leave the valuables in a chest here', when: 'by day and fit, home\'s chest out of reach, valuables carried, and a chest or the wood for one', level: 'root' },
+    { key: 'carry_bed', label: 'make a second bed to carry', when: 'at any hour in the Overworld, once the base\'s bed is claimed, with no bed carried, the wool search not set aside and the next step not a basic tool; said with what it buys (any night passes in seconds, instead of a pocket and the climb out) and what it costs (three wool from sheep or string, three planks)', level: 'root' },
     { key: 'copper_armour', label: 'make copper armour first', when: 'in the Overworld with a stone pickaxe or better and no armour worn or carried', level: 'root' },
     { pattern: 'travel_[a-z_]+', label: 'walk to a nearby biome', when: 'by day and fit, another biome twenty-four or more blocks off in the Overworld (the nearest four), said with what it holds, and the walk there and back fits in the daylight left', level: 'root', dynamic: true },
     { key: 'tame_wolf', label: 'tame a wolf', when: 'a wild adult wolf in view, bones carried, fewer than two tamed, in the Overworld', level: 'root' },

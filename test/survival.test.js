@@ -2078,3 +2078,141 @@ test('a drowned with a trident is a shooter, and its throw is counted at eight',
   const est = fightEstimate({ threats: [{ name: 'drowned', distance: 12, shoots: true, visible: true }], armour: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'] });
   assert(est.mobs[0].hitsBot > 4, `a throw through iron: ${est.mobs[0].hitsBot}`);
 });
+
+// A bed nook: the carried bed where no two level cells lie beside the feet.
+// Six midgame trials (2026-09-26): the one bot carrying a bed sealed itself
+// in eleven times with it, sleep offered only on two level cells.
+function nookFixture({ time = 13000, items = [{ name: 'white_bed', count: 1 }, { name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], open = null } = {}) {
+  const origin = new Vec3(0, 30, 0), blocks = new Map();
+  let inventory = items.map(i => ({ ...i }));
+  const air = p => open ? open(p) : p.equals(origin) || p.equals(origin.offset(0, 1, 0));
+  const nameAt = p => blocks.get(`${p}`) || (air(p) ? 'air' : 'stone');
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20,
+    registry: require('minecraft-data')('26.1'), time: { timeOfDay: time }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => inventory, emptySlotCount: () => 10, slots: [] }, heldItem: null, isSleeping: false,
+    equip: async item => { bot.heldItem = item; }, lookAt: async () => {},
+    blockAt: p => { const name = nameAt(p); return { name, boundingBox: name === 'air' ? 'empty' : 'block', diggable: name !== 'air', position: p }; },
+    placeBlock: async ground => { const foot = ground.position.offset(0, 1, 0); blocks.set(`${foot}`, 'white_bed'); blocks.set(`${foot.offset(1, 0, 0)}`, 'white_bed'); inventory = inventory.filter(i => i.name !== 'white_bed'); },
+    sleep: async block => { assert.equal(block.name, 'white_bed'); setTimeout(() => { bot.time.timeOfDay = 0; }, 50); },
+    wake: async () => {}, world: { raycast: () => null }, findBlocks: () => [], chat() {} });
+  const dug = [], placed = [];
+  const actions = {
+    navigate: async () => {},
+    dig: async (b, t, p) => {
+      dug.push(`${p}`);
+      if (nameAt(p) === 'white_bed') { for (const [k, v] of blocks) if (v === 'white_bed') blocks.set(k, 'air'); inventory.push({ name: 'white_bed', count: 1 }); return; }
+      blocks.set(`${p}`, 'air');
+    },
+    place: async (b, t, p, name) => { placed.push(`${p}`); blocks.set(`${p}`, name); },
+  };
+  return { bot, origin, blocks, actions, dug, placed, refuge: { origin: { ...origin }, dimension: 'overworld' } };
+}
+
+test('a bed nook is two cells in a line dug beside the feet, the floor kept; not beside water, under gravel, or open to the air from a sealed pocket', () => {
+  const { bedNook, bedSite } = require('../src/survival');
+  const { bot, origin, blocks } = nookFixture();
+  assert.equal(bedSite(bot), null, 'a one-by-two pocket has no level cells beside the feet');
+  const nook = bedNook(bot, {}, { sealed: true });
+  assert.deepEqual([nook.foot, nook.head], [origin.offset(1, 0, 0), origin.offset(2, 0, 0)]);
+  assert.equal(nook.dig.length, 4, 'the foot and head cells and the cell over each');
+  assert(nook.dig.every(p => p.y >= origin.y), 'the floor under the bed is not dug');
+  assert.equal(nook.enclosed, true);
+  blocks.set(`${origin.offset(3, 0, 0)}`, 'water');
+  assert.notDeepEqual(bedNook(bot, {}, { sealed: true }).foot, origin.offset(1, 0, 0), 'not beside water');
+  blocks.delete(`${origin.offset(3, 0, 0)}`);
+  blocks.set(`${origin.offset(1, 2, 0)}`, 'gravel');
+  assert.notDeepEqual(bedNook(bot, {}, { sealed: true }).foot, origin.offset(1, 0, 0), 'not under gravel, which falls in');
+  blocks.delete(`${origin.offset(1, 2, 0)}`);
+  // A cave beside the head: from a sealed pocket that way would open it.
+  for (const [dx, dz] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) blocks.set(`${origin.offset(dx, 0, dz)}`, 'air');
+  assert.equal(bedNook(bot, {}, { sealed: true }), null, 'every way opens the pocket to the air');
+  assert.equal(bedNook(bot, {}).enclosed, false, 'unsealed, it is offered and said to be open');
+});
+
+test('from a sealed pocket the nook is dug, the carried bed slept in and picked back up, and the pocket\'s wall goes back', async () => {
+  const { bot, origin, actions, dug, placed, refuge } = nookFixture();
+  const survival = new Survival(bot, actions, { state: { shelters: [refuge] } });
+  const reports = []; survival.report = (g, sv, a) => reports.push(a.action);
+  assert(shelter.sealed(bot, refuge), 'sealed before');
+  await survival.nookSleep(new Task('night'), { kind: 'win' }, () => {}, { pocket: refuge });
+  assert.equal(bot.time.timeOfDay, 0, 'the night passed');
+  assert.deepEqual(reports, ['bed_nook', 'sleep', 'leave_shelter']);
+  assert.deepEqual(dug.slice(0, 4).sort(), [origin.offset(1, 0, 0), origin.offset(1, 1, 0), origin.offset(2, 0, 0), origin.offset(2, 1, 0)].map(String).sort());
+  assert(bot.inventory.items().some(i => i.name === 'white_bed'), 'the bed is carried again');
+  assert.deepEqual(placed, [origin.offset(1, 0, 0), origin.offset(1, 1, 0)].map(String), 'the two cells dug out of the wall go back');
+  assert(shelter.sealed(bot, refuge), 'and the pocket is shut again');
+
+  // Refused, with a monster behind the rock: the bed comes up, the wall goes back, and the sleep waits.
+  const refused = nookFixture();
+  refused.bot.sleep = async () => { throw new Error('You may not rest now; there are monsters nearby'); };
+  const again = new Survival(refused.bot, refused.actions, { state: { shelters: [refused.refuge] } });
+  again.report = () => {};
+  await assert.rejects(again.nookSleep(new Task('night'), { kind: 'win' }, () => {}, { pocket: refused.refuge }), /monsters/);
+  assert(refused.bot.inventory.items().some(i => i.name === 'white_bed'), 'the bed is carried again');
+  assert(shelter.sealed(refused.bot, refused.refuge), 'the pocket is shut again');
+  assert(require('../src/progress').isSetAside(again, 'sleep', 'bed'), 'the sleep waits out the refusal');
+});
+
+test('at bedtime in a shaft with a bed carried, the nook is on offer where the bed does not fit, and the fallback sleeps in it', async () => {
+  const { question } = require('../src/decisions');
+  // A one-wide shaft open to the sky above the bot.
+  const { bot } = nookFixture({ open: p => p.x === 0 && p.z === 0 && p.y >= 30 });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } } });
+  const seen = [];
+  survival.decide = async (task, goal, save, { id, tree }) => { seen.push([id, Object.keys(tree).sort()]); const key = question(id).fallback(tree, []); seen.push(tree[key].description); return { path: [key], action: tree[key], stale: false }; };
+  survival.nookSleep = async () => { seen.push('slept'); };
+  await survival.step(new Task('night'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert.deepEqual(seen[0], ['survival_priority', ['continue_request', 'secure_shelter', 'sleep_in_nook']]);
+  assert.match(seen[1], /dig a bed nook beside the bot, the two cells in a line where the bed goes \(foot and head\), 4 blocks to dig and the floor under them kept, closed in rock all round; put the carried bed in it and sleep/);
+  assert.match(seen[1], /within about eight blocks sideways and five up or down of the bed \(vanilla\), seen or not: none now/);
+  assert.equal(seen[2], 'slept');
+});
+
+test('sealed in with a bed carried: at bedtime the nook is Jev\'s to choose, before it the stay says when; chosen as the night\'s shelter, it is taken without asking', async () => {
+  const early = nookFixture({ time: 12000 });
+  const before = new Survival(early.bot, early.actions, { state: { shelters: [early.refuge] }, client: { systemOne: async () => ({}) } });
+  let asked = [];
+  before.decide = async (task, goal, save, { id, tree }) => { asked.push([id, tree]); return { path: ['stay'], stale: false }; };
+  before.wait = async () => {};
+  await before.step(new Task('night'), { kind: 'win' }, () => {});
+  assert.equal(asked[0][0], 'pocket_next');
+  assert(!asked[0][1].sleep_in_nook, 'not before bedtime');
+  assert.match(asked[0][1].stay.description, /The carried bed can go down in a nook dug out of the wall, the pocket staying shut, from bedtime \(12541\), about 27 seconds off/);
+
+  const late = nookFixture({ time: 13000 });
+  const survival = new Survival(late.bot, late.actions, { state: { shelters: [late.refuge] }, client: { systemOne: async () => ({}) } });
+  asked = [];
+  survival.decide = async (task, goal, save, { id, tree }) => { asked.push([id, Object.keys(tree)]); return { path: ['sleep_in_nook'], stale: false }; };
+  const slept = [];
+  survival.nookSleep = async (task, goal, save, { pocket }) => { slept.push(pocket); };
+  await survival.step(new Task('night'), { kind: 'win' }, () => {});
+  assert(asked[0][1].includes('sleep_in_nook'), asked[0][1].join(','));
+  assert.deepEqual(slept, [late.refuge], 'slept from the pocket, which stays the pocket');
+
+  const planned = nookFixture({ time: 13000 });
+  const held = new Survival(planned.bot, planned.actions, { state: { shelters: [planned.refuge], bedNookPlan: { until: Date.now() + 60000 } }, client: { systemOne: async () => ({}) } });
+  held.decide = async () => assert.fail('the nook was chosen when the pocket was sealed');
+  let ran = 0; held.nookSleep = async () => { ran++; };
+  await held.step(new Task('night'), { kind: 'win' }, () => {});
+  assert.equal(ran, 1);
+});
+
+test('choosing how to shelter with a bed carried, the bed nook is on offer: before bedtime a pocket sealed here and the nook dug at bedtime', async () => {
+  const { bot, actions } = nookFixture({ time: 12000, open: p => p.y >= 30 && p.x === 0 && p.z === 0 });
+  const survival = new Survival(bot, actions, { state: { shelters: [] }, client: { systemOne: async () => ({}) } });
+  bot.pathfinder = { movements: {} };
+  const sites = shelter.shelterSites; shelter.shelterSites = () => [];
+  let seen;
+  survival.decide = async (task, goal, save, { id, tree }) => { seen = { id, tree }; return { path: ['bed_nook'], stale: false }; };
+  const sealed = [];
+  survival.sealHere = async () => { sealed.push(1); return true; };
+  survival.nookSleep = async () => assert.fail('not bedtime yet');
+  try { assert.equal(await survival.refugeStep(new Task('dusk'), {}, () => {}), true); }
+  finally { shelter.shelterSites = sites; }
+  assert.equal(seen.id, 'shelter_method');
+  assert.match(seen.tree.bed_nook.description, /Seal a pocket where the bot stands, as seal_here does \(32 blocks carried\), and at bedtime dig a bed nook out of the pocket's wall/);
+  assert.match(seen.tree.bed_nook.description, /closed in rock all round so the pocket stays shut; put the carried bed in it and sleep\. The night passes in seconds/);
+  assert.match(seen.tree.bed_nook.description, /Bedtime is from 12541, about 27 seconds off/);
+  assert.deepEqual(sealed, [1], 'the pocket is sealed now');
+  assert(survival.state.bedNookPlan?.until > Date.now(), 'and the nook is the plan for bedtime');
+});

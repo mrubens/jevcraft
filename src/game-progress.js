@@ -166,15 +166,7 @@ function ladderRung(bot, goal, waiting) {
   // The bed, the home and the armour can each be left for later (a rung
   // that failed twice without progress, work.js persist): nothing after them
   // needs them to start. The tools before them cannot.
-  if (!carried.some(n => /_bed$/.test(n)) && !goal.survival?.home?.bed?.claimedAt && !isSetAside(goal, 'bed_search', 'wool') && ready({ phase: 'bed' })) {
-    const wool = woolCarried(bot);
-    if (wool.count >= 3) return { phase: 'bed', action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
-    // A remembered village with beds is a walk of known length; a sheep
-    // is a search. The village bed comes first when one is within reach.
-    const village = villageBedRung(bot, goal);
-    if (village) return village;
-    return { phase: 'bed', action: 'gather_wool', count: 3 - wool.count };
-  }
+  if (!carried.some(n => /_bed$/.test(n)) && !goal.survival?.home?.bed?.claimedAt && !isSetAside(goal, 'bed_search', 'wool') && ready({ phase: 'bed' })) return bedRung(bot, goal);
   if (best('pickaxe') < 3) return another('iron_pickaxe');
   if (!carried.includes('shield') && ready({ phase: 'shield' })) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
   if (best('sword') < 3 && ready({ phase: 'iron_sword' })) return another('iron_sword');
@@ -223,6 +215,40 @@ function ladderRung(bot, goal, waiting) {
   // walk to the portal takes the day, and dusk brings the bow rung back.
   if (best('sword') < 4 && ready({ phase: 'diamond_sword' })) return another('diamond_sword');
   return null;
+}
+
+// How a bed is had, the first one or one to carry: three wool of a colour
+// carried is a craft; a remembered village with beds is a walk of known
+// length, and a sheep is a search, so the village bed comes first when one
+// is within reach; else the wool (sheep, shears, string, cobwebs:
+// home-base.js gatherWool).
+function bedRung(bot, goal, phase = 'bed') {
+  const wool = woolCarried(bot);
+  if (wool.count >= 3) return { phase, action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
+  const village = villageBedRung(bot, goal);
+  if (village) return { ...village, phase };
+  return { phase, action: 'gather_wool', count: 3 - wool.count };
+}
+
+// A second bed, to carry, once the base's bed is claimed and none is in
+// the pockets: the bed rung is met by the base's, and the six midgame
+// trials of 2026-09-26 carried none after the home was built but one. A
+// night underground was then a pocket or a night mine, about seven real
+// minutes, and the climb back up was 110 of their 408 minutes. Not a rung:
+// strategy.js offers it beside the ladder, with what it buys and costs,
+// and it is Jev's to take. A wool search set aside is not offered.
+// The chest at home answers first, as it does the bed rung.
+function carryBedRung(bot, goal = {}) {
+  if (bot.game?.gameMode !== 'survival' || dimension(bot) !== 'overworld') return null;
+  if (!goal.survival?.home?.bed?.claimedAt || bedCarried(bot) || isSetAside(goal, 'bed_search', 'wool')) return null;
+  const rung = bedRung(bot, goal, 'carry_bed');
+  const home = homeOf(bot, goal);
+  if (home?.stash?.position) {
+    const wants = rungWants(bot, rung, { home, goal });
+    const restock = restockStage(bot, goal, wants);
+    if (restock) return { ...restock, phase: 'carry_bed', action: 'home', home: { ...restock, wants } };
+  }
+  return rung;
 }
 
 // The rungs that are the fighting kit: tools, shield, armour, and the
@@ -434,4 +460,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };
+module.exports = { bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };
