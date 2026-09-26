@@ -2443,6 +2443,10 @@ test('in a crowd every stance says what the mobs cost it over the same fifteen s
   // With nothing close, the hole is shut before any of them arrives.
   const far = survival.stanceOptions(new Task('dusk'), {}, () => {}, [crowdMob(4, 'skeleton', 24), crowdMob(2, 'zombie', 0, 20)], false);
   assert.match(far.dig_down.description, /Shut in below, none of them reaches it/);
+  // mid-220-c: a creeper seventeen blocks off walked up to the lid and went off through it.
+  const creeper = survival.stanceOptions(new Task('dusk'), {}, () => {}, [crowdMob(4, 'skeleton', 24), crowdMob(3, 'creeper', 0, 17)], false);
+  assert.doesNotMatch(creeper.dig_down.description, /none of them reaches it/);
+  assert.match(creeper.dig_down.description, /Shut in below, the creeper still reaches it/);
 });
 
 test('a meal is offered in an encounter only where it brings health back', () => {

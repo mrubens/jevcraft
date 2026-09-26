@@ -1129,8 +1129,12 @@ class Survival {
       // four of three (the medians of 144 in the flight records of
       // 2026-09-23 to 26); then the cap.
       const setup = Math.round((digMs / 1000 + depth * SHAFT_BLOCK_SECONDS + BLOCK_SECONDS) * 10) / 10;
-      const digCost = stanceCost({ mobs, setup });
-      options.dig_down = { expects: { damage: digCost.damage, seconds: digCost.seconds, oneHit }, description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting. Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + buildCost + costSays(digCost, bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
+      // A creeper that walks up to the lid goes off through it: mid-220-c dug
+      // down three with one seventeen blocks off, told "none of them reaches
+      // it", and the blast came through the cap fourteen seconds later
+      // (2026-09-26).
+      const digCost = stanceCost({ mobs, setup, reaches: m => m.name === 'creeper' });
+      options.dig_down = { expects: { damage: digCost.damage, seconds: digCost.seconds, oneHit }, description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting. Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + buildCost + creeperNote + costSays(digCost, bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
         run: async () => {
           this.report(goal, save, { action: 'dig_down', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, depth, stance: true });
           try { return await this.digShaft(task, goal, save, { start: column.start, bottom: column.bottom, spot: column.spot, here: feet }); }
