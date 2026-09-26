@@ -163,9 +163,13 @@ const sparePickaxeMaterials = bot => countOf(bot, 'cobblestone') >= 3 &&
 // where it stalled: the current shaft, search and surface return, the
 // mining sites' work positions, the hunt's marks, a fortress face.
 function looseEnds(goal, now = Date.now()) {
-  // The search is turned, not dropped (answerStall): dropped, a search for
-  // wood across a desert began again from its first heading at every stall
-  // and zig-zagged (trial 17, 2026-09-24).
+  // The search is turned, not dropped: dropped, a search for wood across a
+  // desert began again from its first heading at every stall and zig-zagged
+  // (trial 17, 2026-09-24). Turned whatever the stall's answer: only
+  // "another way" turned it, and first-days-217, its wood search spent,
+  // was sent to look around by Jev each time and came back to a search
+  // that failed at once, thirty-two times (2026-09-26).
+  goal.search = turnSearch(goal.search);
   delete goal.tunnel; delete goal.surfaceReturn;
   if (goal.miningSites) for (const site of Object.values(goal.miningSites)) { delete site.workPosition; site.rejoinBlockedUntil = now + 600000; }
   if (goal.mobHunt) { attemptsFor(goal).clearAction('hunt_target'); delete goal.mobHunt.stalking; }
@@ -206,10 +210,6 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     ? `Keep at the ${thing} another way: leave this patch of ${String(mine.block).replaceAll('_', ' ')} for one further off.`
     : `Keep at the ${thing} another way: step eight blocks off to fresh ground and come at it again from there; the search turns to a heading not tried, and the shaft or site it was using is dropped.`,
   run: async () => {
-    // A search is turned, not dropped: an empty search re-derives its
-    // heading from the resource's name, which pointed the bot straight back
-    // along the route it had turned away from.
-    goal.search = turnSearch(goal.search);
     // After failures, first out of whatever it is wedged in.
     if (stall.error) await shakeLoose(bot, task, Date.now() + 25000, { guard: () => checkThreats(bot) });
     // A mine moves on from this patch of the resource and says so;

@@ -408,3 +408,12 @@ test('a stance Jev chose is the answer while it is carried out: a hit does not t
   bot.emit('entityHurt', bot.entity, zombie);
   assert.equal(stopped, 2, 'not carried out for four seconds (the work is back): the watchdog is too');
 });
+
+test('a spent search is turned whatever the stall\'s answer, not only by "another way"', () => {
+  // first-days-217: its wood search spent, Jev sent it to look around each time, and each return failed at once, thirty-two times.
+  const { looseEnds } = require('../src/work');
+  const goal = { search: { oak_log: { attempts: 128, origin: { x: 1, y: 64, z: 2 }, leg: 5 }, sand: { attempts: 40, frontier: { heading: 7, legs: 3 } } } };
+  looseEnds(goal);
+  assert.deepEqual(goal.search.oak_log, { attempts: 0, origin: { x: 1, y: 64, z: 2 }, leg: 6 });
+  assert.deepEqual(goal.search.sand, { attempts: 0, frontier: { heading: 0, legs: 0 } });
+});
