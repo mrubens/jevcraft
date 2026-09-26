@@ -21,7 +21,7 @@ const MOBS = {
   zombie: { hit: 3, health: 20 }, husk: { hit: 3, health: 20 }, drowned: { hit: 3, health: 20 }, zombie_villager: { hit: 3, health: 20 },
   spider: { hit: 2, health: 16 }, cave_spider: { hit: 2, health: 12, note: 'poisons' },
   skeleton: { hit: 3, health: 20, shoots: true }, stray: { hit: 3, health: 20, shoots: true, note: 'slows' }, parched: { hit: 3, health: 20, shoots: true }, bogged: { hit: 3, health: 16, shoots: true, note: 'poisons' },
-  pillager: { hit: 4, health: 24, shoots: true }, witch: { hit: 6, health: 26, shoots: true, ignoresArmour: true, note: 'harming potions go through armour, and poison and slowness keep the bot from getting away' },
+  pillager: { hit: 4, health: 24, shoots: true }, witch: { hit: 6, health: 26, shoots: true, ignoresArmour: true, every: 3, note: 'harming potions go through armour, and poison and slowness keep the bot from getting away' },
   creeper: { hit: 22, health: 20, note: 'the hit is its blast, once, at point blank' },
   enderman: { hit: 7, health: 40 }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16 },
   zombified_piglin: { hit: 8, health: 20 }, piglin: { hit: 8, health: 16 }, piglin_brute: { hit: 13, health: 50 },
@@ -66,9 +66,52 @@ function afterArmour(damage, { points, toughness }) {
 }
 const round = (n, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
 
+// How far a shooter shoots from: one further off walks in first. A witch
+// throws from about ten blocks; the bows about fifteen.
+const RANGE = { witch: 10, ghast: 40, blaze: 16 };
+const HOLD_SECONDS = 15, APPROACH = 3, FUSE = 1.5, LIGHTS_AT = 3;
+const inRange = m => Math.max(0, ((m.distance || 0) - (RANGE[m.name] || 15)) / APPROACH);
+// A shot every two seconds (a witch's potion every three). A shield takes
+// about half of the arrows (raised between swings and against each shot
+// seen coming); a witch's thrown potion is not stopped by it.
+const shooting = (m, shield) => m.visible ? m.hitsBot / (m.every || 2) * (shield && m.name !== 'witch' ? 0.5 : 1) : 0;
+
+// The fight where the bot stands, as a timeline: nearest first; every mob
+// still standing hits meanwhile, biters once a second at arm's length,
+// shooters every two seconds in sight once within their range, the one
+// being struck a third as often. At most `atOnce` biters are at arm's
+// length together (the open cells round the bot: two in a tunnel, eight in
+// the open); the rest wait their turn. [{ from, to, perSecond }] pieces.
+function fightTimeline(order, { shield = false, atOnce = Infinity } = {}) {
+  const pieces = [];
+  let t = 0;
+  order.forEach((m0, i) => {
+    const end = t + m0.secondsToKill;
+    let biters = 0;
+    order.slice(i).forEach((m, j) => {
+      if (m.name === 'creeper') return;
+      // The one being struck hits back a third as often if it bites; a
+      // shooter being closed on shoots as ever.
+      let perSecond;
+      if (m.shoots) perSecond = shooting(m, shield);
+      else if (++biters > atOnce) return;
+      else perSecond = (j === 0 ? STRUCK : 1) * m.hitsBot;
+      const from = Math.max(t, m.shoots ? inRange(m) : 0);
+      if (perSecond > 0 && end > from) pieces.push({ from, to: end, perSecond });
+    });
+    t = end;
+  });
+  return pieces;
+}
+// The damage a timeline deals in its first `seconds` (all of it without).
+function within(pieces, seconds = Infinity) {
+  return pieces.reduce((n, p) => n + p.perSecond * Math.max(0, Math.min(p.to, seconds) - p.from), 0);
+}
+
 // threats: [{ name, distance, shoots, visible }]; armour: piece names worn;
-// weapon: the item name or null.
-function fightEstimate({ threats, armour = [], weapon = null, health = 20, shield = false }) {
+// weapon: the item name or null; atOnce: how many biters can be at arm's
+// length together where the bot stands.
+function fightEstimate({ threats, armour = [], weapon = null, health = 20, shield = false, atOnce = Infinity }) {
   const worn = armourOf(armour);
   const [damage, rate] = WEAPONS[weapon] || FIST;
   const unknown = [];
@@ -84,30 +127,70 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     const seconds = shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill / rate;
     return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false,
       // A drowned's thrown trident is eight, where its hand is three.
-      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(m.note ? { note: m.note } : {}) };
+      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(m.every ? { every: m.every } : {}), ...(m.note ? { note: m.note } : {}) };
   }).filter(Boolean);
-  // Fighting here: nearest first; every mob still standing hits meanwhile,
-  // biters once a second at arm's length, shooters every two seconds in
-  // sight, the one being struck a third as often.
   const order = [...mobs].sort((a, b) => a.distance - b.distance);
-  let taken = 0, seconds = 0;
-  for (let i = 0; i < order.length; i++) {
-    const t = order[i].secondsToKill;
-    // The one being struck hits back a third as often if it bites; a shooter
-    // being closed on shoots as ever.
-    // A shield on the arm takes about half of the arrows (raised between
-    // swings and against each shot seen coming).
-    const perSecond = order.slice(i).reduce((s, m, j) => s + (m.name === 'creeper' ? 0 : (j === 0 && !m.shoots ? STRUCK : 1) * (m.shoots ? (m.visible ? m.hitsBot / 2 * (shield ? 0.5 : 1) : 0) : m.hitsBot)), 0);
-    taken += perSecond * t; seconds += t;
-  }
+  const timeline = fightTimeline(order, { shield, atOnce });
+  const taken = within(timeline), seconds = order.reduce((n, m) => n + m.secondsToKill, 0);
   const creepers = order.filter(m => m.name === 'creeper');
   return {
     armourPoints: worn.points, weapon: weapon || 'bare hands',
     mobs,
     fightHere: { seconds: round(seconds), damageTaken: round(taken), healthNow: round(health), healthAfter: round(health - taken),
+      // The same stretch every stance is priced over (stanceCost below).
+      inFifteenSeconds: round(within(timeline, HOLD_SECONDS)),
+      ...(Number.isFinite(atOnce) ? { atArmsLengthAtOnce: atOnce } : {}),
       ...(creepers.length ? { creeper: 'not counted: a creeper that reaches the bot goes off for about ' + round(afterArmour(MOBS.creeper.hit, worn)) + ' after armour' } : {}),
       ...(unknown.length ? { notCounted: `no figures for ${[...new Set(unknown)].join(', ')}` } : {}) },
   };
 }
 
-module.exports = { fightEstimate, afterArmour, armourOf, MOBS, WEAPONS };
+// What the mobs about cost the bot over a stance, worked out the same way
+// for every stance so they can be set side by side. The crowd deaths of
+// 2026-09-26 (mid-83-d, mid-92-e, mid-110-k) were each told the fight's
+// cost ("more than the bot has") and nothing of the pillar's, the pocket's
+// or the run's, and Jev took the stances that carried no figure: a pillar
+// under three skeletons and a creeper, a pocket of thirty blocks with a
+// zombie at arm's length.
+//
+// Over the fifteen seconds a stance is held: `setup` seconds of building or
+// digging first, the hands busy and the shield down, when everything that
+// gets to the bot hurts it; then what `reaches` says still reaches it in
+// that stance at a steady rate, and the mobs `fight.only` picks out are
+// fought as in the fight timeline above (atOnce biters at a time, all of
+// them when there is no `only`). Biters walk about three blocks a second
+// and hit once a second from arm's length; shooters in sight shoot as above
+// once within their range; a creeper lights three blocks off and goes off
+// a second and a half later, once.
+// mobs: fightEstimate's mobs.
+const arrives = m => Math.max(0, ((m.distance || 0) - (m.name === 'creeper' ? LIGHTS_AT : 1.5)) / APPROACH);
+function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => false, fight = null, shield = false }) {
+  let damage = 0;
+  const blasts = [], still = new Set();
+  const fought = m => !!fight && m.name !== 'creeper' && (!fight.only || fight.only(m));
+  for (const m of mobs) {
+    if (m.name === 'creeper') {
+      const at = arrives(m) + FUSE;
+      if (at <= setup || (at <= seconds && reaches(m))) { blasts.push({ name: m.name, distance: m.distance, seconds: round(at), hitsBot: m.hitsBot }); damage += m.hitsBot; }
+      if (reaches(m)) still.add(m.name);
+      continue;
+    }
+    if (m.shoots && !m.visible) continue;
+    const from = m.shoots ? inRange(m) : arrives(m);
+    // Building or digging: every mob that gets there, from when it does,
+    // the shield down.
+    damage += Math.max(0, setup - from) * (m.shoots ? shooting(m, false) : m.hitsBot);
+    if (!fought(m) && reaches(m) && seconds > setup) {
+      still.add(m.name);
+      damage += Math.max(0, seconds - Math.max(setup, from)) * (m.shoots ? shooting(m, shield) : m.hitsBot);
+    }
+  }
+  if (fight && seconds > setup) {
+    const order = mobs.filter(fought).sort((a, b) => a.distance - b.distance);
+    damage += within(fightTimeline(order, { shield, atOnce: fight.atOnce ?? Infinity }), seconds - setup);
+    for (const m of order) if (!m.shoots || m.visible) still.add(m.name);
+  }
+  return { seconds, setup: round(setup), damage: round(damage), blasts, still: [...still] };
+}
+
+module.exports = { fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };

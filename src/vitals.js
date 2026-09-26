@@ -485,6 +485,13 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   // next minute: death nineteen ate twice at six health with a zombie
   // beside it. Starvation is the one reason to eat anyway.
   if (bot.food > 2 && closeHostile(bot)) return false;
+  // In an encounter the meal is a stance, Jev's to choose with the others
+  // (survival.js stanceOptions, eat): eaten here between two ticks of a
+  // stance it stopped the run or the pocket chosen, a second and a half at
+  // a time (mid-83-d ate at twelve health in the middle of its retreat).
+  // Down to six hunger, where the bot can no longer sprint, it still eats.
+  const held = require('./danger').stanceHeld(bot);
+  if (bot.food > 6 && held && held.choice !== 'keep_working' && held.choice !== 'eat') return false;
   // Last resort only when it unlocks regeneration or holds off starvation;
   // a bot at full health does not eat rotten flesh for the fun of it.
   const food = chooseFood(bot) || ((bot.food < 18 && bot.health < 20) || bot.food <= 6 ? lastResortFood(bot) : null);

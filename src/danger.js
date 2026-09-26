@@ -227,4 +227,17 @@ function checkThreats(bot) {
   if (threat) throw new NeedsSafety(threat);
 }
 
-module.exports = { unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };
+// The encounter stance Jev chose (survival.js stanceStep), while it holds:
+// fifteen seconds from the choice, and until six health is gone since.
+// The reflexes that would stop it give way to it meanwhile: the hurt
+// watchdog, the shield raised at each arrow, the meal. Asked again sooner
+// when it fails or a mob it was not chosen against comes within six blocks.
+// Only while it is being carried out (run within the last two seconds): the
+// work that comes back once the mobs are gone has its watchdog back.
+const STANCE_HOLD_MS = 15000, STANCE_HEALTH = 6, STANCE_NEWCOMER = 6;
+function stanceHeld(bot, now = Date.now()) {
+  const s = bot?._stance;
+  return s && now - s.at < STANCE_HOLD_MS && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - STANCE_HEALTH ? s : null;
+}
+
+module.exports = { stanceHeld, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };
