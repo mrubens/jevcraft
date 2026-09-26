@@ -202,3 +202,20 @@ test('pillaring up does not dig into a falling block overhead, nor under one', a
     assert.equal(placed, 0); assert.deepEqual(dug, [], `${name} ${at} up: not dug`);
   }
 });
+
+test('a pillar is as high as the drop to the ground beside it, not the stone stacked under the feet', () => {
+  // mid-237-a: a step above a tunnel floor, stone all the way down, was said to be three blocks up with no way off but digging.
+  const { pillarHeight } = require('../src/pillar-recovery');
+  const { Vec3 } = require('vec3');
+  const solid = p => ({ name: 'stone', boundingBox: 'block', position: p });
+  const air = p => ({ name: 'air', boundingBox: 'empty', position: p });
+  // Feet at y 28 on a one-block step: the floor beside is at y 26, ground at 27 under the feet.
+  const step = { blockAt: p => (p.x === 0 && p.z === 0 ? p.y < 28 : p.y < 27) ? solid(p) : air(p) };
+  assert.equal(pillarHeight(step, new Vec3(0, 28, 0)), 1);
+  // Five placed blocks up from open ground.
+  const tall = { blockAt: p => (p.x === 0 && p.z === 0 ? p.y < 28 : p.y < 23) ? solid(p) : air(p) };
+  assert.equal(pillarHeight(tall, new Vec3(0, 28, 0)), 5);
+  // Walled in on every side: no open side, no pillar.
+  const walled = { blockAt: p => (p.x === 0 && p.z === 0 ? p.y < 28 : p.y < 31) ? solid(p) : air(p) };
+  assert.equal(pillarHeight(walled, new Vec3(0, 28, 0)), null);
+});

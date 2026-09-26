@@ -35,6 +35,29 @@ function pillarDescent(bot, goal, { combat = false } = {}) {
   return { block: { ...blockPosition }, blockName: block.name, floorName: floor.name, destination: { ...destination } };
 }
 
+// How high a pillar stands: the drop to the ground beside it, the least
+// over its open sides, not the blocks stacked under the feet. In a cave the
+// stone under the feet goes down for ever, and mid-237-a, a step above the
+// floor of a tunnel among seven zombies, was told it stood three blocks up
+// with no way off but digging, chose to, and dug under its own feet at
+// thirteen health (2026-09-26). Null with no open side.
+function pillarHeight(bot, feet, { deepest = 24 } = {}) {
+  const at = feet.floored ? feet.floored() : feet;
+  let least = null;
+  for (const d of directions) {
+    const side = at.plus(d);
+    if (!dryPassable(bot.blockAt(side)) || !dryPassable(bot.blockAt(side.offset(0, 1, 0)))) continue;
+    let drop = deepest;
+    for (let dy = 1; dy <= deepest; dy++) {
+      const b = bot.blockAt(side.offset(0, -dy, 0));
+      if (!b) break;
+      if (!dryPassable(b)) { drop = dy - 1; break; }
+    }
+    if (least === null || drop < least) least = drop;
+  }
+  return least;
+}
+
 async function descendPillar(bot, task, goal, save, expected, { combat = false } = {}) {
   // Chosen in a fight (the come_down stance), the mobs about do not stop it.
   const threatCheck = () => { if (!combat) checkThreats(bot); };
@@ -177,4 +200,4 @@ function pillarSite(bot, targetY, target, { radius = 5 } = {}) {
   return sites.sort((a, b) => far(a) - far(b))[0] || null;
 }
 
-module.exports = { pillarDescent, descendPillar, pillarUp, pillarSite, SCAFFOLD };
+module.exports = { pillarHeight, pillarDescent, descendPillar, pillarUp, pillarSite, SCAFFOLD };

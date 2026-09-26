@@ -69,6 +69,8 @@ function creeperNoteFor(danger) {
 const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pillager', 'witch']);
 // The stances that move the bot or keep its hands busy building, digging or
 // eating: a shield raised at each arrow stops them.
+// The most a route drops the bot (movement.js).
+const ROUTE_DROP = 3;
 const MOVING_STANCES = new Set(['retreat', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
 // Two blocks up: from the pillar's report to two up took a second and a
 // half to two seconds in mid-92-e, mid-92-g and mid-110-k (2026-09-26).
@@ -1022,14 +1024,18 @@ class Survival {
     // moves it (a route drops three blocks at most), and mid-83-e stood five
     // up on its dirt for seventy seconds, shot by a skeleton, choosing to
     // retreat and not moving (2026-09-26). A block a time, dug underfoot.
-    const { pillarDescent, descendPillar } = require('./pillar-recovery');
+    const { pillarDescent, descendPillar, pillarHeight } = require('./pillar-recovery');
     const down = pillarDescent(bot, goal, { combat: true });
+    // Up off the ground by more than a route drops: only then is there no
+    // way off it but digging down.
     let onPillar = 0;
-    if (down) {
-      let high = 0;
-      for (let dy = 1; dy <= 24; dy++) { const b = bot.blockAt(feet.offset(0, -dy, 0)); if (!b || b.boundingBox !== 'block' || !/^(dirt|cobblestone|cobbled_deepslate|stone|deepslate|granite|diorite|andesite|tuff|netherrack|nether_bricks|blackstone|basalt|soul_soil)$/.test(b.name)) break; high = dy; }
-      onPillar = high;
-      options.come_down = { description: `Get down off the pillar to the ground${high ? `, ${high} block${high === 1 ? '' : 's'}` : ''}: its top block is dug out and the bot drops onto the next, about a second each, the only way off it; shot at meanwhile if a shooter is about. On the ground the retreat, the pocket and the charge work again; up here none of them can.${hitsLeft}`,
+    const high = down ? pillarHeight(bot, feet) : null;
+    if (down && high) {
+      const stranded = high > ROUTE_DROP;
+      if (stranded) onPillar = high;
+      options.come_down = { description: stranded
+        ? `Get down off the pillar to the ground, ${high} blocks: its top block is dug out and the bot drops onto the next, about a second each, the only way off it; shot at meanwhile if a shooter is about. On the ground the retreat, the pocket and the charge work again; up here none of them can.${hitsLeft}`
+        : `Dig out the block under the feet and drop onto the next, about a second each, down to the ground beside, ${high} block${high === 1 ? '' : 's'} below; shot at meanwhile if a shooter is about. A route steps down ${ROUTE_DROP} blocks, so the retreat and the charge get off it as well, and the walls of a pocket go up beside ${high} block${high === 1 ? '' : 's'} of open air.${hitsLeft}`,
         run: async () => {
           this.report(goal, save, { action: 'come_down', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
           let steps = 0;
@@ -1059,7 +1065,7 @@ class Survival {
     const shellCells = (() => { try { return shelter.missingShell(bot, { origin: { x: feet.x, y: feet.y, z: feet.z } }).length; } catch (_) { return null; } })();
     const sealPriced = shellCells != null ? stanceCost({ mobs, setup: shellCells * BLOCK_SECONDS }) : null;
     const sealCost = sealPriced ? costSays(sealPriced, bot.health, mobs, { doing: 'building', done: 'Shut in' }) : '';
-    if (shelter.materialStock(bot) >= 4) options.seal = { ...(sealPriced ? { expects: { damage: sealPriced.damage, seconds: sealPriced.seconds, oneHit } } : {}), description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + sealCost + nightLong + unseen + (onPillar ? ` The bot stands ${onPillar} blocks up on a pillar a block wide: the walls go up beside nothing, placed against open air.` : ''),
+    if (shelter.materialStock(bot) >= 4) options.seal = { ...(sealPriced ? { expects: { damage: sealPriced.damage, seconds: sealPriced.seconds, oneHit } } : {}), description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + sealCost + nightLong + unseen + (high ? ` The bot stands ${high} block${high === 1 ? '' : 's'} above the ground beside it: the walls go up beside nothing, placed against open air.` : ''),
       run: () => this.sealHere(task, goal, save, danger) };
     // Down into the ground where the bot stands, a block over its head: a
     // player's pocket in a crowd, two or three digs and one block where the
