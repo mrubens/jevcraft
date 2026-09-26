@@ -2833,6 +2833,54 @@ async function tunnelToward(bot, task, goal, save, target, key) {
   await resourceTunnelStep(bot, task, goal, save, target, key, { dig, navigate });
 }
 
+// How the portal comes to be, Jev's to choose when there is more than one
+// way: a frame of its own (ten obsidian, made from lava with a diamond
+// pickaxe), or a remembered ruined portal finished and lit (no diamonds).
+// Held once chosen; a ruin whose frame will not do is marked and the
+// question asked again.
+async function portalMethod(bot, task, goal, save) {
+  const { fitRuin, adopt } = require('./ruined-portal');
+  const { knownLandmarks } = require('./exploration');
+  const diamondPickaxe = bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
+  const method = goal.portalMethod;
+  if (method?.kind === 'build') return true;
+  if (method?.kind === 'ruin') {
+    const r = new Vec3(method.at.x, method.at.y ?? bot.entity.position.y, method.at.z);
+    if (!bot.blockAt(r) || bot.entity.position.distanceTo(r) > 12) {
+      goal.step = { action: 'to_ruined_portal', at: { ...method.at }, distance: Math.round(bot.entity.position.distanceTo(r)) }; save();
+      try { await navigate(bot, task, new goals.GoalNear(r.x, r.y, r.z, 6), { timeoutMs: 120000, stallMs: 8000, sprint: true }); }
+      catch (err) {
+        task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+        await tunnelToward(bot, task, goal, save, r, 'ruined_portal');
+      }
+      return false;
+    }
+    const fit = fitRuin(bot, r, { diamondPickaxe });
+    const mark = (goal.landmarks || []).find(l => l.kind === 'ruined_portal' && l.x === method.at.x && l.z === method.at.z);
+    if (!fit) { if (mark) mark.noFrame = true; delete goal.portalMethod; save(); return false; }
+    goal.portalFrame = adopt(fit); save();
+    return true;
+  }
+  const ruins = knownLandmarks(bot, goal, 'ruined_portal', 512).filter(k => !k.landmark.noFrame).slice(0, 3);
+  const client = task.opportunityClient;
+  if (!ruins.length || !client) { goal.portalMethod = { kind: 'build' }; save(); return true; }
+  const diamonds = countOf(bot, 'diamond'), obsidian = countOf(bot, 'obsidian');
+  const tree = {
+    build_new: { description: `Build a portal frame of its own: ten obsidian (${obsidian} carried), lit with flint and steel. Obsidian is made by pouring water on lava and mined with a diamond pickaxe (${diamondPickaxe ? 'one carried' : `none carried; three diamonds make one, ${diamonds} carried`}), about ten seconds a block once at a lava pool.` },
+  };
+  ruins.forEach((k, i) => {
+    tree[`ruin_${i}`] = { description: `Finish the ruined portal ${k.distance} blocks away and light it: its frame is part standing (${k.landmark.obsidian ?? 'some'} obsidian seen there when it was found) and the missing blocks are placed like any block; no diamond pickaxe is needed unless crying obsidian or obsidian stands where the frame or its inside must be clear. Its chest often holds obsidian, flint and steel or a fire charge. About ${Math.round(k.distance / 4.3)} seconds' walk; ${obsidian} obsidian carried.` };
+  });
+  const decision = await decide('portal_method', { client, bot, task, goal, save, tree,
+    state: { dimension: String(bot.game?.dimension || ''), obsidian, diamonds, diamondPickaxe, flintAndSteel: countOf(bot, 'flint_and_steel'), fireCharges: countOf(bot, 'fire_charge'),
+      riskNow: require('./risk').riskNow(bot) } });
+  if (decision.stale) return false;
+  const pick = decision.fallback ? 'build_new' : decision.path.at(-1);
+  goal.portalMethod = pick === 'build_new' ? { kind: 'build' } : { kind: 'ruin', at: { x: ruins[Number(pick.slice(5))].landmark.x, y: ruins[Number(pick.slice(5))].landmark.y, z: ruins[Number(pick.slice(5))].landmark.z } };
+  save();
+  return pick === 'build_new';
+}
+
 async function netherStep(bot, task, goal, save) {
   if (String(bot.game.dimension).includes('nether')) return true;
   // Fed and healed before the portal, however the crossing was reached.
@@ -2889,6 +2937,7 @@ async function netherStep(bot, task, goal, save) {
   if (goal.portalFrame && goal.portalFrame.blocks.every(p => bot.blockAt(pos(p)) && bot.blockAt(pos(p)).name !== 'obsidian') &&
       !(goal.portalFrame.supports || []).some(p => bot.blockAt(pos(p))?.name === p.material) &&
       !portalSiteClear(bot, goal.portalFrame.origin)) { delete goal.portalFrame; save(); }
+  if (!goal.portalFrame && !await portalMethod(bot, task, goal, save)) return false;
   if (!goal.portalFrame) {
     if (!await acquireStep(bot, task, 'flint_and_steel', 1, goal, save)) return false;
     if (!await acquireStep(bot, task, 'obsidian', 10, goal, save)) return false;
@@ -2910,16 +2959,31 @@ async function netherStep(bot, task, goal, save) {
     save();
   }
   const frame = goal.portalFrame;
+  const { frameCells, across } = require('./ruined-portal');
+  const axis = frame.axis || 'x', cells = frameCells(frame.origin, axis);
+  // A ruin's frame: what stands in its empty slots and inside it comes out
+  // first (a diamond pickaxe for obsidian where it should not be).
+  if (frame.ruin) {
+    for (const p of [...frame.blocks.map(pos), ...(frame.interior || []).map(pos)]) {
+      const b = bot.blockAt(p);
+      const inSlot = frame.blocks.some(q => pos(q).equals(p));
+      if (!b || air(b) || (inSlot && b.name === 'obsidian') || /^(short_grass|tall_grass|fern|large_fern|dead_bush|vine|snow|fire|soul_fire)$/.test(b.name)) continue;
+      goal.step = { action: 'clear_ruined_portal', at: { ...p }, block: b.name }; save();
+      await dig(bot, task, p, { requireDrops: false });
+    }
+  }
   const missing = frame.blocks.filter(p => bot.blockAt(pos(p))?.name !== 'obsidian');
   if (missing.length) {
     if (!await acquireStep(bot, task, 'obsidian', missing.length, goal, save)) return false;
     // The cornerless frame still needs temporary placement anchors. The top
     // beam cannot be placed in midair: build its left corner after the column.
     const o = pos(frame.origin);
-    const scaffold = [o.offset(0, 0, 0), o.offset(3, 0, 0), o.offset(0, 4, 0)];
+    const scaffold = [cells.corners[0], cells.corners[1], cells.corners[2]];
     const neededSupports = scaffold.filter(p => air(bot.blockAt(p))).length;
     if (!await preparePortalSupports(bot, task, goal, save, neededSupports)) return false;
-    await navigate(bot, task, new goals.GoalBlock(o.x, o.y, o.z - 1));
+    const stand = o.minus(across(axis));
+    if (frame.ruin) await navigate(bot, task, new goals.GoalNear(o.x, o.y, o.z, 3));
+    else await navigate(bot, task, new goals.GoalBlock(stand.x, stand.y, stand.z));
     const anchor = async p => {
       const material = portalSupports(bot).material;
       if (!material) throw new Blocked('Portal supports were consumed during travel; need another ordinary stone block');
@@ -2934,10 +2998,13 @@ async function netherStep(bot, task, goal, save) {
       await place(bot, task, pos(p), 'obsidian');
     }
   }
-  if (!await acquireStep(bot, task, 'flint_and_steel', 1, goal, save)) return false;
-  const bottom = pos(frame.origin).offset(1, 0, 0);
+  // A fire charge lights a portal as flint and steel does, and a ruin's
+  // chest often holds one.
+  const lighter = countOf(bot, 'flint_and_steel') ? 'flint_and_steel' : countOf(bot, 'fire_charge') ? 'fire_charge' : null;
+  if (!lighter && !await acquireStep(bot, task, 'flint_and_steel', 1, goal, save)) return false;
+  const bottom = cells.blocks.find(p => p.y === frame.origin.y);
   await navigate(bot, task, new goals.GoalNear(bottom.x, bottom.y, bottom.z, 2));
-  await bot.equip(bot.inventory.items().find(i => i.name === 'flint_and_steel'), 'hand');
+  await bot.equip(bot.inventory.items().find(i => i.name === (lighter || 'flint_and_steel')), 'hand');
   task.check();
   await bot.activateBlock(bot.blockAt(bottom), new Vec3(0, 1, 0));
   await waitFor(task, () => bot.blockAt(bottom.offset(0, 1, 0))?.name === 'nether_portal');

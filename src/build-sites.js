@@ -29,9 +29,12 @@ function reservedForConstruction(goal, p, { from = null } = {}) {
     const xs = corners.map(c => c.x), zs = corners.map(c => c.z);
     if (p.x >= Math.min(...xs) && p.x <= Math.max(...xs) && p.z >= Math.min(...zs) && p.z <= Math.max(...zs) && p.y >= o.y - 3 && p.y <= o.y + 4) return true;
   }
+  // The frame and a block about it, along whichever axis it runs.
   const portal = goal.portalFrame?.origin;
-  return Boolean(portal && p.x >= portal.x - 1 && p.x <= portal.x + 4 &&
-    Math.abs(p.z - portal.z) <= 2 && p.y >= portal.y - 4);
+  if (!portal) return false;
+  const [along, acrossAxis] = goal.portalFrame.axis === 'z' ? ['z', 'x'] : ['x', 'z'];
+  return p[along] >= portal[along] - 1 && p[along] <= portal[along] + 4 &&
+    Math.abs(p[acrossAxis] - portal[acrossAxis]) <= 2 && p.y >= portal.y - 4;
 }
 
 function portalSiteClear(bot, origin) {

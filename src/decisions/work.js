@@ -39,6 +39,20 @@ const IDLE_OPTIONS = [
   { key: 'long_game', label: 'work toward beating the game', when: 'the dream is to beat the game and its ladder is not complete' },
 ];
 
+// How the portal comes to be: a frame of its own, or a ruin finished.
+define({
+  id: 'portal_method', area: 'work', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The way into the Nether: build a portal frame of its own, or finish and light a remembered ruined portal?',
+  trigger: 'In the Overworld on the way to the Nether, with no lit portal known and no frame begun, when a ruined portal is remembered within 512 blocks; held once chosen, asked again when a chosen ruin\'s frame will not do.',
+  source: 'src/work.js (portalMethod)',
+  options: [
+    { key: 'build_new', label: 'build a frame of its own from ten obsidian', when: 'always', level: 'root' },
+    { key: /^ruin_\d+$/, label: 'finish and light a remembered ruined portal', when: 'a ruined portal remembered within 512 blocks, not found frameless', level: 'root' },
+  ],
+  instructions: { task: 'Choose how the bot gets a portal to the Nether.', guidance: 'Each option says its walk, what it needs against what is carried, and whether a diamond pickaxe is needed. A new frame needs ten obsidian, which without a diamond pickaxe means finding diamonds first; a ruin needs only its missing blocks.' },
+  fallback: () => 'build_new',
+});
+
 define({
   id: 'resource_source', area: 'resources', kind: 'source', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Which source (tree, vein, deposit) should the bot work for the resource the request needs?',

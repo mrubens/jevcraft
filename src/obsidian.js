@@ -165,7 +165,9 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
       if (arrived.kind === 'ruined_portal') {
         const id = bot.registry.blocksByName.obsidian?.id;
         const frame = (id === undefined ? [] : bot.findBlocks({ matching: id, maxDistance: 16, count: 32 }))
-          .filter(p => !isSetAside(goal, 'crust', p)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+          // Not the frame being finished: a ruin chosen for the portal is
+          // not also the quarry for it.
+          .filter(p => !isSetAside(goal, 'crust', p) && !require('./build-sites').reservedForConstruction(goal, p)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
         if (!frame.length) { arrived.obsidian = 0; save(); return; }
         for (const p of frame.slice(0, 4)) {
           if (!wanted()) return;

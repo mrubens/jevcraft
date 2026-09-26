@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-74 questions: 26 decision trees and 48 batched questions.
+75 questions: 27 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -220,6 +220,23 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `hunt_\d+` (pattern) | root | fight this mob | observed, reachable, isolated from others of its kind, and the bot fit to fight |
 | `defer` | root | leave them for now | always |
+
+## work
+
+### `portal_method`
+
+**The way into the Nether: build a portal frame of its own, or finish and light a remembered ruined portal?**
+
+- When: In the Overworld on the way to the Nether, with no lit portal known and no frame begun, when a ruined portal is remembered within 512 blocks; held once chosen, asked again when a chosen ruin's frame will not do.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (portalMethod)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `build_new` | root | build a frame of its own from ten obsidian | always |
+| `/^ruin_\d+$/` | root | finish and light a remembered ruined portal | a ruined portal remembered within 512 blocks, not found frameless |
 
 ## resources
 
