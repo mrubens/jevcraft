@@ -150,7 +150,10 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
   for (const f of frames) {
     const h = f.snapshot?.health;
     if (typeof h !== 'number') continue;
-    if (lastHealth !== null && h < lastHealth - 0.5) damage.push({ t: f.t, from: lastHealth, to: h, at: pos(f.snapshot), step: stepOf(f.snapshot), survival: survivalOf(f.snapshot) });
+    // A fall to nothing is a death however small the last step: mid-205-a
+    // died from 0.47 health and, under half a point, it was not counted,
+    // so the verdict said no deaths (2026-09-26).
+    if (lastHealth !== null && (h < lastHealth - 0.5 || (h <= 0 && lastHealth > 0))) damage.push({ t: f.t, from: lastHealth, to: h, at: pos(f.snapshot), step: stepOf(f.snapshot), survival: survivalOf(f.snapshot) });
     lastHealth = h;
   }
   const deaths = damage.filter(d => d.to <= 0);
