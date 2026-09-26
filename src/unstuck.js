@@ -227,6 +227,10 @@ function aimFor(bot, { walksFailing = false } = {}) {
   return null;
 }
 
+function moveReached(m, feet, after, { failure = null, changed = false } = {}) {
+  return !failure && (m.to ? after.x === m.to.x && after.z === m.to.z && (m.to.y <= feet.y || after.y >= m.to.y) : changed);
+}
+
 // One move, done on the live bot.
 async function perform(bot, task, m, { dig }) {
   const { move } = require('./motion');
@@ -306,7 +310,12 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const after = bot.entity.position.floored();
     const changed = before.distanceTo(bot.entity.position) >= 0.5 || (m.cell && bot.blockAt(m.cell)?.name !== blocks);
     still = changed ? 0 : still + 1;
-    const reached = m.to ? after.x === m.to.x && after.z === m.to.z : changed;
+    // Got there: the column, and the height when the move rises. A pillar
+    // rises in its own column, so the column alone always said so:
+    // first-days-204's pillar failed from one cell eleven times in two
+    // minutes, each recorded as got there, and each offered again as
+    // "rises 1" with nothing said of the failures (2026-09-26).
+    const reached = moveReached(m, feet, after, { failure, changed });
     record.moves.push({ move: m.key, from: `${feet}`, reached, result: failure ? `failed: ${failure}` : `${changed ? '' : 'nothing changed; '}now at ${after.x},${after.y},${after.z}` });
     save();
     if (still >= 4) return false;
@@ -314,4 +323,4 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   return false;
 }
 
-module.exports = { dropBelow, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+module.exports = { moveReached, dropBelow, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

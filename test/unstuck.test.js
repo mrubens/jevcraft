@@ -110,3 +110,14 @@ test('no dig is offered that lets lava in beside the body', () => {
   assert(!moves.some(m => m.kind === 'dig' && m.effects.some(e => /lava/.test(e))), moves.filter(m => m.kind === 'dig').map(m => m.key).join(','));
   assert(moves.some(m => m.key === 'dig_east_feet'), 'the rest are still offered');
 });
+
+test('a pillar that failed where it stands did not get there, so it is counted as tried and failed', () => {
+  // first-days-204: the pillar failed from one cell eleven times, each recorded as got there, and was offered again as "rises 1".
+  const { moveReached } = require('../src/unstuck');
+  const feet = new Vec3(71, 118, 203), pillar = { key: 'pillar', to: feet.offset(0, 1, 0) };
+  assert.equal(moveReached(pillar, feet, feet, { failure: 'The block did not go under the feet' }), false);
+  assert.equal(moveReached(pillar, feet, feet, {}), false, 'still at the same height');
+  assert.equal(moveReached(pillar, feet, feet.offset(0, 1, 0), { changed: true }), true);
+  const step = { key: 'step_north', to: feet.offset(0, -2, -1) };
+  assert.equal(moveReached(step, feet, feet.offset(0, -2, -1), { changed: true }), true, 'a step down reaches its column');
+});
