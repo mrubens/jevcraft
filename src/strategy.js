@@ -225,8 +225,17 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   if (rungs.length && rungs[0].phase === stage.phase && dimension(bot) === 'overworld' && rungs.every(r => DEFERRABLE.has(r.phase))) {
     const left = rungs.map(r => r.phase);
     const clock = goal.rungClocks?.[stage.phase];
+    // Without the armour, what the Nether's mobs take a hit through what is
+    // worn now, not a word for it.
+    const armourHits = () => {
+      const { MOBS, armourOf, afterArmour } = require('./combat-estimate');
+      const worn = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
+      const through = armourOf(worn), round = n => Math.round(n * 10) / 10;
+      return `every hit lands on what is worn now (${worn.length ? worn.map(label).join(', ') : 'nothing'}, ${through.points} armour points): a blaze's fireball about ${round(afterArmour(MOBS.blaze.hit, through))}, a wither skeleton's blade about ${round(afterArmour(MOBS.wither_skeleton.hit, through))}, a piglin's about ${round(afterArmour(MOBS.piglin.hit, through))}, of 20 health; full iron would take about ${round(afterArmour(MOBS.blaze.hit, armourOf(['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'])))} of the fireball`;
+    };
+    const without = p => /^iron_(armour|helmet|chestplate|leggings|boots)$/.test(p) ? armourHits() : WITHOUT[p] || RUNG_WHY[p] || 'it waits';
     options.nether_first = {
-      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now: the portal, and through it for a fortress, blaze rods and ender pearls. ${left.map(p => `Without ${label(p)} for now: ${WITHOUT[p] || RUNG_WHY[p] || 'it waits'}.`).join(' ')}${clock ? ` The ladder's next step has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.`,
+      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now: the portal, and through it for a fortress, blaze rods and ender pearls. ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.`).join(' ')}${clock ? ` The ladder's next step has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.`,
       says: `I'll leave the ${left.map(label).join(' and the ')} for later`,
       side: true,
       run: async () => { for (const p of left) setAside(goal, 'rung', p, 'Jev chose the Nether first', 1800000); },

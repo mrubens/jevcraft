@@ -108,7 +108,13 @@ function preparationStage(bot, goal = {}) {
 // The rest of the home too (its site, levelling, chest and bed): trial 39
 // placed its bed and could not walk back to claim it, and the bed's step
 // held the armour off the ladder with ninety-three raw iron in the pack.
-const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword']);
+// Iron armour may wait too: a player goes to the Nether with an iron
+// pickaxe, a bucket and food, and twenty-four ingots of armour were a
+// quarter of the midgame trials' time before it (the scoreboard,
+// 2026-09-26). What going without costs is said with the Nether-first
+// option, hit by hit, for the mobs there.
+const ARMOUR_PIECES = ['iron_armour', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword', ...ARMOUR_PIECES]);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
   const waiting = new Set(Object.keys(attemptsFor(goal).of('rung', now)));

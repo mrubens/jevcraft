@@ -21,7 +21,7 @@ test('the open rungs are the ladder\'s next and each one after it that may wait;
   let { bot, goal } = fixture(['golden_boots', 'diamond_sword']);
   assert.deepEqual(openRungs(bot, goal).map(r => r.phase), ['golden_boots', 'diamond_sword']);
   ({ bot, goal } = fixture(['iron_helmet', 'golden_boots']));
-  assert.deepEqual(openRungs(bot, goal).map(r => r.phase), ['iron_helmet'], 'armour may not wait, so nothing after it is on offer');
+  assert.deepEqual(openRungs(bot, goal).map(r => r.phase), ['iron_helmet', 'golden_boots'], 'armour may wait too, so the steps after it are on offer');
 });
 
 test('Jev may put a later rung first; the choice holds for ten minutes, then is asked again', async () => {
@@ -63,12 +63,13 @@ test('side trips are offered at night too (Jev weighs the dark), and a lone rung
   await strategyStep(bot, task, goal, () => {}, { phase: 'golden_boots' }, { decide: night.decide, sides });
   assert.equal(night.asked.length, 1, 'asked, the trip among the options');
   assert(looted, 'and Jev\'s pick ran');
-  // Armour may not wait: alone, it is no choice.
-  const { bot: b2, goal: g2, task: t2 } = fixture(['iron_helmet']);
+  // The Nether is not a ladder step: a stage past the preparation ladder
+  // alone is no choice.
+  const { bot: b2, goal: g2, task: t2 } = fixture([]);
   b2.time.timeOfDay = 14000;
   const lone = picking('loot');
-  assert.equal(await strategyStep(b2, t2, g2, () => {}, { phase: 'iron_helmet' }, { decide: lone.decide, sides: {} }), null);
-  assert.equal(lone.asked.length, 0, 'a lone rung is not asked about');
+  assert.equal(await strategyStep(b2, t2, g2, () => {}, { phase: 'enter_nether', action: 'enter_nether' }, { decide: lone.decide, sides: {} }), null);
+  assert.equal(lone.asked.length, 0, 'a lone step is not asked about');
 });
 
 test('with Jev unreachable the ladder\'s own order is kept, through the registry', async () => {
@@ -274,9 +275,9 @@ test('when every step left before the Nether may wait, going now is offered, and
   assert.deepEqual(await strategyStep(bot, task, goal, () => {}, stage, { decide }), { ran: true });
   assert(isSetAside(goal, 'rung', 'arrows'), 'the arrows wait');
   assert.equal(openRungs(bot, goal).length, 0, 'nothing on the ladder before the Nether now');
-  // Armour may not wait: with it open, no Nether first.
+  // Armour may wait too (the scoreboard, 2026-09-26): with it open, the Nether first is offered.
   const armour = fixture(['iron_helmet']);
-  assert.equal(strategyOptions(armour.bot, armour.goal, openRungs(armour.bot, armour.goal)[0])?.nether_first, undefined);
+  assert(strategyOptions(armour.bot, armour.goal, openRungs(armour.bot, armour.goal)[0])?.nether_first);
 });
 
 test('the question says what the Nether waits on, and never that every step comes first', async () => {
@@ -299,4 +300,15 @@ test('with the base bed claimed and none carried, taking it along is offered wit
     assert.match(trips.take_home_bed.description, /any night passes in seconds wherever it comes/);
     assert.match(trips.take_home_bed.description, /a death sends it there, not to the base/);
   });
+});
+
+test('with only armour and other steps that may wait left, the Nether first is offered with what the Nether\'s mobs take without it', () => {
+  // The scoreboard: twenty-four ingots of armour were a quarter of the time before the Nether.
+  const { bot, goal } = fixture(['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots']);
+  bot.inventory.slots = {};
+  const stage = { phase: 'iron_helmet', action: 'acquire', item: 'iron_helmet', count: 1 };
+  const options = strategyOptions(bot, goal, stage, {});
+  assert(options.nether_first, Object.keys(options).join(','));
+  assert.match(options.nether_first.description, /Without iron armour for now: every hit lands on what is worn now \(nothing, 0 armour points\): a blaze's fireball about 5/);
+  assert.match(options.nether_first.description, /full iron would take about \d/);
 });
