@@ -2589,3 +2589,14 @@ test('a creeper coming on can be shot with the bow, told the arrows it takes and
   assert(options.shoot_4, Object.keys(options).join(','));
   assert.match(options.shoot_4.description, /About 4 arrows bring it down.*beside the bot and going off in about [\d.]+ seconds if it keeps coming/);
 });
+
+test('a body in lava stops any step at its next breath check, and the way out is not itself stopped', () => {
+  // mid-211-b climbed straight up into lava and burned from seventeen to four over nine seconds while the climb went on.
+  const { checkAir } = require('../src/vitals');
+  const { Vec3 } = require('vec3');
+  const bot = { oxygenLevel: 20, entity: { position: new Vec3(0.5, 58, 0.5), eyeHeight: 1.62, height: 1.8, width: 0.6 },
+    blockAt: p => ({ name: p.y === 58 ? 'lava' : 'air', boundingBox: 'empty', position: p }) };
+  assert.throws(() => checkAir(bot), { name: 'NeedsSafety', message: /lava/ });
+  bot._leavingLava = true;
+  assert.doesNotThrow(() => checkAir(bot));
+});

@@ -21,7 +21,15 @@ function headInBlock(bot) {
   return !!b && b.boundingBox === 'block' && !/_leaves$|glass|slab|stairs|fence|wall|door|trapdoor|scaffolding|chest|bed$/.test(b.name);
 }
 function needsAir(bot) { return bot.oxygenLevel <= 12 || headInBlock(bot); }
-function checkAir(bot) { if (needsAir(bot)) throw new NeedsAir(); }
+// In lava, whatever the step: every dig and walk checks breath here, and
+// now the body in lava too, so the survival layer's way out comes at once.
+// mid-211-b climbed straight up into lava and burned from seventeen health
+// to four over nine seconds while the climb went on (2026-09-26). Not while
+// the way out of lava is itself being walked.
+function checkAir(bot) {
+  if (needsAir(bot)) throw new NeedsAir();
+  if (!bot._leavingLava && require('./terrain').bodyInLava(bot)) throw new (require('./danger').NeedsSafety)({ entity: { name: 'lava' }, distance: 0 });
+}
 function headSubmerged(bot) {
   const eye = bot.entity?.position?.offset(0, bot.entity.eyeHeight || 1.62, 0);
   if (!eye) return false;

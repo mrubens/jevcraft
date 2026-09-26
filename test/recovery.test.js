@@ -75,7 +75,9 @@ test('unsafe, unavailable or missing drops replan from actual inventory without 
     if (kind === 'unloaded') bot.blockAt = () => null;
     if (kind === 'missing') bot.entity.position = new Vec3(5.5, 64, 0.5);
     if (kind === 'route') bot.pathfinder.getPathTo = () => ({ status: 'noPath' });
-    if (kind === 'hazard') bot.blockAt = () => ({ name: 'lava' });
+    // Lava where the drops are, not where the bot stands (the bot in lava is
+    // the survival layer's at once).
+    if (kind === 'hazard') { const inner = bot.blockAt; bot.blockAt = p => (Math.floor(p.x) === Math.floor(bot.entity.position.x) && Math.floor(p.z) === Math.floor(bot.entity.position.z) ? (inner?.(p) ?? { name: 'air' }) : { name: 'lava' }); }
     if (kind === 'kelp') bot.blockAt = () => ({ name: 'kelp' });
     if (kind === 'expired') recovery.at = new Date(Date.now() - 301000).toISOString();
     const original = { ...bot.pathfinder.movements };

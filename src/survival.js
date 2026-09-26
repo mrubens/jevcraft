@@ -2733,9 +2733,12 @@ class Survival {
       // never stand. The step with nothing to do returned at once, a
       // thousand times in four seconds, while the bot burned.
       const toward = exit ? exit.offset(0.5, 1, 0.5) : this.state.lastDry ? pos(this.state.lastDry).offset(0.5, 1, 0.5) : null;
-      await move(bot, task, { label: 'out_of_lava', keys: toward ? ['forward', 'jump'] : ['jump'], sneak: false,
-        why: exit ? 'in lava: the nearest dry cell, whatever the ground' : 'in lava with no dry cell in sight: up, and back the way the bot came',
-        look: toward || undefined, maxMs: 2500, tick: 50, until: () => !inLava(bot) && bot.entity.onGround });
+      bot._leavingLava = true;
+      try {
+        await move(bot, task, { label: 'out_of_lava', keys: toward ? ['forward', 'jump'] : ['jump'], sneak: false,
+          why: exit ? 'in lava: the nearest dry cell, whatever the ground' : 'in lava with no dry cell in sight: up, and back the way the bot came',
+          look: toward || undefined, maxMs: 2500, tick: 50, until: () => !inLava(bot) && bot.entity.onGround });
+      } finally { bot._leavingLava = false; }
       onStep(goal); return true;
     }
     // The last dry footing, for the way back out of lava.
