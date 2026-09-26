@@ -315,3 +315,15 @@ test('with only armour and other steps that may wait left, the Nether first is o
   assert.match(options.nether_first.description, /Without iron armour for now: every hit lands on what is worn now \(nothing, 0 armour points\): a blaze's fireball about 5/);
   assert.match(options.nether_first.description, /full iron would take about \d/);
 });
+
+test('a step that may wait, back on the ladder after its time ran out, has the Nether first beside it', () => {
+  // mid-237-c: handed the diamond sword alone forty-eight times, no way to the Nether before it.
+  const { setAside } = require('../src/progress');
+  const { bot, goal } = fixture(['diamond_sword']);
+  setAside(goal, 'rung', 'diamond_sword', 'twenty minutes without finishing', 1800000);
+  const stage = { phase: 'diamond_sword', action: 'acquire', item: 'diamond_sword', count: 1 };
+  const options = strategyOptions(bot, goal, stage, {});
+  assert(options.stage_diamond_sword, Object.keys(options).join(','));
+  assert(options.nether_first, 'the Nether first beside it');
+  assert.match(options.nether_first.description, /Leave diamond sword for later and go for the Nether now/);
+});

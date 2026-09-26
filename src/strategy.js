@@ -222,8 +222,7 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   // three hours (arrows come only from skeletons here), and never went
   // (2026-09-26). Taken, the steps left are set aside for half an hour.
   const { DEFERRABLE } = require('./game-progress');
-  if (rungs.length && rungs[0].phase === stage.phase && dimension(bot) === 'overworld' && rungs.every(r => DEFERRABLE.has(r.phase))) {
-    const left = rungs.map(r => r.phase);
+  const netherFirst = left => {
     const clock = goal.rungClocks?.[stage.phase];
     // Without the armour, what the Nether's mobs take a hit through what is
     // worn now, not a word for it.
@@ -234,17 +233,28 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
       return `every hit lands on what is worn now (${worn.length ? worn.map(label).join(', ') : 'nothing'}, ${through.points} armour points): a blaze's fireball about ${round(afterArmour(MOBS.blaze.hit, through))}, a wither skeleton's blade about ${round(afterArmour(MOBS.wither_skeleton.hit, through))}, a piglin's about ${round(afterArmour(MOBS.piglin.hit, through))}, of 20 health; full iron would take about ${round(afterArmour(MOBS.blaze.hit, armourOf(['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'])))} of the fireball`;
     };
     const without = p => /^iron_(armour|helmet|chestplate|leggings|boots)$/.test(p) ? armourHits() : WITHOUT[p] || RUNG_WHY[p] || 'it waits';
-    options.nether_first = {
+    return {
       description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now: the portal, and through it for a fortress, blaze rods and ender pearls. ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.`).join(' ')}${clock ? ` The ladder's next step has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.`,
       says: `I'll leave the ${left.map(label).join(' and the ')} for later`,
       side: true,
       run: async () => { for (const p of left) setAside(goal, 'rung', p, 'Jev chose the Nether first', 1800000); },
     };
+  };
+  if (rungs.length && rungs[0].phase === stage.phase && dimension(bot) === 'overworld' && rungs.every(r => DEFERRABLE.has(r.phase))) {
+    options.nether_first = netherFirst(rungs.map(r => r.phase));
   }
   // Past the preparation ladder (pearls, the stronghold, the crossing): the
   // ladder's stage and the side trips. The dream run spent an afternoon
   // walking about after endermen with an ancient city never looked for.
-  else if (LATER.has(stage.action) || stage.phase === 'obtain_ender_pearls') options[`stage_${stage.phase}`] = { description: `The ladder's next step: ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase] ? ` It is for this: ${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase]}.` : ''}`, stage, fallback: true };
+  else if (LATER.has(stage.action) || stage.phase === 'obtain_ender_pearls') {
+    options[`stage_${stage.phase}`] = { description: `The ladder's next step: ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase] ? ` It is for this: ${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase]}.` : ''}`, stage, fallback: true };
+    // A step that may wait, back on the ladder after its time was up (the
+    // ladder returns a set-aside step when nothing else is left): the
+    // Nether first is on offer beside it too. mid-237-c was handed the
+    // diamond sword alone forty-eight times and the bow eighteen, with no
+    // way to the Nether before them, for three hours (2026-09-26).
+    if (DEFERRABLE.has(stage.phase) && dimension(bot) === 'overworld') options.nether_first = netherFirst([stage.phase]);
+  }
   else return null;
   const fit = (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 12 && !immediateThreat(bot);
   // Whether a trip fits in the daylight left is Jev's to weigh, not a rule
