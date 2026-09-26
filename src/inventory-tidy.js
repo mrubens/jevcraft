@@ -8,8 +8,15 @@
 // Wheat seeds are kept up to a stack: clearing grass is how the home plot
 // gets planted, and tossing them was how the plot stayed bare.
 const SURPLUS = Object.freeze({
-  cobblestone: 64, cobbled_deepslate: 64, dirt: 32, gravel: 16, sand: 0, red_sand: 0,
+  // Two stacks: the Nether crossing waits for 128 blocks (work.js), and a
+  // tidy that dropped all past one would send it back for more, round and
+  // round.
+  cobblestone: 128, cobbled_deepslate: 64, dirt: 32, gravel: 16, sand: 0, red_sand: 0,
   diorite: 0, andesite: 0, granite: 0, tuff: 0, calcite: 0, netherrack: 128,
+  // A soul sand valley's staircase: mid-92-o carried 105 soul soil and 104
+  // soul sand out of one, four slots of nothing it builds with (soul sand
+  // slows the walk it would bridge with).
+  soul_sand: 0, soul_soil: 0,
   leaf_litter: 32, short_grass: 0, seagrass: 0, kelp: 0, wheat_seeds: 32, raw_copper: 16, copper_ingot: 16,
   furnace: 2, crafting_table: 2, snowball: 0, ice: 0, clay_ball: 0, flint: 8,
 });
