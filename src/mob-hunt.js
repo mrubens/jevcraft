@@ -362,7 +362,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       // audit, 2026-09-25): a hoglin's toss or a blaze's knockback beside
       // lava or a drop is the fall, not the fight.
       const distance = target.position.distanceTo(bot.entity.position);
-      const one = fightEstimate({ threats: [{ name: target.name, distance, shoots: shooter(target), visible: true }], armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean),
+      const one = fightEstimate({ threats: [{ name: target.name, distance, shoots: shooter(target), ...(target.heldItem?.name ? { held: target.heldItem.name } : {}), visible: true }], armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean),
         weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
       const mob = one.mobs[0];
       const at = target.position.floored();

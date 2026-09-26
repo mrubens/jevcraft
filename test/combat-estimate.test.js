@@ -212,3 +212,14 @@ test('a shooter out of its range walks in before it shoots, and a shield does no
   assert.equal(shielded.damage, bare.damage);
   assert.equal(bare.damage, 30, 'six a potion, one each three seconds, for fifteen seconds');
 });
+
+test('a mob with a spear is reckoned at its thrust, not its hand', () => {
+  // mid-87-m: a zombie villager's spear took it from twenty to 11.4 through full iron, reckoned at three a hit.
+  const { fightEstimate } = require('../src/combat-estimate');
+  const armour = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+  const bare = fightEstimate({ threats: [{ name: 'zombie_villager', distance: 2, visible: true }], armour, weapon: 'diamond_sword' }).mobs[0];
+  const spear = fightEstimate({ threats: [{ name: 'zombie_villager', distance: 2, visible: true, held: 'iron_spear' }], armour, weapon: 'diamond_sword' }).mobs[0];
+  assert(spear.hitsBot >= 8 && spear.hitsBot <= 9.5, `about 8.6 through iron: ${spear.hitsBot}`);
+  assert(bare.hitsBot < 3);
+  assert.match(spear.note, /spear/);
+});

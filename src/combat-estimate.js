@@ -111,13 +111,19 @@ function within(pieces, seconds = Infinity) {
 // threats: [{ name, distance, shoots, visible }]; armour: piece names worn;
 // weapon: the item name or null; atOnce: how many biters can be at arm's
 // length together where the bot stands.
+const SPEAR_HIT = 13;
 function fightEstimate({ threats, armour = [], weapon = null, health = 20, shield = false, atOnce = Infinity }) {
   const worn = armourOf(armour);
   const [damage, rate] = WEAPONS[weapon] || FIST;
   const unknown = [];
   const mobs = threats.map(t => {
-    const m = MOBS[t.name];
-    if (!m) { unknown.push(t.name); return null; }
+    const base = MOBS[t.name];
+    if (!base) { unknown.push(t.name); return null; }
+    // A spear in a mob's hand (26.1): its charged thrust is the hit. One
+    // took mid-87-m from twenty to 11.4 through full iron, a zombie
+    // villager's, where three a hit was reckoned (2026-09-26): about
+    // thirteen before armour.
+    const m = /_spear$/.test(t.held || '') ? { ...base, hit: Math.max(base.hit, SPEAR_HIT), note: 'a spear: its charged thrust hits for about thirteen before armour' } : base;
     const hitsToKill = Math.ceil(m.health / damage);
     const shoots = !!(m.shoots || t.shoots);
     // A shooter backs off after each hit and is closed on again: twice the

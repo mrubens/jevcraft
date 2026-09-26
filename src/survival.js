@@ -917,7 +917,7 @@ class Survival {
     // How many can reach at once here: two in a tunnel, eight in the open.
     const open = openCells(bot, feet);
     const shielded = bot.inventory?.slots?.[45]?.name === 'shield';
-    const estimate = fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
+    const estimate = fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded, atOnce: open });
     const cost = estimate.fightHere;
     const mobs = estimate.mobs || [];
@@ -1192,10 +1192,10 @@ class Survival {
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
         dropWithinThreeBlocks: require('./terrain').dropNear(bot, bot.entity.position.floored(), 3) || false,
         darkHere: darkHere(bot),
-        threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), visible: t.visible })),
+        threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
         // This bot's numbers: each mob's hit after its armour, swings to
         // kill with its weapon, and what fighting all of them here costs.
-        estimate: fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
+        estimate: fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
           armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: openCells(bot, feet) }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health,
           ...(newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` } : {}) } : null,
@@ -1253,7 +1253,7 @@ class Survival {
     const about = [...danger];
     for (const t of threats(bot, 16)) if (!about.some(a => a.entity.id === t.entity.id)) about.push(t);
     const state = { health: bot.health, food: bot.food, arrowsCarried: countOf(bot, 'arrow'), recentSurvivalAction: goal.survivalAction,
-      threats: about.sort((a, b) => a.distance - b.distance).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), shoots: shooter(t.entity), visible: t.visible !== false })),
+      threats: about.sort((a, b) => a.distance - b.distance).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible !== false })),
       riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal) };
     const decision = await this.decide(task, goal, save, { id: 'ranged_response', state, tree, context: { health: bot.health },
       isFresh: () => Math.abs(bot.health - state.health) < 4 && targets.some(t => bot.entities[t.entity.id] === t.entity && t.entity.isValid !== false) });
@@ -2312,7 +2312,7 @@ class Survival {
     const options = {};
     for (const [name, kind] of kinds) {
       const drops = MOB_DROPS[name], label = name.replaceAll('_', ' ');
-      const one = fightEstimate({ threats: [{ name, distance: kind.nearest.distance, shoots: shooter(kind.nearest.entity), visible: true }], armour, weapon, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere;
+      const one = fightEstimate({ threats: [{ name, distance: kind.nearest.distance, shoots: shooter(kind.nearest.entity), ...(kind.nearest.entity.heldItem?.name ? { held: kind.nearest.entity.heldItem.name } : {}), visible: true }], armour, weapon, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere;
       // What else is out there, where it is, and whether health comes back
       // (the decision audit, 2026-09-25): mid-110-c took the spider hunt
       // into a cave with a witch, three skeletons and three creepers, told
@@ -2828,7 +2828,7 @@ class Survival {
       // left a pocket at twenty health past skeletons it was told only the
       // distances of, and was shot down in twenty seconds (2026-09-26).
       const outsideAll = threats(bot, 16).slice(0, 8);
-      const outCost = outsideAll.length ? fightEstimate({ threats: outsideAll.map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: true })),
+      const outCost = outsideAll.length ? fightEstimate({ threats: outsideAll.map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true })),
         armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere : null;
       // The creepers too: mid-83-i left past three creepers and two
       // skeletons told "2.5 damage", the creepers left out of the sum, and

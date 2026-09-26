@@ -14,7 +14,7 @@ function riskNow(bot, { radius = 24, dark = null } = {}) {
   const armour = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
   const weapon = require('./combat').defenseWeapon(bot)?.name || null;
   const health = bot.health ?? 20, food = bot.food ?? 20;
-  const estimate = fightEstimate({ threats: about.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })), armour, weapon, health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
+  const estimate = fightEstimate({ threats: about.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })), armour, weapon, health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
   const t = bot.time?.timeOfDay ?? 0;
   const surface = (bot.blockAt?.(bot.entity.position.floored())?.skyLight ?? 15) >= 8;
   const spawning = dark ?? ((t >= DAY.NIGHT && t < DAY.DAWN && surface) || !surface);
