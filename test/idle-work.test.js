@@ -104,3 +104,17 @@ test('at night a trip says it is in the dark from the first step', () => {
   const { tripTime } = require('../src/work');
   assert.match(tripTime({ time: { timeOfDay: 15000 }, game: { dimension: 'overworld' } }, 100), /all of it in the dark: it is night/);
 });
+
+test('a trip says what waits at its end: the mobs about the place and the fight they are', () => {
+  // first-days-225: went to loot a dungeon told only that its spawner makes mobs; four zombies and a skeleton were about it.
+  const { waitingThere } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  const mob = (id, name, x) => ({ id, name, type: 'hostile', position: new Vec3(x, 42, 0.5), height: 1.95, isValid: true });
+  const bot = { registry, game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 42, 0.5) }, world: { raycast: () => null }, time: { timeOfDay: 6000 }, health: 20,
+    inventory: { items: () => [], slots: [] }, entities: { 1: mob(1, 'zombie', 14.5), 2: mob(2, 'zombie', 15.5), 3: mob(3, 'zombie', 16.5), 4: mob(4, 'skeleton', 13.5) } };
+  const says = waitingThere(bot, new Vec3(14, 42, 0));
+  assert.match(says, /Within sixteen blocks of it now: .*3 zombies/); assert.match(says, /1 skeleton/);
+  assert.match(says, /fighting them all there is about [\d.]+ damage from 20 health \(more than the bot has\)/);
+  assert.match(waitingThere({ ...bot, entities: {} }, new Vec3(14, 42, 0)), /nothing hostile known/);
+});

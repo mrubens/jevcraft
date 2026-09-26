@@ -3169,6 +3169,23 @@ function tripTime(bot, blocks) {
   return ` About ${there} seconds there and back at a walk; ${light} seconds of daylight left${there > light ? ': it would end after dusk' : ''}.`;
 }
 
+// What waits at a place now: the mobs within sixteen blocks of it, seen or
+// heard, and what fighting them all costs with what is carried and worn.
+// first-days-225 went to loot a dungeon told only that its spawner keeps
+// making mobs, with four zombies and a skeleton about it, no armour, and
+// died among them in eight seconds (2026-09-26).
+function waitingThere(bot, at) {
+  try {
+    const { threats } = require('./danger'), { shooter, defenseWeapon } = require('./combat'), { fightEstimate } = require('./combat-estimate');
+    const there = threats(bot, 64).filter(t => t.entity.position && t.entity.position.distanceTo(at) <= 16);
+    if (!there.length) return ' Within sixteen blocks of it now: nothing hostile known.';
+    const kinds = Object.entries(there.reduce((n, t) => ({ ...n, [t.entity.name]: (n[t.entity.name] || 0) + 1 }), {})).map(([k, n]) => `${n} ${k.replaceAll('_', ' ')}${n > 1 ? 's' : ''}`);
+    const fight = fightEstimate({ threats: there.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.entity.position.distanceTo(at), shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true })),
+      armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health ?? 20, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere;
+    return ` Within sixteen blocks of it now: ${kinds.join(', ')}; fighting them all there is about ${fight.damageTaken} damage from ${Math.round(bot.health ?? 20)} health${fight.healthAfter <= 0 ? ' (more than the bot has)' : ''}.`;
+  } catch (_) { return ''; }
+}
+
 function sideTrips(bot, goal, client) {
   const trips = {};
   // Looting: the nearest remembered ruined portal, dungeon or temple whose
@@ -3177,7 +3194,7 @@ function sideTrips(bot, goal, client) {
   // Underground, a dungeon's spawner and a mineshaft's cave spiders are
   // said (the decision audit).
   const below = unlooted && ['dungeon', 'mineshaft'].includes(unlooted.landmark.kind) ? ` It is underground at y ${Math.round(unlooted.landmark.y ?? bot.entity.position.y)}${unlooted.landmark.kind === 'dungeon' ? ', and its spawner keeps making mobs until it is broken or lit' : ', and a cave spider spawner is common in one'}.` : '';
-  if (unlooted) trips.loot = { description: `Loot: walk ${unlooted.distance} blocks to the ${unlooted.landmark.kind.replaceAll('_', ' ')} and open its chests. Ruined portals hold gold, obsidian and flint and steel; dungeons and temples iron, gold, bread and now and then diamonds; a mineshaft's chests ride in minecarts, with rails, iron, gold and bread, and its cobwebs are string.${below}${tripTime(bot, unlooted.distance)}`,
+  if (unlooted) trips.loot = { description: `Loot: walk ${unlooted.distance} blocks to the ${unlooted.landmark.kind.replaceAll('_', ' ')} and open its chests. Ruined portals hold gold, obsidian and flint and steel; dungeons and temples iron, gold, bread and now and then diamonds; a mineshaft's chests ride in minecarts, with rails, iron, gold and bread, and its cobwebs are string.${below}${waitingThere(bot, new Vec3(unlooted.landmark.x, unlooted.landmark.y ?? bot.entity.position.y, unlooted.landmark.z))}${tripTime(bot, unlooted.distance)}`,
     says: `I'll loot the ${unlooted.landmark.kind.replaceAll('_', ' ')} ${unlooted.distance} blocks away`, walkBlocks: unlooted.distance,
     run: (b, t, g, sv) => lootStep(b, t, g, sv, lootActions()) };
   // Trading: a village remembered and something to sell or spend (trading.js).
@@ -3837,4 +3854,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
