@@ -68,7 +68,12 @@ function planCatalog(registry, item, count, inventory = {}, options = {}) {
 // boots, with gold ore and a furnace the local route.
 const NETHER_ONLY = /^(nether_gold_ore|nether_quartz_ore|ancient_debris|netherrack|soul_sand|soul_soil|glowstone|basalt|blackstone|gilded_blackstone|crimson_(stem|hyphae|nylium|fungus|roots)|warped_(stem|hyphae|nylium|fungus|roots|wart_block)|nether_wart(_block)?|shroomlight|weeping_vines|twisting_vines)$/;
 const END_ONLY = /^(end_stone|chorus_plant|chorus_flower|purpur_block|purpur_pillar)$/;
-const dimensionOfBlock = block => NETHER_ONLY.test(block) ? 'nether' : END_ONLY.test(block) ? 'end' : null;
+// Trees and the ores of stone grow only in the Overworld: mid-205-d, in the
+// Nether at y 16, planned oak logs for planks and stood still forty-five
+// seconds at a time over a hundred passes with crimson and warped stems the
+// wood there (2026-09-26).
+const OVERWORLD_ONLY = /^((stripped_)?(oak|birch|spruce|jungle|acacia|dark_oak|mangrove|cherry|pale_oak)_(log|wood)|(deepslate_)?(coal|iron|copper|gold|redstone|lapis|diamond|emerald)_ore)$/;
+const dimensionOfBlock = block => NETHER_ONLY.test(block) ? 'nether' : END_ONLY.test(block) ? 'end' : OVERWORLD_ONLY.test(block) ? 'overworld' : null;
 const TRIP_COST = 200;
 
 function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [], equipment = [], reserveOutputs = true, dimension = null } = {}) {
@@ -161,10 +166,20 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
     }
     return estimates[name] ?? 1000;
   }
+  // An ingredient whose every source lies in another dimension: its block
+  // mined only there, or (one recipe down) made only from such.
+  function onlyElsewhere(name, depth = 0) {
+    const blocks = (data.sources[name] || []).map(s => s.block);
+    if (blocks.length) return blocks.every(elsewhere);
+    if (depth >= 1) return false;
+    const inputs = (data.recipes[name] || []).flatMap(r => slots(r).filter(Boolean).flat());
+    return inputs.length > 0 && inputs.every(i => onlyElsewhere(i, depth + 1));
+  }
   function chooseIngredient(alternatives, counts) {
-    const preference = name => ({ oak_log: -4, oak_planks: -4, cobblestone: -3, stone: -2, coal: -1 }[name] || 0);
+    const preference = name => ({ oak_log: -4, oak_planks: -4, crimson_stem: -4, warped_stem: -3, cobblestone: -3, stone: -2, coal: -1 }[name] || 0);
+    const cost = name => have(name) > (counts[name] || 0) ? -100 : estimate(name) + (onlyElsewhere(name) ? TRIP_COST : 0);
     return alternatives.filter(name => registry.itemsByName[name] && !visiting.has(name)).sort((a, b) =>
-      ((have(a) > (counts[a] || 0) ? -100 : estimate(a)) - (have(b) > (counts[b] || 0) ? -100 : estimate(b))) ||
+      (cost(a) - cost(b)) ||
       preference(a) - preference(b) || a.localeCompare(b))[0];
   }
   // How many of an item the pockets can make at once, one recipe deep:

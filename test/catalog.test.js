@@ -173,3 +173,12 @@ test('with coal ore in view and no fuel carried, a smelt mines coal rather than 
   const planks = planCatalog(registry, 'iron_ingot', 3, { raw_iron: 3, furnace: 1, oak_planks: 4 }, { nearby: ['coal_ore'] });
   assert.equal(planks.find(s => s.action === 'smelt').fuelItem, 'oak_planks', 'planks already carried are used first');
 });
+
+test('in the Nether, planks come from crimson or warped stems, not from oak that does not grow there', () => {
+  // mid-205-d: at y 16 in the Nether, planned oak logs and stood still over a hundred passes.
+  const nether = planCatalog(registry, 'stick', 4, {}, { dimension: 'the_nether' });
+  const mined = nether.filter(s => s.action === 'mine').map(s => s.block);
+  assert(mined.length && mined.every(b => /^(crimson|warped)_stem$/.test(b)), `mined ${mined}`);
+  const overworld = planCatalog(registry, 'stick', 4, {}, { dimension: 'overworld' });
+  assert(overworld.filter(s => s.action === 'mine').every(s => !/stem$/.test(s.block)), 'at home, trees');
+});
