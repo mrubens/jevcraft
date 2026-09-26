@@ -43,3 +43,13 @@ test('the frame being finished is kept from other work along whichever axis it r
   assert(reservedForConstruction(goal, { x: 10, y: 66, z: 23 }), 'along z, in the frame');
   assert(!reservedForConstruction(goal, { x: 13, y: 66, z: 20 }), 'three across is not the frame');
 });
+
+test('a ruin short of obsidian says the missing blocks are obsidian and what making them takes', () => {
+  // mid-218-a: three of ten standing, told the rest were "placed like any block"; three hours on the diamond route.
+  const { ruinSays } = require('../src/work');
+  const k = { distance: 142, landmark: { obsidian: 3 } };
+  const short = ruinSays(k, { obsidian: 0, diamonds: 6, diamondPickaxe: false });
+  assert.match(short, /7 of the frame's ten are missing and are obsidian/);
+  assert.match(short, /7 short; those are made by pouring water on lava and mined with a diamond pickaxe \(none carried; three diamonds make one, 6 carried\)/);
+  assert.match(ruinSays(k, { obsidian: 8, diamonds: 0, diamondPickaxe: false }), /8 carried, enough/);
+});

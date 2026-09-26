@@ -2846,6 +2846,20 @@ async function tunnelToward(bot, task, goal, save, target, key) {
 // pickaxe), or a remembered ruined portal finished and lit (no diamonds).
 // Held once chosen; a ruin whose frame will not do is marked and the
 // question asked again.
+// A ruined portal as an option, with what finishing it takes. The missing
+// blocks are obsidian too, said as such: mid-218-a chose a ruin with three
+// of ten standing, told they were "placed like any block", and spent its
+// three hours making the seven from lava with a diamond pickaxe it had to
+// make first (2026-09-26).
+function ruinSays(k, { obsidian, diamonds, diamondPickaxe }) {
+  const seen = Number.isFinite(k.landmark.obsidian) ? k.landmark.obsidian : null;
+  const missing = seen === null ? null : Math.max(0, 10 - seen);
+  const short = missing === null ? null : Math.max(0, missing - obsidian);
+  const need = missing === null ? `the missing blocks are obsidian (${obsidian} carried)`
+    : `${missing} of the frame's ten are missing and are obsidian, placed like any block: ${obsidian} carried${short ? `, ${short} short; those are made by pouring water on lava and mined with a diamond pickaxe (${diamondPickaxe ? 'one carried' : `none carried; three diamonds make one, ${diamonds} carried`}), unless the ruin's chest holds them` : ', enough'}`;
+  return `Finish the ruined portal ${k.distance} blocks away and light it: its frame is part standing (${seen ?? 'some'} obsidian seen there when it was found); ${need}. Crying obsidian or obsidian where the frame or its inside must be clear needs a diamond pickaxe to take out. Its chest often holds obsidian, flint and steel or a fire charge. About ${Math.round(k.distance / 4.3)} seconds' walk.`;
+}
+
 async function portalMethod(bot, task, goal, save) {
   const { fitRuin, adopt } = require('./ruined-portal');
   const { knownLandmarks } = require('./exploration');
@@ -2877,7 +2891,7 @@ async function portalMethod(bot, task, goal, save) {
     build_new: { description: `Build a portal frame of its own: ten obsidian (${obsidian} carried), lit with flint and steel. Obsidian is made by pouring water on lava and mined with a diamond pickaxe (${diamondPickaxe ? 'one carried' : `none carried; three diamonds make one, ${diamonds} carried`}), about ten seconds a block once at a lava pool.` },
   };
   ruins.forEach((k, i) => {
-    tree[`ruin_${i}`] = { description: `Finish the ruined portal ${k.distance} blocks away and light it: its frame is part standing (${k.landmark.obsidian ?? 'some'} obsidian seen there when it was found) and the missing blocks are placed like any block; no diamond pickaxe is needed unless crying obsidian or obsidian stands where the frame or its inside must be clear. Its chest often holds obsidian, flint and steel or a fire charge. About ${Math.round(k.distance / 4.3)} seconds' walk; ${obsidian} obsidian carried.` };
+    tree[`ruin_${i}`] = { description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) };
   });
   const decision = await decide('portal_method', { client, bot, task, goal, save, tree,
     state: { dimension: String(bot.game?.dimension || ''), obsidian, diamonds, diamondPickaxe, flintAndSteel: countOf(bot, 'flint_and_steel'), fireCharges: countOf(bot, 'fire_charge'),
@@ -3945,4 +3959,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { ruinSays, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
