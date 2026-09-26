@@ -1728,10 +1728,16 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   // a cobblestone trip for each meal it cooked.
   if (block && !goal?.holdWorkstation && (goal?.expeditionReady || goal?.preparingExpedition || goal?.dream) && bot._ownedWorkstations?.has(`furnace:${block.position}`)) {
     const count = countOf(bot, 'furnace');
-    await dig(bot, task, block.position);
-    await navigate(bot, task, new goals.GoalNear(block.position.x, block.position.y, block.position.z, 1));
-    await waitFor(task, () => countOf(bot, 'furnace') > count);
-    forgetWorkstation(bot, goal, `furnace:${block.position}`);
+    // Taken back if it can be; a furnace whose drop is out of reach is not
+    // worth the smelt that is done. mid-79-e's pick-up found no route, the
+    // finished smelt threw for it, and was tried again, a loop at minute 4
+    // (2026-09-26).
+    try {
+      await dig(bot, task, block.position);
+      await navigate(bot, task, new goals.GoalNear(block.position.x, block.position.y, block.position.z, 1), { timeoutMs: 8000, stallMs: 3000 });
+      await waitFor(task, () => countOf(bot, 'furnace') > count);
+    } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    finally { forgetWorkstation(bot, goal, `furnace:${block.position}`); }
   }
 }
 
