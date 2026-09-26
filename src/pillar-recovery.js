@@ -17,7 +17,7 @@ const unsafe = b => !b || damagingTerrain.has(b.name) || ['water', 'bubble_colum
 // This is an inspected one-block descent, never a general shaft-digging rule.
 // An exposed support and a full solid block immediately below distinguish a
 // pillar step from digging blindly through ordinary terrain or a cave ceiling.
-function pillarDescent(bot, goal) {
+function pillarDescent(bot, goal, { combat = false } = {}) {
   const feet = bot.entity.position, blockPosition = supportCell(feet), block = bot.blockAt(blockPosition);
   if (bot.entity.onGround === false || Math.abs(feet.y - blockPosition.y - 1) > 0.05 ||
     Math.abs(feet.x - blockPosition.x - .5) > .18 || Math.abs(feet.z - blockPosition.z - .5) > .18) return null;
@@ -30,23 +30,26 @@ function pillarDescent(bot, goal) {
   if (directions.filter(d => dryPassable(bot.blockAt(blockPosition.plus(d)))).length < 2) return null;
   for (const d of directions) for (const dy of [-1, 0, 1]) if (unsafe(bot.blockAt(blockPosition.plus(d).offset(0, dy, 0)))) return null;
   const destination = blockPosition.offset(.5, 0, .5);
-  if (!safeFromHostiles(bot, destination) || block.harvestTools && !bot.inventory.items().some(i => block.harvestTools[i.type])) return null;
+  // In a fight the mobs below are the reason to come down, not a bar to it.
+  if ((!combat && !safeFromHostiles(bot, destination)) || block.harvestTools && !bot.inventory.items().some(i => block.harvestTools[i.type])) return null;
   return { block: { ...blockPosition }, blockName: block.name, floorName: floor.name, destination: { ...destination } };
 }
 
-async function descendPillar(bot, task, goal, save, expected) {
-  task.check(); checkAir(bot); checkThreats(bot);
+async function descendPillar(bot, task, goal, save, expected, { combat = false } = {}) {
+  // Chosen in a fight (the come_down stance), the mobs about do not stop it.
+  const threatCheck = () => { if (!combat) checkThreats(bot); };
+  task.check(); checkAir(bot); threatCheck();
   // Not a pillar raised on purpose, to a portal overhead: the climb went up
   // to 48 and this took it back down to 47, over and over.
   const raised = bot._pillarUp, feet = bot.entity.position.floored();
   if (raised && raised.until > Date.now() && raised.x === feet.x && raised.z === feet.z) return false;
-  const candidate = pillarDescent(bot, goal);
+  const candidate = pillarDescent(bot, goal, { combat });
   if (!candidate || expected && JSON.stringify(candidate) !== JSON.stringify(expected)) return false;
   bot.pathfinder.setGoal(null); bot.clearControlStates?.();
   const p = new Vec3(candidate.block.x, candidate.block.y, candidate.block.z);
   await equipBestTool(bot, bot.blockAt(p));
-  task.check(); checkAir(bot); checkThreats(bot);
-  if (JSON.stringify(pillarDescent(bot, goal)) !== JSON.stringify(candidate)) throw new Error('Pillar footing changed before descent');
+  task.check(); checkAir(bot); threatCheck();
+  if (JSON.stringify(pillarDescent(bot, goal, { combat })) !== JSON.stringify(candidate)) throw new Error('Pillar footing changed before descent');
   goal.step = { action: 'descend_pillar', ...candidate }; save();
   // Mineflayer resolves dig() after its optimistic local air update. A dig
   // beneath our feet must wait for the server's block packet as well.
@@ -73,7 +76,7 @@ async function descendPillar(bot, task, goal, save, expected) {
     await digWithAirGuard(bot, task, bot.blockAt(p));
     const deadline = Date.now() + 6000;
     while (Date.now() < deadline) {
-      task.check(); checkAir(bot); checkThreats(bot);
+      task.check(); checkAir(bot); threatCheck();
       const now = bot.entity.position;
       if (confirmed && dryPassable(bot.blockAt(p)) && fullCube(bot.blockAt(p.offset(0, -1, 0))) &&
         Math.abs(now.y - p.y) < .08 && Math.hypot(now.x - p.x - .5, now.z - p.z - .5) < .3 && bot.entity.onGround !== false) {

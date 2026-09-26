@@ -157,6 +157,7 @@ define({
     { key: 'fight', label: 'fight where the bot stands', when: 'always, with bare hands when no sword, axe or trident is carried', level: 'root' },
     { key: 'eat_golden_apple', label: 'eat a golden apple now', when: 'a golden or enchanted golden apple is carried and health is below full', level: 'root' },
     { key: 'pillar', label: 'go two blocks up and fight from there', when: 'two scaffold blocks carried and three clear blocks overhead', level: 'root' },
+    { key: 'come_down', label: 'come down the bot\'s own pillar, digging the block underfoot', when: 'standing on a pillar of its own blocks with a floor under it', level: 'root' },
     { key: 'bunker', label: 'dig into the nearby wall and fight at the doorway', when: 'a wall is near that digs in three seconds', level: 'root' },
     { key: 'seal', label: 'seal a pocket and wait', when: 'four or more building blocks are carried', level: 'root' },
     { key: 'charge_shooter', label: 'run at the ground shooters one after another and strike', when: 'skeletons, strays, bogged, pillagers or witches in view within sixteen, a sword or axe carried, not in water', level: 'root' },

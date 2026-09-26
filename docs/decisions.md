@@ -179,6 +179,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `fight` | root | fight where the bot stands | always, with bare hands when no sword, axe or trident is carried |
 | `eat_golden_apple` | root | eat a golden apple now | a golden or enchanted golden apple is carried and health is below full |
 | `pillar` | root | go two blocks up and fight from there | two scaffold blocks carried and three clear blocks overhead |
+| `come_down` | root | come down the bot's own pillar, digging the block underfoot | standing on a pillar of its own blocks with a floor under it |
 | `bunker` | root | dig into the nearby wall and fight at the doorway | a wall is near that digs in three seconds |
 | `seal` | root | seal a pocket and wait | four or more building blocks are carried |
 | `charge_shooter` | root | run at the ground shooters one after another and strike | skeletons, strays, bogged, pillagers or witches in view within sixteen, a sword or axe carried, not in water |

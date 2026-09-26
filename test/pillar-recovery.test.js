@@ -176,3 +176,15 @@ test('a pillar of nether bricks, as the pillar builds them, is dug back down too
   for (let y = 74; y <= 76; y++) blocks.set(`${new Vec3(0, y, 0)}`, 'nether_bricks');
   assert.equal(pillarDescent(bot, goal)?.blockName, 'nether_bricks');
 });
+
+test('in a fight a skeleton near the landing does not stop the way down; out of one it does', async () => {
+  // mid-83-e: five up on its own dirt, shot by a skeleton for seventy seconds, no way down offered.
+  const { bot, task, goal } = fixture();
+  bot.game = { difficulty: 'normal', dimension: 'overworld' };
+  bot.entities[9] = { id: 9, name: 'skeleton', type: 'hostile', position: new Vec3(3.5, 74, .5), height: 1.99, isValid: true };
+  bot.world = { raycast: () => null };
+  assert.equal(pillarDescent(bot, goal), null, 'a hostile by the landing: no quiet descent');
+  assert(pillarDescent(bot, goal, { combat: true }), 'chosen in a fight, the way down is there');
+  assert(await descendPillar(bot, task, goal, () => {}, null, { combat: true }));
+  assert.equal(bot.entity.position.y, 76);
+});

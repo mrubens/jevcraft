@@ -850,6 +850,29 @@ class Survival {
     const up = this.state.pillar && feet.y >= this.state.pillar.y + 2 && Math.hypot(feet.x - this.state.pillar.x, feet.z - this.state.pillar.z) < 1;
     if ((scaffold >= 2 && headroom) || up) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote + climbers(danger) + (edge && heavyHitters(danger, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
       run: async () => up || this.pillarFrom(task, goal, save, danger) };
+    // Down off a pillar of the bot's own: stood on one, nothing else here
+    // moves it (a route drops three blocks at most), and mid-83-e stood five
+    // up on its dirt for seventy seconds, shot by a skeleton, choosing to
+    // retreat and not moving (2026-09-26). A block a time, dug underfoot.
+    const { pillarDescent, descendPillar } = require('./pillar-recovery');
+    const down = pillarDescent(bot, goal, { combat: true });
+    let onPillar = 0;
+    if (down) {
+      let high = 0;
+      for (let dy = 1; dy <= 24; dy++) { const b = bot.blockAt(feet.offset(0, -dy, 0)); if (!b || b.boundingBox !== 'block' || !/^(dirt|cobblestone|cobbled_deepslate|stone|deepslate|granite|diorite|andesite|tuff|netherrack|nether_bricks|blackstone|basalt|soul_soil)$/.test(b.name)) break; high = dy; }
+      onPillar = high;
+      options.come_down = { description: `Get down off the pillar to the ground${high ? `, ${high} block${high === 1 ? '' : 's'}` : ''}: its top block is dug out and the bot drops onto the next, about a second each, the only way off it; shot at meanwhile if a shooter is about. On the ground the retreat, the pocket and the charge work again; up here none of them can.${hitsLeft}`,
+        run: async () => {
+          this.report(goal, save, { action: 'come_down', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
+          let steps = 0;
+          while (steps < 24) {
+            try { if (!await descendPillar(bot, task, goal, save, null, { combat: true })) break; }
+            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; break; }
+            steps++;
+          }
+          return steps > 0;
+        } };
+    }
     // A bunker that is quick to dig: three seconds of digging under fire is
     // the most it is worth (bunker.js bunkerDigMs).
     if (nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.' + buildCost + creeperNote,
@@ -858,7 +881,7 @@ class Survival {
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
     const race = pocketRace(bot, danger);
     const nightLong = shelterNeeded(bot) ? ` At night the mobs outside do not lose interest: about ${minutesToDawn(bot)} real minutes to dawn.` : '';
-    if (shelter.materialStock(bot) >= 4) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + nightLong + unseen,
+    if (shelter.materialStock(bot) >= 4) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + nightLong + unseen + (onPillar ? ` The bot stands ${onPillar} blocks up on a pillar a block wide: the walls go up beside nothing, placed against open air.` : ''),
       run: () => this.sealHere(task, goal, save, danger) };
     // The charge at a few ground shooters, where it can be run.
     const ground = danger.filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16);
@@ -894,7 +917,7 @@ class Survival {
         try { await bot.equip(apple, 'hand'); await bot.consume(); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
       } };
-    options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + (creeperCount ? ' Creepers and spiders follow a running player.' : '') + NO_ROUTE_YET + unseen,
+    options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + (creeperCount ? ' Creepers and spiders follow a running player.' : '') + (onPillar ? ` The bot stands ${onPillar} blocks up on a pillar of its own, and a route drops three blocks at most: from up here there is no way off it to run by.` : NO_ROUTE_YET) + unseen,
       run: () => this.runAway(task, goal, save, danger) };
     for (const t of shotTargets(bot, danger).slice(0, 2)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
