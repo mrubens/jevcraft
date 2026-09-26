@@ -520,3 +520,16 @@ test('both sides of a survival flip rest, so a hold on the other side is refused
   assert.equal(flipped(goal, 'survival:seal_shelter'), true, 'the shelter on the other side rests');
   assert.equal(flipped(goal, 'survival:return_to_surface'), true);
 });
+
+test('a mine and its pickups trading names while the count goes down is progress, filler or not', () => {
+  // mid-202-c: seventeen cobblestone to go became twelve, and the audit called it a loop.
+  const { flipWatch } = require('../src/stillness');
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, inventory: { items: () => [{ name: 'cobblestone', count: 10 }] } };
+  const goal = {};
+  let t = 1_000_000, raised = null, left = 17;
+  for (const a of ['mine', 'collect_nearby_resource', 'mine', 'collect_nearby_resource', 'mine']) {
+    goal.step = a === 'mine' ? { action: 'mine', drops: 'cobblestone', count: left-- } : { action: 'collect_nearby_resource' };
+    raised = flipWatch(bot, goal, t += 2000) || raised;
+  }
+  assert.equal(raised, null, 'the count went down: not a flip');
+});

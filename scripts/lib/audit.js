@@ -131,7 +131,14 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
     // while it advanced a block each time, five blocks in sixteen seconds,
     // and was failed as a loop. A loop comes back to where it was.
     const movedOn = dist(win[6].s.position, win[0].s.position) >= 3;
-    if (names.size === 2 && win[6].t - win[0].t <= 60000 && covered < 5 && !movedOn && !gained(win[0].t, win[6].t)) { flips.push({ from: win[0].t, to: win[6].t, between: [...names].join(' <-> '), at: pos(win[0].s) }); i += 6; }
+    // Nor when the step's own count went down: mid-202-c mined cobblestone
+    // for its Nether blocks, the mine and the pickup of each block trading
+    // names while seventeen to go became twelve, and was failed as a loop;
+    // cobblestone is filler to the worth measure (2026-09-26).
+    const left = c => { const st = c.s?.step || c.s?.goal?.step; return Number.isFinite(st?.count) ? `${st.action}:${st.drops || st.item}:${st.count}` : null; };
+    const counts = win.map(left).filter(Boolean).map(k => ({ key: k.slice(0, k.lastIndexOf(':')), n: Number(k.slice(k.lastIndexOf(':') + 1)) }));
+    const countedDown = counts.some((c, j) => counts.slice(j + 1).some(d => d.key === c.key && d.n < c.n));
+    if (names.size === 2 && win[6].t - win[0].t <= 60000 && covered < 5 && !movedOn && !countedDown && !gained(win[0].t, win[6].t)) { flips.push({ from: win[0].t, to: win[6].t, between: [...names].join(' <-> '), at: pos(win[0].s) }); i += 6; }
   }
 
   // Retry loops: "persist" steps and repeated problems, by problem text.

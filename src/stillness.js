@@ -295,6 +295,7 @@ function raise(bot, goal, seen, now = Date.now(), because = null) {
 const FLIP_CHANGES = 5, FLIP_MS = 45000, FLIP_REST_MS = 2 * FLIP_MS;
 const FLIPPING = /^turning between /;
 function worth(bot) { return (bot.inventory?.items?.() || []).filter(i => !FILLER.test(i.name)).reduce((n, i) => n + i.count, 0); }
+const countKey = step => step ? `${step.action}:${step.drops || step.item || ''}` : null;
 function flipWatch(bot, goal, now = Date.now()) {
   const stalls = bot._stalls ||= { records: {}, marks: [] };
   const here = bot.entity?.position;
@@ -308,7 +309,7 @@ function flipWatch(bot, goal, now = Date.now()) {
   for (const [layer, a] of [['work', goal.step?.action], ['survival', recent]]) {
     if (!a) continue;
     const changes = (stalls.changes ||= {})[layer] ||= [];
-    if (changes.at(-1)?.a !== a) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot) });
+    if (changes.at(-1)?.a !== a) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot), count: goal.step?.count, countKey: countKey(goal.step) });
     while (changes.length > FLIP_CHANGES) changes.shift();
     if (changes.length < FLIP_CHANGES) continue;
     const first = changes[0], names = new Set(changes.map(c => c.a));
@@ -318,6 +319,9 @@ function flipWatch(bot, goal, now = Date.now()) {
     if ([...names].every(n => HOLDS.has(n) || EMERGENCIES.has(n))) continue;
     if (Math.max(...changes.map(c => dist(c.p, first.p)), dist(here, first.p)) >= 5 || dist(here, first.p) >= 3) continue;
     if (worth(bot) > first.worth) continue;
+    // The step's own count going down is progress, filler or not (the
+    // audit's rule too): a mine for cobblestone and its pickups trade names.
+    if (Number.isFinite(goal.step?.count) && changes.some(c => c.countKey === countKey(goal.step) && Number.isFinite(c.count) && goal.step.count < c.count)) continue;
     const pair = [...names].map(n => n.replaceAll('_', ' ')).join(' and ');
     const action = actionOf(goal, now);
     const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
