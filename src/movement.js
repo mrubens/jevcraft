@@ -15,6 +15,7 @@ const { isDoor, doorAt, doorAllowsDirection } = require('./doors');
 // down and nothing that burns. A deep crevice or lava is bridged or walked
 // round as before.
 const GAP_FALL_MAX = 5, GAP_MAX = 2;
+const LAVA_EDGE_COST = 4;
 const BURNS = /lava|fire|magma_block|campfire/;
 function gapSurvivable(movements, node, dir, k = 1) {
   for (let dy = -1; dy >= -(GAP_FALL_MAX + 1); dy--) {
@@ -89,9 +90,18 @@ class SurvivalMovements extends Movements {
     }
     // Upstream checks body space but accepts a damaging solid as the floor.
     // A ruined portal's magma must not become an ordinary walking surface.
-    return neighbors.filter(next => ![-1, 0, 1].some(dy => damagingTerrain.has(this.getBlock(next, 0, dy, 0).name)) &&
+    const kept = neighbors.filter(next => ![-1, 0, 1].some(dy => damagingTerrain.has(this.getBlock(next, 0, dy, 0).name)) &&
       (!this.allowedPosition || this.allowedPosition(next)) &&
       safeFromHostiles(this.bot, new Vec3(next.x + 0.5, next.y, next.z + 0.5), this._hostileObservation.entities));
+    // A cell with lava beside it costs more than open ground: a path along
+    // the lava sea's edge is a step's drift from it, and mid-92-o, walking a
+    // soul sand shore on a fortress leg, went a block and a half into the
+    // sea and burned from sixteen to seven (2026-09-26). Taken only when
+    // it is much the shorter way.
+    for (const next of kept) {
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava'))) next.cost += LAVA_EDGE_COST;
+    }
+    return kept;
   }
 
   getLandingBlock(node, direction) {

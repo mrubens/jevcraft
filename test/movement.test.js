@@ -93,6 +93,20 @@ test('solid damaging floors are excluded even when the body space is air', () =>
   }
 });
 
+test('a cell with lava beside it costs more than open ground', () => {
+  // mid-92-o walked a soul sand shore on a fortress leg and drifted into the lava sea.
+  const bot = botFixture(), Block = require('prismarine-block')(bot.registry);
+  bot.blockAt = point => {
+    const p = point.floored(), blockName = p.y < 70 ? (p.y === 69 && p.x === 2 && p.z === 0 ? 'lava' : 'stone') : 'air';
+    const block = Block.fromStateId(bot.registry.blocksByName[blockName].defaultState); block.position = p; return block;
+  };
+  const movement = configureMovements(bot); movement.canDig = false;
+  const neighbors = movement.getNeighbors({ x: 0, y: 70, z: 0, remainingBlocks: 0 });
+  const east = neighbors.find(p => p.x === 1 && p.z === 0 && p.y === 70), west = neighbors.find(p => p.x === -1 && p.z === 0 && p.y === 70);
+  assert(east && west, 'both still walkable');
+  assert(east.cost > west.cost + 3, `beside the lava costs more: ${east.cost} against ${west.cost}`);
+});
+
 test('flat diagonals cannot skim a lava corner beside a dry destination', () => {
   const bot = botFixture(), movement = configureMovements(bot);
   movement.getBlock = (p, dx, dy, dz) => {
