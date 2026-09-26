@@ -507,3 +507,18 @@ test('no meal with a creeper coming on in sight; a zombie as far off does not st
   assert(await maintainVitals(bot, new Task('zombie')));
   assert.equal(eaten, 1);
 });
+
+test('no meal in a witch\'s throwing range while it can see the bot', async () => {
+  // mid-237-b: stood eating three seconds poisoned with a witch ten blocks off; its harming potion took four.
+  let eaten = 0;
+  const witch = { name: 'witch', type: 'hostile', position: new Vec3(9.5, 64, 0.5), height: 1.9, isValid: true };
+  const bot = { food: 17, health: 13.6, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 7: witch },
+    registry: { foodsByName: { cooked_beef: { effectiveQuality: 20.8 } }, entitiesByName: { witch: { type: 'hostile' } } },
+    inventory: { items: () => [{ name: 'cooked_beef', count: 2 }] },
+    equip: async () => {}, consume: async () => { eaten++; bot.food = 20; }, deactivateItem() {},
+  };
+  assert.equal(await maintainVitals(bot, new Task('witch')), false);
+  witch.position = new Vec3(20.5, 64, 0.5);
+  assert(await maintainVitals(bot, new Task('far witch')));
+  assert.equal(eaten, 1);
+});

@@ -421,10 +421,16 @@ function closeHostile(bot) {
   // mid-214-c ate at 18.6 health with one eight blocks off and in sight,
   // stood still three and a half seconds, and one blast took it all
   // (2026-09-26).
-  const { APPROACH, LIGHTS_AT } = require('./combat-estimate');
+  // A mob that throws or shoots reaches the bot as far as its range: the
+  // meal stands still in it. mid-237-b, poisoned, stood eating three
+  // seconds with a witch ten blocks off and its harming potion took four
+  // (2026-09-26).
+  const { APPROACH, LIGHTS_AT, RANGE } = require('./combat-estimate');
   const creeperReach = LIGHTS_AT + APPROACH * 2 * EAT_MEAL_SECONDS;
+  const SHOOTERS = { skeleton: 15, stray: 15, bogged: 15, pillager: 15, ...RANGE };
+  const reach = name => name === 'creeper' ? Math.max(CLOSE, creeperReach) : Math.max(CLOSE, SHOOTERS[name] || 0);
   return Object.values(bot.entities || {}).some(e => e !== bot.entity && e.position && e.isValid !== false &&
-    (bot.registry?.entitiesByName?.[e.name]?.type === 'hostile' || e.type === 'hostile') && e.position.distanceTo(here) <= (e.name === 'creeper' ? Math.max(CLOSE, creeperReach) : CLOSE) && reaches(e));
+    (bot.registry?.entitiesByName?.[e.name]?.type === 'hostile' || e.type === 'hostile') && e.position.distanceTo(here) <= reach(e.name) && reaches(e));
 }
 // A second and six tenths eating (survival.js EAT_SECONDS).
 const EAT_MEAL_SECONDS = 1.6;
