@@ -1601,6 +1601,10 @@ test('with a creeper close or a mob at arm\'s length, building is still offered,
   // Trial 118: two creepers and a spider, no armour, twelve health, told only the fight's "6.7 damage".
   assert.match(withCreeper.fight.description, /Not counted there: the creeper, whose blast at arm's length takes up to 22 health after the armour worn, more than the bot has/);
   assert.match(withCreeper.creeper_dance.description, /up to twenty-two health without armour/);
+  assert.match(withCreeper.creeper_dance.description, /1 of them ends it/);
+  // mid-215-b: three creepers five to seven blocks off, told of one blast.
+  const three = survival.stanceOptions(new Task('x'), {}, () => {}, [t('creeper', 5), t('creeper', 6), t('creeper', 7)], false);
+  assert.match(three.creeper_dance.description, /3 creepers are here \(5, 6, 7 blocks off\): the dance hits one at a time/);
   assert.match(withCreeper.retreat.description, /No route is checked yet/);
   const withZombie = Object.keys(survival.stanceOptions(new Task('x'), {}, () => {}, [t('zombie', 4)], false));
   assert(withZombie.includes('pillar'), 'a zombie is climbed away from');
