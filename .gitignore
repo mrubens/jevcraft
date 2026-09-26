@@ -34,3 +34,5 @@ logs/
 
 # Written by bots started before the ledger moved to .bot-state/
 docs/run-ledger.md
+
+.trial-sources/

@@ -15,6 +15,7 @@ The ports and server folders the development setup uses (all ignored by git; bri
 | 25579 | `.test-acceptance` | acceptance runs |
 | 25580 | `.test-replay` | the long dream run, recorded with ServerReplay |
 | 25581 | `.clean-run` | first-days trials |
+| 25582+ | `.clean-run-<port>` | more first-days and midgame trials side by side |
 
 Scripts that stage a world write commands to the server's console through a named pipe, `<folder>/console.in`. [`server/start.sh.example`](server/start.sh.example) is a start script that sets that up; copy it into a server folder beside a 26.1 server jar.
 
@@ -37,6 +38,7 @@ Scripts that stage a world write commands to the server's console through a name
 
 ## Trials and runs
 
+- `trials/`: trial servers from scratch. `setup.sh <N>` fetches Java 25, the 26.1.2 server and Fabric with ServerReplay into `../.tools` and makes N server folders from 25581 (each records Jev to `recordings/players`); `supervisor.sh <port>` restarts a bot whose flight record goes quiet for 60 s; `watch.sh <ports>` returns when a trial's verdict is done or failed; `harvest.sh <port>` stops a passed first-days trial and saves its world to `.trial-sources/` and its bot state to an archive, for `midgame.js start`.
 - `first-days.js`: the first-three-days trial. `start <world>` makes a fresh world on `.clean-run` (25581) and a fresh bot (its pid in `.bot-state/pids/`); `verdict` audits the run from its flight recording; `status` lists trials. New worlds get a datapack giving spectators night vision.
 - `acceptance.js` (`npm run accept`): a Survival acceptance run with a fresh identity and empty inventory, on an isolated `MC_PORT`.
 - `audit-day.js`: a day's audit from the flight recorder: stillness, water, retries, pacing, damage and inference cost (`AUDIT_IDENTITY`).
