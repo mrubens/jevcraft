@@ -98,7 +98,7 @@ function dropBelow(view, cell, { reach = 24, extra = 0 } = {}) {
 // Every single move from here, each with its facts. `goal` is 'dry' (out
 // of water onto solid ground) or 'sky' (open sky over dry ground).
 function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null } = {}) {
-  const moves = [];
+  let moves = [];
   const inWater = isWater(view.name(feet));
   const headroom = open(view.name(feet.offset(0, 2, 0))) && !isWater(view.name(feet.offset(0, 2, 0)));
   const where = p => {
@@ -170,6 +170,11 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   const done = goal === 'dry' ? dryFooting(view, feet)
     : goal === 'away' ? dryFooting(view, feet) && !!from && Math.hypot(feet.x - from.x, feet.z - from.z) >= 8
       : dryFooting(view, feet) && atSurface(view, feet);
+  // No dig that lets lava in beside the body: it runs into the bot's cells
+  // in a second. mid-92-s, working up out of a night mine, dug the rock
+  // beside and over its head with lava behind it, the option saying so,
+  // and burned in what poured in (2026-09-26). The other moves stay Jev's.
+  moves = moves.filter(m => m.kind !== 'dig' || !(m.effects || []).some(e => /^lava beside it/.test(e)));
   return { moves, done, here: { feet: { x: feet.x, y: feet.y, z: feet.z }, inWater, headInWater: isWater(view.name(feet.plus(UP))), headroomToRise: headroom, dryFooting: dryFooting(view, feet), openSkyAbove: skyAbove(view, feet), atSurface: atSurface(view, feet) } };
 }
 

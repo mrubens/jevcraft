@@ -102,3 +102,11 @@ test('working free stops for a mob come close: the survival layer answers it', a
     { name: 'NeedsSafety' });
   assert.equal(asked, 0, 'no move asked for with the creeper there');
 });
+
+test('no dig is offered that lets lava in beside the body', () => {
+  // mid-92-s dug the rock over its head with lava beside it, told so, and burned in what poured down.
+  const cells = { '0,70,0': 'air', '0,71,0': 'air', '1,73,0': 'lava', '-1,72,0': 'lava' };
+  const { moves } = localMoves(view(cells), new Vec3(0, 70, 0), { goal: 'sky' });
+  assert(!moves.some(m => m.kind === 'dig' && m.effects.some(e => /lava/.test(e))), moves.filter(m => m.kind === 'dig').map(m => m.key).join(','));
+  assert(moves.some(m => m.key === 'dig_east_feet'), 'the rest are still offered');
+});
