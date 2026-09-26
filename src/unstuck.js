@@ -147,7 +147,13 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     // waterline, or a wall.
     const block = PLACEABLE.find(n => (view.carried?.[n] || 0) > 0);
     if (block && open(view.name(level)) && [DOWN, ...Object.values(DIRS)].some(f => solid(view.name(level.plus(f))))) {
-      moves.push({ key: `place_${dir}`, does: `Put a ${block.replaceAll('_', ' ')} into the ${isWater(view.name(level)) ? 'water' : 'space'} ${dir}, at the feet: a step up${inWater ? ' out of the water' : ''}.`, kind: 'place', cell: level, block });
+      // A step out of the water only where there is air over the step: in a
+      // column flooded to its ceiling it is a block with water on it.
+      // first-days-232 was offered "a step up out of the water" twice under
+      // a granite lid with nine seconds of breath, and drowned (2026-09-26).
+      const over = view.name(level.plus(UP)), overThat = view.name(level.offset(0, 2, 0));
+      const stepOut = !inWater || (open(over) && !isWater(over) && open(overThat) && !isWater(overThat));
+      moves.push({ key: `place_${dir}`, does: `Put a ${block.replaceAll('_', ' ')} into the ${isWater(view.name(level)) ? 'water' : 'space'} ${dir}, at the feet: ${stepOut ? `a step up${inWater ? ' out of the water' : ''}` : 'a block to stand on, with water over it: still under water there'}.`, kind: 'place', cell: level, block });
     }
   }
   // Straight up: dig what is over the head, swim up, or pillar.

@@ -121,3 +121,22 @@ test('a pillar that failed where it stands did not get there, so it is counted a
   const step = { key: 'step_north', to: feet.offset(0, -2, -1) };
   assert.equal(moveReached(step, feet, feet.offset(0, -2, -1), { changed: true }), true, 'a step down reaches its column');
 });
+
+test('a block put into the water is a step out only where there is air over it', () => {
+  // first-days-232: offered "a step up out of the water" in a column flooded to a granite lid, and drowned.
+  const { localMoves } = require('../src/unstuck');
+  const feet = new Vec3(0, 40, 0);
+  // The bot's column and the cell north of it: water from y 40, to a
+  // granite lid at 42 (flooded) or to open air from 41 (a waterline).
+  const view = (airAbove) => ({ carried: { dirt: 4 }, pickaxe: 'iron_pickaxe', name: p => {
+    if (p.y < 40) return 'stone';
+    const shaft = p.x === 0 && (p.z === 0 || p.z === -1);
+    if (!shaft) return 'granite';
+    if (airAbove) return p.y === 40 ? 'water' : 'air';
+    return p.y >= 42 ? 'granite' : 'water';
+  } });
+  const flooded = localMoves(view(false), feet).moves.find(m => m.key === 'place_north');
+  assert.match(flooded.does, /with water over it: still under water there/);
+  const waterline = localMoves(view(true), feet).moves.find(m => m.key === 'place_north');
+  assert.match(waterline.does, /a step up out of the water/);
+});
