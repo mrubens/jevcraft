@@ -2109,13 +2109,18 @@ class Survival {
     // behind the lid for twenty minutes because every door was within
     // twenty blocks of one (2026-09-26).
     const near = threats(bot).filter(t => (t.visible || t.distance < 6) && !claimed(bot, t.entity));
-    const danger = past ? [] : near;
+    // Past them, but never out beside a creeper: mid-72-g, chosen to leave
+    // with one three blocks off behind the wall, opened the pocket on it
+    // and was blown up from twenty health (2026-09-26). A door within six
+    // blocks of a creeper stays shut, and the pocket waits as before.
+    const creepers = threats(bot, 16).filter(t => t.entity.name === 'creeper');
+    const danger = past ? creepers.map(t => ({ ...t, reach: 6 })) : near;
     const clearance = p => Math.min(Infinity, ...near.map(t => t.entity.position.distanceTo(p)));
     const farthest = list => past ? [...list].sort((a, b) => clearance(b.outside || b) - clearance(a.outside || a)) : list;
-    const formal = farthest(shelter.exits(bot, refuge).filter(exit => danger.every(t => t.entity.position.distanceTo(exit.outside) > 20)));
+    const formal = farthest(shelter.exits(bot, refuge).filter(exit => danger.every(t => t.entity.position.distanceTo(exit.outside) > (t.reach ?? 20))));
     // A pocket sealed in a staircase has no two-block exit: its door is the
     // closure the bot placed, and the way on is dug from there.
-    const pocket = !formal.length && farthest(shelter.closures(bot, refuge).filter(door => danger.every(t => t.entity.position.distanceTo(door) > 20)));
+    const pocket = !formal.length && farthest(shelter.closures(bot, refuge).filter(door => danger.every(t => t.entity.position.distanceTo(door) > (t.reach ?? 20))));
     const exit = formal[0] || (pocket.length ? { door: pocket[0], outside: null } : null);
     if (!exit) { await this.wait(task, goal, save, 'Nearby threats still block the shelter exits'); return; }
     this.report(goal, save, { action: 'leave_shelter', origin: refuge.origin, reason });

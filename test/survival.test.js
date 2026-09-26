@@ -475,8 +475,8 @@ test('a pocket left past the mobs, as Jev chose, is opened though a mob is near 
   const origin = new Vec3(0, 20, 0);
   const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`, `${origin.offset(-2, -1, 0)}`, `${origin.offset(-2, 0, 0)}`, `${origin.offset(-2, 1, 0)}`]);
   const placed = new Set([`${origin.offset(-1, 0, 0)}`, `${origin.offset(-1, 1, 0)}`, `${origin.offset(1, 0, 0)}`, `${origin.offset(1, 1, 0)}`]);
-  const make = () => {
-    const zombie = { name: 'zombie', type: 'hostile', position: origin.offset(4.5, 0, 0.5), height: 1.95 };
+  const make = (name = 'zombie') => {
+    const zombie = { name, type: 'hostile', position: origin.offset(4.5, 0, 0.5), height: 1.95 };
     const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 },
       entity: { position: origin.offset(0.5, 0, 0.5) }, entities: { 1: zombie }, health: 20, food: 20, oxygenLevel: 20, time: { timeOfDay: 2000 },
       inventory: { items: () => [{ name: 'cobblestone', count: 60 }] }, registry: require('minecraft-data')('26.1'),
@@ -496,6 +496,11 @@ test('a pocket left past the mobs, as Jev chose, is opened though a mob is near 
   await past.survival.leave(new Task('dawn'), {}, () => {}, past.refuge, undefined, { past: true });
   assert.deepEqual(past.waits, []);
   assert.equal(past.dug.length, 2, 'the door is opened');
+  // mid-72-g: opened on a creeper three blocks off behind the wall and was blown up.
+  const creeper = make('creeper');
+  await creeper.survival.leave(new Task('dawn'), {}, () => {}, creeper.refuge, undefined, { past: true });
+  assert.deepEqual(creeper.dug, [], 'never out beside a creeper');
+  assert.match(creeper.waits[0], /block the shelter exits/);
 });
 
 test('leaving a pocket opens every closure so the staircase continues both ways', async () => {
