@@ -161,3 +161,54 @@ test('copper armour is offered as a side trip with a stone pickaxe and nothing w
   slots[6] = { name: 'iron_chestplate' };
   assert.equal(sideTrips(bot, goal, null).copper_armour, undefined, 'something worn: not offered');
 });
+
+// The crowd of mid-110-k at 05:31:04 (2026-09-26): a spider and a zombie at
+// arm's length, a creeper and a skeleton six blocks off, two more skeletons,
+// full iron and a shield, 13.3 health.
+const IRON = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+const crowd110k = () => fightEstimate({ threats: [['spider', 1.8], ['zombie', 3.2], ['creeper', 6.4], ['skeleton', 6.4, 1], ['skeleton', 8.5, 1], ['skeleton', 20, 1]]
+  .map(([name, distance, shoots]) => ({ name, distance, shoots: !!shoots, visible: true })), armour: IRON, weapon: 'iron_sword', health: 13.3, shield: true });
+
+test('every stance is priced over the same fifteen seconds: the pillar under a creeper and three skeletons is not the cheap one', () => {
+  const { stanceCost } = require('../src/combat-estimate');
+  const e = crowd110k();
+  assert(e.fightHere.inFifteenSeconds < e.fightHere.damageTaken, 'the fight\'s first fifteen seconds are part of its whole');
+  const pillar = stanceCost({ mobs: e.mobs, setup: 1.5, fight: { only: m => m.name === 'spider' }, reaches: m => m.shoots || m.name === 'creeper', shield: true });
+  // Up in a second and a half, the creeper at the foot a second later: the
+  // blast is counted, and the three skeletons and the spider still reach.
+  assert.equal(pillar.blasts.length, 1);
+  assert.equal(pillar.blasts[0].seconds, 2.6);
+  assert.deepEqual(pillar.still.sort(), ['creeper', 'skeleton', 'spider']);
+  assert(pillar.damage > e.fightHere.inFifteenSeconds, `two up costs more than the fight's first fifteen seconds here: ${pillar.damage} against ${e.fightHere.inFifteenSeconds}`);
+  // Thirty-one blocks of pocket: not shut within the fifteen seconds.
+  const seal = stanceCost({ mobs: e.mobs, setup: 31 * 0.6 });
+  assert(seal.damage > pillar.damage && seal.still.length === 0);
+  // Three and a half seconds down into the ground, and then nothing reaches;
+  // but the creeper six blocks off goes off before the cap is on, and that
+  // is counted too.
+  const down = stanceCost({ mobs: e.mobs, setup: 3.4 });
+  assert(down.damage < pillar.damage, JSON.stringify(down));
+  assert.equal(down.blasts.length, 1, 'the creeper is there before the hole is shut');
+  const later = stanceCost({ mobs: e.mobs.filter(m => m.name !== 'creeper'), setup: 3.4 });
+  assert(later.damage < e.fightHere.inFifteenSeconds, JSON.stringify(later));
+});
+
+test('in a tunnel a crowd comes one or two at a time: the fight costs less than on open ground', () => {
+  const zombies = [2, 3, 4, 5].map(distance => ({ name: 'zombie', distance, visible: true }));
+  const open = fightEstimate({ threats: zombies, armour: IRON, weapon: 'iron_sword', health: 20 });
+  const tunnel = fightEstimate({ threats: zombies, armour: IRON, weapon: 'iron_sword', health: 20, atOnce: 2 });
+  assert(tunnel.fightHere.damageTaken < open.fightHere.damageTaken * 0.7, `${tunnel.fightHere.damageTaken} against ${open.fightHere.damageTaken}`);
+  assert.equal(tunnel.fightHere.atArmsLengthAtOnce, 2);
+  assert.equal(open.fightHere.atArmsLengthAtOnce, undefined);
+});
+
+test('a shooter out of its range walks in before it shoots, and a shield does not stop a witch\'s potion', () => {
+  const { stanceCost } = require('../src/combat-estimate');
+  const mobsAt = distance => fightEstimate({ threats: [{ name: 'skeleton', distance, shoots: true, visible: true }], armour: IRON, weapon: 'iron_sword' }).mobs;
+  const far = stanceCost({ mobs: mobsAt(24), reaches: () => true }), near = stanceCost({ mobs: mobsAt(12), reaches: () => true });
+  assert.equal(Math.round((near.damage - far.damage) / (near.damage / 15) * 10) / 10, 3, 'three seconds walking in from twenty-four');
+  const witch = fightEstimate({ threats: [{ name: 'witch', distance: 6, shoots: true, visible: true }], armour: IRON, weapon: 'iron_sword' }).mobs;
+  const shielded = stanceCost({ mobs: witch, reaches: () => true, shield: true }), bare = stanceCost({ mobs: witch, reaches: () => true, shield: false });
+  assert.equal(shielded.damage, bare.damage);
+  assert.equal(bare.damage, 30, 'six a potion, one each three seconds, for fifteen seconds');
+});

@@ -2229,3 +2229,120 @@ test('out of lava, a water cell beside is the way out; out of water it is not', 
   const dry = lavaExit(bot);
   assert(!dry || blockAt(dry).name !== 'water', 'the dry exit is never water');
 });
+
+// A crowd on flat stone (mid-83-d, mid-92-e, mid-110-k): the bot in iron with
+// a diamond sword and pickaxe, cobblestone to build with, bread to eat.
+function crowdBot({ health = 13, food = 14, items = [] } = {}) {
+  const registry = require('minecraft-data')('26.1');
+  const iron = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'].map(name => ({ name }));
+  return Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, health, food, foodSaturation: 0, entities: {}, time: { timeOfDay: 13000 },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, registry,
+    inventory: { items: () => [{ name: 'diamond_sword', count: 1 }, { name: 'diamond_pickaxe', count: 1 }, { name: 'cobblestone', count: 64 }, { name: 'bread', count: 3 }, ...items], slots: { 5: iron[0], 6: iron[1], 7: iron[2], 8: iron[3], 45: { name: 'shield' } } },
+    blockAt: p => ({ position: p.floored(), name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', diggable: true }), world: { raycast: () => null }, findBlocks: () => [] });
+}
+const crowdMob = (id, name, x, z = 0) => ({ entity: { id, name, position: new Vec3(0.5 + x, 64, 0.5 + z), height: 1.8 }, distance: Math.hypot(x, z), visible: true });
+
+test('in a crowd every stance says what the mobs cost it over the same fifteen seconds, the pillar and the pocket as well as the fight', () => {
+  const bot = crowdBot();
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const crowd = [crowdMob(1, 'spider', 1.8), crowdMob(2, 'zombie', -3.2), crowdMob(3, 'creeper', 0, 6.4), crowdMob(4, 'skeleton', 6.4), crowdMob(5, 'skeleton', -8.5), crowdMob(6, 'skeleton', 0, -20)];
+  const options = survival.stanceOptions(new Task('dusk'), {}, () => {}, crowd, false);
+  const priced = /About [\d.]+ damage from the mobs here in the next fifteen seconds this way/;
+  // The pillar under a creeper and three skeletons carried no figure, and was taken (mid-110-k).
+  assert.match(options.pillar.description, priced);
+  assert.match(options.pillar.description, /the 1\.5 seconds of going up included, from 13 health \(more than the bot has\)/);
+  assert.match(options.pillar.description, /The creeper 6 blocks off can go off beside the bot in about 2\.6 seconds, after the going up is done: up to 19 after the armour worn, more than the bot has/);
+  assert.match(options.pillar.description, /Two up, the creeper, 3 skeletons and the spider still reach it/);
+  assert.match(options.seal.description, priced);
+  assert.match(options.seal.description, /seconds of building not done within them/, 'thirty blocks of pocket are not shut in fifteen seconds');
+  assert.match(options.fight.description, /about [\d.]+ of it in the first fifteen seconds/);
+  assert.match(options.fight.description, /Open ground all round: every biter can be at arm's length at once/);
+  // The charge quotes the fight's estimate: what it leaves out is said there too.
+  assert.match(options.charge_shooter.description, /Not counted there: the creeper, whose blast at arm's length takes up to 19 health/);
+  // Down into the stone underfoot: three blocks (walled all round, the roof ring too), a block over the head.
+  assert.match(options.dig_down.description, /Dig straight down 3 blocks where the bot stands, put a block over its head and wait inside for the mobs to lose interest/);
+  assert.match(options.dig_down.description, priced);
+  // Hurt and hungry, a meal is a stance with its bill: the eating alone.
+  assert.match(options.eat.description, /Eat the bread now \(3 carried\): about 1\.6 seconds standing still, the hand busy and the shield down, no swing; hunger 14 to 19, then health comes back about one each four seconds/);
+  assert.match(options.eat.description, /while it eats, from 13 health\. The mobs are all still here when it is done\./);
+  // With nothing close, the hole is shut before any of them arrives.
+  const far = survival.stanceOptions(new Task('dusk'), {}, () => {}, [crowdMob(4, 'skeleton', 24), crowdMob(2, 'zombie', 0, 20)], false);
+  assert.match(far.dig_down.description, /Shut in below, none of them reaches it/);
+});
+
+test('a meal is offered in an encounter only where it brings health back', () => {
+  const survival = b => new Survival(b, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const one = [crowdMob(1, 'zombie', 5)];
+  assert(!survival(crowdBot({ health: 20, food: 14 })).stanceOptions(new Task('x'), {}, () => {}, one, false).eat, 'full health: nothing to heal');
+  assert(!survival(crowdBot({ health: 12, food: 8 })).stanceOptions(new Task('x'), {}, () => {}, one, false).eat, 'bread to thirteen: still no regeneration');
+  assert(survival(crowdBot({ health: 12, food: 16 })).stanceOptions(new Task('x'), {}, () => {}, one, false).eat, 'to eighteen or more: health comes back');
+});
+
+test('how many can reach at once: two in a tunnel, eight on open ground', () => {
+  const { openCells } = require('../src/survival');
+  assert.equal(openCells(crowdBot()), 8);
+  // A one-wide tunnel along x: rock on both sides.
+  const tunnel = { blockAt: p => { const f = p.floored(); const solid = f.y < 64 || f.y > 65 || f.z !== 0; return { position: f, name: solid ? 'stone' : 'air', boundingBox: solid ? 'block' : 'empty' }; }, entity: { position: new Vec3(0.5, 64, 0.5) } };
+  assert.equal(openCells(tunnel), 2);
+});
+
+test('a stance is held through a crowd whose kinds change, and asked again for a mob new to it come close', async () => {
+  const bot = crowdBot({ health: 18 });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const asked = [];
+  survival.stanceOptions = () => ({ fight: { description: 'fight', run: async () => true }, pillar: { description: 'up', run: async () => true }, retreat: { description: 'away', run: async () => true } });
+  survival.decide = async (task, goal, save, q) => { asked.push(q.state.previousStance); return { path: ['fight'] }; };
+  const zombie = crowdMob(1, 'zombie', 4), creeper = crowdMob(2, 'creeper', 9), skeleton = crowdMob(3, 'skeleton', 14), spider = crowdMob(4, 'spider', 5);
+  await survival.stanceStep(new Task('dusk'), {}, () => {}, [zombie, creeper], false);
+  assert.equal(asked.length, 1);
+  // mid-83-d: the kinds in view changed as mobs came into view far off and went out of it.
+  await survival.stanceStep(new Task('dusk'), {}, () => {}, [zombie], false);
+  await survival.stanceStep(new Task('dusk'), {}, () => {}, [zombie, creeper, skeleton], false);
+  assert.equal(asked.length, 1, 'a kind gone out of view, or one come into view fourteen blocks off: held');
+  await survival.stanceStep(new Task('dusk'), {}, () => {}, [zombie, creeper, skeleton, spider], false);
+  assert.equal(asked.length, 2, 'a spider new to the choice five blocks off: asked again');
+  assert.match(asked[1].askedAgainFor, /a spider come within 5 blocks/);
+  bot.health = 11;
+  await survival.stanceStep(new Task('dusk'), {}, () => {}, [zombie, creeper, skeleton, spider], false);
+  assert.equal(asked.length, 3, 'six health gone since the choice: asked again');
+});
+
+test('a stance that failed here is not offered again when the kinds about change, and is once the bot is elsewhere', async () => {
+  const bot = crowdBot({ health: 18 });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const trees = [];
+  survival.stanceOptions = () => ({ pillar: { description: 'up', run: async () => false }, fight: { description: 'fight', run: async () => true }, seal: { description: 'seal', run: async () => true } });
+  survival.decide = async (task, goal, save, q) => { trees.push(Object.keys(q.tree)); return { path: [q.tree.pillar ? 'pillar' : 'fight'] }; };
+  await survival.stanceStep(new Task('dusk'), {}, () => {}, [crowdMob(1, 'zombie', 2)], false);
+  delete survival.state.stance;
+  await survival.stanceStep(new Task('dusk'), {}, () => {}, [crowdMob(1, 'zombie', 2), crowdMob(2, 'skeleton', 9)], false);
+  assert(!trees[1].includes('pillar'), `a skeleton come into view does not bring the failed pillar back: ${trees[1]}`);
+  delete survival.state.stance;
+  bot.entity.position = new Vec3(8.5, 64, 0.5);
+  await survival.stanceStep(new Task('dusk'), {}, () => {}, [crowdMob(1, 'zombie', 2)], false);
+  assert(trees[2].includes('pillar'), 'eight blocks on, it is offered again');
+});
+
+test('the run\'s way is found before the stance is asked, said on the retreat, and run without a second search', async () => {
+  const bot = crowdBot({ health: 16 });
+  const footing = [new Vec3(0, 63, 14), new Vec3(0, 63, -14)];
+  let searches = 0;
+  Object.assign(bot, { findBlocks: () => footing, pathfinder: { movements: {}, setGoal() {},
+    getPathTo: (m, goal) => { searches++; return goal.z > 0 ? { status: 'success', path: Array.from({ length: 14 }, (_, i) => new Vec3(0.5, 64, 1.5 + i)) } : { status: 'noPath', path: [] }; } }, clearControlStates() {} });
+  const zombie = { id: 1, name: 'zombie', type: 'hostile', position: new Vec3(0.5, 64, -4.5), height: 1.95, isValid: true };
+  bot.entities = { 1: zombie };
+  const went = [];
+  const survival = new Survival(bot, { navigate: async (b, t, goal) => { went.push([goal.x, goal.y, goal.z]); } }, { state: { shelters: [] } });
+  const danger = [{ entity: zombie, distance: 5, visible: true }];
+  const scout = await survival.scoutRetreat(new Task('dusk'), danger);
+  assert.deepEqual(scout.destination, { x: 0, y: 64, z: 14 });
+  assert.match(survival.stanceOptions(new Task('dusk'), {}, () => {}, danger, false).retreat.description, /A way is found: 14 blocks to footing \d+ blocks further from every mob about, passing none of them, about 2\.5 seconds at a run/);
+  const before = searches;
+  assert.equal(await survival.runAway(new Task('dusk'), {}, () => {}, danger), true);
+  assert.equal(searches, before, 'the way found is the one run');
+  assert.deepEqual(went, [[0, 64, 14]]);
+  // Nowhere to go: said, so the run is not chosen blind.
+  bot.findBlocks = () => [];
+  await survival.scoutRetreat(new Task('dusk'), danger);
+  assert.match(survival.stanceOptions(new Task('dusk'), {}, () => {}, danger, false).retreat.description, /Nowhere to run to: no footing within 20 blocks is four blocks further than here from every mob about/);
+});

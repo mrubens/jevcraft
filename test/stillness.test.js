@@ -385,3 +385,26 @@ test('a step flipping under a recent survival action is still caught: the two ar
   for (const a of ['tunnel', 'retreat_from_tunnel', 'tunnel', 'retreat_from_tunnel', 'tunnel']) { t += 1200; goal.step = { action: a }; goal.survivalAction.at = new Date(t).toISOString(); raised = flipWatch(bot, goal, t) || raised; }
   assert.match(raised?.why || '', /turning between tunnel and retreat from tunnel 4 times in 5 seconds/);
 });
+
+test('a stance Jev chose is the answer while it is carried out: a hit does not throw it out, six health gone does', () => {
+  // A retreat reports nothing as it runs: the watchdog stopped its walk at
+  // the first hit by a mob, and the next tick searched for a way again.
+  const { EventEmitter } = require('node:events');
+  const { Vec3 } = require('vec3');
+  const { Survival } = require('../src/survival');
+  let stopped = 0;
+  const zombie = { id: 7, name: 'zombie', position: new Vec3(1, 64, 0), isValid: true };
+  const bot = Object.assign(new EventEmitter(), { entity: { id: 1, position: new Vec3(0, 64, 0) }, entities: { 7: zombie }, health: 17, game: { dimension: 'overworld' }, time: { timeOfDay: 18000 },
+    stopDigging: () => {}, pathfinder: { setGoal: () => { stopped++; } }, clearControlStates() {}, inventory: { items: () => [] } });
+  new Survival(bot, {});
+  bot._stance = { choice: 'retreat', at: Date.now(), health: 17, running: true };
+  bot.emit('entityHurt', bot.entity, zombie);
+  assert.equal(stopped, 0, 'the run goes on');
+  bot.health = 10.5;
+  bot.emit('entityHurt', bot.entity, zombie);
+  assert.equal(stopped, 1, 'six health gone since the choice: the watchdog stops it');
+  bot._threatAbort = false; bot._threatAbortAt = 0; bot.health = 17;
+  bot._stance = { choice: 'retreat', at: Date.now() - 5000, health: 17, running: false, ranAt: Date.now() - 4000 };
+  bot.emit('entityHurt', bot.entity, zombie);
+  assert.equal(stopped, 2, 'not carried out for four seconds (the work is back): the watchdog is too');
+});

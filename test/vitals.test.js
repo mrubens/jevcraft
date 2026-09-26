@@ -452,3 +452,20 @@ test('burning with no water bucket, water within eight blocks is run into', asyn
   assert.equal(await douse(bot, new Task('burn'), a => said.push(a)), true);
   assert.deepEqual(said[0].pond, { x: 4, y: 63, z: 0 });
 });
+
+test('while an encounter stance is carried out the meal is Jev\'s, not a reflex between its ticks', async () => {
+  // mid-83-d ate at twelve health in the middle of the retreat it had chosen.
+  let eaten = 0;
+  const bot = { food: 16, health: 12, entity: {},
+    registry: { foodsByName: { bread: { effectiveQuality: 11 } } },
+    inventory: { items: () => [{ name: 'bread', count: 2 }] },
+    equip: async () => {}, consume: async () => { eaten++; bot.food = 20; }, deactivateItem() {},
+    _stance: { choice: 'retreat', at: Date.now(), health: 13, running: true } };
+  assert.equal(await maintainVitals(bot, new Task('crowd')), false);
+  assert.equal(eaten, 0, 'the retreat goes on');
+  bot._stance.choice = 'keep_working';
+  assert(await maintainVitals(bot, new Task('left be')), 'leaving the mobs be is not a stance that eating stops');
+  assert.equal(eaten, 1);
+  bot.food = 5; bot._stance.choice = 'retreat';
+  assert(await maintainVitals(bot, new Task('starving')), 'down to six hunger it eats whatever the stance');
+});

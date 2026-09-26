@@ -181,11 +181,11 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `encounter_stance`
 
-**Hostile mobs are near the bot: fight here, go up, dig into the wall, seal in, run, shoot, charge the shooters, dance with the creeper, or leave them be and keep working?**
+**Hostile mobs are near the bot: fight here, go up, dig into the wall, dig down, seal in, run, eat, shoot, charge the shooters, dance with the creeper, or leave them be and keep working?**
 
-- When: An encounter the reflexes (the swing at arm's length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible (one is taken without asking); held while the same kinds of mob are about, for fifteen seconds, and until health falls by six. Off with JEV_ENCOUNTERS=0.
+- When: An encounter the reflexes (the swing at arm's length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible (one is taken without asking); held for fifteen seconds, until health falls by six, until the stance fails, or until a mob it was not chosen against comes within six blocks (not when a kind of mob comes into view further off or goes out of it). A stance that failed is not offered again within four blocks of where it failed for twenty seconds. While a stance holds, the shield at each arrow gives way to a stance that moves or builds, the hurt watchdog to any stance but keep_working, and eating to the eat stance. Off with JEV_ENCOUNTERS=0.
 - Decision tree, choice; stakes high; ledger kind `combat`
-- Bar: none: Jev's pick is taken at any confidence: a stance is held fifteen seconds and asked again when health falls by six, so a close call is soon corrected; the encounter rules answer only when Jev cannot be reached
+- Bar: none: Jev's pick is taken at any confidence: a stance is held fifteen seconds and asked again when health falls by six, when it fails or when a new mob comes close, so a close call is soon corrected; the encounter rules answer only when Jev cannot be reached
 - Jev unreachable: stops: no safe default
 - Options built in: src/survival.js (stanceOptions)
 
@@ -197,6 +197,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `come_down` | root | come down the bot's own pillar, digging the block underfoot | standing on a pillar of its own blocks with a floor under it |
 | `bunker` | root | dig into the nearby wall and fight at the doorway | a wall is near that digs in three seconds |
 | `seal` | root | seal a pocket and wait | four or more building blocks are carried |
+| `dig_down` | root | dig straight down where the bot stands and close the hole over its head | a dry column of diggable ground under the bot walls it in within twelve blocks, a block carried for the cap, a pickaxe or ground soft enough for the hand, not in water |
+| `eat` | root | eat food now | food carried, health below full, hunger below full and eighteen or more after the meal (health comes back) |
 | `charge_shooter` | root | run at the ground shooters one after another and strike | skeletons, strays, bogged, pillagers or witches in view within sixteen, a sword or axe carried, not in water |
 | `creeper_dance` | root | hit the creeper and back out of its blast, again and again | a creeper within six, a sword or axe carried, no drop or lava to back into |
 | `keep_working` | root | carry on with the work and leave the mobs be for fifteen seconds | nothing within three blocks; ends early when one comes within three or lands a hit |
