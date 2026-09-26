@@ -603,3 +603,22 @@ test('a plot cell over a hole is filled from the bottom up, not placed in the ai
   await repairPlot(w.bot, new Task('plot'), w.goal, () => {}, w.goal.survival.home, actions);
   assert.deepEqual(placed.slice(0, 3), [cell.y - 2, cell.y - 1, cell.y]);
 });
+
+test('the base bed taken along is still the base bed: the home does not ask for it back', async () => {
+  // The user (2026-09-26): a player carries their bed; nights were a third of the time before the Nether.
+  const w = await establishedHome(), { bot, goal, task, save, layout } = w;
+  assert.equal(home.homeStage(bot, goal), null, 'a finished base');
+  bot.entity.position = new Vec3(layout.bed.stand.x + 0.5, layout.bed.stand.y, layout.bed.stand.z + 0.5);
+  const actions = {
+    navigate: async () => {},
+    dig: async (b, t, p) => { w.set(layout.bed.foot, 'air'); w.set(layout.bed.head, 'air'); },
+    collectNearbyDrops: async () => { w.give('white_bed', 1); return true; },
+  };
+  assert.equal(await home.takeHomeBed(bot, task, goal, save, actions), true);
+  assert(goal.survival.home.bed.carriedAt, 'marked as carried');
+  assert.equal(home.homeStage(bot, goal), null, 'carried, the base is not reopened for its bed');
+  assert.equal(home.bedStatus(bot, goal.survival.home).carried, true);
+  // Lost with a death: the bed cells are read again, and the home asks for a bed.
+  w.take('white_bed', 1);
+  assert.equal(home.homeStage(bot, goal)?.phase, 'home_bed');
+});

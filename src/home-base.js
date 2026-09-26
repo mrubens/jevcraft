@@ -313,11 +313,42 @@ function plotStatus(bot, home) {
 }
 
 function bedStatus(bot, home) {
+  // The base's bed taken along is still the base's bed: carried, it is not
+  // missing from home, and the home does not ask for it back (the user,
+  // 2026-09-26: a player carries their bed). Lost (a death drops it), the
+  // bed cells are read as they stand.
+  if (home.bed?.carriedAt && bedCarried(bot)) return { placed: true, loaded: true, claimed: !!home.bed?.claimedAt, carried: true };
   const { bed } = layout(home);
   const foot = bot.blockAt(pos(bed.foot)), head = bot.blockAt(pos(bed.head));
   const placed = isBed(foot) && isBed(head);
   const loaded = !!foot && !!head;
   return { placed, loaded, claimed: placed && !!home.bed?.claimedAt };
+}
+
+// The base's bed picked up to be carried: every night then passes in
+// seconds wherever it comes, in a nook or on open ground, instead of about
+// seven real minutes in a pocket and the climb out after. The scoreboard
+// put nights at over a third of the time before the Nether in the midgame
+// trials of 2026-09-26, with a bed carried at 650 of 2,750 night choices.
+async function takeHomeBed(bot, task, goal, save, { navigate, dig, collectNearbyDrops }) {
+  const home = homeOf(bot, goal);
+  if (!home?.bed) throw new Error('No base bed to take');
+  const { bed } = layout(home);
+  const foot = pos(bed.foot), stand = pos(bed.stand);
+  if (!bot.blockAt(foot) || bot.entity.position.distanceTo(foot) > 4) {
+    goal.step = { action: 'take_home_bed', phase: 'walk', at: { ...stand } }; save();
+    await navigate(bot, task, new goals.GoalNear(stand.x, stand.y, stand.z, 1), { timeoutMs: 120000, stallMs: 10000 });
+    return false;
+  }
+  const block = bot.blockAt(foot);
+  if (!isBed(block)) throw new Error('The base bed is not where it was placed');
+  goal.step = { action: 'take_home_bed', phase: 'pick_up', at: { ...foot } }; save();
+  const name = block.name, before = countOf(bot, name);
+  await dig(bot, task, foot, { requireDrops: false });
+  await collectNearbyDrops(bot, task, name, { before, origin: foot, radius: 6, waitForSpawnMs: 1000 });
+  if (countOf(bot, name) <= before) throw new Error('The bed did not come into the pack');
+  home.bed = { ...home.bed, carriedAt: new Date().toISOString() }; save();
+  return true;
 }
 
 function penStatus(bot, home) {
@@ -733,7 +764,7 @@ async function claimBed(bot, task, goal, save, home, actions) {
   } finally { bot.removeListener?.('message', onMessage); bot.removeListener?.('sleep', onSleep); }
   home.bed.attempts = (home.bed.attempts || 0) + 1;
   if (evidence || home.bed.attempts >= 3) {
-    home.bed = { ...home.bed, claimedAt: new Date().toISOString(), evidence: evidence || 'assumed after three uses' };
+    home.bed = { ...home.bed, claimedAt: new Date().toISOString(), evidence: evidence || 'assumed after three uses' }; delete home.bed.carriedAt;
     delete home.bed.attempts;
   }
   save();
@@ -1226,6 +1257,6 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
   return options;
 }
 
-module.exports = { bedCarried, placeOriented, isBed, siteWork, levelSite, clearStray, repairPlot, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
+module.exports = { takeHomeBed, bedCarried, placeOriented, isBed, siteWork, levelSite, clearStray, repairPlot, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
   woolCarried, woodSpecies, homeStage, homeComplete, homeStep, tillPlot, plantPlot, harvestPlot, placeBed, claimBed, buildPen, gatherWool, lureCows, breedCows, takeSteak, bake,
   homeFood, eatFromHome, homeChores };

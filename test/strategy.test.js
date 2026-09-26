@@ -289,3 +289,14 @@ test('the question says what the Nether waits on, and never that every step come
   assert.match(state.beforeTheNether, /May wait until after it: golden boots, diamond sword/);
   assert.doesNotMatch(state.note, /every step is done before the Nether/);
 });
+
+test('with the base bed claimed and none carried, taking it along is offered with what it buys and what it moves', () => {
+  const { sideTrips } = require('../src/work');
+  const { establishedHome } = require('./fixtures/home-world');
+  return establishedHome().then(({ bot, goal }) => {
+    const trips = sideTrips(bot, goal, null);
+    assert(trips.take_home_bed, Object.keys(trips).join(','));
+    assert.match(trips.take_home_bed.description, /any night passes in seconds wherever it comes/);
+    assert.match(trips.take_home_bed.description, /a death sends it there, not to the base/);
+  });
+});

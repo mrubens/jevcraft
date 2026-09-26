@@ -3344,6 +3344,16 @@ function sideTrips(bot, goal, client) {
   if (unlooted) trips.loot = { description: `Loot: walk ${unlooted.distance} blocks to the ${unlooted.landmark.kind.replaceAll('_', ' ')} and open its chests. Ruined portals hold gold, obsidian and flint and steel; dungeons and temples iron, gold, bread and now and then diamonds; a mineshaft's chests ride in minecarts, with rails, iron, gold and bread, and its cobwebs are string.${below}${waitingThere(bot, new Vec3(unlooted.landmark.x, unlooted.landmark.y ?? bot.entity.position.y, unlooted.landmark.z))}${tripTime(bot, unlooted.distance)}`,
     says: `I'll loot the ${unlooted.landmark.kind.replaceAll('_', ' ')} ${unlooted.distance} blocks away`, walkBlocks: unlooted.distance,
     run: (b, t, g, sv) => lootStep(b, t, g, sv, lootActions()) };
+  // The base's bed taken along, with what it buys and what it moves: the
+  // user's call (2026-09-26), after the scoreboard put nights at over a
+  // third of the time before the Nether.
+  const hb = require('./home-base'), home = hb.homeOf(bot, goal);
+  if (home?.bed?.claimedAt && !hb.bedCarried(bot) && !home.bed.carriedAt && /overworld/.test(String(bot.game?.dimension || ''))) {
+    const foot = hb.layout(home).bed.foot, far = Math.round(new Vec3(foot.x, foot.y, foot.z).distanceTo(bot.entity.position));
+    trips.take_home_bed = { description: `Take the base's bed along: walk ${far} blocks to it, pick it up and carry it. Then any night passes in seconds wherever it comes: put down in a nook or on open ground, slept in, picked back up. Sleep is refused with a monster within about eight blocks of the bed. The spawn point is wherever the bot last slept: a death sends it there, not to the base, and a death drops the bed with everything else.${tripTime(bot, far)}`,
+      says: 'I\'ll take my bed along', walkBlocks: far,
+      run: async (b, t, g, sv) => { for (let i = 0; i < 4; i++) if (await hb.takeHomeBed(b, t, g, sv, { navigate, dig, collectNearbyDrops })) return; } };
+  }
   // Trading: a village remembered and something to sell or spend (trading.js).
   if (tradeWorthwhile(bot, goal)) {
     const village = require('./villages').knownVillages(bot, goal, 256)[0];
