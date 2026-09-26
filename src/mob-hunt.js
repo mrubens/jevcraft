@@ -374,7 +374,9 @@ async function huntObserved(bot, task, goal, save, actions, client) {
         item: state.item, randomDrop: true,
         ...(mob && !handler.passive ? { fight: { hitsBot: mob.hitsBot, seconds: one.fightHere.seconds, damageTaken: one.fightHere.damageTaken, healthAfter: one.fightHere.healthAfter, ...(mob.note ? { note: mob.note } : {}) } } : {}),
         ...(lavaNear ? { lavaNearIt: 'lava within two blocks of it: a knockback there lands in it' } : {}),
-        ...(dropNear ? { dropNearIt: 'a drop within three blocks of it' } : {}) }, run: () => fightForDrop(bot, task, target, goal, save, actions) };
+        ...(dropNear ? { dropNearIt: 'a drop within three blocks of it' } : {}),
+        ...(() => { const { UNPROVOKED } = require('./danger'); const near = Object.values(bot.entities || {}).filter(e => Object.hasOwn(UNPROVOKED, e.name) && e.position && e.position.distanceTo(target.position) <= 6);
+          return near.length ? { hittersNearIt: `${near.length} ${[...new Set(near.map(e => e.name.replaceAll('_', ' ')))].join(' and ')} within six blocks of it: ${[...new Set(near.map(e => UNPROVOKED[e.name].note))].join('; ')}` } : {}; })() }, run: () => fightForDrop(bot, task, target, goal, save, actions) };
     } finally { movement.restore(); restore(); }
   }
   if (!Object.keys(tree).length) return false;

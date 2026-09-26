@@ -43,18 +43,17 @@ function provoked(bot, entity) {
 }
 // Animals that hit a player unprovoked, now and then: a goat rams whoever
 // is near every half-minute to five minutes, a polar bear goes for one near
-// its cubs. One is the bot's threat when it has hurt the bot lately, or
-// when it is close and one hit, and the throw after it, would be all the
-// health left: first-days-210, at 0.7 health among goats on a mountain,
-// walked up to a rabbit beside two of them and was rammed to death
-// (2026-09-26); they were animals to every layer.
-const UNPROVOKED = { goat: 2, polar_bear: 6 };
+// its cubs. One that has hurt the bot lately is attacking it, as the game
+// has it; the rest are facts for Jev (riskNow's animalsThatHit), not a
+// threat by rule. first-days-210, at 0.7 health among goats on a mountain,
+// walked up to a rabbit beside two of them and was rammed to death, told
+// of neither (2026-09-26).
+const UNPROVOKED = {
+  goat: { hit: 2, note: 'rams whoever is near every half-minute to five minutes: about two damage and a throw of several blocks, off an edge if there is one' },
+  polar_bear: { hit: 6, note: 'goes for a player near its cubs' },
+};
 function unprovokedThreat(bot, entity) {
-  const hit = UNPROVOKED[entity.name];
-  if (hit === undefined) return false;
-  if (bot._hurtBy?.[entity.name] > Date.now() - 20000) return true;
-  const here = bot.entity?.position;
-  return !!here && !!entity.position && entity.position.distanceTo(here) <= 8 && (bot.health ?? 20) <= hit + 2;
+  return Object.hasOwn(UNPROVOKED, entity.name) && bot._hurtBy?.[entity.name] > Date.now() - 20000;
 }
 const provokedEnderman = (bot, entity) => entity.name === 'enderman' && provoked(bot, entity);
 
@@ -267,4 +266,4 @@ function stanceHeld(bot, now = Date.now()) {
   return s && now - s.at < STANCE_HOLD_MS && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - STANCE_HEALTH ? s : null;
 }
 
-module.exports = { stanceHeld, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };
+module.exports = { UNPROVOKED, stanceHeld, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };

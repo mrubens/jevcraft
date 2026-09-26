@@ -24,7 +24,14 @@ function riskNow(bot, { radius = 24, dark = null } = {}) {
   const surface = (bot.blockAt?.(bot.entity.position.floored())?.skyLight ?? 15) >= 8;
   const spawning = dark ?? ((t >= DAY.NIGHT && t < DAY.DAWN && surface) || !surface);
   const fight = estimate.fightHere;
-  const level = fight.healthAfter <= 0 ? 'high: the mobs about could kill the bot if they all came'
+  // Animals that hit unprovoked, near: a ram at 0.7 health is the end of it.
+  const { UNPROVOKED } = require('./danger');
+  const here = bot.entity.position;
+  const animals = Object.values(bot.entities || {}).filter(e => Object.hasOwn(UNPROVOKED, e.name) && e.position && e.isValid !== false && e.position.distanceTo(here) <= 16)
+    .map(e => ({ name: e.name, distance: Math.round(e.position.distanceTo(here)) })).sort((a, b) => a.distance - b.distance);
+  const endsIt = animals.find(a => UNPROVOKED[a.name].hit >= health);
+  const level = endsIt ? `high: one hit from the ${endsIt.name.replaceAll('_', ' ')} ${endsIt.distance} blocks off would end the bot`
+    : fight.healthAfter <= 0 ? 'high: the mobs about could kill the bot if they all came'
     : about.some(m => m.entity.name === 'creeper' && m.distance <= 8) ? 'high: a creeper is within eight blocks'
     : fight.damageTaken >= health / 2 ? 'moderate: fighting them all would take half the health or more'
     : about.length ? 'low: the mobs about are a fight the bot wins' : spawning ? 'low for now: nothing hostile in view, but mobs spawn here in the dark' : 'none in view';
@@ -35,6 +42,7 @@ function riskNow(bot, { radius = 24, dark = null } = {}) {
     health, food, healing: food >= 18 ? 'health comes back while hunger stays at eighteen or more' : 'no healing: health comes back only at eighteen hunger or more, so eat first',
     armourPoints: estimate.armourPoints, weapon: estimate.weapon,
     mobsSpawnAround: spawning,
+    ...(animals.length ? { animalsThatHit: { within: 16, near: animals.slice(0, 4), what: Object.fromEntries([...new Set(animals.map(a => a.name))].map(n => [n, `${UNPROVOKED[n].note}; about ${UNPROVOKED[n].hit} a hit`])) } } : {}),
   };
 }
 

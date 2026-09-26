@@ -537,20 +537,18 @@ test('with no path home from a mine under it, the way home is dug a stretch at a
   await assert.rejects(goHome(bot, new Task('home'), {}, () => {}, home, { navigate: async () => { throw new Error('No path to the goal!'); } }), /No path/, 'without a way to dig, the failure is the walk\'s');
 });
 
-test('a step on the home site, far from it, goes home the way that digs when there is no path', async () => {
+test('a step on the home site whose walk finds no path goes home the way that digs, then tries again', async () => {
   // first-days-209: forty blocks off in its night mine, the walk to claim the bed was told "no path" twenty-six times.
-  const { homeStep, layout } = require('../src/home-base');
+  const { homeStep } = require('../src/home-base');
   const home = { origin: { x: 0, y: 63, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 63, z: 0 }, bed: { placedAt: 'x' }, pen: {} };
   const goal = { survival: { home } };
   const bot = { entity: { position: new Vec3(-30.5, 55, 20.5) }, game: { dimension: 'overworld' }, oxygenLevel: 20, blockAt: () => null, inventory: { items: () => [] } };
   const walks = [], dug = [];
-  const actions = { navigate: async (b, t, g) => { walks.push(g); if (walks.length < 2) throw new Error('No path to the goal!'); },
+  const actions = { navigate: async (b, t, g) => { walks.push(g.constructor.name); if (walks.length <= 2) throw new Error('No path to the goal!'); },
     tunnel: async (b, t, g, s, target, key) => { dug.push(key); } };
-  await homeStep(bot, new Task('home'), goal, () => {}, { phase: 'home_bed', action: 'claim_bed' }, actions);
-  assert.deepEqual(dug, ['home'], 'dug toward home after the first no path');
-  assert.equal(walks.length, 2);
-  assert.equal(goal.step.action, 'return_home');
-  assert(layout(home).bed.foot);
+  await assert.rejects(homeStep(bot, new Task('home'), goal, () => {}, { phase: 'home_bed', action: 'claim_bed' }, actions), /bed is not where/, 'at the bed at last: the world here has none');
+  assert.deepEqual(dug, ['home'], 'dug toward home after the walk home found no path');
+  assert.deepEqual(walks, ['GoalNear', 'GoalNear', 'GoalNear', 'GoalNear']);
 });
 
 test('an evening chore whose walk runs past dark says so, with the risk in the state (the decision audit)', async () => {

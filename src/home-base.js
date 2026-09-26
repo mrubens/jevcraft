@@ -465,8 +465,6 @@ async function standAt(bot, task, actions, p, range = 0) {
 // told "no path" twenty-five times and flipped between the walk and a
 // detour until the audit called the loop), the way is dug: a stretch of
 // tunnel or a pillar toward home, then the walk again.
-// The site reaches about seventeen blocks from its origin (the pen).
-const SITE_REACH = 24;
 const ON_SITE = new Set(['place_bed', 'pour_water', 'level_site', 'claim_bed', 'till', 'repair_plot', 'plant', 'build_pen', 'place_chest', 'restock']);
 const NO_PATH = /No route|No path|noPath|did not reach|timed out|Timeout/i;
 async function goHome(bot, task, goal, save, home, actions) {
@@ -999,6 +997,21 @@ async function pickHomeSite(bot, task, goal, save, sites) {
 }
 
 // One step of the home rung.
+function siteStep(bot, task, goal, save, stage, home, actions) {
+  switch (stage.action) {
+    case 'place_bed': return placeBed(bot, task, goal, save, home, actions, stage.item);
+    case 'pour_water': return pourWater(bot, task, goal, save, home, actions);
+    case 'level_site': return levelSite(bot, task, goal, save, home, actions);
+    case 'claim_bed': return claimBed(bot, task, goal, save, home, actions);
+    case 'till': return tillPlot(bot, task, goal, save, home, actions);
+    case 'repair_plot': return repairPlot(bot, task, goal, save, home, actions);
+    case 'plant': return plantPlot(bot, task, goal, save, home, actions);
+    case 'build_pen': return buildPen(bot, task, goal, save, home, actions);
+    case 'place_chest': return stash.placeStashChest(bot, task, goal, save, home, actions);
+    case 'restock': return stash.restockFromStash(bot, task, goal, save, home, actions, stage.wants || []);
+  }
+}
+
 async function homeStep(bot, task, goal, save, stage, actions) {
   task.check(); checkAir(bot);
   const survival = goal.survival;
@@ -1034,13 +1047,20 @@ async function homeStep(bot, task, goal, save, stage, actions) {
   }
   const home = homeOf(bot, goal);
   if (!home) return;
-  // The steps done on the site walk home first, by goHome, which digs when
-  // there is no path: first-days-209, forty blocks off in its night mine,
-  // walked for the bed with the plain walk, was told "no path" twenty-six
-  // times and flipped between the bed and a detour until the audit called
-  // the loop (2026-09-26). goHome had the fix for that (trial 115); the
-  // site's own walks did not.
-  if (ON_SITE.has(stage.action) && homeDistance(bot, home) > SITE_REACH) return goHome(bot, task, goal, save, home, actions);
+  // A step on the site whose walk finds no path goes home the way that
+  // digs (goHome, trial 115) and tries again: first-days-209, forty blocks
+  // off in its night mine, walked for its bed by the plain walk, was told
+  // "no path" twenty-six times and flipped between the bed and a detour
+  // until the audit called the loop (2026-09-26).
+  if (ON_SITE.has(stage.action) && actions.tunnel) {
+    try { return await siteStep(bot, task, goal, save, stage, home, actions); }
+    catch (err) {
+      task.check();
+      if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) || !NO_PATH.test(err.message)) throw err;
+    }
+    await goHome(bot, task, goal, save, home, actions);
+    return siteStep(bot, task, goal, save, stage, home, actions);
+  }
   switch (stage.action) {
     case 'return_home': return goHome(bot, task, goal, save, home, actions);
     case 'acquire': await actions.acquireStep(bot, task, stage.item, stage.count, goal, save); return;

@@ -15,19 +15,21 @@ test('every mob the game calls hostile is a threat: a zombie villager is one', (
   }
 });
 
-test('a goat is a threat when it has rammed the bot lately, or is close and one ram would end it', () => {
-  // first-days-210: at 0.7 health among goats, it walked up to a rabbit beside two and was rammed to death.
+test('a goat is a threat once it has rammed the bot; near, it is a fact in riskNow, and at 0.7 health a high one', () => {
+  // first-days-210: at 0.7 health among goats, it walked up to a rabbit beside two and was rammed to death, told of neither.
   const { threats } = require('../src/danger');
+  const { riskNow } = require('../src/risk');
   const registry = require('minecraft-data')('26.1');
   const goat = { id: 7, name: 'goat', type: 'animal', position: new Vec3(4.5, 64, 0.5), height: 1.3, width: 0.9, isValid: true };
-  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, world: { raycast: () => null }, time: { timeOfDay: 6000 }, entities: { 7: goat }, health: 20 };
-  assert.equal(threats(bot).length, 0, 'at full health a goat is an animal');
+  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, world: { raycast: () => null }, time: { timeOfDay: 6000 }, entities: { 7: goat }, health: 20, food: 20, inventory: { items: () => [], slots: [] } };
+  assert.equal(threats(bot).length, 0, 'an animal until it rams');
+  assert.match(riskNow(bot).animalsThatHit.what.goat, /rams whoever is near/);
+  assert.deepEqual(riskNow(bot).animalsThatHit.near, [{ name: 'goat', distance: 4 }]);
   bot.health = 0.7;
-  assert.deepEqual(threats(bot).map(t => t.entity.name), ['goat'], 'one ram ends it');
-  goat.position = new Vec3(14.5, 64, 0.5);
-  assert.equal(threats(bot).length, 0, 'far off');
+  assert.equal(threats(bot).length, 0, 'still no rule: the facts are Jev\'s');
+  assert.match(riskNow(bot).level, /^high: one hit from the goat 4 blocks off would end the bot/);
   bot.health = 20; bot._hurtBy = { goat: Date.now() - 5000 };
-  assert.deepEqual(threats(bot).map(t => t.entity.name), ['goat'], 'rammed a moment ago');
+  assert.deepEqual(threats(bot).map(t => t.entity.name), ['goat'], 'rammed a moment ago: it is attacking');
   assert(require('../src/combat-estimate').MOBS.goat.hit > 0);
 });
 
