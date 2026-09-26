@@ -91,6 +91,26 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   const run = corpseRun(bot, goal);
   if (!run) { save(); return false; }
   const spot = new Vec3(run.position.x, run.position.y, run.position.z);
+  // Jev's to weigh, once a death: what was about when the bot died there,
+  // against what it would get back.
+  const client = task.opportunityClient;
+  if (!run.choice && client) {
+    const death = (goal.survival?.deaths || []).at(-1) || {};
+    const about = (death.about || []).map(t => `a ${t.name.replaceAll('_', ' ')} ${t.distance} blocks off`).join(', ');
+    const wornNow = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+    const far = Math.round(flat(bot.entity.position, spot));
+    const left = run.loadedAt ? Math.max(0, Math.round((DESPAWN_MS - (Date.now() - Date.parse(run.loadedAt))) / 1000)) : null;
+    const t = bot.time?.timeOfDay ?? 0, night = t >= 12500 && t < 23500;
+    const tree = {
+      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} When the bot died there, ${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. It is ${night ? 'night' : 'day'}.` },
+      leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later.` },
+    };
+    const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
+      state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night } });
+    if (decision.stale) return false;
+    run.choice = decision.fallback ? 'go_back' : decision.path.at(-1); save();
+    if (run.choice === 'leave_them') { run.status = 'left'; save(); return false; }
+  }
   if (!run.announced) {
     run.announced = true;
     bot.chat?.(`Going back for what I dropped when I died, ${Math.round(flat(bot.entity.position, spot))} blocks off: ${listed(run.items)}.`);

@@ -113,3 +113,19 @@ test('a death in lava is not gone back for: the drops burned', () => {
   assert.equal(corpseRun(bot, goal), null);
   assert.equal(goal.corpseRun.status, 'burned');
 });
+
+test('going back for the drops is Jev\'s choice, told what was about when the bot died there', async () => {
+  // mid-230-c walked 194 blocks back to the drowned that had just killed it; mid-231-b died four times in two and a half minutes going back.
+  const { bot, goal } = world();
+  goal.survival.deaths[0].about = [{ name: 'drowned', distance: 13 }, { name: 'drowned', distance: 20 }];
+  goal.survival.deaths[0].worn = ['iron_chestplate'];
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = Object.values(questions)[0].criteria; return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } };
+  let moved = false;
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move: async () => { moved = true; } }), false);
+  assert.match(asked.go_back, /about it were a drowned 13 blocks off, a drowned 20 blocks off; it wore iron chestplate then and wears no armour now/);
+  assert.equal(moved, false, 'left: no walk');
+  assert.equal(goal.corpseRun.status, 'left');
+  assert.equal(corpseRun(bot, goal), null, 'and not asked again for this death');
+});

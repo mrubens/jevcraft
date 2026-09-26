@@ -27,7 +27,12 @@ function recordDeath(bot, state, now = Date.now()) {
   // Lava at the body: what it dropped burns, and nothing is gone back for.
   const cell = bot.entity.position.floored();
   const lava = [cell, cell.offset(0, 1, 0), cell.offset(0, -1, 0)].some(c => /lava/.test(bot.blockAt?.(c)?.name || ''));
-  state.deaths = [...(state.deaths || []), { at: new Date(now).toISOString(), position: { ...bot.entity.position }, dimension: bot.game.dimension, ...(lava ? { lava } : {}) }].slice(-10);
+  // What was about when it died, and what it wore: the way back for the
+  // drops is weighed against them (corpse-run.js).
+  let about = [];
+  try { about = require('./danger').threats(bot, 24).slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance) })); } catch (_) { about = []; }
+  const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+  state.deaths = [...(state.deaths || []), { at: new Date(now).toISOString(), position: { ...bot.entity.position }, dimension: bot.game.dimension, about, worn, ...(lava ? { lava } : {}) }].slice(-10);
   state.recovery = { status: 'pending', at: new Date(now).toISOString(), position: { ...bot.entity.position },
     dimension: bot.game.dimension, inventoryBeforeDeath: recent ? { ...observed.items } : stock(bot),
     inventoryObservedAt: new Date(recent ? observed.at : now).toISOString(), recovered: {}, attempts: 0 };

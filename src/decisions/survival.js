@@ -225,3 +225,20 @@ define({
   instructions: { task: 'The bot is ready for the Nether but for its food. Choose whether to cross now or gather more first.', guidance: 'Each option says what is carried, what the reserve is for, and where more would come from and what that has cost so far. Health comes back only while hunger stays at eighteen or more; the Nether has hoglins for meat and little else to eat.' },
   fallback: () => 'gather_more',
 });
+
+// Back for what a death dropped (src/corpse-run.js). A rule that went
+// whenever the kit was ready or it was day: mid-230-c walked 194 blocks
+// back to the drowned that had just killed it, and mid-231-b died four
+// times in two and a half minutes going back (2026-09-26).
+define({
+  id: 'corpse_run', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Go back for what the last death dropped, or leave it and go on?',
+  trigger: 'After a death whose drops are worth fetching and still there, once the bot is fit to go; asked once a death.',
+  source: 'src/corpse-run.js (corpseRunStep)',
+  options: [
+    { key: 'go_back', label: 'go back for the drops', when: 'always', level: 'root' },
+    { key: 'leave_them', label: 'leave them and go on', when: 'always', level: 'root' },
+  ],
+  instructions: { task: 'The bot died and has come back to life. Choose whether it goes back for what it dropped.', guidance: 'Each option says what is there, how far, how long the drops last, what was about when the bot died there and what it wore then and wears now.' },
+  fallback: () => 'go_back',
+});

@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-76 questions: 28 decision trees and 48 batched questions.
+77 questions: 29 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -160,6 +160,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `staircase` | root | dig a staircase up toward open ground | always |
 | `straight_up` | root | dig straight up, a block put under the feet at each step | the column to open sky has only natural ground to dig, nothing that falls or flows in or beside it, and a building block carried for every step up |
+
+### `corpse_run`
+
+**Go back for what the last death dropped, or leave it and go on?**
+
+- When: After a death whose drops are worth fetching and still there, once the bot is fit to go; asked once a death.
+- Decision tree, choice; stakes medium; ledger kind `survival`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/corpse-run.js (corpseRunStep)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `go_back` | root | go back for the drops | always |
+| `leave_them` | root | leave them and go on | always |
 
 ## combat
 
