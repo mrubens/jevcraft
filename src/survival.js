@@ -270,6 +270,11 @@ function lavaExit(bot, radius = 6, { water = false } = {}) {
     // burned from sixteen health standing in it (2026-09-26). Cells with
     // lava beside them come after those without.
     if (water && c.equals(feet)) continue;
+    // Water a step up is no way out: the climb out of a liquid is refused
+    // where the body would rise into liquid, so mid-92-n bobbed in the
+    // lava against the obsidian under the water it had poured, the one
+    // exit it was steered at, and burned from sixteen (2026-09-26).
+    if (water && c.y > feet.y && [c, c.offset(0, 1, 0)].some(p => bot.blockAt(p)?.name === 'water')) continue;
     cells.push(c);
   }
   const far = c => c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);

@@ -2258,6 +2258,19 @@ test('out of lava, a water cell beside is the way out; out of water it is not', 
   assert(!dry || blockAt(dry).name !== 'water', 'the dry exit is never water');
 });
 
+test('out of lava, water a step up is no way out: the climb into it is refused', () => {
+  // mid-92-n: in the pool at y 37 against obsidian with the poured water on it; steered at the water, it bobbed there and burned.
+  const { lavaExit } = require('../src/survival');
+  const blockAt = p => p.y === 37 && p.x <= 0 ? { name: 'lava', boundingBox: 'empty', position: p }
+    : p.y === 37 ? { name: 'obsidian', boundingBox: 'block', position: p }
+    : p.y === 38 && p.x >= 1 && p.x <= 3 ? { name: 'water', boundingBox: 'empty', position: p }
+    : p.y < 37 ? { name: 'stone', boundingBox: 'block', position: p }
+    : p.x <= 0 || p.y >= 39 || p.x > 3 ? { name: 'air', boundingBox: 'empty', position: p } : { name: 'stone', boundingBox: 'block', position: p };
+  const bot = { entity: { position: new Vec3(0.7, 37.5, 0.5) }, blockAt };
+  const out = lavaExit(bot, 6, { water: true });
+  assert(out && blockAt(out).name !== 'water', `not the water on the obsidian: ${out}`);
+});
+
 // A crowd on flat stone (mid-83-d, mid-92-e, mid-110-k): the bot in iron with
 // a diamond sword and pickaxe, cobblestone to build with, bread to eat.
 function crowdBot({ health = 13, food = 14, items = [] } = {}) {

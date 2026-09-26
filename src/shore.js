@@ -211,7 +211,16 @@ async function notchOut(bot, task, goal, save) {
     }
   }
   options.sort((a, b) => a.cost - b.cost);
-  for (const { from, step, body, head } of options.slice(0, 3)) {
+  // The swim is a straight line, so every cell it crosses must be water: in
+  // a sheet poured over a lava pool, mid-92-n swam across the corner of a
+  // cell the pour had not reached and fell through it into the lava
+  // (2026-09-26).
+  const alongWater = to => {
+    const a = bot.entity.position, b = to.offset(0.5, 0, 0.5), n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.25);
+    for (let i = 0; i <= n; i++) if (!/water/.test(bot.blockAt(new Vec3(a.x + (b.x - a.x) * i / n, water.y, a.z + (b.z - a.z) * i / n).floored())?.name || '')) return false;
+    return true;
+  };
+  for (const { from, step, body, head } of options.filter(o => o.from.equals(water) || alongWater(o.from)).slice(0, 3)) {
     if (!from.equals(water)) {
       await motion(bot, task, { label: 'swim_to_bank', keys: ['forward', 'jump'], sneak: false, why: 'swimming to the bank a step can be cut into',
         look: from.offset(0.5, 0.8, 0.5), maxMs: 4000, tick: 50, until: () => bot.entity.position.floored().x === from.x && bot.entity.position.floored().z === from.z });

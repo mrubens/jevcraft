@@ -129,6 +129,25 @@ test('with no bank beside it, the bot swims to the nearest bank a step can be cu
   assert([...dug].some(k => /,63,2$|,63,-2$|^3,63|^-3,63/.test(k)), `a bank block dug: ${[...dug]}`);
 });
 
+test('the swim to a bank crosses only water: not the corner of a cell over lava the pour did not reach', async () => {
+  // mid-92-n: swimming a poured sheet over a lava pool, the straight line to the bank crossed an air cell and the bot fell into the lava.
+  const { notchOut } = require('../src/shore');
+  const { bot, dug } = pool({ waterBeside: false });
+  const inner = bot.blockAt;
+  // Water only where the bot is and in a ring beyond cells of air over lava.
+  bot.blockAt = p => { const f = p.floored(); const ring = Math.max(Math.abs(f.x), Math.abs(f.z));
+    if (f.y === 62 && ring <= 2) return { position: f, name: ring === 1 ? 'air' : 'water', boundingBox: 'empty' };
+    if (f.y === 61 && ring === 1) return { position: f, name: 'lava', boundingBox: 'empty' };
+    if (f.y >= 63 && ring <= 2) return { position: f, name: 'air', boundingBox: 'empty' };
+    return inner(p); };
+  let swum = false;
+  const set = bot.setControlState;
+  bot.setControlState = (key, on) => { if (key === 'forward' && on) swum = true; set(key, on); };
+  assert.equal(await notchOut(bot, new Task('sheet'), {}, () => {}), false);
+  assert.equal(swum, false, 'no swim across the air');
+  assert.equal(dug.size, 0);
+});
+
 test('a bank of stone that would take long to dig from the water is not cut: that drowned the live bot', async () => {
   const { notchOut } = require('../src/shore');
   const { bot } = pool({ waterBeside: false });
