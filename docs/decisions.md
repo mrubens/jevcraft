@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-75 questions: 27 decision trees and 48 batched questions.
+76 questions: 28 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -220,6 +220,56 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `hunt_\d+` (pattern) | root | fight this mob | observed, reachable, isolated from others of its kind, and the bot fit to fight |
 | `defer` | root | leave them for now | always |
+
+## strategy
+
+### `nether_food`
+
+**Cross into the Nether with the food carried now, or gather more first?**
+
+- When: At the crossing with less food carried than the reserve the ladder aims for, and some carried; held for ten minutes once chosen.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (netherFoodReady)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `go_now` | root | cross with the food carried | some food carried |
+| `gather_more` | root | gather more food first | always |
+
+### `win_strategy`
+
+**On the way to beating the game, which of the open steps, or which side trip, should the bot do next?**
+
+- When: Each step of the beat-the-game ladder in the Overworld while more than one thing is open; the answer holds until the ladder's next step or the options change, or ten minutes pass. A side trip runs once and then rests ten minutes.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/strategy.js (strategyOptions), src/game-progress.js (openRungs), src/work.js (sideTrips)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `stage_[a-z_]+` (pattern) | root | the ladder's later stage | past the preparation ladder in the Overworld (pearls, the crossing, the stronghold): the fallback |
+| `deep_dark` | root | an expedition to the deep dark | in the Overworld with an iron pickaxe or better, health sixteen and hunger fourteen or more, no warden rest, and no city already done |
+| `trial_chambers` | root | an expedition to the trial chambers | in the Overworld with an iron pickaxe or better, healthy and fed, and the chambers not already done |
+| `explore` | root | explore the nearest unexplored area | in the Overworld with an unexplored area within 512 blocks of home |
+| `fetch_cache` | root | fetch the things left in a field cache | a chest left before an earlier trip, full, between 48 and 512 blocks away |
+| `cache_valuables` | root | leave the valuables in a chest here | by day and fit, home's chest out of reach, valuables carried, and a chest or the wood for one |
+| `nether_first` | root | leave the steps that may wait and go for the Nether now | in the Overworld when every step left before the Nether may wait (DEFERRABLE); said with what going without each costs and the minutes spent on the next |
+| `carry_bed` | root | make a second bed to carry | at any hour in the Overworld, once the base's bed is claimed, with no bed carried, the wool search not set aside and the next step not a basic tool; said with what it buys (any night passes in seconds, instead of a pocket and the climb out) and what it costs (three wool from sheep or string, three planks) |
+| `copper_armour` | root | make copper armour first | in the Overworld with a stone pickaxe or better and no armour worn or carried |
+| `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | by day and fit, another biome twenty-four or more blocks off in the Overworld (the nearest four), said with what it holds, and the walk there and back fits in the daylight left |
+| `tame_wolf` | root | tame a wolf | a wild adult wolf in view, bones carried, fewer than two tamed, in the Overworld |
+| `breed_sheep` | root | breed two sheep | two adult sheep within sixteen blocks, two wheat carried, none bred in five minutes |
+| `breed_chickens` | root | breed two chickens | two adult chickens within sixteen blocks, two seeds carried, none bred in five minutes |
+| `rung_[a-z_]+` (pattern) | root | a rung of the ladder | the ladder's next rung (the fallback), and each rung after it the ladder may reach while the ones before it wait (shield, iron sword, bucket, golden boots, bow, arrows, diamond sword); pickaxes and armour are never skipped |
+| `loot` | root | open the chests of a remembered structure | by day, health fourteen or more and hunger twelve or more, with an unlooted ruined portal, dungeon, temple or mineshaft within 256 blocks |
+| `trade` | root | trade at a remembered village | by day and fit, with a village remembered and something to sell or spend |
+| `enchant` | root | enchant gear at the enchanting table | by day and fit, with a table known, lapis carried, level five or more and gear unenchanted |
+| `shear_sheep` | root | shear the sheep in view | shears carried, a sheep with wool within twenty-four blocks, fewer than fifteen wool carried, in the Overworld |
+| `smelt_stock` | root | smelt the raw ore carried into ingots | at any hour, eight or more raw iron or gold carried and the fuel for all of it |
+| `enchanting_table` | root | make an enchanting table | no table known, two diamonds and three lapis carried, level five or more, obsidian carried or a diamond pickaxe, and gear unenchanted |
 
 ## work
 
@@ -615,41 +665,6 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `stock_stash` | root | put spares in the stash chest | by day in the Overworld, and the stash chest is within reach and spares are carried |
 | `light_home` | root | put torches where monsters could spawn around home | by day in the Overworld, and the bed and the chest are down, ground around home is dark, and torches are carried or can be made |
 | `wall_home` | root | build a wall two blocks high round home, with a door by the bed | by day in the Overworld, and the bed and the chest are down and home is not walled yet |
-
-## strategy
-
-### `win_strategy`
-
-**On the way to beating the game, which of the open steps, or which side trip, should the bot do next?**
-
-- When: Each step of the beat-the-game ladder in the Overworld while more than one thing is open; the answer holds until the ladder's next step or the options change, or ten minutes pass. A side trip runs once and then rests ten minutes.
-- Decision tree, choice; stakes medium; ledger kind `strategy`
-- Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
-- Options built in: src/strategy.js (strategyOptions), src/game-progress.js (openRungs), src/work.js (sideTrips)
-
-| Option | Level | What it is | Offered when |
-| --- | --- | --- | --- |
-| `stage_[a-z_]+` (pattern) | root | the ladder's later stage | past the preparation ladder in the Overworld (pearls, the crossing, the stronghold): the fallback |
-| `deep_dark` | root | an expedition to the deep dark | in the Overworld with an iron pickaxe or better, health sixteen and hunger fourteen or more, no warden rest, and no city already done |
-| `trial_chambers` | root | an expedition to the trial chambers | in the Overworld with an iron pickaxe or better, healthy and fed, and the chambers not already done |
-| `explore` | root | explore the nearest unexplored area | in the Overworld with an unexplored area within 512 blocks of home |
-| `fetch_cache` | root | fetch the things left in a field cache | a chest left before an earlier trip, full, between 48 and 512 blocks away |
-| `cache_valuables` | root | leave the valuables in a chest here | by day and fit, home's chest out of reach, valuables carried, and a chest or the wood for one |
-| `nether_first` | root | leave the steps that may wait and go for the Nether now | in the Overworld when every step left before the Nether may wait (DEFERRABLE); said with what going without each costs and the minutes spent on the next |
-| `carry_bed` | root | make a second bed to carry | at any hour in the Overworld, once the base's bed is claimed, with no bed carried, the wool search not set aside and the next step not a basic tool; said with what it buys (any night passes in seconds, instead of a pocket and the climb out) and what it costs (three wool from sheep or string, three planks) |
-| `copper_armour` | root | make copper armour first | in the Overworld with a stone pickaxe or better and no armour worn or carried |
-| `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | by day and fit, another biome twenty-four or more blocks off in the Overworld (the nearest four), said with what it holds, and the walk there and back fits in the daylight left |
-| `tame_wolf` | root | tame a wolf | a wild adult wolf in view, bones carried, fewer than two tamed, in the Overworld |
-| `breed_sheep` | root | breed two sheep | two adult sheep within sixteen blocks, two wheat carried, none bred in five minutes |
-| `breed_chickens` | root | breed two chickens | two adult chickens within sixteen blocks, two seeds carried, none bred in five minutes |
-| `rung_[a-z_]+` (pattern) | root | a rung of the ladder | the ladder's next rung (the fallback), and each rung after it the ladder may reach while the ones before it wait (shield, iron sword, bucket, golden boots, bow, arrows, diamond sword); pickaxes and armour are never skipped |
-| `loot` | root | open the chests of a remembered structure | by day, health fourteen or more and hunger twelve or more, with an unlooted ruined portal, dungeon, temple or mineshaft within 256 blocks |
-| `trade` | root | trade at a remembered village | by day and fit, with a village remembered and something to sell or spend |
-| `enchant` | root | enchant gear at the enchanting table | by day and fit, with a table known, lapis carried, level five or more and gear unenchanted |
-| `shear_sheep` | root | shear the sheep in view | shears carried, a sheep with wool within twenty-four blocks, fewer than fifteen wool carried, in the Overworld |
-| `smelt_stock` | root | smelt the raw ore carried into ingots | at any hour, eight or more raw iron or gold carried and the fuel for all of it |
-| `enchanting_table` | root | make an enchanting table | no table known, two diamonds and three lapis carried, level five or more, obsidian carried or a diamond pickaxe, and gear unenchanted |
 
 ## recovery
 

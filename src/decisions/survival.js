@@ -208,3 +208,20 @@ define({
   instructions: { task: 'The bot is underground and has to dig its way out to open sky. Choose how it climbs.', guidance: 'Each way says how many blocks it digs, how long it takes with the pickaxes carried, and what it leaves behind. A pickaxe wears a use for each block it digs; once the pickaxes are used up the rest is dug by hand, stone at seven and a half seconds a block. `pickaxes` lists what is carried and the uses left; `straightUpBlocked` says why the column overhead is not on offer, when it is not.' },
   fallback: (children, path, context = {}) => children[context.quicker] ? context.quicker : Object.keys(children)[0],
 });
+
+// The food carried into the Nether (src/work.js netherFoodReady). A reserve
+// of forty points was a gate the bot could not see past: mid-220-a stood at
+// thirty-nine for forty-four passes and mid-218-a at thirty-seven for
+// twenty-five, hunting, and neither crossed in three hours (2026-09-26).
+define({
+  id: 'nether_food', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Cross into the Nether with the food carried now, or gather more first?',
+  trigger: 'At the crossing with less food carried than the reserve the ladder aims for, and some carried; held for ten minutes once chosen.',
+  source: 'src/work.js (netherFoodReady)',
+  options: [
+    { key: 'go_now', label: 'cross with the food carried', when: 'some food carried', level: 'root' },
+    { key: 'gather_more', label: 'gather more food first', when: 'always', level: 'root' },
+  ],
+  instructions: { task: 'The bot is ready for the Nether but for its food. Choose whether to cross now or gather more first.', guidance: 'Each option says what is carried, what the reserve is for, and where more would come from and what that has cost so far. Health comes back only while hunger stays at eighteen or more; the Nether has hoglins for meat and little else to eat.' },
+  fallback: () => 'gather_more',
+});

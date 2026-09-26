@@ -440,3 +440,23 @@ test('a hold that flips with another step is refused for a while; a hold that on
   assert.throws(() => survival.report(flipping, () => {}, { action: 'dig_in', threats: [] }), { name: 'SetAside' });
   assert.doesNotThrow(() => survival.report(flipping, () => {}, { action: 'leave_lava' }), 'never the way out of lava');
 });
+
+test('short of the Nether food reserve with food carried, crossing now or gathering more is Jev\'s choice, held ten minutes', async () => {
+  // mid-220-a stood at 39 of 40 points for forty-four passes; mid-218-a at 37 for twenty-five.
+  const { gameHandlers } = require('../src/work');
+  const bread = [{ name: 'bread', count: 7, type: registry.itemsByName.bread.id }];
+  const bot = Object.assign(new EventEmitter(), { registry, inventory: { items: () => bread }, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
+    entity: { id: 1, position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, entities: {}, time: { timeOfDay: 3000 },
+    findBlocks: () => [], blockAt: () => ({ name: 'air', boundingBox: 'empty' }), pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, chat() {} });
+  const gate = gameHandlers(bot, null).food_reserve;
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0?.criteria || Object.values(questions)[0]?.criteria; return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'go_now', confidence: 0.9 }])) }; } };
+  const goal = { kind: 'win', survival: {} };
+  const task = Object.assign(new Task('gate'), { opportunityClient: client });
+  assert.equal(await gate(bot, task, goal, () => {}), true, 'crosses with what it has');
+  assert.match(asked.go_now, /Cross now with 35 food points carried \(7 bread\), short of the 40/);
+  assert.match(asked.gather_more, /Gather food first, up to 40 points/);
+  asked = null;
+  assert.equal(await gate(bot, task, goal, () => {}), true);
+  assert.equal(asked, null, 'held: not asked again at once');
+});

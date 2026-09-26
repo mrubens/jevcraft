@@ -3575,6 +3575,7 @@ const homeActions = () => ({ acquireStep, navigate, place, dig, explore, tunnel:
 // walked straight back through the portal with three pieces of food, fought
 // at four health, and was knocked off the ledge.
 const NETHER_HEALTH = 16;
+const NETHER_FOOD_HOLD_MS = 10 * 60000;
 async function netherFoodReady(bot, task, goal, save) {
   // The gate never waits. It takes food from the chest, harvests the
   // plot, or sends the survival layer hunting, and after twenty
@@ -3593,6 +3594,27 @@ async function netherFoodReady(bot, task, goal, save) {
   if (gate.stalled && foodSupply(bot) > 0) {
     bot.chat?.(`I've spent twenty minutes getting food together. Going with what I have (${foodSupply(bot)} points).`);
     delete goal.preparingNether; return true;
+  }
+  // Short of the reserve with some food carried: cross or gather more is
+  // Jev's to weigh, told what is carried, what the reserve is for and what
+  // the gathering has cost so far; held ten minutes once chosen.
+  const choice = goal.netherFoodChoice;
+  if (choice && choice.until > now) { if (choice.pick === 'go_now') { delete goal.preparingNether; return true; } }
+  else if (foodSupply(bot) > 0 && task.opportunityClient) {
+    const carried = foodSupply(bot), stash = goal.survival?.home?.stash?.contents || {};
+    const inChest = Object.entries(stash).reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
+    const spent = Math.round((now - (gate.record?.startedAt || now)) / 60000);
+    const meals = bot.inventory.items().filter(i => safeFood(bot, i)).map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`).join(', ');
+    const tree = {
+      go_now: { description: `Cross now with ${carried} food points carried (${meals || 'nothing named'}), short of the ${NETHER_FOOD} the ladder aims for. Health comes back only while hunger stays at eighteen or more, and a fortress trip is fighting and running; in the Nether, hoglins are the meat and little else is food.` },
+      gather_more: { description: `Gather food first, up to ${NETHER_FOOD} points: ${inChest ? `${inChest} points in the home chest, ` : ''}the farm plot if there is one, or hunting animals. ${spent ? `${spent} minutes have gone to gathering since the last food was found.` : 'Nothing has gone to it yet.'}` },
+    };
+    const decision = await decide('nether_food', { client: task.opportunityClient, bot, task, goal, save, tree,
+      state: { foodPoints: carried, reserve: NETHER_FOOD, hunger: bot.food, health: bot.health, inHomeChest: inChest, minutesGathering: spent } });
+    if (decision.stale) return false;
+    const pick = decision.fallback ? 'gather_more' : decision.path.at(-1);
+    goal.netherFoodChoice = { pick, until: now + NETHER_FOOD_HOLD_MS }; save();
+    if (pick === 'go_now') { delete goal.preparingNether; return true; }
   }
   goal.preparingNether = true; goal.stockFood = true;
   const survivalState = goal.survival || {};
