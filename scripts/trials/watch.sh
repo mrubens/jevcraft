@@ -8,12 +8,15 @@
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 TRIAL=${TRIAL:-midgame}
 cd "$ROOT" || exit 1
-# auto: every server whose world is of this kind (mid- or first-days-).
+# auto: every running server whose world is of this kind (mid- or
+# first-days-); a stopped one is not a trial.
 ports() {
   if [ "$1" = auto ]; then
     PREFIX=$([ "$TRIAL" = midgame ] && echo mid- || echo first-days-)
     for d in "$ROOT"/.clean-run "$ROOT"/.clean-run-*; do
-      grep -q "^level-name=$PREFIX" "$d/server.properties" 2>/dev/null && sed -n 's/^server-port=//p' "$d/server.properties"
+      grep -q "^level-name=$PREFIX" "$d/server.properties" 2>/dev/null || continue
+      P=$(sed -n 's/^server-port=//p' "$d/server.properties")
+      lsof -tiTCP:"$P" -sTCP:LISTEN >/dev/null 2>&1 && echo "$P"
     done
   else echo "$@"; fi
 }
