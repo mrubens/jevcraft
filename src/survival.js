@@ -2784,14 +2784,20 @@ class Survival {
     // first. Its fireball's blast throws a player, and mid-87-l, on a ledge
     // at y 74 over the lava sea on a fortress leg, was hit from thirty
     // blocks and thrown forty down into the lava (2026-09-26).
-    if (!(this.state.edgeTriedAt > Date.now() - 10000) && threats(bot, 64).some(t => t.entity.name === 'ghast' && t.visible)) {
+    // Any mob in sight among the threats about, as well: a magma cube came
+    // down from eighteen blocks over mid-227-a, stood still on a ledge at
+    // y 77 over the lava sea while its tunnel stalled, and the bot went over
+    // the edge with it and fifty blocks into the lava (2026-09-26).
+    const inReach = new Set(threats(bot).map(t => t.entity.id));
+    const pusher = t => t.visible && (t.entity.name === 'ghast' || inReach.has(t.entity.id));
+    if (!(this.state.edgeTriedAt > Date.now() - 10000) && threats(bot, 64).some(pusher)) {
       const { dropNear } = require('./terrain');
       const deep = dropNear(bot, bot.entity.position.floored(), 2);
       if (deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) {
         this.state.edgeTriedAt = Date.now();
         const cell = firmGround(bot, 8, { margin: 3 });
         if (cell) {
-          this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, from: 'ghast', drop: deep });
+          this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, from: threats(bot, 64).find(pusher)?.entity.name, drop: deep });
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           onStep(goal); return true;

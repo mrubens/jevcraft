@@ -1338,6 +1338,23 @@ test('a ghast in sight with a drop into lava beside the bot: off the edge first'
   assert(to && to.x <= -2, `back from the edge: ${to && to.x}`);
 });
 
+test('any mob in sight within reach, with a drop into lava beside the bot: off the edge first', async () => {
+  // mid-227-a: stood on a ledge at y 77 over the lava sea while a magma cube came down from eighteen blocks over; it went over the edge.
+  const cube = { id: 4, name: 'magma_cube', type: 'hostile', position: new Vec3(-0.5, 92, 0.5), height: 2, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: { 4: cube }, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 6000 }, entity: { position: new Vec3(0.5, 74, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'diamond_sword', count: 1 }, { name: 'netherrack', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ position: p, name: p.x >= 2 ? (p.y <= 30 ? 'lava' : 'air') : p.y < 74 ? 'netherrack' : 'air', boundingBox: p.x < 2 && p.y < 74 ? 'block' : 'empty' }),
+    world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {} });
+  let to = null;
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { to = g; } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.step(new Task('leg'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'off_the_edge');
+  assert.equal(goal.survivalAction?.from, 'magma_cube');
+  assert(to && to.x <= -2, `back from the edge: ${to && to.x}`);
+});
+
 test('with the night planned for a shelter, a bed in sight does not keep the night mine shut', () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20,
     time: { timeOfDay: 16000 }, entity: { position: new Vec3(0.5, 30, 0.5) },
