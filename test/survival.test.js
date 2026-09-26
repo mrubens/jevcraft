@@ -2507,16 +2507,16 @@ test('a stance chosen on an estimate is asked again once it has cost more than i
   const bot = crowdBot({ health: 9.2 });
   const survival = new Survival(bot, { navigate: async () => {} });
   const asked = [];
-  survival.stanceOptions = () => ({ fight: { expects: { damage: 1.3, seconds: 3.8 }, description: 'fight', run: async () => true }, dig_down: { description: 'down', run: async () => true } });
+  survival.stanceOptions = () => ({ fight: { expects: { damage: 1.3, seconds: 3.8, oneHit: 1.4 }, description: 'fight', run: async () => true }, dig_down: { description: 'down', run: async () => true } });
   survival.decide = async (task, goal, save, q) => { asked.push(q.state.previousStance); return { path: ['fight'] }; };
   const skeleton = crowdMob(3, 'skeleton', 5);
   await survival.stanceStep(new Task('cave'), {}, () => {}, [skeleton], false);
-  bot.health = 8.2;
+  bot.health = 8.0;
   await survival.stanceStep(new Task('cave'), {}, () => {}, [skeleton], false);
-  assert.equal(asked.length, 1, 'within the estimate: held');
-  bot.health = 7.8;
+  assert.equal(asked.length, 1, 'one arrow in: within its pace and one blow');
+  bot.health = 6.5;
   await survival.stanceStep(new Task('cave'), {}, () => {}, [skeleton], false);
-  assert.equal(asked.length, 2, 'more than 1.3 lost: asked again, not at six');
+  assert.equal(asked.length, 2, 'two arrows in at once: past its pace, asked again, not at six');
   survival.state.stance.at = Date.now() - 5000; bot.health = 7.8; survival.state.stance.health = 7.8;
   await survival.stanceStep(new Task('cave'), {}, () => {}, [skeleton], false);
   assert.equal(asked.length, 3, 'longer than the 3.8 seconds it was said to take: asked again');
@@ -2555,4 +2555,19 @@ test('every way to shelter says how soon a creeper about could go off, the shaft
   assert(tree, 'the shelter question was asked');
   for (const key of ['shaft_pocket', 'seal_here'].filter(k => tree[k])) assert.match(tree[key].description, /creeper is 8 blocks off/, key);
   assert(tree.shaft_pocket, 'a shaft pocket is on offer here');
+});
+
+test('a stance priced at more than the bot has is still asked again when it runs ahead of its pace, not held to the death', async () => {
+  // mid-205-a ate on for four seconds under two zombies and a creeper walking up.
+  const bot = crowdBot({ health: 18 });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const asked = [];
+  survival.stanceOptions = () => ({ dig_down: { expects: { damage: 44, seconds: 15, oneHit: 2 }, description: 'down', run: async () => true }, eat: { description: 'eat', run: async () => true } });
+  survival.decide = async (task, goal, save, q) => { asked.push(q.id); return { path: ['dig_down'] }; };
+  const zombie = crowdMob(1, 'zombie', 2);
+  await survival.stanceStep(new Task('cave'), {}, () => {}, [zombie], false);
+  survival.state.stance.at = Date.now() - 1000;
+  bot.health = 11;
+  await survival.stanceStep(new Task('cave'), {}, () => {}, [zombie], false);
+  assert.equal(asked.length, 2, 'seven lost in a second, where 44 over fifteen seconds is about three: asked again');
 });

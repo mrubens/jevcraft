@@ -818,7 +818,8 @@ class Survival {
     let best = Infinity, bestAt = Date.now();
     const startHealth = bot.health;
     const startedAt = Date.now(), expects = chosen ? bot._stance?.expects : null;
-    const going = () => chosen ? (expects ? startHealth - bot.health <= expects.damage && Date.now() - startedAt <= expects.seconds * 1000 : bot.health > startHealth - 6) : bot.health >= 4;
+    const onPace = () => { const t = (Date.now() - startedAt) / 1000; return t <= expects.seconds && startHealth - bot.health <= expects.damage * Math.min(1, t / Math.max(0.1, expects.seconds)) + (expects.oneHit || 0); };
+    const going = () => chosen ? (expects ? onPace() : bot.health > startHealth - 6) : bot.health >= 4;
     try {
       while (Date.now() < end && going()) {
         const gap = bot.entity.position.distanceTo(e.position);
@@ -943,6 +944,9 @@ class Survival {
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded, atOnce: open });
     const cost = estimate.fightHere;
     const mobs = estimate.mobs || [];
+    // One blow from the hardest hitter here: the give a stance's pace is
+    // allowed before it is asked again (holding below).
+    const oneHit = Math.max(0, ...mobs.filter(m => m.name !== 'creeper').map(m => m.hitsBot || 0));
     const bitersHere = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper').length;
     // How few hits the health left is, said on the stances that stand in
     // reach or in the line of fire: mid-110-h charged a skeleton at 4.5
@@ -967,7 +971,7 @@ class Survival {
     // quoted it without, and mid-110-k's replay went from the pillar to the
     // charge past a creeper six blocks off.
     const creeperLeftOut = creeperCount ? ` Not counted there: ${creeperCount === 1 ? 'the creeper' : `each of the ${creeperCount} creepers`}, whose blast at arm's length takes up to ${creeperBlast} health after the armour worn${creeperBlast >= bot.health ? ', more than the bot has' : ''}.` : '';
-    options.fight = { expects: { damage: cost.damageTaken, seconds: cost.seconds }, description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${atOnceNote}${creeperLeftOut}${nearestCreeper}${nearest && shooter(nearest.entity) && !inReach(nearest) ? (() => { const stop = chargeStopsAt(bot, nearest.entity); return stop ? ` The nearest shoots, and the ground straight at it stops a closing run after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in its line of fire.` : ''; })() : ''}${unseen}${edge}${hitsLeft}`,
+    options.fight = { expects: { damage: cost.damageTaken, seconds: cost.seconds, oneHit }, description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${atOnceNote}${creeperLeftOut}${nearestCreeper}${nearest && shooter(nearest.entity) && !inReach(nearest) ? (() => { const stop = chargeStopsAt(bot, nearest.entity); return stop ? ` The nearest shoots, and the ground straight at it stops a closing run after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in its line of fire.` : ''; })() : ''}${unseen}${edge}${hitsLeft}`,
       run: async () => {
         if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); await this.swingFor(task, goal, save); return true; }
         if (await this.charge(task, goal, save, nearest, false, { chosen: true })) return true;
@@ -1006,7 +1010,7 @@ class Survival {
     // pillared at thirteen health with a creeper six blocks off and three
     // skeletons, told nothing of what that cost, and the blast was all of it.
     const pillarCost = stanceCost({ mobs, setup: up ? 0 : PILLAR_SECONDS, fight: { only: m => CLIMBERS.has(m.name) }, reaches: m => m.shoots || m.name === 'creeper', shield: shielded });
-    if ((scaffold >= 2 && headroom) || up) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote + climbers(danger) + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: 'Two up' }) + (edge && heavyHitters(danger, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
+    if ((scaffold >= 2 && headroom) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote + climbers(danger) + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: 'Two up' }) + (edge && heavyHitters(danger, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
       run: async () => up || this.pillarFrom(task, goal, save, danger) };
     // Down off a pillar of the bot's own: stood on one, nothing else here
     // moves it (a route drops three blocks at most), and mid-83-e stood five
@@ -1047,8 +1051,9 @@ class Survival {
     // and mid-83-d chose pockets of twenty to thirty-four blocks with a
     // zombie at arm's length and four shooters about, and neither was shut.
     const shellCells = (() => { try { return shelter.missingShell(bot, { origin: { x: feet.x, y: feet.y, z: feet.z } }).length; } catch (_) { return null; } })();
-    const sealCost = shellCells != null ? costSays(stanceCost({ mobs, setup: shellCells * BLOCK_SECONDS }), bot.health, mobs, { doing: 'building', done: 'Shut in' }) : '';
-    if (shelter.materialStock(bot) >= 4) options.seal = { description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + sealCost + nightLong + unseen + (onPillar ? ` The bot stands ${onPillar} blocks up on a pillar a block wide: the walls go up beside nothing, placed against open air.` : ''),
+    const sealPriced = shellCells != null ? stanceCost({ mobs, setup: shellCells * BLOCK_SECONDS }) : null;
+    const sealCost = sealPriced ? costSays(sealPriced, bot.health, mobs, { doing: 'building', done: 'Shut in' }) : '';
+    if (shelter.materialStock(bot) >= 4) options.seal = { ...(sealPriced ? { expects: { damage: sealPriced.damage, seconds: sealPriced.seconds, oneHit } } : {}), description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + sealCost + nightLong + unseen + (onPillar ? ` The bot stands ${onPillar} blocks up on a pillar a block wide: the walls go up beside nothing, placed against open air.` : ''),
       run: () => this.sealHere(task, goal, save, danger) };
     // Down into the ground where the bot stands, a block over its head: a
     // player's pocket in a crowd, two or three digs and one block where the
@@ -1071,7 +1076,8 @@ class Survival {
       // four of three (the medians of 144 in the flight records of
       // 2026-09-23 to 26); then the cap.
       const setup = Math.round((digMs / 1000 + depth * SHAFT_BLOCK_SECONDS + BLOCK_SECONDS) * 10) / 10;
-      options.dig_down = { description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting. Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + buildCost + costSays(stanceCost({ mobs, setup }), bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
+      const digCost = stanceCost({ mobs, setup });
+      options.dig_down = { expects: { damage: digCost.damage, seconds: digCost.seconds, oneHit }, description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting. Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + buildCost + costSays(digCost, bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
         run: async () => {
           this.report(goal, save, { action: 'dig_down', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, depth, stance: true });
           try { return await this.digShaft(task, goal, save, { start: column.start, bottom: column.bottom, spot: column.spot, here: feet }); }
@@ -1085,7 +1091,11 @@ class Survival {
     // retreats chosen with three or more mobs about, 15 had a meal within
     // five seconds.
     const meal = mealHelps(bot);
-    if (meal) options.eat = { description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(stanceCost({ mobs, setup: EAT_SECONDS, seconds: EAT_SECONDS }), bot.health, mobs, { over: 'while it eats' }) + EAT_AFTER,
+    const eatCost = stanceCost({ mobs, setup: EAT_SECONDS, seconds: EAT_SECONDS });
+    // Held to what it was said to cost: mid-205-a chose to eat told about
+    // 1.6 seconds, and ate on for four more with two zombies hitting and a
+    // creeper walking up to it (2026-09-26).
+    if (meal) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + EAT_AFTER,
       run: async () => {
         this.report(goal, save, { action: 'eat', item: meal.name, food: bot.food, health: bot.health, stance: true });
         try { await bot.equip(meal, 'hand'); await bot.consume(); return true; }
@@ -1094,7 +1104,7 @@ class Survival {
     // The charge at a few ground shooters, where it can be run.
     const ground = danger.filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16);
     if (ground.length && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && !inWater(bot) && !isSetAside(this, 'close_on_shooter', 'here')) options.charge_shooter = {
-      expects: { damage: cost.damageTaken, seconds: cost.seconds },
+      expects: { damage: cost.damageTaken, seconds: cost.seconds, oneHit },
       description: `Run at the ${ground.map(t => t.entity.name).join(', ')} (nearest ${Math.round(ground[0].distance)} blocks) and strike, one after another, over ground checked firm; gives way if it cannot get nearer, and hands back to be chosen again once it has cost more health or time than estimated here.${(() => { const stop = chargeStopsAt(bot, ground[0].entity); return stop ? ` The ground straight at the nearest does not carry the charge there: it stops after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in the line of fire.` : ' The ground straight at the nearest carries the charge to it.'; })()} Estimated for all the mobs here with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${creeperLeftOut}${edge}${hitsLeft}`,
       run: () => this.closeOnShooter(task, goal, save, danger, { chosen: true }) };
     // A creeper the player's way: hit, back out of the blast, hit again.
@@ -1190,7 +1200,10 @@ class Survival {
     // skeleton in full iron, told 1.3 damage in 3.8 seconds; it stood eleven
     // seconds under a ledge it could not reach and went from 9.2 health to
     // 2.9 before six health lost handed it back (2026-09-26).
-    const overEstimate = !!held?.expects && (held.health - bot.health > held.expects.damage || Date.now() - held.at > held.expects.seconds * 1000);
+    // At its pace: the damage said, spread over the seconds said, and one
+    // blow of the hardest hitter's give; past its seconds, done.
+    const elapsed = held ? (Date.now() - held.at) / 1000 : 0;
+    const overEstimate = !!held?.expects && (held.health - bot.health > held.expects.damage * Math.min(1, elapsed / Math.max(0.1, held.expects.seconds)) + (held.expects.oneHit || 0) || elapsed > held.expects.seconds);
     const holding = held && (held.ids ? !newcomer : held.kinds === kinds) && Date.now() - held.at < STANCE_HOLD_MS && (held.expects ? !overEstimate : bot.health > held.health - STANCE_HEALTH) && !hitSince;
     // About to ask: the run's way is looked for first, so the retreat says
     // whether there is one (a moment ago from here will do).
