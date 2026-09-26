@@ -45,7 +45,24 @@ class SurvivalMovements extends Movements {
   getMoveForward(node, direction, neighbors) {
     const target = new Vec3(node.x + direction.x, node.y, node.z + direction.z);
     const here = this.getBlock(node, 0, 0, 0), there = this.getBlock(node, direction.x, 0, direction.z);
-    if (!isDoor(here.name) && !isDoor(there.name)) return super.getMoveForward(node, direction, neighbors);
+    if (!isDoor(here.name) && !isDoor(there.name)) {
+      // No bridge over a drop that hurts: the block goes into the floor
+      // cell and the bot steps onto it unsneaking, over the void. mid-87-d
+      // walked its own scaffolding along a ravine toward a herd and went
+      // twenty-six blocks down at full health, as mid-87-c had off a cliff's
+      // corner (2026-09-26). Over a short gap it bridges as before.
+      const floor = this.getBlock(node, direction.x, -1, direction.z);
+      if (!floor.physical && !there.liquid) {
+        let landing = false;
+        for (let dy = -2; dy >= -5 && !landing; dy--) {
+          const below = this.getBlock(node, direction.x, dy, direction.z);
+          if (below.physical || below.liquid) landing = !damagingTerrain.has(below.name);
+          if (below.physical || below.liquid) break;
+        }
+        if (!landing) return;
+      }
+      return super.getMoveForward(node, direction, neighbors);
+    }
     const doors = [];
     for (const [block, p] of [[here, node], [there, target]]) {
       if (!isDoor(block.name)) continue;

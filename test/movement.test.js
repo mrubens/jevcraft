@@ -208,3 +208,20 @@ test('a diagonal does not cut the corner of a drop that hurts; over a step it st
     assert.equal(diagonal.length, expected, `a corner ${hole} blocks deep`);
   }
 });
+
+test('no bridge is laid over a drop that hurts; over a short gap it still is', () => {
+  // mid-87-d: its own scaffolding along a ravine, twenty-six blocks down at full health.
+  const bot = botFixture(), movement = configureMovements(bot);
+  for (const [depth, expected] of [[26, 0], [2, 1]]) {
+    movement.getBlock = (p, dx, dy, dz) => {
+      const position = new Vec3(p.x + dx, p.y + dy, p.z + dz);
+      // Under x 1 the ground is `depth` blocks below the floor cell; elsewhere the floor is y 69.
+      const floorY = position.x === 1 ? 69 - depth : 69;
+      const physical = position.y <= floorY;
+      return { position, physical, safe: !physical, liquid: false, replaceable: !physical, height: position.y + (physical ? 1 : 0), name: physical ? 'stone' : 'air', shapes: physical ? [[0, 0, 0, 1, 1, 1]] : [] };
+    };
+    const neighbors = [];
+    movement.getMoveForward({ x: 0, y: 70, z: 0, remainingBlocks: 10 }, new Vec3(1, 0, 0), neighbors);
+    assert.equal(neighbors.length, expected, `a gap ${depth} deep`);
+  }
+});
