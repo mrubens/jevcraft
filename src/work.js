@@ -590,7 +590,10 @@ const occupiedSays = (e, p) => `a ${(e.username || e.name || 'mob').replaceAll('
 // Mineflayer yaw for looking toward each horizontal facing (0 is north, -z).
 const PLACEMENT_YAW = { north: 0, west: Math.PI / 2, south: Math.PI, east: -Math.PI / 2 };
 async function place(bot, task, p, material, { face, properties, stay = false } = {}) {
-  task.check();
+  // Breath first, as every dig checks it: mid-205-b walled a pocket in
+  // under water for nine seconds, placing block after block, and nothing
+  // looked at its air until two of twenty were left (2026-09-26).
+  task.check(); checkAir(bot);
   const cell = { ...p, material, properties };
   if (buildCellComplete(bot, cell)) return;
   // Walling in on a ledge: a cell that needs the bot to step aside, back

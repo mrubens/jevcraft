@@ -2571,3 +2571,11 @@ test('a stance priced at more than the bot has is still asked again when it runs
   await survival.stanceStep(new Task('cave'), {}, () => {}, [zombie], false);
   assert.equal(asked.length, 2, 'seven lost in a second, where 44 over fifteen seconds is about three: asked again');
 });
+
+test('no shelter is made under water: the way up comes first', async () => {
+  // mid-205-b sealed a pocket under water for nine seconds and drowned.
+  const { bot } = nookFixture({ time: 14000 });
+  bot.blockAt = p => ({ name: 'water', boundingBox: 'empty', position: p, getProperties: () => ({ level: 0 }), metadata: 0 });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => ({}) } });
+  await assert.rejects(survival.refugeStep(new Task('night'), { kind: 'win' }, () => {}), { name: 'NeedsAir' });
+});

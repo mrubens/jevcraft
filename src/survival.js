@@ -1631,6 +1631,9 @@ class Survival {
   // caller has already chosen (the emergency beside a prepared site).
   async refugeStep(task, goal, save, { method: given = null } = {}) {
     const bot = this.bot;
+    // No shelter is made under water: a pocket sealed there is full of it.
+    // The way up comes first (mid-205-b, 2026-09-26).
+    if (require('./vitals').headSubmerged(bot)) throw new (require('./vitals').NeedsAir)();
     if (isSetAside(this, 'refuge', 'anywhere')) return false;
     if (await reachShore(bot, task, goal, save, { move: this.actions.navigate, client: this.client, dig: this.actions.dig })) return true;
     let refuge = await this.reachableRefuge(task, goal, save, this.currentShelter());
