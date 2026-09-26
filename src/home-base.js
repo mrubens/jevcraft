@@ -465,6 +465,9 @@ async function standAt(bot, task, actions, p, range = 0) {
 // told "no path" twenty-five times and flipped between the walk and a
 // detour until the audit called the loop), the way is dug: a stretch of
 // tunnel or a pillar toward home, then the walk again.
+// The site reaches about seventeen blocks from its origin (the pen).
+const SITE_REACH = 24;
+const ON_SITE = new Set(['place_bed', 'pour_water', 'level_site', 'claim_bed', 'till', 'repair_plot', 'plant', 'build_pen', 'place_chest', 'restock']);
 const NO_PATH = /No route|No path|noPath|did not reach|timed out|Timeout/i;
 async function goHome(bot, task, goal, save, home, actions) {
   const at = new Vec3(home.origin.x, home.origin.y + 1, home.origin.z);
@@ -1031,6 +1034,13 @@ async function homeStep(bot, task, goal, save, stage, actions) {
   }
   const home = homeOf(bot, goal);
   if (!home) return;
+  // The steps done on the site walk home first, by goHome, which digs when
+  // there is no path: first-days-209, forty blocks off in its night mine,
+  // walked for the bed with the plain walk, was told "no path" twenty-six
+  // times and flipped between the bed and a detour until the audit called
+  // the loop (2026-09-26). goHome had the fix for that (trial 115); the
+  // site's own walks did not.
+  if (ON_SITE.has(stage.action) && homeDistance(bot, home) > SITE_REACH) return goHome(bot, task, goal, save, home, actions);
   switch (stage.action) {
     case 'return_home': return goHome(bot, task, goal, save, home, actions);
     case 'acquire': await actions.acquireStep(bot, task, stage.item, stage.count, goal, save); return;
