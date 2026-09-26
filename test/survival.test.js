@@ -2521,3 +2521,13 @@ test('a stance chosen on an estimate is asked again once it has cost more than i
   await survival.stanceStep(new Task('cave'), {}, () => {}, [skeleton], false);
   assert.equal(asked.length, 3, 'longer than the 3.8 seconds it was said to take: asked again');
 });
+
+test('a creeper about is said on the shelter: how soon it could go off beside the bot', () => {
+  // first-days-222: chose the shelter with a creeper five blocks off, told only of sealing a room, and was blown up three seconds later.
+  const { creeperSays } = require('../src/survival');
+  const { bot } = nookFixture();
+  bot.entities = { 7: { id: 7, name: 'creeper', type: 'hostile', position: bot.entity.position.offset(5, 0, 0), height: 1.7, isValid: true } };
+  assert.match(creeperSays(bot), /A creeper is 5 blocks off: coming on, it could go off beside the bot in about [\d.]+ seconds; a shelter is walled or dug at about 0.6 seconds a block/);
+  bot.entities = {};
+  assert.equal(creeperSays(bot), '');
+});

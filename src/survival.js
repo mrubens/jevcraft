@@ -510,6 +510,14 @@ function creeperRace(bot, blocks) {
     blocks * BLOCK_SECONDS > Math.max(0, (t.distance - LIGHTS_AT) / APPROACH) + FUSE);
 }
 
+function creeperSays(bot) {
+  const { APPROACH, LIGHTS_AT, FUSE } = require('./combat-estimate');
+  const near = threats(bot, 16).filter(t => t.entity.name === 'creeper' && (t.visible || t.distance <= 5)).sort((a, b) => a.distance - b.distance)[0];
+  if (!near) return '';
+  const secs = Math.round((Math.max(0, (near.distance - LIGHTS_AT) / APPROACH) + FUSE) * 10) / 10;
+  return ` A creeper is ${Math.round(near.distance)} blocks off: coming on, it could go off beside the bot in about ${secs} seconds; a shelter is walled or dug at about ${BLOCK_SECONDS} seconds a block.`;
+}
+
 class Survival {
   constructor(bot, actions, { state, client } = {}) {
     this.bot = bot; this.actions = actions; this.client = client;
@@ -3114,7 +3122,12 @@ class Survival {
     if (nook) tree.sleep_in_nook = { description: `Where the bed does not fit as the ground lies, ${nookSays(bot, nook)} Nothing is built or spent, and the request resumes at dawn.`, run: () => this.nookSleep(task, goal, save) };
     // Beside a bed a shelter is the worse answer, and the option says so
     // rather than being hidden.
-    if (needsShelter) tree.secure_shelter = { description: `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off; in the shelter it can mine or wait.` + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
+    // A creeper about, and how soon it could go off beside the bot, said on
+    // the shelter as on every stance: first-days-222 chose the shelter with
+    // a creeper five blocks off, told only of sealing a room before night,
+    // and was blown up three seconds later (2026-09-26).
+    const creeperRaceSays = creeperSays(bot);
+    if (needsShelter) tree.secure_shelter = { description: `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off; in the shelter it can mine or wait.${creeperRaceSays}` + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
     // At night too, with what it risks said, not hidden (the decision
     // audit, 2026-09-25): hungry in the dark, the food was never offered.
@@ -3168,4 +3181,4 @@ class Survival {
   }
 }
 
-module.exports = { costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
