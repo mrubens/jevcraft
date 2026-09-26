@@ -278,3 +278,14 @@ test('when every step left before the Nether may wait, going now is offered, and
   const armour = fixture(['iron_helmet']);
   assert.equal(strategyOptions(armour.bot, armour.goal, openRungs(armour.bot, armour.goal)[0])?.nether_first, undefined);
 });
+
+test('the question says what the Nether waits on, and never that every step comes first', async () => {
+  // mid-207-a: told "every step is done before the Nether", it chose the arrows 196 times over three hours beside the Nether-first option.
+  const { bot, goal, task } = fixture(['golden_boots', 'diamond_sword']);
+  const { asked, decide } = picking('rung_golden_boots');
+  await strategyStep(bot, task, goal, () => {}, { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 }, { decide, now: () => 1e12 });
+  const state = asked[0].state;
+  assert.match(state.beforeTheNether, /Nothing left is needed before the Nether/);
+  assert.match(state.beforeTheNether, /May wait until after it: golden boots, diamond sword/);
+  assert.doesNotMatch(state.note, /every step is done before the Nether/);
+});

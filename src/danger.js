@@ -25,6 +25,9 @@ function combatTarget(bot, entity) {
 // and none of them was ever a threat here, so a horde could beat the bot
 // down while it went on digging.
 const GROUP_ANGER = { zombified_piglin: 30000, piglin: 30000 };
+// Three blocks nearer within three seconds: an enderman walks about a block
+// a second when it wanders.
+const ENDERMAN_WINDOW_MS = 3000, ENDERMAN_CLOSING = 3;
 function provoked(bot, entity) {
   if (bot._provokedMobs?.get(entity.id) === entity) return true;
   if (entity.name === 'enderman') {
@@ -37,7 +40,20 @@ function provoked(bot, entity) {
     // come within four blocks of it, is taken as the bot's.
     if (bot._hurtBy?.enderman > Date.now() - 20000) return true;
     const here = bot.entity?.position;
-    return !here || !entity.position || entity.position.distanceTo(here) <= 4;
+    if (!here || !entity.position) return true;
+    const d = entity.position.distanceTo(here);
+    if (d <= 4) return true;
+    // Or one closing on the bot, faster than a wander: mid-236-c's came
+    // from twenty blocks screaming, counted the bot's only at four, and hit
+    // for seven three times through no armour in the two seconds after
+    // (2026-09-26). An enderman after the dragon closes on the dragon.
+    const now = Date.now(), seen = (bot._angryEndermen ||= new Map()), was = seen.get(entity.id);
+    if (!was || now - was.at > ENDERMAN_WINDOW_MS) { seen.set(entity.id, { d, at: now }); if (seen.size > 32) seen.delete(seen.keys().next().value); return false; }
+    if (was.d - d >= ENDERMAN_CLOSING) {
+      bot._provokedMobs ||= new Map(); bot._provokedMobs.set(entity.id, entity);
+      return true;
+    }
+    return false;
   }
   return Object.hasOwn(GROUP_ANGER, entity.name) && bot._hurtBy?.[entity.name] > Date.now() - GROUP_ANGER[entity.name];
 }

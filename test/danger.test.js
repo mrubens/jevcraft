@@ -48,3 +48,20 @@ test('a spider by day is calm only in daylight: one in a dark cave is a threat',
   delete bot.blockAt;
   assert.equal(threats(bot).length, 0, 'light unknown: the hour decides, as before');
 });
+
+test('an angry enderman closing on the bot is the bot\'s before it is at arm\'s length; one keeping its distance is not', () => {
+  // mid-236-c: one screaming from twenty blocks was counted only at four, and hit for seven three times in two seconds after.
+  const { provoked } = require('../src/danger');
+  const reg = require('prismarine-registry')('26.1');
+  const { Vec3 } = require('vec3');
+  const key = reg.entitiesByName.enderman.metadataKeys.indexOf('creepy');
+  const bot = { registry: reg, entity: { position: new Vec3(0, 64, 0) } };
+  const e = { id: 5, name: 'enderman', position: new Vec3(20, 64, 0), metadata: { [key]: true } };
+  assert.equal(provoked(bot, e), false, 'first seen at twenty');
+  e.position = new Vec3(12, 64, 0);
+  assert.equal(provoked(bot, e), true, 'eight blocks nearer at once: coming at the bot');
+  const far = { id: 6, name: 'enderman', position: new Vec3(-20, 64, 0), metadata: { [key]: true } };
+  assert.equal(provoked(bot, far), false);
+  far.position = new Vec3(-19, 64, 1);
+  assert.equal(provoked(bot, far), false, 'angry at something else, wandering');
+});

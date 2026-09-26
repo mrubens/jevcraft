@@ -267,9 +267,17 @@ function strategyState(bot, goal, stage, options) {
   return {
     situation: 'On the way to beating the game (Nether, blaze rods, ender pearls, the stronghold, the dragon). Several things are open; choose which to do next. The ladder\'s order is a sensible default, not a rule.',
     ladderNext: stage.phase, minutesOnLadderNext: clock ? Math.round(clock.activeMs / 60000) : 0,
-    note: 'minutesOnLadderNext is how long the ladder\'s next step has been worked on without finishing; this is asked again every twenty of them. Another open step can go first. Nothing skipped here is skipped for good: every step is done before the Nether.',
+    note: 'minutesOnLadderNext is how long the ladder\'s next step has been worked on without finishing; this is asked again every twenty of them. Another open step can go first. Nothing skipped here is skipped for good.',
     timeOfDay: t, daylightMinutesRemaining: Math.round(Math.max(0, DAY.DUSK - t) / 1200 * 10) / 10,
     ...(require('./exploration').biomeView(bot) || {}),
+    // What the Nether truly waits on, said: the note had told Jev "every
+    // step is done before the Nether", with the Nether-first option beside
+    // it, and mid-207-a chose the arrows (only from skeletons here) a
+    // hundred and ninety-six times over three hours and never went
+    // (2026-09-26).
+    beforeTheNether: (() => { const { DEFERRABLE } = require('./game-progress'); const left = openRungs(bot, goal).map(r => r.phase);
+      const needed = left.filter(p => !DEFERRABLE.has(p)), may = left.filter(p => DEFERRABLE.has(p));
+      return `${needed.length ? `Needed before the Nether: ${needed.map(label).join(', ')}.` : 'Nothing left is needed before the Nether: a portal can be made or found now.'}${may.length ? ` May wait until after it: ${may.map(label).join(', ')}.` : ''}`; })(),
     riskNow: require('./risk').riskNow(bot), deathWouldCost: require('./risk').deathCost(bot, goal),
     recentPositions: require('./stillness').recentPositions(bot),
     health: bot.health, food: bot.food, experienceLevel: bot.experience?.level ?? 0,
