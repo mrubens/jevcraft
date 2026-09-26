@@ -1592,6 +1592,26 @@ test('in the Nether with the portal close, going back through it is a stance', a
   assert(!make('overworld').survival.stanceOptions(new Task('x'), {}, () => {}, [t('skeleton', 9)], false).portal_back, 'not from the Overworld');
 });
 
+test('no pocket is begun where a creeper in sight would reach it before it closed', async () => {
+  // mid-92-u dug in with a creeper eight blocks off that had followed it for half a minute, and was blown up at full health.
+  const make = distance => {
+    const creeper = { id: 4, name: 'creeper', type: 'hostile', position: new Vec3(distance + 0.5, 64, 0.5), height: 1.7, isValid: true };
+    const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20, entities: { 4: creeper },
+      entity: { position: new Vec3(0.5, 64, 0.5) }, registry: require('minecraft-data')('26.1'),
+      inventory: { items: () => [{ name: 'cobblestone', count: 64 }], slots: {} },
+      blockAt: p => ({ position: p, name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }), world: { raycast: () => null }, findBlocks: () => [] });
+    const placed = [];
+    const survival = new Survival(bot, { place: async (b, t, p) => { placed.push(`${p}`); }, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    return { survival, placed };
+  };
+  const near = make(8);
+  assert.equal(await near.survival.sealHere(new Task('x'), {}, () => {}, []), false, 'eight blocks off: it would go off first');
+  assert.deepEqual(near.placed, []);
+  const far = make(40);
+  await far.survival.sealHere(new Task('x'), {}, () => {}, []);
+  assert(far.placed.length > 0, 'forty off: time to build');
+});
+
 test('from a pocket on the surface the night mine goes down into solid ground, not sideways to an ore through the hillside', async () => {
   const { Survival } = require('../src/survival');
   const registry = require('minecraft-data')('26.1');

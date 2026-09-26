@@ -498,6 +498,18 @@ const encounterJudgments = survival => !!survival.client && process.env.JEV_ENCO
 // Minecraft actions are injected to avoid a dependency cycle with the work
 // executor. The state lives on the retained goal and can also be shared by an
 // idle companion session. No survival interruption replaces the player request.
+// A pocket is not begun where a creeper in sight would reach it and go off
+// before it closed: its walk to lighting distance and its fuse against
+// six tenths of a second a block. mid-79-g began twenty blocks with two
+// creepers close (note 157); mid-92-u, followed half a minute by one, dug
+// in with it eight blocks off and was blown up at full health (2026-09-26).
+// The dance and the backing off answer a creeper; the pocket after.
+function creeperRace(bot, blocks) {
+  const { APPROACH, LIGHTS_AT, FUSE } = require('./combat-estimate');
+  return threats(bot, 16).some(t => t.entity.name === 'creeper' && (t.visible || t.distance <= 5) &&
+    blocks * BLOCK_SECONDS > Math.max(0, (t.distance - LIGHTS_AT) / APPROACH) + FUSE);
+}
+
 class Survival {
   constructor(bot, actions, { state, client } = {}) {
     this.bot = bot; this.actions = actions; this.client = client;
@@ -1830,8 +1842,7 @@ class Survival {
     // every 0.6 s. mid-79-g began a twenty-block pocket with two creepers
     // close and was blown up from twenty health (2026-09-26); the backing
     // off and the dance are the answers to a creeper that near.
-    const creeperNear = threats(bot, 8).some(t => t.entity.name === 'creeper' && t.distance <= 5);
-    if (creeperNear && shelter.missingShell(bot, refuge).length > 2) return false;
+    if (creeperRace(bot, shelter.missingShell(bot, refuge).length)) return false;
     this.report(goal, save, { action: 'dig_in', threats: danger.map(t => t.entity.name), cells: shelter.missingShell(bot, refuge).length });
     // The nearest cells first: the ones a mob could step into.
     const material = () => bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
@@ -2015,7 +2026,7 @@ class Survival {
       if (shelter.replaceable(bot.blockAt(p)) && !danger.some(t => t.entity.position.floored().equals(p))) cells.push(p);
     }
     if (shelter.replaceable(bot.blockAt(feet.offset(0, 2, 0)))) cells.push(feet.offset(0, 2, 0));
-    if (!cells.length) return false;
+    if (!cells.length || creeperRace(bot, cells.length)) return false;
     this.report(goal, save, { action: 'dig_in', threats: danger.map(t => t.entity.name), cells: cells.length });
     let placed = 0;
     const stay = dropWithin(bot, feet, 2);
