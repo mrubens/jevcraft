@@ -2216,3 +2216,16 @@ test('choosing how to shelter with a bed carried, the bed nook is on offer: befo
   assert.deepEqual(sealed, [1], 'the pocket is sealed now');
   assert(survival.state.bedNookPlan?.until > Date.now(), 'and the nook is the plan for bedtime');
 });
+
+test('out of lava, a water cell beside is the way out; out of water it is not', () => {
+  // mid-92-h: the pour's water filled every cell beside the lava it fell into; the nearest dry cell was seven blocks through the pool.
+  const { lavaExit } = require('../src/survival');
+  const blockAt = p => p.x === 0 && p.z === 0 && p.y === 38 ? { name: 'lava', boundingBox: 'empty', position: p }
+    : p.y === 38 && Math.abs(p.x) <= 3 && Math.abs(p.z) <= 3 ? { name: 'water', boundingBox: 'empty', position: p }
+    : p.y < 38 ? { name: 'stone', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  const bot = { entity: { position: new Vec3(0.5, 38.4, 0.5) }, blockAt };
+  const out = lavaExit(bot, 6, { water: true });
+  assert(out && out.distanceTo(new Vec3(0, 38, 0)) <= 1.5, `beside: ${out}`);
+  const dry = lavaExit(bot);
+  assert(!dry || blockAt(dry).name !== 'water', 'the dry exit is never water');
+});

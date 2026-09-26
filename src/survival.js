@@ -178,9 +178,13 @@ const inLava = bot => require('./terrain').bodyInLava(bot);
 const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(bot.entity.position.floored())?.name === 'water';
 // Out to six blocks: at three, a fall into the Nether's lava sea found no
 // shore, the step did nothing, and the bot burned four seconds standing.
-function lavaExit(bot, radius = 6) {
+function lavaExit(bot, radius = 6, { water = false } = {}) {
   const feet = bot.entity.position.floored(), cells = [];
-  const dry = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name); };
+  // Water is a way out too, and the best one: it puts the fire out. Making
+  // obsidian, the water poured over the pool filled every cell beside the
+  // bot when it went into the lava, the nearest dry cell was seven blocks
+  // off through the pool, and mid-92-h burned without moving (2026-09-26).
+  const dry = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !(water ? /lava|fire/ : /lava|fire|water/).test(b.name); };
   for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (let dy = -1; dy <= 5; dy++) {
     const c = feet.offset(dx, dy, dz);
     if (bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block' || bot.blockAt(c.offset(0, -1, 0))?.name === 'magma_block' || !dry(c) || !dry(c.offset(0, 1, 0))) continue;
@@ -2353,7 +2357,7 @@ class Survival {
     }
     if (this.rememberHouse(goal.blueprint)) save();
     if (inLava(bot)) {
-      const exit = lavaExit(bot);
+      const exit = lavaExit(bot, 6, { water: true });
       this.report(goal, save, { action: 'leave_lava', to: exit && { ...exit }, health: bot.health });
       // No dry cell in sight: swim up and back toward the last dry footing,
       // never stand. The step with nothing to do returned at once, a
