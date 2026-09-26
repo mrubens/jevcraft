@@ -1171,7 +1171,16 @@ class Survival {
       options.portal_back = { description: `Go back through the portal ${blocks} block${blocks === 1 ? '' : 's'} off, to the Overworld where the bot came from: about ${Math.max(1, Math.round(blocks / 4.3))} second${blocks > 4 ? 's' : ''} to it and about four standing in it before it takes the bot, shot at meanwhile; the mobs here stay here. The work comes back through it afterwards.` + (armsLength ? ' Something that bites is at arm\'s length now, and follows the walk.' : ''),
         run: async () => { this.report(goal, save, { action: 'portal_back', portal: { x: portal.x, y: portal.y, z: portal.z }, threats: danger.map(t => t.entity.name) }); await this.actions.returnOverworld(bot, task, goal, save); return true; } };
     }
-    for (const t of shotTargets(bot, danger).slice(0, 2)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + edge,
+    // What each shot is up against: arrows to bring it down (about six a
+    // full draw) and, for one that walks, how soon it is at the bot.
+    const shotFacts = t => {
+      const { MOBS, APPROACH, LIGHTS_AT, FUSE } = require('./combat-estimate');
+      const hp = MOBS[t.entity.name]?.health, arrows = hp ? Math.ceil(hp / 6) : null;
+      const walks = !shooter(t.entity);
+      const at = t.entity.name === 'creeper' ? Math.max(0, (t.distance - LIGHTS_AT) / APPROACH) + FUSE : Math.max(0, (t.distance - 1.5) / APPROACH);
+      return `${arrows ? ` About ${arrows} arrow${arrows === 1 ? '' : 's'} bring it down, about ${arrows} seconds of drawing.` : ''}${walks ? ` It walks on meanwhile: ${t.entity.name === 'creeper' ? `beside the bot and going off in about ${Math.round(at * 10) / 10} seconds if it keeps coming` : `at the bot in about ${Math.round(at * 10) / 10} seconds`}.` : ''}`;
+    };
+    for (const t of shotTargets(bot, danger, { any: true }).slice(0, 3)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + shotFacts(t) + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
     return options;
   }

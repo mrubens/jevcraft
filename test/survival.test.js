@@ -2579,3 +2579,13 @@ test('no shelter is made under water: the way up comes first', async () => {
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => ({}) } });
   await assert.rejects(survival.refugeStep(new Task('night'), { kind: 'win' }, () => {}), { name: 'NeedsAir' });
 });
+
+test('a creeper coming on can be shot with the bow, told the arrows it takes and how soon it is beside the bot', () => {
+  // mid-202-a: offered the bow only at a skeleton, a creeper coming on from eight blocks, and was blown up.
+  const bot = crowdBot({ items: [{ name: 'bow', count: 1 }, { name: 'arrow', count: 32 }] });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const creeper = crowdMob(4, 'creeper', 8);
+  const options = survival.stanceOptions(new Task('night'), {}, () => {}, [creeper], false);
+  assert(options.shoot_4, Object.keys(options).join(','));
+  assert.match(options.shoot_4.description, /About 4 arrows bring it down.*beside the bot and going off in about [\d.]+ seconds if it keeps coming/);
+});

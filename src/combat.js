@@ -28,9 +28,13 @@ function aim(origin, target, velocity = new Vec3(0, 0, 0)) {
 
 // The shooters worth an arrow: in clear view, four to twenty blocks off,
 // with a clear arc from where the bot stands, and a bow and arrows to hand.
-function shotTargets(bot, danger, { minimum = 4, maximum = 20 } = {}) {
+// any: every mob in clear view at bow range, not only those that shoot
+// back: a creeper walking up is shot as a player shoots one (mid-202-a was
+// offered the bow only at a skeleton, a creeper coming on from eight
+// blocks, and was blown up; 2026-09-26). Not an enderman: it dodges arrows.
+function shotTargets(bot, danger, { minimum = 4, maximum = 20, any = false } = {}) {
   if (!bowReady(bot)) return [];
-  return danger.filter(t => shooter(t.entity) && t.visible && t.distance >= minimum && t.distance <= maximum && aimAtEntity(bot, t.entity));
+  return danger.filter(t => (any ? t.entity.name !== 'enderman' : shooter(t.entity)) && t.visible && t.distance >= minimum && t.distance <= maximum && aimAtEntity(bot, t.entity));
 }
 
 // The shield goes up after a shot so the answer lands on it while the bot
