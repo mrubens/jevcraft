@@ -681,7 +681,13 @@ class Survival {
     // blocks off, was walked away from an edge in the creeper's face and
     // took its blast from twenty to eleven (2026-09-26).
     const moving = stanceHeld(bot) && MOVING_STANCES.has(stanceHeld(bot).choice);
-    if ((close.length || heavy) && !moving && (heavy ? dropWithin(bot, feet, 3) : besideDrop(bot, feet) || deadly) && !isSetAside(this, 'firm_ground', 'here')) {
+    // Up on its own pillar the drop round it is the point of it, the
+    // walkers' reach kept off: mid-205-e chose the pillar at 0.97 among
+    // five zombies, and each time it was up this stepped it back off the
+    // edge into them (2026-09-26). A hoglin's toss still counts.
+    const pillar = this.state.pillar;
+    const onPillar = !heavy && pillar && Math.hypot(feet.x - pillar.x, feet.z - pillar.z) < 1 && feet.y >= pillar.y + 1;
+    if ((close.length || heavy) && !moving && !onPillar && (heavy ? dropWithin(bot, feet, 3) : besideDrop(bot, feet) || deadly) && !isSetAside(this, 'firm_ground', 'here')) {
       const cell = ((heavy || deadly) && firmGround(bot, 8, { margin: 3 })) || firmGround(bot);
       if (cell) {
         this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, threats: close.map(t => t.entity.name) });

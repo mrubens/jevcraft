@@ -2739,3 +2739,18 @@ test('a creeper that comes on while the pocket is walled stops the walling', asy
   assert.equal(placed, 2, `stopped once the creeper came on (${placed} placed)`);
   assert.equal(goal.survivalAction?.action, 'seal_failed');
 });
+
+test('up on its own pillar, the step back from the edge does not take the bot off it', async () => {
+  // mid-205-e: pillared among five zombies, stepped back off the edge into them each time it was up.
+  const zombie = { id: 3, name: 'zombie', position: new Vec3(-1.5, 65, 0.5), height: 1.9, isValid: true };
+  // Ground at y 64, a one-block pillar at (0,65,0), and a shaft beside it at x 1.
+  const blockAt = p => (p.x === 0 && p.z === 0 && p.y <= 65) || (p.y < 65 && !(p.x === 1 && p.z === 0)) ? { name: 'cobblestone', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20,
+    entity: { position: new Vec3(0.5, 66, 0.5), onGround: true }, entities: { 3: zombie }, time: { timeOfDay: 18000 },
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, world: { raycast: () => null }, blockAt,
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {} });
+  const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [], pillar: { x: 0, y: 65, z: 0, at: Date.now() } } });
+  const goal = {};
+  await survival.flee(new Task('pillar'), goal, () => {}).catch(() => {});
+  assert.notEqual(goal.survivalAction?.action, 'off_the_edge');
+});
