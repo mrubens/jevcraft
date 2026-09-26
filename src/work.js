@@ -146,6 +146,9 @@ const logsCarried = bot => bot.inventory.items().filter(i => /_log$/.test(i.name
 // pickaxe to nothing on a climb for gravel and left the bot digging out by
 // hand; the durability and fuel checks above only caught it some of the time.
 const descentSuppliesLow = bot => woodCarried(bot) < 2;
+// Blocks for bridging, pillaring and pockets in the Nether.
+const NETHER_BLOCKS = 128;
+const netherBlocks = bot => ['cobblestone', 'cobbled_deepslate', 'netherrack', 'blackstone', 'stone', 'deepslate', 'dirt'].reduce((n, name) => n + countOf(bot, name), 0);
 
 // A pickaxe wears out in the shaft, not at the crafting table. The stone
 // pickaxe on the ninth climb had seventy-seven uses when the iron tunnel
@@ -2803,6 +2806,15 @@ async function netherStep(bot, task, goal, save) {
       for (let i = 0; i < 10; i++) { task.check(); await sleep(100); }
       return false;
     }
+  }
+  // Blocks to cross with: mid-87-k came out of its portal on an island in
+  // the lava sea with fifty-odd, bridged forty blocks east, found no shore,
+  // and stood on the island with eighteen while every leg of the fortress
+  // sweep failed (2026-09-26). A stack and more, from the stone at hand.
+  if (bot.game?.gameMode === 'survival' && netherBlocks(bot) < NETHER_BLOCKS) {
+    goal.step = { action: 'blocks_for_nether', carried: netherBlocks(bot), needed: NETHER_BLOCKS }; save();
+    await acquireStep(bot, task, 'cobblestone', countOf(bot, 'cobblestone') + NETHER_BLOCKS - netherBlocks(bot), goal, save);
+    return false;
   }
   // The portal is often underground and the Nether has no wood: the same
   // supplies a descent needs, checked before the walk rather than after a

@@ -217,3 +217,17 @@ test('a ring search is turned to its next leg from the same origin, not dropped'
   const turned = turnSearch({ enderman: { attempts: 4, origin: { x: -369, y: 59, z: -69 }, leg: 1, walksWithoutProgress: 2 } });
   assert.deepEqual(turned.enderman, { attempts: 0, origin: { x: -369, y: 59, z: -69 }, leg: 2 });
 });
+
+test('the crossing waits for two stacks of blocks to bridge and pillar with', async () => {
+  // mid-87-k: out of its portal on an island in the lava sea with too few blocks to reach a shore.
+  const { gameHandlers } = require('../src/work');
+  const registry = require('minecraft-data')('26.1');
+  const items = [{ name: 'cooked_beef', count: 8, type: registry.itemsByName.cooked_beef.id }, { name: 'cobblestone', count: 20, type: registry.itemsByName.cobblestone.id }];
+  const bot = { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20,
+    inventory: { items: () => items, emptySlotCount: () => 10, slots: [] }, entity: { position: { x: 0, y: 64, z: 0 } } };
+  const goal = { expeditionReady: true };
+  const seen = [];
+  const entered = await gameHandlers(bot).enter_nether(bot, new Task('cross'), goal, () => { if (goal.step) seen.push(goal.step.action); }).catch(() => false);
+  assert.equal(entered, false, 'not through the portal with twenty blocks');
+  assert(seen.includes('blocks_for_nether'), `the blocks come first: ${seen}`);
+});

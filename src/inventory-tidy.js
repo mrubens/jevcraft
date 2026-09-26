@@ -145,13 +145,16 @@ const nether = bot => /nether/.test(String(bot.game?.dimension || ''));
 const EXPENDABLE = [
   ['dirt', 0], ['gravel', 0], [/_sapling$/, 0], ['nether_brick_fence', 0], ['leaf_litter', 16], ['short_grass', 0],
   ['nether_wart', 0], ['egg', 0], ['poisonous_potato', 0], ['spider_eye', 0],
-  ['netherrack', bot => nether(bot) ? 32 : 0], ['cobbled_deepslate', 0], ['cobblestone', 64], ['soul_sand', 0], ['nether_bricks', 0],
+  ['netherrack', bot => nether(bot) ? 32 : 0], ['cobbled_deepslate', 0], ['cobblestone', bot => nether(bot) ? 64 : 128], ['soul_sand', 0], ['nether_bricks', 0],
   ['wheat_seeds', 8], ['raw_copper', 0], ['copper_ingot', 0], ['rotten_flesh', 0], ['wheat_seeds', 0],
 ];
 // A reserve of building blocks is never thrown away: sixteen are a step out
 // of a cliff-banked lake, a wall against a creeper, a pillar out of a pit.
 // The live run had none when it needed one and drowned digging stone.
 const BLOCK_RESERVE = 16;
+// Cobblestone is kept to two stacks: the Nether is crossed with them
+// (work.js NETHER_BLOCKS), and one kept lost to the tidy is gathered again.
+// In the Nether, where netherrack is the blocks, one.
 const BUILDING = /^(dirt|cobblestone|cobbled_deepslate|stone|andesite|diorite|granite|tuff|deepslate|netherrack|nether_bricks|blackstone|basalt|end_stone)$|_planks$/;
 const blockStock = bot => bot.inventory.items().filter(i => BUILDING.test(i.name)).reduce((n, i) => n + i.count, 0);
 
