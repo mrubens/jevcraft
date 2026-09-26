@@ -283,7 +283,13 @@ function lavaExit(bot, radius = 6, { water = false } = {}) {
   }
   const far = c => c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
   const lavaBy = c => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => [0, 1].some(dy => /lava/.test(bot.blockAt(c.offset(x, dy, z))?.name || ''))) ? 4 : 0;
-  return cells.sort((a, b) => (far(a) + (water ? lavaBy(a) : 0)) - (far(b) + (water ? lavaBy(b) : 0)))[0] || null;
+  // Out of lava upright, the push can carry past the cell: one on a ledge
+  // comes after one with a floor all round. mid-235-a stepped out onto the
+  // Nether ledge's edge and over it, twenty blocks into the lava below
+  // (2026-09-26).
+  const edge = c => require('./terrain').besideDrop(bot, c) ? 4 : 0;
+  const cost = c => far(c) + (water ? lavaBy(c) : 0) + edge(c);
+  return cells.sort((a, b) => cost(a) - cost(b))[0] || null;
 }
 
 // A fight is not taken with a drop beside the bot: one hit's knockback on
@@ -2737,7 +2743,11 @@ class Survival {
       try {
         await move(bot, task, { label: 'out_of_lava', keys: toward ? ['forward', 'jump'] : ['jump'], sneak: false,
           why: exit ? 'in lava: the nearest dry cell, whatever the ground' : 'in lava with no dry cell in sight: up, and back the way the bot came',
-          look: toward || undefined, maxMs: 2500, tick: 50, until: () => !inLava(bot) && bot.entity.onGround });
+          look: toward || undefined, maxMs: 2500, tick: 50,
+          // Out of the lava and over the cell chosen is out: the keys held
+          // after that carried mid-235-a on past it, upright, and off the
+          // ledge it stood on (2026-09-26).
+          until: () => !inLava(bot) && (bot.entity.onGround || (exit && bot.entity.position.floored().x === exit.x && bot.entity.position.floored().z === exit.z)) });
       } finally { bot._leavingLava = false; }
       onStep(goal); return true;
     }

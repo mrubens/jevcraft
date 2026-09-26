@@ -1125,6 +1125,18 @@ test('in lava, the way out is the nearest cell with a floor and air, and nothing
   assert.equal(inLava(bot), false, 'and it is out');
 });
 
+test('out of lava, a cell with a floor all round comes before one on a ledge edge', () => {
+  // mid-235-a: stepped out of lava onto the edge of a Nether ledge at y 71 and over it, twenty blocks into the lava below.
+  const { lavaExit } = require('../src/survival');
+  // A ledge floor at y 70 for z >= 0; nothing north of it down to y 50. Lava at the bot's cell (0,71,1).
+  const blockAt = p => (p.x === 0 && p.y === 71 && p.z === 1) ? { name: 'lava', boundingBox: 'empty', position: p }
+    : (p.y <= 70 && p.z >= 0) || p.y < 50 ? { name: 'netherrack', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  const bot = { entity: { position: new Vec3(0.5, 71, 1.2) }, blockAt };
+  const exit = lavaExit(bot, 6, { water: true });
+  assert(exit, 'a way out');
+  assert(exit.z >= 1, `not the edge row over the drop: ${exit}`);
+});
+
 test('floating in water, the way out is dry ground with air above, never another water cell', () => {
   const { inWater, lavaExit } = require('../src/survival');
   const water = new Set(['0,10,0', '1,10,0', '0,10,1']);
