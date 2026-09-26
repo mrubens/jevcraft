@@ -461,13 +461,37 @@ async function maintainVitals(bot, task, onAction = () => {}) {
       } catch (err) { if (err.name === 'Cancelled') throw err; }
     }
   }
-  for (let tries = 0; tries < 12 && headInBlock(bot); tries++) {
+  // And on while the column is still coming down: between one gravel dug
+  // and the next landing the head's cell is air for a moment, the dig
+  // stopped there, and the next block fell on a bot doing something else.
+  // mid-110-p, climbing a one-wide shaft under a gravel column, suffocated
+  // from twelve health that way in six seconds (2026-09-26).
+  const eyeCell = () => bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0).floored();
+  const FALLS = /^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel|anvil|chipped_anvil|damaged_anvil|pointed_dripstone)$/;
+  const falling = () => {
+    const eye = eyeCell();
+    for (let dy = 1; dy <= 6; dy++) {
+      const b = bot.blockAt(eye.offset(0, dy, 0));
+      if (!b) break;
+      if (FALLS.test(b.name)) return true;
+      if (b.boundingBox === 'block') break;
+    }
+    return Object.values(bot.entities || {}).some(e => e.name === 'falling_block' && e.position && Math.abs(e.position.x - (eye.x + 0.5)) < 0.8 &&
+      Math.abs(e.position.z - (eye.z + 0.5)) < 0.8 && e.position.y > eye.y - 0.5 && e.position.y < eye.y + 8);
+  };
+  const eyeBlocked = () => { const b = bot.blockAt(eyeCell()); return !!b && b.boundingBox === 'block' && FALLS.test(b.name); };
+  const digging = headInBlock(bot);
+  for (let tries = 0, waited = 0; tries < 24 && waited < 20; ) {
     if (task.cancelled) throw new (require('./skills').Cancelled)(task.label);
-    const eye = bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0).floored(), block = bot.blockAt(eye);
-    onAction({ action: 'dig_out_of_block', block: block.name, at: { ...eye } });
-    try { await require('./skills').equipBestTool(bot, block); } catch (_) { /* the hand, then */ }
-    try { await bot.dig(block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
-    await sleep(150);
+    if (headInBlock(bot) || (digging && eyeBlocked())) {
+      tries++;
+      const eye = eyeCell(), block = bot.blockAt(eye);
+      onAction({ action: 'dig_out_of_block', block: block.name, at: { ...eye } });
+      try { await require('./skills').equipBestTool(bot, block); } catch (_) { /* the hand, then */ }
+      try { await bot.dig(block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
+      await sleep(150);
+    } else if (digging && falling()) { waited++; await sleep(100); }
+    else break;
   }
   task.check();
   if (inPowderSnow(bot)) { await outOfPowderSnow(bot, task, onAction); task.check(); }

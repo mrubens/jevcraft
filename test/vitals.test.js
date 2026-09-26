@@ -242,6 +242,28 @@ test('suffocating with the head in gravel, the block is dug before anything else
   assert.equal(actions[0], 'dig_out_of_block');
 });
 
+test('under a falling gravel column, the dig goes on while the column is still coming down', async () => {
+  // mid-110-p: the head's cell was air between one gravel dug and the next landing; the dig stopped there and it suffocated.
+  const { maintainVitals } = require('../src/vitals');
+  const Vec3 = require('vec3').Vec3;
+  let column = 3, eyeFull = true;
+  const dug = [];
+  const bot = { oxygenLevel: 20, health: 12, food: 20, entity: { position: new Vec3(0.5, 35, 0.5) }, entities: {}, inventory: { items: () => [] },
+    blockAt: p => {
+      const solid = p.x !== 0 || p.z !== 0 ? p.y >= 35 && p.y <= 45 : false;
+      const name = solid ? 'stone' : p.y === 36 ? (eyeFull ? 'gravel' : 'air') : p.y > 36 && p.y <= 36 + column ? 'gravel' : 'air';
+      return { name, position: p, boundingBox: name === 'air' ? 'empty' : 'block' };
+    },
+    dig: async b => { dug.push(`${b.position}`); eyeFull = false; bot._recentHurtAt = Date.now();
+      // The next block is a falling entity above the head until it lands.
+      if (column > 0) { column--; bot.entities[9] = { name: 'falling_block', position: new Vec3(0.5, 37.5, 0.5) }; setTimeout(() => { eyeFull = true; delete bot.entities[9]; }, 250); } },
+    equip: async () => {} };
+  bot._recentHurtAt = Date.now();
+  await maintainVitals(bot, new Task('climb'), () => {});
+  assert.equal(dug.length, 4, `the block at the head and the three that fell after it: ${dug.length}`);
+  assert.equal(column, 0); assert.equal(eyeFull, false);
+});
+
 test('the way to air can be through a block dug quickly: sideways out of a flooded column under a lake, not up into it', () => {
   // Trial 63: a water column under a dripstone lid with a lake over it, and
   // two pointed dripstones between the bot and a dry cave. The only rule
