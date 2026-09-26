@@ -428,7 +428,14 @@ async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 51
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   const after = Math.hypot(landmark.x - bot.entity.position.x, (landmark.y ?? bot.entity.position.y) - bot.entity.position.y, landmark.z - bot.entity.position.z);
   if (after <= arrive) return landmark;
-  if (before - after < 8) { setAside(goal, 'landmark_trip', key, 'the walk there made no ground', 1800000); save(); }
+  // Ground made is a new nearest approach, not a walk that ended nearer
+  // than it began: mid-242-b walked toward a lava pool at y 24 along a
+  // partial route thirty-three times, each walk a little way in and back
+  // out, and never came nearer than the first (2026-09-26).
+  const best = landmark.nearest ?? before;
+  landmark.nearest = Math.min(best, after);
+  if (before - after < 8 || after >= best - 1) { setAside(goal, 'landmark_trip', key, 'the walk there came no nearer than before', 1800000); }
+  save();
   return false;
 }
 

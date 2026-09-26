@@ -84,6 +84,14 @@ test('a trip to a remembered landmark walks there, arrives, and sets aside one t
   const stuck = world({}, 'overworld', new Vec3(0, 64, 0));
   assert.equal(await goToLandmark(stuck, new Task('go'), goal, () => {}, ['lava_pool'], { navigate: async () => {} }), false);
   assert.equal(await goToLandmark(stuck, new Task('go'), goal, () => {}, ['lava_pool'], { navigate: async () => {} }), null, 'set aside, so none to go to');
+  // mid-242-b: a partial route walked in and back out thirty-three times, never nearer than the first walk.
+  const pendulum = world({}, 'overworld', new Vec3(0, 64, 0));
+  const g2 = { landmarks: [{ kind: 'lava_pool', x: 100, y: 62, z: 0, dimension: 'overworld' }] };
+  const inAndOut = async b => { b.entity.position = new Vec3(40, 64, 0); };
+  assert.equal(await goToLandmark(pendulum, new Task('go'), g2, () => {}, ['lava_pool'], { navigate: inAndOut }), false, 'the first walk gains ground');
+  pendulum.entity.position = new Vec3(20, 64, 0);
+  assert.equal(await goToLandmark(pendulum, new Task('go'), g2, () => {}, ['lava_pool'], { navigate: inAndOut }), false);
+  assert.equal(await goToLandmark(pendulum, new Task('go'), g2, () => {}, ['lava_pool'], { navigate: inAndOut }), null, 'no nearer than the first: set aside');
 });
 
 test('with no lava in view the obsidian step goes to a remembered ruined portal before digging down for lava', async () => {
