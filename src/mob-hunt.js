@@ -438,6 +438,23 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       await actions.returnOverworld(bot, task, goal, save); return;
     }
     goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: handler.passive ? 10 : 14, neededFood: handler.passive ? 6 : 14 }; save();
+    // Hit while it waits, by something it cannot see, beside a drop that
+    // would end it: off the edge first. mid-92-i recovered on a Nether ledge
+    // eighty blocks up, burned by something out of sight, and a hit at 2.4
+    // health put it forty blocks down (2026-09-26).
+    if (bot._recentHurtAt > Date.now() - 2000) {
+      const { dropNear } = require('./terrain');
+      const deep = dropNear(bot, bot.entity.position.floored(), 2);
+      if (deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) {
+        const { firmGround } = require('./survival');
+        const cell = firmGround(bot, 8, { margin: 3 });
+        if (cell) {
+          goal.step = { action: 'off_the_edge', to: { ...cell }, health: bot.health }; save();
+          try { await actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); return; }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+        }
+      }
+    }
     // Not in the open, if something out there shoots. Health comes back at
     // the same rate behind a wall and the wall is free.
     const shooters = threats(bot, 24).filter(t => t.visible && shooter(t.entity));
