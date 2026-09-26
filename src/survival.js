@@ -2759,7 +2759,14 @@ class Survival {
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };
-      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.`,
+      // What going out among them costs, as the stances say it: mid-92-k
+      // left a pocket at twenty health past skeletons it was told only the
+      // distances of, and was shot down in twenty seconds (2026-09-26).
+      const outsideAll = threats(bot, 16).slice(0, 8);
+      const outCost = outsideAll.length ? fightEstimate({ threats: outsideAll.map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: true })),
+        armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere : null;
+      const outSays = outCost ? ` Out among them, fighting them all is estimated at about ${outCost.seconds} seconds and ${outCost.damageTaken} damage, from ${outCost.healthNow} health${outCost.healthAfter <= 0 ? ' (more than the bot has)' : ''}.` : '';
+      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${outSays}`,
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the
