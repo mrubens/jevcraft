@@ -1901,8 +1901,17 @@ class Survival {
     // and the audit failed it. A pass that runs out ends, and the place is
     // set aside for a minute so the next answer is another one.
     const passEnds = Date.now() + 20000;
-    for (const p of blocks) {
+    for (const [i, p] of blocks.entries()) {
       task.check(); checkAir(bot);
+      // A creeper that would reach the pocket and go off before the last
+      // block: the build stops and the mobs are answered. Checked when the
+      // pass began only, mid-226-c went on walling itself in at night for
+      // five seconds while one walked up, and one blast took it from twenty
+      // (2026-09-26).
+      if (creeperRace(bot, blocks.length - i)) {
+        this.report(goal, save, { action: 'seal_failed', at: { ...refuge.origin }, error: 'a creeper coming on would go off before the pocket closed' }); save();
+        return;
+      }
       if (Date.now() > passEnds) {
         setAside(this, 'seal_here', `${pos(refuge.origin)}`, 'the pocket took more than twenty seconds to seal', 60000);
         this.report(goal, save, { action: 'seal_failed', at: { ...refuge.origin }, error: 'twenty seconds and not sealed' }); save();

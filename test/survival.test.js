@@ -2706,3 +2706,20 @@ test('while the stance question is out, the bot backs from a creeper coming on',
   await survival.stanceStep(new Task('pack'), {}, () => {}, [{ entity: creeper, distance: 4, visible: true }], false);
   assert(held.has('back'), `backed while Jev thought: ${[...held]}`);
 });
+
+test('a creeper that comes on while the pocket is walled stops the walling', async () => {
+  // mid-226-c: walled itself in for five seconds at night while a creeper walked up; one blast from twenty.
+  const creeper = { id: 7, name: 'creeper', type: 'hostile', position: new Vec3(40.5, 64, 0.5), height: 1.7, isValid: true };
+  let placed = 0;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 7: creeper },
+    registry: require('minecraft-data')('26.1'), world: { raycast: () => null }, health: 20, food: 20,
+    inventory: { items: () => [{ name: 'dirt', count: 64 }] },
+    blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }) });
+  const state = { shelters: [{ origin: { x: 0, y: 64, z: 0 }, dimension: 'overworld' }] };
+  const controller = new Survival(bot, { navigate: async () => {},
+    place: async () => { placed++; if (placed === 2) creeper.position = new Vec3(3.5, 64, 0.5); } }, { state });
+  const goal = { survival: state };
+  await controller.refugeStep(new Task('night'), goal, () => {});
+  assert.equal(placed, 2, `stopped once the creeper came on (${placed} placed)`);
+  assert.equal(goal.survivalAction?.action, 'seal_failed');
+});
