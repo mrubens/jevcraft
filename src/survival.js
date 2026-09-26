@@ -2464,7 +2464,15 @@ class Survival {
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };
       options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.`,
-        run: async () => { delete this.state.watchedSince; await this.leave(task, goal, save, refuge); return true; } };
+        run: async () => {
+          delete this.state.watchedSince;
+          // Out at night is a plan for a while, not a moment: without it the
+          // next tick saw the night and no shelter and sealed the bot back
+          // in, and the work opened the lid again, every two seconds for a
+          // minute (mid-92-f, 2026-09-26). Held as staying up for two minutes.
+          if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'leave' };
+          await this.leave(task, goal, save, refuge); return true;
+        } };
       // Without Jev, the old order.
       const rule = bedNear && !watched ? 'go_to_bed' : (night || watched) && !outwaited
         ? (options.open_on_watcher && (bot.health ?? 20) >= 16 && watcher.entity.name !== 'creeper' && threats(bot, 16).filter(t => t.entity !== watcher.entity).length <= 1 ? 'open_on_watcher' : options.night_mine && !watched ? 'night_mine' : 'stay')
