@@ -42,11 +42,26 @@ function headSubmerged(bot) {
   return eye.y < head.y + height;
 }
 
+// A dig the server never finishes is given up, not waited on: mid-243-a
+// stood thirty seconds on one block of a shelter's wall, not hit, with a
+// creeper coming, until the blast (2026-09-26). Bounded by what the game
+// says the dig takes with the tool held: three times that and a margin
+// for the round trip.
+const DIG_SLACK = 3, DIG_MARGIN_MS = 2000;
+function digBound(bot, block) {
+  let ms = null;
+  try { ms = block.digTime(bot.heldItem?.type ?? null, false, !!bot.entity?.isInWater, !bot.entity?.onGround, [], bot.entity?.effects || {}); } catch (_) { ms = null; }
+  return Number.isFinite(ms) ? ms * DIG_SLACK + DIG_MARGIN_MS : null;
+}
 async function digWithAirGuard(bot, task, block) {
   task.check(); checkAir(bot);
   let interrupted;
+  const started = Date.now(), bound = typeof block?.digTime === 'function' ? digBound(bot, block) : null;
   const watcher = setInterval(() => {
-    try { task.check(); checkAir(bot); }
+    try {
+      task.check(); checkAir(bot);
+      if (bound && Date.now() - started > bound) throw Object.assign(new Error(`The ${block.name.replaceAll('_', ' ')} did not break in ${Math.round((Date.now() - started) / 1000)} seconds, ${DIG_SLACK} times what the dig takes: given up`), { name: 'DigStalled' });
+    }
     catch (err) { interrupted ||= err; bot.stopDigging(); }
   }, 100);
   try { await bot.dig(block); }

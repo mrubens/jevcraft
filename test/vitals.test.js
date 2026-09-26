@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { chooseFood, maintainVitals, airRoute, surfaceForAir, headSubmerged } = require('../src/vitals');
+const { chooseFood, maintainVitals, airRoute, surfaceForAir, headSubmerged, digWithAirGuard } = require('../src/vitals');
 const { Vec3 } = require('vec3');
 const { Task } = require('../src/skills');
 const { planningInventory } = require('../src/work');
@@ -521,4 +521,15 @@ test('no meal in a witch\'s throwing range while it can see the bot', async () =
   witch.position = new Vec3(20.5, 64, 0.5);
   assert(await maintainVitals(bot, new Task('far witch')));
   assert.equal(eaten, 1);
+});
+
+test('a dig the server never finishes is given up after three times what it should take', async () => {
+  // mid-243-a: thirty seconds on one block of a shelter wall with a creeper coming.
+  let reject;
+  const bot = { oxygenLevel: 20, entity: { position: new Vec3(0, 64, 0), onGround: true }, heldItem: null, blockAt: () => ({ name: 'air' }),
+    dig: () => new Promise((_, r) => { reject = r; }), stopDigging: () => reject(new Error('Digging aborted')) };
+  const block = { name: 'dirt', position: new Vec3(1, 64, 0), digTime: () => 100 };
+  const started = Date.now();
+  await assert.rejects(digWithAirGuard(bot, new Task('dig'), block), { name: 'DigStalled' });
+  assert(Date.now() - started < 4000, 'given up in about 2.3 seconds, not waited on');
 });
