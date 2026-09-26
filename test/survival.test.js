@@ -1355,6 +1355,22 @@ test('any mob in sight within reach, with a drop into lava beside the bot: off t
   assert(to && to.x <= -2, `back from the edge: ${to && to.x}`);
 });
 
+test('a mob in sight with lava level with the feet beside the bot: off the edge first, as from a drop', async () => {
+  // mid-214-b: hit by an enderman beside a lava pool at y 51 in the Nether, went in, and burned to death.
+  const zombie = { id: 4, name: 'zombie', type: 'hostile', position: new Vec3(-8.5, 51, 0.5), height: 1.9, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: { 4: zombie }, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 6000 }, entity: { position: new Vec3(0.5, 51, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'diamond_sword', count: 1 }, { name: 'netherrack', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ position: p, name: p.y === 51 && p.x >= 2 ? 'lava' : p.y < 51 ? 'netherrack' : 'air', boundingBox: p.y < 51 ? 'block' : 'empty' }),
+    world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {} });
+  let to = null;
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { to = g; } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.step(new Task('leg'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'off_the_edge');
+  assert(to && to.x <= -1, `back from the pool: ${to && to.x}`);
+});
+
 test('with the night planned for a shelter, a bed in sight does not keep the night mine shut', () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20,
     time: { timeOfDay: 16000 }, entity: { position: new Vec3(0.5, 30, 0.5) },

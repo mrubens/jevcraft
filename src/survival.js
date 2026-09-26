@@ -667,7 +667,11 @@ class Survival {
     // health or more from the fall, or lava; the ground moved to is three
     // blocks from it.
     const deep = require('./terrain').dropNear(bot, feet, 2);
-    const deadly = !!deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2);
+    // Lava level with the feet within two blocks is as deadly as a drop into
+    // it: mid-214-b, on a fortress leg at y 51 in the Nether, was hit by an
+    // enderman beside a pool, went in, and two seconds of lava and the fire
+    // after it took all twenty health (2026-09-26).
+    const deadly = (!!deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) || lavaBeside(bot, feet);
     // Not while a stance that moves holds, as with the shield below: its
     // own steps keep off edges, and mid-208-a, dancing with a creeper four
     // blocks off, was walked away from an edge in the creeper's face and
@@ -2798,7 +2802,7 @@ class Survival {
     if (!(this.state.edgeTriedAt > Date.now() - 10000) && threats(bot, 64).some(pusher)) {
       const { dropNear } = require('./terrain');
       const deep = dropNear(bot, bot.entity.position.floored(), 2);
-      if (deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) {
+      if ((deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) || lavaBeside(bot, bot.entity.position.floored())) {
         this.state.edgeTriedAt = Date.now();
         const cell = firmGround(bot, 8, { margin: 3 });
         if (cell) {
