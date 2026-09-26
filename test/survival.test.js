@@ -2691,3 +2691,18 @@ test('the step back from an edge gives way to the fight once a biter is at arm\'
   const { isSetAside } = require('../src/progress');
   assert.equal(isSetAside(survival, 'firm_ground', 'here'), true, 'and not tried again at once');
 });
+
+test('while the stance question is out, the bot backs from a creeper coming on', async () => {
+  // mid-231-a: stood still four seconds waiting for the answer with a creeper eight blocks off, and was blown up.
+  const creeper = { id: 7, name: 'creeper', type: 'hostile', position: new Vec3(4.5, 64, 0.5), height: 1.7, isValid: true };
+  const held = new Set();
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, entity: { position: new Vec3(0.5, 64, 0.5), yaw: 0, pitch: 0 },
+    entities: { 7: creeper }, health: 20, food: 20, registry: require('minecraft-data')('26.1'), world: { raycast: () => null },
+    inventory: { items: () => [], slots: {} }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }),
+    setControlState(k, v) { if (v) held.add(k); }, getControlState: () => false, lookAt: async () => {} });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  survival.stanceOptions = () => ({ fight: { description: 'fight', run: async () => true }, retreat: { description: 'run', run: async () => true } });
+  survival.decide = () => new Promise(resolve => setTimeout(() => resolve({ path: ['fight'] }), 400));
+  await survival.stanceStep(new Task('pack'), {}, () => {}, [{ entity: creeper, distance: 4, visible: true }], false);
+  assert(held.has('back'), `backed while Jev thought: ${[...held]}`);
+});

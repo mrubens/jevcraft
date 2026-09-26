@@ -893,6 +893,22 @@ class Survival {
   // seconds, walled itself in with it outside, and one blast took twelve
   // health through iron. Only armed, at eight health or more, with no other
   // mob within five blocks and no drop within two for the knockback.
+  // A step back from a creeper coming on, while a question is out: only
+  // with no drop or lava behind, and not past what the question waits for.
+  async backFromCreeper(task, stop = () => false) {
+    const bot = this.bot;
+    const { LIGHTS_AT } = require('./combat-estimate');
+    const near = () => threats(bot, 12).filter(t => t.entity.name === 'creeper' && t.visible).sort((a, b) => a.distance - b.distance)[0];
+    const creeper = near();
+    if (!creeper || creeper.distance > LIGHTS_AT + 3) return false;
+    const feet = bot.entity.position.floored();
+    if (dropWithin(bot, feet, 2) || lavaBeside(bot, feet)) return false;
+    await move(bot, task, { label: 'creeper_back_off_waiting', keys: ['back'], sneak: false, why: 'backing from a creeper coming on while the stance is chosen',
+      look: creeper.entity.position.offset(0, 1, 0), maxMs: 600, tick: 50,
+      until: () => stop() || !near() || near().distance > LIGHTS_AT + 3 || dropWithin(bot, bot.entity.position.floored(), 1) });
+    return true;
+  }
+
   async creeperDance(task, goal, save, danger, swung, { chosen = false } = {}) {
     const bot = this.bot;
     const creeper = danger.find(t => t.entity.name === 'creeper' && t.distance <= 6);
@@ -1304,8 +1320,17 @@ class Survival {
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
       let decision;
       try {
-        decision = await this.decide(task, goal, save, { id: 'encounter_stance', state, tree,
-          isFresh: () => Math.abs(bot.health - state.health) < 4 });
+        // Jev's answer can take seconds, and a creeper's fuse is a second
+        // and a half: while it is out, the bot backs from a creeper coming
+        // on, as a player steps back while thinking. mid-231-a stood still
+        // four seconds waiting for the answer with one eight blocks off and
+        // was blown up twice, the second time dead before the answer came
+        // (2026-09-26).
+        let answered = false;
+        const asking = this.decide(task, goal, save, { id: 'encounter_stance', state, tree,
+          isFresh: () => Math.abs(bot.health - state.health) < 4 }).finally(() => { answered = true; });
+        const guarding = (async () => { while (!answered) { try { if (!await this.backFromCreeper(task, () => answered)) await sleep(100); } catch (_) { return; } } })();
+        try { decision = await asking; } finally { answered = true; await guarding; }
       } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
       // Stale: the moment moved on while Jev answered; the next tick asks
       // again from where the bot is then.
