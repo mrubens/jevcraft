@@ -2672,3 +2672,18 @@ test('a stance that moves, held, is not walked back from an edge by the reflex',
   await survival.flee(new Task('ledge'), goal, () => {}).catch(() => {});
   assert.notEqual(goal.survivalAction?.action, 'off_the_edge');
 });
+
+test('the step back from an edge gives way to the fight once a biter is at arm\'s length', async () => {
+  // mid-236-d: the way to a cell a block off stalled three seconds while a zombie walked up and hit it from nine to three.
+  const zombie = { id: 3, name: 'zombie', position: new Vec3(3.5, 64, 0.5), height: 1.9, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 9, food: 20,
+    entity: { position: new Vec3(5.5, 64, 0.5), onGround: true }, entities: { 3: zombie }, time: { timeOfDay: 18000 },
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, world: { raycast: () => null }, blockAt: ledgeWorld(),
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {} });
+  let stopped = null;
+  const survival = new Survival(bot, { navigate: async (b, t, g, opts) => { stopped = opts.stopWhen?.(); } }, { state: { shelters: [] } });
+  await survival.flee(new Task('ledge'), {}, () => {}).catch(() => {});
+  assert.equal(stopped, true, 'the walk is told to stop with the zombie two blocks off');
+  const { isSetAside } = require('../src/progress');
+  assert.equal(isSetAside(survival, 'firm_ground', 'here'), true, 'and not tried again at once');
+});

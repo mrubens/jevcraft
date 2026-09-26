@@ -681,7 +681,12 @@ class Survival {
       const cell = ((heavy || deadly) && firmGround(bot, 8, { margin: 3 })) || firmGround(bot);
       if (cell) {
         this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, threats: close.map(t => t.entity.name) });
-        try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 3000, stallMs: 1500 }); return; }
+        // Given up for the fight once a biter is at arm's length, unless the
+        // edge is a heavy hitter's toss: mid-236-d's way to a cell a block
+        // off stalled for three seconds while a zombie walked up and hit it
+        // from nine to three (2026-09-26).
+        const biter = () => !heavy && threats(bot, 5).some(t => t.distance <= 3 && !shooter(t.entity));
+        try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 3000, stallMs: 1500, stopWhen: biter }); if (!biter()) return; setAside(this, 'firm_ground', 'here', 'a biter at arm\'s length', 5000); }
         catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; setAside(this, 'firm_ground', 'here', err, 5000); }
       }
     }
