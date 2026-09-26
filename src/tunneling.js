@@ -239,17 +239,24 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
     // however far each one walks: mid-110-d and mid-100-b backed off a
     // flooded stair to a dry cell, found no step there either, backed off
     // again, and the audit called the flip between the two (2026-09-25).
+    // A retreat is for a landing with another way on. This one comes from
+    // the landing of the last, which had none either: the staircase is
+    // rested now, not after a count. first-days-211 backed off three times
+    // in eleven seconds on its way to iron and the audit called the flip
+    // before the old count of four was reached (2026-09-26).
+    const landingHadNone = (tunnel.retreatsWithoutStep || 0) >= 1;
     tunnel.retreatsWithoutStep = (tunnel.retreatsWithoutStep || 0) + 1;
-    if (tunnel.retreatsWithoutStep >= 4) {
+    if (landingHadNone) {
       tunnel.retreatsWithoutStep = 0; tunnel.noWay = 0;
-      const why = `backed off four times with no step toward it between (${Object.entries(options.blocked || {}).map(([k, n]) => `${k} ${n}`).join(', ') || 'nothing open'})`;
+      const why = `backed off to a landing with no step toward it there either (${Object.entries(options.blocked || {}).map(([k, n]) => `${k} ${n}`).join(', ') || 'nothing open'})`;
       setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
       save();
       throw new StaircaseStalled(target, why);
     }
     if (bot.entity.position.distanceTo(before) >= 0.5) { tunnel.noWay = 0; save(); if (stuck) throw stuck; return; }
+    // Nowhere to back off to, and no step: nothing more to try from here.
     tunnel.noWay = (tunnel.noWay || 0) + 1;
-    if (tunnel.noWay >= 3) {
+    if (tunnel.noWay >= 1) {
       tunnel.noWay = 0;
       const why = `no safe step toward it (${Object.entries(options.blocked || {}).map(([k, n]) => `${k} ${n}`).join(', ') || 'nothing open'})`;
       setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
