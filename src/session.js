@@ -71,6 +71,24 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   bot.loadPlugin(require('./skills').goalGuardPlugin);
   bot.loadPlugin(require('./gaze').gazePlugin);
   bot.loadPlugin(require('./riders').ridersPlugin);
+  // A window click the window refuses ("invalid operation") is logged with
+  // the click and the window, so the craft that made it can be named: it
+  // failed crafts twenty and more times a trial in mid-215-c and mid-220-a
+  // with no more said than that (2026-09-26).
+  bot.once('inject_allowed', () => {
+    const click = bot.clickWindow;
+    if (typeof click !== 'function') return;
+    bot.clickWindow = async (slot, mouseButton, mode, ...rest) => {
+      try { return await click.call(bot, slot, mouseButton, mode, ...rest); }
+      catch (err) {
+        if (/invalid operation/.test(err?.message || '')) {
+          const w = bot.currentWindow || bot.inventory;
+          console.log(`[window] invalid click ${JSON.stringify({ slot, mouseButton, mode, window: w?.type, inventoryEnd: w?.inventoryEnd, selected: w?.selectedItem?.name ?? null })} ${String(err.stack || '').split('\n').slice(1, 6).map(l => l.trim()).join(' | ')}`);
+        }
+        throw err;
+      }
+    };
+  });
   // Mineflayer injects its own chat plugin after createBot, which would
   // overwrite a wrapper installed now; the filter goes on once chat exists.
   bot.once('spawn', () => quietRepeats(bot));
