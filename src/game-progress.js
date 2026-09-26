@@ -86,6 +86,7 @@ const tierOf = name => { const m = /^(\w+)_(pickaxe|sword|axe)$/.exec(name); ret
 // in it costs nothing.
 function preparationStage(bot, goal = {}) {
   const rung = preparationRung(bot, goal);
+  if (!rung) return null;
   const home = homeOf(bot, goal);
   if (!home?.stash?.position) return rung;
   const wants = rungWants(bot, rung, { home, goal });
@@ -117,13 +118,20 @@ const ARMOUR_PIECES = ['iron_armour', 'iron_helmet', 'iron_chestplate', 'iron_le
 const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword', ...ARMOUR_PIECES]);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
-  const waiting = new Set(Object.keys(attemptsFor(goal).of('rung', now)));
+  const attempts = attemptsFor(goal), waiting = new Set(Object.keys(attempts.of('rung', now)));
   if (waiting.size) {
     const open = ladderRung(bot, goal, waiting);
     if (open) return open;
+    // Set aside because Jev chose the Nether first: they wait for the
+    // Nether, not for the next pass. Brought straight back, the arrows were
+    // the only step on offer again the moment the Nether was chosen, and
+    // mid-241-a chose the Nether first twice and hunted skeletons for three
+    // hours (2026-09-26).
+    if ([...waiting].every(k => NETHER_FIRST.test(attempts.why('rung', k) || ''))) return null;
   }
   return ladderRung(bot, goal, new Set());
 }
+const NETHER_FIRST = /Nether first/;
 // The rungs open now, in ladder order: the first, and then each rung the
 // ladder would go on to if the ones before it waited their turn, for as long
 // as those before it may wait (DEFERRABLE). A rung that may not wait, or one

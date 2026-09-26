@@ -275,6 +275,9 @@ test('when every step left before the Nether may wait, going now is offered, and
   assert.deepEqual(await strategyStep(bot, task, goal, () => {}, stage, { decide }), { ran: true });
   assert(isSetAside(goal, 'rung', 'arrows'), 'the arrows wait');
   assert.equal(openRungs(bot, goal).length, 0, 'nothing on the ladder before the Nether now');
+  // mid-241-a: the arrows came straight back as the only step, and the Nether first never happened.
+  const { nextGameStage } = require('../src/game-progress');
+  assert.notEqual(nextGameStage(bot, goal)?.phase, 'arrows', 'the next stage is not the arrows again');
   // Armour may wait too (the scoreboard, 2026-09-26): with it open, the Nether first is offered.
   const armour = fixture(['iron_helmet']);
   assert(strategyOptions(armour.bot, armour.goal, openRungs(armour.bot, armour.goal)[0])?.nether_first);
