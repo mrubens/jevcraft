@@ -2501,3 +2501,23 @@ test('a priority choice that runs into a resting action rests with it and is lef
   assert(!seen[1].keys.includes('secure_shelter'), 'not offered while it rests');
   assert.match(seen[1].notNow.secure_shelter, /Shelter verification failed; back in about 1\d\d seconds/);
 });
+
+test('a stance chosen on an estimate is asked again once it has cost more than it was said to, in health or time', async () => {
+  // first-days-219: told 1.3 damage in 3.8 seconds against one skeleton, the fight stood eleven seconds under its ledge, 9.2 health to 2.9.
+  const bot = crowdBot({ health: 9.2 });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const asked = [];
+  survival.stanceOptions = () => ({ fight: { expects: { damage: 1.3, seconds: 3.8 }, description: 'fight', run: async () => true }, dig_down: { description: 'down', run: async () => true } });
+  survival.decide = async (task, goal, save, q) => { asked.push(q.state.previousStance); return { path: ['fight'] }; };
+  const skeleton = crowdMob(3, 'skeleton', 5);
+  await survival.stanceStep(new Task('cave'), {}, () => {}, [skeleton], false);
+  bot.health = 8.2;
+  await survival.stanceStep(new Task('cave'), {}, () => {}, [skeleton], false);
+  assert.equal(asked.length, 1, 'within the estimate: held');
+  bot.health = 7.8;
+  await survival.stanceStep(new Task('cave'), {}, () => {}, [skeleton], false);
+  assert.equal(asked.length, 2, 'more than 1.3 lost: asked again, not at six');
+  survival.state.stance.at = Date.now() - 5000; bot.health = 7.8; survival.state.stance.health = 7.8;
+  await survival.stanceStep(new Task('cave'), {}, () => {}, [skeleton], false);
+  assert.equal(asked.length, 3, 'longer than the 3.8 seconds it was said to take: asked again');
+});
