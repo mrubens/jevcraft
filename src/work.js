@@ -188,6 +188,7 @@ function looseEnds(goal, now = Date.now()) {
 // stalled is refused by the survival layer for ten minutes
 // (Survival.report), which falls through to its next answer; nothing more
 // is needed here.
+const walksFailed = (...errors) => /navigation timed out|without reaching new ground|No route|noPath|No reachable surveyed ground/i.test(errors.filter(Boolean).join(' '));
 const thingOf = key => key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:/g, ' ').replaceAll('_', ' ');
 async function answerStall(bot, task, goal, save, stall, { client, survival, onStep = () => {}, idle = false, now = Date.now() } = {}) {
   const stats = survival?.state || goal.survival || goal;
@@ -195,7 +196,11 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // Stuck in the terrain (in water, or under cover on the way up): worked
   // free one move at a time, Jev choosing each (unstuck.js). Trials 32 and
   // 33 each stalled here in a trap the escape routines had no answer for.
-  const walksFailing = /navigation timed out|without reaching new ground|No route|noPath/i.test(`${stall.error || ''} ${goal.lastError || ''}`);
+  // No reachable ground at all is walks failing too: mid-230-a, perched
+  // at y 71 by a spruce, was asked a heading every three seconds and chose
+  // south each time, and every one found no ground to walk to; working free
+  // was never on offer (2026-09-26).
+  const walksFailing = walksFailed(stall.error, goal.lastError);
   const terrain = client && bot.game?.gameMode === 'survival' && require('./unstuck').aimFor(bot, { walksFailing });
   if (stall.layer === 'survival') {
     recordStill(stats, stall.key, STALL_MS, { now, detour: terrain ? 'work_free' : 'refused' }); save();
@@ -3940,4 +3945,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

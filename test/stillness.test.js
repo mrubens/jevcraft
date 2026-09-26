@@ -417,3 +417,11 @@ test('a spent search is turned whatever the stall\'s answer, not only by "anothe
   assert.deepEqual(goal.search.oak_log, { attempts: 0, origin: { x: 1, y: 64, z: 2 }, leg: 6 });
   assert.deepEqual(goal.search.sand, { attempts: 0, frontier: { heading: 0, legs: 0 } });
 });
+
+test('no reachable ground anywhere is walks failing: working free is on offer', () => {
+  // mid-230-a, perched by a spruce, was asked a heading every three seconds and working free was never offered.
+  const { walksFailed } = require('../src/work');
+  assert(walksFailed('No reachable surveyed ground while searching for spruce_log'));
+  assert(walksFailed(null, 'navigation timed out'));
+  assert(!walksFailed('Cannot place dirt'));
+});
