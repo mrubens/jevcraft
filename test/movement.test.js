@@ -225,3 +225,16 @@ test('no bridge is laid over a drop that hurts; over a short gap it still is', (
     assert.equal(neighbors.length, expected, `a gap ${depth} deep`);
   }
 });
+
+test('a diagonal corner over lava is no floor', () => {
+  const bot = botFixture(), movement = configureMovements(bot);
+  movement.getBlock = (p, dx, dy, dz) => {
+    const position = new Vec3(p.x + dx, p.y + dy, p.z + dz);
+    const lava = position.x === 1 && position.z === 0 && position.y === 68;
+    const physical = !lava && position.y <= (position.x === 1 && position.z === 0 ? 60 : 69);
+    return { position, physical, safe: !physical && !lava, liquid: lava, height: position.y + (physical ? 1 : 0), name: lava ? 'lava' : physical ? 'stone' : 'air' };
+  };
+  const diagonal = [];
+  movement.getMoveDiagonal({ x: 0, y: 70, z: 0, remainingBlocks: 0 }, new Vec3(1, 0, 1), diagonal);
+  assert.equal(diagonal.length, 0);
+});

@@ -163,8 +163,10 @@ class SurvivalMovements extends Movements {
       let floor = false;
       for (let dy = -1; dy >= -4 && !floor; dy--) {
         const below = this.getBlock(node, dx, dy, dz);
+        // Lava is no floor: counted as a liquid first, a corner over it
+        // passed for one.
+        if (damagingTerrain.has(below.name) || /lava/.test(below.name || '')) break;
         if (below.physical || below.liquid || below.climbable) floor = true;
-        if (damagingTerrain.has(below.name)) break;
       }
       if (!floor) return;
     }
