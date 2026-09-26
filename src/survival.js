@@ -1142,7 +1142,12 @@ class Survival {
       else if (scout.tried >= scout.candidates) footing = ` No way out: none of the ${plural(scout.candidates, 'spot')} further from every mob has a route that passes none of them, so a run from here fails at once.`;
       else footing = ` No way found yet: ${scout.tried} of ${plural(scout.candidates, 'spot')} further from every mob tried and none has a route passing none of them; the rest are tried as it runs.`;
     }
-    options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + (creeperCount ? ' Creepers and spiders follow a running player.' : '') + footing + unseen,
+    // A rider on a horse or a camel is faster than a running player:
+    // mid-215-a ran four times from a zombie on a zombie horse with a spear,
+    // caught each time, 11.3 health to 4.4 in one charge (2026-09-26).
+    const riders = danger.filter(t => t.entity.vehicle).map(t => `a ${t.entity.name.replaceAll('_', ' ')} on a ${t.entity.vehicle.name?.replaceAll('_', ' ') || 'mount'}`);
+    const riderSays = riders.length ? ` ${riders[0][0].toUpperCase()}${riders[0].slice(1)}${riders.length > 1 ? ` and ${riders.length - 1} more riding` : ''} ${riders.length > 1 ? 'are' : 'is'} faster than a running player: a run from ${riders.length > 1 ? 'them' : 'it'} is caught.` : '';
+    options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + (creeperCount ? ' Creepers and spiders follow a running player.' : '') + riderSays + footing + unseen,
       run: () => this.runAway(task, goal, save, danger) };
     // In the Nether with its portal close, the way home is a stance too:
     // mid-92-q came out beside its portal among skeletons and ghasts, turned

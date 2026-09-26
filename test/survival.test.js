@@ -2531,3 +2531,15 @@ test('a creeper about is said on the shelter: how soon it could go off beside th
   bot.entities = {};
   assert.equal(creeperSays(bot), '');
 });
+
+test('the retreat says a rider on a horse or camel outruns a running player', () => {
+  // mid-215-a: ran four times from a zombie on a zombie horse with a spear, caught each time.
+  const bot = crowdBot();
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const rider = crowdMob(1, 'zombie', 6);
+  rider.entity.vehicle = { name: 'zombie_horse' };
+  const options = survival.stanceOptions(new Task('night'), {}, () => {}, [rider], false);
+  assert.match(options.retreat.description, /A zombie on a zombie horse is faster than a running player: a run from it is caught/);
+  const walker = survival.stanceOptions(new Task('night'), {}, () => {}, [crowdMob(2, 'zombie', 6)], false);
+  assert.doesNotMatch(walker.retreat.description, /faster than a running player/);
+});
