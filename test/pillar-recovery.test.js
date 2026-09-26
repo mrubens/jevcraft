@@ -188,3 +188,17 @@ test('in a fight a skeleton near the landing does not stop the way down; out of 
   assert(await descendPillar(bot, task, goal, () => {}, null, { combat: true }));
   assert.equal(bot.entity.position.y, 76);
 });
+
+test('pillaring up does not dig into a falling block overhead, nor under one', async () => {
+  // mid-83-g: up at seven health into gravel, the column came down and it suffocated in four seconds.
+  const { pillarUp } = require('../src/pillar-recovery');
+  for (const [at, name] of [[2, 'gravel'], [3, 'sand']]) {
+    const dug = [];
+    const bot = { entity: { position: new Vec3(0.5, 64, 0.5), onGround: true }, inventory: { items: () => [{ name: 'cobblestone', count: 16 }] },
+      blockAt: p => { const dy = p.y - 64; const name = p.x === 0 && p.z === 0 && dy === at ? name0 : p.x === 0 && p.z === 0 && dy === 2 && at === 3 ? 'stone' : p.y < 64 ? 'stone' : 'air';
+        return { name, position: p, diggable: true, boundingBox: ['air'].includes(name) ? 'empty' : 'block' }; } };
+    var name0 = name;
+    const placed = await pillarUp(bot, new Task('up'), 70, { dig: async (b, t, p) => dug.push(`${p}`), threats: false });
+    assert.equal(placed, 0); assert.deepEqual(dug, [], `${name} ${at} up: not dug`);
+  }
+});

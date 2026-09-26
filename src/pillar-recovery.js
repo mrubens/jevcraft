@@ -119,6 +119,12 @@ async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = tru
     if (passing.some(liquid) || passing.slice(0, 2).some(c => directions.some(d => liquid(c.plus(d))))) break;
     if (!dryPassable(above)) {
       if (!canDig(above)) break;
+      // Not under a block that falls, nor one with a falling block over it:
+      // dug from beneath, the column comes down onto the head. mid-83-g
+      // pillared up at seven health into gravel and suffocated in four
+      // seconds (2026-09-26).
+      if (/^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$/.test(above.name) ||
+        /^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$/.test(bot.blockAt(head.offset(0, 1, 0))?.name || '')) break;
       await dig(bot, task, head, { requireDrops: false });
       continue;
     }
