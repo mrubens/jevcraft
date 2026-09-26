@@ -4,7 +4,7 @@ const { fixMiningMaterials, fixPathfinderResults } = require('./compatibility');
 const { hostileEntities, safeFromHostiles } = require('./danger');
 const { Vec3 } = require('vec3');
 const Move = require('mineflayer-pathfinder/lib/move');
-const { damagingTerrain, swimmingBlocks, swimmableWater } = require('./terrain');
+const { damagingTerrain, swimmingBlocks, swimmableWater, edgeHeld } = require('./terrain');
 const { isDoor, doorAt, doorAllowsDirection } = require('./doors');
 
 // Parkour, where a miss costs nothing: with it off, the only way across a
@@ -16,6 +16,10 @@ const { isDoor, doorAt, doorAllowsDirection } = require('./doors');
 // round as before.
 const GAP_FALL_MAX = 5, GAP_MAX = 2;
 const LAVA_EDGE_COST = 4;
+// The eight cells round a standing cell, and how far down a drop is
+// measured: terrain.js's AROUND and dropNear's deepest.
+const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+const DROP_DEEPEST = 48;
 const BURNS = /lava|fire|magma_block|campfire/;
 function gapSurvivable(movements, node, dir, k = 1) {
   for (let dy = -1; dy >= -(GAP_FALL_MAX + 1); dy--) {
@@ -98,10 +102,52 @@ class SurvivalMovements extends Movements {
     // soul sand shore on a fortress leg, went a block and a half into the
     // sea and burned from sixteen to seven (2026-09-26). Taken only when
     // it is much the shorter way.
+    // In the Nether, a cell beside a drop into lava or a fall that kills
+    // costs the same: a step's drift or a mob's push off it ends the same
+    // way. mid-227-a and mid-227-b were routed along ledges high over the
+    // lava sea on fortress legs, magma cubes about, and each went over and
+    // fifty blocks down into the lava (notes 217 and 248, 2026-09-26). A
+    // cost, not a ban: a narrow span is still taken where it is the way.
+    const nether = /nether/.test(String(this.bot?.game?.dimension || ''));
     for (const next of kept) {
-      if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava'))) next.cost += LAVA_EDGE_COST;
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava')) ||
+        (nether && this.deadlyDropBeside(next))) next.cost += LAVA_EDGE_COST;
     }
-    return kept;
+    // Nor back onto the edge the bot has just stepped back from, while the
+    // mobs it stepped back from are about (terrain.js holdOffEdge).
+    return this.bot?._edgeHold ? kept.filter(next => !edgeHeld(this.bot, next, this._hostileObservation.entities)) : kept;
+  }
+
+  // What lies below each cell round `node` that the body could go over: the
+  // same cells, and the same measure, as the step back from an edge
+  // (terrain.js dropAt and dropNear): open at the feet, no floor within
+  // three, and then lava, or a fall whose damage is half the health or more.
+  // Read through the pathfinder's own block view and kept for a second, so
+  // a search over the same ledge measures each column once.
+  deadlyDropBeside(node) {
+    const now = Date.now();
+    if (!this._drops || now - this._drops.at > 1000) this._drops = { at: now, cells: new Map() };
+    const health = this.bot?.health ?? 20;
+    for (const [dx, dz] of AROUND) {
+      const key = `${node.x + dx},${node.y},${node.z + dz}`;
+      let drop = this._drops.cells.get(key);
+      if (drop === undefined) { drop = this.dropFrom(node, dx, dz); this._drops.cells.set(key, drop); }
+      if (drop && (drop.into === 'lava' || drop.damage >= health / 2)) return true;
+    }
+    return false;
+  }
+  dropFrom(node, dx, dz) {
+    const cell = this.getBlock(node, dx, 0, dz);
+    // Lava level with the feet is the lava-beside cost's; unknown is no fact.
+    if (cell.physical || cell.liquid || cell.name === undefined) return null;
+    for (let dy = 1; dy <= DROP_DEEPEST; dy++) {
+      const under = this.getBlock(node, dx, -dy, dz);
+      if (under.name === undefined) return null;
+      if (/lava/.test(under.name)) return { into: 'lava', fall: dy - 1, damage: Infinity };
+      if (under.liquid) return { into: 'water', fall: dy - 1, damage: 0 };
+      if (under.physical) return dy <= 3 ? null : { into: 'ground', fall: dy - 1, damage: Math.max(0, dy - 1 - 3) };
+    }
+    return { into: 'unknown', fall: DROP_DEEPEST, damage: Math.max(0, DROP_DEEPEST - 3) };
   }
 
   getLandingBlock(node, direction) {

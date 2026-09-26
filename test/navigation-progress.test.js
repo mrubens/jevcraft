@@ -24,6 +24,30 @@ test('bouncing about a shaft is no progress toward the goal: new cells alone do 
   assert(Date.now() - started < 4000, `stalled in ${Date.now() - started} ms, not at the timeout`);
 });
 
+test('in the Nether a leg toward the portal back that comes no nearer than before gives way to a crossing straight at it', async () => {
+  // mid-211-c: its legs on foot toward the portal 250 blocks off made no ground, and nothing else but a staircase was tried (note 241).
+  const { walkToKnownPortal } = require('../src/work');
+  const laid = new Set();
+  let look = null;
+  const bot = Object.assign(new EventEmitter(), { entity: { position: new Vec3(0.5, 39, 0.5), isInWater: false }, game: { dimension: 'the_nether', gameMode: 'survival' }, oxygenLevel: 20,
+    health: 20, food: 20, entities: {}, world: { raycast: () => null }, inventory: { items: () => [{ name: 'netherrack', count: 64, type: 1 }] },
+    blockAt: p => {
+      const name = laid.has(`${p}`) ? 'netherrack' : p.y <= 31 ? 'lava' : p.y === 38 && p.x <= 32 ? 'netherrack' : 'air';
+      return { name, boundingBox: name === 'netherrack' ? 'block' : 'empty', diggable: true, position: p };
+    },
+    clearControlStates() {}, getControlState() { return false; }, stopDigging() {}, equip: async () => {}, lookAt: async p => { look = p; },
+    placeBlock: async (ref, face) => { laid.add(`${ref.position.plus(face)}`); },
+    setControlState: (name, on) => { if (name === 'forward' && on && look) bot.entity.position = new Vec3(Math.floor(look.x) + 0.5, 39, Math.floor(look.z) + 0.5); } });
+  // The walk goes thirty blocks in; earlier walks had come within two hundred.
+  bot.pathfinder = { movements: {}, setGoal() {}, goto: async () => { bot.entity.position = new Vec3(30.5, 39, 0.5); } };
+  const goal = { survival: {}, portals: [{ x: 250, y: 83, z: 0, dimension: 'nether' }], portalApproach: { '250,83,0': { best: 200 } } };
+  assert.equal(await walkToKnownPortal(bot, new Task('back'), goal, () => {}, 'nether'), true);
+  assert.equal(goal.step.action, 'cross_toward');
+  assert.equal(laid.size, 30, 'thirty blocks laid over the lava sea, x 33 to 62');
+  assert.equal(bot.entity.position.x, 62.5);
+  assert.equal(Math.round(goal.portalApproach['250,83,0'].best), 188, 'a new nearest approach to the portal');
+});
+
 test('a walk that keeps getting nearer is progress, however long', async () => {
   const bot = walker(new Vec3(0.5, 64, 0.5), (b, i) => { b.entity.position = new Vec3(0.5 + i * 0.5, 64, 0.5); });
   await assert.rejects(navigate(bot, new Task('walk'), new goals.GoalBlock(200, 64, 0), { timeoutMs: 3000, stallMs: 1000 }), /navigation timed out/);

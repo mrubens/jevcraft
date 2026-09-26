@@ -441,6 +441,84 @@ test('a span is laid one block ahead at a time toward a fortress across open air
   assert.equal(placed.length, 5, 'not one more block');
 });
 
+// A Nether world as a rule: `solid(p)` names the block at p, or null for
+// air. The bot walks to the cell it looks at when it holds forward.
+function netherWorld(position, solid, items = [{ name: 'netherrack', count: 64, type: 1 }]) {
+  const dug = new Set(), laid = new Set();
+  const at = p => {
+    const key = `${p}`;
+    const name = laid.has(key) ? 'netherrack' : dug.has(key) ? null : solid(p);
+    return { name: name || 'air', boundingBox: name && name !== 'lava' ? 'block' : 'empty', diggable: name !== 'bedrock', position: p, digTime: () => 400 };
+  };
+  let look = null;
+  const controls = {};
+  const bot = { registry, game: { dimension: 'the_nether', gameMode: 'survival' }, health: 20, food: 20, entity: { position }, entities: {}, world: { raycast: () => null },
+    inventory: { items: () => items }, findBlocks: () => [], chat() {}, blockAt: at, equip: async () => {}, lookAt: async p => { look = p; },
+    placeBlock: async (ref, face) => { const p = ref.position.plus(face); laid.add(`${p}`); items[0].count--; },
+    dig: async block => { dug.add(`${block.position}`); },
+    setControlState: (name, on) => { controls[name] = on; if (name === 'forward' && on && look) bot.entity.position = new Vec3(Math.floor(look.x) + 0.5, Math.floor(bot.entity.position.y), Math.floor(look.z) + 0.5); },
+    getControlState: name => !!controls[name], clearControlStates() {} };
+  return { bot, dug, laid };
+}
+
+test('a crossing is surveyed cell by cell: rock to dig, air to lay blocks over, and where it must stop', () => {
+  const { surveyCrossing } = require('../src/bridging');
+  // Netherrack underfoot to x 4, a wall of it at x 3 and 4, then open air over the lava sea.
+  const rock = p => p.y <= 40 ? 'lava' : (p.y === 64 && p.x <= 4) || (p.x >= 3 && p.x <= 4 && p.y <= 66 && p.y >= 65) ? 'netherrack' : null;
+  const { bot } = netherWorld(new Vec3(0.5, 65, 0.5), rock, [{ name: 'netherrack', count: 3, type: 1 }]);
+  const s = surveyCrossing(bot, new Vec3(40, 65, 0));
+  assert.deepEqual([s.cells, s.dig, s.bridge, s.overLava], [7, 4, 3, 3], JSON.stringify(s));
+  assert.match(s.stoppedBy, /out of blocks \(3 carried\)/);
+  assert.equal(s.gain, 7);
+  // Lava behind the rock: the dig stops short of it, as the staircase's does.
+  const behind = p => p.x === 4 && p.y === 65 && p.z === 1 ? 'lava' : rock(p);
+  const { bot: b2 } = netherWorld(new Vec3(0.5, 65, 0.5), behind);
+  const s2 = surveyCrossing(b2, new Vec3(40, 65, 0));
+  assert.equal(s2.cells, 3); assert.match(s2.stoppedBy, /lava or water behind the netherrack/);
+});
+
+test('a span never digs into rock with lava behind it, nor walks into lava', async () => {
+  const { bridgeTo } = require('../src/bridging');
+  const rock = p => (p.x === 2 && p.y === 65 && p.z === 1) ? 'lava' : p.y === 64 || (p.x === 2 && p.y >= 65 && p.y <= 66) ? 'netherrack' : null;
+  const { bot, dug } = netherWorld(new Vec3(0.5, 65, 0.5), rock);
+  await assert.rejects(bridgeTo(bot, new Task('cross'), new Vec3(10, 65, 0)), /Lava or water behind the netherrack/);
+  assert.equal(dug.size, 0, 'the wall with lava behind it stands');
+  const flow = p => (p.x === 2 && p.y === 65) ? 'lava' : p.y === 64 ? 'netherrack' : null;
+  const { bot: b2 } = netherWorld(new Vec3(0.5, 65, 0.5), flow);
+  await assert.rejects(bridgeTo(b2, new Task('cross'), new Vec3(10, 65, 0)), /Lava in the way/);
+  assert(b2.entity.position.x < 2, 'not a step into it');
+});
+
+test('a Nether leg that makes no ground on foot goes on straight at this height, bridging the gap and tunnelling the wall', async () => {
+  // mid-215-d stood at y 95 unable to reach its next leg's target a hundred blocks off on foot (note 251).
+  const { findFortressStep } = require('../src/mob-hunt');
+  const rock = p => p.y <= 31 ? 'lava' : (p.y === 94 && (p.x <= 3 || p.x >= 21)) || (p.x >= 21 && p.x <= 24 && (p.y === 95 || p.y === 96)) ? 'netherrack' : null;
+  const { bot, laid, dug } = netherWorld(new Vec3(0.5, 95, 0.5), rock);
+  const goal = { fortressSearch: { axis: 1, legs: 1, target: { x: 96, y: 80, z: 0 }, legSince: Date.now(), legFrom: { x: -50, z: 0 } } };
+  const tunnels = [];
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { navigate: async () => {}, tunnel: async (b, t, g, s, target) => tunnels.push(target) });
+  assert.equal(laid.size, 17, 'a block for each cell of open air, x 4 to 20');
+  assert.equal(dug.size, 8, 'the wall at x 21 to 24, two high');
+  assert.equal(bot.entity.position.x, 32.5, 'thirty-two blocks along, the stretch the survey saw');
+  assert.equal(tunnels.length, 0, 'ground made: no staircase');
+  assert.equal(goal.fortressSearch.legFails, 0);
+  assert.equal(Math.round(goal.fortressSearch.legBest), 64, 'the nearest approach is kept for the leg');
+});
+
+test('a leg walk that goes some way and comes back out is not ground made on the leg', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  // Flat netherrack, lava at the body's height at x 21: nothing to cross on.
+  const rock = p => p.x === 21 && p.y === 95 ? 'lava' : p.y === 94 ? 'netherrack' : null;
+  const { bot } = netherWorld(new Vec3(0.5, 95, 0.5), rock);
+  // The leg came within sixty of its end before; this walk ends seventy-six off.
+  const goal = { fortressSearch: { axis: 1, legs: 1, target: { x: 96, y: 80, z: 0 }, legSince: Date.now(), legFrom: { x: -50, z: 0 }, legBest: 60 } };
+  const tunnels = [];
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { navigate: async () => { bot.entity.position = new Vec3(20.5, 95, 0.5); }, tunnel: async (b, t, g, s, target) => tunnels.push(target) });
+  assert.equal(tunnels.length, 1, 'the staircase is tried: the walk came no nearer than before');
+  assert.equal(goal.fortressSearch.legFails, 1);
+  assert.match(goal.fortressSearch.lastCrossStop, /lava in the way/);
+});
+
 test('a fortress whose every stretch in view was walked is patrolled again, not left for the sweep', async () => {
   const { findFortressStep } = require('../src/mob-hunt');
   const { Vec3 } = require('vec3');

@@ -691,6 +691,7 @@ class Survival {
       const cell = ((heavy || deadly) && firmGround(bot, 8, { margin: 3 })) || firmGround(bot);
       if (cell) {
         this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, threats: close.map(t => t.entity.name) });
+        require('./terrain').holdOffEdge(bot, feet, threats(bot, 64).map(t => t.entity));
         // Given up for the fight once a biter is at arm's length, unless the
         // edge is a heavy hitter's toss: mid-236-d's way to a cell a block
         // off stalled for three seconds while a zombie walked up and hit it
@@ -2539,6 +2540,35 @@ class Survival {
       } };
   }
 
+  // A hunt for food Jev chose, carried out as the night hunt is (huntStep):
+  // the nearest of the kind closed on and struck, its drops picked up, for
+  // two minutes or six health. The Nether's hoglins (nether-travel.js):
+  // mid-211-c, short of food 250 blocks from its portal, was never offered
+  // them (note 241, 2026-09-26).
+  foodHunt(goal, save, kind) {
+    this.state.nightPlan = { plan: 'hunt', kind, food: true, until: Date.now() + 120000, startHealth: this.bot.health };
+    this.report(goal, save, { action: 'food_hunt_chosen', kind });
+  }
+
+  // Food off the Overworld: back through the portal, or, in the Nether,
+  // its hoglins, in view or seen earlier. The trip back is left out for the
+  // time Jev chose to go on without it (nether-travel.js keep_on).
+  offWorldFood(task, goal, save) {
+    const bot = this.bot, children = {};
+    if (!isSetAside(goal, 'nether_return', 'food')) children.return_for_food = { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked.' + (/nether/.test(String(bot.game?.dimension || '')) ? ' In the Nether hoglins are the only meat.' : ' Nothing here is safe to eat.'),
+      run: async () => { goal.survivalAction = { action: 'return_for_food', at: new Date().toISOString() }; save(); await this.actions.returnOverworld(bot, task, goal, save); } };
+    if (/nether/.test(String(bot.game?.dimension || ''))) {
+      const { hoglinsKnown, hoglinSays } = require('./nether-travel');
+      const known = hoglinsKnown(bot, goal);
+      if (known.inView.length || known.seen.length) children.hoglin_food = { description: hoglinSays(bot, known),
+        run: async () => {
+          if (!known.inView.length) await require('./sightings').walkToSighting(bot, task, goal, save, 'hoglin', known.seen[0], this.actions.navigate);
+          this.foodHunt(goal, save, 'hoglin');
+        } };
+    }
+    return children;
+  }
+
   // One step of the night hunt Jev chose: the nearest of the kind, closed
   // on over level ground and struck; its drops picked up once it is down.
   // Two minutes, then Jev is asked again with the night as it is by then;
@@ -2881,6 +2911,7 @@ class Survival {
         const cell = firmGround(bot, 8, { margin: 3 });
         if (cell) {
           this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, from: threats(bot, 64).find(pusher)?.entity.name, drop: deep });
+          require('./terrain').holdOffEdge(bot, bot.entity.position.floored(), threats(bot, 64).map(t => t.entity));
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           onStep(goal); return true;
@@ -3069,7 +3100,8 @@ class Survival {
     }
     // The hunt Jev chose for the night, while it holds.
     const hunt = this.state.nightPlan?.plan === 'hunt' ? this.state.nightPlan : null;
-    if (hunt && (hunt.until < Date.now() || !shelterNeeded(bot))) { delete this.state.nightPlan; delete bot._nightHunt; }
+    // A hunt for food (foodHunt) is not a night's: day or Nether, it runs its time.
+    if (hunt && (hunt.until < Date.now() || (!hunt.food && !shelterNeeded(bot)))) { delete this.state.nightPlan; delete bot._nightHunt; }
     else if (hunt && await this.huntStep(task, goal, save)) { onStep(goal); return true; }
     if (!shelterNeeded(bot)) delete this.state.nightMine;
     else if (this.state.nightMine && !immediateThreat(bot) && !surfaceObserver(bot)(bot.entity.position.offset(0, 1, 0)) &&
@@ -3291,9 +3323,8 @@ class Survival {
     // At night too, with what it risks said, not hidden (the decision
     // audit, 2026-09-25): hungry in the dark, the food was never offered.
     if (needsFood) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.' + (night(bot) && needsShelter ? ` Night: mobs spawn on the way; hunger ${bot.food}, starvation at 0.` : ''),
-      children: offWorld && this.actions.returnOverworld ? { return_for_food: { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked; nothing here is safe to eat.',
-        run: async () => { goal.survivalAction = { action: 'return_for_food', at: new Date().toISOString() }; save(); await this.actions.returnOverworld(bot, task, goal, save); } } }
-        : await forageChoices(bot, task, goal, save, this.actions, this.state) };
+      children: offWorld && this.actions.returnOverworld ? this.offWorldFood(task, goal, save) : await forageChoices(bot, task, goal, save, this.actions, this.state) };
+    if (tree.obtain_food && !Object.keys(tree.obtain_food.children).length) delete tree.obtain_food;
     // Without Jev, shelter comes before food and food before the request
     // (the survival_priority question's fallback, in decisions/survival.js).
     // A reserve top-up once chosen is held, not asked again: at full health

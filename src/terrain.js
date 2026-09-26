@@ -108,6 +108,32 @@ function dropNote(drop, health) {
   return ` A drop of ${drop.fallBlocks} blocks is ${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off: a hit's knockback or a step back over it is ${end}.`;
 }
 
+// A step back from an edge that holds. mid-227-b stepped back from a
+// ledge over the lava sea with three magma cubes about, and the fortress
+// leg's next route walked it back along the same ledge; a push put it
+// fifty-five blocks down into the lava (note 248, 2026-09-26). The cells it
+// left, and those beside the drop within the step back's own reach of
+// them, are kept out of routes while any of the mobs it stepped back from
+// is still about (movement.js).
+const EDGE_REACH = 2;
+function holdOffEdge(bot, feet, mobs = []) {
+  const cells = [];
+  for (let dx = -EDGE_REACH; dx <= EDGE_REACH; dx++) for (let dz = -EDGE_REACH; dz <= EDGE_REACH; dz++) {
+    const c = feet.offset(dx, 0, dz);
+    if ((dx === 0 && dz === 0) || besideDrop(bot, c)) cells.push({ x: c.x, y: c.y, z: c.z });
+  }
+  bot._edgeHold = { cells, mobs: mobs.map(m => m.id).filter(id => id !== undefined), at: Date.now() };
+  return bot._edgeHold;
+}
+// Whether a cell is one held off, given the hostile mobs about now. The hold
+// ends when none of the mobs it was made for is about.
+function edgeHeld(bot, p, hostiles = []) {
+  const hold = bot._edgeHold;
+  if (!hold) return false;
+  if (!hostiles.some(e => hold.mobs.includes(e.id) && e.isValid !== false)) { delete bot._edgeHold; return false; }
+  return hold.cells.some(c => c.x === p.x && c.y === p.y && c.z === p.z);
+}
+
 // Mobs whose hit throws the body blocks, not a step.
 const KNOCKBACK = new Set(['hoglin', 'zoglin', 'ravager', 'iron_golem', 'warden']);
 
@@ -132,4 +158,4 @@ function bodyInLava(bot) {
   return false;
 }
 
-module.exports = { dropNear, dropNote, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

@@ -2754,3 +2754,22 @@ test('up on its own pillar, the step back from the edge does not take the bot of
   await survival.flee(new Task('pillar'), goal, () => {}).catch(() => {});
   assert.notEqual(goal.survivalAction?.action, 'off_the_edge');
 });
+
+test('food in the Nether is a hoglin as well as the trip back, and the trip is left out once Jev chose to go on without it', () => {
+  // mid-211-c, short of food in the Nether, was offered only the portal back, 250 blocks off and lost (note 241).
+  const { setAside } = require('../src/progress');
+  const registry = require('minecraft-data')('26.1');
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'the_nether' }, health: 18, food: 6, entity: { position: new Vec3(0.5, 64, 0.5) },
+    entities: { 3: { id: 3, name: 'hoglin', position: new Vec3(10.5, 64, 0.5), isValid: true, height: 1.4 } }, world: { raycast: () => null },
+    inventory: { items: () => [], slots: [] } });
+  const state = { shelters: [] }, goal = { survival: state };
+  const survival = new Survival(bot, { navigate: async () => {}, returnOverworld: async () => {} }, { state });
+  let children = survival.offWorldFood(new Task('food'), goal, () => {});
+  assert.deepEqual(Object.keys(children).sort(), ['hoglin_food', 'return_for_food']);
+  assert.match(children.hoglin_food.description, /1 in view within thirty-two blocks, the nearest 10 blocks off/);
+  children.hoglin_food.run();
+  assert.equal(state.nightPlan.kind, 'hoglin'); assert(state.nightPlan.food, 'a hunt for food, not ended by daylight or the Nether');
+  setAside(goal, 'nether_return', 'food', 'Jev chose to go on', 60000);
+  children = survival.offWorldFood(new Task('food'), goal, () => {});
+  assert.deepEqual(Object.keys(children), ['hoglin_food']);
+});

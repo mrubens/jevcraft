@@ -230,6 +230,47 @@ test('a detour underground says where the ore is and what is beside it, and that
   assert.match(offered.look_around, /Chosen for this same stall 2 times in the last 30 minutes, and the work stood still again after each/);
 });
 
+// mid-211-c: short of food in the Nether at y 39 by the lava sea, its portal
+// 250 blocks off and 44 up, the way back blocked (note 241).
+function stranded(items) {
+  const hoglin = { id: 5, name: 'hoglin', position: new Vec3(-20.5, 39, 6.5), isValid: true, height: 1.4 };
+  const bot = Object.assign(botAt(0.5, 39, 0.5, items), { registry, health: 16, food: 5, findBlocks: () => [], chat() {},
+    game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: { 5: hoglin },
+    blockAt: p => {
+      const name = p.y <= 31 ? 'lava' : p.y === 38 && p.x <= 2 ? 'netherrack' : 'air';
+      return { name, boundingBox: name === 'netherrack' ? 'block' : 'empty', diggable: true, position: p };
+    },
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {} });
+  bot.inventory.slots = [];
+  const goal = { kind: 'win', survival: {}, step: { action: 'return_to_portal', portal: { x: 250, y: 83, z: 0 } }, survivalAction: { action: 'return_for_food' },
+    portals: [{ x: 250, y: 83, z: 0, dimension: 'nether' }, { x: 1990, y: 70, z: 10, dimension: 'overworld' }] };
+  return { bot, goal };
+}
+
+test('stranded in the Nether and short of food, the stall offers what answers it: a crossing, a hoglin, a portal here, going on without the Overworld', async () => {
+  const { answerStall } = require('../src/work');
+  const { isSetAside } = require('../src/progress');
+  const { bot, goal } = stranded([stack('netherrack', 64), stack('obsidian', 10), stack('flint_and_steel', 1), stack('iron_sword', 1)]);
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'keep_on', confidence: 0.8 } } }; } };
+  const hunts = [];
+  const survival = { state: goal.survival, canNightMine: () => false, foodHunt: (g, s, kind) => hunts.push(kind) };
+  await answerStall(bot, new Task('stall'), goal, () => {}, { key: 'step:return_to_portal', layer: 'work', strikes: 2, error: 'No way back to the nether portal' }, { client, survival }).catch(() => {});
+  const offered = asked[0];
+  for (const key of ['differently', 'cross_toward', 'hoglin_food', 'portal_here', 'keep_on']) assert(offered[key], `${key} on offer: ${Object.keys(offered).join(', ')}`);
+  assert.match(offered.cross_toward, /the portal back, 250 blocks off and 44 blocks up.*32 blocks, laying 30 blocks over open air and lava \(30 of them over lava\).*64 blocks carried, 34 left after.*It ends 32 blocks nearer/);
+  assert.match(offered.hoglin_food, /1 in view within thirty-two blocks, the nearest 22 blocks off.*two to four raw porkchops.*forty health.*Health does not come back meanwhile: hunger 5/);
+  assert.match(offered.portal_here, /obsidian carried \(10.*flint and steel.*near 4, 4.*a new place/);
+  assert.match(offered.keep_on, /nothing edible is carried.*Hunger 5.*starving takes health down to one/);
+  assert(isSetAside(goal, 'nether_return', 'food'), 'going on without the Overworld leaves the trip back out');
+  // Nothing to build a portal with, and not hungry: neither the portal, the hoglin nor going on is offered.
+  const fed = stranded([stack('netherrack', 64)]);
+  fed.bot.food = 20; delete fed.goal.survivalAction;
+  asked.length = 0;
+  await answerStall(fed.bot, new Task('stall'), fed.goal, () => {}, { key: 'step:return_to_portal', layer: 'work', strikes: 2 }, { client, survival: { ...survival, state: fed.goal.survival } }).catch(() => {});
+  assert.deepEqual(Object.keys(asked[0]).sort(), ['cross_toward', 'differently']);
+});
+
 test('the Nether food gate never waits: a rested search is taken up again, and twenty minutes lets the crossing go', async () => {
   const { gameHandlers } = require('../src/work');
   const bot = Object.assign(new EventEmitter(), { registry, inventory: { items: () => [] }, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
