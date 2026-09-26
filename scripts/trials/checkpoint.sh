@@ -10,12 +10,20 @@
 #   MIDGAME_PORT=<port> node scripts/midgame.js start mid-<n>-r1 \
 #     .trial-checkpoints/deaths/<world>-<time>/<snapshot>/world .trial-checkpoints/deaths/<world>-<time>/<snapshot>/state
 #   sh scripts/trials/checkpoint.sh 25582 25585 ... &
+#   sh scripts/trials/checkpoint.sh auto &     # every server running a midgame world
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 EVERY=${CHECKPOINT_S:-30}; KEEP=${CHECKPOINT_KEEP:-10}
 BASE="$ROOT/.trial-checkpoints"
 deaths() { grep -cE ' Jev (was|died|fell|drowned|blew|burned|hit the|tried|walked into|suffocated|experienced|went|froze|starved|withered|discovered)' "$1/logs/latest.log" 2>/dev/null; }
+ports() {
+  if [ "$1" = auto ]; then
+    for d in "$ROOT"/.clean-run "$ROOT"/.clean-run-*; do
+      grep -q '^level-name=mid-' "$d/server.properties" 2>/dev/null && sed -n 's/^server-port=//p' "$d/server.properties"
+    done
+  else echo "$@"; fi
+}
 while :; do
-  for PORT in "$@"; do
+  for PORT in $(ports "$@"); do
     if [ "$PORT" = 25581 ]; then SERVER="$ROOT/.clean-run"; else SERVER="$ROOT/.clean-run-$PORT"; fi
     lsof -tiTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 || continue
     [ -f "$ROOT/.bot-state/pids/127.0.0.1-$PORT-Jev.starting" ] && continue
