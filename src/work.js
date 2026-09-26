@@ -1899,7 +1899,10 @@ async function executeAcquisition(bot, task, step, goal, save) {
     // 'approach' is a shaft dug at a mob rather than past one, so the
     // hostile-avoidance that a travelling shaft needs is off for it.
     tunnel: (b, t, g, sv, target, resource) => ['fortress', 'approach'].includes(resource)
-      ? tunnelStep(b, t, g, sv, target, { dig, navigate, approach: resource === 'approach', strict: resource === 'approach' })
+      // The fortress sweep's tunnel is the sweep's phase, as obsidian's is:
+      // named 'tunnel' in turn with 'find_fortress', mid-87-j's leg was
+      // called a flip at minute 59 (2026-09-26).
+      ? tunnelStep(b, t, g, sv, target, { dig, navigate, approach: resource === 'approach', strict: resource === 'approach', within: resource === 'fortress' && g.step?.action === 'find_fortress' ? g.step : null })
       : resourceTunnelStep(b, t, g, sv, target, resource, { dig, navigate }) });
   else throw new Error(`Unknown action ${step.action}`);
 }
