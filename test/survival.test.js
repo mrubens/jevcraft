@@ -2612,3 +2612,15 @@ test('a body in lava stops any step at its next breath check, and the way out is
   bot._leavingLava = true;
   assert.doesNotThrow(() => checkAir(bot));
 });
+
+test('a run at a mob that got no nearer is said with the next question', () => {
+  // mid-230-b: three runs at a witch each ended as far off as they began; the fight was offered as if it stood to be struck.
+  const { chargeSays } = require('../src/survival');
+  const witch = { id: 7, name: 'witch' };
+  const bot = { _charges: { 7: { at: Date.now() - 3000, from: 4.7, to: 6.1, name: 'witch' } } };
+  assert.match(chargeSays(bot, witch), /last run at the witch, 3 seconds ago, ended 6 blocks off, no nearer than the 5/);
+  bot._charges[7] = { at: Date.now() - 3000, from: 6, to: 2, name: 'witch' };
+  assert.equal(chargeSays(bot, witch), '', 'a run that closed in says nothing');
+  bot._charges[7] = { at: Date.now() - 60000, from: 5, to: 6, name: 'witch' };
+  assert.equal(chargeSays(bot, witch), '', 'forgotten after half a minute');
+});

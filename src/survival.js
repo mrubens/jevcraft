@@ -170,6 +170,16 @@ function chargeStopsAt(bot, target) {
   }
   return null;
 }
+// The last run at this mob, if it got no nearer: a mob that keeps its
+// distance (a witch, a skeleton backing off) or a way that does not carry
+// the bot to it.
+const CHARGE_REMEMBERED_MS = 30000;
+function chargeSays(bot, entity) {
+  const last = bot._charges?.[entity?.id];
+  if (!last || Date.now() - last.at > CHARGE_REMEMBERED_MS || last.to < last.from - 1) return '';
+  const name = (last.name || entity.name || 'mob').replaceAll('_', ' ');
+  return ` The last run at the ${name}, ${Math.round((Date.now() - last.at) / 1000)} seconds ago, ended ${Math.round(last.to)} blocks off, no nearer than the ${Math.round(last.from)} it began at.`;
+}
 // Ore worth a night's digging, nearest first, below the bot or level with
 // it: a tunnel up toward an ore in the roof is a tunnel toward the surface.
 // Not copper: nothing on the ladder wants it, and trial 20's stone pickaxe
@@ -960,7 +970,7 @@ class Survival {
     // reach or in the line of fire: mid-110-h charged a skeleton at 4.5
     // health told only "hands back after six health lost" (2026-09-26).
     const hardest = (estimate.mobs || []).filter(m => m.name !== 'creeper' && m.hitsBot > 0).sort((a, b) => b.hitsBot - a.hitsBot)[0];
-    const hitsLeft = hardest && bot.health < 14 ? ` At ${Math.round(bot.health * 10) / 10} health, ${Math.max(1, Math.ceil(bot.health / hardest.hitsBot))} ${hardest.shoots ? 'arrow' : 'hit'}${Math.ceil(bot.health / hardest.hitsBot) === 1 ? '' : 's'} from the ${hardest.name.replaceAll('_', ' ')} (about ${hardest.hitsBot} each after armour) end it.` : '';
+    const hitsLeft = hardest && bot.health < 14 ? ` At ${Math.round(bot.health * 10) / 10} health, ${Math.max(1, Math.ceil(bot.health / hardest.hitsBot))} ${hardest.name === 'witch' ? 'potion' : hardest.shoots ? 'arrow' : 'hit'}${Math.ceil(bot.health / hardest.hitsBot) === 1 ? '' : 's'} from the ${hardest.name.replaceAll('_', ' ')} (about ${hardest.hitsBot} each after armour) end it.` : '';
     // The estimate leaves creepers out of its numbers (a blast is once, not
     // per second); said beside them: trial 118 fought two creepers and a
     // spider with no armour at twelve health, told only "6.7 damage".
@@ -979,7 +989,7 @@ class Survival {
     // quoted it without, and mid-110-k's replay went from the pillar to the
     // charge past a creeper six blocks off.
     const creeperLeftOut = creeperCount ? ` Not counted there: ${creeperCount === 1 ? 'the creeper' : `each of the ${creeperCount} creepers`}, whose blast at arm's length takes up to ${creeperBlast} health after the armour worn${creeperBlast >= bot.health ? ', more than the bot has' : ''}.` : '';
-    options.fight = { expects: { damage: cost.damageTaken, seconds: cost.seconds, oneHit }, description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${atOnceNote}${creeperLeftOut}${nearestCreeper}${nearest && shooter(nearest.entity) && !inReach(nearest) ? (() => { const stop = chargeStopsAt(bot, nearest.entity); return stop ? ` The nearest shoots, and the ground straight at it stops a closing run after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in its line of fire.` : ''; })() : ''}${unseen}${edge}${hitsLeft}`,
+    options.fight = { expects: { damage: cost.damageTaken, seconds: cost.seconds, oneHit }, description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${atOnceNote}${creeperLeftOut}${nearestCreeper}${nearest && shooter(nearest.entity) && !inReach(nearest) ? (() => { const stop = chargeStopsAt(bot, nearest.entity); return stop ? ` The nearest shoots, and the ground straight at it stops a closing run after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in its line of fire.` : ''; })() : ''}${nearest && !inReach(nearest) ? chargeSays(bot, nearest.entity) : ''}${unseen}${edge}${hitsLeft}`,
       run: async () => {
         if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); await this.swingFor(task, goal, save); return true; }
         if (await this.charge(task, goal, save, nearest, false, { chosen: true })) return true;
@@ -1117,7 +1127,7 @@ class Survival {
     const ground = danger.filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16);
     if (ground.length && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && !inWater(bot) && !isSetAside(this, 'close_on_shooter', 'here')) options.charge_shooter = {
       expects: { damage: cost.damageTaken, seconds: cost.seconds, oneHit },
-      description: `Run at the ${ground.map(t => t.entity.name).join(', ')} (nearest ${Math.round(ground[0].distance)} blocks) and strike, one after another, over ground checked firm; gives way if it cannot get nearer, and hands back to be chosen again once it has cost more health or time than estimated here.${(() => { const stop = chargeStopsAt(bot, ground[0].entity); return stop ? ` The ground straight at the nearest does not carry the charge there: it stops after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in the line of fire.` : ' The ground straight at the nearest carries the charge to it.'; })()} Estimated for all the mobs here with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${creeperLeftOut}${edge}${hitsLeft}`,
+      description: `Run at the ${ground.map(t => t.entity.name).join(', ')} (nearest ${Math.round(ground[0].distance)} blocks) and strike, one after another, over ground checked firm; gives way if it cannot get nearer, and hands back to be chosen again once it has cost more health or time than estimated here.${(() => { const stop = chargeStopsAt(bot, ground[0].entity); return stop ? ` The ground straight at the nearest does not carry the charge there: it stops after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in the line of fire.` : ' The ground straight at the nearest carries the charge to it.'; })()}${chargeSays(bot, ground[0].entity)} Estimated for all the mobs here with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${creeperLeftOut}${edge}${hitsLeft}`,
       run: () => this.closeOnShooter(task, goal, save, danger, { chosen: true }) };
     // A creeper the player's way: hit, back out of the blast, hit again.
     // Possible with a blade and no drop or lava to back into.
@@ -2128,6 +2138,12 @@ class Survival {
     // minutes, the way to it failing at once each time, neither of them
     // able to reach the other. The mob is out of reach for twenty seconds
     // (danger.js), and the caller takes its next answer.
+    // How the run went, said with the next question: mid-230-b ran at a
+    // witch three times, each run ending as far off as it began, and was
+    // offered the fight each time priced as if the witch stood still to be
+    // struck; its potions took twenty health (2026-09-26).
+    const after = nearest.entity.position?.distanceTo?.(bot.entity.position);
+    if (Number.isFinite(after)) (bot._charges ||= {})[nearest.entity.id] = { at: Date.now(), from: nearest.distance, to: after, name: nearest.entity.name };
     if (failed && bot.entity.position.distanceTo(from) < 1 && !canStrike(bot, nearest.entity)) {
       bot._unreachable = { ids: [...new Set([...(bot._unreachable?.until > Date.now() ? bot._unreachable.ids : []), nearest.entity.id])], until: Date.now() + 20000 };
       return false;
@@ -3234,4 +3250,4 @@ class Survival {
   }
 }
 
-module.exports = { creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
