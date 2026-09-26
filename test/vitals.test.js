@@ -437,3 +437,18 @@ test('a falling gravel column is dug out as often as it refills', async () => {
   await maintainVitals(bot, new Task('mine')).catch(() => {});
   assert.equal(digs, 6, 'the whole column, not four');
 });
+
+test('burning with no water bucket, water within eight blocks is run into', async () => {
+  // mid-110-j: out of a lava pool with an empty bucket, burned from sixteen to nothing on the bank.
+  const { douse } = require('../src/vitals');
+  const { Task } = require('../src/skills');
+  const pond = new Vec3(4, 63, 0);
+  const controls = {};
+  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5), metadata: [1], isInWater: false }, health: 12, inventory: { items: () => [{ name: 'bucket', count: 1 }] },
+    blockAt: p => ({ name: p.equals(pond) ? 'water' : p.y < 64 ? 'stone' : 'air', position: p, boundingBox: p.y < 64 && !p.equals(pond) ? 'block' : 'empty' }),
+    lookAt: async () => {}, getControlState: k => !!controls[k], clearControlStates: () => {},
+    setControlState: (k, v) => { controls[k] = v; if (k === 'forward' && v) { bot.entity.isInWater = true; bot.entity.metadata[0] = 0; } } };
+  const said = [];
+  assert.equal(await douse(bot, new Task('burn'), a => said.push(a)), true);
+  assert.deepEqual(said[0].pond, { x: 4, y: 63, z: 0 });
+});

@@ -344,7 +344,24 @@ async function outOfFire(bot, task, onAction = () => {}) {
 // standing beside it with a water bucket in its pack (2026-09-25).
 async function douse(bot, task, onAction = () => {}) {
   const bucket = bot.inventory.items().find(i => i.name === 'water_bucket');
-  if (!bucket || /nether/.test(String(bot.game?.dimension || ''))) return false;
+  if (/nether/.test(String(bot.game?.dimension || ''))) return false;
+  // No water carried: water within eight blocks is walked into, as a player
+  // runs for the pond. mid-110-j came out of a lava pool with an empty bucket
+  // and burned from sixteen health to nothing on the bank (2026-09-26).
+  if (!bucket) {
+    const here = bot.entity.position.floored();
+    let pond = null;
+    for (let r = 1; r <= 8 && !pond; r++) for (let dx = -r; dx <= r && !pond; dx++) for (let dz = -r; dz <= r && !pond; dz++) for (const dy of [0, -1, 1]) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+      const c = here.offset(dx, dy, dz);
+      if (bot.blockAt(c)?.name === 'water' && !/lava|fire/.test(bot.blockAt(c.offset(0, 1, 0))?.name || '')) { pond = c; break; }
+    }
+    if (!pond) return false;
+    onAction({ action: 'douse', health: bot.health, pond: { ...pond } });
+    await require('./motion').move(bot, task, { label: 'into_water', keys: ['forward', 'sprint'], sneak: false, why: 'burning, into the water to put it out',
+      look: pond.offset(0.5, 1, 0.5), maxMs: 4000, tick: 50, until: () => !onFire(bot) || !!bot.entity.isInWater });
+    return !onFire(bot);
+  }
   const feet = bot.entity.position.floored(), below = feet.offset(0, -1, 0);
   if (bot.blockAt(below)?.boundingBox !== 'block' || !['air', 'cave_air'].includes(bot.blockAt(feet)?.name)) return false;
   onAction({ action: 'douse', health: bot.health });
