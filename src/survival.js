@@ -799,6 +799,12 @@ class Survival {
     // below rather than decided for it by hiding them.
     const buildCost = armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the blocks go down.' : '';
     const creeperNote = creeperNoteFor(danger);
+    // A witch's potions come over a pillar and into a doorway: mid-72-c dug
+    // a bunker against one at twenty health, the harm (armour does not stop
+    // it) and the poison came in at the doorway, and a skeleton finished it
+    // at five (2026-09-26). A shut pocket is the cover a thrown potion stops at.
+    const witch = danger.find(t => t.entity.name === 'witch');
+    const witchNote = witch ? ` A witch ${Math.round(witch.distance)} blocks off throws its potions over a pillar and into a doorway: harm that armour does not stop, and poison that keeps taking health for half a minute; a shut pocket stops them.` : '';
     const estimate = fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: t.visible })),
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
     const cost = estimate.fightHere;
@@ -852,7 +858,7 @@ class Survival {
     // failure it was asked again every tick, a hundred and twenty times in
     // three hoglin drills.
     const up = this.state.pillar && feet.y >= this.state.pillar.y + 2 && Math.hypot(feet.x - this.state.pillar.x, feet.z - this.state.pillar.z) < 1;
-    if ((scaffold >= 2 && headroom) || up) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote + climbers(danger) + (edge && heavyHitters(danger, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
+    if ((scaffold >= 2 && headroom) || up) options.pillar = { description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies and other walkers cannot climb to a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote + climbers(danger) + witchNote + (edge && heavyHitters(danger, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
       run: async () => up || this.pillarFrom(task, goal, save, danger) };
     // Down off a pillar of the bot's own: stood on one, nothing else here
     // moves it (a route drops three blocks at most), and mid-83-e stood five
@@ -879,7 +885,7 @@ class Survival {
     }
     // A bunker that is quick to dig: three seconds of digging under fire is
     // the most it is worth (bunker.js bunkerDigMs).
-    if (nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.' + buildCost + creeperNote,
+    if (nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.' + buildCost + creeperNote + witchNote,
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
