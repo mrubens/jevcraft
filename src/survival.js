@@ -463,7 +463,9 @@ class Survival {
     // A swing can buy room, but it must not consume the escape action. Ending
     // the turn after every hit trapped an unarmed bot in a losing melee loop.
     const swung = await defendNearby(bot, task, goal, save);
-    const danger = threats(bot).filter(t => t.visible);
+    // With a creeper out of sight within four blocks among them (danger.js
+    // immediateThreat): it is the danger, seen or not.
+    const danger = threats(bot).filter(t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4));
     if (!danger.length) { lowerShield(bot); return; }
     // Something already in the air is answered before anything is decided:
     // the decision takes longer than the flight.

@@ -178,7 +178,12 @@ function immediateThreat(bot) {
   // land nothing: they cannot reach the bot either.
   const unreachable = !hurt && bot._unreachable?.until > Date.now() ? bot._unreachable.ids : [];
   const leftBe = t => (!!waved && waved.includes(t.entity.id) && t.distance > 3) || (unreachable.includes(t.entity.id) && t.distance > (t.entity.name === 'creeper' ? 5 : 2));
-  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && t.visible && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) && !nightHunted(bot, t.entity) &&
+  // A creeper within four blocks is one whether it is in sight or not: it
+  // comes round the corner already at its fuse's distance. mid-79-b stood
+  // recovering for five seconds with one out of sight beside it, and the
+  // blast was the first it knew (2026-09-26).
+  const seen = t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4);
+  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) && !nightHunted(bot, t.entity) &&
     t.distance <= (shooter(t.entity) ? (fighting ? 8 : hurt ? 32 : 16) : (fighting ? 5 : 8)));
 }
 

@@ -2044,3 +2044,13 @@ test('with a skeleton close, a deadly drop two blocks off is the edge: the bot s
   assert.equal(goal.survivalAction?.action, 'off_the_edge');
   assert(moved[0].x <= 2, `to x ${moved[0]?.x}: three blocks from the shaft at x 6`);
 });
+
+test('a creeper out of sight within four blocks is an immediate threat; farther off unseen, it is not', () => {
+  // mid-79-b: recovering beside a creeper round a block's edge; the blast was the first it knew.
+  const { immediateThreat } = require('../src/danger');
+  const make = d => ({ entity: { position: new Vec3(0.5, 64, 0.5), height: 1.8 }, game: { dimension: 'overworld' }, health: 12, food: 18,
+    entities: { 7: { id: 7, name: 'creeper', type: 'hostile', position: new Vec3(0.5 + d, 64, 0.5), height: 1.7, isValid: true } },
+    world: { raycast: () => ({ intersect: new Vec3(1, 65, 0.5), position: new Vec3(1, 65, 0) }) }, inventory: { items: () => [], slots: {} } });
+  assert.equal(immediateThreat(make(3))?.entity.name, 'creeper');
+  assert.equal(immediateThreat(make(7)), undefined);
+});
