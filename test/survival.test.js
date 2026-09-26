@@ -2641,3 +2641,18 @@ test('a run at a mob that got no nearer is said with the next question', () => {
   bot._charges[7] = { at: Date.now() - 60000, from: 5, to: 6, name: 'witch' };
   assert.equal(chargeSays(bot, witch), '', 'forgotten after half a minute');
 });
+
+test('a stance that moves, held, is not walked back from an edge by the reflex', async () => {
+  // mid-208-a: dancing with a creeper four blocks off, the edge reflex walked the bot in the creeper's face; its blast took nine.
+  const moved = [];
+  const hoglin = { id: 3, name: 'hoglin', position: new Vec3(-6, 64, 0.5), height: 1.4, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20,
+    entity: { position: new Vec3(3.5, 64, 0.5), onGround: true }, entities: { 3: hoglin }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'diamond_sword' }], slots: {} }, world: { raycast: () => null }, blockAt: ledgeWorld(),
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {} });
+  bot._stance = { choice: 'retreat', at: Date.now(), running: true, health: 20 };
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { moved.push(g); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('ledge'), goal, () => {}).catch(() => {});
+  assert.notEqual(goal.survivalAction?.action, 'off_the_edge');
+});

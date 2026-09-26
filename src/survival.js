@@ -668,7 +668,12 @@ class Survival {
     // blocks from it.
     const deep = require('./terrain').dropNear(bot, feet, 2);
     const deadly = !!deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2);
-    if ((close.length || heavy) && (heavy ? dropWithin(bot, feet, 3) : besideDrop(bot, feet) || deadly) && !isSetAside(this, 'firm_ground', 'here')) {
+    // Not while a stance that moves holds, as with the shield below: its
+    // own steps keep off edges, and mid-208-a, dancing with a creeper four
+    // blocks off, was walked away from an edge in the creeper's face and
+    // took its blast from twenty to eleven (2026-09-26).
+    const moving = stanceHeld(bot) && MOVING_STANCES.has(stanceHeld(bot).choice);
+    if ((close.length || heavy) && !moving && (heavy ? dropWithin(bot, feet, 3) : besideDrop(bot, feet) || deadly) && !isSetAside(this, 'firm_ground', 'here')) {
       const cell = ((heavy || deadly) && firmGround(bot, 8, { margin: 3 })) || firmGround(bot);
       if (cell) {
         this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, threats: close.map(t => t.entity.name) });
