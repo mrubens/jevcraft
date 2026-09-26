@@ -322,7 +322,14 @@ function flipWatch(bot, goal, now = Date.now()) {
     const action = actionOf(goal, now);
     const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
     stalls.changes = {};
-    return raise(bot, goal, { record, action }, now, `turning between ${pair} ${FLIP_CHANGES - 1} times in ${Math.round((now - first.t) / 1000)} seconds without getting anywhere`);
+    const why = `turning between ${pair} ${FLIP_CHANGES - 1} times in ${Math.round((now - first.t) / 1000)} seconds without getting anywhere`;
+    // Both sides of a survival flip rest, not only the one in hand: the one
+    // in hand may be reported where no refusal is looked at (the way back
+    // to the surface is set by the work step's climb), and mid-235-b's
+    // return to the surface and sealed shelter traded turns through eight
+    // strikes (2026-09-26).
+    if (layer === 'survival') { const { setAside } = require('./progress'); for (const n of names) if (!EMERGENCIES.has(n)) setAside(goal, 'flip', `survival:${n}`, why, FLIP_REST_MS); }
+    return raise(bot, goal, { record, action }, now, why);
   }
   return null;
 }

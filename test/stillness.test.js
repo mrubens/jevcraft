@@ -460,3 +460,18 @@ test('short of the Nether food reserve with food carried, crossing now or gather
   assert.equal(await gate(bot, task, goal, () => {}), true);
   assert.equal(asked, null, 'held: not asked again at once');
 });
+
+test('both sides of a survival flip rest, so a hold on the other side is refused too', () => {
+  // mid-235-b: return to the surface and a sealed shelter traded turns through eight strikes.
+  const { flipWatch, flipped } = require('../src/stillness');
+  const bot = { entity: { position: new Vec3(0.5, 61, 0.5) }, inventory: { items: () => [] } };
+  const goal = { step: { action: 'mine' } };
+  let t = Date.now() - 20000, raised = null;
+  for (const a of ['return_to_surface', 'seal_shelter', 'return_to_surface', 'seal_shelter', 'return_to_surface']) {
+    goal.survivalAction = { action: a, at: new Date(t += 1500).toISOString() };
+    raised = flipWatch(bot, goal, t) || raised;
+  }
+  assert(raised, 'the flip is raised');
+  assert.equal(flipped(goal, 'survival:seal_shelter'), true, 'the shelter on the other side rests');
+  assert.equal(flipped(goal, 'survival:return_to_surface'), true);
+});
