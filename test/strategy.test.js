@@ -56,13 +56,20 @@ test('a side trip runs once, rests, and the next step asks without it', async ()
   assert.equal(asked.length, 1);
 });
 
-test('side trips are offered by day only, and a lone rung is taken without asking', async () => {
+test('side trips are offered at night too (Jev weighs the dark), and a lone rung is taken without asking', async () => {
   const { bot, goal, task } = fixture(['golden_boots']);
   bot.time.timeOfDay = 14000;
-  const sides = { loot: { description: 'Loot the ruined portal.', run: async () => assert.fail('not at night') } };
-  const { asked, decide } = picking('loot');
-  assert.equal(await strategyStep(bot, task, goal, () => {}, { phase: 'golden_boots' }, { decide, sides }), null);
-  assert.equal(asked.length, 0);
+  let looted = false;
+  const sides = { loot: { description: 'Loot the ruined portal.', run: async () => { looted = true; } } };
+  const night = picking('loot');
+  await strategyStep(bot, task, goal, () => {}, { phase: 'golden_boots' }, { decide: night.decide, sides });
+  assert.equal(night.asked.length, 1, 'asked, the trip among the options');
+  assert(looted, 'and Jev\'s pick ran');
+  const { bot: b2, goal: g2, task: t2 } = fixture(['golden_boots']);
+  b2.time.timeOfDay = 14000;
+  const lone = picking('loot');
+  assert.equal(await strategyStep(b2, t2, g2, () => {}, { phase: 'golden_boots' }, { decide: lone.decide, sides: {} }), null);
+  assert.equal(lone.asked.length, 0, 'a lone rung is not asked about');
 });
 
 test('with Jev unreachable the ladder\'s own order is kept, through the registry', async () => {
@@ -83,14 +90,14 @@ test('the ladder step works the rung Jev chose', async () => {
   assert.equal(goal.gameProgress.phase, 'diamond_sword');
 });
 
-test('a trip that does not fit in the daylight left is not offered', () => {
+test('a trip that does not fit in the daylight left is still offered: whether to go is Jev\'s (the user, 2026-09-26)', () => {
   const { bot, goal } = fixture(['golden_boots', 'diamond_sword']);
   const sides = { loot: { description: 'Loot the ruined portal 240 blocks away.', walkBlocks: 240, run: async () => {} } };
   const stage = { phase: 'golden_boots' };
-  bot.time.timeOfDay = 3000;
-  assert(strategyOptions(bot, goal, stage, sides).loot, 'by morning there is time');
-  bot.time.timeOfDay = 9000;
-  assert.equal(strategyOptions(bot, goal, stage, sides).loot, undefined, 'twenty-five seconds before dusk there is not');
+  for (const t of [3000, 9000, 15000]) {
+    bot.time.timeOfDay = t;
+    assert(strategyOptions(bot, goal, stage, sides).loot, `offered at ${t}`);
+  }
 });
 
 test('no side trip while the next step is a basic tool', () => {

@@ -3096,6 +3096,8 @@ function tripTime(bot, blocks) {
   if (!Number.isFinite(blocks)) return '';
   const there = Math.round(blocks * 2 / 4.3), t = bot.time?.timeOfDay ?? 0;
   if (!/overworld/.test(String(bot.game?.dimension || 'overworld'))) return ` About ${there} seconds there and back at a walk.`;
+  // At night the trip is in the dark from the first step, and says so.
+  if (t >= DAY.DUSK && t < DAY.DAWN) return ` About ${there} seconds there and back at a walk, all of it in the dark: it is night, and mobs spawn about the bot for about ${Math.round((DAY.DAWN - t) / 1200)} real minutes more.`;
   const light = Math.max(0, Math.round((DAY.DUSK - t) / 20));
   return ` About ${there} seconds there and back at a walk; ${light} seconds of daylight left${there > light ? ': it would end after dusk' : ''}.`;
 }
@@ -3768,4 +3770,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

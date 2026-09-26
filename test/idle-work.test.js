@@ -99,3 +99,8 @@ test('choosing the long game runs the next rung of the beat-the-game ladder', as
   assert.equal(goal.gameProgress.phase, 'iron_pickaxe');
   assert.match(bot.said[0], /long game: iron pickaxe/);
 });
+
+test('at night a trip says it is in the dark from the first step', () => {
+  const { tripTime } = require('../src/work');
+  assert.match(tripTime({ time: { timeOfDay: 15000 }, game: { dimension: 'overworld' } }, 100), /all of it in the dark: it is night/);
+});

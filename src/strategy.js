@@ -221,21 +221,21 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   // walking about after endermen with an ancient city never looked for.
   else if (LATER.has(stage.action) || stage.phase === 'obtain_ender_pearls') options[`stage_${stage.phase}`] = { description: `The ladder's next step: ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase] ? ` It is for this: ${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase]}.` : ''}`, stage, fallback: true };
   else return null;
-  const t = bot.time?.timeOfDay ?? 0;
-  const daylight = t < DAY.DUSK;
   const fit = (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 12 && !immediateThreat(bot);
-  // A trip must fit in the daylight left: there and back at a walk, and
-  // half a minute at the far end. That is arithmetic, not judgment; asked,
-  // Jev sent the bot 240 blocks to a chest with half a minute of day left.
-  const fits = side => !Number.isFinite(side.walkBlocks) || (side.walkBlocks * 2 / WALK_BLOCKS_PER_S + 30) * 20 < DAY.DUSK - t;
+  // Whether a trip fits in the daylight left is Jev's to weigh, not a rule
+  // that hides it (the user, 2026-09-26: "drop the daylight rule, let Jev
+  // choose"). Every trip says its walk against the daylight left, or that it
+  // is night (work.js tripTime). It had been a rule since Jev sent the bot
+  // 240 blocks to a chest with half a minute of day left, told only the
+  // distance.
   // Not while the next step is a basic tool: Jev chose a dungeon over the
   // stone pickaxe it had none of.
   const toolless = rungs.length && /^(stone_pickaxe|stone_sword|iron_pickaxe)$/.test(rungs[0].phase);
   // A bed to carry, at any hour: spiders' string is a night's wool.
   const carryBed = !toolless && carryBedOption(bot, goal, planFor);
   if (carryBed) options.carry_bed = carryBed;
-  if (daylight && fit && !toolless) for (const [key, side] of Object.entries(sides)) {
-    if (side && !isSetAside(goal, 'strategy_side', key) && fits(side)) options[key] = { description: side.description, says: side.says, run: side.run, side: true };
+  if (fit && !toolless) for (const [key, side] of Object.entries(sides)) {
+    if (side && !isSetAside(goal, 'strategy_side', key)) options[key] = { description: side.description, says: side.says, run: side.run, side: true };
   }
   // Work that needs no walk or daylight (smelting the ore carried) is on
   // offer at any hour while nothing is on the bot.
