@@ -196,7 +196,14 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
     if (entity === target) { dead = true; bot._defeatedMobs ||= new WeakSet(); bot._defeatedMobs.add(entity); }
   };
   bot.on('entityDead', onDeath);
+  // The hunt's claim on the kind, renewed for as long as the fight runs:
+  // staked for five seconds by the hunt's tick, it lapsed during the walk
+  // to the target, and mid-83-j's fights under the spawner ended "Threat
+  // nearby: blaze at 5 blocks" five seconds in, every one (2026-09-26).
+  const claim = () => { if (!handler.passive) bot._huntingEntity = { name: target.name, until: Date.now() + 5000 }; };
+  claim();
   task.interruptCheck = () => {
+    claim();
     previousInterrupt?.(); checkAir(bot); checkThreats(bot);
     if (!ready() || !isolated(bot, target, handler)) throw new NeedsSafety({ entity: target, distance: target.position.distanceTo(bot.entity.position) });
     if (Date.now() >= deadline) throw new Error(`Timed out fighting ${target.name} after ${Math.round(timeoutMs / 1000)} seconds`);

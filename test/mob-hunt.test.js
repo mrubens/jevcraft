@@ -705,3 +705,16 @@ test('a sweep with every leg failing and too few blocks to cross goes back throu
   assert.equal(mined, 2);
   assert.equal(back, 1, 'none to be had: back through the portal');
 });
+
+test('the hunt\'s claim on the kind is renewed while the fight runs, not left to lapse after five seconds', async () => {
+  // mid-83-j: under the spawner, every fight ended "Threat nearby: blaze at 5 blocks" five seconds in.
+  const { bot, task, target, goal } = fixture();
+  bot._huntingEntity = { name: 'blaze', until: Date.now() - 10000 };
+  let claimDuringFight = null;
+  bot.attack = entity => {
+    claimDuringFight = bot._huntingEntity;
+    bot.emit('entityDead', entity); delete bot.entities[entity.id];
+  };
+  await fightForDrop(bot, task, target, goal, () => {}, { navigate: async () => {} }, { pickupWaitMs: 10 }).catch(() => {});
+  assert(claimDuringFight && claimDuringFight.name === 'blaze' && claimDuringFight.until > Date.now(), `claimed while fighting: ${JSON.stringify(claimDuringFight)}`);
+});
