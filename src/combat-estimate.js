@@ -83,7 +83,8 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     // seconds without falling, and Jev, told otherwise, fought on at two.
     const seconds = shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill / rate;
     return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false,
-      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(m.note ? { note: m.note } : {}) };
+      // A drowned's thrown trident is eight, where its hand is three.
+      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(m.note ? { note: m.note } : {}) };
   }).filter(Boolean);
   // Fighting here: nearest first; every mob still standing hits meanwhile,
   // biters once a second at arm's length, shooters every two seconds in

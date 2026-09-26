@@ -2068,3 +2068,13 @@ test('the charge\'s way to a shooter is walked ahead: a gap on the line stops it
   assert.equal(chargeStopsAt(bot(null), skeleton), null, 'level ground all the way');
   assert.deepEqual(chargeStopsAt(bot(4), skeleton), { blocks: 3, left: 7 }, 'a ravine at x 4');
 });
+
+test('a drowned with a trident is a shooter, and its throw is counted at eight', () => {
+  // mid-72-a: a trident drowned threw from beyond eight blocks underwater, 4.5 a throw through iron, and nothing answered it.
+  const { shooter } = require('../src/mob-policy');
+  const { fightEstimate } = require('../src/combat-estimate');
+  assert.equal(shooter({ name: 'drowned', heldItem: { name: 'trident' } }), true);
+  assert.equal(shooter({ name: 'drowned', heldItem: null }), false);
+  const est = fightEstimate({ threats: [{ name: 'drowned', distance: 12, shoots: true, visible: true }], armour: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'] });
+  assert(est.mobs[0].hitsBot > 4, `a throw through iron: ${est.mobs[0].hitsBot}`);
+});

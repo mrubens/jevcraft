@@ -84,7 +84,11 @@ function fitToFight(bot) {
   return (bot.health ?? 20) >= FIGHT_FLOOR && (bot.food ?? 20) >= FIGHT_FLOOR && kitReady(bot) && ((bot.food ?? 20) >= 18 || hasFood(bot));
 }
 const SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pillager', 'witch', 'blaze', 'ghast', 'breeze']);
-const shooter = entity => SHOOTERS.has(entity?.name) || (entity?.name === 'piglin' && entity.heldItem?.name === 'crossbow');
+// A drowned with a trident throws it, as a skeleton shoots: counted a biter
+// (a threat within eight blocks), one threw from further off at mid-72-a
+// underwater, 4.5 a throw, and nothing answered it (2026-09-26).
+const shooter = entity => SHOOTERS.has(entity?.name) || (entity?.name === 'piglin' && entity.heldItem?.name === 'crossbow') ||
+  (entity?.name === 'drowned' && entity.heldItem?.name === 'trident');
 
 function mobSources() {
   const sources = {};
