@@ -2054,3 +2054,17 @@ test('a creeper out of sight within four blocks is an immediate threat; farther 
   assert.equal(immediateThreat(make(3))?.entity.name, 'creeper');
   assert.equal(immediateThreat(make(7)), undefined);
 });
+
+test('the charge\'s way to a shooter is walked ahead: a gap on the line stops it short, level ground carries it', () => {
+  // mid-110-h: a charge offered at skeletons the ground between did not carry it to.
+  const { chargeStopsAt } = require('../src/survival');
+  const world = gapAt => p => {
+    const x = Math.floor(p.x), y = Math.floor(p.y);
+    const solid = y < 64 && !(gapAt !== null && x === gapAt && y >= 50);
+    return { position: p, name: solid ? 'stone' : 'air', boundingBox: solid ? 'block' : 'empty' };
+  };
+  const skeleton = { position: new Vec3(10.5, 64, 0.5) };
+  const bot = gap => ({ entity: { position: new Vec3(0.5, 64, 0.5) }, blockAt: world(gap) });
+  assert.equal(chargeStopsAt(bot(null), skeleton), null, 'level ground all the way');
+  assert.deepEqual(chargeStopsAt(bot(4), skeleton), { blocks: 3, left: 7 }, 'a ravine at x 4');
+});
