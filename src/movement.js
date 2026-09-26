@@ -131,23 +131,27 @@ class SurvivalMovements extends Movements {
     for (const [dx, dz] of AROUND) {
       const key = `${node.x + dx},${node.y},${node.z + dz}`;
       let drop = this._drops.cells.get(key);
-      if (drop === undefined) { drop = this.dropFrom(node, dx, dz); this._drops.cells.set(key, drop); }
+      if (drop === undefined) { drop = this.dropFrom(node, dx, dz, health); this._drops.cells.set(key, drop); }
       if (drop && (drop.into === 'lava' || drop.damage >= health / 2)) return true;
     }
     return false;
   }
-  dropFrom(node, dx, dz) {
+  // Measured no deeper than a fall that already costs half the health: the
+  // lava sea is fifty blocks under the ledges, and every column of a search
+  // over it was read to the bottom.
+  dropFrom(node, dx, dz, health = 20) {
+    const deadly = Math.min(DROP_DEEPEST, Math.ceil(health / 2) + 4);
     const cell = this.getBlock(node, dx, 0, dz);
     // Lava level with the feet is the lava-beside cost's; unknown is no fact.
     if (cell.physical || cell.liquid || cell.name === undefined) return null;
-    for (let dy = 1; dy <= DROP_DEEPEST; dy++) {
+    for (let dy = 1; dy <= deadly; dy++) {
       const under = this.getBlock(node, dx, -dy, dz);
       if (under.name === undefined) return null;
       if (/lava/.test(under.name)) return { into: 'lava', fall: dy - 1, damage: Infinity };
       if (under.liquid) return { into: 'water', fall: dy - 1, damage: 0 };
       if (under.physical) return dy <= 3 ? null : { into: 'ground', fall: dy - 1, damage: Math.max(0, dy - 1 - 3) };
     }
-    return { into: 'unknown', fall: DROP_DEEPEST, damage: Math.max(0, DROP_DEEPEST - 3) };
+    return { into: 'deep', fall: deadly, damage: Math.max(0, deadly - 3) };
   }
 
   getLandingBlock(node, direction) {
