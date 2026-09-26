@@ -265,10 +265,16 @@ function lavaExit(bot, radius = 6, { water = false } = {}) {
   for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (let dy = -1; dy <= 5; dy++) {
     const c = feet.offset(dx, dy, dz);
     if (bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block' || bot.blockAt(c.offset(0, -1, 0))?.name === 'magma_block' || !dry(c) || !dry(c.offset(0, 1, 0))) continue;
+    // Out of lava, never the cell the feet are in: the body leaned from it
+    // into the lava beside, it was "the nearest dry cell", and mid-92-m
+    // burned from sixteen health standing in it (2026-09-26). Cells with
+    // lava beside them come after those without.
+    if (water && c.equals(feet)) continue;
     cells.push(c);
   }
   const far = c => c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
-  return cells.sort((a, b) => far(a) - far(b))[0] || null;
+  const lavaBy = c => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => [0, 1].some(dy => /lava/.test(bot.blockAt(c.offset(x, dy, z))?.name || ''))) ? 4 : 0;
+  return cells.sort((a, b) => (far(a) + (water ? lavaBy(a) : 0)) - (far(b) + (water ? lavaBy(b) : 0)))[0] || null;
 }
 
 // A fight is not taken with a drop beside the bot: one hit's knockback on

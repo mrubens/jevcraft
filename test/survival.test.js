@@ -2346,3 +2346,14 @@ test('the run\'s way is found before the stance is asked, said on the retreat, a
   await survival.scoutRetreat(new Task('dusk'), danger);
   assert.match(survival.stanceOptions(new Task('dusk'), {}, () => {}, danger, false).retreat.description, /Nowhere to run to: no footing within 20 blocks is four blocks further than here from every mob about/);
 });
+
+test('out of lava the way out is never the cell the feet are in, and a cell with no lava beside comes first', () => {
+  // mid-92-m: its own cell, leaned out of into the lava beside, was "the nearest dry cell"; it burned standing in it.
+  const { lavaExit } = require('../src/survival');
+  const blockAt = p => p.x === 1 && p.y === 75 && p.z === 0 ? { name: 'lava', boundingBox: 'empty', position: p }
+    : p.y < 75 ? { name: 'netherrack', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  const bot = { entity: { position: new Vec3(0.8, 75, 0.5) }, blockAt };
+  const out = lavaExit(bot, 6, { water: true });
+  assert(!(out.x === 0 && out.z === 0), `not its own cell: ${out}`);
+  assert(![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => blockAt(out.offset(x, 0, z)).name === 'lava'), `no lava beside it: ${out}`);
+});
