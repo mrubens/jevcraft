@@ -81,3 +81,10 @@ test('digging up with water beside the block says the water pours down, and fill
   const up = localMoves(view, new Vec3(0, 10, 0), { goal: 'sky' }).moves.find(m => m.key === 'dig_up');
   assert.match(describeMove(up), /water beside it would pour down onto the bot and fill the one-block shaft it stands in/);
 });
+
+test('a move that already failed from this cell says so', () => {
+  // mid-72-e chose the climb south out of a pool ten times in ten minutes.
+  const climb = { key: 'climb_south', does: 'Climb out of the water onto the block south.', kind: 'move', to: new Vec3(0, 71, 1), rises: 1, dryFooting: true };
+  assert.doesNotMatch(describeMove(climb), /tried/);
+  assert.match(describeMove({ ...climb, failedHere: 3 }), /tried from here 3 times already and it did not get there/);
+});

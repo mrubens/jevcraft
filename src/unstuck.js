@@ -190,6 +190,10 @@ function describeMove(m) {
     if (m.blocksToTarget != null) facts.push(`${m.blocksToTarget} blocks from the target after`);
     if (m.blocksFromStart != null) facts.push(`${m.blocksFromStart} blocks from where it got stuck`);
   }
+  // The same move from the same cell before, and that it never got there:
+  // mid-72-e chose to climb south out of a pool ten times in ten minutes,
+  // told only in recentMoves that each ended where it began (2026-09-26).
+  if (m.failedHere) facts.push(`tried from here ${m.failedHere} time${m.failedHere > 1 ? 's' : ''} already and it did not get there`);
   return `${m.does}${facts.length ? ` ${facts.join('; ')}.` : ''}`;
 }
 
@@ -255,7 +259,10 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   if (!aim || !client) return false;
   const { decide } = require('./decisions');
   const fatal = err => ['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name);
-  const record = goal.unstuck = { aim: aim.aim, since: new Date().toISOString(), moves: [], visits: {} };
+  // Stuck again at the same aim within ten minutes is the same spell: its
+  // moves and visits are kept, so what failed is still known.
+  const prior = goal.unstuck?.aim === aim.aim && Date.now() - Date.parse(goal.unstuck.since) < 600000 ? goal.unstuck : null;
+  const record = goal.unstuck = prior ? { ...prior, moves: (prior.moves || []).slice(-24), visits: prior.visits || {} } : { aim: aim.aim, since: new Date().toISOString(), moves: [], visits: {} };
   bot.chat?.(`Stuck. Working my way ${aim.goal === 'dry' ? 'out of the water' : aim.goal === 'away' ? 'off this spot' : 'up'} one move at a time.`);
   let still = 0;
   for (let n = 0; n < maxMoves; n++) {
@@ -267,7 +274,8 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const surfaced = aim.goal === 'sky' && here.dryFooting && require('./surface').surfaceObserver(bot)(bot.entity.position);
     if (done || surfaced) { record.out = true; save(); return true; }
     if (!moves.length) return false;
-    const tree = Object.fromEntries(moves.map(m => [m.key, { description: describeMove(m) }]));
+    const failedHere = key => record.moves.filter(r => r.move === key && r.from === `${feet}` && !r.reached).length;
+    const tree = Object.fromEntries(moves.map(m => [m.key, { description: describeMove({ ...m, failedHere: failedHere(m.key) }) }]));
     const decision = await decide('unstuck_move', { client, bot, task, goal, save, tree,
       // Breath, in seconds: a full bar is fifteen under water.
       state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6), health: bot.health, food: bot.food,
@@ -284,7 +292,8 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const after = bot.entity.position.floored();
     const changed = before.distanceTo(bot.entity.position) >= 0.5 || (m.cell && bot.blockAt(m.cell)?.name !== blocks);
     still = changed ? 0 : still + 1;
-    record.moves.push({ move: m.key, result: failure ? `failed: ${failure}` : `${changed ? '' : 'nothing changed; '}now at ${after.x},${after.y},${after.z}` });
+    const reached = m.to ? after.x === m.to.x && after.z === m.to.z : changed;
+    record.moves.push({ move: m.key, from: `${feet}`, reached, result: failure ? `failed: ${failure}` : `${changed ? '' : 'nothing changed; '}now at ${after.x},${after.y},${after.z}` });
     save();
     if (still >= 4) return false;
   }

@@ -65,3 +65,15 @@ test('an await loop waits on something real between passes', () => {
   }
   assert.deepEqual(offenders, []);
 });
+
+test('a move aimed somewhere keeps that heading while its keys are held, whatever turns the bot', async () => {
+  // mid-72-e: climbing south out of a pool, it was found facing north against the far bank.
+  const bot = fakeBot();
+  bot.entity = { yaw: 0, pitch: 0 };
+  bot.lookAt = async () => { bot.entity.yaw = Math.PI; bot.entity.pitch = 0.8; };
+  bot.look = async (yaw, pitch) => { bot.entity.yaw = yaw; bot.entity.pitch = pitch; };
+  let ticks = 0, headings = [];
+  await move(bot, new Task('m'), { label: 'climb', sneak: false, why: 'out of the water', look: { x: 0, y: 0, z: 1 }, tick: 5, maxMs: 200,
+    until: () => { headings.push(bot.entity.yaw); if (++ticks === 2) bot.entity.yaw = 0; return ticks > 4; } });
+  assert.equal(headings.at(-1), Math.PI, `turned back: ${headings}`);
+});

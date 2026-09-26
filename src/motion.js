@@ -30,6 +30,11 @@ async function move(bot, task, { label, keys = ['forward'], sneak = true, why, l
   // through (the arena server timed the bot out mid-drill).
   await new Promise(resolve => setImmediate(resolve));
   if (look) await bot.lookAt(look, true);
+  // The heading the move was aimed at, held for its whole length: mid-72-e
+  // held forward to climb south out of a pool and was found facing north,
+  // pressed against the far bank, ten times in ten minutes (2026-09-26).
+  // Whatever turned it, the keys are pressed along the aim.
+  const aim = look && Number.isFinite(bot.entity?.yaw) && typeof bot.look === 'function' ? { yaw: bot.entity.yaw, pitch: bot.entity.pitch } : null;
   task.check();
   const touched = [...new Set([...keys, ...(sneak ? ['sneak'] : [])])];
   const held = key => !!(bot.getControlState ? bot.getControlState(key) : bot.controlState?.[key]);
@@ -43,6 +48,11 @@ async function move(bot, task, { label, keys = ['forward'], sneak = true, why, l
     while (Date.now() - started < limit) {
       task.check(); guard();
       if (until()) return true;
+      if (aim && Math.abs(Math.atan2(Math.sin(bot.entity.yaw - aim.yaw), Math.cos(bot.entity.yaw - aim.yaw))) > 0.05) {
+        controller.turned = (controller.turned || 0) + 1;
+        if (controller.turned === 1) console.log(`[motion] ${label}: turned from ${aim.yaw.toFixed(2)} to ${bot.entity.yaw.toFixed(2)} mid-move; turned back`);
+        await bot.look(aim.yaw, aim.pitch, true);
+      }
       await sleep(tick);
     }
     return !!until();
