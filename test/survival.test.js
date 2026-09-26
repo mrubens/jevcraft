@@ -2543,3 +2543,16 @@ test('the retreat says a rider on a horse or camel outruns a running player', ()
   const walker = survival.stanceOptions(new Task('night'), {}, () => {}, [crowdMob(2, 'zombie', 6)], false);
   assert.doesNotMatch(walker.retreat.description, /faster than a running player/);
 });
+
+test('every way to shelter says how soon a creeper about could go off, the shaft pocket as well as the room', async () => {
+  // mid-211-a: chose the shaft pocket told "done in seconds" with a creeper eight blocks off, and it followed the bot down.
+  const { bot } = nookFixture({ time: 14000, open: p => p.x === 0 && p.z === 0 && p.y >= 30 });
+  bot.entities = { 7: { id: 7, name: 'creeper', type: 'hostile', position: bot.entity.position.offset(8, 0, 0), height: 1.7, isValid: true } };
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => ({}) } });
+  let tree = null;
+  survival.decide = async (task, goal, save, q) => { if (q.id === 'shelter_method') tree = q.tree; return { stale: true, path: [] }; };
+  try { await survival.refugeStep(new Task('night'), { kind: 'win' }, () => {}); } catch (_) {}
+  assert(tree, 'the shelter question was asked');
+  for (const key of ['shaft_pocket', 'seal_here'].filter(k => tree[k])) assert.match(tree[key].description, /creeper is 8 blocks off/, key);
+  assert(tree.shaft_pocket, 'a shaft pocket is on offer here');
+});

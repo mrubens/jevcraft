@@ -1664,11 +1664,15 @@ class Survival {
       if (site && !resting('build_at_site')) { const need = shelter.missingShell(bot, { origin: site }).length;
         options.build_at_site = { description: `Build a small room at a dry site ${Math.round(site.distanceTo(bot.entity.position))} blocks away: ${need} blocks to place, ${stock} carried${stock < need + 4 ? ', the rest gathered first' : ''}. A room is kept and can be used again on later nights.${walkTo(site)}` }; }
       const near = about.filter(t => t.distance <= 24);
-      if (!resting('seal_here')) options.seal_here = { description: (stock >= 12 ? `Seal a two-block pocket around the bot where it stands with the ${stock} blocks carried; quick, and kept for later nights.` : `Dig into the ground where the bot stands and close it over (${stock} blocks carried, too few for a pocket on open ground).`) + pocketRace(bot, near) + creeperNoteFor(near) };
+      if (!resting('seal_here')) options.seal_here = { description: (stock >= 12 ? `Seal a two-block pocket around the bot where it stands with the ${stock} blocks carried; quick, and kept for later nights.` : `Dig into the ground where the bot stands and close it over (${stock} blocks carried, too few for a pocket on open ground).`) + pocketRace(bot, near) + (creeperNoteFor(near) || creeperSays(bot)) };
       if (!resting('shaft_pocket')) {
         const column = this.shaftColumn();
         const found = column.bottom ? ` A dry column is found${column.start.equals(bot.entity.position.floored()) ? ' underfoot' : ` ${Math.round(column.start.distanceTo(bot.entity.position))} blocks over`}: ${column.start.y - column.bottom.y} blocks down.` : ` ${column.none.charAt(0).toUpperCase()}${column.none.slice(1)}; chosen, it fails and the question comes again.`;
-        options.shaft_pocket = { description: 'Dig two or three blocks straight down here and cap it with one block: the fewest blocks, done in seconds.' + found };
+        // The creeper's race said here too: mid-211-a chose the shaft pocket
+        // at 9.2 health told "done in seconds", a creeper eight blocks off
+        // and said only beside the room, and it followed the bot down and
+        // went off (2026-09-26).
+        options.shaft_pocket = { description: 'Dig two or three blocks straight down here and cap it with one block: the fewest blocks, done in seconds.' + found + creeperSays(bot) };
       }
       // The carried bed, in a nook dug beside the bot: now at bedtime, or in
       // the wall of a pocket sealed here and dug at bedtime. The one bot of
@@ -1677,10 +1681,10 @@ class Survival {
       if (bedCarried(bot) && bot.game?.dimension === 'overworld' && !sleepWaiting(this) && !resting('bed_nook') && !isSetAside(this, 'bed_nook', 'here')) {
         const now = sleepable(bot);
         const nook = bedNook(bot, goal, now ? {} : { sealed: true, shell: shelter.shell(bot.entity.position.floored()) });
-        if (nook) options.bed_nook = { description: now ? `Put the carried bed down here instead of a shelter: ${nookSays(bot, nook)}`
+        if (nook) options.bed_nook = { description: now ? `Put the carried bed down here instead of a shelter: ${nookSays(bot, nook)}${creeperSays(bot)}`
           : `Seal a pocket where the bot stands, as seal_here does (${stock} blocks carried), and at bedtime ${nookSays(bot, nook, { pocket: true, later: true })}${pocketRace(bot, near)}${creeperNoteFor(near)}` };
       }
-      if (this.canNightMine(goal) && !resting('night_mine')) options.night_mine = { description: 'Dig a mine from here for the night: a staircase into the rock is shelter and a mine at once, and gains ore while the night passes.' };
+      if (this.canNightMine(goal) && !resting('night_mine')) options.night_mine = { description: 'Dig a mine from here for the night: a staircase into the rock is shelter and a mine at once, and gains ore while the night passes.' + creeperSays(bot) };
       if (!Object.keys(options).length) {
         // Nowhere, nothing to build with, no ground to dig: failing that every
         // tick was trial 9's loop at minute ten, with no wood yet to make any
