@@ -36,3 +36,4 @@ logs/
 docs/run-ledger.md
 
 .trial-sources/
+.trial-checkpoints/
