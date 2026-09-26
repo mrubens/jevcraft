@@ -168,3 +168,35 @@ test('at a lava pool with no lava to pour on, the pool is marked spent and not g
   await makeObsidian(bot, new Task('obsidian'), step, goal, () => {}, actions);
   assert.equal(tunnels, 1, 'the next pass goes looking for lava instead');
 });
+
+test('lava in buckets: planned from empty buckets, scooped from the dry shore a block above the pool', async () => {
+  // A frame cast in place is a lava bucket a block (portal-cast.js).
+  const plan = planCatalog(registry, 'lava_bucket', 2, { bucket: 2 });
+  assert.deepEqual(plan.map(s => `${s.action}:${s.item}:${s.count}`), ['fill_bucket:lava_bucket:2']);
+  assert(planCatalog(registry, 'lava_bucket', 1, { iron_ingot: 3, crafting_table: 1 }).some(s => s.action === 'craft' && s.item === 'bucket'), 'a bucket is made from three iron');
+  const { collectLava } = require('../src/obsidian');
+  const { bot, items, blocks } = world();
+  items.splice(0, items.length, { name: 'bucket', count: 2 });
+  const scooped = [];
+  let look;
+  bot.equip = async () => {}; bot.deactivateItem = () => {};
+  bot.lookAt = async p => { look = p; };
+  bot.world = { raycast: () => null };
+  bot.activateItem = () => {
+    const c = look.floored();
+    scooped.push(c);
+    blocks.delete(`${c.x},${c.y},${c.z}`);
+    items[0].count--;
+    const full = items.find(i => i.name === 'lava_bucket');
+    if (full) full.count++; else items.push({ name: 'lava_bucket', count: 1 });
+  };
+  let stood;
+  const actions = { navigate: async (b, t, g) => { stood = new Vec3(g.x, g.y, g.z); bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+    dig: async () => {}, resourceTunnelStep: async () => { throw new Error('no tunnel with a pool in reach'); } };
+  await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 2 }, {}, () => {}, actions);
+  assert.equal(items.find(i => i.name === 'lava_bucket').count, 2);
+  assert.equal(scooped.length, 2);
+  assert.equal(stood.y, 11, 'a block above the pool');
+  assert.equal(bot.blockAt(stood.offset(0, -1, 0)).name, 'stone', 'on dry ground');
+  assert(scooped.every(c => c.y === 10 && !(c.x === stood.x && c.z === stood.z)), 'from the pool, never where it stands');
+});

@@ -9,7 +9,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { countOf, surveyRoute } = require('./skills');
 const { dryStanding } = require('./mining-access');
-const { fillWaterBucket } = require('./water');
+const { fillWaterBucket, fillBucket } = require('./water');
 const { checkThreats, safeFromHostiles, threats } = require('./danger');
 const { checkAir } = require('./vitals');
 
@@ -21,6 +21,8 @@ const FLOW = 7;
 // pool is loaded anywhere near.
 const LAVA_DEPTH = -56;
 const CONVERSION_MS = 3000;
+// A survival player's block interaction range.
+const REACH = 4.5;
 const sourceLava = b => b?.name === 'lava' && Number(b.getProperties?.().level ?? b.metadata ?? 0) === 0;
 const open = b => !b || ['air', 'cave_air', 'void_air'].includes(b.name);
 const solid = b => b?.boundingBox === 'block';
@@ -195,4 +197,50 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
 }
 
-module.exports = { makeObsidian, poolSurface, pourSpots, safeCrust, pour, sourceLava, LAVA_DEPTH };
+// Lava in buckets, for a portal frame cast in place (portal-cast.js): from
+// dry ground at a pool's edge, the same shore a pour of water is made from,
+// an empty bucket used on each surface source in reach. The feet are a block
+// above the pool, so no lava taken from beside them can flow up to them;
+// the bot never steps into it. A pool the bot cannot stand beside is gone
+// round as the obsidian step goes round it: a remembered lava pool, then a
+// dig toward lava.
+async function collectLava(bot, task, step, goal, save, { navigate, dig, resourceTunnelStep }) {
+  task.check(); checkAir(bot); checkThreats(bot);
+  if (threats(bot).some(t => t.visible && t.distance < 16)) { goal.step = { ...step, phase: 'wait_for_quiet' }; save(); await sleep(1000); return; }
+  const target = countOf(bot, 'lava_bucket') + (step.count || 1);
+  const surface = poolSurface(bot);
+  const spots = pourSpots(bot, surface);
+  for (const spot of spots) {
+    task.check();
+    const destination = new goals.GoalBlock(spot.feet.x, spot.feet.y, spot.feet.z);
+    const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 500);
+    if (route.status !== 'success') continue;
+    goal.step = { ...step, phase: 'scoop', position: { ...spot.feet } }; save();
+    if (!bot.entity.position.floored().equals(spot.feet)) await navigate(bot, task, destination, { timeoutMs: 20000, stallMs: 5000 });
+    if (!bot.entity.position.floored().equals(spot.feet)) continue;
+    const eye = bot.entity.position.offset(0, 1.62, 0);
+    const inReach = surface.filter(p => sourceLava(bot.blockAt(p)) && eye.distanceTo(p.offset(0.5, 0.5, 0.5)) <= REACH)
+      .sort((a, b) => eye.distanceTo(a) - eye.distanceTo(b));
+    let filled = 0;
+    for (const p of inReach) {
+      if (countOf(bot, 'lava_bucket') >= target || !countOf(bot, 'bucket')) break;
+      try { await fillBucket(bot, task, p, { fluid: 'lava', guard: () => checkThreats(bot) }); filled++; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+    if (filled) return;
+  }
+  if (!surface.length) {
+    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: l => !l.spent });
+    if (arrived !== null) {
+      if (arrived && !poolSurface(bot).length) { arrived.spent = new Date().toISOString(); save(); }
+      return;
+    }
+  }
+  const here = bot.entity.position;
+  const nearest = surface.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+  const dest = spots[0]?.feet || (nearest ? nearest.plus(UP) : here.floored().offset(24, LAVA_DEPTH - here.floored().y, 0));
+  goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
+  await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
+}
+
+module.exports = { makeObsidian, collectLava, poolSurface, pourSpots, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };

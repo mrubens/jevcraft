@@ -275,17 +275,18 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `portal_method`
 
-**The way into the Nether: build a portal frame of its own, or finish and light a remembered ruined portal?**
+**The way into the Nether: build a portal frame of its own from obsidian, cast one in place from lava and water, or finish and light a remembered ruined portal?**
 
-- When: In the Overworld on the way to the Nether, with no lit portal known and no frame begun, when a ruined portal is remembered within 512 blocks; held once chosen, asked again when a chosen ruin's frame will not do.
+- When: In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen, asked again when a chosen ruin's frame will not do.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
-- Options built in: src/work.js (portalMethod)
+- Options built in: src/work.js (portalMethod), src/portal-cast.js (castSays)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `build_new` | root | build a frame of its own from ten obsidian | always |
+| `cast_frame` | root | cast a frame of its own in place from lava and water | always |
 | `/^ruin_\d+$/` | root | finish and light a remembered ruined portal | a ruined portal remembered within 512 blocks, not found frameless |
 
 ## resources
