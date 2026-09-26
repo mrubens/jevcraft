@@ -1106,7 +1106,19 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       const held = goal.tunnelOre && found.find(p => p.x === goal.tunnelOre.x && p.y === goal.tunnelOre.y && p.z === goal.tunnelOre.z);
       const ore = held || found[0];
       if (ore) goal.tunnelOre = { x: ore.x, y: ore.y, z: ore.z }; else delete goal.tunnelOre;
-      const target = ore || bot.entity.position.floored().offset(24, step.depth - bot.entity.position.floored().y, 0);
+      // With no ore in view, down toward the depth along a heading whose
+      // staircase is not resting. Always east, a resting staircase threw at
+      // once, was set aside, and the same east target came straight back:
+      // mid-110-l's diamond step returned 927 times in four minutes
+      // (2026-09-26).
+      let target = ore;
+      if (!target) {
+        const { staircaseResting } = require('./tunneling');
+        const feet = bot.entity.position.floored();
+        target = [[24, 0], [0, 24], [-24, 0], [0, -24]].map(([dx, dz]) => feet.offset(dx, step.depth - feet.y, dz))
+          .find(t => !staircaseResting(goal, t) && !isSetAside(goal, 'reach', t));
+        if (!target) throw new Error(`Every way down toward the ${String(step.block).replaceAll('_', ' ')} from here is set aside for now`);
+      }
       await tunnelOrSetAside(bot, task, goal, save, target, step.block, ore);
     } else await explore(bot, task, goal, save, step.block);
     return;
