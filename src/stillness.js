@@ -271,6 +271,12 @@ function raise(bot, goal, seen, now = Date.now(), because = null) {
   const why = because || `${Math.round(STALL_MS / 1000)} seconds on ${action.key.replace(/^\w+:/, '').replaceAll('_', ' ')} without getting anywhere`;
   const { setAside } = require('./progress');
   setAside(goal, 'act', action.key, why, MEMORY_MS);
+  // A flip is not a wait: a hold that trades turns with another step is
+  // refused as well, for a while. dig_in, a hold, traded turns with the
+  // way back to the surface twenty-three times in mid-205-c, its lid placed
+  // and dug out again every second and a half, and five strikes against it
+  // changed nothing (2026-09-26).
+  if (because && FLIPPING.test(because)) setAside(goal, 'flip', action.key, why, FLIP_REST_MS);
   bot._stalls.stall = { key: action.key, layer: action.layer, name: action.name, why, strikes: r.strikes.length, at: now };
   console.log(`[stall] ${action.key}: strike ${r.strikes.length} (${why})`);
   return bot._stalls.stall;
@@ -286,7 +292,8 @@ function raise(bot, goal, seen, now = Date.now(), because = null) {
 // worth keeping gained. Raised as a stall of the step in hand, so the loop
 // answers it the way it answers any other: another way, a detour, or the
 // step set aside, Jev's choice with the flip said.
-const FLIP_CHANGES = 5, FLIP_MS = 45000;
+const FLIP_CHANGES = 5, FLIP_MS = 45000, FLIP_REST_MS = 2 * FLIP_MS;
+const FLIPPING = /^turning between /;
 function worth(bot) { return (bot.inventory?.items?.() || []).filter(i => !FILLER.test(i.name)).reduce((n, i) => n + i.count, 0); }
 function flipWatch(bot, goal, now = Date.now()) {
   const stalls = bot._stalls ||= { records: {}, marks: [] };
@@ -371,6 +378,7 @@ function takeStall(bot) { const stall = bot._stalls?.stall; if (stall) delete bo
 // The survival layer asks before it starts an action: one that stalled is
 // refused for a while, and the layer falls through to its next answer.
 function refused(holder, key, now = Date.now()) { return require('./progress').isSetAside(holder, 'act', key, now); }
+function flipped(holder, key, now = Date.now()) { return require('./progress').isSetAside(holder, 'flip', key, now); }
 
 // Seconds stalled, per hour and per reason, kept with the survival state
 // so the trial notes can say whether getting stuck is going down.
@@ -385,5 +393,5 @@ function recordStill(state, reason, ms, { now = Date.now(), detour } = {}) {
   return bucket;
 }
 
-module.exports = { flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
+module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
   Stalled, checkStall, takeStall, refused, recordStill };

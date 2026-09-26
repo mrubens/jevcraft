@@ -2,7 +2,7 @@
 const { move } = require('./motion');
 const { makeRoom } = require('./inventory-tidy');
 const { attemptsFor, setAside, isSetAside, failedWithin, watch, unwatch } = require('./progress');
-const { HOLDS, EMERGENCIES, refused } = require('./stillness');
+const { HOLDS, EMERGENCIES, refused, flipped } = require('./stillness');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { threats, immediateThreat, checkThreats, hunted, claimed, hostileEntities, nightHunted, stanceHeld, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER } = require('./danger');
@@ -628,8 +628,9 @@ class Survival {
     // dig in, once a second at the surface with a spider coming) was set
     // aside on the goal and never refused here (2026-09-25).
     const key = `survival:${action.action}`;
-    if (!HOLDS.has(action.action) && !EMERGENCIES.has(action.action) && (refused(this, key) || refused(goal, key))) {
-      const entry = attemptsFor(this).of('act')[key] || attemptsFor(goal).of('act')[key];
+    const flip = !EMERGENCIES.has(action.action) && flipped(goal, key);
+    if (flip || (!HOLDS.has(action.action) && !EMERGENCIES.has(action.action) && (refused(this, key) || refused(goal, key)))) {
+      const entry = (flip && attemptsFor(goal).of('flip')[key]) || attemptsFor(this).of('act')[key] || attemptsFor(goal).of('act')[key];
       throw Object.assign(new Error(`${action.action.replaceAll('_', ' ')} is set aside: ${entry?.why || 'it stalled'}`), { name: 'SetAside', until: entry?.until });
     }
     goal.survivalAction = { ...action, at: new Date().toISOString() }; save();

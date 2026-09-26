@@ -425,3 +425,18 @@ test('no reachable ground anywhere is walks failing: working free is on offer', 
   assert(walksFailed(null, 'navigation timed out'));
   assert(!walksFailed('Cannot place dirt'));
 });
+
+test('a hold that flips with another step is refused for a while; a hold that only waits is not', () => {
+  // mid-205-c: dig_in (a hold) and the way back to the surface traded turns twenty-three times; five strikes changed nothing.
+  const { raise } = require('../src/stillness');
+  const { Survival } = require('../src/survival');
+  const bot = { entity: { position: { x: 0, y: 61, z: 0 } }, _stalls: { records: {} }, game: {}, on() {} };
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  const waited = {};
+  raise(bot, waited, { record: { strikes: [] }, action: { key: 'survival:dig_in', layer: 'survival', name: 'dig_in' } });
+  assert.doesNotThrow(() => survival.report(waited, () => {}, { action: 'dig_in', threats: [] }), 'forty-five idle seconds in a pocket is the hold doing its job');
+  const flipping = {};
+  raise(bot, flipping, { record: { strikes: [] }, action: { key: 'survival:dig_in', layer: 'survival', name: 'dig_in' } }, Date.now(), 'turning between dig in and return to surface 4 times in 6 seconds without getting anywhere');
+  assert.throws(() => survival.report(flipping, () => {}, { action: 'dig_in', threats: [] }), { name: 'SetAside' });
+  assert.doesNotThrow(() => survival.report(flipping, () => {}, { action: 'leave_lava' }), 'never the way out of lava');
+});
