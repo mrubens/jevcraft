@@ -1798,6 +1798,13 @@ class Survival {
     if (isSetAside(this, 'seal_here', `${origin}`)) return false;
     let refuge = this.state.shelters.find(s => s.origin.x === origin.x && s.origin.y === origin.y && s.origin.z === origin.z && s.dimension === bot.game.dimension);
     if (!refuge) { refuge = { origin: { ...origin }, dimension: bot.game.dimension, createdAt: new Date().toISOString(), emergency: true }; this.state.shelters.push(refuge); save(); }
+    // Not with a creeper at arm's length and more of the pocket to build
+    // than its fuse allows: about a second and a half from lighting, a block
+    // every 0.6 s. mid-79-g began a twenty-block pocket with two creepers
+    // close and was blown up from twenty health (2026-09-26); the backing
+    // off and the dance are the answers to a creeper that near.
+    const creeperNear = threats(bot, 8).some(t => t.entity.name === 'creeper' && t.distance <= 5);
+    if (creeperNear && shelter.missingShell(bot, refuge).length > 2) return false;
     this.report(goal, save, { action: 'dig_in', threats: danger.map(t => t.entity.name), cells: shelter.missingShell(bot, refuge).length });
     // The nearest cells first: the ones a mob could step into.
     const material = () => bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
