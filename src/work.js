@@ -573,6 +573,20 @@ function knockedAway(bot, block) {
   return (block.hardness ?? bot.registry?.blocksByName?.[block.name]?.hardness) === 0;
 }
 
+// A body in the cell: the game will not put a block where a mob or a
+// player stands. first-days-221's pen gate "did not go where it was placed"
+// two hundred and ninety-one times with a trader llama standing in its
+// cell, and nothing said so (2026-09-26).
+function occupant(bot, p) {
+  const cell = { x0: p.x, x1: p.x + 1, y0: p.y, y1: p.y + 1, z0: p.z, z1: p.z + 1 };
+  // A spectator has no body in the game.
+  const spectator = e => e.type === 'player' && bot.players?.[e.username]?.gamemode === 3;
+  return Object.values(bot.entities || {}).find(e => e !== bot.entity && e.position && e.isValid !== false && !spectator(e) && !/^(item|experience_orb|arrow|spectral_arrow|trident)$/.test(e.name || '') &&
+    e.type !== 'orb' && e.type !== 'projectile' && (() => { const half = (e.width || 0.6) / 2, h = e.height || 1.8;
+      return e.position.x + half > cell.x0 && e.position.x - half < cell.x1 && e.position.z + half > cell.z0 && e.position.z - half < cell.z1 && e.position.y + h > cell.y0 && e.position.y < cell.y1; })()) || null;
+}
+const occupiedSays = (e, p) => `a ${(e.username || e.name || 'mob').replaceAll('_', ' ')} stands in the cell at ${p}, and the game puts no block where a body is`;
+
 // Mineflayer yaw for looking toward each horizontal facing (0 is north, -z).
 const PLACEMENT_YAW = { north: 0, west: Math.PI / 2, south: Math.PI, east: -Math.PI / 2 };
 async function place(bot, task, p, material, { face, properties, stay = false } = {}) {
@@ -602,6 +616,8 @@ async function place(bot, task, p, material, { face, properties, stay = false } 
   if (!air(bot.blockAt(p)) && !GROUND_COVER.has(bot.blockAt(p)?.name)) {
     throw new Error(`Placement obstructed by ${bot.blockAt(p)?.name} at ${p}`);
   }
+  const body = occupant(bot, p);
+  if (body) throw new Error(`Placement obstructed: ${occupiedSays(body, p)}`);
   await stepOff(bot, task, p);
   await nudgeClear(bot, task, p);
   const eye = bot.entity.position.offset(0, 1.62, 0);
@@ -3854,4 +3870,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

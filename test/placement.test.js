@@ -104,3 +104,19 @@ test('a flower in the cell is punched out before placing; a crop is not', async 
   await assert.rejects(place(cropped, new Task('fence'), target, 'oak_fence'), /obstructed by wheat/);
   assert.deepEqual(cropped.dug, []);
 });
+
+test('a mob standing in the cell is named as what stops the block, and a spectator is not', async () => {
+  // first-days-221: a pen gate "did not go where it was placed" 291 times with a trader llama standing in its cell.
+  const { occupant } = require('../src/work');
+  const target = new Vec3(2, 64, 0);
+  const llama = { id: 9, name: 'trader_llama', type: 'animal', position: new Vec3(2.4, 64, 0.5), width: 0.9, height: 1.87, isValid: true };
+  const watcher = { id: 10, type: 'player', username: 'Watcher', position: new Vec3(2.5, 64, 0.5), width: 0.6, height: 1.8, isValid: true };
+  const bot = { game: { gameMode: 'survival' }, entity: { position: new Vec3(0.5, 64, 0.5) }, inventory: { items: () => [{ name: 'dirt', count: 4 }] }, equip: async () => {},
+    entities: { 9: llama }, players: { Watcher: { gamemode: 3 } },
+    blockAt: p => ({ name: p.y === 63 ? 'stone' : 'air', boundingBox: p.y === 63 ? 'block' : 'empty', position: p }), placeBlock: async () => {} };
+  await assert.rejects(place(bot, new Task('wall'), target, 'dirt'), /trader llama stands in the cell/);
+  bot.entities = { 10: watcher };
+  assert.equal(occupant(bot, target), null, 'a spectator has no body');
+  bot.players.Watcher.gamemode = 0;
+  assert.equal(occupant(bot, target), watcher);
+});

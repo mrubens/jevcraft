@@ -602,6 +602,9 @@ async function placeOriented(bot, task, actions, stand, target, item, verify) {
   await equip(bot, item);
   const ground = bot.blockAt(pos(target).offset(0, -1, 0));
   if (ground?.boundingBox !== 'block') throw new Error(`No ground under ${item.replaceAll('_', ' ')} at ${pos(target)}`);
+  const { occupant, occupiedSays } = require('./work');
+  const body = occupant(bot, pos(target));
+  if (body) throw new Error(`${item.replaceAll('_', ' ')} cannot go in: ${occupiedSays(body, pos(target))}`);
   await bot.lookAt(pos(target).offset(0.5, 0.5, 0.5), true);
   try { await bot.placeBlock(ground, new Vec3(0, 1, 0)); } catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
   if (!await waitFor(task, verify)) throw new Error(`${item.replaceAll('_', ' ')} did not go where it was placed`);
