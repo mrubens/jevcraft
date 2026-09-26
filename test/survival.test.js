@@ -1284,6 +1284,8 @@ test('sealed in, the mobs the wall hides are named in the choice to leave', asyn
   survival.wait = async () => {};
   await survival.step(new Task('night'), { kind: 'win' }, () => {});
   assert.match(leave || '', /past a creeper 10 blocks off \(heard, not seen: the wall is between\)/);
+  // mid-83-i: the fight's figure left the creepers out, and said so nowhere.
+  assert.match(leave || '', /the creeper not counted in it: each that reaches the bot goes off for about [\d.]+ health/);
 });
 
 test('with the night planned for a shelter, a bed in sight does not keep the night mine shut', () => {

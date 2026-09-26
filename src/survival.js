@@ -2790,7 +2790,11 @@ class Survival {
       const outsideAll = threats(bot, 16).slice(0, 8);
       const outCost = outsideAll.length ? fightEstimate({ threats: outsideAll.map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), visible: true })),
         armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere : null;
-      const outSays = outCost ? ` Out among them, fighting them all is estimated at about ${outCost.seconds} seconds and ${outCost.damageTaken} damage, from ${outCost.healthNow} health${outCost.healthAfter <= 0 ? ' (more than the bot has)' : ''}.` : '';
+      // The creepers too: mid-83-i left past three creepers and two
+      // skeletons told "2.5 damage", the creepers left out of the sum, and
+      // was shot down among them in half a minute (2026-09-26).
+      const creeperCount = outsideAll.filter(t => t.entity.name === 'creeper').length;
+      const outSays = outCost ? ` Out among them, fighting them all is estimated at about ${outCost.seconds} seconds and ${outCost.damageTaken} damage, from ${outCost.healthNow} health${outCost.healthAfter <= 0 ? ' (more than the bot has)' : ''}${creeperCount ? `, the ${creeperCount === 1 ? 'creeper' : `${creeperCount} creepers`} not counted in it: each that reaches the bot goes off for about ${outCost.creeper?.match(/about ([\d.]+)/)?.[1] || 18} health` : ''}.` : '';
       options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${outSays}`,
         run: async () => {
           delete this.state.watchedSince;
