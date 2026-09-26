@@ -191,3 +191,20 @@ test('a water column is swum up where it comes out into air within twenty blocks
     const block = Block.fromStateId(bot.registry.blocksByName[name].defaultState); block.position = p; return block; };
   assert.equal(up().length, 0, 'water to a stone ceiling: not planned');
 });
+
+test('a diagonal does not cut the corner of a drop that hurts; over a step it still goes', () => {
+  // mid-87-c: from a cliff-top toward a herd, the corner of a twenty-five-block drop, dead at full health.
+  const bot = botFixture(), movement = configureMovements(bot);
+  for (const [hole, expected] of [[25, 0], [2, 1]]) {
+    movement.getBlock = (p, dx, dy, dz) => {
+      const position = new Vec3(p.x + dx, p.y + dy, p.z + dz);
+      // The corner cell (1, 0) has its floor `hole` blocks down; everything else stands on y 69.
+      const floorY = position.x === 1 && position.z === 0 ? 70 - hole - 1 : 69;
+      const physical = position.y <= floorY;
+      return { position, physical, safe: !physical, liquid: false, height: position.y + (physical ? 1 : 0), name: physical ? 'stone' : 'air' };
+    };
+    const diagonal = [];
+    movement.getMoveDiagonal({ x: 0, y: 70, z: 0, remainingBlocks: 0 }, new Vec3(1, 0, 1), diagonal);
+    assert.equal(diagonal.length, expected, `a corner ${hole} blocks deep`);
+  }
+});

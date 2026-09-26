@@ -139,6 +139,17 @@ class SurvivalMovements extends Movements {
         const block = this.getBlock(node, dx, dy, dz);
         return damagingTerrain.has(block.name) || dy <= 0 && block.liquid;
       })) return;
+      // Nor a corner over a fall that hurts: the body's width swings over
+      // the corner cell as it cuts across, and a little drift is a fall.
+      // mid-87-c walked from a cliff-top toward a herd, cut the corner of a
+      // twenty-five-block drop, and died at full health (2026-09-25).
+      let floor = false;
+      for (let dy = -1; dy >= -4 && !floor; dy--) {
+        const below = this.getBlock(node, dx, dy, dz);
+        if (below.physical || below.liquid || below.climbable) floor = true;
+        if (damagingTerrain.has(below.name)) break;
+      }
+      if (!floor) return;
     }
     const candidates = [];
     super.getMoveDiagonal(node, direction, candidates);
