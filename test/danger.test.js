@@ -30,3 +30,19 @@ test('a goat is a threat when it has rammed the bot lately, or is close and one 
   assert.deepEqual(threats(bot).map(t => t.entity.name), ['goat'], 'rammed a moment ago');
   assert(require('../src/combat-estimate').MOBS.goat.hit > 0);
 });
+
+test('a spider by day is calm only in daylight: one in a dark cave is a threat', () => {
+  // first-days-203: at y 19 in a cave by day, a spider at arm's length was counted by no layer.
+  const { threats } = require('../src/danger');
+  const registry = require('minecraft-data')('26.1');
+  const spider = { id: 3, name: 'spider', type: 'hostile', position: new Vec3(2.5, 19, 0.5), height: 0.9, width: 1.4, isValid: true };
+  let light = { skyLight: 0, light: 0 };
+  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 19, 0.5) }, registry, world: { raycast: () => null }, time: { timeOfDay: 6000 }, entities: { 3: spider }, blockAt: () => ({ name: 'cave_air', ...light }) };
+  assert.deepEqual(threats(bot).map(t => t.entity.name), ['spider'], 'dark cave, midday');
+  light = { skyLight: 15, light: 0 };
+  assert.equal(threats(bot).length, 0, 'in the sun');
+  light = { skyLight: 0, light: 14 };
+  assert.equal(threats(bot).length, 0, 'by a torch');
+  delete bot.blockAt;
+  assert.equal(threats(bot).length, 0, 'light unknown: the hour decides, as before');
+});

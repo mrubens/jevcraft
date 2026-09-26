@@ -60,6 +60,13 @@ const provokedEnderman = (bot, entity) => entity.name === 'enderman' && provoked
 
 const wearingGold = bot => [5, 6, 7, 8].some(slot => /^golden_/.test(bot.inventory?.slots?.[slot]?.name || ''));
 
+// Unknown light (no block loaded) counts as lit, as the hour alone did.
+function litForSpider(bot, entity) {
+  const cell = entity.position && bot.blockAt?.(entity.position.offset(0, 0.5, 0).floored());
+  if (!cell || (cell.skyLight == null && cell.light == null)) return true;
+  return Math.max(cell.skyLight ?? 0, cell.light ?? 0) >= 12;
+}
+
 function hostileEntities(bot, radius = 24) {
   const position = bot.entity.position;
   const daytime = bot.time?.timeOfDay < DAY.DARK || bot.time?.timeOfDay >= DAY.DAWN;
@@ -67,7 +74,12 @@ function hostileEntities(bot, radius = 24) {
     if ((!hostileNames.has(entity.name) && !provoked(bot, entity) && !unprovokedThreat(bot, entity)) || !entity.position || entity.isValid === false || observedDead(bot, entity)) return false;
     // A spider turns by day when a spider hits the bot, not when anything
     // does: a fall or a fire set every spider in view back on it.
-    if (entity.name === 'spider' && daytime && !(bot._hurtBy?.spider > Date.now() - 10000)) return false;
+    // Calm is the daylight where the spider stands, not the hour: the game
+    // leaves one be in light of twelve or more. first-days-203, at y 19 in
+    // a cave by day, charged four skeletons with a spider at arm's length
+    // that no layer counted, eleven health to one in three seconds
+    // (2026-09-26).
+    if (entity.name === 'spider' && daytime && litForSpider(bot, entity) && !(bot._hurtBy?.spider > Date.now() - 10000)) return false;
     // A piglin leaves a player in gold alone; a brute does not. With the
     // golden boots on, the bot was digging in from piglins at eight blocks.
     // The truce ends when a piglin strikes, not when anything does: a
