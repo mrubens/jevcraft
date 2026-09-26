@@ -567,6 +567,12 @@ const openForStation = (bot, q) => {
   return !hit || eye.distanceTo(hit.intersect || hit.position) >= d - 0.6;
 };
 
+const CROPS = new Set(['wheat', 'carrots', 'potatoes', 'beetroots', 'melon_stem', 'pumpkin_stem', 'sweet_berry_bush', 'torchflower_crop', 'pitcher_crop', 'nether_wart']);
+function knockedAway(bot, block) {
+  if (!block || block.boundingBox !== 'empty' || CROPS.has(block.name) || /water|lava|fire|portal/.test(block.name)) return false;
+  return (block.hardness ?? bot.registry?.blocksByName?.[block.name]?.hardness) === 0;
+}
+
 // Mineflayer yaw for looking toward each horizontal facing (0 is north, -z).
 const PLACEMENT_YAW = { north: 0, west: Math.PI / 2, south: Math.PI, east: -Math.PI / 2 };
 async function place(bot, task, p, material, { face, properties, stay = false } = {}) {
@@ -585,6 +591,14 @@ async function place(bot, task, p, material, { face, properties, stay = false } 
   if (isDoor(material) && !air(bot.blockAt(p.offset(0, 1, 0)))) throw new Error(`A door needs room for its top half at ${p}`);
   // Ground cover is replaced by a placed block, the way the game does it:
   // leaf litter on the chest cell held up the whole base.
+  // A flower or anything else that breaks at a touch and stops nothing
+  // comes out first, as a player punches it: a dandelion on a fence cell
+  // of first-days-212's pen was "placement obstructed" seven times until
+  // the audit called the loop (2026-09-26). Not a crop.
+  const there = bot.blockAt(p);
+  if (!air(there) && !GROUND_COVER.has(there?.name) && knockedAway(bot, there) && typeof bot.dig === 'function') {
+    try { await bot.dig(there, true); } catch (_) { task.check(); }
+  }
   if (!air(bot.blockAt(p)) && !GROUND_COVER.has(bot.blockAt(p)?.name)) {
     throw new Error(`Placement obstructed by ${bot.blockAt(p)?.name} at ${p}`);
   }

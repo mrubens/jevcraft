@@ -81,3 +81,26 @@ test('placing with stay never moves the bot: a cell its body is in, its own colu
   await assert.rejects(place(bot, new Task('seal'), new Vec3(6, 64, 0), 'netherrack', { stay: true }), /would move me off this ledge/, 'out of reach');
   assert.deepEqual(moves, [], 'no key was pressed');
 });
+
+test('a flower in the cell is punched out before placing; a crop is not', async () => {
+  // first-days-212: a dandelion on a pen fence cell was "placement obstructed" seven times.
+  const registry = require('minecraft-data')('26.1');
+  const target = new Vec3(2, 64, 0);
+  const world = (plant) => {
+    let there = plant, placed = false;
+    const bot = { registry, game: { gameMode: 'survival' }, entity: { position: new Vec3(0.5, 64, 0.5) }, inventory: { items: () => [{ name: 'oak_fence', count: 4 }] },
+      equip: async () => {}, dug: [],
+      blockAt: p => p.y === 63 ? { name: 'grass_block', boundingBox: 'block', position: p }
+        : p.equals(target) ? { name: placed ? 'oak_fence' : there, boundingBox: placed ? 'block' : 'empty', hardness: registry.blocksByName[placed ? 'oak_fence' : there].hardness, position: p }
+        : { name: 'air', boundingBox: 'empty', position: p },
+      dig: async b => { bot.dug.push(b.name); there = 'air'; },
+      placeBlock: async () => { placed = true; } };
+    return bot;
+  };
+  const flowered = world('dandelion');
+  await place(flowered, new Task('fence'), target, 'oak_fence');
+  assert.deepEqual(flowered.dug, ['dandelion']);
+  const cropped = world('wheat');
+  await assert.rejects(place(cropped, new Task('fence'), target, 'oak_fence'), /obstructed by wheat/);
+  assert.deepEqual(cropped.dug, []);
+});
