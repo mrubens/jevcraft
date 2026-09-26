@@ -1,4 +1,5 @@
 'use strict';
+const { Vec3 } = require('vec3');
 const { move } = require('./motion');
 
 const { TOOL_TIERS } = require('./plan');
@@ -316,6 +317,14 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   } finally { if (sprinting) movements.allowSprinting = walked; }
 }
 
+// Where a goal is, when it has a place: a block or near-a-point goal, or
+// the entity it follows.
+function goalPoint(goal) {
+  if (goal?.entity?.position) return goal.entity.position;
+  if ([goal?.x, goal?.y, goal?.z].every(Number.isFinite)) return new Vec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+  return null;
+}
+
 async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }) {
   task.check(); checkAir(bot);
   if (stopWhen?.()) return;
@@ -324,7 +333,9 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
   let acquired = false;
   let corrections = [];
   let latestRoute;
+  let routeLength = null;
   const observedRoute = route => {
+    if (Array.isArray(route.path) && route.status !== 'noPath') routeLength = route.path.length;
     latestRoute = { status: route.status, path: (route.path || []).slice(0, 12).map(p => ({
       x: p.x, y: p.y, z: p.z, toBreak: p.toBreak, toPlace: p.toPlace,
     })) };
@@ -341,6 +352,7 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
     let lastProgress = started;
     let previous = bot.entity.position.clone();
     const visited = new Set([`${previous.floored()}`]);
+    let bestRoute = null, bestNear = null;
     timer = setInterval(() => {
       try { task.check(); if (doorUse.error) throw doorUse.error; }
       catch (err) {
@@ -359,10 +371,20 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
         bot.clearControlStates?.();
         return;
       }
+      // Progress is getting nearer: a new shortest route left, or a new
+      // nearest to a goal with a place. New cells alone were progress, and
+      // first-days-206's retreat bounced up and down its own shaft for
+      // fourteen seconds, every bounce a new cell, shot from 10.8 health to
+      // 4.8 before the timeout (2026-09-26). New cells still count for a
+      // goal with neither.
+      const there = goalPoint(goal);
+      const near = there ? bot.entity.position.distanceTo(there) : null;
+      if (routeLength !== null && (bestRoute === null || routeLength < bestRoute)) { bestRoute = routeLength; lastProgress = Date.now(); }
+      if (near !== null && (bestNear === null || near <= bestNear - 1)) { bestNear = near; lastProgress = Date.now(); }
       if (bot.entity.position.distanceTo(previous) >= 1) {
         previous = bot.entity.position.clone();
         const cell = `${previous.floored()}`;
-        if (!visited.has(cell)) { visited.add(cell); lastProgress = Date.now(); }
+        if (!visited.has(cell)) { visited.add(cell); if (routeLength === null && near === null) lastProgress = Date.now(); }
       }
       if (task.cancelled || Date.now() - started > timeoutMs || Date.now() - lastProgress > stallMs) {
         if (!task.cancelled) {
