@@ -416,9 +416,18 @@ function closeHostile(bot) {
     const hit = bot.world.raycast(eye, dir.scaled(1 / d), d);
     return !hit || eye.distanceTo(hit.intersect || hit.position) >= d - 0.5;
   };
+  // A creeper's reach is its walk to lighting distance and its fuse: one
+  // that would be there before the meal and its answer are done is close.
+  // mid-214-c ate at 18.6 health with one eight blocks off and in sight,
+  // stood still three and a half seconds, and one blast took it all
+  // (2026-09-26).
+  const { APPROACH, LIGHTS_AT } = require('./combat-estimate');
+  const creeperReach = LIGHTS_AT + APPROACH * 2 * EAT_MEAL_SECONDS;
   return Object.values(bot.entities || {}).some(e => e !== bot.entity && e.position && e.isValid !== false &&
-    (bot.registry?.entitiesByName?.[e.name]?.type === 'hostile' || e.type === 'hostile') && e.position.distanceTo(here) <= CLOSE && reaches(e));
+    (bot.registry?.entitiesByName?.[e.name]?.type === 'hostile' || e.type === 'hostile') && e.position.distanceTo(here) <= (e.name === 'creeper' ? Math.max(CLOSE, creeperReach) : CLOSE) && reaches(e));
 }
+// A second and six tenths eating (survival.js EAT_SECONDS).
+const EAT_MEAL_SECONDS = 1.6;
 
 function chooseFood(bot) {
   return bot.inventory.items().filter(item => safeFood(bot, item))

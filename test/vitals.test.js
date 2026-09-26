@@ -491,3 +491,19 @@ test('while an encounter stance is carried out the meal is Jev\'s, not a reflex 
   bot.food = 5; bot._stance.choice = 'retreat';
   assert(await maintainVitals(bot, new Task('starving')), 'down to six hunger it eats whatever the stance');
 });
+
+test('no meal with a creeper coming on in sight; a zombie as far off does not stop it', async () => {
+  // mid-214-c: ate with a creeper eight blocks off, stood still three and a half seconds, one blast.
+  let eaten = 0;
+  const creeper = { name: 'creeper', type: 'hostile', position: new Vec3(8.5, 64, 0.5), height: 1.7, isValid: true };
+  const bot = { food: 17, health: 13.6, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 7: creeper },
+    registry: { foodsByName: { cooked_beef: { effectiveQuality: 20.8 } }, entitiesByName: { creeper: { type: 'hostile' }, zombie: { type: 'hostile' } } },
+    inventory: { items: () => [{ name: 'cooked_beef', count: 2 }] },
+    equip: async () => {}, consume: async () => { eaten++; bot.food = 20; }, deactivateItem() {},
+  };
+  assert.equal(await maintainVitals(bot, new Task('creeper')), false);
+  assert.equal(eaten, 0);
+  creeper.name = 'zombie';
+  assert(await maintainVitals(bot, new Task('zombie')));
+  assert.equal(eaten, 1);
+});
