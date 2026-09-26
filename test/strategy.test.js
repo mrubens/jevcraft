@@ -32,7 +32,7 @@ test('Jev may put a later rung first; the choice holds for ten minutes, then is 
   const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   const first = await strategyStep(bot, task, goal, () => {}, stage, { decide, now: () => now });
   assert.equal(first.stage.phase, 'diamond_sword');
-  assert.deepEqual(asked[0].keys, ['rung_golden_boots', 'rung_diamond_sword']);
+  assert.deepEqual(asked[0].keys, ['rung_golden_boots', 'rung_diamond_sword', 'nether_first']);
   assert.equal(asked[0].id, 'win_strategy');
   assert.match(said[0], /diamond sword first, then the golden boots/);
   now += 60000;
@@ -51,9 +51,7 @@ test('a side trip runs once, rests, and the next step asks without it', async ()
   const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   assert.deepEqual(await strategyStep(bot, task, goal, () => {}, stage, { decide, sides }), { ran: true });
   assert.equal(looted, 1);
-  assert.equal(strategyOptions(bot, goal, stage, sides), null, 'the portal rests, and one rung alone is no choice');
-  assert.equal(await strategyStep(bot, task, goal, () => {}, stage, { decide, sides }), null);
-  assert.equal(asked.length, 1);
+  assert.deepEqual(Object.keys(strategyOptions(bot, goal, stage, sides)), ['rung_golden_boots', 'nether_first'], 'the portal rests; the rung and the Nether before it remain');
 });
 
 test('side trips are offered at night too (Jev weighs the dark), and a lone rung is taken without asking', async () => {
@@ -65,10 +63,11 @@ test('side trips are offered at night too (Jev weighs the dark), and a lone rung
   await strategyStep(bot, task, goal, () => {}, { phase: 'golden_boots' }, { decide: night.decide, sides });
   assert.equal(night.asked.length, 1, 'asked, the trip among the options');
   assert(looted, 'and Jev\'s pick ran');
-  const { bot: b2, goal: g2, task: t2 } = fixture(['golden_boots']);
+  // Armour may not wait: alone, it is no choice.
+  const { bot: b2, goal: g2, task: t2 } = fixture(['iron_helmet']);
   b2.time.timeOfDay = 14000;
   const lone = picking('loot');
-  assert.equal(await strategyStep(b2, t2, g2, () => {}, { phase: 'golden_boots' }, { decide: lone.decide, sides: {} }), null);
+  assert.equal(await strategyStep(b2, t2, g2, () => {}, { phase: 'iron_helmet' }, { decide: lone.decide, sides: {} }), null);
   assert.equal(lone.asked.length, 0, 'a lone rung is not asked about');
 });
 
@@ -227,7 +226,7 @@ test('once the base\'s bed is claimed, a second bed to carry is Jev\'s option, w
   const { bot, goal } = homeFixture(['golden_boots', 'diamond_sword'], { items: [{ name: 'string', count: 5 }, { name: 'oak_planks', count: 8 }] });
   const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   const options = strategyOptions(bot, goal, stage);
-  assert.deepEqual(Object.keys(options), ['rung_golden_boots', 'rung_diamond_sword', 'carry_bed']);
+  assert.deepEqual(Object.keys(options), ['rung_golden_boots', 'rung_diamond_sword', 'nether_first', 'carry_bed']);
   const d = options.carry_bed.description;
   assert.match(d, /three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed/);
   assert.match(d, /any night, anywhere: .*the night passes in seconds, instead of about seven real minutes in a pocket or a night mine and the climb out after/);
@@ -258,4 +257,24 @@ test('the second bed chosen, the ladder step makes it: three wool is a craft, fe
   await gameStep(without.bot, without.task, without.goal, () => {}, { acquireStep: async () => assert.fail('no wool yet'), gather_wool: async (b, t, g, sv, stage) => { gathered.push(stage.count); },
     strategy: (b, t, g, sv, stage) => strategyStep(b, t, g, sv, stage, picking('carry_bed')) });
   assert.deepEqual(gathered, [3]);
+});
+
+test('when every step left before the Nether may wait, going now is offered, and taken the steps are set aside', async () => {
+  // mid-110-i: only the arrows left, chosen seventy-three times over three hours, and never the Nether.
+  const { isSetAside } = require('../src/progress');
+  const { bot, goal, task } = fixture(['arrow']);
+  const stage = openRungs(bot, goal)[0];
+  assert.equal(stage.phase, 'arrows');
+  const options = strategyOptions(bot, goal, stage);
+  assert(options.nether_first, 'on offer');
+  assert.match(options.nether_first.description, /Leave .*for later and go for the Nether now/);
+  assert.match(options.nether_first.description, /Without arrows for now: the bow cannot shoot/);
+  assert.match(options.rung_arrows.description, /only from skeletons/);
+  const { decide } = picking('nether_first');
+  assert.deepEqual(await strategyStep(bot, task, goal, () => {}, stage, { decide }), { ran: true });
+  assert(isSetAside(goal, 'rung', 'arrows'), 'the arrows wait');
+  assert.equal(openRungs(bot, goal).length, 0, 'nothing on the ladder before the Nether now');
+  // Armour may not wait: with it open, no Nether first.
+  const armour = fixture(['iron_helmet']);
+  assert.equal(strategyOptions(armour.bot, armour.goal, openRungs(armour.bot, armour.goal)[0])?.nether_first, undefined);
 });

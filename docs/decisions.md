@@ -601,6 +601,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `explore` | root | explore the nearest unexplored area | in the Overworld with an unexplored area within 512 blocks of home |
 | `fetch_cache` | root | fetch the things left in a field cache | a chest left before an earlier trip, full, between 48 and 512 blocks away |
 | `cache_valuables` | root | leave the valuables in a chest here | by day and fit, home's chest out of reach, valuables carried, and a chest or the wood for one |
+| `nether_first` | root | leave the steps that may wait and go for the Nether now | in the Overworld when every step left before the Nether may wait (DEFERRABLE); said with what going without each costs and the minutes spent on the next |
 | `carry_bed` | root | make a second bed to carry | at any hour in the Overworld, once the base's bed is claimed, with no bed carried, the wool search not set aside and the next step not a basic tool; said with what it buys (any night passes in seconds, instead of a pocket and the climb out) and what it costs (three wool from sheep or string, three planks) |
 | `copper_armour` | root | make copper armour first | in the Overworld with a stone pickaxe or better and no armour worn or carried |
 | `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | by day and fit, another biome twenty-four or more blocks off in the Overworld (the nearest four), said with what it holds, and the walk there and back fits in the daylight left |

@@ -49,7 +49,7 @@ const RUNG_WHY = {
   bucket: 'water for lava, falls and the End portal room',
   golden_boots: 'piglins leave a player wearing gold alone in the Nether',
   bow: 'answers skeletons, blazes and the dragon\'s crystals from range',
-  arrows: 'the bow is nothing without them',
+  arrows: 'the bow is nothing without them; here they come only from skeletons, none to two a skeleton, and are spent as they are shot (feathers for crafting come from chickens, which the bot never hurts)',
   diamond_sword: 'ends a blaze or a piglin in two swings',
   // The rest of the ladder, said as the others are (the decision audit,
   // 2026-09-25).
@@ -216,6 +216,22 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   const rungs = openRungs(bot, goal);
   const options = {};
   if (rungs.length && rungs[0].phase === stage.phase) rungs.forEach((rung, i) => { options[`rung_${rung.phase}`] = rungOption(rung, i === 0, bot, goal, planFor); });
+  // The Nether before the steps that may wait: when every step left before
+  // it may, going now is Jev's to weigh, not a door kept shut by the ladder.
+  // mid-110-i had only the arrows left, chose them seventy-three times over
+  // three hours (arrows come only from skeletons here), and never went
+  // (2026-09-26). Taken, the steps left are set aside for half an hour.
+  const { DEFERRABLE } = require('./game-progress');
+  if (rungs.length && rungs[0].phase === stage.phase && dimension(bot) === 'overworld' && rungs.every(r => DEFERRABLE.has(r.phase))) {
+    const left = rungs.map(r => r.phase);
+    const clock = goal.rungClocks?.[stage.phase];
+    options.nether_first = {
+      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now: the portal, and through it for a fortress, blaze rods and ender pearls. ${left.map(p => `Without ${label(p)} for now: ${WITHOUT[p] || RUNG_WHY[p] || 'it waits'}.`).join(' ')}${clock ? ` The ladder's next step has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.`,
+      says: `I'll leave the ${left.map(label).join(' and the ')} for later`,
+      side: true,
+      run: async () => { for (const p of left) setAside(goal, 'rung', p, 'Jev chose the Nether first', 1800000); },
+    };
+  }
   // Past the preparation ladder (pearls, the stronghold, the crossing): the
   // ladder's stage and the side trips. The dream run spent an afternoon
   // walking about after endermen with an ancient city never looked for.
