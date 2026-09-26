@@ -470,6 +470,34 @@ test('a pocket sealed in a staircase is left through the closure the bot placed'
   assert.deepEqual(survival.state.shelters, [], 'a pocket is forgotten once left, so its shell is not reserved against the climb');
 });
 
+test('a pocket left past the mobs, as Jev chose, is opened though a mob is near every door', async () => {
+  const { Survival } = require('../src/survival');
+  const origin = new Vec3(0, 20, 0);
+  const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`, `${origin.offset(-2, -1, 0)}`, `${origin.offset(-2, 0, 0)}`, `${origin.offset(-2, 1, 0)}`]);
+  const placed = new Set([`${origin.offset(-1, 0, 0)}`, `${origin.offset(-1, 1, 0)}`, `${origin.offset(1, 0, 0)}`, `${origin.offset(1, 1, 0)}`]);
+  const make = () => {
+    const zombie = { name: 'zombie', type: 'hostile', position: origin.offset(4.5, 0, 0.5), height: 1.95 };
+    const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 },
+      entity: { position: origin.offset(0.5, 0, 0.5) }, entities: { 1: zombie }, health: 20, food: 20, oxygenLevel: 20, time: { timeOfDay: 2000 },
+      inventory: { items: () => [{ name: 'cobblestone', count: 60 }] }, registry: require('minecraft-data')('26.1'),
+      blockAt: p => ({ name: open.has(`${p}`) ? 'air' : placed.has(`${p}`) ? 'cobblestone' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : 'block', position: p }),
+      world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: {} }, on() {}, removeListener() {} };
+    const refuge = { origin: { ...origin }, dimension: 'overworld', verifiedAt: 'x', createdAt: 'x' };
+    const dug = [], waits = [];
+    const survival = new Survival(bot, { navigate: async () => { throw new Error('no outside cell to walk to'); }, dig: async (b, t, p) => { dug.push(`${p}`); } }, { state: { shelters: [refuge] } });
+    survival.wait = async (t, g, s, reason) => { waits.push(reason); };
+    return { survival, refuge, dug, waits };
+  };
+  const held = make();
+  await held.survival.leave(new Task('dawn'), {}, () => {}, held.refuge);
+  assert.deepEqual(held.dug, [], 'leaving for the work alone still waits a mob out');
+  assert.match(held.waits[0], /block the shelter exits/);
+  const past = make();
+  await past.survival.leave(new Task('dawn'), {}, () => {}, past.refuge, undefined, { past: true });
+  assert.deepEqual(past.waits, []);
+  assert.equal(past.dug.length, 2, 'the door is opened');
+});
+
 test('leaving a pocket opens every closure so the staircase continues both ways', async () => {
   const { Survival } = require('../src/survival');
   const origin = new Vec3(0, 20, 0);

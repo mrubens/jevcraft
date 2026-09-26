@@ -2083,11 +2083,18 @@ class Survival {
     // bot decided to leave and then refused every door for twenty minutes.
     // Going out for the mobs (a hunt) or past them (to the chest): no exit
     // is refused for them.
-    const danger = past ? [] : threats(bot).filter(t => (t.visible || t.distance < 6) && !claimed(bot, t.entity));
-    const formal = shelter.exits(bot, refuge).filter(exit => danger.every(t => t.entity.position.distanceTo(exit.outside) > 20));
+    // Going past them, the door farthest from them: mid-110-n chose to leave
+    // its pocket past a zombie and a skeleton fifteen times, and was held
+    // behind the lid for twenty minutes because every door was within
+    // twenty blocks of one (2026-09-26).
+    const near = threats(bot).filter(t => (t.visible || t.distance < 6) && !claimed(bot, t.entity));
+    const danger = past ? [] : near;
+    const clearance = p => Math.min(Infinity, ...near.map(t => t.entity.position.distanceTo(p)));
+    const farthest = list => past ? [...list].sort((a, b) => clearance(b.outside || b) - clearance(a.outside || a)) : list;
+    const formal = farthest(shelter.exits(bot, refuge).filter(exit => danger.every(t => t.entity.position.distanceTo(exit.outside) > 20)));
     // A pocket sealed in a staircase has no two-block exit: its door is the
     // closure the bot placed, and the way on is dug from there.
-    const pocket = !formal.length && shelter.closures(bot, refuge).filter(door => danger.every(t => t.entity.position.distanceTo(door) > 20));
+    const pocket = !formal.length && farthest(shelter.closures(bot, refuge).filter(door => danger.every(t => t.entity.position.distanceTo(door) > 20)));
     const exit = formal[0] || (pocket.length ? { door: pocket[0], outside: null } : null);
     if (!exit) { await this.wait(task, goal, save, 'Nearby threats still block the shelter exits'); return; }
     this.report(goal, save, { action: 'leave_shelter', origin: refuge.origin, reason });
@@ -2787,7 +2794,7 @@ class Survival {
           // in, and the work opened the lid again, every two seconds for a
           // minute (mid-92-f, 2026-09-26). Held as staying up for two minutes.
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'leave' };
-          await this.leave(task, goal, save, refuge); return true;
+          await this.leave(task, goal, save, refuge, undefined, { past: true }); return true;
         } };
       // Without Jev, the old order.
       const rule = bedNear && !watched ? 'go_to_bed' : (night || watched) && !outwaited
