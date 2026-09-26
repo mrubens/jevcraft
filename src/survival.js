@@ -2780,7 +2780,13 @@ class Survival {
       const cache = night && !watcher && !stash && this.cacheOption(goal);
       if (cache) options.cache_valuables = { description: `Open the pocket and ${cache.description.charAt(0).toLowerCase()}${cache.description.slice(1)}${outside}`, run: async () => { await this.leave(task, goal, save, refuge, 'Leaving my valuables in a chest.', { past: true }); return cache.run(task, goal, save); } };
       const bedLater = nook && !sleepable(bot) ? ` The carried bed can go down in a nook dug out of the wall, the pocket staying shut, from bedtime (${SLEEP_FROM}), about ${Math.max(0, Math.round((SLEEP_FROM - bot.time.timeOfDay) / 20))} seconds off.` : '';
-      options.stay = { description: night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes with nothing gained${who ? `; ${who} is outside` : ''}.${bedLater}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${(bot.health ?? 20) < 20 ? ((bot.food ?? 20) >= 18 ? ', healing' : `, not healing: hunger ${bot.food}, and health comes back only at eighteen or more`) : ''}.`,
+      // Health and whether it comes back, at night too, and on the way out:
+      // mid-92-o, at eight health and twelve hunger, chose to leave its
+      // pocket in the dark told only that mobs spawn there, looked for food,
+      // and died among them in a minute (2026-09-26).
+      const hp = Math.round((bot.health ?? 20) * 10) / 10;
+      const healthNow = hp >= 20 ? '' : (bot.food ?? 20) >= 18 ? `, healing from ${hp} health` : `, not healing: ${hp} health and hunger ${bot.food}, and health comes back only at eighteen or more`;
+      options.stay = { description: night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes with nothing gained${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.`,
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };
@@ -2795,7 +2801,11 @@ class Survival {
       // was shot down among them in half a minute (2026-09-26).
       const creeperCount = outsideAll.filter(t => t.entity.name === 'creeper').length;
       const outSays = outCost ? ` Out among them, fighting them all is estimated at about ${outCost.seconds} seconds and ${outCost.damageTaken} damage, from ${outCost.healthNow} health${outCost.healthAfter <= 0 ? ' (more than the bot has)' : ''}${creeperCount ? `, the ${creeperCount === 1 ? 'creeper' : `${creeperCount} creepers`} not counted in it: each that reaches the bot goes off for about ${outCost.creeper?.match(/about ([\d.]+)/)?.[1] || 18} health` : ''}.` : '';
-      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${outSays}`,
+      const ce = require('./combat-estimate');
+      const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
+      const hitsOf = name => Math.max(1, Math.ceil(hp / Math.max(0.5, ce.afterArmour(ce.MOBS[name].hit, worn))));
+      const outHealth = hp >= 20 ? '' : ` It goes out at ${hp} health${(bot.food ?? 20) < 18 ? `, not healing at hunger ${bot.food}` : ''}: about ${hitsOf('zombie')} zombie hits or ${hitsOf('skeleton')} arrows end it${ce.afterArmour(ce.MOBS.creeper.hit, worn) >= hp ? ', or one creeper\'s blast' : ''}.`;
+      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${outSays}${outHealth}`,
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the

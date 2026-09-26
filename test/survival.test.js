@@ -1288,6 +1288,23 @@ test('sealed in, the mobs the wall hides are named in the choice to leave', asyn
   assert.match(leave || '', /the creeper not counted in it: each that reaches the bot goes off for about [\d.]+ health/);
 });
 
+test('sealed in hurt and hungry at night, staying and leaving both say the health and that it does not come back', async () => {
+  // mid-92-o: at eight health and twelve hunger it left the pocket told only that mobs spawn in the dark, and died in a minute.
+  const origin = new Vec3(0, 30, 0);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 8.3, food: 12, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 16000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ name: p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'air' : 'stone', boundingBox: p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'empty' : 'block', position: p }),
+    world: { raycast: (from) => ({ intersect: from.offset(0.6, 0, 0) }) } });
+  const survival = new Survival(bot, {}, { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld' }] }, client: { systemOne: async () => ({}) } });
+  let tree;
+  survival.decide = async (task, goal, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['stay'], stale: false }; };
+  survival.wait = async () => {};
+  await survival.step(new Task('night'), { kind: 'win' }, () => {});
+  assert.match(tree?.stay?.description || '', /not healing: 8.3 health and hunger 12/);
+  assert.match(tree?.leave?.description || '', /goes out at 8.3 health, not healing at hunger 12: about \d+ zombie hits or \d+ arrows end it/);
+});
+
 test('with the night planned for a shelter, a bed in sight does not keep the night mine shut', () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20,
     time: { timeOfDay: 16000 }, entity: { position: new Vec3(0.5, 30, 0.5) },
