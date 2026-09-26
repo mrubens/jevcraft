@@ -166,6 +166,7 @@ define({
     { key: 'creeper_dance', label: 'hit the creeper and back out of its blast, again and again', when: 'a creeper within six, a sword or axe carried, no drop or lava to back into', level: 'root' },
     { key: 'keep_working', label: 'carry on with the work and leave the mobs be for fifteen seconds', when: 'nothing within three blocks; ends early when one comes within three or lands a hit', level: 'root' },
     { key: 'retreat', label: 'run for footing out of reach and sight', when: 'always', level: 'root' },
+    { key: 'portal_back', label: 'go back through the portal to the Overworld', when: 'in the Nether with a portal within eight blocks and a way back through it', level: 'root' },
     { pattern: 'shoot_\\d+', label: 'shoot this mob with the bow', when: 'a bow, arrows and a clear arrow path (up to two targets)', level: 'root', dynamic: true },
   ],
   fallback: 'throws',

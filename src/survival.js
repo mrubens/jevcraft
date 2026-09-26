@@ -1121,6 +1121,18 @@ class Survival {
     }
     options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + (creeperCount ? ' Creepers and spiders follow a running player.' : '') + footing + unseen,
       run: () => this.runAway(task, goal, save, danger) };
+    // In the Nether with its portal close, the way home is a stance too:
+    // mid-92-q came out beside its portal among skeletons and ghasts, turned
+    // between six stances in twenty-five seconds and burned, the portal
+    // five blocks off the whole time (2026-09-26).
+    const portalId = bot.registry?.blocksByName?.nether_portal?.id;
+    const portal = /nether/.test(String(bot.game?.dimension || '')) && portalId !== undefined && this.actions.returnOverworld && typeof bot.findBlocks === 'function'
+      ? bot.findBlocks({ matching: portalId, maxDistance: 8, count: 1 })[0] : null;
+    if (portal) {
+      const blocks = Math.round(portal.distanceTo(bot.entity.position));
+      options.portal_back = { description: `Go back through the portal ${blocks} block${blocks === 1 ? '' : 's'} off, to the Overworld where the bot came from: about ${Math.max(1, Math.round(blocks / 4.3))} second${blocks > 4 ? 's' : ''} to it and about four standing in it before it takes the bot, shot at meanwhile; the mobs here stay here. The work comes back through it afterwards.` + (armsLength ? ' Something that bites is at arm\'s length now, and follows the walk.' : ''),
+        run: async () => { this.report(goal, save, { action: 'portal_back', portal: { x: portal.x, y: portal.y, z: portal.z }, threats: danger.map(t => t.entity.name) }); await this.actions.returnOverworld(bot, task, goal, save); return true; } };
+    }
     for (const t of shotTargets(bot, danger).slice(0, 2)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
     return options;

@@ -1565,6 +1565,28 @@ test('with a creeper close or a mob at arm\'s length, building is still offered,
   assert(atArmsLength.retreat);
 });
 
+test('in the Nether with the portal close, going back through it is a stance', async () => {
+  // mid-92-q burned among skeletons and ghasts beside its portal, turning between six stances.
+  const make = dimension => {
+    const bot = Object.assign(new EventEmitter(), { game: { dimension, gameMode: 'survival' }, health: 12, food: 20, entities: {},
+      entity: { position: new Vec3(0.5, 64, 0.5) }, registry: require('minecraft-data')('26.1'),
+      inventory: { items: () => [{ name: 'diamond_sword' }, { name: 'netherrack', count: 64 }], slots: {} },
+      blockAt: p => ({ position: p, name: p.y < 64 ? 'netherrack' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }), world: { raycast: () => null },
+      findBlocks: ({ matching }) => matching === require('minecraft-data')('26.1').blocksByName.nether_portal.id ? [new Vec3(4, 64, 0)] : [] });
+    let back = 0;
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {}, returnOverworld: async () => { back++; } }, { state: { shelters: [] } });
+    return { survival, count: () => back };
+  };
+  const t = (name, distance) => ({ entity: { name, position: new Vec3(distance, 64, 0), height: 1.99 }, distance, visible: true });
+  const nether = make('the_nether');
+  const options = nether.survival.stanceOptions(new Task('x'), {}, () => {}, [t('skeleton', 9), t('skeleton', 12)], false);
+  assert(options.portal_back, Object.keys(options).join(','));
+  assert.match(options.portal_back.description, /back through the portal 4 blocks off, to the Overworld/);
+  await options.portal_back.run();
+  assert.equal(nether.count(), 1);
+  assert(!make('overworld').survival.stanceOptions(new Task('x'), {}, () => {}, [t('skeleton', 9)], false).portal_back, 'not from the Overworld');
+});
+
 test('from a pocket on the surface the night mine goes down into solid ground, not sideways to an ore through the hillside', async () => {
   const { Survival } = require('../src/survival');
   const registry = require('minecraft-data')('26.1');
