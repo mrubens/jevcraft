@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-78 questions: 30 decision trees and 48 batched questions.
+79 questions: 31 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -787,6 +787,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `cross_level` | root | go straight at it at the height the bot stands, digging rock and laying a one-wide span | the cells ahead at this height let it come a block or more nearer (surveyCrossing); said with the cells, the blocks to lay against those carried, how many over lava, how much nearer it ends, what stops it, about how long, and the mobs in view |
 | `tunnel` | root | dig a staircase through the rock toward it | a staircase is at hand |
 | `keep_searching` | root | leave this fortress for ten minutes and go on searching | always |
+
+### `fortress_leg`
+
+**Searching the Nether for a fortress: which way should the next leg go, or should the bot first dig toward the heights fortresses stand at?**
+
+- When: On the fortress search, each time a leg begins: at the start, when the last leg reached its end, and when the sweep turned for a leg that made no ground.
+- Decision tree, choice; stakes medium; ledger kind `fortress`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/mob-hunt.js (chooseLeg, findFortressStep), src/nether-travel.js (surveyLeg, legSays)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `leg_(east\|south\|west\|north)` (pattern) | root | go this way ninety-six blocks at the height the bot stands | always, one for each heading; said with the cells ahead at this height (open air, how many of them over a drop of four or more, rock to dig at about six seconds a cell, and what stops it), about how long, whether it is back the way the last leg came, and how the last leg this way ended |
+| `seek_fortress_height` | root | dig a staircase toward y 64 first, along the most open heading | the bot stands more than eight blocks above or below y 64 and a staircase is at hand; said with the height to make up and where fortresses stand |
 
 ## travel
 

@@ -17,7 +17,7 @@ const { decide } = require('./decisions');
 const { descendTo } = require('./descent');
 const { setAside, isSetAside, watch, unwatch } = require('./progress');
 const { bridgeTo, surveyCrossing, underFire, blocksCarried } = require('./bridging');
-const { crossToward, crossingSays, nearer } = require('./nether-travel');
+const { crossToward, crossingSays, nearer, surveyLeg, legSays } = require('./nether-travel');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
@@ -771,10 +771,54 @@ const FORTRESS_LEG = 96;
 // height between the lava sea and the ceiling.
 // Legs run along x until a direction will not give; then the sweep turns.
 const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+const HEADING_NAMES = ['east', 'south', 'west', 'north'];
+// Where fortresses stand: their corridors and bridges mostly between y 48
+// and 75, over the lava sea at y 31. A leg at y 100 through the rock passes
+// over every one of them unseen (mid-205-m, note 394).
+const FORTRESS_Y = 64, FORTRESS_BAND = 8;
+const headingIndex = state => Number.isInteger(state.heading) ? state.heading % 4 : (state.axis === -1 ? 2 : 0);
 function fortressLegTarget(state, position) {
-  const y = Math.max(40, Math.min(80, Math.round(position.y)));
-  const [dx, dz] = Number.isInteger(state.heading) ? HEADINGS[state.heading % 4] : [state.axis, 0];
+  // A leg seeking the fortress heights (chooseLeg's seek_fortress_height)
+  // ends at them; a level leg keeps its height between the sea and the roof.
+  const y = state.legMode === 'descend' ? FORTRESS_Y : Math.max(40, Math.min(80, Math.round(position.y)));
+  const [dx, dz] = HEADINGS[headingIndex(state)];
   return new Vec3(Math.round(position.x + FORTRESS_LEG * dx), y, Math.round(position.z + FORTRESS_LEG * dz));
+}
+
+// The next leg is Jev's (fortress_leg): each heading surveyed at the
+// height the bot stands (nether-travel.js surveyLeg), and, off the
+// fortress heights, a staircase down or up toward them. mid-205-m's
+// thirteen legs went the way the compass said at y 96 to 104, six seconds a
+// cell of netherrack and nothing seen (note 394, 2026-09-27). Without Jev,
+// the heading with the most open air, the code's own heading at a tie.
+async function chooseLeg(bot, task, goal, save, actions, state) {
+  const here = bot.entity.position, y = Math.round(here.y);
+  const current = headingIndex(state);
+  const surveys = HEADINGS.map(h => surveyLeg(bot, h, { cells: FORTRESS_LEG }));
+  const back = state.legFrom && Number.isInteger(state.lastHeading) ? (state.lastHeading + 2) % 4 : null;
+  const options = {};
+  HEADINGS.forEach((h, i) => {
+    options[`leg_${HEADING_NAMES[i]}`] = { description: legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) +
+      (i === back ? ' This is back the way the last leg came.' : '') + (i === current && state.lastLegError ? ` The last leg this way ended: ${state.lastLegError}.` : ''),
+      run: () => { state.heading = i; state.legMode = 'level'; } };
+  });
+  const off = y - FORTRESS_Y;
+  if (Math.abs(off) > FORTRESS_BAND && actions.tunnel) {
+    const most = surveys.every(s => !s) ? current : surveys.map((s, i) => [s?.open || 0, i]).sort((a, b) => b[0] - a[0] || (a[1] === current ? -1 : b[1] === current ? 1 : 0))[0][1];
+    options.seek_fortress_height = { description: `Dig a staircase ${off > 0 ? 'down' : 'up'} toward y ${FORTRESS_Y} heading ${HEADING_NAMES[most]}, ${Math.abs(off)} blocks of height, a step at a time with rock round the bot and no block dug with lava or water behind it: fortress corridors and bridges stand mostly between y 48 and 75, over the lava sea at y 31, and from y ${y} none is seen through the rock. The leg goes level again once within ${FORTRESS_BAND} of y ${FORTRESS_Y}.`,
+      run: () => { state.heading = most; state.legMode = 'descend'; } };
+  }
+  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
+  const facts = { height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
+    legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
+    lastLeg: Number.isInteger(state.lastHeading) ? `${HEADING_NAMES[state.lastHeading]}${state.lastLegError ? `, ended: ${state.lastLegError}` : ''}` : null,
+    blocksCarried: blocksCarried(bot), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`) };
+  const open = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, surveys[i]?.open ?? null]));
+  const decision = await decide('fortress_leg', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree, state: facts,
+    context: { current: `leg_${HEADING_NAMES[current]}`, open } });
+  if (decision.stale) return false;
+  options[decision.path.at(-1)].run();
+  return true;
 }
 // A direction the sweep cannot make ground in for several ticks is given
 // up for the next one round the compass: a leg toward an open cavern had
@@ -1032,8 +1076,12 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // the Nether, each ended by the progress watch before the leg counted
     // its failures, and the audit called the loop (2026-09-26). Turned.
     if (state.legFrom && Math.hypot(state.legFrom.x - here.x, state.legFrom.z - here.z) < 8) turnSweep(state);
+    // The leg's heading and height are Jev's, with each heading surveyed
+    // (chooseLeg); the compass's own heading is the outage default.
+    state.since ||= Date.now();
+    if (!await chooseLeg(bot, task, goal, save, actions, state)) return;
     const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++; state.legSince = Date.now();
-    state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) };
+    state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) }; state.lastHeading = headingIndex(state); delete state.lastLegError;
     delete state.legBest;
   }
   goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();
@@ -1046,9 +1094,18 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // of reach on foot (note 251, 2026-09-26).
   const approach = { best: state.legBest };
   const gained = () => { const made = nearer(approach, flat(bot.entity.position), before); state.legBest = approach.best; return made; };
+  // Seeking the fortress heights (chooseLeg): the staircase alone, down or
+  // up toward the leg's end, until the bot is within the band; a crossing at
+  // the standing height would keep it where nothing is seen.
+  const seeking = state.legMode === 'descend' && Math.abs(here.y - FORTRESS_Y) > FORTRESS_BAND;
+  if (seeking) {
+    try { await actions.tunnel(bot, task, goal, save, leg, 'fortress'); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastLegError = err.message; }
+    if (gained() || Math.abs(bot.entity.position.y - FORTRESS_Y) < Math.abs(here.y - FORTRESS_Y) - 0.5) { state.legFails = 0; return; }
+  }
   // The pathfinder first: it walks open ground, bridges and climbs where a
   // staircase can only dig. The tunnel takes over where it finds no way.
-  if (actions.navigate) {
+  if (actions.navigate && !seeking) {
     try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 6), { timeoutMs: 30000, stallMs: 8000, stopWhen }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     if (gained()) { state.legFails = 0; return; }
@@ -1056,12 +1113,14 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // No ground on foot in the Nether: straight on at this height, through
   // the netherrack or over the air and lava on blocks laid ahead, as far as
   // the cells ahead show it can go (nether-travel.js).
-  const crossed = await crossToward(bot, task, goal, save, leg, { what: 'the fortress search\'s leg' });
+  const crossed = seeking ? { tried: false } : await crossToward(bot, task, goal, save, leg, { what: 'the fortress search\'s leg' });
   if (crossed.tried && gained()) { state.legFails = 0; return; }
   if (crossed.survey?.stoppedBy) state.lastCrossStop = crossed.survey.stoppedBy;
-  try { await actions.tunnel(bot, task, goal, save, leg, 'fortress'); }
-  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastLegError = err.message; }
-  if (gained()) { state.legFails = 0; return; }
+  if (!seeking) {
+    try { await actions.tunnel(bot, task, goal, save, leg, 'fortress'); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastLegError = err.message; }
+    if (gained()) { state.legFails = 0; return; }
+  }
   // Four failures and twenty seconds: a leg whose every attempt fails at
   // once turned the compass four times in half a minute.
   // Counted from nothing on a fresh search: incremented from undefined it
@@ -1093,4 +1152,4 @@ async function findFortressStep(bot, task, goal, save, actions) {
   }
 }
 
-module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };
+module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };

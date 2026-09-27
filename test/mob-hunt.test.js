@@ -581,6 +581,43 @@ test('no hunt fight is begun from a one-wide span over the lava sea', async () =
   assert.deepEqual(attacks, []);
 });
 
+test('the next leg of the fortress search is Jev\'s: each heading surveyed for open air against rock, and the fortress heights offered from high up', async () => {
+  // mid-205-m (note 394): thirteen legs at y 96 to 104 straight through solid netherrack, six seconds a cell, nothing seen in fifty-one minutes.
+  const { findFortressStep, FORTRESS_LEG, FORTRESS_Y } = require('../src/mob-hunt');
+  const { legFallback } = require('../src/decisions/travel');
+  // Solid netherrack everywhere at the standing height except a cavern to the south: open air from z 1 to 40, its floor thirty blocks down.
+  const rock = p => p.y === 99 && p.z <= 0 ? 'netherrack' : (p.z >= 1 && p.z <= 40 && p.x === 0) ? (p.y < 70 ? 'netherrack' : null) : 'netherrack';
+  const { bot } = netherWorld(new Vec3(0.5, 100, 0.5), rock);
+  const client = jevStub(['leg_south']);
+  const goal = {};
+  const tunnels = [];
+  const actions = { client, navigate: async () => {}, tunnel: async (b, t, g, s, target) => tunnels.push({ x: target.x, y: target.y, z: target.z }) };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 1); assert.equal(client.asked[0].kind, 'fortress');
+  const { options, state } = client.asked[0];
+  assert.deepEqual(Object.keys(options).sort(), ['leg_east', 'leg_north', 'leg_south', 'leg_west', 'seek_fortress_height']);
+  assert.match(options.leg_east, /Go east 96 blocks at y 100: of the 96 cells ahead, 96 of rock to dig \(about 6 seconds a cell, and nothing is seen from inside it\); about 576 seconds/);
+  assert.match(options.leg_south, /40 of open air \(40 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar\) and 56 of rock to dig/);
+  assert.match(options.seek_fortress_height, /Dig a staircase down toward y 64 heading south, 36 blocks of height/);
+  assert.match(options.seek_fortress_height, /fortress corridors and bridges stand mostly between y 48 and 75/);
+  assert.equal(state.height, 100); assert.equal(state.legsSoFar, 0);
+  assert.equal(goal.fortressSearch.heading, 1, 'south, as Jev chose'); assert.equal(goal.fortressSearch.legMode, 'level');
+  assert.deepEqual([goal.fortressSearch.target.x, goal.fortressSearch.target.z], [1, FORTRESS_LEG + 1], 'a leg south from (0.5, 0.5)');
+  assert.equal(goal.decisions.at(-1).id, 'fortress_leg');
+  // From high up, the fortress heights: the staircase alone toward y 64, no crossing at the standing height.
+  const again = jevStub(['seek_fortress_height']);
+  const goal2 = {};
+  const steps = [];
+  await findFortressStep(bot, new Task('hunt'), goal2, () => {}, { client: again, navigate: async () => steps.push('walk'), tunnel: async (b, t, g, s, target) => steps.push(['tunnel', target.y]) });
+  assert.equal(goal2.fortressSearch.legMode, 'descend'); assert.equal(goal2.fortressSearch.target.y, FORTRESS_Y);
+  assert.deepEqual(steps, [['tunnel', FORTRESS_Y]], 'the staircase toward the fortress heights, no walk and no level crossing');
+  // Without Jev, the heading with the most open air; the compass's own at a tie.
+  const children = { leg_east: {}, leg_south: {}, leg_west: {}, leg_north: {}, seek_fortress_height: {} };
+  assert.equal(legFallback(children, [], { current: 'leg_east', open: { leg_east: 0, leg_south: 40, leg_west: 0, leg_north: 0 } }), 'leg_south');
+  assert.equal(legFallback(children, [], { current: 'leg_west', open: { leg_east: 5, leg_south: 5, leg_west: 5, leg_north: 5 } }), 'leg_west');
+  assert.equal(legFallback(children, [], { current: 'leg_west', open: { leg_east: null, leg_south: null, leg_west: null, leg_north: null } }), 'leg_west');
+});
+
 test('a leg walk that goes some way and comes back out is not ground made on the leg', async () => {
   const { findFortressStep } = require('../src/mob-hunt');
   // Flat netherrack, lava at the body's height at x 21: nothing to cross on.
