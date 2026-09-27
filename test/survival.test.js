@@ -2300,6 +2300,41 @@ test('a thrown trident flying at the bot is incoming, for the shield', () => {
   assert.deepEqual(incoming(bot).map(e => e.name), ['trident']);
 });
 
+test('a shot whose velocity has not arrived is incoming once it has moved toward the bot', () => {
+  // mid-202-k (note 382): a blaze's fireball seen eight blocks off, struck 1.3 seconds later, no shield raised between.
+  const { Vec3 } = require('vec3');
+  const { incoming } = require('../src/projectile-guard');
+  const fireball = { name: 'small_fireball', position: new Vec3(8, 65.5, 0) };
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, entities: { 1: fireball } };
+  assert.deepEqual(incoming(bot), [], 'eight blocks off and not yet seen to move: not known to be coming');
+  fireball.position = new Vec3(6.5, 65.5, 0);
+  assert.deepEqual(incoming(bot).map(e => e.name), ['small_fireball'], 'moved a block and a half nearer since the last look');
+  fireball.position = new Vec3(7.5, 65.5, 0);
+  assert.deepEqual(incoming(bot), [], 'moving away');
+});
+
+test('a held pillar faces the shooter, not the nearest mob, and a shot on its way before either', () => {
+  // mid-227-n (note 395): on its pillar the bot faced the spider at its foot while the skeleton shot it through a raised shield.
+  const { Vec3 } = require('vec3');
+  const { shieldFacing } = require('../src/survival');
+  const spider = { entity: { id: 1, name: 'spider', position: new Vec3(1.5, 62, 0.5), isValid: true }, distance: 2, visible: true };
+  const skeleton = { entity: { id: 2, name: 'skeleton', position: new Vec3(-9.5, 62, 0.5), isValid: true }, distance: 10, visible: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {} };
+  assert.equal(shieldFacing(bot, [spider, skeleton]).name, 'skeleton');
+  assert.deepEqual(shieldFacing(bot, [spider, skeleton]).at, skeleton.entity.position.offset(0, 1, 0));
+  assert.equal(shieldFacing(bot, [spider]).name, 'spider', 'nothing shoots: the nearest');
+  bot.entities[3] = { name: 'arrow', position: new Vec3(0.5, 66, 6.5), velocity: new Vec3(0, 0, -1.2) };
+  assert.equal(shieldFacing(bot, [spider, skeleton]).name, 'arrow', 'a shot on its way first');
+  // Held on the pillar, the look goes to the shooter.
+  const looks = [];
+  const world = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal' }, registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 64, 0.5), onGround: true }, entities: {}, health: 14, food: 18,
+    inventory: { items: () => [{ name: 'cobblestone', count: 32 }, { name: 'iron_sword' }], slots: { 45: { name: 'shield' } } }, heldItem: { name: 'iron_sword' }, world: { raycast: () => null }, findBlocks: () => [],
+    lookAt: async p => looks.push(p), blockAt: p => ({ name: p.y < 64 ? 'cobblestone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }) });
+  const survival = new Survival(world, { navigate: async () => {} }, { state: { pillar: { x: 0, y: 62, z: 0 } } });
+  const options = survival.stanceOptions(new Task('t'), {}, () => {}, [spider, skeleton], false);
+  return options.pillar.run().then(() => { assert.deepEqual(looks.at(-1), skeleton.entity.position.offset(0, 1, 0)); });
+});
+
 // A bed nook: the carried bed where no two level cells lie beside the feet.
 // Six midgame trials (2026-09-26): the one bot carrying a bed sealed itself
 // in eleven times with it, sleep offered only on two level cells.

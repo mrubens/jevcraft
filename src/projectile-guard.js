@@ -35,7 +35,17 @@ function incoming(bot, { reach = REACH } = {}) {
     // trial 62 held its shield up fifty-five seconds at the misses lying
     // round its feet, and never got to answer the skeleton or the creeper.
     entity._seenAt ||= Date.now();
-    if (!velocity || Math.abs(velocity.x) + Math.abs(velocity.y) + Math.abs(velocity.z) < 0.05) return distance < 6 && Date.now() - entity._seenAt < 1000;
+    // A shot whose velocity has not arrived is judged by where it has moved
+    // since it was last looked at: mid-202-k saw a blaze's fireball eight
+    // blocks off and was struck 1.3 seconds later with no shield raised
+    // between (note 382, 2026-09-27); at eight blocks a still-looking shot
+    // was waited on until it came within six.
+    const moved = entity._guardSeen && !entity._guardSeen.position.equals(entity.position) ? entity.position.minus(entity._guardSeen.position) : null;
+    entity._guardSeen = { position: entity.position.clone(), at: Date.now() };
+    if (!velocity || Math.abs(velocity.x) + Math.abs(velocity.y) + Math.abs(velocity.z) < 0.05) {
+      if (moved) return entity.position.plus(moved).distanceTo(eye) < distance;
+      return distance < 6 && Date.now() - entity._seenAt < 1000;
+    }
     return entity.position.plus(velocity).distanceTo(eye) < distance;
   }).sort((a, b) => a.position.distanceTo(eye) - b.position.distanceTo(eye));
 }

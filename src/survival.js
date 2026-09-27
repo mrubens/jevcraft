@@ -285,6 +285,18 @@ const worldAge = bot => Number(bot.time?.age);
 
 const inLava = bot => require('./terrain').bodyInLava(bot);
 const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(bot.entity.position.floored())?.name === 'water';
+
+// Where a held stance looks, for the shield: a shield covers only the way
+// the bot faces. A shot on its way first (the guard's own rule), then the
+// nearest shooter that can see the bot, then the nearest mob. mid-227-n
+// held its pillar facing the nearest mob each pass while the skeleton
+// behind it shot through a raised shield (note 395, 2026-09-27).
+function shieldFacing(bot, danger) {
+  const shot = require('./projectile-guard').incoming(bot, { reach: 24 })[0];
+  if (shot?.position) return { at: shot.position, name: shot.name };
+  const aimed = danger.find(t => t.visible && shooter(t.entity)) || danger[0];
+  return aimed?.entity?.position ? { at: aimed.entity.position.offset(0, 1, 0), name: aimed.entity.name } : null;
+}
 // Out to six blocks: at three, a fall into the Nether's lava sea found no
 // shore, the step did nothing, and the bot burned four seconds standing.
 function lavaExit(bot, radius = 6, { water = false } = {}) {
@@ -1249,11 +1261,15 @@ class Survival {
       // the shield (the tick's own, before this) taking what comes. Returned
       // at once, it ran twenty passes a second with nothing reported, and the
       // hurt watchdog stopped the work under it at each hit (mid-243-i).
+      // Facing the shooter, not the nearest: a shield covers only the way
+      // the bot looks, and mid-227-n on its pillar faced the spider at its
+      // foot while the skeleton shot it from 14.4 to none through a shield
+      // raised at four of the last five hits (note 395, 2026-09-27).
       run: async () => {
         if (!up) return this.pillarFrom(task, goal, save, danger);
-        const nearest = danger[0];
-        this.report(goal, save, { action: 'pillar_hold', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
-        if (nearest?.entity?.position) await bot.lookAt?.(nearest.entity.position.offset(0, 1, 0), true);
+        const face = shieldFacing(bot, danger);
+        this.report(goal, save, { action: 'pillar_hold', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, ...(face ? { facing: face.name } : {}) });
+        if (face) await bot.lookAt?.(face.at, true);
         await sleep(250);
         return true;
       } };
@@ -3779,4 +3795,4 @@ class Survival {
   }
 }
 
-module.exports = { biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
