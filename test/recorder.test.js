@@ -123,3 +123,20 @@ test('the session attaches the flight recorder to its bot and detaches it when t
     session.shutdown(); assert.equal(detached, true);
   } finally { session?.shutdown(); mineflayer.createBot = original; }
 });
+
+test('a damage event on the bot is a frame with its type and the mob that caused it', () => {
+  // mid-241-d lost its last points climbing a staircase and the record could not say why (note 293).
+  const b = bot(), trace = new Trace();
+  b._client = new EventEmitter();
+  b.entities[7] = { id: 7, name: 'zombie' };
+  const observation = observeBot(trace, b);
+  b.emit('spawn');
+  b._client.emit('registry_data', { id: 'minecraft:damage_type', entries: [{ key: 'minecraft:arrow' }, { key: 'minecraft:in_wall' }, { key: 'minecraft:mob_attack' }] });
+  b._client.emit('damage_event', { entityId: 1, sourceTypeId: 1, sourceCauseId: 0, sourceDirectId: 0 });
+  b._client.emit('damage_event', { entityId: 1, sourceTypeId: 2, sourceCauseId: 8, sourceDirectId: 8 });
+  b._client.emit('damage_event', { entityId: 7, sourceTypeId: 2, sourceCauseId: 2, sourceDirectId: 2 });
+  const frames = trace.frames.filter(f => f.kind === 'damage');
+  assert.deepEqual(frames.map(f => [f.detail.type, f.detail.cause]), [['in_wall', null], ['mob_attack', 'zombie']], 'the bot\'s own, not another mob\'s');
+  observation.detach();
+  assert.equal(b._client.listenerCount('damage_event'), 0);
+});

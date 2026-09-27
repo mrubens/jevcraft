@@ -54,6 +54,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   const closed = new Promise(resolve => { resolveClosed = resolve; });
   const bot = mineflayer.createBot({ ...config, respawn: false });
   global.__jevBot = bot;
+  // The damage types by index, from the registry the server sends before
+  // login, for the flight record's damage frames (recorder/observer.js).
+  bot._damageTypeNames = [];
+  bot._client.on('registry_data', packet => { if (/damage_type/.test(String(packet?.id || '')) && Array.isArray(packet.entries)) packet.entries.forEach((e, i) => { bot._damageTypeNames[i] = String(e.key || e.id || '').replace('minecraft:', ''); }); });
   bot.on('physicsTick', () => { if (!ended) observeAliveInventory(bot); });
   bot.on('handover', event => { if (!ended) console.log(JSON.stringify({ handover: event })); });
   for (const event of ['recovery_advice', 'recovery_result']) bot.on(event, data => {

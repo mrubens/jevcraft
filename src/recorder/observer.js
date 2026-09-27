@@ -70,6 +70,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
     if (kind === 'action' && !goal.step?.action) kind = 'observation';
     const label = kind === 'recovery_advice' ? detail?.source === 'jev' ? 'Jev chose a recovery action' : 'Fable recovery advice'
       : kind === 'recovery_result' ? detail?.outcome || 'Recovery outcome'
+      : kind === 'damage' ? `hurt: ${String(detail?.type ?? 'unknown').replaceAll('_', ' ')}${detail?.cause ? ` by ${detail.cause}` : ''}`
       : kind === 'request' ? `Understood: ${String(detail?.kind || 'request').replaceAll('_', ' ')}`
       : kind === 'clarify' ? `Asked back: ${detail?.message || 'a clarifying question'}`
       : kind === 'dream' ? `Dream ${({ clear: 'taken away', query: 'asked about', pause: 'set aside', resume: 'picked back up' })[detail?.operation] || `given: ${String(detail?.key || '').replaceAll('_', ' ')}`}`
@@ -89,6 +90,22 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
   on('path_reset', () => { route = []; });
   for (const kind of ['health', 'death', 'navigation_stall', 'navigation_recovery', 'handover', 'mob_hunt', 'stronghold_search', 'end_combat', 'fall_recovery', 'recovery_advice', 'recovery_result']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
   on('chat', (from, message) => sample('chat', { from, message }));
+  // What hurt the bot, from the server's own damage event: its damage type
+  // (by name where the registry was seen) and the mob that caused it. The
+  // vitals frames showed a point lost and nothing of why: mid-241-d lost its
+  // last two climbing a staircase and "suffocated in a wall" (note 293).
+  const client = bot._client;
+  const damageTypes = bot._damageTypeNames ||= [];
+  const registry = packet => { if (/damage_type/.test(String(packet?.id || '')) && Array.isArray(packet.entries)) packet.entries.forEach((e, i) => { damageTypes[i] = String(e.key || e.id || '').replace('minecraft:', ''); }); };
+  const hurt = packet => {
+    if (!bot.entity || packet.entityId !== bot.entity.id) return;
+    const by = id => id > 0 ? bot.entities[id - 1]?.name || null : null;
+    sample('damage', { type: damageTypes[packet.sourceTypeId] || packet.sourceTypeId, cause: by(packet.sourceCauseId), direct: by(packet.sourceDirectId), ...(packet.sourcePosition ? { from: packet.sourcePosition } : {}) });
+  };
+  if (client?.on) {
+    client.on('registry_data', registry); client.on('damage_event', hurt);
+    listeners.push(['__client', () => { client.removeListener('registry_data', registry); client.removeListener('damage_event', hurt); }]);
+  }
   const timer = setInterval(() => { if (trace.connected) sample(); }, 1000);
   timer.unref();
   // While keys are held outside the pathfinder, four looks a second: a fall
@@ -101,7 +118,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
   function detach(reason = 'disconnected') {
     if (!alive) return;
     if (trace.epoch === epoch) { trace.connected = false; sample('connection', { connected: false, reason }); }
-    alive = false; clearInterval(timer); clearInterval(motion); for (const [name, fn] of listeners) bot.removeListener(name, fn);
+    alive = false; clearInterval(timer); clearInterval(motion); for (const [name, fn] of listeners) name === '__client' ? fn() : bot.removeListener(name, fn);
   }
   on('end', detach);
   // The run's cost so far, read fresh on every poll; a ledger that cannot
