@@ -124,6 +124,7 @@ const DEATHS = 'recentDeaths are the bot\'s deaths of the last two hours: how, w
 // A sense of pace said as a fact, not a limit: what the minutes played
 // compare with.
 const CLOCK = 'runClock is the run so far: minutes played toward the goal, when each milestone was reached, what it is on now, and where the minutes went, all told and in the last half hour. For pace, a practiced player from a settled start with iron reaches the Nether within the first hour and has the blaze rods and ender pearls within the next two; minutes already spent on a way are spent, and what counts is the minutes each option still costs.';
+const SCULK = 'sculk says the sculk sensors and shriekers near, what hears the bot and what a shrieker calls.';
 const TRAIL = 'recentPositions is where the bot has been over the last few minutes, fifteen seconds apart, and what it was doing: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 function withRealTime(spec, state = {}) {
   if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
@@ -131,7 +132,7 @@ function withRealTime(spec, state = {}) {
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = state?.recentPositions ? ` ${TRAIL}` : '';
   const deaths = state?.recentDeaths ? ` ${DEATHS}` : '';
-  const clock = state?.runClock ? ` ${CLOCK}` : '';
+  const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '');
   return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${clock}${risk}${trail}${deaths}` };
 }
 
@@ -183,6 +184,12 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.runClock) {
     const clock = require('../game-progress').runClock(goal);
     if (clock) state = { ...state, runClock: clock };
+  }
+  // Sculk near, with every such question: mid-230-n worked beside a
+  // shrieker it was never told of, and the warden it called killed it.
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.sculk) {
+    let sculk = null; try { sculk = require('../sculk').sculkAbout(bot); } catch (_) { /* no world */ }
+    if (sculk) state = { ...state, sculk: sculk.says };
   }
   checkOptions(spec, tree);
   const fallback = typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : null;

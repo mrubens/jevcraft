@@ -72,6 +72,13 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // again told nothing of it (note 412).
     if (type === 'sonic_boom') (bot._sonicBooms ||= []).push(Date.now());
   });
+  // Each shriek of a sculk shrieker darkens the players about it: counted
+  // as the warnings toward a warden (sculk.js).
+  bot.on('entityEffect', (entity, effect) => {
+    if (entity !== bot.entity || effect?.id !== bot.registry?.effectsByName?.darkness?.id) return;
+    const shrieks = bot._shrieks ||= [];
+    if (!shrieks.length || Date.now() - shrieks.at(-1) > 5000) shrieks.push(Date.now());
+  });
   bot._client.on('registry_data', packet => { if (/damage_type/.test(String(packet?.id || '')) && Array.isArray(packet.entries)) packet.entries.forEach((e, i) => { bot._damageTypeNames[i] = String(e.key || e.id || '').replace('minecraft:', ''); }); });
   bot.on('physicsTick', () => { if (!ended) observeAliveInventory(bot); });
   bot.on('handover', event => { if (!ended) console.log(JSON.stringify({ handover: event })); });

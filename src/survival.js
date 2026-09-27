@@ -1792,6 +1792,12 @@ class Survival {
     const footing = bot.findBlocks({ matching: ids, maxDistance: radius, count: 512,
       useExtraInfo: b => shelter.solid(b) && shelter.replaceable(bot.blockAt(b.position.offset(0, 1, 0))) && shelter.replaceable(bot.blockAt(b.position.offset(0, 2, 0))),
     }).map(p => p.offset(0, 1, 0)).filter(p => !isSetAside(this, 'escape', p) && !lavaBeside(bot, p));
+    // Out of a sculk sensor's hearing where any footing is: mid-230-n ran
+    // from a creeper into the deep dark and worked beside a shrieker that
+    // called a warden (note 414). Within it only when nothing else is.
+    const heard = require('./sculk').hearing(bot, radius);
+    const quiet = footing.filter(p => !heard(p));
+    if (quiet.length && quiet.length < footing.length) footing.splice(0, footing.length, ...quiet);
     const gaining = p => distance(p) >= distance(bot.entity.position) + gain;
     // With a hoglin about, no footing near an edge and no route along one.
     const heavy = heavyHitters(threats(bot, 16), 16).length > 0;
