@@ -388,6 +388,22 @@ function wardenSays(bot) {
 // A mob spawner within its reach of the bot: it makes more of its mob
 // while a player is within sixteen blocks, so a fight beside it, or a wait
 // for its mobs to lose interest, does not end there.
+// The bot's own effects that bear on a fight, said as facts.
+function effectsSay(bot) {
+  const effects = bot.entity?.effects || {};
+  const byId = id => (bot.registry?.effects?.[id]?.name || bot.registry?.effectsArray?.find(e => e.id === Number(id))?.name || '').toLowerCase();
+  const out = [];
+  for (const [id, e] of Object.entries(effects)) {
+    const name = byId(id), secs = Number.isFinite(e?.duration) ? Math.round(e.duration / 20) : null;
+    const left = secs ? `, about ${secs} seconds left` : '';
+    if (name === 'poison') out.push(`The bot is poisoned${left}: poison takes about one health a second or so but never the last one; a harming potion or any hit still can.`);
+    else if (name === 'wither') out.push(`The bot is withering${left}: it takes health and can take the last.`);
+    else if (name === 'slowness') out.push(`The bot is slowed${left}: a run covers less ground.`);
+    else if (name === 'regeneration') out.push(`The bot is regenerating${left}.`);
+    else if (name === 'weakness') out.push(`The bot is weakened${left}: its hits do less.`);
+  }
+  return out.length ? ' ' + out.join(' ') : '';
+}
 const SPAWNER_REACH = 16;
 function spawnerAbout(bot) {
   const id = bot.registry?.blocksByName?.spawner?.id;
@@ -1697,6 +1713,17 @@ class Survival {
     // none (2026-09-27).
     const spawner = spawnerAbout(bot);
     if (spawner) for (const o of Object.values(options)) o.description += spawner.says;
+    // What ails the bot, and a witch's pursuit, said with every stance:
+    // mid-244-w was poisoned by a witch, ran from it three times with the
+    // witch walking after, held at one health by the poison, and a harming
+    // potion from ten blocks ended it; its golden apples were never taken
+    // (note 442).
+    const ails = effectsSay(bot);
+    const witchAbout = danger.find(t => t.entity.name === 'witch');
+    for (const [k, o] of Object.entries(options)) {
+      if (ails) o.description += ails;
+      if (witchAbout && k === 'retreat') o.description += ' A witch walks after a player it has seen and throws within about ten blocks; a run that stays in its sight stays in its reach.';
+    }
     let choice = holding && options[held.choice] ? held.choice : null;
     // One stance possible is no choice: it is taken without asking.
     if (!choice && Object.keys(options).length === 1) choice = Object.keys(options)[0];
@@ -1714,6 +1741,7 @@ class Survival {
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health,
           ...(newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` } : {}) } : null,
         ...(spawner ? { spawner: { blocksAway: spawner.distance } } : {}),
+        ...(ails ? { effectsNow: ails.trim() } : {}),
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
       let decision;

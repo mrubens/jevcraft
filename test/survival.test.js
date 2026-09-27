@@ -3813,3 +3813,15 @@ test('the bow is priced as the other stances are, and the question carries no st
   assert.match(shot, /About [\d.]+ damage from the mobs here in the next fifteen seconds this way/);
   assert.doesNotMatch(calls[0].text, /the bow 16 to 17 with no kill/);
 });
+
+test('poisoned, every stance says poison never takes the last health but a harming potion can', async () => {
+  // mid-244-w: poisoned by a witch, it ran three times, the poison held it at one, and a harming potion ended it (2026-09-27).
+  const calls = [];
+  const client = { systemOne: async ({ questions, state }) => { calls.push({ questions, state }); return { answers: { branch_0: { choice: 'retreat', confidence: 0.9 } } }; } };
+  const { bot, controller, task, goal } = archerFixture({ client, sword: true, shield: false, lone: false });
+  bot.registry = require('minecraft-data')('26.1');
+  bot.entity.effects = { 18: { id: 18, amplifier: 0, duration: 300 } };
+  await controller.step(task, goal, () => {});
+  assert.match(calls[0].state.effectsNow || '', /poisoned, about 15 seconds left: poison takes about one health .* never the last one/);
+  for (const [k, c] of Object.entries(calls[0].questions.branch_0.criteria)) assert.match(JSON.stringify(c), /never the last one/, k);
+});
