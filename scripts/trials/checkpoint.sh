@@ -30,6 +30,12 @@ while :; do
     WORLD=$(sed -n 's/^level-name=//p' "$SERVER/server.properties")
     [ -d "$SERVER/$WORLD" ] || continue
     RING="$BASE/$WORLD/ring"
+    # A new world on this port: the last one's ring is done with (its deaths
+    # were kept above as they came). Left, the rings of finished trials
+    # filled the disk: 181 of them, sixty gigabytes (2026-09-27).
+    LAST_FILE="$BASE/.port-$PORT"; LAST=$(cat "$LAST_FILE" 2>/dev/null)
+    if [ -n "$LAST" ] && [ "$LAST" != "$WORLD" ] && [ -d "$BASE/$LAST/ring" ]; then rm -rf "$BASE/$LAST/ring"; echo "$(date -u +%H:%M:%S) $LAST finished: its ring removed"; fi
+    echo "$WORLD" > "$LAST_FILE"
     # A death since the last round: keep the ring as it stood before it.
     NOW=$(deaths "$SERVER"); NOW=${NOW:-0}
     SEEN_FILE="$BASE/$WORLD/deaths-seen"; SEEN=$(cat "$SEEN_FILE" 2>/dev/null || echo "$NOW")
