@@ -21,6 +21,7 @@ const LAVA_EDGE_COST = 4;
 const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const DROP_DEEPEST = 48;
 const BURNS = /lava|fire|magma_block|campfire/;
+const netherOf = bot => /nether/.test(String(bot?.game?.dimension || ''));
 function gapSurvivable(movements, node, dir, k = 1) {
   for (let dy = -1; dy >= -(GAP_FALL_MAX + 1); dy--) {
     const b = movements.getBlock(node, dir.x * k, dy, dir.z * k);
@@ -33,6 +34,11 @@ function gapSurvivable(movements, node, dir, k = 1) {
 }
 
 class SurvivalMovements extends Movements {
+  // No parkour in the Nether at all, whatever a step sets and the loop
+  // restores: a jump that falls short there is the lava sea (the gap-jump
+  // rule below; note 516).
+  get allowParkour() { return this._allowParkour && !netherOf(this.bot); }
+  set allowParkour(on) { this._allowParkour = on; }
   getMoveParkourForward(node, dir, neighbors) {
     if (!this.allowGapJumps || this.bot?._gapJumpsOffUntil > Date.now()) return;
     // No gap jumps in the Nether: a jump that falls short lands where the
@@ -40,7 +46,7 @@ class SurvivalMovements extends Movements {
     // mid-229-f each went into it on a fortress leg with the route running
     // and no hit taken, twenty blocks down (2026-09-27); a gap there is
     // bridged or walked round.
-    if (/nether/.test(String(this.bot?.game?.dimension || ''))) return;
+    if (netherOf(this.bot)) return;
     const found = [];
     super.getMoveParkourForward(node, dir, found);
     for (const move of found) {
@@ -112,9 +118,9 @@ class SurvivalMovements extends Movements {
     // costs the same: a step's drift or a mob's push off it ends the same
     // way. mid-227-a and mid-227-b were routed along ledges high over the
     // lava sea on fortress legs, magma cubes about, and each went over and
-    // fifty blocks down into the lava (notes 217 and 248, 2026-09-26). A
-    // cost, not a ban: a narrow span is still taken where it is the way.
-    const nether = /nether/.test(String(this.bot?.game?.dimension || ''));
+    // fifty blocks down into the lava (notes 217 and 248, 2026-09-26). Now
+    // refused outright (below); the cost stays for a walk that opts out.
+    const nether = netherOf(this.bot);
     // No drop of two or more onto a cell with lava beside it: a fall carries
     // the body on past the cell it was aimed at, and the path cannot steer
     // it back until it lands. mid-220-e, on a fortress leg, dropped three
@@ -135,6 +141,21 @@ class SurvivalMovements extends Movements {
     const missIntoLava = p => (p.dx || p.dz) && !p.useOne && p.dy === 0 && this.fallIntoLava({ x: p.x + p.dx, y: p.y + 1, z: p.z + p.dz });
     for (let i = kept.length - 1; i >= 0; i--) {
       if (airborne(kept[i]) && lavaBy(kept[i]) || kept[i].toPlace?.some(missIntoLava)) kept.splice(i, 1);
+      // In the Nether no cell a block sideways of lava, or of an edge whose
+      // fall ends in lava or costs half the health, whatever the move:
+      // refused one kind of move at a time, the pathfinder's routes found
+      // the next, and both of note 514's burns were its own (mid-235-p-
+      // nether-2, mid-235-p-fortress-3). mid-243-q-nether-1, on a ledge
+      // thirteen over the lava sea, was knocked off by a ghast's fireball
+      // into the sea with no shore to climb onto (note 516). With no water
+      // there, lava beside the feet or below the edge is the end. A one-wide
+      // span or bridge over the sea is such an edge: crossing it is Jev's
+      // (cross_toward, cross_level), crouched, its cost said; a walk that
+      // needs such cells opts out by name (besideLava).
+      else if (nether) {
+        const why = this.besideLavaRefused(kept[i]);
+        if (why) { kept.splice(i, 1); this.lavaRefusals = (this.lavaRefusals || 0) + (why === 'lava' ? 1 : 0); this.edgeRefusals = (this.edgeRefusals || 0) + (why === 'edge' ? 1 : 0); }
+      }
     }
     for (const next of kept) {
       if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava')) ||
@@ -143,6 +164,18 @@ class SurvivalMovements extends Movements {
     // Nor back onto the edge the bot has just stepped back from, while the
     // mobs it stepped back from are about (terrain.js holdOffEdge).
     return this.bot?._edgeHold ? kept.filter(next => !edgeHeld(this.bot, next, this._hostileObservation.entities)) : kept;
+  }
+
+  // The note 516 rule for a cell: 'lava' for lava in any of the eight
+  // cells round it at the feet, the head or the floor, or an edge there
+  // whose fall ends in lava; 'edge' for an edge whose fall costs half the
+  // health; null for neither. `besideLava` is the opt-out: a predicate of
+  // cells the caller has chosen to take all the same.
+  besideLavaRefused(next) {
+    if (this.besideLava?.(next)) return null;
+    if (AROUND.some(([dx, dz]) => [1, 0, -1].some(dy => /lava/.test(this.getBlock(next, dx, dy, dz)?.name || '')))) return 'lava';
+    const drop = this.deadlyDropBeside(next);
+    return drop ? (drop.into === 'lava' ? 'lava' : 'edge') : null;
   }
 
   // Where a body with its feet at `feet`, over nothing, comes down: into
@@ -176,9 +209,9 @@ class SurvivalMovements extends Movements {
       const key = `${node.x + dx},${node.y},${node.z + dz}`;
       let drop = this._drops.cells.get(key);
       if (drop === undefined) { drop = this.dropFrom(node, dx, dz, health); this._drops.cells.set(key, drop); }
-      if (drop && (drop.into === 'lava' || drop.damage >= health / 2)) return true;
+      if (drop && (drop.into === 'lava' || drop.damage >= health / 2)) return drop;
     }
-    return false;
+    return null;
   }
   // Measured no deeper than a fall that already costs half the health: the
   // lava sea is fifty blocks under the ledges, and every column of a search
@@ -326,7 +359,8 @@ function configureMovements(bot) {
   }
   movement.canDig = true;
   movement.allow1by1towers = true;
-  // Parkour on, filtered to the one-block level jump (getMoveParkourForward).
+  // Parkour on, filtered to the one-block level jump (getMoveParkourForward),
+  // and off in the Nether (the allowParkour getter).
   movement.allowParkour = true;
   movement.allowGapJumps = true;
   movement.allowSprinting = false;
@@ -335,7 +369,7 @@ function configureMovements(bot) {
   // step applies and never restores on an error path otherwise cripples
   // every later path search with someone else's restrictions.
   bot._movementDefaults = { canDig: true, allow1by1towers: true, allowParkour: true, allowSprinting: false, maxDropDown: 3,
-    scafoldingBlocks: [...movement.scafoldingBlocks], allowedPosition: undefined };
+    scafoldingBlocks: [...movement.scafoldingBlocks], allowedPosition: undefined, besideLava: undefined };
   // Pathfinder otherwise treats water as a safe landing at ANY depth,
   // even when a cliff has ledges between the bot and that water.
   movement.infiniteLiquidDropdownDistance = false;

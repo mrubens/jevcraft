@@ -3072,7 +3072,11 @@ async function enterPortal(bot, task, portal, arrived) {
       throw new Error(`Both faces of the portal the bot stands in step into fire or lava (${refused.map(r => `${r.name.replace('_', ' ')} at ${r.x}, ${r.y}, ${r.z}`).join('; ')}); not walked into`);
     }
   }
-  await navigate(bot, task, new goals.GoalNear(portal.x, portal.y, portal.z, 1), { timeoutMs: 20000 });
+  // The last cells up to the frame may be taken beside lava: a portal is
+  // where it is, and the step in is crouched (below). The way there keeps
+  // off the lava's edge as every walk does (movement.js, note 516).
+  const atFrame = c => Math.abs(c.x - portal.x) <= 2 && Math.abs(c.y - portal.y) <= 2 && Math.abs(c.z - portal.z) <= 2;
+  await navigate(bot, task, new goals.GoalNear(portal.x, portal.y, portal.z, 1), { timeoutMs: 20000, besideLava: atFrame });
   if (arrived()) return;
   bot.pathfinder.setGoal(null);
   if (!inPortal(bot)) {

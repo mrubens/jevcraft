@@ -280,12 +280,17 @@ function ledgeFixture(dimension) {
   return { bot, movement };
 }
 
-test('in the Nether a cell beside a drop into the lava sea costs more than one back from the edge', () => {
-  // mid-227-a and mid-227-b were routed along ledges high over the lava sea and went over (notes 217, 248).
+test('in the Nether a cell beside a drop into the lava sea is refused, and costs more where a walk opts out', () => {
+  // mid-227-a and mid-227-b were routed along ledges high over the lava sea and went over (notes 217, 248);
+  // mid-243-q-nether-1 was knocked off one by a ghast's fireball (note 516).
   const { movement } = ledgeFixture('the_nether');
-  const neighbors = movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
+  let neighbors = movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
+  assert(!neighbors.some(p => p.z === 0), 'not onto the edge');
+  assert(neighbors.some(p => p.x === -1 && p.z === 1 && p.y === 70), 'a block back from it is open');
+  movement.besideLava = () => true;
+  neighbors = movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
   const edge = neighbors.find(p => p.x === 0 && p.z === 0 && p.y === 70), back = neighbors.find(p => p.x === -1 && p.z === 1 && p.y === 70);
-  assert(edge && back, 'both still walkable: a cost, not a ban');
+  assert(edge && back, 'opted out, both walkable');
   assert(edge.cost > back.cost + 3, `the ledge costs more: ${edge.cost} against ${back.cost}`);
   // In the Overworld the cost is left as it was.
   const overworld = ledgeFixture('overworld').movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
@@ -296,6 +301,8 @@ test('after a step back from the edge the route does not go back onto it while t
   // mid-227-b stepped back from the ledge at the magma cubes, and the next route walked it back along the same edge (note 248).
   const { holdOffEdge } = require('../src/terrain');
   const { bot, movement } = ledgeFixture('the_nether');
+  // The edge opted into, as a walk that must take it does (note 516): the hold is what is tested.
+  movement.besideLava = () => true;
   const cube = { id: 7, name: 'magma_cube', position: new Vec3(40, 70, 1), isValid: true, height: 1 };
   bot.entities = { 7: cube };
   holdOffEdge(bot, new Vec3(0, 70, 0), [cube]);
@@ -357,13 +364,15 @@ test('no block is laid level beside the floor where a miss ends in lava or besid
     const beside = neighbors.filter(n => n.toPlace.some(p => p.dy === 0));
     if (sea) assert.equal(beside.length, 0, 'nothing laid beside the tower over the span and the sea');
     else assert(beside.some(n => n.x === 4 && n.y === 36), 'over ground the tower still bridges off');
-    assert(neighbors.some(n => n.x === 5 && n.y === 37 && n.z === 0), 'the tower still goes up');
+    // Over the sea the tower's top is itself a block from a short fall into lava (note 516).
+    assert.equal(neighbors.some(n => n.x === 5 && n.y === 37 && n.z === 0), !sea, sea ? 'no higher over the sea' : 'the tower still goes up');
   }
   // Nor a span laid out over the lava sea itself: a miss is the sea.
   const movement = namedWorld('the_nether', p => p.y === 31 && p.z === 0 && p.x <= 0 ? 'cobblestone' : p.y <= 31 ? 'lava' : 'air');
   const out = movement.getNeighbors({ x: 0, y: 32, z: 0, remainingBlocks: 64 });
   assert(!out.some(n => n.toPlace.some(p => p.dy === 0)), 'no block laid out over the lava from the span\'s end');
-  assert(out.some(n => n.x === -1 && n.y === 32), 'back along the span is open');
+  // Nor walked back along the span: a one-wide span over lava is Jev's crossing, not a route (note 516).
+  assert(!out.some(n => n.x === -1 && n.y === 32), 'the span is not a route');
 });
 
 test('no jump up, across, onto a cell with lava beside it', () => {
@@ -375,4 +384,63 @@ test('no jump up, across, onto a cell with lava beside it', () => {
     const up = movement.getNeighbors({ x: 0, y: 48, z: 0, remainingBlocks: 0 }).filter(n => n.x === -1 && n.y === 49 && n.z === 0);
     assert.equal(up.length, lava ? 0 : 1, lava ? 'not up beside the lava' : 'up the step as before');
   }
+});
+
+test('in the Nether no cell a block sideways of lava is walked: along a one-wide shore the route keeps a block off', () => {
+  // Both of note 514's burns were the pathfinder's own routes; refused a move at a time, the next leaked (note 516).
+  // Netherrack floor at y 47 for z >= 0; the lava sea at z < 0, level with the floor.
+  const shore = dimension => namedWorld(dimension, p => p.y <= 47 ? (p.z < 0 ? 'lava' : 'netherrack') : 'air');
+  const nether = shore('the_nether');
+  const along = nether.getNeighbors({ x: 0, y: 48, z: 1, remainingBlocks: 0 });
+  assert(!along.some(n => n.z === 0), 'no cell on the shore beside the sea');
+  assert(along.some(n => n.x === 1 && n.z === 1 && n.y === 48), 'a block off the shore it goes on');
+  assert(nether.lavaRefusals > 0, 'the refusal is counted for the no-route error');
+  // Nor beside a column that falls into lava within reach: a ledge at z >= 0, open air at z < 0 down to lava four below.
+  const ledge = namedWorld('the_nether', p => p.z < 0 ? (p.y <= 43 ? 'lava' : 'air') : p.y <= 47 ? 'netherrack' : 'air');
+  assert(!ledge.getNeighbors({ x: 0, y: 48, z: 1, remainingBlocks: 0 }).some(n => n.z === 0), 'not beside a short fall into lava');
+  // A fortress bridge three wide with the sea forty blocks down: its edges are refused, its middle walked.
+  const bridge = namedWorld('the_nether', p => p.y <= 8 ? 'lava' : p.y === 47 && p.z >= 0 && p.z <= 2 ? 'nether_bricks' : 'air');
+  const deck = bridge.getNeighbors({ x: 0, y: 48, z: 1, remainingBlocks: 0 });
+  assert(deck.some(n => n.x === 1 && n.z === 1 && n.y === 48), 'along the middle');
+  assert(!deck.some(n => n.z !== 1), 'not along an edge');
+  // An opt-out by name takes the shore, and the Overworld keeps its cost.
+  nether.besideLava = () => true;
+  assert(nether.getNeighbors({ x: 0, y: 48, z: 1, remainingBlocks: 0 }).some(n => n.z === 0), 'opted out, the shore is open');
+  assert(shore('overworld').getNeighbors({ x: 0, y: 48, z: 1, remainingBlocks: 0 }).some(n => n.z === 0), 'the Overworld shore is priced, not refused');
+});
+
+test('in the Nether a route over ground far from lava is unchanged', () => {
+  const ground = dimension => namedWorld(dimension, p => p.y <= 47 ? 'netherrack' : 'air');
+  const key = n => `${n.x},${n.y},${n.z}:${n.cost}`;
+  const node = { x: 0, y: 48, z: 0, remainingBlocks: 0 };
+  const nether = ground('the_nether');
+  assert.deepEqual(nether.getNeighbors(node).map(key).sort(), ground('overworld').getNeighbors(node).map(key).sort());
+  assert.equal(nether.lavaRefusals || 0, 0);
+});
+
+test('parkour is off in the Nether, whatever the loop restores', () => {
+  const bot = botFixture(), movement = configureMovements(bot);
+  assert.equal(movement.allowParkour, true);
+  bot.game.dimension = 'the_nether';
+  assert.equal(movement.allowParkour, false);
+  Object.assign(movement, bot._movementDefaults);
+  assert.equal(movement.allowParkour, false, 'the defaults put back each tick do not turn it on');
+  bot.game.dimension = 'overworld';
+  assert.equal(movement.allowParkour, true);
+});
+
+test('a walk the lava rule leaves no route for says the way passes beside lava; an opt-out is by name and put back', async () => {
+  const { navigate, Task } = require('../src/skills');
+  const { goals } = require('mineflayer-pathfinder');
+  const movements = { besideLava: undefined }, seen = [];
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, game: { dimension: 'the_nether' }, pathfinder: { movements, setGoal() {},
+    goto: async () => { seen.push(movements.besideLava); movements.lavaRefusals = 3; } } };
+  const atFrame = () => true;
+  await assert.rejects(navigate(bot, new Task('test', 'test'), new goals.GoalBlock(10, 64, 0), { besideLava: atFrame }),
+    err => err.name === 'NoRoute' && /the way passes beside lava/.test(err.message) && err.besideLava);
+  assert.deepEqual(seen, [atFrame]);
+  assert.equal(movements.besideLava, undefined, 'the opt-out ends with the walk');
+  // With nothing refused, the error is as before.
+  bot.pathfinder.goto = async () => {};
+  await assert.rejects(navigate(bot, new Task('test', 'test'), new goals.GoalBlock(10, 64, 0)), err => err.name === 'NoRoute' && !/lava/.test(err.message));
 });
