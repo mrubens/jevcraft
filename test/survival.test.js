@@ -1473,7 +1473,7 @@ test('with a hoglin about, the bot steps back from an edge three blocks off, to 
     entity: { position: new Vec3(3.5, 64, 0.5), onGround: true }, entities: { 3: hoglin }, time: { timeOfDay: 6000 },
     inventory: { items: () => [{ name: 'diamond_sword' }], slots: {} }, world: { raycast: () => null }, blockAt: ledgeWorld(),
     pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {} });
-  const survival = new Survival(bot, { navigate: async (b, t, g) => { moved.push({ x: g.x, y: g.y, z: g.z }); } }, { state: { shelters: [] } });
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { moved.push({ x: g.x, y: g.y, z: g.z }); b.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } }, { state: { shelters: [] } });
   const goal = {};
   await survival.flee(new Task('ledge'), goal, () => {});
   assert.equal(goal.survivalAction.action, 'off_the_edge');
@@ -2248,7 +2248,7 @@ test('with a skeleton close, a deadly drop two blocks off is the edge: the bot s
     pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {} });
   const { besideDrop } = require('../src/terrain');
   assert.equal(besideDrop(bot, new Vec3(4, 64, 0)), false, 'the next cell is floor: the old rule saw no edge');
-  const survival = new Survival(bot, { navigate: async (b, t, g) => { moved.push({ x: g.x, y: g.y, z: g.z }); } }, { state: { shelters: [] } });
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { moved.push({ x: g.x, y: g.y, z: g.z }); b.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } }, { state: { shelters: [] } });
   const goal = {};
   await survival.flee(new Task('shaft'), goal, () => {});
   assert.equal(goal.survivalAction?.action, 'off_the_edge');
@@ -3348,4 +3348,23 @@ test('a zombie at arm\'s length round a wall, out of sight, still rules out seal
   assert.equal(biterAtArm(bot), true);
   zombie.position = new Vec3(6, 64, 0.5);
   assert.equal(biterAtArm(bot), false);
+});
+
+test('a step off the edge that goes nowhere is set aside a moment, not taken again a hundred times a second', async () => {
+  // mid-244-l: its step to the cell beside it came back at once, over and over, until an arrow and a creeper's blast.
+  const skeleton = { id: 5, name: 'skeleton', type: 'hostile', position: new Vec3(0.5, 64, -5.5), height: 1.99, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, health: 12, food: 18,
+    entities: { 5: skeleton }, time: { timeOfDay: 14000 }, inventory: { items: () => [{ name: 'iron_sword' }], slots: {}, emptySlotCount: () => 10 }, world: { raycast: () => null },
+    registry: require('minecraft-data')('26.1'), findBlocks: () => [], oxygenLevel: 20,
+    // Ground to the west, a deep drop to the east beside the feet.
+    blockAt: p => { const q = p.floored(); const solid = q.y === 63 && q.x <= 0; return { name: solid ? 'stone' : q.y < 40 ? 'lava' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; },
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, attack() {}, equip: async () => {}, activateItem() {}, deactivateItem() {} });
+  let walks = 0;
+  const survival = new Survival(bot, { navigate: async () => { if (goal.survivalAction?.action === 'off_the_edge') walks++; } }, { state: { shelters: [] } });
+  const goal = {};
+  survival.stanceStep = async () => true;
+  await survival.flee(new Task('edge'), goal, () => {}).catch(() => {});
+  delete goal.survivalAction;
+  await survival.flee(new Task('edge'), goal, () => {}).catch(() => {});
+  assert.equal(walks, 1, 'set aside after going nowhere once');
 });

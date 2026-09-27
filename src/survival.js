@@ -813,9 +813,17 @@ class Survival {
         const { incoming, deflect } = require('./projectile-guard');
         const shot = () => bot.inventory.slots?.[45]?.name === 'shield' && incoming(bot).length > 0;
         try {
+          const from = bot.entity.position.clone();
           await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 3000, stallMs: 1500, stopWhen: () => biter() || shot() });
           if (shot()) { await deflect(bot, task); return; }
-          if (!biter()) return; setAside(this, 'firm_ground', 'here', 'a biter at arm\'s length', 5000);
+          // A step that went nowhere is no answer: mid-244-l's to the cell
+          // beside it came back at once, a hundred times a second, with a
+          // skeleton and a creeper about, until an arrow and a blast
+          // (2026-09-27). Set aside a moment; the rest of the turn answers.
+          const moved = bot.entity.position.distanceTo(from) >= 0.3;
+          if (!moved) setAside(this, 'firm_ground', 'here', 'the step off the edge went nowhere', 5000);
+          else if (!biter()) return;
+          else setAside(this, 'firm_ground', 'here', 'a biter at arm\'s length', 5000);
         }
         catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; setAside(this, 'firm_ground', 'here', err, 5000); }
       }
