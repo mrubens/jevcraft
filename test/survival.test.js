@@ -1385,6 +1385,24 @@ test('a mob in sight with lava level with the feet beside the bot: off the edge 
   assert(to && to.x <= -1, `back from the pool: ${to && to.x}`);
 });
 
+test('a deadly drop two blocks off and no firmer ground than the feet: no walk to where the bot stands', async () => {
+  // mid-244-i: off_the_edge to its own cell twenty passes a second, for minutes, with zombies about.
+  const zombie = { id: 4, name: 'zombie', type: 'hostile', position: new Vec3(0.5, 51, -1.5), height: 1.9, isValid: true };
+  const ground = p => Math.abs(p.x) <= 1 && Math.abs(p.z) <= 1;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: { 4: zombie }, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 6000 }, entity: { position: new Vec3(0.5, 51, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'diamond_sword', count: 1 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ position: p, name: p.y <= 30 ? 'lava' : ground(p) && p.y < 51 ? 'stone' : 'air', boundingBox: ground(p) && p.y < 51 && p.y > 30 ? 'block' : 'empty' }),
+    world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {},
+    equip: async () => {}, attack() {}, lookAt: async () => {}, heldItem: { name: 'diamond_sword' } });
+  const walked = [];
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { walked.push(g); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.step(new Task('leg'), goal, () => {});
+  assert(!walked.some(g => g.x === 0 && g.y === 51 && g.z === 0), 'not walked to its own cell');
+  assert.notEqual(goal.survivalAction?.action, 'off_the_edge');
+});
+
 test('with the night planned for a shelter, a bed in sight does not keep the night mine shut', () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20,
     time: { timeOfDay: 16000 }, entity: { position: new Vec3(0.5, 30, 0.5) },

@@ -149,9 +149,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `climb_out`
 
-**Climbing out of the mine by digging: a staircase toward open ground, or straight up the column overhead?**
+**Climbing out of the mine by digging: a staircase toward open ground, straight up the column overhead, or a span across open cave toward the way up?**
 
-- When: A climb to the surface with no dug way out found, when it starts digging; asked again when the pickaxes carried change, the column overhead opens or closes, or the column would not rise.
+- When: A climb to the surface with no dug way out found, when it starts digging; asked again when the pickaxes carried change, a way not offered before is open, the column would not rise, or a span has been laid.
 - Decision tree, choice; stakes medium; ledger kind `mining`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -161,6 +161,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `staircase` | root | dig a staircase up toward open ground | always |
 | `straight_up` | root | dig straight up, a block put under the feet at each step | the column to open sky has only natural ground to dig, nothing that falls or flows in or beside it, and a building block carried for every step up |
+| `bridge` | root | lay a level span across the open cave toward the way up, then look again from its end | a straight crossing at the feet's height toward the way up has open air to lay blocks over and gains four blocks or more on it |
 
 ### `corpse_run`
 

@@ -738,8 +738,12 @@ class Survival {
     const pillar = this.state.pillar;
     const onPillar = !heavy && pillar && Math.hypot(feet.x - pillar.x, feet.z - pillar.z) < 1 && feet.y >= pillar.y + 1;
     if ((close.length || heavy) && !moving && !onPillar && (heavy ? dropWithin(bot, feet, 3) : besideDrop(bot, feet) || deadly) && !isSetAside(this, 'firm_ground', 'here')) {
+      // Not the cell stood on: the fallback's ground only need not be beside
+      // a drop, and with the deadly drop two blocks off the feet were such
+      // ground. mid-244-i walked to where it stood, twenty passes a second,
+      // for minutes at y 3 with three zombies about (2026-09-27).
       const cell = ((heavy || deadly) && firmGround(bot, 8, { margin: 3 })) || firmGround(bot);
-      if (cell) {
+      if (cell && !cell.equals(feet)) {
         this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, threats: close.map(t => t.entity.name) });
         require('./terrain').holdOffEdge(bot, feet, threats(bot, 64).map(t => t.entity));
         // Given up for the fight once a biter is at arm's length, unless the

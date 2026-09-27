@@ -497,6 +497,31 @@ test('the ways out say what they cost: by hand the stairs take three digs a bloc
   assert.match(short.state.straightUpBlocked, /10 building blocks carried for the 24 steps up/);
 });
 
+test('on a bridge over open cave, a span toward the way up is a way out', () => {
+  // mid-244-i: a one-wide mineshaft bridge at y 3, no floor for any stair, gravel overhead; the staircase alone was offered and set aside heading after heading.
+  const { straightUpColumn, climbOptions } = require('../src/surface');
+  const { bot, blocks } = shaft({ y: 10 });
+  // A cave from y 5 to 20 out to x -30, and a plank path along z under the feet.
+  const cave = p => p.x >= -30 && p.x <= 5 && p.y >= 5 && p.y <= 20 && Math.abs(p.z) <= 5;
+  const inner = bot.blockAt;
+  bot.blockAt = p => {
+    if (p.x === 0 && p.y === 9 && Math.abs(p.z) <= 5) return { name: 'oak_planks', position: p, diggable: true, boundingBox: 'block' };
+    if (p.x === 0 && p.z === 0 && p.y === 30) return { name: 'gravel', position: p, diggable: true, boundingBox: 'block' };
+    if (cave(p) && !blocks.has(`${p}`)) return { name: 'cave_air', position: p, diggable: false, boundingBox: 'empty' };
+    return inner(p);
+  };
+  const target = new Vec3(-24, 42, 0);
+  const column = straightUpColumn(bot);
+  assert.match(column.blocked, /gravel/);
+  const ways = climbOptions(bot, target, column);
+  assert(ways.options.bridge, `offered: ${Object.keys(ways.options)}`);
+  assert.match(ways.options.bridge.description, /Lay a level span .* blocks laid of 64 carried.*crouched/);
+  assert.match(ways.options.bridge.description, /knockback is a fall/);
+  // On rock with no open cave toward it, no span is offered.
+  const solid = shaft({ y: 10 }).bot;
+  assert(!climbOptions(solid, target, straightUpColumn(solid)).options.bridge);
+});
+
 test('without Jev the quicker way is taken: straight up, a few blocks a call, one dig a block, asked once', async () => {
   const { bot, blocks } = shaft();
   const goal = {}, dug = [], calls = [];

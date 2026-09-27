@@ -200,12 +200,13 @@ define({
 // twenty seconds a stair twice when the last pickaxe wore out on the way.
 define({
   id: 'climb_out', area: 'survival', kind: 'mining', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'Climbing out of the mine by digging: a staircase toward open ground, or straight up the column overhead?',
-  trigger: 'A climb to the surface with no dug way out found, when it starts digging; asked again when the pickaxes carried change, the column overhead opens or closes, or the column would not rise.',
+  question: 'Climbing out of the mine by digging: a staircase toward open ground, straight up the column overhead, or a span across open cave toward the way up?',
+  trigger: 'A climb to the surface with no dug way out found, when it starts digging; asked again when the pickaxes carried change, a way not offered before is open, the column would not rise, or a span has been laid.',
   source: 'src/surface.js (returnToSurface, chooseClimb, climbOptions)',
   options: [
     { key: 'staircase', label: 'dig a staircase up toward open ground', when: 'always', level: 'root' },
     { key: 'straight_up', label: 'dig straight up, a block put under the feet at each step', when: 'the column to open sky has only natural ground to dig, nothing that falls or flows in or beside it, and a building block carried for every step up', level: 'root' },
+    { key: 'bridge', label: 'lay a level span across the open cave toward the way up, then look again from its end', when: 'a straight crossing at the feet\'s height toward the way up has open air to lay blocks over and gains four blocks or more on it', level: 'root' },
   ],
   instructions: { task: 'The bot is underground and has to dig its way out to open sky. Choose how it climbs.', guidance: 'Each way says how many blocks it digs, how long it takes with the pickaxes carried, and what it leaves behind. A pickaxe wears a use for each block it digs; once the pickaxes are used up the rest is dug by hand, stone at seven and a half seconds a block. `pickaxes` lists what is carried and the uses left; `straightUpBlocked` says why the column overhead is not on offer, when it is not.' },
   fallback: (children, path, context = {}) => children[context.quicker] ? context.quicker : Object.keys(children)[0],

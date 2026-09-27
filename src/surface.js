@@ -143,6 +143,18 @@ function climbOptions(bot, target, column, { landing = false } = {}) {
       options.straight_up = { description: `Dig straight up this column to open sky: ${column.up} blocks up, ${column.cells.length} blocks to dig${kinds ? ` (${kinds})` : ''}, a block put under the feet at each of the ${column.up} steps (${scaffold} building blocks carried); ${duration(seconds)} with ${picks.length ? 'the pickaxe' : 'bare hands'}.${wearNote(wearing, wearing > 0)} Nothing that falls or flows is in or beside the column. The column is filled behind with the blocks put down: no way back down is left.` };
     }
   }
+  // Across open cave toward the way up, on laid blocks: a staircase needs
+  // floor for each step and the column overhead may hold what falls, and
+  // mid-244-i, on a one-wide mineshaft bridge over a cave at y 3, had every
+  // heading's first step without floor and gravel overhead: the staircase,
+  // the one way offered, was set aside heading after heading until the loop
+  // watch ended the trial (2026-09-27).
+  let crossing = null;
+  try { crossing = require('./bridging').surveyCrossing(bot, new Vec3(target.x, feet.y, target.z), { cells: 24 }); } catch (_) { /* no survey here */ }
+  if (crossing?.bridge > 0 && crossing.gain >= 4) {
+    estimate.bridge = crossing.cells * 2 + crossing.digSeconds;
+    options.bridge = { description: `Lay a level span of blocks across the open cave toward the way up, ${crossing.cells} cells (${crossing.bridge} blocks laid of ${crossing.carried} carried${crossing.dig ? `, ${crossing.dig} dug` : ''}), crouched the whole way, ${Math.round(crossing.gain)} blocks nearer; then the way up is looked for again from its end.${crossing.overLava ? ` ${crossing.overLava} of the cells are over lava.` : ''}${crossing.stoppedBy ? ` It stops at ${crossing.stoppedBy}.` : ''} One block wide over the drop: a hit's knockback is a fall.`, crossing };
+  }
   const state = { blocksToOpenSky: climbToSurface(bot, feet), pickaxes: tools, pickaxeUsesLeft: usesLeft,
     ...(column?.blocked ? { straightUpBlocked: column.blocked } : {}) };
   return { options, estimate, state };
@@ -343,6 +355,17 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       // column overhead, each said with what it costs and leaves.
       const climb = await chooseClimb(bot, task, goal, save, state, target, { landing: !!open[0] });
       if (climb.method === 'straight_up') { await climbStraightUp(bot, task, goal, save, state, climb.column, start, actions); return; }
+      if (climb.method === 'bridge') {
+        goal.step = { action: 'ascend_to_surface', method: 'bridge', from: { ...start }, toward: { x: target.x, y: start.y, z: target.z } };
+        goal.survivalAction = { action: 'return_to_surface', method: 'bridge', from: { ...start }, target: { ...target }, at: new Date().toISOString() };
+        save();
+        try { await (actions.bridgeTo || require('./bridging').bridgeTo)(bot, task, new Vec3(target.x, start.y, target.z), { maxBlocks: 24, maxSteps: 24 }); }
+        finally {
+          // Asked again from the span's end, where the staircase has floor.
+          delete state.climb; delete state.target; state.ascent = { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} }; save();
+        }
+        return;
+      }
       state.ascent ||= { entrance: { ...start }, steps: 0, visited: {} };
       // Keep the exit staircase separate from the suspended mining worksite.
       // The copy shares the goal's memory of failed attempts, or a
@@ -393,7 +416,6 @@ async function chooseClimb(bot, task, goal, save, state, target, { landing = fal
   const column = state.climb?.failedColumn === here ? null : straightUpColumn(bot, feet);
   const kept = state.climb?.method && state.climb.tools === tools && (state.climb.method !== 'straight_up' || column?.cells);
   const offered = state.climb?.offered || [];
-  if (kept && !(column?.cells && !offered.includes('straight_up'))) return { method: state.climb.method, column };
   const { options, estimate, state: facts } = climbOptions(bot, target, column, { landing });
   // Asked again only when something new is on offer.
   if (kept && Object.keys(options).every(k => offered.includes(k))) return { method: state.climb.method, column };
