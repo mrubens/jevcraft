@@ -763,6 +763,12 @@ class Survival {
       // A mob at arm's length is struck crouched and still (combat.js
       // defendNearby on a span); nothing else is done about it here.
       if (await defendNearby(bot, task, goal, save)) return;
+      // A shot on its way meets the shield, crouched (projectile-guard.js
+      // deflect keeps the crouch on a span): this returned before the
+      // shield's turn, and mid-227-l held still on a fortress bridge under
+      // two blazes' fire, no wall to be had and no firm ground near, from
+      // 7.5 to none (2026-09-27).
+      if (await deflect(bot, task)) { this.report(goal, save, { action: 'block_shot', threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health }); return; }
       try { for (let n = 0; n < 4; n++) { task.check(); await sleep(100); } }
       finally { if (!bot._spanning) bot.setControlState?.('sneak', false); }
       return;

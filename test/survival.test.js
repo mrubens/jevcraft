@@ -3458,3 +3458,22 @@ test('the run from an enderman says it teleports after the bot', () => {
   const options = survival.stanceOptions(new Task('t'), {}, () => {}, [crowdMob(1, 'enderman', 3)], false);
   assert.match(options.retreat.description, /An enderman after the bot teleports to it: a run from one ends with it beside the bot again/);
 });
+
+test('held on a span with a shot on its way and no walls or ground to be had, the shield comes up', async () => {
+  // mid-227-l held still on a fortress bridge under two blazes' fire and burned from 7.5 to none.
+  const blaze = { id: 4, name: 'blaze', type: 'hostile', position: new Vec3(0.5, 66, 10.5), height: 1.8, isValid: true };
+  const fireball = { id: 9, name: 'small_fireball', position: new Vec3(0.5, 65.5, 5.5), velocity: new Vec3(0, 0, -1), isValid: true };
+  let raised = false;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, health: 7, food: 18,
+    entities: { 4: blaze, 9: fireball }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: { 45: { name: 'shield' } } }, world: { raycast: () => null },
+    // A one-wide bridge along x, lava far below, nothing firm anywhere else.
+    blockAt: p => { const q = p.floored(); const solid = q.y === 63 && q.z === 0; return { name: solid ? 'nether_bricks' : q.y < 30 ? 'lava' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; },
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, attack() {}, equip: async () => {},
+    activateItem() { raised = true; }, deactivateItem() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, place: async () => { throw new Error('nothing to place'); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('bridge'), goal, () => {});
+  assert.equal(raised, true, 'the shield came up');
+  assert.equal(goal.survivalAction?.action, 'block_shot');
+});
