@@ -88,7 +88,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
   on('flight_route', p => { route = (p.path || []).slice(0, 128).map(position).filter(Boolean); });
   on('goal_reached', () => { route = []; });
   on('path_reset', () => { route = []; });
-  for (const kind of ['health', 'death', 'navigation_stall', 'navigation_recovery', 'handover', 'mob_hunt', 'stronghold_search', 'end_combat', 'fall_recovery', 'recovery_advice', 'recovery_result']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
+  for (const kind of ['health', 'death', 'no_route', 'navigation_stall', 'navigation_recovery', 'handover', 'mob_hunt', 'stronghold_search', 'end_combat', 'fall_recovery', 'recovery_advice', 'recovery_result']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
   on('chat', (from, message) => sample('chat', { from, message }));
   // What hurt the bot, from the server's own damage event: its damage type
   // (by name where the registry was seen) and the mob that caused it. The

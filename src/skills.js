@@ -437,7 +437,21 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
       // search found: that is no route from here, not a walk cut short, and
       // the two want different answers (trial 3 persisted ten times on
       // "ended before reaching", sealed in its own pocket 16 blocks from home).
-      if (!latestRoute?.path?.length && latestRoute?.status !== 'success') throw Object.assign(new Error(`No route from here to the destination (${latestRoute?.status || 'no search'})`), { name: 'NoRoute' });
+      if (!latestRoute?.path?.length && latestRoute?.status !== 'success') {
+        // What stands round the feet, for the flight record: mid-207-d's
+        // every walk came back "partial" beside its cast frame, and what
+        // boxed it in could not be seen (note 304). Once in ten seconds.
+        if (!(bot._noRouteSeenAt > now - 10000) && bot.entity?.position && bot.blockAt) {
+          bot._noRouteSeenAt = now;
+          const feet = bot.entity.position.floored(), around = [];
+          for (let dy = -1; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+            const b = bot.blockAt(feet.offset(dx, dy, dz));
+            if (b && b.boundingBox !== 'empty' || /water|lava/.test(b?.name || '')) around.push(`${dx},${dy},${dz}:${b.name}`);
+          }
+          bot.emit('no_route', { status: latestRoute?.status || 'no search', feet: { x: feet.x, y: feet.y, z: feet.z }, goal: goal && ['x', 'y', 'z'].every(k => Number.isFinite(goal[k])) ? { x: goal.x, y: goal.y, z: goal.z } : null, around });
+        }
+        throw Object.assign(new Error(`No route from here to the destination (${latestRoute?.status || 'no search'})`), { name: 'NoRoute' });
+      }
       throw new Error('Navigation ended before reaching the destination');
     }
   } catch (err) {

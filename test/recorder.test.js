@@ -140,3 +140,14 @@ test('a damage event on the bot is a frame with its type and the mob that caused
   observation.detach();
   assert.equal(b._client.listenerCount('damage_event'), 0);
 });
+
+test('a walk with no route records what stands round the feet', () => {
+  // mid-207-d's every walk came back "partial", and what boxed it in could not be seen (note 304).
+  const b = bot(), trace = new Trace();
+  const observation = observeBot(trace, b);
+  b.emit('spawn');
+  b.emit('no_route', { status: 'partial', feet: { x: 2, y: 64, z: 3 }, around: ['1,0,0:cobblestone'] });
+  const frame = trace.frames.find(f => f.kind === 'no_route');
+  assert.deepEqual(frame?.detail.around, ['1,0,0:cobblestone']);
+  observation.detach();
+});
