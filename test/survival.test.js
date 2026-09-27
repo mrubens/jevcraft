@@ -3054,6 +3054,17 @@ test('in water with a drowned, the stances say so, no pillar, pocket or bunker i
   assert(options.get_out_of_water, Object.keys(options).join(','));
   assert.match(options.get_out_of_water.description, /in water, air 12 of 20.*sinks unless it swims.*The drowned swims faster than the bot in water/);
   assert.match(options.fight.description, /The bot is in water/);
+  assert.match(options.get_out_of_water.description, /No dry landing near the water's level is in view within thirty-two blocks/);
+  // A pillager on the bank (notes 367, 388): the bank out of its sight is said, and the swim for shore is run as the stance, the pillager passed with it.
+  const pillager = { entity: { id: 2, name: 'pillager', position: new Vec3(8.5, 16, -6.5), height: 1.95, isValid: true }, distance: 10, visible: true };
+  // Two banks at the water's surface (y 20 here): one at z 0 in the pillager's sight, one at z 6 behind the bank.
+  const bank = new Set(['6,20,0', '6,21,0', '6,20,6', '6,21,6']);
+  const ground = bot.blockAt;
+  bot.blockAt = p => { const q = p.floored ? p.floored() : p; return bank.has(`${q.x},${q.y},${q.z}`) ? { name: 'air', position: q, boundingBox: 'empty' } : ground(p); };
+  bot.findBlocks = ({ useExtraInfo } = {}) => [new Vec3(6, 19, 0), new Vec3(6, 19, 6)].map(p => ({ position: p })).filter(b => !useExtraInfo || useExtraInfo(b)).map(b => b.position);
+  bot.world.raycast = (from, dir, len) => { const to = from.plus(dir.scaled(len)); return to.z > 3 ? { intersect: from.plus(dir.scaled(2)) } : null; };
+  const shot = survival.stanceOptions(new Task('t'), {}, () => {}, [drowned, pillager], false);
+  assert.match(shot.get_out_of_water.description, /The nearest bank out of the shooter's sight is 9 blocks off \(the nearest bank of all, 7 off, is in their sight\); it is swum for first, shot at on the way, and behind it they cannot hit the bot/);
 });
 
 test('on a one-wide ledge with a zombie close, the open sides are walled before anything else: knockback there is the fall', async () => {

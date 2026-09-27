@@ -12,8 +12,19 @@ const { move: motion } = require('./motion');
 
 // Shelter construction needs dry ground before it can choose a local site.
 // A failed crossing may leave that ground farther away than the shelter scan.
-async function reachShore(bot, task, goal, save, { move = navigate, surface = floatAfterBoat, client = null, dig = null } = {}) {
+async function reachShore(bot, task, goal, save, { move = navigate, surface = floatAfterBoat, client = null, dig = null, fight = null } = {}) {
   task.check();
+  // In a fight (the survival stance get_out_of_water, with the mobs it was
+  // chosen against), the threat check is not run: the stance is the answer
+  // to the threats, and run here it ended the swim for shore at once. And
+  // the landing is the bank the shooters cannot see, not the one farthest
+  // from every mob: mid-211-l and mid-211-n were each shot dead swimming a
+  // stream under four pillager crossbows, every stance that builds or runs
+  // failing in the water and the retreat finding no route (notes 367 and
+  // 388, 2026-09-27); what would have served was out of the water behind
+  // the bank.
+  const shooters = fight ? fight.filter(t => require('./mob-policy').shooter(t.entity)).map(t => t.entity) : [];
+  const guard = () => { task.check(); checkAir(bot); if (!fight) checkThreats(bot); };
   if (dryStanding(bot, bot.entity.position) || !swimmableWater(bot.blockAt(bot.entity.position.floored()))) { if (goal.shoreRecovery) delete goal.shoreRecovery.inWaterSince; return false; }
   // Half a minute in the water in one place and the escapes below are not
   // working: out one move at a time, each Jev's (unstuck.js). Trial 41 went
@@ -45,7 +56,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
   let floated = true;
   try { await surface(bot, task, waterY); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; floated = false; }
-  task.check(); checkAir(bot); checkThreats(bot);
+  guard();
   const movement = bot.pathfinder.movements;
   const previous = { canDig: movement.canDig, scafoldingBlocks: movement.scafoldingBlocks, allowParkour: movement.allowParkour };
   const policy = surfaceMovement(bot);
@@ -57,16 +68,18 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
   // surface, walked off the pool's edge to it, and the fall took 14.7 health
   // (2026-09-27).
   const safe = p => p.y >= waterY - 3 && dryStanding(bot, p) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name) &&
-    policy.isSurface(p) && movement.allowedPosition(p) && safeFromHostiles(bot, p);
+    policy.isSurface(p) && movement.allowedPosition(p) && (fight ? true : safeFromHostiles(bot, p));
   try {
     const ids = bot.registry.blocksArray.filter(b => b.boundingBox === 'block' && !/_leaves$|_log$/.test(b.name)).map(b => b.id);
     const land = bot.findBlocks({ matching: ids, maxDistance: 64, count: 256,
       useExtraInfo: block => safe(block.position.offset(0, 1, 0)),
     }).map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    // Under fire, the landings the shooters cannot see come first.
+    if (shooters.length) land.sort((a, b) => (hiddenFrom(bot, a, shooters) ? 0 : 1) - (hiddenFrom(bot, b, shooters) ? 0 : 1) || a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
     const checked = new Set();
     let attempts = 0;
     for (const p of land) {
-      task.check(); checkAir(bot); checkThreats(bot);
+      guard();
       const area = `${Math.floor(p.x / 4)},${p.y},${Math.floor(p.z / 4)}`;
       if (checked.has(area) || state.failures[`${p}`] > Date.now() - 60000) continue;
       checked.add(area); if (checked.size > 24) break;
@@ -77,7 +90,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
       goal.survivalAction = { action: 'reach_shore', at: new Date().toISOString() }; save();
       try {
         await move(bot, task, destination, { timeoutMs: 30000, stallMs: 5000 });
-        task.check(); checkAir(bot); checkThreats(bot);
+        guard();
         if (!safe(bot.entity.position) || bot.entity.onGround === false || !bot.entity.position.floored().equals(p)) throw new Error('Shore travel did not reach its dry landing');
         state.landed = { position: { ...bot.entity.position }, at: new Date().toISOString() }; delete state.lastError; save();
         return true;
@@ -151,6 +164,31 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
 // does: stood on, the bank is a block up and hopped onto. Blocks carried
 // and a water cell beside with room over it; the step cut into the bank
 // (notchOut) is the way without blocks.
+// Whether a landing is out of every shooter's sight: from each one's eyes to
+// the head of a player standing there, with the world between.
+function hiddenFrom(bot, p, shooters) {
+  const head = p.offset(0.5, 1.6, 0.5);
+  return shooters.every(s => {
+    const eye = s.position.offset(0, Math.min(s.height || 1.6, 1.6), 0), direction = head.minus(eye);
+    const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
+    return !!hit && eye.distanceTo(hit.intersect || hit.position) < eye.distanceTo(head) - 0.5;
+  });
+}
+// The banks about, for the fact on the stance: the nearest dry landing near
+// the water's level within `reach`, and the nearest of them the shooters
+// cannot see, each with its distance.
+function landingsAbout(bot, shooters, { reach = 32 } = {}) {
+  if (typeof bot.findBlocks !== 'function' || typeof bot.blockAt !== 'function') return { nearest: null, hidden: null };
+  const start = bot.entity.position.floored();
+  let waterY = start.y;
+  while (waterY < start.y + 16 && swimmableWater(bot.blockAt(new Vec3(start.x, waterY + 1, start.z)))) waterY++;
+  const ids = bot.registry.blocksArray.filter(b => b.boundingBox === 'block' && !/_leaves$|_log$/.test(b.name)).map(b => b.id);
+  const land = bot.findBlocks({ matching: ids, maxDistance: reach, count: 256, useExtraInfo: block => { const p = block.position.offset(0, 1, 0); return p.y >= waterY - 3 && p.y <= waterY + 3 && dryStanding(bot, p); } })
+    .map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+  const at = p => p ? { x: p.x, y: p.y, z: p.z, distance: Math.round(p.distanceTo(bot.entity.position)) } : null;
+  return { nearest: at(land[0]), hidden: at(land.find(p => hiddenFrom(bot, p, shooters))) };
+}
+
 async function stepOut(bot, task, goal, save) {
   const { inWater } = require('./survival');
   const shelter = require('./shelter');
@@ -462,4 +500,4 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   return before - flat() >= 4 || !!goal.step.landInView;
 }
 
-module.exports = { clearHeadroom, reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView, ownGround };
+module.exports = { hiddenFrom, landingsAbout, clearHeadroom, reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView, ownGround };

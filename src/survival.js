@@ -1525,9 +1525,19 @@ class Survival {
       const drowned = danger.filter(t => t.entity.name === 'drowned').length;
       const wet = ` The bot is in water, air ${bot.oxygenLevel ?? 20} of 20 (air runs out in about fifteen seconds under water, then it drowns at two health a second), and sinks unless it swims; a pillar, a pocket or a bunker cannot be built here.${drowned ? ` ${drowned === 1 ? 'The drowned swims' : `${drowned} drowned swim`} faster than the bot in water.` : ''}`;
       if (options.fight) options.fight.description += wet;
-      options.get_out_of_water = { description: `Swim for the nearest dry ground with air over it, digging a step into the bank if that is the way out, and deal with the mobs from there.${wet}`,
-        run: async () => { this.report(goal, save, { action: 'out_of_water', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, air: bot.oxygenLevel });
-          return !!await reachShore(bot, task, goal, save, { move: this.actions.navigate, client: this.client, dig: this.actions.dig }); } };
+      // The bank out of the shooters' sight first, and said: mid-211-l and
+      // mid-211-n, swimming a stream under four pillager crossbows, had the
+      // retreat find no route and every building stance fail in the water
+      // (notes 367 and 388, 2026-09-27).
+      const shooting = danger.filter(m => shooter(m.entity)).map(m => m.entity);
+      const banks = require('./shore').landingsAbout(bot, shooting);
+      const bankSays = !banks.nearest ? ' No dry landing near the water\'s level is in view within thirty-two blocks; the bot digs or climbs out where it can.'
+        : shooting.length ? (banks.hidden ? ` The nearest bank out of the ${shooting.length === 1 ? 'shooter\'s' : 'shooters\''} sight is ${banks.hidden.distance} blocks off${banks.hidden.distance > banks.nearest.distance ? ` (the nearest bank of all, ${banks.nearest.distance} off, is in their sight)` : ''}; it is swum for first, shot at on the way, and behind it they cannot hit the bot.`
+          : ` Every dry landing in view within thirty-two blocks is in the shooters\' sight; the nearest is ${banks.nearest.distance} blocks off.`)
+        : ` The nearest dry landing is ${banks.nearest.distance} blocks off.`;
+      options.get_out_of_water = { description: `Swim for the nearest dry ground with air over it, out of the shooters' sight where a bank hides the bot, digging a step into the bank if that is the way out, and deal with the mobs from there.${wet}${bankSays}`,
+        run: async () => { this.report(goal, save, { action: 'out_of_water', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, air: bot.oxygenLevel, hiddenBank: banks.hidden });
+          return !!await reachShore(bot, task, goal, save, { move: this.actions.navigate, client: this.client, dig: this.actions.dig, fight: danger }); } };
     }
     for (const t of shotTargets(bot, danger, { any: true }).slice(0, 3)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + shotFacts(t) + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
