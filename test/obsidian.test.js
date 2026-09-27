@@ -256,3 +256,54 @@ test('with the four straight headings to the deep lava resting, a diagonal or fa
   assert.equal(dug.length, 1, 'a way found');
   assert(Math.abs(dug[0].x - feet.x) >= 10 && Math.abs(dug[0].z - feet.z) >= 10, `a diagonal heading: ${dug[0]}`);
 });
+
+// mid-229-m: five blocks from its only pool, (342, 47, 33), every staircase
+// into it resting in the areas at y 48 (the block above the lava), the pool
+// passed as open by its own block's area at y 40; the step arrived, did
+// nothing and returned, twenty-five times a second (2026-09-27).
+function restingPool() {
+  const lava = (x, z) => x >= 341 && x <= 343 && z >= 32 && z <= 34;
+  const blockAt = p => {
+    const name = p.y < 47 ? 'stone' : p.y === 47 ? (lava(p.x, p.z) ? 'lava' : 'stone') : 'air';
+    return { name, position: p.clone(), boundingBox: name === 'stone' ? 'block' : 'empty', ...(name === 'lava' ? { getProperties: () => ({ level: 0 }) } : {}) };
+  };
+  const pool = [];
+  for (let x = 341; x <= 343; x++) for (let z = 32; z <= 34; z++) pool.push(new Vec3(x, 47, z));
+  const bot = {
+    registry, game: { gameMode: 'survival', difficulty: 'normal', dimension: 'overworld' }, entities: {},
+    entity: { position: new Vec3(347.5, 48, 33.5) }, inventory: { items: () => [{ name: 'bucket', count: 2 }] }, world: { raycast: () => null }, blockAt,
+    findBlocks: ({ matching, maxDistance, count, point = bot.entity.position, useExtraInfo = () => true }) => matching !== registry.blocksByName.lava.id ? []
+      : pool.filter(p => p.distanceTo(point) <= maxDistance && useExtraInfo(blockAt(p))).slice(0, count).map(p => p.clone()),
+    // No route to any shore: the scooping spots are not reached.
+    pathfinder: { movements: {}, getPathTo: async () => ({ status: 'noPath', path: [] }) },
+  };
+  const { setAside } = require('../src/progress');
+  const goal = { landmarks: [{ kind: 'lava_pool', x: 342, y: 47, z: 33, dimension: 'overworld' }] };
+  for (const x of [336, 344, 352]) for (const z of [24, 32]) setAside(goal, 'staircase', { x, y: 48, z }, 'backed off to a landing with no step toward it there either', 600000);
+  const dug = [], walked = [];
+  const actions = { navigate: async (b, t, g) => { walked.push(g); }, dig: async () => {}, resourceTunnelStep: async (b, t, g, s, dest) => { dug.push(dest); } };
+  return { bot, goal, dug, walked, actions };
+}
+
+test('at the only pool, every way into it resting, the lava step digs toward the deep lava rather than arriving and doing nothing', async () => {
+  const { collectLava, LAVA_DEPTH } = require('../src/obsidian');
+  const { bot, goal, dug, walked, actions } = restingPool();
+  const done = await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 2 }, goal, () => {}, actions);
+  assert(dug.length || walked.length || done !== undefined, 'the step acted in the world');
+  assert.equal(dug.length, 1);
+  assert.equal(dug[0].y, LAVA_DEPTH, `the deep lava, not the resting pool: ${dug[0]}`);
+});
+
+test('at the only pool, with every way to lava resting, the lava step says so as a named fact', async () => {
+  const { collectLava, LAVA_DEPTH } = require('../src/obsidian');
+  const { descentTargets } = require('../src/tunneling');
+  const { setAside } = require('../src/progress');
+  const { bot, goal, dug, walked, actions } = restingPool();
+  const area = t => ({ x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 });
+  for (const t of descentTargets(bot.entity.position.floored(), LAVA_DEPTH)) setAside(goal, 'staircase', area(t), 'refusing to open a drop beside the feet', 900000);
+  await assert.rejects(collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 2 }, goal, () => {}, actions),
+    err => err.name === 'WaysResting' && /pool at \(342, 47, 33\) is the only lava known; every way into it rests for 10 more minutes/.test(err.message) &&
+      /deep lava .* rests for 15 more minutes/.test(err.message) && err.until > Date.now());
+  assert.equal(dug.length + walked.length, 0);
+  assert.equal(goal.step.phase, 'no_lava_way');
+});

@@ -3205,8 +3205,9 @@ function nearestLava(bot, goal) {
   // whose staircase rests. mid-211-g was told of lava seven blocks off
   // forty minutes into its cast while every bucket went to a staircase
   // toward the deep lava instead, that pool's way resting (2026-09-27).
-  const { staircaseResting } = require('./tunneling');
-  const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool').filter(k => !k.landmark.spent && !staircaseResting(goal, new Vec3(k.landmark.x, k.landmark.y ?? 0, k.landmark.z)))
+  // By the way into it (tunneling.js lavaResting), not its own block.
+  const { lavaResting } = require('./tunneling');
+  const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool').filter(k => !k.landmark.spent && !lavaResting(goal, new Vec3(k.landmark.x, k.landmark.y ?? 0, k.landmark.z)))
     .map(k => ({ distance: k.distance, how: 'a lava pool remembered', at: { x: k.landmark.x, y: k.landmark.y, z: k.landmark.z } }));
   return [...loaded, ...known].sort((a, b) => a.distance - b.distance)[0] || null;
 }
@@ -4350,9 +4351,10 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) failures++;
       noteError(goal, err); save(); onStep(goal);
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) recoveryAdviser.recordFailure(goal, err);
-      if (failures >= 3 && await inCatch(task, goal, () => tryRecovery(recoveryAdviser, task, goal, save))) { failures = 0; continue; }
+      // Every way resting goes to Jev at once, as in runGoal's loop.
+      if (err.name !== 'WaysResting' && failures >= 3 && await inCatch(task, goal, () => tryRecovery(recoveryAdviser, task, goal, save))) { failures = 0; continue; }
       // Survival never gives up either: shake loose, back off, go again.
-      if (failures >= 5) { await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival })); failures = 0; continue; }
+      if (err.name === 'WaysResting' || failures >= 5) { await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival })); failures = 0; continue; }
     } finally { task.interruptCheck = undefined; }
     for (let n = 0; n < 10 && !bot._stalls?.stall; n++) { if (loopCheck(task)) break; await sleep(100); }
   }
@@ -4533,6 +4535,16 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // A partial craft/build can change inventory before its promise fails.
       // Replan that observed progress; only consecutive no-progress errors
       // exhaust retries.
+      // Every way resting (tunneling.js WaysResting) is a fact to answer,
+      // not a failure to retry: nothing tried again changes it before its
+      // time. mid-229-m's lava step ran twenty-five times a second at a pool
+      // whose every way rested, and persist put it back each time
+      // (2026-09-27). Jev hears it at once, as the failure.
+      if (err.name === 'WaysResting') {
+        if (goal.step?.action !== 'persist') goal.lastStruggleStep = goal.step;
+        await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival }));
+        continue;
+      }
       goal.failures = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 2 &&
         constructionBefore === constructionObservation(bot, goal) ? goal.failures + 1 : 0;
       recoveryAdviser.recordFailure(goal, err);

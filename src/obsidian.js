@@ -152,7 +152,7 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   if (!surface.length) {
     const diamond = bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
     const kinds = diamond ? ['ruined_portal', 'lava_pool'] : ['lava_pool'];
-    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, kinds, { navigate, filter: l => l.kind === 'ruined_portal' ? (l.obsidian || 0) > 0 : !l.spent });
+    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, kinds, { navigate, filter: l => l.kind === 'ruined_portal' ? (l.obsidian || 0) > 0 : !l.spent && !require('./tunneling').lavaResting(goal, new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z)) });
     if (arrived !== null) {
       if (!arrived) return;
       goal.step = { ...step, phase: 'at_landmark', kind: arrived.kind }; save();
@@ -192,16 +192,16 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   // mid-230-i dug for the same lava thirteen passes running, each refused
   // at once for the drop it would open, until the loop watch ended the
   // trial (2026-09-27).
-  const { staircaseResting } = require('./tunneling');
+  const { staircaseResting, lavaResting, lavaWay } = require('./tunneling');
   const open = p => !staircaseResting(goal, p);
   const here = bot.entity.position;
-  const nearest = surface.filter(p => open(p.plus(UP))).sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+  const nearest = surface.filter(p => !lavaResting(goal, p)).sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
   // The lake already found comes before a new shaft: chased off by a
   // creeper, the bot stood at its base sixty blocks from its own crust.
   const remembered = works.lastPour && open(at(works.lastPour)) ? at(works.lastPour) : null;
   const deep = require('./tunneling').descentTargets(here.floored(), LAVA_DEPTH).find(open);
-  const dest = spots.find(s => open(s.feet))?.feet || (nearest ? nearest.plus(UP) : remembered || deep);
-  if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw new Error('Every way to lava from here is resting: the pools here and the deep lava on sixteen headings near and far'); }
+  const dest = spots.find(s => open(s.feet))?.feet || (nearest ? lavaWay(nearest) : remembered || deep);
+  if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw noLavaWay(bot, goal, surface); }
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
   await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
 }
@@ -244,25 +244,49 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   // once and asked how to answer the stall; the loop ended the trial
   // (2026-09-27). Resting, it counts as no lava here, and the other pools
   // known (or the deep lava) are the way while it rests.
-  const { staircaseResting } = require('./tunneling');
+  const { staircaseResting, lavaResting, lavaWay } = require('./tunneling');
   const open = p => !staircaseResting(goal, p);
-  const diggable = surface.filter(p => open(p.plus(UP)));
+  const diggable = surface.filter(p => !lavaResting(goal, p));
   if (!diggable.length) {
-    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: l => !l.spent && open(new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z)) });
-    if (arrived !== null) {
-      if (arrived && !poolSurface(bot).length) { arrived.spent = new Date().toISOString(); save(); }
-      return;
-    }
+    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: l => !l.spent && !lavaResting(goal, new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z)) });
+    // On the way, or at a pool found dry. At one still holding lava, whose
+    // every way rests, it is not done: the other ways below are.
+    if (arrived === false) return;
+    if (arrived && !poolSurface(bot).length) { arrived.spent = new Date().toISOString(); save(); return; }
   }
   const here = bot.entity.position;
   const nearest = diggable.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
   // The deep lava, the first heading whose staircase is not resting.
   const deep = require('./tunneling').descentTargets(here.floored(), LAVA_DEPTH).find(open);
   const spot = spots.find(s => open(s.feet))?.feet;
-  const dest = spot || (nearest ? nearest.plus(UP) : deep);
-  if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw new Error('Every way to lava from here is resting: the pool here and the deep lava on sixteen headings near and far'); }
+  const dest = spot || (nearest ? lavaWay(nearest) : deep);
+  if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw noLavaWay(bot, goal, surface); }
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
   await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
+}
+
+// Every way to lava resting, as the fact Jev is given: the lava known, how
+// long until a way into it opens, and why it rests. A step that arrived
+// and did nothing said none of this: mid-229-m (tunneling.js lavaResting).
+function noLavaWay(bot, goal, surface = []) {
+  const { lavaWay, staircaseUntil, staircaseWhy, WaysResting } = require('./tunneling');
+  const here = bot.entity.position, now = Date.now();
+  const pools = require('./exploration').knownLandmarks(bot, goal, 'lava_pool').filter(k => !k.landmark.spent)
+    .map(k => new Vec3(k.landmark.x, k.landmark.y ?? LAVA_DEPTH, k.landmark.z));
+  const seen = surface.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+  if (seen && !pools.some(p => p.distanceTo(seen) <= 16)) pools.unshift(seen);
+  // A pool's ways are its own cell and those of the lava in sight about it.
+  const ways = pool => [pool, ...surface.filter(p => p.distanceTo(pool) <= 16)].map(lavaWay);
+  const soonest = targets => Math.min(...targets.map(t => staircaseUntil(goal, t)).filter(u => u > now));
+  const minutes = until => Number.isFinite(until) ? Math.max(1, Math.ceil((until - now) / 60000)) : null;
+  const at = p => `(${p.x}, ${p.y}, ${p.z})`;
+  const poolUntil = pools.length ? soonest(pools.flatMap(ways)) : Infinity;
+  const deepUntil = soonest(require('./tunneling').descentTargets(here.floored(), LAVA_DEPTH));
+  const rests = until => minutes(until) ? `for ${minutes(until)} more minute${minutes(until) === 1 ? '' : 's'}` : 'for now';
+  const known = !pools.length ? 'No lava pool is known here'
+    : pools.length === 1 ? `The pool at ${at(pools[0])} is the only lava known; every way into it rests ${rests(poolUntil)} (${staircaseWhy(goal, lavaWay(pools[0]))})`
+    : `The ${pools.length} pools known, at ${pools.slice(0, 4).map(at).join(', ')}, are the lava known; every way into them rests, the first to open ${rests(poolUntil)}`;
+  return new WaysResting(`${known}, and the deep lava on all sixteen headings near and far rests ${rests(deepUntil)}`, Math.min(poolUntil, deepUntil));
 }
 
 module.exports = { makeObsidian, collectLava, poolSurface, pourSpots, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };

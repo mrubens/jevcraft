@@ -6,7 +6,7 @@ const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
 const { safeFromHostiles, hostileEntities } = require('./danger');
 const { fitToFight } = require('./mob-policy');
-const { advance, attemptsFor, setAside, isSetAside } = require('./progress');
+const { advance, attemptsFor, setAside, isSetAside, keyOf } = require('./progress');
 const { surveyRoute } = require('./skills');
 const { dryPassable: passable, dryBodySpace, dropNear } = require('./terrain');
 const { descendPillar } = require('./pillar-recovery');
@@ -231,6 +231,23 @@ const area = t => ({ x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: 
 const staircaseResting = (goal, target) => isSetAside(goal, 'staircase', area(target));
 // Why the staircase toward `target` rests, as its set-aside said it.
 const staircaseWhy = (goal, target) => attemptsFor(goal).why('staircase', area(target)) || 'the staircase toward it is resting';
+// When it is taken up again (0 when it is not resting).
+const staircaseUntil = (goal, target) => attemptsFor(goal).entries[keyOf('staircase', area(target))]?.until || 0;
+// The way into lava is the staircase to the block above it: that is where
+// it is dug toward (obsidian.js), so that is the area it rests by. A pool
+// judged by its own block is judged by the area below: mid-229-m stood
+// five blocks from its only pool, (342, 47, 33), every staircase into it
+// resting in the areas at y 48, and the pool's own area at y 40 said it
+// was open; the step arrived there, did nothing, and ran twenty-five times
+// a second until persist put it back, again and again (2026-09-27).
+const lavaWay = lava => new Vec3(lava.x, lava.y + 1, lava.z);
+const lavaResting = (goal, lava) => staircaseResting(goal, lavaWay(lava));
+// Every way to something rests, until a time: nothing the step can do
+// changes that before then, so it is not tried again and again; it goes
+// to Jev as the fact it is (work.js).
+class WaysResting extends Error {
+  constructor(message, until) { super(message); this.name = 'WaysResting'; this.until = until; }
+}
 
 async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false, within = null, retreat = retreatForTunnel }) {
   if (staircaseResting(goal, target)) throw new StaircaseStalled(target, attemptsFor(goal).why('staircase', area(target)));
@@ -483,4 +500,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { descentTargets, natural, NoSafeWay, StaircaseStalled, staircaseResting, staircaseWhy, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
