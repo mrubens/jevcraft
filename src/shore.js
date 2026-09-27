@@ -114,6 +114,28 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     if (await stepOut(bot, task, goal, save)) return true;
     if (await notchOut(bot, task, goal, save)) return true;
     if (await digToShore(bot, task, goal, save, movement, move, state.failures)) return true;
+    // Out at sea with no shore within sight: swim for the land remembered,
+    // else hold one heading and look again. mid-218-d searched for a shore
+    // in the open sea over and over, drifting, until the stall watch ended
+    // the trial (2026-09-27).
+    // Not beside unloaded ground: what is there is not known to be sea.
+    const feetNow = bot.entity.position.floored();
+    const unloaded = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => { for (let r = 1; r <= 24; r++) for (const dy of [0, 1]) if (!bot.blockAt(feetNow.offset(dx * r, dy, dz * r))) return true; return false; });
+    if (!land.length && atSea(bot) && !unloaded && !landInView(bot, 48, new Set())) {
+      policy.restore();
+      if (await crossSea(bot, task, goal, save, { move })) return true;
+      const headings = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+      goal.seaHeading ??= Math.floor(Math.random() * 4); save();
+      const [dx, dz] = headings[goal.seaHeading];
+      const was = bot.entity.position.clone();
+      goal.survivalAction = { action: 'swim_heading', heading: goal.seaHeading, at: new Date().toISOString() }; save();
+      await motion(bot, task, { label: 'swim_heading', keys: ['forward', 'jump'], sneak: false, why: 'no shore in sight: one heading held until land is',
+        look: bot.entity.position.offset(dx * 16, 1.6, dz * 16), maxMs: 20000, tick: 50, guard: () => checkThreats(bot),
+        until: () => !!landInView(bot, 24, new Set()) });
+      // Blocked (ice, a wall): the next heading next time.
+      if (Math.hypot(bot.entity.position.x - was.x, bot.entity.position.z - was.z) < 4) { goal.seaHeading = (goal.seaHeading + 1) % 4; save(); }
+      return true;
+    }
     throw new Error('No reachable dry shore found in the observed water area');
   } finally {
     policy.restore(); Object.assign(movement, previous);
