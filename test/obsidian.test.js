@@ -200,3 +200,20 @@ test('lava in buckets: planned from empty buckets, scooped from the dry shore a 
   assert.equal(bot.blockAt(stood.offset(0, -1, 0)).name, 'stone', 'on dry ground');
   assert(scooped.every(c => c.y === 10 && !(c.x === stood.x && c.z === stood.z)), 'from the pool, never where it stands');
 });
+
+test('lava whose staircase is resting is not dug toward again: the deep lava on another heading is', async () => {
+  // mid-215-f dug toward a pool two blocks below it whose staircase was resting, was refused at once every pass, and the loop ended the trial (2026-09-27).
+  const { collectLava } = require('../src/obsidian');
+  const { setAside } = require('../src/progress');
+  const { bot, items } = world();
+  items.splice(0, items.length, { name: 'bucket', count: 2 });
+  bot.world = { raycast: () => null };
+  const goal = {};
+  // Every cell of the pool and the shore round it rests, as the staircase's eight-block areas do.
+  for (let x = -16; x <= 16; x += 8) for (let z = -16; z <= 16; z += 8) for (const y of [8, 16]) setAside(goal, 'staircase', { x, y, z }, 'three rounds without getting closer', 600000);
+  const dug = [];
+  const actions = { navigate: async () => {}, dig: async () => {}, resourceTunnelStep: async (b, t, g, s, dest) => { dug.push(dest); } };
+  await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 2 }, goal, () => {}, actions);
+  assert.equal(dug.length, 1);
+  assert(Math.abs(dug[0].x - bot.entity.position.x) >= 20 || Math.abs(dug[0].z - bot.entity.position.z) >= 20, `not the resting pool: ${dug[0]}`);
+});

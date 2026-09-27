@@ -229,16 +229,29 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     }
     if (filled) return;
   }
-  if (!surface.length) {
-    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: l => !l.spent });
+  // Lava whose staircase is resting is not lava to dig toward: mid-215-f
+  // saw a pool two blocks below it with no scooping spot a route reached,
+  // and every pass dug toward the same resting staircase, was refused at
+  // once and asked how to answer the stall; the loop ended the trial
+  // (2026-09-27). Resting, it counts as no lava here, and the other pools
+  // known (or the deep lava) are the way while it rests.
+  const { staircaseResting } = require('./tunneling');
+  const open = p => !staircaseResting(goal, p);
+  const diggable = surface.filter(p => open(p.plus(UP)));
+  if (!diggable.length) {
+    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: l => !l.spent && open(new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z)) });
     if (arrived !== null) {
       if (arrived && !poolSurface(bot).length) { arrived.spent = new Date().toISOString(); save(); }
       return;
     }
   }
   const here = bot.entity.position;
-  const nearest = surface.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
-  const dest = spots[0]?.feet || (nearest ? nearest.plus(UP) : here.floored().offset(24, LAVA_DEPTH - here.floored().y, 0));
+  const nearest = diggable.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+  // The deep lava, the first heading whose staircase is not resting.
+  const deep = [[24, 0], [0, 24], [-24, 0], [0, -24]].map(([dx, dz]) => here.floored().offset(dx, LAVA_DEPTH - here.floored().y, dz)).find(open);
+  const spot = spots.find(s => open(s.feet))?.feet;
+  const dest = spot || (nearest ? nearest.plus(UP) : deep);
+  if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw new Error('Every way to lava from here is resting: the pool here and the deep lava on all four headings'); }
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
   await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
 }
