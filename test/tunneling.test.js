@@ -700,3 +700,10 @@ test('the staircase does not step down onto a lip beside a deadly drop', () => {
   const choices = stairOptions(bot, {}, new Vec3(0, -56, -40));
   assert(!choices.some(c => c.destination.z === -1), JSON.stringify(choices.map(c => `${c.destination}`)));
 });
+
+test('packed and blue ice are rock to tunnel through; plain ice, which melts to water, is not', () => {
+  // mid-231-m under a frozen lake had every heading refused for "packed ice in the way" (2026-09-27).
+  const { natural } = require('../src/tunneling');
+  const test_ = n => (typeof natural === 'function' ? natural({ name: n }) : natural.test(n));
+  assert.equal(test_('packed_ice'), true); assert.equal(test_('blue_ice'), true); assert.equal(test_('ice'), false);
+});

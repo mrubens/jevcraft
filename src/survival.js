@@ -1613,7 +1613,16 @@ class Survival {
         run: async () => { this.report(goal, save, { action: 'out_of_water', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, air: bot.oxygenLevel, hiddenBank: banks.hidden });
           return !!await reachShore(bot, task, goal, save, { move: this.actions.navigate, client: this.client, dig: this.actions.dig, fight: danger }); } };
     }
-    for (const t of shotTargets(bot, danger, { any: true }).slice(0, 3)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + shotFacts(t) + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + edge,
+    // Priced as every other stance is: the seconds of drawing standing
+    // still, everything about reaching the bot meanwhile, then only what
+    // else still shoots. Without a number beside the others' numbers the
+    // bow was seldom chosen, 0.15 where four arrows would have ended
+    // mid-244-s's pillager (the Fable advice on note 416).
+    const shotCost = t => {
+      const hp = require('./combat-estimate').MOBS[t.entity.name]?.health, arrows = hp ? Math.ceil(hp / 6) : 4;
+      return stanceCost({ mobs, setup: arrows, reaches: m => m.shoots && m.name !== t.entity.name, shield: shielded });
+    };
+    for (const t of shotTargets(bot, danger, { any: true }).slice(0, 3)) options[`shoot_${t.entity.id}`] = { expects: (c => ({ damage: c.damage, seconds: c.seconds, oneHit }))(shotCost(t)), description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + shotFacts(t) + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + costSays(shotCost(t), bot.health, mobs, { doing: 'drawing', done: 'The shooter down' }) + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
     return options;
   }
@@ -3012,12 +3021,20 @@ class Survival {
   async closeNook(task, nook, wall) {
     const bot = this.bot;
     try {
-      if (!bot.entity.position.floored().equals(nook.stand)) await this.actions.navigate(bot, task, new goals.GoalBlock(nook.stand.x, nook.stand.y, nook.stand.z), { timeoutMs: 8000, stallMs: 3000 });
+      // The walk back to the stand may fail; the wall goes back from where
+      // the bot stands all the same, or the pocket is left open: mid-243-m's
+      // walk failed, the wall was never put back, and it was out among a
+      // spider and a skeleton a moment later (the Fable advice on note 422).
+      if (!bot.entity.position.floored().equals(nook.stand)) {
+        try { await this.actions.navigate(bot, task, new goals.GoalBlock(nook.stand.x, nook.stand.y, nook.stand.z), { timeoutMs: 8000, stallMs: 3000 }); }
+        catch (err) { if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+      }
       for (const p of [...wall].sort((a, b) => a.y - b.y)) {
         if (bot.blockAt(p)?.boundingBox !== 'empty' || isBed(bot.blockAt(p))) continue;
         const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
         if (!material) break;
-        await this.actions.place(bot, task, p, material);
+        try { await this.actions.place(bot, task, p, material); }
+        catch (err) { if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
       }
     } catch (err) { if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
   }
@@ -3401,7 +3418,15 @@ class Survival {
   // sand island, five times (2026-09-24), as trial 9's shelter search before
   // it. Air, danger, cancellation and stalls go on up as always.
   async step(task, goal, save, onStep = () => {}) {
-    try { return await this.stepOnce(task, goal, save, onStep); }
+    try {
+      const acted = await this.stepOnce(task, goal, save, onStep);
+      // A pass that leaves a threat at hand unanswered is not done: the work
+      // loop then arms the threat check for the same mob and every step
+      // after throws on it (the Fable advice on note 430). The encounter's
+      // own question answers it.
+      if (!acted && !this._answeringSetAside && immediateThreat(this.bot)) return this.answerWhileSetAside(task, goal, save, onStep, new Error('the survival step returned with a threat at hand'));
+      return acted;
+    }
     catch (err) {
       // An answer set aside is no answer to a mob that is hitting the bot:
       // the encounter's own question comes instead. Returned as "nothing to
@@ -3422,7 +3447,7 @@ class Survival {
   async answerWhileSetAside(task, goal, save, onStep, err) {
     const bot = this.bot;
     const hurt = (bot._hurtTimes || []).some(t => Date.now() - t < 4000);
-    const close = threats(bot, 8).some(t => t.visible || t.distance <= 3);
+    const close = threats(bot, 8).some(t => t.visible || t.distance <= 3) || !!immediateThreat(bot);
     if ((!hurt && !close) || this._answeringSetAside) return false;
     this._answeringSetAside = true;
     try {

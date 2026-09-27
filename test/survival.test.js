@@ -3779,3 +3779,37 @@ test('burning out of the lava, the survival step pours the water before anything
   assert.equal(poured, 1);
   assert.equal(goal.survivalAction?.action, 'douse');
 });
+
+test('a survival step that returns with a threat at hand has the encounter answered', async () => {
+  // The Fable advice on mid-244-t: a pass that leaves an immediate threat unanswered lets every step after throw on it.
+  const zombie = { id: 4, name: 'zombie', type: 'hostile', position: new Vec3(1.5, 64, 0.5), height: 1.95, width: 0.6, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, entities: { 4: zombie }, health: 12,
+    entity: { position: new Vec3(0.5, 64, 0.5) }, world: { raycast: () => null } });
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  survival.stepOnce = async () => false;
+  let fled = 0; survival.flee = async () => { fled++; };
+  assert.equal(await survival.step(new Task('x'), {}, () => {}), true);
+  assert.equal(fled, 1);
+});
+
+test('the nook\'s wall is put back though the walk to its stand fails', async () => {
+  // mid-243-m: the walk back failed, the wall was never put back, and the pocket stood open (2026-09-27).
+  const placed = [];
+  const bot = Object.assign(new EventEmitter(), { entity: { position: new Vec3(0.5, 64, 0.5) }, inventory: { items: () => [{ name: 'cobblestone', count: 8 }] },
+    blockAt: p => ({ position: p, name: 'air', boundingBox: 'empty' }) });
+  const survival = new Survival(bot, { navigate: async () => { throw new Error('No path'); }, place: async (b, t, p) => { placed.push(`${p}`); } }, { state: { shelters: [] } });
+  await survival.closeNook(new Task('x'), { stand: new Vec3(1, 64, 0) }, [new Vec3(1, 64, 0), new Vec3(1, 65, 0)]);
+  assert.equal(placed.length, 2);
+});
+
+test('the bow is priced as the other stances are, and the question carries no standing verdict against it', async () => {
+  // The Fable advice on mid-244-s: the shot had no number beside the others' numbers, and the guidance said "the bow 16 to 17 with no kill".
+  const calls = [];
+  const client = { systemOne: async ({ questions, instructions, rootInstructions }) => { calls.push({ questions, text: JSON.stringify(rootInstructions || instructions || '') }); return { answers: { branch_0: { choice: 'retreat', confidence: 0.9 } } }; } };
+  const { bot, controller, task, goal } = archerFixture({ client, sword: true, shield: false, lone: false });
+  bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
+  await controller.step(task, goal, () => {});
+  const shot = JSON.stringify(calls[0].questions.branch_0.criteria.shoot_7);
+  assert.match(shot, /About [\d.]+ damage from the mobs here in the next fifteen seconds this way/);
+  assert.doesNotMatch(calls[0].text, /the bow 16 to 17 with no kill/);
+});

@@ -25,7 +25,10 @@ const faces = [...directions, new Vec3(0, 1, 0), new Vec3(0, -1, 0)];
 // The Nether's forest floor and its trees too: mid-242-k's fortress leg met
 // a block of crimson nylium at head height and paced three cells for minutes,
 // every way south "crimson nylium in the way" (2026-09-27).
-const natural = /^(stone|deepslate|granite|diorite|andesite|tuff|calcite|dripstone_block|pointed_dripstone|smooth_basalt|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|grass_block|mud|clay|moss_block|gravel|sand|red_sand|sandstone|red_sandstone|terracotta|(white|orange|yellow|red|brown|light_gray)_terracotta|snow_block|cobblestone|cobbled_deepslate|netherrack|crimson_nylium|warped_nylium|nether_wart_block|warped_wart_block|shroomlight|crimson_stem|warped_stem|crimson_hyphae|warped_hyphae|glowstone|soul_sand|soul_soil|basalt|blackstone|nether_bricks|nether_brick_fence|nether_brick_stairs|nether_brick_slab|nether_brick_wall|end_stone)$|_ore$|_leaves$/;
+// Packed and blue ice too: dug, they leave no water, and mid-231-m under a
+// frozen lake had every heading refused for "packed ice in the way"
+// (the Fable advice on note 432). Plain ice melts to water and is not here.
+const natural = /^(packed_ice|blue_ice|stone|deepslate|granite|diorite|andesite|tuff|calcite|dripstone_block|pointed_dripstone|smooth_basalt|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|grass_block|mud|clay|moss_block|gravel|sand|red_sand|sandstone|red_sandstone|terracotta|(white|orange|yellow|red|brown|light_gray)_terracotta|snow_block|cobblestone|cobbled_deepslate|netherrack|crimson_nylium|warped_nylium|nether_wart_block|warped_wart_block|shroomlight|crimson_stem|warped_stem|crimson_hyphae|warped_hyphae|glowstone|soul_sand|soul_soil|basalt|blackstone|nether_bricks|nether_brick_fence|nether_brick_stairs|nether_brick_slab|nether_brick_wall|end_stone)$|_ore$|_leaves$/;
 const dangerous = block => !block || ['lava', 'water', 'fire', 'magma_block', 'powder_snow'].includes(block.name);
 const falling = block => block && (['sand', 'red_sand', 'gravel'].includes(block.name) || block.name.endsWith('_concrete_powder'));
 
