@@ -1483,7 +1483,11 @@ class Survival {
         let answered = false;
         const asking = this.decide(task, goal, save, { id: 'encounter_stance', state, tree,
           isFresh: () => Math.abs(bot.health - state.health) < 4 }).finally(() => { answered = true; });
-        const guarding = (async () => { while (!answered) { try { if (!await this.backFromCreeper(task, () => answered)) await sleep(100); } catch (_) { return; } } })();
+        // And swings at what is in reach meanwhile, as a player fights on
+        // while thinking: mid-227-i's fight with magma cubes was asked again
+        // every two seconds, each answer two seconds with no swing, and the
+        // cubes took it from seventeen to one (2026-09-27).
+        const guarding = (async () => { while (!answered) { try { if (!await this.backFromCreeper(task, () => answered) && !await defendNearby(bot, task, goal, save)) await sleep(100); } catch (_) { return; } } })();
         try { decision = await asking; } finally { answered = true; await guarding; }
       } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
       // Stale: the moment moved on while Jev answered; the next tick asks

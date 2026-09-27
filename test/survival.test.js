@@ -3232,3 +3232,21 @@ test('the charge at a shooter is not offered where its run would refuse it: in w
   bot.entity.isInWater = true;
   assert(!survival.stanceOptions(new Task('stream'), {}, () => {}, [crowdMob(8, 'skeleton', 10)], false).charge_shooter, 'in the water: not');
 });
+
+test('while Jev is asked the stance, a mob in reach is still struck', async () => {
+  // mid-227-i: the fight re-asked every two seconds, each answer two seconds with no swing; magma cubes took it from seventeen to one.
+  const registry = require('prismarine-registry')('26.1');
+  const zombie = { id: 7, name: 'zombie', type: 'hostile', position: new Vec3(2, 64, .5), height: 1.8, isValid: true };
+  const attacks = [];
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
+    entity: { position: new Vec3(.5, 64, .5), height: 1.8 }, entities: { 7: zombie }, health: 12, food: 20, oxygenLevel: 20,
+    time: { timeOfDay: 14000 }, inventory: { items: () => [], slots: {} }, world: { raycast: () => null }, heldItem: null,
+    blockAt: p => ({ position: p.floored(), name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }),
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, equip: async () => {}, unequip: async () => {},
+    attack: target => attacks.push(target.name) });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  survival.stanceOptions = () => ({ fight: { description: 'fight', run: async () => true }, seal: { description: 'seal', run: async () => true } });
+  survival.decide = async () => { await new Promise(r => setTimeout(r, 400)); return { path: ['fight'] }; };
+  await survival.stanceStep(new Task('cubes'), {}, () => {}, [{ entity: zombie, distance: 1.5, visible: true }], false);
+  assert(attacks.length >= 1, 'struck while the answer was out');
+});
