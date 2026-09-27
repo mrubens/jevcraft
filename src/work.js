@@ -334,7 +334,14 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
     return treeNear ? ` A tree is ${Math.round(treeNear.distanceTo(bot.entity.position))} blocks away.` : ' No tree is in view from here.';
   };
   if (goal.kind === 'win' && woodDue(bot, goal)) options.wood_reserve = { description: `Cut a few logs now: ${Math.floor(woodUnits(bot) * 10) / 10} logs' worth of wood carried, and ${WOOD_RESERVE} make the sticks for three pickaxes and a crafting table wherever the bot is.${where()} The pickaxes carried: ${worn.join(', ') || 'none'}.`, run: () => gatherWood(bot, task, goal, save) };
-  if (goal.kind === 'win' && blocksDue(bot, goal)) options.block_reserve = { description: `Gather building blocks now: ${blockStock(bot)} carried, and ${BLOCK_RESERVE} seal a pocket for the night or tower out of a hole.`, run: () => gatherBlocks(bot, task, goal, save) };
+  // In the Nether the blocks are the crossings: mid-235-k, at its fortress
+  // with none carried, was offered them three times as "seal a pocket for
+  // the night", carried on, and every leg of its search stopped at the
+  // first gap until the loop watch ended the trial (2026-09-27).
+  const inNether = /nether/.test(String(bot.game?.dimension || ''));
+  if (goal.kind === 'win' && blocksDue(bot, goal)) options.block_reserve = { description: inNether
+    ? `Mine netherrack for building blocks now: ${blockStock(bot)} carried. Here every crossing over lava or a gap is laid a block a step, and a crossing with none stops at the first gap; netherrack is all around and comes out in a moment with any pickaxe. ${BLOCK_RESERVE} also seal a pocket or tower out of a hole.`
+    : `Gather building blocks now: ${blockStock(bot)} carried, and ${BLOCK_RESERVE} seal a pocket for the night or tower out of a hole.`, run: () => gatherBlocks(bot, task, goal, save) };
   // Two things a night asks for, seen to before it comes (the user,
   // 2026-09-26): the base's bed taken along while it is near, and food
   // enough to heal on. The evening's deaths were out at night, too hungry

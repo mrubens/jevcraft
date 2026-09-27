@@ -327,3 +327,14 @@ test('before dark, food enough to heal on and the base bed near are offered with
   assert(offered.take_bed, 'the base bed, a short walk away');
   assert.match(offered.take_bed, /any night passes in seconds wherever it comes/);
 });
+
+test('short of blocks in the Nether, the upkeep says they are the crossings and netherrack is all around', async () => {
+  // mid-235-k, at its fortress with none, was told "seal a pocket for the night", carried on, and every leg stopped at the first gap.
+  const { upkeepStep } = require('../src/work');
+  let said = null;
+  const client = { systemOne: async ({ questions }) => { said = questions.branch_0.criteria.block_reserve; return { answers: { branch_0: { choice: 'carry_on', confidence: 0.7 } } }; } };
+  const bot = { game: { gameMode: 'survival', dimension: 'the_nether' }, time: { timeOfDay: 3000 }, entity: { isInWater: false, position: new (require('vec3').Vec3)(0, 64, 0) },
+    registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }] }, health: 20, food: 20 };
+  await upkeepStep(bot, { check() {} }, { kind: 'win', step: { action: 'find_fortress' } }, () => {}, client);
+  assert.match(said || '', /Mine netherrack for building blocks now: 0 carried\. Here every crossing over lava or a gap is laid a block a step, and a crossing with none stops at the first gap/);
+});
