@@ -644,3 +644,76 @@ test('a cast here, chosen with the frame out of reach, leaves the frame begun be
   assert.equal(goal.portalMethod.near, undefined);
   assert.equal(goal.portalMethod.here, undefined);
 });
+
+test('a kept resting way, answered with other work until the rest ends, is not met again and asked every pass until then', async () => {
+  // mid-226-f (note 490): the stairs to its lava at (363, 66, 230) were refused at the roof of a cave and rested ten
+  // minutes; Jev kept the way, and every pass after met the rest, threw WaysResting, and the stall question was asked
+  // again: "differently" forty-two times, each an eight-block walk of seconds, until the rest ended.
+  const { portalStep, persist } = require('../src/work');
+  const { setAside } = require('../src/progress');
+  const { Task } = require('../src/skills');
+  const { bot } = castingBot({ bucket: 1, water_bucket: 1, cobblestone: 64, flint_and_steel: 1, stone_pickaxe: 1 });
+  bot.findBlocks = () => [];
+  bot.on = () => {}; bot.removeListener = () => {}; bot.off = () => {};
+  bot.chat = () => {}; bot.clearControlStates = () => {};
+  bot.pathfinder.setGoal = () => {}; bot.pathfinder.stop = () => {};
+  bot.pathfinder.goto = async () => { throw new Error('No path to the goal'); };
+  const near = { x: 20, y: -54, z: 40 };
+  const goal = { landmarks: [{ kind: 'lava_pool', ...near, dimension: 'overworld' }],
+    portalMethod: { kind: 'cast', near: { ...near }, nearByStairs: true, activeMs: 0, reasked: 0, from: { obsidian: 0, diamonds: 0, diamondPickaxe: false } } };
+  const REST_MS = 2500;
+  setAside(goal, 'staircase', { x: 16, y: -56, z: 40 }, 'refusing to open a drop beside the feet', REST_MS);
+  const until = Date.now() + REST_MS;
+  const asked = { portal: 0, stall: 0, hold: 0 }, offered = {};
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async ({ questions }) => {
+    const keys = Object.keys(questions.branch_0.criteria);
+    if (keys.includes('cast_at_lava')) { asked.portal++; return { answers: { branch_0: { choice: 'cast_at_lava', confidence: 0.7 } } }; }
+    if (keys.includes('until_rest_ends')) { asked.stall++; offered.stall = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'until_rest_ends', confidence: 0.8 } } }; }
+    asked.hold++; return { answers: { branch_0: { choice: keys[0], confidence: 0.6 } } };
+  } };
+  let resting = 0;
+  for (let pass = 0; pass < 400 && Date.now() < until; pass++) {
+    delete goal.step;
+    try { await portalStep(bot, task, goal, () => {}, task.opportunityClient); }
+    catch (err) {
+      if (err.name === 'WaysResting') { resting++; await persist(bot, task, goal, () => {}, err, () => {}, { client: task.opportunityClient }).catch(() => {}); }
+    }
+    await new Promise(r => setTimeout(r, 5));
+  }
+  assert.equal(asked.portal, 1, 'the way is asked once and kept');
+  assert.equal(resting, 1, `the rest met once, not every pass: ${resting} times`);
+  assert.equal(asked.stall, 1, 'the stall question asked once');
+  assert.match(offered.stall.until_rest_ends, /Leave the .* for the 1 minute until its rest ends and do other work meanwhile/);
+  assert.match(offered.stall.differently || '', /meets the same rest until then/);
+  assert(Date.now() >= until, 'held until the rest ended');
+  assert.equal(goal.restHeld, undefined, 'the hold ends with the rest');
+});
+
+test('the lava held, its staircase resting over a cave, is asked with the ways on: down into the cave, another lava, a cast here', async () => {
+  // mid-226-f (note 490): the only thing said was "set aside (refusing to open a drop)"; the cave under the stair, its
+  // depth, and the other ways a player has from there were not.
+  const { portalMethod } = require('../src/work');
+  const { setAside } = require('../src/progress');
+  const { Task } = require('../src/skills');
+  const { bot } = castingBot({ bucket: 1, water_bucket: 1, flint_and_steel: 1, stone_pickaxe: 1 });
+  bot.findBlocks = () => []; bot.health = 20;
+  const near = { x: 20, y: -54, z: 40 };
+  const why = 'refusing to open a drop beside the feet: a cave under the stair at (21, -52, 41), a fall of 3 to its floor at y -55 (the target at y -54); no building block carried to floor the stair';
+  const goal = { landmarks: [{ kind: 'lava_pool', ...near, dimension: 'overworld' }, { kind: 'lava_pool', x: 60, y: 12, z: 17, dimension: 'overworld' }],
+    portalMethod: { kind: 'cast', near: { ...near }, nearByStairs: true, nearFailed: { walks: 3, best: 90, now: 90, stopped: `the staircase set aside: ${why}`.slice(0, 80) }, activeMs: 0, reasked: 0, from: { obsidian: 0, diamonds: 0, diamondPickaxe: false } },
+    staircaseStalled: { why, at: Date.now(), target: { ...near },
+      cave: { at: { x: 21, y: -52, z: 41 }, landing: { x: 20, y: -51, z: 41 }, depth: 2, fall: 3, floorY: -55, standY: -54, into: 'ground', targetY: -54, target: { ...near } } } };
+  setAside(goal, 'staircase', { x: 16, y: -56, z: 40 }, why, 10 * 60000);
+  let offered = null;
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'into_cave', confidence: 0.8 } } }; } };
+  assert.equal(await portalMethod(bot, task, goal, () => {}), false);
+  assert.match(offered.cast_at_lava, /a cave under the stair at \(21, -52, 41\), a fall of 3 to its floor at y -55/, 'the rest says the cave');
+  assert.match(offered.into_cave, /the stair at \(21, -52, 41\) is dug open and the bot drops 3 blocks to its floor at y -55, a fall that does no harm/);
+  assert.match(offered.into_cave, /level with the lava/);
+  assert.match(offered.other_lava, /another lava instead, its way not resting: \d+ blocks away \(a lava pool remembered\), at y 12/);
+  assert.match(offered.cast_here, /Cast a new frame of its own here, where the bot stands, the lava chosen before left while its way rests/);
+  assert.deepEqual(goal.portalMethod.intoCave.at, { x: 21, y: -52, z: 41 }, 'chosen, the way goes down into the cave');
+  assert.deepEqual(goal.portalMethod.near, near, 'the lava held is kept');
+});

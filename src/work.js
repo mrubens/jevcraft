@@ -264,6 +264,22 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       setAside(goal, 'rung', rung, `stalled ${stall.strikes} times in ten minutes`, RUNG_WAIT_MS); delete goal.rungTime;
       bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
     } };
+  // Every way to it resting until a time: other work until then, as one
+  // choice that holds, with the minutes said. mid-226-f kept its resting
+  // portal way and answered the rest met again with "differently" forty-two
+  // times, each an eight-block walk of seconds, until the rest ended; the
+  // loop auditor counted the same failure four times over (note 490).
+  const restUntil = stall.until > now ? stall.until : 0;
+  if (restUntil) {
+    const minutes = Math.max(1, Math.ceil((restUntil - now) / 60000));
+    answers.until_rest_ends = { description: `Leave the ${thing} for the ${minutes} minute${minutes === 1 ? '' : 's'} until its rest ends and do other work meanwhile, chosen here a piece at a time, each piece given the time that is left; the ${thing} is taken up again when the rest ends, and the rest met again before then goes back to that work, not to this question. Nothing done here ends the rest sooner.`,
+      run: async () => {
+        goal.restHeld = { until: restUntil, reason: stall.key, at: now }; save();
+        await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: stall.key, until: restUntil, why: stall.error });
+      } };
+    // The other answers' walks meet the same rest, said.
+    if (answers.differently) answers.differently.description += ` The way rests ${minutes} more minute${minutes === 1 ? '' : 's'} whatever is done: come at it again from fresh ground, it meets the same rest until then.`;
+  }
   Object.assign(answers, nether);
   // What it is stuck on, named: a step for another dimension (note 476).
   const blocker = stall.blocker || require('./stillness').actionOf(goal, now).blocker;
@@ -609,7 +625,11 @@ async function stepOff(bot, task, p, { dropInto = false } = {}) {
   await navigate(bot, task, new goals.GoalBlock(exit.x, exit.y, exit.z));
 }
 
-async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops = true, minimumToolDurability = 8, plug = true, dropInto = false } = {}) {
+// `openPit`: the gap is looked into and answered by the caller, a floor
+// laid in it before any step (tunneling.js floorStair) or its depth said
+// and chosen (the cave way, portalStep). Only a hole nobody has looked into
+// is refused.
+async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops = true, minimumToolDurability = 8, plug = true, dropInto = false, openPit = false } = {}) {
   task.check(); checkAir(bot);
   if (done?.()) return;
   let block = bot.blockAt(p);
@@ -626,7 +646,7 @@ async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops
   if (p.equals(supportCell(bot.entity.position))) await stepOff(bot, task, p, { dropInto });
   block = bot.blockAt(p);
   if (p.equals(supportCell(bot.entity.position)) && !(dropInto && safeDropBelow(bot, p))) throw new Error('Refusing to dig directly beneath feet');
-  if (opensPit(bot, p)) throw new Error('Refusing to open a drop beside the feet');
+  if (!openPit && opensPit(bot, p)) throw new Error('Refusing to open a drop beside the feet');
   if (opensLava(bot, p)) throw new Error('Refusing to open lava beside the bot');
   if (requiredTool || enchantment) {
     const remaining = item => (bot.registry.itemsByName[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
@@ -722,6 +742,8 @@ function hitboxIntrudes(bot, p, margin = 0.02) {
 // Whether the body, backed out of p along the line away from its centre
 // until clear, stands on a floor under some part of its 0.6 width.
 function backingOutLands(bot, p) {
+  // A flying worker hovers where it stops; open air is its floor.
+  if (require('./flight').canFly(bot)) return true;
   const pos = bot.entity.position, dx = pos.x - (p.x + 0.5), dz = pos.z - (p.z + 0.5), len = Math.hypot(dx, dz) || 1;
   const x = pos.x + dx / len * 0.6, z = pos.z + dz / len * 0.6, y = Math.floor(pos.y);
   const { dropAt } = require('./terrain');
@@ -821,7 +843,9 @@ async function place(bot, task, p, material, { face, properties, stay = false } 
   // and fell eighteen blocks, 17.2 to 3.2 (note 493). Physics, whoever
   // places: where no floor lies under the body backed out, it is refused
   // with the drop said, as the ledge rule above refuses for its callers.
-  if (hitboxIntrudes(bot, p) && !backingOutLands(bot, p)) throw new Error(`Placing at ${p} would move me off this ledge: no floor where the body backs out to`);
+  const feetHere = bot.entity.position.floored();
+  // (Standing in the cell itself is stepOff's, which looks for a floor.)
+  if (hitboxIntrudes(bot, p) && !(feetHere.x === p.x && feetHere.z === p.z) && !backingOutLands(bot, p)) throw new Error(`Placing at ${p} would move me off this ledge: no floor where the body backs out to`);
   await stepOff(bot, task, p);
   await nudgeClear(bot, task, p);
   const eye = bot.entity.position.offset(0, 1.62, 0);
@@ -3290,6 +3314,28 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const minutes = Math.max(1, Math.ceil((frameFailed.until - Date.now()) / 60000));
     if (tree[current]) tree[current].description += ` Kept, the frame is made for again: the walk is tried again${frameFailed.legs ? ' and the legs when their rest ends' : ''}, and the staircase in ${minutes} minute${minutes === 1 ? '' : 's'}; until then, if the walk fails again, that is said as every way to the frame resting.`;
   }
+  // The lava held, its staircase resting: the ways a player has from there,
+  // as their costs allow, said with it. Only "set aside" was said, and
+  // mid-226-f kept the way and met the rest for ten minutes, twice over,
+  // its stairs stopped at the roof of a cave (mid-214-f, note 490). Down
+  // into that cave, when the fall is one a body takes; another lava whose
+  // way is open; or a frame cast here.
+  const heldResting = current === 'cast_at_lava' && nearRest(goal, method.near);
+  const cave = heldResting ? heldCave(bot, goal, method.near) : null;
+  if (cave) {
+    const health = Math.round(bot.health ?? 20), damage = cave.into === 'water' ? 0 : Math.max(0, cave.fall - 3);
+    const level = cave.standY - method.near.y;
+    tree.into_cave = { description: `Go down into the cave the staircase met: the stair at (${cave.at.x}, ${cave.at.y}, ${cave.at.z}) is dug open and the bot drops ${cave.fall} blocks to ${cave.into === 'water' ? 'water' : `its floor at y ${cave.floorY}`}, ${damage ? `about ${damage} of the ${health} health lost in the fall` : 'a fall that does no harm'}. Standing there it is ${level > 0 ? `${level} blocks above the lava's level` : level < 0 ? `${-level} blocks below the lava's level` : "level with the lava"}, ${Math.round(Math.hypot(cave.at.x - method.near.x, cave.at.z - method.near.z))} blocks from it across; the staircase toward the lava goes on from the cave floor, its rest lifted.` + facts };
+  }
+  const otherLava = heldResting && lava && !(lava.at.x === method.near.x && lava.at.y === method.near.y && lava.at.z === method.near.z) ? lava : null;
+  if (otherLava) {
+    const dy = Math.round(otherLava.at.y - bot.entity.position.y);
+    tree.other_lava = { description: `Cast a frame of its own beside another lava instead, its way not resting: ${otherLava.distance} blocks away (${otherLava.how}), at y ${Math.round(otherLava.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}. The lava chosen before is left.` + facts };
+  }
+  if (heldResting && !tree.cast_here) {
+    tree.cast_here = { description: `Cast a new frame of its own here, where the bot stands, the lava chosen before left while its way rests. ` + castSays({ ...castCount, standing: 0, waterBucket: countOf(bot, 'water_bucket') > 0,
+      iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava, from: bot.entity.position, frameBegun: false }) + facts };
+  }
   // Buckets are the trips: each carries one lava per bucket held, and the
   // iron in hand makes more (mid-237-d carried one bucket and eight ingots).
   // No more than the lava still to fetch wants, and each trip's time said:
@@ -3314,7 +3360,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   if (current) {
     for (const [key, node] of Object.entries(tree)) {
       if (key === current) node.description += methodSoFar(bot, goal, method, key.startsWith('ruin_') ? ruins[Number(key.slice(5))] : null);
-      else if (placed && key !== 'craft_buckets' && key !== 'cast_at_lava' && key !== 'cast_here') node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
+      else if (placed && !['craft_buckets', 'cast_at_lava', 'cast_here', 'other_lava', 'into_cave'].includes(key)) node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
     }
   }
   const decision = await decide('portal_method', { client, bot, task, goal, save, tree, context: { current },
@@ -3342,8 +3388,14 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     if (rest) { method.nearAsked = rest.until; save(); throw nearResting(method.near, rest); }
     save(); return goal.portalFrame ? true : portalMethod(bot, task, goal, save, client);
   }
+  // Down into the cave: the way held, gone on from its floor (intoCave).
+  if (pick === 'into_cave') {
+    method.intoCave = { ...cave }; method.reasked = (method.reasked || 0) + 1; delete method.nearAsked;
+    save(); return false;
+  }
   const ruin = pick.startsWith('ruin_') ? ruins[Number(pick.slice(5))] : null;
   const next = pick === 'build_new' ? { kind: 'build' } : pick === 'cast_frame' ? { kind: 'cast' } : pick === 'cast_here' ? { kind: 'cast', here: true } : pick === 'cast_at_lava' ? { kind: 'cast', near: { ...castBy.at } }
+    : pick === 'other_lava' ? { kind: 'cast', near: { ...otherLava.at } }
     : { kind: 'ruin', at: { x: ruin.landmark.x, y: ruin.landmark.y, z: ruin.landmark.z } };
   // A frame begun goes on the new way: its obsidian stays in its slots and
   // the rest is cast or placed. A ruin's frame, or a move to a ruin, leaves
@@ -3368,6 +3420,43 @@ function nearRest(goal, near) {
   if (!target) return null;
   const until = staircaseUntil(goal, target);
   return { why: staircaseWhy(goal, target), until, minutes: Math.max(1, Math.ceil((until - Date.now()) / 60000)) };
+}
+// The cave the staircase to the held lava stopped over (tunneling.js
+// caveUnder), while its stall stands: offered to go down into when what is
+// under it is ground or water, and the fall one a body takes, as the
+// staircase's own drops are judged (no more than half the health).
+function heldCave(bot, goal, near) {
+  const { STAIRCASE_REST_MS, lavaWay } = require('./tunneling');
+  const stall = goal.staircaseStalled, cave = stall?.cave;
+  if (!cave || !(Date.now() - stall.at < STAIRCASE_REST_MS)) return null;
+  const at = new Vec3(near.x, near.y, near.z), t = new Vec3(cave.target.x, cave.target.y, cave.target.z);
+  if (![at, lavaWay(at)].some(p => p.distanceTo(t) < 2)) return null;
+  if (!['ground', 'water'].includes(cave.into)) return null;
+  const damage = cave.into === 'water' ? 0 : Math.max(0, cave.fall - 3);
+  return damage < (bot.health ?? 20) / 2 ? cave : null;
+}
+// Jev's way down into the cave under the stair: to the landing the stairs
+// stopped on, the stair column dug open, and the drop taken to the cave's
+// floor; the staircase's rest then lifted, the way going on from down
+// there. Tried once: a failure is the loop's and asked about with the way.
+async function intoCave(bot, task, goal, save, cave) {
+  const { liftStaircaseRest, lavaWay } = require('./tunneling');
+  const method = goal.portalMethod;
+  delete method.intoCave; save();
+  const stair = new Vec3(cave.at.x, cave.at.y, cave.at.z), landing = new Vec3(cave.landing.x, cave.landing.y, cave.landing.z);
+  goal.step = { action: 'into_cave', stair: { ...cave.at }, floorY: cave.floorY, fall: cave.fall }; save();
+  if (bot.entity.position.floored().distanceTo(landing) > 1) await navigate(bot, task, new goals.GoalBlock(landing.x, landing.y, landing.z), { timeoutMs: 60000, stallMs: 8000 });
+  for (let y = Math.max(landing.y + 1, stair.y); y >= stair.y; y--) {
+    const c = new Vec3(stair.x, y, stair.z);
+    if (!air(bot.blockAt(c))) await dig(bot, task, c, { requireDrops: false, openPit: true });
+  }
+  const movements = bot.pathfinder.movements, before = movements.maxDropDown;
+  movements.maxDropDown = Math.max(before ?? 4, cave.fall + 1);
+  try { await navigate(bot, task, new goals.GoalBlock(stair.x, cave.standY, stair.z), { timeoutMs: 20000, stallMs: 5000 }); }
+  finally { movements.maxDropDown = before; }
+  const near = method.near && new Vec3(method.near.x, method.near.y, method.near.z);
+  if (near) { liftStaircaseRest(goal, near); liftStaircaseRest(goal, lavaWay(near)); }
+  delete goal.staircaseStalled; delete method.nearAsked; delete method.nearTries; save();
 }
 const nearResting = (near, rest) => new (require('./tunneling').WaysResting)(`The lava chosen for the portal, at (${near.x}, ${near.y}, ${near.z}): the staircase toward it is set aside (${rest.why}), taken up again in ${rest.minutes} minute${rest.minutes === 1 ? '' : 's'}. The way to the portal was asked with this and kept.`, rest.until);
 
@@ -3478,6 +3567,7 @@ async function portalStep(bot, task, goal, save, client) {
     // Cast beside the lava, as Jev chose: the walk there first, and the
     // site picked about where the bot then stands.
     const near = casting && goal.portalMethod.near;
+    if (near && goal.portalMethod.intoCave) { await intoCave(bot, task, goal, save, goal.portalMethod.intoCave); return false; }
     if (near && bot.entity.position.distanceTo(new Vec3(near.x, near.y, near.z)) > 12) {
       const at = new Vec3(near.x, near.y, near.z);
       // Three walks that come no nearer and the lava is not walked to:
@@ -3810,7 +3900,16 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival } 
   const failed = goal.lastStruggleStep || goal.step;
   const key = `step:${failed?.block || failed?.item || failed?.action || 'none'}`;
   goal.step = { action: 'persist', attempt: goal.struggles, problem: err.message }; save(); onStep(goal);
-  try { await answerStall(bot, task, goal, save, { key, layer: 'work', strikes: goal.struggles, error: err.message }, { client, survival, onStep }); }
+  // Every way resting until a time (WaysResting): when that is, for the
+  // stall's question to offer other work until then; and once Jev has
+  // chosen that, the same rest met again goes back to that work, not to the
+  // question (note 490).
+  const until = err.name === 'WaysResting' && err.until > Date.now() ? err.until : 0;
+  const held = until && goal.restHeld?.until === until ? goal.restHeld : null;
+  try {
+    if (held) await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: held.reason || key, until, why: err.message });
+    else await answerStall(bot, task, goal, save, { key, layer: 'work', strikes: goal.struggles, error: err.message, ...(until ? { until } : {}) }, { client, survival, onStep });
+  }
   finally {
     // Not back in hand where it cannot be done: a step for another dimension
     // is left for the ladder to plan again (note 433).
@@ -4192,9 +4291,10 @@ const DETOUR_MS = 180000, DETOUR_REST_MS = 300000;
 const USEFUL_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
   'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore',
   'nether_quartz_ore', 'nether_gold_ore', 'ancient_debris'];
-async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now(), answers = {}, stalled = null } = {}) {
+async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now(), answers = {}, stalled = null, until = 0, holding = null } = {}) {
   const ms = STALL_MS;
-  const deadline = now + DETOUR_MS;
+  // Held until a rest ends (holdForRest), the work has that long.
+  const deadline = until > now ? until : now + DETOUR_MS;
   const bounded = Object.create(task);
   // A detour answers to threats like any work: one that shows ends it and
   // hands the tick to the survival layer.
@@ -4278,13 +4378,16 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   }
   const options = Object.keys(tree);
   const stats = survival?.state || goal.survival || goal;
-  recordStill(stats, reason, ms, { now, detour: options.join(',') || 'none' });
-  console.log(`[still] ${Math.round(ms / 1000)}s on ${reason}; detours: ${options.join(', ') || 'none'}`);
+  // Work while a rest runs out is not the work standing still.
+  if (!holding) recordStill(stats, reason, ms, { now, detour: options.join(',') || 'none' });
+  console.log(`[still] ${holding ? `holding ${reason} until its rest ends` : `${Math.round(ms / 1000)}s on ${reason}`}; detours: ${options.join(', ') || 'none'}`);
   save();
   if (!options.length) return false;
   const step = goal.step;
   const what = reason.replace(/^\w+:/, '').replace(/^rung:/, '').replaceAll('_', ' ');
-  const context = { situation: stalled?.failure
+  const context = { situation: holding
+    ? `The ${what} rests ${holding.minutes} more minute${holding.minutes === 1 ? '' : 's'}${holding.why ? ` (${holding.why})` : ''}, and Jev chose other work until then. Choose the work for now; it has until the rest ends.`
+    : stalled?.failure
     ? `${what} keeps failing (${stalled.failure}), round ${stalled.strikes} of failures. Choose: keep at it another way, leave it for later, or something useful from here for a few minutes.`
     : stalled
     ? `${Math.round(ms / 1000)} seconds on ${what} without getting anywhere, ${stalled.strikes === 1 ? 'the first time' : `${stalled.strikes} times in ten minutes`}. Choose: keep at it another way, leave it for later, or something useful from here for a few minutes.`
@@ -4308,6 +4411,24 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     else await decideAction(bot, task, goal, save, client, onStep, tree, context, 'stillness_detour');
   } finally { goal.step = step; save(); }
   return true;
+}
+
+// Other work until a rest ends, Jev's choice at the stall (answerStall's
+// until_rest_ends): detour after detour, each given the minutes left and
+// each picked by Jev, and the work that rested taken up again at the end.
+// With nothing on offer, or a detour over at once, the rest is waited out a
+// few seconds at a time rather than the rest met again and asked about.
+async function holdForRest(bot, task, goal, save, { client, survival, onStep = () => {}, reason, until, why = null }) {
+  try {
+    while (Date.now() < until) {
+      task.check();
+      const started = Date.now(), minutes = Math.max(1, Math.ceil((until - started) / 60000));
+      let worked = false;
+      try { worked = await breakStillness(bot, task, goal, save, { client, survival, onStep, reason, now: started, until, holding: { minutes, why } }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
+      if (!worked || Date.now() - started < 5000) await sleep(Math.max(0, Math.min(5000, until - Date.now())));
+    }
+  } finally { if (goal.restHeld?.until === until && Date.now() >= until) { delete goal.restHeld; save(); } }
 }
 
 // What the home base needs from the executor: travel, placing, digging,
@@ -4918,4 +5039,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { opensPit, persist, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

@@ -227,10 +227,11 @@ const RETREAT_REACH = 16;
 class StaircaseStalled extends Error {
   // The landing it stalled at and what blocked each step from there travel
   // with it, for the stall's question to say (work.js answerStall).
-  constructor(target, why, { landing = null, blocked = null } = {}) {
+  constructor(target, why, { landing = null, blocked = null, cave = null } = {}) {
     super(`The staircase toward ${target} is set aside (${why}); trying another way`); this.name = 'StaircaseStalled'; this.why = why;
     if (landing) this.landing = landing;
     if (blocked) this.blocked = blocked;
+    if (cave) this.cave = cave;
   }
 }
 const blockedSays = blocked => Object.entries(blocked || {}).map(([k, n]) => `${k} ${n}`).join(', ') || 'nothing open';
@@ -252,13 +253,39 @@ const landingKey = (landing, target) => {
 };
 // A staircase stalled at a landing: rested by the target's area and by the
 // landing's, and kept on the goal as the fact the stall question gives Jev.
-function staircaseStalled(goal, save, target, why, { landing, blocked } = {}) {
+// A cave met under the next stair travels with it too (caveUnder), for the
+// way's question to offer the way down into it (work.js portalMethod).
+function staircaseStalled(goal, save, target, why, { landing, blocked, cave } = {}) {
   setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
   if (landing) setAside(goal, 'staircase_from', landingKey(landing, target), why, STAIRCASE_REST_MS);
-  goal.staircaseStalled = { why, at: Date.now(), ...(landing ? { landing: { x: landing.x, y: landing.y, z: landing.z } } : {}), ...(blocked ? { blocked } : {}) };
+  goal.staircaseStalled = { why, at: Date.now(), target: { x: target.x, y: target.y, z: target.z }, ...(landing ? { landing: { x: landing.x, y: landing.y, z: landing.z } } : {}), ...(blocked ? { blocked } : {}), ...(cave ? { cave } : {}) };
   save();
-  return new StaircaseStalled(target, why, { landing: goal.staircaseStalled.landing, blocked });
+  return new StaircaseStalled(target, why, { landing: goal.staircaseStalled.landing, blocked, cave });
 }
+// The cave under a stair cell that would open a pit: how far the body
+// falls from the feet to its floor, where that floor is, what is down
+// there, and the target's depth against it. mid-226-f's stairs toward its
+// lava at (363, 66, 230) met a cave under the next stair and were only
+// "set aside (refusing to open a drop)", four times over, the depth never
+// looked at (mid-214-f, mid-226-f, note 490).
+function caveUnder(bot, p, target, deepest = 48) {
+  const feet = bot.entity.position.floored();
+  let depth = 0, into = 'ground';
+  for (let dy = 1; dy <= deepest; dy++) {
+    const b = bot.blockAt(p.offset(0, -dy, 0));
+    if (!b) { into = 'unknown'; break; }
+    if (/lava/.test(b.name)) { into = 'lava'; break; }
+    if (/water/.test(b.name)) { into = 'water'; break; }
+    if (b.boundingBox === 'block') break;
+    depth = dy;
+    if (dy === deepest) into = 'unknown';
+  }
+  const standY = p.y - depth;
+  return { at: { x: p.x, y: p.y, z: p.z }, landing: { x: feet.x, y: feet.y, z: feet.z }, depth, fall: feet.y - standY, floorY: standY - 1, standY, into,
+    targetY: Math.round(target.y), target: { x: target.x, y: target.y, z: target.z } };
+}
+// Said within the two hundred characters a rest keeps of its why.
+const caveSays = c => `a cave under the stair at (${c.at.x}, ${c.at.y}, ${c.at.z}), a fall of ${c.fall}${c.into === 'ground' ? ` to its floor at y ${c.floorY}` : c.into === 'unknown' ? ', its floor not in view' : ` into ${c.into}`} (the target at y ${c.targetY})`;
 // A rest already standing, met again: the stall it is, on the goal as
 // such, the rest neither renewed nor lengthened. Thrown bare, mid-214-f's
 // stall question had strikes and no failure, and the staircase resting
@@ -269,7 +296,7 @@ function staircaseStillResting(goal, save, target, kind, key) {
   // The set-aside keeps two hundred characters of the why.
   if (String(prev?.why).slice(0, 200) !== why || !(prev.at >= (entry?.at ?? 0))) { goal.staircaseStalled = { why, at: entry?.at ?? Date.now() }; save(); }
   const rest = goal.staircaseStalled;
-  return new StaircaseStalled(target, why, { landing: rest.landing, blocked: rest.blocked });
+  return new StaircaseStalled(target, why, { landing: rest.landing, blocked: rest.blocked, cave: rest.cave });
 }
 // By the eight-block area: the way-up target is the nearest landing, and it
 // moves a block or two with every step taken toward it.
@@ -288,6 +315,9 @@ const staircaseUntil = (goal, target) => attemptsFor(goal).entries[keyOf('stairc
 // a second until persist put it back, again and again (2026-09-27).
 const lavaWay = lava => new Vec3(lava.x, lava.y + 1, lava.z);
 const lavaResting = (goal, lava) => staircaseResting(goal, lavaWay(lava));
+// The rest lifted, the way it was for having been taken another way (the
+// cave gone down into, work.js intoCave).
+const liftStaircaseRest = (goal, target) => attemptsFor(goal).clear('staircase', area(target));
 // Every way to something rests, until a time: nothing the step can do
 // changes that before then, so it is not tried again and again; it goes
 // to Jev as the fact it is (work.js).
@@ -295,7 +325,7 @@ class WaysResting extends Error {
   constructor(message, until) { super(message); this.name = 'WaysResting'; this.until = until; }
 }
 
-async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false, within = null, retreat = retreatForTunnel }) {
+async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place = null, approach = false, strict = false, within = null, retreat = retreatForTunnel }) {
   if (staircaseResting(goal, target)) throw staircaseStillResting(goal, save, target, 'staircase', area(target));
   const from = bot.entity.position.floored();
   if (isSetAside(goal, 'staircase_from', landingKey(from, target))) throw staircaseStillResting(goal, save, target, 'staircase_from', landingKey(from, target));
@@ -428,12 +458,21 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
   const tunnelling = { target: { ...target }, destination: { ...choice.destination }, steps: tunnel.steps };
   goal.step = within ? { ...within, phase: 'tunnel', ...tunnelling } : { action: 'tunnel', ...tunnelling };
   save();
+  let destination = choice.destination;
   for (const p of choice.clear) {
     // Gravel can fall into a cleared headspace. Recheck it before entering.
     for (let tries = 0; !passable(bot.blockAt(p)); tries++) {
       task.check();
       if (tries >= 5) throw new Error('Falling blocks keep obstructing the staircase');
       if (!safeExcavation(bot, p)) throw new Error('Staircase excavation exposed a liquid or unstable wet ceiling');
+      // The stair reaches the roof of a cave: a floor under it first, as a
+      // player sets a block in the gap and digs on. Stood on, the stair is
+      // the cell dug, not the drop past it.
+      if (require('./work').opensPit(bot, p)) {
+        await floorStair(bot, task, goal, save, target, p, { dig, place });
+        destination = p.clone();
+        continue;
+      }
       // A dig refused for the drop it would open is not refused less next
       // pass: the staircase rests, as for no safe step. mid-242-j's stairs
       // toward iron were refused so four times a pass and turned with the
@@ -442,17 +481,18 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
       catch (err) {
         if (!/Refusing to (open a drop|open lava|dig directly beneath)/.test(err.message || '')) throw err;
         // Through the stall's own record, for the stall question's failure
-        // (mid-214-f, note 488).
-        throw staircaseStalled(goal, save, target, err.message.toLowerCase());
+        // (mid-214-f, note 488), and the cave under it said.
+        const cave = /open a drop/.test(err.message) ? caveUnder(bot, p, target) : null;
+        throw staircaseStalled(goal, save, target, err.message.toLowerCase() + (cave ? `: ${caveSays(cave)}` : ''), { cave });
       }
     }
   }
-  const floor = bot.blockAt(choice.destination.offset(0, -1, 0));
+  const floor = bot.blockAt(destination.offset(0, -1, 0));
   if (dangerous(floor) || floor.boundingBox !== 'block') throw new Error('Staircase footing changed during excavation');
   // One block away: walked in seconds or not at all. At the default fifteen
   // seconds without movement, and a recovery try after, a stair that could not
   // be stepped onto cost thirty seconds a time in trial 16 (2026-09-24).
-  await navigate(bot, task, new goals.GoalBlock(choice.destination.x, choice.destination.y, choice.destination.z), { timeoutMs: 6000, stallMs: 2500 });
+  await navigate(bot, task, new goals.GoalBlock(destination.x, destination.y, destination.z), { timeoutMs: 6000, stallMs: 2500 });
   tunnel.workPosition = { ...bot.entity.position.floored() };
   tunnel.dimension = bot.game?.dimension;
   save();
@@ -462,6 +502,37 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
   await opportunisticMining(bot, task, goal, save, { drops: tunnel.resource || null }, { navigate, dig });
   await opportunisticPickups(bot, task, goal, save, { drops: tunnel.resource || null }, { navigate });
   goal.step = step;
+}
+
+// A stair cell over open air two deep (work.js opensPit): dug, and a
+// carried building block set in the gap under it before any step, against
+// a face beside or below the gap. With no block carried or no face to set
+// it against, the staircase rests with the cave said: how far down its
+// floor is and the target's depth against it (mid-214-f, mid-226-f,
+// mid-229-m, note 490). The fall is the body's safety; the way on is not
+// ended silently.
+const FLOOR_FACES = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]];
+async function floorStair(bot, task, goal, save, target, p, { dig, place }) {
+  const { buildingMaterials } = require('./shelter');
+  const gap = p.offset(0, -1, 0);
+  const material = bot.inventory.items().find(i => buildingMaterials.has(i.name));
+  const face = FLOOR_FACES.some(([x, y, z]) => bot.blockAt(gap.offset(x, y, z))?.boundingBox === 'block');
+  if (!material || !face) {
+    const cave = caveUnder(bot, p, target);
+    throw staircaseStalled(goal, save, target, `refusing to open a drop beside the feet: ${caveSays(cave)}; ${!material ? 'no building block carried' : 'no face beside the gap'} to floor the stair`, { cave });
+  }
+  await dig(bot, task, p, { requireDrops: false, openPit: true });
+  try { await (place || require('./work').place)(bot, task, gap, material.name); }
+  catch (err) {
+    task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+    const cave = caveUnder(bot, p, target);
+    throw staircaseStalled(goal, save, target, `the floor for the stair over a cave would not go in (${String(err.message).slice(0, 50)}): ${caveSays(cave)}`, { cave });
+  }
+  if (bot.blockAt(gap)?.boundingBox !== 'block') {
+    const cave = caveUnder(bot, p, target);
+    throw staircaseStalled(goal, save, target, `the floor for the stair over a cave did not land: ${caveSays(cave)}`, { cave });
+  }
+  console.log(`[tunnel] floored the stair at ${p} over a cave with ${material.name}`);
 }
 
 // Resource work survives food, tool and shelter interruptions. Each resource
@@ -557,4 +628,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };

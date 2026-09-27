@@ -768,3 +768,42 @@ test('a staircase that steps out and backs off to the same landing, its target n
   assert.equal(isSetAside(goal, 'staircase_from', landingKey(at, new Vec3(400, -59, 30))), true);
   assert.equal(isSetAside(goal, 'staircase_from', landingKey(at, new Vec3(-200, -59, 0))), false);
 });
+
+// A stair over the roof of a cave: the next stair cell (1, 69, 0) is stone, and under it two cells of air to a floor
+// at y 66. mid-226-f's stairs toward its lava at (363, 66, 230) met one, carrying 128 cobblestone, and were "set aside
+// (refusing to open a drop beside the feet)" four times over; the portal way then rested ten minutes (note 490).
+const caveUnderStair = carried => {
+  const bot = world();
+  bot.inventory.items = () => [{ type: 1, name: 'iron_pickaxe', count: 1 }, ...carried];
+  for (const y of [68, 67]) bot.blocks.set(`${new Vec3(1, y, 0)}`, { name: 'cave_air', boundingBox: 'empty', position: new Vec3(1, y, 0) });
+  return bot;
+};
+
+test('a staircase over a cave sets a carried block in the gap under the next stair, then steps onto it', async () => {
+  const bot = caveUnderStair([{ name: 'cobblestone', count: 8 }]), goal = {}, placed = [], dug = [];
+  await tunnelStep(bot, new Task('stair'), goal, () => {}, new Vec3(5, 60, 0), {
+    dig: async (_bot, _task, p, opts) => { dug.push({ p, opts }); bot.blocks.set(`${p}`, { name: 'air', boundingBox: 'empty', position: p }); },
+    place: async (_bot, _task, p, material) => { placed.push({ p, material }); bot.blocks.set(`${p}`, { name: material, boundingBox: 'block', position: p }); },
+    navigate: async (_bot, _task, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+  });
+  assert.deepEqual(placed.map(({ p, material }) => `${p} ${material}`), ['(1, 68, 0) cobblestone'], 'the floor goes in the gap under the stair');
+  const stair = dug.find(d => d.p.equals(new Vec3(1, 69, 0)));
+  assert(stair?.opts?.openPit, 'the stair cell is dug knowing its gap is floored');
+  assert.deepEqual(bot.entity.position.floored(), new Vec3(1, 69, 0), 'stood on the floor laid, not dropped into the cave');
+  assert.equal(goal.staircaseStalled, undefined);
+  assert.equal(goal.tunnel.steps, 1);
+});
+
+test('a staircase over a cave with no building block carried rests with the cave said: its depth, its floor and the target\'s', async () => {
+  const bot = caveUnderStair([]), goal = {}, dug = [];
+  const step = tunnelStep(bot, new Task('stair'), goal, () => {}, new Vec3(5, 60, 0), {
+    dig: async (_bot, _task, p) => { dug.push(p); bot.blocks.set(`${p}`, { name: 'air', boundingBox: 'empty', position: p }); },
+    navigate: async (_bot, _task, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+  });
+  await assert.rejects(step, err => err.name === 'StaircaseStalled' &&
+    /refusing to open a drop beside the feet: a cave under the stair at \(1, 69, 0\), a fall of 3 to its floor at y 66 \(the target at y 60\); no building block carried/.test(err.message) &&
+    err.cave?.fall === 3 && err.cave.floorY === 66);
+  assert(!dug.some(p => p.equals(new Vec3(1, 69, 0))), 'the gap is not opened');
+  assert.equal(goal.staircaseStalled.cave.floorY, 66, 'the cave is kept with the stall');
+  assert.match(goal.staircaseStalled.why, /a fall of 3 to its floor at y 66/);
+});

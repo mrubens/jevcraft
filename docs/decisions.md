@@ -374,7 +374,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `build_new` | root | build a frame of its own from ten obsidian | always |
 | `cast_frame` | root | cast a frame of its own in place from lava and water | always |
 | `cast_at_lava` | root | cast a frame of its own beside the nearest known lava | lava known more than sixteen blocks away |
-| `cast_here` | root | cast a new frame where the bot stands, the frame begun left behind | the frame begun cannot be got back to: the walk and the staircase toward it both failed (note 481) |
+| `cast_here` | root | cast a new frame where the bot stands, the frame begun or the lava chosen left behind | the frame begun cannot be got back to: the walk and the staircase toward it both failed (note 481); or the staircase to the lava held rests (note 490) |
+| `into_cave` | root | go down into the cave the staircase to the lava held stopped over, and go on from its floor | the staircase to the lava held rests over a cave under its next stair (no block to floor it), and the fall to its floor or water costs less than half the health (note 490) |
+| `other_lava` | root | cast beside another known lava whose way is not resting | the staircase to the lava held rests and another lava is known (note 490) |
 | `craft_buckets` | root | make more buckets first from the iron carried | three or more iron ingots carried |
 | `ruin_[0-9]+` (pattern) | root | finish and light a remembered ruined portal | a ruined portal remembered within 512 blocks, not found frameless (and the one held, however far) |
 
@@ -744,6 +746,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `differently` | root | keep at the stalled work another way | work stalled (not idle time): a mine leaves this patch of the resource, anything else turns its search |
 | `set_aside_rung` | root | leave the stalled rung for thirty minutes | the stall is on a game-ladder rung that can wait |
+| `until_rest_ends` | root | other work until the rest ends, the minutes said, a choice that holds | every way to the stalled work rests until a time (WaysResting); the same rest met again goes back to that work, not to the question (note 490) |
 | `work_free` | root | work free of the terrain one move at a time | the bot is in water, under cover on the way up, or where every walk has failed (src/unstuck.js); each move is then Jev's (unstuck_move) |
 | `night_mine` | root | dig a mine from here for the night | night in the Overworld, a pickaxe and nothing watching |
 | `mine_nearby` | root | dig a useful ore in view | an ore within sixteen blocks with no lava beside it |

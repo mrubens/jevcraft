@@ -122,9 +122,9 @@ test('a mob standing in the cell is named as what stops the block, and a spectat
 });
 
 test('a block whose placing would back the body out over a drop is refused, whoever places it (mid-241-w)', async () => {
-  // The bot straddles the rim at z 0.05: its floor is the cell at z 0 (y 63); z < 0 is an open drop.
+  // The bot straddles the rim at z -0.05, its feet cell over the drop, held up by the cell at z 0 (y 63); z < 0 is an open drop.
   const pressed = [];
-  const bot = { game: { gameMode: 'survival' }, entity: { position: new Vec3(0.5, 64, 0.05) }, inventory: { items: () => [{ name: 'cobblestone', count: 8 }] },
+  const bot = { game: { gameMode: 'survival' }, entity: { position: new Vec3(0.5, 64, -0.05) }, inventory: { items: () => [{ name: "cobblestone", count: 8 }] },
     equip: async () => {}, blockAt: p => ({ name: p.y === 63 && p.z >= 0 ? 'stone' : 'air', boundingBox: p.y === 63 && p.z >= 0 ? 'block' : 'empty', position: p }),
     placeBlock: async () => {}, setControlState: (k, v) => { if (v) pressed.push(k); }, clearControlStates() {}, look: async () => {}, lookAt: async () => {} };
   await assert.rejects(place(bot, new Task('cover'), new Vec3(0, 64, 0), 'cobblestone'), /off this ledge/);

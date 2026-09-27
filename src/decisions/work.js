@@ -53,7 +53,9 @@ define({
     { key: 'build_new', label: 'build a frame of its own from ten obsidian', when: 'always', level: 'root' },
     { key: 'cast_frame', label: 'cast a frame of its own in place from lava and water', when: 'always', level: 'root' },
     { key: 'cast_at_lava', label: 'cast a frame of its own beside the nearest known lava', when: 'lava known more than sixteen blocks away', level: 'root' },
-    { key: 'cast_here', label: 'cast a new frame where the bot stands, the frame begun left behind', when: 'the frame begun cannot be got back to: the walk and the staircase toward it both failed (note 481)', level: 'root' },
+    { key: 'cast_here', label: 'cast a new frame where the bot stands, the frame begun or the lava chosen left behind', when: 'the frame begun cannot be got back to: the walk and the staircase toward it both failed (note 481); or the staircase to the lava held rests (note 490)', level: 'root' },
+    { key: 'into_cave', label: 'go down into the cave the staircase to the lava held stopped over, and go on from its floor', when: 'the staircase to the lava held rests over a cave under its next stair (no block to floor it), and the fall to its floor or water costs less than half the health (note 490)', level: 'root' },
+    { key: 'other_lava', label: 'cast beside another known lava whose way is not resting', when: 'the staircase to the lava held rests and another lava is known (note 490)', level: 'root' },
     { key: 'craft_buckets', label: 'make more buckets first from the iron carried', when: 'three or more iron ingots carried', level: 'root' },
     { pattern: 'ruin_[0-9]+', label: 'finish and light a remembered ruined portal', when: 'a ruined portal remembered within 512 blocks, not found frameless (and the one held, however far)', level: 'root', dynamic: true },
   ],
@@ -152,6 +154,7 @@ define({
   options: [
     { key: 'differently', label: 'keep at the stalled work another way', when: 'work stalled (not idle time): a mine leaves this patch of the resource, anything else turns its search', level: 'root' },
     { key: 'set_aside_rung', label: 'leave the stalled rung for thirty minutes', when: 'the stall is on a game-ladder rung that can wait', level: 'root' },
+    { key: 'until_rest_ends', label: 'other work until the rest ends, the minutes said, a choice that holds', when: 'every way to the stalled work rests until a time (WaysResting); the same rest met again goes back to that work, not to the question (note 490)', level: 'root' },
     { key: 'work_free', label: 'work free of the terrain one move at a time', when: 'the bot is in water, under cover on the way up, or where every walk has failed (src/unstuck.js); each move is then Jev\'s (unstuck_move)', level: 'root' },
     { key: 'night_mine', label: 'dig a mine from here for the night', when: 'night in the Overworld, a pickaxe and nothing watching', level: 'root' },
     { key: 'mine_nearby', label: 'dig a useful ore in view', when: 'an ore within sixteen blocks with no lava beside it', level: 'root' },
