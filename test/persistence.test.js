@@ -121,3 +121,16 @@ test('a watchdog\'s threat signal, still held when the step\'s error is caught, 
   assert.equal(result.reason, 'Action budget reached', `ended: ${result.reason || JSON.stringify(result)}`);
   assert(calls >= 2, 'the survival layer had its turn after the signal');
 });
+
+test('a step for another dimension planned again and again sets the stage it came from aside', async () => {
+  // mid-218-l, in the Nether, was asked for oak logs some 3700 times in ten minutes, standing still (2026-09-27).
+  const { isSetAside } = require('../src/progress');
+  const { bot, goal, task } = fixture();
+  Object.assign(bot, { on() {}, once() {}, removeListener() {}, off() {}, _client: { on() {}, removeListener() {} } });
+  goal.kind = 'win'; goal.request = 'beat the game'; goal.gameProgress = { phase: 'iron_pickaxe', milestones: {} }; goal.strategy = { choice: 'rung_iron_pickaxe' };
+  const survival = { state: goal.survival, step: async () => { throw Object.assign(new Error('No oak log in the nether: it is only found in the overworld'), { name: 'WrongDimension' }); } };
+  await runGoal(bot, task, goal, { save() {} }, { survival, maxSteps: 4, backoffMs: 1 });
+  assert.equal(isSetAside(goal, 'rung', 'iron_pickaxe'), true);
+  assert.equal(goal.strategy, undefined);
+  assert.match(goal.wrongDimension.error, /oak log/);
+});

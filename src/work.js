@@ -4512,7 +4512,24 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // for where it is: the stall's answer put mid-242-q's Overworld iron
       // step back in hand after the portal, and it was tried and failed
       // until the loop watch ended the trial (note 433).
-      if (err.name === 'WrongDimension') { delete goal.step; delete goal.lastStruggleStep; goal.failures = 0; save(); onStep(goal); continue; }
+      // Again and again (the ladder planning the same step here each pass),
+      // the stage it came from is set aside ten minutes and the held choice
+      // let go: mid-218-l, in the Nether, was asked for oak logs some
+      // thirty-seven hundred times in ten minutes, standing still (note 458).
+      if (err.name === 'WrongDimension') {
+        const prev = goal.wrongDimension;
+        const n = prev && Date.now() - prev.at < 60000 ? prev.n + 1 : 1;
+        const phase = goal.rungTime?.phase || goal.gameProgress?.phase || null;
+        goal.wrongDimension = { n, at: Date.now(), error: err.message, phase, from: (err.stack || '').split('\n').slice(1, 6).map(l => l.trim()) };
+        if (n >= 3) {
+          if (phase) setAside(goal, 'rung', phase, err.message, 600000);
+          delete goal.strategy;
+          console.log(`[work] ${err.message}, ${n} times in a minute: ${phase ? `the ${phase} step set aside ten minutes` : 'nothing to set aside'}`);
+        }
+        delete goal.step; delete goal.lastStruggleStep; goal.failures = 0; save(); onStep(goal);
+        await sleep(1000);
+        continue;
+      }
       // A partial craft/build can change inventory before its promise fails.
       // Replan that observed progress; only consecutive no-progress errors
       // exhaust retries.
