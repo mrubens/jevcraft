@@ -5145,6 +5145,12 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (loopCheck(task)) { noteError(goal, err); save(); onStep(goal); continue; }
       noteError(goal, err);
       if (err.name === 'DesignRepair') { save(); onStep(goal); continue; }
+      // A mob that stopped the work ends the ruling that gave it the turn
+      // (arbiter.js): the work runs after the arbiter hands it the turn,
+      // outside its own catch, so note 504's rule never saw it; mid-236-k's
+      // bucket fill was stopped by three skeletons for ten seconds, handed
+      // back each pass, until health fell six (note 506).
+      if (err.name === 'NeedsSafety') { const ruling = bot._arbiter?.ruling; if (ruling?.winner === 'work') ruling.stoppedBy = String(err.message || '').slice(0, 120); }
       if (err.name === 'NeedsAir' || err.name === 'NeedsSafety') { save(); onStep(goal); continue; }
       // A step for where the bot is not (iron ore in the Nether) is dropped,
       // with the stalled step it came back as, and the ladder plans again

@@ -413,3 +413,13 @@ test('any winner stopped by a mob ends its ruling, not only the work (mid-218-q)
   const again = arbiter.rule(null, claims, { state, mobs: [], dry: true });
   assert.notEqual(again.by, 'held'); assert.equal(again.ask, true, 'asked again after the stop');
 });
+
+test('a ruling for the work that the loop marks stopped is asked again (mid-236-k)', () => {
+  const work = { layer: 'work', action: 'fill_bucket', urgency: 'routine', facts: {} };
+  const survival = { layer: 'survival', action: 'escape_threat', urgency: 'pressing', facts: { threat: { name: 'skeleton', distance: 9, seen: true } } };
+  const claims = [work, survival];
+  const state = { ruling: { winner: 'work', fingerprint: arbiter.fingerprintOf(claims), at: 1000, until: Date.now() + 60000, ids: [], health: 20, band: arbiter.foodBand(undefined) } };
+  assert.equal(arbiter.rule(null, claims, { state, mobs: [], dry: true }).by, 'held');
+  state.ruling.stoppedBy = 'Threat nearby: skeleton at 9 blocks';
+  assert.equal(arbiter.rule(null, claims, { state, mobs: [], dry: true }).ask, true);
+});
