@@ -67,7 +67,15 @@ const EMERGENCIES = new Set(['leave_lava', 'leave_lava_edge', 'out_of_fire', 'of
 // last eight seconds. mid-235-n's fight_in_pocket was excused by name for
 // two hours and twenty minutes of no swing at mobs on its lid, and the
 // pocket's question never came (note 478).
-const RESULTS = { fight_in_pocket: (bot, now) => !!bot?._struck && now - bot._struck.at < 8000 };
+// A seal or a shelter build is a hold while its blocks go in, the same:
+// a block placed in the last eight seconds. mid-226-h's seal_shelter was
+// excused by name for forty seconds that placed two, its cell taken by a
+// skeleton shooting it from 1.6 blocks, and the stance never came (note 520).
+const placing = (bot, now) => !!bot?._sealPlaced && now - bot._sealPlaced.at < 8000;
+const RESULTS = { fight_in_pocket: (bot, now) => !!bot?._struck && now - bot._struck.at < 8000, seal_shelter: placing, dig_in: placing };
+// Whether a hold or an emergency is excused now: by its name, and where its
+// result can be read, by the result.
+const excused = (bot, name, now = Date.now()) => (HOLDS.has(name) || EMERGENCIES.has(name)) && (RESULTS[name]?.(bot, now) ?? true);
 // Goals whose whole point is to be near a player who may be standing still.
 const COMPANY = new Set(['follow', 'come']);
 // The retry steps are not actions of their own: their time is the time of
@@ -98,7 +106,7 @@ function permittedWait(bot, goal, now = Date.now()) {
   if (encounter && encounter.expiresAt > now && !encounter.task?.cancelled) return 'in a fight';
   const recent = goal?.survivalAction;
   const current = recent && now - Date.parse(recent.at || 0) < 8000 ? recent.action : null;
-  if (current && (HOLDS.has(current) || (EMERGENCIES.has(current) && (RESULTS[current]?.(bot, now) ?? true)))) return current;
+  if (current && excused(bot, current, now)) return current;
   // A bundle's step is its child's, wrapped.
   const action = goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action;
   if (HOLDS.has(action)) return action;
@@ -440,5 +448,5 @@ function recordStill(state, reason, ms, { now = Date.now(), detour } = {}) {
   return bucket;
 }
 
-module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
+module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, RESULTS, excused, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
   Stalled, checkStall, preempted, takeStall, refused, recordStill };

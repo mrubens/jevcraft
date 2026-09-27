@@ -508,8 +508,15 @@ test('a hold that flips with another step is refused for a while; a hold that on
   const bot = { entity: { position: { x: 0, y: 61, z: 0 } }, _stalls: { records: {} }, game: {}, on() {} };
   const survival = new Survival(bot, {}, { state: { shelters: [] } });
   const waited = {};
-  raise(bot, waited, { record: { strikes: [] }, action: { key: 'survival:dig_in', layer: 'survival', name: 'dig_in' } });
-  assert.doesNotThrow(() => survival.report(waited, () => {}, { action: 'dig_in', threats: [] }), 'forty-five idle seconds in a pocket is the hold doing its job');
+  raise(bot, waited, { record: { strikes: [] }, action: { key: 'survival:wait_in_shelter', layer: 'survival', name: 'wait_in_shelter' } });
+  assert.doesNotThrow(() => survival.report(waited, () => {}, { action: 'wait_in_shelter', reason: 'dawn' }), 'forty-five idle seconds in a pocket is the hold doing its job');
+  // A pocket going up is a hold while its blocks go in, and only then (mid-226-h, note 520).
+  const sealing = {};
+  raise(bot, sealing, { record: { strikes: [] }, action: { key: 'survival:dig_in', layer: 'survival', name: 'dig_in' } });
+  bot._sealPlaced = { at: Date.now() - 1000 };
+  assert.doesNotThrow(() => survival.report(sealing, () => {}, { action: 'dig_in', threats: [] }), 'a block placed a second ago');
+  delete bot._sealPlaced;
+  assert.throws(() => survival.report(sealing, () => {}, { action: 'dig_in', threats: [] }), { name: 'SetAside' }, 'none placed: it rests as any action does');
   const flipping = {};
   raise(bot, flipping, { record: { strikes: [] }, action: { key: 'survival:dig_in', layer: 'survival', name: 'dig_in' } }, Date.now(), 'turning between dig in and return to surface 4 times in 6 seconds without getting anywhere');
   assert.throws(() => survival.report(flipping, () => {}, { action: 'dig_in', threats: [] }), { name: 'SetAside' });
@@ -705,6 +712,18 @@ test('a fight in the pocket is excused only while its swings land (mid-235-n, no
   assert.equal(permittedWait({}, goal, now), null, 'no swing landed: the progress rule measures it');
   assert.equal(permittedWait({ _struck: { id: 7, at: now - 20000 } }, goal, now), null, 'nor one twenty seconds ago');
   assert.equal(permittedWait({ _struck: { id: 7, at: now - 2000 } }, goal, now), 'fight_in_pocket', 'a swing landed two seconds ago');
+});
+
+test('a seal or a pocket going up is excused only while its blocks go in (mid-226-h, note 520)', () => {
+  // mid-226-h: seal_shelter excused by name forty seconds, two blocks placed, a skeleton in its cell shooting it from 1.6 blocks.
+  const now = Date.now(), at = new Date(now - 1000).toISOString();
+  for (const action of ['seal_shelter', 'dig_in']) {
+    const goal = { survivalAction: { action, at } };
+    assert.equal(permittedWait({}, goal, now), null, `${action}: nothing placed, the progress rule measures it`);
+    assert.equal(permittedWait({ _sealPlaced: { at: now - 20000 } }, goal, now), null, `${action}: nor a block twenty seconds ago`);
+    assert.equal(permittedWait({ _sealPlaced: { at: now - 2000 } }, goal, now), action, `${action}: a block placed two seconds ago`);
+  }
+  assert.equal(permittedWait({}, { survivalAction: { action: 'wait_in_shelter', at } }, now), 'wait_in_shelter', 'a wait in the pocket is still the hold it was');
 });
 
 test('a step dropped for another dimension still names the stall: the WrongDimension blocker is in its facts, not "step:none"', async () => {

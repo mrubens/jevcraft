@@ -2278,9 +2278,9 @@ test('a survival action the stall supervisor set aside on the goal is refused wh
   const goal = {};
   setAside(goal, 'act', 'survival:return_to_surface', 'turning between return to surface and dig in', 600000);
   assert.throws(() => survival.report(goal, () => {}, { action: 'return_to_surface' }), { name: 'SetAside' });
-  setAside(goal, 'act', 'survival:dig_in', 'x', 600000);
-  survival.report(goal, () => {}, { action: 'dig_in' });
-  assert.equal(goal.survivalAction.action, 'dig_in');
+  setAside(goal, 'act', 'survival:wait_in_shelter', 'x', 600000);
+  survival.report(goal, () => {}, { action: 'wait_in_shelter' });
+  assert.equal(goal.survivalAction.action, 'wait_in_shelter');
 });
 
 test('the pickaxe uses kept for the climb out grow with the rock over the head', () => {
@@ -4437,4 +4437,72 @@ test('beside a drop into lava with a blaze about, the stances say its fireball\'
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, blaze)], false);
   assert.match(options.fight.description, /A blaze's fireball that lands pushes the bot about 2 blocks, shield raised or not; the drop into lava is 1 block off: one that lands puts it over\./);
   assert.equal(options.back_to_wall, undefined, 'no wall on the bridge, and every cell a push from the lava');
+});
+
+// mid-226-h (note 520): a skeleton stood in a wall cell of the pocket at 1.5 to 2.1 blocks and shot the bot from 17.1 to none in
+// forty seconds; each seal_shelter pass began at its cell, threw "Placement obstructed", and began there again.
+const skeletonInWall = () => ({ id: 9, name: 'skeleton', type: 'hostile', position: new Vec3(-0.4, 65, 0.6), height: 1.99, width: 0.6, isValid: true });
+function wallBot(skeleton, placed = new Set()) {
+  const registry = require('minecraft-data')('26.1');
+  const solid = p => p.y < 64 || placed.has(`${p.floored()}`);
+  return Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 }, registry,
+    entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, entities: { 9: skeleton }, health: 17, food: 17, oxygenLevel: 20,
+    time: { timeOfDay: 17000 }, world: { raycast: () => null }, findBlocks: () => [], heldItem: null,
+    inventory: { items: () => [{ name: 'diamond_sword', count: 1 }, { name: 'dirt', count: 60 }], slots: { 45: { name: 'shield' } }, emptySlotCount: () => 10 },
+    blockAt: p => ({ position: p.floored(), name: solid(p) ? (p.y < 64 ? 'stone' : 'dirt') : 'air', boundingBox: solid(p) ? 'block' : 'empty', diggable: true }),
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, getControlState: () => false, lookAt: async () => {}, equip: async () => {}, attack() {} });
+}
+
+test('a seal pass leaves the cell a mob stands in and says it, rather than beginning there again (mid-226-h, note 520)', async () => {
+  const skeleton = skeletonInWall(), placed = new Set(), tried = [];
+  const bot = wallBot(skeleton, placed);
+  const { occupant, occupiedSays } = require('../src/work');
+  const state = { shelters: [{ origin: { x: 0, y: 64, z: 0 }, dimension: 'overworld' }] };
+  const controller = new Survival(bot, { navigate: async () => {}, dig: async () => {},
+    // As the real placing does: no block where a body is.
+    place: async (b, t, p) => { tried.push(`${p}`); const body = occupant(bot, p); if (body) throw new Error(`Placement obstructed: ${occupiedSays(body, p)}`); placed.add(`${p}`); } }, { state });
+  const goal = { survival: state };
+  assert.equal(await controller.refugeStep(new Task('night'), goal, () => {}), false, 'not sealed: the skeleton is in its wall');
+  assert(!tried.includes('(-1, 65, 0)'), 'the skeleton\'s cell is not placed at');
+  assert(!tried.includes('(-1, 66, 0)'), 'nor the roof cell its head is in');
+  assert.equal(placed.size, 23, 'every other cell of the shell is');
+  assert.equal(goal.survivalAction?.action, 'seal_failed');
+  assert.match(goal.survivalAction.error, /a skeleton stands in the cell at \(-1, 65, 0\), and the game puts no block where a body is/);
+  assert.ok(bot._sealPlaced, 'the blocks placed are the hold\'s results');
+  const before = tried.length;
+  assert.equal(await controller.refugeStep(new Task('night'), goal, () => {}), false);
+  assert.equal(tried.length, before, 'not begun again at once');
+});
+
+test('a mob at arm\'s length while sealing goes to the stance, told how much of the pocket stands and the cell the mob is in (mid-226-h, note 520)', async () => {
+  const skeleton = skeletonInWall();
+  const bot = wallBot(skeleton);
+  const state = { shelters: [{ origin: { x: 0, y: 64, z: 0 }, dimension: 'overworld', emergency: true }], sealing: { origin: { x: 0, y: 64, z: 0 }, at: Date.now() } };
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { state });
+  const went = [];
+  survival.refugeStep = async () => { went.push('seal'); };
+  survival.flee = async () => { went.push('stance'); };
+  await survival.step(new Task('night'), { kind: 'win' }, () => {});
+  assert.deepEqual(went, ['stance'], 'the skeleton at 1.6 blocks is answered, not sealed against');
+  // And the stance says the pocket's state, with the seal and in the state.
+  let asked;
+  survival.decide = async (task, goal, save, q) => { asked = q; return { path: ['seal'], stale: false }; };
+  survival.sealHere = async () => true;
+  const danger = [{ entity: skeleton, distance: 1.1, visible: true }];
+  await survival.stanceStep(new Task('night'), {}, () => {}, danger, false);
+  assert.equal(asked?.id, 'encounter_stance');
+  assert.match(asked.tree.seal.description, /The pocket here is 9 of 34 blocks; a skeleton stands in the cells at \(-1, 65, 0\) and \(-1, 66, 0\), and no block goes where a body is, so it does not close while it stays there\./);
+  assert.deepEqual(asked.state.pocketHere.mobInCells.map(c => c.cell), [{ x: -1, y: 65, z: 0 }, { x: -1, y: 66, z: 0 }]);
+});
+
+test('the claim for the mob at arm\'s length says the pocket being sealed and the mob in its wall (mid-226-h, note 520)', () => {
+  const { claim } = require('../src/survival');
+  const { claimSays } = require('../src/arbiter');
+  const skeleton = skeletonInWall();
+  const bot = wallBot(skeleton);
+  bot._recentHurtAt = Date.now();
+  const survival = new Survival(bot, {}, { state: { shelters: [], sealing: { origin: { x: 0, y: 64, z: 0 }, at: Date.now() } } });
+  const c = claim(bot, { kind: 'win' }, survival);
+  assert.equal(c?.action, 'escape_threat');
+  assert.match(claimSays(c), /The pocket here is 9 of 34 blocks; a skeleton stands in the cells at \(-1, 65, 0\) and \(-1, 66, 0\)/);
 });

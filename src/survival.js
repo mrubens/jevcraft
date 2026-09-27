@@ -2,7 +2,7 @@
 const { move } = require('./motion');
 const { makeRoom } = require('./inventory-tidy');
 const { attemptsFor, setAside, isSetAside, failedWithin, watch, unwatch } = require('./progress');
-const { HOLDS, EMERGENCIES, refused, flipped } = require('./stillness');
+const { HOLDS, EMERGENCIES, excused, refused, flipped } = require('./stillness');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { threats, immediateThreat, checkThreats, hunted, claimed, hostileEntities, nightHunted, stanceHeld, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER } = require('./danger');
@@ -518,6 +518,26 @@ function sealedWaitSays(bot) {
   const day = t >= DAY.DAWN || t < DAY.DUSK;
   return { ticks, minutes, says: `Seal a pocket (the way is asked next) and wait in it for daylight, about ${minutes} real minutes off${day ? `: it is day now, so the wait runs through dusk and the whole night, and daylight is what the bot already has` : ''}. ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and standing still in it spends no hunger: it falls with moving, mining, fighting and healing, so the wait costs minutes, not food. At dawn the mobs in the open burn; eating to eighteen ends the wait, health coming back.` };
 }
+// A pocket being sealed where the bot stands, as its last pass left it: the
+// blocks of it in place, and a mob standing in a cell of it, which no block
+// goes into while it stands there. Said on the claim and the stance, not
+// retried: mid-226-h's seal went at the cell a skeleton stood in forty times
+// in forty seconds, two blocks placed, the skeleton shooting it from 17.1 to
+// none at 1.6 blocks, and nothing said the pocket would not close (note 520).
+function sealingSays(bot, state, now = Date.now()) {
+  const s = state?.sealing;
+  if (!s || now - s.at > 20000 || !bot.entity?.position || pos(s.origin).distanceTo(bot.entity.position.floored()) > 1) return null;
+  const refuge = { origin: s.origin, dimension: bot.game?.dimension };
+  const of = shelter.enclosure(refuge).length, placed = of - shelter.missingShell(bot, refuge).length;
+  const { occupant } = require('./work');
+  const inCells = shelter.missingShell(bot, refuge).map(p => ({ p, body: occupant(bot, p) })).filter(c => c.body);
+  // One mob two blocks tall stands in two cells of a wall: said once.
+  const bodies = [...new Set(inCells.map(c => c.body))];
+  const mobs = bodies.map(body => { const cells = inCells.filter(c => c.body === body).map(c => `${c.p}`);
+    return `a ${(body.username || body.name || 'mob').replaceAll('_', ' ')} stands in the cell${cells.length > 1 ? 's' : ''} at ${cells.join(' and ')}`; });
+  return { placed, of, ...(inCells.length ? { mobInCells: inCells.map(({ p, body }) => ({ name: body.name, cell: { x: p.x, y: p.y, z: p.z } })) } : {}),
+    says: `The pocket here is ${placed} of ${of} blocks${mobs.length ? `; ${mobs.join(', ')}, and no block goes where a body is, so it does not close while ${bodies.length > 1 ? 'they stay' : 'it stays'} there` : ''}.` };
+}
 const sleepable = bot => bot.time?.timeOfDay >= SLEEP_FROM && bot.time.timeOfDay <= SLEEP_UNTIL;
 // Three cells in a line: where the bot stands, the bed's foot, its head.
 // Level floor under both bed cells, air at feet and head height.
@@ -851,7 +871,11 @@ class Survival {
     else (spin.runs ||= {})[key] = { since: now, at: here?.clone?.() || null, count: 1 };
     if (spin.runs[key].count >= 20) { (spin.until ||= {})[key] = now + 5000; delete spin.runs[key]; console.log(`[survival] ${action.action} ran twenty times in a second without the bot moving: set aside five seconds`); }
     const flip = !EMERGENCIES.has(action.action) && flipped(goal, key);
-    if (flip || (!HOLDS.has(action.action) && !EMERGENCIES.has(action.action) && (refused(this, key) || refused(goal, key)))) {
+    // A hold whose results can be read rests as any action does unless it
+    // is getting them: mid-226-h's seal, "resting ten seconds" after each
+    // failure, ran again at once forty times, its hold excusing it by name
+    // (note 520).
+    if (flip || (!EMERGENCIES.has(action.action) && !excused(this.bot, action.action, now) && (refused(this, key) || refused(goal, key)))) {
       const entry = (flip && attemptsFor(goal).of('flip')[key]) || attemptsFor(this).of('act')[key] || attemptsFor(goal).of('act')[key];
       throw Object.assign(new Error(`${action.action.replaceAll('_', ' ')} is set aside: ${entry?.why || 'it stalled'}`), { name: 'SetAside', until: entry?.until });
     }
@@ -2011,6 +2035,11 @@ class Survival {
     // none (2026-09-27).
     const spawner = spawnerAbout(bot);
     if (spawner) for (const o of Object.values(options)) o.description += spawner.says;
+    // A pocket begun here, said with the stance that would go on with it
+    // and in the state: how much of it stands, and the mob in its wall
+    // (mid-226-h, note 520).
+    const sealing = sealingSays(bot, this.state);
+    if (sealing && options.seal) options.seal.description += ` ${sealing.says}`;
     // Met here, for what the place is said to be later (mobSourceAbout).
     this.noteMobPlace('encounter', danger.slice(0, 4).map(t => t.entity.name));
     // What ails the bot, and a witch's pursuit, said with every stance:
@@ -2046,6 +2075,7 @@ class Survival {
         // A walk of survival's own that found no route here (step), whatever it was for.
         ...(this.state.walkFailed && Date.now() - this.state.walkFailed.at < 20000 ? { walkFailedJustNow: this.state.walkFailed.says } : {}),
         ...(spawner ? { spawner: { blocksAway: spawner.distance } } : {}),
+        ...(sealing ? { pocketHere: { placed: sealing.placed, of: sealing.of, ...(sealing.mobInCells ? { mobInCells: sealing.mobInCells } : {}), says: sealing.says } } : {}),
         ...(ails ? { effectsNow: ails.trim() } : {}),
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
@@ -2719,8 +2749,17 @@ class Survival {
     // and the audit failed it. A pass that runs out ends, and the place is
     // set aside for a minute so the next answer is another one.
     const passEnds = Date.now() + 20000;
+    // A cell a mob stands in is left and said, not placed at: the game puts
+    // no block where a body is, and mid-226-h's pass began at the skeleton's
+    // cell every time, threw, and began there again, forty passes and two
+    // blocks while it shot the bot from 17.1 to none (note 520).
+    const { occupant, occupiedSays } = require('./work');
+    const occupied = [];
+    this.state.sealing = { origin: { ...refuge.origin }, at: Date.now() };
     for (const [i, p] of blocks.entries()) {
       task.check(); checkAir(bot);
+      const body = occupant(bot, p);
+      if (body) { occupied.push(occupiedSays(body, p)); continue; }
       // A creeper that would reach the pocket and go off before the last
       // block: the build stops and the mobs are answered. Checked when the
       // pass began only, mid-226-c went on walling itself in at night for
@@ -2744,9 +2783,11 @@ class Survival {
       // Snow/vegetation is being cleared to seal a room, not harvested. A
       // shovel must not become a prerequisite for emergency shelter.
       if (!['air', 'cave_air', 'void_air'].includes(bot.blockAt(p)?.name)) await this.actions.dig(bot, task, p, { requireDrops: false });
-      try { await this.actions.place(bot, task, p, material); }
+      try { await this.actions.place(bot, task, p, material); bot._sealPlaced = { at: Date.now(), cell: { x: p.x, y: p.y, z: p.z } }; }
       catch (err) {
         task.check();
+        // Stepped into between the look and the placing: the same.
+        if (/^Placement obstructed: /.test(err.message)) { occupied.push(err.message.replace(/^Placement obstructed: /, '')); continue; }
         // Reaching a placement can spend the selected block as scaffolding.
         // Other shelter blocks may still be available: reobserve the shell
         // and choose from current inventory on the next bounded step.
@@ -2756,6 +2797,15 @@ class Survival {
         throw err;
       }
       save();
+    }
+    // Every other cell done, the mob's left open: the pass ends said, and
+    // the pocket here rests a moment, so the mob at it is answered (the
+    // stance, told the pocket's state) rather than sealed against again.
+    if (occupied.length && !shelter.sealed(bot, refuge)) {
+      const why = `${occupied[0]}${occupied.length > 1 ? ` (and ${occupied.length - 1} more cell${occupied.length > 2 ? 's' : ''} so)` : ''}`;
+      setAside(this, 'seal_here', `${pos(refuge.origin)}`, why, 10000);
+      this.report(goal, save, { action: 'seal_failed', at: { ...refuge.origin }, error: why }); save();
+      return false;
     }
     if (!shelter.inside(bot, refuge) || !shelter.sealed(bot, refuge)) throw new Error('Shelter verification failed');
     refuge.verifiedAt = new Date().toISOString();
@@ -2813,12 +2863,17 @@ class Survival {
     // seconds in one, each block of the shell failing slowly and silently.
     let failedInRow = 0;
     const passEnds = Date.now() + 20000;
+    // A body in the cell by its hitbox, any mob's, not the feet of the
+    // danger: mid-226-h's skeleton at z 262.8 stood in the cell at z 263
+    // too (note 520).
+    const { occupant } = require('./work');
+    this.state.sealing = { origin: { ...origin }, at: Date.now() };
     for (const p of cells) {
       task.check();
       if (Date.now() > passEnds) { this.report(goal, save, { action: 'seal_failed', at: { ...origin }, error: 'twenty seconds and not sealed' }); break; }
       const name = material(); if (!name) break;
-      if (danger.some(t => t.entity.position.floored().equals(p))) continue;
-      try { await this.actions.place(bot, task, p, name, { stay }); failedInRow = 0; }
+      if (occupant(bot, p) || danger.some(t => t.entity.position.floored().equals(p))) continue;
+      try { await this.actions.place(bot, task, p, name, { stay }); failedInRow = 0; bot._sealPlaced = { at: Date.now(), cell: { x: p.x, y: p.y, z: p.z } }; }
       catch (err) {
         task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err;
         this.state.lastSealError = err.message;
@@ -4290,9 +4345,17 @@ class Survival {
       // hits all the same. mid-202-i sealed its half-built walls for four
       // seconds with one at one to two blocks, not counted as in view, and
       // went into the fight at seven health (2026-09-27).
-      const adjacent = biterAtArm(bot);
-      if (!adjacent && refuge && pos(refuge.origin).distanceTo(bot.entity.position) < 3 && shelter.materialStock(bot) >= shelter.missingShell(bot, refuge).length) await this.refugeStep(task, goal, save, { method: 'saved_shelter' });
-      else await this.flee(task, goal, save);
+      // A shooter at arm's length too: the seal is no answer to a mob that
+      // stands in its wall, and the claim Jev chose said the stance comes
+      // next. mid-226-h sealed here forty times in forty seconds against a
+      // skeleton at 1.5 to 2.1 blocks, no stance asked and no swing, 17.1 to
+      // none (note 520). The pocket's state is said on the stance.
+      const adjacent = biterAtArm(bot) || threats(bot).some(t => t.distance <= 3 && (t.visible || canStrike(bot, t.entity)));
+      if (!adjacent && refuge && pos(refuge.origin).distanceTo(bot.entity.position) < 3 && shelter.materialStock(bot) >= shelter.missingShell(bot, refuge).length) {
+        // A pass that closed nothing (a mob in a cell, the pocket resting)
+        // is no answer either: the mob is, this tick.
+        if (await this.refugeStep(task, goal, save, { method: 'saved_shelter' }) === false) await this.flee(task, goal, save);
+      } else await this.flee(task, goal, save);
       onStep(goal); return true;
     }
     delete this.state.trappedSince;
@@ -4638,9 +4701,14 @@ function claim(bot, goal = {}, survival = null) {
   const hp = bot.health ?? 20, now = Date.now();
   const round = n => Math.round(n * 10) / 10;
   const reflex = require('./arbiter').observeReflexes(bot).find(r => r.layer === 'survival');
+  // A pocket being sealed here, said with the mob: "answer the skeleton"
+  // alone was what mid-226-h's Jev read, its seal stuck on the skeleton's
+  // cell (note 520).
+  const sealing = sealingSays(bot, state, now);
+  const pocket = sealing ? { pocket: sealing.says } : {};
   // An alert (a creeper in reach, a mob at arm's length) is pressing, and
   // who answers it is Jev's (arbiter.js ALERTS); the body's physics is a reflex.
-  if (reflex && require('./arbiter').ALERTS.has(reflex.key)) return { layer: 'survival', action: reflex.action, urgency: 'pressing', alert: reflex.key, facts: reflex.facts };
+  if (reflex && require('./arbiter').ALERTS.has(reflex.key)) return { layer: 'survival', action: reflex.action, urgency: 'pressing', alert: reflex.key, facts: { ...reflex.facts, ...pocket } };
   if (reflex) return { layer: 'survival', action: reflex.action, urgency: 'reflex', reflex: reflex.key, facts: reflex.facts, preemptible: false };
   // What rests, and why: the facts a failed plan leaves. Read straight from
   // the record (progress.js), which attemptsFor would create on a first look.
@@ -4658,7 +4726,7 @@ function claim(bot, goal = {}, survival = null) {
   // A mob at arm's length, as stepOnce's atArm (in sight: canStrike is not
   // asked here).
   const atArm = threats(bot).filter(t => t.distance <= 3 && !shooter(t.entity) && t.visible && !nightHunted(bot, t.entity));
-  if (atArm.length && !claimed(bot, atArm[0].entity)) return make('escape_threat', 'pressing', { atArm: atArm.slice(0, 3).map(mob) });
+  if (atArm.length && !claimed(bot, atArm[0].entity)) return make('escape_threat', 'pressing', { atArm: atArm.slice(0, 3).map(mob), ...pocket });
   const refuge = survival?.currentShelter?.();
   if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot) });
   const nightPlan = state.nightPlan?.until > now ? state.nightPlan : null;
@@ -4682,8 +4750,8 @@ function claim(bot, goal = {}, survival = null) {
     const lands = t.entity.name === 'blaze' ? { fireballLandsPer100: Math.round(fireballHit(t.distance) * 100), volleyLandsOnePer100: Math.round(volleyHit(t.distance) * 100), volleysMostlyLandWithin: FIRE_REACH.blaze } : {};
     return { shoots: true, reach: RANGE[t.entity.name] || 15, ...lands, ...(hit > now - 30000 ? { hitItSecondsAgo: Math.round((now - hit) / 1000) } : {}), ...(inFlight ? { shotsInFlight: inFlight } : {}) };
   };
-  if (threat) return make('escape_threat', 'pressing', threat.projectile ? { threat: { name: threat.entity.name, distance: round(threat.distance), projectile: true } }
-    : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: mob(threat) });
+  if (threat) return make('escape_threat', 'pressing', { ...(threat.projectile ? { threat: { name: threat.entity.name, distance: round(threat.distance), projectile: true } }
+    : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: mob(threat) }), ...pocket });
   const underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
   // sleepDebt() without its first-look write of sleptAtAge.
   const debt = Number.isFinite(worldAge(bot)) && Number.isFinite(state.sleptAtAge) && worldAge(bot) - state.sleptAtAge > SLEEP_DEBT_TICKS;
