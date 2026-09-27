@@ -109,6 +109,12 @@ class SurvivalMovements extends Movements {
     // fifty blocks down into the lava (notes 217 and 248, 2026-09-26). A
     // cost, not a ban: a narrow span is still taken where it is the way.
     const nether = /nether/.test(String(this.bot?.game?.dimension || ''));
+    // No drop of two or more onto a cell with lava beside it: a fall carries
+    // the body on past the cell it was aimed at, and the path cannot steer
+    // it back until it lands. mid-220-e, on a fortress leg, dropped three
+    // blocks to the lava sea's shore and went on into the sea (2026-09-27).
+    const lavaBy = next => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava'));
+    for (let i = kept.length - 1; i >= 0; i--) if (node.y - kept[i].y >= 2 && lavaBy(kept[i])) kept.splice(i, 1);
     for (const next of kept) {
       if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava')) ||
         (nether && this.deadlyDropBeside(next))) next.cost += LAVA_EDGE_COST;

@@ -309,3 +309,20 @@ test('after a step back from the edge the route does not go back onto it while t
   assert(neighbors.some(p => p.x === 0 && p.z === 0 && p.y === 70));
   assert.equal(bot._edgeHold, undefined);
 });
+
+test('no drop of two or more onto the lava sea\'s shore: the fall carries on past the cell it was aimed at', () => {
+  // mid-220-e dropped three blocks to the shore on a fortress leg and went on into the sea (2026-09-27).
+  for (const lava of [true, false]) {
+    const bot = botFixture(), Block = require('prismarine-block')(bot.registry);
+    bot.game.dimension = 'the_nether'; bot.health = 20;
+    bot.blockAt = point => {
+      const p = point.floored();
+      // A ledge at x <= 0 (feet 70); the shore below it at x 1 (feet 67); x 2 is the sea, or more shore.
+      const name = p.x <= 0 ? (p.y < 70 ? 'netherrack' : 'air') : p.y < 66 ? 'netherrack' : p.y === 66 ? (p.x >= 2 && lava ? 'lava' : 'netherrack') : 'air';
+      const block = Block.fromStateId(bot.registry.blocksByName[name].defaultState); block.position = p; return block;
+    };
+    const movement = configureMovements(bot); movement.canDig = false;
+    const down = movement.getNeighbors({ x: 0, y: 70, z: 0, remainingBlocks: 0 }).filter(p => p.x === 1 && p.y === 67);
+    assert.equal(down.length, lava ? 0 : 1, lava ? 'not down to the shore beside the lava' : 'down to dry ground as before');
+  }
+});
