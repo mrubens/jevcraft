@@ -1831,6 +1831,22 @@ test('a stance that failed is not offered again against the same mobs for twenty
   assert(!trees[1].includes('pillar'), `the failed pillar was not offered again: ${trees[1]}`);
 });
 
+test('a stance whose action is resting is a stance that failed, not one held and refused every tick', async () => {
+  // mid-235-i: dug down at 6.7 health with its shaft pocket resting, and stood fifteen seconds under a skeleton's arrows.
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, health: 20, food: 20,
+    inventory: { items: () => [], slots: {} }, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const ran = [], trees = [];
+  survival.stanceOptions = () => ({ dig_down: { description: 'down', run: async () => { ran.push('dig_down'); throw Object.assign(new Error('shaft pocket is set aside'), { name: 'SetAside' }); } },
+    fight: { description: 'fight', run: async () => { ran.push('fight'); return true; } } });
+  survival.decide = async (task, goal, save, q) => { trees.push(Object.keys(q.tree)); return { path: [q.tree.dig_down ? 'dig_down' : 'fight'] }; };
+  const danger = [{ entity: { name: 'skeleton' }, distance: 3 }];
+  assert.equal(await survival.stanceStep(new Task('pack'), {}, () => {}, danger, false), true);
+  assert.equal(await survival.stanceStep(new Task('pack'), {}, () => {}, danger, false), true);
+  assert.deepEqual(ran, ['dig_down', 'fight']);
+  assert.equal(trees.length, 1, 'the fight, alone on offer, is taken without asking');
+});
+
 test('a fight that failed for want of reach is offered again once the mob is at reach', async () => {
   // Trial 106: the charge could not climb the stairs to the zombie; it came down to one block, and the bot was offered no fight.
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, health: 12, food: 20,

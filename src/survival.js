@@ -1494,7 +1494,14 @@ class Survival {
     if (!/^shoot_/.test(choice)) lowerShield(bot);
     stance.running = true;
     let done;
-    try { done = await options[choice].run(); } finally { stance.running = false; stance.ranAt = Date.now(); }
+    // A stance whose action is resting (set aside after it failed) is a stance
+    // that failed: thrown on up, the stance stayed held, ran again at every
+    // tick and was refused, and the turn went to the work with nothing done.
+    // mid-235-i chose to dig down at 6.7 health, its shaft pocket resting,
+    // and stood fifteen seconds under a skeleton's arrows (2026-09-27).
+    try { done = await options[choice].run(); }
+    catch (err) { if (err.name !== 'SetAside') throw err; done = false; }
+    finally { stance.running = false; stance.ranAt = Date.now(); }
     // A stance that could not be carried out is not offered again for a
     // while, and Jev chooses again at the next tick from what is left.
     if (!done) { delete this.state.stance; delete bot._stance; this.state.stanceFailed = [...failed, { choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now() }]; }
