@@ -410,28 +410,48 @@ async function exploreStep(bot, task, goal, save, { navigate, home, noticeVillag
   return arrived || gained >= 8;
 }
 
-// A trip to the nearest remembered landmark of the given kinds, in order of
-// preference: one leg of up to two minutes, sprinting while food allows.
-// A landmark the walk makes no ground toward rests half an hour. Returns
-// the landmark when the bot is within `arrive` of it, false while on the way,
-// and null when there is none to go to.
-async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 512, arrive = 12, filter = () => true } = {}) {
+// A walk whose route search ran out of time: the pathfinder gives up
+// planning after a few seconds (its think timeout), which a walk of a
+// hundred and fifty blocks over rough ground outruns. It found no way and
+// no lack of one.
+const planningTimedOut = err => err?.name === 'Timeout' || /took to long to decide path/i.test(String(err?.message || ''));
+
+// A trip to the nearest remembered landmark of the given kinds (or the
+// cheapest by `cost`: lava carried on to a frame, obsidian.js collectLava),
+// in order of preference: one leg of up to two minutes, sprinting while food
+// allows. A landmark the walk makes no ground toward rests half an hour.
+// Returns the landmark when the bot is within `arrive` of it, false while on
+// the way, and null when there is none to go to.
+async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 512, arrive = 12, filter = () => true, cost = null } = {}) {
   let choice = null;
   for (const kind of kinds) {
-    choice = knownLandmarks(bot, goal, kind, reach).find(k => filter(k.landmark) && !isSetAside(goal, 'landmark_trip', `${k.landmark.kind}:${k.landmark.x},${k.landmark.z}`));
+    const known = knownLandmarks(bot, goal, kind, reach).filter(k => filter(k.landmark) && !isSetAside(goal, 'landmark_trip', `${k.landmark.kind}:${k.landmark.x},${k.landmark.z}`));
+    choice = cost ? known.map(k => ({ k, c: cost(k.landmark) })).sort((a, b) => a.c - b.c)[0]?.k : known[0];
     if (choice) break;
   }
   if (!choice) return null;
   const { landmark } = choice, key = `${landmark.kind}:${landmark.x},${landmark.z}`;
   if (choice.distance <= arrive) return landmark;
-  const before = choice.distance;
+  const before = choice.distance, from = bot.entity.position.clone();
   goal.step = { action: 'go_to_landmark', kind: landmark.kind, target: { x: landmark.x, y: landmark.y, z: landmark.z }, distance: before }; save();
   // To the place itself, depth and all: a walk that judged only the map
   // stopped on the grass over a buried dungeon and "looted" nothing.
   const goal3 = landmark.y === undefined ? new goals.GoalNearXZ(landmark.x, landmark.z, Math.max(2, arrive - 4)) : new goals.GoalNear(landmark.x, landmark.y, landmark.z, Math.max(2, arrive - 4));
+  const distanceNow = () => Math.hypot(landmark.x - bot.entity.position.x, (landmark.y ?? bot.entity.position.y) - bot.entity.position.y, landmark.z - bot.entity.position.z);
+  let timedOut = false;
   try { await navigate(bot, task, goal3, { timeoutMs: 120000, stallMs: 8000, sprint: true }); }
-  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-  const after = Math.hypot(landmark.x - bot.entity.position.x, (landmark.y ?? bot.entity.position.y) - bot.entity.position.y, landmark.z - bot.entity.position.z);
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; timedOut = planningTimedOut(err); }
+  // Its search out of time, a leg of the way on foot, thirty-two blocks
+  // toward it, as to a portal (work.js portalLeg): read as a walk that came
+  // no nearer, mid-230-u set aside the four lava pools within two hundred
+  // blocks in twenty seconds, five seconds a pool (note 524).
+  const flat = Math.hypot(landmark.x - from.x, landmark.z - from.z);
+  if (timedOut && distanceNow() > arrive && before - distanceNow() < 8 && flat > 16) {
+    const k = Math.min(32, flat - 8) / flat;
+    try { await navigate(bot, task, new goals.GoalNearXZ(from.x + (landmark.x - from.x) * k, from.z + (landmark.z - from.z) * k, 4), { timeoutMs: 30000, stallMs: 8000, sprint: true }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
+  const after = distanceNow();
   if (after <= arrive) return landmark;
   // Ground made is a new nearest approach, not a walk that ended nearer
   // than it began: mid-242-b walked toward a lava pool at y 24 along a

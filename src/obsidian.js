@@ -207,6 +207,20 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
 }
 
+// Where lava fetched now is carried: the frame being cast, in the Overworld
+// where it stands; none otherwise.
+function castTo(bot, goal) {
+  const frame = goal?.portalFrame;
+  if (!frame?.cast || frame.ruin || !frame.origin || /nether|end/.test(String(bot.game?.dimension || ''))) return null;
+  return at(frame.origin);
+}
+// The seconds of a carry: the walk to the lava and on to where it goes, at
+// a walk's four blocks a second, and a staircase of three seconds a block
+// of height where a leg rises or falls more than eight (surface.js
+// climbMinutes, portal-cast.js lavaTrip).
+const legSeconds = (a, b) => a.distanceTo(b) / 4.3 + (Math.abs(a.y - b.y) > 8 ? Math.abs(a.y - b.y) * 3 : 0);
+const carrySeconds = (here, lava, to) => legSeconds(here, lava) + (to ? legSeconds(lava, to) : 0);
+
 // Lava in buckets, for a portal frame cast in place (portal-cast.js): from
 // dry ground at a pool's edge, the same shore a pour of water is made from,
 // an empty bucket used on each surface source in reach. The feet are a block
@@ -219,6 +233,33 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   if (threats(bot).some(t => t.visible && t.distance < 16)) { goal.step = { ...step, phase: 'wait_for_quiet' }; save(); await sleep(1000); return; }
   const target = countOf(bot, 'lava_bucket') + (step.count || 1);
   const surface = poolSurface(bot);
+  const { staircaseResting, lavaResting, lavaWay, descentTargets } = require('./tunneling');
+  // Lava for a cast frame is carried to the frame: the lava fetched is the
+  // one whose carry is shortest, here to the lava and on to the frame, as
+  // the trips Jev chose the cast by are measured (portal-cast.js lavaTrip).
+  // By its distance from the bot alone, mid-230-u, back from a food trip
+  // 130 blocks from its frame with a pool twenty blocks beside the frame,
+  // went for pools 350 and 460 blocks off and then dug to the deep lava
+  // below where it stood, 135 blocks down: forty minutes for one bucket
+  // (note 524).
+  const to = castTo(bot, goal), here = bot.entity.position;
+  const carry = p => carrySeconds(here, p, to);
+  const deep = descentTargets(here.floored(), LAVA_DEPTH).find(p => !staircaseResting(goal, p));
+  const landmarkAt = l => new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z);
+  const pool = l => !l.spent && !lavaResting(goal, landmarkAt(l));
+  if (to) {
+    // Known lava that is a shorter carry than any in sight and the deep lava
+    // below: walked to first, the nearest carry first. Not the pool in sight
+    // itself, remembered: that one is scooped below.
+    const bound = Math.min(surface.length ? Math.min(...surface.map(carry)) : Infinity, deep ? carry(deep) : Infinity);
+    const shorter = l => pool(l) && carry(landmarkAt(l)) < bound && !surface.some(p => Math.hypot(p.x - l.x, p.z - l.z) <= 16);
+    if ((goal.landmarks || []).some(l => l.kind === 'lava_pool' && shorter(l))) {
+      const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: shorter, cost: l => carry(landmarkAt(l)) });
+      if (arrived === false) return;
+      // Arrived and no lava in sight there: that pool is spent.
+      if (arrived && !poolSurface(bot).length) { arrived.spent = new Date().toISOString(); save(); return; }
+    }
+  }
   const spots = pourSpots(bot, surface);
   for (const spot of spots) {
     task.check();
@@ -259,20 +300,19 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   // once and asked how to answer the stall; the loop ended the trial
   // (2026-09-27). Resting, it counts as no lava here, and the other pools
   // known (or the deep lava) are the way while it rests.
-  const { staircaseResting, lavaResting, lavaWay } = require('./tunneling');
   const open = p => !staircaseResting(goal, p);
   const diggable = surface.filter(p => !lavaResting(goal, p));
   if (!diggable.length) {
-    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: l => !l.spent && !lavaResting(goal, new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z)) });
+    // For a cast, not a pool farther to carry from than the deep lava.
+    const filter = to ? l => pool(l) && !(deep && carry(landmarkAt(l)) >= carry(deep)) : pool;
+    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter, ...(to ? { cost: l => carry(landmarkAt(l)) } : {}) });
     // On the way, or at a pool found dry. At one still holding lava, whose
     // every way rests, it is not done: the other ways below are.
     if (arrived === false) return;
     if (arrived && !poolSurface(bot).length) { arrived.spent = new Date().toISOString(); save(); return; }
   }
-  const here = bot.entity.position;
-  const nearest = diggable.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
-  // The deep lava, the first heading whose staircase is not resting.
-  const deep = require('./tunneling').descentTargets(here.floored(), LAVA_DEPTH).find(open);
+  const nearest = diggable.sort((a, b) => to ? carry(a) - carry(b) : a.distanceTo(here) - b.distanceTo(here))[0];
+  // The deep lava is the first heading whose staircase is not resting.
   const spot = spots.find(s => open(s.feet))?.feet;
   const dest = spot || (nearest ? lavaWay(nearest) : deep);
   if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw noLavaWay(bot, goal, surface); }

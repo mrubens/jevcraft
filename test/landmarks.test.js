@@ -94,6 +94,31 @@ test('a trip to a remembered landmark walks there, arrives, and sets aside one t
   assert.equal(await goToLandmark(pendulum, new Task('go'), g2, () => {}, ['lava_pool'], { navigate: inAndOut }), null, 'no nearer than the first: set aside');
 });
 
+test('a walk to a landmark whose route search ran out of time goes a leg of the way, and the landmark is not set aside', async () => {
+  // mid-230-u (note 524): 150 to 190 blocks from four lava pools, each walk's search gave up in five seconds, each
+  // pool was set aside for half an hour as "came no nearer", and the lava was dug for 135 blocks down instead.
+  const { goToLandmark } = require('../src/exploration');
+  const { Task } = require('../src/skills');
+  const bot = world({}, 'overworld', new Vec3(0, 64, 0));
+  const goal = { landmarks: [{ kind: 'lava_pool', x: 150, y: 62, z: 0, dimension: 'overworld' }] };
+  const legs = [];
+  const walk = async (b, t, g) => {
+    if (g.constructor.name !== 'GoalNearXZ') { const err = new Error('Took to long to decide path to goal!'); err.name = 'Timeout'; throw err; }
+    legs.push(g); b.entity.position = new Vec3(g.x, 64, g.z);
+  };
+  assert.equal(await goToLandmark(bot, new Task('go'), goal, () => {}, ['lava_pool'], { navigate: walk }), false);
+  assert.equal(legs.length, 1);
+  assert(Math.abs(legs[0].x - 32) < 1, `a leg of thirty-two blocks: ${legs[0].x}`);
+  assert.equal(await goToLandmark(bot, new Task('go'), goal, () => {}, ['lava_pool'], { navigate: walk }), false, 'still made for, not set aside');
+  assert.equal(legs.length, 2);
+  // A walk that failed for want of a way, not of time, is set aside as before.
+  const stuck = world({}, 'overworld', new Vec3(0, 64, 0));
+  const g2 = { landmarks: [{ kind: 'lava_pool', x: 150, y: 62, z: 0, dimension: 'overworld' }] };
+  const noPath = async () => { const err = new Error('No path to the goal!'); err.name = 'NoPath'; throw err; };
+  assert.equal(await goToLandmark(stuck, new Task('go'), g2, () => {}, ['lava_pool'], { navigate: noPath }), false);
+  assert.equal(await goToLandmark(stuck, new Task('go'), g2, () => {}, ['lava_pool'], { navigate: noPath }), null);
+});
+
 test('with no lava in view the obsidian step goes to a remembered ruined portal before digging down for lava', async () => {
   const { makeObsidian } = require('../src/obsidian');
   const { Task } = require('../src/skills');

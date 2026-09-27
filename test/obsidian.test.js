@@ -338,3 +338,35 @@ test('at the only pool, with every way to lava resting, the lava step says so as
   assert.equal(dug.length + walked.length, 0);
   assert.equal(goal.step.phase, 'no_lava_way');
 });
+
+test('lava for a cast frame is fetched by the carry to the frame: the pool beside the frame, not the one nearest the bot', async () => {
+  // mid-230-u (note 524): back from a food trip 130 blocks from its frame, a pool twenty blocks beside the frame, the
+  // bot went for pools 350 and 460 blocks off and then dug to the deep lava below it: forty minutes for one bucket.
+  const { collectLava, LAVA_DEPTH } = require('../src/obsidian');
+  const bot = {
+    registry, game: { gameMode: 'survival', difficulty: 'normal', dimension: 'overworld' }, entities: {},
+    entity: { position: new Vec3(130.5, 79, 35.5) }, inventory: { items: () => [{ name: 'bucket', count: 1 }] }, world: { raycast: () => null },
+    blockAt: p => ({ name: p.y < 79 ? 'stone' : 'air', position: p.clone(), boundingBox: p.y < 79 ? 'block' : 'empty' }),
+    findBlocks: () => [], pathfinder: { movements: {}, getPathTo: async () => ({ status: 'noPath', path: [] }) },
+  };
+  const beside = { kind: 'lava_pool', x: 10, y: 84, z: -20, dimension: 'overworld' };
+  const nearBot = { kind: 'lava_pool', x: 150, y: 20, z: 40, dimension: 'overworld' };
+  const frame = { origin: { x: 0, y: 78, z: 0 }, cast: true, axis: 'x', blocks: [] };
+  const walked = [], dug = [];
+  const actions = { navigate: async (b, t, g) => { walked.push(g); }, dig: async () => {}, resourceTunnelStep: async (b, t, g, s, dest) => { dug.push(dest); } };
+  await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, { portalFrame: frame, landmarks: [nearBot, beside] }, () => {}, actions);
+  assert.equal(dug.length, 0, `not dug toward: ${dug.map(String)}`);
+  assert.equal(walked.length, 1);
+  assert.deepEqual([walked[0].x, walked[0].z], [beside.x, beside.z], 'the pool beside the frame');
+  // Not casting: the nearest pool, as before.
+  walked.length = 0;
+  await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, { landmarks: [{ ...nearBot }, { ...beside }] }, () => {}, actions);
+  assert.deepEqual([walked[0].x, walked[0].z], [nearBot.x, nearBot.z]);
+  // Only lava known that is a longer carry than the deep lava below: the deep lava it is.
+  walked.length = 0;
+  const deeper = { kind: 'lava_pool', x: 150, y: -50, z: 300, dimension: 'overworld' };
+  await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, { portalFrame: frame, landmarks: [deeper] }, () => {}, actions);
+  assert.equal(walked.length, 0);
+  assert.equal(dug.length, 1);
+  assert.equal(dug[0].y, LAVA_DEPTH);
+});
