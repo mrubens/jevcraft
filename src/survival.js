@@ -758,6 +758,13 @@ class Survival {
     // With a creeper out of sight within four blocks among them (danger.js
     // immediateThreat): it is the danger, seen or not.
     const danger = threats(bot).filter(t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4));
+    // The mob that stopped the work is among them, whatever its sight line
+    // reads this time: mid-244-f's skeleton at three blocks stopped the work
+    // twenty times a second for four minutes while the stance, held for a
+    // creeper, never saw it, its line of sight flickering between the two
+    // looks; seven health to under three (2026-09-27).
+    const urgent = require('./danger').immediateThreat(bot);
+    if (urgent && !urgent.projectile && !danger.some(t => t.entity.id === urgent.entity.id)) danger.push(urgent), danger.sort((a, b) => a.distance - b.distance);
     // A shot from a shooter out of view: the shield up to it, since there
     // is no mob here to answer (danger.js immediateThreat, projectile).
     if (!danger.length) {
