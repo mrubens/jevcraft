@@ -3238,8 +3238,12 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
         // does not dig down): the staircase to it. mid-241-e came up for
         // food thirteen blocks over its frame and "no path" came back
         // thirty-nine times (2026-09-27).
+        // Only with something to cast (a lava bucket or obsidian): fetching
+        // lava is the cast's own business, and walked back to the frame at
+        // every pass, mid-244-h's staircase to the deep lava was undone four
+        // steps down, again and again (2026-09-27, a slip in note 318).
         const origin = pos(frame.origin);
-        if (bot.entity.position.distanceTo(origin) > 8) {
+        if (bot.entity.position.distanceTo(origin) > 8 && (countOf(bot, 'lava_bucket') || countOf(bot, 'obsidian'))) {
           try { await navigate(bot, task, new goals.GoalNear(origin.x, origin.y, origin.z, 3), { timeoutMs: 60000, stallMs: 8000 }); }
           catch (err) {
             task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
