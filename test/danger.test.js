@@ -95,3 +95,16 @@ test('a shooter a charge could not reach is still a threat: its bow reaches the 
   bot.entities = { 8: zombie };
   assert.equal(immediateThreat(bot), undefined, 'a walker the charge could not reach is left be while it lands nothing');
 });
+
+test('an unseen biter within a hit and a jump is a threat where a knock is a fall, and not on firm ground (mid-227-r-nether-1-nether-1)', () => {
+  const { immediateThreat } = require('../src/danger');
+  const registry = require('minecraft-data')('26.1');
+  const cube = { id: 9, name: 'magma_cube', type: 'hostile', position: new Vec3(-0.5, 67, 1.5), height: 2, width: 2, isValid: true };
+  // Every ray blocked: out of sight.
+  const lip = p => ({ position: p, name: p.x >= 2 && p.y < 64 ? (p.y <= 20 ? 'lava' : 'air') : p.y < 64 ? 'netherrack' : 'air', boundingBox: !(p.x >= 2) && p.y < 64 ? 'block' : 'empty' });
+  const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, health: 20, food: 20, time: { timeOfDay: 6000 },
+    world: { raycast: (from) => ({ position: from.offset(0, 0.1, 0) }) }, blockAt: lip, entities: { 9: cube }, inventory: { items: () => [], slots: [] } };
+  assert.equal(immediateThreat(bot)?.entity.id, 9, 'at the lip of a drop into lava');
+  bot.blockAt = p => ({ position: p, name: p.y < 64 ? 'netherrack' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' });
+  assert.equal(immediateThreat(bot), undefined, 'on firm ground an unseen one is not');
+});

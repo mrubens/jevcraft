@@ -247,7 +247,20 @@ function immediateThreat(bot) {
   // ten a hit. mid-230-h stood recovering at y -52 with one sixteen blocks
   // off behind the rock and was "obliterated by a sonically-charged
   // shriek" with nothing answering it (2026-09-27).
-  const seen = t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24);
+  // A biter within a hit and a jump, seen or not, where a knock is a fall:
+  // mid-227-r-nether-1-nether-1 stood at the lip of a forty-six-block drop
+  // into lava with a magma cube three blocks up on a ledge, out of every
+  // ray, for twelve seconds; its first hit threw the bot over (note 476).
+  let deadlyEdge;
+  const edge = () => {
+    if (deadlyEdge === undefined) {
+      const drop = require('./terrain').dropNear(bot, bot.entity.position.floored(), 3);
+      deadlyEdge = !!drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2);
+    }
+    return deadlyEdge;
+  };
+  const seen = t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24) ||
+    (t.distance <= 3.5 && !shooter(t.entity) && edge());
   // A shooter is a threat within its own reach: a ghast fires from forty
   // blocks. mid-244-e walked a ledge at y 89 with one in sight at seventeen
   // to nineteen, outside the sixteen counted for any shooter, and its

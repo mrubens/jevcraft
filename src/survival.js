@@ -1602,10 +1602,13 @@ class Survival {
     // trial 81 took one from a dungeon chest in its first minute and died to
     // a spider two minutes later with it still in the pack, never offered.
     const apple = bot.inventory.items().find(i => i.name === 'enchanted_golden_apple') || bot.inventory.items().find(i => i.name === 'golden_apple');
-    if (apple && bot.health < 20) options.eat_golden_apple = {
-      description: apple.name === 'enchanted_golden_apple'
+    // Priced as every stance is (mid-205-q, note 475: the only one without
+    // its damage and health said, and taken at 0.04 against take_cover's
+    // "0.8 damage from 2.8 health").
+    if (apple && bot.health < 20) options.eat_golden_apple = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit },
+      description: (apple.name === 'enchanted_golden_apple'
         ? `Eat the enchanted golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then sixteen extra health as absorption, strong regeneration for twenty seconds and resistance for five minutes. Worth more later in the game than any other food.`
-        : `Eat the golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds. Eight gold ingots and an apple to make another.`,
+        : `Eat the golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds. Eight gold ingots and an apple to make another.`) + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }),
       run: async () => {
         this.report(goal, save, { action: 'eat', item: apple.name, food: bot.food, health: bot.health, stance: true });
         // Eaten only when one is gone: the equip's own held-item change came
@@ -1786,7 +1789,17 @@ class Survival {
     // set aside the bot was offered a pillar, a retreat and a pocket in a
     // one-wide staircase, and died from fifteen health in nine seconds.
     const atReach = danger.some(t => !shooter(t.entity) && (t.distance <= 3.2 || (t.entity.position && canStrike(bot, t.entity))));
-    for (const f of failed) if (!(f.choice === 'fight' && atReach)) delete options[f.choice];
+    // And an eat cut short with the food still carried: nothing about the
+    // place made it fail, and at low health it is the stance that counts.
+    // mid-205-q chose its golden apple at 0.9 health, the eat was cut short
+    // under a second in, the apple still in the pack; it was taken off the
+    // list for twenty seconds, and the zombies finished it (note 475). Said
+    // with it, and every stance that failed is said in the state.
+    for (const f of failed) {
+      if (f.choice === 'fight' && atReach) continue;
+      if (/^eat/.test(f.choice) && options[f.choice]) { options[f.choice].description += ` Tried ${Math.max(1, Math.round((Date.now() - f.at) / 1000))} seconds ago here and cut short before it was eaten; still carried.`; continue; }
+      delete options[f.choice];
+    }
     if (!Object.keys(options).length) return false;
     // A spawner in reach, said with every stance: mid-207-j fought beside a
     // dungeon's zombie spawner six blocks off, told each time of "a zombie,
@@ -1821,6 +1834,9 @@ class Survival {
           armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: openCells(bot, feet) }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health,
           ...(newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` } : {}) } : null,
+        // What failed here just now, and so is not asked again for a while:
+        // each question after a failure began with nothing said of it.
+        ...(failed.length ? { failedHereJustNow: failed.map(f => ({ choice: f.choice, secondsAgo: Math.round((Date.now() - f.at) / 1000) })) } : {}),
         ...(spawner ? { spawner: { blocksAway: spawner.distance } } : {}),
         ...(ails ? { effectsNow: ails.trim() } : {}),
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };

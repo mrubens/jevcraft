@@ -4023,3 +4023,20 @@ test('on a ledge with no ground near, walling the open edge and then fighting is
   assert(placed.has(`${new Vec3(0, 74, 1)}`) && placed.has(`${new Vec3(0, 74, -1)}`), [...placed].join(' '));
   assert(fought);
 });
+
+test('a golden apple is priced as every stance is, and an eat cut short with the apple still carried stays on offer, said (mid-205-q)', async () => {
+  const bot = crowdBot({ health: 2.8, items: [{ name: 'golden_apple', count: 1 }] });
+  const zombie = crowdMob(1, 'zombie', 2);
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } }, state: { shelters: [] } });
+  const apple = survival.stanceOptions(new Task('t'), {}, () => {}, [zombie], false).eat_golden_apple;
+  assert(apple.expects, 'priced');
+  assert.match(apple.description, /from 2\.8 health|from 3 health/);
+  const feet = bot.entity.position.floored();
+  survival.state.stanceFailed = [{ choice: 'eat_golden_apple', where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now() - 1000 }];
+  let q = null;
+  survival.decide = async (task, goal, save, question) => { q = q || question; return { path: ['fight'], action: question.tree.fight, stale: true }; };
+  await survival.stanceStep(new Task('t'), {}, () => {}, [zombie], false).catch(() => {});
+  assert(q?.tree?.eat_golden_apple, Object.keys(q?.tree || {}).join(','));
+  assert.match(q.tree.eat_golden_apple.description, /Tried \d+ seconds? ago here and cut short before it was eaten; still carried/);
+  assert.equal(q.state.failedHereJustNow[0].choice, 'eat_golden_apple');
+});
