@@ -450,6 +450,32 @@ test('a sealed-in bot leaves at dawn despite mobs behind rock, and stays for one
   assert.equal(goal.survivalAction?.action, 'fight_in_pocket');
 });
 
+test('a zombie on the lid of a dug-down pocket is not fought from inside: the pocket\'s question is asked, and says it is on the lid (mid-235-n, note 478)', async () => {
+  // mid-235-n sat two hours and twenty minutes under zombies on its lid, the
+  // reflex "fighting" them twice a second without a swing, and was never asked.
+  const origin = new Vec3(0, 10, 0);
+  const open = p => p.x === 0 && p.z === 0 && (p.y === 10 || p.y === 11);
+  const blockAt = p => { const c = p.floored(); return open(c) || c.y > 12 ? { name: 'air', boundingBox: 'empty', position: c, shapes: [] } : { name: 'stone', boundingBox: 'block', position: c, shapes: [[0, 0, 0, 1, 1, 1]], diggable: true, hardness: 1.5 }; };
+  const raycast = (from, dir, range) => {
+    for (let t = 0; t <= range; t += 0.01) { const at = from.plus(dir.scaled(t)), b = blockAt(at); if (b.boundingBox === 'block') return { ...b, intersect: at }; }
+    return null;
+  };
+  const zombie = { id: 7, name: 'zombie', type: 'hostile', position: new Vec3(1, 13, 0.5), height: 1.95, width: 0.6, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 }, entities: { 7: zombie }, health: 20, food: 20,
+    registry: require('minecraft-data')('26.1'), time: { timeOfDay: 23500 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] }, heldItem: null,
+    blockAt, world: { raycast }, findBlocks: () => [], pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, equip: async () => {}, attack() {} });
+  const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {} }, { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld', verifiedAt: 'x', createdAt: 'x' }] } });
+  let tree;
+  survival.decide = async (task, goal, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['stay'], stale: false }; };
+  survival.wait = async () => {};
+  const goal = { kind: 'win' };
+  await survival.step(new Task('dawn'), goal, () => {});
+  assert.notEqual(goal.survivalAction?.action, 'fight_in_pocket', 'no swing reaches it through the lid');
+  assert(tree, 'pocket_next is asked');
+  for (const key of ['stay', 'leave']) assert.match(tree[key]?.description || '', /A zombie is standing on the pocket's lid, right over the bot: a solid block is between, so the sword cannot reach it and it cannot hit the bot through it\./, key);
+});
+
 test('a pocket sealed in a staircase is left through the closure the bot placed', async () => {
   const { Survival } = require('../src/survival');
   const origin = new Vec3(0, 20, 0);

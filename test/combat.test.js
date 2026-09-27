@@ -198,3 +198,30 @@ test('beside a neutral zombified piglin the sword does not sweep: the swing is m
   assert.equal(await strike(bot, new Task('alone'), hoglin), 'plain', 'with nobody beside it the sword swings as before');
   assert.deepEqual(bot.attacks, ['diamond_sword>hoglin']);
 });
+
+test('a mob on the solid block over the bot\'s head is not in reach; a step up or down a stair still is (mid-235-n, note 478)', () => {
+  const { canStrike, strikeTarget } = require('../src/combat');
+  // A plain voxel world: the ray stops at the first solid cell it enters.
+  const world = solid => {
+    const blockAt = p => { const c = p.floored(); return solid(c) ? { name: 'stone', boundingBox: 'block', position: c, shapes: [[0, 0, 0, 1, 1, 1]] } : { name: 'air', boundingBox: 'empty', position: c, shapes: [] }; };
+    const raycast = (from, dir, range) => {
+      for (let t = 0; t <= range; t += 0.01) { const at = from.plus(dir.scaled(t)), b = blockAt(at); if (b.boundingBox === 'block') return { ...b, intersect: at }; }
+      return null;
+    };
+    return { blockAt, world: { raycast } };
+  };
+  const bot = (solid, zombieAt) => {
+    const zombie = { id: 3, name: 'zombie', type: 'hostile', position: zombieAt, height: 1.95, width: 0.6, isValid: true };
+    return { zombie, bot: { entity: { position: new Vec3(0.5, 10, 0.5) }, entities: { 3: zombie }, health: 20, ...world(solid) } };
+  };
+  // A pocket dug down: the bot's two cells open, everything else rock, the lid at y 12.
+  const pocket = c => !(c.x === 0 && c.z === 0 && (c.y === 10 || c.y === 11)) && c.y <= 12;
+  const lid = bot(pocket, new Vec3(0.5, 13, 0.5));
+  assert.equal(canStrike(lid.bot, lid.zombie), false, 'the lid is between: 1.38 from the eye, and no swing lands');
+  assert.equal(strikeTarget(lid.bot), undefined);
+  // The staircase the arm's-length rule was written for.
+  const down = bot(c => c.y <= 8 || (c.y === 9 && !(c.x === 1 && c.z === 0)), new Vec3(1.5, 9, 0.5));
+  assert.equal(canStrike(down.bot, down.zombie), true, 'a step down, the head hidden behind the stair edge');
+  const up = bot(c => c.y <= 9 || (c.x === 1 && c.z === 0 && c.y === 10), new Vec3(1.5, 11, 0.5));
+  assert.equal(canStrike(up.bot, up.zombie), true, 'a step up');
+});

@@ -699,3 +699,10 @@ test('a stair under a column of gravel is not taken: the gravel falls into the h
   const choices = stairOptions(bot, {}, new Vec3(20, 35, 0));
   assert(!choices.some(c => c.destination.x === 1 && c.destination.y === 35), `not under the gravel: ${JSON.stringify(choices.map(c => c.destination))}`);
 });
+
+test('a fight in the pocket is excused only while its swings land (mid-235-n, note 478)', () => {
+  const now = Date.now(), at = new Date(now - 1000).toISOString(), goal = { survivalAction: { action: 'fight_in_pocket', at } };
+  assert.equal(permittedWait({}, goal, now), null, 'no swing landed: the progress rule measures it');
+  assert.equal(permittedWait({ _struck: { id: 7, at: now - 20000 } }, goal, now), null, 'nor one twenty seconds ago');
+  assert.equal(permittedWait({ _struck: { id: 7, at: now - 2000 } }, goal, now), 'fight_in_pocket', 'a swing landed two seconds ago');
+});

@@ -62,6 +62,12 @@ const HOLDS = new Set(['hold_bunker', 'hold_defensive_position', 'fight', 'defen
 // of lava would be the death of the bot.
 const EMERGENCIES = new Set(['leave_lava', 'leave_lava_edge', 'out_of_fire', 'off_span', 'escape_threat', 'eat', 'dig_out_of_block', 'creeper_back_off',
   'creeper_close_in', 'fight_in_pocket', 'shoot', 'charge', 'off_the_edge', 'surface', 'swim_up']);
+// An emergency is excused while it is getting results, not by its name.
+// Where its result can be read, it is: a fight is a swing landed in the
+// last eight seconds. mid-235-n's fight_in_pocket was excused by name for
+// two hours and twenty minutes of no swing at mobs on its lid, and the
+// pocket's question never came (note 478).
+const RESULTS = { fight_in_pocket: (bot, now) => !!bot?._struck && now - bot._struck.at < 8000 };
 // Goals whose whole point is to be near a player who may be standing still.
 const COMPANY = new Set(['follow', 'come']);
 // The retry steps are not actions of their own: their time is the time of
@@ -92,7 +98,7 @@ function permittedWait(bot, goal, now = Date.now()) {
   if (encounter && encounter.expiresAt > now && !encounter.task?.cancelled) return 'in a fight';
   const recent = goal?.survivalAction;
   const current = recent && now - Date.parse(recent.at || 0) < 8000 ? recent.action : null;
-  if (current && (HOLDS.has(current) || EMERGENCIES.has(current))) return current;
+  if (current && (HOLDS.has(current) || (EMERGENCIES.has(current) && (RESULTS[current]?.(bot, now) ?? true)))) return current;
   // A bundle's step is its child's, wrapped.
   const action = goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action;
   if (HOLDS.has(action)) return action;

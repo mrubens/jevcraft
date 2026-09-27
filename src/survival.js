@@ -20,7 +20,7 @@ const darkHere = bot => { const feet = bot.entity.position.floored(); return blo
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute, countOf } = require('./skills');
-const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield, raiseShield, canStrike } = require('./combat');
+const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield, raiseShield, canStrike, strikeTarget } = require('./combat');
 const { digBunker, bunkerSide, wallStands, nearWall, centroid } = require('./bunker');
 const { deflect } = require('./projectile-guard');
 const { takeTurn } = require('./turn');
@@ -3861,8 +3861,13 @@ class Survival {
       // fought, not waited out (a reflex). The clean run sealed itself in
       // with a skeleton at 0.3 blocks and "waited for it to leave" for
       // eighteen minutes, arrows piling up at its feet (2026-09-24).
-      if (watcher && (watcher.distance < 2.5 || canStrike(bot, watcher.entity))) {
-        this.report(goal, save, { action: 'fight_in_pocket', target: watcher.entity.name, distance: Number(watcher.distance.toFixed(1)), health: bot.health });
+      // In reach by the swing's own test, not a nearer one of the reflex's:
+      // mid-235-n's zombies on its lid were "in reach" to the reflex and
+      // never to the swing, and the reflex held the pocket two hours and
+      // twenty minutes without a hit or a question (note 478).
+      const reach = watcher && strikeTarget(bot);
+      if (reach) {
+        this.report(goal, save, { action: 'fight_in_pocket', target: reach.entity.name, distance: Number(reach.distance.toFixed(1)), health: bot.health });
         await defendNearby(bot, task, goal, save);
         for (let n = 0; n < 5; n++) { task.check(); await sleep(100); }
         onStep(goal); return true;
@@ -3890,8 +3895,15 @@ class Survival {
       const about = threats(bot, 16).filter(t => t.entity !== watcher?.entity).slice(0, 4);
       const hidden = about.length ? `${about.map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}${about.some(t => !t.visible) ? ' (heard, not seen: the wall is between)' : ''}` : '';
       const who = watcher ? `${watcher.visible ? 'the' : 'a'} ${watcher.entity.name.replaceAll('_', ' ')} ${Math.round(watcher.distance)} blocks off${watcher.visible ? ', in sight' : ' (heard, not seen: the wall is between)'}${hidden ? `, and ${hidden}` : ''}` : hidden || null;
+      // The ones standing on the lid, said as such: a solid block between,
+      // out of the sword's reach and unable to hit the bot through it.
+      // mid-235-n's zombies and skeletons piled up there, up to five, and
+      // the pocket was never asked about in the two hours after (note 478).
+      const under = bot.entity.position;
+      const onLid = threats(bot, 8).filter(t => t.entity.position.y >= under.y + 2.5 && Math.hypot(t.entity.position.x - under.x, t.entity.position.z - under.z) <= 1.5 && !canStrike(bot, t.entity));
+      const lidSays = onLid.length ? ` ${onLid.length === 1 ? `A ${onLid[0].entity.name.replaceAll('_', ' ')} is` : `${onLid.length} mobs (${onLid.map(t => t.entity.name.replaceAll('_', ' ')).join(', ')}) are`} standing on the pocket's lid, right over the bot: a solid block is between, so the sword cannot reach ${onLid.length === 1 ? 'it' : 'them'} and ${onLid.length === 1 ? 'it cannot' : 'they cannot'} hit the bot through it. Waiting under them gains nothing but time.` : '';
       const options = {};
-      const outside = (who ? ` Outside is ${who}.` : '') + wardenSays(bot);
+      const outside = (who ? ` Outside is ${who}.` : '') + lidSays + wardenSays(bot);
       // Sleep is refused with a monster within eight blocks of the bed, seen
       // or not (the decision audit): said, with the walk.
       const byBed = homeBed ? monstersByBed(bot, homeBed.foot, 32) : 0;
@@ -3962,7 +3974,7 @@ class Survival {
       // and died among them in a minute (2026-09-26).
       const hp = Math.round((bot.health ?? 20) * 10) / 10;
       const healthNow = hp >= 20 ? '' : (bot.food ?? 20) >= 18 ? `, healing from ${hp} health` : `, not healing: ${hp} health and hunger ${bot.food}, and health comes back only at eighteen or more`;
-      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes with nothing gained${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.`) + wardenSays(bot) + placeSays,
+      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes with nothing gained${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.`) + lidSays + wardenSays(bot) + placeSays,
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };
@@ -4033,7 +4045,7 @@ class Survival {
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_from_warden' };
           return this.tunnelOut(task, goal, save, refuge, wardenAbout, away);
         } };
-      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays,
+      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${lidSays}${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays,
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the
@@ -4062,7 +4074,7 @@ class Survival {
             inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
             riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
             health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), armourWorn: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
-            threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity) })) } });
+            threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity), ...(onLid.some(o => o.entity === t.entity) ? { onLid: true, inReach: false, canReachBot: false } : {}) })) } });
         if (decision.stale) { onStep(goal); return true; }
         choice = decision.path.at(-1);
         this.state.pocketPlan = { choice, key, until: Date.now() + 90000 };

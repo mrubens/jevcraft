@@ -83,7 +83,20 @@ function canStrike(bot, entity) {
   // the one a step up or down is hidden behind the stair edge from the eye
   // to its head, and it lands every hit while the bot waits for a clear
   // line. That is how the dream run died, in iron armour, without a swing.
-  if (eye.distanceTo(closest) <= 2) return true;
+  // But not through a full block: the ray to the nearest point of the mob
+  // (not its head) clears a stair edge, and stops at a pocket's lid. A
+  // zombie standing on the lid over mid-235-n measured 1.38 from the eye,
+  // was "in reach" twice a second for two hours, and not one swing landed
+  // (note 478).
+  if (eye.distanceTo(closest) <= 2) {
+    const toward = closest.minus(eye), gap = toward.norm();
+    if (gap < 0.05) return true;
+    const wall = bot.world?.raycast?.(eye, toward.unit(), gap);
+    if (!wall || eye.distanceTo(wall.intersect || wall.position) >= gap - 0.05) return true;
+    const block = wall.boundingBox ? wall : bot.blockAt?.(wall.position);
+    const full = block?.boundingBox === 'block' && (!block.shapes || (block.shapes.length === 1 && block.shapes[0].join() === '0,0,0,1,1,1'));
+    return !full;
+  }
   const aim = entity.position.offset(0, (entity.height || 1.8) / 2, 0), direction = aim.minus(eye);
   const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
   return !hit || eye.distanceTo(hit.intersect || hit.position) >= direction.norm() - 0.1;
