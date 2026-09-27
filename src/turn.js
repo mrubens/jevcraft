@@ -25,4 +25,20 @@ function turnHeld(bot, now = Date.now()) {
 // done): the layer that took the turn has it again.
 function giveBack(bot, previous) { if (bot) bot._turn = previous || null; }
 
-module.exports = { takeTurn, turnHeld, giveBack };
+// The step under the turn stopped for another to have it: the walk, the
+// dig, the keys and any window, as the hurt watchdog stopped them (trial
+// 29's crafting window at y -9). The step's next task.check() unwinds it;
+// what it was doing is returned, read before it was stopped, for the log.
+function stopForTurn(bot, why = null) {
+  if (!bot) return null;
+  const now = Date.now();
+  const was = { ...(why ? { why } : {}), sinceCheckMs: bot._lastCheckAt ? now - bot._lastCheckAt : null, digging: bot.targetDigBlock?.name || null,
+    window: bot.currentWindow?.type ?? null, pathing: bot.pathfinder?.isMoving?.() ?? null };
+  try { bot.stopDigging?.(); } catch (_) { /* not digging */ }
+  try { bot.pathfinder?.setGoal?.(null); } catch (_) { /* not walking */ }
+  try { bot.clearControlStates?.(); } catch (_) { /* nothing held */ }
+  try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow); } catch (_) { /* no window */ }
+  return was;
+}
+
+module.exports = { takeTurn, turnHeld, giveBack, stopForTurn };

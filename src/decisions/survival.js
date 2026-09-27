@@ -292,11 +292,11 @@ define({
 define({
   id: 'turn_priority', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'high', tree: true,
   question: 'Which layer has the bot\'s turn now: survival, the meal and breath, the hunt, or the work?',
-  trigger: 'When two or more layers claim the turn and none of them is a reflex; the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, or a minute.',
+  trigger: 'When two or more layers claim the turn and none of them is a reflex (JEV_ARBITER=live; in shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.',
   source: 'src/arbiter.js (arbitrate), the claims in src/survival.js, src/vitals.js, src/mob-hunt.js and src/work.js',
   instructions: {
     task: 'Several parts of the bot want its turn at once. Choose which one acts NEXT. Each option is what that part would do and what it observed; nothing here is a verdict.',
-    guidance: 'The player request stays saved whichever is chosen. The ruling is kept until something observed changes, so choose what should hold for the next while.',
+    guidance: 'The player request stays saved whichever is chosen. The ruling is kept until something observed changes, so choose what should hold for the next while. A plan that failed or rests says so in its facts (setAside), and the part that has the turn says how long it has had it and how long it has done nothing with it: a part that does nothing keeps the turn while it is chosen.',
   },
   options: [
     { key: 'survival', label: 'the survival layer: a shelter, a stance, a bed, food to find', when: 'the survival layer has something to do, including a plan that failed or rests (said as a fact)', level: 'root' },

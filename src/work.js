@@ -4474,25 +4474,36 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
   recoveryAdviser ||= createRecoveryAdviser(bot, decisionClient);
   let failures = 0;
   watchStalls(bot, () => goal); task.stallCheck = () => checkStall(bot);
+  const arbiterLive = require('./arbiter').mode() === 'live';
+  require('./arbiter').watch(bot);
   try {
   while (!until()) {
     task.interruptCheck = undefined;
     // A stall is answered first, before anything can throw it again.
     const stall = takeStall(bot);
     if (stall) { await inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep, idle: true })); failures = 0; save(); onStep(goal); continue; }
-    if (loopCheck(task)) { await inCatch(task, goal, () => survival.step(task, goal, save, onStep)); save(); onStep(goal); continue; }
+    // A preemption is the arbiter's to pick up, below.
+    const held = loopCheck(task);
+    if (held && !held.preempted) { await inCatch(task, goal, () => survival.step(task, goal, save, onStep)); save(); onStep(goal); continue; }
     updateDigCapabilities(bot);
     try {
       if ((bot.vehicle || bot._seatedIn != null) && await require('./boats').leaveStrandedVehicle(bot)) console.log('[work] sat in a boat between passes; got out');
-      if (goal.recoveryAdvice?.active) {
-        await maintainVitals(bot, task);
-        if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
+      // Live, the arbiter rules first (it picks up a preemption before
+      // anything checks the task again); the idle work below is the work's
+      // turn, and the survival step runs there only when it claimed nothing.
+      const turn = arbiterLive ? await liveTurn(bot, task, goal, goal, survival, save, { client: decisionClient, onStep, save, backstopFor: ['vitals'] }) : null;
+      if (turn && turn.layer !== 'work') { if (!turn.acted) await sleep(250); }
+      else {
+        if (goal.recoveryAdvice?.active) {
+          await maintainVitals(bot, task);
+          if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
+        }
+        await keepRoom(bot, task, goal);
+        noticeVillage(bot, goal, save);
+        noticeLandmarks(bot, goal, save);
+        const acted = ((!turn || turn.unclaimed) && await survival.step(task, goal, save, onStep)) || await lootNearby(bot, task, goal, save, lootActions());
+        if (!acted) await idleWork(bot, task, goal, save, decisionClient, onStep);
       }
-      await keepRoom(bot, task, goal);
-      noticeVillage(bot, goal, save);
-      noticeLandmarks(bot, goal, save);
-      const acted = await survival.step(task, goal, save, onStep) || await lootNearby(bot, task, goal, save, lootActions());
-      if (!acted) await idleWork(bot, task, goal, save, decisionClient, onStep);
       failures = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); narrate(bot, goal);
     } catch (err) {
       task.interruptCheck = undefined;
@@ -4508,7 +4519,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
     } finally { task.interruptCheck = undefined; }
     for (let n = 0; n < 10 && !bot._stalls?.stall; n++) { if (loopCheck(task)) break; await sleep(100); }
   }
-  } finally { if (bot._stalls) bot._stalls.goalOf = null; task.stallCheck = undefined; }
+  } finally { if (bot._stalls) bot._stalls.goalOf = null; task.stallCheck = undefined; require('./arbiter').unwatch(bot); }
   return { ok: true, goal };
 }
 
@@ -4528,6 +4539,32 @@ function shadowTurn(bot, goal, activeWork, survival) {
   return require('./arbiter').shadow(bot, () => [require('./survival').claim(bot, activeWork, survival), require('./vitals').claim(bot),
     require('./mob-hunt').claim(bot, activeWork), workClaim(goal)]);
 }
+// The arbiter live (JEV_ARBITER=live, src/arbiter.js): the turn goes to
+// the claim it rules for, and each claim runs its layer's own step as the
+// old loop ran it. The work's run only says it has the turn: the caller
+// goes on to the work below. The hunt is staked first, whoever wins: the
+// survival claim reads it (danger.js), as the old loop staked it first.
+async function liveTurn(bot, task, goal, activeWork, survival, saveWork, { client, onStep, save, backstopFor }) {
+  require('./mob-hunt').stakeHunt(bot, activeWork);
+  let vitalsActed = false;
+  const report = step => { vitalsActed = true; goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); };
+  const runs = {
+    survival: () => survival.step(task, activeWork, saveWork, () => onStep(goal)),
+    vitals: async () => {
+      task.interruptCheck = bot.game.gameMode === 'creative' ? undefined : () => checkThreats(bot);
+      const ate = await maintainVitals(bot, task, report);
+      return !!ate || vitalsActed;
+    },
+    hunt: () => huntObserved(bot, task, activeWork, saveWork, { navigate }, client),
+    work: async () => true,
+  };
+  // A claim that throws is said once and counts as none: survival's step
+  // then runs as the backstop, as it did before the arbiter.
+  const read = f => { try { return f(); } catch (err) { if (!liveTurn.failed) { liveTurn.failed = true; console.log(`[arbiter] a claim failed (said once): ${err?.stack || err}`); } return null; } };
+  const claims = [read(() => require('./survival').claim(bot, activeWork, survival)), read(() => require('./vitals').claim(bot)),
+    read(() => require('./mob-hunt').claim(bot, activeWork)), workClaim(goal)].map(c => c && { ...c, run: runs[c.layer] });
+  return require('./arbiter').take(bot, claims, { task, goal, save, client, backstop: runs.survival, backstopFor });
+}
 // The layer an action reported during the survival step belongs to: the
 // step runs the vitals' own meal and douse.
 const reportedLayer = (before, after) => after?.at && after.at !== before && require('./vitals').ACTIONS.has(after.action) ? 'vitals' : null;
@@ -4544,6 +4581,10 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
   goal.status = 'running'; goal.failures = 0; goal.stalls = 0; save();
   const stopObserving = goal.kind === 'win' ? watchGameProgress(bot, goal, save) : () => {};
   watchStalls(bot, () => goal); task.stallCheck = () => checkStall(bot);
+  // Live, the arbiter gives the turn; in shadow the old order does and the
+  // arbiter says where it would differ. The watch runs either way.
+  const arbiterLive = require('./arbiter').mode() === 'live';
+  require('./arbiter').watch(bot);
   try {
   // The loop yields to the event loop every pass and never spins: a step
   // that returns without waiting on anything real (a synchronous throw
@@ -4567,8 +4608,10 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       await inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep }));
       goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
     }
-    // A signal the watchdogs hold for the survival layer: its turn now.
-    if (loopCheck(task)) { await inCatch(task, goal, () => survival.step(task, goal, save, () => onStep(goal))); save(); onStep(goal); continue; }
+    // A signal the watchdogs hold for the survival layer: its turn now. A
+    // preemption is the arbiter's to pick up, below.
+    const held = loopCheck(task);
+    if (held && !held.preempted) { await inCatch(task, goal, () => survival.step(task, goal, save, () => onStep(goal))); save(); onStep(goal); continue; }
     updateDigCapabilities(bot);
     // Every tick starts with the configured movement policy: leaked
     // restrictions from a step that threw are not carried into the next.
@@ -4590,10 +4633,24 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // A requested, equipped encounter can approach its selected mob. All
       // other survival work keeps the ordinary hostile-avoidance policy.
       const endTask = goal.kind === 'win' && dimension(bot) === 'end';
-      // End combat owns the End's turn: no shadow there.
-      turnShadow = endTask ? null : shadowTurn(bot, goal, activeWork, survival); layerNow = 'hunt';
-      require('./turn').takeTurn(bot, 'hunt', 'observed');
-      if (!endTask && await huntObserved(bot, task, activeWork, saveWork, { navigate }, decisionClient)) {
+      // End combat owns the End's turn: no arbiter there, live or shadow.
+      const ruled = arbiterLive && !endTask;
+      let turn = null;
+      if (ruled) {
+        // The work's own backstop is below, after the recovery plan, as the
+        // old order had it.
+        turn = await liveTurn(bot, task, goal, activeWork, survival, saveWork, { client: decisionClient, onStep, save, backstopFor: ['vitals'] });
+        if (turn.layer !== 'work') {
+          if (turn.acted) { goal.stalls = 0; goal.failures = 0; delete goal.lastError; delete goal.lastErrorAt; }
+          save(); onStep(goal);
+          // Nothing done and the turn held: a breath, not a spin.
+          if (!turn.acted) await sleep(250);
+          continue;
+        }
+      }
+      turnShadow = endTask || ruled ? null : shadowTurn(bot, goal, activeWork, survival); layerNow = 'hunt';
+      if (!ruled) require('./turn').takeTurn(bot, 'hunt', 'observed');
+      if (!endTask && !ruled && await huntObserved(bot, task, activeWork, saveWork, { navigate }, decisionClient)) {
         turnShadow?.gave('hunt');
         goal.failures = 0; goal.stalls = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); continue;
       }
@@ -4606,7 +4663,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // choices are invalid in the End, where the dragon can destroy them.
       await keepRoom(bot, task, goal);
       const reportedBefore = activeWork.survivalAction?.at; layerNow = 'survival';
-      if (!endTask && await survival.step(task, activeWork, saveWork, () => onStep(goal))) {
+      // Live, the survival step runs here only when it claimed nothing
+      // (arbiter.js take's backstop): what its claim cannot see yet.
+      if (!endTask && (!ruled || turn.unclaimed) && await survival.step(task, activeWork, saveWork, () => onStep(goal))) {
         turnShadow?.gave(reportedLayer(reportedBefore, activeWork.survivalAction) || 'survival');
         goal.stalls = 0; goal.failures = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); continue;
       }
@@ -4615,7 +4674,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // Air and eating carried food are rules, not judgments: there is no
       // request that is better served by staying hungry with bread in hand.
       layerNow = 'vitals';
-      if (!endTask) {
+      if (!endTask && !ruled) {
         require('./turn').takeTurn(bot, 'vitals', 'maintain');
         await maintainVitals(bot, task, step => { vitalsActed = true; goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
       }
@@ -4769,7 +4828,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
   goal.status = 'blocked'; goal.lastError = 'Action budget reached'; save();
   bot.chat('This is taking a while. I saved our progress. Say "Jev resume" to keep going.');
   return { ok: false, reason: goal.lastError, goal };
-  } finally { stopObserving(); if (bot._stalls) bot._stalls.goalOf = null; task.stallCheck = undefined; }
+  } finally { stopObserving(); if (bot._stalls) bot._stalls.goalOf = null; task.stallCheck = undefined; require('./arbiter').unwatch(bot); }
 }
 
 // Placement in Creative consumes no inventory. Observe the actual construction
@@ -4779,4 +4838,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

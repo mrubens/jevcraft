@@ -195,3 +195,177 @@ test('the shadow never throws into the loop: a claim that fails is logged once a
   assert.equal(turn.would, undefined);
   assert.doesNotThrow(() => turn.gave('work'));
 });
+
+// The watch and the live turn (steps three to five of the migration).
+const { checkStall } = require('../src/stillness');
+const { Task } = require('../src/skills');
+const stoppable = (over = {}) => {
+  const stopped = [];
+  const bot = fakeBot({ stopDigging: () => stopped.push('dig'), clearControlStates: () => stopped.push('keys'), pathfinder: { setGoal: () => stopped.push('walk') }, ...over });
+  return { bot, stopped };
+};
+const creeperNear = () => look({ mobs: [mob('creeper', arbiter.CREEPER_REACH - 0.5, 7)] });
+
+test('a preemption is sticky until the arbiter rules for real, with no clock', () => {
+  const { bot, stopped } = stoppable();
+  bot._arbiter = { holder: { layer: 'work', action: 'mine', since: 0, ids: [] } };
+  const p = arbiter.watchOnce(bot, { live: true, look: creeperNear(), now: 1000, log: () => {} });
+  assert.equal(p.by, 'creeper'); assert.equal(p.over, 'work mine');
+  assert.deepEqual(stopped.sort(), ['dig', 'keys', 'walk']);
+  // Gone from view, a minute on: still held, still thrown at every check.
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look(), now: 61000, log: () => {} }), p);
+  for (let i = 0; i < 3; i++) assert.throws(() => checkStall(bot), err => err.name === 'NeedsSafety' && err.preempted.by === 'creeper');
+  // A dry ruling (the shadow's) picks up nothing.
+  arbiter.rule(bot, [reflex('creeper'), claim('work')], { dry: true });
+  assert.equal(bot._preempt, p);
+  // The arbiter's ruling picks it up.
+  const out = arbiter.rule(bot, [reflex('creeper'), claim('work')], {});
+  assert.equal(out.winner.reflex, 'creeper'); assert.equal(bot._preempt, undefined);
+  assert.doesNotThrow(() => checkStall(bot));
+});
+
+test('the preemption is on the stall check: a nested step that drops the interrupt check still meets it', () => {
+  const { bot } = stoppable();
+  bot._arbiter = { holder: { layer: 'work', action: 'mine', since: 0, ids: [] } };
+  const task = new Task('t', 'mine');
+  task.stallCheck = () => checkStall(bot);
+  task.interruptCheck = () => {};
+  arbiter.watchOnce(bot, { live: true, look: creeperNear(), log: () => {} });
+  // As a nested step does before its own work.
+  task.interruptCheck = undefined;
+  assert.throws(() => task.check(), err => err.name === 'NeedsSafety' && err.preempted.by === 'creeper' && /Preempted by creeper/.test(err.message));
+});
+
+test('a creeper within its fuse\'s reach preempts a running dig; one further off, or in shadow, does not', async () => {
+  const { bot, stopped } = stoppable();
+  bot._arbiter = { holder: { layer: 'work', action: 'mine', since: Date.now(), ids: [] } };
+  const task = new Task('t', 'mine');
+  task.stallCheck = () => checkStall(bot);
+  let mobs = [mob('creeper', arbiter.CREEPER_REACH + 3, 7)];
+  const probe = { ...look(), mobs: () => mobs };
+  const logs = [];
+  arbiter.watch(bot, { live: true, look: probe, log: line => logs.push(line) });
+  try {
+    // The dig: a check between blows, as skills.js digs.
+    const dig = (async () => { for (;;) { task.check(); await new Promise(r => setTimeout(r, 20)); } })();
+    await new Promise(r => setTimeout(r, arbiter.WATCH_MS * 2));
+    assert.equal(bot._preempt, undefined, 'out past its reach: the dig goes on');
+    mobs = [mob('creeper', arbiter.CREEPER_REACH - 1, 7)];
+    await assert.rejects(dig, err => err.name === 'NeedsSafety' && err.preempted.by === 'creeper');
+    assert(stopped.includes('dig'));
+    assert.match(logs[0], /^\[arbiter\] preempted work mine/);
+  } finally { arbiter.unwatch(bot); }
+  // Shadow: said over the work, nothing stopped.
+  const quiet = stoppable();
+  quiet.bot._turn = { holder: 'work', phase: 'mine', since: 0 };
+  const said = [];
+  assert.equal(arbiter.watchOnce(quiet.bot, { live: false, look: creeperNear(), log: line => said.push(line) }), null);
+  assert.equal(quiet.bot._preempt, undefined); assert.deepEqual(quiet.stopped, []);
+  assert.match(said[0], /^\[arbiter\] would preempt work mine: creeper back off/);
+});
+
+test('the watch: a reflex above the one held preempts it, the same one does not, and a stance Jev chose holds off the mob reflexes', () => {
+  const { bot } = stoppable();
+  bot._arbiter = { holder: { layer: 'survival', action: 'creeper_back_off', reflex: 'creeper', since: 0, ids: [] } };
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: creeperNear(), log: () => {} }), null);
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ lava: true }), log: () => {} }).by, 'lava');
+  const held = stoppable();
+  held.bot._arbiter = { holder: { layer: 'survival', action: 'secure_shelter', since: 0, ids: [] } };
+  held.bot._stance = { choice: 'pillar', at: Date.now(), running: true, health: 20 };
+  assert.equal(arbiter.watchOnce(held.bot, { live: true, look: creeperNear(), log: () => {} }), null);
+  assert.equal(arbiter.watchOnce(held.bot, { live: true, look: look({ fire: true }), log: () => {} }).by, 'fire');
+});
+
+test('a hostile newcomer preempts the work once: the ruling was made without it', () => {
+  const { bot } = stoppable();
+  bot._arbiter = { holder: { layer: 'work', action: 'mine', since: 0, ids: [1] } };
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('zombie', 5, 1)] }), log: () => {} }), null, 'known when the turn was given');
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('zombie', 5, 2, false)] }), log: () => {} }), null, 'unseen past four');
+  const p = arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('zombie', 5, 1), mob('skeleton', 5.5, 3)] }), log: () => {} });
+  assert.equal(p.by, 'newcomer'); assert.equal(p.facts.mob, 'skeleton');
+});
+
+test('live: at 0.9 health with the shelter set aside, Jev is asked between survival and the work, and the work does not get the turn by default', async () => {
+  const bot = world({ health: 0.9, food: 10, time: { timeOfDay: 14000, age: 100000 } });
+  const now = Date.now();
+  const goal = { kind: 'win', step: { action: 'obtain', item: 'bread' }, survival: { attempts: {
+    'act:survival:secure_shelter': { action: 'act', target: 'survival:secure_shelter', why: 'no route to a shelter site', at: now, until: now + 600000, count: 1 } } } };
+  const ran = [];
+  const runs = { survival: async () => { ran.push('survival'); return false; }, work: async () => { ran.push('work'); return true; } };
+  const claims = b => claimsOf(b, goal, { state: goal.survival, currentShelter: () => null }).map(c => c && { ...c, run: runs[c.layer] });
+  const asked = [];
+  const decide = async (id, q) => { asked.push([id, q]); return { path: ['survival'] }; };
+  const turn = await arbiter.take(bot, claims(bot), { decide, mobs: [], now });
+  assert.equal(asked.length, 1); assert.equal(asked[0][0], 'turn_priority');
+  assert.deepEqual(Object.keys(asked[0][1].tree).sort(), ['survival', 'work']);
+  assert.equal(asked[0][1].state.health, 0.9);
+  assert.equal(turn.layer, 'survival'); assert.equal(turn.acted, false);
+  assert.deepEqual(ran, ['survival'], 'the step did nothing, and the turn stayed with it');
+  // Without Jev, the question's own fallback: survival, the more urgent.
+  const alone = world({ health: 0.9, food: 10, time: { timeOfDay: 14000, age: 100000 } });
+  const byRule = await arbiter.take(alone, claims(alone), { mobs: [], now });
+  assert.equal(byRule.layer, 'survival'); assert.equal(byRule.winner.action, 'secure_shelter');
+});
+
+test('live: a hungry bot in a renewing shelter plan gets its turn to eat', async () => {
+  const bread = { name: 'bread', count: 3 };
+  const bot = world({ health: 12, food: 5, time: { timeOfDay: 14000, age: 100000 }, inventory: { items: () => [bread], slots: [] },
+    registry: { entitiesByName: {}, foodsByName: { bread: { effectiveQuality: 13 } } } });
+  const now = Date.now();
+  const goal = { kind: 'win', step: { action: 'mine', item: 'iron_ore' }, survival: { nightPlan: { plan: 'shelter', until: now + 120000 } } };
+  const ran = [];
+  // The shelter plan renews itself and says it acted, every pass: the old
+  // loop never reached the meal behind it.
+  const runs = { survival: async () => { ran.push('survival'); return true; }, vitals: async () => { ran.push('vitals'); return true; }, work: async () => { ran.push('work'); return true; } };
+  const claims = claimsOf(bot, goal, { state: goal.survival, currentShelter: () => null }).map(c => c && { ...c, run: runs[c.layer] });
+  assert.equal(claims[0].action, 'secure_shelter'); assert.equal(claims[1].action, 'eat'); assert.equal(claims[1].urgency, 'pressing');
+  let tree;
+  const turn = await arbiter.take(bot, claims, { decide: async (id, q) => { tree = q.tree; return { path: ['vitals'] }; }, mobs: [], now });
+  assert.deepEqual(tree.vitals.description.cost, { seconds: 1.6 });
+  assert.equal(tree.vitals.description.facts.item, 'bread');
+  assert.equal(turn.layer, 'vitals'); assert.deepEqual(ran, ['vitals']);
+});
+
+test('live: the ruling is held pass after pass and asked again when its winner has done nothing for a while', async () => {
+  const bot = fakeBot({ health: 10 });
+  let asked = 0, facts;
+  const decide = async (id, q) => { asked++; facts = q.tree.survival.description.facts; return { path: ['survival'] }; };
+  const claims = () => [claim('survival', 'pressing', { action: 'secure_shelter', run: async () => false }), claim('work')];
+  const t0 = 1000000;
+  for (let i = 0; i < 20; i++) {
+    const turn = await arbiter.take(bot, claims(), { decide, mobs: [], now: t0 + i * 250 });
+    assert.equal(turn.layer, 'survival');
+    assert.equal(turn.by, i ? 'held' : 'jev');
+  }
+  assert.equal(asked, 1, 'asked once, not every pass');
+  const again = await arbiter.take(bot, claims(), { decide, mobs: [], now: t0 + arbiter.IDLE_MS + 1 });
+  assert.equal(again.why, `its winner did nothing for ${arbiter.IDLE_MS / 1000} seconds`);
+  assert.equal(asked, 2);
+  assert.equal(facts.didNothingWithItSeconds, 10); assert.equal(facts.hasHadTheTurnSeconds, 10);
+});
+
+test('live: the survival step still runs first when survival claims nothing, and is said when it acts', async () => {
+  const bot = fakeBot();
+  const ran = [], lines = [];
+  const original = console.log; console.log = line => lines.push(line);
+  try {
+    const work = () => claim('work', 'routine', { run: async () => { ran.push('work'); return true; } });
+    const turn = await arbiter.take(bot, [work()], { backstop: async () => { ran.push('backstop'); return true; }, mobs: [] });
+    assert.equal(turn.layer, 'survival'); assert.equal(turn.backstop, true); assert.deepEqual(ran, ['backstop']);
+    assert(lines.some(l => /survival acted with no claim, ahead of work/.test(l)));
+    const through = await arbiter.take(bot, [work()], { backstop: async () => false, mobs: [] });
+    assert.equal(through.layer, 'work'); assert.deepEqual(ran, ['backstop', 'work']);
+    // Only for the layers named: runGoal runs the work's backstop itself.
+    const own = await arbiter.take(bot, [claim('work')], { backstop: async () => assert.fail('not for the work'), backstopFor: ['vitals'], mobs: [] });
+    assert.equal(own.layer, 'work'); assert.equal(own.unclaimed, true);
+  } finally { console.log = original; }
+});
+
+test('the mode is shadow unless JEV_ARBITER=live', () => {
+  const was = process.env.JEV_ARBITER;
+  try {
+    delete process.env.JEV_ARBITER; assert.equal(arbiter.mode(), 'shadow');
+    process.env.JEV_ARBITER = 'live'; assert.equal(arbiter.mode(), 'live');
+    process.env.JEV_ARBITER = 'shadow'; assert.equal(arbiter.mode(), 'shadow');
+  } finally { if (was === undefined) delete process.env.JEV_ARBITER; else process.env.JEV_ARBITER = was; }
+});

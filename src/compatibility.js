@@ -63,6 +63,7 @@ function boundSyncWindow(bot) {
     original(window).then(() => { settled = true; }, err => { settled = true; failure = err; });
     const end = Date.now() + 2000;
     while (!settled && Date.now() < end) {
+      if (bot._preempt) throw require('./stillness').preempted(bot._preempt);
       if (bot._threatAbort) { const { NeedsSafety, threats } = require('./danger'); let near = null; try { near = threats(bot, 16)[0]; } catch (_) { /* no entities yet */ } throw new NeedsSafety(near || { entity: { name: 'something unseen' }, distance: 0 }); }
       if (bot._airAbort) { const { NeedsAir } = require('./vitals'); throw new NeedsAir(); }
       await new Promise(resolve => setTimeout(resolve, 50));

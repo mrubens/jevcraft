@@ -478,17 +478,25 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
   }
 }
 
+// The hunt's claim on this kind of mob, renewed on every tick it is live.
+// It has to be staked first in the loop: staking it where the fight runs
+// was useless, because the survival layer sealed the bot in before that
+// code was ever reached, so the claim was never made and the blazes stayed
+// an emergency. Chicken, egg. The live arbiter stakes it before the claims
+// are read, whoever then gets the turn.
+function stakeHunt(bot, goal) {
+  const state = goal?.mobHunt;
+  if (!state || countOf(bot, state.item) >= state.targetCount) return false;
+  bot._huntingEntity = { name: state.entity, until: Date.now() + 5000 };
+  return true;
+}
+
 async function huntObserved(bot, task, goal, save, actions, client) {
   const state = goal.mobHunt;
   if (!state) return false;
   if (countOf(bot, state.item) >= state.targetCount) { delete goal.mobHunt; save(); return false; }
   const handler = handlers[state.entity] || {};
-  // The hunt's claim on this kind of mob, renewed on every tick it is live.
-  // It has to be staked here, first in the loop: staking it where the fight
-  // runs was useless, because the survival layer sealed the bot in before
-  // that code was ever reached, so the claim was never made and the blazes
-  // stayed an emergency. Chicken, egg.
-  bot._huntingEntity = { name: state.entity, until: Date.now() + 5000 };
+  stakeHunt(bot, goal);
   if (!canBegin(bot, handler)) return false;
   const candidates = Object.values(bot.entities).filter(e => e.name === state.entity && valid(bot, e) &&
     e.position.distanceTo(bot.entity.position) < 24 && isolated(bot, e, handler) &&
@@ -1376,4 +1384,4 @@ function claim(bot, goal = {}) {
     item: state.item, have: countOf(bot, state.item), want: state.targetCount, health: bot.health } };
 }
 
-module.exports = { claim, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };
+module.exports = { claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };

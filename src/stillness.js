@@ -401,12 +401,24 @@ function checkStall(bot) {
   if (bot._airAbort && now - (bot._airAbortAt || 0) > 10000) bot._airAbort = false;
   if (bot._threatAbort && now - (bot._threatAbortAt || 0) > 10000) bot._threatAbort = false;
   if (bot._airAbort) { const { NeedsAir } = require('./vitals'); throw new NeedsAir(); }
+  // A claim that outranks the turn's holder (arbiter.js watch): held until
+  // the arbiter picks it up, with no clock. Here, on the task's stall check,
+  // because nested steps set their own interruptCheck and lose the caller's.
+  if (bot._preempt) throw preempted(bot._preempt);
   if (bot._threatAbort) {
     const { NeedsSafety, threats } = require('./danger');
     let near = null; try { near = threats(bot, 16)[0]; } catch (_) { /* no entities yet */ }
     throw new NeedsSafety(near || { entity: { name: 'something unseen' }, distance: 0 });
   }
   const stall = bot._stalls?.stall; if (stall) throw new Stalled(stall);
+}
+// NeedsSafety, which every rethrow list already passes up, saying what
+// took the turn.
+function preempted(p) {
+  const { NeedsSafety } = require('./danger');
+  const err = new NeedsSafety({ entity: { name: p.by }, distance: 0 });
+  err.message = `Preempted by ${p.by}: ${p.why}`; err.preempted = p;
+  return err;
 }
 // The loop takes the stall to answer it; nothing throws it again after.
 function takeStall(bot) { const stall = bot._stalls?.stall; if (stall) delete bot._stalls.stall; return stall || null; }
@@ -429,4 +441,4 @@ function recordStill(state, reason, ms, { now = Date.now(), detour } = {}) {
 }
 
 module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
-  Stalled, checkStall, takeStall, refused, recordStill };
+  Stalled, checkStall, preempted, takeStall, refused, recordStill };

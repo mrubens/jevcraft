@@ -745,13 +745,9 @@ class Survival {
         const answering = held && held.choice !== 'keep_working' && !require('./vitals').inFire(bot);
         if (bot._hurtTimes.filter(t => now - t < 4000).length >= (byMob ? 1 : 2) && !answering && !(bot._threatResponseAt > now - 3000) && !(bot._threatAbortAt > now - 5000) && (bot.health ?? 0) > 0) {
           bot._threatAbortAt = now; bot._threatAbort = true;
-          try { bot.stopDigging?.(); } catch (_) { /* not digging */ }
-          try { bot.pathfinder?.setGoal?.(null); } catch (_) { /* not walking */ }
-          try { bot.clearControlStates?.(); } catch (_) { /* nothing held */ }
-          try { if (bot.currentWindow) bot.closeWindow(bot.currentWindow); } catch (_) { /* no window */ }
+          const was = require('./turn').stopForTurn(bot);
           console.log(`[hurt] hit with no survival response (health ${Math.round(bot.health)}): the step is stopped for the survival layer ${JSON.stringify({
-            sinceCheckMs: bot._lastCheckAt ? now - bot._lastCheckAt : null, digging: bot.targetDigBlock?.name || null, window: bot.currentWindow?.type ?? null,
-            pathing: bot.pathfinder?.isMoving?.() ?? null, step: bot._survivalGoal?.step?.action || null })}`);
+            ...was, step: bot._survivalGoal?.step?.action || null })}`);
         }
         if (bot._hurtTimes.length >= 3 && !(bot._survivalReportedAt > now - 15000) && !(bot._silentHurtLoggedAt > now - 30000)) {
           bot._silentHurtLoggedAt = now;
