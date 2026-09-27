@@ -1974,10 +1974,17 @@ class Survival {
     // under a second in, the apple still in the pack; it was taken off the
     // list for twenty seconds, and the zombies finished it (note 475). Said
     // with it, and every stance that failed is said in the state.
+    // A stance that failed here just now stays on offer with the failure
+    // said, not taken off for twenty seconds: that was a hidden threshold
+    // (a second opinion's advice), and mid-239-h, a zombie at 0.6 blocks
+    // and the fight failed two seconds before, was offered a pocket, the
+    // work and a retreat, and died (note 521). Jev weighs a failure said.
     for (const f of failed) {
-      if (f.choice === 'fight' && atReach) continue;
-      if (/^eat/.test(f.choice) && options[f.choice]) { options[f.choice].description += ` Tried ${Math.max(1, Math.round((Date.now() - f.at) / 1000))} seconds ago here and cut short before it was eaten; still carried.`; continue; }
-      delete options[f.choice];
+      if (!options[f.choice]) continue;
+      const ago = Math.max(1, Math.round((Date.now() - f.at) / 1000));
+      if (/^eat/.test(f.choice)) { options[f.choice].description += ` Tried ${ago} seconds ago here and cut short before it was eaten; still carried.`; continue; }
+      if (f.choice === 'fight' && atReach) { options.fight.description += ` Tried ${ago} seconds ago here and ended; a mob is at reach now.`; continue; }
+      options[f.choice].description += ` Tried ${ago} seconds ago here, and it failed${f.why ? `: ${String(f.why).slice(0, 120)}` : ''}.`;
     }
     if (!Object.keys(options).length) return false;
     // A spawner in reach, said with every stance: mid-207-j fought beside a

@@ -1897,19 +1897,19 @@ test('sealing beside a drop places with stay, so the bot never steps off the led
   assert(options.every(o => o?.stay === true), JSON.stringify(options.slice(0, 2)));
 });
 
-test('a stance that failed is not offered again against the same mobs for twenty seconds', async () => {
+test('a stance that failed stays on offer with its failure said, not taken off for twenty seconds (note 521)', async () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, health: 20, food: 20,
     inventory: { items: () => [], slots: {} }, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) });
   const survival = new Survival(bot, { navigate: async () => {} });
   const ran = [], trees = [];
   survival.stanceOptions = () => ({ pillar: { description: 'up', run: async () => { ran.push('pillar'); return false; } },
     fight: { description: 'fight', run: async () => { ran.push('fight'); return true; } }, seal: { description: 'seal', run: async () => true } });
-  survival.decide = async (task, goal, save, q) => { trees.push(Object.keys(q.tree)); return { path: [q.tree.pillar ? 'pillar' : 'fight'] }; };
+  survival.decide = async (task, goal, save, q) => { trees.push(q.tree); return { path: [/Tried/.test(q.tree.pillar?.description || '') ? 'fight' : 'pillar'] }; };
   const danger = [{ entity: { name: 'zombie' }, distance: 2 }];
   assert.equal(await survival.stanceStep(new Task('pack'), {}, () => {}, danger, false), true, 'knocked off the pillar: the tick is spent, the rules do not step in');
   assert.equal(await survival.stanceStep(new Task('pack'), {}, () => {}, danger, false), true);
   assert.deepEqual(ran, ['pillar', 'fight']);
-  assert(!trees[1].includes('pillar'), `the failed pillar was not offered again: ${trees[1]}`);
+  assert.match(trees[1].pillar.description, /Tried \d+ seconds? ago here, and it failed/, 'the failed pillar is offered with its failure said');
 });
 
 test('a stance whose action is resting is a stance that failed, not one held and refused every tick', async () => {
@@ -1920,12 +1920,12 @@ test('a stance whose action is resting is a stance that failed, not one held and
   const ran = [], trees = [];
   survival.stanceOptions = () => ({ dig_down: { description: 'down', run: async () => { ran.push('dig_down'); throw Object.assign(new Error('shaft pocket is set aside'), { name: 'SetAside' }); } },
     fight: { description: 'fight', run: async () => { ran.push('fight'); return true; } } });
-  survival.decide = async (task, goal, save, q) => { trees.push(Object.keys(q.tree)); return { path: [q.tree.dig_down ? 'dig_down' : 'fight'] }; };
+  survival.decide = async (task, goal, save, q) => { trees.push(q.tree); return { path: [/Tried/.test(q.tree.dig_down?.description || '') ? 'fight' : 'dig_down'] }; };
   const danger = [{ entity: { name: 'skeleton' }, distance: 3 }];
   assert.equal(await survival.stanceStep(new Task('pack'), {}, () => {}, danger, false), true);
   assert.equal(await survival.stanceStep(new Task('pack'), {}, () => {}, danger, false), true);
   assert.deepEqual(ran, ['dig_down', 'fight']);
-  assert.equal(trees.length, 1, 'the fight, alone on offer, is taken without asking');
+  assert.match(trees[1].dig_down.description, /Tried \d+ seconds? ago here, and it failed/, 'the resting dig is offered with its failure said');
 });
 
 test('a fight that failed for want of reach is offered again once the mob is at reach', async () => {
@@ -1935,13 +1935,13 @@ test('a fight that failed for want of reach is offered again once the mob is at 
   const survival = new Survival(bot, { navigate: async () => {} });
   const trees = [];
   survival.stanceOptions = () => ({ fight: { description: 'fight', run: async () => true }, pillar: { description: 'up', run: async () => true }, retreat: { description: 'away', run: async () => true } });
-  survival.decide = async (task, goal, save, q) => { trees.push(Object.keys(q.tree)); return { path: ['retreat'] }; };
+  survival.decide = async (task, goal, save, q) => { trees.push(q.tree); return { path: ['retreat'] }; };
   survival.state.stanceFailed = [{ choice: 'fight', kinds: 'zombie', at: Date.now() }];
   await survival.stanceStep(new Task('stairs'), {}, () => {}, [{ entity: { name: 'zombie' }, distance: 5 }], false);
-  assert(!trees[0].includes('fight'), 'still out of reach: not again yet');
+  assert.match(trees[0].fight.description, /Tried \d+ seconds? ago here, and it failed/, 'still out of reach: offered with the failure said');
   delete survival.state.stance;
   await survival.stanceStep(new Task('stairs'), {}, () => {}, [{ entity: { name: 'zombie' }, distance: 1 }], false);
-  assert(trees[1].includes('fight'), `at reach: the fight is back: ${trees[1]}`);
+  assert.match(trees[1].fight.description, /a mob is at reach now/, 'at reach: said so');
 });
 
 test('cornered with a wither skeleton at arm\'s length and blazes behind it, the bot fights instead of sealing', async () => {
@@ -2659,20 +2659,20 @@ test('a stance is held through a crowd whose kinds change, and asked again for a
   assert.equal(asked.length, 3, 'six health gone since the choice: asked again');
 });
 
-test('a stance that failed here is not offered again when the kinds about change, and is once the bot is elsewhere', async () => {
+test('a stance that failed here is said as failed when the kinds about change, and not once the bot is elsewhere', async () => {
   const bot = crowdBot({ health: 18 });
   const survival = new Survival(bot, { navigate: async () => {} });
   const trees = [];
   survival.stanceOptions = () => ({ pillar: { description: 'up', run: async () => false }, fight: { description: 'fight', run: async () => true }, seal: { description: 'seal', run: async () => true } });
-  survival.decide = async (task, goal, save, q) => { trees.push(Object.keys(q.tree)); return { path: [q.tree.pillar ? 'pillar' : 'fight'] }; };
+  survival.decide = async (task, goal, save, q) => { trees.push(q.tree); return { path: [/Tried/.test(q.tree.pillar?.description || '') ? 'fight' : 'pillar'] }; };
   await survival.stanceStep(new Task('dusk'), {}, () => {}, [crowdMob(1, 'zombie', 2)], false);
   delete survival.state.stance;
   await survival.stanceStep(new Task('dusk'), {}, () => {}, [crowdMob(1, 'zombie', 2), crowdMob(2, 'skeleton', 9)], false);
-  assert(!trees[1].includes('pillar'), `a skeleton come into view does not bring the failed pillar back: ${trees[1]}`);
+  assert.match(trees[1].pillar.description, /Tried .* and it failed/, 'a skeleton come into view: the pillar is said as failed here');
   delete survival.state.stance;
   bot.entity.position = new Vec3(8.5, 64, 0.5);
   await survival.stanceStep(new Task('dusk'), {}, () => {}, [crowdMob(1, 'zombie', 2)], false);
-  assert(trees[2].includes('pillar'), 'eight blocks on, it is offered again');
+  assert.doesNotMatch(trees[2].pillar.description, /Tried/, 'eight blocks on, it is offered fresh');
 });
 
 test('the run\'s way is found before the stance is asked, said on the retreat, and run without a second search', async () => {
