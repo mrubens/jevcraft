@@ -3678,3 +3678,18 @@ test('on a span with the hold refused, a piglin at arm\'s length is still struck
   await survival.flee(new Task('span'), goal, () => {});
   assert.equal(attacks.length, 1, 'struck, though the hold was refused');
 });
+
+test('a zombie on a ledge within a block of the pillar\'s top is said to reach it, and priced', () => {
+  // mid-241-k held a pillar in a cave told "two up, none of them reaches it" and was hit on top (2026-09-27).
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, health: 15.7, food: 16, entities: {},
+    entity: { position: new Vec3(0.5, -14, 0.5) }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cobblestone', count: 64 }], slots: {} },
+    blockAt: p => ({ position: p, name: p.y < -14 || (p.x >= 2 && p.y < -13) ? 'deepslate' : 'air', boundingBox: p.y < -14 || (p.x >= 2 && p.y < -13) ? 'block' : 'empty' }), world: { raycast: () => null }, findBlocks: () => [] });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const z = (id, x, y) => ({ entity: { id, name: 'zombie', position: new Vec3(x + 0.5, y, 0.5), height: 1.95 }, distance: Math.hypot(x, y + 14), visible: true });
+  const flat = survival.stanceOptions(new Task('x'), {}, () => {}, [z(1, 4, -14)], false);
+  assert.doesNotMatch(flat.pillar.description, /ledge/);
+  const ledge = survival.stanceOptions(new Task('x'), {}, () => {}, [z(2, 2, -13)], false);
+  assert.match(ledge.pillar.description, /The zombie 2 blocks off stands on ground within a block of the pillar's top \(a ledge or a slope\): from there it reaches a player two up/);
+  assert(ledge.pillar.expects.damage > flat.pillar.expects.damage);
+});
