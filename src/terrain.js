@@ -55,6 +55,19 @@ function dropAt(bot, c) {
   return true;
 }
 const besideDrop = (bot, feet) => AROUND.some(([dx, dz]) => dropAt(bot, feet.offset(dx, 0, dz)));
+// On a one-wide span over a drop: a drop on both sides of the feet, along
+// x or along z, or a span being laid (bridging.js marks it). No reflex
+// swings at a mob or turns to one there: mid-215-e's swing at a hoglin
+// behind it turned it about on its span and the crossing walked it off the
+// far end into the lava sea (note 273), and mid-242-c went in a second
+// after its fortress came into view (note 264). Crouched and still, a
+// player cannot walk off an edge; swinging and turning, it can.
+function onSpan(bot, feet = bot.entity?.position?.floored?.()) {
+  if (bot._spanning) return true;
+  if (!feet || typeof bot.blockAt !== 'function') return false;
+  const drop = (dx, dz) => dropAt(bot, feet.offset(dx, 0, dz));
+  return (drop(1, 0) && drop(-1, 0)) || (drop(0, 1) && drop(0, -1));
+}
 // A drop within `radius` blocks along a clear line: where a hoglin's toss
 // can carry the body, not only the next cell. The day audit's two Nether
 // falls began two and three blocks from the edge. A wall in between stops
@@ -158,4 +171,4 @@ function bodyInLava(bot) {
   return false;
 }
 
-module.exports = { holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

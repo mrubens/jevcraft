@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-77 questions: 29 decision trees and 48 batched questions.
+78 questions: 30 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -754,6 +754,24 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `walk_\d+` (pattern) | root | walk this surveyed surface route | a surveyed route toward the Eye-indicated estimate |
+
+### `fortress_approach`
+
+**A Nether fortress is in view: which way should the bot go to it, or should it leave it and keep searching?**
+
+- When: On the fortress search, when a fortress (two dozen or more of its bricks) comes into view more than six blocks off, and again each time the way chosen ends no nearer; the answer holds for the approach until it fails, five minutes at most.
+- Decision tree, choice; stakes high; ledger kind `fortress`
+- Bar: none: every way offered was surveyed and runs under the hard rules (a span laid crouched and never under a shooter's fire, no rock dug with lava behind it, no drop into lava, no swing or turn on a span); a way that fails is asked again with what failed, and the outage default is the order the code kept, a failed way passed over
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/mob-hunt.js (fortressApproaches, approachFortress), src/bridging.js (surveyCrossing), src/nether-travel.js (crossingSays)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `walk_route` | root | walk the pathfinder's route to it, level with the bot first, then at the bricks' height | a pathfinder is at hand; said with its surveyed route (cells, blocks it would place and dig, how many beside lava, how much nearer it ends) and that it walks upright |
+| `descend` | root | dig straight down to the bricks below | the bricks are more than two blocks below and within twelve blocks across; said with the drop and that a drop too deep for the health or ending in lava is refused |
+| `cross_level` | root | go straight at it at the height the bot stands, digging rock and laying a one-wide span | the cells ahead at this height let it come a block or more nearer (surveyCrossing); said with the cells, the blocks to lay against those carried, how many over lava, how much nearer it ends, what stops it, about how long, and the mobs in view |
+| `tunnel` | root | dig a staircase through the rock toward it | a staircase is at hand |
+| `keep_searching` | root | leave this fortress for ten minutes and go on searching | always |
 
 ## travel
 

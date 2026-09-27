@@ -424,7 +424,7 @@ test('a span is laid one block ahead at a time toward a fortress across open air
     entity: { position: new Vec3(0.5, 65, 0.5) }, health: 20,
     inventory: { items: () => [{ name: 'netherrack', count: 20, type: 1 }] },
     blockAt: at, equip: async () => {}, lookAt: async p => { look = p; },
-    placeBlock: async (ref, face) => { assert(controls.sneak, 'crouched while placing at the end of the span'); const p = ref.position.plus(face); blocks.set(`${p}`, 'netherrack'); placed.push([p.x, p.y, p.z]); },
+    placeBlock: async (ref, face) => { assert(controls.sneak, 'crouched while placing at the end of the span'); assert(bot._spanning, 'marked on the span while it is laid (terrain.js onSpan): no reflex swings or turns'); const p = ref.position.plus(face); blocks.set(`${p}`, 'netherrack'); placed.push([p.x, p.y, p.z]); },
     setControlState: (name, on) => { controls[name] = on; if (name === 'forward' && on && look) bot.entity.position = new Vec3(Math.floor(look.x) + 0.5, 65, Math.floor(look.z) + 0.5); },
     getControlState: name => !!controls[name],
     dig: async () => {},
@@ -433,7 +433,7 @@ test('a span is laid one block ahead at a time toward a fortress across open air
   const laid = await bridgeTo(bot, new Task('hunt'), new Vec3(6, 64, 0));
   assert.equal(laid, 5); assert.deepEqual(placed, [[1, 64, 0], [2, 64, 0], [3, 64, 0], [4, 64, 0], [5, 64, 0]]);
   assert.equal(bot.entity.position.x, 5.5, 'standing on the last span block, beside the brick');
-  assert.equal(controls.sneak, false, 'and standing up again once the span is done');
+  assert.equal(controls.sneak, false, 'and standing up again once the span is done'); assert.equal(bot._spanning, null, 'and off it');
   // A blaze that can see the bot: no span is laid in the open under fire.
   bot.entities = { 9: { id: 9, name: 'blaze', position: new Vec3(12.5, 68, 0.5), isValid: true, height: 1.8 } };
   bot.world = { raycast: () => null };
@@ -503,6 +503,82 @@ test('a Nether leg that makes no ground on foot goes on straight at this height,
   assert.equal(tunnels.length, 0, 'ground made: no staircase');
   assert.equal(goal.fortressSearch.legFails, 0);
   assert.equal(Math.round(goal.fortressSearch.legBest), 64, 'the nearest approach is kept for the leg');
+});
+
+// A fortress across the lava sea from a ledge: netherrack to x 3 at y 64,
+// the fortress's bricks from x 30 along z 0, lava at y 31 and below.
+function fortressAcrossLava() {
+  const bricks = Array.from({ length: 25 }, (_, i) => new Vec3(30 + i, 64, 0));
+  const rock = p => p.y <= 31 ? 'lava' : p.y === 64 && p.z === 0 && p.x >= 30 && p.x <= 54 ? 'nether_bricks' : p.y === 64 && p.x <= 3 ? 'netherrack' : null;
+  const world = netherWorld(new Vec3(0.5, 65, 0.5), rock);
+  world.bot.findBlocks = () => bricks;
+  world.bot.time = { timeOfDay: 6000 };
+  const hoglin = { id: 3, name: 'hoglin', type: 'hostile', position: new Vec3(-3.5, 65, 0.5), height: 1.4, width: 1.4, isValid: true };
+  world.bot.entities = { 3: hoglin };
+  return world;
+}
+// Jev as a stub: records what it was asked and answers from `picks`.
+function jevStub(picks) {
+  const asked = [];
+  return { asked, systemOne: async ({ kind, state, questions }) => { asked.push({ kind, state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
+}
+
+test('a fortress in view is Jev\'s to approach: each way with what it meets, the span\'s cells over lava and the hoglin in sight', async () => {
+  // mid-242-c (note 264) and mid-215-e (note 273) each went into the lava sea within a second of seeing a fortress, by a way the code chose alone.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot, laid } = fortressAcrossLava();
+  const client = jevStub(['cross_level']);
+  const goal = { fortressSearch: { axis: 1, legs: 3, target: { x: 96, y: 65, z: 0 } } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => { throw new Error('the code walked on its own'); }, tunnel: async () => { throw new Error('the code tunnelled on its own'); } });
+  assert.equal(client.asked.length, 1); assert.equal(client.asked[0].kind, 'fortress');
+  const { options, state } = client.asked[0];
+  assert.deepEqual(Object.keys(options).sort(), ['cross_level', 'keep_searching', 'tunnel', 'walk_route']);
+  assert.match(options.cross_level, /29 blocks, laying 26 blocks over open air and lava \(26 of them over lava\)/);
+  assert.match(options.cross_level, /64 blocks carried, 38 left after/);
+  assert.match(options.cross_level, /It ends 29 blocks nearer/);
+  assert.match(options.cross_level, /a hoglin 4 blocks off; a hit on a one-wide span over lava is the fall/);
+  assert.match(options.walk_route, /walks upright/);
+  assert.deepEqual(state.threatsInView, ['hoglin 4 blocks off']);
+  assert.equal(laid.size, 26, 'the span Jev chose, a block for each cell over the lava');
+  assert.equal(bot.entity.position.x, 29.5);
+  assert.equal(goal.fortressSearch.approach.choice, 'cross_level');
+  assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
+});
+
+test('the way chosen to a fortress holds while it makes ground, and a failure is asked again with what failed', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { approachFallback } = require('../src/decisions/travel');
+  const { bot } = fortressAcrossLava();
+  const client = jevStub(['tunnel', 'keep_searching']);
+  const goal = { fortressSearch: { axis: 1, legs: 3, target: { x: 96, y: 65, z: 0 } } };
+  let tunnels = 0;
+  const actions = { client, tunnel: async () => { tunnels++; if (tunnels === 1) { bot.entity.position = new Vec3(3.5, 65, 0.5); return; } throw new Error('No safe way toward (30, 64, 0): lava'); } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(tunnels, 2); assert.equal(client.asked.length, 1, 'held while it made ground');
+  assert.equal(goal.fortressSearch.approach.choice, undefined, 'let go once it came no nearer');
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 2);
+  assert.match(client.asked[1].options.tunnel, /Tried on this approach once and ended no nearer: No safe way toward/);
+  assert.deepEqual(client.asked[1].state.failed, ['tunnel: No safe way toward (30, 64, 0): lava']);
+  assert(goal.fortressSearch.shunned.some(s => s.x === 30), 'left for now, as Jev chose');
+  assert.equal(tunnels, 2);
+  // Without Jev, the order the code kept, each way failed on this approach passed over.
+  const children = { walk_route: {}, cross_level: {}, tunnel: {}, keep_searching: {} };
+  assert.equal(approachFallback(children, [], { failed: [] }), 'walk_route');
+  assert.equal(approachFallback(children, [], { failed: ['walk_route', 'cross_level'] }), 'tunnel');
+  assert.equal(approachFallback(children, [], { failed: ['walk_route', 'cross_level', 'tunnel'] }), 'keep_searching');
+});
+
+test('no hunt fight is begun from a one-wide span over the lava sea', async () => {
+  const { canBegin } = require('../src/mob-hunt');
+  const { bot, target, goal, task, attacks } = fixture('blaze');
+  assert.equal(canBegin(bot, handlers.blaze), true, 'on firm ground');
+  // Netherrack one block wide along x under the feet, lava far below.
+  bot.blockAt = p => { const span = p.y === 63 && Math.floor(p.z) === 0; return { name: span ? 'netherrack' : p.y < 40 ? 'lava' : 'air', boundingBox: span ? 'block' : 'empty', position: p }; };
+  assert.equal(canBegin(bot, handlers.blaze), false);
+  await assert.rejects(fightForDrop(bot, task, target, goal, () => {}, { navigate: async () => {} }), /no longer feasible/);
+  assert.deepEqual(attacks, []);
 });
 
 test('a leg walk that goes some way and comes back out is not ground made on the leg', async () => {

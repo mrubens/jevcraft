@@ -165,6 +165,10 @@ function strikeTarget(bot) {
 // health, air and new threats are observed again before the next action.
 async function defendNearby(bot, task, goal, save) {
   task.check(); checkAir(bot);
+  // Not on a one-wide span over a drop (terrain.js onSpan): a swing turns
+  // the bot to the mob, and mid-215-e's, at a hoglin behind it on its span,
+  // ended thirty-five blocks down in the lava sea (note 273).
+  if (require('./terrain').onSpan(bot)) return false;
   let threat = strikeTarget(bot);
   if (!threat) return false;
   const weapon = defenseWeapon(bot), kind = weapon?.name.split('_').at(-1);

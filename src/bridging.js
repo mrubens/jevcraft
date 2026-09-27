@@ -113,10 +113,14 @@ function underFire(bot) {
 }
 // `maxSteps` cells at most: a crossing laid a stretch at a time, as far as
 // its survey saw.
+// While it is laid the bot is on the span (terrain.js onSpan): no reflex
+// swings at a mob or turns to one until it is done.
 async function bridgeTo(bot, task, target, { maxBlocks = 64, maxSteps = maxBlocks * 2 } = {}) {
+  const spanning = { target: { x: target.x, y: target.y, z: target.z }, since: Date.now() };
+  bot._spanning = spanning;
   bot.setControlState('sneak', true);
   try { return await span(bot, task, target, maxBlocks, maxSteps); }
-  finally { bot.setControlState('forward', false); bot.setControlState('sneak', false); }
+  finally { bot.setControlState('forward', false); bot.setControlState('sneak', false); if (bot._spanning === spanning) bot._spanning = null; }
 }
 async function span(bot, task, target, maxBlocks, maxSteps) {
   let placed = 0;
