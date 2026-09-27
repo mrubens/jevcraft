@@ -92,7 +92,10 @@ function creeperBlastSays(worn) {
 // took its last fireball from a blaze 16.5 blocks off, counted by nothing,
 // and mid-227-r-nether-3 was hit from thirty-two to thirty-five (notes 491,
 // 509).
-const RANGE = { witch: 10, ghast: 40, blaze: 48 };
+// A ghast fires from as far as sixty-four blocks: mid-243-q was struck
+// twice on a span by one never in the frames (the look reached forty-eight)
+// and knocked into the lava sea (note 513).
+const RANGE = { witch: 10, ghast: 64, blaze: 48 };
 const HOLD_SECONDS = 15, APPROACH = 3, FUSE = 1.5, LIGHTS_AT = 3;
 const inRange = m => Math.max(0, ((m.distance || 0) - (RANGE[m.name] || 15)) / APPROACH);
 // A shot every two seconds (a witch's potion every three). A shield takes

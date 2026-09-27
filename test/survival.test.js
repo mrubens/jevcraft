@@ -3191,14 +3191,15 @@ test('no shaft pocket is dug while a creeper would reach the open shaft before t
   assert.equal(await far.survival.shaftPocket(new Task('night'), {}, () => {}), true, 'forty off: time to dig and cap');
 });
 
-test('a ghast in sight is a threat within its own reach, forty blocks, not the sixteen of a bow', () => {
+test('a ghast in sight is a threat within its own reach, sixty-four blocks (note 513), not the sixteen of a bow', () => {
   // mid-244-e walked a ledge at y 89 with a ghast in sight at seventeen to nineteen blocks, and its fireball threw the bot off (2026-09-27).
   const { immediateThreat } = require('../src/danger');
   const make = distance => ({ game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 89, 0.5), height: 1.8 }, health: 20, food: 20,
     entities: { 9: { id: 9, name: 'ghast', type: 'hostile', position: new Vec3(distance + 0.5, 89, 0.5), height: 4, isValid: true } },
     world: { raycast: () => null }, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }), inventory: { items: () => [], slots: {} } });
   assert.equal(immediateThreat(make(19))?.entity.name, 'ghast');
-  assert.equal(immediateThreat(make(45)), undefined, 'past its reach');
+  assert.equal(immediateThreat(make(45))?.entity.name, 'ghast', 'forty-five: within its sixty-four');
+  assert.equal(immediateThreat(make(70)), undefined, 'past its reach');
 });
 
 test('a meal cut short is not offered as a stance again for ten seconds', async () => {
@@ -3410,7 +3411,9 @@ test('a ghast in sight within its own reach puts a span under fire, not only a s
     blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) };
   assert.equal(underFire(bot)?.entity?.name, 'ghast');
   ghast.position = new Vec3(60.5, 70, 0.5);
-  assert.equal(underFire(bot), undefined, 'past its forty');
+  assert.equal(underFire(bot)?.entity?.name, 'ghast', 'sixty: within its sixty-four (note 513)');
+  ghast.position = new Vec3(75.5, 70, 0.5);
+  assert.equal(underFire(bot), undefined, 'past its sixty-four');
 });
 
 test('the charge at a shooter is no answer with a biter at arm\'s length, in view or not', async () => {

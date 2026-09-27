@@ -37,7 +37,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       // Shooters out to forty-eight: a ghast fires from forty, and
       // mid-242-s's was never in the record that its fireballs burned down.
       const { shooter } = require('../mob-policy');
-      return threats(bot, 48).filter(t => t.distance <= 24 || shooter(t.entity)).slice(0, 8).map(t => ({ name: t.entity.name, id: t.entity.id, d: Math.round(t.distance * 10) / 10,
+      return threats(bot, 64).filter(t => t.distance <= 24 || shooter(t.entity)).slice(0, 8).map(t => ({ name: t.entity.name, id: t.entity.id, d: Math.round(t.distance * 10) / 10,
         at: { x: Math.round(t.entity.position.x * 10) / 10, y: Math.round(t.entity.position.y * 10) / 10, z: Math.round(t.entity.position.z * 10) / 10 }, seen: !!t.visible }));
     } catch (_) { return undefined; }
   }

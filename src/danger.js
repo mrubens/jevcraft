@@ -302,7 +302,7 @@ function immediateThreat(bot) {
   // besides, and no stance was asked, twenty health to none (note 491).
   const hitBy = t => Date.now() - (bot._hurtBy?.[t.entity.name] || 0) < ATTRIBUTE_MS;
   const shooterReach = t => fighting ? 8 : Math.max(hitBy(t) ? 48 : hurt ? 32 : 16, RANGE[t.entity.name] || 0);
-  const mob = threats(bot, 48).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) &&
+  const mob = threats(bot, 64).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) &&
     t.distance <= (shooter(t.entity) ? shooterReach(t) : t.entity.name === 'warden' ? 24 : (fighting ? 5 : 8)));
   if (mob) return mob;
   // A shot on its way is a threat of its own, its shooter seen or not:
