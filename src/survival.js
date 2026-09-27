@@ -788,7 +788,13 @@ class Survival {
     // walked from: the bot holds still, crouched (terrain.js onSpan). A
     // swing at a hoglin behind mid-215-e turned it about on its span, and
     // the crossing walked it off the far end into the lava sea (note 273).
-    if (require('./terrain').onSpan(bot)) {
+    // Unless the span's own answers are not holding: hurt twice in six
+    // seconds on it, the encounter is Jev's like any other (the stances,
+    // the retreat off it among them). Four deaths on spans in a day were
+    // the span branch's alone to the end, Jev asked only when too late or
+    // never (notes 435, 436, 439, 443).
+    const bleeding = (bot._hurtTimes || []).filter(t => Date.now() - t < 6000).length >= 2;
+    if (require('./terrain').onSpan(bot) && !(bleeding && this.client && !bot._spanning)) {
       const close = threats(bot).filter(t => t.distance <= 8);
       // A hold refused (a stall, a spin) is no reason to stop answering the
       // mob: the swing and the shield below still come (note 420).

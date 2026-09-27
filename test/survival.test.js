@@ -3825,3 +3825,24 @@ test('poisoned, every stance says poison never takes the last health but a harmi
   assert.match(calls[0].state.effectsNow || '', /poisoned, about 15 seconds left: poison takes about one health .* never the last one/);
   for (const [k, c] of Object.entries(calls[0].questions.branch_0.criteria)) assert.match(JSON.stringify(c), /never the last one/, k);
 });
+
+test('on a span, hurt twice in six seconds, the encounter goes to Jev instead of the span\'s own answers', async () => {
+  // Four span deaths in a day were the span branch's alone to the end (notes 435, 436, 439, 443).
+  const span = p => { const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+    return y === 64 && z === 0 && x >= -10 && x <= 10 ? { position: p, name: 'netherrack', boundingBox: 'block' }
+      : y <= 40 ? { position: p, name: 'lava', boundingBox: 'empty' } : { position: p, name: 'air', boundingBox: 'empty' }; };
+  const blaze = { id: 3, name: 'blaze', type: 'hostile', position: new Vec3(12.5, 70, 8.5), height: 1.8, width: 0.6, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 14, food: 20, oxygenLevel: 20,
+    entity: { position: new Vec3(0.5, 65, 0.5), onGround: true, height: 1.8, velocity: new Vec3(0, 0, 0) }, entities: { 3: blaze }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'iron_sword', type: 1 }, { name: 'netherrack', count: 20 }], slots: { 45: { name: 'shield' } } }, world: { raycast: () => null }, blockAt: span, registry: require('minecraft-data')('26.1'),
+    pathfinder: { movements: {}, setGoal() {}, getPathTo: () => ({ status: 'noPath', path: [] }) }, clearControlStates() {}, setControlState() {}, getControlState: () => false,
+    activateItem() {}, deactivateItem() {}, lookAt: async () => {}, look: async () => {}, equip: async () => {}, attack: () => {}, findBlocks: () => [],
+    _hurtTimes: [Date.now() - 3000, Date.now() - 1000] });
+  const survival = new Survival(bot, { navigate: async () => {}, place: async () => {}, dig: async () => {} }, { state: { shelters: [] }, client: { systemOne: async () => ({}) } });
+  const asked = [];
+  survival.decide = async (task, goal, save, { id }) => { asked.push(id); return { path: ['seal'], stale: false }; };
+  const goal = {};
+  await survival.flee(new Task('span'), goal, () => {}).catch(() => {});
+  assert.notEqual(goal.survivalAction?.action, 'hold_on_span');
+  assert(asked.includes('encounter_stance'), `asked: ${asked.join(',')} / ${goal.survivalAction?.action}`);
+});
