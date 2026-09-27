@@ -216,8 +216,14 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null) 
       if (BUILDING.test(stack.name) && blockStock(bot) - stack.count < BLOCK_RESERVE) notes.push(`part of the ${BLOCK_RESERVE}-block reserve for pillars, walls and pockets`);
       if (food(stack.name)) notes.push(bot.inventory.items().some(i => i !== stack && food(i.name)) ? 'food' : 'the only food carried');
       if (weapon(stack.name) && !bot.inventory.items().some(i => i !== stack && weapon(i.name))) notes.push('the only weapon');
-      if (stack.name === 'water_bucket') notes.push('the water bucket: breaks a fall, puts out fire, turns lava to stone');
-      if (stack.name === 'lava_bucket' && goal?.portalFrame?.cast) notes.push('lava for the portal frame being cast in place, a bucket a block');
+      // The cast frame's buckets, said for the frame whether it is begun or
+      // only chosen: mid-211-f dropped its water bucket twice for planks
+      // with the frame chosen, told only that water breaks a fall
+      // (2026-09-26).
+      const casting = goal?.portalFrame?.cast || goal?.portalMethod?.kind === 'cast';
+      if (stack.name === 'water_bucket') notes.push(`the water bucket: breaks a fall, puts out fire, turns lava to stone${casting ? '; and the water that turns each block of the portal frame being cast to obsidian: without it the frame cannot be cast, and another is a bucket (three iron) and a trip to water' : ''}`);
+      if (stack.name === 'lava_bucket' && casting) notes.push('lava for the portal frame being cast in place, a bucket a block');
+      if (stack.name === 'bucket' && casting) notes.push('a bucket for the lava of the portal frame being cast in place, a bucket a block');
       if (Object.hasOwn(VALUABLES, stack.name)) notes.push('a valuable');
       if (needed.has(stack.name)) notes.push('needed by the step in hand');
       else if (needed.has(`rung:${stack.name}`)) notes.push(`needed by the ladder's next step (${nextRung.replaceAll('_', ' ')})`);

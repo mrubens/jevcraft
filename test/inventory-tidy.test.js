@@ -299,3 +299,15 @@ test('making room asks whether to drop anything apart from which stack, so junk 
   assert.equal(tossed.length, 1);
   assert(/dripstone|mushroom/.test(tossed[0]), `a junk stack went: ${tossed[0]}`);
 });
+
+test('with the portal frame to be cast, the water bucket is said to be what turns its blocks to obsidian', async () => {
+  // mid-211-f dropped its water bucket twice for planks with the cast frame chosen, told only that water breaks a fall.
+  const { makeRoom } = require('../src/inventory-tidy');
+  let items = [{ name: 'water_bucket', count: 1, type: 1 }, { name: 'dirt', count: 20, type: 2 }, { name: 'bucket', count: 1, type: 3 }];
+  const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 0 }, entity: { position: { x: 0, y: 64, z: 0 } }, tossStack: async () => {} };
+  let offered;
+  const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...(questions.branch_1?.criteria || {}) }; return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_1', confidence: 0.6 } } }; } } };
+  await makeRoom(bot, task, 'oak_planks', { goal: { portalMethod: { kind: 'cast' } } }).catch(() => {});
+  assert.match(offered.drop_0 || '', /turns each block of the portal frame being cast to obsidian/);
+  assert.match(offered.drop_2 || '', /a bucket for the lava of the portal frame/);
+});
