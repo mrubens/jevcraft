@@ -3174,7 +3174,17 @@ async function portalStep(bot, task, goal, save, client) {
     const near = casting && goal.portalMethod.near;
     if (near && bot.entity.position.distanceTo(new Vec3(near.x, near.y, near.z)) > 12) {
       const at = new Vec3(near.x, near.y, near.z);
-      goal.step = { action: 'to_lava_for_portal', at: { ...near }, distance: Math.round(bot.entity.position.distanceTo(at)) }; save();
+      // Three walks that come no nearer and the lava is not walked to: the
+      // frame is cast where the bot is. mid-243-f walked at a pool fourteen
+      // blocks off for minutes, up and down a hillside above it, until the
+      // flip watch ended the trial (2026-09-27).
+      const d = bot.entity.position.distanceTo(at), tries = goal.portalMethod.nearTries ||= { best: Infinity, stale: 0 };
+      if (d < tries.best - 1) { tries.best = d; tries.stale = 0; } else if (++tries.stale >= 3) {
+        goal.portalMethod.nearLeft = { ...near, why: `three walks came no nearer than ${Math.round(tries.best)} blocks` };
+        delete goal.portalMethod.near; delete goal.portalMethod.nearTries; save();
+        return false;
+      }
+      goal.step = { action: 'to_lava_for_portal', at: { ...near }, distance: Math.round(d) }; save();
       try { await navigate(bot, task, new goals.GoalNear(at.x, at.y, at.z, 6), { timeoutMs: 120000, stallMs: 8000, sprint: true }); }
       catch (err) {
         task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
