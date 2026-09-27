@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-81 questions: 33 decision trees and 48 batched questions.
+83 questions: 35 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -265,6 +265,22 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `hunt_\d+` (pattern) | root | fight this mob | observed, reachable, isolated from others of its kind; said with the one fight's estimate and the bot's fitness: health against the fourteen the code once required, hunger and whether health comes back, food carried, fire, and the kit |
 | `defer` | root | leave them for now | always; said with the fitness, and what the hunt does meanwhile when the bot is short of it (food, cover, health) |
 
+### `combat_kit`
+
+**Pieces of the combat kit (iron-or-better sword, helmet, chestplate, leggings, boots, a shield) are missing: go on with what is carried, make them here first, or go back to the Overworld for them?**
+
+- When: Before a hunt of a mob that fights back, or the crossing into the Nether or the End, with a piece of the kit neither carried nor set aside, and more than one way on; held ten minutes while the same options stand.
+- Decision tree, choice; stakes medium; ledger kind `combat`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/mob-hunt.js (prepareCombatGear, kitChoice, kitPieces)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `fight_with_carried` | root | go on with what is carried | always; said with the weapon and armour carried and one fight's estimate against the mob hunted |
+| `make_kit_here` | root | make the pieces that can be made here first | a missing piece can be made from sources in this dimension; said with the iron it takes and the steps |
+| `return_for_kit` | root | go back to the Overworld for the pieces | outside the Overworld, a missing piece made only from Overworld ore; said with the iron, the ore and the trip to the portal |
+
 ## strategy
 
 ### `crossing_kit`
@@ -288,6 +304,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `top_up_wood` | root | gather logs up to eight and make a crafting table first | fewer than eight logs or no crafting table carried |
 | `stash_valuables` | root | walk home and leave the valuables in the stash chest first | the home stash chest within 128 blocks and valuables carried |
 | `cache_valuables` | root | leave the valuables in a chest put down here first | home's chest out of reach, valuables carried, and a chest or the wood for one |
+
+### `rung_elsewhere`
+
+**The step the game needs next cannot be done in this dimension: go where its sources are, or go on with what the ladder has next here?**
+
+- When: On the game ladder, a step whose plan from here needs a block found only in another dimension, or a step set aside for that.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/game-progress.js (elsewhereStep, nextGameStage)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `go_(overworld\|nether\|end)` (pattern) | root | go to the dimension its sources are in | always; said with what is mined there, what is brought back, and the trip to the portal |
+| `on_here` | root | leave the step for now and go on with what the ladder has next here | the ladder has something else to do in this dimension |
 
 ### `win_strategy`
 

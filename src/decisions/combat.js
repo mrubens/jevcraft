@@ -21,6 +21,27 @@ define({
   ungated: 'every target offered is reachable and isolated and the bot has footing for a fight; the fitness is said in full on every option, a close call between fighting and leaving it is a preference, and the outage default is the same nearest target',
 });
 
+// The kit for a fight, offered and not required (src/mob-hunt.js
+// kitChoice): the planner once required it, and a Nether blaze hunt with a
+// stone sword planned iron ore it could not dig there, 1,130 times in
+// twenty-five minutes (mid-227-r-nether-1, note 476).
+define({
+  id: 'combat_kit', area: 'combat', kind: 'combat', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Pieces of the combat kit (iron-or-better sword, helmet, chestplate, leggings, boots, a shield) are missing: go on with what is carried, make them here first, or go back to the Overworld for them?',
+  trigger: 'Before a hunt of a mob that fights back, or the crossing into the Nether or the End, with a piece of the kit neither carried nor set aside, and more than one way on; held ten minutes while the same options stand.',
+  source: 'src/mob-hunt.js (prepareCombatGear, kitChoice, kitPieces)',
+  options: [
+    { key: 'fight_with_carried', label: 'go on with what is carried', when: 'always; said with the weapon and armour carried and one fight\'s estimate against the mob hunted', level: 'root' },
+    { key: 'make_kit_here', label: 'make the pieces that can be made here first', when: 'a missing piece can be made from sources in this dimension; said with the iron it takes and the steps', level: 'root' },
+    { key: 'return_for_kit', label: 'go back to the Overworld for the pieces', when: 'outside the Overworld, a missing piece made only from Overworld ore; said with the iron, the ore and the trip to the portal', level: 'root' },
+  ],
+  instructions: {
+    task: 'A fight needs a kit the bot is short of. Choose to go on with what is carried, to make the missing pieces here, or to go back to the Overworld for them.',
+    guidance: 'Each option says what it costs: the fight as it would go with what is worn and held, the iron and steps to make a piece, the walk to the portal. Fighting without armour is a real choice, not a rule broken; iron ore is found only in the Overworld.',
+  },
+  fallback: (children, path, context = {}) => children[context.fallback] ? context.fallback : Object.keys(children)[0],
+});
+
 // Out of danger first, then the crystals that heal the dragon, then a bed
 // by the perched head, then the head within reach, then an arrow, then a better position, then a watch.
 function endFallback(safe) {

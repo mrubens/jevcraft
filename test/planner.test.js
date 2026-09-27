@@ -39,3 +39,21 @@ test('a table from two oak planks and five jungle logs is made of jungle planks,
     assert(plan.some(st => st.action === 'craft' && st.item === 'jungle_planks'));
   }
 });
+
+test('a blaze hunt in the Nether with a stone sword and no armour plans the hunt, not iron ore: the kit is offered, not required', () => {
+  // mid-227-r-nether-1 planned iron ore in the Nether for the kit 1,130 times in twenty-five minutes, then died (note 476).
+  const { planCatalog, elsewhereOf } = require('../src/knowledge');
+  const registry = require('minecraft-data')('26.1');
+  const stock = { stone_sword: 1, iron_pickaxe: 1, cooked_beef: 8, netherrack: 64 };
+  const plan = planCatalog(registry, 'blaze_rod', 3, stock, { dimension: 'the_nether', equipment: ['stone_sword'] });
+  assert.notEqual(plan[0].block, 'iron_ore', `first step: ${JSON.stringify(plan[0])}`);
+  assert(!plan.some(s => s.action === 'mine' && /iron_ore$/.test(s.block)), plan.map(s => `${s.action}:${s.block || s.item}`).join(' '));
+  assert.equal(plan[0].action, 'hunt_mob');
+  assert.deepEqual(plan[0].kit.missing, ['hand', 'head', 'torso', 'legs', 'feet', 'off-hand'], 'a stone sword is not the kit\'s sword, and the pieces missing are said');
+  assert.equal(elsewhereOf(plan, 'the_nether'), null, 'nothing in the plan lies in another dimension');
+  // A kit piece itself, planned in the Nether, says its iron is in the Overworld.
+  const helmet = planCatalog(registry, 'iron_helmet', 1, stock, { dimension: 'the_nether' });
+  const away = elsewhereOf(helmet, 'the_nether', [{ item: 'iron_helmet', count: 1 }]);
+  assert.equal(away.dimension, 'overworld');
+  assert.deepEqual(away.bring, [{ item: 'iron_helmet', count: 1 }], 'the helmet is what comes back, not its ingots');
+});

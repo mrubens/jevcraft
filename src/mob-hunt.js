@@ -2,7 +2,7 @@
 const { goldInPassing, mineGoldInPassing } = require('./opportunistic-mining');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead, shooter, hasFood, FIGHT_FLOOR: HUNT_FLOOR } = require('./mob-policy');
+const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead, shooter, hasFood, SHOOTERS, FIGHT_FLOOR: HUNT_FLOOR } = require('./mob-policy');
 const { threats, checkThreats, NeedsSafety } = require('./danger');
 const { canStrike, defenseWeapon, bowReady, shoot, strike } = require('./combat');
 const { deflect } = require('./projectile-guard');
@@ -36,14 +36,16 @@ function preferredBoots(bot) {
 // The ladder's step for each piece, whose setting aside means it waits.
 const PIECE_RUNG = { hand: ['iron_sword', 'diamond_sword'], head: ['iron_helmet', 'iron_armour'], torso: ['iron_chestplate', 'iron_armour'],
   legs: ['iron_leggings', 'iron_armour'], feet: ['iron_boots', 'iron_armour'], 'off-hand': ['shield'] };
-async function prepareCombatGear(bot, task, goal, save, actions) {
-  // What is carried is worn; what is missing is fetched only where it can
-  // be and where Jev has not chosen to go without it. Jev's "Nether first"
-  // set the armour aside and this fetched every piece before the portal
-  // anyway (the decision review, 2026-09-26).
+async function prepareCombatGear(bot, task, goal, save, actions, { client = task.opportunityClient, mob = goal.mobHunt?.entity } = {}) {
+  // What is carried is worn; what is missing is Jev's to fetch or go
+  // without, told what each costs (kitChoice). Jev's "Nether first" set the
+  // armour aside and this fetched every piece before the portal anyway (the
+  // decision review, 2026-09-26); in the Nether it fetched iron that is not
+  // there to be had (mid-227-r-nether-1, note 476).
   const { isSetAside } = require('./progress');
   const waiting = destination => (PIECE_RUNG[destination] || []).some(p => isSetAside(goal, 'rung', p));
   let short = false;
+  const missing = [];
   for (const [destination, names] of Object.entries(combatGear)) {
     task.check(); checkAir(bot);
     const current = equipped(bot, destination);
@@ -58,21 +60,118 @@ async function prepareCombatGear(bot, task, goal, save, actions) {
     // staircase turned between the two until the flip watch ended it
     // (2026-09-27).
     if (destination === 'hand' && carried) continue;
-    if (!carried) {
-      goal.step = { action: 'prepare_combat_equipment', destination, item: names[0] }; save();
-      // Worn equipment is still physically present; require an additional
-      // item rather than accepting that worn stack as its own replacement.
-      await actions.acquireStep(bot, task, names[0], countOf(bot, names[0]) + 1, goal, save);
-      return false;
-    }
+    if (!carried) { missing.push(destination); continue; }
     await bot.equip(carried, destination);
     task.check();
     if (equipped(bot, destination)?.name !== carried.name) throw new Error(`Server did not confirm ${carried.name} equipped in ${destination}`);
     goal.step = { action: 'equip_combat', item: carried.name, destination }; save();
   }
+  if (missing.length) return kitChoice(bot, task, goal, save, actions, missing, { client, mob });
   // Going without what waits is Jev's choice made: the crossing goes on.
   return short ? true : kitReady(bot);
 }
+
+// What the missing pieces take, planned from the pockets as they are: the
+// pieces that can be made where the bot stands (golden boots from the
+// Nether's gold, in place of iron), and those whose ore is in another
+// dimension. Two plans at most, not one a piece: a plan of iron pieces in
+// the Nether is some seventy milliseconds each on the event loop.
+function kitPieces(bot, missing) {
+  const { planOutputs, elsewhereOf } = require('./knowledge');
+  const inventory = {};
+  for (const i of bot.inventory.items()) inventory[i.name] = (inventory[i.name] || 0) + i.count;
+  const where = bot.game?.dimension, equipment = carriedEquipment(bot).map(i => i.name);
+  const plan = items => planOutputs(bot.registry, items.map(item => ({ item, count: countOf(bot, item) + 1 })), inventory, { dimension: where, equipment, reserveOutputs: false }).steps;
+  const gold = () => { try { return !elsewhereOf(plan(['golden_boots']), where); } catch (_) { return false; } };
+  const pieces = missing.map(destination => ({ destination, item: destination === 'feet' && dimension(bot) === 'nether' && gold() ? 'golden_boots' : combatGear[destination][0] }));
+  let steps;
+  try { steps = plan(pieces.map(p => p.item)); } catch (_) { return { here: [], away: [], unplanned: pieces }; }
+  const awayWhere = elsewhereOf(steps, where, pieces.map(p => ({ item: p.item, count: 1 })));
+  const bring = new Set((awayWhere?.bring || []).map(i => i.item));
+  const here = pieces.filter(p => !bring.has(p.item)), away = pieces.filter(p => bring.has(p.item));
+  let hereSteps = away.length ? null : steps;
+  if (here.length && away.length) { try { hereSteps = plan(here.map(p => p.item)); } catch (_) { hereSteps = null; } }
+  const iron = s => (s || []).filter(st => st.action === 'craft').reduce((n, st) => n + (st.consumes?.iron_ingot || 0), 0);
+  return { here: hereSteps ? here : [], away, unplanned: hereSteps ? [] : here, hereSteps, hereIron: iron(hereSteps), awayIron: iron(steps) - iron(hereSteps), awayWhere };
+}
+const words = s => String(s || '').replaceAll('_', ' ');
+const Dimension = d => d ? `${d[0].toUpperCase()}${d.slice(1)}` : d;
+const listed = items => items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0] || '';
+// One fight with what is carried, against the mob hunted: the estimate the
+// hunt's own question gives (combat-estimate.js).
+function carriedFightSays(bot, mob) {
+  const worn = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
+  const weapon = defenseWeapon(bot)?.name || null, shield = bot.inventory.slots?.[45]?.name === 'shield';
+  const { armourOf } = require('./combat-estimate');
+  let fight = '';
+  if (mob) {
+    try {
+      const one = fightEstimate({ threats: [{ name: mob, distance: 8, shoots: SHOOTERS.has(mob), visible: true }], armour: worn, weapon, health: bot.health ?? 20, shield });
+      if (one.mobs[0]) fight = ` One ${words(mob)} fought so: about ${Math.round(one.fightHere.seconds)} seconds, ${Math.round(one.fightHere.damageTaken * 10) / 10} health lost, ${Math.round(one.fightHere.healthAfter * 10) / 10} of ${Math.round(bot.health ?? 20)} left${one.mobs[0].note ? ` (${one.mobs[0].note})` : ''}.`;
+    } catch (_) { fight = ''; }
+  }
+  return `${weapon ? `a ${words(weapon)}` : 'no sword or axe (a fist)'}, ${worn.length ? worn.map(words).join(', ') : 'no armour'} worn (${armourOf(worn).points} armour points)${shield ? ', a shield' : ', no shield'}.${fight}`;
+}
+
+// The kit for a fight is offered, not required: going on with what is
+// carried, making what can be made here, or the trip to where its iron is.
+// Required, the planner sent a Nether blaze hunt with a stone sword after
+// iron ore, and mid-227-r-nether-1 spun on "No iron ore in the nether" for
+// twenty-five minutes, then died (note 476). The answer holds ten minutes
+// while the same pieces are missing in the same dimension, and is not
+// planned again meanwhile.
+const KIT_CHOICE_HOLD_MS = 10 * 60000;
+async function kitChoice(bot, task, goal, save, actions, missing, { client, mob, now = Date.now() } = {}) {
+  // Held while in the same dimension with no piece newly missing: a piece
+  // made is the choice carried out, not a new question.
+  const sig = dimension(bot), was = goal.combatKit;
+  const held = was?.sig === sig && now - was.at < KIT_CHOICE_HOLD_MS && missing.every(d => was.missing?.includes(d)) ? was : null;
+  const still = list => (list || []).filter(p => missing.includes(p.destination));
+  let pick = held && (held.pick !== 'make_kit_here' || still(held.here).length) ? held.pick : null, here = still(held?.here), away = still(held?.away);
+  if (!pick) {
+    const k = kitPieces(bot, missing);
+    ({ here, away } = k);
+    const all = [...k.here, ...k.away, ...k.unplanned].map(p => words(p.item));
+    const carriedIron = countOf(bot, 'iron_ingot');
+    const tree = {
+      fight_with_carried: { description: `Go on with what is carried: ${carriedFightSays(bot, mob)} Without ${listed(all)} for now; the pieces are left for half an hour, then offered again.` },
+    };
+    if (here.length) tree.make_kit_here = { description: `Make ${listed(here.map(p => words(p.item)))} here first${k.hereIron ? `: ${k.hereIron} iron ingots, ${carriedIron} carried` : ''}. It takes: ${k.hereSteps.map(s => `${words(s.action)} ${s.count || 1} ${words(s.item || s.block || s.entity)}`).join(', ')}.${away.length ? ` The rest (${listed(away.map(p => words(p.item)))}) cannot be made in the ${Dimension(dimension(bot))}.` : ''}` };
+    if (away.length && k.awayWhere?.dimension === 'overworld' && dimension(bot) !== 'overworld' && actions.returnOverworld) {
+      const ores = Object.entries(k.awayWhere.mines).map(([block, n]) => `${n} ${words(block)}`);
+      tree.return_for_kit = { description: `Go back to the Overworld for ${listed(away.map(p => words(p.item)))}: ${k.awayIron} iron ingots${carriedIron ? ` (${carriedIron} carried)` : ''}, from ${listed(ores)} mined there, smelted and crafted; there is none in the ${Dimension(dimension(bot))}. ${require('./game-progress').portalTrip(bot, goal)} The hunt waits until the kit is made and the bot is back.` };
+    }
+    // One route only (nothing can be made here, and no way back is at
+    // hand): there is nothing to choose between.
+    if (Object.keys(tree).length === 1) pick = 'fight_with_carried';
+    else {
+      const fallback = tree.make_kit_here ? 'make_kit_here' : tree.return_for_kit ? 'return_for_kit' : 'fight_with_carried';
+      const decision = await decide('combat_kit', { client, bot, task, goal, save, tree, context: { fallback },
+        state: { missing: all, carried: carriedFightSays(bot, mob), ...(mob ? { against: mob } : {}), dimension: dimension(bot), health: bot.health, hunger: bot.food, ironIngotsCarried: carriedIron } });
+      if (decision.stale) return false;
+      pick = decision.path.at(-1);
+    }
+    goal.combatKit = { pick, sig, missing, at: now, here, away }; save();
+  }
+  if (pick === 'fight_with_carried') {
+    for (const destination of missing) setAside(goal, 'rung', PIECE_RUNG[destination][0], 'Jev chose to fight with what is carried', 1800000);
+    delete goal.combatKit; save();
+    return true;
+  }
+  if (pick === 'return_for_kit') {
+    goal.errand = { dimension: 'overworld', items: away.map(p => ({ item: p.item, count: countOf(bot, p.item) + 1 })), for: 'the combat kit', at: now };
+    goal.step = { action: 'return_for_kit', pieces: away.map(p => p.item) }; save();
+    await actions.returnOverworld(bot, task, goal, save);
+    return false;
+  }
+  const piece = here[0];
+  goal.step = { action: 'prepare_combat_equipment', destination: piece.destination, item: piece.item }; save();
+  // Worn equipment is still physically present; require an additional
+  // item rather than accepting that worn stack as its own replacement.
+  await actions.acquireStep(bot, task, piece.item, countOf(bot, piece.item) + 1, goal, save);
+  return false;
+}
+
 
 function combatMovement(bot) {
   const movements = bot.pathfinder.movements;

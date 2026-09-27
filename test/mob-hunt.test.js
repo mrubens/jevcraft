@@ -49,8 +49,10 @@ test('the exact supported vanilla mob loot tables extend the Eyes of Ender recip
   assert.deepEqual(hunts.map(s => [s.entity, s.count]).sort(), [['blaze', 8], ['enderman', 16]]);
   assert.equal(plan.at(-1).item, 'ender_eye'); assert.equal(plan.at(-1).count, 16);
   assert(!plan.some(s => /sword|helmet|chestplate|leggings|boots|shield/.test(s.item || '')), 'Equipped gear is not crafted again');
+  // The kit is not planned: it is offered where the hunt begins (note 476).
   const missing = planCatalog(registry, 'blaze_rod', 1, { iron_ingot: 40, oak_planks: 30, stick: 8, crafting_table: 1 });
-  for (const item of equipment) assert(missing.some(s => s.action === 'craft' && s.item === item), item);
+  assert.deepEqual(missing.map(s => s.action), ['hunt_mob']);
+  assert.deepEqual(missing[0].kit, { carried: [], missing: Object.keys(combatGear) });
   assert.throws(() => planCatalog(registry, 'bedrock', 1), /No supported survival acquisition/);
 });
 
@@ -62,7 +64,8 @@ test('string comes from a spider and arrows from skeletons (never a chicken), so
   assert(!knowledge(registry).sources.string.some(s => s.block === 'tripwire'), 'tripwire is placed string, never a deposit');
   const bow = planCatalog(registry, 'bow', 1, { stick: 3, crafting_table: 1 });
   assert.deepEqual(bow.map(s => [s.action, s.entity || s.item, s.count]).slice(-2), [['hunt_mob', 'spider', 3], ['craft', 'bow', 1]]);
-  assert(bow.some(s => s.action === 'craft' && s.item === 'iron_sword'), 'a spider fights back, so the hunt still wants the kit');
+  assert(!bow.some(s => s.action === 'craft' && s.item === 'iron_sword'), 'the kit is offered where the hunt begins, not planned (note 476)');
+  assert(bow.find(s => s.action === 'hunt_mob').kit.missing.includes('hand'), 'a spider fights back: the kit it lacks is said');
   const seen = planCatalog(registry, 'bow', 1, { stick: 3, crafting_table: 1 }, { nearby: ['cobweb'] });
   assert(seen.some(s => s.action === 'mine' && s.block === 'cobweb') && !seen.some(s => s.action === 'hunt_mob'), 'a cobweb in view beats the hunt');
   const arrows = planCatalog(registry, 'arrow', 16, { stick: 4, crafting_table: 1 });
@@ -102,6 +105,9 @@ test('two blazes off one spawner are each a fight: the crowd rule counts kin, th
 
 test('combat preparation verifies equipment slots and replaces worn gear instead of counting it as ready', async () => {
   const { bot, slots, goal, task } = fixture();
+  // In the Overworld, where a chestplate can be made: without Jev, the
+  // code's default makes it (in the Nether it cannot: kitChoice, note 476).
+  bot.game.dimension = 'overworld';
   slots[6].durabilityUsed = registry.itemsByName.iron_chestplate.maxDurability - 1;
   const requests = [], actions = { acquireStep: async (_b, _t, item, count) => requests.push({ item, count }) };
   assert.equal(await prepareCombatGear(bot, task, goal, () => {}, actions), false);
@@ -263,6 +269,36 @@ test('a blaze in view at range is shot with the carried bow, and the sword is ba
   assert.equal(result.shots, 1); assert.equal(result.attacks, 1); assert.equal(slots[11].count, 15);
   assert.deepEqual(events.slice(0, 4), ['draw', 'release', 'attack with iron_sword', 'raise shield']);
   assert.equal(bot.heldItem.name, 'iron_sword'); assert.equal(bot._combatEncounter, undefined);
+});
+
+test('in the Nether with a stone sword and no armour, the kit is Jev\'s choice with its costs: fight with what is carried, golden boots here, or back for the iron', async () => {
+  // mid-227-r-nether-1 fetched iron in the Nether for the kit 1,130 times in twenty-five minutes, then died (note 476).
+  const { isSetAside } = require('../src/progress');
+  const { bot, slots, goal, task } = fixture('blaze');
+  for (const slot of [5, 6, 7, 8, 45]) slots[slot] = null;
+  slots[36] = { name: 'stone_sword', slot: 36, count: 1, type: registry.itemsByName.stone_sword.id, durabilityUsed: 0 };
+  slots[20] = { name: 'iron_pickaxe', slot: 20, count: 1, type: registry.itemsByName.iron_pickaxe.id, durabilityUsed: 0 };
+  goal.portals = [{ x: 40, y: 64, z: 0, dimension: 'nether' }];
+  const asked = [], back = [];
+  let choice = 'return_for_kit';
+  const client = { systemOne: async ({ state, questions }) => { asked.push({ state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice, confidence: 0.9 } } }; } };
+  const actions = { acquireStep: async () => assert.fail('nothing fetched before Jev chooses'), returnOverworld: async () => back.push('portal') };
+  assert.equal(await prepareCombatGear(bot, task, goal, () => {}, actions, { client }), false);
+  const { options } = asked[0];
+  assert.deepEqual(Object.keys(options).sort(), ['fight_with_carried', 'make_kit_here', 'return_for_kit']);
+  assert.match(options.fight_with_carried, /a stone sword, no armour worn \(0 armour points\), no shield\. One blaze fought so: about \d+ seconds/);
+  assert.match(options.make_kit_here, /golden boots/, 'gold is in the Nether');
+  assert.match(options.return_for_kit, /iron sword, iron helmet, iron chestplate, iron leggings and shield: 23 iron ingots, from 23 iron ore mined there/);
+  assert.match(options.return_for_kit, /40 blocks off/);
+  assert.deepEqual(back, ['portal']);
+  assert.equal(goal.errand.dimension, 'overworld');
+  assert.deepEqual(goal.errand.items.map(i => i.item), ['iron_sword', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'shield']);
+  // Going on with what is carried leaves the pieces for half an hour, and the hunt goes on.
+  delete goal.combatKit; choice = 'fight_with_carried';
+  assert.equal(await prepareCombatGear(bot, task, goal, () => {}, actions, { client }), true);
+  assert(isSetAside(goal, 'rung', 'iron_helmet') && isSetAside(goal, 'rung', 'shield'));
+  assert.equal(await prepareCombatGear(bot, task, goal, () => {}, actions, { client }), true);
+  assert.equal(asked.length, 2, 'not asked again while the pieces wait');
 });
 
 test('golden boots go on in the Nether and come off for iron in the Overworld', async () => {

@@ -706,3 +706,32 @@ test('a fight in the pocket is excused only while its swings land (mid-235-n, no
   assert.equal(permittedWait({ _struck: { id: 7, at: now - 20000 } }, goal, now), null, 'nor one twenty seconds ago');
   assert.equal(permittedWait({ _struck: { id: 7, at: now - 2000 } }, goal, now), 'fight_in_pocket', 'a swing landed two seconds ago');
 });
+
+test('a step dropped for another dimension still names the stall: the WrongDimension blocker is in its facts, not "step:none"', async () => {
+  // mid-227-r-nether-1's stall question said "step:none" while iron ore was planned in the Nether 1,130 times (note 476).
+  const { answerStall } = require('../src/work');
+  const bot = Object.assign(botAt(0.5, 64, 0.5), { registry, health: 20, food: 20, findBlocks: () => [], blockAt: () => ({ name: 'netherrack', boundingBox: 'block' }),
+    time: { timeOfDay: 1000 }, pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, chat() {} });
+  bot.game.dimension = 'the_nether';
+  const error = 'No iron ore in the nether: it is only found in the overworld';
+  const from = ['at mineAtSource (src/work.js:1303:39)', 'at mine (src/work.js:1270:9)'];
+  // The loop dropped the step from hand (work.js, note 433) and kept it with the record.
+  const goal = { survival: {}, wrongDimension: { n: 5, at: Date.now(), error, phase: 'obtain_blaze_rods', block: 'iron_ore', to: 'overworld', from,
+    step: { action: 'mine', block: 'iron_ore', drops: 'raw_iron', count: 5 } } };
+  const action = actionOf(goal);
+  assert.notEqual(action.key, 'step:none');
+  assert.equal(action.key, 'step:iron_ore');
+  assert.equal(action.blocker.wrongDimension, error); assert.deepEqual(action.blocker.from, from);
+  const seen = looks(bot, goal, 57);
+  const stall = raise(bot, goal, seen);
+  assert.equal(stall.key, 'step:iron_ore'); assert.equal(stall.blocker.wrongDimension, error);
+  const asked = [];
+  const client = { systemOne: async ({ state }) => { asked.push(state); return { answers: { branch_0: { choice: 'differently', confidence: 0.9 } } }; } };
+  // A rung that may wait, so there is more than one answer and Jev is asked.
+  Object.assign(goal, { kind: 'win', rungTime: { phase: 'bow' } });
+  await answerStall(bot, new Task('stall'), goal, () => {}, takeStall(bot), { client }).catch(() => {});
+  assert(asked.length, 'the stall was asked');
+  assert.equal(asked[0].stalled.blocker.wrongDimension, error, 'the question names the real blocker');
+  assert.deepEqual(asked[0].stalled.blocker.from, from);
+  assert.match(asked[0].situation || asked[0].stalled.what, /iron ore/);
+});

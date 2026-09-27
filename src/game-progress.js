@@ -286,9 +286,54 @@ function gearStage(bot, goal) {
   return rung;
 }
 
-function nextGameStage(bot, goal) {
+// The trip through a portal, said from the portals remembered here.
+function portalTrip(bot, goal = {}) {
+  const where = dimension(bot), here = bot.entity?.position;
+  const known = here ? (goal.portals || []).filter(p => p.dimension === where) : [];
+  if (!known.length) return where === 'overworld' ? 'No portal is remembered here: one is found or built first (ten obsidian, or a bucket and a lava pool).' : `No portal is remembered in the ${where}: the way back is looked for first.`;
+  const d = Math.round(Math.min(...known.map(p => Math.hypot(p.x - here.x, p.z - here.z))));
+  return `The nearest portal remembered is ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk, and back through one after.`;
+}
+
+// A trip to another dimension for what a step needs from there, chosen by
+// Jev (elsewhereStep, or the kit's return_for_kit): the way there, then
+// each item made there, then the ladder as before. Kept an hour at most.
+const ERRAND_MS = 60 * 60000;
+function errandStage(bot, goal, where, now = Date.now()) {
+  const errand = goal.errand;
+  if (!errand || now - (errand.at || 0) > ERRAND_MS) return null;
+  const left = (errand.items || []).filter(i => count(bot, i.item) < i.count);
+  // Nothing named to bring is a trip there, and the ladder there after.
+  if (errand.items?.length ? !left.length : where === errand.dimension) return null;
+  const why = { for: errand.for };
+  if (where === errand.dimension) return { phase: 'errand', action: 'acquire', item: left[0].item, count: left[0].count, ...why };
+  if (where === 'nether' && errand.dimension === 'overworld') return { phase: 'errand', action: 'return_overworld', ...why };
+  if (where === 'overworld' && errand.dimension === 'nether') return { phase: 'errand', action: 'enter_nether', ...why };
+  return null;
+}
+
+// A step whose sources are all in another dimension, set aside for it (the
+// loop's WrongDimension, work.js), is said as that: the stage is the
+// choice of routes (elsewhereStep), not the same step again. The set-aside
+// had been made and never read here, and mid-227-r-nether-1 planned iron
+// ore in the Nether 1,130 times in twenty-five minutes (note 476). Jev's
+// "go on here" is read too: the step waits its half hour.
+const ELSEWHERE_WAIT_MS = 30 * 60000;
+const goingOnHere = (goal, phase, now = Date.now()) => goal.elsewhere?.phase === phase && goal.elsewhere.pick === 'on_here' && now - goal.elsewhere.at < ELSEWHERE_WAIT_MS;
+const ELSEWHERE = /only found in the|in another dimension/;
+function asideStage(goal, stage, skip) {
+  if (skip.has(stage.phase) || goingOnHere(goal, stage.phase)) return null;
+  if (!isSetAside(goal, 'rung', stage.phase)) return stage;
+  const why = attemptsFor(goal).why('rung', stage.phase) || '';
+  // Set aside for another reason, it waits its turn like any rung.
+  return ELSEWHERE.test(why) ? { ...stage, action: 'elsewhere', acquire: stage.action, why } : null;
+}
+
+function nextGameStage(bot, goal, skip = new Set()) {
   if (verifyGameCompletion(bot, goal)) return { phase: 'complete' };
   const where = dimension(bot), m = goal.gameProgress?.milestones || {};
+  const errand = errandStage(bot, goal, where);
+  if (errand) return errand;
   // Early game only: once any Nether or End supply is in hand, the run has
   // moved past preparation and the later stages own what to fetch next.
   // The first Nether entry is not that line: a death empties the pockets,
@@ -325,9 +370,11 @@ function nextGameStage(bot, goal) {
     const restock = wants.length && restockStage(bot, goal, wants);
     if (restock) { const supply = restock.items.filter(m => m.want); if (supply.length) return { ...restock, phase: 'restock_supplies', action: 'home', home: { ...restock, items: supply, wants } }; }
   }
-  if (count(bot, 'blaze_rod') < rods) {
-    return where === 'nether' ? { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: rods } :
-      { phase: 'reach_nether', action: 'enter_nether' };
+  const rodsShort = count(bot, 'blaze_rod') < rods;
+  if (rodsShort && where !== 'nether') return { phase: 'reach_nether', action: 'enter_nether' };
+  if (rodsShort) {
+    const rodStage = asideStage(goal, { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: rods }, skip);
+    if (rodStage) return rodStage;
   }
   // Short of pearls with gold on hand and a piglin in view: barter before
   // going back. The enderman hunt in the Overworld is the other way.
@@ -340,7 +387,9 @@ function nextGameStage(bot, goal) {
   const warped = require('./warped-pearls');
   if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && warped.warpedOpen(goal))
     return { phase: 'obtain_ender_pearls', action: 'warped_pearls', item: 'ender_pearl', count: target - eyes };
-  if (where === 'nether') return { phase: 'return_with_blaze_supplies', action: 'return_overworld' };
+  // Short of rods here only when that step waits (asideStage): the way back
+  // is said as that, not as rods carried home.
+  if (where === 'nether') return { phase: rodsShort ? 'return_overworld' : 'return_with_blaze_supplies', action: 'return_overworld' };
   if (where !== 'overworld') return { phase: 'unknown_dimension', action: 'unsupported_dimension' };
   // A cleric's pearls, when a village is remembered and a pearl trade has
   // been read there (trading.js): a walk and some emeralds instead of an
@@ -451,7 +500,10 @@ async function gameStep(bot, task, goal, save, actions) {
   if (stage.phase === 'complete') {
     progress.milestones.returned_alive = { at: Date.now(), dimension: 'overworld', position: position(bot) }; save(); return true;
   }
-  if (stage.action === 'acquire') await actions.acquireStep(bot, task, stage.item, stage.count, goal, save);
+  // A plan that needs another dimension's blocks is not begun here: the
+  // routes are Jev's (elsewhereStep).
+  if (stage.action === 'acquire') await actions.acquireStep(bot, task, stage.item, stage.count, goal, save, { elsewhere: away => elsewhereStep(bot, task, goal, save, stage, away, actions) });
+  else if (stage.action === 'elsewhere') await elsewhereStep(bot, task, goal, save, stage, null, actions);
   else if (stage.action === 'gather_wool') {
     if (!actions.gather_wool) throw Object.assign(new Error('Game progression is blocked at the bed: the gather wool action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });
     await actions.gather_wool(bot, task, goal, save, stage);
@@ -493,6 +545,50 @@ async function gameStep(bot, task, goal, save, actions) {
   return false;
 }
 
+// The step on the ladder cannot be done in this dimension: its plan mines
+// blocks found only in another (`away`, knowledge.js elsewhereOf), or the
+// loop set it aside for that (asideStage). The ladder says so, and going
+// there or going on here with the ladder's next step is Jev's choice. Gone
+// there, the errand is what is mined there and brought back.
+async function elsewhereStep(bot, task, goal, save, stage, away, actions = {}, now = Date.now()) {
+  const where = dimension(bot), words = s => String(s || '').replaceAll('_', ' ');
+  const record = goal.wrongDimension?.phase === stage.phase || !away ? goal.wrongDimension : null;
+  // Set aside by the loop, the plan from here says what is found there.
+  if (!away && actions.planFor && stage.item) {
+    try { away = require('./knowledge').elsewhereOf(actions.planFor(bot, stage.item, stage.count || 1, goal), bot.game?.dimension, [{ item: stage.item, count: stage.count || 1 }]); }
+    catch (_) { away = null; }
+  }
+  const to = away?.dimension || record?.to || (where === 'nether' ? 'overworld' : null);
+  const tree = {};
+  if (to && to !== where) {
+    const mined = away ? Object.entries(away.mines).map(([block, n]) => `${n} ${words(block)}`).join(', ') : words(record?.block || '');
+    const bring = away?.bring?.length ? away.bring : [];
+    tree[`go_${to}`] = { description: `Go to the ${to} for the ${words(stage.phase)}: ${mined ? `${mined}, found only there` : 'its sources are there'}${bring.length ? `, and back with ${bring.map(i => `${i.count} ${words(i.item)}`).join(', ')}` : ''}. ${portalTrip(bot, goal)}${stage.why ? ` Here it failed so: ${stage.why}.` : ''}` };
+  }
+  const next = nextGameStage(bot, goal, new Set([stage.phase]));
+  if (next && next.phase !== stage.phase && !['return_overworld', 'enter_nether', 'elsewhere'].includes(next.action)) {
+    tree.on_here = { description: `Leave the ${words(stage.phase)} for half an hour and go on here with ${words(next.phase)}${next.item ? ` (${next.count || ''} ${words(next.item)})` : ''}; it comes back after.` };
+  }
+  if (!Object.keys(tree).length) throw Object.assign(new Error(`The ${words(stage.phase)} cannot be done in the ${where}, and no way to where it can is known`), { name: 'Blocked' });
+  const decision = await require('./decisions').decide('rung_elsewhere', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
+    state: { step: words(stage.phase), ...(stage.item ? { item: `${stage.count || ''} ${words(stage.item)}` } : {}), dimension: where, ...(away ? { minedElsewhere: away.mines, bringBack: away.bring } : {}), ...(record?.error ? { failure: record.error } : {}) } });
+  if (decision.stale) return false;
+  const pick = decision.path.at(-1);
+  if (pick === 'on_here') {
+    goal.elsewhere = { phase: stage.phase, pick, at: now };
+    setAside(goal, 'rung', stage.phase, 'Jev chose to go on here first', ELSEWHERE_WAIT_MS);
+  } else {
+    // Brought back is what the other dimension gives; the whole step is
+    // done there when nothing narrower is known.
+    const items = away?.bring?.length ? away.bring.map(i => ({ item: i.item, count: count(bot, i.item) + i.count }))
+      : record?.step?.drops ? [{ item: record.step.drops, count: count(bot, record.step.drops) + (record.step.count || 1) }] : [];
+    goal.errand = { dimension: to, items, for: stage.phase, at: now };
+    attemptsFor(goal).clear('rung', stage.phase); delete goal.elsewhere;
+  }
+  goal.step = { action: 'elsewhere', phase: stage.phase, choice: pick }; save();
+  return false;
+}
+
 // The steps still open on the ladder, each with what making it takes from
 // the pockets as they are: said to Jev wherever it chooses how to spend
 // time, so a choice to wait is made knowing what waiting leaves undone. A
@@ -516,4 +612,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };
+module.exports = { portalTrip, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };

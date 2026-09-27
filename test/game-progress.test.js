@@ -235,3 +235,43 @@ test('the steps still open are said with what each is for and what it takes from
   assert.match(ahead[1].takes, /^mine 3 iron ore.*smelt 3 iron ingot.*craft 1 iron pickaxe$/);
   assert.deepEqual(rungsAhead(bot, { kind: 'request' }, planFor), []);
 });
+
+test('the blaze rods set aside because their sources are in the Overworld: the ladder offers the routes, not the same acquire', async () => {
+  // mid-227-r-nether-1: iron ore planned in the Nether 1,130 times in twenty-five minutes; the ten-minute set-aside was never read (note 476).
+  const { setAside, isSetAside } = require('../src/progress');
+  const { bot, goal, task, give } = fixture();
+  bot.game.dimension = 'minecraft:the_nether'; observeProgress(bot, goal);
+  give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 2 });
+  const why = 'No iron ore in the nether: it is only found in the overworld';
+  goal.wrongDimension = { n: 3, at: Date.now(), error: why, phase: 'obtain_blaze_rods', block: 'iron_ore', to: 'overworld', step: { action: 'mine', block: 'iron_ore', drops: 'raw_iron', count: 5 } };
+  setAside(goal, 'rung', 'obtain_blaze_rods', why, 600000);
+  const stage = nextGameStage(bot, goal);
+  assert.notDeepEqual(stage, { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: 3 });
+  assert.equal(stage.action, 'elsewhere'); assert.equal(stage.phase, 'obtain_blaze_rods'); assert.match(stage.why, /only found in the overworld/);
+  // Asked: the Overworld for what is found there, or the warped forest's pearls here meanwhile.
+  const asked = [], left = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'go_overworld', confidence: 0.9 } } }; } };
+  const helmet = [{ action: 'mine', block: 'iron_ore', drops: 'raw_iron', count: 5, produces: { raw_iron: 5 }, consumes: {} },
+    { action: 'smelt', item: 'iron_ingot', count: 5, consumes: { raw_iron: 5, coal: 1 }, produces: { iron_ingot: 5 } },
+    { action: 'craft', item: 'iron_helmet', count: 1, consumes: { iron_ingot: 5 }, produces: { iron_helmet: 1 } },
+    { action: 'hunt_mob', entity: 'blaze', item: 'blaze_rod', count: 1, requires: { iron_helmet: 1 }, consumes: {}, produces: { blaze_rod: 1 } }];
+  const actions = { client, planFor: () => helmet, acquireStep: async () => assert.fail('not the same acquire again'), return_overworld: async () => left.push('portal') };
+  assert.equal(await gameStep(bot, task, goal, () => {}, actions), false);
+  assert.equal(asked.length, 1, 'the routes are Jev\'s');
+  assert(asked[0].go_overworld && asked[0].on_here, Object.keys(asked[0]).join(','));
+  assert.match(asked[0].go_overworld, /5 iron ore, found only there, and back with 1 iron helmet/);
+  assert.match(asked[0].on_here, /go on here with obtain ender pearls/);
+  assert.deepEqual(goal.errand.items, [{ item: 'iron_helmet', count: 2 }], 'one more than the helmet carried');
+  assert(!isSetAside(goal, 'rung', 'obtain_blaze_rods'), 'the way chosen replaces the set-aside');
+  assert.deepEqual(nextGameStage(bot, goal), { phase: 'errand', action: 'return_overworld', for: 'obtain_blaze_rods' });
+  await gameStep(bot, task, goal, () => {}, actions);
+  assert.deepEqual(left, ['portal']);
+  bot.game.dimension = 'overworld';
+  assert.deepEqual(nextGameStage(bot, goal), { phase: 'errand', action: 'acquire', item: 'iron_helmet', count: 2, for: 'obtain_blaze_rods' });
+  // A plan that needs the other dimension is not begun: acquireStep hands it to the choice.
+  bot.game.dimension = 'minecraft:the_nether'; delete goal.errand;
+  let handed = null;
+  actions.acquireStep = async (_b, _t, _item, _count, _g, _s, { elsewhere }) => { handed = elsewhere; };
+  await gameStep(bot, task, goal, () => {}, actions);
+  assert.equal(typeof handed, 'function', 'the ladder\'s acquire carries the elsewhere answer');
+});

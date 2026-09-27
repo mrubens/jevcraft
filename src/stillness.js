@@ -130,7 +130,15 @@ function actionOf(goal, now = Date.now()) {
   }
   let step = goal?.step?.action === 'combined_request' ? goal.step.detail : goal?.step;
   if (RETRY_STEPS.has(step?.action) && goal?.lastStruggleStep) step = goal.lastStruggleStep;
-  if (!step?.action) return { key: 'step:none', layer: 'work', name: 'none', target: null, item: null };
+  // A step dropped from hand because it cannot be done in this dimension
+  // is still what the work is stuck on, and the stall names it: said as
+  // "step:none", mid-227-r-nether-1's question named nothing while the loop
+  // planned iron ore in the Nether 1,130 times (note 476).
+  const away = goal?.wrongDimension;
+  const blocker = away && now - (away.at || 0) < MEMORY_MS ? { wrongDimension: away.error, times: away.n, ...(away.phase ? { phase: away.phase } : {}), ...(away.from?.length ? { from: away.from } : {}) } : null;
+  if (!step?.action && blocker && away.step?.action) step = away.step;
+  if (!step?.action) return { key: 'step:none', layer: 'work', name: 'none', target: null, item: null, ...(blocker ? { blocker } : {}) };
+  const blocked = blocker && (step === away.step || (away.phase && [step.phase, goal.rungTime?.phase, goal.gameProgress?.phase].includes(away.phase))) ? { blocker } : {};
   const item = step.item || step.drops || null;
   // On the game ladder the purpose is the rung: every step under it (the
   // repair and the tilling of one plot, the mining and smelting for one set
@@ -141,7 +149,7 @@ function actionOf(goal, now = Date.now()) {
   const rung = goal?.kind === 'win' && step.action !== 'detour' ? goal.rungTime?.phase || goal.gameProgress?.phase : null;
   const purpose = rung ? `rung:${rung}` : step.block || step.resource || item || (step.choice ? `${step.action}:${step.choice}` : step.action);
   return { key: `step:${purpose}`, layer: 'work', name: step.action,
-    target: P(step.target) || P(step.destination) || P(step.to) || P(step.cell) || P(step.portal), item };
+    target: P(step.target) || P(step.destination) || P(step.to) || P(step.cell) || P(step.portal), item, ...blocked };
 }
 const stillReason = (goal, now = Date.now()) => actionOf(goal, now).key;
 
@@ -291,7 +299,7 @@ function raise(bot, goal, seen, now = Date.now(), because = null) {
   // and dug out again every second and a half, and five strikes against it
   // changed nothing (2026-09-26).
   if (because && FLIPPING.test(because)) setAside(goal, 'flip', action.key, why, FLIP_REST_MS);
-  bot._stalls.stall = { key: action.key, layer: action.layer, name: action.name, why, strikes: r.strikes.length, at: now };
+  bot._stalls.stall = { key: action.key, layer: action.layer, name: action.name, why, strikes: r.strikes.length, at: now, ...(action.blocker ? { blocker: action.blocker } : {}) };
   console.log(`[stall] ${action.key}: strike ${r.strikes.length} (${why})`);
   return bot._stalls.stall;
 }

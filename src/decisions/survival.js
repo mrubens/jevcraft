@@ -248,6 +248,25 @@ define({
   fallback: (children, path, context = {}) => children[context.fallback] ? context.fallback : 'cross_now',
 });
 
+// A step on the ladder whose sources are in another dimension
+// (src/game-progress.js elsewhereStep): the ladder says so and the routes
+// are Jev's, instead of the same step planned again. mid-227-r-nether-1
+// planned iron ore in the Nether for its blaze hunt 1,130 times in
+// twenty-five minutes, and the set-aside the loop made was never read
+// (note 476).
+define({
+  id: 'rung_elsewhere', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The step the game needs next cannot be done in this dimension: go where its sources are, or go on with what the ladder has next here?',
+  trigger: 'On the game ladder, a step whose plan from here needs a block found only in another dimension, or a step set aside for that.',
+  source: 'src/game-progress.js (elsewhereStep, nextGameStage)',
+  options: [
+    { pattern: 'go_(overworld|nether|end)', label: 'go to the dimension its sources are in', when: 'always; said with what is mined there, what is brought back, and the trip to the portal', level: 'root', dynamic: true },
+    { key: 'on_here', label: 'leave the step for now and go on with what the ladder has next here', when: 'the ladder has something else to do in this dimension', level: 'root' },
+  ],
+  instructions: { task: 'The next step of the game cannot be done where the bot is. Choose to go where its sources are, or go on here with the ladder\'s next step.', guidance: 'Each option says what it means: what is mined in the other dimension and brought back, and the trip to the portal; or what the ladder does here meanwhile. A step left comes back after half an hour.' },
+  fallback: children => Object.keys(children).find(k => k.startsWith('go_')) || Object.keys(children)[0],
+});
+
 // Back for what a death dropped (src/corpse-run.js). A rule that went
 // whenever the kit was ready or it was day: mid-230-c walked 194 blocks
 // back to the drowned that had just killed it, and mid-231-b died four

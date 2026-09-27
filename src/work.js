@@ -20,7 +20,7 @@ const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
 const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, rememberSource, committedSource } = require('./decision-options');
 const { reviewDesign } = require('./design-review');
 const { narrate } = require('./narration');
-const { planCatalog, sourceBlocks } = require('./knowledge');
+const { planCatalog, sourceBlocks, elsewhereOf } = require('./knowledge');
 const { takeCreativeItem, clearCreativeInventory } = require('./creative');
 const { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit } = require('./surface');
 const { bootstrapPickaxe } = require('./tool-recovery');
@@ -250,7 +250,9 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
     } };
   Object.assign(answers, nether);
-  const stalled = { what: thing, strikes: stall.strikes, ...(stall.error ? { failure: stall.error } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}) };
+  // What it is stuck on, named: a step for another dimension (note 476).
+  const blocker = stall.blocker || require('./stillness').actionOf(goal, now).blocker;
+  const stalled = { what: thing, strikes: stall.strikes, ...(stall.error ? { failure: stall.error } : {}), ...(blocker ? { blocker } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}) };
   await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled });
 }
 
@@ -1300,7 +1302,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
     // way back taken, not dug for.
     const home = require('./knowledge').dimensionOfBlock(step.block || '');
     const here = String(bot.game?.dimension || 'overworld').replace('minecraft:', '').replace('the_', '');
-    if (home && home !== here) throw Object.assign(new Error(`No ${String(step.block).replaceAll('_', ' ')} in the ${here}: it is only found in the ${home}`), { name: 'WrongDimension' });
+    if (home && home !== here) throw Object.assign(new Error(`No ${String(step.block).replaceAll('_', ' ')} in the ${here}: it is only found in the ${home}`), { name: 'WrongDimension', block: step.block, dimension: home });
     if (step.depth !== null && step.depth !== undefined) {
       const names = step.sources || Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
       // The ore already tunnelled toward is kept while it is there and not
@@ -2048,7 +2050,7 @@ async function acquireSetStep(bot, task, items, goal, save) {
   return false;
 }
 
-async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY, reserved = {} } = {}) {
+async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY, reserved = {}, elsewhere } = {}) {
   task.check(); checkAir(bot);
   if (localBatch(bot, goal, save)) { await smelt(bot, task, goal.smelting, goal, save); return false; }
   const inv = planningInventory(bot);
@@ -2056,6 +2058,11 @@ async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY,
   if ((inv[item] || 0) >= count) return true;
   const available = await withUsableWorkstations(bot, task, inv, [item]);
   const plan = catalogPlan(bot, item, count, available, goal);
+  // A plan that mines what is found only in another dimension is the
+  // caller's to answer, before any of it is begun here (game-progress.js
+  // elsewhereStep, note 476).
+  const away = elsewhere && elsewhereOf(plan, bot.game?.dimension, [{ item, count }]);
+  if (away) return elsewhere(away);
   if (await prepareMiningTool(bot, task, goal, save, plan, available, { requestedTool: item.endsWith('_pickaxe'), minimumMiningY })) return false;
   if (await ensureDescentSupplies(bot, task, goal, save, plan)) return false;
   const step = plan[0];
@@ -4334,7 +4341,8 @@ function gameHandlers(bot, decisionClient) {
         // Which open rung, or a side trip, next: Jev's choice (strategy.js).
         strategy: (bot, task, goal, save, stage) => strategyStep(bot, task, goal, save, stage, { client: decisionClient, decide, sides: sideTrips(bot, goal, decisionClient),
           planFor: (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g) }),
-        acquireStep, acquireSetStep, return_overworld: returnFromNether,
+        acquireStep, acquireSetStep, return_overworld: returnFromNether, client: decisionClient,
+        planFor: (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g),
         enter_nether: (bot, task, goal, save) => netherStep(bot, task, goal, save, decisionClient || task.opportunityClient),
         enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate }),
         fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate, dig }, decisionClient),
@@ -4648,7 +4656,12 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         const prev = goal.wrongDimension;
         const n = prev && Date.now() - prev.at < 60000 ? prev.n + 1 : 1;
         const phase = goal.rungTime?.phase || goal.gameProgress?.phase || null;
-        goal.wrongDimension = { n, at: Date.now(), error: err.message, phase, from: (err.stack || '').split('\n').slice(1, 6).map(l => l.trim()) };
+        // The step that met it is kept with the record: dropped from hand,
+        // the stall question said "step:none" and named nothing
+        // (mid-227-r-nether-1, note 476). The ladder reads the set-aside
+        // below and puts the routes to Jev (game-progress.js asideStage).
+        goal.wrongDimension = { n, at: Date.now(), error: err.message, phase, block: err.block, to: err.dimension,
+          step: goal.step?.action === 'persist' ? goal.lastStruggleStep || null : goal.step || null, from: (err.stack || '').split('\n').slice(1, 6).map(l => l.trim()) };
         if (n >= 3) {
           if (phase) setAside(goal, 'rung', phase, err.message, 600000);
           delete goal.strategy;

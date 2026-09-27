@@ -323,17 +323,20 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
           requires: { furnace: 1 }, consumes: { [input]: missing, [fuelItem]: fuel }, produces: { [name]: missing } }); add(name, missing);
       } });
       for (const source of data.mobSources[name] || []) methods.push({ cost: source.cost ?? 80, run: () => {
-        // A passive animal is struck with whatever is carried; the full kit
-        // is for mobs that fight back.
-        if (!source.passive) for (const names of Object.values(combatGear)) {
-          if (!names.some(tool => have(tool) > 0 || equipment.includes(tool))) acquire(names[0], 1);
-        }
+        // The kit is not a step of the plan: the hunt goes with what is
+        // carried, and what is missing is said where the hunt begins, a
+        // choice with its cost (mob-hunt.js prepareCombatGear). Planned as a
+        // prerequisite, a Nether blaze hunt with a stone sword planned iron
+        // ore first, and mid-227-r-nether-1 was told "No iron ore in the
+        // nether" some 1,130 times in 25 minutes, then died (note 476).
         // produces expresses the resource target for dependency planning;
         // kills never credit this amount to the real inventory.
-        const requires = source.passive ? {} : Object.fromEntries(Object.values(combatGear).map(names => names.find(tool => have(tool))).filter(Boolean).map(name => [name, 1]));
+        const kit = source.passive ? null : Object.entries(combatGear).map(([destination, names]) => [destination, names.find(tool => have(tool) > 0 || equipment.includes(tool))]);
+        const requires = kit ? Object.fromEntries(kit.filter(([, tool]) => tool && have(tool) > 0).map(([, tool]) => [tool, 1])) : {};
         const remaining = needed - have(name);
         if (remaining > 0) {
-          steps.push({ action: 'hunt_mob', ...source, count: remaining, requires, consumes: {}, produces: { [name]: remaining } });
+          steps.push({ action: 'hunt_mob', ...source, count: remaining, requires, consumes: {}, produces: { [name]: remaining },
+            ...(kit ? { kit: { carried: kit.filter(([, tool]) => tool).map(([, tool]) => tool), missing: kit.filter(([, tool]) => !tool).map(([destination]) => destination) } } : {}) });
           add(name, remaining);
         }
       } });
@@ -384,4 +387,26 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
   return { steps: steps.filter(s => s.action !== 'reserve_output'), sequence: steps, available, reserved, totals };
 }
 
-module.exports = { knowledge, sourceBlocks, planCatalog, planOutputs, dimensionOfBlock };
+// What of a plan lies in another dimension: its mine steps there, and what
+// to bring back from it, the items made of those that a step bound to where
+// it is done needs (a hunt, or the output itself), not the crafts between,
+// which are made anywhere. Null when all of it can be done here.
+function elsewhereOf(steps, dimension, outputs = []) {
+  const here = dimension ? String(dimension).replace(/^minecraft:/, '').replace(/^the_/, '') : null;
+  const away = here ? steps.filter(s => s.action === 'mine' && dimensionOfBlock(s.block) && dimensionOfBlock(s.block) !== here) : [];
+  if (!away.length) return null;
+  const from = new Set(away.flatMap(s => Object.keys(s.produces || {})));
+  const chain = new Set(away);
+  for (const s of steps) {
+    if (!['craft', 'smelt', 'harden'].includes(s.action) || !Object.keys({ ...s.consumes, ...s.requires }).some(i => from.has(i))) continue;
+    chain.add(s); for (const i of Object.keys(s.produces || {})) from.add(i);
+  }
+  const bring = {};
+  for (const s of steps) if (!chain.has(s)) for (const [i, n] of Object.entries({ ...s.requires, ...s.consumes })) if (from.has(i)) bring[i] = Math.max(bring[i] || 0, n);
+  for (const { item, count } of outputs) if (from.has(item)) bring[item] = Math.max(bring[item] || 0, count);
+  const mines = {};
+  for (const s of away) mines[s.block] = (mines[s.block] || 0) + (s.count || 1);
+  return { dimension: dimensionOfBlock(away[0].block), mines, bring: Object.entries(bring).map(([item, count]) => ({ item, count })) };
+}
+
+module.exports = { knowledge, sourceBlocks, planCatalog, planOutputs, dimensionOfBlock, elsewhereOf };
