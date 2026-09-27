@@ -3424,3 +3424,16 @@ test('hurt and fed, resting where it is while health comes back is on offer, wit
   assert(tree?.rest_to_heal, Object.keys(tree || {}).join(','));
   assert.match(tree.rest_to_heal.description, /6 health now, hunger 19, about one health each four seconds .* about 56 seconds to twenty/);
 });
+
+test('a step back from the lava edge that goes nowhere is no answer: the next footing is tried, and with none the rest', async () => {
+  // mid-229-i "left the lava edge" twenty times a second without a step while a skeleton shot it.
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, health: 10,
+    blockAt: p => { const q = p.floored(); return { name: q.y < 64 ? 'netherrack' : (q.x === 1 && q.y === 64) ? 'lava' : 'air', position: q, boundingBox: q.y < 64 ? 'block' : 'empty' }; },
+    pathfinder: { movements: {}, getPathTo: () => ({ status: 'success', path: [] }), setGoal() {} }, clearControlStates() {}, setControlState() {} });
+  const walks = [];
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { walks.push(g); } }, { state: { shelters: [] } });
+  survival.escapeFootings = () => ({ about: [], footing: [new Vec3(-3, 64, 0), new Vec3(-4, 64, 2)], far: [], near: [], heavy: false, persistent: false });
+  survival.wayAway = async () => ({});
+  assert.equal(await survival.runAway(new Task('t'), {}, () => {}, []), false);
+  assert.equal(walks.length, 2, 'both footings tried');
+});

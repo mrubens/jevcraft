@@ -1723,7 +1723,13 @@ class Survival {
           const route = await surveyRoute(bot, task, movements, new goals.GoalBlock(p.x, p.y, p.z), 150);
           if (route.status !== 'success') continue;
           this.report(goal, save, { action: 'leave_lava_edge', destination: { ...p }, threats: danger.map(t => t.entity.name) });
+          const from = bot.entity.position.clone();
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(p.x, p.y, p.z), { timeoutMs: 5000, stallMs: 2000 }); } catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
+          // A walk that went nowhere is no step back: the next footing, and
+          // with none, the rest of the answer. mid-229-i "left the lava
+          // edge" twenty times a second without a step, a skeleton shooting
+          // (2026-09-27), as note 370's step off an edge did.
+          if (bot.entity.position.distanceTo(from) < 0.3) continue;
           return true;
         }
       }
