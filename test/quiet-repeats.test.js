@@ -37,3 +37,13 @@ test('the filter survives a chat function installed after it was armed, when ins
   bot.chat('Getting 3 raw iron.'); bot.chat('Getting 3 raw iron.');
   assert.deepEqual(said, ['Getting 3 raw iron.']);
 });
+
+test('no faster than the server allows: a burst of five, then the rest is dropped', () => {
+  // mid-229-b: a spinning search said a changing line twenty times a second and was kicked for spam 230 times.
+  const sent = [];
+  const bot = { chat: m => sent.push(m) };
+  quietRepeats(bot);
+  for (let i = 0; i < 20; i++) bot.chat(`heading ${i}`);
+  assert.equal(sent.length, 5);
+  assert.equal(bot._quietRepeats.throttled, 15);
+});

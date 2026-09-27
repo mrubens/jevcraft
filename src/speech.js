@@ -61,15 +61,26 @@ function thinking(bot, intervalMs = 1500) {
 // succession is a stuck bot, not news. Installed once on the bot, it drops an
 // exact repeat within the window, except when a player spoke a moment ago,
 // because "Jev status" asked twice deserves the same answer twice.
+const CHAT_BURST = 5, CHAT_EVERY_MS = 1200;
 function quietRepeats(bot, { windowMs = 120000, replyMs = 15000 } = {}) {
   if (typeof bot?.chat !== 'function' || bot._quietRepeats) return bot;
   const original = bot.chat.bind(bot), said = new Map();
   bot._quietRepeats = { dropped: 0 };
   bot._client?.on?.('playerChat', () => { bot._lastPlayerChatAt = Date.now(); });
+  // And no faster than the server allows: vanilla counts twenty a message
+  // against a limit of two hundred, less one a tick, and kicks for spam
+  // past it. mid-229-b, its wool search spinning twenty times a second and
+  // saying a changing line each time, was kicked 230 times in three hours
+  // (2026-09-26). A burst of five, then one each 1.2 seconds; the rest is
+  // dropped, not queued (a queue would say stale things late).
+  let tokens = CHAT_BURST, filledAt = Date.now();
   bot.chat = message => {
     const text = String(message), now = Date.now();
+    tokens = Math.min(CHAT_BURST, tokens + (now - filledAt) / CHAT_EVERY_MS); filledAt = now;
     const answering = now - (bot._lastPlayerChatAt || 0) < replyMs;
     if (!answering && said.has(text) && now - said.get(text) < windowMs) { bot._quietRepeats.dropped++; return; }
+    if (tokens < 1) { bot._quietRepeats.dropped++; bot._quietRepeats.throttled = (bot._quietRepeats.throttled || 0) + 1; return; }
+    tokens -= 1;
     said.set(text, now);
     if (said.size > 64) said.delete(said.keys().next().value);
     return original(message);
