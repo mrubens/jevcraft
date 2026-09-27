@@ -228,7 +228,7 @@ class StaircaseStalled extends Error {
   // The landing it stalled at and what blocked each step from there travel
   // with it, for the stall's question to say (work.js answerStall).
   constructor(target, why, { landing = null, blocked = null } = {}) {
-    super(`The staircase toward ${target} is set aside (${why}); trying another way`); this.name = 'StaircaseStalled';
+    super(`The staircase toward ${target} is set aside (${why}); trying another way`); this.name = 'StaircaseStalled'; this.why = why;
     if (landing) this.landing = landing;
     if (blocked) this.blocked = blocked;
   }
@@ -259,6 +259,18 @@ function staircaseStalled(goal, save, target, why, { landing, blocked } = {}) {
   save();
   return new StaircaseStalled(target, why, { landing: goal.staircaseStalled.landing, blocked });
 }
+// A rest already standing, met again: the stall it is, on the goal as
+// such, the rest neither renewed nor lengthened. Thrown bare, mid-214-f's
+// stall question had strikes and no failure, and the staircase resting
+// was met every half second for its ten minutes (note 488).
+function staircaseStillResting(goal, save, target, kind, key) {
+  const entry = attemptsFor(goal).entries[keyOf(kind, key)], why = entry?.why || 'the staircase toward it is resting';
+  const prev = goal.staircaseStalled;
+  // The set-aside keeps two hundred characters of the why.
+  if (String(prev?.why).slice(0, 200) !== why || !(prev.at >= (entry?.at ?? 0))) { goal.staircaseStalled = { why, at: entry?.at ?? Date.now() }; save(); }
+  const rest = goal.staircaseStalled;
+  return new StaircaseStalled(target, why, { landing: rest.landing, blocked: rest.blocked });
+}
 // By the eight-block area: the way-up target is the nearest landing, and it
 // moves a block or two with every step taken toward it.
 const area = t => ({ x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 });
@@ -284,12 +296,9 @@ class WaysResting extends Error {
 }
 
 async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false, within = null, retreat = retreatForTunnel }) {
-  if (staircaseResting(goal, target)) throw new StaircaseStalled(target, attemptsFor(goal).why('staircase', area(target)));
+  if (staircaseResting(goal, target)) throw staircaseStillResting(goal, save, target, 'staircase', area(target));
   const from = bot.entity.position.floored();
-  if (isSetAside(goal, 'staircase_from', landingKey(from, target))) {
-    const rest = goal.staircaseStalled;
-    throw new StaircaseStalled(target, attemptsFor(goal).why('staircase_from', landingKey(from, target)), rest ? { landing: rest.landing, blocked: rest.blocked } : {});
-  }
+  if (isSetAside(goal, 'staircase_from', landingKey(from, target))) throw staircaseStillResting(goal, save, target, 'staircase_from', landingKey(from, target));
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
   // Where a way down began at the surface, remembered: the way back up is
@@ -398,9 +407,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
   if (pacing && entrance && entrance.distanceTo(bot.entity.position.floored()) <= 3) {
     const why = `paced the same few cells round where the round began, ${Math.round(tunnel.best ?? bot.entity.position.distanceTo(target))} blocks from it`;
     Object.assign(tunnel, { staleRounds: 0, visited: {} }); delete tunnel.best;
-    setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
-    save();
-    throw new StaircaseStalled(target, why);
+    throw staircaseStalled(goal, save, target, why);
   }
   if (tunnel.sinceBest >= 48 || pacing) {
     tunnel.staleRounds = (tunnel.staleRounds || 0) + 1;
@@ -409,9 +416,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
     if (tunnel.staleRounds >= STALE_ROUNDS) {
       const why = `${STALE_ROUNDS} rounds without getting closer than ${Math.round(tunnel.best)} blocks`;
       Object.assign(tunnel, { staleRounds: 0, visited: {} }); delete tunnel.best;
-      setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
-      save();
-      throw new StaircaseStalled(target, why);
+      throw staircaseStalled(goal, save, target, why);
     }
     save();
     throw new Error(`The staircase toward ${target} is not gaining on it; starting round ${tunnel.rounds + 1}`);
@@ -436,8 +441,9 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
       try { await dig(bot, task, p, { requireDrops: false }); }
       catch (err) {
         if (!/Refusing to (open a drop|open lava|dig directly beneath)/.test(err.message || '')) throw err;
-        setAside(goal, 'staircase', area(target), err.message.toLowerCase(), STAIRCASE_REST_MS); save();
-        throw new StaircaseStalled(target, err.message.toLowerCase());
+        // Through the stall's own record, for the stall question's failure
+        // (mid-214-f, note 488).
+        throw staircaseStalled(goal, save, target, err.message.toLowerCase());
       }
     }
   }

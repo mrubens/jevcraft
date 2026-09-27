@@ -765,3 +765,31 @@ test('a staircase stalled for want of ground gained is the stall question\'s fai
   assert.equal(asked.length, 2);
   assert.match(JSON.stringify(asked[1].stalled), /0 of 8 blocks.*No route to the ground eight blocks off/, `the short walk is a fact: ${JSON.stringify(asked[1].stalled)}`);
 });
+
+test('a dig refused for the drop it would open is the stall question\'s failure, and so is the rest met again after', async () => {
+  // mid-214-f: the stairs toward its lava were refused ("Refusing to open a drop"), the staircase rested, and every
+  // pass after met the rest and threw before the stall's record was kept; 26 strikes asked with no failure (note 488).
+  const { answerStall } = require('../src/work');
+  const { tunnelStep } = require('../src/tunneling');
+  const { attemptsFor } = require('../src/progress');
+  const open = new Set(['0,60,0', '0,61,0']);
+  const bot = Object.assign(botAt(0.5, 60, 0.5), { registry, health: 20, food: 20, findBlocks: () => [], time: { timeOfDay: 1000 }, clearControlStates() {}, chat() {},
+    blockAt: p => { const f = p.floored(), air = open.has(`${f.x},${f.y},${f.z}`); return { position: f, name: air ? 'air' : 'stone', boundingBox: air ? 'empty' : 'block', diggable: !air, hardness: 1.5 }; },
+    pathfinder: { movements: {}, setGoal() {} } });
+  const goal = { kind: 'win', survival: {}, rungTime: { phase: 'reach_nether' } };
+  const actions = { dig: async () => { throw new Error('Refusing to open a drop beside the feet'); }, navigate: async () => {}, retreat: async () => {} };
+  const step = () => tunnelStep(bot, new Task('stair'), goal, () => {}, new Vec3(40, 30, 0), actions);
+  await assert.rejects(step(), err => err.name === 'StaircaseStalled' && /refusing to open a drop/.test(err.message));
+  const asked = [];
+  const client = { systemOne: async ({ state }) => { asked.push(state); return { answers: { branch_0: { choice: 'differently', confidence: 0.9 } } }; } };
+  await answerStall(bot, new Task('stall'), goal, () => {}, { key: 'step:rung:reach_nether', layer: 'work', strikes: 1 }, { client }).catch(() => {});
+  assert(asked.length, 'Jev was asked');
+  assert.match(asked[0].stalled.failure || '', /refusing to open a drop beside the feet/, `the refusal is the failure: ${JSON.stringify(asked[0].stalled)}`);
+  // The rest met again with the stall's record gone: kept as the failure, the rest not lengthened.
+  const rest = () => Object.values(attemptsFor(goal).entries).find(e => e.action === 'staircase');
+  const until = rest().until;
+  delete goal.staircaseStalled;
+  await assert.rejects(step(), err => err.name === 'StaircaseStalled');
+  assert.match(goal.staircaseStalled?.why || '', /refusing to open a drop/, 'the rest met is the stall on the goal');
+  assert.equal(rest().until, until, 'and the rest is not renewed');
+});

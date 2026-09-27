@@ -3250,7 +3250,13 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     // it: three walks that came no nearer had dropped the lava without a
     // word and cast the frame 122 blocks up (mid-244-v, note 470).
     const nf = current === 'cast_at_lava' && method.nearFailed;
-    const failed = nf ? ` The walk there has failed: ${nf.walks} walks toward it came no nearer than ${nf.best} blocks (what ended them: ${nf.stopped || 'not known'}). Kept, the walk goes on by staircase.` : '';
+    // The staircase to the held lava resting, said as the nearest lava's
+    // and the frame's are: mid-214-f was told "Kept, the walk goes on by
+    // staircase" while that staircase rested ten minutes, kept it, and met
+    // the rest every half second, asked again every few (note 488).
+    const heldRest = current === 'cast_at_lava' ? nearRest(goal, method.near) : null;
+    const rests = heldRest ? ` The staircase toward it is set aside (${heldRest.why}), taken up again in ${heldRest.minutes} minute${heldRest.minutes === 1 ? '' : 's'}; kept, that is said as every way to it resting, not tried again before then.` : '';
+    const failed = (nf ? ` The walk there has failed: ${nf.walks} walks toward it came no nearer than ${nf.best} blocks (what ended them: ${nf.stopped || 'not known'}).${heldRest ? '' : ' Kept, the walk goes on by staircase.'}` : '') + rests;
     tree.cast_at_lava = { description: `Cast a frame of its own as above, but beside ${current === 'cast_at_lava' ? 'the lava chosen before' : 'the nearest known lava'} rather than ${frameBegun ? 'at the frame begun' : 'here'}: it is ${castBy.distance} blocks away (${castBy.how}), at y ${Math.round(castBy.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}${frameBegun ? `, and ${far.distance} blocks from the frame begun` : ''}. The bot ${castBy.distance > 12 ? 'walks there first and ' : ''}puts the frame down within a few blocks of it, so a trip for lava is a few seconds, against ${tripSays(far)} from ${where}.${standing} The portal is then down there, and the way back from the Nether comes out beside that lava.${failed}` + facts };
   }
   // With the frame out of reach, a frame cast where the bot stands, the
@@ -3308,7 +3314,14 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     save(); return false;
   }
   // Kept: the clock runs on to the next twenty minutes.
-  if (current && pick === current) { method.reasked = (method.reasked || 0) + 1; save(); return goal.portalFrame ? true : portalMethod(bot, task, goal, save, client); }
+  if (current && pick === current) {
+    method.reasked = (method.reasked || 0) + 1;
+    // Kept with its staircase resting: every way to it rests until then, a
+    // fact for persist to answer, not a pass to repeat (note 488).
+    const rest = current === 'cast_at_lava' && nearRest(goal, method.near);
+    if (rest) { method.nearAsked = rest.until; save(); throw nearResting(method.near, rest); }
+    save(); return goal.portalFrame ? true : portalMethod(bot, task, goal, save, client);
+  }
   const ruin = pick.startsWith('ruin_') ? ruins[Number(pick.slice(5))] : null;
   const next = pick === 'build_new' ? { kind: 'build' } : pick === 'cast_frame' ? { kind: 'cast' } : pick === 'cast_here' ? { kind: 'cast', here: true } : pick === 'cast_at_lava' ? { kind: 'cast', near: { ...castBy.at } }
     : { kind: 'ruin', at: { x: ruin.landmark.x, y: ruin.landmark.y, z: ruin.landmark.z } };
@@ -3324,6 +3337,19 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   save();
   return next.kind !== 'ruin' || (goal.portalFrame ? true : portalMethod(bot, task, goal, save, client));
 }
+
+// The rest on the way to a lava: the staircase dug toward it (portalStep
+// tunnels to the lava's own block) or the one into it (lavaResting, as
+// nearestLava drops it by). Null when neither rests.
+function nearRest(goal, near) {
+  const { staircaseResting, staircaseWhy, staircaseUntil, lavaWay } = require('./tunneling');
+  const at = new Vec3(near.x, near.y, near.z);
+  const target = [at, lavaWay(at)].find(t => staircaseResting(goal, t));
+  if (!target) return null;
+  const until = staircaseUntil(goal, target);
+  return { why: staircaseWhy(goal, target), until, minutes: Math.max(1, Math.ceil((until - Date.now()) / 60000)) };
+}
+const nearResting = (near, rest) => new (require('./tunneling').WaysResting)(`The lava chosen for the portal, at (${near.x}, ${near.y}, ${near.z}): the staircase toward it is set aside (${rest.why}), taken up again in ${rest.minutes} minute${rest.minutes === 1 ? '' : 's'}. The way to the portal was asked with this and kept.`, rest.until);
 
 // The nearest lava the bot knows of, for the cast option's trips: a pool
 // loaded about it, or one remembered (exploration.js), not one spent.
@@ -3443,6 +3469,10 @@ async function portalStep(bot, task, goal, save, client) {
       // frame cast 122 blocks above the lava it chose (note 470). The
       // question is asked again with the walks said: how many, how near,
       // and what ended each (survival's step since, or the walk's error).
+      // Asked with this very rest said, and kept: every way to it rests
+      // until then, not a walk counted and asked about again (note 488).
+      const rest = goal.portalMethod.nearByStairs && nearRest(goal, near);
+      if (rest && goal.portalMethod.nearAsked === rest.until) throw nearResting(near, rest);
       const d = bot.entity.position.distanceTo(at), tries = goal.portalMethod.nearTries ||= { best: Infinity, stale: 0, walks: 0, stops: {} };
       if (tries.lastAt) {
         const s = goal.survivalAction, since = s?.at && Date.parse(s.at) > tries.lastAt;
@@ -3460,9 +3490,16 @@ async function portalStep(bot, task, goal, save, client) {
       // first each pass: mid-211-i gained a block a pass down its stairs,
       // five seconds of failed walk between, and the flip watch took the
       // turn between them for a loop (2026-09-27).
+      // The stall that ended the stairs is what ended the walk: said only
+      // from the walk's own failure, mid-214-f's twenty-six stalls read
+      // "the walk ended short" (note 488).
+      const stairs = async () => {
+        try { await tunnelToward(bot, task, goal, save, at, 'lava_for_portal'); }
+        catch (err) { if (err.name === 'StaircaseStalled') { tries.error = `the staircase set aside: ${err.why}`.slice(0, 80); save(); } throw err; }
+      };
       if (goal.portalMethod.nearByStairs) {
         goal.step = { action: 'tunnel', target: { ...near }, toward: 'lava_for_portal', distance: Math.round(d) }; save();
-        await tunnelToward(bot, task, goal, save, at, 'lava_for_portal');
+        await stairs();
         return false;
       }
       goal.step = { action: 'to_lava_for_portal', at: { ...near }, distance: Math.round(d) }; save();
@@ -3471,7 +3508,7 @@ async function portalStep(bot, task, goal, save, client) {
         task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
         tries.error = String(err.message || err).slice(0, 80);
         goal.portalMethod.nearByStairs = true; save();
-        await tunnelToward(bot, task, goal, save, at, 'lava_for_portal');
+        await stairs();
       }
       return false;
     }
