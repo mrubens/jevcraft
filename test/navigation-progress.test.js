@@ -52,3 +52,20 @@ test('a walk that keeps getting nearer is progress, however long', async () => {
   const bot = walker(new Vec3(0.5, 64, 0.5), (b, i) => { b.entity.position = new Vec3(0.5 + i * 0.5, 64, 0.5); });
   await assert.rejects(navigate(bot, new Task('walk'), new goals.GoalBlock(200, 64, 0), { timeoutMs: 3000, stallMs: 1000 }), /navigation timed out/);
 });
+
+test('a crossing that ends no nearer rests from here toward that target, and is not offered again meanwhile', async () => {
+  // mid-235-e took the crossing forty times in a few minutes on a lava-sea island, each run back within a second with nothing laid (2026-09-27).
+  const { crossToward, netherAnswers } = require('../src/nether-travel');
+  const bot = Object.assign(new EventEmitter(), { entity: { position: new Vec3(0.5, 39, 0.5), isInWater: false }, game: { dimension: 'the_nether', gameMode: 'survival' }, oxygenLevel: 20,
+    health: 20, food: 20, entities: {}, world: { raycast: () => null }, inventory: { items: () => [{ name: 'netherrack', count: 64, type: 1 }] },
+    blockAt: p => { const name = p.y <= 31 ? 'lava' : p.y === 38 && p.x <= 0 ? 'netherrack' : 'air'; return { name, boundingBox: name === 'netherrack' ? 'block' : 'empty', diggable: true, position: p }; },
+    clearControlStates() {}, getControlState() { return false; }, setControlState() {}, stopDigging() {}, equip: async () => {}, lookAt: async () => {},
+    // The block never lands.
+    placeBlock: async () => {} });
+  const goal = { survival: {}, fortressSearch: { target: { x: 60, y: 39, z: 0 } } };
+  const target = new Vec3(60, 39, 0);
+  assert(netherAnswers(bot, new Task('stall'), goal, () => {}).cross_toward, 'offered before it is tried');
+  assert.equal((await crossToward(bot, new Task('cross'), goal, () => {}, target)).tried, true);
+  assert.equal((await crossToward(bot, new Task('cross'), goal, () => {}, target)).tried, false, 'resting: not run again at once');
+  assert.equal(netherAnswers(bot, new Task('stall'), goal, () => {}).cross_toward, undefined, 'nor offered');
+});

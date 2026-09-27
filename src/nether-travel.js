@@ -52,14 +52,26 @@ function crossingSays(s, what) {
 // Straight at `target`, through rock and over air or lava, at this height,
 // as far as the survey shows it can go: the way a player gets on where the
 // pathfinder's walk ended. Returns the survey and whether it was tried.
+// A crossing that ended no nearer rests, from this eight-block area toward
+// this target, with why: mid-235-e's fortress search took the crossing
+// forty times in a few minutes on an island in the lava sea, each run
+// returning within a second with nothing laid, and the stall answered with
+// it again each time (2026-09-27).
+const CROSS_REST_MS = 5 * 60000;
+const crossKey = (bot, target) => { const h = bot.entity.position; return `${Math.floor(h.x / 8)},${Math.floor(h.z / 8)}>${Math.round(target.x)},${Math.round(target.z)}`; };
+const crossingResting = (bot, goal, target) => isSetAside(goal, 'crossing', crossKey(bot, target));
 async function crossToward(bot, task, goal, save, target, { what = 'the target' } = {}) {
   if (!inNether(bot) || typeof bot.blockAt !== 'function') return { tried: false };
+  if (crossingResting(bot, goal, target)) return { tried: false, resting: true };
   const survey = surveyCrossing(bot, target, { cells: CROSS_STRETCH });
   if (!survey.cells || survey.gain < 1) return { tried: false, survey };
   goal.step = { action: 'cross_toward', what, target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) },
     cells: survey.cells, dig: survey.dig, bridge: survey.bridge, carried: survey.carried }; save();
+  const key = crossKey(bot, target), before = flat(target, bot.entity.position);
+  let why = null;
   try { await bridgeTo(bot, task, target, { maxBlocks: survey.bridge, maxSteps: survey.cells }); }
-  catch (err) { task.check(); if (!retryable(err)) throw err; goal.lastCrossError = err.message; save(); }
+  catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; goal.lastCrossError = err.message; save(); }
+  if (before - flat(target, bot.entity.position) < 1) { setAside(goal, 'crossing', key, why || 'it laid nothing nearer', CROSS_REST_MS); save(); }
   return { tried: true, survey };
 }
 
@@ -148,7 +160,7 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   const target = legTarget(bot, goal);
   if (target && typeof bot.blockAt === 'function') {
     const survey = surveyCrossing(bot, target.at, { cells: CROSS_STRETCH });
-    if (survey.cells && survey.gain >= 1) answers.cross_toward = { description: crossingSays(survey, `${target.what}, ${Math.round(flat(target.at, bot.entity.position))} blocks off${Math.abs(target.at.y - bot.entity.position.y) >= 4 ? ` and ${Math.abs(Math.round(target.at.y - bot.entity.position.y))} blocks ${target.at.y > bot.entity.position.y ? 'up' : 'down'}` : ''}`),
+    if (survey.cells && survey.gain >= 1 && !crossingResting(bot, goal, target.at)) answers.cross_toward = { description: crossingSays(survey, `${target.what}, ${Math.round(flat(target.at, bot.entity.position))} blocks off${Math.abs(target.at.y - bot.entity.position.y) >= 4 ? ` and ${Math.abs(Math.round(target.at.y - bot.entity.position.y))} blocks ${target.at.y > bot.entity.position.y ? 'up' : 'down'}` : ''}`),
       run: async () => {
         // The leg goes on from where the crossing ends, not a new one.
         if (!target.portal && goal.fortressSearch && !goal.fortressSearch.target) goal.fortressSearch.target = { x: target.at.x, y: target.at.y, z: target.at.z };
@@ -186,4 +198,4 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   return answers;
 }
 
-module.exports = { inNether, nearer, crossToward, crossingSays, crossingSeconds, foodReason, legTarget, hoglinsKnown, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
+module.exports = { crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, crossingSays, crossingSeconds, foodReason, legTarget, hoglinsKnown, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
