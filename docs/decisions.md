@@ -215,6 +215,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `take_cover` | root | put a block two high in the line of each shooter in sight and stay behind it | shooters in sight (up to three), two blocks each carried, not in water; said with the blocks, the seconds and the damage in the next fifteen seconds this way |
 | `fight_from_footing` | root | step onto firm ground away from the drop, then fight there | the drop beside the bot is into lava or does half its health or more, and ground three blocks from any drop is within sixteen; said with its distance and seconds |
+| `rail_and_fight` | root | wall the open sides at the feet over the drop, then fight | the drop beside the bot is into lava or does half its health or more, a mob can be fought, and blocks for the wall are carried; said with the blocks and seconds |
 | `fight` | root | fight where the bot stands | always, with bare hands when no sword, axe or trident is carried |
 | `eat_golden_apple` | root | eat a golden apple now | a golden or enchanted golden apple is carried and health is below full |
 | `pillar` | root | go two blocks up and fight from there | two scaffold blocks carried and three clear blocks overhead |

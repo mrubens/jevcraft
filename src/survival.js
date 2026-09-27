@@ -88,7 +88,7 @@ const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pill
 // eating: a shield raised at each arrow stops them.
 // The most a route drops the bot (movement.js).
 const ROUTE_DROP = 3;
-const MOVING_STANCES = new Set(['retreat', 'fight_from_footing', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
+const MOVING_STANCES = new Set(['retreat', 'fight_from_footing', 'rail_and_fight', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
 // Two blocks up: from the pillar's report to two up took a second and a
 // half to two seconds in mid-92-e, mid-92-g and mid-110-k (2026-09-26).
 const PILLAR_SECONDS = 1.5;
@@ -1342,6 +1342,21 @@ class Survival {
           finally { if (movements) movements.allow1by1towers = towers; }
           const at = bot.entity.position.floored();
           if (Math.hypot(at.x - groundBy.x, at.z - groundBy.z) > 1.5) return false;
+          return options.fight.run();
+        } };
+    }
+    // Where there is no ground to go to, the edge walled at the feet, then
+    // the fight: a knock stops at a block. mid-211-s's ledge ran beside a
+    // netherrack wall with lava in it and no ground three from a drop within
+    // sixteen; its snapshot, started again, fought on the open edge and fell
+    // twice (note 471). The span's own railing (railSpan), chosen.
+    const railSides = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2) && !noStep
+      ? [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => require('./terrain').dropAt(bot, c)) : [];
+    const railBlocks = railSides.reduce((n, c) => n + (bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' ? 1 : 2), 0);
+    if (railSides.length && bot.inventory.items().some(i => shelter.buildingMaterials.has(i.name) && i.count >= railBlocks)) {
+      options.rail_and_fight = { description: `Wall the ${railSides.length} open side${railSides.length === 1 ? '' : 's'} at the feet over the drop (${railBlocks} block${railBlocks === 1 ? '' : 's'}, about ${Math.round(railBlocks * BLOCK_SECONDS * 10) / 10} seconds, anything at reach hitting freely meanwhile), then fight here: a knock toward the drop stops at the wall.${edge}${hitsLeft}`,
+        run: async () => {
+          if (!await this.railSpan(task, goal, save)) return false;
           return options.fight.run();
         } };
     }
