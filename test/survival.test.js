@@ -3640,3 +3640,21 @@ test('beside a mob spawner, every stance says it makes more of its mob while the
   assert.equal(calls[0].state.spawner?.blocksAway, 6);
   for (const [key, c] of Object.entries(calls[0].questions.branch_0.criteria)) assert.match(JSON.stringify(c), /A mob spawner is 6 blocks off: while a player is within 16 blocks of it, it makes more of its mob/, key);
 });
+
+test('on a pillar with a shooter out of reach, no charge that carries no step is offered, and the fight is priced as the shots taken', () => {
+  // mid-244-s, on a pillar eight blocks from a pillager, was told the fight and the charge were "about 6.2 seconds and 2.9 damage"; each ended at once, twice, arrows every three seconds (2026-09-27).
+  const pillar = p => p.x === 0 && p.z === 0 && p.y < 62;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, health: 10.7, food: 18, entities: {},
+    entity: { position: new Vec3(0.5, 62, 0.5), onGround: true }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cobblestone', count: 64 }], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' } } },
+    blockAt: p => { const f = p.floored(); const solid = pillar(f) || f.y < 48; return { position: f, name: solid ? 'stone' : 'air', boundingBox: solid ? 'block' : 'empty' }; },
+    world: { raycast: () => null }, findBlocks: () => [] });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const pillager = { entity: { id: 9, name: 'pillager', position: new Vec3(8.5, 60, 0.5), height: 1.95, heldItem: { name: 'crossbow' } }, distance: 8.2, visible: true };
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [pillager], false);
+  assert.equal(options.charge_shooter, undefined, Object.keys(options).join(','));
+  assert.match(options.fight.description, /None of them can be reached from here: .* about [\d.]+ damage from their shots in the next fifteen seconds, from 10.7 health/);
+  assert.equal(options.fight.expects.seconds, 15);
+  // Holding the pillar is the same: nothing to swing at, shot with no end.
+  assert.match(options.pillar?.description || '', /nothing (up here|two up) to swing at: held, it is standing in their line of fire/);
+});
