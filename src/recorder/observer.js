@@ -29,6 +29,15 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
   trace.connected = false;
   const listeners = [];
   const on = (name, fn) => { bot.on(name, fn); listeners.push([name, fn]); };
+  function mobsAbout(bot) {
+    try {
+      const here = bot.entity?.position;
+      if (!here) return undefined;
+      const { threats } = require('../danger');
+      return threats(bot, 24).slice(0, 8).map(t => ({ name: t.entity.name, id: t.entity.id, d: Math.round(t.distance * 10) / 10,
+        at: { x: Math.round(t.entity.position.x * 10) / 10, y: Math.round(t.entity.position.y * 10) / 10, z: Math.round(t.entity.position.z * 10) / 10 }, seen: !!t.visible }));
+    } catch (_) { return undefined; }
+  }
   function snapshot(goal) {
     const now = Date.now();
     if (!world || now - worldAt >= 2000) { world = terrain(bot); worldAt = now; }
@@ -56,6 +65,10 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       // of silence while hurt (notes 358, 366, 391) had no holder in the
       // record.
       turn: turnHeld(bot, now),
+      // The mobs about, where they stand: mid-211-p's creeper went off two
+      // seconds after the last frame without one, and several deaths could
+      // not say where the mob that hit it stood (notes 424, 437).
+      mobs: mobsAbout(bot),
       held: Object.entries(bot.controlState || {}).filter(([, on]) => on).map(([key]) => key),
       pathing: !!bot.pathfinder?.isMoving?.(),
       memory: bot.companionMemory ? { places: bot.companionMemory.state.places.length,

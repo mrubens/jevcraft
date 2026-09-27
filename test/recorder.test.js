@@ -176,3 +176,16 @@ test('every frame says who has the turn and for how long, and a question out to 
   giveBack(b, null); assert.equal(turnHeld(b), undefined);
   observation.detach();
 });
+
+test('every frame says the mobs about and where they stand', () => {
+  // mid-211-p's creeper went off two seconds after the last frame without one; the record could not say where it had been (2026-09-27).
+  const b = bot(), trace = new Trace();
+  b.entities = { 7: { id: 7, name: 'creeper', type: 'hostile', position: new Vec3(b.entity.position.x + 3, b.entity.position.y, b.entity.position.z), height: 1.7, width: 0.6, isValid: true } };
+  b.world = { raycast: () => null };
+  const observation = observeBot(trace, b, { getGoal: () => ({}) });
+  b.emit('spawn'); observation.sample();
+  const mobs = trace.frames.at(-1).snapshot.mobs;
+  assert.equal(mobs?.[0]?.name, 'creeper');
+  assert.equal(mobs[0].d, 3);
+  assert.equal(mobs[0].seen, true);
+});
