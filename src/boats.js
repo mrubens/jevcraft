@@ -149,8 +149,16 @@ async function leaveBoat(bot) {
 // in it for minutes with no survival check, and a spider killed it where
 // it sat (2026-09-27). The trip, if still wanted, boards again.
 async function leaveStrandedVehicle(bot) {
-  if (!bot.vehicle) return false;
-  await leaveBoat(bot);
+  if (!bot.vehicle && bot._seatedIn == null) return false;
+  if (bot.vehicle) { await leaveBoat(bot); bot._seatedIn = null; return true; }
+  // Seated in a vehicle not yet known: the dismount input all the same.
+  if (bot.supportFeature?.('newPlayerInputPacket')) bot._client.write('player_input', { inputs: { shift: true } });
+  else bot.dismount?.();
+  const deadline = Date.now() + 2500;
+  while (bot._seatedIn != null && !bot.vehicle && Date.now() < deadline) await sleep(50);
+  if (bot.supportFeature?.('newPlayerInputPacket')) bot._client.write('player_input', { inputs: {} });
+  if (bot.vehicle) await leaveBoat(bot);
+  bot._seatedIn = null;
   return true;
 }
 

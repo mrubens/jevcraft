@@ -598,7 +598,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       const joinedAt = Date.now();
       const seated = () => { if (Date.now() - joinedAt < 5000) require('./boats').leaveStrandedVehicle(bot).then(left => left && console.log('[bot] joined in a boat; got out'), err => console.log(`[bot] joined in a boat and could not get out: ${err.message}`)); };
       bot.once('mount', seated);
-      if (bot.vehicle) seated();
+      if (bot.vehicle || bot._seatedIn != null) seated();
+      // The seat can come by the raw packet alone (compatibility.js), with no mount event.
+      bot._client.on('set_passengers', () => { if (bot._seatedIn != null && !bot.vehicle) seated(); });
       await bot.waitForChunksToLoad();
       if (ended || !bot.isAlive) return;
       ready = true;

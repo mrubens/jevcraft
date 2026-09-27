@@ -4207,7 +4207,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
     if (loopCheck(task)) { await inCatch(task, goal, () => survival.step(task, goal, save, onStep)); save(); onStep(goal); continue; }
     updateDigCapabilities(bot);
     try {
-      if (bot.vehicle && await require('./boats').leaveStrandedVehicle(bot)) console.log('[work] sat in a boat between passes; got out');
+      if ((bot.vehicle || bot._seatedIn != null) && await require('./boats').leaveStrandedVehicle(bot)) console.log('[work] sat in a boat between passes; got out');
       if (goal.recoveryAdvice?.active) {
         await maintainVitals(bot, task);
         if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }

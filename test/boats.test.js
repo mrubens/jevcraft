@@ -173,3 +173,13 @@ test('sitting in a boat between work passes, the bot gets out', async () => {
   assert(written.includes('player_input'));
   assert.equal(await leaveStrandedVehicle({ vehicle: null }), false);
 });
+
+test('seated by the server before the boat is known, the bot still gets out', async () => {
+  // mid-218-h: the seat came before the boat on joining; bot.vehicle was nothing, and it sat thirteen minutes until a zombie killed it.
+  const { leaveStrandedVehicle } = require('../src/boats');
+  const written = [];
+  const bot = { vehicle: null, _seatedIn: 42, supportFeature: () => true, _client: { write: (name, data) => { written.push([name, data.inputs]); if (name === 'player_input' && data.inputs.shift) setTimeout(() => { bot._seatedIn = null; }, 20); } } };
+  assert.equal(await leaveStrandedVehicle(bot), true);
+  assert.equal(bot._seatedIn, null);
+  assert.deepEqual(written.map(w => w[0]), ['player_input', 'player_input'], 'shift down, then let go');
+});

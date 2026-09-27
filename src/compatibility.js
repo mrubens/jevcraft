@@ -85,6 +85,11 @@ function compatibilityPlugin(bot) {
   // Modern set_passengers names the VEHICLE and its remaining passengers.
   // Mineflayer only removes our mount when entityId is -1 (never sent here).
   bot._client.on('set_passengers', ({ entityId, passengers }) => {
+    // The seat as the server says it, whether or not the vehicle is known yet:
+    // on joining, the seat can come before the boat, and mineflayer's own
+    // bot.vehicle is then nothing (mid-218-h sat thirteen minutes, note 357).
+    if (bot.entity && passengers.includes(bot.entity.id)) bot._seatedIn = entityId;
+    else if (bot._seatedIn === entityId) bot._seatedIn = null;
     const observed = bot.entities?.[entityId];
     if (observed) {
       for (const old of observed.passengers || []) if (!passengers.includes(old.id) && old.vehicle === observed) delete old.vehicle;
