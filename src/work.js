@@ -2992,7 +2992,16 @@ function methodSoFar(bot, goal, method, ruin) {
   const placed = goal.portalFrame ? goal.portalFrame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
   const madePick = from.diamondPickaxe === false && diamondPickaxeCarried(bot);
   const walk = ruin && Number.isFinite(from.distance) ? `, the ruin ${from.distance} blocks away then and ${ruin.distance} now` : '';
-  return ` This is the way chosen, worked on for ${Math.round((method.activeMs || 0) / 60000)} minutes so far. Since it was chosen: obsidian carried ${from.obsidian ?? 0} to ${countOf(bot, 'obsidian')}, ${goal.portalFrame ? `${placed} of the frame's ten standing` : 'no frame begun'}, diamonds carried ${from.diamonds ?? 0} to ${countOf(bot, 'diamond')}${madePick ? ', a diamond pickaxe made' : ''}${walk}. Kept, it is asked again after another ${PORTAL_BUDGET_MS / 60000} working minutes.`;
+  // The pace so far, said beside the estimate: mid-207-i's frame was said
+  // to be eleven minutes of trips from done after sixty-one minutes had
+  // made three blocks, and it was kept each time (2026-09-27).
+  const minutes = Math.round((method.activeMs || 0) / 60000);
+  const gained = Math.max(0, placed - (from.placed || 0)) + Math.max(0, countOf(bot, 'obsidian') - (from.obsidian || 0));
+  const left = Math.max(0, 10 - placed - countOf(bot, 'obsidian'));
+  const pace = minutes < 10 || ruin || !left ? '' : gained
+    ? ` At the pace so far, ${gained} obsidian in ${minutes} minutes (about ${Math.round(minutes / gained)} a block), the ${left} still to come would take about ${Math.round(minutes / gained * left)} minutes more.`
+    : ` No obsidian has come of it in ${minutes} minutes.`;
+  return ` This is the way chosen, worked on for ${minutes} minutes so far. Since it was chosen: obsidian carried ${from.obsidian ?? 0} to ${countOf(bot, 'obsidian')}, ${goal.portalFrame ? `${placed} of the frame's ten standing` : 'no frame begun'}, diamonds carried ${from.diamonds ?? 0} to ${countOf(bot, 'diamond')}${madePick ? ', a diamond pickaxe made' : ''}${walk}.${pace} Kept, it is asked again after another ${PORTAL_BUDGET_MS / 60000} working minutes.`;
 }
 
 async function portalMethod(bot, task, goal, save, client = task.opportunityClient) {
@@ -3031,10 +3040,11 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const lava = nearestLava(bot, goal);
   const facts = portalFacts(bot, goal, ruins, lava);
   const current = due ? methodKey(method, ruins) : null;
+  const placed = goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
   const tree = {
     build_new: { description: buildSays({ obsidian, diamonds, diamondPickaxe }) + facts },
     cast_frame: { description: castSays({ obsidian, waterBucket: countOf(bot, 'water_bucket') > 0, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket'),
-      iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava }) + facts },
+      iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava, standing: placed, feetY: bot.entity.position.y }) + facts },
   };
   // Where a cast frame stands is part of the way: mid-237-d cast on the
   // surface at y 68 with its lava at y -54 and one bucket, a round trip of
@@ -3045,7 +3055,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     ? { at: method.near, how: 'the lava chosen before', distance: Math.round(bot.entity.position.distanceTo(new Vec3(method.near.x, method.near.y, method.near.z))) } : lava;
   if (castBy?.at && (castBy.distance > 16 || current === 'cast_at_lava')) {
     const dy = Math.round(castBy.at.y - bot.entity.position.y);
-    tree.cast_at_lava = { description: `Cast a frame of its own as above, but beside ${current === 'cast_at_lava' ? 'the lava chosen before' : 'the nearest known lava'} rather than here: it is ${castBy.distance} blocks away (${castBy.how}), at y ${Math.round(castBy.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}. The bot walks there first and puts the frame down within a few blocks of it, so a trip for lava is a few seconds, against about ${Math.round(castBy.distance * 2 / 4.3)} seconds there and back from a frame here. The portal is then down there, and the way back from the Nether comes out beside that lava.` + facts };
+    tree.cast_at_lava = { description: `Cast a frame of its own as above, but beside ${current === 'cast_at_lava' ? 'the lava chosen before' : 'the nearest known lava'} rather than here: it is ${castBy.distance} blocks away (${castBy.how}), at y ${Math.round(castBy.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}. The bot walks there first and puts the frame down within a few blocks of it, so a trip for lava is a few seconds, against about ${Math.round(castBy.distance * 2 / 4.3)} seconds there and back from a frame here${dy < -8 ? `, walking on the level, and down and back up ${-dy} blocks each trip` : ''}. The portal is then down there, and the way back from the Nether comes out beside that lava.` + facts };
   }
   // Buckets are the trips: each carries one lava per bucket held, and the
   // iron in hand makes more (mid-237-d carried one bucket and eight ingots).
@@ -3054,7 +3064,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // 10", chose the cast with its one bucket, and spent thirty-eight minutes
   // carrying lava a bucket at a time from sixty blocks down (2026-09-27).
   const iron = countOf(bot, 'iron_ingot');
-  const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket'), toFetch = Math.max(0, 10 - obsidian - countOf(bot, 'lava_bucket'));
+  const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket'), toFetch = Math.max(0, 10 - placed - obsidian - countOf(bot, 'lava_bucket'));
   const more = Math.min(Math.floor(iron / 3), Math.max(0, toFetch - Math.max(1, carriers)));
   if (more > 0) {
     const trips = n => Math.ceil(toFetch / Math.max(1, n));
@@ -3068,7 +3078,6 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // Asked again: the way held says its minutes and what they made; the
   // others say what becomes of a frame begun.
   if (current) {
-    const placed = goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
     for (const [key, node] of Object.entries(tree)) {
       if (key === current) node.description += methodSoFar(bot, goal, method, key.startsWith('ruin_') ? ruins[Number(key.slice(5))] : null);
       else if (placed && key !== 'craft_buckets') node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
@@ -3100,7 +3109,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   if (frame && (frame.ruin || next.kind === 'ruin' || next.near)) delete goal.portalFrame;
   else if (frame && next.kind === 'cast') { frame.cast = true; frame.axis ||= 'x'; frame.castTemp ||= []; }
   else if (frame && next.kind === 'build') delete frame.cast;
-  goal.portalMethod = { ...next, activeMs: 0, reasked: 0, from: { obsidian, diamonds, diamondPickaxe, ...(ruin ? { distance: ruin.distance } : {}) } };
+  goal.portalMethod = { ...next, activeMs: 0, reasked: 0, from: { obsidian, diamonds, diamondPickaxe, placed: next.kind === 'ruin' || next.near ? 0 : placed, ...(ruin ? { distance: ruin.distance } : {}) } };
   save();
   return next.kind !== 'ruin' || (goal.portalFrame ? true : portalMethod(bot, task, goal, save, client));
 }

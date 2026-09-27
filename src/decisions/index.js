@@ -113,7 +113,7 @@ function walk(tree, fallback) {
 // Every choice about playing the game is told what the player counts:
 // real minutes. A night hidden in a pocket was weighed as safe and free,
 // and it cost seven minutes of a run with nothing to show.
-const GAMEPLAY_AREAS = new Set(['combat', 'endgame', 'home', 'idle', 'resources', 'strategy', 'survival']);
+const GAMEPLAY_AREAS = new Set(['combat', 'endgame', 'home', 'idle', 'resources', 'strategy', 'survival', 'travel', 'work']);
 // The run's own scoring, said plainly: a death fails it. The line had said
 // a death mattered less than a night idled, a thumb on the scale toward the
 // risky answer at low health (the decision review, 2026-09-26). A night is

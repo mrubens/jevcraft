@@ -199,8 +199,10 @@ function standsFor(frame, p, w, { floorless = false } = {}) {
 
 // The portal_method option, said with what it needs against what is
 // carried, the trips to lava it takes and how far the lava is.
-function castSays({ obsidian = 0, waterBucket = false, buckets = 0, lavaBuckets = 0, iron = 0, walls, blocks = 0, lighter = false, lava = null }) {
-  const cast = Math.max(0, 10 - obsidian);
+// The frame's blocks already standing are not cast again: mid-207-i was
+// told "10 of the ten to cast" with 3 standing (2026-09-27).
+function castSays({ obsidian = 0, standing = 0, waterBucket = false, buckets = 0, lavaBuckets = 0, iron = 0, walls, blocks = 0, lighter = false, lava = null, feetY = null }) {
+  const cast = Math.max(0, 10 - standing - obsidian);
   const carriers = buckets + lavaBuckets;
   const toFetch = Math.max(0, cast - lavaBuckets);
   const trips = carriers ? Math.ceil(toFetch / carriers) : toFetch;
@@ -213,9 +215,14 @@ function castSays({ obsidian = 0, waterBucket = false, buckets = 0, lavaBuckets 
     : `With no bucket carried one has to be made first; each block is one lava bucket, so with one that is ${plural(trips, 'trip')} to lava.`) +
     (more && toFetch ? ` The ${iron} iron ingots carried make ${plural(more, 'more bucket')}, about ${plural(Math.ceil(toFetch / (Math.max(1, carriers) + more)), 'trip')} with them.` : '');
   const round = lava && Math.round(lava.distance * 2 / 4.3);
-  const lavaSay = lava ? `The nearest known lava is ${lava.distance} blocks away (${lava.how}): about ${round} seconds there and back a trip, ${round * trips} in all.`
+  // The seconds are a walk on the level; lava far below is a staircase each
+  // way. mid-207-i was told 66 seconds a trip to lava 136 blocks down and
+  // took sixty-one minutes over three blocks (2026-09-27).
+  const below = lava?.at && Number.isFinite(feetY) ? Math.round(feetY - lava.at.y) : 0;
+  const depthSay = below > 8 ? ` That is a walk on the level; the lava is ${below} blocks below here, and each trip goes down and back up that far by a staircase dug or found, which takes longer.` : '';
+  const lavaSay = lava ? `The nearest known lava is ${lava.distance} blocks away (${lava.how}): about ${round} seconds there and back a trip, ${round * trips} in all.${depthSay}`
     : 'No lava is known nearby: a pool has to be found first.';
-  return `Build a portal frame of its own and cast each missing block in place, with no diamond pickaxe: the bot walls a frame slot round with temporary blocks, pours a lava bucket into it, pours water on top and takes the water back, and the lava source turns to obsidian. ${cast} of the ten to cast (${obsidian} obsidian carried, placed as it is). ` +
+  return `Build a portal frame of its own and cast each missing block in place, with no diamond pickaxe: the bot walls a frame slot round with temporary blocks, pours a lava bucket into it, pours water on top and takes the water back, and the lava source turns to obsidian. ${cast} of the ten to cast (${standing ? `${standing} standing, ` : ''}${obsidian} obsidian carried, placed as it is). ` +
     `Needs: a water bucket (${waterBucket ? 'one carried' : 'none carried'}); a lava bucket for each block (${plural(buckets, 'empty bucket')} and ${lavaBuckets} full of lava carried; a bucket is three iron ingots, ${iron} carried); ` +
     `about ${walls} ordinary blocks for the temporary walls, those inside the frame dug out before lighting (${blocks} carried); flint and steel or a fire charge (${lighter ? 'carried' : 'none carried'}). ${tripsSay} ${lavaSay}`;
 }

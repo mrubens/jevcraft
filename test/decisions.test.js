@@ -135,3 +135,13 @@ test('every question about playing the game is told the run clock: minutes playe
   assert.equal(seen.runClock.lastHalfHourBy['seal shelter'], 10);
   assert.equal(seen.runClock.reached['nether entered'], '79 minutes in');
 });
+
+test('the portal way question, a work question, is told the run clock too', async () => {
+  // It is the question mid-207-i kept answering with its surface frame, and it was left out of the time facts.
+  const { decide } = require('../src/decisions');
+  const goal = { gameProgress: { version: 1, startedAt: Date.now() - 60000, milestones: {}, clock: { startedAt: Date.now() - 60000, lastAt: Date.now(), playedMs: 60000, byDoing: { 'enter_nether: fill_bucket': 60000 } } } };
+  let seen = null, said = null;
+  const client = { systemOne: async ({ state, rootInstructions }) => { seen = state; said = rootInstructions; return { answers: { branch_0: { choice: 'cast_frame', confidence: 0.9 } } }; } };
+  await decide('portal_method', { client, bot: null, goal, tree: { cast_frame: { description: 'a' }, build_new: { description: 'b' } }, state: {} });
+  assert.equal(seen.runClock?.minutesPlayed, 1);
+});

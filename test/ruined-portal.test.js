@@ -443,3 +443,13 @@ test('a ruin that fails at its site ten times is marked no frame, and the way to
   assert.equal(goal.portalMethod, undefined, 'the way to a portal is asked again');
   assert.equal(goal.landmarks[0].noFrame, true, 'and the ruin is not on offer');
 });
+
+test('the cast option counts the frame already standing and says when the lava is far below', () => {
+  // mid-207-i was told "10 of the ten to cast" with 3 standing, and 66 seconds a trip to lava 136 blocks down (2026-09-27).
+  const cast = require('../src/portal-cast');
+  const says = cast.castSays({ obsidian: 0, standing: 3, waterBucket: true, buckets: 1, iron: 0, walls: 44, blocks: 200, lighter: true,
+    lava: { distance: 141, how: 'a lava pool remembered', at: { x: 0, y: -55, z: 0 } }, feetY: 81 });
+  assert.match(says, /7 of the ten to cast \(3 standing, 0 obsidian carried/);
+  assert.match(says, /about 7 trips to lava/);
+  assert.match(says, /the lava is 136 blocks below here/);
+});
