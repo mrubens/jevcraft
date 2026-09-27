@@ -674,7 +674,11 @@ class Survival {
       // (2026-09-27). With a mob that hits within six, the open sides are
       // walled first, the floor beside the feet and a block on it: a
       // player thrown into a wall stays where it is.
-      if (!bot._spanning && close.some(t => t.distance <= 6 && !shooter(t.entity)) && await this.railSpan(task, goal, save)) return;
+      // Shots too: a blocked fireball still pushes, and mid-242-h, bridging
+      // toward a fortress under a blaze's fire, blocked four and drifted
+      // off its span with them, thirty blocks into the lava (2026-09-27).
+      const shots = require('./projectile-guard').incoming(bot, { reach: 24 }).length > 0 || close.some(t => t.visible && shooter(t.entity));
+      if (!bot._spanning && (shots || close.some(t => t.distance <= 6 && !shooter(t.entity))) && await this.railSpan(task, goal, save)) return;
       // A mob at arm's length is struck crouched and still (combat.js
       // defendNearby on a span); nothing else is done about it here.
       if (await defendNearby(bot, task, goal, save)) return;

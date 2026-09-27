@@ -3110,3 +3110,19 @@ test('the charge at a shooter says the mobs out of sight about, as the fight doe
   assert(options.charge_shooter, Object.keys(options).join(','));
   assert.match(options.charge_shooter.description, /Out of sight but about: a skeleton 4 blocks off/);
 });
+
+test('on a one-wide span with fireballs coming, the open sides are walled: a blocked shot still pushes', async () => {
+  // mid-242-h blocked four blaze fireballs on its span and drifted off it into the lava (2026-09-27).
+  const placed = new Set();
+  const fireball = { id: 9, name: 'small_fireball', position: new Vec3(0.5, 65.5, 8.5), velocity: new Vec3(0, 0, -1), isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, health: 20, food: 18,
+    entities: { 9: fireball }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'netherrack', count: 32 }, { name: 'iron_sword' }], slots: { 45: { name: 'shield' } } }, world: { raycast: () => null },
+    blockAt: p => { const q = p.floored(); const solid = placed.has(`${q}`) || (q.y === 63 && q.x === 0); return { name: solid ? 'netherrack' : q.y < 30 ? 'lava' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; },
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, attack() {}, equip: async () => {}, activateItem() {}, deactivateItem() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, place: async (b, t, p) => { placed.add(`${p}`); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('span'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'rail_span');
+  assert(placed.has(`${new Vec3(1, 64, 0)}`) && placed.has(`${new Vec3(-1, 64, 0)}`), [...placed].join(' '));
+});
