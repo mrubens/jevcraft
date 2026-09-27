@@ -105,6 +105,10 @@ const BLOCK_SECONDS = 0.6, EAT_SECONDS = 1.6, SHAFT_BLOCK_SECONDS = 1;
 // A run: about five and a half blocks a second sprinting. The route searches
 // made before the stance is asked, at most (scoutRetreat).
 const SPRINT = 5.6, SCOUT_MS = 300;
+// A swim at the surface: about two blocks a second. mid-215-j swam 29
+// blocks of open sea in 14.3 seconds on its way to a ruined portal (the
+// flight frames of 2026-09-27, note 501).
+const SWIM = 2;
 // Walkers that still get at a player two blocks up.
 const CLIMBERS = new Set(['spider', 'cave_spider', 'enderman', 'wither_skeleton', 'ravager', 'iron_golem', 'warden']);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -1834,12 +1838,27 @@ class Survival {
       // retreat find no route and every building stance fail in the water
       // (notes 367 and 388, 2026-09-27).
       const shooting = danger.filter(m => shooter(m.entity)).map(m => m.entity);
-      const banks = require('./shore').landingsAbout(bot, shooting);
-      const bankSays = !banks.nearest ? ' No dry landing near the water\'s level is in view within thirty-two blocks; the bot digs or climbs out where it can.'
+      // As far as the swim itself looks (shore.js reachShore), and priced
+      // as the other stances are: the seconds of swimming to the bank it
+      // makes for and what the mobs deal meanwhile. mid-215-j was told only
+      // that no bank was within thirty-two blocks and that it would dig or
+      // climb out where it could; the bank was 35 blocks off, some 17
+      // seconds of swimming, and the drowned's trident took 4.5 every two
+      // seconds, more than its 15.5 health in that time (note 501).
+      const banks = require('./shore').landingsAbout(bot, shooting, { reach: 64 });
+      const swimFor = shooting.length && banks.hidden ? banks.hidden : banks.nearest;
+      const swimSays = (() => {
+        if (!swimFor) return '';
+        const secs = Math.round(swimFor.distance / SWIM * 10) / 10, here = bot.entity.position, s = shooting[0];
+        const toward = s && (swimFor.x - here.x) * (s.position.x - here.x) + (swimFor.z - here.z) * (s.position.z - here.z) > 0;
+        const way = s ? `, ${toward ? 'toward' : 'away from'} the ${s.name.replaceAll('_', ' ')}` : '';
+        return ` The swim to it is about ${secs} seconds at the surface (about ${SWIM} blocks a second)${way}.` + costSays(stanceCost({ mobs, setup: secs, seconds: secs }), bot.health, mobs, { over: 'over the swim' });
+      })();
+      const bankSays = !banks.nearest ? ' No dry landing near the water\'s level is in view within sixty-four blocks: nothing to swim for, and the bot climbs or digs out only where a bank or the floor is within a few blocks.'
         : shooting.length ? (banks.hidden ? ` The nearest bank out of the ${shooting.length === 1 ? 'shooter\'s' : 'shooters\''} sight is ${banks.hidden.distance} blocks off${banks.hidden.distance > banks.nearest.distance ? ` (the nearest bank of all, ${banks.nearest.distance} off, is in their sight)` : ''}; it is swum for first, shot at on the way, and behind it they cannot hit the bot.`
-          : ` Every dry landing in view within thirty-two blocks is in the shooters\' sight; the nearest is ${banks.nearest.distance} blocks off.`)
+          : ` Every dry landing in view within sixty-four blocks is in the shooters\' sight; the nearest is ${banks.nearest.distance} blocks off.`)
         : ` The nearest dry landing is ${banks.nearest.distance} blocks off.`;
-      options.get_out_of_water = { description: `Swim for the nearest dry ground with air over it, out of the shooters' sight where a bank hides the bot, digging a step into the bank if that is the way out, and deal with the mobs from there.${wet}${bankSays}`,
+      options.get_out_of_water = { description: `Swim for the nearest dry ground with air over it, out of the shooters' sight where a bank hides the bot, digging a step into the bank if that is the way out, and deal with the mobs from there.${wet}${bankSays}${swimSays}`,
         run: async () => { this.report(goal, save, { action: 'out_of_water', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, air: bot.oxygenLevel, hiddenBank: banks.hidden });
           return !!await reachShore(bot, task, goal, save, { move: this.actions.navigate, client: this.client, dig: this.actions.dig, fight: danger }); } };
     }

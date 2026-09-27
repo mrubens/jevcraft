@@ -3081,7 +3081,7 @@ test('in water with a drowned, the stances say so, no pillar, pocket or bunker i
   assert(options.get_out_of_water, Object.keys(options).join(','));
   assert.match(options.get_out_of_water.description, /in water, air 12 of 20.*sinks unless it swims.*The drowned swims faster than the bot in water/);
   assert.match(options.fight.description, /The bot is in water/);
-  assert.match(options.get_out_of_water.description, /No dry landing near the water's level is in view within thirty-two blocks/);
+  assert.match(options.get_out_of_water.description, /No dry landing near the water's level is in view within sixty-four blocks: nothing to swim for/);
   // A pillager on the bank (notes 367, 388): the bank out of its sight is said, and the swim for shore is run as the stance, the pillager passed with it.
   const pillager = { entity: { id: 2, name: 'pillager', position: new Vec3(8.5, 16, -6.5), height: 1.95, isValid: true }, distance: 10, visible: true };
   // Two banks at the water's surface (y 20 here): one at z 0 in the pillager's sight, one at z 6 behind the bank.
@@ -3092,6 +3092,23 @@ test('in water with a drowned, the stances say so, no pillar, pocket or bunker i
   bot.world.raycast = (from, dir, len) => { const to = from.plus(dir.scaled(len)); return to.z > 3 ? { intersect: from.plus(dir.scaled(2)) } : null; };
   const shot = survival.stanceOptions(new Task('t'), {}, () => {}, [drowned, pillager], false);
   assert.match(shot.get_out_of_water.description, /The nearest bank out of the shooter's sight is 9 blocks off \(the nearest bank of all, 7 off, is in their sight\); it is swum for first, shot at on the way, and behind it they cannot hit the bot/);
+});
+
+test('getting out of the water says the bank as far as the swim looks, and prices the swim under fire', () => {
+  // mid-215-j (note 501): told only that no bank was within thirty-two blocks; it was 35 off, some 17 seconds of swimming, and a drowned's trident took 4.5 every two seconds from 15.5 health.
+  const sea = p => p.y >= 53 && p.y <= 62 && p.z > -35;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal' }, registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 61.5, 0.5), isInWater: true }, entities: {},
+    health: 15.5, food: 18, oxygenLevel: 20, inventory: { items: () => [{ name: 'cobblestone', count: 64 }, { name: 'iron_sword' }], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' }, 45: { name: 'shield' } } },
+    heldItem: { name: 'iron_sword' }, world: { raycast: () => null },
+    blockAt: p => { const q = p.floored ? p.floored() : p; return sea(q) ? { name: 'water', position: q, boundingBox: 'empty' } : q.y <= 62 ? { name: 'stone', position: q, boundingBox: 'block' } : { name: 'air', position: q, boundingBox: 'empty' }; } });
+  // The bank's top row at z -35, y 62: found only by a search that looks past thirty-two blocks.
+  bot.findBlocks = ({ maxDistance, useExtraInfo }) => [-1, 0, 1].map(x => new Vec3(x, 62, -35)).filter(p => p.distanceTo(bot.entity.position) <= maxDistance)
+    .map(p => ({ position: p })).filter(b => !useExtraInfo || useExtraInfo(b)).map(b => b.position);
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} });
+  const drowned = { entity: { id: 1, name: 'drowned', position: new Vec3(5, 55, -15), height: 1.95, isValid: true, heldItem: { name: 'trident' } }, distance: 20, visible: true };
+  const says = survival.stanceOptions(new Task('t'), {}, () => {}, [drowned], false).get_out_of_water.description;
+  assert.match(says, /Every dry landing in view within sixty-four blocks is in the shooters' sight; the nearest is 36 blocks off/);
+  assert.match(says, /The swim to it is about 18 seconds at the surface \(about 2 blocks a second\), toward the drowned\. About (\d+(\.\d)?) damage from the mobs here over the swim, from 15\.5 health \(more than the bot has\)/);
 });
 
 test('on a one-wide ledge with a zombie close, the open sides are walled before anything else: knockback there is the fall', async () => {

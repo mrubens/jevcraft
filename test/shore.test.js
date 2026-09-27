@@ -78,6 +78,32 @@ test('out of the water in a fight: the threat check does not end the swim, and t
   assert.deepEqual(moved, [[18, 6]], 'the bank behind cover, not the nearer one in the pillager\'s sight');
 });
 
+test('a bank in view the route search does not reach in its time is swum for straight over open water, not given up', async () => {
+  // mid-215-j (note 501): the bank 35 blocks off across open sea, every landing unrouted, the stance swam nowhere and failed in two seconds under a drowned's trident.
+  const f = fixture(), { bot, landing } = f;
+  bot.pathfinder.getPathTo = () => ({ status: 'timeout', path: [] });
+  const keys = {};
+  Object.assign(bot, { lookAt: async () => {}, controlState: keys, inventory: { items: () => [] },
+    setControlState(k, v) {
+      keys[k] = v;
+      if (k !== 'forward' || !v) return;
+      // The first stroke brings the bot to the bank's edge; the climb onto it.
+      if (bot.entity.position.x < 16) bot.entity.position = new Vec3(17.2, 62.2, 0.5);
+      else { bot.entity.position = landing.offset(.5, 0, .5); bot.entity.onGround = true; }
+    } });
+  const danger = [{ entity: { id: 9, name: 'drowned', position: new Vec3(5, 55, 5), height: 1.95, isValid: true }, distance: 9, visible: true }];
+  const landed = await reachShore(bot, f.task, f.goal, () => {}, { surface: f.surface, fight: danger, move: () => assert.fail('no route was found to walk') });
+  assert.equal(landed, true);
+  assert.equal(f.goal.step.straight, true);
+  assert.deepEqual(bot.entity.position.floored(), landing);
+  // A wall across the water: not swum at.
+  const g = fixture();
+  g.bot.pathfinder.getPathTo = () => ({ status: 'timeout', path: [] });
+  g.blocks.set(`${new Vec3(9, 62, 0)}`, 'stone'); g.blocks.set(`${new Vec3(9, 63, 0)}`, 'stone');
+  Object.assign(g.bot, { lookAt: async () => {}, controlState: {}, inventory: { items: () => [] }, setControlState: () => assert.fail('swum into the wall') });
+  await assert.rejects(reachShore(g.bot, g.task, g.goal, () => {}, { surface: g.surface, fight: danger }), /No reachable dry shore/);
+});
+
 test('under a roof, with no landing counted as surface, the bot climbs out onto the nearest dry cell', async () => {
   const { Vec3 } = require('vec3');
   const { reachShore } = require('../src/shore');

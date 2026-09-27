@@ -76,7 +76,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     }).map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
     // Under fire, the landings the shooters cannot see come first.
     if (shooters.length) land.sort((a, b) => (hiddenFrom(bot, a, shooters) ? 0 : 1) - (hiddenFrom(bot, b, shooters) ? 0 : 1) || a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
-    const checked = new Set();
+    const checked = new Set(), unrouted = [];
     let attempts = 0;
     for (const p of land) {
       guard();
@@ -85,7 +85,8 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
       checked.add(area); if (checked.size > 24) break;
       const destination = new goals.GoalBlock(p.x, p.y, p.z);
       const route = await surveyRoute(bot, task, movement, destination, 300);
-      if (route.status !== 'success' || (route.path || []).some(q => !movement.allowedPosition(q) || q.toBreak?.length || q.toPlace?.length) || !safe(p)) continue;
+      if (route.status !== 'success') { unrouted.push(p); continue; }
+      if ((route.path || []).some(q => !movement.allowedPosition(q) || q.toBreak?.length || q.toPlace?.length) || !safe(p)) continue;
       goal.step = { action: 'reach_shore', from: { ...bot.entity.position }, destination: { ...p } };
       goal.survivalAction = { action: 'reach_shore', at: new Date().toISOString() }; save();
       try {
@@ -131,6 +132,37 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     if (await stepOut(bot, task, goal, save)) return true;
     if (await notchOut(bot, task, goal, save)) return true;
     if (await digToShore(bot, task, goal, save, movement, move, state.failures)) return true;
+    // A bank in view that the route search found no way to in its time (a
+    // long swim is a long search): swum for straight at the surface, over
+    // open water only, as a player does. mid-215-j's bank was 35 blocks off
+    // across open sea; every landing went unrouted, the stance swam nowhere
+    // and failed in two seconds, and the drowned's trident hit every two
+    // until it died (note 501).
+    const bank = unrouted.find(p => openSwim(bot, p, waterY));
+    if (bank) {
+      const flat = () => Math.hypot(bank.x + 0.5 - bot.entity.position.x, bank.z + 0.5 - bot.entity.position.z), before = flat();
+      const out = () => bot.entity.onGround && !inWater(bot) && dryStanding(bot, bot.entity.position);
+      goal.step = { action: 'reach_shore', from: { ...bot.entity.position }, destination: { ...bank }, straight: true };
+      goal.survivalAction = { action: 'reach_shore', straight: true, at: new Date().toISOString() }; save();
+      const began = Date.now();
+      let stuck = 0;
+      while (Date.now() - began < Math.min(60000, before / SWIM_BPS * 2000 + 4000) && flat() > 1.5 && !out()) {
+        const was = bot.entity.position.clone();
+        await motion(bot, task, { label: 'swim_to_bank', keys: ['forward', 'jump'], sneak: false, why: 'swimming straight for the bank in view', guard,
+          look: new Vec3(bank.x + 0.5, bot.entity.position.y + 1.6, bank.z + 0.5), maxMs: SEGMENT_MS, tick: 50, until: () => flat() <= 1.5 || out() });
+        if (Math.hypot(bot.entity.position.x - was.x, bot.entity.position.z - was.z) >= 1) stuck = 0;
+        else if (++stuck >= 2) break;
+      }
+      if (!out() && flat() <= 2.5) {
+        await clearHeadroom(bot, task);
+        await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'onto the bank swum to',
+          look: bank.offset(0.5, 1, 0.5), maxMs: 2500, tick: 50, guard, until: out });
+      }
+      if (out()) { state.landed = { position: { ...bot.entity.position }, at: new Date().toISOString(), straight: true }; save(); return true; }
+      // Nearer the bank: the search is run again from there.
+      if (before - flat() >= 4) return true;
+      state.failures[`${bank}`] = Date.now(); save();
+    }
     // Out at sea with no shore within sight: swim for the land remembered,
     // else hold one heading and look again. mid-218-d searched for a shore
     // in the open sea over and over, drifting, until the stall watch ended
@@ -365,6 +397,21 @@ async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
 // if there is none), swum to at the surface until ground comes into view;
 // the search then walks onto it like any other.
 const SEA_BIOME = /ocean|river/;
+// About two blocks a second at the surface (mid-215-j, 29 blocks in 14.3
+// seconds, note 501).
+const SWIM_BPS = 2;
+// A straight swim at the water's surface to the landing `p`: every cell on
+// the line water with open air over it, up to the bank's own edge.
+function openSwim(bot, p, waterY) {
+  const a = bot.entity.position, b = p.offset(0.5, 0, 0.5), n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.25);
+  for (let i = 0; i <= n; i++) {
+    const x = a.x + (b.x - a.x) * i / n, z = a.z + (b.z - a.z) * i / n;
+    if (Math.hypot(b.x - x, b.z - z) <= 1.5) break;
+    const cell = new Vec3(x, waterY, z).floored();
+    if (!/water/.test(bot.blockAt(cell)?.name || '') || !dryPassable(bot.blockAt(cell.offset(0, 1, 0)))) return false;
+  }
+  return true;
+}
 const SWIM_MS = 180000, SEGMENT_MS = 2000, LAND_IDS = ['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'mycelium', 'moss_block', 'stone',
   'granite', 'diorite', 'andesite', 'sand', 'red_sand', 'gravel', 'sandstone', 'snow_block', 'clay', 'mud'];
 
