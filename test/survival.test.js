@@ -3129,3 +3129,14 @@ test('on a one-wide span with fireballs coming, the open sides are walled: a blo
   assert.equal(goal.survivalAction?.action, 'rail_span');
   assert(placed.has(`${new Vec3(1, 64, 0)}`) && placed.has(`${new Vec3(-1, 64, 0)}`), [...placed].join(' '));
 });
+
+test('a creeper Jev chose to leave be is a threat again well before its fuse\'s reach, not at three blocks', () => {
+  // mid-231-i at two health had one follow it in from nine blocks to two, no stance asked, and was blown up (2026-09-27).
+  const { immediateThreat } = require('../src/danger');
+  const creeper = { id: 8, name: 'creeper', type: 'hostile', position: new Vec3(6.5, 64, 0.5), height: 1.7, isValid: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5), height: 1.8 }, entities: { 8: creeper }, game: { dimension: 'overworld' }, health: 20,
+    world: { raycast: () => null }, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }), _wavedOff: { ids: [8], until: Date.now() + 15000 } };
+  assert.equal(immediateThreat(bot)?.entity.name, 'creeper', 'six blocks off: a threat again');
+  creeper.position = new Vec3(10.5, 64, 0.5);
+  assert.equal(immediateThreat(bot), undefined, 'ten off: still left be');
+});

@@ -219,7 +219,16 @@ function immediateThreat(bot) {
   // And mobs a charge could not reach (survival.js charge), while they
   // land nothing: they cannot reach the bot either.
   const unreachable = !hurt && bot._unreachable?.until > Date.now() ? bot._unreachable.ids : [];
-  const leftBe = t => (!!waved && waved.includes(t.entity.id) && t.distance > 3) || (unreachable.includes(t.entity.id) && t.distance > (t.entity.name === 'creeper' ? 5 : 2));
+  // A creeper Jev chose to leave be is left only while it is further than
+  // its fuse's reach and a second and a half's walk: at three it is already
+  // lighting. (One a charge could not reach, off on a ledge, stays left be
+  // to five: trial 73 faced such a one for three minutes.)
+  // mid-231-i, at two health, had one follow it in from nine blocks to two,
+  // no stance asked, and was blown up (2026-09-27).
+  const { LIGHTS_AT, APPROACH } = require('./combat-estimate');
+  const creeperFar = LIGHTS_AT + APPROACH * 1.5;
+  const leftBe = t => (!!waved && waved.includes(t.entity.id) && t.distance > (t.entity.name === 'creeper' ? creeperFar : 3)) ||
+    (unreachable.includes(t.entity.id) && t.distance > (t.entity.name === 'creeper' ? 5 : 2));
   // A creeper within four blocks is one whether it is in sight or not: it
   // comes round the corner already at its fuse's distance. mid-79-b stood
   // recovering for five seconds with one out of sight beside it, and the
