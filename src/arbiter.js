@@ -124,7 +124,13 @@ function rulesPick(claims) {
   return [...claims].sort((a, b) => (URGENCY[a.urgency] ?? 3) - (URGENCY[b.urgency] ?? 3) ||
     (LAYERS.indexOf(a.layer) + 1 || 99) - (LAYERS.indexOf(b.layer) + 1 || 99))[0] || null;
 }
-const fingerprintOf = claims => claims.map(c => `${c.layer}:${c.action}`).sort().join('|');
+// The work's own step changing (mine, craft, mine) is not a new question:
+// mid-218-n was asked eight times in a minute for it (note 490). The other
+// layers' actions are: a creeper in place of a shelter is.
+const fingerprintOf = claims => claims.map(c => `${c.layer}:${c.layer === 'work' ? '' : c.action}`).sort().join('|');
+// When a claim's last run was stopped, as a time.
+const stoppedAt = c => { const t = c?.facts?.lastErrorAt; return typeof t === 'number' ? t : Date.parse(t || '') || 0; };
+const STOPPED_BY_THREAT = /Threat nearby|Preempted|hurt|NeedsSafety/i;
 
 // What the ruling was made against: the mobs within STANCE_NEWCOMER, the
 // health and the food band.
@@ -142,6 +148,11 @@ function broken(ruling, claims, seen, now) {
   // whatever else comes; only a reflex takes it.
   if (winner.preemptible === false && now - ruling.at < (winner.minHoldMs || 0)) return null;
   if (now >= ruling.until) return 'a minute passed';
+  // Its winner stopped by a mob since the ruling: the ruling was made
+  // before it, and giving it the turn back only stops it again. mid-218-n's
+  // work was stopped by a drowned eleven times in four seconds, handed back
+  // each time on the ruling held, at seven health (note 490).
+  if (stoppedAt(winner) > ruling.at && STOPPED_BY_THREAT.test(winner.facts?.lastError || '')) return `its winner was stopped: ${winner.facts.lastError}`;
   if (ruling.idleSince && now - ruling.idleSince >= IDLE_MS) return `its winner did nothing for ${IDLE_MS / 1000} seconds`;
   if (fingerprintOf(claims) !== ruling.fingerprint) return 'the claims changed';
   if (seen.ids.some(id => !ruling.ids.includes(id))) return 'a newcomer within six blocks';
@@ -156,8 +167,31 @@ const optionOf = (c, held = null, now = Date.now()) => {
   const mine = held?.layer === c.layer;
   const facts = { ...(c.facts || {}), ...(mine ? { hasHadTheTurnSeconds: Math.round((now - held.since) / 1000) } : {}),
     ...(mine && held.idleSince ? { didNothingWithItSeconds: Math.round((now - held.idleSince) / 1000) } : {}) };
-  return { description: { action: c.action, urgency: c.urgency, facts, ...(c.cost ? { cost: c.cost } : {}) }, run: c.run };
+  return { description: { does: claimSays(c), action: c.action, urgency: c.urgency, facts, ...(c.cost ? { cost: c.cost } : {}) }, run: c.run };
 };
+// What giving a layer the turn does, in words: mid-218-n chose the work
+// ("recover_before_nether") over "escape_threat" at seven health with a
+// drowned five blocks off, the options named by their code (note 490).
+function claimSays(c) {
+  const f = c.facts || {}, mob = t => t ? `the ${String(t.name).replaceAll('_', ' ')} ${t.distance} blocks off${t.seen === false ? ' (out of sight)' : ''}` : 'the mobs about';
+  const hp = f.health !== undefined ? ` Health ${Math.round(f.health * 10) / 10}.` : '';
+  switch (c.action) {
+    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}: the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest). The work waits.${hp}`;
+    case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; the stance is asked next. The work waits.`;
+    case 'surface': return `Swim up for air: the head is under water, air ${f.air} of 20; at none, drowning takes 2 health a second.${hp}`;
+    case 'eat': return `Eat ${f.item ? String(f.item).replaceAll('_', ' ') : 'food'} now, about ${c.cost?.seconds || 1.6} seconds.${hp} Hunger ${f.food}.`;
+    case 'leave_lava': return 'Get out of the lava.';
+    case 'out_of_fire': return 'Put out the fire on the bot.';
+    case 'dig_out_of_block': return 'Dig the head out of the block it is in.';
+    case 'swim_up': return `Swim up: air ${f.air} of 20.`;
+    case 'pocket_next': return `In a sealed pocket: whether to stay, leave or do something else there is asked next.${hp}`;
+    case 'secure_shelter': return `Shelter for the night: the way (a room, a pocket here, a shaft, the bed) is asked next.${hp}`;
+    case 'obtain_food': return `Find food: where is asked next. Hunger ${f.food}${f.foodCarried !== undefined ? `, ${f.foodCarried} food points carried` : ''}.${hp}`;
+    default:
+      if (c.layer === 'work') return `Go on with the work: ${f.doing || String(c.action).replaceAll('_', ' ')}${f.request ? ` (toward "${f.request}")` : ''}.${f.lastError ? ` Its last try ended: ${f.lastError}.` : ''}`;
+      return `${c.layer}: ${String(c.action).replaceAll('_', ' ')}.${hp}`;
+  }
+}
 // The hostile mobs about, for the question's state.
 const mobsSaid = mobs => (mobs || []).slice(0, 5).map(t => ({ name: t.entity?.name, distance: Math.round(t.distance * 10) / 10, seen: !!t.visible }));
 
@@ -381,4 +415,4 @@ function unwatch(bot) {
   if (bot) delete bot._preempt;
 }
 
-module.exports = { ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };
+module.exports = { claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };

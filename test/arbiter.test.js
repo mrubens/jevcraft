@@ -371,3 +371,20 @@ test('the mode is shadow unless JEV_ARBITER=live', () => {
     process.env.JEV_ARBITER = 'shadow'; assert.equal(arbiter.mode(), 'shadow');
   } finally { if (was === undefined) delete process.env.JEV_ARBITER; else process.env.JEV_ARBITER = was; }
 });
+
+test('turn_priority says each claim in words, and a ruling for the work ends when a mob stops the work (mid-218-n)', () => {
+  const survival = { layer: 'survival', action: 'escape_threat', urgency: 'pressing', facts: { health: 7, threat: { name: 'drowned', distance: 5.6, seen: true } } };
+  const work = { layer: 'work', action: 'recover_before_nether', urgency: 'routine', facts: { request: 'beat the game', doing: 'recover before nether' } };
+  assert.match(arbiter.claimSays(survival), /^Answer the drowned 5\.6 blocks off: the stance is asked next .* Health 7\./);
+  assert.match(arbiter.claimSays(work), /^Go on with the work: recover before nether \(toward "beat the game"\)\./);
+  const claims = [survival, work];
+  const state = { ruling: { winner: 'work', fingerprint: arbiter.fingerprintOf(claims), at: 1000, until: 61000, ids: [], health: 20, band: arbiter.foodBand(undefined) } };
+  assert.equal(arbiter.rule(null, claims, { state, now: 2000, mobs: [], dry: true }).by, 'held');
+  const stopped = [survival, { ...work, facts: { ...work.facts, lastError: 'Threat nearby: drowned at 5 blocks', lastErrorAt: 1500 } }];
+  const r = arbiter.rule(null, stopped, { state, now: 2000, mobs: [], dry: true });
+  assert.notEqual(r.by, 'held'); assert.equal(r.ask, true, 'asked again: its winner was stopped');
+  // The work's own step changing is not a new question.
+  const mining = [survival, { ...work, action: 'mine' }];
+  state.ruling = { winner: 'work', fingerprint: arbiter.fingerprintOf(claims), at: 1000, until: 61000, ids: [], health: 20, band: arbiter.foodBand(undefined) };
+  assert.equal(arbiter.rule(null, mining, { state, now: 2000, mobs: [], dry: true }).by, 'held');
+});

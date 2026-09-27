@@ -4586,8 +4586,11 @@ function workClaim(goal) {
   if (!goal) return null;
   return { layer: 'work', action: goal.step?.action || 'step', urgency: 'routine', facts: { request: goal.request || goal.kind || null,
     ...(goal.step?.item || goal.step?.block ? { item: goal.step.item || goal.step.block } : {}), failures: goal.failures || 0, stalls: goal.stalls || 0,
-    ...(goal.lastError ? { lastError: String(goal.lastError).slice(0, 160) } : {}) } };
+    ...(goal.lastError ? { lastError: String(goal.lastError).slice(0, 160) } : {}), ...(goal.lastErrorAt ? { lastErrorAt: goal.lastErrorAt } : {}),
+    // What the step is, in words, for turn_priority (mid-218-n, note 490).
+    ...(goal.step?.action ? { doing: stepSays(goal.step) } : {}) } };
 }
+const stepSays = step => `${String(step.action).replaceAll('_', ' ')}${step.item || step.block ? ` (${String(step.item || step.block).replaceAll('_', ' ')})` : ''}${step.phase ? `, ${String(step.phase).replaceAll('_', ' ')}` : ''}`;
 
 // The arbiter in shadow (src/arbiter.js): what it would give this pass to,
 // from every layer's claim, beside what the layers below did. It acts on
