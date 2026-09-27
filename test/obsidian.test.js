@@ -217,3 +217,21 @@ test('lava whose staircase is resting is not dug toward again: the deep lava on 
   assert.equal(dug.length, 1);
   assert(Math.abs(dug[0].x - bot.entity.position.x) >= 20 || Math.abs(dug[0].z - bot.entity.position.z) >= 20, `not the resting pool: ${dug[0]}`);
 });
+
+test('making obsidian, lava whose staircase is resting is not dug toward again either', async () => {
+  // mid-230-i dug for the same lava thirteen passes running, each refused at once, until the loop watch ended the trial.
+  const { makeObsidian } = require('../src/obsidian');
+  const { setAside } = require('../src/progress');
+  const { bot, items } = world();
+  items.splice(0, items.length, { name: 'water_bucket', count: 1 }, { name: 'diamond_pickaxe', count: 1 });
+  bot.world = { raycast: () => null };
+  // No route to any shore to pour from: the step digs toward the lava.
+  bot.pathfinder = { ...(bot.pathfinder || {}), movements: {}, getPathTo: () => ({ status: 'noPath', path: [] }) };
+  const goal = {};
+  for (let x = -16; x <= 16; x += 8) for (let z = -16; z <= 16; z += 8) for (const y of [8, 16]) setAside(goal, 'staircase', { x, y, z }, 'refusing to open a drop beside the feet', 600000);
+  const dug = [];
+  const actions = { navigate: async () => { throw new Error('no route'); }, dig: async () => {}, surveyRoute: async () => ({ status: 'noPath' }), resourceTunnelStep: async (b, t, g, s, dest) => { dug.push(dest); } };
+  await makeObsidian(bot, new Task('obsidian'), { action: 'make_obsidian', item: 'obsidian', count: 4 }, goal, () => {}, actions).catch(e => { goal.err = e.message; });
+  assert.equal(dug.length, 1, `dug toward: ${goal.err || ''}`);
+  assert(dug.every(d => Math.abs(d.x - bot.entity.position.x) >= 20 || Math.abs(d.z - bot.entity.position.z) >= 20), `not the resting pool: ${dug.map(String)}`);
+});

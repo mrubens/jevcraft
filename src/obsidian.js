@@ -187,12 +187,20 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   // No walkable way to a shore: dig toward one, or toward the nearest pool,
   // or down to where the lava lakes are. The staircase stops short of any
   // liquid it would expose and backs out to try another approach.
+  // Not toward lava whose staircase is resting, as collectLava below:
+  // mid-230-i dug for the same lava thirteen passes running, each refused
+  // at once for the drop it would open, until the loop watch ended the
+  // trial (2026-09-27).
+  const { staircaseResting } = require('./tunneling');
+  const open = p => !staircaseResting(goal, p);
   const here = bot.entity.position;
-  const nearest = surface.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+  const nearest = surface.filter(p => open(p.plus(UP))).sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
   // The lake already found comes before a new shaft: chased off by a
   // creeper, the bot stood at its base sixty blocks from its own crust.
-  const remembered = works.lastPour && at(works.lastPour);
-  const dest = spots[0]?.feet || (nearest ? nearest.plus(UP) : remembered || here.floored().offset(24, LAVA_DEPTH - here.floored().y, 0));
+  const remembered = works.lastPour && open(at(works.lastPour)) ? at(works.lastPour) : null;
+  const deep = [[24, 0], [0, 24], [-24, 0], [0, -24]].map(([dx, dz]) => here.floored().offset(dx, LAVA_DEPTH - here.floored().y, dz)).find(open);
+  const dest = spots.find(s => open(s.feet))?.feet || (nearest ? nearest.plus(UP) : remembered || deep);
+  if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw new Error('Every way to lava from here is resting: the pools here and the deep lava on all four headings'); }
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
   await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
 }
