@@ -2966,3 +2966,30 @@ test('open water on both sides is swimming, not a ledge: no hold on a span there
   const ledge = { entity: { position: new Vec3(0.5, 70, 0.5) }, blockAt: p => { const q = p.floored(); return q.x === 0 && q.y === 69 ? { name: 'stone', position: q, boundingBox: 'block' } : q.y <= 67 ? { name: 'water', position: q, boundingBox: 'empty' } : { name: 'air', position: q, boundingBox: 'empty' }; } };
   assert.equal(onSpan(ledge), false);
 });
+
+test('no charge at a creeper, even in a fight Jev chose: a run at one ends beside it as it lights', async () => {
+  // mid-242-e's held fight ran at a creeper eight blocks off twice: twenty to one, then seven to dead (2026-09-27).
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 65, 0.5) }, entities: {}, health: 20,
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, pathfinder: { movements: {} },
+    blockAt: p => { const f = p.floored(); return { name: f.y < 65 ? 'stone' : 'air', position: f, boundingBox: f.y < 65 ? 'block' : 'empty' }; } });
+  let walked = 0;
+  const survival = new Survival(bot, { navigate: async () => { walked++; } });
+  survival.report = () => {};
+  const creeper = { entity: { id: 2, name: 'creeper', position: new Vec3(6.5, 65, 0.5), height: 1.7 }, distance: 6 };
+  assert.equal(await survival.charge(new Task('t'), {}, () => {}, creeper, false, { chosen: true }), false);
+  assert.equal(walked, 0);
+});
+
+test('a pocket beside a drop walls the drop side first, from the bottom: a hit while it goes up throws the bot a block', async () => {
+  // mid-242-e sealed beside a hole with zombies at arm's length and was knocked twenty-two blocks down before that side was walled (2026-09-27).
+  const hole = p => p.x === 1 && p.z === 0 && p.y >= 40;
+  const placed = [];
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 17, food: 20, entities: {},
+    entity: { position: new Vec3(0.5, 64, 0.5) }, registry: require('minecraft-data')('26.1'), inventory: { items: () => [{ name: 'cobblestone', count: 64 }], slots: {} },
+    blockAt: p => { const q = p.floored(); const solid = placed.includes(`${q}`) || (q.y < 64 && !hole(q)); return { position: q, name: solid ? 'stone' : 'air', boundingBox: solid ? 'block' : 'empty' }; },
+    world: { raycast: () => null }, findBlocks: () => [] });
+  const survival = new Survival(bot, { place: async (b, t, p) => { placed.push(`${p}`); }, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  await survival.sealHere(new Task('x'), {}, () => {}, []);
+  assert(placed.length > 2, placed.join(' '));
+  assert(/^\(1, 6[34], 0\)$/.test(placed[0]), `the hole's side first: ${placed.slice(0, 3).join(' ')}`);
+});

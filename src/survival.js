@@ -2084,7 +2084,14 @@ class Survival {
     this.report(goal, save, { action: 'dig_in', threats: danger.map(t => t.entity.name), cells: shelter.missingShell(bot, refuge).length });
     // The nearest cells first: the ones a mob could step into.
     const material = () => bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
-    const cells = shelter.missingShell(bot, refuge).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    // The side over a drop first, lowest first: a hit while the pocket goes
+    // up throws the bot a block, and mid-242-e, sealing beside a hole with
+    // zombies at arm's length, was knocked twenty-two blocks down before
+    // that side was walled (2026-09-27).
+    const { dropAt } = require('./terrain');
+    const feetY = bot.entity.position.floored().y;
+    const overDrop = c => dropAt(bot, new Vec3(c.x, feetY, c.z));
+    const cells = shelter.missingShell(bot, refuge).sort((a, b) => (overDrop(b) - overDrop(a)) || (overDrop(a) && a.y - b.y) || a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
     // Beside a drop the bot does not move to place: what it can reach from
     // where it stands, and nothing else (place's `stay`).
     const stay = dropWithin(bot, origin, 2);
@@ -2283,6 +2290,11 @@ class Survival {
   async charge(task, goal, save, nearest, pack, { chosen = false } = {}) {
     const bot = this.bot;
     if ((!chosen && (pack || bot.health < 12)) || nearest.distance > 8 || canStrike(bot, nearest.entity) || lavaBeside(bot, nearest.entity.position.floored())) return false;
+    // Never at a creeper: a run at one ends beside it as its fuse lights,
+    // and a creeper is struck where it comes (the dance). mid-242-e's fight,
+    // held, ran at the nearest mob, a creeper eight blocks off, twice: twenty
+    // to one, and then from seven to dead (2026-09-27).
+    if (nearest.entity.name === 'creeper') return false;
     // Level ground only, and not from an edge: charging a wither skeleton
     // four blocks up a Nether fortress, the dream run's floor went from
     // under it and it fell thirty blocks (2026-09-24 01:39). The charge
