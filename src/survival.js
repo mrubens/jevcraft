@@ -46,6 +46,14 @@ const { NETHER_FOOD_POINTS, KIT_FOOD_POINTS } = require('./home-stash');
 const REACH_UP = { spider: 'climbs', cave_spider: 'climbs', enderman: 'teleports, and is tall enough to hit two up', witch: 'throws potions up', creeper: 'goes off at the foot and the blast reaches',
   wither_skeleton: 'is tall enough to hit a player two up', ravager: 'is tall enough to hit two up', iron_golem: 'is tall enough to hit two up', warden: 'is tall enough to hit two up' };
 const climbers = danger => { const kinds = [...new Set(danger.map(t => t.entity.name).filter(n => REACH_UP[n]))]; return kinds.length ? ` Two up does not stop ${kinds.map(n => `a ${n.replaceAll('_', ' ')} (${REACH_UP[n]})`).join(' or ')}.` : ''; };
+// Two up is out of reach only of mobs on the bot's own level: one standing
+// a block or more higher (stairs, a slope, a ledge) is level with the top
+// of the pillar or near it. mid-239-b pillared at the foot of its stairs
+// with the zombies coming down them (2026-09-27).
+const above = (bot, danger) => {
+  const y = Math.floor(bot.entity.position.y), up = danger.filter(t => !shooter(t.entity) && t.distance <= 8 && Math.floor(t.entity.position?.y ?? y) >= y + 1);
+  return up.length ? ` ${up.length === 1 ? `A ${up[0].entity.name.replaceAll('_', ' ')} stands` : `${up.length} of the mobs stand`} a block or more above the bot's feet (${up.map(t => `${Math.floor(t.entity.position.y) - y} up, ${Math.round(t.distance)} off`).join('; ')}): two up is within reach of ${up.length === 1 ? 'it' : 'them'}.` : '';
+};
 // A retreat's footing is found when it runs, not before (runAway): said, so
 // the run is not read as a known safe place (the decision audit, 2026-09-25).
 const NO_ROUTE_YET = ' No route is checked yet: where it ends, how high and how lit, is found as it runs.';
@@ -1095,7 +1103,7 @@ class Survival {
     // pillared at thirteen health with a creeper six blocks off and three
     // skeletons, told nothing of what that cost, and the blast was all of it.
     const pillarCost = stanceCost({ mobs, setup: up ? 0 : PILLAR_SECONDS, fight: { only: m => CLIMBERS.has(m.name) }, reaches: m => m.shoots || m.name === 'creeper', shield: shielded });
-    if ((scaffold >= 2 && headroom) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote + climbers(danger) + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: 'Two up' }) + (edge && heavyHitters(danger, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
+    if ((scaffold >= 2 && headroom) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote + climbers(danger) + (up ? '' : above(bot, danger)) + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: 'Two up' }) + (edge && heavyHitters(danger, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
       run: async () => up || this.pillarFrom(task, goal, save, danger) };
     // Down off a pillar of the bot's own: stood on one, nothing else here
     // moves it (a route drops three blocks at most), and mid-83-e stood five
@@ -1297,6 +1305,10 @@ class Survival {
 
   async stanceStep(task, goal, save, danger, swung) {
     const bot = this.bot;
+    // Measured from the ground, not mid-jump: floored in the air, the feet
+    // are a block high and every stance's cells with them (mid-239-b's
+    // pillar, offered and then refused by its own headroom check).
+    for (let n = 0; n < 8 && bot.entity.onGround === false && !bot.entity.isInWater; n++) { task.check(); await sleep(100); }
     const kinds = [...new Set(danger.map(t => t.entity.name))].sort().join(',');
     const feet = bot.entity.position.floored();
     const held = this.state.stance;

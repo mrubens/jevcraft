@@ -156,6 +156,11 @@ test('a swing jumps for a critical hit when it safely can, and swings plainly un
   assert.equal(critReady(withCreeper.bot, withCreeper.zombie), true, 'a creeper eight blocks off is not close');
   const c = make(); c.zombie.name = 'creeper';
   assert.equal(critReady(c.bot, c.zombie), false, 'never at a creeper');
+  // mid-239-b: the crit's jump went first each time the pillar was chosen, and the pillar was never built.
+  const building = make(); building.bot._stance = { choice: 'pillar' };
+  assert.equal(await strike(building.bot, new Task('stance'), building.zombie), 'plain', 'no jump while a stance other than the fight holds');
+  const fighting = make(); fighting.bot._stance = { choice: 'fight' };
+  assert.equal(await strike(fighting.bot, new Task('fight'), fighting.zombie), 'critical', 'the fight keeps its criticals');
 });
 
 test('a crit jump that comes down out of reach is not tried again at that mob: the next swings are plain', async () => {

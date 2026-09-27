@@ -137,7 +137,14 @@ async function strike(bot, task, target) {
     if (!critReady(bot, target)) return 'held';
   }
   const missed = bot._critMiss && bot._critMiss.id === target.id && Date.now() - bot._critMiss.at < CRIT_MISS_MS;
-  if (!missed && critReady(bot, target)) {
+  // No critical's jump while a stance other than the fight holds: the jump
+  // leaves the bot in the air when the stance comes to build or dig, and
+  // measured from the air the pillar's headroom is a block off. mid-239-b
+  // chose the pillar nine times with zombies coming down its stairs, and
+  // each time the swing's jump went first and the pillar was not built;
+  // twenty health to none (2026-09-27).
+  const stance = bot._stance?.choice;
+  if (!missed && !(stance && stance !== 'fight') && critReady(bot, target)) {
     // Past the top of the jump: seen rising, now coming down. Standing
     // still reads a small downward velocity too, and the first version
     // swung the instant the feet left the ground, on the way up: no crit.

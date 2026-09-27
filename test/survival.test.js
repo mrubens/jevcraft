@@ -2892,3 +2892,29 @@ test('walking off a deadly edge from a skeleton, an arrow on its way stops the w
   assert.equal(stopped, true, 'the walk is told to stop for the shot');
   assert.equal(raised, true, 'and the shield comes up to it');
 });
+
+test('a stance is asked and run from the ground: mid-jump the bot lands first, so its cells are not measured a block high', async () => {
+  // mid-239-b: the swing's jump put the feet a block high each time the pillar was chosen, and the pillar's own headroom check refused it.
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64.8, 0.5), onGround: false }, entities: {}, health: 12, food: 20,
+    inventory: { items: () => [], slots: {} }, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) });
+  setTimeout(() => { bot.entity.position = new Vec3(0.5, 64, 0.5); bot.entity.onGround = true; }, 250);
+  const survival = new Survival(bot, { navigate: async () => {} });
+  let measuredAt = null;
+  survival.stanceOptions = () => { measuredAt = bot.entity.position.y; return { pillar: { description: 'up', run: async () => true }, retreat: { description: 'away', run: async () => true } }; };
+  survival.decide = async () => ({ path: ['pillar'] });
+  await survival.stanceStep(new Task('jump'), {}, () => {}, [{ entity: { name: 'zombie', id: 1 }, distance: 2 }], true);
+  assert.equal(measuredAt, 64, 'measured once landed');
+});
+
+test('the pillar says when the mobs stand above the bot\'s feet: two up is within their reach', () => {
+  // mid-239-b pillared at the foot of its stairs with the zombies coming down them (2026-09-27).
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal' }, registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 9, 0.5), onGround: true }, entities: {}, health: 17, food: 18,
+    inventory: { items: () => [{ name: 'cobblestone', count: 32 }, { name: 'iron_sword' }], slots: {} }, heldItem: { name: 'iron_sword' }, world: { raycast: () => null }, findBlocks: () => [],
+    blockAt: p => ({ name: p.y < 9 ? 'stone' : 'air', position: p, boundingBox: p.y < 9 ? 'block' : 'empty' }) });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const zombie = (id, y, z) => ({ entity: { id, name: 'zombie', position: new Vec3(0.5, y, z), height: 1.95, isValid: true }, distance: Math.hypot(z - 0.5, y - 9), visible: true });
+  const stairs = survival.stanceOptions(new Task('t'), {}, () => {}, [zombie(1, 11, 3.5), zombie(2, 12, 4.5)], false);
+  assert.match(stairs.pillar.description, /2 of the mobs stand a block or more above the bot's feet \(2 up, 4 off; 3 up, 5 off\): two up is within reach of them/);
+  const level = survival.stanceOptions(new Task('t'), {}, () => {}, [zombie(1, 9, 3.5)], false);
+  assert.doesNotMatch(level.pillar.description, /above the bot's feet/);
+});
