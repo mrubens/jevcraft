@@ -3628,3 +3628,15 @@ test('sealed in with a warden about, the pocket\'s choices say its boom goes thr
   // And a way away from it, beyond the boom, that is not a door past it.
   assert.match(tree.tunnel_from_warden?.description || '', /pocket's west wall, away from the warden: one wide and two high, 9 blocks, .* ending 17 blocks across from where it is now, beyond its boom's 15/);
 });
+
+test('beside a mob spawner, every stance says it makes more of its mob while the bot stays within sixteen blocks', async () => {
+  // mid-207-j fought beside a dungeon's zombie spawner told of "a zombie, 2.5 seconds", and eight zombies came in a minute (2026-09-27).
+  const calls = [];
+  const client = { systemOne: async ({ state, questions }) => { calls.push({ state, questions }); return { answers: { branch_0: { choice: 'retreat', confidence: 0.9 } } }; } };
+  const { bot, controller, task, goal } = archerFixture({ client, sword: true, shield: false, lone: false });
+  bot.registry = require('minecraft-data')('26.1');
+  bot.findBlocks = ({ matching }) => matching === bot.registry.blocksByName.spawner.id ? [new Vec3(6, 64, 0)] : [];
+  await controller.step(task, goal, () => {});
+  assert.equal(calls[0].state.spawner?.blocksAway, 6);
+  for (const [key, c] of Object.entries(calls[0].questions.branch_0.criteria)) assert.match(JSON.stringify(c), /A mob spawner is 6 blocks off: while a player is within 16 blocks of it, it makes more of its mob/, key);
+});

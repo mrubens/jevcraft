@@ -385,6 +385,18 @@ function wardenSays(bot) {
   const hit = booms ? ` The bot has been hit by the boom ${booms === 1 ? 'once' : `${booms} times`} in the last minute.` : '';
   return facts + here + hit;
 }
+// A mob spawner within its reach of the bot: it makes more of its mob
+// while a player is within sixteen blocks, so a fight beside it, or a wait
+// for its mobs to lose interest, does not end there.
+const SPAWNER_REACH = 16;
+function spawnerAbout(bot) {
+  const id = bot.registry?.blocksByName?.spawner?.id;
+  if (id === undefined || typeof bot.findBlocks !== 'function') return null;
+  const p = bot.findBlocks({ matching: id, maxDistance: SPAWNER_REACH, count: 1 })[0];
+  if (!p) return null;
+  const distance = Math.round(p.distanceTo(bot.entity.position));
+  return { at: p, distance, says: ` A mob spawner is ${distance} blocks off: while a player is within ${SPAWNER_REACH} blocks of it, it makes more of its mob, up to four at a time every ten to forty seconds, so the mobs here do not run out and do not lose interest while the bot stays within that. Beyond ${SPAWNER_REACH} blocks of it no more come; broken with a pickaxe, it makes no more.` };
+}
 const biterAtArm = bot => threats(bot).some(t => t.distance <= 2.2 && !shooter(t.entity));
 
 function firmGround(bot, radius = 4, { margin = 1, awayFrom = null } = {}) {
@@ -1627,6 +1639,12 @@ class Survival {
     const atReach = danger.some(t => !shooter(t.entity) && (t.distance <= 3.2 || (t.entity.position && canStrike(bot, t.entity))));
     for (const f of failed) if (!(f.choice === 'fight' && atReach)) delete options[f.choice];
     if (!Object.keys(options).length) return false;
+    // A spawner in reach, said with every stance: mid-207-j fought beside a
+    // dungeon's zombie spawner six blocks off, told each time of "a zombie,
+    // 2.5 seconds", and eight zombies came in a minute, twenty health to
+    // none (2026-09-27).
+    const spawner = spawnerAbout(bot);
+    if (spawner) for (const o of Object.values(options)) o.description += spawner.says;
     let choice = holding && options[held.choice] ? held.choice : null;
     // One stance possible is no choice: it is taken without asking.
     if (!choice && Object.keys(options).length === 1) choice = Object.keys(options)[0];
@@ -1643,6 +1661,7 @@ class Survival {
           armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: openCells(bot, feet) }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health,
           ...(newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` } : {}) } : null,
+        ...(spawner ? { spawner: { blocksAway: spawner.distance } } : {}),
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
       let decision;
