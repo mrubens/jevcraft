@@ -2218,12 +2218,18 @@ class Survival {
     // the drop into its cell, and the cap, not as blocks placed.
     const digSecs = c => { const b = bot.blockAt(c); if (!b || b.boundingBox !== 'block') return 0; if (typeof b.digTime !== 'function') return 1.3; const tool = require('./skills').cheapestTool(bot, b); return b.digTime(tool?.type ?? null, false, false, false, [], {}) / 1000 + 0.3; };
     const racing = y => { let secs = BLOCK_SECONDS; for (let yy = y; yy >= bottom.y; yy--) secs += digSecs(new Vec3(start.x, yy, start.z)); return creeperRace(bot, secs / BLOCK_SECONDS); };
-    const raced = () => { setAside(this, 'shaft_pocket', spot, 'a creeper would reach the open shaft before the cap', 30000); save(); return false; };
+    // Nor with a biter at arm's length: it follows the bot down the open
+    // shaft. mid-229-e dug on for ten seconds with two zombies in the shaft
+    // with it, a hit a second, eighteen health to five (2026-09-27).
+    const biting = () => threats(bot, 4).some(t => t.distance <= 3 && !shooter(t.entity) && t.entity.name !== 'creeper');
+    const raced = (why = 'a creeper would reach the open shaft before the cap') => { setAside(this, 'shaft_pocket', spot, why, 30000); save(); return false; };
+    if (biting()) return raced('a mob at arm\'s length would follow the bot down the open shaft');
     if (racing(start.y - 1)) return raced();
     this.report(goal, save, { action: 'shaft_pocket', from: { ...start }, to: { ...bottom } });
     for (let y = start.y - 1; y >= bottom.y; y--) {
       task.check(); checkAir(bot);
       if (racing(y)) return raced();
+      if (biting()) return raced('a mob at arm\'s length would follow the bot down the open shaft');
       const c = new Vec3(start.x, y, start.z);
       if (bot.blockAt(c)?.boundingBox === 'block') await this.actions.dig(bot, task, c, { requireDrops: false, dropInto: true });
       for (let i = 0; i < 20 && bot.entity.position.y > y + 0.1; i++) { task.check(); await sleep(50); }

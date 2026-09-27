@@ -3047,3 +3047,16 @@ test('the pillar says a phantom flies and dives on a player wherever it stands',
   const options = survival.stanceOptions(new Task('night'), {}, () => {}, [crowdMob(1, 'zombie', 3), crowdMob(2, 'phantom', 0, 4)], false);
   assert.match(options.pillar.description, /Two up does not stop a phantom \(flies, and dives on a player wherever it stands; only a roof keeps it off\)/);
 });
+
+test('no shaft pocket is dug with a zombie at arm\'s length: it follows the bot down the open shaft', async () => {
+  // mid-229-e dug on with two zombies in the shaft with it, a hit a second (2026-09-27).
+  const registry = require('minecraft-data')('26.1'), Block = require('prismarine-block')(registry);
+  const blockAt = p => { const f = p.floored(); const name = f.y >= 63 ? 'air' : f.y >= 58 ? 'dirt' : 'stone'; const b = Block.fromStateId(registry.blocksByName[name].defaultState); b.position = f; return b; };
+  const zombie = { id: 4, name: 'zombie', type: 'hostile', position: new Vec3(2.0, 63, 0.5), height: 1.95, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: { 4: zombie }, registry, entity: { position: new Vec3(0.5, 63, 0.5), onGround: true },
+    health: 18, inventory: { items: () => [{ name: 'cobblestone', count: 8 }], slots: {} }, blockAt, world: { raycast: () => null } });
+  const dug = [];
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async (b, t, p) => { dug.push(`${p}`); }, place: async () => {} }, { state: { shelters: [] } });
+  assert.equal(await survival.shaftPocket(new Task('night'), {}, () => {}), false);
+  assert.deepEqual(dug, []);
+});
