@@ -553,3 +553,22 @@ test('a mine and its pickups trading names while the count goes down is progress
   }
   assert.equal(raised, null, 'the count went down: not a flip');
 });
+
+test('working time is counted while a pass runs and saved as it goes, so a restart mid-pass keeps it', async () => {
+  // mid-242-d's cast walked two hundred blocks to lava a pass, the bot restarted every few minutes, and its clock never reached the re-ask (2026-09-27).
+  const { timed } = require('../src/work');
+  let total = 0, saves = 0;
+  const pass = timed(() => { saves++; }, ms => { total += ms; }, () => new Promise(resolve => setTimeout(resolve, 25)));
+  await pass;
+  assert(total >= 20, `counted: ${total}`);
+  // A pass cut off: what the ticks counted before it is kept and saved.
+  const realSetInterval = global.setInterval;
+  let tick; global.setInterval = fn => { tick = fn; return { unref() {} }; };
+  try {
+    let t2 = 0; saves = 0;
+    const cut = timed(() => { saves++; }, ms => { t2 += ms; }, () => new Promise(() => {}));
+    await new Promise(r => setTimeout(r, 15)); tick();
+    assert(t2 >= 10 && saves === 1, `ticked: ${t2} ms, ${saves} save`);
+    void cut;
+  } finally { global.setInterval = realSetInterval; }
+});

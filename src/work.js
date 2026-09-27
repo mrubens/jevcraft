@@ -3080,13 +3080,24 @@ function nearestLava(bot, goal) {
 // a lit portal, a known one, or one made. With Jev's client from whichever
 // task asks: from the ladder's own step the task had none, and the food
 // question was skipped there (mid-230-e, 2026-09-26).
+// Working time counted while a pass runs, ten seconds at a time and saved:
+// counted only at its end, a pass minutes long (a walk to lava two hundred
+// blocks off) that a restart cut short counted nothing, and mid-242-d's
+// cast, three hours from its lava, was never asked about again (2026-09-27).
+const TICK_MS = 10000;
+async function timed(save, add, fn) {
+  let last = Date.now();
+  const credit = () => { const now = Date.now(); add(now - last); last = now; };
+  const timer = setInterval(() => { credit(); save(); }, TICK_MS);
+  timer.unref?.();
+  try { return await fn(); }
+  finally { clearInterval(timer); credit(); }
+}
 async function netherStep(bot, task, goal, save, client = task.opportunityClient) {
   if (String(bot.game.dimension).includes('nether')) return true;
   // Working time at the crossing, a pass at a time: the kit's answer holds
   // for ten minutes of it, not of nights sat out between passes.
-  const started = Date.now();
-  try { return await crossing(bot, task, goal, save, client); }
-  finally { if (goal.crossingKit) goal.crossingKit.workedMs = (goal.crossingKit.workedMs || 0) + Date.now() - started; }
+  return timed(save, ms => { if (goal.crossingKit) goal.crossingKit.workedMs = (goal.crossingKit.workedMs || 0) + ms; }, () => crossing(bot, task, goal, save, client));
 }
 async function crossing(bot, task, goal, save, client) {
   if (!await crossingKitReady(bot, task, goal, save, client)) return false;
@@ -3106,9 +3117,8 @@ async function crossing(bot, task, goal, save, client) {
   if (await walkToKnownPortal(bot, task, goal, save, 'overworld')) return false;
   // The portal's own work is timed for the way it is made (portalMethod):
   // the time its passes take.
-  const method = goal.portalMethod, started = Date.now();
-  try { return await portalStep(bot, task, goal, save, client); }
-  finally { if (method && goal.portalMethod === method) method.activeMs = (method.activeMs || 0) + Date.now() - started; }
+  const method = goal.portalMethod;
+  return timed(save, ms => { if (method && goal.portalMethod === method) method.activeMs = (method.activeMs || 0) + ms; }, () => portalStep(bot, task, goal, save, client));
 }
 async function portalStep(bot, task, goal, save, client) {
   // Buckets Jev chose to make for the cast, before anything else of it.
@@ -4279,4 +4289,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
