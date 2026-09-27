@@ -66,16 +66,18 @@ const legFallback = (children, path, context = {}) => {
 };
 define({
   id: 'fortress_leg', area: 'endgame', kind: 'fortress', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'Searching the Nether for a fortress: which way should the next leg go, or should the bot first dig toward the heights fortresses stand at?',
+  question: 'Searching the Nether for a fortress: which way should the next leg go, should the bot first dig toward the heights fortresses stand at, or first get blocks to lay spans with?',
   trigger: 'On the fortress search, each time a leg begins: at the start, when the last leg reached its end, and when the sweep turned for a leg that made no ground.',
   source: 'src/mob-hunt.js (chooseLeg, findFortressStep), src/nether-travel.js (surveyLeg, legSays)',
   options: [
-    { pattern: 'leg_(east|south|west|north)', label: 'go this way ninety-six blocks at the height the bot stands', when: 'always, one for each heading; said with the cells ahead at this height (open air, how many of them over a drop of four or more, rock to dig at about six seconds a cell, and what stops it), about how long, whether it is back the way the last leg came, and how the last leg this way ended', level: 'root', dynamic: true },
+    { pattern: 'leg_(east|south|west|north)', label: 'go this way ninety-six blocks at the height the bot stands', when: 'always, one for each heading; said with the cells ahead at this height (open air, how many of them over a drop of four or more, rock to dig at about six seconds a cell, and what stops it), the cells with no floor against the blocks carried and where they run out, about how long, whether it is back the way the last leg came, and how the last leg this way ended, kept on that heading', level: 'root', dynamic: true },
     { key: 'seek_fortress_height', label: 'dig a staircase toward y 64 first, along the most open heading', when: 'the bot stands more than eight blocks above or below y 64 and a staircase is at hand; said with the height to make up and where fortresses stand', level: 'root' },
+    { key: 'restock_blocks', label: 'mine a stack of the most plentiful block a span is laid with nearby, then choose the leg again', when: 'a leg runs out of the blocks carried and some within sixteen blocks can be mined; said with each kind counted, the nearest, and about how long', level: 'root' },
+    { key: 'return_for_blocks', label: 'go back through the portal to the Overworld for stone', when: 'a leg runs out of the blocks carried and the way back through the portal is at hand; said with the nearest portal known', level: 'root' },
   ],
   instructions: {
     task: 'The bot is searching the Nether for a fortress, in legs of ninety-six blocks. Choose the next leg.',
-    guidance: 'Fortresses stand mostly between y 48 and 75 over the lava sea at y 31, and their bricks are seen within 128 blocks through open air only: a leg through rock sees nothing however far it goes, at about six seconds a cell. Open air over a deep drop is a cavern or the sea\'s edge, where the view is long. The mobs in view and the blocks carried are in the state; a leg over open air may need a span laid.',
+    guidance: 'Fortresses stand mostly between y 48 and 75 over the lava sea at y 31, and their bricks are seen within 128 blocks through open air only: a leg through rock sees nothing however far it goes, at about six seconds a cell. Open air over a deep drop is a cavern or the sea\'s edge, where the view is long. The mobs in view and the blocks carried are in the state; a leg over open air with no floor needs a block laid a cell, and stops where the blocks carried run out.',
   },
   fallback: legFallback,
 });

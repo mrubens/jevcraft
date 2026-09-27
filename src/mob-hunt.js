@@ -16,8 +16,8 @@ const { collectNearbyDrops } = require('./drop-collection');
 const { decide } = require('./decisions');
 const { descendTo } = require('./descent');
 const { setAside, isSetAside, watch, unwatch } = require('./progress');
-const { bridgeTo, surveyCrossing, underFire, blocksCarried } = require('./bridging');
-const { crossToward, crossingSays, nearer, surveyLeg, legSays } = require('./nether-travel');
+const { bridgeTo, surveyCrossing, underFire, blocksCarried, MATERIALS } = require('./bridging');
+const { crossToward, crossingSays, nearer, surveyLeg, legSays, WALK_SPEED } = require('./nether-travel');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
@@ -905,12 +905,69 @@ function fortressLegTarget(state, position) {
   return new Vec3(Math.round(position.x + FORTRESS_LEG * dx), y, Math.round(position.z + FORTRESS_LEG * dz));
 }
 
+// How each heading's last leg ended no nearer, kept on that heading: noted
+// on whatever heading the sweep had turned to, leg_south's failure read as
+// leg_west's and leg_south looked untried, some thirty times over in
+// mid-211-s-nether-4 and mid-202-o (note 480). Where it began, so a failure
+// far from here is read as that.
+function legEnded(state, why) {
+  const i = Number.isInteger(state.lastHeading) ? state.lastHeading : headingIndex(state);
+  const history = state.legHistory ||= {};
+  const from = state.legFrom || null, was = history[HEADING_NAMES[i]];
+  const same = was?.from && from && Math.hypot(was.from.x - from.x, was.from.z - from.z) < 8;
+  history[HEADING_NAMES[i]] = { ended: why || 'no ground made', from, tries: same ? (was.tries || 1) + 1 : 1, at: Date.now() };
+}
+function legHistorySays(state, name, here) {
+  const h = state.legHistory?.[name];
+  if (!h) return '';
+  const where = h.from ? `, begun ${Math.round(Math.hypot(h.from.x - here.x, h.from.z - here.z))} blocks from here` : '';
+  return ` The last leg this way${where}, ended no nearer${h.tries > 1 ? ` (${h.tries} tries from there)` : ''}: ${h.ended}.`;
+}
+
+// The blocks a span can be laid with (bridging.js MATERIALS) in the ground
+// round the bot, by kind: a basalt delta is thousands of them with hardly
+// any netherrack, and the restock mined netherrack only, counting blocks
+// without basalt (mid-211-s-nether-4, mid-202-o, note 480).
+const RESTOCK_REACH = 16, RESTOCK_STACK = 64;
+function bridgingNearby(bot) {
+  if (typeof bot.findBlocks !== 'function' || typeof bot.blockAt !== 'function') return [];
+  const ids = MATERIALS.map(n => bot.registry?.blocksByName?.[n]?.id).filter(id => id !== undefined);
+  const here = bot.entity.position, kinds = {};
+  for (const p of bot.findBlocks({ matching: ids, maxDistance: RESTOCK_REACH, count: 4096 }) || []) {
+    const b = bot.blockAt(p);
+    if (!b || !MATERIALS.includes(b.name)) continue;
+    const k = kinds[b.name] ||= { name: b.name, count: 0, nearest: Infinity, block: null };
+    k.count++;
+    const d = p.distanceTo(here);
+    if (d < k.nearest) { k.nearest = d; k.block = b; }
+  }
+  return Object.values(kinds).sort((x, y) => y.count - x.count || x.nearest - y.nearest);
+}
+// Seconds a block of this kind takes to dig with the tool the dig would
+// take (skills.js cheapestTool), as the crossing's survey reckons it.
+function digSeconds(bot, block) {
+  if (typeof block?.digTime !== 'function') return null;
+  const tool = require('./skills').cheapestTool(bot, block);
+  return block.digTime(tool?.type ?? null, false, false, false, [], {}) / 1000;
+}
+function restockSays(bot, kinds, want) {
+  const [k] = kinds, per = digSeconds(bot, k.block);
+  const all = kinds.map(x => `${x.count.toLocaleString('en-US')} ${x.name.replaceAll('_', ' ')}`).join(', ');
+  return `Mine ${want} ${k.name.replaceAll('_', ' ')} to lay spans with, the nearest ${Math.round(k.nearest)} blocks off` +
+    `${per === null ? '' : `, about ${Math.round(want * per + want / WALK_SPEED)} seconds (${Math.round(per * 10) / 10} a block to dig)`}. ` +
+    `Within ${RESTOCK_REACH} blocks, of what a span is laid with: ${all}. ${blocksCarried(bot)} carried now. The leg is chosen again after.`;
+}
+
 // The next leg is Jev's (fortress_leg): each heading surveyed at the
 // height the bot stands (nether-travel.js surveyLeg), and, off the
 // fortress heights, a staircase down or up toward them. mid-205-m's
 // thirteen legs went the way the compass said at y 96 to 104, six seconds a
 // cell of netherrack and nothing seen (note 394, 2026-09-27). Without Jev,
-// the heading with the most open air, the code's own heading at a tie.
+// the heading with the most open air the blocks carried reach, the code's
+// own heading at a tie. With a leg short of blocks, the ways to more are
+// beside the legs: mining what is round the bot, or back through the
+// portal; the code chose between them itself after four failed ticks, and
+// mined netherrack in a delta of basalt (note 480).
 async function chooseLeg(bot, task, goal, save, actions, state) {
   const here = bot.entity.position, y = Math.round(here.y);
   const current = headingIndex(state);
@@ -919,25 +976,57 @@ async function chooseLeg(bot, task, goal, save, actions, state) {
   const options = {};
   HEADINGS.forEach((h, i) => {
     options[`leg_${HEADING_NAMES[i]}`] = { description: legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) +
-      (i === back ? ' This is back the way the last leg came.' : '') + (i === current && state.lastLegError ? ` The last leg this way ended: ${state.lastLegError}.` : ''),
-      run: () => { state.heading = i; state.legMode = 'level'; } };
+      (i === back ? ' This is back the way the last leg came.' : '') + legHistorySays(state, HEADING_NAMES[i], here),
+      run: () => { state.heading = i; state.legMode = 'level'; return true; } };
   });
   const off = y - FORTRESS_Y;
   if (Math.abs(off) > FORTRESS_BAND && actions.tunnel) {
     const most = surveys.every(s => !s) ? current : surveys.map((s, i) => [s?.open || 0, i]).sort((a, b) => b[0] - a[0] || (a[1] === current ? -1 : b[1] === current ? 1 : 0))[0][1];
     options.seek_fortress_height = { description: `Dig a staircase ${off > 0 ? 'down' : 'up'} toward y ${FORTRESS_Y} heading ${HEADING_NAMES[most]}, ${Math.abs(off)} blocks of height, a step at a time with rock round the bot and no block dug with lava or water behind it: fortress corridors and bridges stand mostly between y 48 and 75, over the lava sea at y 31, and from y ${y} none is seen through the rock. The leg goes level again once within ${FORTRESS_BAND} of y ${FORTRESS_Y}.`,
-      run: () => { state.heading = most; state.legMode = 'descend'; } };
+      run: () => { state.heading = most; state.legMode = 'descend'; return true; } };
+  }
+  const short = surveys.some(s => Number.isInteger(s?.runsOut));
+  if (short && actions.acquireStep) {
+    const kinds = bridgingNearby(bot).filter(k => !isSetAside(goal, 'restock', k.name));
+    if (kinds.length) {
+      const want = Math.min(RESTOCK_STACK, kinds[0].count), name = kinds[0].name;
+      const seconds = digSeconds(bot, kinds[0].block);
+      options.restock_blocks = { description: restockSays(bot, kinds, want),
+        run: async () => { state.restock = { name, want: countOf(bot, name) + want, since: Date.now(), said: seconds === null ? null : Math.round(want * seconds + want / WALK_SPEED) }; save(); await restockStep(bot, task, goal, save, actions, state); return 'restock'; } };
+    }
+  }
+  if (short && actions.returnOverworld) {
+    const portal = (goal.portals || []).filter(p => p.dimension === 'nether').sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
+    options.return_for_blocks = { description: `Go back through the portal to the Overworld${portal ? `, the nearest known ${Math.round(Math.hypot(portal.x - here.x, portal.z - here.z))} blocks off at ${portal.x}, ${portal.y}, ${portal.z}` : ', none known in the Nether: the way is found from what is loaded'}, for stone to lay spans with; the Nether is entered again by the same portal, and the search goes on from there.`,
+      run: async () => { await actions.returnOverworld(bot, task, goal, save); return 'returned'; } };
   }
   const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
   const facts = { height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
     legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
-    lastLeg: Number.isInteger(state.lastHeading) ? `${HEADING_NAMES[state.lastHeading]}${state.lastLegError ? `, ended: ${state.lastLegError}` : ''}` : null,
+    lastLeg: Number.isInteger(state.lastHeading) ? `${HEADING_NAMES[state.lastHeading]}${state.legHistory?.[HEADING_NAMES[state.lastHeading]] ? `, ended no nearer: ${state.legHistory[HEADING_NAMES[state.lastHeading]].ended}` : ''}` : null,
     blocksCarried: blocksCarried(bot), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`) };
-  const open = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, surveys[i]?.open ?? null]));
+  // Without Jev: the open air each heading's carried blocks reach.
+  const open = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, surveys[i] ? surveys[i].reach : null]));
   const decision = await decide('fortress_leg', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree, state: facts,
     context: { current: `leg_${HEADING_NAMES[current]}`, open } });
   if (decision.stale) return false;
-  options[decision.path.at(-1)].run();
+  return options[decision.path.at(-1)].run();
+}
+// The restock Jev chose, held until its blocks are carried: each call of
+// acquireStep is one step of it. It ends where it fails, or at twice the
+// time it was said to take, and the failure is said on the next offer.
+async function restockStep(bot, task, goal, save, actions, state) {
+  const r = state.restock;
+  if (countOf(bot, r.name) >= r.want) { delete state.restock; save(); return false; }
+  const over = r.said !== null && Date.now() - r.since > Math.max(60, r.said * 2) * 1000;
+  goal.step = { action: 'restock_blocks', item: r.name, want: r.want, have: countOf(bot, r.name) }; save();
+  try {
+    if (over) throw new Error(`still short after twice the ${r.said} seconds it was said to take`);
+    await actions.acquireStep(bot, task, r.name, r.want, goal, save);
+  } catch (err) {
+    task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err;
+    setAside(goal, 'restock', r.name, err.message, 5 * 60000); delete state.restock; save();
+  }
   return true;
 }
 // A direction the sweep cannot make ground in for several ticks is given
@@ -1198,9 +1287,13 @@ async function findFortressStep(bot, task, goal, save, actions) {
     state.target = { x: remembered.landmark.x, y: remembered.landmark.y, z: remembered.landmark.z }; state.rememberedTarget = true; state.legSince = Date.now();
   }
   if (!state.target || Math.hypot(state.target.x - here.x, state.target.z - here.z) < 8) {
-    // A leg walked to its end: whatever was left behind may be seen again.
+    // A leg walked to its end: whatever was left behind may be seen again,
+    // and that heading's failure is history.
     if (state.target && !state.rememberedTarget) delete state.leaving;
+    if (state.target && Number.isInteger(state.lastHeading) && state.legHistory) delete state.legHistory[HEADING_NAMES[state.lastHeading]];
     delete state.rememberedTarget;
+    // Blocks Jev chose to mine before the next leg, until they are carried.
+    if (state.restock && actions.acquireStep && await restockStep(bot, task, goal, save, actions, state)) return;
     // A leg begun again where the last one began got nowhere, however the
     // step was cut short: mid-83-f began five legs south from one spot in
     // the Nether, each ended by the progress watch before the leg counted
@@ -1209,7 +1302,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // The leg's heading and height are Jev's, with each heading surveyed
     // (chooseLeg); the compass's own heading is the outage default.
     state.since ||= Date.now();
-    if (!await chooseLeg(bot, task, goal, save, actions, state)) return;
+    if (await chooseLeg(bot, task, goal, save, actions, state) !== true) return;
     const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++; state.legSince = Date.now();
     state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) }; state.lastHeading = headingIndex(state); delete state.lastLegError;
     delete state.legBest;
@@ -1256,27 +1349,10 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // Counted from nothing on a fresh search: incremented from undefined it
   // was NaN, never four, and a leg that never once made ground never turned.
   state.legFails = (state.legFails || 0) + 1;
+  legEnded(state, state.lastLegError || state.lastCrossStop);
+  // Short of blocks, the ways to more are Jev's beside the legs (chooseLeg:
+  // restock_blocks, return_for_blocks), asked when the sweep turns.
   if (state.legFails >= 4 && Date.now() - (state.legSince || 0) >= 20000) {
-    // Short of blocks to cross with, back through the portal for more
-    // (the crossing waits for two stacks): mid-87-k turned the sweep twelve
-    // times on an island in the lava sea with eighteen (2026-09-26).
-    const blocks = bot.inventory.items().filter(i => /^(cobblestone|cobbled_deepslate|netherrack|blackstone|stone|deepslate|dirt)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
-    // Netherrack first, where the Nether is made of it: mid-92-o, with
-    // thirty blocks, set off for its portal instead (2026-09-26).
-    if (blocks < 32 && (actions.acquireStep || actions.returnOverworld)) {
-      turnSweep(state); save();
-      const rack = bot.inventory.items().filter(i => i.name === 'netherrack').reduce((n, i) => n + i.count, 0);
-      if (actions.acquireStep && !state.rackFailedAt) {
-        bot.chat?.(`Down to ${blocks} blocks and no way on. Mining netherrack to build with.`);
-        try { await actions.acquireStep(bot, task, 'netherrack', rack + 64, goal, save); return; }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.rackFailedAt = Date.now(); save(); }
-      }
-      if (actions.returnOverworld) {
-        bot.chat?.(`Down to ${blocks} blocks and no netherrack to be had. Back through the portal for more.`);
-        await actions.returnOverworld(bot, task, goal, save);
-      }
-      return;
-    }
     turnSweep(state); save();
     if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.('No way on in this direction. Turning the search.'); }
   }

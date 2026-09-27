@@ -654,6 +654,44 @@ test('the next leg of the fortress search is Jev\'s: each heading surveyed for o
   assert.equal(legFallback(children, [], { current: 'leg_west', open: { leg_east: null, leg_south: null, leg_west: null, leg_north: null } }), 'leg_west');
 });
 
+test('a fortress leg over a void is priced by the blocks carried, its failure kept on its own heading, and the blocks round the bot offered to mine', async () => {
+  // mid-211-s-nether-4 and mid-202-o (note 480): in a basalt delta with nothing carried, "94 of open air, about 34 seconds" south,
+  // chosen some thirty times; its failure was noted on the next heading, and the hidden restock mined netherrack only.
+  const { findFortressStep } = require('../src/mob-hunt');
+  // A basalt ledge to z 1, a sixty-block void to z 61 over the lava sea, basalt again from z 62; a basalt wall north from z -4.
+  const rock = p => p.y <= 31 ? 'lava' : (p.x === 5 && p.y === 63 && p.z === -3) ? 'netherrack'
+    : (p.z <= 1 && p.y <= 64) || (p.z <= -4) || (p.z >= 62 && p.y <= 64) ? 'basalt' : null;
+  const { bot } = netherWorld(new Vec3(0.5, 65, 1.5), rock, []);
+  const near = [new Vec3(5, 63, -3)];
+  for (let x = -3; x <= 3; x++) for (let z = -3; z <= 1; z++) for (let y = 60; y <= 64; y++) near.push(new Vec3(x, y, z));
+  bot.findBlocks = ({ maxDistance }) => near.filter(p => p.distanceTo(bot.entity.position) <= maxDistance);
+  // The last leg went south from the ledge's edge and failed: the staircase found no way over the void.
+  const goal = { fortressSearch: { axis: 1, legs: 3, heading: 1, lastHeading: 1, legMode: 'level', target: { x: 1, y: 65, z: 97 }, legFrom: { x: 0, z: 1 }, legSince: Date.now() - 30000, legFails: 3 } };
+  const mined = [];
+  const actions = { navigate: async () => {}, tunnel: async () => { throw new Error('No safe way toward (1, 65, 97): open air'); },
+    acquireStep: async (b, t, item, count) => mined.push([item, count]), returnOverworld: async () => {} };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.notEqual(goal.fortressSearch.heading, 1, 'the sweep turned off south');
+  // Back from the edge, the next leg is asked.
+  bot.entity.position = new Vec3(0.5, 65, -0.5);
+  const client = jevStub(['restock_blocks']);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client });
+  assert.equal(client.asked.length, 1);
+  const { options, state } = client.asked[0];
+  assert.match(options.leg_south, /it needs 60 blocks laid, crouched, about 1\.4 seconds a cell, 0 carried: the blocks run out at cell 2/);
+  assert.match(options.leg_east, /96 of open air; about 22 seconds\./, 'a walk along the ledge, floored all the way');
+  assert.doesNotMatch(options.leg_east, /blocks laid/);
+  assert.match(options.leg_south, /The last leg this way, begun 2 blocks from here, ended no nearer: No safe way toward \(1, 65, 97\): open air/);
+  for (const k of ['leg_east', 'leg_west', 'leg_north']) assert.doesNotMatch(options[k], /ended no nearer/, `${k} was not tried`);
+  assert.match(options.restock_blocks, /^Mine 64 basalt to lay spans with, the nearest 1 blocks off/);
+  assert.match(options.restock_blocks, /175 basalt, 1 netherrack/);
+  assert.match(options.return_for_blocks, /back through the portal to the Overworld/);
+  assert.equal(state.blocksCarried, 0);
+  // Jev chose the restock: basalt is mined, the leg waits for it.
+  assert.deepEqual(mined, [['basalt', 64]]);
+  assert.equal(goal.fortressSearch.target, undefined, 'no leg begun short of blocks');
+});
+
 test('a leg walk that goes some way and comes back out is not ground made on the leg', async () => {
   const { findFortressStep } = require('../src/mob-hunt');
   // Flat netherrack, lava at the body's height at x 21: nothing to cross on.
@@ -927,25 +965,27 @@ test('a fortress leg begun again where the last began turns the sweep, however t
   assert.notDeepEqual(a, b, `a new heading, not the same leg again: ${a} then ${b}`);
 });
 
-test('a sweep with every leg failing and too few blocks to cross goes back through the portal for more', async () => {
-  // mid-87-k: on an island in the lava sea with eighteen blocks, twelve legs turned in four minutes.
+test('a sweep with every leg failing and too few blocks to cross is offered the portal back for more, Jev\'s to take', async () => {
+  // mid-87-k: on an island in the lava sea with eighteen blocks, twelve legs turned in four minutes. The code once chose the
+  // restock itself after four failures, netherrack only (note 480); now it is an option beside the legs.
   const { findFortressStep } = require('../src/mob-hunt');
   const { Vec3 } = require('vec3');
   const registry = require('minecraft-data')('26.1');
   const bot = { registry, game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: {}, entity: { position: new Vec3(57.5, 32, 1.5) },
     inventory: { items: () => [{ name: 'cobblestone', count: 7 }, { name: 'cobbled_deepslate', count: 11 }] },
     findBlocks: () => [], blockAt: p => ({ name: p.y < 32 ? 'lava' : 'air', position: p, boundingBox: 'empty' }), world: { raycast: () => null }, chat() {} };
-  const goal = { fortressSearch: { axis: 1, legs: 9, legFails: 3, legSince: Date.now() - 60000, legFrom: { x: 57, z: 1 }, target: { x: 153, y: 40, z: 1 } } };
+  const goal = { portals: [{ dimension: 'nether', x: 40, y: 70, z: 1 }], fortressSearch: { axis: 1, legs: 9, legFails: 3, legSince: Date.now() - 60000, legFrom: { x: 57, z: 1 }, target: { x: 153, y: 40, z: 1 } } };
   let back = 0;
-  let mined = 0;
-  const actions = { navigate: async () => {}, tunnel: async () => {}, acquireStep: async (b, t, item) => { mined++; assert.equal(item, 'netherrack'); if (mined > 1) throw new Error('No netherrack in reach'); }, returnOverworld: async () => { back++; } };
+  const actions = { navigate: async () => {}, tunnel: async () => {}, acquireStep: async () => assert.fail('nothing to mine within reach'), returnOverworld: async () => { back++; } };
   await findFortressStep(bot, new Task('fortress'), goal, () => {}, actions);
-  assert.equal(mined, 1, 'netherrack first');
-  assert.equal(back, 0);
-  Object.assign(goal.fortressSearch, { legFails: 3, legSince: Date.now() - 60000, target: { x: 153, y: 40, z: 1 } });
-  await findFortressStep(bot, new Task('fortress'), goal, () => {}, actions);
-  assert.equal(mined, 2);
-  assert.equal(back, 1, 'none to be had: back through the portal');
+  assert.equal(back, 0, 'not the code\'s to choose');
+  const client = jevStub(['return_for_blocks']);
+  await findFortressStep(bot, new Task('fortress'), goal, () => {}, { ...actions, client });
+  const { options } = client.asked[0];
+  assert.match(options.leg_east, /it needs 96 blocks laid, crouched, about 1\.4 seconds a cell, 18 carried: the blocks run out at cell 18/);
+  assert.equal(options.restock_blocks, undefined, 'nothing within sixteen blocks to mine');
+  assert.match(options.return_for_blocks, /the nearest known 18 blocks off at 40, 70, 1/);
+  assert.equal(back, 1, 'back through the portal, as Jev chose');
 });
 
 test('the hunt\'s claim on the kind is renewed while the fight runs, not left to lapse after five seconds', async () => {

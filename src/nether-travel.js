@@ -91,38 +91,57 @@ const ROCK_CELL_SECONDS = 6;
 // fortress is seen from afar (its bricks are found within 128 blocks).
 const CAVERN_DROP = 4;
 const passable = b => !b || b.boundingBox === 'empty';
-function surveyLeg(bot, heading, { cells = 96, from = null } = {}) {
+// A cell of open air with no floor under it is crossed only on a block laid
+// there, crouched: the crossing's pace (crossingSeconds), not a walk.
+// mid-211-s-nether-4 and mid-202-o, in a basalt delta with nothing carried,
+// were told a leg south was "94 of open air, about 34 seconds" and chose it
+// some thirty times; every one ended at the ledge (note 480).
+const LAY_CELL_SECONDS = 1 / SNEAK_SPEED + BLOCK_SECONDS;
+function surveyLeg(bot, heading, { cells = 96, from = null, blocks = null } = {}) {
   if (typeof bot.blockAt !== 'function' || !bot.entity?.position) return null;
   const [dx, dz] = heading;
-  const out = { cells: 0, open: 0, rock: 0, cavern: 0, stoppedBy: null, stoppedAt: null };
-  let here = from || bot.entity.position.floored();
+  const carried = blocks ?? blocksCarried(bot);
+  const out = { cells: 0, open: 0, rock: 0, cavern: 0, lay: 0, carried, runsOut: null, reach: 0, reachSeconds: null, stoppedBy: null, stoppedAt: null };
+  let here = from || bot.entity.position.floored(), seconds = 0;
   for (let n = 0; n < cells; n++) {
     const next = here.offset(dx, 0, dz);
     const body = [next, next.offset(0, 1, 0)].map(p => bot.blockAt(p));
     if (body.some(b => !b)) { out.stoppedBy = 'unloaded ground'; out.stoppedAt = out.cells; break; }
     if (body.some(b => /lava|fire/.test(b.name || ''))) { out.stoppedBy = 'lava in the way'; out.stoppedAt = out.cells; break; }
-    if (body.some(b => !passable(b))) out.rock++;
+    if (body.some(b => !passable(b))) { out.rock++; seconds += ROCK_CELL_SECONDS; }
     else {
       out.open++;
+      const floor = bot.blockAt(next.offset(0, -1, 0));
+      if (floor && floor.boundingBox === 'block') seconds += 1 / WALK_SPEED;
+      else {
+        // The first cell needing a block past those carried: the leg ends there.
+        if (out.lay >= carried && out.runsOut === null) { out.runsOut = out.cells; out.reachSeconds = Math.round(seconds); }
+        out.lay++; seconds += LAY_CELL_SECONDS;
+      }
       let depth = 0;
       for (; depth < CAVERN_DROP; depth++) { const b = bot.blockAt(next.offset(0, -1 - depth, 0)); if (!b || !passable(b) || /lava/.test(b.name || '')) break; }
       if (depth >= CAVERN_DROP) out.cavern++;
+      if (out.runsOut === null) out.reach++;
     }
     out.cells++; here = next;
   }
-  out.seconds = Math.round(out.open / WALK_SPEED + out.rock * ROCK_CELL_SECONDS);
+  out.seconds = Math.round(seconds);
   return out;
 }
 
-// The leg as a fact: what is open, what is rock and about how long, and
-// that nothing is seen from inside the rock.
+// The leg as a fact: what is open, what is rock and about how long, that
+// nothing is seen from inside the rock, and the blocks it needs laid
+// against the blocks carried.
 function legSays(survey, { direction, length, y }) {
   if (!survey) return `Go ${direction} ${length} blocks at y ${y}. Not surveyed from here.`;
   const parts = [];
   if (survey.open) parts.push(`${survey.open} of open air${survey.cavern ? ` (${survey.cavern} of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar)` : ''}`);
   if (survey.rock) parts.push(`${survey.rock} of rock to dig (about ${ROCK_CELL_SECONDS} seconds a cell, and nothing is seen from inside it)`);
   const stop = survey.stoppedBy ? ` ${survey.stoppedBy[0].toUpperCase()}${survey.stoppedBy.slice(1)} stops it at cell ${survey.stoppedAt}.` : '';
-  return `Go ${direction} ${length} blocks at y ${y}: of the ${survey.cells} cells ahead, ${parts.join(' and ') || 'none open'}; about ${survey.seconds} seconds.${stop}`;
+  const lay = survey.lay || 0, carried = survey.carried ?? 0, short = Number.isInteger(survey.runsOut);
+  const blocks = !lay ? '' : ` ${lay} of the open cells have no floor: it needs ${lay} block${lay === 1 ? '' : 's'} laid, crouched, about ${Math.round(LAY_CELL_SECONDS * 10) / 10} seconds a cell, ${carried} carried: ` +
+    (short ? `the blocks run out at cell ${survey.runsOut}, about ${survey.reachSeconds} seconds in, where the leg stops with none to lay.` : `${carried - lay} left after.`);
+  return `Go ${direction} ${length} blocks at y ${y}: of the ${survey.cells} cells ahead, ${parts.join(' and ') || 'none open'}; about ${survey.seconds} seconds${short ? ' with the blocks for all of it' : ''}.${blocks}${stop}`;
 }
 
 // Whether food is why the bot is going back: hungry, with nothing to eat
@@ -248,4 +267,4 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   return answers;
 }
 
-module.exports = { crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, legTarget, hoglinsKnown, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
+module.exports = { LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, legTarget, hoglinsKnown, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
