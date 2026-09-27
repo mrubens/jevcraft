@@ -3039,3 +3039,11 @@ test('a meal cut short is not offered as a stance again for ten seconds', async 
   survival.state.mealCutAt = Date.now() - 11000;
   assert(survival.stanceOptions(new Task('t'), {}, () => {}, crowd, false).eat, 'offered again after ten seconds');
 });
+
+test('the pillar says a phantom flies and dives on a player wherever it stands', () => {
+  // mid-205-g pillared from phantoms twice at five health (2026-09-27).
+  const bot = crowdBot();
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('night'), {}, () => {}, [crowdMob(1, 'zombie', 3), crowdMob(2, 'phantom', 0, 4)], false);
+  assert.match(options.pillar.description, /Two up does not stop a phantom \(flies, and dives on a player wherever it stands; only a roof keeps it off\)/);
+});

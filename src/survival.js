@@ -45,7 +45,10 @@ const { NETHER_FOOD_POINTS, KIT_FOOD_POINTS } = require('./home-stash');
 // hits a player two up, and mid-92-p pillared from one at twenty health
 // and was cut down in four blows while it placed the blocks (2026-09-26).
 const REACH_UP = { spider: 'climbs', cave_spider: 'climbs', enderman: 'teleports, and is tall enough to hit two up', witch: 'throws potions up', creeper: 'goes off at the foot and the blast reaches',
-  wither_skeleton: 'is tall enough to hit a player two up', ravager: 'is tall enough to hit two up', iron_golem: 'is tall enough to hit two up', warden: 'is tall enough to hit two up' };
+  wither_skeleton: 'is tall enough to hit a player two up', ravager: 'is tall enough to hit two up', iron_golem: 'is tall enough to hit two up', warden: 'is tall enough to hit two up',
+  // Those that fly: mid-205-g pillared from phantoms twice at five health,
+  // told two up was out of reach of all but the climbers (2026-09-27).
+  phantom: 'flies, and dives on a player wherever it stands; only a roof keeps it off', blaze: 'flies', vex: 'flies, through walls too', bee: 'flies', allay: 'flies' };
 const climbers = danger => { const kinds = [...new Set(danger.map(t => t.entity.name).filter(n => REACH_UP[n]))]; return kinds.length ? ` Two up does not stop ${kinds.map(n => `a ${n.replaceAll('_', ' ')} (${REACH_UP[n]})`).join(' or ')}.` : ''; };
 // Two up is out of reach only of mobs on the bot's own level: one standing
 // a block or more higher (stairs, a slope, a ledge) is level with the top
