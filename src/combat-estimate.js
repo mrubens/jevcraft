@@ -146,7 +146,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     const seconds = shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill / rate;
     return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false,
       // A drowned's thrown trident is eight, where its hand is three.
-      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(m.every ? { every: m.every } : {}), ...(m.note ? { note: m.note } : {}) };
+      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(/_spear$/.test(t.held || '') ? { spear: true } : {}), ...(m.every ? { every: m.every } : {}), ...(m.note ? { note: m.note } : {}) };
   }).filter(Boolean);
   const order = [...mobs].sort((a, b) => a.distance - b.distance);
   // The cells round the bot bound how many can come at it, but not the

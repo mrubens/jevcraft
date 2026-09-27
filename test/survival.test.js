@@ -3372,3 +3372,15 @@ test('a step off the edge that goes nowhere is set aside a moment, not taken aga
   await survival.flee(new Task('edge'), goal, () => {}).catch(() => {});
   assert.equal(walks, 1, 'set aside after going nowhere once');
 });
+
+test('two up is not out of a spear\'s reach: the pillar says so and counts its thrusts', () => {
+  // mid-244-o pillared from spear zombies and was speared on top, three hits from 6.6 to none.
+  const bot = crowdBot({ health: 12 });
+  const spear = { entity: { id: 1, name: 'zombie', position: new Vec3(2.5, 64, 0.5), height: 1.95, heldItem: { name: 'iron_spear' } }, distance: 2, visible: true };
+  const plain = { entity: { id: 2, name: 'zombie', position: new Vec3(2.5, 64, 0.5), height: 1.95 }, distance: 2, visible: true };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const withSpear = survival.stanceOptions(new Task('t'), {}, () => {}, [spear], false).pillar;
+  const without = survival.stanceOptions(new Task('t'), {}, () => {}, [plain], false).pillar;
+  assert.match(withSpear.description, /A spear reaches past an arm: the zombie with a spear still reaches the bot two up/);
+  assert(withSpear.expects.damage > without.expects.damage, `${withSpear.expects.damage} against ${without.expects.damage}`);
+});
