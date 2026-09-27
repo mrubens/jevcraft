@@ -229,16 +229,16 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **The request needs a mob's drop: which observed mob should the bot fight now, or leave them for now?**
 
-- When: A mob hunt step with at least one candidate that passed the fight-readiness and isolation checks.
+- When: A mob hunt step with at least one candidate in view that is reachable and isolated, the bot on ground it can fight from (dry, not on a one-wide span, air to breathe).
 - Decision tree, choice; stakes high; ledger kind `combat`
-- Bar: none: every target offered already passed canBegin and isolated; a close call between fighting and leaving it is a preference, and the outage default is the same nearest target
+- Bar: none: every target offered is reachable and isolated and the bot has footing for a fight; the fitness is said in full on every option, a close call between fighting and leaving it is a preference, and the outage default is the same nearest target
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
-- Options built in: src/mob-hunt.js (huntObserved)
+- Options built in: src/mob-hunt.js (huntObserved, fitness, fitnessSays)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `hunt_\d+` (pattern) | root | fight this mob | observed, reachable, isolated from others of its kind, and the bot fit to fight |
-| `defer` | root | leave them for now | always |
+| `hunt_\d+` (pattern) | root | fight this mob | observed, reachable, isolated from others of its kind; said with the one fight's estimate and the bot's fitness: health against the fourteen the code once required, hunger and whether health comes back, food carried, fire, and the kit |
+| `defer` | root | leave them for now | always; said with the fitness, and what the hunt does meanwhile when the bot is short of it (food, cover, health) |
 
 ## strategy
 

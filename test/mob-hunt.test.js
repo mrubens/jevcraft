@@ -779,24 +779,39 @@ test('something overhead is reached by standing under it, never by towering up t
   assert.equal(below[0].y, 70, 'something below is reached by going down to it');
 });
 
-test('a burning bot still fights the blaze that lit it, until the fire is the thing killing it', () => {
-  const { canBegin } = require('../src/mob-hunt');
+test('the hunt\'s health, hunger, food, fire and kit are facts on Jev\'s choice, not a gate; only the footing is a rule', async () => {
+  // mid-227-m (note 392): stalking blazes at 11.9 health, lit by a fireball, burned from 6.4 to none with no water in the Nether.
+  const { canBegin, fitness, fitnessSays } = require('../src/mob-hunt');
   const { Vec3 } = require('vec3');
   const kit = { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'golden_boots' }, 45: { name: 'shield' } };
-  const make = (health, onFire) => ({
-    game: { gameMode: 'survival', difficulty: 'normal' }, health, food: 20, oxygenLevel: 20,
+  const make = (health, onFire, food = 20) => ({
+    game: { gameMode: 'survival', difficulty: 'normal', dimension: 'the_nether' }, health, food, oxygenLevel: 20,
     entity: { position: new Vec3(0.5, 77, 0.5), metadata: { 0: onFire ? 1 : 0 } },
     registry: require('minecraft-data')('26.1'),
     inventory: { items: () => [{ name: 'diamond_sword' }], slots: kit },
     blockAt: p => ({ name: p.y < 77 ? 'netherrack' : 'air', boundingBox: p.y < 77 ? 'block' : 'empty', position: p }),
   });
   const blaze = { item: 'blaze_rod', dimension: 'nether', ranged: true };
-  assert(canBegin(make(18, false), blaze), 'unhurt and unlit: fight');
-  assert(canBegin(make(18, true), blaze), 'alight at eighteen health: still fight, the fire came from the target');
-  assert(!canBegin(make(9, true), blaze), 'alight and nearly out: the fire is what is killing it now');
-  assert(!canBegin(make(9, false), blaze), 'the ordinary health floor still applies');
+  for (const [health, fire] of [[18, false], [18, true], [9, true], [9, false]]) assert(canBegin(make(health, fire), blaze), `footing is the rule: ${health} health, ${fire ? 'alight' : 'unlit'}`);
+  assert(fitness(make(18, false)).fit);
+  const lit = fitness(make(9, true));
+  assert(!lit.fit && lit.burning);
+  assert.match(fitnessSays(make(9, true), lit), /Health 9 \(under the 14 the code once required to start a fight\); hunger 20: health comes back while it stays at eighteen or more; alight now: fire takes half a heart a second, and in the Nether there is no water to put it out; only waiting burns it off\./);
+  assert.match(fitnessSays(make(11.9, false, 12)), /Health 11.9 \(under the 14 .*\); hunger 12: health does not come back under eighteen, and nothing is carried to eat: every point lost is gone for good\./);
+  const bare = make(18, false); bare.inventory = { items: () => [], slots: {} };
+  assert.match(fitnessSays(bare), /the kit is short: no sword or axe carried, no head armour worn, no torso armour worn, no legs armour worn, no feet armour worn/);
   // A passive chase has no armour behind it, so fire still calls it off.
   assert(!canBegin(make(18, true), { item: 'feather', passive: true }), 'a chase in shirtsleeves stops for fire');
+  // In view at nine health, the fight is asked, the fitness on every option and in the state.
+  const { bot, task, goal } = fixture('blaze');
+  bot.health = 9; bot.food = 12;
+  let asked = null;
+  const client = { systemOne: async ({ state, questions }) => { asked = { state, options: questions.branch_0.criteria }; return { answers: { branch_0: { choice: 'defer', confidence: 0.9 } } }; } };
+  assert.equal(await huntObserved(bot, task, goal, () => {}, {}, client), false, 'deferred, as Jev chose');
+  assert(asked, 'asked, where the old gate refused without a word');
+  assert.match(asked.options.hunt_7.fitness, /Health 9 \(under the 14 the code once required to start a fight\); hunger 12: health does not come back under eighteen/);
+  assert.match(asked.options.defer, /Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more/);
+  assert.equal(asked.state.fitness.fit, false); assert.equal(asked.state.fitness.floor, 14);
 });
 
 test('fit in every way but its footing, the hunt moves on rather than waiting to recover', async () => {
