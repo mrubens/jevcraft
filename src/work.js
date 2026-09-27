@@ -348,7 +348,7 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
     const standing = home?.bed ? hb.bedStatus(bot, home) : null;
     if (home?.bed?.claimedAt && standing?.placed && !standing.carried && !hb.bedCarried(bot) && !home.bed.carriedAt) {
       const foot = hb.layout(home).bed.foot, far = Math.round(new Vec3(foot.x, foot.y, foot.z).distanceTo(bot.entity.position));
-      if (far <= NEAR_BED) options.take_bed = { description: `Take the base's bed along now, ${far} blocks away, before going on: then any night passes in seconds wherever it comes, instead of about seven real minutes in a pocket or a night mine. The spawn point goes wherever the bot last slept, and a death drops the bed with everything else.${tripTime(bot, far)}`,
+      if (far <= NEAR_BED) options.take_bed = { description: `Take the base's bed along now, ${far} blocks away, before going on: then any night passes in seconds wherever it comes, instead of about eleven real minutes in a pocket or a night mine. The spawn point goes wherever the bot last slept, and a death drops the bed with everything else.${tripTime(bot, far)}`,
         run: async () => { for (let i = 0; i < 4; i++) if (await hb.takeHomeBed(bot, task, goal, save, { navigate, dig, collectNearbyDrops })) return; } };
     }
     const { foodSupply } = require('./foraging'), { KIT_FOOD_POINTS } = require('./home-stash');

@@ -32,7 +32,7 @@ const label = phase => phase.replaceAll('_', ' ');
 const RUNG_WHY = {
   bed: 'a night slept passes in seconds and sets the spawn point; three wool from sheep or crafted from spiders\' string (four string a wool), or a bed from a village',
   iron_pickaxe: 'mines the iron for armour and the diamonds past it',
-  iron_armour: 'a helmet, chestplate, leggings and boots, twenty-four ingots in all; worn, they take about a third or more off every hit',
+  iron_armour: 'a helmet, chestplate, leggings and boots, twenty-four ingots in all; worn, they take about three fifths off every hit but a creeper\'s blast',
   copper_armour: 'a helmet, chestplate, leggings and boots of copper, twenty-four copper ingots (copper ore is common in caves near the surface, two to five raw copper a block); worn, ten armour points: a zombie\'s hit of three comes down to two, an arrow of four to under three, until the iron armour replaces it',
   // What a home is for, said with its steps: offered as "get home site"
   // and nothing more beside options that each said what they were worth,
@@ -204,7 +204,7 @@ function carryBedOption(bot, goal, planFor = null) {
     : rung.action === 'home' ? ' The chest at home holds what it takes.' : '';
   const inHand = ` In hand: ${wool.total} wool (${wool.count >= 3 ? `three ${wool.colour.replaceAll('_', ' ')}: the bed is a craft` : 'three of one colour make the bed'}), ${string} string, ${planks} planks and ${logs} logs; ${sheep ? `${sheep} sheep in view` : flocks.length ? flocks[0].says : 'no sheep in view or remembered'}.`;
   return {
-    description: `Make a second bed to carry, the base's staying where it is (three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed). It buys any night, anywhere: put down where the night comes, slept in and picked back up, the night passes in seconds, instead of about seven real minutes in a pocket or a night mine and the climb out after. A carried bed does not keep the spawn point; the base's does.${inHand}${where}${searchSoFar(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}`,
+    description: `Make a second bed to carry, the base's staying where it is (three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed). It buys any night, anywhere: put down where the night comes, slept in and picked back up, the night passes in seconds, instead of about eleven real minutes in a pocket or a night mine and the climb out after. A carried bed does not keep the spawn point; the base's does.${inHand}${where}${searchSoFar(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}`,
     says: 'I\'ll make a second bed to carry', rung,
   };
 }

@@ -33,7 +33,17 @@ function preferredBoots(bot) {
   return ['netherite_boots', 'diamond_boots', 'iron_boots'].find(name => carried.has(name)) || null;
 }
 
+// The ladder's step for each piece, whose setting aside means it waits.
+const PIECE_RUNG = { hand: ['iron_sword', 'diamond_sword'], head: ['iron_helmet', 'iron_armour'], torso: ['iron_chestplate', 'iron_armour'],
+  legs: ['iron_leggings', 'iron_armour'], feet: ['iron_boots', 'iron_armour'], 'off-hand': ['shield'] };
 async function prepareCombatGear(bot, task, goal, save, actions) {
+  // What is carried is worn; what is missing is fetched only where it can
+  // be and where Jev has not chosen to go without it. Jev's "Nether first"
+  // set the armour aside and this fetched every piece before the portal
+  // anyway (the decision review, 2026-09-26).
+  const { isSetAside } = require('./progress');
+  const waiting = destination => (PIECE_RUNG[destination] || []).some(p => isSetAside(goal, 'rung', p));
+  let short = false;
   for (const [destination, names] of Object.entries(combatGear)) {
     task.check(); checkAir(bot);
     const current = equipped(bot, destination);
@@ -41,6 +51,7 @@ async function prepareCombatGear(bot, task, goal, save, actions) {
     if (names.includes(current?.name) && durable(bot.registry, current) && (!preferred || current.name === preferred)) continue;
     const carried = (preferred && carriedEquipment(bot).find(item => item.name === preferred)) ||
       carriedEquipment(bot).filter(item => names.includes(item.name)).sort((a, b) => names.indexOf(b.name) - names.indexOf(a.name))[0];
+    if (!carried && waiting(destination)) { short = true; continue; }
     if (!carried) {
       goal.step = { action: 'prepare_combat_equipment', destination, item: names[0] }; save();
       // Worn equipment is still physically present; require an additional
@@ -53,7 +64,8 @@ async function prepareCombatGear(bot, task, goal, save, actions) {
     if (equipped(bot, destination)?.name !== carried.name) throw new Error(`Server did not confirm ${carried.name} equipped in ${destination}`);
     goal.step = { action: 'equip_combat', item: carried.name, destination }; save();
   }
-  return readyEquipment(bot);
+  // Going without what waits is Jev's choice made: the crossing goes on.
+  return short ? true : readyEquipment(bot);
 }
 
 function combatMovement(bot) {

@@ -796,3 +796,14 @@ test('the hunt\'s claim on the kind is renewed while the fight runs, not left to
   await fightForDrop(bot, task, target, goal, () => {}, { navigate: async () => {} }, { pickupWaitMs: 10 }).catch(() => {});
   assert(claimDuringFight && claimDuringFight.name === 'blaze' && claimDuringFight.until > Date.now(), `claimed while fighting: ${JSON.stringify(claimDuringFight)}`);
 });
+
+test('a piece Jev set aside for the Nether first is not fetched before the crossing; what is carried is worn', async () => {
+  // The decision review: "Nether first" set the armour aside and the crossing fetched every piece anyway.
+  const { setAside } = require('../src/progress');
+  const { bot, slots, goal, task } = fixture();
+  slots[6] = null;
+  setAside(goal, 'rung', 'iron_chestplate', 'Jev chose the Nether first', 1800000);
+  const requests = [], actions = { acquireStep: async (_b, _t, item, count) => requests.push({ item, count }) };
+  assert.equal(await prepareCombatGear(bot, task, goal, () => {}, actions), true, 'the crossing goes on');
+  assert.deepEqual(requests, [], 'nothing fetched');
+});

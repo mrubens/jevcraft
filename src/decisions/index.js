@@ -114,7 +114,11 @@ function walk(tree, fallback) {
 // real minutes. A night hidden in a pocket was weighed as safe and free,
 // and it cost seven minutes of a run with nothing to show.
 const GAMEPLAY_AREAS = new Set(['combat', 'endgame', 'home', 'idle', 'resources', 'strategy', 'survival']);
-const REAL_TIME = 'The player counts real time: a Minecraft day is twenty real minutes and a night about seven. Minutes spent waiting, hiding, or redoing what a death lost are the cost that counts, and the player minds a death less than a night idled.';
+// The run's own scoring, said plainly: a death fails it. The line had said
+// a death mattered less than a night idled, a thumb on the scale toward the
+// risky answer at low health (the decision review, 2026-09-26). A night is
+// eleven real minutes from dusk to dawn, eight and a half from bedtime.
+const REAL_TIME = 'The player counts real time: a Minecraft day is twenty real minutes, and a night about eleven from dusk to dawn. A death ends this attempt and loses what is carried; after that, minutes spent waiting, hiding or going back are the cost that counts.';
 const RISK = 'riskNow is how likely a death is now (the mobs about, what fighting them all here would cost, whether more spawn around, whether health comes back); deathWouldCost is what a death now would lose.';
 const DEATHS = 'recentDeaths are the bot\'s deaths of the last two hours: how, where, what was about, and what was chosen last before each; the same answer in the same place seldom ends differently.';
 const TRAIL = 'recentPositions is where the bot has been over the last few minutes, fifteen seconds apart, and what it was doing: the same few places over and over is a loop, and the same answer again seldom breaks it.';

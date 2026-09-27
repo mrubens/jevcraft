@@ -1193,7 +1193,15 @@ class Survival {
       run: () => this.creeperDance(task, goal, save, danger, swung, { chosen: true }) };
     // Leave them be: the work goes on, and they are a threat again when one
     // comes within three blocks or lands a hit, or after fifteen seconds.
-    if (!danger.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work and leave these mobs be for fifteen seconds (nearest ${Math.round(danger[0].distance)} blocks). The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? ' A creeper at three blocks is already lighting, and its blast reaches about five.' : ''}${(() => { const shooting = (estimate.mobs || []).filter(m => m.shoots && m.visible); if (!shooting.length) return ''; const in15 = Math.round(shooting.reduce((n, m) => n + m.hitsBot / 2, 0) * 15); return ` The ${shooting.length === 1 ? shooting[0].name.replaceAll('_', ' ') : `${shooting.length} shooters`} in sight keep${shooting.length === 1 ? 's' : ''} shooting while the bot works: about ${in15} damage in the fifteen seconds, from ${Math.round(bot.health)} health${in15 >= bot.health ? ', more than the bot has' : ''}; the first hit ends it.`; })()}${unseen}${edge}${hitsLeft}`,
+    if (!danger.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work and leave these mobs be for fifteen seconds (nearest ${Math.round(danger[0].distance)} blocks). The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? (() => {
+      // When the work would stop, against when the creeper lights: the
+      // work stops at three blocks, which is where the fuse starts (the
+      // decision review, 2026-09-26).
+      const { APPROACH, LIGHTS_AT, FUSE } = require('./combat-estimate');
+      const c = danger.filter(t => t.entity.name === 'creeper').sort((a, b) => a.distance - b.distance)[0];
+      const secs = Math.max(0, Math.round((c.distance - LIGHTS_AT) / APPROACH * 10) / 10);
+      return ` The creeper ${Math.round(c.distance)} blocks off, coming on, is at three blocks in about ${secs} seconds: that is when the work stops, and when its fuse lights; it goes off ${FUSE} seconds later unless the bot is out of its blast (about five blocks).`;
+    })() : ''}${(() => { const shooting = (estimate.mobs || []).filter(m => m.shoots && m.visible); if (!shooting.length) return ''; const in15 = Math.round(shooting.reduce((n, m) => n + m.hitsBot / 2, 0) * 15); return ` The ${shooting.length === 1 ? shooting[0].name.replaceAll('_', ' ') : `${shooting.length} shooters`} in sight keep${shooting.length === 1 ? 's' : ''} shooting while the bot works: about ${in15} damage in the fifteen seconds, from ${Math.round(bot.health)} health${in15 >= bot.health ? ', more than the bot has' : ''}; the first hit ends it.`; })()}${unseen}${edge}${hitsLeft}`,
       run: async () => {
         bot._wavedOff = { ids: danger.map(t => t.entity.id), until: Date.now() + 15000 };
         this.report(goal, save, { action: 'keep_working', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
@@ -2903,7 +2911,13 @@ class Survival {
     // the edge with it and fifty blocks into the lava (2026-09-26).
     const inReach = new Set(threats(bot).map(t => t.entity.id));
     const pusher = t => t.visible && (t.entity.name === 'ghast' || inReach.has(t.entity.id));
-    if (!(this.state.edgeTriedAt > Date.now() - 10000) && threats(bot, 64).some(pusher)) {
+    // Not off a stance that moves, nor off the bot's own pillar: flee's
+    // copy of this rule has both guards (notes 218, 250), and this one had
+    // neither (the decision review, 2026-09-26).
+    const heldStance = stanceHeld(bot), feetHere = bot.entity.position.floored(), ownPillar = this.state.pillar;
+    const guarded = (heldStance && MOVING_STANCES.has(heldStance.choice)) ||
+      (ownPillar && Math.hypot(feetHere.x - ownPillar.x, feetHere.z - ownPillar.z) < 1 && feetHere.y >= ownPillar.y + 1);
+    if (!guarded && !(this.state.edgeTriedAt > Date.now() - 10000) && threats(bot, 64).some(pusher)) {
       const { dropNear } = require('./terrain');
       const deep = dropNear(bot, bot.entity.position.floored(), 2);
       if ((deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) || lavaBeside(bot, bot.entity.position.floored())) {
