@@ -400,3 +400,15 @@ test('a frame in a hillside with no open cell beside a slot has a stand dug out,
   assert(dug.length >= 1 && dug.length <= 2, `dug ${dug.join(' ')}`);
   assert(!dug.some(p => frame.blocks.some(q => q.x === p.x && q.y === p.y && q.z === p.z)), 'no frame cell dug');
 });
+
+test('before lighting, any block inside the frame is in the way, not only the recorded walls', () => {
+  // mid-211-j: a cobblestone inside a cast frame, not among its recorded walls, and the flint and steel lit only fire, 125 times.
+  const { portalInteriorBlockers } = require('../src/work');
+  const origin = new Vec3(10, 64, 20);
+  const cells = frameCells(origin, 'x');
+  const names = new Map(cells.interior.map(p => [`${p}`, 'air']));
+  const [a, b, c] = cells.interior;
+  names.set(`${a}`, 'fire'); names.set(`${b}`, 'cobblestone'); names.set(`${c}`, 'cave_air');
+  const bot = { blockAt: p => ({ name: names.get(`${p}`) || 'air', position: p }) };
+  assert.deepEqual(portalInteriorBlockers(bot, cells).map(String), [`${b}`]);
+});

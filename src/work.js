@@ -3220,6 +3220,12 @@ async function portalStep(bot, task, goal, save, client) {
 // A frame raised and lit, from its obsidian and a lighter: the Overworld's
 // portal, or one built where the bot stands in the Nether (nether-travel.js,
 // when the way back to the one it came through is lost).
+// The cells inside a frame that keep the portal from filling: the portal
+// takes only air and fire.
+function portalInteriorBlockers(bot, cells) {
+  return cells.interior.filter(p => { const b = bot.blockAt(p); return b && !air(b) && !['fire', 'soul_fire', 'nether_portal'].includes(b.name); });
+}
+
 async function buildPortalFrame(bot, task, goal, save, frame) {
   const { frameCells, across } = require('./ruined-portal');
   const axis = frame.axis || 'x', cells = frameCells(frame.origin, axis);
@@ -3329,6 +3335,15 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
       }
       frame.castTemp = frame.castTemp.filter(q => !pos(q).equals(p)); save();
     }
+  }
+  // Anything else inside comes out too: the portal fills only when every
+  // inside cell is empty. mid-211-j's cast frame had a cobblestone in it
+  // that was not among the recorded walls (a stand or a scaffold), and the
+  // flint and steel lit fire beside it and nothing more, a hundred and
+  // twenty-five times, until the loop watch ended the trial (2026-09-27).
+  for (const p of portalInteriorBlockers(bot, cells)) {
+    goal.step = { action: 'clear_portal_inside', at: { x: p.x, y: p.y, z: p.z }, block: bot.blockAt(p)?.name }; save();
+    await dig(bot, task, p, { requireDrops: false });
   }
   // A fire charge lights a portal as flint and steel does, and a ruin's
   // chest often holds one.
@@ -4369,4 +4384,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
