@@ -86,6 +86,20 @@ test('a round of gathering blocks that gains none counts: twice in ten minutes a
   assert.deepEqual(goal.blockRounds.map(r => r.gained), [0, 0]);
 });
 
+test('a round of gathering blocks broken off by a threat is still a round, with what it gained, and rests the reserve as any two empty ones', async () => {
+  // mid-227-r: a blaze's fireballs broke every round on a basalt bridge before it was counted, and upkeep asked again every eight seconds until one threw it off (2026-09-27).
+  const { gatherBlocks } = require('../src/work');
+  const { isSetAside } = require('../src/progress');
+  const bot = { game: { dimension: 'the_nether' }, inventory: { items: () => [] } };
+  const goal = { kind: 'win' };
+  const acquire = async () => { throw Object.assign(new Error('a threat'), { name: 'NeedsSafety' }); };
+  await assert.rejects(gatherBlocks(bot, new Task('blocks'), goal, () => {}, { acquire }), { name: 'NeedsSafety' });
+  assert.equal(isSetAside(goal, 'block_reserve', 'gather'), false, 'once is not yet');
+  await assert.rejects(gatherBlocks(bot, new Task('blocks'), goal, () => {}, { acquire }), { name: 'NeedsSafety' });
+  assert.deepEqual(goal.blockRounds.map(r => r.gained), [0, 0]);
+  assert.equal(isSetAside(goal, 'block_reserve', 'gather'), true, 'twice with none gained rests it');
+});
+
 test('the portal way held says its pace and where its minutes went', () => {
   // mid-235-l was told "2 obsidian in 40 minutes, about 20 a block", the minutes mostly climbs and a pickaxe (2026-09-27).
   const { methodSoFar } = require('../src/work');

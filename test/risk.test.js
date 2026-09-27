@@ -33,3 +33,20 @@ test('fighting them all counts the shooters behind a wall: the fight is out amon
   assert.deepEqual(walled.fightingAllHere, open.fightingAllHere);
   assert.doesNotMatch(walled.level, /^low/);
 });
+
+test('a shooter beyond twenty-four blocks is counted, and a shot in the air coming at the bot is said', () => {
+  // mid-227-r was told "nothing hostile in view" while a blaze 27 off fired at it on a bridge over the void, and a fireball threw it off (2026-09-27).
+  const blaze = riskNow(botWith({ mobs: [['blaze', 27]] }));
+  assert.notEqual(blaze.level, 'none in view');
+  assert.doesNotMatch(blaze.level, /nothing hostile in view/);
+  assert.deepEqual(blaze.hostilesWithin.kinds, ['blaze']);
+  assert.equal(blaze.hostilesWithin.shooters, 1);
+  assert.equal(riskNow(botWith({ mobs: [['zombie', 27]] })).level, 'none in view', 'a biter that far is not yet about');
+  assert.equal(riskNow(botWith({ mobs: [['blaze', 50]] })).level, 'none in view');
+  const shot = botWith();
+  shot.entities[9] = { id: 9, name: 'small_fireball', position: new Vec3(12, 66, 0), velocity: new Vec3(-1.5, -0.1, 0), isValid: true };
+  shot.entities[10] = { id: 10, name: 'arrow', position: new Vec3(12, 66, 0), velocity: new Vec3(0, 0, 1.5), isValid: true };
+  const said = riskNow(shot);
+  assert.match(said.level, /nothing hostile in view, but a shot in the air is coming at the bot/);
+  assert.equal(said.shotsComingAtTheBot, 1, 'the arrow flying across is not');
+});

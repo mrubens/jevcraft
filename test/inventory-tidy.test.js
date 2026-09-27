@@ -328,7 +328,7 @@ test('before dark, food enough to heal on and the base bed near are offered with
   assert.match(offered.take_bed, /any night passes in seconds wherever it comes/);
 });
 
-test('short of blocks in the Nether, the upkeep says they are the crossings and netherrack is all around', async () => {
+test('short of blocks in the Nether, the upkeep says they are the crossings', async () => {
   // mid-235-k, at its fortress with none, was told "seal a pocket for the night", carried on, and every leg stopped at the first gap.
   const { upkeepStep } = require('../src/work');
   let said = null;
@@ -337,4 +337,25 @@ test('short of blocks in the Nether, the upkeep says they are the crossings and 
     registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }] }, health: 20, food: 20 };
   await upkeepStep(bot, { check() {} }, { kind: 'win', step: { action: 'find_fortress' } }, () => {}, client);
   assert.match(said || '', /Mine netherrack for building blocks now: 0 carried\. Here every crossing over lava or a gap is laid a block a step, and a crossing with none stops at the first gap/);
+});
+
+test('short of blocks in the Nether, the upkeep says where the nearest netherrack it would dig is, and the drop between', async () => {
+  // mid-227-r, on a one-wide basalt bridge at y 87 over a forty-four block drop, was told netherrack "is all around"; the nearest was thirty off across the void and fifteen up (2026-09-27).
+  const { upkeepStep } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  let said = null;
+  const client = { systemOne: async ({ questions }) => { said = questions.branch_0.criteria.block_reserve; return { answers: { branch_0: { choice: 'carry_on', confidence: 0.7 } } }; } };
+  const blockAt = p => {
+    const name = p.y === 86 && p.z === 0 && p.x >= -5 && p.x <= 0 ? 'basalt' : p.y <= 42 || (p.x >= 30 && p.y >= 95 && p.y <= 110) ? 'netherrack' : 'air';
+    return { name, position: p, boundingBox: name === 'air' ? 'empty' : 'block' };
+  };
+  const bot = { game: { gameMode: 'survival', dimension: 'the_nether' }, time: { timeOfDay: 3000 }, entity: { isInWater: false, position: new Vec3(0.5, 87, 0.5) },
+    registry, inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'basalt', count: 2 }] }, health: 20, food: 20, entities: {}, blockAt,
+    findBlocks: () => [new Vec3(31, 101, 0), new Vec3(30, 102, 0)] };
+  await upkeepStep(bot, { check() {} }, { kind: 'win', step: { action: 'find_fortress' } }, () => {}, client);
+  assert.doesNotMatch(said || '', /all around/);
+  assert.match(said || '', /The nearest netherrack the gather would go for is 33 blocks off and 15 up, across 29 blocks of open drop on the straight line to it \(44 deep\)\./);
+  bot.findBlocks = () => [];
+  await upkeepStep(bot, { check() {} }, { kind: 'win', step: { action: 'find_fortress' } }, () => {}, client);
+  assert.match(said || '', /No netherrack with an open face is within 48 blocks of here/);
 });

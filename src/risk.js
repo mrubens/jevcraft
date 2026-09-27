@@ -9,8 +9,30 @@ const { shooter } = require('./combat');
 const { fightEstimate } = require('./combat-estimate');
 const { DAY } = require('./day');
 
+// Shooters count out to forty-eight: mid-227-r was told "nothing hostile
+// in view" on a bridge over the void while a blaze twenty-seven off fired
+// at it, and a fireball threw it off (2026-09-27). The flight recorder
+// counts them as far (observer.js).
+const SHOOTER_REACH = 48;
+// Shots in the air whose line passes within a few blocks of the bot and
+// that are still closing: what is shooting may be out of sight.
+const shotsAt = bot => {
+  const { INCOMING } = require('./projectile-guard');
+  const flying = Object.values(bot.entities || {}).filter(e => INCOMING.has(e.name) && e.position && e.isValid !== false);
+  if (!flying.length) return 0;
+  const p = bot.entity.position, eye = new Vec3(p.x, p.y + 1.5, p.z);
+  return flying.filter(e => {
+    if (e.position.distanceTo(eye) > SHOOTER_REACH) return false;
+    const v = e.velocity, speed = v ? v.norm() : 0;
+    if (speed < 0.05) return false;
+    const to = eye.minus(e.position), along = to.dot(v) / speed;
+    return along > 0 && Math.sqrt(Math.max(0, to.dot(to) - along * along)) <= 3;
+  }).length;
+};
+
 function riskNow(bot, { radius = 24, dark = null } = {}) {
-  const about = threats(bot, radius);
+  const about = threats(bot, Math.max(radius, SHOOTER_REACH)).filter(t => t.distance <= radius || shooter(t.entity));
+  const shots = shotsAt(bot);
   const armour = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
   const weapon = require('./combat').defenseWeapon(bot)?.name || null;
   const health = bot.health ?? 20, food = bot.food ?? 20;
@@ -34,10 +56,12 @@ function riskNow(bot, { radius = 24, dark = null } = {}) {
     : fight.healthAfter <= 0 ? 'high: the mobs about could kill the bot if they all came'
     : about.some(m => m.entity.name === 'creeper' && m.distance <= 8) ? 'high: a creeper is within eight blocks'
     : fight.damageTaken >= health / 2 ? 'moderate: fighting them all would take half the health or more'
-    : about.length ? 'low: the mobs about are a fight the bot wins' : spawning ? 'low for now: nothing hostile in view, but mobs spawn here in the dark' : 'none in view';
+    : about.length ? 'low: the mobs about are a fight the bot wins'
+    : shots ? `low: nothing hostile in view, but ${shots === 1 ? 'a shot in the air is' : `${shots} shots in the air are`} coming at the bot` : spawning ? 'low for now: nothing hostile in view, but mobs spawn here in the dark' : 'none in view';
   return {
     level,
-    hostilesWithin: { blocks: radius, count: about.length, kinds: [...new Set(about.map(m => m.entity.name))], inSight: about.filter(m => m.visible).length, shooters: about.filter(m => shooter(m.entity)).length },
+    hostilesWithin: { blocks: radius, shootersTo: SHOOTER_REACH, count: about.length, kinds: [...new Set(about.map(m => m.entity.name))], inSight: about.filter(m => m.visible).length, shooters: about.filter(m => shooter(m.entity)).length },
+    ...(shots ? { shotsComingAtTheBot: shots } : {}),
     fightingAllHere: { damageTaken: fight.damageTaken, healthAfter: fight.healthAfter, ...(fight.creeper ? { creeper: fight.creeper } : {}) },
     health, food, healing: food >= 18 ? 'health comes back while hunger stays at eighteen or more' : 'no healing: health comes back only at eighteen hunger or more, so eat first',
     armourPoints: estimate.armourPoints, weapon: estimate.weapon,
