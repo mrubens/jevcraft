@@ -2147,6 +2147,9 @@ class Survival {
     }
     if (shelter.materialStock(bot) < shelter.missingShell(bot, refuge).length) return;
     this.report(goal, save, { action: 'seal_shelter', origin: refuge.origin });
+    // A pocket here just given up (a creeper racing it, or the twenty
+    // seconds run out) is not begun again for the while it is set aside.
+    if (isSetAside(this, 'seal_here', `${pos(refuge.origin)}`)) return false;
     const threat = immediateThreat(bot);
     const blocks = shelter.missingShell(bot, refuge).sort((a, b) => {
       // Finish a full-height wall on the threat-facing side first. Roof comes
@@ -2170,6 +2173,10 @@ class Survival {
       // five seconds while one walked up, and one blast took it from twenty
       // (2026-09-26).
       if (creeperRace(bot, blocks.length - i)) {
+        // Set aside a moment, or the next tick seals here again and stops
+        // again: mid-202-j stopped a hundred times a second, at full health,
+        // nothing else answering, until the creeper went off (2026-09-27).
+        setAside(this, 'seal_here', `${pos(refuge.origin)}`, 'a creeper coming on would go off before the pocket closed', 10000);
         this.report(goal, save, { action: 'seal_failed', at: { ...refuge.origin }, error: 'a creeper coming on would go off before the pocket closed' }); save();
         return;
       }

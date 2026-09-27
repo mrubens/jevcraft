@@ -2783,6 +2783,10 @@ test('a creeper that comes on while the pocket is walled stops the walling', asy
   await controller.refugeStep(new Task('night'), goal, () => {});
   assert.equal(placed, 2, `stopped once the creeper came on (${placed} placed)`);
   assert.equal(goal.survivalAction?.action, 'seal_failed');
+  // mid-202-j: stopped a hundred times a second; the pocket here is set aside a moment instead.
+  delete goal.survivalAction;
+  assert.equal(await controller.refugeStep(new Task('night'), goal, () => {}), false);
+  assert.equal(placed, 2, 'not begun again');
 });
 
 test('up on its own pillar, the step back from the edge does not take the bot off it', async () => {
