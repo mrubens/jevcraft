@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 
 const port = process.argv[2];
-const args = Object.fromEntries(process.argv.slice(3).reduce((out, a, i, all) => (a.startsWith('--') ? [...out, [a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]] : out), []));
+const args = Object.fromEntries(process.argv.slice(3).filter(a => a !== '--help').reduce((out, a, i, all) => (a.startsWith('--') ? [...out, [a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]] : out), []));
 const seconds = Number(args.seconds || 60);
 const root = path.join(__dirname, '..');
 const server = path.join(root, port === '25581' ? '.clean-run' : `.clean-run-${port}`);
@@ -20,8 +20,15 @@ const deaths = log.split('\n').filter(l => deathRe.test(l));
 const world = (() => { try { return fs.readFileSync(path.join(server, 'server.properties'), 'utf8').match(/^level-name=(.*)$/m)[1]; } catch (_) { return '?'; } })();
 
 const flightDir = path.join(root, '.bot-state', 'flight');
+// The files of the moment asked about: begun before it and written after
+// it began (a new trial on the port writes newer ones; the six newest hid
+// mid-244-v once mid-236-h began).
+const atArg = args.at ? Date.parse(args.at) : null;
+const begun = f => { const m = f.match(/(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z/); return m ? Date.parse(`${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`) : 0; };
 const files = fs.readdirSync(flightDir).filter(f => f.includes(`-${port}-`) && f.endsWith('.jsonl'))
-  .map(f => ({ f, t: fs.statSync(path.join(flightDir, f)).mtimeMs })).sort((a, b) => b.t - a.t).slice(0, 6).map(x => x.f);
+  .map(f => ({ f, t: fs.statSync(path.join(flightDir, f)).mtimeMs, b: begun(f) }))
+  .filter(x => !atArg || (x.b <= atArg && x.t >= atArg - Number(args.seconds || 60) * 1000))
+  .sort((a, b) => b.t - a.t).slice(0, 6).map(x => x.f);
 const frames = [];
 for (const f of files) {
   let text = ''; try { text = fs.readFileSync(path.join(flightDir, f), 'utf8'); } catch (_) { continue; }

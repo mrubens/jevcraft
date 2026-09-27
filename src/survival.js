@@ -1320,14 +1320,16 @@ class Survival {
     // the end, with no way offered to fight anywhere else; the second hit
     // threw it down forty blocks into the lava (note 469). A player steps
     // back onto firm ground first. Offered where the drop beside the bot is
-    // lava or half its health, and firm ground three from any drop is near.
+    // lava or half its health, and firm ground three from any drop is within
+    // sixteen (eight found none from mid-211-s's span: its snapshot, started
+    // again, fought there and fell in ten seconds).
     // What a fight here costs at the edge is not its damage but its hits:
     // each that lands is a knock, and one over the drop ends it. mid-211-s
     // was told the drop and a fight of 2.2 damage, and fought (note 469).
     const hitsLanding = hardest && edge && !noStep ? Math.max(1, Math.round(cost.damageTaken / hardest.hitsBot)) : 0;
-    const edgeHits = hitsLanding ? ` By the estimate about ${hitsLanding} of their hit${hitsLanding === 1 ? '' : 's'} land${hitsLanding === 1 ? 's' : ''} in this fight, and each is a knock that can put the bot over the drop.` : '';
+    const edgeHits = hitsLanding ? ` By the estimate about ${hitsLanding} of their hits land${hitsLanding === 1 ? 's' : ''} in this fight, and each is a knock that can put the bot over the drop.` : '';
     const deepHere = require('./terrain').dropNear(bot, feet, 3);
-    const groundBy = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2) && firmGround(bot, 8, { margin: 3 });
+    const groundBy = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2) && firmGround(bot, 16, { margin: 3 });
     if (groundBy) {
       const far = Math.round(groundBy.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
       options.fight_from_footing = { description: `Step to firm ground ${far} blocks off, three blocks or more from any drop (about ${Math.max(1, Math.round(far / 4.3))} second${far > 4.3 ? 's' : ''}, the mobs hitting freely meanwhile), then fight there: a knock there lands on ground, where here it goes over the edge.${edge}`,
@@ -1335,7 +1337,7 @@ class Survival {
           this.report(goal, save, { action: 'fight_from_footing', to: { ...groundBy } });
           const movements = bot.pathfinder?.movements, towers = movements?.allow1by1towers;
           if (movements) movements.allow1by1towers = false;
-          try { await this.actions.navigate(bot, task, new goals.GoalBlock(groundBy.x, groundBy.y, groundBy.z), { timeoutMs: 4000, stallMs: 1200 }); }
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(groundBy.x, groundBy.y, groundBy.z), { timeoutMs: Math.max(4000, far / 4.3 * 2000), stallMs: 1200 }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           finally { if (movements) movements.allow1by1towers = towers; }
           const at = bot.entity.position.floored();

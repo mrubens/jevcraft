@@ -161,7 +161,7 @@ define({
   },
   options: [
     { key: 'take_cover', label: 'put a block two high in the line of each shooter in sight and stay behind it', when: 'shooters in sight (up to three), two blocks each carried, not in water; said with the blocks, the seconds and the damage in the next fifteen seconds this way', level: 'root' },
-    { key: 'fight_from_footing', label: 'step onto firm ground away from the drop, then fight there', when: 'the drop beside the bot is into lava or does half its health or more, and ground three blocks from any drop is within eight; said with its distance and seconds', level: 'root' },
+    { key: 'fight_from_footing', label: 'step onto firm ground away from the drop, then fight there', when: 'the drop beside the bot is into lava or does half its health or more, and ground three blocks from any drop is within sixteen; said with its distance and seconds', level: 'root' },
     { key: 'fight', label: 'fight where the bot stands', when: 'always, with bare hands when no sword, axe or trident is carried', level: 'root' },
     { key: 'eat_golden_apple', label: 'eat a golden apple now', when: 'a golden or enchanted golden apple is carried and health is below full', level: 'root' },
     { key: 'pillar', label: 'go two blocks up and fight from there', when: 'two scaffold blocks carried and three clear blocks overhead', level: 'root' },
