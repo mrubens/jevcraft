@@ -622,3 +622,14 @@ test('the base bed taken along is still the base bed: the home does not ask for 
   w.take('white_bed', 1);
   assert.equal(home.homeStage(bot, goal)?.phase, 'home_bed');
 });
+
+test('a biome the sheep search could not walk to rests, and a bed is three wool of one colour', async () => {
+  // mid-229-b: four wool of two colours read as none short; the same unreachable biome chosen six times a second.
+  const w = await establishedHome(), { bot, goal, task, save } = w;
+  w.give('white_wool', 2); w.give('black_wool', 2);
+  assert.equal(home.woolCarried(bot).count, 2, 'two of one colour, not four');
+  goal.woolSearch = { since: Date.now(), from: { x: 0, y: 65, z: 0 }, toward: { x: 300, z: 0, biome: 'plains' } };
+  await home.searchForSheep(bot, task, goal, save, { navigate: async () => { throw new Error('No route'); }, explore: async () => {} });
+  assert(goal.woolSearch.unreachable['300,0'], 'the biome rests');
+  assert.equal(goal.woolSearch.toward, undefined);
+});

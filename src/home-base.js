@@ -799,6 +799,7 @@ async function buildPen(bot, task, goal, save, home, actions) {
 // ones about with their distance and direction (sheep graze plains, meadows
 // and forests, not deserts or oceans), beside exploring on from here. The
 // pick holds until the bot is there or the walk fails. Without Jev, explore.
+const BIOME_REST_MS = 10 * 60000;
 async function searchForSheep(bot, task, goal, save, actions) {
   const search = goal.woolSearch ||= { since: Date.now(), from: plain(bot.entity.position.floored()) };
   const held = search.toward;
@@ -815,6 +816,10 @@ async function searchForSheep(bot, task, goal, save, actions) {
       // chosen again at once, four times a second, and the chat of it got the
       // bot kicked from the server (trial 76).
       if (held.seen && goal.sightings?.sheep) goal.sightings.sheep = goal.sightings.sheep.filter(s => Math.hypot(s.x - held.x, s.z - held.z) > 24);
+      // A biome the walk could not reach rests too: offered again at once,
+      // it was chosen again at once, six times a second for three hours in
+      // mid-229-b (2026-09-26).
+      if (!held.seen) (search.unreachable ||= {})[`${held.x},${held.z}`] = Date.now();
       delete search.toward; save(); return;
     }
   }
@@ -825,9 +830,13 @@ async function searchForSheep(bot, task, goal, save, actions) {
   const exploration = require('./exploration');
   const view = exploration.biomeView(bot);
   const client = task.opportunityClient;
-  const nearby = exploration.biomeTrips(bot, { limit: 6 });
+  const resting = search.unreachable || {};
+  const nearby = exploration.biomeTrips(bot, { limit: 6 }).filter(b => !(Date.now() - (resting[`${b.x},${b.z}`] || 0) < BIOME_REST_MS));
   // String carried is wool too: four string a white wool.
-  const string = countOf(bot, 'string'), short = Math.max(0, 3 - woolCarried(bot).total);
+  // Three of one colour make the bed, not three in all: mid-229-b carried
+  // four of two colours, was reckoned none short, and its search returned
+  // at once twenty times a second for three hours (2026-09-26).
+  const string = countOf(bot, 'string'), short = Math.max(0, 3 - woolCarried(bot).count);
   const fromString = Math.min(Math.floor(string / 4), short);
   const flocksKnown = require('./sightings').sighted(bot, goal, 'sheep').filter(s => s.distance > 32);
   if (!client && flocksKnown.length) { search.toward = { x: flocksKnown[0].x, y: flocksKnown[0].y, z: flocksKnown[0].z, seen: true }; save(); return; }
@@ -859,7 +868,7 @@ async function searchForSheep(bot, task, goal, save, actions) {
   let pick = null;
   try {
     const decision = await require('./decisions').decide('sheep_search', { client, bot, task, goal, save, tree,
-      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, stringCarried: string,
+      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, woolOfOneColour: woolCarried(bot).count, stringCarried: string,
         timeOfDay: tod, ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot) } : {}),
         withoutSheep: 'Four string craft a white wool, twelve a bed\'s three: spiders drop up to two string each (they come out at night), and cobwebs cut with a sword drop one (abandoned mineshafts are full of them). An igloo, in snowy plains and taiga, always has a bed in it, and so do most village houses. Phantoms only come after three nights without sleep.' } });
     if (!decision.stale && !decision.fallback) pick = decision.path.at(-1);
@@ -1257,6 +1266,6 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
   return options;
 }
 
-module.exports = { takeHomeBed, bedCarried, placeOriented, isBed, siteWork, levelSite, clearStray, repairPlot, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
+module.exports = { searchForSheep, takeHomeBed, bedCarried, placeOriented, isBed, siteWork, levelSite, clearStray, repairPlot, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
   woolCarried, woodSpecies, homeStage, homeComplete, homeStep, tillPlot, plantPlot, harvestPlot, placeBed, claimBed, buildPen, gatherWool, lureCows, breedCows, takeSteak, bake,
   homeFood, eatFromHome, homeChores };
