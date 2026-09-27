@@ -4242,6 +4242,62 @@ test('in a wall of stone with a skeleton in the open, an L dug in out of its lin
   assert(woodSecs > secs, `${woodSecs} against ${secs}`);
 });
 
+test('out of a shooter\'s line is priced from when it walks to a new one, in the corner and in the L (mid-242-y, note 522)', () => {
+  // mid-242-y: round a corner from a skeleton three blocks off, told "about 1 damage" in fifteen seconds; then
+  // "none of them reaches" the end of an L that the skeleton walked into and shot it from.
+  const corridor = p => (p.y === 64 || p.y === 65) && ((p.z === 0 && p.x >= -6 && p.x <= 20) || (p.x === -3 && (p.z === 1 || p.z === 2)));
+  const bot = rockWorld(corridor, ['iron_sword', 'cobblestone']);
+  const skeleton = skeletonAt(3.5, 0.5);
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const hidden = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false).out_of_sight;
+  assert(hidden);
+  const { lineRegained } = require('../src/bunker');
+  const back = lineRegained(bot, skeleton, new Vec3(-3, 64, 1));
+  assert(back && back.blocks >= 5 && back.blocks <= 8, JSON.stringify(back));
+  assert.match(hidden.description, /A shooter that loses sight of the bot walks on toward it by its way and shoots once it has a line again, its bow drawn in about a second: the skeleton 3 blocks off has one after about [\d.]+ blocks of walking, about [\d.]+ seconds in/);
+  assert.match(hidden.description, /Out of their line, none of them reaches it at first; the skeleton after about [\d.]+ seconds reaches it again, counted from then/);
+  // Its arrows from then on, not none: about 1.1 a second after armour, unshielded.
+  assert(hidden.expects.damage >= 8, `${hidden.expects.damage}`);
+  // Far down the corridor it is longer, and the damage less.
+  const far = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeletonAt(15.5, 0.5))], false).out_of_sight;
+  assert(far.expects.damage < hidden.expects.damage, `${far.expects.damage} against ${hidden.expects.damage}`);
+
+  // The L: a shooter walks to its mouth and in, to the turn.
+  const wall = rockWorld(p => p.y >= 64 && p.x < 1, ['iron_pickaxe', 'cobblestone']);
+  const near = skeletonAt(-3.5, 0.5);
+  const nook = new Survival(wall, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } })
+    .stanceOptions(new Task('x'), {}, () => {}, [threat(wall, near)], false).nook;
+  assert(nook);
+  assert.doesNotMatch(nook.description, /a shooter has to come to the mouth to see in/);
+  assert.match(nook.description, /the skeleton 4 blocks off has one after about [\d.]+ blocks of walking/);
+  assert.match(nook.description, /Round the turn, none of them reaches it at first; the skeleton after about [\d.]+ seconds reaches it again/);
+});
+
+test('a stance that hid the bot is asked again once a shooter has a line to where it hid, and said (mid-242-y, note 522)', async () => {
+  // In the open: nothing stands between the skeleton and the bot where it "hid".
+  const make = air => {
+    const bot = rockWorld(air, ['iron_sword', 'cobblestone']);
+    const skeleton = skeletonAt(-3.5, 0.5);
+    bot.entities = { 9: skeleton };
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } }, state: { shelters: [] } });
+    const feet = bot.entity.position.floored();
+    survival.state.nook = { end: `${feet}`, watch: { x: 1, y: 64, z: 0 } };
+    survival.state.stance = { choice: 'nook', kinds: 'skeleton', ids: [9], at: Date.now() - 2000, health: 14, expects: { damage: 12, seconds: 15, oneHit: 2.2 }, hidden: { cell: `${feet}`, seenBy: [] } };
+    let asked = null;
+    survival.decide = async (task, goal, save, question) => { asked = question; return { path: ['nook'], stale: true }; };
+    return { bot, skeleton, survival, asked: () => asked };
+  };
+  const seen = make(p => p.y >= 64);
+  await seen.survival.stanceStep(new Task('t'), {}, () => {}, [threat(seen.bot, seen.skeleton)], false);
+  assert(seen.asked(), 'asked again, not held');
+  assert.match(seen.asked().state.previousStance.askedAgainFor, /the skeleton [\d.]+ blocks off has a line to where the bot hid/);
+  assert.match(seen.asked().tree.nook.description, /^Stay round the turn of the nook dug here: the skeleton [\d.]+ blocks off has a line into it now/);
+  // Rock between: held, not asked.
+  const hid = make(p => p.y >= 64 && (p.x !== -1 || p.z < -3 || p.z > 3));
+  await hid.survival.stanceStep(new Task('t'), {}, () => {}, [threat(hid.bot, hid.skeleton)], false);
+  assert.equal(hid.asked(), null);
+});
+
 test('a bunker that takes five seconds or more to dig is offered with its seconds said, not hidden', () => {
   const open = p => p.y >= 64 && p.x < 1;
   const bot = rockWorld(open, ['wooden_pickaxe', 'cobblestone']);

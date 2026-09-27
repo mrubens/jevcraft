@@ -225,6 +225,86 @@ function coverWithin(bot, shooters, { steps = 8, avoid = [] } = {}) {
   return null;
 }
 
+// A shooter out of its line walks on to one. The game's bow goal (26.1
+// RangedBowAttackGoal) paths toward its target while it cannot see it, and
+// keeps to that path when it gives the target up (the goal runs on while
+// its navigation is not done, and stopping does not stop the walk); where
+// the path first has a line, it looks and shoots, the bow drawn in twenty
+// ticks. mid-242-y, told "about 1 damage" out of a skeleton's line three
+// blocks off, was shot as it went; then it dug an L that the skeleton
+// walked into, and was shot from the turn at arm's length (note 522).
+// How fast: a mob's walk is its movement speed twice over (the move
+// control sets both the speed and the input to it), against the ground's
+// friction, 0.6 x 0.91 kept each tick: 0.25 is about 2.75 blocks a second
+// (a skeleton), 0.35 about 5.4 (a pillager), where a player walks 4.3.
+// A ghast drifts and does not follow a path; a blaze flies at it (below).
+const MOB_SPEED = { skeleton: 0.25, stray: 0.25, bogged: 0.25, parched: 0.25, witch: 0.25, pillager: 0.35, illusioner: 0.5, drowned: 0.23, blaze: 0.23, breeze: 0.63 };
+const FLIERS = new Set(['blaze', 'breeze']);
+const blocksPerSecond = name => { const s = MOB_SPEED[name] ?? 0.25; return s * s * 20 / (1 - 0.6 * 0.91); };
+const DRAW_SECONDS = 1;
+// The seconds until `shooter` has a line to `cell` again by walking its way
+// toward it, the draw included, and the blocks walked: null when it has
+// none within `within` seconds of walking (or it does not follow a path).
+// `open` counts cells still to be dug as dug; `cache` is shared between
+// calls made of one moment.
+function lineRegained(bot, shooter, cell, { open = null, within = 15, cache = new Map() } = {}) {
+  if (!shooter?.position || shooter.name === 'ghast') return null;
+  const speed = blocksPerSecond(shooter.name), flies = FLIERS.has(shooter.name);
+  const height = shooter.height || 1.8, tall = Math.max(1, Math.ceil(height - 1e-6));
+  const clear = p => { const k = `${p}`; if (open?.has(k)) return true; if (!cache.has(k)) { const b = bot.blockAt(p); cache.set(k, !!b && b.boundingBox === 'empty' && !/lava/.test(b.name)); } return cache.get(k); };
+  const floor = p => !open?.has(`${p}`) && bot.blockAt(p)?.boundingBox === 'block';
+  const room = p => { for (let dy = 0; dy < tall; dy++) if (!clear(p.offset(0, dy, 0))) return false; return true; };
+  const stand = p => room(p) && (flies || floor(p.offset(0, -1, 0)));
+  const sees = p => BODY.some(dy => require('./danger').lineClear(bot, p.offset(0.5, height * 0.85, 0.5), cell.offset(0.5, dy, 0.5), { open }));
+  const start = shooter.position.floored(), goal = cell;
+  const maxBlocks = Math.max(0, within - DRAW_SECONDS) * speed;
+  // A* to the cell the bot stands in, the way the game's pathfinder goes;
+  // then along it to the first cell with a line.
+  const key = p => `${p.x},${p.y},${p.z}`;
+  const h = p => Math.hypot(p.x - goal.x, p.y - goal.y, p.z - goal.z);
+  // A binary heap on f.
+  const heap = [];
+  const push = node => { heap.push(node); for (let i = heap.length - 1; i > 0;) { const j = (i - 1) >> 1; if (heap[j].f <= heap[i].f) break; [heap[i], heap[j]] = [heap[j], heap[i]]; i = j; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; for (let i = 0; ;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l].f < heap[m].f) m = l; if (r < heap.length && heap[r].f < heap[m].f) m = r; if (m === i) break; [heap[i], heap[m]] = [heap[m], heap[i]]; i = m; } } return top; };
+  push({ p: start, g: 0, f: h(start) });
+  const came = new Map([[key(start), null]]), best = new Map([[key(start), 0]]);
+  const goalStands = stand(goal);
+  let reached = null, n = 0;
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  while (heap.length && n++ < 3000) {
+    const { p, g } = pop();
+    if (g > (best.get(key(p)) ?? Infinity)) continue;
+    if (p.equals(goal) || (!goalStands && p.y === goal.y && Math.abs(p.x - goal.x) + Math.abs(p.z - goal.z) === 1)) { reached = p; break; }
+    const next = [];
+    for (const [dx, dz] of DIRS) {
+      // A corner is not cut: both cells beside a diagonal step are open.
+      if (dx && dz && !(room(p.offset(dx, 0, 0)) && room(p.offset(0, 0, dz)))) continue;
+      for (const dy of flies ? [0, 1, -1] : [0, 1, -1, -2, -3]) {
+        const to = p.offset(dx, dy, dz);
+        if (dy > 0 && !clear(p.offset(0, tall, 0))) continue;
+        if (dy < 0 && ![...Array(-dy).keys()].every(k => room(p.offset(dx, -k, dz)))) continue;
+        if (stand(to)) { next.push([to, Math.hypot(dx, dz)]); break; }
+      }
+    }
+    if (flies) for (const dy of [1, -1]) { const to = p.offset(0, dy, 0); if (room(to)) next.push([to, 1]); }
+    for (const [to, step] of next) {
+      const g2 = g + step, k = key(to);
+      if (g2 > maxBlocks + 2 || g2 >= (best.get(k) ?? Infinity)) continue;
+      best.set(k, g2); came.set(k, p); push({ p: to, g: g2, f: g2 + h(to) });
+    }
+  }
+  if (!reached) return null;
+  const path = [];
+  for (let p = reached; p; p = came.get(key(p))) path.unshift(p);
+  let walked = 0;
+  for (let i = 0; i < path.length; i++) {
+    if (i) walked += Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z);
+    if (walked > maxBlocks) return null;
+    if (sees(path[i])) return { blocks: Math.round(walked * 10) / 10, seconds: Math.round((walked / speed + DRAW_SECONDS) * 10) / 10, at: path[i] };
+  }
+  return null;
+}
+
 // An L dug into the rock, in two and turned one, whose end no shooter's
 // line reaches: the doorway a player digs under arrows. Anything that
 // wants the bot comes to the mouth and round the turn, one at a time,
@@ -404,4 +484,4 @@ async function raiseCover(bot, task, from) {
   return solid(bot.blockAt(cell)) ? cell : false;
 }
 
-module.exports = { blockDigMs, digsWith, seenFrom, coverWithin, nookSite, digNook, bunkerDigMs, bunkerFight, digBunker, holdBunker, collectRods, digCell, stepTo, standable, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, NATURAL, WALK_TO_WALL, SWARM };
+module.exports = { blockDigMs, digsWith, seenFrom, lineRegained, DRAW_SECONDS, coverWithin, nookSite, digNook, bunkerDigMs, bunkerFight, digBunker, holdBunker, collectRods, digCell, stepTo, standable, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, NATURAL, WALK_TO_WALL, SWARM };

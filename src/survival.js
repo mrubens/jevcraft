@@ -127,7 +127,11 @@ function costSays(cost, health, mobs, { doing = null, done = null, over = 'in th
   const setupSays = !doing || !cost.setup ? '' : cost.setup >= cost.seconds ? `, and the ${cost.setup} seconds of ${doing} not done within them` : `, the ${cost.setup} seconds of ${doing} included`;
   let s = ` About ${cost.damage} damage from the mobs here ${over}${setupSays}, from ${h} health${cost.damage >= health ? ' (more than the bot has)' : ''}.`;
   for (const b of cost.blasts) s += ` The creeper ${Math.round(b.distance)} blocks off can go off beside the bot in about ${b.seconds} seconds${doing && cost.setup ? `, ${b.seconds <= cost.setup ? 'before' : 'after'} the ${doing} is done` : ''}: about ${Math.round(b.hitsBot)} two blocks off after the armour worn${b.hitsBot >= health ? ', more than the bot has' : ''}.`;
-  if (done && cost.setup < cost.seconds) s += cost.still.length ? ` ${done}, ${mobList(cost.still, mobs)} still reach${cost.still.length === 1 && mobs.filter(m => m.name === cost.still[0]).length === 1 ? 'es' : ''} it.` : ` ${done}, none of them reaches it.`;
+  // Those that reach it again partway (a shooter walked to a new line) are
+  // said with when, and counted from then.
+  const later = (cost.later || []).map(l => `the ${l.name.replaceAll('_', ' ')} after about ${l.seconds} seconds`);
+  const laterSays = later.length ? `; ${later.length > 1 ? `${later.slice(0, -1).join(', ')} and ${later.at(-1)}` : later[0]} reach${later.length === 1 ? 'es' : ''} it again, counted from then` : '';
+  if (done && cost.setup < cost.seconds) s += cost.still.length ? ` ${done}, ${mobList(cost.still, mobs)} still reach${cost.still.length === 1 && mobs.filter(m => m.name === cost.still[0]).length === 1 ? 'es' : ''} it${laterSays}.` : ` ${done}, none of them reaches it${later.length ? ' at first' : ''}${laterSays}.`;
   return s;
 }
 // How many biters can be at arm's length at once where the bot stands: the
@@ -1370,7 +1374,7 @@ class Survival {
     // How many can reach at once here: two in a tunnel, eight in the open.
     const open = openCells(bot, feet);
     const shielded = bot.inventory?.slots?.[45]?.name === 'shield';
-    const estimate = fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
+    const estimate = fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, id: t.entity.id })),
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded, atOnce: open });
     const cost = estimate.fightHere;
     const mobs = estimate.mobs || [];
@@ -1611,21 +1615,48 @@ class Survival {
     const seenHere = shooting.length ? require('./bunker').seenFrom(bot, shooting, feet) : [];
     const shooterNames = list => mobList([...new Set(list.map(e => e.name))], list.map(e => ({ name: e.name })));
     const heldHidden = this.state.stance?.choice === 'out_of_sight' || this.state.stance?.choice === 'nook';
+    // Out of the line is not out of reach: a shooter that loses sight of the
+    // bot walks on toward it and shoots once it has a line again (bunker.js
+    // lineRegained, the game's bow goal). Each shooter in sight is walked
+    // to the hiding place by its way, and counted from the second it has a
+    // line: mid-242-y was told one damage in fifteen seconds round a corner
+    // from a skeleton three blocks off; then "none of them reaches" the end
+    // of an L the skeleton walked into, and was shot from the turn (note
+    // 522).
+    const lineCache = new Map();
+    const regainAt = (cell, { open = null, setup = 0 } = {}) => {
+      const out = new Map();
+      for (const t of danger.filter(d => d.visible && shooter(d.entity)).slice(0, 8)) {
+        const r = require('./bunker').lineRegained(bot, t.entity, cell, { open, within: Math.max(0, require('./combat-estimate').HOLD_SECONDS - setup), cache: lineCache });
+        out.set(t.entity.id, { name: t.entity.name, distance: t.distance, ...(r ? { blocks: r.blocks, seconds: Math.round((setup + r.seconds) * 10) / 10 } : { none: true }) });
+      }
+      return out;
+    };
+    const reachesAgain = regain => m => m.name === 'creeper' || m.name === 'warden' || (m.shoots && regain.get(m.id)?.seconds) || false;
+    const regainSays = regain => {
+      const parts = [...regain.values()].slice(0, 4).map(r => `the ${r.name.replaceAll('_', ' ')} ${Math.round(r.distance)} blocks off ${r.none ? 'has none within the fifteen seconds' : r.blocks ? `has one after about ${r.blocks} blocks of walking, about ${r.seconds} seconds in` : `has one from where it stands, about ${r.seconds} seconds in`}`);
+      return parts.length ? ` A shooter that loses sight of the bot walks on toward it by its way and shoots once it has a line again, its bow drawn in about a second: ${parts.join('; ')}.` : '';
+    };
+    // Where the bot hid, kept with the stance: it is asked again when a
+    // shooter has a line there (stanceStep).
+    const hideAt = cell => { const st = this.state.stance; if (st) st.hidden = { cell: `${cell}`, seenBy: require('./bunker').seenFrom(bot, shooting, cell).map(e => e.id) }; };
     const cover = shooting.length && !inWater(bot) && (seenHere.length || heldHidden) ? require('./bunker').coverWithin(bot, shooting, { steps: 8, avoid: biting }) : null;
     if (cover) {
       const secs = Math.round(cover.steps / 4.3 * 10) / 10;
       const atOnce = Math.max(1, openCells(bot, cover.cell));
-      const hiddenCost = stanceCost({ mobs, setup: secs, fight: { atOnce, only: m => !m.shoots }, reaches: m => m.name === 'creeper' || m.name === 'warden', shield: shielded });
+      const regain = regainAt(cover.cell, { setup: secs });
+      const hiddenCost = stanceCost({ mobs, setup: secs, fight: { atOnce, only: m => !m.shoots }, reaches: reachesAgain(regain), shield: shielded });
       const off = Math.round(cover.cell.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
       const biters = biting.length ? ` What bites comes round to it and is fought at arm's length, at most ${atOnce} at once there.` : '';
       options.out_of_sight = { expects: { damage: hiddenCost.damage, seconds: hiddenCost.seconds, oneHit },
         description: (cover.steps
           ? `Walk ${plural(cover.steps, 'block')} to a spot ${off} blocks off that no line from ${shooterNames(shooting)} reaches (rock stands between), about ${secs} seconds in their fire on the way, and stay there.`
-          : `Stay where the bot stands: no line from ${shooterNames(shooting)} reaches it here (rock stands between).`) + biters + ' A shooter that walks round to a new line finds the bot open again.' +
+          : `Stay where the bot stands: no line from ${shooterNames(shooting)} reaches it here (rock stands between).`) + biters + regainSays(regain) +
           costSays(hiddenCost, bot.health, mobs, { doing: cover.steps ? 'walking there' : null, done: 'Out of their line' }) + hitsLeft,
         run: async () => {
           if (!cover.steps) {
             this.report(goal, save, { action: 'out_of_sight_hold', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
+            hideAt(feet);
             const next = [...biting].sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
             if (next) await bot.lookAt?.(next.position.offset(0, 1.6, 0), true);
             await sleep(250);
@@ -1634,7 +1665,9 @@ class Survival {
           this.report(goal, save, { action: 'out_of_sight', to: { x: cover.cell.x, y: cover.cell.y, z: cover.cell.z }, blocks: cover.steps, threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(cover.cell.x, cover.cell.y, cover.cell.z), { timeoutMs: Math.max(3000, secs * 3000), stallMs: 1200 }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
-          return bot.entity.position.floored().equals(cover.cell);
+          const there = bot.entity.position.floored().equals(cover.cell);
+          if (there) hideAt(cover.cell);
+          return there;
         } };
     }
     // The L dug in: two in and one to the side, its end out of every
@@ -1643,17 +1676,23 @@ class Survival {
     const nook = !inNook && seenHere.length && !inWater(bot) && typeof this.actions.dig === 'function' ? require('./bunker').nookSite(bot, shooting) : null;
     if (nook || inNook) {
       const setup = nook ? Math.round((nook.ms + nook.cells.length * 250) / 100) / 10 : 0;
-      const nookCost = stanceCost({ mobs, setup, fight: { atOnce: 1, only: m => !m.shoots }, reaches: m => m.name === 'creeper' || m.name === 'warden', shield: shielded });
+      const regain = regainAt(nook ? nook.end : feet, { open: nook ? new Set(nook.cells.flatMap(c => [`${c}`, `${c.offset(0, 1, 0)}`])) : null, setup });
+      const nookCost = stanceCost({ mobs, setup, fight: { atOnce: 1, only: m => !m.shoots }, reaches: reachesAgain(regain), shield: shielded });
       const walk = nook && nook.walkMs ? ` from the wall ${Math.round(nook.stand.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10} blocks off` : '';
+      // In it, with a shooter come round to a line into it: said as it is.
+      const seesIn = inNook ? seenHere : [];
       options.nook = { expects: { damage: nookCost.damage, seconds: nookCost.seconds, oneHit },
         description: (nook
           ? `Dig an L into the rock${walk}: two blocks in and one to the side, ${nook.blocks} blocks ${nook.with}, about ${setup} seconds of digging and stepping in, shot at meanwhile; no line from ${shooterNames(shooting)} reaches its end.`
-          : `Stay round the turn of the nook dug here: no line from ${shooterNames(shooting)} reaches it.`) +
-          ' What bites comes to the mouth and round the turn one at a time and is fought at arm\'s length; a shooter has to come to the mouth to see in.' + (nook ? buildCost + creeperNote : '') +
+          : seesIn.length
+            ? `Stay round the turn of the nook dug here: ${seesIn.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${seesIn.length === 1 ? 'has' : 'have'} a line into it now.`
+            : `Stay round the turn of the nook dug here: no line from ${shooterNames(shooting)} reaches it.`) +
+          ' What bites comes to the mouth and round the turn one at a time and is fought at arm\'s length.' + regainSays(regain) + (nook ? buildCost + creeperNote : '') +
           costSays(nookCost, bot.health, mobs, { doing: nook ? 'digging in' : null, done: 'Round the turn' }) + hitsLeft,
         run: async () => {
           if (inNook) {
             this.report(goal, save, { action: 'nook_hold', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
+            hideAt(feet);
             const w = this.state.nook.watch;
             if (w) await bot.lookAt?.(new Vec3(w.x + 0.5, w.y + 1.2, w.z + 0.5), true);
             await sleep(250);
@@ -1664,6 +1703,7 @@ class Survival {
             const dug = await require('./bunker').digNook(bot, task, nook, { navigate: this.actions.navigate });
             if (!dug) return false;
             this.state.nook = { end: `${nook.end}`, watch: { x: nook.watch.x, y: nook.watch.y, z: nook.watch.z } };
+            hideAt(nook.end);
             return true;
           } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
         } };
@@ -1982,7 +2022,16 @@ class Survival {
     // a hundred times a second, and mid-227-k's creeper walked up through
     // it; mid-202-h and mid-227-i spun the same way (2026-09-27).
     const leftBe = held?.choice === 'keep_working' && !!immediateThreat(bot);
-    const holding = held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && Date.now() - held.at < STANCE_HOLD_MS && (held.expects ? !overEstimate : bot.health > held.health - STANCE_HEALTH) && !hitSince;
+    // A stance that hid the bot from the shooters (out of sight, the nook)
+    // is asked again once a shooter has a line to where it hid, or the bot
+    // is off that spot: held on its estimate, mid-242-y sat at the end of
+    // its L at 2.1 health while a skeleton walked in to the turn and shot
+    // it (note 522). A line Jev was told of when it chose to stay is not
+    // asked of again.
+    const hid = held?.hidden;
+    const offSpot = !!hid && hid.cell !== `${feet}`;
+    const lineAgain = hid && !offSpot ? require('./bunker').seenFrom(bot, danger.filter(t => shooter(t.entity)).map(t => t.entity), feet).filter(e => !hid.seenBy.includes(e.id)) : [];
+    const holding = held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && Date.now() - held.at < STANCE_HOLD_MS && (held.expects ? !overEstimate : bot.health > held.health - STANCE_HEALTH) && !hitSince && !offSpot && !lineAgain.length;
     // About to ask: the run's way is looked for first, so the retreat says
     // whether there is one (a moment ago from here will do).
     const scouted = this.state.retreatScout;
@@ -2068,7 +2117,9 @@ class Survival {
         estimate: fightEstimate({ threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
           armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: openCells(bot, feet) }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health,
-          ...(newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` } : {}) } : null,
+          ...(lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
+            : offSpot ? { askedAgainFor: 'the bot is off the spot it hid in' }
+            : newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` } : {}) } : null,
         // What failed here just now, and so is not asked again for a while:
         // each question after a failure began with nothing said of it.
         ...(failed.length ? { failedHereJustNow: failed.map(f => ({ choice: f.choice, secondsAgo: Math.round((Date.now() - f.at) / 1000), ...(f.why ? { why: f.why } : {}) })) } : {}),

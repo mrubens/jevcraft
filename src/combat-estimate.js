@@ -261,6 +261,9 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   });
   // The mob each split one comes from, kept off the record (not enumerable).
   mobs.forEach((m, i) => { if (m && threats[i].from) Object.defineProperty(m, 'bornOf', { value: mobs[threats.indexOf(threats[i].from)] }); });
+  // And the entity each stands for, off the record too, where the caller
+  // gave its id: a stance's cost asks where that one mob can get to.
+  mobs.forEach((m, i) => { if (m && !threats[i].from && threats[i].id != null) Object.defineProperty(m, 'id', { value: threats[i].id }); });
   mobs = mobs.filter(Boolean);
   const order = [...mobs].sort((a, b) => a.distance - b.distance);
   // The cells round the bot bound how many can come at it, but not the
@@ -307,7 +310,7 @@ const arrives = m => Math.max(0, ((m.distance || 0) - (m.name === 'creeper' ? LI
 const bites = m => m.jab ?? m.hitsBot;
 function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => false, fight = null, shield = false }) {
   let damage = 0;
-  const blasts = [], still = new Set();
+  const blasts = [], still = new Set(), later = [];
   const fought = m => !!fight && m.name !== 'creeper' && (!fight.only || fight.only(m));
   for (const m of mobs) {
     if (m.name === 'creeper') {
@@ -321,9 +324,15 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     // Building or digging: every mob that gets there, from when it does,
     // the shield down.
     damage += Math.max(0, setup - from) * (m.shoots ? shooting(m, false) : bites(m));
-    if (!fought(m) && reaches(m) && seconds > setup) {
-      still.add(m.name);
-      damage += Math.max(0, seconds - Math.max(setup, from)) * (m.shoots ? shooting(m, shield) : bites(m));
+    // `reaches` may say from when: a shooter out of its line that walks to
+    // a new one reaches the bot from the second it has it (bunker.js
+    // lineRegained), not never.
+    const r = reaches(m), again = r === true ? 0 : typeof r === 'number' && Number.isFinite(r) ? r : null;
+    if (!fought(m) && again != null && seconds > setup) {
+      const start = Math.max(setup, from, again);
+      if (again > 0 && Math.max(setup, again) >= seconds) continue;
+      if (again > setup) later.push({ name: m.name, seconds: round(again) }); else still.add(m.name);
+      damage += Math.max(0, seconds - start) * (m.shoots ? shooting(m, shield) : bites(m));
     }
   }
   if (fight && seconds > setup) {
@@ -332,7 +341,7 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     damage += within(fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach) }), seconds - setup);
     for (const m of order) if (!m.shoots || m.visible) still.add(m.name);
   }
-  return { seconds, setup: round(setup), damage: round(damage), blasts, still: [...still] };
+  return { seconds, setup: round(setup), damage: round(damage), blasts, still: [...still], later: later.sort((a, b) => a.seconds - b.seconds) };
 }
 
 module.exports = { SPEAR, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };

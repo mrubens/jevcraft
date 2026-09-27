@@ -47,7 +47,12 @@ for (const l of frames) {
   if (s.decision) {
     const d = s.decision, w = d.judgments?.[0]?.probabilities || {};
     const top = Object.entries(w).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k} ${v.toFixed(2)}`).join(', ');
-    console.log(`${l.at.slice(11, 19)} DECIDE ${d.id} -> ${(d.path || []).join('/')}${d.noneGood ? ' (none of these)' : ''} [${top}]`);
+    // Written when the frame was, which can be seconds after the question:
+    // its own time and the health it was asked at are said (mid-242-y's
+    // nook read as asked at 1.1 health, 22:55:35; it was asked at 5.4,
+    // 22:55:31, note 522).
+    const asked = d.at && d.at.slice(11, 19) !== l.at.slice(11, 19) ? ` (asked ${d.at.slice(11, 21)}${d.state?.health != null ? ` at hp ${Number(d.state.health).toFixed(1)}` : ''})` : '';
+    console.log(`${l.at.slice(11, 19)} DECIDE ${d.id} -> ${(d.path || []).join('/')}${d.noneGood ? ' (none of these)' : ''}${asked} [${top}]`);
     if (args.options) for (const [k, o] of Object.entries(d.options || {})) console.log(`           - ${k}: ${String(typeof o.description === 'string' ? o.description : JSON.stringify(o.description)).slice(0, 300)}`);
     continue;
   }
