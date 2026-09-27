@@ -611,7 +611,7 @@ test('an ore found only in the Overworld is not dug for in the Nether: the step 
   const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(18.5, 48, 26.5) }, entities: {}, registry: require('minecraft-data')('26.1'),
     inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }] }, findBlocks: () => [], blockAt: p => ({ name: 'netherrack', position: p, boundingBox: 'block' }),
     pathfinder: { movements: {}, setGoal() { tunnelled = true; } } };
-  await assert.rejects(mineAtSource(bot, new Task('mine'), { action: 'mine', block: 'iron_ore', drops: 'raw_iron', count: 3, depth: 16 }, {}, () => {}, null), /No iron ore in the nether: it is only found in the overworld/);
+  await assert.rejects(mineAtSource(bot, new Task('mine'), { action: 'mine', block: 'iron_ore', drops: 'raw_iron', count: 3, depth: 16 }, {}, () => {}, null), err => /No iron ore in the nether: it is only found in the overworld/.test(err.message) && err.name === 'WrongDimension');
   assert.equal(tunnelled, false);
 });
 

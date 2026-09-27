@@ -1252,7 +1252,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
     // way back taken, not dug for.
     const home = require('./knowledge').dimensionOfBlock(step.block || '');
     const here = String(bot.game?.dimension || 'overworld').replace('minecraft:', '').replace('the_', '');
-    if (home && home !== here) throw new Error(`No ${String(step.block).replaceAll('_', ' ')} in the ${here}: it is only found in the ${home}`);
+    if (home && home !== here) throw Object.assign(new Error(`No ${String(step.block).replaceAll('_', ' ')} in the ${here}: it is only found in the ${home}`), { name: 'WrongDimension' });
     if (step.depth !== null && step.depth !== undefined) {
       const names = step.sources || Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
       // The ore already tunnelled toward is kept while it is there and not
@@ -3575,7 +3575,11 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival } 
   goal.step = { action: 'persist', attempt: goal.struggles, problem: err.message }; save(); onStep(goal);
   try { await answerStall(bot, task, goal, save, { key, layer: 'work', strikes: goal.struggles, error: err.message }, { client, survival, onStep }); }
   finally {
-    if (goal.step?.action === 'persist') goal.step = failed;
+    // Not back in hand where it cannot be done: a step for another dimension
+    // is left for the ladder to plan again (note 433).
+    const home = failed?.block ? require('./knowledge').dimensionOfBlock(failed.block) : null;
+    const here = String(bot.game?.dimension || 'overworld').replace('minecraft:', '').replace('the_', '');
+    if (goal.step?.action === 'persist') { if (home && home !== here) { delete goal.step; delete goal.lastStruggleStep; } else goal.step = failed; }
     goal.failures = 0; goal.stalls = 0; attemptsFor(goal).clearAction('option'); delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal);
   }
 }
@@ -4493,6 +4497,12 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       noteError(goal, err);
       if (err.name === 'DesignRepair') { save(); onStep(goal); continue; }
       if (err.name === 'NeedsAir' || err.name === 'NeedsSafety') { save(); onStep(goal); continue; }
+      // A step for where the bot is not (iron ore in the Nether) is dropped,
+      // with the stalled step it came back as, and the ladder plans again
+      // for where it is: the stall's answer put mid-242-q's Overworld iron
+      // step back in hand after the portal, and it was tried and failed
+      // until the loop watch ended the trial (note 433).
+      if (err.name === 'WrongDimension') { delete goal.step; delete goal.lastStruggleStep; goal.failures = 0; save(); onStep(goal); continue; }
       // A partial craft/build can change inventory before its promise fails.
       // Replan that observed progress; only consecutive no-progress errors
       // exhaust retries.
