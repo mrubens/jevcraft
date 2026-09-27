@@ -225,8 +225,14 @@ function immediateThreat(bot) {
   // recovering for five seconds with one out of sight beside it, and the
   // blast was the first it knew (2026-09-26).
   const seen = t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4);
-  return threats(bot, 32).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) && !nightHunted(bot, t.entity) &&
-    t.distance <= (shooter(t.entity) ? (fighting ? 8 : hurt ? 32 : 16) : (fighting ? 5 : 8)));
+  // A shooter is a threat within its own reach: a ghast fires from forty
+  // blocks. mid-244-e walked a ledge at y 89 with one in sight at seventeen
+  // to nineteen, outside the sixteen counted for any shooter, and its
+  // fireball threw the bot off, shield in hand (2026-09-27).
+  const { RANGE } = require('./combat-estimate');
+  const shooterReach = t => fighting ? 8 : Math.max(hurt ? 32 : 16, RANGE[t.entity.name] || 0);
+  return threats(bot, 48).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) && !nightHunted(bot, t.entity) &&
+    t.distance <= (shooter(t.entity) ? shooterReach(t) : (fighting ? 5 : 8)));
 }
 
 // Keep a route outside attack range plus a movement margin. If a mob already
