@@ -359,4 +359,4 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
   return { steps: steps.filter(s => s.action !== 'reserve_output'), sequence: steps, available, reserved, totals };
 }
 
-module.exports = { knowledge, sourceBlocks, planCatalog, planOutputs };
+module.exports = { knowledge, sourceBlocks, planCatalog, planOutputs, dimensionOfBlock };

@@ -1159,6 +1159,14 @@ async function surfaceStep(bot, task, goal, save) {
 async function mineAtSource(bot, task, step, goal, save, selected) {
   const candidates = selected ? [selected] : await miningCandidates(bot, task, step, goal);
   if (!candidates.length) {
+    // Not dug for where it is not: iron is not in the Nether. mid-242-f's
+    // armour, fetched in the Nether, set a staircase down toward the iron's
+    // depth, y 16, under the lava sea, and it broke into a cave over the
+    // lava and fell in (2026-09-27). Said, so the step is set aside or the
+    // way back taken, not dug for.
+    const home = require('./knowledge').dimensionOfBlock(step.block || '');
+    const here = String(bot.game?.dimension || 'overworld').replace('minecraft:', '').replace('the_', '');
+    if (home && home !== here) throw new Error(`No ${String(step.block).replaceAll('_', ' ')} in the ${here}: it is only found in the ${home}`);
     if (step.depth !== null && step.depth !== undefined) {
       const names = step.sources || Object.entries(MINEABLE).filter(([, info]) => info.drops === step.drops).map(([name]) => name);
       // The ore already tunnelled toward is kept while it is there and not
@@ -4305,4 +4313,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

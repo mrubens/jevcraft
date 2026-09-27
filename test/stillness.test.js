@@ -572,3 +572,15 @@ test('working time is counted while a pass runs and saved as it goes, so a resta
     void cut;
   } finally { global.setInterval = realSetInterval; }
 });
+test('an ore found only in the Overworld is not dug for in the Nether: the step says so instead of a staircase to its depth', async () => {
+  // mid-242-f's armour, fetched in the Nether, set a staircase toward y 16 under the lava sea, and it fell in (2026-09-27).
+  const { mineAtSource } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  const { Task } = require('../src/skills');
+  let tunnelled = false;
+  const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(18.5, 48, 26.5) }, entities: {}, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }] }, findBlocks: () => [], blockAt: p => ({ name: 'netherrack', position: p, boundingBox: 'block' }),
+    pathfinder: { movements: {}, setGoal() { tunnelled = true; } } };
+  await assert.rejects(mineAtSource(bot, new Task('mine'), { action: 'mine', block: 'iron_ore', drops: 'raw_iron', count: 3, depth: 16 }, {}, () => {}, null), /No iron ore in the nether: it is only found in the overworld/);
+  assert.equal(tunnelled, false);
+});
