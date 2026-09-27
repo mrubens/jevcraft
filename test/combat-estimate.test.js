@@ -231,3 +231,14 @@ test('biters already at arm\'s length are counted however few open cells there a
   assert(e.fightHere.damageTaken > 3, JSON.stringify(e.fightHere));
   assert.equal(e.fightHere.atArmsLengthAtOnce, 3);
 });
+
+test('a big magma cube is fought with the mediums and smalls it splits into, each coming when the one before it dies (mid-211-s)', () => {
+  const iron = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+  const e = fightEstimate({ threats: [{ name: 'magma_cube', distance: 3, visible: true }], armour: iron, weapon: 'iron_sword', health: 20, atOnce: 2 });
+  assert.equal(e.mobs.length, 13);
+  assert(e.fightHere.seconds > 5, `${e.fightHere.seconds}`);
+  assert(e.fightHere.damageTaken > 8, `more than one hit: ${e.fightHere.damageTaken}`);
+  assert.doesNotThrow(() => JSON.stringify(e), 'the link to the one it came from is off the record');
+  const zombie = fightEstimate({ threats: [{ name: 'zombie', distance: 3, visible: true }], armour: iron, weapon: 'iron_sword', health: 20 });
+  assert.equal(zombie.mobs.length, 1);
+});

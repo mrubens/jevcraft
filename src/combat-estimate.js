@@ -23,11 +23,11 @@ const MOBS = {
   skeleton: { hit: 3, health: 20, shoots: true }, stray: { hit: 3, health: 20, shoots: true, note: 'slows' }, parched: { hit: 3, health: 20, shoots: true }, bogged: { hit: 3, health: 16, shoots: true, note: 'poisons' },
   pillager: { hit: 4, health: 24, shoots: true }, witch: { hit: 6, health: 26, shoots: true, ignoresArmour: true, every: 3, note: 'harming potions go through armour, and poison and slowness keep the bot from getting away' },
   creeper: { hit: 24, health: 20, note: 'the hit is its blast, once, two blocks off, where one goes off beside a player backing from it (creeperBlast)' },
-  enderman: { hit: 7, health: 40 }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16 },
+  enderman: { hit: 7, health: 40 }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16, splits: [{ size: 'medium', count: 3, hit: 2, health: 4 }] },
   zombified_piglin: { hit: 8, health: 20 }, piglin: { hit: 8, health: 16 }, piglin_brute: { hit: 13, health: 50 },
   hoglin: { hit: 6, health: 40, note: '3 to 8 a hit, and throws the bot about three blocks' }, zoglin: { hit: 6, health: 40, note: 'throws the bot about three blocks' },
   wither_skeleton: { hit: 8, health: 20, note: 'withers' }, blaze: { hit: 5, health: 20, shoots: true, note: 'sets alight' },
-  magma_cube: { hit: 6, health: 16, note: 'a big one; a medium hits for 4, a small for 3' }, silverfish: { hit: 1, health: 8 }, phantom: { hit: 4, health: 20 },
+  magma_cube: { hit: 6, health: 16, note: 'a big one: it splits into two to four mediums (4 a hit), each of those into two to four smalls (3 a hit)', splits: [{ size: 'medium', count: 3, hit: 4, health: 4 }, { size: 'small', count: 9, hit: 3, health: 1 }] }, silverfish: { hit: 1, health: 8 }, phantom: { hit: 4, health: 20 },
   // Every mob the danger list names (the decision audit, 2026-09-25): one
   // not here added nothing, and a ghast fight read "0 damage".
   ghast: { hit: 9, health: 10, shoots: true, note: 'fireballs that blast and set alight' }, breeze: { hit: 3, health: 30, shoots: true, note: 'wind charges throw the bot' },
@@ -101,13 +101,15 @@ const shooting = (m, shield) => m.visible ? m.hitsBot / (m.every || 2) * (shield
 // length together (the open cells round the bot: two in a tunnel, eight in
 // the open); the rest wait their turn. [{ from, to, perSecond }] pieces.
 function fightTimeline(order, { shield = false, atOnce = Infinity } = {}) {
-  const pieces = [];
+  const pieces = [], killed = new Map();
   let t = 0;
   order.forEach((m0, i) => {
     const end = t + m0.secondsToKill;
     let biters = 0;
     order.slice(i).forEach((m, j) => {
       if (m.name === 'creeper') return;
+      // One from a split is not there until the one it came from is dead.
+      if (m.bornOf && !killed.has(m.bornOf)) return;
       // The one being struck hits back a third as often if it bites; a
       // shooter being closed on shoots as ever.
       let perSecond;
@@ -117,6 +119,7 @@ function fightTimeline(order, { shield = false, atOnce = Infinity } = {}) {
       const from = Math.max(t, m.shoots ? inRange(m) : 0);
       if (perSecond > 0 && end > from) pieces.push({ from, to: end, perSecond });
     });
+    killed.set(m0, end);
     t = end;
   });
   return pieces;
@@ -134,8 +137,25 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   const worn = armourOf(armour);
   const [damage, rate] = WEAPONS[weapon] || FIST;
   const unknown = [];
-  const mobs = threats.map(t => {
-    const base = MOBS[t.name];
+  let mobs;
+  // A big slime or magma cube killed is two to four smaller ones where it
+  // stood, and a medium magma cube's are smaller again (three of each
+  // reckoned): mid-211-s was told a big magma cube cost 2.2 damage, about
+  // one hit, fought it on a ledge, and the second hit put it into the lava
+  // (note 472). Every one of them is swung at and hits back.
+  // Each comes only when the one it came from dies (bornOf, below).
+  threats = threats.flatMap(t => {
+    const out = [t];
+    let parents = [t];
+    for (const s of MOBS[t.name]?.splits || []) {
+      const per = Math.round(s.count / parents.length);
+      parents = parents.flatMap(p => Array.from({ length: per }, () => ({ ...t, distance: (t.distance || 0) + 0.5, split: s, from: p })));
+      out.push(...parents);
+    }
+    return out;
+  });
+  mobs = threats.map(t => {
+    const base = t.split ? { hit: t.split.hit, health: t.split.health, note: `a ${t.split.size} one, from a split` } : MOBS[t.name];
     if (!base) { unknown.push(t.name); return null; }
     // A spear in a mob's hand (26.1): its charged thrust is the hit. One
     // took mid-87-m from twenty to 11.4 through full iron, a zombie
@@ -152,7 +172,10 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false,
       // A drowned's thrown trident is eight, where its hand is three.
       hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(/_spear$/.test(t.held || '') ? { spear: true } : {}), ...(m.every ? { every: m.every } : {}), ...(m.note ? { note: m.note } : {}) };
-  }).filter(Boolean);
+  });
+  // The mob each split one comes from, kept off the record (not enumerable).
+  mobs.forEach((m, i) => { if (m && threats[i].from) Object.defineProperty(m, 'bornOf', { value: mobs[threats.indexOf(threats[i].from)] }); });
+  mobs = mobs.filter(Boolean);
   const order = [...mobs].sort((a, b) => a.distance - b.distance);
   // The cells round the bot bound how many can come at it, but not the
   // ones already there: in a tunnel or a shaft the open cells counted none,
