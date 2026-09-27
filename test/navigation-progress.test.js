@@ -69,3 +69,19 @@ test('a crossing that ends no nearer rests from here toward that target, and is 
   assert.equal((await crossToward(bot, new Task('cross'), goal, () => {}, target)).tried, false, 'resting: not run again at once');
   assert.equal(netherAnswers(bot, new Task('stall'), goal, () => {}).cross_toward, undefined, 'nor offered');
 });
+
+test('a round of gathering blocks that gains none counts: twice in ten minutes and the reserve rests, said on the option', async () => {
+  // mid-202-l chose "mine netherrack" sixteen times in seven minutes over the lava sea and never carried one (2026-09-27).
+  const { gatherBlocks } = require('../src/work');
+  const { isSetAside } = require('../src/progress');
+  const bot = { game: { dimension: 'the_nether' }, inventory: { items: () => [] } };
+  const goal = { kind: 'win' };
+  let asked = 0;
+  const acquire = async () => { asked++; };
+  await gatherBlocks(bot, new Task('blocks'), goal, () => {}, { acquire });
+  assert.equal(isSetAside(goal, 'block_reserve', 'gather'), false, 'once is not yet');
+  await gatherBlocks(bot, new Task('blocks'), goal, () => {}, { acquire });
+  assert.equal(asked, 2);
+  assert.equal(isSetAside(goal, 'block_reserve', 'gather'), true, 'twice with none gained rests it');
+  assert.deepEqual(goal.blockRounds.map(r => r.gained), [0, 0]);
+});

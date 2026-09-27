@@ -290,15 +290,32 @@ async function gatherWood(bot, task, goal, save) {
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'block_reserve', 'wood', err, 600000); }
   return true;
 }
-async function gatherBlocks(bot, task, goal, save) {
+async function gatherBlocks(bot, task, goal, save, { acquire = acquireStep } = {}) {
   const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy');
   const have = blockStock(bot);
   const nether = /nether/.test(String(bot.game?.dimension || ''));
   const item = nether ? 'netherrack' : pickaxeTier(bot) >= 1 ? 'cobblestone' : 'dirt';
   goal.step = { action: 'block_reserve', item, have }; save();
-  try { await acquireStep(bot, task, item, countOf(bot, item) + (BLOCK_RESERVE - have), goal, save); }
+  try { await acquire(bot, task, item, countOf(bot, item) + (BLOCK_RESERVE - have), goal, save); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'block_reserve', 'gather', err, 600000); }
+  // A round that gained nothing is a failure too, said on the option next
+  // time and resting it after two: mid-202-l chose "mine netherrack" sixteen
+  // times in seven minutes over the lava sea, each round a ten-second walk
+  // that dug nothing, and with no blocks never made its way back to its
+  // portal (note 423).
+  const gained = blockStock(bot) - have;
+  const tries = (goal.blockRounds || []).filter(r => Date.now() - r.at < 600000);
+  goal.blockRounds = [...tries, { at: Date.now(), gained }].slice(-6);
+  if (gained <= 0 && tries.filter(r => r.gained <= 0).length >= 1) setAside(goal, 'block_reserve', 'gather', `${item.replaceAll('_', ' ')} sought twice in ten minutes and none gained`, 600000);
+  save();
   return true;
+}
+// The last rounds of gathering blocks, said on the option.
+function blockRoundsSay(goal) {
+  const rounds = (goal.blockRounds || []).filter(r => Date.now() - r.at < 600000);
+  if (!rounds.length) return '';
+  const got = rounds.reduce((n, r) => n + Math.max(0, r.gained), 0);
+  return ` Chosen ${rounds.length === 1 ? 'once' : `${rounds.length} times`} in the last ten minutes, and ${got ? `${got} gained` : 'none gained'}.`;
 }
 // Without Jev, the reserves in the old order: wood, then blocks.
 async function maintainBlocks(bot, task, goal, save) {
@@ -339,9 +356,9 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   // the night", carried on, and every leg of its search stopped at the
   // first gap until the loop watch ended the trial (2026-09-27).
   const inNether = /nether/.test(String(bot.game?.dimension || ''));
-  if (goal.kind === 'win' && blocksDue(bot, goal)) options.block_reserve = { description: inNether
+  if (goal.kind === 'win' && blocksDue(bot, goal)) options.block_reserve = { description: (inNether
     ? `Mine netherrack for building blocks now: ${blockStock(bot)} carried. Here every crossing over lava or a gap is laid a block a step, and a crossing with none stops at the first gap; netherrack is all around and comes out in a moment with any pickaxe. ${BLOCK_RESERVE} also seal a pocket or tower out of a hole.`
-    : `Gather building blocks now: ${blockStock(bot)} carried, and ${BLOCK_RESERVE} seal a pocket for the night or tower out of a hole.`, run: () => gatherBlocks(bot, task, goal, save) };
+    : `Gather building blocks now: ${blockStock(bot)} carried, and ${BLOCK_RESERVE} seal a pocket for the night or tower out of a hole.`) + blockRoundsSay(goal), run: () => gatherBlocks(bot, task, goal, save) };
   // Two things a night asks for, seen to before it comes (the user,
   // 2026-09-26): the base's bed taken along while it is near, and food
   // enough to heal on. The evening's deaths were out at night, too hungry
@@ -4516,4 +4533,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
