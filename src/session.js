@@ -1,4 +1,5 @@
 'use strict';
+const DEATH_WORDS = /^(was |were |died|drowned|fell|burned|went up in flames|tried to swim|blew up|hit the ground|starved|suffocated|froze|withered|walked into|experienced kinetic|discovered the floor)/;
 
 const path = require('path');
 const fs = require('fs');
@@ -586,6 +587,16 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         launch(saved);
       } else bot.chat('Call me Jev: "Jev come here", "Jev follow me", "Jev craft a chest", or "Jev get me 8 birch stairs".');
     } catch (err) { console.error('[bot] spawn:', err); bot.quit('Could not initialize the world'); }
+  });
+  // The game's death message for this bot, kept for the death record: the
+  // cause said in the game's words ("was shot by Skeleton").
+  bot.on('messagestr', text => {
+    const name = bot.username;
+    if (name && typeof text === 'string' && text.startsWith(`${name} `) && DEATH_WORDS.test(text.slice(name.length + 1))) {
+      bot._deathMessage = { text: text.slice(name.length + 1), at: Date.now() };
+      const last = (survival.state.deaths || []).at(-1);
+      if (last && !last.cause && Date.now() - Date.parse(last.at) < 5000) last.cause = bot._deathMessage.text;
+    }
   });
   bot.on('death', () => {
     ready = false; invalidateRequests();

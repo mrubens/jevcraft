@@ -32,7 +32,12 @@ function recordDeath(bot, state, now = Date.now()) {
   let about = [];
   try { about = require('./danger').threats(bot, 24).slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance) })); } catch (_) { about = []; }
   const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
-  state.deaths = [...(state.deaths || []), { at: new Date(now).toISOString(), position: { ...bot.entity.position }, dimension: bot.game.dimension, about, worn, ...(lava ? { lava } : {}) }].slice(-10);
+  // How it died, in the game's own words, and what Jev had last chosen:
+  // said with every question after (decisions/index.js recentDeaths).
+  const cause = bot._deathMessage && now - bot._deathMessage.at < 5000 ? bot._deathMessage.text : null;
+  const lastChoice = (bot._lastDecision && now - bot._lastDecision.at < 60000) ? { question: bot._lastDecision.id, choice: bot._lastDecision.choice, secondsBefore: Math.round((now - bot._lastDecision.at) / 1000) } : null;
+  state.deaths = [...(state.deaths || []), { at: new Date(now).toISOString(), position: { ...bot.entity.position }, dimension: bot.game.dimension, about, worn,
+    food: bot.food, ...(cause ? { cause } : {}), ...(lastChoice ? { lastChoice } : {}), ...(lava ? { lava } : {}) }].slice(-10);
   state.recovery = { status: 'pending', at: new Date(now).toISOString(), position: { ...bot.entity.position },
     dimension: bot.game.dimension, inventoryBeforeDeath: recent ? { ...observed.items } : stock(bot),
     inventoryObservedAt: new Date(recent ? observed.at : now).toISOString(), recovered: {}, attempts: 0 };

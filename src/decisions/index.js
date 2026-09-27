@@ -116,13 +116,32 @@ function walk(tree, fallback) {
 const GAMEPLAY_AREAS = new Set(['combat', 'endgame', 'home', 'idle', 'resources', 'strategy', 'survival']);
 const REAL_TIME = 'The player counts real time: a Minecraft day is twenty real minutes and a night about seven. Minutes spent waiting, hiding, or redoing what a death lost are the cost that counts, and the player minds a death less than a night idled.';
 const RISK = 'riskNow is how likely a death is now (the mobs about, what fighting them all here would cost, whether more spawn around, whether health comes back); deathWouldCost is what a death now would lose.';
+const DEATHS = 'recentDeaths are the bot\'s deaths of the last two hours: how, where, what was about, and what was chosen last before each; the same answer in the same place seldom ends differently.';
 const TRAIL = 'recentPositions is where the bot has been over the last few minutes, fifteen seconds apart, and what it was doing: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 function withRealTime(spec, state = {}) {
   if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
   const { task, guidance = '' } = spec.instructions;
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = state?.recentPositions ? ` ${TRAIL}` : '';
-  return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${risk}${trail}` };
+  const deaths = state?.recentDeaths ? ` ${DEATHS}` : '';
+  return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${risk}${trail}${deaths}` };
+}
+
+// The deaths of the last two hours, newest first: how, where from here,
+// what was about, what it wore and ate, and what Jev had last chosen.
+const DEATHS_KEPT_MS = 2 * 3600000;
+function recentDeaths(bot, goal, now = Date.now()) {
+  const here = bot.entity?.position;
+  return (goal?.survival?.deaths || []).filter(d => now - Date.parse(d.at) < DEATHS_KEPT_MS).slice(-3).reverse().map(d => ({
+    minutesAgo: Math.round((now - Date.parse(d.at)) / 60000),
+    ...(d.cause ? { cause: d.cause } : {}),
+    where: here && d.position && String(d.dimension || '').replace(/^minecraft:/, '') === String(bot.game?.dimension || '').replace(/^minecraft:/, '')
+      ? `${Math.round(Math.hypot(d.position.x - here.x, d.position.y - here.y, d.position.z - here.z))} blocks from here, at y ${Math.round(d.position.y)}` : `in the ${String(d.dimension || '').replace(/^minecraft:/, '').replace(/^the_/, '')}`,
+    ...(d.about?.length ? { about: d.about.map(t => `${t.name.replaceAll('_', ' ')} ${t.distance} blocks off`) } : {}),
+    ...(d.worn ? { wore: d.worn.length ? d.worn.map(n => n.replaceAll('_', ' ')) : ['no armour'] } : {}),
+    ...(Number.isFinite(d.food) ? { hunger: d.food } : {}),
+    ...(d.lastChoice ? { lastChoice: `${d.lastChoice.choice.replaceAll('_', ' ')} (${d.lastChoice.question.replaceAll('_', ' ')}, ${d.lastChoice.secondsBefore} seconds before)` } : {}),
+  }));
 }
 
 class NoSafeDefault extends Error {
@@ -135,6 +154,14 @@ class NoSafeDefault extends Error {
 async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100 }) {
   const spec = question(id);
   if (!tree || !Object.keys(tree).length) throw new Error(`No feasible options for ${id}`);
+  // How the bot died lately, with every question about playing the game:
+  // it walked back to the drowned that had just killed it, and chose to
+  // search for food at five health three deaths running, told nothing of
+  // any of them (the user's suggestion, 2026-09-26).
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.recentDeaths) {
+    const deaths = recentDeaths(bot, goal);
+    if (deaths.length) state = { ...state, recentDeaths: deaths };
+  }
   checkOptions(spec, tree);
   const fallback = typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : null;
   let decision;
@@ -166,6 +193,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (goal && bot && !decision.stale) announceFallback(bot, goal, decision);
   }
   decision.id = id;
+  if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
   if (goal) {
     goal.decisions ||= [];
@@ -204,7 +232,7 @@ function confident(id, answer, { threshold, missing = true } = {}) {
 
 const all = () => [...QUESTIONS.values()];
 
-module.exports = { define, question, decide, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
+module.exports = { recentDeaths, define, question, decide, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
 
 // The area modules register their questions when this directory is loaded.
 require('./survival'); require('./work'); require('./combat'); require('./travel'); require('./intake');

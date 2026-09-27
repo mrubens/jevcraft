@@ -86,3 +86,21 @@ test('the outage is announced once and its end once, and the first listed option
   assert.equal(firstOption({ a: {}, b: {} }), 'a');
   assert.equal(firstOption({ a: {}, b: { fallback: true } }), 'b');
 });
+
+test('every question about playing the game is told how the bot died lately', async () => {
+  // The user's suggestion (2026-09-26): it walked back to the drowned that had just killed it, told nothing.
+  const { decide, recentDeaths } = require('../src/decisions');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, game: { dimension: 'overworld' } };
+  const goal = { survival: { deaths: [{ at: new Date(Date.now() - 120000).toISOString(), position: { x: 30, y: 60, z: 40 }, dimension: 'overworld', cause: 'was impaled by Drowned',
+    about: [{ name: 'drowned', distance: 13 }], worn: [], food: 12, lastChoice: { question: 'encounter_stance', choice: 'retreat', secondsBefore: 4 } }] } };
+  const said = recentDeaths(bot, goal);
+  assert.equal(said.length, 1);
+  assert.equal(said[0].cause, 'was impaled by Drowned');
+  assert.match(said[0].where, /^50 blocks from here/);
+  assert.equal(said[0].lastChoice, 'retreat (encounter stance, 4 seconds before)');
+  let seen = null;
+  const client = { systemOne: async ({ state }) => { seen = state; return { answers: { branch_0: { choice: 'go_back', confidence: 0.9 } } }; } };
+  await decide('corpse_run', { client, bot, goal, tree: { go_back: { description: 'a' }, leave_them: { description: 'b' } }, state: { distance: 50 } });
+  assert.equal(seen.recentDeaths?.[0]?.cause, 'was impaled by Drowned');
+});
