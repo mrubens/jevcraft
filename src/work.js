@@ -818,6 +818,10 @@ function occupant(bot, p) {
     e.type !== 'orb' && e.type !== 'projectile' && bodyIn(e, p)) || null;
 }
 const occupiedSays = (e, p) => `a ${(e.username || e.name || 'mob').replaceAll('_', ' ')} stands in the cell at ${p}, and the game puts no block where a body is`;
+// A failure a body caused, said and marked as such: a mob in a cell is a
+// passing obstruction, not a fault of the place (buildPortalFrame counts a
+// site's failures without them, note 527).
+const bodyError = (message, e, p) => Object.assign(new Error(message), { body: { name: e.username || e.name || 'mob', at: { x: p.x, y: p.y, z: p.z } } });
 
 // Mineflayer yaw for looking toward each horizontal facing (0 is north, -z).
 const PLACEMENT_YAW = { north: 0, west: Math.PI / 2, south: Math.PI, east: -Math.PI / 2 };
@@ -852,7 +856,7 @@ async function place(bot, task, p, material, { face, properties, stay = false } 
     throw new Error(`Placement obstructed by ${bot.blockAt(p)?.name} at ${p}`);
   }
   const body = occupant(bot, p);
-  if (body) throw new Error(`Placement obstructed: ${occupiedSays(body, p)}`);
+  if (body) throw bodyError(`Placement obstructed: ${occupiedSays(body, p)}`, body, p);
   // Backing out of the cell must end on something: the step back is blind,
   // and at a rim it is the fall. mid-241-w's take_cover put its wall in the
   // cell under its own feet, crossed a tenth of a block, backed out of it
@@ -906,6 +910,11 @@ async function place(bot, task, p, material, { face, properties, stay = false } 
     } catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; placementError = err.message; }
     finally { if (sneak) bot.setControlState('sneak', wasSneaking); }
   }
+  // A body that stepped into the cell after it was looked at: the server
+  // refuses the block and says only that the cell is still air. mid-230-u's
+  // stand cell took a zombie between the look and the click (note 527).
+  const late = occupant(bot, p);
+  if (late) throw bodyError(`Cannot place ${material} at ${p}: ${placementError}; ${occupiedSays(late, p)}`, late, p);
   throw new Error(`Cannot place ${material} at ${p}: ${placementError}`);
 }
 
@@ -3376,12 +3385,23 @@ const PORTAL_BUDGET_MS = 20 * 60000;
 // A walk to the lava chosen that fails is asked about at once, with how
 // it failed (portalStep, note 470), and so is a way back to the frame
 // that fails (buildPortalFrame, note 481).
-const portalDue = method => !!method && (!!method.nearFailed || !!method.frameFailed || (method.activeMs || 0) >= PORTAL_BUDGET_MS * ((method.reasked || 0) + 1));
+// And so is a part-cast frame failing at its site (note 527).
+const portalDue = method => !!method && (!!method.nearFailed || !!method.frameFailed || !!method.siteFailed || (method.activeMs || 0) >= PORTAL_BUDGET_MS * ((method.reasked || 0) + 1));
 // The frame that cannot be got back to, as the fact every way is weighed
 // with: where, how far, and what each way ended in.
 function frameFailedSays(f) {
   const minutes = Math.max(1, Math.ceil((f.until - Date.now()) / 60000));
   return ` The frame at (${f.at.x}, ${f.at.y}, ${f.at.z}) is ${f.distance} blocks off and cannot be got back to: the walk there failed (${f.walk})${f.legs ? `, ${f.legs}` : ''}, and the staircase toward it is set aside (${f.stairs}), taken up again in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+}
+// The frame failing where it stands, as the fact every way is weighed with:
+// what is cast, the failures since the last block went in and why, and the
+// ones a mob in the way caused, which are not the site's (note 527).
+function siteFailedSays(frame, placed) {
+  const f = frame.siteFailed || { n: 0, whys: {} };
+  const times = n => n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`;
+  const whys = Object.entries(f.whys || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([why, n]) => `"${why}" ${times(n)}`).join(', ');
+  const body = frame.bodyFailures?.n ? ` Not counted: ${frame.bodyFailures.n} more where a mob stood in the cells the cast works in (the last a ${String(frame.bodyFailures.name).replaceAll('_', ' ')} at (${frame.bodyFailures.at.x}, ${frame.bodyFailures.at.y}, ${frame.bodyFailures.at.z})); a mob moves on or is fought, and the cell is free again.` : '';
+  return ` The frame at (${frame.origin.x}, ${frame.origin.y}, ${frame.origin.z}), ${placed} of ten cast, has failed at its site ${times(f.n)} since the last block went in: ${whys || 'reasons not kept'}.${body}`;
 }
 const diamondPickaxeCarried = bot => bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
 const methodKey = (method, ruins) => method?.kind === 'build' ? 'build_new' : method?.kind === 'cast' ? (method.near ? 'cast_at_lava' : 'cast_frame')
@@ -3483,9 +3503,12 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // The frame that cannot be got back to is said with every way, as it
   // bears on all of them (note 481).
   const frameFailed = due && goal.portalFrame && method.frameFailed;
-  const facts = portalFacts(bot, goal, ruins, lava) + (frameFailed ? frameFailedSays(frameFailed) : '');
-  const current = due ? methodKey(method, ruins) : null;
   const placed = goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
+  // The part-cast frame failing at its site: said with every way, and a
+  // new site offered beside keeping it (note 527).
+  const siteFailed = due && method.siteFailed && goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame : null;
+  const facts = portalFacts(bot, goal, ruins, lava) + (frameFailed ? frameFailedSays(frameFailed) : '') + (siteFailed ? siteFailedSays(siteFailed, placed) : '');
+  const current = due ? methodKey(method, ruins) : null;
   // Trips for lava are measured from the frame, where each one starts and
   // ends, not from the bot: mid-244-v, standing at its lava with the frame
   // 122 blocks up, was told five seconds a trip, and was never offered the
@@ -3547,6 +3570,19 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const minutes = Math.max(1, Math.ceil((frameFailed.until - Date.now()) / 60000));
     if (tree[current]) tree[current].description += ` Kept, the frame is made for again: the walk is tried again${frameFailed.legs ? ' and the legs when their rest ends' : ''}, and the staircase in ${minutes} minute${minutes === 1 ? '' : 's'}; until then, if the walk fails again, that is said as every way to the frame resting.`;
   }
+  // Leaving the part-cast frame for another site is Jev's, with what it
+  // leaves and what starting afresh costs: a counter left mid-230-u's four
+  // of ten for a new frame fifty blocks off, all ten to cast (note 527).
+  if (siteFailed) {
+    const byHand = method.kind === 'build';
+    const here = bot.entity.position, hereTrip = lava && lavaTrip(here, lava);
+    const afresh = byHand
+      ? buildSays({ obsidian, diamonds, diamondPickaxe, need: Math.max(0, 10 - obsidian), trip: hereTrip, atLava: !!lava && lava.distance <= 16, frameBegun: false })
+      : castSays({ ...castCount, standing: 0, waterBucket: countOf(bot, 'water_bucket') > 0, iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava, from: here, frameBegun: false });
+    const leftHere = castTrips(castCount);
+    tree.new_site = { description: `Leave the frame at (${siteFailed.origin.x}, ${siteFailed.origin.y}, ${siteFailed.origin.z}) as it stands, ${placed} of ten in it${placed ? `, its obsidian out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'})` : ''}, and ${byHand ? 'build' : 'cast'} a new frame at another site near here, that one passed over. Kept, ${leftHere.cast} of ten are still to ${byHand ? 'place' : 'cast'} there; a new frame starts from none. ` + afresh + facts };
+    if (tree[current]) tree[current].description += ` Kept, the ${byHand ? 'frame' : 'cast'} goes on at this frame, the slot it failed at tried again.`;
+  }
   // The lava held, its staircase resting: the ways a player has from there,
   // as their costs allow, said with it. Only "set aside" was said, and
   // mid-226-f kept the way and met the rest for ten minutes, twice over,
@@ -3597,10 +3633,11 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   if (current) {
     for (const [key, node] of Object.entries(tree)) {
       if (key === current) node.description += methodSoFar(bot, goal, method, key.startsWith('ruin_') ? ruins[Number(key.slice(5))] : null);
-      else if (placed && !['craft_buckets', 'cast_at_lava', 'cast_here', 'other_lava', 'into_cave'].includes(key)) node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
+      else if (placed && !['craft_buckets', 'cast_at_lava', 'cast_here', 'other_lava', 'into_cave', 'new_site'].includes(key)) node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
     }
   }
-  const decision = await decide('portal_method', { client, bot, task, goal, save, tree, context: { current },
+  // Without Jev, the code's old default: a part-cast frame is left after ten failures at its site.
+  const decision = await decide('portal_method', { client, bot, task, goal, save, tree, context: { current, leaveSite: !!siteFailed && (siteFailed.siteFailures || 0) >= 10 },
     state: { dimension: String(bot.game?.dimension || ''), obsidian, diamonds, diamondPickaxe, flintAndSteel: countOf(bot, 'flint_and_steel'), fireCharges: countOf(bot, 'fire_charge'),
       buckets: countOf(bot, 'bucket'), waterBuckets: countOf(bot, 'water_bucket'), lavaBuckets: countOf(bot, 'lava_bucket'), ironIngots: countOf(bot, 'iron_ingot'),
       ...(current ? { wayHeld: current, minutesOnWay: Math.round((method.activeMs || 0) / 60000) } : {}),
@@ -3609,7 +3646,17 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const pick = decision.path.at(-1);
   const nearWalked = method?.nearFailed;
   // The failed walk is answered, whatever the answer.
-  if (method?.nearFailed || method?.frameFailed) { delete method.nearFailed; delete method.frameFailed; save(); }
+  if (method?.nearFailed || method?.frameFailed || method?.siteFailed) { delete method.nearFailed; delete method.frameFailed; delete method.siteFailed; save(); }
+  // A new site: the frame begun passed over and left as it stands, the way
+  // held going on from none there.
+  if (pick === 'new_site') {
+    const f = goal.portalFrame;
+    (goal.portalSitesLeft ||= []).push({ ...f.origin, why: f.siteFailure, at: Date.now() });
+    delete goal.portalFrame;
+    goal.portalMethod = { kind: method.kind === 'build' ? 'build' : 'cast', activeMs: 0, reasked: 0, from: { obsidian, diamonds, diamondPickaxe, placed: 0 } };
+    bot.chat?.('Leaving this frame for another spot.');
+    save(); return false;
+  }
   // Buckets first: made on the next passes (netherStep), the way held
   // going on with them, or none held and the question asked with them.
   if (pick === 'craft_buckets') {
@@ -3903,10 +3950,28 @@ function portalInteriorBlockers(bot, cells) {
 }
 
 const SITE_REACH = 12;
+// The body a failure at the frame's site is owed to: one the placement
+// named, or, for a failure to stand, place or pour, a mob in the cells the
+// cast works in at its slot (portal-cast.js workCells). Null otherwise.
+function siteBody(bot, frame, goal, err) {
+  if (err?.body) return err.body;
+  if (!/Nowhere to stand|Cannot place|Placement obstructed|No line into|No place to pour water|would move me off/.test(String(err?.message || ''))) return null;
+  const { castOrder, workCells } = require('./portal-cast');
+  const slot = goal.step?.action === 'cast_portal' && goal.step.slot ? pos(goal.step.slot) : castOrder(frame).find(p => bot.blockAt(p)?.name !== 'obsidian');
+  if (!slot) return null;
+  for (const c of workCells(frame, slot)) {
+    const e = occupant(bot, c);
+    if (e) return { name: e.username || e.name || 'mob', at: { x: c.x, y: c.y, z: c.z } };
+  }
+  return null;
+}
 async function buildPortalFrame(bot, task, goal, save, frame) {
   const { frameCells, across } = require('./ruined-portal');
   const axis = frame.axis || 'x', cells = frameCells(frame.origin, axis);
   const missing = frame.blocks.filter(p => bot.blockAt(pos(p))?.name !== 'obsidian');
+  // What stands, as last seen: said from hundreds of blocks off, where the
+  // frame's cells are not loaded (crossingKitReady, note 527).
+  if (frame.blocks.every(p => bot.blockAt(pos(p)))) frame.placedSeen = frame.blocks.length - missing.length;
   // A frame that fails at its site again and again, no obsidian in it yet,
   // is the site's fault: mid-227-e's cast frame went down at y 28 in a cave
   // by the lava, "nowhere to stand to pour" and then "no route" every pass,
@@ -4017,12 +4082,41 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     // them for "refusing to open a drop" in the tunnel down to the lava,
     // far from each frame, and never got its portal made (2026-09-27).
     if (bot.entity.position.distanceTo(pos(frame.origin)) > SITE_REACH) throw err;
-    frame.siteFailures = (frame.siteFailures || 0) + 1; frame.siteFailure = err.message; save();
-    // With obsidian in it, after ten: a cast block is a lava trip, and
-    // mid-243-h's part-cast frame on a mountain failed ninety-five times at
-    // the same slot, a stand dug and still no pour (2026-09-27).
+    // A mob in the cells the cast works in is a passing obstruction, not a
+    // fault of the site: mid-230-u's zombie stood in a stand cell, the
+    // server refused the stand's block and "nowhere to stand to pour"
+    // followed, and that took the tenth site failure; the frame with four
+    // of ten cast was left for a new one fifty blocks off (note 527). Said,
+    // not counted.
+    const body = siteBody(bot, frame, goal, err);
+    if (body) {
+      frame.bodyFailures = { n: (frame.bodyFailures?.n || 0) + 1, name: body.name, at: body.at, why: String(err.message).slice(0, 160) }; save();
+      throw err;
+    }
+    frame.siteFailures = (frame.siteFailures || 0) + 1; frame.siteFailure = err.message;
     const castIn = frame.blocks.filter(q => bot.blockAt(pos(q))?.name === 'obsidian').length;
-    if (!frame.ruin && goal.portalFrame === frame && ((frame.siteFailures >= 3 && !castIn) || frame.siteFailures >= 10)) {
+    // The failures since the last block went in, each said with its reason.
+    if (!frame.siteFailed || frame.siteFailed.cast !== castIn) frame.siteFailed = { cast: castIn, n: 0, whys: {} };
+    const why = String(err.message).slice(0, 160);
+    frame.siteFailed.n++; frame.siteFailed.whys[why] = (frame.siteFailed.whys[why] || 0) + 1;
+    save();
+    if (!frame.ruin && goal.portalFrame === frame && frame.siteFailures >= 3 && !castIn) {
+      (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
+      delete goal.portalFrame; save();
+      bot.chat?.('This spot will not take the portal. Finding another.');
+      return false;
+    }
+    // With obsidian in it, leaving the frame is Jev's: the way to a portal
+    // is asked at once, the failures here said with what is cast and what a
+    // new frame would cost (portalMethod, new_site). A counter left it after
+    // ten; mid-243-h's part-cast frame failed ninety-five times at one slot,
+    // and mid-230-u's four cast were left for all ten again (note 527).
+    if (!frame.ruin && goal.portalFrame === frame && castIn && goal.portalMethod) {
+      goal.portalMethod.siteFailed = true; save();
+      return false;
+    }
+    // No way held (a record from before ways were held): the code's default.
+    if (!frame.ruin && goal.portalFrame === frame && frame.siteFailures >= 10) {
       (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
       delete goal.portalFrame; save();
       bot.chat?.('This spot will not take the portal. Finding another.');
@@ -4731,6 +4825,67 @@ const TOP_UP = {
   // (2026-09-27).
   gold: 'Make golden boots first and wear them: four gold ingots, smelted from raw gold or gold ore.',
 };
+// The portal not yet lit, which a top-up leaves where it stands or the
+// crossing goes on with: the frame begun, what stands in it (as last seen
+// when it is out of sight), how far it is, and its lava. mid-230-u chose
+// food over crossing (0.38 against 0.35), told nothing of the frame with
+// four of ten cast, and the hunt took it four hundred blocks off by boat,
+// most of an hour before the cast went on (note 527).
+function framePending(bot, goal) {
+  const f = goal.portalFrame;
+  if (!f?.origin || !Array.isArray(f.blocks) || lowestPortalBlock(bot)) return null;
+  const at = pos(f.origin);
+  const loaded = f.blocks.every(p => bot.blockAt(pos(p)));
+  const placed = loaded ? f.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : (Number.isFinite(f.placedSeen) ? f.placedSeen : null);
+  const lava = nearestLava(bot, goal), fromFrame = lava && lavaTrip(f.origin, lava);
+  return { frame: f, at, distance: Math.round(bot.entity.position.distanceTo(at)), placed, lava: fromFrame ? fromFrame.distance : null };
+}
+const frameSays = pending => `the frame at (${pending.at.x}, ${pending.at.y}, ${pending.at.z}), ${pending.placed ?? 'some'} of ten ${pending.frame.cast ? 'cast' : 'placed'}, ${pending.distance} blocks from here${pending.lava !== null ? `, its nearest known lava ${pending.lava} blocks from it` : ''}`;
+// The food known, each with the trip for it: the walk there, the gathering,
+// and the walk on to the frame (or back here), and about what it gives
+// against what is short. Seconds are a walk at 4.3 blocks a second and about
+// fifteen seconds an animal to reach and kill; a chest a few seconds, a
+// plot's or a village's harvest and bread about a minute.
+function foodTrips(bot, goal, pending, short) {
+  const { foodSources, MEAT_POINTS } = require('./healing');
+  const back = pending ? pending.at : bot.entity.position;
+  const named = s => String(s).replaceAll('_', ' ');
+  return foodSources(bot, goal).map(src => {
+    const onward = src.at ? Math.round(Math.hypot(src.at.x - back.x, (src.at.y ?? back.y) - back.y, src.at.z - back.z)) : src.distance;
+    const gives = Math.min(short, src.points || 0);
+    const each = src.animal ? MEAT_POINTS[src.animal] || 6 : 0;
+    const animals = each ? Math.min(src.count || 1, Math.max(1, Math.ceil(gives / each))) : 0;
+    const gather = each ? animals * 15 : src.kind === 'home_chest' ? 10 : 60;
+    const there = Math.round(src.distance / 4.3), on = Math.round(onward / 4.3);
+    const gatherSays = each ? `about ${duration(gather)} for ${animals} ${named(src.animal)}${animals === 1 || src.animal === 'sheep' ? '' : 's'}`
+      : src.kind === 'home_chest' ? 'the chest emptied' : `about ${duration(gather)} for the harvest and the bread`;
+    const says = `${src.says}${pending ? `, ${onward} blocks from the frame` : ''}: about ${duration(there + gather + on)} in all (the walk there about ${duration(there)}, ${gatherSays}, and ${pending ? 'on to the frame' : 'back here'} about ${duration(on)}), for about ${gives} of the ${short} points short`;
+    return { ...src, onward, seconds: there + gather + on, gives, says };
+  });
+}
+// The known food whose trip, there and on to the frame, is shortest.
+const foodNearFrame = (bot, goal, pending, short) => foodTrips(bot, goal, pending, short).filter(t => t.at && t.gives > 0).sort((a, b) => a.seconds - b.seconds)[0] || null;
+// Where the plain food top-up goes (gatherNetherFood): the home chest, the
+// plot, then a search outward with no bound, said with its trip where one
+// is known and with the frame it leaves (note 527).
+function foodTopUpSays(bot, goal, pending, item) {
+  const short = Math.max(1, item.wants - item.carried);
+  const trips = foodTrips(bot, goal, pending, short);
+  const first = trips.find(t => t.kind === 'home_chest') || trips.find(t => t.kind === 'home_plot');
+  const others = trips.filter(t => t !== first).slice(0, 3);
+  const route = first ? ` It goes to ${first.kind === 'home_chest' ? "home's chest" : 'the home plot'} first: ${first.says}.`
+    : ` With no home chest or plot of food to go to, it searches outward from here for animals, heading by heading, on foot, swimming or by boat, with no bound on how far: how far and how long is not known until animals are seen.${others.length ? ` The food known (the search does not go to it first): ${others.map(t => t.says).join('; ')}.` : ' No food is known nearby.'}`;
+  const left = pending ? ` Meanwhile ${frameSays(pending)}, is left where it stands: nothing keeps the ${first ? 'trip' : 'search'} near it, and the ${pending.frame.cast ? 'cast' : 'frame'} is taken up again only when the bot has walked back to it.` : '';
+  return route + left;
+}
+// Hunger as the work goes on without food (healing.js): whether health comes
+// back now, and what an empty larder comes to.
+function hungerSays(bot, goal) {
+  const h = require('./healing').healingSays(bot, goal);
+  if (!h) return '';
+  const starves = { easy: 'to ten health', normal: 'to one health', hard: 'to death' }[bot.game?.difficulty] || 'health';
+  return `Now health ${h.health}, hunger ${h.hunger}; health comes back: ${h.healthComesBack}. Food carried: ${Array.isArray(h.foodCarried) ? h.foodCarried.join(', ') : h.foodCarried}. Hunger falls with the work (walking, mining, fighting), and at zero it starves ${starves}.`;
+}
 async function crossingKitReady(bot, task, goal, save, client = task.opportunityClient, now = Date.now()) {
   if (bot.game?.gameMode !== 'survival') return true;
   const items = kitItems(bot), valuables = valuablesAt(bot, goal);
@@ -4746,10 +4901,19 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     const s = kit.spent[i.key];
     return s?.ms >= 60000 ? ` ${Math.round(s.ms / 60000)} working minutes have gone to it at this crossing, from ${s.from} to ${i.carried}.` : ' Nothing has gone to it yet at this crossing.';
   };
+  // No portal lit yet: going on is finishing the frame first, and a
+  // top-up leaves it where it stands (note 527).
+  const pending = framePending(bot, goal);
+  const food = short.find(i => i.key === 'food');
+  const going = pending ? ` No portal is lit yet: going on is ${frameSays(pending)}, finished first, then the crossing.${food ? ` ${hungerSays(bot, goal)}` : ''}` : '';
   const tree = {
-    cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}. ${items.map(i => i.says).join(' ')}` },
+    cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going} ${items.map(i => i.says).join(' ')}` },
   };
-  for (const i of short) tree[`top_up_${i.key}`] = { description: `${TOP_UP[i.key]}${i.key === 'food' && inChest ? ` The home chest holds ${inChest} food points.` : ''} ${i.says}${soFar(i)}` };
+  for (const i of short) tree[`top_up_${i.key}`] = { description: `${TOP_UP[i.key]}${i.key === 'food' && inChest ? ` The home chest holds ${inChest} food points.` : ''}${i.key === 'food' ? foodTopUpSays(bot, goal, pending, i) : ''} ${i.says}${soFar(i)}` };
+  // Food at the known source nearest the frame, then back to it: the way
+  // to food that keeps the portal work in reach.
+  const nearFood = food && pending && foodNearFrame(bot, goal, pending, food.wants - food.carried);
+  if (nearFood) tree.top_up_food_near = { description: `Gather food at the known food whose trip on to the frame is shortest, then back to the ${pending.frame.cast ? 'cast' : 'frame'}: ${nearFood.says}. Nothing farther is searched: when it is spent or gone, this is asked again with what is known then. ${food.says}${soFar(food)}` };
   if (valuables?.how === 'stash') tree.stash_valuables = { description: `Walk ${valuables.far} blocks to the stash chest at home first and leave the valuables in it (${valuables.what}), about ${Math.round(valuables.far / 4.3)} seconds each way: a death in the Nether drops everything carried, often into lava.` };
   if (valuables?.how === 'cache') tree.cache_valuables = { description: `Put ${valuables.chest} down here first and leave the valuables in it (${valuables.what}): home's chest is out of reach, and a death in the Nether drops everything carried, often into lava. They are taken back passing by.${pickaxeLeft(bot, valuables.spends)}` };
   const keys = Object.keys(tree).sort().join(',');
@@ -4765,14 +4929,15 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     pick = decision.path.at(-1);
     kit.choice = { pick, keys, at: kit.workedMs }; save();
   }
-  if (pick !== 'top_up_food') delete goal.preparingNether;
+  if (pick !== 'top_up_food' && pick !== 'top_up_food_near') delete goal.preparingNether;
   if (pick === 'cross_now') return true;
-  const item = short.find(i => `top_up_${i.key}` === pick);
+  const item = short.find(i => `top_up_${i.key}` === pick || (pick === 'top_up_food_near' && i.key === 'food'));
   const spent = item && (kit.spent[item.key] ||= { ms: 0, from: item.carried });
   const started = Date.now();
   try {
     if (pick === 'stash_valuables') await stashValuables(bot, task, goal, save, homeActions());
     else if (pick === 'cache_valuables') await require('./field-cache').cacheValuables(bot, task, goal, save, homeActions());
+    else if (pick === 'top_up_food_near') await gatherNetherFood(bot, task, goal, save, now, { near: framePending(bot, goal), short: item.wants - item.carried });
     else if (item.key === 'food') await gatherNetherFood(bot, task, goal, save, now);
     else if (item.key === 'health') {
       goal.step = { action: 'recover_before_nether', health: Math.round(bot.health), needed: item.wants, food: bot.food }; save();
@@ -4802,9 +4967,23 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
 // it used to return having done nothing whenever the chest would not open
 // and the animal search was resting, and the loop spun on it at twenty
 // passes a second.
-async function gatherNetherFood(bot, task, goal, save, now = Date.now()) {
+async function gatherNetherFood(bot, task, goal, save, now = Date.now(), { near = null, short = 0 } = {}) {
   const NETHER_FOOD = NETHER_FOOD_POINTS;
   goal.preparingNether = true; goal.stockFood = true;
+  // Jev chose the known food nearest the frame: that one, and nothing
+  // farther. Gone or spent, the option goes and the question comes back.
+  if (near) {
+    const src = foodNearFrame(bot, goal, near, Math.max(1, short));
+    if (!src) return;
+    goal.step = { action: 'food_near_frame', source: src.kind, at: src.at, distance: src.distance, fromFrame: src.onward, foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
+    const home = require('./home-base').homeOf(bot, goal);
+    if (src.kind === 'home_chest') await restockFromStash(bot, task, goal, save, home, homeActions(), []);
+    else if (src.kind === 'home_plot') await require('./home-base').homeChores(bot, goal).harvest_and_bake?.run(bot, task, goal, save, homeActions());
+    else if (src.kind === 'village') await require('./villages').eatFromVillage(bot, task, goal, save, src.village, homeActions());
+    else if (src.kind === 'herd') await require('./sightings').walkToSighting(bot, task, goal, save, src.animal, src.sighting, navigate);
+    // In view: the hunt is the survival layer's, the reserve asked for.
+    return;
+  }
   const survivalState = goal.survival || {};
   const stashFood = Object.entries(survivalState.home?.stash?.contents || {})
     .reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);

@@ -242,7 +242,8 @@ define({
   source: 'src/work.js (crossingKitReady), src/crossing-kit.js (kitItems, valuablesAt)',
   options: [
     { key: 'cross_now', label: 'cross with what is carried', when: 'always', level: 'root' },
-    { key: 'top_up_food', label: 'gather food first, up to forty points', when: 'fewer than forty food points carried, monsters on', level: 'root' },
+    { key: 'top_up_food', label: 'gather food first, up to forty points', when: 'fewer than forty food points carried, monsters on; said with where it goes (the home chest, the plot, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (note 527)', level: 'root' },
+    { key: 'top_up_food_near', label: 'gather food at the known food whose trip on to the frame begun is shortest, then back to it', when: 'food short, a frame begun and no portal lit, and some food known (animals in view, a herd seen, a village, the home plot or chest); said with the walk there, the gathering, the walk on to the frame and about what it gives (note 527)', level: 'root' },
     { key: 'top_up_health', label: 'wait and heal first, to sixteen', when: 'health under sixteen, monsters on', level: 'root' },
     { key: 'top_up_blocks', label: 'mine stone first, up to two stacks of blocks', when: 'fewer than 128 building blocks carried', level: 'root' },
     { key: 'top_up_pickaxe', label: 'make a stone pickaxe first, as the spare', when: 'no stone pickaxe or better, or the best has under 24 uses', level: 'root' },

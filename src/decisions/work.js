@@ -47,7 +47,7 @@ const IDLE_OPTIONS = [
 define({
   id: 'portal_method', area: 'work', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'The way into the Nether: build a portal frame of its own from obsidian, cast one in place from lava and water (here, or beside the known lava), or finish and light a remembered ruined portal; or make more buckets first?',
-  trigger: 'In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), when a chosen ruin\'s frame will not do, when the walks to the lava chosen come no nearer, or when neither the walk nor the staircase gets back to a cast frame (said with where it is and what each way ended in).',
+  trigger: 'In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), when a chosen ruin\'s frame will not do, when the walks to the lava chosen come no nearer, or when neither the walk nor the staircase gets back to a cast frame (said with where it is and what each way ended in), or when a frame with obsidian in it fails at its site (said with what is cast, the failures since the last block went in and why, and those a mob in the way caused, not counted).',
   source: 'src/work.js (portalMethod, portalFacts, methodSoFar), src/portal-cast.js (castSays)',
   options: [
     { key: 'build_new', label: 'build a frame of its own from ten obsidian', when: 'always', level: 'root' },
@@ -56,11 +56,12 @@ define({
     { key: 'cast_here', label: 'cast a new frame where the bot stands, the frame begun or the lava chosen left behind', when: 'the frame begun cannot be got back to: the walk and the staircase toward it both failed (note 481); or the staircase to the lava held rests (note 490)', level: 'root' },
     { key: 'into_cave', label: 'go down into the cave the staircase to the lava held stopped over, and go on from its floor', when: 'the staircase to the lava held rests over a cave under its next stair (no block to floor it), and the fall to its floor or water costs less than half the health (note 490)', level: 'root' },
     { key: 'other_lava', label: 'cast beside another known lava whose way is not resting', when: 'the staircase to the lava held rests and another lava is known (note 490)', level: 'root' },
+    { key: 'new_site', label: 'leave the part-cast frame as it stands and start a new one at another site near here', when: 'a frame with obsidian in it failed at its site, not for a mob in the way (note 527); said with what is left there and what a new frame costs', level: 'root' },
     { key: 'craft_buckets', label: 'make more buckets first from the iron carried', when: 'three or more iron ingots carried', level: 'root' },
     { pattern: 'ruin_[0-9]+', label: 'finish and light a remembered ruined portal', when: 'a ruined portal remembered within 512 blocks, not found frameless (and the one held, however far)', level: 'root', dynamic: true },
   ],
   instructions: { task: 'Choose how the bot gets a portal to the Nether.', guidance: 'Each option says its walk, what it needs against what is carried, and whether a diamond pickaxe is needed, and every option ends with the same facts: the nearest known lava, how deep diamonds lie, the pickaxes, buckets and iron carried, and the ruins remembered. A new frame needs ten obsidian, which without a diamond pickaxe means finding diamonds first; a frame cast in place needs no pickaxe but one lava bucket a block, each trip carrying one lava per bucket held, so where it stands against the lava and the buckets carried decide its trips; a ruin needs only its missing blocks. Asked again, the way held says how long it has been worked on and what that made.' },
-  fallback: (children, path, context = {}) => children[context.current] ? context.current : 'build_new',
+  fallback: (children, path, context = {}) => context.leaveSite && children.new_site ? 'new_site' : children[context.current] ? context.current : 'build_new',
 });
 
 // A known portal the bot is making for that no way reaches: the walk, the

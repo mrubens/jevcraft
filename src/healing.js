@@ -33,10 +33,16 @@ function foodCarried(bot) {
   });
 }
 
-// The nearest food the bot knows of, nearest first: animals in view, herds
-// seen (sightings.js), a village's crops, the home's plot and pen, and the
-// home's chest. Each read is guarded: a missing world or record is none.
-function nearestFood(bot, goal) {
+// The food the bot knows of, nearest first, each with where it is and
+// roughly how much it holds: animals in view, herds seen (sightings.js), a
+// village's crops, the home's plot and pen, and the home's chest. Each read
+// is guarded: a missing world or record is none. `at` is where it lies,
+// `points` about what it gives (cooked), `kind` which it is.
+// A grown animal's meat, cooked: a cow or pig one to three (about two) at
+// eight each, a sheep one or two mutton at six, a chicken one at six, a
+// rabbit one at five.
+const MEAT_POINTS = { cow: 16, mooshroom: 16, pig: 16, sheep: 9, chicken: 6, rabbit: 5, hoglin: 24 };
+function foodSources(bot, goal) {
   const here = bot.entity?.position;
   if (!here) return [];
   const found = [];
@@ -45,24 +51,33 @@ function nearestFood(bot, goal) {
   const prey = overworld ? ['cow', 'mooshroom', 'sheep', 'rabbit'] : ['hoglin'];
   guard(() => {
     const seen = Object.values(bot.entities || {}).filter(e => prey.includes(e.name) && e.isValid !== false && e.position && e.position.distanceTo(here) <= 32)
-      .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here))[0];
-    if (seen) { const d = Math.round(seen.position.distanceTo(here)); found.push({ distance: d, says: `a ${words(seen.name)} in view, ${d} blocks off` }); }
+      .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here));
+    if (seen[0]) {
+      const d = Math.round(seen[0].position.distanceTo(here)), kind = seen[0].name, count = seen.filter(e => e.name === kind).length;
+      const p = seen[0].position;
+      found.push({ kind: 'in_view', animal: kind, count, points: count * (MEAT_POINTS[kind] || 6), distance: d, at: { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) },
+        says: `a ${words(kind)} in view, ${d} blocks off` });
+    }
   });
   guard(() => {
     const sightings = require('./sightings');
     for (const kind of overworld ? ['cow', 'sheep'] : ['hoglin']) {
       const s = sightings.sighted(bot, goal, kind).find(f => f.distance > 32);
-      if (s) found.push({ distance: s.distance, says: s.says });
+      if (s) found.push({ kind: 'herd', animal: kind, count: s.count, points: (s.count || 1) * (MEAT_POINTS[kind] || 6), distance: s.distance, at: { x: s.x, y: s.y, z: s.z }, sighting: s, says: s.says });
     }
   });
   if (goal && overworld) {
     guard(() => {
       const v = require('./villages').villageFood(bot, goal);
-      if (v) found.push({ distance: v.distance, says: `a village ${v.distance} blocks off with ${v.ripeCrops} ripe crops and ${v.hayBales} hay bales` });
+      // Three wheat a loaf of five, or a crop of carrots or potatoes about three.
+      if (v) found.push({ kind: 'village', distance: v.distance, at: { x: v.village.x, y: v.village.y, z: v.village.z }, village: v.village, points: Math.round(v.ripeCrops * 5 / 3 + v.hayBales * 15),
+        says: `a village ${v.distance} blocks off with ${v.ripeCrops} ripe crops and ${v.hayBales} hay bales` });
     });
     guard(() => {
+      const home = require('./home-base').homeOf(bot, goal);
       const h = require('./home-base').homeFood(bot, goal);
-      if (h) found.push({ distance: h.distance, says: `home, ${h.distance} blocks off: wheat for ${h.loaves} loaves and ${h.steaks} cows to spare` });
+      if (h) found.push({ kind: 'home_plot', distance: h.distance, at: home?.origin ? { ...home.origin } : null, points: h.loaves * 5 + h.steaks * MEAT_POINTS.cow,
+        says: `home, ${h.distance} blocks off: wheat for ${h.loaves} loaves and ${h.steaks} cows to spare` });
     });
     guard(() => {
       const { homeOf, homeDistance } = require('./home-base');
@@ -71,12 +86,14 @@ function nearestFood(bot, goal) {
       const stash = Object.entries(home?.stash?.contents || {}).filter(([name]) => safeFood(bot, { name }) && bot.registry.foodsByName?.[name]);
       if (home?.stash?.position && stash.length) {
         const d = Math.round(homeDistance(bot, home)), points = stash.reduce((n, [name, c]) => n + c * bot.registry.foodsByName[name].foodPoints, 0);
-        found.push({ distance: d, says: `home's chest, ${d} blocks off: ${stash.map(([name, c]) => `${c} ${words(name)}`).join(', ')} (${points} hunger)` });
+        found.push({ kind: 'home_chest', distance: d, at: { ...home.stash.position }, points,
+          says: `home's chest, ${d} blocks off: ${stash.map(([name, c]) => `${c} ${words(name)}`).join(', ')} (${points} hunger)` });
       }
     });
   }
-  return found.sort((a, b) => a.distance - b.distance).slice(0, 3).map(f => f.says);
+  return found.sort((a, b) => a.distance - b.distance);
 }
+const nearestFood = (bot, goal) => foodSources(bot, goal).slice(0, 3).map(f => f.says);
 
 // Daylight, said as the time to it: the surface's mobs burn at dawn and
 // spawn from dark. Underground the dark is the same at any hour.
@@ -112,4 +129,4 @@ function healingSays(bot, goal) {
   };
 }
 
-module.exports = { healingSays, foodCarried, nearestFood, daylightSays };
+module.exports = { healingSays, foodCarried, nearestFood, foodSources, daylightSays, MEAT_POINTS };

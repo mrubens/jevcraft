@@ -197,6 +197,19 @@ function standsFor(frame, p, w, { floorless = false } = {}) {
   return out;
 }
 
+// The cells the cast works in at a slot: the slot and the cell over it,
+// and every cell a stand beside it could take (feet, head and the floor
+// under them). A body in one of them is in the cast's way for as long as it
+// stays there (work.js buildPortalFrame, note 527).
+function workCells(frame, p) {
+  const axis = frame.axis || 'x', X = across(axis), A = AXES[axis];
+  const cells = [p, p.plus(UP)];
+  for (const side of [-1, 1]) for (const dist of [1, 2]) for (const du of [0, -1, 1]) for (const dy of [-1, 0, 1, 2, 3]) {
+    cells.push(p.plus(X.scaled(side * dist)).plus(A.scaled(du)).offset(0, dy, 0));
+  }
+  return cells;
+}
+
 // A trip for lava, measured from where the frame stands, not from where
 // the bot does: the walk there and back on the level, and the staircase
 // back up (or up to it) when the lava is more than eight blocks off level
@@ -529,4 +542,4 @@ function wetAbout(bot, p) {
   return false;
 }
 
-module.exports = { castFrame, castOrder, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, castTrips, duration, view };
+module.exports = { castFrame, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, castTrips, duration, view };

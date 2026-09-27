@@ -306,7 +306,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `cross_now` | root | cross with what is carried | always |
-| `top_up_food` | root | gather food first, up to forty points | fewer than forty food points carried, monsters on |
+| `top_up_food` | root | gather food first, up to forty points | fewer than forty food points carried, monsters on; said with where it goes (the home chest, the plot, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (note 527) |
+| `top_up_food_near` | root | gather food at the known food whose trip on to the frame begun is shortest, then back to it | food short, a frame begun and no portal lit, and some food known (animals in view, a herd seen, a village, the home plot or chest); said with the walk there, the gathering, the walk on to the frame and about what it gives (note 527) |
 | `top_up_health` | root | wait and heal first, to sixteen | health under sixteen, monsters on |
 | `top_up_blocks` | root | mine stone first, up to two stacks of blocks | fewer than 128 building blocks carried |
 | `top_up_pickaxe` | root | make a stone pickaxe first, as the spare | no stone pickaxe or better, or the best has under 24 uses |
@@ -405,7 +406,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **The way into the Nether: build a portal frame of its own from obsidian, cast one in place from lava and water (here, or beside the known lava), or finish and light a remembered ruined portal; or make more buckets first?**
 
-- When: In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), when a chosen ruin's frame will not do, when the walks to the lava chosen come no nearer, or when neither the walk nor the staircase gets back to a cast frame (said with where it is and what each way ended in).
+- When: In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), when a chosen ruin's frame will not do, when the walks to the lava chosen come no nearer, or when neither the walk nor the staircase gets back to a cast frame (said with where it is and what each way ended in), or when a frame with obsidian in it fails at its site (said with what is cast, the failures since the last block went in and why, and those a mob in the way caused, not counted).
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -419,6 +420,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `cast_here` | root | cast a new frame where the bot stands, the frame begun or the lava chosen left behind | the frame begun cannot be got back to: the walk and the staircase toward it both failed (note 481); or the staircase to the lava held rests (note 490) |
 | `into_cave` | root | go down into the cave the staircase to the lava held stopped over, and go on from its floor | the staircase to the lava held rests over a cave under its next stair (no block to floor it), and the fall to its floor or water costs less than half the health (note 490) |
 | `other_lava` | root | cast beside another known lava whose way is not resting | the staircase to the lava held rests and another lava is known (note 490) |
+| `new_site` | root | leave the part-cast frame as it stands and start a new one at another site near here | a frame with obsidian in it failed at its site, not for a mob in the way (note 527); said with what is left there and what a new frame costs |
 | `craft_buckets` | root | make more buckets first from the iron carried | three or more iron ingots carried |
 | `ruin_[0-9]+` (pattern) | root | finish and light a remembered ruined portal | a ruined portal remembered within 512 blocks, not found frameless (and the one held, however far) |
 

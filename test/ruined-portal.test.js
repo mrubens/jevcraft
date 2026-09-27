@@ -767,3 +767,81 @@ test('the lava held, its staircase resting over a cave, is asked with the ways o
   assert.deepEqual(goal.portalMethod.intoCave.at, { x: 21, y: -52, z: 41 }, 'chosen, the way goes down into the cave');
   assert.deepEqual(goal.portalMethod.near, near, 'the lava held is kept');
 });
+
+test('a mob in the cast\'s cells is not the site\'s failure, and a part-cast frame failing at its site is Jev\'s to leave, with the facts', async () => {
+  // mid-230-u: a zombie in a stand cell took the tenth site failure and a frame with four of ten cast was left for all ten again (note 527).
+  const { Task } = require('../src/skills');
+  const { buildPortalFrame, portalMethod, portalDue } = require('../src/work');
+  const { bot, w } = castingBot({ water_bucket: 1, lava_bucket: 1, cobblestone: 64, flint_and_steel: 1 });
+  bot.findBlocks = () => []; bot.health = 20; bot.food = 20;
+  const frame = newFrame('x', new Vec3(8, 64, 23));
+  const goal = { portalFrame: frame, portalMethod: { kind: 'cast', activeMs: 0, reasked: 0, from: {} } };
+  w.set(new Vec3(frame.blocks[0].x, frame.blocks[0].y, frame.blocks[0].z), 'obsidian');
+  const slot = cast.castOrder(frame).find(q => w.nameAt(q) !== 'obsidian');
+  // A cow stands in the first wall cell: the block is refused for its body.
+  const cell = cast.wallsFor(slot, w.solidAt)[0];
+  bot.entities = { 7: { id: 7, name: 'cow', type: 'animal', position: new Vec3(cell.x + 0.5, cell.y, cell.z + 0.5), width: 0.9, height: 1.4, isValid: true } };
+  await assert.rejects(buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), /Placement obstructed: a cow stands in the cell/);
+  assert.equal(frame.siteFailures || 0, 0, 'a body in the way is not the site\'s failure');
+  assert.equal(frame.bodyFailures.n, 1);
+  assert.equal(goal.portalMethod.siteFailed, undefined, 'nor asked about as one');
+  // The cow gone, a failure of the site itself: asked at once, never left by a count.
+  bot.entities = {};
+  w.set(slot, 'lava');
+  const inner = bot.blockAt; bot.blockAt = p => { const b = inner(p); return p.floored().equals(slot) ? { ...b, getProperties: () => ({ level: 3 }) } : b; };
+  for (let n = 1; n <= 12; n++) {
+    assert.equal(await buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), false);
+    assert.equal(goal.portalFrame, frame, `kept after ${n}: leaving it is Jev's`);
+  }
+  assert.equal(goal.portalMethod.siteFailed, true);
+  assert.equal(portalDue(goal.portalMethod), true, 'the way is asked at once');
+  let offered, pick = 'cast_frame';
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: pick, confidence: 0.7 } } }; } };
+  assert.equal(await portalMethod(bot, task, goal, () => {}), true);
+  assert.match(offered.new_site, /^Leave the frame at \(8, 64, 23\) as it stands, 1 of ten in it, its obsidian out only with a diamond pickaxe \(none carried\), and cast a new frame at another site near here/);
+  assert.match(offered.new_site, /Kept, 9 of ten are still to cast there; a new frame starts from none\. .*10 of the ten to cast/);
+  assert.match(offered.cast_frame, /has failed at its site 12 times since the last block went in: "Flowing lava in the frame slot at \(\d+, \d+, \d+\): its walls are not whole" 12 times\. Not counted: 1 more where a mob stood in the cells the cast works in \(the last a cow at/);
+  assert.match(offered.cast_frame, /Kept, the cast goes on at this frame, the slot it failed at tried again/);
+  assert.equal(goal.portalFrame, frame, 'kept'); assert.equal(goal.portalMethod.siteFailed, undefined, 'answered');
+  // Failing again, asked again; a new site chosen, the frame is passed over.
+  assert.equal(await buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), false);
+  pick = 'new_site';
+  assert.equal(await portalMethod(bot, task, goal, () => {}), false);
+  assert.equal(goal.portalFrame, undefined);
+  assert.deepEqual(goal.portalSitesLeft.map(s => [s.x, s.y, s.z]), [[8, 64, 23]]);
+  assert.equal(goal.portalMethod.kind, 'cast'); assert.equal(goal.portalMethod.activeMs, 0);
+  // Without Jev, the code's default: left after ten failures at the site.
+  const quiet = { portalFrame: { ...frame, siteFailures: 10, siteFailed: { cast: 1, n: 10, whys: { x: 10 } } }, portalMethod: { kind: 'cast', activeMs: 0, siteFailed: true, from: {} } };
+  assert.equal(await portalMethod(bot, new Task('nether'), quiet, () => {}), false);
+  assert.equal(quiet.portalFrame, undefined, 'the fallback leaves it');
+});
+
+test('the crossing kit says where food lies against the frame begun, and offers food near the frame beside the open search', async () => {
+  // mid-230-u chose food at 0.38 against crossing at 0.35, told no trip and nothing of its frame with four of ten cast,
+  // and the search took it four hundred blocks off by boat (note 527).
+  const { Task } = require('../src/skills');
+  const { crossingKitReady } = require('../src/work');
+  const { bot, w } = castingBot({ cobblestone: 130, iron_pickaxe: 1, golden_boots: 1, oak_log: 8, crafting_table: 1 });
+  bot.findBlocks = () => []; bot.health = 20; bot.food = 6;
+  bot.game.difficulty = 'normal';
+  const frame = newFrame('x', new Vec3(8, 64, 23));
+  for (const b of frame.blocks.slice(0, 4)) w.set(new Vec3(b.x, b.y, b.z), 'obsidian');
+  bot.entity.position = new Vec3(208.5, 64, 23.5);
+  const goal = { portalFrame: frame, portalMethod: { kind: 'cast', activeMs: 0, from: {} },
+    sightings: { cow: [{ x: 30, y: 64, z: 40, count: 3, at: Date.now(), dimension: 'overworld' }] } };
+  let offered;
+  const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.6 } } }; } };
+  assert.equal(await crossingKitReady(bot, new Task('win'), goal, () => {}, client), true);
+  assert.match(offered.top_up_food, /searches outward from here for animals, heading by heading, on foot, swimming or by boat, with no bound on how far/);
+  assert.match(offered.top_up_food, /Meanwhile the frame at \(8, 64, 23\), 4 of ten cast, 201 blocks from here, is left where it stands: nothing keeps the search near it/);
+  assert.match(offered.top_up_food, /The food known \(the search does not go to it first\): 3 cow seen just now, \d+ blocks \w+ \(30, 40\), 28 blocks from the frame: about \d+ (seconds|minutes) in all/);
+  assert.match(offered.top_up_food_near, /^Gather food at the known food whose trip on to the frame is shortest, then back to the cast: 3 cow seen just now/);
+  assert.match(offered.top_up_food_near, /the walk there about \d+ seconds, about 45 seconds for 3 cows, and on to the frame about 7 seconds\), for about 40 of the 40 points short/);
+  assert.match(offered.cross_now, /No portal is lit yet: going on is the frame at \(8, 64, 23\), 4 of ten cast, 201 blocks from here, finished first, then the crossing\. Now health 20, hunger 6; health comes back: health is full; at hunger 6 a point lost would not come back until the bot eats to eighteen\. Food carried: nothing to eat\. .*at zero it starves to one health/);
+  // With no frame begun, none of that is said.
+  delete goal.portalFrame; delete goal.crossingKit;
+  assert.equal(await crossingKitReady(bot, new Task('win'), goal, () => {}, client), true);
+  assert.equal(offered.top_up_food_near, undefined);
+  assert.doesNotMatch(offered.cross_now, /No portal is lit yet/);
+});
