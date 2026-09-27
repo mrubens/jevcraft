@@ -947,19 +947,25 @@ function fortressLegTarget(state, position) {
 // leg_west's and leg_south looked untried, some thirty times over in
 // mid-211-s-nether-4 and mid-202-o (note 480). Where it began, so a failure
 // far from here is read as that.
-function legEnded(state, why) {
+// A staircase seeking the fortress heights is kept apart (seek_<heading>):
+// filed as the level leg's, mid-202-o-nether-2's leg_north grew to "564
+// tries from there" while seek_fortress_height, chosen again and again,
+// said nothing of its own failure (note 500).
+const legKey = (i, seeking) => seeking ? `seek_${HEADING_NAMES[i]}` : HEADING_NAMES[i];
+function legEnded(state, why, seeking = false) {
   const i = Number.isInteger(state.lastHeading) ? state.lastHeading : headingIndex(state);
   const history = state.legHistory ||= {};
-  const from = state.legFrom || null, was = history[HEADING_NAMES[i]];
+  const from = state.legFrom || null, was = history[legKey(i, seeking)];
   const same = was?.from && from && Math.hypot(was.from.x - from.x, was.from.z - from.z) < 8;
-  history[HEADING_NAMES[i]] = { ended: why || 'no ground made', from, tries: same ? (was.tries || 1) + 1 : 1, at: Date.now() };
+  history[legKey(i, seeking)] = { ended: why || 'no ground made', from, tries: same ? (was.tries || 1) + 1 : 1, at: Date.now() };
 }
-function legHistorySays(state, name, here) {
+function legHistorySays(state, name, here, what = 'leg') {
   const h = state.legHistory?.[name];
   if (!h) return '';
   const where = h.from ? `, begun ${Math.round(Math.hypot(h.from.x - here.x, h.from.z - here.z))} blocks from here` : '';
-  return ` The last leg this way${where}, ended no nearer${h.tries > 1 ? ` (${h.tries} tries from there)` : ''}: ${h.ended}.`;
+  return ` The last ${what} this way${where}, ended no nearer${h.tries > 1 ? ` (${h.tries} tries from there)` : ''}: ${h.ended}.`;
 }
+const capital = s => `${s[0].toUpperCase()}${s.slice(1)}`;
 
 // The blocks a span can be laid with (bridging.js MATERIALS) in the ground
 // round the bot, by kind: a basalt delta is thousands of them with hardly
@@ -1010,16 +1016,31 @@ async function chooseLeg(bot, task, goal, save, actions, state) {
   const current = headingIndex(state);
   const surveys = HEADINGS.map(h => surveyLeg(bot, h, { cells: FORTRESS_LEG }));
   const back = state.legFrom && Number.isInteger(state.lastHeading) ? (state.lastHeading + 2) % 4 : null;
+  const { restingSays } = require('./tunneling');
+  // Each way's staircase as the step would dig it (fortressLegTarget), and
+  // whether it rests: a level leg digs one where the walk and the span give
+  // out, and the fortress heights are one alone.
+  const rests = mode => HEADINGS.map((h, i) => restingSays(goal, fortressLegTarget({ heading: i, legMode: mode }, here), here));
+  const levelRests = rests('level');
   const options = {};
   HEADINGS.forEach((h, i) => {
     options[`leg_${HEADING_NAMES[i]}`] = { description: legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) +
-      (i === back ? ' This is back the way the last leg came.' : '') + legHistorySays(state, HEADING_NAMES[i], here),
+      (i === back ? ' This is back the way the last leg came.' : '') + legHistorySays(state, HEADING_NAMES[i], here) +
+      (levelRests[i] ? ` Where the walk and the span give out, ${levelRests[i]}.` : ''),
       run: () => { state.heading = i; state.legMode = 'level'; return true; } };
   });
   const off = y - FORTRESS_Y;
   if (Math.abs(off) > FORTRESS_BAND && actions.tunnel) {
-    const most = surveys.every(s => !s) ? current : surveys.map((s, i) => [s?.open || 0, i]).sort((a, b) => b[0] - a[0] || (a[1] === current ? -1 : b[1] === current ? 1 : 0))[0][1];
-    options.seek_fortress_height = { description: `Dig a staircase ${off > 0 ? 'down' : 'up'} toward y ${FORTRESS_Y} heading ${HEADING_NAMES[most]}, ${Math.abs(off)} blocks of height, a step at a time with rock round the bot and no block dug with lava or water behind it: fortress corridors and bridges stand mostly between y 48 and 75, over the lava sea at y 31, and from y ${y} none is seen through the rock. The leg goes level again once within ${FORTRESS_BAND} of y ${FORTRESS_Y}.`,
+    // A heading whose staircase rests is not offered as a fresh one: mid-
+    // 202-o-nether-2 chose seek_fortress_height north four times in three
+    // minutes, its staircase resting since 20:53 and never said, and each
+    // step threw before a stair (note 500). All resting, the rest is said.
+    const seekRests = rests('descend');
+    const open = seekRests.some(r => !r) ? HEADINGS.map((h, i) => i).filter(i => !seekRests[i]) : HEADINGS.map((h, i) => i);
+    const most = surveys.every(s => !s) && open.includes(current) ? current : open.map(i => [surveys[i]?.open || 0, i]).sort((a, b) => b[0] - a[0] || (a[1] === current ? -1 : b[1] === current ? 1 : 0))[0][1];
+    const passed = HEADINGS.map((h, i) => i).filter(i => seekRests[i] && i !== most).map(i => ` Not heading ${HEADING_NAMES[i]}: ${seekRests[i]}.`).join('');
+    options.seek_fortress_height = { description: `Dig a staircase ${off > 0 ? 'down' : 'up'} toward y ${FORTRESS_Y} heading ${HEADING_NAMES[most]}, ${Math.abs(off)} blocks of height, a step at a time with rock round the bot and no block dug with lava or water behind it: fortress corridors and bridges stand mostly between y 48 and 75, over the lava sea at y 31, and from y ${y} none is seen through the rock. The leg goes level again once within ${FORTRESS_BAND} of y ${FORTRESS_Y}.` +
+      (seekRests[most] ? ` ${capital(seekRests[most])}: taken now, it digs nothing until then.` : '') + passed + legHistorySays(state, legKey(most, true), here, 'staircase'),
       run: () => { state.heading = most; state.legMode = 'descend'; return true; } };
   }
   const short = surveys.some(s => Number.isInteger(s?.runsOut));
@@ -1040,7 +1061,8 @@ async function chooseLeg(bot, task, goal, save, actions, state) {
   const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
   const facts = { height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
     legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
-    lastLeg: Number.isInteger(state.lastHeading) ? `${HEADING_NAMES[state.lastHeading]}${state.legHistory?.[HEADING_NAMES[state.lastHeading]] ? `, ended no nearer: ${state.legHistory[HEADING_NAMES[state.lastHeading]].ended}` : ''}` : null,
+    lastLeg: Number.isInteger(state.lastHeading) ? (() => { const seeking = state.legMode === 'descend', h = state.legHistory?.[legKey(state.lastHeading, seeking)];
+      return `${seeking ? 'a staircase toward the fortress heights ' : ''}${HEADING_NAMES[state.lastHeading]}${h ? `, ended no nearer: ${h.ended}` : ''}`; })() : null,
     blocksCarried: blocksCarried(bot), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`) };
   // Without Jev: the open air each heading's carried blocks reach.
   const open = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, surveys[i] ? surveys[i].reach : null]));
@@ -1175,7 +1197,8 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     }
   }
   if (actions.tunnel) {
-    options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.`,
+    const rest = require('./tunneling').restingSays(goal, nearest, here);
+    options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}`,
       run: async () => { await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); return null; } };
   }
   const minutes = state.legSince ? Math.round((Date.now() - state.legSince) / 60000) : null;
@@ -1327,7 +1350,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // A leg walked to its end: whatever was left behind may be seen again,
     // and that heading's failure is history.
     if (state.target && !state.rememberedTarget) delete state.leaving;
-    if (state.target && Number.isInteger(state.lastHeading) && state.legHistory) delete state.legHistory[HEADING_NAMES[state.lastHeading]];
+    if (state.target && Number.isInteger(state.lastHeading) && state.legHistory) { delete state.legHistory[legKey(state.lastHeading, false)]; delete state.legHistory[legKey(state.lastHeading, true)]; }
     delete state.rememberedTarget;
     // Blocks Jev chose to mine before the next leg, until they are carried.
     if (state.restock && actions.acquireStep && await restockStep(bot, task, goal, save, actions, state)) return;
@@ -1386,7 +1409,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // Counted from nothing on a fresh search: incremented from undefined it
   // was NaN, never four, and a leg that never once made ground never turned.
   state.legFails = (state.legFails || 0) + 1;
-  legEnded(state, state.lastLegError || state.lastCrossStop);
+  legEnded(state, state.lastLegError || state.lastCrossStop, seeking);
   // Short of blocks, the ways to more are Jev's beside the legs (chooseLeg:
   // restock_blocks, return_for_blocks), asked when the sweep turns.
   if (state.legFails >= 4 && Date.now() - (state.legSince || 0) >= 20000) {

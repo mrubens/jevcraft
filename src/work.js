@@ -3494,8 +3494,12 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const minutes = n => tripSeconds ? ` (about ${Math.max(1, Math.round(trips(n) * tripSeconds / 60))} minutes of trips)` : '';
     tree.craft_buckets = { description: `Make ${more} more bucket${more === 1 ? '' : 's'} first from the iron ingots carried (three each, ${3 * more} of the ${iron}). A cast frame takes one lava bucket a block and each trip to lava carries one lava per bucket held: with ${carriers + more} buckets the ${toFetch} lava still to fetch is about ${trips(carriers + more)} trip${trips(carriers + more) === 1 ? '' : 's'}${minutes(carriers + more)}, against ${trips(carriers)}${minutes(carriers)} with ${carriers ? `the ${carriers} carried` : 'the one a cast would make'}.${tripSeconds ? ` A trip to the nearest known lava, ${trip.distance} blocks from ${frameBegun ? 'the frame' : 'here'}, is about ${duration(tripSeconds)} there and back${trip.climb ? `, a staircase of about ${duration(trip.climb)} of it` : ''}.${tripsSoFar(method)}` : ''} The iron goes to buckets, not to armour or tools. ${current ? 'The way held goes on with them.' : 'Then this is asked again with them in hand.'}` + facts };
   }
+  // Where the walk to a ruin gives out, the staircase toward it: said
+  // while it rests (tunneling.js restingSays, note 500).
+  const { restingSays } = require('./tunneling');
   ruins.forEach((k, i) => {
-    tree[`ruin_${i}`] = { description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) + facts };
+    const rest = restingSays(goal, new Vec3(k.landmark.x, k.landmark.y ?? bot.entity.position.y, k.landmark.z), bot.entity.position);
+    tree[`ruin_${i}`] = { description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) + (rest ? ` Where the walk gives out, ${rest}.` : '') + facts };
   });
   // Asked again: the way held says its minutes and what they made; the
   // others say what becomes of a frame begun.
@@ -4041,7 +4045,10 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival } 
   }
   const failed = goal.lastStruggleStep || goal.step;
   const key = `step:${failed?.block || failed?.item || failed?.action || 'none'}`;
-  goal.step = { action: 'persist', attempt: goal.struggles, problem: err.message }; save(); onStep(goal);
+  // What is retried and where it was going, named: mid-202-o-nether-2's
+  // persist ran from attempt 1 to 12 on "No route from here to the
+  // destination", neither said (note 500).
+  goal.step = { action: 'persist', attempt: goal.struggles, problem: err.message, ...(failed?.action ? { retrying: failed.action } : {}), ...(err.destination ? { destination: err.destination } : {}) }; save(); onStep(goal);
   // Every way resting until a time (WaysResting): when that is, for the
   // stall's question to offer other work until then; and once Jev has
   // chosen that, the same rest met again goes back to that work, not to the

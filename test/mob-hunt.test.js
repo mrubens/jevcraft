@@ -1093,3 +1093,42 @@ test('the ways to a fortress say the mobs at its bricks, seen or not', async () 
   assert.match(state.atTheBricks || '', /2 wither skeletons, 1 blaze|1 blaze, 2 wither skeletons/);
   for (const [key, text] of Object.entries(options)) assert.match(text, /Within sixteen blocks of the bricks, seen or not: .*wither skeleton/, key);
 });
+
+test('a resting staircase is not offered fresh as seek_fortress_height', async () => {
+  // mid-202-o-nether-2 (note 500): seek_fortress_height north, chosen at 0.64 to 0.87 for three minutes with its staircase resting since 20:53,
+  // each step throwing before a stair; the failure was filed under leg_north ("564 tries from there") and the option said nothing.
+  const { findFortressStep, chooseLeg, fortressLegTarget } = require('../src/mob-hunt');
+  const { setAside } = require('../src/progress');
+  const rock = p => (p.z >= 1 && p.z <= 40 && p.x === 0) ? (p.y < 70 ? 'netherrack' : null) : 'netherrack';
+  const here = new Vec3(0.5, 100, 0.5);
+  const { bot } = netherWorld(here, rock);
+  const rest = (goal, i, why) => { const t = fortressLegTarget({ heading: i, legMode: 'descend' }, here);
+    setAside(goal, 'staircase', { x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 }, why, 3 * 60000); };
+  // South has the open air, and its staircase rests: the heading offered is another, and south's rest is said.
+  const goal = {};
+  rest(goal, 1, 'refusing to open a drop');
+  const client = jevStub(['seek_fortress_height']);
+  const state = { legs: 2 };
+  await chooseLeg(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => {}, tunnel: async () => {} }, state);
+  let { options } = client.asked[0];
+  assert.match(options.seek_fortress_height, /Dig a staircase down toward y 64 heading (east|west|north)/);
+  assert.match(options.seek_fortress_height, /Not heading south: the staircase toward it is set aside \(refusing to open a drop\), taken up again in 3 minutes/);
+  assert.notEqual(state.heading, 1, 'not the resting heading');
+  // Every heading resting: still offered, with its rest said.
+  for (const i of [0, 2, 3]) rest(goal, i, 'lava behind the next stair');
+  const again = jevStub(['leg_east']);
+  await chooseLeg(bot, new Task('hunt'), goal, () => {}, { client: again, navigate: async () => {}, tunnel: async () => {} }, { legs: 2 });
+  options = again.asked[0].options;
+  assert.match(options.seek_fortress_height, /heading south, .*The staircase toward it is set aside \(refusing to open a drop\), taken up again in 3 minutes: taken now, it digs nothing until then\./);
+  // A seeking leg that fails is kept as its own (seek_south), not as leg_south, and said with the option.
+  const goal2 = { fortressSearch: { legs: 3, heading: 1, lastHeading: 1, legMode: 'descend', target: { x: 1, y: 64, z: 97 }, legFrom: { x: 0, z: 0 }, legSince: Date.now() } };
+  const stalled = async () => { throw Object.assign(new Error('Staircase toward (1, 64, 97) stalled: refusing to open a drop'), { name: 'StaircaseStalled' }); };
+  await findFortressStep(bot, new Task('hunt'), goal2, () => {}, { navigate: async () => {}, tunnel: stalled });
+  assert.match(goal2.fortressSearch.legHistory.seek_south.ended, /stalled: refusing to open a drop/);
+  assert.equal(goal2.fortressSearch.legHistory.south, undefined, 'not filed under the level leg');
+  const third = jevStub(['leg_east']);
+  await chooseLeg(bot, new Task('hunt'), goal2, () => {}, { client: third, navigate: async () => {}, tunnel: async () => {} }, goal2.fortressSearch);
+  options = third.asked[0].options;
+  assert.match(options.seek_fortress_height, /heading south.*The last staircase this way, begun 1 blocks from here, ended no nearer: Staircase toward \(1, 64, 97\) stalled/);
+  assert.doesNotMatch(options.leg_south, /ended no nearer/);
+});

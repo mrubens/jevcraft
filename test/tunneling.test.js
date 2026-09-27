@@ -807,3 +807,21 @@ test('a staircase over a cave with no building block carried rests with the cave
   assert.equal(goal.staircaseStalled.cave.floorY, 66, 'the cave is kept with the stall');
   assert.match(goal.staircaseStalled.why, /a fall of 3 to its floor at y 66/);
 });
+
+test('a resting staircase says why and when it is taken up again, by its target\'s area or from the landing', () => {
+  // mid-202-o-nether-2 (note 500): seek_fortress_height was offered and chosen with its staircase resting, and said nothing of it.
+  const { restingSays, landingKey } = require('../src/tunneling');
+  const { setAside } = require('../src/progress');
+  const goal = {}, target = new Vec3(100, 64, 3), here = new Vec3(4.5, 90, 3.5);
+  assert.equal(restingSays(goal, target, here), null, 'open');
+  setAside(goal, 'staircase', { x: 96, y: 64, z: 0 }, 'refusing to open a drop', 4 * 60000 + 1000);
+  assert.equal(restingSays(goal, target), 'the staircase toward it is set aside (refusing to open a drop), taken up again in 5 minutes');
+  assert.equal(restingSays(goal, new Vec3(101, 70, 7)), restingSays(goal, target), 'the same eight-block area');
+  assert.equal(restingSays(goal, new Vec3(120, 64, 3)), null, 'another area');
+  // From here toward it, by the landing and heading.
+  const other = new Vec3(100, 64, 40);
+  setAside(goal, 'staircase_from', landingKey(here.floored(), other), 'lava behind the next stair', 30000);
+  assert.equal(restingSays(goal, other), null, 'without the landing, only the area');
+  assert.equal(restingSays(goal, other, here), 'the staircase toward it from here is set aside (lava behind the next stair), taken up again in 1 minute');
+  assert.equal(restingSays(goal, other, here, Date.now() + 60000), null, 'the rest over');
+});

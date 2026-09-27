@@ -306,6 +306,24 @@ const staircaseResting = (goal, target) => isSetAside(goal, 'staircase', area(ta
 const staircaseWhy = (goal, target) => attemptsFor(goal).why('staircase', area(target)) || 'the staircase toward it is resting';
 // When it is taken up again (0 when it is not resting).
 const staircaseUntil = (goal, target) => attemptsFor(goal).entries[keyOf('staircase', area(target))]?.until || 0;
+// What an option whose way is a staircase says while it rests, by the
+// target's area or, from `from`, by the landing and heading (tunnelStep
+// meets either at once): why, and when it is taken up again. Null while
+// open. Offered bare, a resting way was chosen fresh and threw before a
+// step: the portal way (note 482), the stall question (note 488), the
+// lava (note 494), and mid-202-o-nether-2's seek_fortress_height, chosen
+// at 0.64 to 0.87 for three minutes with its staircase resting (note 500).
+function restingSays(goal, target, from = null, now = Date.now()) {
+  const ways = [['staircase', area(target), 'the staircase toward it']];
+  if (from) ways.push(['staircase_from', landingKey(new Vec3(Math.floor(from.x), Math.floor(from.y), Math.floor(from.z)), target), 'the staircase toward it from here']);
+  for (const [kind, key, what] of ways) {
+    const entry = attemptsFor(goal).entries[keyOf(kind, key)];
+    if (!(entry?.until > now)) continue;
+    const minutes = Math.max(1, Math.ceil((entry.until - now) / 60000));
+    return `${what} is set aside (${entry.why || 'resting'}), taken up again in ${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+  return null;
+}
 // The way into lava is the staircase to the block above it: that is where
 // it is dug toward (obsidian.js), so that is the area it rests by. A pool
 // judged by its own block is judged by the area below: mid-229-m stood
@@ -628,4 +646,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, restingSays, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };

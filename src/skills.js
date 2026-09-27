@@ -478,7 +478,12 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
           }
           bot.emit('no_route', { status: latestRoute?.status || 'no search', feet: { x: feet.x, y: feet.y, z: feet.z }, goal: goal && ['x', 'y', 'z'].every(k => Number.isFinite(goal[k])) ? { x: goal.x, y: goal.y, z: goal.z } : null, around });
         }
-        throw Object.assign(new Error(`No route from here to the destination (${latestRoute?.status || 'no search'})`), { name: 'NoRoute' });
+        // Where to, said and carried: mid-202-o-nether-2 persisted twelve
+        // times on "No route from here to the destination" with none named,
+        // a cell two blocks under its own pocket's floor (note 500).
+        const destination = goal && Number.isFinite(goal.x) && Number.isFinite(goal.z) ? { x: goal.x, ...(Number.isFinite(goal.y) ? { y: goal.y } : {}), z: goal.z } : null;
+        const to = destination ? `(${destination.x}, ${Number.isFinite(destination.y) ? `${destination.y}, ` : ''}${destination.z})` : 'the destination';
+        throw Object.assign(new Error(`No route from here to ${to} (${latestRoute?.status || 'no search'})`), { name: 'NoRoute', destination });
       }
       throw new Error('Navigation ended before reaching the destination');
     }

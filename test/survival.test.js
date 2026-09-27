@@ -4217,3 +4217,31 @@ test('a bunker that takes five seconds or more to dig is offered with its second
   assert(options.bunker, Object.keys(options).join(','));
   assert.match(options.bunker.description, new RegExp(`about ${Math.round(ms / 100) / 10} seconds of digging with the tools carried`));
 });
+
+test('a NoRoute from an emergency walk is not persisted as the work step', async () => {
+  // mid-202-o-nether-2 (note 500): survival held the turn for escape_threat, the last report an eat; its walk threw
+  // "No route" to (89, 88, 115), two blocks under its own pocket's floor, and it was rethrown into the work, which
+  // persisted it from attempt 1 to 12 in 28 seconds, nothing named, while health went from 18 to 4.8.
+  const { persist } = require('../src/work');
+  const bot = Object.assign(new EventEmitter(), { entity: { position: new Vec3(89.5, 90, 115.5) }, entities: {}, health: 18, food: 19,
+    game: { dimension: 'the_nether', gameMode: 'survival' }, inventory: { items: () => [], slots: [] }, chat() {} });
+  const controller = new Survival(bot, {});
+  const noRoute = () => Object.assign(new Error('No route from here to (89, 88, 115) (partial)'), { name: 'NoRoute', destination: { x: 89, y: 88, z: 115 } });
+  controller.stepOnce = async () => { throw noRoute(); };
+  const goal = { kind: 'win', step: { action: 'return_to_blazes', target: { x: -91, y: 74, z: 53 } }, survivalAction: { action: 'eat', item: 'mutton', at: new Date().toISOString() } };
+  assert.equal(await controller.step(new Task('survival'), goal, () => {}), false, 'survival\'s own, not thrown on to the work');
+  assert.deepEqual(goal.step, { action: 'return_to_blazes', target: { x: -91, y: 74, z: 53 } }, 'the work step untouched');
+  assert.match(controller.state.walkFailed.says, /a survival walk \(the last action reported: eat\) found no route to \(89, 88, 115\)/);
+  assert.deepEqual(controller.state.walkFailed.destination, { x: 89, y: 88, z: 115 });
+  // A fact on the survival claim, as a set-aside says it.
+  const { claim } = require('../src/survival');
+  bot.entities[3] = { id: 3, name: 'hoglin', type: 'hostile', position: new Vec3(89.5, 90, 117.5), height: 1.4, isValid: true };
+  bot.world = { raycast: () => null };
+  const said = claim(bot, goal, controller)?.facts?.setAside || {};
+  assert.match(said.eat || '', /found no route to \(89, 88, 115\)/);
+  // What the work does persist names what it retries and where it was going.
+  let seen = null;
+  const work = { step: { action: 'find_fortress', legs: 6 } };
+  await persist(bot, new Task('work'), work, () => {}, noRoute(), g => { seen ||= { ...g.step }; }).catch(() => {});
+  assert.deepEqual(seen, { action: 'persist', attempt: 1, problem: 'No route from here to (89, 88, 115) (partial)', retrying: 'find_fortress', destination: { x: 89, y: 88, z: 115 } });
+});

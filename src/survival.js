@@ -30,6 +30,12 @@ const { surfaceObserver } = require('./surface');
 const { tunnelStep } = require('./tunneling');
 const { thinking } = require('./speech');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// What a walk that found no route says, with where it was going
+// (skills.js NoRoute carries it).
+const noRouteSays = (err, what) => {
+  const d = err?.destination;
+  return `${what} found no route to ${d ? `(${d.x}, ${Number.isFinite(d.y) ? `${d.y}, ` : ''}${d.z})` : 'its destination'}`;
+};
 const MEAL_CUT_MS = 10000;
 const pos = p => new Vec3(p.x, p.y, p.z);
 const { DAY, night } = require('./day');
@@ -1974,7 +1980,9 @@ class Survival {
           ...(newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` } : {}) } : null,
         // What failed here just now, and so is not asked again for a while:
         // each question after a failure began with nothing said of it.
-        ...(failed.length ? { failedHereJustNow: failed.map(f => ({ choice: f.choice, secondsAgo: Math.round((Date.now() - f.at) / 1000) })) } : {}),
+        ...(failed.length ? { failedHereJustNow: failed.map(f => ({ choice: f.choice, secondsAgo: Math.round((Date.now() - f.at) / 1000), ...(f.why ? { why: f.why } : {}) })) } : {}),
+        // A walk of survival's own that found no route here (step), whatever it was for.
+        ...(this.state.walkFailed && Date.now() - this.state.walkFailed.at < 20000 ? { walkFailedJustNow: this.state.walkFailed.says } : {}),
         ...(spawner ? { spawner: { blocksAway: spawner.distance } } : {}),
         ...(ails ? { effectsNow: ails.trim() } : {}),
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
@@ -2017,12 +2025,16 @@ class Survival {
     // mid-235-i chose to dig down at 6.7 health, its shaft pocket resting,
     // and stood fifteen seconds under a skeleton's arrows (2026-09-27).
     takeTurn(bot, 'survival', `stance: ${choice}`, { threats: danger.slice(0, 4).map(t => `${t.entity.name} ${Math.round(t.distance)}`) });
+    // And one whose walk found no route (skills.js NoRoute): the stance
+    // failed, said as such to the next question. Thrown on, it went past
+    // the survival layer into the work, which persisted it as its own step.
+    let why = null;
     try { done = await options[choice].run(); }
-    catch (err) { if (err.name !== 'SetAside') throw err; done = false; }
+    catch (err) { if (err.name === 'NoRoute') why = noRouteSays(err, `the ${choice.replaceAll('_', ' ')} walk`); else if (err.name !== 'SetAside') throw err; done = false; }
     finally { stance.running = false; stance.ranAt = Date.now(); }
     // A stance that could not be carried out is not offered again for a
     // while, and Jev chooses again at the next tick from what is left.
-    if (!done) { delete this.state.stance; delete bot._stance; this.state.stanceFailed = [...failed, { choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now() }]; }
+    if (!done) { delete this.state.stance; delete bot._stance; this.state.stanceFailed = [...failed, { choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), ...(why ? { why } : {}) }]; }
     return true;
   }
 
@@ -3727,6 +3739,22 @@ class Survival {
       if (err.name === 'SetAside') return this.answerWhileSetAside(task, goal, save, onStep, err);
       if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
       const recent = goal.survivalAction, name = recent?.action;
+      // A walk of survival's own that found no route stays survival's,
+      // an emergency's too: rethrown, the work took it for its own step.
+      // mid-202-o-nether-2's escape, the last report an eat, threw "No
+      // route" to a cell two blocks under its own pocket's floor, and the
+      // work persisted it twelve times in twenty-eight seconds, nothing
+      // named, while health went from 18 to 4.8 (note 500). It is a fact
+      // on the claim (setAside) and on the next stance question.
+      if (err.name === 'NoRoute') {
+        const says = noRouteSays(err, `a survival walk${name ? ` (the last action reported: ${name.replaceAll('_', ' ')})` : ''}`);
+        this.state.walkFailed = { says, at: Date.now(), ...(err.destination ? { destination: err.destination } : {}) };
+        // Rested as any failure of the action is; an emergency's rest refuses
+        // nothing (report), and is only the fact.
+        setAside(this, 'act', `survival:${name || 'walk'}`, says, name && !EMERGENCIES.has(name) && !HOLDS.has(name) ? 180000 : 10000); save();
+        console.log(`[survival] ${says}`);
+        return false;
+      }
       if (!name || EMERGENCIES.has(name) || Date.now() - Date.parse(recent.at || 0) > 60000) throw err;
       // A hold that failed (the swing's walk timing out) rests ten seconds,
       // not three minutes: mid-211-q's defend failed once on "took too long

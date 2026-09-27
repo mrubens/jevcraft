@@ -3,7 +3,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute, navigate, cheapestTool } = require('./skills');
 const { safeFromHostiles } = require('./danger');
-const { tunnelStep, staircaseResting, natural } = require('./tunneling');
+const { tunnelStep, staircaseResting, restingSays, natural } = require('./tunneling');
 const { pillarUp, SCAFFOLD } = require('./pillar-recovery');
 const { dryPassable, dryLeaf, dryBodySpace, supportCell, swimmableWater } = require('./terrain');
 
@@ -112,7 +112,7 @@ function straightUpColumn(bot, origin = bot.entity.position.floored()) {
 }
 
 // The two ways out by digging, each with what it costs and leaves, for Jev.
-function climbOptions(bot, target, column, { landing = false } = {}) {
+function climbOptions(bot, target, column, { landing = false, rests = null } = {}) {
   const feet = bot.entity.position.floored(), picks = pickaxesCarried(bot);
   const usesLeft = picks.reduce((n, p) => n + (p.usesLeft ?? 64), 0);
   const tools = picks.length ? picks.map(p => `${p.name.replaceAll('_', ' ')}${p.usesLeft != null ? ` (${p.usesLeft} uses left)` : ''}`).join(', ') : 'no pickaxe';
@@ -129,7 +129,7 @@ function climbOptions(bot, target, column, { landing = false } = {}) {
   const level = Math.max(0, across - rises), stairDigs = 3 * rises + 2 * level;
   estimate.staircase = digTime(stairDigs, stone, usesLeft) + (rises + level) * STAIR_STEP_SECONDS;
   const toward = landing ? `to the open ground seen at ${target.x}, ${target.y}, ${target.z}, ${rises} up and ${across} across` : `up toward open sky, about ${rises} blocks up (no open ground seen within reach to head for)`;
-  options.staircase = { description: `Dig a staircase ${toward}: about ${stairDigs} blocks dug, three for each block of height and two for each stair across, and ${rises + level} stairs walked; ${duration(estimate.staircase)} with ${picks.length ? 'the pickaxe' : 'bare hands'}.${wearNote(stairDigs, stone.wears)} The stairs stay open behind: a walk back down to this mine later.` };
+  options.staircase = { description: `Dig a staircase ${toward}: about ${stairDigs} blocks dug, three for each block of height and two for each stair across, and ${rises + level} stairs walked; ${duration(estimate.staircase)} with ${picks.length ? 'the pickaxe' : 'bare hands'}.${wearNote(stairDigs, stone.wears)} The stairs stay open behind: a walk back down to this mine later.${rests ? ` Now ${rests}: taken, it digs nothing until then.` : ''}` };
 
   if (column?.cells) {
     const scaffold = bot.inventory?.items?.().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0) || 0;
@@ -440,14 +440,17 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
 // pickaxes carried change (one wearing out halfway up changes every cost)
 // or the column overhead stops being open. Without Jev, the quicker.
 async function chooseClimb(bot, task, goal, save, state, target, { landing = false } = {}) {
+  // The staircase's rest, said with it (tunneling.js restingSays, note 500).
+  const rests = restingSays(goal, target, bot.entity.position);
   const feet = bot.entity.position.floored(), here = `${feet.x},${feet.z}`;
   const tools = pickaxesCarried(bot).map(p => p.name).sort().join(',') || 'hand';
   const column = state.climb?.failedColumn === here ? null : straightUpColumn(bot, feet);
   const kept = state.climb?.method && state.climb.tools === tools && (state.climb.method !== 'straight_up' || column?.cells);
   const offered = state.climb?.offered || [];
-  const { options, estimate, state: facts } = climbOptions(bot, target, column, { landing });
-  // Asked again only when something new is on offer.
-  if (kept && Object.keys(options).every(k => offered.includes(k))) return { method: state.climb.method, column };
+  const { options, estimate, state: facts } = climbOptions(bot, target, column, { landing, rests });
+  // Asked again only when something new is on offer, or the staircase
+  // kept has come to rest since.
+  if (kept && !(state.climb.method === 'staircase' && rests) && Object.keys(options).every(k => offered.includes(k))) return { method: state.climb.method, column };
   const quicker = Object.keys(estimate).sort((a, b) => estimate[a] - estimate[b])[0];
   const decision = await require('./decisions').decide('climb_out', { client: task.opportunityClient, bot, task, goal, save, tree: options, state: facts, context: { quicker } });
   const method = decision.path.at(-1);
