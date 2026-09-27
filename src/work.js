@@ -3042,11 +3042,18 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   }
   // Buckets are the trips: each carries one lava per bucket held, and the
   // iron in hand makes more (mid-237-d carried one bucket and eight ingots).
-  const iron = countOf(bot, 'iron_ingot'), more = Math.floor(iron / 3);
+  // No more than the lava still to fetch wants, and each trip's time said:
+  // mid-244-j was offered twelve buckets for all its iron, "1 trip against
+  // 10", chose the cast with its one bucket, and spent thirty-eight minutes
+  // carrying lava a bucket at a time from sixty blocks down (2026-09-27).
+  const iron = countOf(bot, 'iron_ingot');
+  const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket'), toFetch = Math.max(0, 10 - obsidian - countOf(bot, 'lava_bucket'));
+  const more = Math.min(Math.floor(iron / 3), Math.max(0, toFetch - Math.max(1, carriers)));
   if (more > 0) {
-    const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket'), toFetch = Math.max(0, 10 - obsidian - countOf(bot, 'lava_bucket'));
     const trips = n => Math.ceil(toFetch / Math.max(1, n));
-    tree.craft_buckets = { description: `Make ${more} more bucket${more === 1 ? '' : 's'} first from the ${iron} iron ingots carried (three each). A cast frame takes one lava bucket a block and each trip to lava carries one lava per bucket held: with ${carriers + more} buckets the ${toFetch} lava still to fetch is about ${trips(carriers + more)} trips, against ${trips(carriers)} with ${carriers ? `the ${carriers} carried` : 'the one a cast would make'}. The iron goes to buckets, not to armour or tools. ${current ? 'The way held goes on with them.' : 'Then this is asked again with them in hand.'}` + facts };
+    const tripSeconds = lava?.distance ? Math.round(lava.distance * 2 / 4.3) + 10 : null;
+    const minutes = n => tripSeconds ? ` (about ${Math.max(1, Math.round(trips(n) * tripSeconds / 60))} minutes of walking)` : '';
+    tree.craft_buckets = { description: `Make ${more} more bucket${more === 1 ? '' : 's'} first from the iron ingots carried (three each, ${3 * more} of the ${iron}). A cast frame takes one lava bucket a block and each trip to lava carries one lava per bucket held: with ${carriers + more} buckets the ${toFetch} lava still to fetch is about ${trips(carriers + more)} trip${trips(carriers + more) === 1 ? '' : 's'}${minutes(carriers + more)}, against ${trips(carriers)}${minutes(carriers)} with ${carriers ? `the ${carriers} carried` : 'the one a cast would make'}.${tripSeconds ? ` A trip to the nearest known lava, ${lava.distance} blocks off, is about ${tripSeconds} seconds there and back.` : ''} The iron goes to buckets, not to armour or tools. ${current ? 'The way held goes on with them.' : 'Then this is asked again with them in hand.'}` + facts };
   }
   ruins.forEach((k, i) => {
     tree[`ruin_${i}`] = { description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) + facts };

@@ -296,7 +296,9 @@ test('the way into the Nether is asked again every twenty working minutes, with 
   assert.match(offered.cast_at_lava, /at y -54, 118 blocks below here/);
   assert.match(offered.cast_frame, /each trip carries one lava per bucket held, so with 1 bucket that is about 10 trips/);
   assert.match(offered.cast_frame, /The 8 iron ingots carried make 2 more buckets, about 4 trips with them/);
-  assert.match(offered.craft_buckets, /Make 2 more buckets first from the 8 iron ingots carried/);
+  assert.match(offered.craft_buckets, /Make 2 more buckets first from the iron ingots carried \(three each, 6 of the 8\)/);
+  // mid-244-j: each trip's time said, and the walking either way.
+  assert.match(offered.craft_buckets, /about 4 trips \(about \d+ minutes of walking\), against 10 \(about \d+ minutes of walking\).*A trip to the nearest known lava, 121 blocks off, is about \d+ seconds there and back/);
   // Moved beside the lava: the frame up here is left, and the new one goes down there.
   assert.equal(goal.portalMethod.kind, 'cast');
   assert.deepEqual(goal.portalMethod.near, { x: 20, y: -54, z: 40 });
