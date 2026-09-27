@@ -1153,6 +1153,22 @@ test('in lava, the way out is the nearest cell with a floor and air, and nothing
   assert.equal(inLava(bot), false, 'and it is out');
 });
 
+test('out of lava into water is out: jump is not held on, up the water (mid-237-j, note 518)', { timeout: 6000 }, async () => {
+  // Out of the pool into a waterfall's foot, forward and jump swam it six blocks up toward the lip it fell from.
+  const { Survival } = require('../src/survival');
+  const blockAt = p => p.x === 0 && p.z === 0 && p.y === 10 ? { name: 'lava', boundingBox: 'empty', position: p }
+    : p.y < 10 ? { name: 'stone', boundingBox: 'block', position: p } : p.x === 1 && p.z === 0 ? { name: 'water', boundingBox: 'empty', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  const bot = { entity: { position: new Vec3(0.5, 10, 0.5), isInLava: true, onGround: false }, blockAt, health: 13, food: 20,
+    game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, controlState: {},
+    // In the water column: out of the lava, afloat, never on ground, never over the exit's own cell.
+    setControlState(k, v) { this.controlState[k] = v; if (k === 'forward' && v) { this.entity.position = new Vec3(1.5, 10.3, 0.5); this.entity.isInLava = false; this.entity.isInWater = true; } },
+    lookAt: async () => {}, inventory: { items: () => [], slots: {} }, time: { timeOfDay: 6000 }, on() {}, removeListener() {} };
+  const survival = new Survival(bot, {}, { state: { shelters: [], lastDry: { x: -1, y: 10, z: 0 } } });
+  const started = Date.now();
+  assert.equal(await survival.step(new Task('lava'), {}, () => {}, () => {}), true);
+  assert(Date.now() - started < 1500, `stopped once in the water, not held for the move's whole time: ${Date.now() - started} ms`);
+});
+
 test('out of lava, a cell with a floor all round comes before one on a ledge edge', () => {
   // mid-235-a: stepped out of lava onto the edge of a Nether ledge at y 71 and over it, twenty blocks into the lava below.
   const { lavaExit } = require('../src/survival');

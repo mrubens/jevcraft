@@ -1,6 +1,6 @@
 'use strict';
 const { Vec3 } = require('vec3');
-const { swimmableWater, waterLevel } = require('./terrain');
+const { swimmableWater, waterLevel, besideDrop } = require('./terrain');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const unsafeFoods = new Set(['pufferfish', 'poisonous_potato', 'spider_eye', 'rotten_flesh', 'chicken', 'suspicious_stew', 'chorus_fruit']);
 
@@ -137,6 +137,12 @@ function airRoute(bot, closed = new Set(), { from = null, budgetS = breathSecond
   const start = (from || bot.entity.position).floored();
   const open = b => swimmableWater(b) || b && ['air', 'cave_air', 'void_air'].includes(b.name);
   const water = p => swimmableWater(bot.blockAt(p));
+  // Air over moving water at a lip is no place to breathe: the swimmer
+  // floats there, its keys let go, and the current carries it off the
+  // edge. mid-237-j swam up a waterfall to its top, breathed in the
+  // spill at the lip with a thirteen-block shaft beside it, and was
+  // carried over into the lava at its foot, three times (note 518).
+  const spill = p => waterLevel(bot.blockAt(p)) > 0 && besideDrop(bot, p);
   // Seconds to make a cell passable, dug from `stand`: 0 open, the dig time
   // for a block that brings nothing down, null otherwise.
   const clear = (p, stand) => {
@@ -153,7 +159,7 @@ function airRoute(bot, closed = new Set(), { from = null, budgetS = breathSecond
     const { p, path, cost } = frontier.pop();
     if (cost > (best.get(`${p}`) ?? Infinity)) continue;
     if (!closed.has(`${p}`) && open(bot.blockAt(p)) && open(bot.blockAt(p.offset(0, 1, 0))) && !water(p.offset(0, 1, 0)) &&
-      (water(p) || bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block')) return Object.assign(path.length ? path : [p], { seconds: cost });
+      (water(p) || bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block') && !spill(p)) return Object.assign(path.length ? path : [p], { seconds: cost });
     for (const d of directions) {
       const next = p.plus(d);
       if (next.y < start.y - 4) continue;

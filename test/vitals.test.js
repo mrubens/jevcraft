@@ -591,6 +591,25 @@ test('straight up is not dug where the lid takes longer than the breath and heal
   assert.deepEqual(dug, [], 'no hand against the stone');
 });
 
+test('air is not taken in the spill at a waterfall\'s lip, beside the shaft it runs into (mid-237-j, note 518)', () => {
+  // A waterfall up a shaft at x 0, its spill at the top (0,34,0) level 1; beside it at x 1 an open shaft thirteen
+  // blocks to lava; a mossy bank at x -1. The swimmer breathed in the spill, the current took it over the lip, three times.
+  const mcData = require('minecraft-data')('26.1'), Block = require('prismarine-block')('26.1'), blocks = new Map();
+  const world = (x, y, z) => {
+    if (x === 0 && z === 0) return y === 34 ? ['water', { level: 1 }] : y >= 20 && y < 34 ? ['water', { level: 8 }] : y > 34 ? ['air'] : ['stone'];
+    if (x === 1 && z >= -1 && z <= 1) return y === 21 ? ['lava', { level: 0 }] : y > 21 ? ['air'] : ['stone'];
+    if (x === -1 && z === 0) return y >= 34 ? ['air'] : ['stone'];
+    return y >= 36 ? ['air'] : ['stone'];
+  };
+  const blockAt = q => { const p = q.floored(), k = `${p}`; if (!blocks.has(k)) { const [name, props = {}] = world(p.x, p.y, p.z); const b = Block.fromProperties(mcData.blocksByName[name].id, props, 0); b.position = p; blocks.set(k, b); } return blocks.get(k); };
+  const bot = { entity: { position: new Vec3(0.5, 32, 0.5), isInWater: true, onGround: false, effects: {} }, oxygenLevel: 13, health: 15, inventory: { items: () => [] }, blockAt };
+  const route = airRoute(bot);
+  assert(route, 'a way to air');
+  const end = route.at(-1);
+  assert.notDeepEqual([end.x, end.y, end.z], [0, 34, 0], 'not the spill at the lip');
+  assert.deepEqual([end.x, end.y, end.z], [-1, 34, 0], 'the bank beside it');
+});
+
 test('rotten flesh is eaten with no rule of ours on health, and offered with its Hunger said: on the claim and as a stance (note 515)', async () => {
   // The gate ate it only hurt and under eighteen hunger; several of the day's low-health deaths carried it.
   const { maintainVitals, claim } = require('../src/vitals');

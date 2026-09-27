@@ -3875,8 +3875,12 @@ class Survival {
           look: toward || undefined, maxMs: 2500, tick: 50,
           // Out of the lava and over the cell chosen is out: the keys held
           // after that carried mid-235-a on past it, upright, and off the
-          // ledge it stood on (2026-09-26).
-          until: () => !inLava(bot) && (bot.entity.onGround || (exit && bot.entity.position.floored().x === exit.x && bot.entity.position.floored().z === exit.z)) });
+          // ledge it stood on (2026-09-26). Out into water is out, too: the
+          // water puts the fire out and holds the body, and jump held there
+          // swims. mid-237-j left the lava into a waterfall's foot and swam
+          // six blocks up it on these keys, toward the lip it had fallen
+          // from (note 518).
+          until: () => !inLava(bot) && (bot.entity.onGround || bot.entity.isInWater || (exit && bot.entity.position.floored().x === exit.x && bot.entity.position.floored().z === exit.z)) });
       } finally { bot._leavingLava = false; }
       onStep(goal); return true;
     }
