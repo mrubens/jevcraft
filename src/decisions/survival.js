@@ -229,6 +229,7 @@ define({
     { key: 'top_up_health', label: 'wait and heal first, to sixteen', when: 'health under sixteen, monsters on', level: 'root' },
     { key: 'top_up_blocks', label: 'mine stone first, up to two stacks of blocks', when: 'fewer than 128 building blocks carried', level: 'root' },
     { key: 'top_up_pickaxe', label: 'make a stone pickaxe first, as the spare', when: 'no stone pickaxe or better, or the best has under 24 uses', level: 'root' },
+    { key: 'top_up_gold', label: 'make golden boots first, a piece of gold worn so piglins leave the bot be', when: 'no piece of golden armour carried', level: 'root' },
     { key: 'top_up_wood', label: 'gather logs up to eight and make a crafting table first', when: 'fewer than eight logs or no crafting table carried', level: 'root' },
     { key: 'stash_valuables', label: 'walk home and leave the valuables in the stash chest first', when: 'the home stash chest within 128 blocks and valuables carried', level: 'root' },
     { key: 'cache_valuables', label: 'leave the valuables in a chest put down here first', when: 'home\'s chest out of reach, valuables carried, and a chest or the wood for one', level: 'root' },

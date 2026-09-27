@@ -257,6 +257,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `top_up_health` | root | wait and heal first, to sixteen | health under sixteen, monsters on |
 | `top_up_blocks` | root | mine stone first, up to two stacks of blocks | fewer than 128 building blocks carried |
 | `top_up_pickaxe` | root | make a stone pickaxe first, as the spare | no stone pickaxe or better, or the best has under 24 uses |
+| `top_up_gold` | root | make golden boots first, a piece of gold worn so piglins leave the bot be | no piece of golden armour carried |
 | `top_up_wood` | root | gather logs up to eight and make a crafting table first | fewer than eight logs or no crafting table carried |
 | `stash_valuables` | root | walk home and leave the valuables in the stash chest first | the home stash chest within 128 blocks and valuables carried |
 | `cache_valuables` | root | leave the valuables in a chest put down here first | home's chest out of reach, valuables carried, and a chest or the wood for one |

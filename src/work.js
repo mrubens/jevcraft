@@ -3888,7 +3888,7 @@ const KIT_HOLD_MS = 10 * 60000;
 // in turn, one worked on twenty minutes passed over unless none of it is
 // carried, then the crossing.
 const KIT_FALLBACK_MS = 20 * 60000;
-const KIT_ORDER = ['stash_valuables', 'top_up_food', 'top_up_health', 'top_up_blocks', 'top_up_pickaxe', 'top_up_wood', 'cache_valuables'];
+const KIT_ORDER = ['stash_valuables', 'top_up_food', 'top_up_health', 'top_up_blocks', 'top_up_pickaxe', 'top_up_gold', 'top_up_wood', 'cache_valuables'];
 const TOP_UP = {
   food: 'Gather food first, up to the forty points: the home chest, the farm plot if there is one, or hunting animals.',
   health: 'Wait here and heal first, to sixteen.',
@@ -3948,6 +3948,9 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     } else if (item.key === 'pickaxe') {
       goal.step = { action: 'pickaxe_for_nether', uses: item.carried, needed: item.wants }; save();
       await acquireStep(bot, task, 'stone_pickaxe', countOf(bot, 'stone_pickaxe') + 1, goal, save);
+    } else if (item.key === 'gold') {
+      goal.step = { action: 'gold_for_nether', needed: 'golden_boots' }; save();
+      await acquireStep(bot, task, 'golden_boots', countOf(bot, 'golden_boots') + 1, goal, save);
     } else if (item.key === 'wood') {
       goal.step = { action: 'wood_for_nether', logs: item.carried, needed: item.wants }; save();
       // The trees that were seen here, not oak by name.

@@ -55,6 +55,14 @@ function kitItems(bot) {
   const shortPick = tier < 2 || (best !== null && best < SPARE_PICKAXE_DURABILITY);
   items.push({ key: 'pickaxe', short: shortPick, carried: best ?? 0, wants: SPARE_PICKAXE_DURABILITY,
     says: `Pickaxe: ${picks.length ? `${picks.map(i => words(i.name)).join(', ')} carried, the best with ${best ?? 'many'} uses left` : 'none carried'}; the code would take a stone one or better with at least ${SPARE_PICKAXE_DURABILITY} uses, or a spare: the way out of a pocket, a fortress wall or a buried portal is dug. A stone pickaxe is three cobblestone or blackstone and two sticks.` });
+  // A piece of gold worn: piglins leave a player wearing one be, and go for
+  // one with none on sight. mid-242-g crossed in iron with no gold, a piglin
+  // hit it from twenty to eight in two blows and the second threw it into
+  // the lava (2026-09-27). Golden boots are worn in the Nether when carried
+  // (mob-policy.js).
+  const gold = bot.inventory.items().concat([5, 6, 7, 8].map(s => bot.inventory.slots?.[s]).filter(Boolean)).filter(i => /^golden_(helmet|chestplate|leggings|boots)$/.test(i?.name || ''));
+  items.push({ key: 'gold', short: !gold.length, carried: gold.length, wants: 1,
+    says: `Gold: ${gold.length ? `${gold.map(i => words(i.name)).join(', ')} carried, worn in the Nether` : 'no piece of golden armour carried'}; the code would take one piece, golden boots (four gold ingots). Piglins, in the crimson forests and the wastes, leave a player wearing a piece of gold be, and go for one wearing none on sight: about eight a hit with a gold sword before armour, and a hit near the lava sea is a throw.` });
   const logs = logsCarried(bot), table = countOf(bot, 'crafting_table') > 0;
   items.push({ key: 'wood', short: logs < EXPEDITION_LOGS || !table, carried: logs, wants: EXPEDITION_LOGS,
     says: `Wood: ${logs} logs and ${table ? 'a crafting table' : 'no crafting table'} carried; the code would take ${EXPEDITION_LOGS} logs and a table: sticks for the next tools and a table to make them at. The Nether's only trees are the crimson and warped fungi of its forests.` });
@@ -87,10 +95,11 @@ function kitSummary(bot, goal) {
   try { short = kitItems(bot).filter(i => i.short); valuables = valuablesAt(bot, goal); } catch (_) { return ''; }
   const parts = short.map(i => i.key === 'wood' ? `${i.carried} of ${i.wants} logs${countOf(bot, 'crafting_table') ? '' : ' and no crafting table'}`
     : i.key === 'pickaxe' ? `a pickaxe with ${i.carried} of ${i.wants} uses` : i.key === 'health' ? `${i.carried} of ${i.wants} health`
+      : i.key === 'gold' ? 'a piece of gold to wear (piglins go for a player with none)'
       : `${i.carried} of ${i.wants} ${i.key === 'food' ? 'food points' : 'blocks'}`);
   if (valuables) parts.push(`valuables carried (${valuables.what})${valuables.how === 'stash' ? `, the home chest ${valuables.far} blocks away` : ''}`);
   return parts.length ? ` At the portal the kit is said and topping any of it up is a choice, not a wait: short now of ${parts.join('; ')}.`
-    : ' The kit for the crossing (food, blocks, a pickaxe, wood) is carried.';
+    : ' The kit for the crossing (food, blocks, a pickaxe, gold, wood) is carried.';
 }
 
 module.exports = { kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };

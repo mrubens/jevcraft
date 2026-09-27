@@ -504,7 +504,7 @@ test('the kit for the crossing is one question: every item said against what the
   const goal = { kind: 'win', survival: {} };
   const task = new Task('kit');
   assert.equal(await crossingKitReady(bot, task, goal, () => {}, client), true, 'crosses with what it has');
-  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_blocks', 'top_up_food']);
+  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_blocks', 'top_up_food', 'top_up_gold']);
   assert.match(asked.cross_now, /short of what the code would take in food, blocks/);
   assert.match(asked.cross_now, /Food: 16 food points carried \(2 cooked beef\); the code would take 40, about 5 cooked steaks' worth/);
   assert.match(asked.cross_now, /Health: 20 of 20; the code would step through at 16 or more/);
@@ -583,4 +583,15 @@ test('an ore found only in the Overworld is not dug for in the Nether: the step 
     pathfinder: { movements: {}, setGoal() { tunnelled = true; } } };
   await assert.rejects(mineAtSource(bot, new Task('mine'), { action: 'mine', block: 'iron_ore', drops: 'raw_iron', count: 3, depth: 16 }, {}, () => {}, null), /No iron ore in the nether: it is only found in the overworld/);
   assert.equal(tunnelled, false);
+});
+
+test('the kit for the crossing says a piece of gold keeps piglins off, and golden boots carried meet it', () => {
+  // mid-242-g crossed in iron with no gold; a piglin hit it from twenty to eight and threw it into the lava (2026-09-27).
+  const { kitItems } = require('../src/crossing-kit');
+  const make = items => ({ game: { gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => items, slots: {} } });
+  const none = kitItems(make([])).find(i => i.key === 'gold');
+  assert.equal(none.short, true);
+  assert.match(none.says, /Piglins.*leave a player wearing a piece of gold be, and go for one wearing none on sight/);
+  assert.equal(kitItems(make([{ name: 'golden_boots', count: 1 }])).find(i => i.key === 'gold').short, false);
 });
