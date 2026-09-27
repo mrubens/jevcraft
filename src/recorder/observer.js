@@ -35,6 +35,11 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
     return { connected: trace.connected, position: position(bot.entity?.position), dimension: bot.game?.dimension,
       gameMode: bot.game?.gameMode, flying: !!bot._creativeFlight?.active,
       health: bot.health, food: bot.food, oxygen: bot.oxygenLevel, yaw: bot.entity?.yaw, pitch: bot.entity?.pitch,
+      // How it was moving and what keys were down: mid-243-g went west and
+      // over the edge into the lava with its route east, and the record
+      // could not say what moved it (note 320).
+      velocity: bot.entity?.velocity ? position(bot.entity.velocity) : undefined, onGround: bot.entity?.onGround,
+      keys: bot.controlState ? Object.keys(bot.controlState).filter(k => bot.controlState[k]) : undefined,
       inventory: Object.fromEntries([...new Set(items.map(i => i.name))].map(n => [n, items.filter(i => i.name === n).reduce((a, i) => a + i.count, 0)])),
       tools: items.filter(i => bot.registry?.itemsByName?.[i.name]?.maxDurability).map(i => ({ name: i.name,
         remaining: bot.registry.itemsByName[i.name].maxDurability - (i.durabilityUsed || 0) })),
