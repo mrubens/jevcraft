@@ -3723,7 +3723,7 @@ const homeActions = () => ({ acquireStep, navigate, place, dig, explore, tunnel:
 // at four health, and was knocked off the ledge.
 const NETHER_HEALTH = 16;
 const NETHER_FOOD_HOLD_MS = 10 * 60000;
-async function netherFoodReady(bot, task, goal, save) {
+async function netherFoodReady(bot, task, goal, save, client = task.opportunityClient) {
   // The gate never waits. It takes food from the chest, harvests the
   // plot, or sends the survival layer hunting, and after twenty
   // working minutes of that it lets the crossing go with what there
@@ -3747,7 +3747,7 @@ async function netherFoodReady(bot, task, goal, save) {
   // the gathering has cost so far; held ten minutes once chosen.
   const choice = goal.netherFoodChoice;
   if (choice && choice.until > now) { if (choice.pick === 'go_now') { delete goal.preparingNether; return true; } }
-  else if (foodSupply(bot) > 0 && task.opportunityClient) {
+  else if (foodSupply(bot) > 0 && client) {
     const carried = foodSupply(bot), stash = goal.survival?.home?.stash?.contents || {};
     const inChest = Object.entries(stash).reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
     const spent = Math.round((now - (gate.record?.startedAt || now)) / 60000);
@@ -3756,7 +3756,7 @@ async function netherFoodReady(bot, task, goal, save) {
       go_now: { description: `Cross now with ${carried} food points carried (${meals || 'nothing named'}), short of the ${NETHER_FOOD} the ladder aims for. Health comes back only while hunger stays at eighteen or more, and a fortress trip is fighting and running; in the Nether, hoglins are the meat and little else is food.` },
       gather_more: { description: `Gather food first, up to ${NETHER_FOOD} points: ${inChest ? `${inChest} points in the home chest, ` : ''}the farm plot if there is one, or hunting animals. ${spent ? `${spent} minutes have gone to gathering since the last food was found.` : 'Nothing has gone to it yet.'}` },
     };
-    const decision = await decide('nether_food', { client: task.opportunityClient, bot, task, goal, save, tree,
+    const decision = await decide('nether_food', { client, bot, task, goal, save, tree,
       state: { foodPoints: carried, reserve: NETHER_FOOD, hunger: bot.food, health: bot.health, inHomeChest: inChest, minutesGathering: spent } });
     if (decision.stale) return false;
     const pick = decision.fallback ? 'gather_more' : decision.path.at(-1);
@@ -3821,7 +3821,12 @@ function gameHandlers(bot, decisionClient) {
         // Two steaks was the whole larder for the first Nether trip. The
         // survival layer's stock-driven search fills the reserve; a search
         // it has set aside as fruitless lets the trip go with what there is.
-        food_reserve: (bot, task, goal, save) => netherFoodReady(bot, task, goal, save),
+        // With Jev's client whichever task asks: from the ladder's own step
+        // the task had none, so the crossing-or-gathering question was
+        // skipped and mid-230-e hunted at ten to fourteen food points, over
+        // four hundred passes, having chosen to cross twenty-nine times
+        // (2026-09-26).
+        food_reserve: (bot, task, goal, save) => netherFoodReady(bot, task, goal, save, decisionClient || task.opportunityClient),
         barter: (bot, task, goal, save) => barterStep(bot, task, goal, save, { acquireStep, navigate }),
         bastion_gold: async (bot, task, goal, save) => {
           try { return await gatherBastionGold(bot, task, goal, save, { acquireStep, navigate, dig, place, approachDryMining, collectNearbyDrops,
