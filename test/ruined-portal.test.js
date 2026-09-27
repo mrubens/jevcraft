@@ -549,3 +549,60 @@ test('three walks to the lava Jev chose that come no nearer ask the way again, t
   assert.equal(goal.portalMethod.nearFailed, undefined);
   assert.equal(goal.portalMethod.reasked, 1);
 });
+
+// mid-215-h (note 481): 137 blocks from its cast frame at (212, 69, -393) with a lava bucket, the walk there failed, the
+// staircase was set aside ("paced the same few cells"), and both were done again every pass, flipping with the stall.
+const farFromFrame = () => {
+  const { setAside } = require('../src/progress');
+  const { bot, w } = castingBot({ bucket: 1, lava_bucket: 1, water_bucket: 1, cobblestone: 64, flint_and_steel: 1, stone_pickaxe: 1 });
+  bot.findBlocks = () => [];
+  bot.on = () => {}; bot.removeListener = () => {}; bot.off = () => {};
+  bot.pathfinder.setGoal = () => {}; bot.pathfinder.stop = () => {};
+  bot.pathfinder.goto = async () => { throw new Error('No path to the goal'); };
+  bot.entity.position = new Vec3(75.5, 69, -392.5);
+  const frame = newFrame('x', new Vec3(212, 69, -393));
+  frame.blocks.slice(0, 3).forEach(p => w.set(new Vec3(p.x, p.y, p.z), 'obsidian'));
+  const goal = { portalFrame: frame, portalMethod: { kind: 'cast', activeMs: 0, reasked: 0, from: { obsidian: 0, diamonds: 0, diamondPickaxe: false } } };
+  // The staircase toward the frame set aside, as it was (by its eight-block area).
+  setAside(goal, 'staircase', { x: 208, y: 64, z: -400 }, 'paced the same few cells round where the round began, 137 blocks from it', 10 * 60000);
+  return { bot, goal, frame };
+};
+
+test('neither the walk nor the staircase gets back to the cast frame: the way is asked again with the frame said, a cast here offered, and kept, every way resting is said', async () => {
+  const { portalStep } = require('../src/work');
+  const { Task } = require('../src/skills');
+  const { bot, goal } = farFromFrame();
+  let offered = null, asked = 0;
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked++; offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cast_frame', confidence: 0.8 } } }; } };
+  const pass = () => portalStep(bot, task, goal, () => {}, task.opportunityClient);
+  assert.equal(await pass(), false);
+  assert(goal.portalMethod.frameFailed, 'the failure is kept to be asked about, not tried again unasked');
+  assert.equal(goal.portalMethod.frameFailed.distance, 137);
+  await pass().catch(err => { if (err.name !== 'WaysResting') throw err; });
+  assert.equal(asked, 1, 'the portal way is asked again');
+  const said = /The frame at \(212, 69, -393\) is 137 blocks off and cannot be got back to: the walk there failed \([^)]*\), legs of thirty-two blocks on foot made no ground, and the staircase toward it is set aside \(paced the same few cells round where the round began, 137 blocks from it\), taken up again in \d+ minutes/;
+  for (const key of ['cast_frame', 'build_new', 'cast_here']) assert.match(offered[key], said, `${key} is weighed with the frame out of reach`);
+  assert.match(offered.cast_here, /Cast a new frame of its own here, where the bot stands/);
+  assert.match(offered.cast_here, /The frame at \(212, 69, -393\) is left behind as it stands, 3 of ten standing/);
+  assert.match(offered.cast_frame, /Kept, the frame is made for again/);
+  assert.equal(goal.portalMethod.frameFailed, undefined, 'answered');
+  assert(goal.portalFrame, 'kept, as Jev chose');
+  // Kept, and the walk fails again with the staircase still resting: every way resting, said, not a pass repeated.
+  await assert.rejects(pass(), err => err.name === 'WaysResting' && /The frame at \(212, 69, -393\)/.test(err.message));
+  assert.equal(asked, 1);
+});
+
+test('a cast here, chosen with the frame out of reach, leaves the frame begun behind', async () => {
+  const { portalMethod } = require('../src/work');
+  const { Task } = require('../src/skills');
+  const { bot, goal } = farFromFrame();
+  goal.portalMethod.frameFailed = { at: { x: 212, y: 69, z: -393 }, distance: 137, walk: 'No path to the goal', legs: null, stairs: 'paced', until: Date.now() + 600000 };
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async () => ({ answers: { branch_0: { choice: 'cast_here', confidence: 0.8 } } }) };
+  await portalMethod(bot, task, goal, () => {});
+  assert.equal(goal.portalFrame, undefined, 'the frame begun is left');
+  assert.equal(goal.portalMethod.kind, 'cast');
+  assert.equal(goal.portalMethod.near, undefined);
+  assert.equal(goal.portalMethod.here, undefined);
+});

@@ -47,12 +47,13 @@ const IDLE_OPTIONS = [
 define({
   id: 'portal_method', area: 'work', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'The way into the Nether: build a portal frame of its own from obsidian, cast one in place from lava and water (here, or beside the known lava), or finish and light a remembered ruined portal; or make more buckets first?',
-  trigger: 'In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), or when a chosen ruin\'s frame will not do.',
+  trigger: 'In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), when a chosen ruin\'s frame will not do, when the walks to the lava chosen come no nearer, or when neither the walk nor the staircase gets back to a cast frame (said with where it is and what each way ended in).',
   source: 'src/work.js (portalMethod, portalFacts, methodSoFar), src/portal-cast.js (castSays)',
   options: [
     { key: 'build_new', label: 'build a frame of its own from ten obsidian', when: 'always', level: 'root' },
     { key: 'cast_frame', label: 'cast a frame of its own in place from lava and water', when: 'always', level: 'root' },
     { key: 'cast_at_lava', label: 'cast a frame of its own beside the nearest known lava', when: 'lava known more than sixteen blocks away', level: 'root' },
+    { key: 'cast_here', label: 'cast a new frame where the bot stands, the frame begun left behind', when: 'the frame begun cannot be got back to: the walk and the staircase toward it both failed (note 481)', level: 'root' },
     { key: 'craft_buckets', label: 'make more buckets first from the iron carried', when: 'three or more iron ingots carried', level: 'root' },
     { pattern: 'ruin_[0-9]+', label: 'finish and light a remembered ruined portal', when: 'a ruined portal remembered within 512 blocks, not found frameless (and the one held, however far)', level: 'root', dynamic: true },
   ],

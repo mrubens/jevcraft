@@ -3086,8 +3086,15 @@ async function tunnelToward(bot, task, goal, save, target, key) {
 // A ruin whose frame will not do is marked and the question asked again.
 const PORTAL_BUDGET_MS = 20 * 60000;
 // A walk to the lava chosen that fails is asked about at once, with how
-// it failed (portalStep, note 470).
-const portalDue = method => !!method && (!!method.nearFailed || (method.activeMs || 0) >= PORTAL_BUDGET_MS * ((method.reasked || 0) + 1));
+// it failed (portalStep, note 470), and so is a way back to the frame
+// that fails (buildPortalFrame, note 481).
+const portalDue = method => !!method && (!!method.nearFailed || !!method.frameFailed || (method.activeMs || 0) >= PORTAL_BUDGET_MS * ((method.reasked || 0) + 1));
+// The frame that cannot be got back to, as the fact every way is weighed
+// with: where, how far, and what each way ended in.
+function frameFailedSays(f) {
+  const minutes = Math.max(1, Math.ceil((f.until - Date.now()) / 60000));
+  return ` The frame at (${f.at.x}, ${f.at.y}, ${f.at.z}) is ${f.distance} blocks off and cannot be got back to: the walk there failed (${f.walk})${f.legs ? `, ${f.legs}` : ''}, and the staircase toward it is set aside (${f.stairs}), taken up again in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+}
 const diamondPickaxeCarried = bot => bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
 const methodKey = (method, ruins) => method?.kind === 'build' ? 'build_new' : method?.kind === 'cast' ? (method.near ? 'cast_at_lava' : 'cast_frame')
   : method?.kind === 'ruin' ? (i => i < 0 ? null : `ruin_${i}`)(ruins.findIndex(k => k.landmark.x === method.at.x && k.landmark.z === method.at.z)) : null;
@@ -3185,7 +3192,10 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const diamonds = countOf(bot, 'diamond'), obsidian = countOf(bot, 'obsidian');
   const lighter = countOf(bot, 'flint_and_steel') + countOf(bot, 'fire_charge') > 0;
   const lava = nearestLava(bot, goal);
-  const facts = portalFacts(bot, goal, ruins, lava);
+  // The frame that cannot be got back to is said with every way, as it
+  // bears on all of them (note 481).
+  const frameFailed = due && goal.portalFrame && method.frameFailed;
+  const facts = portalFacts(bot, goal, ruins, lava) + (frameFailed ? frameFailedSays(frameFailed) : '');
   const current = due ? methodKey(method, ruins) : null;
   const placed = goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
   // Trips for lava are measured from the frame, where each one starts and
@@ -3223,6 +3233,17 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const failed = nf ? ` The walk there has failed: ${nf.walks} walks toward it came no nearer than ${nf.best} blocks (what ended them: ${nf.stopped || 'not known'}). Kept, the walk goes on by staircase.` : '';
     tree.cast_at_lava = { description: `Cast a frame of its own as above, but beside ${current === 'cast_at_lava' ? 'the lava chosen before' : 'the nearest known lava'} rather than ${frameBegun ? 'at the frame begun' : 'here'}: it is ${castBy.distance} blocks away (${castBy.how}), at y ${Math.round(castBy.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}${frameBegun ? `, and ${far.distance} blocks from the frame begun` : ''}. The bot ${castBy.distance > 12 ? 'walks there first and ' : ''}puts the frame down within a few blocks of it, so a trip for lava is a few seconds, against ${tripSays(far)} from ${where}.${standing} The portal is then down there, and the way back from the Nether comes out beside that lava.${failed}` + facts };
   }
+  // With the frame out of reach, a frame cast where the bot stands, the
+  // one begun left behind: mid-215-h, 137 blocks from its frame, was
+  // offered only the frame it could not get back to (note 481).
+  if (frameFailed) {
+    const left = ` The frame at (${frameFailed.at.x}, ${frameFailed.at.y}, ${frameFailed.at.z}) is left behind as it stands${placed ? `, ${placed} of ten standing, its obsidian out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'})` : ''}; what is carried is cast here.`;
+    tree.cast_here = { description: `Cast a new frame of its own here, where the bot stands, rather than at the frame begun. ` + castSays({ ...castCount, standing: 0, waterBucket: countOf(bot, 'water_bucket') > 0,
+      iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava, from: bot.entity.position, frameBegun: false }) + left + facts };
+    // Kept: the frame made for again, and what that will meet.
+    const minutes = Math.max(1, Math.ceil((frameFailed.until - Date.now()) / 60000));
+    if (tree[current]) tree[current].description += ` Kept, the frame is made for again: the walk is tried again${frameFailed.legs ? ' and the legs when their rest ends' : ''}, and the staircase in ${minutes} minute${minutes === 1 ? '' : 's'}; until then, if the walk fails again, that is said as every way to the frame resting.`;
+  }
   // Buckets are the trips: each carries one lava per bucket held, and the
   // iron in hand makes more (mid-237-d carried one bucket and eight ingots).
   // No more than the lava still to fetch wants, and each trip's time said:
@@ -3247,7 +3268,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   if (current) {
     for (const [key, node] of Object.entries(tree)) {
       if (key === current) node.description += methodSoFar(bot, goal, method, key.startsWith('ruin_') ? ruins[Number(key.slice(5))] : null);
-      else if (placed && key !== 'craft_buckets' && key !== 'cast_at_lava') node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
+      else if (placed && key !== 'craft_buckets' && key !== 'cast_at_lava' && key !== 'cast_here') node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
     }
   }
   const decision = await decide('portal_method', { client, bot, task, goal, save, tree, context: { current },
@@ -3258,7 +3279,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
   // The failed walk is answered, whatever the answer.
-  if (method?.nearFailed) { delete method.nearFailed; save(); }
+  if (method?.nearFailed || method?.frameFailed) { delete method.nearFailed; delete method.frameFailed; save(); }
   // Buckets first: made on the next passes (netherStep), the way held
   // going on with them, or none held and the question asked with them.
   if (pick === 'craft_buckets') {
@@ -3269,16 +3290,17 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // Kept: the clock runs on to the next twenty minutes.
   if (current && pick === current) { method.reasked = (method.reasked || 0) + 1; save(); return goal.portalFrame ? true : portalMethod(bot, task, goal, save, client); }
   const ruin = pick.startsWith('ruin_') ? ruins[Number(pick.slice(5))] : null;
-  const next = pick === 'build_new' ? { kind: 'build' } : pick === 'cast_frame' ? { kind: 'cast' } : pick === 'cast_at_lava' ? { kind: 'cast', near: { ...castBy.at } }
+  const next = pick === 'build_new' ? { kind: 'build' } : pick === 'cast_frame' ? { kind: 'cast' } : pick === 'cast_here' ? { kind: 'cast', here: true } : pick === 'cast_at_lava' ? { kind: 'cast', near: { ...castBy.at } }
     : { kind: 'ruin', at: { x: ruin.landmark.x, y: ruin.landmark.y, z: ruin.landmark.z } };
   // A frame begun goes on the new way: its obsidian stays in its slots and
   // the rest is cast or placed. A ruin's frame, or a move to a ruin, leaves
   // the frame where it stands.
   const frame = goal.portalFrame;
-  if (frame && (frame.ruin || next.kind === 'ruin' || next.near)) delete goal.portalFrame;
+  if (frame && (frame.ruin || next.kind === 'ruin' || next.near || next.here)) delete goal.portalFrame;
   else if (frame && next.kind === 'cast') { frame.cast = true; frame.axis ||= 'x'; frame.castTemp ||= []; }
   else if (frame && next.kind === 'build') delete frame.cast;
-  goal.portalMethod = { ...next, activeMs: 0, reasked: 0, from: { obsidian, diamonds, diamondPickaxe, placed: next.kind === 'ruin' || next.near ? 0 : placed, ...(ruin ? { distance: ruin.distance } : {}) } };
+  delete next.here;
+  goal.portalMethod = { ...next, activeMs: 0, reasked: 0, from: { obsidian, diamonds, diamondPickaxe, placed: goal.portalFrame ? placed : 0, ...(ruin ? { distance: ruin.distance } : {}) } };
   save();
   return next.kind !== 'ruin' || (goal.portalFrame ? true : portalMethod(bot, task, goal, save, client));
 }
@@ -3496,7 +3518,34 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
           catch (err) {
             task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
             goal.step = { action: 'return_to_frame', frame: { ...frame.origin } }; save();
-            await tunnelToward(bot, task, goal, save, origin, 'portal_frame');
+            // Far off, legs of the way on foot first, as to a portal
+            // (walkToKnownPortal): the pathfinder bridges and climbs where
+            // the staircase only digs.
+            const distance = Math.round(bot.entity.position.distanceTo(origin));
+            let legs = null;
+            if (distance > 48) {
+              if (!isSetAside(goal, 'portal_leg', origin)) {
+                if (await portalLeg(bot, task, goal, origin)) return false;
+                setAside(goal, 'portal_leg', origin, 'a walk toward it made no ground', 120000); save();
+              }
+              legs = 'legs of thirty-two blocks on foot made no ground';
+            }
+            // Neither the walk nor the staircase gets there, and the way is
+            // asked again with that said, as for the lava (note 473): not
+            // tried again unasked. mid-215-h, 137 blocks from its frame with
+            // lava in hand, walked, had the staircase set aside, and did
+            // both again every pass (note 481).
+            const held = goal.portalFrame === frame && goal.portalMethod;
+            try { await tunnelToward(bot, task, goal, save, origin, 'portal_frame'); }
+            catch (e) {
+              task.check(); if (!held || e.name !== 'StaircaseStalled') throw e;
+              const { staircaseWhy, staircaseUntil, WaysResting } = require('./tunneling');
+              const failed = { at: { ...frame.origin }, distance, walk: String(err.message || err).slice(0, 80), legs, stairs: staircaseWhy(goal, origin), until: staircaseUntil(goal, origin) };
+              // Asked already for this very rest, and kept: every way to it
+              // rests, a fact to answer (persist), not a pass to repeat.
+              if (held.frameAsked && held.frameAsked === failed.until) throw new WaysResting(frameFailedSays(failed) + ' The way to the portal was asked with this and kept.', failed.until);
+              held.frameFailed = failed; held.frameAsked = failed.until; save();
+            }
             return false;
           }
         }

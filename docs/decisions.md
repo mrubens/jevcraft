@@ -363,7 +363,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **The way into the Nether: build a portal frame of its own from obsidian, cast one in place from lava and water (here, or beside the known lava), or finish and light a remembered ruined portal; or make more buckets first?**
 
-- When: In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), or when a chosen ruin's frame will not do.
+- When: In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), when a chosen ruin's frame will not do, when the walks to the lava chosen come no nearer, or when neither the walk nor the staircase gets back to a cast frame (said with where it is and what each way ended in).
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -374,6 +374,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `build_new` | root | build a frame of its own from ten obsidian | always |
 | `cast_frame` | root | cast a frame of its own in place from lava and water | always |
 | `cast_at_lava` | root | cast a frame of its own beside the nearest known lava | lava known more than sixteen blocks away |
+| `cast_here` | root | cast a new frame where the bot stands, the frame begun left behind | the frame begun cannot be got back to: the walk and the staircase toward it both failed (note 481) |
 | `craft_buckets` | root | make more buckets first from the iron carried | three or more iron ingots carried |
 | `ruin_[0-9]+` (pattern) | root | finish and light a remembered ruined portal | a ruined portal remembered within 512 blocks, not found frameless (and the one held, however far) |
 
