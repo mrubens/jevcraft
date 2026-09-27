@@ -2789,6 +2789,7 @@ test('a creeper that comes on while the pocket is walled stops the walling', asy
   delete goal.survivalAction;
   assert.equal(await controller.refugeStep(new Task('night'), goal, () => {}), false);
   assert.equal(placed, 2, 'not begun again');
+  assert.notEqual(goal.survivalAction?.action, 'seal_shelter', 'and not reported as begun (mid-231-l spun on the report)');
 });
 
 test('up on its own pillar, the step back from the edge does not take the bot off it', async () => {

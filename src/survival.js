@@ -2207,10 +2207,12 @@ class Survival {
       await this.approachRefuge(task, goal, refuge, new goals.GoalBlock(o.x, o.y, o.z));
     }
     if (shelter.materialStock(bot) < shelter.missingShell(bot, refuge).length) return;
-    this.report(goal, save, { action: 'seal_shelter', origin: refuge.origin });
     // A pocket here just given up (a creeper racing it, or the twenty
     // seconds run out) is not begun again for the while it is set aside.
+    // Before the report: after it, mid-231-l "sealed" a hundred times a
+    // second at 2.5 health beside a zombie and a skeleton (2026-09-27).
     if (isSetAside(this, 'seal_here', `${pos(refuge.origin)}`)) return false;
+    this.report(goal, save, { action: 'seal_shelter', origin: refuge.origin });
     const threat = immediateThreat(bot);
     const blocks = shelter.missingShell(bot, refuge).sort((a, b) => {
       // Finish a full-height wall on the threat-facing side first. Roof comes
