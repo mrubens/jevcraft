@@ -3764,3 +3764,18 @@ test('a step whose answer is set aside, with a mob hitting the bot, answers the 
   assert.equal(await survival.step(new Task('x'), {}, () => {}), false);
   assert.equal(fled, 1);
 });
+
+test('burning out of the lava, the survival step pours the water before anything else', async () => {
+  // mid-235-m came out of a lava pool alight with a water bucket, and the span's walls were rebuilt every tick while it burned to none (2026-09-27).
+  let poured = 0;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, entities: {}, health: 6.6, food: 20, oxygenLevel: 20,
+    entity: { position: new Vec3(0.5, 64, 0.5), metadata: { 0: 1 }, onGround: true, velocity: new Vec3(0, 0, 0) },
+    inventory: { items: () => [{ name: 'water_bucket', count: 1 }] }, world: { raycast: () => null },
+    blockAt: p => { const f = p.floored(); return { position: f, name: f.y < 64 ? 'stone' : 'air', boundingBox: f.y < 64 ? 'block' : 'empty' }; },
+    equip: async () => {}, lookAt: async () => {}, activateItem: () => { poured++; bot.entity.metadata[0] = 0; } });
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  const goal = {};
+  assert.equal(await survival.step(new Task('fire'), goal, () => {}), true);
+  assert.equal(poured, 1);
+  assert.equal(goal.survivalAction?.action, 'douse');
+});

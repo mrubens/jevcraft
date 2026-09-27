@@ -3450,6 +3450,19 @@ class Survival {
       return false;
     }
     if (this.rememberHouse(goal.blueprint)) save();
+    // Burning, out of the lava and the fire: the water, before anything a
+    // mob asks. The douse is the vitals step's, and vitals had the turn only
+    // when this layer had nothing to do: mid-235-m came out of a lava pool
+    // at 6.6 health still alight, with a water bucket, and this layer rebuilt
+    // its span's walls every tick while it burned to none (note 434).
+    if (!inLava(bot) && !require('./terrain').bodyInLava(bot)) {
+      const vitals = require('./vitals');
+      if ((bot.entity?.metadata?.[0] & 1) && !vitals.inFire(bot)) {
+        let acted = false;
+        const done = await vitals.douse(bot, task, step => { acted = true; this.report(goal, save, { ...step, health: bot.health }); });
+        if (acted || done) { onStep(goal); return true; }
+      }
+    }
     if (inLava(bot)) {
       const exit = lavaExit(bot, 6, { water: true });
       this.report(goal, save, { action: 'leave_lava', to: exit && { ...exit }, health: bot.health });
