@@ -3320,3 +3320,21 @@ test('on a span with no blocks for walls and a shooter in reach, off the span to
   assert.equal(goal.survivalAction?.action, 'off_span');
   assert(to && to.x <= -4, `to firm ground: ${to && to.x}`);
 });
+
+test('on a span with a creeper coming, off the span away from it before any wall', async () => {
+  // mid-241-h held still on a ledge at y 74 and a creeper went off beside it.
+  const placed = [];
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, health: 9, food: 18,
+    entities: { 4: { id: 4, name: 'creeper', type: 'hostile', position: new Vec3(5.5, 64, 0.5), height: 1.7, isValid: true } }, time: { timeOfDay: 14000 },
+    inventory: { items: () => [{ name: 'cobblestone', count: 32 }, { name: 'iron_sword' }], slots: {} }, world: { raycast: () => null },
+    // A ledge one wide along x, firm ground either end: x <= -4 and x >= 8.
+    blockAt: p => { const q = p.floored(); const solid = q.y === 63 && (q.x <= -4 || q.x >= 8 || q.z === 0); return { name: solid ? 'stone' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; },
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, attack() {}, equip: async () => {}, activateItem() {}, deactivateItem() {} });
+  let to = null;
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { to = g; }, place: async (b, t, p) => { placed.push(p); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('span'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'off_span');
+  assert(to && to.x <= -4, `away from the creeper: ${to && to.x}`);
+  assert.equal(placed.length, 0, 'no walls: a wall does not stop a blast');
+});

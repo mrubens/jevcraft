@@ -346,13 +346,15 @@ function pickaxeReserve(bot, feet) {
   return { stonePickaxesMakeable: more, sticksAvailable: sticks, ...(up ? { blocksToOpenSky: up, climbOutByHandMinutes: Math.round(up * 3 * 7.5 / 60) } : {}) };
 }
 
-function firmGround(bot, radius = 4, { margin = 1 } = {}) {
+function firmGround(bot, radius = 4, { margin = 1, awayFrom = null } = {}) {
   const feet = bot.entity.position.floored(), cells = [];
+  // Farther from a mob than now by two blocks at least (a creeper coming).
+  const gains = c => !awayFrom || c.offset(0.5, 0, 0.5).distanceTo(awayFrom) >= bot.entity.position.distanceTo(awayFrom) + 2;
   const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water|powder_snow/.test(b.name); };
   for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (let dy = -1; dy <= 1; dy++) {
     const c = feet.offset(dx, dy, dz);
     const floor = bot.blockAt(c.offset(0, -1, 0));
-    if (floor?.boundingBox !== 'block' || /magma/.test(floor.name) || !open(c) || !open(c.offset(0, 1, 0)) || (margin > 1 ? dropWithin(bot, c, margin) : besideDrop(bot, c)) || lavaBeside(bot, c)) continue;
+    if (floor?.boundingBox !== 'block' || /magma/.test(floor.name) || !open(c) || !open(c.offset(0, 1, 0)) || (margin > 1 ? dropWithin(bot, c, margin) : besideDrop(bot, c)) || lavaBeside(bot, c) || !gains(c)) continue;
     cells.push(c);
   }
   const far = c => c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
@@ -712,6 +714,21 @@ class Survival {
       // enderman, no wall up, and the second hit threw it thirty blocks into
       // the lava (2026-09-27).
       const pressed = shots || close.some(t => t.distance <= 6 && !shooter(t.entity));
+      // A creeper coming: walls do not stop a blast, and crouched still is
+      // where it goes off. Off the span, away from it, first. mid-241-h held
+      // on a ledge at y 74 at 8.9 health and one went off beside it
+      // (2026-09-27).
+      const { LIGHTS_AT, APPROACH } = require('./combat-estimate');
+      const creeper = close.filter(t => t.entity.name === 'creeper' && t.distance <= LIGHTS_AT + APPROACH * 3).sort((a, b) => a.distance - b.distance)[0];
+      if (creeper && !isSetAside(this, 'off_span', 'here')) {
+        const cell = firmGround(bot, 8, { margin: 2, awayFrom: creeper.entity.position }) || firmGround(bot, 8, { awayFrom: creeper.entity.position });
+        if (cell) {
+          this.report(goal, save, { action: 'off_span', to: { ...cell }, threats: ['creeper'], health: bot.health });
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'off_span', 'here', err, 10000); }
+          return;
+        }
+      }
       if (pressed && await this.railSpan(task, goal, save, { ahead: bot._spanning?.target })) return;
       // No walls to be had (no blocks for them): off the span to firm
       // ground near by, crouched, as a player steps back from a ledge.
