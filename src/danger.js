@@ -234,7 +234,11 @@ function immediateThreat(bot) {
   const { LIGHTS_AT, APPROACH } = require('./combat-estimate');
   const creeperFar = LIGHTS_AT + APPROACH * 1.5;
   const leftBe = t => (!!waved && waved.includes(t.entity.id) && t.distance > (t.entity.name === 'creeper' ? creeperFar : 3)) ||
-    (unreachable.includes(t.entity.id) && t.distance > (t.entity.name === 'creeper' ? 5 : 2));
+    // Not a shooter: out of a charge's reach is not out of its bow's. mid-230-p's
+    // skeleton, marked unreachable after a charge, shot it every three to
+    // six seconds from eight blocks, each gap longer than the four seconds
+    // "hurt" lasts, and nothing answered it, 9.7 to none (note 457).
+    (unreachable.includes(t.entity.id) && !shooter(t.entity) && t.distance > (t.entity.name === 'creeper' ? 5 : 2));
   // A creeper within four blocks is one whether it is in sight or not: it
   // comes round the corner already at its fuse's distance. mid-79-b stood
   // recovering for five seconds with one out of sight beside it, and the

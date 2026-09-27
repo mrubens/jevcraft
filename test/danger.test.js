@@ -82,3 +82,16 @@ test('a wolf that bites turns its pack into threats; any other mob that hurt the
   bot._hurtBy = { wolf: Date.now() - 60000 }; bot._hurtById = { 1: Date.now() - 60000, 9: Date.now() - 60000 };
   assert.equal(threats(bot).length, 0, 'a minute on, calm again');
 });
+
+test('a shooter a charge could not reach is still a threat: its bow reaches the bot', () => {
+  // mid-230-p's skeleton, marked unreachable after a charge, shot it every three to six seconds and nothing answered (2026-09-27).
+  const { immediateThreat } = require('../src/danger');
+  const registry = require('minecraft-data')('26.1');
+  const skeleton = { id: 7, name: 'skeleton', type: 'hostile', position: new Vec3(8.5, 64, 0.5), height: 1.99, width: 0.6, isValid: true };
+  const zombie = { id: 8, name: 'zombie', type: 'hostile', position: new Vec3(0.5, 64, 6.5), height: 1.95, width: 0.6, isValid: true };
+  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, world: { raycast: () => null }, time: { timeOfDay: 6000 },
+    entities: { 7: skeleton }, _unreachable: { ids: [7, 8], until: Date.now() + 20000 } };
+  assert.equal(immediateThreat(bot)?.entity.id, 7, 'the skeleton');
+  bot.entities = { 8: zombie };
+  assert.equal(immediateThreat(bot), undefined, 'a walker the charge could not reach is left be while it lands nothing');
+});
