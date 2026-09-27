@@ -5,14 +5,14 @@
 // A case passes when most answers are among `expect` and at most a third
 // among `forbid`. Run after a change that touches what Jev is told, before a
 // trial finds out (the user, 2026-09-27: to go faster).
-//   node scripts/replay-suite.js [--runs 3] [--only name-substring]
+//   node scripts/replay-suite.js [--runs 5] [--only name-substring]
 require('../src/env').loadEnv();
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((out, a, i, all) => (a.startsWith('--') ? [...out, [a.slice(2), all[i + 1]]] : out), []));
-const runs = Number(args.runs || 3);
+const runs = Number(args.runs || 5);
 const file = path.join(__dirname, '..', 'evals', 'replays', 'cases.jsonl');
 const cases = fs.readFileSync(file, 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter(c => !args.only || c.name.includes(args.only));
 // A pick of "none of these" here is the suite's, not a trial's.

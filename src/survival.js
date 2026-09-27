@@ -88,7 +88,7 @@ const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pill
 // eating: a shield raised at each arrow stops them.
 // The most a route drops the bot (movement.js).
 const ROUTE_DROP = 3;
-const MOVING_STANCES = new Set(['retreat', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
+const MOVING_STANCES = new Set(['retreat', 'fight_from_footing', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
 // Two blocks up: from the pillar's report to two up took a second and a
 // half to two seconds in mid-92-e, mid-92-g and mid-110-k (2026-09-26).
 const PILLAR_SECONDS = 1.5;
@@ -1315,7 +1315,35 @@ class Survival {
     const noStep = nearest && ((shootersOnly && chargeStopsAt(bot, nearest.entity)?.blocks === 0) ||
       (shooter(nearest.entity) && !inReach(nearest) && !danger.some(inReach) && chargeRefused(nearest)));
     const shotsIn15 = noStep ? Math.round(mobs.filter(m => m.shoots && m.visible !== false).reduce((n, m) => n + (m.hitsBot || 0) * 15 / (m.every || 2), 0) * 10) / 10 : 0;
-    options.fight = { expects: noStep ? { damage: shotsIn15, seconds: 15, oneHit } : { damage: cost.damageTaken, seconds: cost.seconds, oneHit }, description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. ${noStep ? `${shootersOnly ? 'None of them can be reached from here: every one shoots, none is at reach, and the ground toward the nearest carries no step.' : `The nearest, a ${nearest.entity.name.replaceAll('_', ' ')} ${Math.round(nearest.distance)} blocks off, shoots and cannot be run at from here (a drop beside the bot, too far, or too far up or down).`} ${shootersOnly ? '' : 'The rest are not at arm\'s length either. '}Fighting here is standing in their line of fire with nothing to swing at: about ${shotsIn15} damage from their shots in the next fifteen seconds, from ${cost.healthNow} health${shotsIn15 >= cost.healthNow ? ' (more than the bot has)' : ''}, and no end while they shoot.` : `Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.`}${atOnceNote}${creeperLeftOut}${nearestCreeper}${nearest && shooter(nearest.entity) && !inReach(nearest) ? (() => { const stop = chargeStopsAt(bot, nearest.entity); return stop ? ` The nearest shoots, and the ground straight at it stops a closing run after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in its line of fire.` : ''; })() : ''}${nearest && !inReach(nearest) ? chargeSays(bot, nearest.entity) : ''}${unseen}${edge}${hitsLeft}`,
+    // Ground to fight from, off the edge: mid-211-s fought a magma cube on
+    // a span over the lava sea, told the drop and that a knock over it was
+    // the end, with no way offered to fight anywhere else; the second hit
+    // threw it down forty blocks into the lava (note 469). A player steps
+    // back onto firm ground first. Offered where the drop beside the bot is
+    // lava or half its health, and firm ground three from any drop is near.
+    // What a fight here costs at the edge is not its damage but its hits:
+    // each that lands is a knock, and one over the drop ends it. mid-211-s
+    // was told the drop and a fight of 2.2 damage, and fought (note 469).
+    const hitsLanding = hardest && edge && !noStep ? Math.max(1, Math.round(cost.damageTaken / hardest.hitsBot)) : 0;
+    const edgeHits = hitsLanding ? ` By the estimate about ${hitsLanding} of their hit${hitsLanding === 1 ? '' : 's'} land${hitsLanding === 1 ? 's' : ''} in this fight, and each is a knock that can put the bot over the drop.` : '';
+    const deepHere = require('./terrain').dropNear(bot, feet, 3);
+    const groundBy = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2) && firmGround(bot, 8, { margin: 3 });
+    if (groundBy) {
+      const far = Math.round(groundBy.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
+      options.fight_from_footing = { description: `Step to firm ground ${far} blocks off, three blocks or more from any drop (about ${Math.max(1, Math.round(far / 4.3))} second${far > 4.3 ? 's' : ''}, the mobs hitting freely meanwhile), then fight there: a knock there lands on ground, where here it goes over the edge.${edge}`,
+        run: async () => {
+          this.report(goal, save, { action: 'fight_from_footing', to: { ...groundBy } });
+          const movements = bot.pathfinder?.movements, towers = movements?.allow1by1towers;
+          if (movements) movements.allow1by1towers = false;
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(groundBy.x, groundBy.y, groundBy.z), { timeoutMs: 4000, stallMs: 1200 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          finally { if (movements) movements.allow1by1towers = towers; }
+          const at = bot.entity.position.floored();
+          if (Math.hypot(at.x - groundBy.x, at.z - groundBy.z) > 1.5) return false;
+          return options.fight.run();
+        } };
+    }
+    options.fight = { expects: noStep ? { damage: shotsIn15, seconds: 15, oneHit } : { damage: cost.damageTaken, seconds: cost.seconds, oneHit }, description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. ${noStep ? `${shootersOnly ? 'None of them can be reached from here: every one shoots, none is at reach, and the ground toward the nearest carries no step.' : `The nearest, a ${nearest.entity.name.replaceAll('_', ' ')} ${Math.round(nearest.distance)} blocks off, shoots and cannot be run at from here (a drop beside the bot, too far, or too far up or down).`} ${shootersOnly ? '' : 'The rest are not at arm\'s length either. '}Fighting here is standing in their line of fire with nothing to swing at: about ${shotsIn15} damage from their shots in the next fifteen seconds, from ${cost.healthNow} health${shotsIn15 >= cost.healthNow ? ' (more than the bot has)' : ''}, and no end while they shoot.` : `Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.`}${atOnceNote}${creeperLeftOut}${nearestCreeper}${nearest && shooter(nearest.entity) && !inReach(nearest) ? (() => { const stop = chargeStopsAt(bot, nearest.entity); return stop ? ` The nearest shoots, and the ground straight at it stops a closing run after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in its line of fire.` : ''; })() : ''}${nearest && !inReach(nearest) ? chargeSays(bot, nearest.entity) : ''}${unseen}${edge}${edgeHits}${hitsLeft}`,
       run: async () => {
         if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); await this.swingFor(task, goal, save); return true; }
         if (await this.charge(task, goal, save, nearest, false, { chosen: true })) return true;

@@ -3956,3 +3956,34 @@ test('underground at night, hurt, with no food and no healing: sealing in until 
   assert.match(tree.secure_shelter.description, /wait in it for dawn.*5\.2 health, which does not come back/);
   if (tree.obtain_food) assert.match(tree.obtain_food.description, /night there until dawn/);
 });
+
+test('beside a drop into lava, fighting from firm ground away from it is on offer; on open ground it is not (mid-211-s)', async () => {
+  const cube = { id: 4, name: 'magma_cube', type: 'hostile', position: new Vec3(-2.5, 74, 0.5), height: 2, isValid: true };
+  const ledge = p => ({ position: p, name: p.x >= 2 ? (p.y <= 30 ? 'lava' : 'air') : p.y < 74 ? 'netherrack' : 'air', boundingBox: p.x < 2 && p.y < 74 ? 'block' : 'empty' });
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: { 4: cube }, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 6000 }, entity: { position: new Vec3(0.5, 74, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: ledge, world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: { allow1by1towers: true }, setGoal() {} }, clearControlStates() {}, setControlState() {} });
+  let to = null;
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { to = g; } }, { state: { shelters: [] } });
+  const danger = [{ entity: cube, distance: 3, visible: true }];
+  const options = survival.stanceOptions(new Task('t'), {}, () => {}, danger, false);
+  assert(options.fight_from_footing, Object.keys(options).join(','));
+  assert.match(options.fight_from_footing.description, /Step to firm ground .* blocks off, three blocks or more from any drop.*into lava/);
+  await options.fight_from_footing.run();
+  assert(to && to.x <= -2, `onto ground three from the edge: ${to && to.x}`);
+  bot.blockAt = p => ({ position: p, name: p.y < 74 ? 'netherrack' : 'air', boundingBox: p.y < 74 ? 'block' : 'empty' });
+  assert.equal(survival.stanceOptions(new Task('t'), {}, () => {}, danger, false).fight_from_footing, undefined);
+});
+
+test('a fight beside a deadly drop says how many of the mobs\' hits land, each a knock toward it (mid-211-s)', () => {
+  const cube = { id: 4, name: 'magma_cube', type: 'hostile', position: new Vec3(-2.5, 74, 0.5), height: 2, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: { 4: cube }, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 6000 }, entity: { position: new Vec3(0.5, 74, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ position: p, name: p.x >= 2 ? (p.y <= 30 ? 'lava' : 'air') : p.y < 74 ? 'netherrack' : 'air', boundingBox: p.x < 2 && p.y < 74 ? 'block' : 'empty' }),
+    world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {} });
+  const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('t'), {}, () => {}, [{ entity: cube, distance: 3, visible: true }], false);
+  assert.match(options.fight.description, /about \d+ of their hits? lands? in this fight, and each is a knock that can put the bot over the drop/);
+});
