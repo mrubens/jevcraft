@@ -3234,6 +3234,20 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
   try {
     if (!await (async () => {
       if (missing.length && frame.cast) {
+        // Far from the frame with no walk there (it lies below, and a walk
+        // does not dig down): the staircase to it. mid-241-e came up for
+        // food thirteen blocks over its frame and "no path" came back
+        // thirty-nine times (2026-09-27).
+        const origin = pos(frame.origin);
+        if (bot.entity.position.distanceTo(origin) > 8) {
+          try { await navigate(bot, task, new goals.GoalNear(origin.x, origin.y, origin.z, 3), { timeoutMs: 60000, stallMs: 8000 }); }
+          catch (err) {
+            task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+            goal.step = { action: 'return_to_frame', frame: { ...frame.origin } }; save();
+            await tunnelToward(bot, task, goal, save, origin, 'portal_frame');
+            return false;
+          }
+        }
         if (!await castFrame(bot, task, goal, save, { navigate, place, dig, acquireStep })) return false;
       } else if (missing.length) {
         if (!await acquireStep(bot, task, 'obsidian', missing.length, goal, save)) return false;
