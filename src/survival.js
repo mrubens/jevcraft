@@ -3678,6 +3678,18 @@ class Survival {
     if (needsFood) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.' + (night(bot) && needsShelter ? ` Night: mobs spawn on the way; hunger ${bot.food}, starvation at 0.` : ''),
       children: offWorld && this.actions.returnOverworld ? this.offWorldFood(task, goal, save) : await forageChoices(bot, task, goal, save, this.actions, this.state) };
     if (tree.obtain_food && !Object.keys(tree.obtain_food.children).length) delete tree.obtain_food;
+    // Resting where it is while health comes back, when it does (hunger
+    // eighteen or more): mid-241-i, at 2.3 health and hunger nineteen, had
+    // only food to choose, walked back past the skeleton it had got away
+    // from, and was shot (2026-09-27).
+    if ((bot.health ?? 20) < 20 && (bot.food ?? 0) >= 18) {
+      const seconds = Math.round((20 - bot.health) * 4);
+      tree.rest_to_heal = { description: `Stay where it is, still, and let health come back: ${Math.round(bot.health * 10) / 10} health now, hunger ${bot.food}, about one health each four seconds while hunger stays at eighteen or more, so about ${seconds} seconds to twenty; the healing uses up hunger meanwhile.${nowAbout || ' Nothing hostile is within twenty-four blocks now.'} Asked again after half a minute.`,
+        run: async () => {
+          this.report(goal, save, { action: 'rest_to_heal', health: bot.health, food: bot.food });
+          for (const until = Date.now() + 30000; Date.now() < until && bot.health < 20 && (bot.food ?? 0) >= 18;) { task.check(); checkThreats(bot); await sleep(250); }
+        } };
+    }
     // Without Jev, shelter comes before food and food before the request
     // (the survival_priority question's fallback, in decisions/survival.js).
     // A reserve top-up once chosen is held, not asked again: at full health

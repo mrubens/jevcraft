@@ -53,7 +53,7 @@ const HOLDS = new Set(['hold_bunker', 'hold_defensive_position', 'fight', 'defen
   'seal_shelter', 'wall_off', 'take_cover', 'dig_in_to_recover', 'break_their_line', 'take_the_door',
   // A shelter held because something outside is watching, and the minute
   // by the bed before it can be slept in.
-  'wait_in_shelter', 'wait_for_bedtime', 'sleep']);
+  'wait_in_shelter', 'wait_for_bedtime', 'sleep', 'rest_to_heal']);
 // Emergencies end when the danger does; a rule that set aside the way out
 // of lava would be the death of the bot.
 const EMERGENCIES = new Set(['leave_lava', 'leave_lava_edge', 'out_of_fire', 'off_span', 'escape_threat', 'eat', 'dig_out_of_block', 'creeper_back_off',

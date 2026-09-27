@@ -3412,3 +3412,15 @@ test('a golden apple is eaten only when one is gone: an eat cut short by the han
   assert(option);
   assert.equal(await option.run(), false, 'nothing eaten: not done');
 });
+
+test('hurt and fed, resting where it is while health comes back is on offer, with the seconds said', async () => {
+  // mid-241-i, at 2.3 health and hunger nineteen, had only food to choose and walked back past the skeleton it had got away from.
+  const { bot } = nookFixture({ open: p => p.x === 0 && p.z === 0 && p.y >= 30 });
+  bot.health = 6; bot.food = 19;
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } } });
+  let tree = null;
+  survival.decide = async (task, goal, save, q) => { tree = tree || q.tree; return { path: ['rest_to_heal'], action: q.tree.rest_to_heal, stale: true }; };
+  await survival.step(new Task('hurt'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert(tree?.rest_to_heal, Object.keys(tree || {}).join(','));
+  assert.match(tree.rest_to_heal.description, /6 health now, hunger 19, about one health each four seconds .* about 56 seconds to twenty/);
+});
