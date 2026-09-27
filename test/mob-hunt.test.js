@@ -988,6 +988,30 @@ test('a sweep with every leg failing and too few blocks to cross is offered the 
   assert.equal(back, 1, 'back through the portal, as Jev chose');
 });
 
+test('hungry in the Nether with nothing to eat, the hunt asks before going back for food, with the trip and the hour it comes out at', async () => {
+  // mid-202-o-nether-3, -4 and mid-218-m-nether-1 (note 495): at hunger seventeen with nothing to eat the hunt went back
+  // through the portal by rule, unasked, and came out into the night.
+  const { bot, task, goal } = fixture();
+  bot.entities = {}; bot.food = 17; bot.time = { timeOfDay: 12500 };
+  goal.portals = [{ x: 20, y: 102, z: 7, dimension: 'nether' }];
+  let back = 0;
+  const actions = { returnOverworld: async () => { back++; }, navigate: async () => {}, acquireStep: async () => {} };
+  const client = jevStub(['keep_on', 'go_back']);
+  await prepareMobHunt(bot, task, { entity: 'blaze', item: 'blaze_rod', count: 1 }, goal, () => {}, { ...actions, client });
+  assert.equal(back, 0, 'staying, as Jev chose');
+  assert.equal(client.asked.length, 1);
+  const { options } = client.asked[0];
+  assert.deepEqual(Object.keys(options).sort(), ['go_back', 'keep_on']);
+  assert.match(options.go_back, /The nearest portal remembered is 21 blocks off/);
+  assert.match(options.go_back, /comes out in the Overworld at night/);
+  assert.match(options.keep_on, /hunger 17/);
+  // Asked again once staying lapses: back, as Jev chose.
+  require('../src/progress').attemptsFor(goal).clear('nether_return', 'food');
+  await prepareMobHunt(bot, task, { entity: 'blaze', item: 'blaze_rod', count: 1 }, goal, () => {}, { ...actions, client });
+  assert.equal(back, 1);
+  assert.equal(goal.step.action, 'return_for_food');
+});
+
 test('the hunt\'s claim on the kind is renewed while the fight runs, not left to lapse after five seconds', async () => {
   // mid-83-j: under the spawner, every fight ended "Threat nearby: blaze at 5 blocks" five seconds in.
   const { bot, task, target, goal } = fixture();

@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-83 questions: 35 decision trees and 48 batched questions.
+85 questions: 37 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -320,6 +320,23 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `go_(overworld\|nether\|end)` (pattern) | root | go to the dimension its sources are in | always; said with what is mined there, what is brought back, and the trip to the portal |
 | `on_here` | root | leave the step for now and go on with what the ladder has next here | the ladder has something else to do in this dimension |
 
+### `leave_nether`
+
+**Go back through the portal to the Overworld now, or stay in the Nether: the rods step taken up again, other work here until its rest ends, or going on without food?**
+
+- When: In the Nether on the game ladder: the blaze rods step waits (set aside, not for its sources being elsewhere) and the ladder would go back; or a hunt short of fitness, hungry under eighteen with nothing to eat. The answer kept while its reason stands.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/game-progress.js (leaveNetherStep, nextGameStage), src/mob-hunt.js (prepareMobHunt)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `go_back` | root | go back through the portal to the Overworld | always; said with what it is for, the trip to the portal, and the hour it comes out at |
+| `search_on` | root | take the rods step up again now, its rest lifted | the rods step waits |
+| `wait_here` | root | other work in the Nether until the rods step's rest ends, the minutes said | the rods step waits until a time |
+| `keep_on` | root | go on in the Nether without going back for food | hungry under eighteen with nothing to eat; the trip back is left out for twenty minutes |
+
 ### `win_strategy`
 
 **On the way to beating the game, which of the open steps, the Nether now, or a side trip should the bot do next; and if a side trip, which?**
@@ -379,6 +396,24 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `other_lava` | root | cast beside another known lava whose way is not resting | the staircase to the lava held rests and another lava is known (note 490) |
 | `craft_buckets` | root | make more buckets first from the iron carried | three or more iron ingots carried |
 | `ruin_[0-9]+` (pattern) | root | finish and light a remembered ruined portal | a ruined portal remembered within 512 blocks, not found frameless (and the one held, however far) |
+
+### `portal_way`
+
+**The portal the bot is making for cannot be reached from here: the walk, the boat and the staircase have failed. Make a portal here, go round another way, take the boat again, or other work until the staircase's rest ends?**
+
+- When: On the way to a remembered portal (the crossing into the Nether, or the way back from it), when the walk made no ground and the staircase toward it rests; asked once for each rest from each place, the answer kept (said as every way resting when met again).
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (walkToKnownPortal, portalWay, lineSays)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `portal_here` | root | make a portal here instead, the one remembered passed over | in the Overworld, always (the way it is made is then asked: portal_method); in the Nether, ten obsidian, a lighter and three blocks carried |
+| `around_left` | root | a leg of thirty-two blocks on foot to the left of the heading, and the way asked again from there | always |
+| `around_right` | root | a leg of thirty-two blocks on foot to the right of the heading, and the way asked again from there | always |
+| `boat_again` | root | the boat again, its failure or the walk chosen over it set aside | in the Overworld, the boat failed or was declined here and rests |
+| `wait_rest` | root | other work until the staircase's rest ends, the minutes said | the staircase toward the portal rests until a time |
 
 ### `sculk_work`
 

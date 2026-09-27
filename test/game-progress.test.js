@@ -275,3 +275,44 @@ test('the blaze rods set aside because their sources are in the Overworld: the l
   await gameStep(bot, task, goal, () => {}, actions);
   assert.equal(typeof handed, 'function', 'the ladder\'s acquire carries the elsewhere answer');
 });
+
+test('the rods set aside in the Nether for a stall: leaving is Jev\'s, with why they wait, the trip and the hour on the other side', async () => {
+  // mid-218-m-nether-1 and the mid-202-o-nether trials (note 495): a ladder short of rods whose step waited went back
+  // through the portal unasked (nextGameStage's return_overworld), whatever the reason the rods waited.
+  const { setAside, isSetAside } = require('../src/progress');
+  const { bot, goal, task, give } = fixture();
+  bot.game.dimension = 'minecraft:the_nether'; observeProgress(bot, goal);
+  bot.time = { timeOfDay: 11000 };
+  give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 2 });
+  goal.portals = [{ x: 20, y: 102, z: 7, dimension: 'nether' }];
+  bot.entity.position = new Vec3(-2, 87, -15);
+  setAside(goal, 'rung', 'obtain_blaze_rods', 'No measurable progress on find_fortress', 600000);
+  setAside(goal, 'rung', 'warped_search', 'none found', 600000);
+  const stage = nextGameStage(bot, goal);
+  assert.notEqual(stage.action, 'return_overworld', 'not back through the portal without a decision');
+  assert.equal(stage.action, 'rods_waiting'); assert.match(stage.why, /No measurable progress/);
+  const asked = [], left = [];
+  const picks = ['wait_here', 'go_back'];
+  const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
+  const actions = { client, return_overworld: async () => left.push('portal'), acquireStep: async () => assert.fail('the rods wait') };
+  // Other work here till the rest ends: every way resting, said, and not asked again for the same rest.
+  await assert.rejects(gameStep(bot, task, goal, () => {}, actions), err => err.name === 'WaysResting' && /The blaze rods step waits \(No measurable progress on find_fortress\), taken up again in 10 minutes/.test(err.message));
+  assert.equal(asked.length, 1);
+  assert.deepEqual(Object.keys(asked[0]).sort(), ['go_back', 'search_on', 'wait_here']);
+  assert.match(asked[0].go_back, /The nearest portal remembered is 31 blocks off, about 7 seconds at a walk/);
+  assert.match(asked[0].go_back, /comes out in the Overworld at dusk/);
+  assert.match(asked[0].go_back, /Back there the ladder's next step is the Nether again for the rods/);
+  await assert.rejects(gameStep(bot, task, goal, () => {}, actions), err => err.name === 'WaysResting');
+  assert.equal(asked.length, 1, 'the same rest met again is not the question again');
+  assert.deepEqual(left, []);
+  // Asked afresh: back, as Jev chose, and kept while the rest stands.
+  delete goal.leaveNether;
+  await gameStep(bot, task, goal, () => {}, actions);
+  assert.equal(asked.length, 2); assert.deepEqual(left, ['portal']);
+  assert.equal(nextGameStage(bot, goal).action, 'return_overworld', 'kept: the way back goes on');
+  // The rods taken up again instead: the rest lifted.
+  delete goal.leaveNether; picks.push('search_on');
+  await gameStep(bot, task, goal, () => {}, actions);
+  assert(!isSetAside(goal, 'rung', 'obtain_blaze_rods'));
+  assert.equal(nextGameStage(bot, goal).action, 'acquire');
+});

@@ -572,6 +572,25 @@ function keepCover(state, cell) {
 }
 const coverKept = state => (state.cover || []).filter(c => c.until > Date.now()).map(c => c.key);
 
+// Hungry off the Overworld with nothing to eat, short of the fitness to
+// fight: back for food, or on without it, as Jev chooses (leave_nether).
+// null when the question went stale.
+async function foodLeave(bot, task, goal, save, actions) {
+  const { portalTrip } = require('./game-progress');
+  const tree = {
+    go_back: { description: `Go back to the Overworld for food, hunted and cooked there. ${portalTrip(bot, goal)} The hunt waits till the bot is fed and back.` },
+    keep_on: { description: `Stay and go on without food for twenty minutes: hunger ${bot.food}, and health comes back only at eighteen or more, so no fight is started; the fortress search goes on meanwhile. ${fitnessSays(bot)}` },
+  };
+  const decision = await decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
+    state: { for: 'food', health: bot.health, food: bot.food, foodCarried: false, dimension: dimension(bot) } });
+  if (decision.stale) return null;
+  const pick = decision.path.at(-1);
+  goal.leaveNether = { reason: 'food', pick, until: 0, at: Date.now() };
+  if (pick === 'keep_on') { setAside(goal, 'nether_return', 'food', 'Jev chose to go on in the Nether without going back for food', 20 * 60000); delete goal.stockFood; }
+  save();
+  return pick;
+}
+
 async function prepareMobHunt(bot, task, step, goal, save, actions) {
   const handler = handlers[step.entity];
   if (!handler || handler.item !== step.item) throw blocked(`Unsupported mob source ${step.entity} for ${step.item}`);
@@ -615,10 +634,20 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // Unless Jev chose to go on in the Nether without going back (nether-
     // travel.js keep_on): then the search goes on, and the fight waits for
     // food. mid-211-c's way back was lost 250 blocks off (note 241).
-    const keepOn = isSetAside(goal, 'nether_return', 'food');
+    // Going back is Jev's (leave_nether), with the trip and the hour it
+    // comes out at: the rule went back at hunger seventeen unasked, and
+    // mid-202-o-nether-3 came out into the night and was 330 blocks from
+    // its portal by the morning's food search (note 495).
+    let keepOn = isSetAside(goal, 'nether_return', 'food');
     if (bot.food < 18 && !hasFood(bot) && dimension(bot) !== 'overworld' && actions.returnOverworld && !keepOn) {
-      goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
-      await actions.returnOverworld(bot, task, goal, save); return;
+      const { netherLeaveHeld } = require('./game-progress');
+      const pick = netherLeaveHeld(goal, 'food') ? 'go_back' : await foodLeave(bot, task, goal, save, actions);
+      if (pick === null) return;
+      if (pick === 'go_back') {
+        goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
+        await actions.returnOverworld(bot, task, goal, save); return;
+      }
+      keepOn = true;
     }
     if (keepOn && bot.food < 18 && !hasFood(bot) && handler.dimension === 'nether' && dimension(bot) === 'nether' && actions.tunnel && !threats(bot, 16).some(t => t.visible)) {
       await findFortressStep(bot, task, goal, save, actions); return;

@@ -292,7 +292,20 @@ function portalTrip(bot, goal = {}) {
   const known = here ? (goal.portals || []).filter(p => p.dimension === where) : [];
   if (!known.length) return where === 'overworld' ? 'No portal is remembered here: one is found or built first (ten obsidian, or a bucket and a lava pool).' : `No portal is remembered in the ${where}: the way back is looked for first.`;
   const d = Math.round(Math.min(...known.map(p => Math.hypot(p.x - here.x, p.z - here.z))));
-  return `The nearest portal remembered is ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk, and back through one after.`;
+  return `The nearest portal remembered is ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk, and back through one after.${where === 'overworld' ? '' : arrivalSays(bot, d / 4.3)}`;
+}
+
+// The hour the Overworld side is at when the bot comes out there: the
+// clock runs on in the Nether. mid-202-o-nether-3 went back at hunger
+// seventeen, came out into the night, sealed itself in and was 330 blocks
+// off by the morning's food search (note 495).
+function arrivalSays(bot, seconds = 0) {
+  const now = bot.time?.timeOfDay;
+  if (!Number.isFinite(now)) return '';
+  const t = (now + Math.round(seconds * 20)) % 24000;
+  if (t >= DAY.DARK && t < DAY.DAWN) return ` It comes out in the Overworld at night, about ${Math.round((DAY.DAWN - t) / 1200)} minutes before dawn: mobs spawn about a player on the surface till then.`;
+  if (t >= DAY.DUSK) return ` It comes out in the Overworld at dusk, about ${Math.round((DAY.DARK - t) / 1200)} minutes before dark.`;
+  return ` It comes out in the Overworld by day, about ${Math.round((DAY.DUSK - (t >= DAY.DAWN ? t - 24000 : t)) / 1200)} minutes of daylight left.`;
 }
 
 // A trip to another dimension for what a step needs from there, chosen by
@@ -327,6 +340,49 @@ function asideStage(goal, stage, skip) {
   const why = attemptsFor(goal).why('rung', stage.phase) || '';
   // Set aside for another reason, it waits its turn like any rung.
   return ELSEWHERE.test(why) ? { ...stage, action: 'elsewhere', acquire: stage.action, why } : null;
+}
+
+// Why a step waits and until when, as its set-aside said it.
+function rodsRest(goal, phase = 'obtain_blaze_rods', now = Date.now()) {
+  const entry = attemptsFor(goal).entries[require('./progress').keyOf('rung', phase)];
+  return entry?.until > now ? { why: entry.why || 'set aside', until: entry.until } : { why: goingOnHere(goal, phase, now) ? 'Jev chose to go on here first' : 'set aside', until: 0 };
+}
+// Jev's "go back" for this reason, kept while the reason stands: the rest
+// it was asked with, or ten minutes for a trip back for food.
+const NETHER_LEAVE_MS = 10 * 60000;
+function netherLeaveHeld(goal, reason, now = Date.now()) {
+  const held = goal.leaveNether;
+  if (!held || held.reason !== reason || held.pick !== 'go_back') return false;
+  return held.until ? held.until > now && rodsRest(goal, reason, now).until === held.until : now - held.at < NETHER_LEAVE_MS;
+}
+
+// The rods step waits in the Nether: going back, the step taken up again,
+// or other work here till its rest ends, as Jev chooses (leave_nether).
+// Asked once for each rest: "wait here" met again is every way resting,
+// said (work.js persist), and "go back" is kept (netherLeaveHeld).
+async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now = Date.now()) {
+  const { WaysResting } = require('./tunneling');
+  const minutes = stage.until ? Math.max(1, Math.ceil((stage.until - now) / 60000)) : 0;
+  const rest = minutes ? `, taken up again in ${minutes} minute${minutes === 1 ? '' : 's'}` : '';
+  const waits = `The blaze rods step waits (${stage.why})${rest}.`;
+  const held = goal.leaveNether;
+  if (held?.reason === stage.phase && held.pick === 'wait_here' && stage.until && held.until === stage.until) throw new WaysResting(`${waits} Jev chose other work in the Nether until then.`, stage.until);
+  const search = goal.fortressSearch;
+  const searched = search ? ` The fortress search so far: ${search.legs || 0} leg${search.legs === 1 ? '' : 's'} in ${search.since ? Math.round((now - search.since) / 60000) : 0} minutes${search.lastLegError ? `; the last ended: ${search.lastLegError}` : ''}.` : '';
+  const tree = {
+    go_back: { description: `Go back to the Overworld while the rods wait. ${portalTrip(bot, goal)} Back there the ladder's next step is the Nether again for the rods; the trip is for what the Overworld gives meanwhile (food, ore, the stash), and the way in again is the same portal.${searched}` },
+    search_on: { description: `Take the rods step up again now, its rest lifted: the fortress search goes on from here.${searched}` },
+  };
+  if (stage.until) tree.wait_here = { description: `Other work in the Nether until the rods step's rest ends${rest}, then the rods again; what the work is, is asked then.` };
+  const decision = await require('./decisions').decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
+    state: { waiting: stage.phase.replaceAll('_', ' '), why: stage.why, ...(minutes ? { minutesLeft: minutes } : {}), dimension: dimension(bot), health: bot.health, food: bot.food, blazeRods: count(bot, 'blaze_rod') } });
+  if (decision.stale) return false;
+  const pick = decision.path.at(-1);
+  goal.leaveNether = { reason: stage.phase, pick, until: stage.until || 0, at: now }; save();
+  if (pick === 'search_on') { attemptsFor(goal).clear('rung', stage.phase); delete goal.elsewhere; save(); return false; }
+  if (pick === 'wait_here') throw new WaysResting(`${waits} Jev chose other work in the Nether until then.`, stage.until);
+  if (actions.return_overworld) await actions.return_overworld(bot, task, goal, save);
+  return false;
 }
 
 function nextGameStage(bot, goal, skip = new Set()) {
@@ -389,7 +445,13 @@ function nextGameStage(bot, goal, skip = new Set()) {
     return { phase: 'obtain_ender_pearls', action: 'warped_pearls', item: 'ender_pearl', count: target - eyes };
   // Short of rods here only when that step waits (asideStage): the way back
   // is said as that, not as rods carried home.
-  if (where === 'nether') return { phase: rodsShort ? 'return_overworld' : 'return_with_blaze_supplies', action: 'return_overworld' };
+  // Short of rods, that step waiting: leaving is Jev's (leaveNetherStep),
+  // or kept once Jev chose it. It had gone back unasked whenever the rods
+  // were set aside for any reason not their sources (note 495).
+  if (where === 'nether' && rodsShort) {
+    return netherLeaveHeld(goal, 'obtain_blaze_rods') ? { phase: 'return_overworld', action: 'return_overworld' } : { phase: 'obtain_blaze_rods', action: 'rods_waiting', ...rodsRest(goal) };
+  }
+  if (where === 'nether') return { phase: 'return_with_blaze_supplies', action: 'return_overworld' };
   if (where !== 'overworld') return { phase: 'unknown_dimension', action: 'unsupported_dimension' };
   // A cleric's pearls, when a village is remembered and a pearl trade has
   // been read there (trading.js): a walk and some emeralds instead of an
@@ -504,6 +566,7 @@ async function gameStep(bot, task, goal, save, actions) {
   // routes are Jev's (elsewhereStep).
   if (stage.action === 'acquire') await actions.acquireStep(bot, task, stage.item, stage.count, goal, save, { elsewhere: away => elsewhereStep(bot, task, goal, save, stage, away, actions) });
   else if (stage.action === 'elsewhere') await elsewhereStep(bot, task, goal, save, stage, null, actions);
+  else if (stage.action === 'rods_waiting') await leaveNetherStep(bot, task, goal, save, stage, actions);
   else if (stage.action === 'gather_wool') {
     if (!actions.gather_wool) throw Object.assign(new Error('Game progression is blocked at the bed: the gather wool action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });
     await actions.gather_wool(bot, task, goal, save, stage);
@@ -612,4 +675,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { portalTrip, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };
+module.exports = { portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };

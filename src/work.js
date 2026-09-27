@@ -3054,22 +3054,27 @@ function rememberPortal(goal, save, portal, where) {
 }
 async function walkToKnownPortal(bot, task, goal, save, where) {
   const here = bot.entity.position;
-  const known = (goal.portals || []).filter(p => p.dimension === where && Math.hypot(p.x - here.x, p.z - here.z) <= 600)
+  // One Jev chose to pass over for a portal made here (portal_way) is not
+  // made for while that holds.
+  const known = (goal.portals || []).filter(p => p.dimension === where && Math.hypot(p.x - here.x, p.z - here.z) <= 600 && !isSetAside(goal, 'portal_passed', { x: p.x, y: p.y, z: p.z }))
     .sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z));
   if (!known.length) return false;
   const p = known[0];
   goal.step = { action: 'return_to_portal', portal: { x: p.x, y: p.y, z: p.z } }; save();
   // Close enough to route: walk. Otherwise, or when the walk gives out, dig
   // a staircase toward it the way an ore is reached; a portal at y=-11 is
-  // not on any surface route.
+  // not on any surface route. What each way ended in is kept, for the
+  // question when none gets there (portalWay).
   const distance = here.distanceTo(pos(p));
+  let walk;
   if (distance <= 48) {
     try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000 }); return true; }
-    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; walk = `the walk there failed (${String(err.message || err).slice(0, 80)})`; }
   } else if (!isSetAside(goal, 'portal_leg', pos(p))) {
     if (await portalLeg(bot, task, goal, p)) return true;
     setAside(goal, 'portal_leg', pos(p), 'a walk toward it made no ground', 120000); save();
-  }
+    walk = 'legs of thirty-two blocks on foot toward it made no ground';
+  } else walk = 'legs of thirty-two blocks on foot toward it made no ground, and rest two minutes';
   // In the Nether, no ground on foot: straight at it at this height, through
   // the netherrack or over the lava on blocks laid ahead, as far as the
   // cells ahead show (nether-travel.js). mid-211-c's legs on foot and its
@@ -3081,6 +3086,7 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
     portalApproach(goal, p, bot.entity.position);
     const crossed = await crossToward(bot, task, goal, save, pos(p), { what: 'the portal back' });
     if (crossed.tried && portalApproach(goal, p, bot.entity.position)) return true;
+    if (crossed.tried) walk += '; a crossing straight toward it at this height came no nearer';
   }
   // Farther off, a leg of the way on foot first: ninety-six blocks from
   // the portal the staircase was the only thing tried, and it went up and
@@ -3092,11 +3098,113 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   if (where === 'overworld') {
     if (await boatTravelStep(bot, task, goal, save, pos(p), { acquireStep })) return true;
   }
-  if (staircaseResting(goal, pos(p))) {
-    const err = new Error(`No way back to the ${where} portal at ${p.x}, ${p.y}, ${p.z}: ${require('./tunneling').staircaseWhy(goal, pos(p))}, and the walk made no ground`);
-    err.name = 'Blocked'; throw err;
+  // Neither the walk, the boat nor the staircase gets there: what next is
+  // Jev's, not the same ways again. mid-202-o-nether-3, 374 blocks from its
+  // Overworld portal with water between, threw "No way back" at every pass
+  // and the run ended with a lava pool known and a bucket carried (note
+  // 495).
+  if (staircaseResting(goal, pos(p))) return portalWay(bot, task, goal, save, p, where, { walk });
+  try { await tunnelToward(bot, task, goal, save, pos(p), `portal_${where}`); }
+  catch (err) { task.check(); if (err.name !== 'StaircaseStalled') throw err; return portalWay(bot, task, goal, save, p, where, { walk }); }
+  return true;
+}
+
+// What lies on the straight line toward `to`, as far as the ground is
+// loaded (ninety-six blocks at most): the top block every two blocks, said
+// as water, lava, ground or a drop past what is seen.
+function lineSays(bot, to, max = 96) {
+  const here = bot.entity?.position, d = here && Math.hypot(to.x - here.x, to.z - here.z);
+  if (!d || d < 4 || typeof bot.blockAt !== 'function') return null;
+  const n = { water: 0, lava: 0, ground: 0, drop: 0 }, span = Math.min(max, d), y0 = Math.floor(here.y);
+  let loaded = 0;
+  for (let s = 2; s <= span; s += 2) {
+    const x = Math.floor(here.x + (to.x - here.x) * s / d), z = Math.floor(here.z + (to.z - here.z) * s / d);
+    let top = null, seen = false;
+    for (let y = y0 + 12; y >= y0 - 24; y--) {
+      const b = bot.blockAt(new Vec3(x, y, z));
+      if (!b) break;
+      seen = true;
+      if (/water|lava|kelp|seagrass/.test(b.name) || b.boundingBox === 'block') { top = b; break; }
+    }
+    if (!seen) break;
+    loaded = s;
+    n[!top ? 'drop' : /lava/.test(top.name) ? 'lava' : /water|kelp|seagrass/.test(top.name) ? 'water' : 'ground'] += 2;
   }
-  await tunnelToward(bot, task, goal, save, pos(p), `portal_${where}`);
+  if (!loaded) return `The ground toward it is not loaded from here.`;
+  const parts = [n.water && `${n.water} over water`, n.lava && `${n.lava} over lava`, n.ground && `${n.ground} on ground`, n.drop && `${n.drop} over a drop of more than twenty-four`].filter(Boolean);
+  return `On the straight line toward it, of the ${loaded} blocks loaded: ${parts.join(', ')}${loaded < Math.floor(span) - 1 ? `; past ${loaded} blocks the ground is not loaded` : ''}.`;
+}
+
+// A leg of thirty-two blocks on foot square to the heading, left or right:
+// round the water or the drop the straight way meets.
+async function sideLeg(bot, task, p, side) {
+  const here = bot.entity.position, dx = p.x - here.x, dz = p.z - here.z, d = Math.hypot(dx, dz) || 1;
+  // With x east and z south, left of a heading (hx, hz) is (hz, -hx).
+  const [ux, uz] = side === 'left' ? [dz / d, -dx / d] : [-dz / d, dx / d];
+  try { await navigate(bot, task, new goals.GoalNearXZ(here.x + ux * 32, here.z + uz * 32, 4), { timeoutMs: 30000, stallMs: 8000, sprint: true }); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return false; }
+  return true;
+}
+
+// The boat's last word on this water: failed and resting, or the walk
+// chosen over it here.
+function boatSays(goal) {
+  const state = goal.boatTravel;
+  if (!state) return null;
+  if (isSetAside(goal, 'boat', 'crossing')) return `the boat was tried and failed (${state.lastError || attemptsFor(goal).why('boat', 'crossing') || 'not known'}), and rests`;
+  if (state.declinedUntil > Date.now()) return 'the boat was offered for the water here and the walk chosen';
+  return null;
+}
+
+// Every way to a remembered portal has failed from here: the walk, the
+// boat, the staircase. What next is Jev's (portal_way), with what each
+// ended in and what lies on the line between; asked once for each rest
+// from each place (as a frame out of reach is, note 482), and met again,
+// every way resting is said (WaysResting), not a pass repeated.
+async function portalWay(bot, task, goal, save, p, where, { walk, client = task.opportunityClient } = {}) {
+  const { staircaseWhy, staircaseUntil, landingKey, WaysResting } = require('./tunneling');
+  const target = pos(p), here = bot.entity.position, now = Date.now();
+  const distance = Math.round(Math.hypot(p.x - here.x, p.z - here.z));
+  const fromRest = attemptsFor(goal).entries[require('./progress').keyOf('staircase_from', landingKey(here.floored(), target))];
+  const until = Math.max(staircaseUntil(goal, target), fromRest?.until > now ? fromRest.until : 0);
+  const minutes = until ? Math.max(1, Math.ceil((until - now) / 60000)) : 0;
+  const boat = where === 'overworld' ? boatSays(goal) : null;
+  const between = lineSays(bot, target);
+  const says = `The ${where} portal at (${p.x}, ${p.y}, ${p.z}) is ${distance} blocks off and cannot be reached from here: ${walk || 'the walk made no ground'}${boat ? `; ${boat}` : ''}; and the staircase toward it is set aside (${staircaseWhy(goal, target)})${minutes ? `, taken up again in ${minutes} minute${minutes === 1 ? '' : 's'}` : ''}.${between ? ` ${between}` : ''}`;
+  const key = `${p.x},${p.y},${p.z}`, from = `${Math.floor(here.x / 8)},${Math.floor(here.z / 8)}`;
+  // Met again from the same place in the same rest: "other work" chosen is
+  // every way resting, said; a way chosen that ended back here is said with
+  // the question asked again.
+  const held = goal.portalWay, again = held && held.key === key && held.until === until && held.from === from ? held : null;
+  if (again?.pick === 'wait_rest') throw new WaysResting(`${says} The way was asked from here with this, and other work chosen until then.`, until);
+  const tree = {};
+  const lighter = countOf(bot, 'flint_and_steel') + countOf(bot, 'fire_charge') > 0;
+  if (where === 'overworld') {
+    let lava = null; try { lava = nearestLava(bot, goal); } catch (_) { /* nothing loaded to look in */ }
+    const nx = Math.round(here.x / 8), nz = Math.round(here.z / 8);
+    const netherSide = (goal.portals || []).filter(q => q.dimension === 'nether').sort((a, b) => Math.hypot(a.x - nx, a.z - nz) - Math.hypot(b.x - nx, b.z - nz))[0];
+    tree.portal_here = { description: `Make a portal here instead and pass this one over for half an hour; how it is made is asked next: a frame from ten obsidian (${countOf(bot, 'obsidian')} carried), or one cast from lava and water (${countOf(bot, 'bucket') + countOf(bot, 'lava_bucket')} bucket${countOf(bot, 'bucket') + countOf(bot, 'lava_bucket') === 1 ? '' : 's'} and ${countOf(bot, 'water_bucket') ? 'a water bucket' : 'no water bucket'} carried; ${lava ? `the nearest lava ${lava.distance} blocks off, ${lava.how}` : 'no lava known'}). ${lighter ? 'A lighter is carried.' : 'No flint and steel or fire charge is carried: one is made first.'} It comes out in the Nether near ${nx}, ${nz}${netherSide ? `, ${Math.round(Math.hypot(netherSide.x - nx, netherSide.z - nz))} blocks from the Nether portal remembered` : ''}.` };
+  } else if (countOf(bot, 'obsidian') >= 10 && lighter && portalSupports(bot).count >= 3 && !isSetAside(goal, 'portal_here', 'nether')) {
+    tree.portal_here = { description: require('./nether-travel').portalHereSays(bot, goal) };
+  }
+  for (const side of ['left', 'right']) tree[`around_${side}`] = { description: `Go round: a leg of thirty-two blocks on foot to the ${side} of the heading to the portal, the pathfinder bridging and climbing where it can, and the way asked again from where it ends.` };
+  if (boat) tree.boat_again = { description: `Take the boat again over the water toward it, though ${boat}: the crossing is surveyed from here and the boat made or taken from the pack.` };
+  if (until) tree.wait_rest = { description: `Other work until the staircase's rest ends in ${minutes} minute${minutes === 1 ? '' : 's'}, then the way to the portal again from wherever the bot is; the work is asked then.` };
+  if (again && tree[again.pick]) tree[again.pick].description += ' Chosen from here before in this rest, and the bot is back here.';
+  const decision = await decide('portal_way', { client, bot, task, goal, save, tree,
+    state: { portal: { x: p.x, y: p.y, z: p.z, dimension: where }, distance, walk, staircase: staircaseWhy(goal, target), ...(minutes ? { minutesLeft: minutes } : {}), ...(boat ? { boat } : {}), ...(between ? { between } : {}), ...(again ? { chosenFromHereBefore: again.pick } : {}), health: bot.health, food: bot.food } });
+  if (decision.stale) return true;
+  const pick = decision.path.at(-1);
+  goal.portalWay = { key, until, from, pick, at: now }; save();
+  if (pick === 'wait_rest') throw new WaysResting(`${says} Jev chose other work until then.`, until);
+  if (pick === 'portal_here' && where === 'overworld') { setAside(goal, 'portal_passed', { x: p.x, y: p.y, z: p.z }, 'Jev chose a portal made here, this one out of reach', 30 * 60000); save(); return false; }
+  if (pick === 'portal_here') {
+    try { for (let i = 0; i < 4; i++) { task.check(); if (await portalHere(bot, task, goal, save)) return true; } }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'portal_here', 'nether', err, 600000); save(); }
+    return true;
+  }
+  if (pick === 'boat_again') { attemptsFor(goal).clear('boat', 'crossing'); delete goal.boatTravel.declinedArea; delete goal.boatTravel.declinedUntil; save(); return true; }
+  await sideLeg(bot, task, p, pick === 'around_left' ? 'left' : 'right');
   return true;
 }
 
@@ -5073,4 +5181,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { opensPit, persist, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { opensPit, persist, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

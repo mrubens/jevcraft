@@ -194,11 +194,53 @@ test('on the way back to a portal across water, the boat is offered, and a way r
   bot.pathfinder = { ...bot.pathfinder, setGoal() {}, isMoving: () => false, goto: async () => { throw Object.assign(new Error('No path'), { name: 'NoPath' }); } };
   const asked = [];
   const task = new Task('back');
-  task.opportunityClient = { systemOne: async ({ state }) => { asked.push(state); return { answers: { travel: { choice: 'swim' } } }; } };
+  // The boat's question, then the way's (portal_way, note 495): other work till the staircase's rest ends.
+  task.opportunityClient = { systemOne: async ({ state, questions }) => {
+    if (questions?.branch_0) return { answers: { branch_0: { choice: 'wait_rest', confidence: 0.9 } } };
+    asked.push(state); return { answers: { travel: { choice: 'swim' } } };
+  } };
   const goal = { portals: [{ x: 120, y: 65, z: 0, dimension: 'overworld' }] };
   setAside(goal, 'staircase', { x: 120, y: 64, z: 0 }, 'lava or water underfoot', 600000);
   await assert.rejects(walkToKnownPortal(bot, task, goal, () => {}, 'overworld'), err => !/undefined/.test(err.message) && /lava or water underfoot/.test(err.message));
   assert.equal(asked.length, 1, 'the boat was Jev\'s to choose');
   assert(asked[0].waterBlocks >= 30);
   assert.equal(asked[0].carriedBoat, 'oak_boat');
+});
+
+test('the walk, the boat and the staircase to the portal all failed: the way is Jev\'s, a portal here, round, the boat again or other work, asked once from each place', async () => {
+  // mid-202-o-nether-3 (note 495): 374 blocks from its Overworld portal at (268, 103, 134) across water, the boat's route
+  // "blocked or unsafe", the staircase "no floor 2, lava or water underfoot 2": "No way back" thrown at every pass till the
+  // run ended, a lava pool known and a bucket carried.
+  const { walkToKnownPortal } = require('../src/work');
+  const { setAside, isSetAside } = require('../src/progress');
+  const bot = Object.assign(new EventEmitter(), lake(200), { registry: require('minecraft-data')('26.1'), oxygenLevel: 20, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'bucket', count: 1 }, { name: 'water_bucket', count: 1 }, { name: 'flint_and_steel', count: 1 }, { name: 'cobblestone', count: 64 }] },
+    world: { raycast: () => null }, findBlocks: () => [], clearControlStates() {}, setControlState() {}, stopDigging() {} });
+  bot.pathfinder = { ...bot.pathfinder, setGoal() {}, isMoving: () => false, goto: async () => { throw Object.assign(new Error('No path'), { name: 'NoPath' }); } };
+  const asked = [], picks = ['wait_rest', 'portal_here'];
+  const task = new Task('back');
+  task.opportunityClient = { systemOne: async ({ state, questions }) => { asked.push({ state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
+  const goal = { portals: [{ x: 120, y: 65, z: 0, dimension: 'overworld' }], boatTravel: { attempts: 0, failures: 1, lastError: 'Boat route is blocked or unsafe' } };
+  setAside(goal, 'boat', 'crossing', 'Boat route is blocked or unsafe', 60000);
+  setAside(goal, 'staircase', { x: 120, y: 64, z: 0 }, 'no safe step toward it from (0, 65, 0) (no floor 2, lava or water underfoot 2)', 600000);
+  const pass = () => walkToKnownPortal(bot, task, goal, () => {}, 'overworld');
+  await assert.rejects(pass(), err => err.name === 'WaysResting' && /Jev chose other work until then/.test(err.message));
+  assert.equal(asked.length, 1, 'the way is Jev\'s, not "No way back" thrown');
+  const { options, state } = asked[0];
+  assert.deepEqual(Object.keys(options).sort(), ['around_left', 'around_right', 'boat_again', 'portal_here', 'wait_rest']);
+  const said = /The overworld portal at \(120, 65, 0\) is 120 blocks off and cannot be reached from here: legs of thirty-two blocks on foot toward it made no ground(, and rest two minutes)?; the boat was tried and failed \(Boat route is blocked or unsafe\), and rests; and the staircase toward it is set aside \(no safe step toward it from \(0, 65, 0\) \(no floor 2, lava or water underfoot 2\)\), taken up again in 10 minutes\./;
+  await assert.rejects(pass(), err => err.name === 'WaysResting' && said.test(err.message));
+  assert.equal(asked.length, 1, 'met again from the same place in the same rest: every way resting, said, not asked again');
+  assert.match(options.portal_here, /Make a portal here instead and pass this one over for half an hour/);
+  assert.match(options.portal_here, /1 bucket and a water bucket carried; no lava known\)\. A lighter is carried\./);
+  assert.match(options.boat_again, /the boat was tried and failed \(Boat route is blocked or unsafe\)/);
+  assert.match(options.wait_rest, /in 10 minutes/);
+  assert.match(state.between, /On the straight line toward it, of the 96 blocks loaded: 94 over water, 2 on ground\./);
+  // From another place: asked again, and a portal made here passes the one out of reach over.
+  bot.entity.position = new Vec3(0.5, 65, 20.5);
+  assert.equal(await pass(), false, 'on to making a portal (portalStep)');
+  assert.equal(asked.length, 2);
+  assert(isSetAside(goal, 'portal_passed', { x: 120, y: 65, z: 0 }));
+  assert.equal(await pass(), false, 'the one passed over is not made for again');
+  assert.equal(asked.length, 2);
 });

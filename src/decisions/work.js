@@ -63,6 +63,45 @@ define({
   fallback: (children, path, context = {}) => children[context.current] ? context.current : 'build_new',
 });
 
+// A known portal the bot is making for that no way reaches: the walk, the
+// boat and the staircase all failed. mid-202-o-nether-3, 374 blocks from
+// its Overworld portal across water, threw "No way back" three times and
+// the run ended, with a lava pool known and a bucket carried (note 495).
+define({
+  id: 'portal_way', area: 'work', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The portal the bot is making for cannot be reached from here: the walk, the boat and the staircase have failed. Make a portal here, go round another way, take the boat again, or other work until the staircase\'s rest ends?',
+  trigger: 'On the way to a remembered portal (the crossing into the Nether, or the way back from it), when the walk made no ground and the staircase toward it rests; asked once for each rest from each place, the answer kept (said as every way resting when met again).',
+  source: 'src/work.js (walkToKnownPortal, portalWay, lineSays)',
+  options: [
+    { key: 'portal_here', label: 'make a portal here instead, the one remembered passed over', when: 'in the Overworld, always (the way it is made is then asked: portal_method); in the Nether, ten obsidian, a lighter and three blocks carried', level: 'root' },
+    { key: 'around_left', label: 'a leg of thirty-two blocks on foot to the left of the heading, and the way asked again from there', when: 'always', level: 'root' },
+    { key: 'around_right', label: 'a leg of thirty-two blocks on foot to the right of the heading, and the way asked again from there', when: 'always', level: 'root' },
+    { key: 'boat_again', label: 'the boat again, its failure or the walk chosen over it set aside', when: 'in the Overworld, the boat failed or was declined here and rests', level: 'root' },
+    { key: 'wait_rest', label: 'other work until the staircase\'s rest ends, the minutes said', when: 'the staircase toward the portal rests until a time', level: 'root' },
+  ],
+  instructions: { task: 'The bot cannot get to the portal it is making for. Choose how it goes on.', guidance: 'Each option says what it takes and what it leaves. The state says where the portal is, what each way ended in, and what lies on the straight line toward it (water, lava, ground, unloaded). A portal made here comes out somewhere new on the other side; a leg round goes on foot and asks again from where it ends.' },
+  fallback: children => ['portal_here', 'wait_rest'].find(k => children[k]) || Object.keys(children)[0],
+});
+
+// Leaving the Nether for the Overworld while the rods step waits, or for
+// food: mid-202-o-nether-3, -4 and mid-218-m-nether-1 each went back at
+// hunger seventeen with nothing to eat, by a rule in the hunt, unasked,
+// and came out into the night (note 495).
+define({
+  id: 'leave_nether', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Go back through the portal to the Overworld now, or stay in the Nether: the rods step taken up again, other work here until its rest ends, or going on without food?',
+  trigger: 'In the Nether on the game ladder: the blaze rods step waits (set aside, not for its sources being elsewhere) and the ladder would go back; or a hunt short of fitness, hungry under eighteen with nothing to eat. The answer kept while its reason stands.',
+  source: 'src/game-progress.js (leaveNetherStep, nextGameStage), src/mob-hunt.js (prepareMobHunt)',
+  options: [
+    { key: 'go_back', label: 'go back through the portal to the Overworld', when: 'always; said with what it is for, the trip to the portal, and the hour it comes out at', level: 'root' },
+    { key: 'search_on', label: 'take the rods step up again now, its rest lifted', when: 'the rods step waits', level: 'root' },
+    { key: 'wait_here', label: 'other work in the Nether until the rods step\'s rest ends, the minutes said', when: 'the rods step waits until a time', level: 'root' },
+    { key: 'keep_on', label: 'go on in the Nether without going back for food', when: 'hungry under eighteen with nothing to eat; the trip back is left out for twenty minutes', level: 'root' },
+  ],
+  instructions: { task: 'Choose whether the bot leaves the Nether now.', guidance: 'Going back says what it is for, how far the portal is and whether it is night on the other side; staying says what waits and for how long. Health comes back only at hunger eighteen or more.' },
+  fallback: children => Object.keys(children).find(k => k !== 'go_back') || 'go_back',
+});
+
 define({
   id: 'resource_source', area: 'resources', kind: 'source', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Which source (tree, vein, deposit) should the bot work for the resource the request needs?',
