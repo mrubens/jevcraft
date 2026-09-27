@@ -3264,7 +3264,12 @@ class Survival {
       const deep = dropNear(bot, bot.entity.position.floored(), 2);
       if ((deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) || lavaBeside(bot, bot.entity.position.floored())) {
         this.state.edgeTriedAt = Date.now();
-        const cell = firmGround(bot, 8, { margin: 3 });
+        // With a creeper the pusher, the ground is away from it, and the walk
+        // short: mid-230-m walked two seconds toward ground by the creeper,
+        // stalled, and the blast took it from twenty (2026-09-27). With no
+        // such ground the creeper is answered as a creeper, below.
+        const creeper = threats(bot, 16).filter(t => t.entity.name === 'creeper').sort((a, b) => a.distance - b.distance)[0];
+        const cell = creeper ? firmGround(bot, 8, { margin: 3, awayFrom: creeper.entity.position }) : firmGround(bot, 8, { margin: 3 });
         if (cell) {
           this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, from: threats(bot, 64).find(pusher)?.entity.name, drop: deep });
           require('./terrain').holdOffEdge(bot, bot.entity.position.floored(), threats(bot, 64).map(t => t.entity));
@@ -3274,7 +3279,7 @@ class Survival {
           // and a half when a skeleton's arrow put it over (2026-09-27).
           const { incoming, deflect } = require('./projectile-guard');
           const shot = () => bot.inventory.slots?.[45]?.name === 'shield' && incoming(bot).length > 0;
-          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000, stopWhen: shot }); }
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), creeper ? { timeoutMs: 2500, stallMs: 800, stopWhen: shot } : { timeoutMs: 6000, stallMs: 2000, stopWhen: shot }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           if (shot()) { this.state.edgeTriedAt = 0; await deflect(bot, task); }
           onStep(goal); return true;

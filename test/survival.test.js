@@ -3489,3 +3489,20 @@ test('a span wall counts only when it stands: a place that leaves nothing is no 
   const survival = new Survival(bot, { place: async () => {} }, { state: { shelters: [] } });
   assert.equal(await survival.railSpan(new Task('span'), {}, () => {}), false);
 });
+
+test('by a deadly edge with a creeper coming, the step back goes away from the creeper', async () => {
+  // mid-230-m walked two seconds toward ground by the creeper, stalled, and the blast took it from twenty.
+  const creeper = { id: 4, name: 'creeper', type: 'hostile', position: new Vec3(-3.5, 74, 0.5), height: 1.7, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: { 4: creeper }, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 6000 }, entity: { position: new Vec3(0.5, 74, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'diamond_sword', count: 1 }, { name: 'netherrack', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ position: p, name: p.x >= 2 ? (p.y <= 30 ? 'lava' : 'air') : p.y < 74 ? 'netherrack' : 'air', boundingBox: p.x < 2 && p.y < 74 ? 'block' : 'empty' }),
+    world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {} });
+  let to = null;
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { to = g; } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.step(new Task('leg'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'off_the_edge');
+  const d = new Vec3(to.x + 0.5, to.y, to.z + 0.5).distanceTo(creeper.position);
+  assert(d >= bot.entity.position.distanceTo(creeper.position) + 2, `away from the creeper: ${to.x},${to.z} at ${d.toFixed(1)}`);
+});
