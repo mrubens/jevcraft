@@ -198,9 +198,9 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   // The lake already found comes before a new shaft: chased off by a
   // creeper, the bot stood at its base sixty blocks from its own crust.
   const remembered = works.lastPour && open(at(works.lastPour)) ? at(works.lastPour) : null;
-  const deep = [[24, 0], [0, 24], [-24, 0], [0, -24]].map(([dx, dz]) => here.floored().offset(dx, LAVA_DEPTH - here.floored().y, dz)).find(open);
+  const deep = require('./tunneling').descentTargets(here.floored(), LAVA_DEPTH).find(open);
   const dest = spots.find(s => open(s.feet))?.feet || (nearest ? nearest.plus(UP) : remembered || deep);
-  if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw new Error('Every way to lava from here is resting: the pools here and the deep lava on all four headings'); }
+  if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw new Error('Every way to lava from here is resting: the pools here and the deep lava on sixteen headings near and far'); }
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
   await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
 }
@@ -256,10 +256,10 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   const here = bot.entity.position;
   const nearest = diggable.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
   // The deep lava, the first heading whose staircase is not resting.
-  const deep = [[24, 0], [0, 24], [-24, 0], [0, -24]].map(([dx, dz]) => here.floored().offset(dx, LAVA_DEPTH - here.floored().y, dz)).find(open);
+  const deep = require('./tunneling').descentTargets(here.floored(), LAVA_DEPTH).find(open);
   const spot = spots.find(s => open(s.feet))?.feet;
   const dest = spot || (nearest ? nearest.plus(UP) : deep);
-  if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw new Error('Every way to lava from here is resting: the pool here and the deep lava on all four headings'); }
+  if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw new Error('Every way to lava from here is resting: the pool here and the deep lava on sixteen headings near and far'); }
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
   await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
 }

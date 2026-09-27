@@ -445,4 +445,10 @@ async function retreatForTunnel(bot, task, goal, save, { navigate }) {
   } finally { Object.assign(movement, previous); }
 }
 
-module.exports = { natural, NoSafeWay, StaircaseStalled, staircaseResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+// The ways down to a depth when no ore is in view: eight headings, near first.
+function descentTargets(feet, depth) {
+  const unit = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+  return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
+}
+
+module.exports = { descentTargets, natural, NoSafeWay, StaircaseStalled, staircaseResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };

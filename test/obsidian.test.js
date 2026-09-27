@@ -235,3 +235,24 @@ test('making obsidian, lava whose staircase is resting is not dug toward again e
   assert.equal(dug.length, 1, `dug toward: ${goal.err || ''}`);
   assert(dug.every(d => Math.abs(d.x - bot.entity.position.x) >= 20 || Math.abs(d.z - bot.entity.position.z) >= 20), `not the resting pool: ${dug.map(String)}`);
 });
+
+test('with the four straight headings to the deep lava resting, a diagonal or farther one is dug toward', async () => {
+  // mid-207-h: "every way to lava from here is resting" three passes running, four headings only.
+  const { collectLava } = require('../src/obsidian');
+  const { setAside } = require('../src/progress');
+  const { bot, items } = world();
+  items.splice(0, items.length, { name: 'bucket', count: 2 });
+  bot.world = { raycast: () => null };
+  const goal = {};
+  const { LAVA_DEPTH } = require('../src/obsidian');
+  const area = t => ({ x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 });
+  // The pool here, and the four straight headings twenty-four off, all resting.
+  for (let x = -16; x <= 16; x += 8) for (let z = -16; z <= 16; z += 8) for (const y of [8, 16]) setAside(goal, 'staircase', { x, y, z }, 'resting', 600000);
+  const feet = bot.entity.position.floored();
+  for (const [dx, dz] of [[24, 0], [0, 24], [-24, 0], [0, -24]]) setAside(goal, 'staircase', area(feet.offset(dx, LAVA_DEPTH - feet.y, dz)), 'refusing to open a drop beside the feet', 600000);
+  const dug = [];
+  const actions = { navigate: async () => {}, dig: async () => {}, resourceTunnelStep: async (b, t, g, s, dest) => { dug.push(dest); } };
+  await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 2 }, goal, () => {}, actions);
+  assert.equal(dug.length, 1, 'a way found');
+  assert(Math.abs(dug[0].x - feet.x) >= 10 && Math.abs(dug[0].z - feet.z) >= 10, `a diagonal heading: ${dug[0]}`);
+});

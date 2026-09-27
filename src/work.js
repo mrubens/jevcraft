@@ -733,12 +733,7 @@ function searchFor(goal, resource, here) {
 // another ore thirty blocks off, and dug the next stair, flipping between
 // the two steps a dozen times a minute (2026-09-24). Six stairs, or until
 // the target is close or a stair gets nowhere.
-// The ways down to a depth when no ore is in view: eight headings, near first.
-function descentTargets(feet, depth) {
-  const unit = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
-  return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
-}
-
+const { descentTargets } = require('./tunneling');
 const STAIRS_AT_A_TIME = 6;
 async function tunnelOrSetAside(bot, task, goal, save, target, resource, ore = null) {
   try {
