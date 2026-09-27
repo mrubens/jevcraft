@@ -121,20 +121,37 @@ const ARMOUR_PIECES = ['iron_armour', 'iron_helmet', 'iron_chestplate', 'iron_le
 const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword', ...ARMOUR_PIECES]);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
-  const attempts = attemptsFor(goal), waiting = new Set(Object.keys(attempts.of('rung', now)));
-  if (waiting.size) {
-    const open = ladderRung(bot, goal, waiting);
-    if (open) return open;
-    // Set aside because Jev chose the Nether first: they wait for the
-    // Nether, not for the next pass. Brought straight back, the arrows were
-    // the only step on offer again the moment the Nether was chosen, and
-    // mid-241-a chose the Nether first twice and hunted skeletons for three
-    // hours (2026-09-26).
-    if ([...waiting].every(k => NETHER_FIRST.test(attempts.why('rung', k) || ''))) return null;
-  }
-  return ladderRung(bot, goal, new Set());
+  const resting = attemptsFor(goal).of('rung', now);
+  // Set aside because Jev chose to go without them (the Nether first, or
+  // the crossing's kit gone on with what is carried): they wait for the
+  // Nether, not for the next pass. Brought straight back, the arrows were
+  // the only step on offer again the moment the Nether was chosen, and
+  // mid-241-a chose the Nether first twice and hunted skeletons for three
+  // hours (2026-09-26). The rest come back when nothing else is left.
+  // That was all or nothing: one rung resting for another reason brought
+  // every one back, and mid-242-x, its iron boots left by the kit's go-on,
+  // was handed the bow and then the diamond sword it had just left for the
+  // Nether, chose the Nether first again five times a second, and stalled
+  // (note 498).
+  return ladderRung(bot, goal, new Set(Object.keys(resting))) || ladderRung(bot, goal, goingWithout(resting));
 }
-const NETHER_FIRST = /Nether first/;
+const GOING_WITHOUT = /Nether first|fight with what is carried/;
+const goingWithout = resting => new Set(Object.keys(resting).filter(k => GOING_WITHOUT.test(resting[k].why || '')));
+// The rungs Jev set aside to go without, in ladder order, each with when it
+// comes back on its own: what the ladder would hand back were they lifted.
+// Said with the Nether, where taking one up again is a route of its own.
+function asideRungs(bot, goal = {}, now = Date.now()) {
+  const resting = attemptsFor(goal).of('rung', now), without = goingWithout(resting);
+  const skipped = new Set(Object.keys(resting).filter(k => !without.has(k)));
+  const out = [];
+  for (let i = 0; i < 12; i++) {
+    const rung = ladderRung(bot, goal, skipped);
+    if (!rung || !without.has(rung.phase)) break;
+    out.push({ ...rung, until: resting[rung.phase].until });
+    skipped.add(rung.phase);
+  }
+  return out;
+}
 // The rungs open now, in ladder order: the first, and then each rung the
 // ladder would go on to if the ones before it waited their turn, for as long
 // as those before it may wait (DEFERRABLE). A rung that may not wait, or one
@@ -548,6 +565,10 @@ async function gameStep(bot, task, goal, save, actions) {
     const chosen = await actions.strategy(bot, task, goal, save, stage);
     if (chosen?.ran) return false;
     if (chosen?.stage) stage = chosen.stage;
+    // A choice that only set steps aside did nothing in the world: the
+    // ladder moves on at once to what it leaves next. Kept as the step, it
+    // was work that never progressed (mid-242-x, note 498).
+    if (chosen?.replan) stage = nextGameStage(bot, goal);
   }
   // Back in the Overworld and not crossing: wolves left sitting stand up.
   if (actions.wolves && goal.wolfOrder?.sit && dimension(bot) === 'overworld' && !['enter_nether', 'reach_nether', 'enter_end'].includes(stage.action)) await actions.wolves(bot, task, goal, save, false);
@@ -675,4 +696,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };
+module.exports = { portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };

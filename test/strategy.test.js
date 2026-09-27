@@ -272,7 +272,7 @@ test('when every step left before the Nether may wait, going now is offered, and
   assert.match(options.nether_first.description, /Without arrows for now: the bow cannot shoot/);
   assert.match(options.rung_arrows.description, /only from skeletons/);
   const { decide } = picking('nether_first');
-  assert.deepEqual(await strategyStep(bot, task, goal, () => {}, stage, { decide }), { ran: true });
+  assert.deepEqual(await strategyStep(bot, task, goal, () => {}, stage, { decide }), { replan: true }, 'setting steps aside is not work: the ladder is read again at once');
   assert(isSetAside(goal, 'rung', 'arrows'), 'the arrows wait');
   assert.equal(openRungs(bot, goal).length, 0, 'nothing on the ladder before the Nether now');
   // mid-241-a: the arrows came straight back as the only step, and the Nether first never happened.
@@ -281,6 +281,36 @@ test('when every step left before the Nether may wait, going now is offered, and
   // Armour may wait too (the scoreboard, 2026-09-26): with it open, the Nether first is offered.
   const armour = fixture(['iron_helmet']);
   assert(strategyOptions(armour.bot, armour.goal, openRungs(armour.bot, armour.goal)[0])?.nether_first);
+});
+
+test('the Nether first moves the ladder on to the Nether at once, and is not offered again while its steps rest', async () => {
+  // mid-242-x: the kit's go-on left the iron boots resting for another reason, so the ladder handed back the bow and the
+  // diamond sword it had just left; the Nether first was chosen five times a second as a strategy_side step that never
+  // progressed, and failed on "no measurable progress" (note 498).
+  const { setAside } = require('../src/progress');
+  const { nextGameStage } = require('../src/game-progress');
+  const { bot, goal, task } = fixture(['bow', 'diamond_sword']);
+  bot.time.timeOfDay = 17617; // night: the bow is the ladder's next
+  setAside(goal, 'rung', 'iron_boots', 'Jev chose to fight with what is carried', 1800000);
+  assert.equal(nextGameStage(bot, goal).phase, 'bow');
+  const entered = [], trees = [];
+  const pick = choice => (b, t, g, sv, stage) => strategyStep(b, t, g, sv, stage, { decide: async (id, args) => { trees.push(args); return { path: [choice] }; } });
+  const actions = { acquireStep: async (b, t, item) => assert.fail(`${item} was set aside for the Nether`), enter_nether: async () => { entered.push(goal.step.phase); } };
+  assert.equal(await gameStep(bot, task, goal, () => {}, { ...actions, strategy: pick('nether_first') }), false);
+  assert.deepEqual(entered, ['reach_nether'], 'on to the Nether in the same step');
+  assert.deepEqual([goal.step.phase, goal.step.action], ['reach_nether', 'enter_nether'], 'the step is the Nether, not a strategy_side left to stall on');
+  const stage = nextGameStage(bot, goal);
+  assert.equal(stage.phase, 'reach_nether', 'the steps left for the Nether are not handed back');
+  const options = strategyOptions(bot, goal, stage, {});
+  assert.equal(options.nether_first, undefined, 'a Nether first that would set nothing aside is not offered');
+  assert.deepEqual(Object.keys(options), ['stage_reach_nether', 'take_up_bow', 'take_up_diamond_sword'], 'each step set aside is a route of its own');
+  assert.match(options.take_up_bow.description, /Take up the bow now after all, before the Nether: it was set aside to go without it, and would come back on its own in 30 minutes/);
+  // The question says so as a fact, and a step taken up is the ladder's again.
+  const acquired = [];
+  await gameStep(bot, task, goal, () => {}, { ...actions, acquireStep: async (b, t, item) => { acquired.push(item); }, strategy: pick('take_up_bow') });
+  assert.match(trees.at(-1).state.beforeTheNether, /Set aside by choice, to go without for now: bow \(30 minutes more\), diamond sword \(30 minutes more\)/);
+  assert.deepEqual(acquired, ['bow']);
+  assert.equal(nextGameStage(bot, goal).phase, 'bow');
 });
 
 test('the question says what the Nether waits on, and never that every step comes first', async () => {

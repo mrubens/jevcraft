@@ -27,7 +27,7 @@
 const { DAY } = require('./day');
 const { openRungs, dimension, carryBedRung } = require('./game-progress');
 const { woolCarried, homeStage, bedCarried } = require('./home-base');
-const { setAside, isSetAside } = require('./progress');
+const { setAside, isSetAside, attemptsFor } = require('./progress');
 const { immediateThreat } = require('./danger');
 
 const WALK_BLOCKS_PER_S = 4;
@@ -268,8 +268,13 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   // mid-110-i had only the arrows left, chose them seventy-three times over
   // three hours (arrows come only from skeletons here), and never went
   // (2026-09-26). Taken, the steps left are set aside for half an hour.
-  const { DEFERRABLE } = require('./game-progress');
-  const netherFirst = left => {
+  const { DEFERRABLE, asideRungs, GOING_WITHOUT } = require('./game-progress');
+  const netherFirst = all => {
+    // What is already set aside to go without is not set aside again: an
+    // option that would change nothing is not offered (mid-242-x, note 498).
+    const resting = attemptsFor(goal).of('rung');
+    const left = all.filter(p => !GOING_WITHOUT.test(resting[p]?.why || ''));
+    if (!left.length) return null;
     const clock = goal.rungClocks?.[stage.phase];
     // Without the armour, what the Nether's mobs take a hit through what is
     // worn now, not a word for it.
@@ -283,12 +288,13 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
     return {
       description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now: the portal, and through it for a fortress, blaze rods and ender pearls. ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.`).join(' ')}${clock ? ` The ${label(stage.phase)} has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.${require('./crossing-kit').kitSummary(bot, goal)}`,
       says: `I'll leave the ${left.map(label).join(' and the ')} for later`,
-      side: true,
+      side: true, aside: true,
       run: async () => { for (const p of left) setAside(goal, 'rung', p, 'Jev chose the Nether first', 1800000); },
     };
   };
   if (rungs.length && rungs[0].phase === stage.phase && dimension(bot) === 'overworld' && rungs.every(r => DEFERRABLE.has(r.phase))) {
-    options.nether_first = netherFirst(rungs.map(r => r.phase));
+    const first = netherFirst(rungs.map(r => r.phase));
+    if (first) options.nether_first = first;
   }
   // Past the preparation ladder (pearls, the stronghold, the crossing): the
   // ladder's stage and the side trips. The dream run spent an afternoon
@@ -300,7 +306,17 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
     // Nether first is on offer beside it too. mid-237-c was handed the
     // diamond sword alone forty-eight times and the bow eighteen, with no
     // way to the Nether before them, for three hours (2026-09-26).
-    if (DEFERRABLE.has(stage.phase) && dimension(bot) === 'overworld') options.nether_first = netherFirst([stage.phase]);
+    const first = DEFERRABLE.has(stage.phase) && dimension(bot) === 'overworld' && netherFirst([stage.phase]);
+    if (first) options.nether_first = first;
+    // On the way to the Nether with only steps Jev set aside to go without
+    // left before it: each is a route of its own, taken up now rather than
+    // when its half hour is out. mid-242-x was handed them back instead,
+    // one after another, beside a Nether first that did nothing (note 498).
+    if (stage.action === 'enter_nether' && dimension(bot) === 'overworld') for (const rung of asideRungs(bot, goal)) {
+      const minutes = Math.max(1, Math.round((rung.until - Date.now()) / 60000)), p = /^iron_(helmet|chestplate|leggings|boots)$/.test(rung.phase) ? 'iron_armour' : rung.phase;
+      options[`take_up_${rung.phase}`] = { description: `Take up the ${label(rung.phase)} now after all, before the Nether: it was set aside to go without it, and would come back on its own in ${minutes} minute${minutes === 1 ? '' : 's'}.${RUNG_WHY[p] ? ` It is for this: ${RUNG_WHY[p]}.` : ''}${rungTakes(bot, goal, rung, planFor)}`,
+        says: `I'll make the ${label(rung.phase)} first after all`, rung, takeUp: true };
+    }
   }
   else return null;
   const fit = (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 12 && !immediateThreat(bot);
@@ -362,12 +378,14 @@ function strategyState(bot, goal, stage) {
     // it, and mid-207-a chose the arrows (only from skeletons here) a
     // hundred and ninety-six times over three hours and never went
     // (2026-09-26).
-    beforeTheNether: (() => { const { DEFERRABLE } = require('./game-progress'); const left = openRungs(bot, goal).map(r => r.phase);
+    beforeTheNether: (() => { const { DEFERRABLE, asideRungs } = require('./game-progress'); const left = openRungs(bot, goal).map(r => r.phase);
       const needed = left.filter(p => !DEFERRABLE.has(p)), may = left.filter(p => DEFERRABLE.has(p));
+      // What Jev set aside to go without, said as that (mid-242-x, note 498).
+      const aside = asideRungs(bot, goal).map(r => `${label(r.phase)} (${Math.max(1, Math.round((r.until - Date.now()) / 60000))} minutes more)`);
       // And the kit for the crossing, said: it was a second ladder of gates
       // at the portal that this line never mentioned (the decision review,
       // 2026-09-26).
-      return `${needed.length ? `Needed before the Nether: ${needed.map(label).join(', ')}.` : 'Nothing left is needed before the Nether: a portal can be made or found now.'}${may.length ? ` May wait until after it: ${may.map(label).join(', ')}.` : ''}${require('./crossing-kit').kitSummary(bot, goal)}`; })(),
+      return `${needed.length ? `Needed before the Nether: ${needed.map(label).join(', ')}.` : 'Nothing left is needed before the Nether: a portal can be made or found now.'}${may.length ? ` May wait until after it: ${may.map(label).join(', ')}.` : ''}${aside.length ? ` Set aside by choice, to go without for now: ${aside.join(', ')}, each back on its own after that.` : ''}${require('./crossing-kit').kitSummary(bot, goal)}`; })(),
     riskNow: require('./risk').riskNow(bot), deathWouldCost: require('./risk').deathCost(bot, goal),
     recentPositions: require('./stillness').recentPositions(bot),
     health: bot.health, food: bot.food, experienceLevel: bot.experience?.level ?? 0,
@@ -395,7 +413,14 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   }
   const option = options[choice];
   if (option.stage) return null;
+  // A step set aside to go without, taken up again now.
+  if (option.takeUp) { attemptsFor(goal).clear('rung', option.rung.phase); delete goal.strategy; save(); return { stage: option.rung }; }
   if (option.rung) return option.rung.phase === stage.phase ? null : { stage: option.rung };
+  // Setting steps aside is not work: nothing to run in the world, no step to
+  // stall on, no rest. The ladder is read again at once (gameStep).
+  // mid-242-x kept it as a strategy_side step, re-chose it five times a
+  // second and failed on "no measurable progress" (note 498).
+  if (option.aside) { await option.run(bot, task, goal, save); delete goal.strategy; save(); return { replan: true }; }
   // A side trip: once, then a rest, and the next step asks again.
   delete goal.strategy;
   goal.step = { action: 'strategy_side', choice, ladderNext: stage.phase }; save();
