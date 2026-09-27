@@ -140,3 +140,12 @@ test('a block put into the water is a step out only where there is air over it',
   const waterline = localMoves(view(true), feet).moves.find(m => m.key === 'place_north');
   assert.match(waterline.does, /a step up out of the water/);
 });
+
+test('a step onto dry ground says the drop one block past it, where a step that runs on ends up (mid-236-h)', () => {
+  // Feet in water at a ledge; dry ground a block south, and past it a ravine.
+  const cells = { '0,70,0': 'water', '0,71,0': 'air', '0,72,0': 'air', '0,70,1': 'air', '0,71,1': 'air', '0,70,2': 'air', '0,71,2': 'air' };
+  for (let y = 20; y <= 69; y++) cells[`0,${y},2`] = 'air';
+  const step = localMoves(view(cells), new Vec3(0, 70, 0), { goal: 'dry' }).moves.find(m => m.key === 'step_south');
+  assert(step, 'the step south is on offer');
+  assert.match(describeMove(step), /one block past it, a drop of 24\+? blocks|one block past it, no floor within 24 blocks/);
+});

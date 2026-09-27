@@ -128,7 +128,11 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     if (standable(level)) {
       let land = level;
       for (let n = 0; n < 3 && !isWater(view.name(land)) && open(view.name(land.plus(DOWN))) && !isLava(view.name(land.plus(DOWN))); n++) land = land.plus(DOWN);
-      if (isWater(view.name(land)) || solid(view.name(land.plus(DOWN)))) moves.push({ key: `step_${dir}`, does: `${inWater ? 'Swim' : 'Walk'} one block ${dir}${land.y < feet.y ? `, dropping ${feet.y - land.y}` : ''}.`, kind: 'move', to: land, ...where(land) });
+      // What lies one past it, where a step that runs on ends up: mid-236-h
+      // swam a block south onto dry ground, ran on past it and fell
+      // fifty-eight blocks into a ravine the option never named (note 474).
+      const past = land.plus(d), pastDrop = open(view.name(past)) && open(view.name(past.plus(UP))) ? dropBelow(view, past) : null;
+      if (isWater(view.name(land)) || solid(view.name(land.plus(DOWN)))) moves.push({ key: `step_${dir}`, does: `${inWater ? 'Swim' : 'Walk'} one block ${dir}${land.y < feet.y ? `, dropping ${feet.y - land.y}` : ''}.`, kind: 'move', to: land, ...(pastDrop ? { effects: [`one block past it, ${pastDrop}`] } : {}), ...where(land) });
     }
     // Up a block onto the next cell: the cell over the head must be open to
     // rise into, out of water too (the game lifts a swimmer only then).
@@ -248,7 +252,13 @@ async function perform(bot, task, m, { dig }) {
     const keys = m.key === 'swim_up' ? ['jump'] : up || inWater ? ['forward', 'jump'] : ['forward'];
     await move(bot, task, { label: `unstuck_${m.key}`, keys, sneak: false, why: `one move out of being stuck: ${m.key.replaceAll('_', ' ')}`,
       look: to.offset(0.5, up ? 1.1 : 0.6, 0.5), maxMs: 2500, tick: 50,
-      until: () => { const f = bot.entity.position.floored(); return m.key === 'swim_up' ? f.y >= to.y : f.x === to.x && f.z === to.z && f.y >= to.y - (to.y < feet.y ? 3 : 0) && (bot.entity.onGround || isWater(bot.blockAt(f)?.name)); } });
+      // In the cell is enough: waiting to be on the ground there kept the
+      // keys down, and a swimmer's jump out of the water onto land is not
+      // on the ground, so forward ran on past it (mid-236-h, note 474).
+      until: () => { const f = bot.entity.position.floored(); return m.key === 'swim_up' ? f.y >= to.y : f.x === to.x && f.z === to.z && f.y >= to.y - (to.y < feet.y ? 3 : 0); } });
+    bot.clearControlStates?.();
+    // Then still until it lands, the keys up.
+    for (let n = 0; n < 10 && bot.entity.onGround === false && !isWater(bot.blockAt(bot.entity.position.floored())?.name); n++) { task.check(); await new Promise(r => setTimeout(r, 50)); }
     return;
   }
   if (m.kind === 'dig') { await dig(bot, task, m.cell, { requireDrops: false, dropInto: m.key === 'dig_down' }); return; }
