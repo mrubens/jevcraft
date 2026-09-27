@@ -68,6 +68,9 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       // of silence while hurt (notes 358, 366, 391) had no holder in the
       // record.
       turn: turnHeld(bot, now),
+      // What the arbiter, in shadow, would have given the last pass to,
+      // beside the layer that took it (src/arbiter.js shadow).
+      arbiter: bot._arbiterShadow ? { would: bot._arbiterShadow.would, gave: bot._arbiterShadow.gave } : undefined,
       // The mobs about, where they stand: mid-211-p's creeper went off two
       // seconds after the last frame without one, and several deaths could
       // not say where the mob that hit it stood (notes 424, 437).

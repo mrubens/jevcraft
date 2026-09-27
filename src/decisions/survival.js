@@ -264,3 +264,27 @@ define({
   instructions: { task: 'The bot died and has come back to life. Choose whether it goes back for what it dropped.', guidance: 'Each option says what is there, how far, how long the drops last, what was about when the bot died there and what it wore then and wears now.' },
   fallback: () => 'go_back',
 });
+
+// Whose turn it is, when more than one layer claims it (src/arbiter.js).
+// The reflexes are never asked; this is the rest: a live survival plan, the
+// meal, the hunt and the work, each with what it observed. mid-231-o's turn
+// fell through to the work at 0.9 health because the survival plan had
+// failed and returned false (notes 465, 466): now it is a claim like any.
+define({
+  id: 'turn_priority', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'high', tree: true,
+  question: 'Which layer has the bot\'s turn now: survival, the meal and breath, the hunt, or the work?',
+  trigger: 'When two or more layers claim the turn and none of them is a reflex; the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, or a minute.',
+  source: 'src/arbiter.js (arbitrate), the claims in src/survival.js, src/vitals.js, src/mob-hunt.js and src/work.js',
+  instructions: {
+    task: 'Several parts of the bot want its turn at once. Choose which one acts NEXT. Each option is what that part would do and what it observed; nothing here is a verdict.',
+    guidance: 'The player request stays saved whichever is chosen. The ruling is kept until something observed changes, so choose what should hold for the next while.',
+  },
+  options: [
+    { key: 'survival', label: 'the survival layer: a shelter, a stance, a bed, food to find', when: 'the survival layer has something to do, including a plan that failed or rests (said as a fact)', level: 'root' },
+    { key: 'vitals', label: 'eat carried food, get out of powder snow, or surface for air', when: 'hunger or breath call for it and the means are carried', level: 'root' },
+    { key: 'hunt', label: 'fight a mob the request needs a drop from', when: 'a mob hunt is on and one of its kind is in view', level: 'root' },
+    { key: 'work', label: 'the request\'s next step', when: 'always while a request is running', level: 'root' },
+  ],
+  fallback: children => require('../arbiter').rulesPick(Object.entries(children).map(([layer, o]) => ({ layer, urgency: o.description?.urgency })))?.layer || Object.keys(children)[0],
+  ungated: 'Jev\'s pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; the urgency then safety order answers only when Jev cannot be reached',
+});

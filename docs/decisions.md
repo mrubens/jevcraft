@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-80 questions: 32 decision trees and 48 batched questions.
+81 questions: 33 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -183,6 +183,23 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `go_back` | root | go back for the drops | always |
 | `leave_them` | root | leave them and go on | always |
+
+### `turn_priority`
+
+**Which layer has the bot's turn now: survival, the meal and breath, the hunt, or the work?**
+
+- When: When two or more layers claim the turn and none of them is a reflex; the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, or a minute.
+- Decision tree, choice; stakes high; ledger kind `survival`
+- Bar: none: Jev's pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; the urgency then safety order answers only when Jev cannot be reached
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/arbiter.js (arbitrate), the claims in src/survival.js, src/vitals.js, src/mob-hunt.js and src/work.js
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `survival` | root | the survival layer: a shelter, a stance, a bed, food to find | the survival layer has something to do, including a plan that failed or rests (said as a fact) |
+| `vitals` | root | eat carried food, get out of powder snow, or surface for air | hunger or breath call for it and the means are carried |
+| `hunt` | root | fight a mob the request needs a drop from | a mob hunt is on and one of its kind is in view |
+| `work` | root | the request's next step | always while a request is running |
 
 ## combat
 
