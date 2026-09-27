@@ -3693,3 +3693,21 @@ test('a zombie on a ledge within a block of the pillar\'s top is said to reach i
   assert.match(ledge.pillar.description, /The zombie 2 blocks off stands on ground within a block of the pillar's top \(a ledge or a slope\): from there it reaches a player two up/);
   assert(ledge.pillar.expects.damage > flat.pillar.expects.damage);
 });
+
+test('running from a shooter, no footing beside a drop into lava is chosen: its arrows push', () => {
+  // mid-242-p ran from a crossbow piglin to a spot beside a three-block drop to the lava, and the next arrow put it in (2026-09-27).
+  const registry = require('minecraft-data')('26.1');
+  // Netherrack at y 34 for x <= 12; past x 9 at z >= 4 a drop to lava at y 31.
+  const solid = p => p.y === 34 && p.x <= 12 && !(p.x >= 10 && p.z >= 4);
+  const blockAt = p => { const f = p.floored(); return { position: f, name: solid(f) ? 'netherrack' : f.y <= 31 ? 'lava' : 'air', boundingBox: solid(f) ? 'block' : 'empty' }; };
+  const piglin = { id: 5, name: 'piglin', type: 'hostile', position: new Vec3(-4.5, 35, 0.5), height: 1.95, width: 0.6, isValid: true, heldItem: { name: 'crossbow' } };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether' }, registry, health: 16, entities: { 5: piglin }, entity: { position: new Vec3(0.5, 35, 0.5) },
+    blockAt, world: { raycast: () => null },
+    findBlocks: ({ maxDistance }) => { const out = []; for (let x = -20; x <= 12; x++) for (let z = -20; z <= 20; z++) { const p = new Vec3(x, 34, z); if (solid(p) && p.distanceTo(bot.entity.position) <= maxDistance) out.push(p); } return out; } });
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  const danger = [{ entity: piglin, distance: 5, visible: true }];
+  const { near, far } = survival.escapeFootings(danger);
+  const beside = p => p.x >= 8 && p.z >= 2;
+  assert(near.length > 0);
+  assert(![...near, ...far].some(beside), `none by the lava: ${[...near, ...far].filter(beside).map(String).slice(0, 3)}`);
+});

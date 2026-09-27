@@ -1826,7 +1826,14 @@ class Survival {
     const gaining = p => distance(p) >= distance(bot.entity.position) + gain;
     // With a hoglin about, no footing near an edge and no route along one.
     const heavy = heavyHitters(threats(bot, 16), 16).length > 0;
-    const edgeSafe = p => !heavy || !dropWithin(bot, p, 2);
+    // An arrow's knockback moves the bot as a toss does, less far: with a
+    // shooter about, no footing beside a drop into lava or one deep enough
+    // to take half the health. mid-242-p ran from a crossbow piglin to a
+    // spot beside a three-block drop to the lava, and the next arrow put it
+    // in (note 427).
+    const shot = !heavy && danger.some(t => shooter(t.entity));
+    const deadlyBeside = p => { const d = require('./terrain').dropNear(bot, p, 2); return !!d && (d.into === 'lava' || d.damage >= (bot.health ?? 20) / 2); };
+    const edgeSafe = p => heavy ? !dropWithin(bot, p, 2) : !(shot && deadlyBeside(p));
     // The far spots first when the chaser persists; the ordinary hop is the
     // fallback, because standing still beside a creeper is never the answer.
     const far = persistent ? footing.filter(p => p.distanceTo(bot.entity.position) >= 20 && distance(p) >= 20 && edgeSafe(p)).sort((a, b) => distance(b) - distance(a)) : [];
