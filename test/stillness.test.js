@@ -685,3 +685,16 @@ test('walking a one-wide ridge over lava in the Nether, the bot crouches; before
   assert.equal(controls.sneak, false, 'not before a step down');
   await walking;
 });
+
+test('a stair under a column of gravel is not taken: the gravel falls into the head as the bot steps in', () => {
+  // mid-242-n tunnelled under a gravel column at y 36 and suffocated in its own stair.
+  const { stairOptions } = require('../src/tunneling');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0.5, 35, 0.5) }, inventory: { items: () => [] }, entities: {},
+    blockAt: p => { const q = p.floored();
+      if (q.y < 35) return { name: 'stone', position: q, boundingBox: 'block', diggable: true };
+      if (q.x === 1 && q.y >= 37) return { name: 'gravel', position: q, boundingBox: 'block', diggable: true };
+      return { name: q.x === 0 && q.z === 0 ? 'air' : q.y <= 36 && q.x !== 1 ? 'stone' : 'air', position: q, boundingBox: q.x === 0 && q.z === 0 ? 'empty' : (q.y <= 36 && q.x !== 1 ? 'block' : 'empty'), diggable: true }; } };
+  const choices = stairOptions(bot, {}, new Vec3(20, 35, 0));
+  assert(!choices.some(c => c.destination.x === 1 && c.destination.y === 35), `not under the gravel: ${JSON.stringify(choices.map(c => c.destination))}`);
+});

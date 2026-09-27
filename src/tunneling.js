@@ -160,6 +160,11 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
       if (falling(bot.blockAt(feet.offset(0, 2, 0))) || falling(bot.blockAt(feet.offset(0, 3, 0)))) continue;
       clear.push(feet.offset(0, 2, 0));
     }
+    // Nor into a cell with sand or gravel standing over its head: dug out,
+    // it falls into the head cell as the bot steps in. mid-242-n tunnelled
+    // under a gravel column at y 36 and suffocated in its own stair, twenty
+    // to none (2026-09-27).
+    if (falling(bot.blockAt(destination.offset(0, 2, 0)))) { block(destination, 'gravel or sand over the way'); continue; }
     for (let y = Math.max(feet.y + 1, destination.y + 1); y >= destination.y; y--) clear.push(new Vec3(destination.x, y, destination.z));
     let why = null;
     const safe = clear.every(p => {
