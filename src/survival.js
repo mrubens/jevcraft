@@ -918,7 +918,11 @@ class Survival {
     const bot = this.bot;
     const weapon = defenseWeapon(bot);
     if (!/_(sword|axe)$/.test(weapon?.name || '')) return false;
-    if (!chosen && (bot.health < 6 || creeperClose(danger) || danger.some(t => t.distance <= 3 && !shooter(t.entity)))) return false;
+    // A biter at arm's length, in view or not, is the swing's, not a charge's:
+    // mid-241-g charged a skeleton with a zombie at its back out of the list
+    // in view, broke off at once for it, and did so ten times a second while
+    // the zombie hit it from four to none (2026-09-27).
+    if (!chosen && (bot.health < 6 || creeperClose(danger) || threats(bot, 3).some(t => !shooter(t.entity)))) return false;
     const shooters = danger.filter(t => t.visible && shooter(t.entity) && t.distance <= 16);
     const ground = shooters.filter(t => GROUND_SHOOTERS.has(t.entity.name)).sort((a, b) => a.distance - b.distance);
     if (!ground.length) return false;
@@ -945,6 +949,9 @@ class Survival {
     let best = Infinity, bestAt = Date.now();
     const startHealth = bot.health;
     const startedAt = Date.now(), expects = chosen ? bot._stance?.expects : null;
+    // Whether it did anything: a charge broken off before a step or a swing
+    // is no answer, and the turn goes on to the next.
+    let acted = false;
     const onPace = () => { const t = (Date.now() - startedAt) / 1000; return t <= expects.seconds && startHealth - bot.health <= expects.damage * Math.min(1, t / Math.max(0.1, expects.seconds)) + (expects.oneHit || 0); };
     const going = () => chosen ? (expects ? onPace() : bot.health > startHealth - 6) : bot.health >= 4;
     try {
@@ -963,7 +970,7 @@ class Survival {
         await bot.lookAt(e.position.offset(0, 1.5, 0), true);
         if (canStrike(bot, e)) {
           bot.clearControlStates?.(); lowerShield(bot);
-          if (bot.entities[e.id] === e) bot.attack(e);
+          if (bot.entities[e.id] === e) { bot.attack(e); acted = true; }
           if (shielded) raiseShield(bot);
           await sleep(650); lowerShield(bot);
           continue;
@@ -975,9 +982,10 @@ class Survival {
         if (!level && !up && !down) { setAside(this, 'close_on_shooter', 'here', 'no firm ground toward the shooter', 15000); return false; }
         await move(bot, task, { label: 'close_on_shooter', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false,
           why: 'running at a lone shooter over ground checked firm', look: e.position.offset(0, 1.5, 0), maxMs: 250, tick: 50, until: () => canStrike(bot, e) });
+        acted = true;
       }
     } finally { lowerShield(bot); bot.clearControlStates?.(); }
-    return true;
+    return acted;
   }
 
   // A creeper, the player's way: hit it, back off out of the blast while

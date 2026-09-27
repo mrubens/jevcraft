@@ -3279,3 +3279,16 @@ test('a ghast in sight within its own reach puts a span under fire, not only a s
   ghast.position = new Vec3(60.5, 70, 0.5);
   assert.equal(underFire(bot), undefined, 'past its forty');
 });
+
+test('the charge at a shooter is no answer with a biter at arm\'s length, in view or not', async () => {
+  // mid-241-g charged a skeleton with a zombie at its back, broke off at once for it, ten times a second, and the zombie killed it.
+  const skeleton = { id: 8, name: 'skeleton', type: 'hostile', position: new Vec3(10.5, 64, 0.5), height: 1.99, isValid: true };
+  const zombie = { id: 9, name: 'zombie', type: 'hostile', position: new Vec3(-1.5, 64, 0.5), height: 1.95, isValid: true };
+  const bot = crowdBot({ health: 12 });
+  bot.entities = { 8: skeleton, 9: zombie };
+  Object.assign(bot, { pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, equip: async () => {}, attack() {}, heldItem: { name: 'diamond_sword' } });
+  bot.entity.onGround = true;
+  const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [] } });
+  const danger = [{ entity: skeleton, distance: 10, visible: true }];
+  assert.equal(await survival.closeOnShooter(new Task('t'), {}, () => {}, danger), false);
+});
