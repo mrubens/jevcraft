@@ -3088,3 +3088,16 @@ test('standing on the corner of a block over an edge, the drop is under the bot 
   assert(drop, 'a drop');
   assert.equal(drop.blocksAway, 0);
 });
+
+test('the charge at a shooter says the mobs out of sight about, as the fight does', () => {
+  // mid-231-h charged a skeleton at 3.7 health told of it alone, two more four blocks off out of sight, and was shot (2026-09-27).
+  const bot = crowdBot({ health: 4 });
+  bot.entities = { 7: { id: 7, name: 'skeleton', type: 'hostile', position: new Vec3(-3.5, 64, 0.5), height: 1.99, isValid: true },
+    8: { id: 8, name: 'skeleton', type: 'hostile', position: new Vec3(10.5, 64, 0.5), height: 1.99, isValid: true } };
+  // Behind a wall to the west.
+  bot.world = { raycast: (from, dir) => dir.x < 0 ? { position: from.floored(), intersect: from } : null };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('night'), {}, () => {}, [crowdMob(8, 'skeleton', 10)], false);
+  assert(options.charge_shooter, Object.keys(options).join(','));
+  assert.match(options.charge_shooter.description, /Out of sight but about: a skeleton 4 blocks off/);
+});
