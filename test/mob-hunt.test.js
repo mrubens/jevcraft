@@ -883,3 +883,18 @@ test('a piece Jev set aside for the Nether first is not fetched before the cross
   assert.equal(await prepareCombatGear(bot, task, goal, () => {}, actions), true, 'the crossing goes on');
   assert.deepEqual(requests, [], 'nothing fetched');
 });
+
+test('a sword carried is ready: the kit does not put it in the hand over the tool of the work', async () => {
+  // mid-227-g's staircase and the kit swapped the pickaxe and the sword in the hand each pass (2026-09-27).
+  const { bot, slots, goal, task } = fixture();
+  // The sword in the pockets, a pickaxe in the hand for the staircase.
+  const sword = slots[36]; slots[37] = { ...sword, slot: 37 }; slots[36] = { name: 'iron_pickaxe', slot: 36, count: 1, durabilityUsed: 0 };
+  const held = bot.heldItem;
+  const equips = [];
+  const equip = bot.equip; bot.equip = async (item, dest) => { equips.push([item.name, dest]); return equip.call(bot, item, dest); };
+  const actions = { acquireStep: async () => false };
+  const ready = await prepareCombatGear(bot, task, goal, () => {}, actions);
+  assert(!equips.some(([, dest]) => dest === 'hand'), `nothing put in the hand: ${JSON.stringify(equips)}`);
+  assert.equal(ready, require('../src/mob-policy').kitReady(bot));
+  void held; void slots;
+});

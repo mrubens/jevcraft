@@ -52,6 +52,12 @@ async function prepareCombatGear(bot, task, goal, save, actions) {
     const carried = (preferred && carriedEquipment(bot).find(item => item.name === preferred)) ||
       carriedEquipment(bot).filter(item => names.includes(item.name)).sort((a, b) => names.indexOf(b.name) - names.indexOf(a.name))[0];
     if (!carried && waiting(destination)) { short = true; continue; }
+    // The hand holds the tool of the work in hand: a sword carried is ready,
+    // the fight takes it up (combat.js defendNearby). Put in the hand each
+    // pass, it swapped with the tunnel's pickaxe and back, and mid-227-g's
+    // staircase turned between the two until the flip watch ended it
+    // (2026-09-27).
+    if (destination === 'hand' && carried) continue;
     if (!carried) {
       goal.step = { action: 'prepare_combat_equipment', destination, item: names[0] }; save();
       // Worn equipment is still physically present; require an additional
@@ -65,7 +71,7 @@ async function prepareCombatGear(bot, task, goal, save, actions) {
     goal.step = { action: 'equip_combat', item: carried.name, destination }; save();
   }
   // Going without what waits is Jev's choice made: the crossing goes on.
-  return short ? true : readyEquipment(bot);
+  return short ? true : kitReady(bot);
 }
 
 function combatMovement(bot) {
