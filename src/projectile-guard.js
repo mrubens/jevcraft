@@ -62,16 +62,19 @@ function meleeClose(bot, { holdMs = 700 } = {}) {
   } catch (_) { return false; }
 }
 
-// Nor on a one-wide span over a drop (terrain.js onSpan): the turn to the
-// shot is a turn on the span, and the crossing's step walks the way it
-// faces (note 273).
+// On a one-wide span over a drop (terrain.js onSpan) too, crouched: with
+// every key up the turn walks nowhere (note 273 was forward held through a
+// turn), and there an arrow's knockback is the fall. mid-243-e, walking off
+// a forty-block edge from a skeleton, was hit and knocked over it with its
+// shield in hand (2026-09-27).
 async function deflect(bot, task, { holdMs = 700 } = {}) {
-  if (!shielded(bot) || meleeClose(bot, { holdMs }) || require('./terrain').onSpan(bot)) return false;
+  if (!shielded(bot) || meleeClose(bot, { holdMs })) return false;
   const shot = incoming(bot)[0];
   if (!shot) return false;
   const deadline = Date.now() + holdMs;
   bot.pathfinder?.setGoal?.(null);
   bot.clearControlStates?.();
+  if (require('./terrain').onSpan(bot)) bot.setControlState?.('sneak', true);
   try {
     await bot.lookAt(shot.position, true);
     task.check();

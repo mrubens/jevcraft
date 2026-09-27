@@ -23,18 +23,15 @@ test('an arrow is blocked when nothing is at arm\'s length, and not with a zombi
   assert.equal(await deflect(cornered, new Task('guard'), { holdMs: 50 }), false, 'the zombie hitting the bot comes before the skeleton shooting at it');
 });
 
-test('on a one-wide span over a drop the bot does not turn to an arrow: the turn is a turn on the span', async () => {
-  // mid-215-e was turned about on its span over the lava sea and walked off the far end (note 273).
+test('on a one-wide span over a drop the shield still comes up to an arrow, crouched with every key up: there its knockback is the fall', async () => {
+  // mid-215-e walked off its span with forward held through a turn (note 273); mid-243-e was knocked off a forty-block edge by an arrow, shield in hand.
   const bot = fixture({ 1: mob(1, 'skeleton', 0.5, 12.5), 9: { ...arrow, _seenAt: undefined } });
-  let looked = 0; bot.lookAt = async () => { looked++; };
+  const keys = {}; bot.setControlState = (k, v) => { keys[k] = v; }; bot.clearControlStates = () => { for (const k of Object.keys(keys)) keys[k] = false; };
+  keys.forward = true;
+  let sneakAtLook = null; bot.lookAt = async () => { sneakAtLook = !!keys.sneak && !keys.forward; };
   bot.blockAt = p => Math.floor(p.y) === 13 && Math.floor(p.z) === 0 ? { name: 'netherrack', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
-  assert.equal(await deflect(bot, new Task('guard'), { holdMs: 50 }), false);
-  assert.equal(looked, 0);
-  bot._spanning = { since: Date.now() };
-  bot.blockAt = p => Math.floor(p.y) === 13 ? { name: 'netherrack', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
-  assert.equal(await deflect(bot, new Task('guard'), { holdMs: 50 }), false, 'nor while a span is being laid');
-  bot._spanning = null;
-  assert.equal(await deflect(bot, new Task('guard'), { holdMs: 50 }), true, 'on wide ground the shield comes up');
+  assert.equal(await deflect(bot, new Task('guard'), { holdMs: 50 }), true);
+  assert.equal(sneakAtLook, true, 'crouched, forward let go, before the turn');
 });
 
 test('a creeper that would light while the shield is held comes before the arrow', async () => {

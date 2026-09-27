@@ -713,7 +713,14 @@ class Survival {
         // off stalled for three seconds while a zombie walked up and hit it
         // from nine to three (2026-09-26).
         const biter = () => !heavy && threats(bot, 5).some(t => t.distance <= 3 && !shooter(t.entity));
-        try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 3000, stallMs: 1500, stopWhen: biter }); if (!biter()) return; setAside(this, 'firm_ground', 'here', 'a biter at arm\'s length', 5000); }
+        // A shot on its way stops it for the shield, as in stepOnce's copy.
+        const { incoming, deflect } = require('./projectile-guard');
+        const shot = () => bot.inventory.slots?.[45]?.name === 'shield' && incoming(bot).length > 0;
+        try {
+          await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 3000, stallMs: 1500, stopWhen: () => biter() || shot() });
+          if (shot()) { await deflect(bot, task); return; }
+          if (!biter()) return; setAside(this, 'firm_ground', 'here', 'a biter at arm\'s length', 5000);
+        }
         catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; setAside(this, 'firm_ground', 'here', err, 5000); }
       }
     }
@@ -2947,8 +2954,15 @@ class Survival {
         if (cell) {
           this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, from: threats(bot, 64).find(pusher)?.entity.name, drop: deep });
           require('./terrain').holdOffEdge(bot, bot.entity.position.floored(), threats(bot, 64).map(t => t.entity));
-          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
+          // A shot on its way stops the walk for the shield: at the edge its
+          // knockback is the fall the walk is getting away from. mid-243-e's
+          // walk from a forty-block edge had gone half a block in a second
+          // and a half when a skeleton's arrow put it over (2026-09-27).
+          const { incoming, deflect } = require('./projectile-guard');
+          const shot = () => bot.inventory.slots?.[45]?.name === 'shield' && incoming(bot).length > 0;
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000, stopWhen: shot }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          if (shot()) { this.state.edgeTriedAt = 0; await deflect(bot, task); }
           onStep(goal); return true;
         }
       }

@@ -2757,7 +2757,7 @@ test('up on its own pillar, the step back from the edge does not take the bot of
   assert.notEqual(goal.survivalAction?.action, 'off_the_edge');
 });
 
-test('on a one-wide span over the lava sea, a hoglin at arm\'s length is struck crouched and still, with no jump and no key down; a shot is not turned to', async () => {
+test('on a one-wide span over the lava sea, a hoglin at arm\'s length is struck crouched and still, with no jump and no key down', async () => {
   // mid-215-e: a swing at a hoglin behind it turned it about on its span, and the crossing walked it off the far end into the lava sea (note 273).
   const { onSpan } = require('../src/terrain');
   const { defendNearby } = require('../src/combat');
@@ -2781,7 +2781,7 @@ test('on a one-wide span over the lava sea, a hoglin at arm\'s length is struck 
   assert.equal(await defendNearby(bot, new Task('span'), {}, () => {}), true, 'struck where it stands');
   assert.deepEqual([attacks.length, jumps, keys.sneak, keys.forward || false, keys.back || false], [1, [], true, false, false], 'one plain swing, crouched, no jump, no walking');
   attacks.length = 0; looks.length = 0; bot._defenseAttackAt = 0;
-  assert.equal(await deflect(bot, new Task('span'), { holdMs: 50 }), false, 'no turn to a shot on the span');
+  assert.equal(await deflect(bot, new Task('span'), { holdMs: 50 }), false, 'the hoglin at arm\'s length comes before the shot');
   const survival = new Survival(bot, { navigate: async () => { throw new Error('not walked from a span'); } }, { state: { shelters: [] } });
   const goal = {};
   await survival.flee(new Task('span'), goal, () => {});
@@ -2867,4 +2867,28 @@ test('a mob nine blocks off does not hide the bed: sleep is offered with the mon
   assert.doesNotMatch(seen.tree.sleep_in_bed.description, /monster/, 'nine blocks off is outside the eight that refuse a sleep');
   assert.deepEqual(seen.state.survivalFacts.armourWorn, ['iron_helmet', 'iron_chestplate']);
   assert.equal(seen.state.survivalFacts.weapon, 'iron_sword');
+});
+
+test('walking off a deadly edge from a skeleton, an arrow on its way stops the walk and the shield comes up to it', async () => {
+  // mid-243-e: half a block in a second and a half from a forty-block edge, and a skeleton's arrow put it over, shield in hand (2026-09-27).
+  const world = p => {
+    const x = Math.floor(p.x), y = Math.floor(p.y);
+    if (x >= 6 && y > 22) return { position: p, name: 'air', boundingBox: 'empty' };
+    if (y <= 63) return { position: p, name: 'stone', boundingBox: 'block' };
+    return { position: p, name: 'air', boundingBox: 'empty' };
+  };
+  const skeleton = { id: 4, name: 'skeleton', type: 'hostile', position: new Vec3(0.5, 64, 0.5), height: 1.99, isValid: true };
+  const arrow = { id: 9, name: 'arrow', position: new Vec3(2.5, 65.5, 0.5), velocity: new Vec3(1, 0, 0), isValid: true };
+  let raised = false, stopped = null;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 17,
+    entity: { position: new Vec3(4.5, 64, 0.5), onGround: true, height: 1.8 }, entities: { 4: skeleton }, time: { timeOfDay: 14000 },
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: { 45: { name: 'shield' } } }, world: { raycast: () => null }, blockAt: world,
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {},
+    activateItem() { raised = true; }, deactivateItem() {} });
+  const survival = new Survival(bot, { navigate: async (b, t, g, opts) => { bot.entities[9] = arrow; stopped = opts.stopWhen?.() ?? null; } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('edge'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'off_the_edge');
+  assert.equal(stopped, true, 'the walk is told to stop for the shot');
+  assert.equal(raised, true, 'and the shield comes up to it');
 });
