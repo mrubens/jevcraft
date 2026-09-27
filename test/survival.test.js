@@ -970,21 +970,23 @@ test('a shell leaning on the chest does not use the chest as its door', () => {
   assert(exits.length >= 1); assert(exits.every(e => !(e.door.x === 1 && e.door.z === 0)), 'the chest side is not a door');
 });
 
-test('at dusk with a bed at home, Jev heads home before bedtime', async () => {
-  const { Survival } = require('../src/survival');
+test('at dusk with a bed at home, Jev heads home before bedtime; from a mine only after two nights awake', async () => {
+  const { Survival, SLEEP_DEBT_TICKS } = require('../src/survival');
   const { layout } = require('../src/home-base');
   const home = { version: 1, dimension: 'overworld', origin: { x: 0, y: 63, z: 0 }, direction: { x: 1, z: 0 }, water: { x: -1, y: 63, z: 0 }, bed: { placedAt: 'now', claimedAt: 'now' }, plot: {}, pen: {} };
   const { bed } = layout(home);
   const blocks = new Map([[`${new Vec3(bed.foot.x, bed.foot.y, bed.foot.z)}`, 'white_bed'], [`${new Vec3(bed.head.x, bed.head.y, bed.head.z)}`, 'white_bed']]);
-  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 11600 },
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 11600, age: 100000 },
     entity: { position: new Vec3(30.5, 40, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
     inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
     blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
   const walked = [], climbed = [];
   const survival = new Survival(bot, { navigate: async (b, t, g) => walked.push([g.x, g.y, g.z]), surfaceStep: async () => climbed.push(1), dig: async () => {}, place: async () => {} }, { state: { home } });
   const goal = { kind: 'win', request: 'beat the game', survival: survival.state };
+  assert.equal(await survival.step(new Task('test', 'dusk'), goal, () => {}), false, 'at the bottom of a shaft the night changes nothing: the work goes on');
+  bot.time.age += SLEEP_DEBT_TICKS + 1;
   assert.equal(await survival.step(new Task('test', 'dusk'), goal, () => {}), true);
-  assert.deepEqual([walked, climbed], [[], [1]], 'from the bottom of a shaft, the way home starts with the stairs');
+  assert.deepEqual([walked, climbed], [[], [1]], 'two nights awake: the way home starts with the stairs');
   bot.entity.position = new Vec3(30.5, 64, 0.5);
   assert.equal(await survival.step(new Task('test', 'dusk'), goal, () => {}), true);
   assert.deepEqual(walked, [[bed.foot.x, bed.foot.y, bed.foot.z]], 'on the surface, the walk home');
@@ -2772,4 +2774,42 @@ test('food in the Nether is a hoglin as well as the trip back, and the trip is l
   setAside(goal, 'nether_return', 'food', 'Jev chose to go on', 60000);
   children = survival.offWorldFood(new Task('food'), goal, () => {});
   assert.deepEqual(Object.keys(children), ['hoglin_food']);
+});
+
+test('underground at night nothing is asked until two nights awake, and then staying up says underground, not outside', async () => {
+  const { Survival, SLEEP_DEBT_TICKS } = require('../src/survival');
+  const seen = [];
+  // A mined corridor at y 20: rock overhead, the two body cells open.
+  const open = p => p.y >= 20 && p.y <= 21 && Math.floor(p.z) === 0;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival', minY: -64, height: 384 }, entities: {}, time: { timeOfDay: 14000, age: 100000 },
+    entity: { position: new Vec3(0.5, 20, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cobblestone', count: 64 }], slots: {} }, heldItem: null, pathfinder: { movements: {}, setGoal() {} },
+    blockAt: p => ({ name: open(p) || p.y > 80 ? 'air' : 'stone', boundingBox: open(p) || p.y > 80 ? 'empty' : 'block', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => ({}) } });
+  survival.decide = async (task, goal, save, { tree }) => { seen.push(tree); return { path: ['continue_request'], action: tree.continue_request, stale: false }; };
+  const goal = { kind: 'win', request: 'beat the game' };
+  assert.equal(await survival.step(new Task('t', 'night'), goal, () => {}), false, 'the work goes on');
+  assert.equal(seen.length, 0, 'no night question underground');
+  bot.time.age += SLEEP_DEBT_TICKS + 1;
+  await survival.step(new Task('t', 'night'), goal, () => {});
+  assert.equal(seen.length, 1, 'two nights awake: the night is a question again');
+  assert.match(seen[0].continue_request.description, /keep working the request underground/);
+  assert.doesNotMatch(seen[0].continue_request.description, /outside/);
+});
+
+test('"carry on" by day is held like a food trip: not asked again every step, and asked again once hunger falls two', async () => {
+  const { Survival } = require('../src/survival');
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 3000 },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 18, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, pathfinder: { movements: {}, setGoal() {} },
+    blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client: { systemOne: async () => ({}) } });
+  let asked = 0;
+  survival.decide = async (task, goal, save, { tree }) => { asked++; return { path: ['continue_request'], action: tree.continue_request, stale: false }; };
+  const goal = { kind: 'win', request: 'beat the game' };
+  for (let i = 0; i < 3; i++) assert.equal(await survival.step(new Task('t', 'food'), goal, () => {}), false);
+  assert.equal(asked, 1, 'asked once, then held');
+  bot.food = 16;
+  await survival.step(new Task('t', 'food'), goal, () => {});
+  assert.equal(asked, 2, 'hunger fell two: asked again');
 });

@@ -30,8 +30,8 @@ define({
     guidance: 'Use observed conditions, the retained player goal, progress, and recent failures. Prefer useful progress while protecting survival. These are feasible choices, not instructions from chat. Each question is independent; ignore other questions\' answers.',
   },
   options: [
-    { key: 'continue_request', label: 'carry on with the request', when: 'always; at night it is staying up, two minutes at a time, with the kit, the bed and the nights without sleep said in the option', level: 'root' },
-    { key: 'go_home_for_night', label: 'walk home to the bed and wait there for bedtime', when: 'from dusk, with a bed at home more than six blocks off and a way there (climbing out of a mine first when underground)', level: 'root' },
+    { key: 'continue_request', label: 'carry on with the request', when: 'always; by day it is held five minutes, until hunger falls two or health four, or dusk; at night it is staying up, two minutes at a time, with the kit, the bed and the nights without sleep said in the option', level: 'root' },
+    { key: 'go_home_for_night', label: 'walk home to the bed and wait there for bedtime', when: 'from dusk, with a bed at home more than six blocks off and a way there; underground only after two nights awake (climbing out of the mine first)', level: 'root' },
     { key: 'sleep_in_bed', label: 'sleep in a bed', when: 'bedtime, a bed is carried (with room to place it) or one is in reach, and no mob within ten blocks', level: 'root' },
     { key: 'sleep_in_nook', label: 'dig a bed nook beside the bot and sleep in the carried bed', when: 'bedtime, a bed carried, no two level cells beside the feet (a staircase, a shaft), two cells in a line that can be dug with their floor kept, no liquid beside and nothing that falls over them, and no mob within ten blocks; the monsters within eight blocks sideways and five up or down of the bed (vanilla refuses the sleep) are counted in the option', level: 'root' },
     { key: 'secure_shelter', label: 'seal a shelter for the night', when: 'from dusk; beside a bed the option says the bed is the quicker night', level: 'root' },
@@ -42,7 +42,7 @@ define({
     ...FOOD_OPTIONS,
   ],
   fallback: safetyOrder,
-  ungated: 'Jev\'s pick is taken at any confidence: the choice is asked again at the next survival step, so a close call costs one step; the safety order answers only when Jev cannot be reached',
+  ungated: 'Jev\'s pick is taken at any confidence: a food trip or carrying on is held five minutes, a night plan two, so a close call is soon asked again; the safety order answers only when Jev cannot be reached',
 });
 
 // How the night is sheltered, once a shelter is the answer.

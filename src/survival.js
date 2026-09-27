@@ -1110,7 +1110,8 @@ class Survival {
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
     const race = pocketRace(bot, danger);
-    const nightLong = shelterNeeded(bot) ? ` At night the mobs outside do not lose interest: about ${minutesToDawn(bot)} real minutes to dawn.` : '';
+    // Underground the dawn changes nothing: no mob there burns in it.
+    const nightLong = shelterNeeded(bot) && surfaceObserver(bot)(bot.entity.position) ? ` At night the mobs outside do not lose interest: about ${minutesToDawn(bot)} real minutes to dawn.` : '';
     // The blocks against what the crowd deals while they go down: mid-92-e
     // and mid-83-d chose pockets of twenty to thirty-four blocks with a
     // zombie at arm's length and four shooters about, and neither was shut.
@@ -3196,7 +3197,16 @@ class Survival {
     }
     // The walk home for the night is Jev's to choose (go_home_for_night
     // below); once chosen it is held, not asked again every tick.
-    const homeWalk = homeBed && shelterNeeded(bot) && homeBed.foot.distanceTo(bot.entity.position) > 6 && (underground || !routeBlocked) &&
+    // Underground, night is not a question: the dark down there is the same
+    // at noon, and its mobs neither spawn more nor burn at dawn. The shelter,
+    // the walk home and staying up were asked at y -50 mid-dig all night,
+    // every two minutes, and the climbs out for them were 110 of 408
+    // pre-Nether minutes (the decision review, 2026-09-26). The night comes
+    // up when the work does, or after two nights awake, when the phantoms
+    // waiting on the third are a reason to find a bed.
+    const nightFree = underground && !this.sleepDebt();
+    const nightNow = shelterNeeded(bot) && !nightFree;
+    const homeWalk = homeBed && nightNow && homeBed.foot.distanceTo(bot.entity.position) > 6 && (underground || !routeBlocked) &&
       !sleepWaiting(this) && !isSetAside(this, 'surface_home', 'here');
     const heldPlan = this.state.nightPlan?.until > Date.now() ? this.state.nightPlan : null;
     if (homeWalk && heldPlan?.plan === 'home') { heldPlan.until = Date.now() + 120000; await this.goHomeForNight(task, goal, save, homeBed, underground); onStep(goal); return true; }
@@ -3205,7 +3215,7 @@ class Survival {
     // Before bedtime, a bed anywhere in reach (a walk that just failed
     // included) means no sealing in yet: the walk is retried in two minutes
     // and the shelter thirty blocks from the bed was the worse night.
-    const needsShelter = shelterNeeded(bot) && !stayingUp && plan?.plan !== 'hunt';
+    const needsShelter = nightNow && !stayingUp && plan?.plan !== 'hunt';
     // A shelter once chosen is a plan, not a question for every tick: the
     // second run climbed its shaft for a shelter, was asked again at the
     // top, went back down to the mine, and was asked again at the bottom.
@@ -3259,6 +3269,15 @@ class Survival {
     const stockPaused = isSetAside(this, 'food_search', 'stock', now);
     const needsFood = foodSupply(bot) < desiredFood && (hungry || (stockDriven && !stockPaused));
     if (!needsShelter && !needsFood) return false;
+    // "Carry on" is an answer too, held as a food trip is: on the surface
+    // at hunger eighteen the question came back every pass while Jev said
+    // carry on, each asking with its route surveys, until one pass said
+    // food (the decision review, 2026-09-26). Held for five minutes, until
+    // hunger falls two or health four from when it was chosen, or the night
+    // comes; then asked again with what changed.
+    const carryOn = this.state.carryOnPlan;
+    if (carryOn && (carryOn.until < now || needsShelter || bot.food <= carryOn.food - 2 || (bot.health ?? 20) <= carryOn.health - 4)) delete this.state.carryOnPlan;
+    if (this.state.carryOnPlan) return false;
     const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
       ...(require('./exploration').biomeView(bot) || {}),
       playerUrgency: goal.urgency ? { level: goal.urgency.level, meaning: 'How much the wording of the request pressed for speed: relaxed, ordinary or pressed. Pressure is a reason to keep working while it is still safe, never a reason to skip shelter once night is close.' } : undefined,
@@ -3286,7 +3305,7 @@ class Survival {
     const healing = (bot.food ?? 20) >= 18 ? '' : ` Health does not come back meanwhile: hunger ${bot.food}, below eighteen.`;
     const tree = {
       continue_request: { description: stayUp
-        ? `Stay up and keep working the request outside in the dark, two minutes at a time. Hostile mobs spawn around the bot all night; it is ${armed ? 'armed and armoured' : 'not armed and armoured'}${bedReady ? ', and the bed is one action away' : ', and there is no bed to fall back on'}.${this.sleepDebt() ? ' It has not slept for two nights: phantoms come for a player on the third.' : ''}${nowAbout}${healing}`
+        ? `Stay up and keep working the request ${underground ? 'underground' : 'outside in the dark'}, two minutes at a time. ${underground ? 'Underground the night is no darker, but the surface it comes back up to is full of mobs until dawn' : 'Hostile mobs spawn around the bot all night'}; it is ${armed ? 'armed and armoured' : 'not armed and armoured'}${bedReady ? ', and the bed is one action away' : ', and there is no bed to fall back on'}.${this.sleepDebt() ? ' It has not slept for two nights: phantoms come for a player on the third.' : ''}${nowAbout}${healing}`
         : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
         run: async () => { if (stayUp) { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up', armed }); } } },
     };
@@ -3379,7 +3398,10 @@ class Survival {
     onStep(goal);
     if (decision.stale) return true;
     if (decision.path[0] === 'obtain_food' && !hungry && !this.state.foodPlan) this.state.foodPlan = { until: Date.now() + 300000, at: new Date().toISOString() };
-    if (decision.path[0] === 'continue_request') delete this.state.foodPlan;
+    if (decision.path[0] === 'continue_request') {
+      delete this.state.foodPlan;
+      if (!needsShelter) this.state.carryOnPlan = { until: Date.now() + 300000, food: bot.food, health: bot.health ?? 20 };
+    } else delete this.state.carryOnPlan;
     if (!await runChosen(decision.path[0], { run: () => decision.action.run() })) return false;
     return decision.path[0] !== 'continue_request';
   }

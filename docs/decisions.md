@@ -26,14 +26,14 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter, walk home, night up or food top-up is still being carried out.
 - Decision tree, choice; stakes high; ledger kind `survival`
-- Bar: none: Jev's pick is taken at any confidence: the choice is asked again at the next survival step, so a close call costs one step; the safety order answers only when Jev cannot be reached
+- Bar: none: Jev's pick is taken at any confidence: a food trip or carrying on is held five minutes, a night plan two, so a close call is soon asked again; the safety order answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/survival.js (step: the tree), src/foraging.js (forageChoices: the food options)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `continue_request` | root | carry on with the request | always; at night it is staying up, two minutes at a time, with the kit, the bed and the nights without sleep said in the option |
-| `go_home_for_night` | root | walk home to the bed and wait there for bedtime | from dusk, with a bed at home more than six blocks off and a way there (climbing out of a mine first when underground) |
+| `continue_request` | root | carry on with the request | always; by day it is held five minutes, until hunger falls two or health four, or dusk; at night it is staying up, two minutes at a time, with the kit, the bed and the nights without sleep said in the option |
+| `go_home_for_night` | root | walk home to the bed and wait there for bedtime | from dusk, with a bed at home more than six blocks off and a way there; underground only after two nights awake (climbing out of the mine first) |
 | `sleep_in_bed` | root | sleep in a bed | bedtime, a bed is carried (with room to place it) or one is in reach, and no mob within ten blocks |
 | `sleep_in_nook` | root | dig a bed nook beside the bot and sleep in the carried bed | bedtime, a bed carried, no two level cells beside the feet (a staircase, a shaft), two cells in a line that can be dug with their floor kept, no liquid beside and nothing that falls over them, and no mob within ten blocks; the monsters within eight blocks sideways and five up or down of the bed (vanilla refuses the sleep) are counted in the option |
 | `secure_shelter` | root | seal a shelter for the night | from dusk; beside a bed the option says the bed is the quicker night |
