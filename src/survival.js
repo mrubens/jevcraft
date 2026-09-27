@@ -286,6 +286,12 @@ const worldAge = bot => Number(bot.time?.age);
 const inLava = bot => require('./terrain').bodyInLava(bot);
 const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(bot.entity.position.floored())?.name === 'water';
 
+// A passage out of a pocket away from a creeper (Survival.passageOut): its
+// end at least this far from the creeper, more than the six blocks that keep
+// a door shut; at least this long, so the bot is in rock and not at a door;
+// and no longer than this.
+const PASSAGE_CLEAR = 10, PASSAGE_MIN = 4, PASSAGE_MAX = 16;
+
 // Where a held stance looks, for the shield: a shield covers only the way
 // the bot faces. A shot on its way first (the guard's own rule), then the
 // nearest shooter that can see the bot, then the nearest mob. mid-227-n
@@ -2611,6 +2617,71 @@ class Survival {
     return true;
   }
 
+  // The passage out of a pocket away from a creeper, surveyed before it is
+  // offered (the pocket_next option tunnel_out): level, one wide and two
+  // high, along the axis that leads farthest from the creeper, cell by cell
+  // through rock that is safe to dig (nothing flowing behind it, tunneling.js
+  // safeExcavation) with a solid floor under each cell, until its end is
+  // PASSAGE_CLEAR blocks from the creeper and at least PASSAGE_MIN long. Null
+  // where the rock ahead does not allow it.
+  passageOut(creeper) {
+    const bot = this.bot;
+    const feet = bot.entity.position.floored(), at = creeper.entity.position;
+    const away = feet.offset(0.5, 0, 0.5).minus(at);
+    const dir = Math.abs(away.x) >= Math.abs(away.z) ? new Vec3(Math.sign(away.x) || 1, 0, 0) : new Vec3(0, 0, Math.sign(away.z) || 1);
+    const direction = dir.x === 1 ? 'east' : dir.x === -1 ? 'west' : dir.z === 1 ? 'south' : 'north';
+    const { safeExcavation } = require('./tunneling');
+    let here = feet, cells = 0;
+    for (let n = 0; n < PASSAGE_MAX; n++) {
+      const next = here.plus(dir);
+      const floor = bot.blockAt(next.offset(0, -1, 0));
+      if (!floor || floor.boundingBox !== 'block' || /lava|water/.test(floor.name)) break;
+      let blocked = false;
+      for (const c of [next, next.offset(0, 1, 0)]) {
+        const b = bot.blockAt(c);
+        if (!b || /lava|water|fire/.test(b.name) || (b.boundingBox === 'block' && (!b.diggable || !safeExcavation(bot, c)))) { blocked = true; break; }
+      }
+      if (blocked) break;
+      here = next; cells++;
+      if (cells >= PASSAGE_MIN && Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z) >= PASSAGE_CLEAR) break;
+    }
+    const clearance = Math.round(Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z));
+    if (cells < PASSAGE_MIN || clearance < PASSAGE_CLEAR) return null;
+    return { dir, direction, cells, clearance, end: here };
+  }
+
+  // Dig the passage surveyed (passageOut) and go on from its end: the pocket
+  // is forgotten as one left by a door. The creeper is looked for before
+  // each cell; within six blocks of the passage's head it stops, the bot
+  // still enclosed, and the pocket's next step is asked again.
+  async tunnelOut(task, goal, save, refuge, creeper, passage) {
+    const bot = this.bot;
+    this.report(goal, save, { action: 'tunnel_out', origin: refuge.origin, direction: passage.direction, cells: passage.cells, creeper: Number(creeper.distance.toFixed(1)), health: bot.health });
+    const start = bot.entity.position.floored().offset(0.5, 0, 0.5);
+    let here = bot.entity.position.floored(), dug = 0;
+    for (let n = 0; n < passage.cells; n++) {
+      task.check();
+      const next = here.plus(passage.dir), head = next.offset(0.5, 0, 0.5);
+      // Come round toward the passage: within six of its head and nearer to
+      // it than to the pocket it was dug from. (The first cell of a passage
+      // dug from five blocks off is six from the creeper by itself.)
+      const near = threats(bot, 16).filter(t => t.entity.name === 'creeper').some(t => t.entity.position.distanceTo(head) <= 6 && t.entity.position.distanceTo(head) < t.entity.position.distanceTo(start));
+      if (near) { this.report(goal, save, { action: 'tunnel_out_stopped', cells: dug, reason: 'a creeper come round within six blocks of the passage\'s head' }); return dug > 0; }
+      for (const c of [next, next.offset(0, 1, 0)]) {
+        const b = bot.blockAt(c);
+        if (b && b.boundingBox === 'block') {
+          if (!require('./tunneling').safeExcavation(bot, c)) { this.report(goal, save, { action: 'tunnel_out_stopped', cells: dug, reason: `lava or water behind the ${b.name.replaceAll('_', ' ')} ahead` }); return dug > 0; }
+          await this.actions.dig(bot, task, c, { requireDrops: false });
+        }
+      }
+      await this.actions.navigate(bot, task, new goals.GoalBlock(next.x, next.y, next.z), { timeoutMs: 6000, stallMs: 2000 });
+      here = next; dug++;
+    }
+    // Left by its passage, the pocket is one night's stop like any other.
+    if (refuge.kind !== 'house') { this.state.shelters = this.state.shelters.filter(s => s !== refuge); save(); }
+    return true;
+  }
+
   async leave(task, goal, save, refuge, reason, { past = false } = {}) {
     const bot = this.bot;
     // "Morning. Back to it." only when it is morning; a shelter left at
@@ -3445,6 +3516,20 @@ class Survival {
       // blocks of one stays shut, and with every door so, the pocket waits.
       const creeperNear = threats(bot, 16).filter(t => t.entity.name === 'creeper').sort((a, b) => a.distance - b.distance)[0];
       const doorsSay = creeperNear ? ` A door within six blocks of a creeper stays shut (the creeper ${Math.round(creeperNear.distance)} blocks off now${creeperNear.visible ? '' : ', behind the rock'}): with every door so, the pocket waits for it to move off.` : '';
+      // A way out that no door rule shuts: a passage dug through the far
+      // wall, away from the creeper. mid-230-l chose to leave sixty-seven
+      // times with a creeper drifting three to seven blocks off behind the
+      // rock, every door refused for it each time, and sat a hundred minutes
+      // in the pocket (note 390, 2026-09-27). The rule that keeps a door
+      // within six blocks of a creeper shut is a physical one and stays; the
+      // passage ends farther from the creeper than that, and is Jev's.
+      const passage = creeperNear && !inWater(bot) && typeof this.actions.dig === 'function' && typeof this.actions.navigate === 'function' ? this.passageOut(creeperNear) : null;
+      if (passage) options.tunnel_out = { description: `Dig a passage out through the pocket's ${passage.direction} wall, away from the creeper: one wide and two high, ${passage.cells} blocks, about ${Math.round(passage.cells * 2.5)} seconds, and go back to work${night ? ' in the dark, where mobs spawn' : ''} from its end, ${passage.clearance} blocks from where the creeper is now (it is ${Math.round(creeperNear.distance)} off${creeperNear.visible ? '' : ', behind the rock'}). A creeper walks to a player it sees within sixteen blocks and lights its fuse within three; behind rock it sees nothing, and digging makes no noise it follows. No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if the creeper comes round toward its head within six blocks or the rock ahead is not safe to dig through.${outSays}${outHealth}`,
+        run: async () => {
+          delete this.state.watchedSince;
+          if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_out' };
+          return this.tunnelOut(task, goal, save, refuge, creeperNear, passage);
+        } };
       options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${doorsSay}${outSays}${outHealth}`,
         run: async () => {
           delete this.state.watchedSince;

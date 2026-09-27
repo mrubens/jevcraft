@@ -1321,6 +1321,43 @@ test('sealed in, the mobs the wall hides are named in the choice to leave', asyn
   assert.match(leave || '', /A door within six blocks of a creeper stays shut \(the creeper 10 blocks off now, behind the rock\): with every door so, the pocket waits for it to move off/);
 });
 
+test('a creeper that keeps every door shut: a passage out through the far wall is Jev\'s, and it is dug away from the creeper', async () => {
+  // mid-230-l (note 390): sixty-seven choices to leave, every door refused for a creeper three to seven blocks off behind the rock, a hundred minutes in the pocket.
+  const origin = new Vec3(0, 30, 0);
+  const creeper = { id: 7, name: 'creeper', type: 'hostile', position: new Vec3(5.5, 30, 0.5), height: 1.7, width: 0.6, isValid: true };
+  const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`]);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: { 7: creeper }, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 6000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ name: open.has(`${p}`) ? 'air' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : 'block', diggable: true, position: p }),
+    world: { raycast: (from) => ({ intersect: from.offset(0.6, 0, 0) }) } });
+  const dug = [], walked = [];
+  const refuge = { origin: { ...origin }, dimension: 'overworld' };
+  const survival = new Survival(bot, { dig: async (b, t, p) => { dug.push([p.x, p.y, p.z]); open.add(`${p}`); }, navigate: async (b, t, g) => { walked.push([g.x, g.z]); bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } },
+    { state: { shelters: [refuge] }, client: { systemOne: async () => ({}) } });
+  let tree;
+  survival.decide = async (task, goal, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['tunnel_out'], stale: false }; };
+  survival.wait = async () => assert.fail('Jev chose the passage');
+  await survival.step(new Task('day'), { kind: 'win' }, () => {});
+  assert.match(tree?.tunnel_out?.description || '', /Dig a passage out through the pocket's west wall, away from the creeper: one wide and two high, 5 blocks, about 13 seconds/);
+  assert.match(tree.tunnel_out.description, /10 blocks from where the creeper is now \(it is 5 off, behind the rock\)/);
+  assert.match(tree.tunnel_out.description, /stops, the bot still enclosed, if the creeper comes round toward its head within six blocks/);
+  assert.deepEqual(dug, [[-1, 30, 0], [-1, 31, 0], [-2, 30, 0], [-2, 31, 0], [-3, 30, 0], [-3, 31, 0], [-4, 30, 0], [-4, 31, 0], [-5, 30, 0], [-5, 31, 0]], 'west, cell by cell, two high');
+  assert.deepEqual(walked.at(-1), [-5, 0]);
+  assert(!survival.state.shelters.includes(refuge), 'the pocket is left behind, as by a door');
+  // The creeper come round to the passage's head: it stops, the bot still in rock.
+  const again = new Survival(bot, { dig: async (b, t, p) => { dug.push([p.x, p.y, p.z]); open.add(`${p}`); }, navigate: async () => {} }, { state: { shelters: [refuge] } });
+  bot.entity.position = origin.offset(0.5, 0, 0.5); dug.length = 0;
+  const passage = again.passageOut({ entity: creeper, distance: 5, visible: false });
+  creeper.position = new Vec3(-3.5, 30, 0.5);
+  assert.equal(await again.tunnelOut(new Task('day'), {}, () => {}, refuge, { entity: creeper, distance: 4 }, passage), false);
+  assert.deepEqual(dug, [], 'not a block dug toward a creeper within six of the passage');
+  assert(again.state.shelters.includes(refuge), 'still the pocket');
+  // No passage where the rock ahead has water behind it.
+  const wet = new Survival(Object.assign(bot, { blockAt: p => ({ name: open.has(`${p}`) ? 'air' : p.x <= -2 ? 'water' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : p.x <= -2 ? 'empty' : 'block', diggable: true, position: p }) }), {}, {});
+  assert.equal(wet.passageOut({ entity: { position: new Vec3(5.5, 30, 0.5) }, distance: 5 }), null);
+});
+
 test('sealed in hurt and hungry at night, staying and leaving both say the health and that it does not come back', async () => {
   // mid-92-o: at eight health and twelve hunger it left the pocket told only that mobs spawn in the dark, and died in a minute.
   const origin = new Vec3(0, 30, 0);

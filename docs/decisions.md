@@ -73,7 +73,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `pocket_next`
 
-**Sealed in a pocket: stay, leave, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
+**Sealed in a pocket: stay, leave, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, dig a passage out away from a creeper, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
 
 - When: Each survival step inside a sealed pocket, unless a mob is inside or at arm's length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.
 - Decision tree, choice; stakes medium; ledger kind `survival`
@@ -91,6 +91,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `hunt_[a-z_]+` (pattern) | root | open the pocket and hunt this kind of mob for its drops | night, nothing watching, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back |
 | `stash_valuables` | root | open the pocket and put the valuables in the stash chest | night, nothing watching, a stash chest within 128 blocks and valuables carried |
 | `cache_valuables` | root | open the pocket and put a chest down outside for the valuables | night, nothing watching, home's chest out of reach, valuables carried, and a chest or the wood for one |
+| `tunnel_out` | root | dig a passage out through the far wall, away from the creeper, and go back to work from its end | a creeper within sixteen blocks (the rule that keeps a door within six of one shut would refuse the doors), the bot not in water, digging and walking at hand, and the rock away from the creeper safe to dig for at least four cells to a point ten or more blocks from it; said with the direction, the cells, about how long, the clearance at its end, and that it stops, the bot still enclosed, if the creeper comes round toward its head within six blocks |
 | `stay` | root | stay in the pocket | always |
 | `leave` | root | open the pocket and go back to work | always |
 
