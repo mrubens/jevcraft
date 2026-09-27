@@ -346,6 +346,9 @@ function pickaxeReserve(bot, feet) {
   return { stonePickaxesMakeable: more, sticksAvailable: sticks, ...(up ? { blocksToOpenSky: up, climbOutByHandMinutes: Math.round(up * 3 * 7.5 / 60) } : {}) };
 }
 
+// A mob that bites within arm's length, in sight or not: no sealing it out.
+const biterAtArm = bot => threats(bot).some(t => t.distance <= 2.2 && !shooter(t.entity));
+
 function firmGround(bot, radius = 4, { margin = 1, awayFrom = null } = {}) {
   const feet = bot.entity.position.floored(), cells = [];
   // Farther from a mob than now by two blocks at least (a creeper coming).
@@ -3395,7 +3398,11 @@ class Survival {
       // With a mob already at arm's length there is no sealing it out: the
       // third death was six zombies in the shell cells and a bot placing
       // blocks against them until its health ran out.
-      const adjacent = threats(bot).some(t => t.visible && t.distance <= 2.2);
+      // In sight or not: a zombie at arm's length round the shelter's wall
+      // hits all the same. mid-202-i sealed its half-built walls for four
+      // seconds with one at one to two blocks, not counted as in view, and
+      // went into the fight at seven health (2026-09-27).
+      const adjacent = biterAtArm(bot);
       if (!adjacent && refuge && pos(refuge.origin).distanceTo(bot.entity.position) < 3 && shelter.materialStock(bot) >= shelter.missingShell(bot, refuge).length) await this.refugeStep(task, goal, save, { method: 'saved_shelter' });
       else await this.flee(task, goal, save);
       onStep(goal); return true;
@@ -3678,4 +3685,4 @@ class Survival {
   }
 }
 
-module.exports = { pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

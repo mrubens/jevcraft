@@ -3338,3 +3338,14 @@ test('on a span with a creeper coming, off the span away from it before any wall
   assert(to && to.x <= -4, `away from the creeper: ${to && to.x}`);
   assert.equal(placed.length, 0, 'no walls: a wall does not stop a blast');
 });
+
+test('a zombie at arm\'s length round a wall, out of sight, still rules out sealing the shelter', () => {
+  // mid-202-i sealed its half-built walls four seconds with a zombie one to two blocks off, not in view.
+  const { biterAtArm } = require('../src/survival');
+  const zombie = { id: 3, name: 'zombie', type: 'hostile', position: new Vec3(2, 64, 0.5), height: 1.95, isValid: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5), height: 1.8 }, entities: { 3: zombie }, game: { dimension: 'overworld' },
+    world: { raycast: (from) => ({ position: from.floored(), intersect: from }) }, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) };
+  assert.equal(biterAtArm(bot), true);
+  zombie.position = new Vec3(6, 64, 0.5);
+  assert.equal(biterAtArm(bot), false);
+});
