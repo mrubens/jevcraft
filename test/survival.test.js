@@ -3846,3 +3846,15 @@ test('on a span, hurt twice in six seconds, the encounter goes to Jev instead of
   assert.notEqual(goal.survivalAction?.action, 'hold_on_span');
   assert(asked.includes('encounter_stance'), `asked: ${asked.join(',')} / ${goal.survivalAction?.action}`);
 });
+
+test('a hold that fails (the swing\'s walk timing out) rests ten seconds, not three minutes', async () => {
+  // mid-211-q's defend failed once on a path timeout, rested three minutes, and a skeleton at 1.5 blocks shot it to none (2026-09-27).
+  const { attemptsFor } = require('../src/progress');
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, entities: {}, health: 15, entity: { position: new Vec3(0.5, 64, 0.5) }, world: { raycast: () => null } });
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  const goal = { survivalAction: { action: 'defend', at: new Date().toISOString() } };
+  survival.stepOnce = async () => { throw new Error('Took to long to decide path to goal!'); };
+  assert.equal(await survival.step(new Task('x'), goal, () => {}), false);
+  const entry = attemptsFor(survival).of('act')['survival:defend'];
+  assert(entry && entry.until - Date.now() <= 10000, `rests ${entry && Math.round((entry.until - Date.now()) / 1000)} seconds`);
+});

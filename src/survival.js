@@ -3472,8 +3472,13 @@ class Survival {
       if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
       const recent = goal.survivalAction, name = recent?.action;
       if (!name || EMERGENCIES.has(name) || Date.now() - Date.parse(recent.at || 0) > 60000) throw err;
-      setAside(this, 'act', `survival:${name}`, err.message, 180000); save();
-      console.log(`[survival] ${name} failed and rests three minutes: ${err.message}`);
+      // A hold that failed (the swing's walk timing out) rests ten seconds,
+      // not three minutes: mid-211-q's defend failed once on "took too long
+      // to decide path", rested three minutes, and a skeleton a block and a
+      // half off shot it from 15.7 to none with no swing (note 445).
+      const rest = HOLDS.has(name) ? 10000 : 180000;
+      setAside(this, 'act', `survival:${name}`, err.message, rest); save();
+      console.log(`[survival] ${name} failed and rests ${rest === 10000 ? 'ten seconds' : 'three minutes'}: ${err.message}`);
       return false;
     }
   }
