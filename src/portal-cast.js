@@ -388,6 +388,25 @@ async function castFrame(bot, task, goal, save, actions) {
         }
         return false;
       }
+      // Nor a cell with its floor that is open: the frame is in a hillside.
+      // A stand is dug out beside the slot, feet and head, never a frame
+      // cell, the slot's own walls or a temporary block (mid-242-i, a
+      // hundred and seven times, 2026-09-27).
+      const axis = frame.axis || 'x', X = across(axis), A = AXES[axis];
+      const keep = new Set([...frame.blocks.map(at), ...wallsFor(p, w.solidAt), ...(frame.castTemp || []).map(at)].map(key));
+      const diggable = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'block' && b.diggable !== false && !/obsidian|bedrock/.test(b.name) && !keep.has(key(c)); };
+      const cut = [];
+      for (const side of [-1, 1]) for (const dist of [2, 1]) for (const dy of [0, 1]) {
+        const feet = p.plus(X.scaled(side * dist)).offset(0, dy, 0), head = feet.plus(UP);
+        if (!w.solidAt(feet.plus(DOWN)) || keep.has(key(feet)) || keep.has(key(head))) continue;
+        const digs = [feet, head].filter(c => !w.openAt(c));
+        if (digs.every(diggable)) cut.push({ feet, digs });
+      }
+      cut.sort((a, b) => a.digs.length - b.digs.length || a.feet.distanceTo(bot.entity.position) - b.feet.distanceTo(bot.entity.position));
+      if (cut[0]?.digs.length) {
+        for (const c of cut[0].digs) { stepIs(p, 'dig_stand', { at: { x: c.x, y: c.y, z: c.z } }); await dig(bot, task, c, { requireDrops: false }); }
+        return false;
+      }
       throw new Error(`Nowhere to stand to pour into the frame slot at ${p}`);
     }
     const eye = () => bot.entity.position.offset(0, EYE, 0);

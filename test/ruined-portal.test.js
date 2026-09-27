@@ -371,3 +371,21 @@ test('the lava said to the portal question is lava the fetch would use: not a po
   assert.equal(nearestLava(bot, goal), null, 'its way rests: not said');
 });
 
+
+test('a frame in a hillside with no open cell beside a slot has a stand dug out, never its own cells or walls', async () => {
+  // mid-242-i's frame had rock on both sides of a slot: "nowhere to stand" a hundred and seven times (2026-09-27).
+  const { Task } = require('../src/skills');
+  const { bot, w, actions } = castingBot({ water_bucket: 1, lava_bucket: 2, cobblestone: 64 });
+  const frame = newFrame('x');
+  const goal = { portalFrame: frame };
+  // Rock on both sides of the frame's plane, everywhere a stand could be.
+  for (const dz of [-2, -1, 1, 2]) for (let x = frame.origin.x - 2; x <= frame.origin.x + 5; x++) for (let y = frame.origin.y; y <= frame.origin.y + 7; y++) w.set(new Vec3(x, y, frame.origin.z + dz), 'stone');
+  // Standing just outside the rock, within reach of the first slot.
+  bot.entity.position = new Vec3(frame.origin.x + 1.5, frame.origin.y, frame.origin.z - 2.5);
+  const dug = [];
+  const dig = actions.dig; actions.dig = async (b, t, p) => { dug.push(p.clone()); await dig(b, t, p); };
+  await cast.castFrame(bot, new Task('cast'), goal, () => {}, actions);
+  assert.equal(goal.step?.phase, 'dig_stand', `phase ${goal.step?.phase}`);
+  assert(dug.length >= 1 && dug.length <= 2, `dug ${dug.join(' ')}`);
+  assert(!dug.some(p => frame.blocks.some(q => q.x === p.x && q.y === p.y && q.z === p.z)), 'no frame cell dug');
+});
