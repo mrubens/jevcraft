@@ -201,6 +201,37 @@ test('lava in buckets: planned from empty buckets, scooped from the dry shore a 
   assert(scooped.every(c => c.y === 10 && !(c.x === stood.x && c.z === stood.z)), 'from the pool, never where it stands');
 });
 
+test('lava in buckets with every slot full: room is made before each fill, and no lava bucket is lost', async () => {
+  // mid-244-v (note 470): nine buckets filled with all thirty-six slots full, one lava bucket kept, eight dropped by the game.
+  const { collectLava } = require('../src/obsidian');
+  const { bot, items, blocks } = world();
+  items.splice(0, items.length, { name: 'bucket', count: 9, stackSize: 16 }, ...Array.from({ length: 35 }, () => ({ name: 'dirt', count: 64, stackSize: 64 })));
+  bot.inventory.emptySlotCount = () => 36 - items.filter(i => i.count > 0).length;
+  bot.tossStack = async stack => { items.splice(items.indexOf(stack), 1); };
+  let look, lost = 0;
+  const scooped = [];
+  bot.equip = async () => {}; bot.deactivateItem = () => {};
+  bot.lookAt = async p => { look = p; };
+  bot.world = { raycast: () => null };
+  // As the game does: the last empty bucket of a stack fills in its slot; from a bigger stack the lava bucket (which does
+  // not stack) goes to a free slot, or is dropped at the feet when there is none.
+  bot.activateItem = () => {
+    const c = look.floored(), stack = items.find(i => i.name === 'bucket');
+    scooped.push(c);
+    blocks.delete(`${c.x},${c.y},${c.z}`);
+    if (stack.count === 1) { Object.assign(stack, { name: 'lava_bucket', stackSize: 1 }); return; }
+    stack.count--;
+    if (bot.inventory.emptySlotCount() > 0) items.push({ name: 'lava_bucket', count: 1, stackSize: 1 }); else lost++;
+  };
+  const actions = { navigate: async (b, t, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+    dig: async () => {}, resourceTunnelStep: async () => { throw new Error('no tunnel with a pool in reach'); } };
+  await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 9 }, {}, () => {}, actions);
+  assert(scooped.length > 1, 'more than one filled');
+  assert.equal(lost, 0, 'no lava bucket dropped');
+  assert.equal(items.filter(i => i.name === 'lava_bucket').length, scooped.length, 'every bucket filled is carried');
+  assert.equal(items.filter(i => i.name === 'lava_bucket' || i.name === 'bucket').reduce((n, i) => n + i.count, 0), 9, 'all nine buckets still carried');
+});
+
 test('lava whose staircase is resting is not dug toward again: the deep lava on another heading is', async () => {
   // mid-215-f dug toward a pool two blocks below it whose staircase was resting, was refused at once every pass, and the loop ended the trial (2026-09-27).
   const { collectLava } = require('../src/obsidian');

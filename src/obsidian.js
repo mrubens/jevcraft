@@ -12,6 +12,7 @@ const { dryStanding } = require('./mining-access');
 const { fillWaterBucket, fillBucket } = require('./water');
 const { checkThreats, safeFromHostiles, threats } = require('./danger');
 const { checkAir } = require('./vitals');
+const { makeRoom } = require('./inventory-tidy');
 
 const SIDES = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
 const UP = new Vec3(0, 1, 0), DOWN = new Vec3(0, -1, 0);
@@ -230,13 +231,27 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     const eye = bot.entity.position.offset(0, 1.62, 0);
     const inReach = surface.filter(p => sourceLava(bot.blockAt(p)) && eye.distanceTo(p.offset(0.5, 0.5, 0.5)) <= REACH)
       .sort((a, b) => eye.distanceTo(a) - eye.distanceTo(b));
-    let filled = 0;
+    // A lava bucket does not stack: filled from a stack of empties with no
+    // free slot, the game drops it at the feet, beside the lava. mid-244-v
+    // filled nine with all thirty-six slots full and kept one (note 470).
+    // Room is made before each fill (Jev choosing what goes, inventory-
+    // tidy.js makeRoom), and no fill is made without it: the last empty
+    // bucket of a stack fills in its own slot.
+    const room = () => (bot.inventory.emptySlotCount?.() ?? 1) > 0 || bot.inventory.items().find(i => i.name === 'bucket')?.count === 1;
+    let filled = 0, noRoom = false;
     for (const p of inReach) {
       if (countOf(bot, 'lava_bucket') >= target || !countOf(bot, 'bucket')) break;
+      if (!room()) {
+        const wanted = Math.min(target - countOf(bot, 'lava_bucket'), countOf(bot, 'bucket'));
+        await makeRoom(bot, task, 'lava_bucket', { goal, away: p, keep: new Set(['bucket', 'lava_bucket', 'water_bucket']),
+          purpose: `lava for the portal frame (${wanted} more bucket${wanted === 1 ? '' : 's'} to fill here, each a slot of its own)` });
+        if (!room()) { noRoom = true; break; }
+      }
       try { await fillBucket(bot, task, p, { fluid: 'lava', guard: () => checkThreats(bot) }); filled++; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
     if (filled) return;
+    if (noRoom) { goal.step = { ...step, phase: 'no_room' }; save(); throw new Error('No room in my pockets for a lava bucket: each takes a slot of its own, and nothing was dropped for one'); }
   }
   // Lava whose staircase is resting is not lava to dig toward: mid-215-f
   // saw a pool two blocks below it with no scooping spot a route reached,
