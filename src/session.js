@@ -57,6 +57,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // The damage types by index, from the registry the server sends before
   // login, for the flight record's damage frames (recorder/observer.js).
   bot._damageTypeNames = [];
+  // Freezing, from the server's own word: powder snow has no collision
+  // box, and a bot standing in it was not always seen to be (mid-202-f
+  // froze to death at y 121 with the way out tried once, note 308).
+  bot._client.on('damage_event', packet => { if (bot.entity && packet.entityId === bot.entity.id && bot._damageTypeNames?.[packet.sourceTypeId] === 'freeze') bot._freezingAt = Date.now(); });
   bot._client.on('registry_data', packet => { if (/damage_type/.test(String(packet?.id || '')) && Array.isArray(packet.entries)) packet.entries.forEach((e, i) => { bot._damageTypeNames[i] = String(e.key || e.id || '').replace('minecraft:', ''); }); });
   bot.on('physicsTick', () => { if (!ended) observeAliveInventory(bot); });
   bot.on('handover', event => { if (!ended) console.log(JSON.stringify({ handover: event })); });

@@ -329,7 +329,7 @@ const BUNKER_DIG_MS = 3000;
 const heavyHitters = (danger, radius) => danger.filter(t => KNOCKBACK.has(t.entity.name) && t.distance <= radius);
 function firmGround(bot, radius = 4, { margin = 1 } = {}) {
   const feet = bot.entity.position.floored(), cells = [];
-  const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name); };
+  const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water|powder_snow/.test(b.name); };
   for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (let dy = -1; dy <= 1; dy++) {
     const c = feet.offset(dx, dy, dz);
     const floor = bot.blockAt(c.offset(0, -1, 0));

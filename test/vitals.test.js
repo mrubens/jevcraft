@@ -533,3 +533,19 @@ test('a dig the server never finishes is given up after three times what it shou
   await assert.rejects(digWithAirGuard(bot, new Task('dig'), block), { name: 'DigStalled' });
   assert(Date.now() - started < 4000, 'given up in about 2.3 seconds, not waited on');
 });
+
+test('told by the server it is freezing, the bot leaves the snow though the blocks did not show it in any', async () => {
+  // mid-202-f froze to death at y 121, the way out of the snow tried once (note 308).
+  const { maintainVitals } = require('../src/vitals');
+  const { Vec3 } = require('vec3');
+  const { Task } = require('../src/skills');
+  // A snowfield: powder snow round the bot's cell, firm stone four blocks east.
+  const at = p => { const f = p.floored(); if (f.y < 64) return { name: 'stone', boundingBox: 'block', position: f }; if (f.y <= 65 && f.x < 4 && f.x > -4 && !(f.x === 0 && f.z === 0)) return { name: 'powder_snow', boundingBox: 'empty', position: f }; return { name: 'air', boundingBox: 'empty', position: f }; };
+  const went = [];
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5), eyeHeight: 1.62 }, health: 18, food: 20, oxygenLevel: 20, entities: {}, game: { dimension: 'overworld' },
+    inventory: { items: () => [] }, registry: require('minecraft-data')('26.1'), blockAt: at, _freezingAt: Date.now(), lookAt: async () => {}, dig: async () => {},
+    pathfinder: { goto: async g => { went.push(g); bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } } };
+  await maintainVitals(bot, new Task('snow'), () => {});
+  assert.equal(went.length, 1, 'walked out');
+  assert(Math.abs(went[0].x) >= 4, `to firm ground clear of the snow: ${went[0].x}`);
+});

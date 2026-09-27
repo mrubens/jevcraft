@@ -276,7 +276,16 @@ function snowRoute(bot) {
 async function outOfPowderSnow(bot, task, onAction = () => {}) {
   const route = snowRoute(bot);
   onAction({ action: 'out_of_powder_snow', steps: route?.length ?? null });
-  if (!route) return false;
+  if (!route) {
+    // No way through the snow found from the blocks: the nearest firm
+    // ground with no snow on it, walked to.
+    const { firmGround } = require('./survival');
+    const cell = firmGround(bot, 8);
+    if (!cell) return false;
+    const { goals } = require('mineflayer-pathfinder');
+    try { await bot.pathfinder.goto(new goals.GoalBlock(cell.x, cell.y, cell.z)); } catch (err) { if (err.name === 'Cancelled') throw err; }
+    return !inPowderSnow(bot);
+  }
   for (const cell of route) {
     for (const c of [cell, cell.offset(0, 1, 0)]) {
       task.check();
@@ -532,7 +541,8 @@ async function maintainVitals(bot, task, onAction = () => {}) {
     else break;
   }
   task.check();
-  if (inPowderSnow(bot)) { await outOfPowderSnow(bot, task, onAction); task.check(); }
+  // In powder snow, or told by the server it is freezing.
+  if (inPowderSnow(bot) || bot._freezingAt > Date.now() - 3000) { await outOfPowderSnow(bot, task, onAction); task.check(); }
   if (inFire(bot)) { await outOfFire(bot, task, onAction); task.check(); }
   if (onFire(bot) && !inFire(bot) && !require('./terrain').bodyInLava(bot)) { await douse(bot, task, onAction); task.check(); }
   if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
