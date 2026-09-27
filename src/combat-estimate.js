@@ -22,12 +22,12 @@ const MOBS = {
   spider: { hit: 2, health: 16 }, cave_spider: { hit: 2, health: 12, note: 'poisons' },
   skeleton: { hit: 3, health: 20, shoots: true }, stray: { hit: 3, health: 20, shoots: true, note: 'slows' }, parched: { hit: 3, health: 20, shoots: true }, bogged: { hit: 3, health: 16, shoots: true, note: 'poisons' },
   pillager: { hit: 4, health: 24, shoots: true }, witch: { hit: 6, health: 26, shoots: true, ignoresArmour: true, every: 3, note: 'harming potions go through armour, and poison and slowness keep the bot from getting away' },
-  creeper: { hit: 22, health: 20, note: 'the hit is its blast, once, at point blank' },
+  creeper: { hit: 24, health: 20, note: 'the hit is its blast, once, two blocks off, where one goes off beside a player backing from it (creeperBlast)' },
   enderman: { hit: 7, health: 40 }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16 },
   zombified_piglin: { hit: 8, health: 20 }, piglin: { hit: 8, health: 16 }, piglin_brute: { hit: 13, health: 50 },
-  hoglin: { hit: 6, health: 40, note: 'throws the bot about three blocks' }, zoglin: { hit: 6, health: 40, note: 'throws the bot about three blocks' },
+  hoglin: { hit: 6, health: 40, note: '3 to 8 a hit, and throws the bot about three blocks' }, zoglin: { hit: 6, health: 40, note: 'throws the bot about three blocks' },
   wither_skeleton: { hit: 8, health: 20, note: 'withers' }, blaze: { hit: 5, health: 20, shoots: true, note: 'sets alight' },
-  magma_cube: { hit: 5, health: 16 }, silverfish: { hit: 1, health: 8 }, phantom: { hit: 4, health: 20 },
+  magma_cube: { hit: 6, health: 16, note: 'a big one; a medium hits for 4, a small for 3' }, silverfish: { hit: 1, health: 8 }, phantom: { hit: 4, health: 20 },
   // Every mob the danger list names (the decision audit, 2026-09-25): one
   // not here added nothing, and a ghast fight read "0 damage".
   ghast: { hit: 9, health: 10, shoots: true, note: 'fireballs that blast and set alight' }, breeze: { hit: 3, health: 30, shoots: true, note: 'wind charges throw the bot' },
@@ -66,6 +66,18 @@ function afterArmour(damage, { points, toughness }) {
   return damage * (1 - effective / 25);
 }
 const round = (n, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
+// A creeper's blast by distance, the game's explosion formula (power 3, so
+// six blocks across), on Normal and before armour: 43 at point blank, 24 at
+// two blocks, 16 at three, 10 at four. The same encounter was told 11,
+// 18.5 and "up to 20" by three options (the decision review, 2026-09-26).
+function creeperBlast(distance) {
+  const impact = Math.max(0, 1 - distance / 6);
+  return impact ? Math.floor((impact * impact + impact) / 2 * 7 * 6 + 1) : 0;
+}
+// Said the same way wherever a creeper is: by distance, after what is worn.
+function creeperBlastSays(worn) {
+  return [0, 2, 3, 4].map(d => `${Math.round(afterArmour(creeperBlast(d), worn))} ${d ? `at ${d} blocks` : 'at point blank'}`).join(', ');
+}
 
 // How far a shooter shoots from: one further off walks in first. A witch
 // throws from about ten blocks; the bows about fifteen.
@@ -147,7 +159,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
       // The same stretch every stance is priced over (stanceCost below).
       inFifteenSeconds: round(within(timeline, HOLD_SECONDS)),
       ...(Number.isFinite(atOnce) ? { atArmsLengthAtOnce: atOnce } : {}),
-      ...(creepers.length ? { creeper: 'not counted: a creeper that reaches the bot goes off for about ' + round(afterArmour(MOBS.creeper.hit, worn)) + ' after armour' } : {}),
+      ...(creepers.length ? { creeper: 'not counted: a creeper that reaches the bot goes off for about ' + round(afterArmour(MOBS.creeper.hit, worn)) + ' after armour two blocks off (' + creeperBlastSays(worn) + ')' } : {}),
       ...(unknown.length ? { notCounted: `no figures for ${[...new Set(unknown)].join(', ')}` } : {}) },
   };
 }
@@ -200,4 +212,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return { seconds, setup: round(setup), damage: round(damage), blasts, still: [...still] };
 }
 
-module.exports = { fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
+module.exports = { creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };

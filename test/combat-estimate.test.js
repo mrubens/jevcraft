@@ -31,7 +31,7 @@ test('the arena cave trio comes out near what it measured (about five, with a sh
 test('a shooter out of sight costs nothing while it is fought for; a creeper\'s blast is said, not summed', () => {
   const e = fightEstimate({ threats: [{ name: 'skeleton', distance: 10, shoots: true, visible: false }, { name: 'creeper', distance: 5, visible: true }], weapon: 'iron_sword' });
   assert.equal(e.fightHere.damageTaken, 0);
-  assert.match(e.fightHere.creeper, /goes off for about 22/);
+  assert.match(e.fightHere.creeper, /goes off for about 24 after armour two blocks off \(43 at point blank, 24 at 2 blocks/);
 });
 
 test('a skeleton is not a quick kill: it backs off after each hit and shoots while it is closed on', () => {

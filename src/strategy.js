@@ -32,7 +32,7 @@ const label = phase => phase.replaceAll('_', ' ');
 const RUNG_WHY = {
   bed: 'a night slept passes in seconds and sets the spawn point; three wool from sheep or crafted from spiders\' string (four string a wool), or a bed from a village',
   iron_pickaxe: 'mines the iron for armour and the diamonds past it',
-  iron_armour: 'a helmet, chestplate, leggings and boots, twenty-four ingots in all; worn, they take about three fifths off every hit but a creeper\'s blast',
+  iron_armour: 'a helmet, chestplate, leggings and boots, twenty-four ingots in all; worn, they take about half off a mob\'s hit and an eighth off a creeper\'s blast',
   copper_armour: 'a helmet, chestplate, leggings and boots of copper, twenty-four copper ingots (copper ore is common in caves near the surface, two to five raw copper a block); worn, ten armour points: a zombie\'s hit of three comes down to two, an arrow of four to under three, until the iron armour replaces it',
   // What a home is for, said with its steps: offered as "get home site"
   // and nothing more beside options that each said what they were worth,

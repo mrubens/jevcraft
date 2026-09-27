@@ -1613,8 +1613,8 @@ test('with a creeper close or a mob at arm\'s length, building is still offered,
   assert.match(withCreeper.seal.description, /creeper is 4 blocks off/);
   assert.match(withCreeper.pillar.description, /goes off/);
   // Trial 118: two creepers and a spider, no armour, twelve health, told only the fight's "6.7 damage".
-  assert.match(withCreeper.fight.description, /Not counted there: the creeper, whose blast at arm's length takes up to 22 health after the armour worn, more than the bot has/);
-  assert.match(withCreeper.creeper_dance.description, /up to twenty-two health without armour/);
+  assert.match(withCreeper.fight.description, /Not counted there: the creeper, whose blast takes 43 at point blank, 24 at 2 blocks, 16 at 3 blocks, 10 at 4 blocks health after the armour worn, two blocks off more than the bot has/);
+  assert.match(withCreeper.creeper_dance.description, /A blast takes 43 at point blank, 24 at 2 blocks, 16 at 3 blocks, 10 at 4 blocks health after the armour on/);
   assert.match(withCreeper.creeper_dance.description, /1 of them ends it/);
   // mid-215-b: three creepers five to seven blocks off, told of one blast.
   const three = survival.stanceOptions(new Task('x'), {}, () => {}, [t('creeper', 5), t('creeper', 6), t('creeper', 7)], false);
@@ -2440,14 +2440,14 @@ test('in a crowd every stance says what the mobs cost it over the same fifteen s
   // The pillar under a creeper and three skeletons carried no figure, and was taken (mid-110-k).
   assert.match(options.pillar.description, priced);
   assert.match(options.pillar.description, /the 1\.5 seconds of going up included, from 13 health \(more than the bot has\)/);
-  assert.match(options.pillar.description, /The creeper 6 blocks off can go off beside the bot in about 2\.6 seconds, after the going up is done: up to 19 after the armour worn, more than the bot has/);
+  assert.match(options.pillar.description, /The creeper 6 blocks off can go off beside the bot in about 2\.6 seconds, after the going up is done: about 21 two blocks off after the armour worn, more than the bot has/);
   assert.match(options.pillar.description, /Two up, the creeper, 3 skeletons and the spider still reach it/);
   assert.match(options.seal.description, priced);
   assert.match(options.seal.description, /seconds of building not done within them/, 'thirty blocks of pocket are not shut in fifteen seconds');
   assert.match(options.fight.description, /about [\d.]+ of it in the first fifteen seconds/);
   assert.match(options.fight.description, /Open ground all round: every biter can be at arm's length at once/);
   // The charge quotes the fight's estimate: what it leaves out is said there too.
-  assert.match(options.charge_shooter.description, /Not counted there: the creeper, whose blast at arm's length takes up to 19 health/);
+  assert.match(options.charge_shooter.description, /Not counted there: the creeper, whose blast takes 38 at point blank, 21 at 2 blocks/);
   // Down into the stone underfoot: three blocks (walled all round, the roof ring too), a block over the head.
   assert.match(options.dig_down.description, /Dig straight down 3 blocks where the bot stands, put a block over its head and wait inside for the mobs to lose interest/);
   assert.match(options.dig_down.description, priced);
