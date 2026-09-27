@@ -3221,3 +3221,14 @@ test('the Nether forest floor and its trees are ground to dig through, not walls
   assert.equal(survey.stoppedBy, null, survey.stoppedBy);
   assert.equal(survey.dig, 1);
 });
+
+test('the charge at a shooter is not offered where its run would refuse it: in water', () => {
+  // mid-202-h: offered waist-deep in a stream, failed at once and rested twenty seconds, then shot at 3.2.
+  const bot = crowdBot({ health: 10 });
+  bot.entities = { 8: { id: 8, name: 'skeleton', type: 'hostile', position: new Vec3(10.5, 64, 0.5), height: 1.99, isValid: true } };
+  bot.world = { raycast: () => null };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  assert(survival.stanceOptions(new Task('stream'), {}, () => {}, [crowdMob(8, 'skeleton', 10)], false).charge_shooter, 'on dry ground: offered');
+  bot.entity.isInWater = true;
+  assert(!survival.stanceOptions(new Task('stream'), {}, () => {}, [crowdMob(8, 'skeleton', 10)], false).charge_shooter, 'in the water: not');
+});

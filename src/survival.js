@@ -926,6 +926,8 @@ class Survival {
     // 21's bot raised its shield for a moment a tick and stood forty seconds
     // under a skeleton's arrows across uneven ground (2026-09-24).
     if (isSetAside(this, 'close_on_shooter', 'here')) return false;
+    // Mid-hop is not refused: the feet are waited for, a second at most.
+    for (let n = 0; n < 10 && bot.entity.onGround === false && !bot.entity.isInWater; n++) { task.check(); await sleep(100); }
     if (bot.entity.isInWater || inWater(bot) || bot.entity.onGround === false) return false;
     let target = ground[0];
     const shielded = bot.inventory.slots?.[45]?.name === 'shield';
@@ -1276,7 +1278,11 @@ class Survival {
       } };
     // The charge at a few ground shooters, where it can be run.
     const ground = danger.filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16);
-    if (ground.length && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && !inWater(bot) && !isSetAside(this, 'close_on_shooter', 'here')) options.charge_shooter = {
+    // Offered only where it can run: its run refuses the water (either test of
+    // it) and the air, and mid-202-h, offered it waist-deep in a stream, had
+    // it fail at once and rest twenty seconds, leaving shelters that cost
+    // more than its health and working on; it was shot at 3.2 (2026-09-27).
+    if (ground.length && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && !inWater(bot) && !bot.entity.isInWater && !isSetAside(this, 'close_on_shooter', 'here')) options.charge_shooter = {
       expects: { damage: cost.damageTaken, seconds: cost.seconds, oneHit },
       description: `Run at the ${ground.map(t => t.entity.name).join(', ')} (nearest ${Math.round(ground[0].distance)} blocks) and strike, one after another, over ground checked firm; gives way if it cannot get nearer, and hands back to be chosen again once it has cost more health or time than estimated here.${(() => { const stop = chargeStopsAt(bot, ground[0].entity); return stop ? ` The ground straight at the nearest does not carry the charge there: it stops after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in the line of fire.` : ' The ground straight at the nearest carries the charge to it.'; })()}${chargeSays(bot, ground[0].entity)} Estimated for all the mobs here with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${creeperLeftOut}${unseen}${edge}${hitsLeft}`,
       run: () => this.closeOnShooter(task, goal, save, danger, { chosen: true }) };
