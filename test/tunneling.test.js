@@ -676,3 +676,15 @@ test('a staircase that only backs off is set aside when the landing it backed of
   await assert.rejects(step(), err => err.name === 'StaircaseStalled' && /no step toward it there either/.test(err.message));
   assert.equal(retreats, 2);
 });
+
+test('a staircase dig refused for the drop it would open rests the staircase at once', async () => {
+  // mid-242-j's stairs toward iron were refused four times a pass and turned with the mine step into a loop (2026-09-27).
+  const bot = world();
+  const goal = {};
+  const { staircaseResting } = require('../src/tunneling');
+  await assert.rejects(tunnelStep(bot, new Task('test', 'descend'), goal, () => {}, new Vec3(5, 60, 0), {
+    dig: async () => { throw new Error('Refusing to open a drop beside the feet'); },
+    navigate: async () => {},
+  }), err => err.name === 'StaircaseStalled');
+  assert.equal(staircaseResting(goal, new Vec3(5, 60, 0)), true);
+});

@@ -322,7 +322,16 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
       task.check();
       if (tries >= 5) throw new Error('Falling blocks keep obstructing the staircase');
       if (!safeExcavation(bot, p)) throw new Error('Staircase excavation exposed a liquid or unstable wet ceiling');
-      await dig(bot, task, p);
+      // A dig refused for the drop it would open is not refused less next
+      // pass: the staircase rests, as for no safe step. mid-242-j's stairs
+      // toward iron were refused so four times a pass and turned with the
+      // mine step until the flip watch ended the trial (2026-09-27).
+      try { await dig(bot, task, p); }
+      catch (err) {
+        if (!/Refusing to (open a drop|dig directly beneath)/.test(err.message || '')) throw err;
+        setAside(goal, 'staircase', area(target), err.message.toLowerCase(), STAIRCASE_REST_MS); save();
+        throw new StaircaseStalled(target, err.message.toLowerCase());
+      }
     }
   }
   const floor = bot.blockAt(choice.destination.offset(0, -1, 0));
