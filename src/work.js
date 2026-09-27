@@ -3169,7 +3169,7 @@ async function portalStep(bot, task, goal, save, client) {
       }
       return false;
     }
-    const site = selectPortalSite(bot);
+    const site = selectPortalSite(bot, { avoid: (goal.portalSitesLeft || []).map(pos) });
     if (!site) {
       if (surfaceObserver(bot)(bot.entity.position)) await explore(bot, task, goal, save, 'portal site', { surfaceOnly: true });
       else await surfaceStep(bot, task, goal, save);
@@ -3203,7 +3203,23 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
   }
   const missing = frame.blocks.filter(p => bot.blockAt(pos(p))?.name !== 'obsidian');
   if (missing.length && frame.cast) {
-    if (!await castFrame(bot, task, goal, save, { navigate, place, dig, acquireStep })) return false;
+    // A cast that fails at its site again and again, nothing cast yet, is
+    // the site's fault: mid-227-e's frame went down at y 28 in a cave by
+    // the lava, "nowhere to stand to pour" and then "no route" every pass,
+    // until the stall watch ended the trial (2026-09-27). After three, with
+    // no obsidian in it, the site is left and another chosen.
+    try { if (!await castFrame(bot, task, goal, save, { navigate, place, dig, acquireStep })) return false; frame.castFailures = 0; }
+    catch (err) {
+      task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+      frame.castFailures = (frame.castFailures || 0) + 1; frame.castFailure = err.message; save();
+      if (frame.castFailures >= 3 && goal.portalFrame === frame && !frame.blocks.some(q => bot.blockAt(pos(q))?.name === 'obsidian')) {
+        (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
+        delete goal.portalFrame; save();
+        bot.chat?.('This spot will not take the portal. Finding another.');
+        return false;
+      }
+      throw err;
+    }
   } else if (missing.length) {
     if (!await acquireStep(bot, task, 'obsidian', missing.length, goal, save)) return false;
     // A frame begun as a cast and finished by hand: a temporary block left

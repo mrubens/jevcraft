@@ -336,3 +336,26 @@ test('the cast\'s water left standing is walked back to and scooped, from out of
   assert.notEqual(w.nameAt(left), 'water', 'and scooped it');
   assert.equal(goal.portalFrame.castWater, undefined);
 });
+
+test('a cast that fails at its site three passes running, nothing cast, leaves the site for another', async () => {
+  // mid-227-e's frame went down in a cave by the lava; every pass failed there until the stall watch ended the trial (2026-09-27).
+  const { Task } = require('../src/skills');
+  const { buildPortalFrame } = require('../src/work');
+  const { bot, w } = castingBot({ water_bucket: 1, lava_bucket: 2, cobblestone: 64, flint_and_steel: 1 });
+  const frame = newFrame('x');
+  const goal = { portalFrame: frame };
+  // Flowing lava in the first slot: its walls are not whole, every pass throws.
+  const slot = cast.castOrder(frame)[0];
+  w.set(slot, 'lava');
+  const blockAt = bot.blockAt;
+  bot.blockAt = p => { const b = blockAt(p); return p.floored().equals(slot) ? { ...b, getProperties: () => ({ level: 3 }) } : b; };
+  for (let n = 1; n <= 2; n++) {
+    await assert.rejects(buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), /Flowing lava/);
+    assert.equal(goal.portalFrame, frame, `kept after ${n}`);
+  }
+  assert.equal(await buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), false);
+  assert.equal(goal.portalFrame, undefined, 'left after three');
+  assert.equal(goal.portalSitesLeft.length, 1);
+  const { selectPortalSite } = require('../src/build-sites');
+  assert.equal(typeof selectPortalSite, 'function');
+});

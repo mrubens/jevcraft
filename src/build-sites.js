@@ -47,7 +47,7 @@ function portalSiteClear(bot, origin) {
   return true;
 }
 
-function selectPortalSite(bot) {
+function selectPortalSite(bot, { avoid = [] } = {}) {
   const feet = bot.entity.position.floored();
   // A portal can stand on deepslate beside the lava lake the obsidian came
   // from; climbing sixty blocks to find grass is a wasted hour.
@@ -56,7 +56,8 @@ function selectPortalSite(bot) {
   const surfaces = bot.findBlocks({ matching: ids, maxDistance: 24, count: 128,
     useExtraInfo: b => air(bot.blockAt(b.position.offset(0, 1, 0))) && air(bot.blockAt(b.position.offset(0, 2, 0))),
   }).map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet));
-  return surfaces.find(p => portalSiteClear(bot, p)) || null;
+  // Not within six of a site left for failing (work.js buildPortalFrame).
+  return surfaces.find(p => portalSiteClear(bot, p) && !avoid.some(q => q.distanceTo(p) < 6)) || null;
 }
 
 // Temporary portal anchors can use ordinary non-burning full blocks already
