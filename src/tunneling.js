@@ -8,7 +8,7 @@ const { safeFromHostiles, hostileEntities } = require('./danger');
 const { fitToFight } = require('./mob-policy');
 const { advance, attemptsFor, setAside, isSetAside } = require('./progress');
 const { surveyRoute } = require('./skills');
-const { dryPassable: passable, dryBodySpace } = require('./terrain');
+const { dryPassable: passable, dryBodySpace, dropNear } = require('./terrain');
 const { descendPillar } = require('./pillar-recovery');
 
 const directions = [new Vec3(1, 0, 0), new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(0, 0, -1)];
@@ -152,6 +152,13 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
     if (hostiles && !safeFromHostiles(bot, destination.offset(0.5, 0, 0.5), Array.isArray(hostiles) ? hostiles : undefined)) { block(destination, 'a hostile'); continue; }
     const floor = bot.blockAt((dropTo || destination).offset(0, -1, 0));
     if (dangerous(floor) || falling(floor) || floor.boundingBox !== 'block') { block(destination, dangerous(floor) ? 'lava or water underfoot' : 'no floor'); continue; }
+    // Nor onto a lip beside a deadly drop: a step down carries on past its
+    // cell, and a stop mid-step leaves the body going. mid-244-q stepped two
+    // down onto a one-block ledge over a ravine, a skeleton's alert stopped
+    // the step, and it went on over the edge, forty-three blocks to the
+    // rails below (2026-09-27). Deadly as the Nether crouch counts it.
+    const edge = dropNear(bot, dropTo || destination, 1);
+    if (edge && (edge.into === 'lava' || edge.damage >= (bot.health ?? 20) / 2)) { block(destination, 'a deadly drop beside the step'); continue; }
     if (bot.pathfinder?.movements?.allowedPosition && !bot.pathfinder.movements.allowedPosition(destination)) { block(destination, 'a forbidden cell'); continue; }
     const clear = [];
     // A jump needs three blocks of headroom in the cell we leave. Inspect and

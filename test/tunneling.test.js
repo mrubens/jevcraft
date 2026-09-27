@@ -688,3 +688,15 @@ test('a staircase dig refused for the drop it would open rests the staircase at 
   }), err => err.name === 'StaircaseStalled');
   assert.equal(staircaseResting(goal, new Vec3(5, 60, 0)), true);
 });
+
+test('the staircase does not step down onto a lip beside a deadly drop', () => {
+  // mid-244-q stepped two down onto a one-block ledge over a ravine and went on over the edge, forty-three blocks (2026-09-27).
+  const air = p => (p.x === 0 && p.z >= 0 && p.y >= 41 && p.y <= 42) // the tunnel it stood in
+    || (p.x === 0 && p.z === -1 && p.y >= 39 && p.y <= 42) // the lip's cell, open over its stone
+    || (p.z <= -2 && p.y >= 1 && p.y <= 45); // the ravine
+  const bot = { game: { gameMode: 'survival', dimension: 'overworld' }, health: 20, entity: { position: new Vec3(0.5, 41, 0.5), onGround: true },
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }] }, entities: {},
+    blockAt: p => air(p) ? { position: p, name: 'air', type: 0, boundingBox: 'empty' } : { position: p, name: 'stone', type: 1, boundingBox: 'block', diggable: true, hardness: 1.5, digTime: () => 400 } };
+  const choices = stairOptions(bot, {}, new Vec3(0, -56, -40));
+  assert(!choices.some(c => c.destination.z === -1), JSON.stringify(choices.map(c => `${c.destination}`)));
+});
