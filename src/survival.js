@@ -1357,7 +1357,7 @@ class Survival {
       options.dig_down = { expects: { damage: digCost.damage, seconds: digCost.seconds, oneHit }, description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting. Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + buildCost + creeperNote + costSays(digCost, bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
         run: async () => {
           this.report(goal, save, { action: 'dig_down', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, depth, stance: true });
-          try { return await this.digShaft(task, goal, save, { start: column.start, bottom: column.bottom, spot: column.spot, here: feet }); }
+          try { return await this.digShaft(task, goal, save, { start: column.start, bottom: column.bottom, spot: column.spot, here: feet, stance: true }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
         } };
     }
@@ -2449,7 +2449,7 @@ class Survival {
     return { none: `no dry column here: every one within four blocks meets water, lava or bedrock${pick ? '' : ', or rock too hard to dig by hand,'} before it is walled in, twelve blocks down at most`, spot };
   }
 
-  async digShaft(task, goal, save, { start, bottom, spot, here }) {
+  async digShaft(task, goal, save, { start, bottom, spot, here, stance = false }) {
     const bot = this.bot;
     if (!start.equals(here)) {
       try { await this.actions.navigate(bot, task, new goals.GoalBlock(start.x, start.y, start.z), { timeoutMs: 8000, stallMs: 3000 }); }
@@ -2470,13 +2470,24 @@ class Survival {
     // with it, a hit a second, eighteen health to five (2026-09-27).
     const biting = () => threats(bot, 4).some(t => t.distance <= 3 && !shooter(t.entity) && t.entity.name !== 'creeper');
     const raced = (why = 'a creeper would reach the open shaft before the cap') => { setAside(this, 'shaft_pocket', spot, why, 30000); save(); return false; };
+    // Nor, as the night's shelter, with a shooter in sight and in range: it
+    // shoots down the open shaft for the seconds of the dig. mid-218-j's
+    // retreat found no way, the night's held shaft went down beside a witch
+    // five blocks off, and its potions came in for twelve seconds, twenty
+    // health to none (2026-09-27). As a stance it is Jev's, chosen with the
+    // shots of the dig counted (dig_down); here the encounter goes back to it.
+    const { RANGE } = require('./combat-estimate');
+    const shotAt = () => stance ? null : threats(bot, 40).find(t => t.visible && shooter(t.entity) && t.distance <= (RANGE[t.entity.name] || 15));
+    const shooting = () => { const t = shotAt(); return t && raced(`a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off, in sight, shoots down the open shaft`); };
     if (biting()) return raced('a mob at arm\'s length would follow the bot down the open shaft');
+    if (shotAt()) return shooting();
     if (racing(start.y - 1)) return raced();
     this.report(goal, save, { action: 'shaft_pocket', from: { ...start }, to: { ...bottom } });
     for (let y = start.y - 1; y >= bottom.y; y--) {
       task.check(); checkAir(bot);
       if (racing(y)) return raced();
       if (biting()) return raced('a mob at arm\'s length would follow the bot down the open shaft');
+      if (shotAt()) return shooting();
       const c = new Vec3(start.x, y, start.z);
       if (bot.blockAt(c)?.boundingBox === 'block') await this.actions.dig(bot, task, c, { requireDrops: false, dropInto: true });
       for (let i = 0; i < 20 && bot.entity.position.y > y + 0.1; i++) { task.check(); await sleep(50); }

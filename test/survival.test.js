@@ -3589,3 +3589,20 @@ test('by a deadly edge with a creeper coming, the step back goes away from the c
   const d = new Vec3(to.x + 0.5, to.y, to.z + 0.5).distanceTo(creeper.position);
   assert(d >= bot.entity.position.distanceTo(creeper.position) + 2, `away from the creeper: ${to.x},${to.z} at ${d.toFixed(1)}`);
 });
+
+test('the night\'s shaft pocket is not dug with a witch in sight and in range; as Jev\'s own dig_down it is', async () => {
+  // mid-218-j's night shaft went down beside a witch five blocks off, its potions coming in for twelve seconds, twenty health to none (2026-09-27).
+  const registry = require('minecraft-data')('26.1'), Block = require('prismarine-block')(registry);
+  const blockAt = p => { const f = p.floored(); const name = f.y >= 63 ? 'air' : f.y >= 58 ? 'dirt' : 'stone'; const b = Block.fromStateId(registry.blocksByName[name].defaultState); b.position = f; return b; };
+  const witch = { id: 4, name: 'witch', type: 'hostile', position: new Vec3(5.5, 63, 0.5), height: 1.95, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: { 4: witch }, registry, entity: { position: new Vec3(0.5, 63, 0.5), onGround: true },
+    health: 20, inventory: { items: () => [{ name: 'cobblestone', count: 8 }], slots: {} }, blockAt, world: { raycast: () => null } });
+  const dug = [];
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async (b, t, p) => { dug.push(`${p}`); }, place: async () => {} }, { state: { shelters: [] } });
+  const column = survival.shaftColumn();
+  assert(column.bottom, JSON.stringify(column));
+  assert.equal(await survival.shaftPocket(new Task('night'), {}, () => {}), false);
+  assert.deepEqual(dug, []);
+  await survival.digShaft(new Task('stance'), {}, () => {}, { ...column, here: column.start, spot: 'x', stance: true });
+  assert(dug.length > 0);
+});
