@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-85 questions: 37 decision trees and 48 batched questions.
+86 questions: 38 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -321,6 +321,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `go_(overworld\|nether\|end)` (pattern) | root | go to the dimension its sources are in | always; said with what is mined there, what is brought back, and the trip to the portal |
 | `on_here` | root | leave the step for now and go on with what the ladder has next here | the ladder has something else to do in this dimension |
+
+### `surface_trip`
+
+**The step in hand wants the surface and the bot is underground: climb to open sky for it, or leave the step for now and go on down here with the ladder's next one?**
+
+- When: Underground in the Overworld, the work's step wants what only the surface has (logs, flowers, a surface search, a portal site), on the game ladder with another step to go on with; asked when the climb would begin, and held to the top once chosen.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (surfaceTrip), src/surface.js (tripCost), src/game-progress.js (nextGameStage)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `climb` | root | climb to open sky for it | always; said with the height, the quicker way out and its time, the pickaxe uses it wears, and the way back down it leaves |
+| `stay_below` | root | leave the step thirty minutes and go on with the ladder's next step here | the ladder has another step to go on with, and it is the work's turn |
 
 ### `leave_nether`
 

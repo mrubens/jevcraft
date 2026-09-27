@@ -172,6 +172,32 @@ function climbOptions(bot, target, column, { landing = false, rests = null } = {
   return { options, estimate, state };
 }
 
+// What a trip to open sky from here costs, said before it is made: the
+// quicker way out by digging with the pickaxes carried, what it wears, and
+// what the way back down to this depth then is. mid-229-q climbed 74 blocks
+// from y -12 for one log, 97 minutes of it: the stairs wore out both
+// pickaxes in the first three and the rest went by hand (note 511).
+function tripCost(bot, goal = {}) {
+  const feet = bot.entity.position.floored(), up = climbToSurface(bot, feet);
+  if (!up) return null;
+  const column = straightUpColumn(bot, feet);
+  const { estimate, state } = climbOptions(bot, feet.offset(0, up, 0), column);
+  const way = ['staircase', 'straight_up'].filter(k => estimate[k] !== undefined).sort((a, b) => estimate[a] - estimate[b])[0];
+  const duration = s => s < 90 ? `about ${Math.max(5, Math.round(s / 5) * 5)} seconds` : `about ${Math.round(s / 60)} minutes`;
+  const digs = way === 'straight_up' ? column.cells.length : 3 * up, picks = pickaxesCarried(bot).length;
+  const wear = !picks ? ' No pickaxe is carried: all of it by hand.'
+    : digs > state.pickaxeUsesLeft ? ` That is more digs than the ${state.pickaxeUsesLeft} uses the pickaxes have left (${state.pickaxes}): the rest by hand, and none left for the work after.`
+      : ` It wears ${digs} of the ${state.pickaxeUsesLeft} uses the pickaxes have left (${state.pickaxes}).`;
+  const back = way === 'straight_up' ? 'the column is filled behind, so this depth is dug down to again'
+    : `the stairs stay open, so this depth is ${up} stairs back down, ${duration(up * STAIR_STEP_SECONDS)} at a walk`;
+  // The way down it came by is walked first where it can be (returnToSurface).
+  const dim = String(bot.game?.dimension || '');
+  const came = (goal.surfaceEntrances || []).find(e => e.dimension === dim && Math.hypot(e.x - feet.x, e.z - feet.z) <= 160 && e.y > feet.y + 4);
+  const first = came ? `The stairs it came down by, from ${came.x}, ${came.y}, ${came.z}, are walked first where they can be; dug, it is ` : 'Dug, it is ';
+  return { up, way, seconds: estimate[way], digs, state,
+    says: `${up} blocks up to open sky. ${first}${way === 'straight_up' ? 'straight up the column' : 'a staircase'}, ${duration(estimate[way])}.${wear} After it, ${back}.` };
+}
+
 function surfaceMovement(bot) {
   const movements = bot.pathfinder.movements;
   const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers,
@@ -515,4 +541,4 @@ function lidExit(bot, { origin = bot.entity.position.floored(), maxHeight = 3 } 
   return lid;
 }
 
-module.exports = { climbToSurface, climbMinutes, climbStraightMinutes, straightUpColumn, climbOptions, lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };
+module.exports = { climbToSurface, climbMinutes, climbStraightMinutes, straightUpColumn, climbOptions, tripCost, lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };

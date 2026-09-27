@@ -588,3 +588,36 @@ test('with a shooter in sight, every way up says so and what its arrow does on t
   for (const o of Object.values(options)) assert.match(o.description, /In sight and shooting: a skeleton 11 blocks off; on the climb an arrow's knockback/);
   assert.equal(state.shootersInSight[0].name, 'skeleton');
 });
+
+test('a climb to the surface for the ladder\'s log is Jev\'s trip, said with its cost, and staying below leaves the spare pickaxe (mid-229-q, note 511)', async () => {
+  // mid-229-q: at y -12, a worn iron pickaxe (49 uses) and a fresh stone one, the ladder's spare iron pickaxe wanted a
+  // table, the table a log, and the log's step climbed 74 blocks at once: 97 minutes, both pickaxes worn out, no question.
+  const { nextGameStage } = require('../src/game-progress');
+  const { isSetAside } = require('../src/progress');
+  const items = [{ name: 'iron_pickaxe', count: 1, durabilityUsed: 201 }, { name: 'stone_pickaxe', count: 1, durabilityUsed: 0 },
+    { name: 'iron_sword', count: 1 }, { name: 'white_bed', count: 1 }, { name: 'cobblestone', count: 64 }, { name: 'iron_ingot', count: 15 }];
+  const { bot } = shaft({ items });
+  Object.assign(bot, { time: { timeOfDay: 6000 }, entities: {} });
+  bot.inventory.slots = [];
+  const goal = { kind: 'win', gameProgress: { phase: 'iron_pickaxe', milestones: {} } };
+  assert.equal(nextGameStage(bot, goal).phase, 'iron_pickaxe', 'the ladder wants the spare');
+  const task = new Task('win');
+  const asked = [];
+  task.opportunityClient = { systemOne: async ({ state, questions }) => { asked.push({ state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: 'stay_below', confidence: 0.9 } } }; } };
+  const said = [];
+  bot.chat = m => said.push(m);
+  await explore(bot, task, goal, () => {}, 'spruce_log');
+  assert.equal(asked.length, 1, 'the climb was asked, not made');
+  const decision = goal.decisions.find(d => d.id === 'surface_trip');
+  assert.deepEqual(Object.keys(decision.options).sort(), ['climb', 'stay_below']);
+  assert.match(decision.options.climb.description, /Climb to open sky for wood \(any log\) \(for the iron pickaxe\): 24 blocks up to open sky\. Dug, it is straight up the column, about \d+ seconds\. It wears 22 of the \d+ uses/);
+  assert.match(decision.options.climb.description, /the column is filled behind, so this depth is dug down to again/);
+  assert.match(decision.options.stay_below.description, /leave the iron pickaxe for thirty minutes and go on with shield/);
+  assert.equal(bot.entity.position.y, 40, 'no stair dug');
+  assert(isSetAside(goal, 'rung', 'iron_pickaxe'));
+  assert.equal(nextGameStage(bot, goal).phase, 'shield', 'the spare waits while the worn one works');
+  assert.match(said[0], /leave the iron pickaxe for now rather than climb/);
+  // With no pickaxe of the tier that still works, the rung cannot wait.
+  items.splice(0, 1);
+  assert.equal(nextGameStage(bot, goal).phase, 'iron_pickaxe');
+});

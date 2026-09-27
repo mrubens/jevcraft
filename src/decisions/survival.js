@@ -269,6 +269,24 @@ define({
   fallback: children => Object.keys(children).find(k => k.startsWith('go_')) || Object.keys(children)[0],
 });
 
+// A climb to open sky for the ladder's step (src/work.js surfaceTrip): a
+// log, a flower, a surface search or a portal site wanted underground. It
+// had been climbed at once, and mid-229-q climbed 74 blocks in 97 minutes
+// for one log for a spare pickaxe's table, 100 of its 180 minutes on
+// climbs nothing asked about (note 511).
+define({
+  id: 'surface_trip', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The step in hand wants the surface and the bot is underground: climb to open sky for it, or leave the step for now and go on down here with the ladder\'s next one?',
+  trigger: 'Underground in the Overworld, the work\'s step wants what only the surface has (logs, flowers, a surface search, a portal site), on the game ladder with another step to go on with; asked when the climb would begin, and held to the top once chosen.',
+  source: 'src/work.js (surfaceTrip), src/surface.js (tripCost), src/game-progress.js (nextGameStage)',
+  options: [
+    { key: 'climb', label: 'climb to open sky for it', when: 'always; said with the height, the quicker way out and its time, the pickaxe uses it wears, and the way back down it leaves', level: 'root' },
+    { key: 'stay_below', label: 'leave the step thirty minutes and go on with the ladder\'s next step here', when: 'the ladder has another step to go on with, and it is the work\'s turn', level: 'root' },
+  ],
+  instructions: { task: 'The step in hand needs the surface and the bot is underground. Choose to climb for it now, or to leave it and go on with the next step down here.', guidance: 'The climb says how far up it is, how long the quicker way out takes with the pickaxes carried, how many of their uses it wears, and what the way back down to this depth is after. Staying says what the ladder goes on with meanwhile; the step left comes back after thirty minutes.' },
+  fallback: children => children.climb ? 'climb' : Object.keys(children)[0],
+});
+
 // Back for what a death dropped (src/corpse-run.js). A rule that went
 // whenever the kit was ready or it was day: mid-230-c walked 194 blocks
 // back to the drowned that had just killed it, and mid-231-b died four

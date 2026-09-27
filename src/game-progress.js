@@ -190,7 +190,13 @@ function ladderRung(bot, goal, waiting) {
   // A worn tool is still in the inventory, so the replacement is one more
   // than what is carried; asking for one would be satisfied by the worn one.
   const another = item => ({ phase: item, action: 'acquire', item, count: carried.filter(n => n === item).length + 1 });
-  if (best('pickaxe') < 2) return another('stone_pickaxe');
+  // A spare may wait its turn: with a worn pickaxe of the tier still carried
+  // and working, the rung Jev left (surface_trip, a climb for its wood) is
+  // not handed straight back. mid-229-q's spare, the iron one at 49 uses,
+  // took a 97-minute climb that wore out both pickaxes (note 511). With none
+  // that works, nothing after it can start, and it cannot wait.
+  const spare = (item, tier) => waiting.has(item) && carried.some(n => n.endsWith('_pickaxe') && tierOf(n) >= tier);
+  if (best('pickaxe') < 2 && !spare('stone_pickaxe', 2)) return another('stone_pickaxe');
   if (best('sword') < 2) return another('stone_sword');
   // A bed before the mine. Walled in and waiting was the largest share of
   // the run's standing still, and a night slept passes in seconds; the bed
@@ -204,7 +210,7 @@ function ladderRung(bot, goal, waiting) {
   // that failed twice without progress, work.js persist): nothing after them
   // needs them to start. The tools before them cannot.
   if (!carried.some(n => /_bed$/.test(n)) && !goal.survival?.home?.bed?.claimedAt && !isSetAside(goal, 'bed_search', 'wool') && ready({ phase: 'bed' })) return bedRung(bot, goal);
-  if (best('pickaxe') < 3) return another('iron_pickaxe');
+  if (best('pickaxe') < 3 && !spare('iron_pickaxe', 3)) return another('iron_pickaxe');
   if (!carried.includes('shield') && ready({ phase: 'shield' })) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
   if (best('sword') < 3 && ready({ phase: 'iron_sword' })) return another('iron_sword');
   if (!carried.includes('bucket') && !carried.includes('water_bucket') && ready({ phase: 'bucket' })) return { phase: 'bucket', action: 'acquire', item: 'bucket', count: 1 };

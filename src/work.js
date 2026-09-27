@@ -22,7 +22,7 @@ const { reviewDesign } = require('./design-review');
 const { narrate } = require('./narration');
 const { planCatalog, sourceBlocks, elsewhereOf } = require('./knowledge');
 const { takeCreativeItem, clearCreativeInventory } = require('./creative');
-const { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit } = require('./surface');
+const { surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, tripCost } = require('./surface');
 const { bootstrapPickaxe } = require('./tool-recovery');
 const { foodSupply } = require('./foraging');
 const { observeRecipeAlternatives, knownResourceLocations, knownResourceNames, rememberResources, isSurfaceResource } = require('./resource-observation');
@@ -968,7 +968,7 @@ async function breakOut(bot, task, toward) {
 
 async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfaceResource(resource), frontier = surfaceOnly } = {}) {
   if (surfaceOnly && !surfaceReturnComplete(bot, goal)) {
-    await surfaceStep(bot, task, goal, save);
+    await surfaceTrip(bot, task, goal, save, LOG.test(resource) ? 'wood (any log)' : resource.replaceAll('_', ' '));
     return;
   }
   const surface = surfaceOnly ? surfaceMovement(bot) : null;
@@ -1314,7 +1314,7 @@ async function mine(bot, task, step, goal, save, selected) {
   if (step.insteadOf && goal) { goal.step = step; save(); }
   const surfaceOnly = isSurfaceResource(step.block);
   if (surfaceOnly && !surfaceReturnComplete(bot, goal)) {
-    await surfaceStep(bot, task, goal, save); return;
+    await surfaceTrip(bot, task, goal, save, `${step.count || 1} ${String(step.block).replaceAll('_', ' ')}`); return;
   }
   // Mining with no slot for the drop digs ore for the ground to keep.
   if (step.drops && bot.game?.gameMode !== 'creative' && !roomFor(bot, step.drops)) {
@@ -1354,6 +1354,56 @@ async function surfaceStep(bot, task, goal, save) {
     await executeAcquisition(bot, task, step, goal, save);
     return false;
   } });
+}
+
+// A climb to open sky for the work is a trip, and Jev's to make: said with
+// what it is for, what it costs up and back, and the ladder's next step to
+// go on with down here instead. It had been a rule: a log, a flower or a
+// surface search wanted underground climbed at once. mid-229-q, at y -12
+// for one log for the table of a spare iron pickaxe (the one carried at 49
+// uses), climbed 74 blocks in 97 minutes, both pickaxes worn out on the
+// first three minutes of stairs and the rest by hand, made the pickaxe in
+// twenty seconds at the top and was back down within twenty minutes; the
+// climbs were 100 of its 180 minutes, none of them asked (note 511).
+async function surfaceTrip(bot, task, goal, save, need) {
+  const held = goal.surfaceTrip;
+  // Chosen, the climb holds to the top: not asked again at each stair.
+  if (held?.pick === 'climb' && held.need === need && goal.surfaceReturn) return surfaceStep(bot, task, goal, save);
+  const words = s => String(s || '').replaceAll('_', ' ');
+  const cost = tripCost(bot, goal);
+  // The ladder's step, when it is the work's turn: a climb survival wants
+  // (its shelter's blocks, a table to cook at) is not the rung's to leave.
+  const ruling = bot._arbiter?.ruling?.winner;
+  const phase = !ruling || ruling === 'work' ? goal.rungTime?.phase || goal.gameProgress?.phase || null : null;
+  const tree = { climb: { description: `Climb to open sky for ${need}${phase ? ` (for the ${words(phase)})` : ''}: ${cost?.says || 'the column overhead is not all loaded, so the height is not known yet.'}` } };
+  const client = task.opportunityClient;
+  let next = null;
+  if (phase && client) {
+    const { nextGameStage, RUNG_WAIT_MS } = require('./game-progress');
+    // What the ladder hands on with the step left, read from a copy.
+    try { const probe = JSON.parse(JSON.stringify(goal)); setAside(probe, 'rung', phase, 'left for now', RUNG_WAIT_MS); next = nextGameStage(bot, probe); }
+    catch (_) { next = null; }
+    if (next?.phase && next.phase !== phase) tree.stay_below = { description: `Stay down here: leave the ${words(phase)} for thirty minutes and go on with ${words(next.phase)}${next.item ? ` (${next.count || ''} ${words(next.item)})` : ''}. It comes back after, and this climb with it unless the work has gone up by then.` };
+  }
+  let pick = 'climb';
+  if (tree.stay_below) {
+    const decision = await require('./decisions').decide('surface_trip', { client, bot, task, goal, save, tree,
+      state: { need, step: phase ? words(phase) : null, ...(cost ? { blocksToOpenSky: cost.up, quickerWayOut: cost.way, minutesUp: Math.round(cost.seconds / 60), pickaxes: cost.state.pickaxes, pickaxeUsesLeft: cost.state.pickaxeUsesLeft } : {}),
+        goOnWith: `${words(next.phase)}${next.item ? `: ${next.count || ''} ${words(next.item)}` : ''}` } });
+    if (decision.stale) return;
+    pick = decision.path.at(-1);
+  }
+  goal.surfaceTrip = { need, pick, ...(phase ? { phase } : {}), ...(cost ? { up: cost.up } : {}), at: new Date().toISOString() };
+  if (pick === 'stay_below') {
+    const { RUNG_WAIT_MS } = require('./game-progress');
+    setAside(goal, 'rung', phase, `Jev chose to stay below rather than climb${cost ? ` ${cost.up} blocks` : ''} for ${need}`, RUNG_WAIT_MS);
+    delete goal.rungTime;
+    goal.step = { action: 'stay_below', phase, need }; save();
+    bot.chat?.(`I'll leave the ${words(phase)} for now rather than climb all the way up for ${need}.`);
+    return;
+  }
+  save();
+  await surfaceStep(bot, task, goal, save);
 }
 
 async function mineAtSource(bot, task, step, goal, save, selected) {
@@ -3811,7 +3861,7 @@ async function portalStep(bot, task, goal, save, client) {
     const site = selectPortalSite(bot, { avoid: (goal.portalSitesLeft || []).map(pos) });
     if (!site) {
       if (surfaceObserver(bot)(bot.entity.position)) await explore(bot, task, goal, save, 'portal site', { surfaceOnly: true });
-      else await surfaceStep(bot, task, goal, save);
+      else await surfaceTrip(bot, task, goal, save, 'a portal site (none level and dry down here)');
       return false;
     }
     const o = pos(site);
@@ -5239,4 +5289,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { opensPit, persist, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { opensPit, persist, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };
