@@ -23,6 +23,7 @@ const { surveyRoute, countOf } = require('./skills');
 const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield, raiseShield, canStrike } = require('./combat');
 const { digBunker, bunkerSide, wallStands, nearWall, centroid } = require('./bunker');
 const { deflect } = require('./projectile-guard');
+const { takeTurn } = require('./turn');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
 const { surfaceObserver } = require('./surface');
@@ -1652,6 +1653,7 @@ class Survival {
     // tick and was refused, and the turn went to the work with nothing done.
     // mid-235-i chose to dig down at 6.7 health, its shaft pocket resting,
     // and stood fifteen seconds under a skeleton's arrows (2026-09-27).
+    takeTurn(bot, 'survival', `stance: ${choice}`, { threats: danger.slice(0, 4).map(t => `${t.entity.name} ${Math.round(t.distance)}`) });
     try { done = await options[choice].run(); }
     catch (err) { if (err.name !== 'SetAside') throw err; done = false; }
     finally { stance.running = false; stance.ranAt = Date.now(); }
@@ -3249,6 +3251,7 @@ class Survival {
 
   async wait(task, goal, save, reason = 'Waiting for daylight inside the verified shelter') {
     this.report(goal, save, { action: 'wait_in_shelter', reason });
+    takeTurn(this.bot, 'survival', 'wait', reason);
     for (let i = 0; i < 50; i++) { task.check(); await sleep(100); }
   }
 
@@ -3273,6 +3276,7 @@ class Survival {
   async stepOnce(task, goal, save, onStep) {
     const bot = this.bot;
     // The survival layer has the turn: what the watchdogs held for it is met.
+    takeTurn(bot, 'survival', 'step');
     bot._airAbort = false; bot._threatAbort = false;
     goal.survival = this.state;
     task.interruptCheck = undefined;

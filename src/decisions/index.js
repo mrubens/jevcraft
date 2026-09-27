@@ -178,7 +178,11 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   }
   checkOptions(spec, tree);
   const fallback = typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : null;
+  // The question out is what holds the turn while it is out (turn.js).
+  const { takeTurn, giveBack } = require('../turn');
+  const turnBefore = takeTurn(bot, 'decision', `asking Jev: ${id}`);
   let decision;
+  try {
   if (!client) {
     if (!fallback) throw new NoSafeDefault(id, 'no client');
     decision = { ...walk(tree, fallback), fallback: { reason: 'no Jev client' } };
@@ -206,6 +210,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     }
     if (goal && bot && !decision.stale) announceFallback(bot, goal, decision);
   }
+  } finally { giveBack(bot, turnBefore); }
   decision.id = id;
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;

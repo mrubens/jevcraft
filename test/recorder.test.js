@@ -151,3 +151,28 @@ test('a walk with no route records what stands round the feet', () => {
   assert.deepEqual(frame?.detail.around, ['1,0,0:cobblestone']);
   observation.detach();
 });
+
+test('every frame says who has the turn and for how long, and a question out to Jev holds it while it is out', async () => {
+  // Notes 358, 366 and 391: seconds of silence while hurt, with no holder in the record.
+  const { takeTurn, turnHeld, giveBack } = require('../src/turn');
+  const b = bot(), trace = new Trace();
+  const observation = observeBot(trace, b, { getGoal: () => ({ decisions: [] }) });
+  b.emit('spawn');
+  observation.sample();
+  assert.equal(trace.frames.at(-1).snapshot.turn, undefined, 'nothing has taken the turn yet');
+  const before = takeTurn(b, 'survival', 'stance: pillar', { threats: ['skeleton 9'] });
+  assert.equal(before, null);
+  observation.sample();
+  const turn = trace.frames.at(-1).snapshot.turn;
+  assert.equal(turn.holder, 'survival'); assert.equal(turn.phase, 'stance: pillar'); assert.deepEqual(turn.detail, { threats: ['skeleton 9'] }); assert(turn.forMs >= 0);
+  assert.equal(turnHeld(b, b._turn.since + 2500).forMs, 2500);
+  // A question out to Jev: the turn is the question's while it is out, and the layer's again after.
+  const { decide } = require('../src/decisions');
+  let during = null;
+  const client = { systemOne: async () => { during = turnHeld(b); return { answers: { branch_0: { choice: 'defer', confidence: 0.9 } } }; } };
+  await decide('hunt_target', { client, bot: b, goal: { decisions: [] }, tree: { hunt_1: { description: 'fight it' }, defer: { description: 'leave them' } }, state: { recentDeaths: [], nightsWithoutSleep: 0 } });
+  assert.equal(during.holder, 'decision'); assert.equal(during.phase, 'asking Jev: hunt_target');
+  assert.equal(b._turn.phase, 'stance: pillar', 'given back');
+  giveBack(b, null); assert.equal(turnHeld(b), undefined);
+  observation.detach();
+});

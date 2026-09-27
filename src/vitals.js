@@ -552,6 +552,7 @@ async function maintainVitals(bot, task, onAction = () => {}) {
       tries++;
       const block = suffocatingBlock(bot) || bot.blockAt(eyeCell()), eye = block.position;
       onAction({ action: 'dig_out_of_block', block: block.name, at: { x: eye.x, y: eye.y, z: eye.z } });
+      require('./turn').takeTurn(bot, 'vitals', 'dig_out_of_block', block.name);
       try { await require('./skills').equipBestTool(bot, block); } catch (_) { /* the hand, then */ }
       try { await bot.dig(block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
       await sleep(150);
@@ -587,6 +588,7 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   const food = chooseFood(bot) || ((bot.food < 18 && bot.health < 20) || bot.food <= 6 ? lastResortFood(bot) : null);
   if (!food) return false; // The higher-level survival planner must forage.
   onAction({ action: 'eat', item: food.name, food: bot.food, health: bot.health });
+  require('./turn').takeTurn(bot, 'vitals', 'eat', food.name);
   await bot.equip(food, 'hand');
   if (bot._syncWindow) await bot._syncWindow(bot.inventory);
   task.check();
