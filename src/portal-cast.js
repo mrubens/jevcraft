@@ -182,13 +182,14 @@ function waterAim(eye, p, w, exclude = []) {
 // half-width either way of the middle), not only from its middle: the
 // aims are taken again from where the bot is.
 const WIDTH = 0.6;
-function standsFor(frame, p, w) {
+function standsFor(frame, p, w, { floorless = false } = {}) {
   const axis = frame.axis || 'x', X = across(axis), A = AXES[axis];
   const give = (1 - WIDTH) / 2;
   const out = [];
   for (const side of [-1, 1]) for (const dist of [1, 2]) for (const du of [0, -1, 1]) for (const dy of [1, 0, 2]) {
     const feet = p.plus(X.scaled(side * dist)).plus(A.scaled(du)).offset(0, dy, 0), head = feet.plus(UP);
-    if (!w.solidAt(feet.plus(DOWN)) || !w.openAt(feet) || !w.openAt(head)) continue;
+    // floorless: the cells that would do with a block put under them.
+    if ((floorless ? w.solidAt(feet.plus(DOWN)) || !w.openAt(feet.plus(DOWN)) : !w.solidAt(feet.plus(DOWN))) || !w.openAt(feet) || !w.openAt(head)) continue;
     const eyes = [[0, 0], [-give, -give], [-give, give], [give, -give], [give, give]].map(([dx, dz]) => feet.offset(0.5 + dx, EYE, 0.5 + dz));
     const aims = eyes.map(eye => { const lava = pourAim(eye, p, w); return { lava, water: lava && waterAim(eye, p, w, [feet, head]) }; });
     if (aims.every(a => a.lava && a.water)) out.push({ feet, ...aims[0] });
@@ -370,7 +371,25 @@ async function castFrame(bot, task, goal, save, actions) {
     // Water still running off the last slot fills the cells to stand in
     // for a moment.
     if (!stand && wetAbout(bot, p)) { stepIs(p, 'drain'); await sleep(500); return false; }
-    if (!stand) throw new Error(`Nowhere to stand to pour into the frame slot at ${p}`);
+    // No cell beside the slot has a floor: one is made, a temporary block
+    // put under a cell that would do otherwise. mid-218-c's part-cast frame
+    // had no floor beside its next slot, and "nowhere to stand" came back
+    // two hundred times (2026-09-27).
+    if (!stand) {
+      const material = portalSupports(bot).material;
+      const make = material && standsFor(frame, p, w, { floorless: true })
+        .map(s => ({ s, chain: anchorPath(s.feet.plus(DOWN), w.solidAt, [p, s.feet, s.feet.plus(UP), ...frame.blocks.map(at)]) }))
+        .filter(x => x.chain && x.chain.length <= 2)
+        .sort((a, b) => a.chain.length - b.chain.length || a.s.feet.distanceTo(bot.entity.position) - b.s.feet.distanceTo(bot.entity.position))[0];
+      if (make) {
+        for (const c of [...make.chain, make.s.feet.plus(DOWN)]) {
+          stepIs(p, 'make_stand', { at: { x: c.x, y: c.y, z: c.z } });
+          await place(bot, task, c, material); track(c, material); save();
+        }
+        return false;
+      }
+      throw new Error(`Nowhere to stand to pour into the frame slot at ${p}`);
+    }
     const eye = () => bot.entity.position.offset(0, EYE, 0);
     const exclude = () => { const f = bot.entity.position.floored(); return [f, f.plus(UP)]; };
     if (!sourceLava(bot.blockAt(p))) {

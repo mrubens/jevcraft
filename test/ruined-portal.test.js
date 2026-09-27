@@ -370,3 +370,4 @@ test('the lava said to the portal question is lava the fetch would use: not a po
   setAside(goal, 'staircase', { x: 0, y: 56, z: 0 }, 'paced the same few cells', 600000);
   assert.equal(nearestLava(bot, goal), null, 'its way rests: not said');
 });
+
