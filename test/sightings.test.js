@@ -45,7 +45,7 @@ test('under a flock seen from a mine, the bot has not arrived: it goes to the sh
   const flock = { x: 100, y: 72, z: 5, count: 3, at: Date.now() - 60000, dimension: 'overworld' };
   const goal = { sightings: { sheep: [flock] }, woolSearch: { since: Date.now(), from: { x: 0, y: 70, z: 0 }, toward: { x: 100, y: 72, z: 5, seen: true } } };
   let went;
-  await gatherWool(bot, { check() {} }, goal, () => {}, null, { navigate: async (b, t, g) => { went = g; }, explore: async () => { throw new Error('explored instead'); } });
+  await gatherWool(bot, { check() {} }, goal, () => {}, null, { navigate: async (b, t, g) => { went = g; b.entity.position = new Vec3(100.5, 40, 5.5); }, explore: async () => { throw new Error('explored instead'); } });
   assert(went, 'walked on toward the flock');
   assert.equal(went.y, 72, 'to the height the sheep were seen at');
   assert.equal(goal.sightings.sheep.length, 1, 'the flock is not forgotten from underneath it');

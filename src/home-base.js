@@ -809,7 +809,17 @@ async function searchForSheep(bot, task, goal, save, actions) {
   const off = held && (held.y != null ? bot.entity.position.distanceTo(new Vec3(held.x, held.y, held.z)) : Math.hypot(held.x - bot.entity.position.x, held.z - bot.entity.position.z));
   if (held && off > 12) {
     const target = held.y != null ? new goals.GoalNear(held.x, held.y, held.z, 6) : new goals.GoalNearXZ(held.x, held.z, 8);
-    try { await actions.navigate(bot, task, target, { timeoutMs: 60000, stallMs: 8000 }); return; }
+    try {
+      await actions.navigate(bot, task, target, { timeoutMs: 60000, stallMs: 8000 });
+      // A walk that ended no nearer than the nearest yet is as good as a
+      // failed one: mid-229-c chose the same biome six times in a second,
+      // each walk returning at once, at 2.6 health among skeletons
+      // (2026-09-26).
+      const now = held.y != null ? bot.entity.position.distanceTo(new Vec3(held.x, held.y, held.z)) : Math.hypot(held.x - bot.entity.position.x, held.z - bot.entity.position.z);
+      if (now > 12 && now >= (held.nearest ?? off) - 1) throw new Error('The walk there came no nearer');
+      held.nearest = Math.min(held.nearest ?? off, now); save();
+      return;
+    }
     catch (err) {
       task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
       // A flock that cannot be walked to is not offered again: kept, it was

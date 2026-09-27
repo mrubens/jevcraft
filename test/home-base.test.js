@@ -632,4 +632,8 @@ test('a biome the sheep search could not walk to rests, and a bed is three wool 
   await home.searchForSheep(bot, task, goal, save, { navigate: async () => { throw new Error('No route'); }, explore: async () => {} });
   assert(goal.woolSearch.unreachable['300,0'], 'the biome rests');
   assert.equal(goal.woolSearch.toward, undefined);
+  // mid-229-c: a walk that returns at once, no nearer, rests the biome too.
+  goal.woolSearch.toward = { x: 0, z: 400, biome: 'taiga' };
+  await home.searchForSheep(bot, task, goal, save, { navigate: async () => {}, explore: async () => {} });
+  assert(goal.woolSearch.unreachable['0,400'], 'no nearer: rests');
 });
