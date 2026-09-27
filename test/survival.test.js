@@ -3911,3 +3911,48 @@ test('a swimmer is on no span and takes no step off an edge', () => {
   const bot = { entity: { position: new Vec3(0.5, -4.8, 0.5), isInWater: true }, blockAt };
   assert.equal(onSpan(bot), false);
 });
+
+test('a shelter search out of time looks longer, and is not a shelter with no way (mid-231-o)', async () => {
+  const { Survival } = require('../src/survival');
+  const timeouts = [];
+  const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 35, 0.5) },
+    pathfinder: { movements: {}, getPathTo: (m, g, ms) => { timeouts.push(ms); return { status: ms > 400 ? 'success' : 'timeout', path: [] }; } },
+    blockAt: () => ({ name: 'stone', boundingBox: 'block' }), on() {} };
+  const survival = new Survival(bot, {}, { state: { shelters: [{ origin: { x: 0, y: 75, z: 0 }, dimension: 'overworld', verifiedAt: 'x', createdAt: 'x' }] } });
+  const refuge = survival.currentShelter();
+  assert.equal(await survival.reachableRefuge(new Task('night'), {}, () => {}, refuge), refuge);
+  assert.equal(refuge.avoidUntil, undefined);
+  bot.pathfinder.getPathTo = () => ({ status: 'timeout', path: [] });
+  assert.equal(await survival.reachableRefuge(new Task('night'), {}, () => {}, refuge), null);
+  assert(refuge.avoidUntil - Date.now() <= 60000, 'out of time twice rests a minute, not ten');
+});
+
+test('knocked into the air at the rim, the edge step plans from where the bot lands, and its walk does not tower up (mid-230-q)', async () => {
+  const cube = { id: 4, name: 'magma_cube', type: 'hostile', position: new Vec3(-0.5, 76, 0.5), height: 2, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: { 4: cube }, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 6000 }, entity: { position: new Vec3(2.2, 74.6, 0.5), onGround: false, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'diamond_sword', count: 1 }, { name: 'netherrack', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ position: p, name: p.x >= 2 ? (p.y <= 30 ? 'lava' : 'air') : p.y < 74 ? 'netherrack' : 'air', boundingBox: p.x < 2 && p.y < 74 ? 'block' : 'empty' }),
+    world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: { allow1by1towers: true }, setGoal() {} }, clearControlStates() {}, setControlState() {} });
+  setTimeout(() => { bot.entity.position = new Vec3(1.5, 74, 0.5); bot.entity.onGround = true; }, 150);
+  let towers = null, from = null;
+  const survival = new Survival(bot, { navigate: async () => { towers = bot.pathfinder.movements.allow1by1towers; from = bot.entity.position.x; } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.step(new Task('leg'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'off_the_edge');
+  assert.equal(from, 1.5, 'planned once on the ground');
+  assert.equal(towers, false, 'no tower in place on the walk to ground');
+  assert.equal(bot.pathfinder.movements.allow1by1towers, true, 'given back after');
+});
+
+test('underground at night, hurt, with no food and no healing: sealing in until dawn is offered beside the climb to food (mid-207-l)', async () => {
+  const { bot } = nookFixture({ time: 18000, items: [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }] });
+  bot.health = 5.2; bot.food = 16; bot.pathfinder = { movements: {}, getPathTo: () => ({ status: "noPath", path: [] }), setGoal() {} };
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } } });
+  let tree = null;
+  survival.decide = async (task, goal, save, q) => { if (q.id === 'survival_priority') tree = tree || q.tree; return { path: ['continue_request'], action: q.tree.continue_request || Object.values(q.tree)[0], stale: true }; };
+  await survival.step(new Task('hurt'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert(tree?.secure_shelter, Object.keys(tree || {}).join(','));
+  assert.match(tree.secure_shelter.description, /wait in it for dawn.*5\.2 health, which does not come back/);
+  if (tree.obtain_food) assert.match(tree.obtain_food.description, /night there until dawn/);
+});

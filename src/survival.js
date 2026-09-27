@@ -2217,9 +2217,15 @@ class Survival {
     if (!refuge || shelter.inside(bot, refuge)) return refuge;
     const o = pos(refuge.origin);
     if (o.distanceTo(bot.entity.position) <= 6 || !bot.pathfinder?.movements) return refuge;
-    const route = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalNear(o.x, o.y, o.z, 2), 400);
+    const near = new goals.GoalNear(o.x, o.y, o.z, 2);
+    let route = await surveyRoute(bot, task, bot.pathfinder.movements, near, 400);
+    // A search out of time has not found that there is no way: under load
+    // four hundred milliseconds ran out, and mid-231-o's shelter was set
+    // aside ten minutes as unreachable at 0.9 health on a "timeout" (note
+    // 466). It looks longer once; still out of time, it rests a minute.
+    if (route.status === 'timeout') route = await surveyRoute(bot, task, bot.pathfinder.movements, near, 2500);
     if (route.status === 'success') return refuge;
-    refuge.avoidUntil = Date.now() + 600000;
+    refuge.avoidUntil = Date.now() + (route.status === 'timeout' ? 60000 : 600000);
     this.report(goal, save, { action: 'shelter_unreachable', origin: refuge.origin, reason: route.status });
     return null;
   }
@@ -3615,7 +3621,12 @@ class Survival {
       (ownPillar && Math.hypot(feetHere.x - ownPillar.x, feetHere.z - ownPillar.z) < 1 && feetHere.y >= ownPillar.y + 1);
     if (!guarded && !bot.entity?.isInWater && !inWater(bot) && !(this.state.edgeTriedAt > Date.now() - 10000) && (threats(bot, 64).some(pusher) || fireball())) {
       const { dropNear } = require('./terrain');
-      const deep = dropNear(bot, bot.entity.position.floored(), 2);
+      // From the block the bot stands on, not the air it was knocked into:
+      // mid-230-q, hit at a ravine's rim, measured and planned from the cell
+      // over the drop, and the route's first move was a pillar there; it
+      // fell fourteen blocks, 15.1 to 4.1 (note 466). As the stance does.
+      for (let n = 0; n < 8 && bot.entity.onGround === false && !bot.entity.isInWater; n++) { task.check(); await sleep(100); }
+      const deep = bot.entity.onGround === false ? null : dropNear(bot, bot.entity.position.floored(), 2);
       if ((deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) || lavaBeside(bot, bot.entity.position.floored())) {
         this.state.edgeTriedAt = Date.now();
         // With a creeper the pusher, the ground is away from it, and the walk
@@ -3633,8 +3644,13 @@ class Survival {
           // and a half when a skeleton's arrow put it over (2026-09-27).
           const { incoming, deflect } = require('./projectile-guard');
           const shot = () => bot.inventory.slots?.[45]?.name === 'shield' && incoming(bot).length > 0;
+          // A walk to ground: no tower up in place on the way, which at the
+          // rim is a jump over the drop (mid-230-q).
+          const movements = bot.pathfinder?.movements, towers = movements?.allow1by1towers;
+          if (movements) movements.allow1by1towers = false;
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), creeper ? { timeoutMs: 2500, stallMs: 800, stopWhen: shot } : { timeoutMs: 6000, stallMs: 2000, stopWhen: shot }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          finally { if (movements) movements.allow1by1towers = towers; }
           if (shot()) { this.state.edgeTriedAt = 0; await deflect(bot, task); }
           onStep(goal); return true;
         }
@@ -3971,7 +3987,8 @@ class Survival {
     // pre-Nether minutes (the decision review, 2026-09-26). The night comes
     // up when the work does, or after two nights awake, when the phantoms
     // waiting on the third are a reason to find a bed.
-    const nightFree = underground && !this.sleepDebt();
+    // A shelter Jev chose underground is held as one above is (note 466).
+    const nightFree = underground && !this.sleepDebt() && !(this.state.nightPlan?.plan === 'shelter' && this.state.nightPlan.until > Date.now());
     const nightNow = shelterNeeded(bot) && !nightFree;
     const homeWalk = homeBed && nightNow && homeBed.foot.distanceTo(bot.entity.position) > 6 && (underground || !routeBlocked) &&
       !sleepWaiting(this) && !isSetAside(this, 'surface_home', 'here');
@@ -4122,11 +4139,21 @@ class Survival {
     // a creeper five blocks off, told only of sealing a room before night,
     // and was blown up three seconds later (2026-09-26).
     const creeperRaceSays = creeperSays(bot);
-    if (needsShelter) tree.secure_shelter = { description: `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off; in the shelter it can mine or wait.${creeperRaceSays}` + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
+    // Underground at night the shelter is no question while health comes
+    // back or is whole. When it does not, sealing in until dawn is a real
+    // way beside the climb to food on the night surface: mid-207-l, at 5.2
+    // health, hunger 16 and no food, was offered only the request and a
+    // food search, climbed toward the surface at night, and a zombie and a
+    // spider met it on the way (note 466).
+    const woundedBelow = underground && nightFree && shelterNeeded(bot) && (bot.health ?? 20) < 20 && healing;
+    if (needsShelter || woundedBelow) tree.secure_shelter = { description: (woundedBelow
+      ? `Seal a pocket here underground and wait in it for dawn, about ${minutesToDawn(bot)} real minutes off: ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and hunger drops slowly while still. The surface above is night, with its mobs, until dawn, when those in the open burn; underground the dark is the same at any hour.${nowAbout}`
+      : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off; in the shelter it can mine or wait.`) + creeperRaceSays + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
     // At night too, with what it risks said, not hidden (the decision
     // audit, 2026-09-25): hungry in the dark, the food was never offered.
-    if (needsFood) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.' + (night(bot) && needsShelter ? ` Night: mobs spawn on the way; hunger ${bot.food}, starvation at 0.` : ''),
+    if (needsFood) tree.obtain_food = { description: 'Obtain safe food to restore hunger and maintain a reserve for healing and the coming night. Keep the player request saved.' + (night(bot) && needsShelter ? ` Night: mobs spawn on the way; hunger ${bot.food}, starvation at 0.` : '') +
+        (night(bot) && underground ? ` Food is mostly on the surface, and it is night there until dawn, about ${minutesToDawn(bot)} real minutes off; the climb up comes out among its mobs. ${Math.round(bot.health * 10) / 10} health now${healing ? ', not coming back' : ''}.` : ''),
       children: offWorld && this.actions.returnOverworld ? this.offWorldFood(task, goal, save) : await forageChoices(bot, task, goal, save, this.actions, this.state) };
     if (tree.obtain_food && !Object.keys(tree.obtain_food.children).length) delete tree.obtain_food;
     // Resting where it is while health comes back, when it does (hunger

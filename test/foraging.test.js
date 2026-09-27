@@ -188,3 +188,16 @@ test('a food step gives the work its threat check back when it ends, not nothing
   await choices.cook_cooked_chicken.run();
   assert.equal(task.interruptCheck, outer);
 });
+
+test('the food search says the climb out, the health and whether it comes back, and the mobs about (mid-207-l)', async () => {
+  const bot = fixture([]);
+  bot.game.dimension = 'overworld'; bot.health = 5.2; bot.food = 16; bot.time = { timeOfDay: 8867 };
+  bot.entity.position = new Vec3(0.5, 20, 0.5);
+  bot.blockAt = p => ({ name: p.y > 20 && p.y < 40 ? 'stone' : p.y < 20 ? 'stone' : 'air', boundingBox: p.y < 20 || (p.y > 21 && p.y < 40) ? 'block' : 'empty', position: p });
+  bot.entities[1] = { id: 1, name: 'zombie', type: 'hostile', position: new Vec3(6, 20, 0.5), height: 1.9, isValid: true };
+  const d = (await forageChoices(bot, new Task('food'), {}, () => {}, {}, {})).search_food.description;
+  assert.equal(d.healthNow, 5);
+  assert.match(d.healing, /none meanwhile: hunger 16/);
+  assert.match(d.climbFirst, /up to the surface first/);
+  assert.match(d.hostilesWithin24, /1 zombie/);
+});

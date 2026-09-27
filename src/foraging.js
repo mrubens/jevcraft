@@ -258,8 +258,23 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   // eight minutes, each failing at once (2026-09-25). Rested two minutes
   // then, so the other ways (a boat, a herd seen) are chosen instead.
   const { isSetAside, setAside } = require('./progress');
+  // Said with what the walk costs, as the others are: mid-207-l, at 5.2
+  // health with no healing, chose it told nothing more than "walk to another
+  // dry area", climbed out of its cave toward the surface, and a zombie and
+  // a spider met it on the way (note 466).
+  const searchFacts = () => {
+    const facts = walkFacts(0);
+    delete facts.walkSeconds;
+    const { climbToSurface, climbMinutes, surfaceObserver } = require('./surface');
+    let underground = false, climb = 0;
+    try { underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position); climb = underground ? climbToSurface(bot, bot.entity.position) : 0; } catch (_) {}
+    if (underground) facts.climbFirst = climb != null ? `about ${climb} blocks up to the surface first, roughly ${climbMinutes(climb)} minutes` : 'up to the surface first, how far not known';
+    const about = require('./danger').hostileEntities(bot, 24);
+    if (about.length) facts.hostilesWithin24 = [...new Set(about.map(e => e.name))].map(n => `${about.filter(e => e.name === n).length} ${n.replaceAll('_', ' ')}`).join(', ');
+    return facts;
+  };
   if (!isSetAside(goal, 'forage', 'search_food')) choices.search_food = {
-    description: 'Walk to another observed dry area to search for passive animals; avoid remembered failed targets.',
+    description: { action: 'Walk to another observed dry area on the surface to search for passive animals, how far not known until they are seen; avoid remembered failed targets.', ...searchFacts() },
     run: async () => {
       goal.survivalAction = { action: 'search_food', at: new Date().toISOString() }; save();
       const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
