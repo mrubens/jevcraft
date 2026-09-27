@@ -538,6 +538,9 @@ test('the kit for the crossing is one question: every item said against what the
   assert.match(asked.cross_now, /Pickaxe: stone pickaxe carried, the best with 131 uses left/);
   assert.match(asked.cross_now, /Wood: 8 logs and a crafting table carried/);
   assert.match(asked.top_up_blocks, /^Mine stone first, up to two stacks of blocks\. Blocks: 30 carried.* Nothing has gone to it yet at this crossing\./);
+  // mid-242-l was offered its gold as "undefined Gold: ...".
+  for (const [k, v] of Object.entries(asked)) assert(!/undefined/.test(v), `${k}: ${v.slice(0, 80)}`);
+  assert.match(asked.top_up_gold, /^Make golden boots first and wear them/);
   asked = null;
   assert.equal(await crossingKitReady(bot, task, goal, () => {}, client), true);
   assert.equal(asked, null, 'held: not asked again at once');

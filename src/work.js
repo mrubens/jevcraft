@@ -3993,6 +3993,10 @@ const TOP_UP = {
   blocks: 'Mine stone first, up to two stacks of blocks.',
   pickaxe: 'Make a stone pickaxe first, as the spare.',
   wood: 'Gather wood first: logs up to eight, and a crafting table.',
+  // Said, not "undefined": mid-242-l was offered its gold as "undefined Gold:
+  // no piece carried", crossed without it, and was shot by a piglin
+  // (2026-09-27).
+  gold: 'Make golden boots first and wear them: four gold ingots, smelted from raw gold or gold ore.',
 };
 async function crossingKitReady(bot, task, goal, save, client = task.opportunityClient, now = Date.now()) {
   if (bot.game?.gameMode !== 'survival') return true;
