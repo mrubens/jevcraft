@@ -127,7 +127,10 @@ function rulesPick(claims) {
 // The work's own step changing (mine, craft, mine) is not a new question:
 // mid-218-n was asked eight times in a minute for it (note 490). The other
 // layers' actions are: a creeper in place of a shelter is.
-const fingerprintOf = claims => claims.map(c => `${c.layer}:${c.layer === 'work' ? '' : c.action}`).sort().join('|');
+// Nor is a layer's own action changing (survival between its shelter and
+// the creeper's answer: mid-236-j was asked twice in a second): who acts is
+// the question, and an alert's coming or going is part of that (note 492).
+const fingerprintOf = claims => claims.map(c => `${c.layer}${c.alert ? `:${c.alert}` : ''}`).sort().join('|');
 // When a claim's last run was stopped, as a time.
 const stoppedAt = c => { const t = c?.facts?.lastErrorAt; return typeof t === 'number' ? t : Date.parse(t || '') || 0; };
 const STOPPED_BY_THREAT = /Threat nearby|Preempted|hurt|NeedsSafety/i;
@@ -359,6 +362,12 @@ function outranks(bot, reflex, holder, now = Date.now()) {
   if (!reflex) return false;
   if (holder?.reflex) return (REFLEX_RANK[reflex.key] ?? 99) < (REFLEX_RANK[holder.reflex] ?? 99);
   if (holder && holder.layer === reflex.layer && holder.action === reflex.action) return false;
+  // An alert does not stop the layer it would give the turn to: survival's
+  // own step answers a creeper (its stance), and stopping its shelter walk
+  // for one, asking who acts, and giving survival the turn again ran round
+  // for thirteen seconds with nothing answering it; mid-236-j was blown up
+  // at the end of it (note 492). The body's physics still stops anything.
+  if (ALERTS.has(reflex.key) && holder?.layer === reflex.layer) return false;
   if (['creeper', 'arm'].includes(reflex.key)) {
     const held = require('./danger').stanceHeld(bot, now);
     if (held && held.choice !== 'keep_working') return false;

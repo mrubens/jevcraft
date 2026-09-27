@@ -388,3 +388,16 @@ test('turn_priority says each claim in words, and a ruling for the work ends whe
   state.ruling = { winner: 'work', fingerprint: arbiter.fingerprintOf(claims), at: 1000, until: 61000, ids: [], health: 20, band: arbiter.foodBand(undefined) };
   assert.equal(arbiter.rule(null, mining, { state, now: 2000, mobs: [], dry: true }).by, 'held');
 });
+
+test('an alert does not stop the layer it would give the turn to, and a layer changing its own action is not a new question (mid-236-j)', () => {
+  const creeper = { key: 'creeper', layer: 'survival', action: 'creeper_back_off' };
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, _stance: null };
+  assert.equal(arbiter.outranks(bot, creeper, { layer: 'survival', action: 'secure_shelter' }), false, 'survival answers its own creeper');
+  assert.equal(arbiter.outranks(bot, creeper, { layer: 'work', action: 'mine' }), true, 'the work is stopped for it');
+  assert.equal(arbiter.outranks(bot, { key: 'lava', layer: 'survival', action: 'leave_lava' }, { layer: 'vitals', action: 'eat' }), true);
+  const a = [{ layer: 'survival', action: 'secure_shelter' }, { layer: 'work', action: 'mine' }];
+  const b = [{ layer: 'survival', action: 'pocket_next' }, { layer: 'work', action: 'craft' }];
+  assert.equal(arbiter.fingerprintOf(a), arbiter.fingerprintOf(b));
+  const c = [{ layer: 'survival', action: 'creeper_back_off', alert: 'creeper' }, { layer: 'work', action: 'mine' }];
+  assert.notEqual(arbiter.fingerprintOf(a), arbiter.fingerprintOf(c), 'an alert coming is');
+});
