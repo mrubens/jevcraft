@@ -3024,3 +3024,18 @@ test('a ghast in sight is a threat within its own reach, forty blocks, not the s
   assert.equal(immediateThreat(make(19))?.entity.name, 'ghast');
   assert.equal(immediateThreat(make(45)), undefined, 'past its reach');
 });
+
+test('a meal cut short is not offered as a stance again for ten seconds', async () => {
+  // mid-235-g chose to eat with two drowned at arm's length; the meal began every half second and was never eaten (2026-09-27).
+  const bot = crowdBot();
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const crowd = [crowdMob(1, 'spider', 1.8), crowdMob(2, 'zombie', -3.2)];
+  const first = survival.stanceOptions(new Task('t'), {}, () => {}, crowd, false);
+  assert(first.eat, Object.keys(first).join(','));
+  bot.equip = async () => {}; bot.consume = () => new Promise((resolve, reject) => setTimeout(() => reject(new Error('Consuming cancelled')), 5));
+  survival.report = () => {};
+  assert.equal(await first.eat.run(), false);
+  assert.equal(survival.stanceOptions(new Task('t'), {}, () => {}, crowd, false).eat, undefined, 'cut short: not offered');
+  survival.state.mealCutAt = Date.now() - 11000;
+  assert(survival.stanceOptions(new Task('t'), {}, () => {}, crowd, false).eat, 'offered again after ten seconds');
+});

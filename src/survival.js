@@ -29,6 +29,7 @@ const { surfaceObserver } = require('./surface');
 const { tunnelStep } = require('./tunneling');
 const { thinking } = require('./speech');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const MEAL_CUT_MS = 10000;
 const pos = p => new Vec3(p.x, p.y, p.z);
 const { DAY, night } = require('./day');
 const { NETHER_FOOD_POINTS, KIT_FOOD_POINTS } = require('./home-stash');
@@ -1205,10 +1206,16 @@ class Survival {
     // Held to what it was said to cost: mid-205-a chose to eat told about
     // 1.6 seconds, and ate on for four more with two zombies hitting and a
     // creeper walking up to it (2026-09-26).
-    if (meal) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + EAT_AFTER,
+    if (meal && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + EAT_AFTER,
       run: async () => {
         this.report(goal, save, { action: 'eat', item: meal.name, food: bot.food, health: bot.health, stance: true });
-        try { await bot.equip(meal, 'hand'); await bot.consume(); return true; }
+        // Marked before the meal and cleared when it is eaten: a meal cut
+        // short, however it was cut, is not offered again for ten seconds.
+        // mid-235-g chose to eat with two drowned at arm's length; the meal
+        // began every half second and was never eaten, food at seventeen
+        // throughout, twelve health to none (2026-09-27).
+        this.state.mealCutAt = Date.now();
+        try { await bot.equip(meal, 'hand'); await bot.consume(); delete this.state.mealCutAt; return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
       } };
     // The charge at a few ground shooters, where it can be run.
