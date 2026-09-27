@@ -401,3 +401,15 @@ test('an alert does not stop the layer it would give the turn to, and a layer ch
   const c = [{ layer: 'survival', action: 'creeper_back_off', alert: 'creeper' }, { layer: 'work', action: 'mine' }];
   assert.notEqual(arbiter.fingerprintOf(a), arbiter.fingerprintOf(c), 'an alert coming is');
 });
+
+test('any winner stopped by a mob ends its ruling, not only the work (mid-218-q)', async () => {
+  const state = {};
+  const stop = Object.assign(new Error('Threat nearby: drowned at 5 blocks'), { name: 'NeedsSafety' });
+  const vitals = { layer: 'vitals', action: 'surface', urgency: 'pressing', facts: { air: 18 }, run: async () => { throw stop; } };
+  const survival = { layer: 'survival', action: 'escape_threat', urgency: 'pressing', facts: { threat: { name: 'drowned', distance: 5, seen: true } }, run: async () => true };
+  const claims = [vitals, survival];
+  state.ruling = { winner: 'vitals', fingerprint: arbiter.fingerprintOf(claims), at: 1000, until: Date.now() + 60000, ids: [], health: 20, band: arbiter.foodBand(undefined) };
+  await assert.rejects(arbiter.take(null, claims, { state, mobs: [], decide: async () => ({ path: ['vitals'] }) }), /Threat nearby/);
+  const again = arbiter.rule(null, claims, { state, mobs: [], dry: true });
+  assert.notEqual(again.by, 'held'); assert.equal(again.ask, true, 'asked again after the stop');
+});

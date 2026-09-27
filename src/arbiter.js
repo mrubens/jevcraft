@@ -150,6 +150,7 @@ function broken(ruling, claims, seen, now) {
   // A winner that asked not to be cut short keeps the turn for its hold,
   // whatever else comes; only a reflex takes it.
   if (winner.preemptible === false && now - ruling.at < (winner.minHoldMs || 0)) return null;
+  if (ruling.stoppedBy) return `its winner was stopped: ${ruling.stoppedBy}`;
   if (now >= ruling.until) return 'a minute passed';
   // Its winner stopped by a mob since the ruling: the ruling was made
   // before it, and giving it the turn back only stops it again. mid-218-n's
@@ -339,7 +340,18 @@ async function take(bot, claims, ctx = {}) {
     }
     state.holder = given; require('./turn').takeTurn(bot, w.layer, w.action);
   }
-  const acted = !!(w.run ? await w.run(ctx.task) : false);
+  // Stopped by a mob, any winner's ruling ends with it: giving the turn back
+  // only stops it again. mid-218-q's swim up (vitals, Jev's pick at 0.97)
+  // was stopped by a drowned at every tick, "Threat nearby", and handed
+  // back each time on the ruling held, sinking, until the drowned was on
+  // it; survival never answered (note 504). Note 490's rule read only the
+  // work's error.
+  let acted;
+  try { acted = !!(w.run ? await w.run(ctx.task) : false); }
+  catch (err) {
+    if (err?.name === 'NeedsSafety' && state.ruling?.winner === w.layer) { state.ruling.until = 0; state.ruling.stoppedBy = String(err.message || '').slice(0, 120); }
+    throw err;
+  }
   idled(state, w, acted, ctx.now ?? Date.now());
   if (bot) bot._arbiterShadow = { would: { layer: w.layer, action: w.action, by: r.by, ...(r.ask ? { ask: true } : {}) }, gave: w.layer, at: now, live: true };
   return { ...r, layer: w.layer, acted, unclaimed };
