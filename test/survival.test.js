@@ -3874,3 +3874,19 @@ test('a fight at a shooter the charge would not run at (beside a drop) is priced
   assert.match(options.fight.description, /The nearest, a skeleton 6 blocks off, shoots and cannot be run at from here/);
   assert.equal(options.fight.expects.seconds, 15);
 });
+
+test('with a shooter in sight, cover is offered: a block two high in its line, priced, and run', async () => {
+  // mid-227-q and mid-202-m were burned down at twenty blocks from their blazes with no way to break the line offered (2026-09-27).
+  const placed = [];
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival' }, health: 6.6, food: 18, entities: {},
+    entity: { position: new Vec3(0.5, 72, 0.5), onGround: true }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'netherrack', count: 32 }], slots: {} },
+    blockAt: p => { const f = p.floored(); const solid = f.y < 72 || placed.includes(`${f}`); return { position: f, name: solid ? 'netherrack' : 'air', boundingBox: solid ? 'block' : 'empty' }; },
+    world: { raycast: () => null }, findBlocks: () => [] });
+  const survival = new Survival(bot, { place: async (b, t, p) => { placed.push(`${p.floored()}`); }, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const blaze = { entity: { id: 9, name: 'blaze', position: new Vec3(20.5, 74, 0.5), height: 1.8 }, distance: 20, visible: true };
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [blaze], false);
+  assert.match(options.take_cover?.description || '', /Put a block two high in the line of the blaze \(20 blocks off\).*About [\d.]+ damage/);
+  assert.equal(await options.take_cover.run(), true);
+  assert.deepEqual(placed.sort(), ['(1, 72, 0)', '(1, 73, 0)']);
+});

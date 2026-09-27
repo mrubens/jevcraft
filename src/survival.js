@@ -1652,6 +1652,18 @@ class Survival {
       const hp = require('./combat-estimate').MOBS[t.entity.name]?.health, arrows = hp ? Math.ceil(hp / 6) : 4;
       return stanceCost({ mobs, setup: arrows, reaches: m => m.shoots && m.name !== t.entity.name, shield: shielded });
     };
+    // Cover from the shooters in sight: a block two high in the line of
+    // each, as a player ducks behind a pillar from a blaze. In the Nether a
+    // fireball's fire is not put out by water, and mid-227-q and mid-202-m
+    // were burned down at twenty blocks from their blazes with no way to
+    // break the line offered (notes 443, 451).
+    const shootersSeen = danger.filter(t => t.visible && shooter(t.entity)).slice(0, 3);
+    const coverBlocks = shootersSeen.length * 2;
+    if (shootersSeen.length && typeof this.actions.place === 'function' && shelter.materialStock(bot) >= coverBlocks && !inWater(bot)) {
+      const coverCost = stanceCost({ mobs, setup: coverBlocks * BLOCK_SECONDS, reaches: m => !m.shoots || m.name === 'creeper', shield: shielded });
+      options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, description: `Put a block two high in the line of ${shootersSeen.length === 1 ? `the ${shootersSeen[0].entity.name.replaceAll('_', ' ')} (${Math.round(shootersSeen[0].distance)} blocks off)` : `each of the ${shootersSeen.length} shooters in sight`}, beside the bot, and stay behind it: ${coverBlocks} blocks, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds; a shot does not come through a block, and a shooter that moves round finds the bot open again.` + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
+        run: async () => { const done = await this.wallOff(task, goal, save, shootersSeen, { reach: 64, action: 'take_cover' }); if (done && bot.inventory?.slots?.[45]?.name === 'shield') { try { await raiseShield(bot); } catch (_) { /* the block is the cover */ } } return done; } };
+    }
     for (const t of shotTargets(bot, danger, { any: true }).slice(0, 3)) options[`shoot_${t.entity.id}`] = { expects: (c => ({ damage: c.damage, seconds: c.seconds, oneHit }))(shotCost(t)), description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + shotFacts(t) + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + costSays(shotCost(t), bot.health, mobs, { doing: 'drawing', done: 'The shooter down' }) + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
     return options;
@@ -2771,7 +2783,7 @@ class Survival {
     return true;
   }
 
-  async wallOff(task, goal, save, danger) {
+  async wallOff(task, goal, save, danger, { reach = 6, action = 'wall_off' } = {}) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function') return false;
     const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 2)?.name;
@@ -2779,7 +2791,7 @@ class Survival {
     const feet = bot.entity.position.floored();
     const walls = [];
     for (const t of danger) {
-      if (t.distance > 6) continue;
+      if (t.distance > reach) continue;
       const dx = t.entity.position.x - bot.entity.position.x, dz = t.entity.position.z - bot.entity.position.z;
       const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
       if (!step.x && !step.z) continue;
@@ -2791,7 +2803,7 @@ class Survival {
       walls.push(cell);
     }
     if (!walls.length) return false;
-    this.report(goal, save, { action: 'wall_off', threats: danger.map(t => t.entity.name), cells: walls.map(p => ({ ...p })) });
+    this.report(goal, save, { action, threats: danger.map(t => t.entity.name), cells: walls.map(p => ({ ...p })) });
     for (const cell of walls) {
       for (const p of [cell, cell.offset(0, 1, 0)]) {
         task.check();

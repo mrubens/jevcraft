@@ -213,6 +213,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
+| `take_cover` | root | put a block two high in the line of each shooter in sight and stay behind it | shooters in sight (up to three), two blocks each carried, not in water; said with the blocks, the seconds and the damage in the next fifteen seconds this way |
 | `fight` | root | fight where the bot stands | always, with bare hands when no sword, axe or trident is carried |
 | `eat_golden_apple` | root | eat a golden apple now | a golden or enchanted golden apple is carried and health is below full |
 | `pillar` | root | go two blocks up and fight from there | two scaffold blocks carried and three clear blocks overhead |
