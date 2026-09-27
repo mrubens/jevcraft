@@ -621,3 +621,14 @@ test('the kit for the crossing says a piece of gold keeps piglins off, and golde
   assert.match(none.says, /Piglins.*leave a player wearing a piece of gold be, and go for one wearing none on sight/);
   assert.equal(kitItems(make([{ name: 'golden_boots', count: 1 }])).find(i => i.key === 'gold').short, false);
 });
+
+test('with no ore in view, the ways down are eight headings near and far, each its own staircase area', () => {
+  // mid-205-j: its four headings all resting, "every way down is set aside" fifteen passes running.
+  const { descentTargets } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  const targets = descentTargets(new Vec3(-296, 49, 637), -16);
+  assert.equal(targets.length, 16);
+  assert(targets.every(t => t.y === -16));
+  const areas = new Set(targets.map(t => `${Math.floor(t.x / 8)},${Math.floor(t.z / 8)}`));
+  assert.equal(areas.size, 16, 'no two share a resting area');
+});

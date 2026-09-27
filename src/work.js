@@ -719,6 +719,12 @@ function searchFor(goal, resource, here) {
 // another ore thirty blocks off, and dug the next stair, flipping between
 // the two steps a dozen times a minute (2026-09-24). Six stairs, or until
 // the target is close or a stair gets nowhere.
+// The ways down to a depth when no ore is in view: eight headings, near first.
+function descentTargets(feet, depth) {
+  const unit = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+  return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
+}
+
 const STAIRS_AT_A_TIME = 6;
 async function tunnelOrSetAside(bot, task, goal, save, target, resource, ore = null) {
   try {
@@ -1185,8 +1191,10 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       if (!target) {
         const { staircaseResting } = require('./tunneling');
         const feet = bot.entity.position.floored();
-        target = [[24, 0], [0, 24], [-24, 0], [0, -24]].map(([dx, dz]) => feet.offset(dx, step.depth - feet.y, dz))
-          .find(t => !staircaseResting(goal, t) && !isSetAside(goal, 'reach', t));
+        // Eight headings, near and far, not four: mid-205-j had its four
+        // resting at once and threw "every way down is set aside" fifteen
+        // passes running until the loop watch ended the trial (2026-09-27).
+        target = descentTargets(feet, step.depth).find(t => !staircaseResting(goal, t) && !isSetAside(goal, 'reach', t));
         if (!target) throw new Error(`Every way down toward the ${String(step.block).replaceAll('_', ' ')} from here is set aside for now`);
       }
       await tunnelOrSetAside(bot, task, goal, save, target, step.block, ore);
@@ -4391,4 +4399,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
