@@ -199,7 +199,7 @@ test('a bug in the code is recorded with where it happened; a failure in the wor
   assert.equal(goal.lastError, 'No wheat seed took on the plot');
 });
 
-test('the crossing waits for health as well as food, however it is reached', async () => {
+test('without Jev, the crossing kit\'s own walk heals before the portal, however the crossing is reached', async () => {
   const { gameHandlers } = require('../src/work');
   const registry = require('minecraft-data')('26.1');
   const bot = { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 9, food: 20,
@@ -218,7 +218,7 @@ test('a ring search is turned to its next leg from the same origin, not dropped'
   assert.deepEqual(turned.enderman, { attempts: 0, origin: { x: -369, y: 59, z: -69 }, leg: 2 });
 });
 
-test('the crossing waits for two stacks of blocks to bridge and pillar with', async () => {
+test('without Jev, the crossing kit\'s own walk gathers two stacks of blocks to bridge and pillar with', async () => {
   // mid-87-k: out of its portal on an island in the lava sea with too few blocks to reach a shore.
   const { gameHandlers } = require('../src/work');
   const registry = require('minecraft-data')('26.1');

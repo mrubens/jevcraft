@@ -118,6 +118,8 @@ function stepVariants(goal, step) {
     case 'make_obsidian': return `Water on lava: I'm making ${step.count ? `${step.count} ` : ''}obsidian.`;
     case 'fill_bucket': return step.item === 'lava_bucket' ? ["I'm fetching lava in a bucket.", 'Off to a lava pool with my buckets.'] : ["I'm fetching some water.", 'Filling up my bucket.'];
     case 'cast_portal': return "Lava in, water on top: I'm casting the portal frame.";
+    case 'to_lava_for_portal': return "I'll cast the portal down by the lava, so each bucket is a short trip.";
+    case 'buckets_for_portal': return "More buckets first: each one is another lava per trip.";
     case 'hunt_mob': return [`I'm going after a ${name(step.entity)} for ${name(step.item)}.`, `Hunting a ${name(step.entity)}. I need ${name(step.item)}.`];
     case 'strike_out': return ["Nothing here. I'll try somewhere new.", 'Time to look somewhere else.'];
     case 'stock_food_for_nether': return "I'm stocking up on food before the Nether.";

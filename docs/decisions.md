@@ -239,20 +239,26 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ## strategy
 
-### `nether_food`
+### `crossing_kit`
 
-**Cross into the Nether with the food carried now, or gather more first?**
+**Cross into the Nether with the kit carried now, or first top up one named item of it (food, health, blocks, a spare pickaxe, wood) or leave the valuables behind?**
 
-- When: At the crossing with less food carried than the reserve the ladder aims for, and some carried; held for ten minutes once chosen.
+- When: In the Overworld on the way through a portal, in Survival, with some item of the kit short of what the code would take or valuables carried that could be left; held until what is on offer changes or for ten working minutes.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
-- Options built in: src/work.js (netherFoodReady)
+- Options built in: src/work.js (crossingKitReady), src/crossing-kit.js (kitItems, valuablesAt)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `go_now` | root | cross with the food carried | some food carried |
-| `gather_more` | root | gather more food first | always |
+| `cross_now` | root | cross with what is carried | always |
+| `top_up_food` | root | gather food first, up to forty points | fewer than forty food points carried, monsters on |
+| `top_up_health` | root | wait and heal first, to sixteen | health under sixteen, monsters on |
+| `top_up_blocks` | root | mine stone first, up to two stacks of blocks | fewer than 128 building blocks carried |
+| `top_up_pickaxe` | root | make a stone pickaxe first, as the spare | no stone pickaxe or better, or the best has under 24 uses |
+| `top_up_wood` | root | gather logs up to eight and make a crafting table first | fewer than eight logs or no crafting table carried |
+| `stash_valuables` | root | walk home and leave the valuables in the stash chest first | the home stash chest within 128 blocks and valuables carried |
+| `cache_valuables` | root | leave the valuables in a chest put down here first | home's chest out of reach, valuables carried, and a chest or the wood for one |
 
 ### `win_strategy`
 
@@ -295,19 +301,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `portal_method`
 
-**The way into the Nether: build a portal frame of its own from obsidian, cast one in place from lava and water, or finish and light a remembered ruined portal?**
+**The way into the Nether: build a portal frame of its own from obsidian, cast one in place from lava and water (here, or beside the known lava), or finish and light a remembered ruined portal; or make more buckets first?**
 
-- When: In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen, asked again when a chosen ruin's frame will not do.
+- When: In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), or when a chosen ruin's frame will not do.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
-- Options built in: src/work.js (portalMethod), src/portal-cast.js (castSays)
+- Options built in: src/work.js (portalMethod, portalFacts, methodSoFar), src/portal-cast.js (castSays)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `build_new` | root | build a frame of its own from ten obsidian | always |
 | `cast_frame` | root | cast a frame of its own in place from lava and water | always |
-| `/^ruin_\d+$/` | root | finish and light a remembered ruined portal | a ruined portal remembered within 512 blocks, not found frameless |
+| `cast_at_lava` | root | cast a frame of its own beside the nearest known lava | lava known more than sixteen blocks away |
+| `craft_buckets` | root | make more buckets first from the iron carried | three or more iron ingots carried |
+| `ruin_[0-9]+` (pattern) | root | finish and light a remembered ruined portal | a ruined portal remembered within 512 blocks, not found frameless (and the one held, however far) |
 
 ## resources
 

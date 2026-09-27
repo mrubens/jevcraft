@@ -271,29 +271,32 @@ test('stranded in the Nether and short of food, the stall offers what answers it
   assert.deepEqual(Object.keys(asked[0]).sort(), ['cross_toward', 'differently']);
 });
 
-test('the Nether food gate never waits: a rested search is taken up again, and twenty minutes lets the crossing go', async () => {
-  const { gameHandlers } = require('../src/work');
-  const bot = Object.assign(new EventEmitter(), { registry, inventory: { items: () => [] }, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
+test('gathering food for the crossing never waits: a rested search is taken up again; without Jev a top-up worked twenty minutes is passed over unless none is carried', async () => {
+  const { crossingKitReady } = require('../src/work');
+  let items = [];
+  const bot = Object.assign(new EventEmitter(), { registry, inventory: { items: () => items }, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
     entity: { id: 1, position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, entities: {}, time: { timeOfDay: 3000 },
     findBlocks: () => [], blockAt: () => ({ name: 'air', boundingBox: 'empty' }), pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, chat() {} });
-  const gate = gameHandlers(bot, null).food_reserve;
+  const kit = goal => crossingKitReady(bot, new Task('kit'), goal, () => {}, null).catch(() => false);
   const goal = { kind: 'win', survival: {} };
   const { setAside, isSetAside } = require('../src/progress');
   setAside(goal, 'food_search', 'stock', 'five minutes of searching brought no food', 600000);
-  await gate(bot, new Task('gate'), goal, () => {}).catch(() => {});
+  assert.equal(await kit(goal), false);
+  assert.equal(goal.crossingKit.choice.pick, 'top_up_food', 'without Jev, food first');
   assert.equal(isSetAside(goal, 'food_search', 'stock'), false, 'the animal search is not left resting');
   assert.equal(goal.step.action, 'hunt_food_for_nether');
   assert(goal.stockFood && goal.preparingNether);
-  const noFoodFor = ms => { goal.survival.progress['food_gate:nether'].bestAt -= ms; };
-  noFoodFor(20 * 60000);
-  await gate(bot, new Task('gate'), goal, () => {}).catch(() => {});
-  assert.equal(goal.step.action, 'hunt_food_for_nether', 'with nothing at all to eat, twenty minutes is not a reason to cross');
-  const bread = [{ name: 'bread', count: 2, type: registry.itemsByName.bread.id }];
-  bot.inventory.items = () => bread;
-  await gate(bot, new Task('gate'), goal, () => {}).catch(() => {});
-  noFoodFor(20 * 60000);
-  assert.equal(await gate(bot, new Task('gate'), goal, () => {}), true, 'with something, and twenty minutes with no more, the crossing goes with what there is');
-  assert.equal(goal.survival.progress['food_gate:nether'], undefined, 'and the gate is done with');
+  // Twenty working minutes with nothing at all to eat: still food.
+  const later = () => { goal.crossingKit.workedMs += 11 * 60000; };
+  goal.crossingKit.spent.food.ms = 20 * 60000; later();
+  await kit(goal);
+  assert.equal(goal.crossingKit.choice.pick, 'top_up_food', 'with nothing to eat, twenty minutes is not a reason to pass it over');
+  // With something, twenty minutes passes it over for the next item short.
+  items = [{ name: 'bread', count: 2, type: registry.itemsByName.bread.id }];
+  goal.crossingKit.spent.food.ms = 20 * 60000; later();
+  await kit(goal);
+  assert.equal(goal.crossingKit.choice.pick, 'top_up_blocks');
+  assert.equal(goal.preparingNether, undefined, 'and the food reserve is no longer being stocked');
 });
 
 test('low on air with no rescue under way, the step is stopped and every check unwinds until the survival layer runs', () => {
@@ -486,24 +489,41 @@ test('a hold that flips with another step is refused for a while; a hold that on
   assert.doesNotThrow(() => survival.report(flipping, () => {}, { action: 'leave_lava' }), 'never the way out of lava');
 });
 
-test('short of the Nether food reserve with food carried, crossing now or gathering more is Jev\'s choice, held ten minutes', async () => {
-  // mid-220-a stood at 39 of 40 points for forty-four passes; mid-218-a at 37 for twenty-five.
-  const { gameHandlers } = require('../src/work');
-  const bread = [{ name: 'bread', count: 7, type: registry.itemsByName.bread.id }];
-  const bot = Object.assign(new EventEmitter(), { registry, inventory: { items: () => bread }, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
+test('the kit for the crossing is one question: every item said against what the code would take, a top-up for each one short, the answer held', async () => {
+  // The decision review (2026-09-26): forty food points, sixteen health, 128 blocks, a spare pickaxe, eight logs
+  // and a table, and the valuables walked home were gates in a row between "Nether first" and the portal, none said.
+  // mid-220-a stood at 39 of 40 food points for forty-four passes.
+  const { crossingKitReady } = require('../src/work');
+  const items = [['cooked_beef', 2], ['cobblestone', 30], ['stone_pickaxe', 1], ['oak_log', 8], ['crafting_table', 1]]
+    .map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id, durabilityUsed: 0 }));
+  const bot = Object.assign(new EventEmitter(), { registry, inventory: { items: () => items }, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
     entity: { id: 1, position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, entities: {}, time: { timeOfDay: 3000 },
     findBlocks: () => [], blockAt: () => ({ name: 'air', boundingBox: 'empty' }), pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, chat() {} });
-  const gate = gameHandlers(bot, null).food_reserve;
-  let asked = null;
-  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0?.criteria || Object.values(questions)[0]?.criteria; return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'go_now', confidence: 0.9 }])) }; } };
+  let asked = null, pick = 'cross_now';
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: pick, confidence: 0.9 } } }; } };
   const goal = { kind: 'win', survival: {} };
-  const task = Object.assign(new Task('gate'), { opportunityClient: client });
-  assert.equal(await gate(bot, task, goal, () => {}), true, 'crosses with what it has');
-  assert.match(asked.go_now, /Cross now with 35 food points carried \(7 bread\), short of the 40/);
-  assert.match(asked.gather_more, /Gather food first, up to 40 points/);
+  const task = new Task('kit');
+  assert.equal(await crossingKitReady(bot, task, goal, () => {}, client), true, 'crosses with what it has');
+  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_blocks', 'top_up_food']);
+  assert.match(asked.cross_now, /short of what the code would take in food, blocks/);
+  assert.match(asked.cross_now, /Food: 16 food points carried \(2 cooked beef\); the code would take 40, about 5 cooked steaks' worth/);
+  assert.match(asked.cross_now, /Health: 20 of 20; the code would step through at 16 or more/);
+  assert.match(asked.cross_now, /Blocks: 30 carried for bridging and pillaring .*the code would take 128, two stacks/);
+  assert.match(asked.cross_now, /Pickaxe: stone pickaxe carried, the best with 131 uses left/);
+  assert.match(asked.cross_now, /Wood: 8 logs and a crafting table carried/);
+  assert.match(asked.top_up_blocks, /^Mine stone first, up to two stacks of blocks\. Blocks: 30 carried.* Nothing has gone to it yet at this crossing\./);
   asked = null;
-  assert.equal(await gate(bot, task, goal, () => {}), true);
+  assert.equal(await crossingKitReady(bot, task, goal, () => {}, client), true);
   assert.equal(asked, null, 'held: not asked again at once');
+  // An item newly short: asked again, and the top-up chosen is worked.
+  bot.health = 9; pick = 'top_up_health';
+  assert.equal(await crossingKitReady(bot, task, goal, () => {}, client), false);
+  assert.match(asked.top_up_health, /Health: 9 of 20; the code would step through at 16 or more\..* At hunger 20 it comes back about a point every four seconds: about 28 seconds to 16\./);
+  assert.equal(goal.step.action, 'recover_before_nether');
+  // Ten working minutes on one answer: asked again, with the minutes it has had.
+  asked = null; goal.crossingKit.spent.health.ms = 4 * 60000; goal.crossingKit.workedMs += 10 * 60000; pick = 'cross_now';
+  assert.equal(await crossingKitReady(bot, task, goal, () => {}, client), true);
+  assert.match(asked.top_up_health, /4 working minutes have gone to it at this crossing, from 9 to 9\./);
 });
 
 test('both sides of a survival flip rest, so a hold on the other side is refused too', () => {

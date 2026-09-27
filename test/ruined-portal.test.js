@@ -256,12 +256,65 @@ test('the way into the Nether is asked with no ruin known, and a frame cast in p
   task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cast_frame', confidence: 0.7 } } }; } };
   const goal = {};
   assert.equal(await portalMethod(bot, task, goal, () => {}), true);
-  assert.deepEqual(goal.portalMethod, { kind: 'cast' });
+  assert.equal(goal.portalMethod.kind, 'cast');
   assert(offered.build_new && offered.cast_frame, 'both ways offered');
   assert.match(offered.cast_frame, /2 empty buckets and 0 full of lava carried/);
   assert.match(offered.cast_frame, /No lava is known nearby/);
   // No client: a frame of its own, as before.
   const quiet = {};
   assert.equal(await portalMethod(bot, new Task('nether'), quiet, () => {}), true);
-  assert.deepEqual(quiet.portalMethod, { kind: 'build' });
+  assert.equal(quiet.portalMethod.kind, 'build');
+});
+
+test('the way into the Nether is asked again every twenty working minutes, with the minutes, what they made and the same facts for every way', async () => {
+  // The decision review (2026-09-26): held for good, one trial cast for three hours (834 bucket passes) and
+  // another spent a whole run on the diamond route. mid-237-d cast at y 68 with its lava at y -54 and one
+  // bucket, eight iron ingots in its pockets, and had none cast after three hours.
+  const { portalMethod, portalDue } = require('../src/work');
+  const { Task } = require('../src/skills');
+  const { bot } = castingBot({ bucket: 1, water_bucket: 1, cobblestone: 30, iron_ingot: 8 });
+  bot.findBlocks = () => [];
+  const goal = { landmarks: [{ kind: 'lava_pool', x: 20, y: -54, z: 40, dimension: 'overworld' }], portalFrame: newFrame('x'),
+    portalMethod: { kind: 'cast', activeMs: 19 * 60000, reasked: 0, from: { obsidian: 0, diamonds: 0, diamondPickaxe: false } } };
+  let offered = null, pick = 'cast_at_lava';
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: pick, confidence: 0.8 } } }; } };
+  assert.equal(portalDue(goal.portalMethod), false);
+  assert.equal(await portalMethod(bot, task, goal, () => {}), true);
+  assert.equal(offered, null, 'under twenty working minutes the way held is not asked about');
+  goal.portalMethod.activeMs = 21 * 60000;
+  assert.equal(portalDue(goal.portalMethod), true);
+  assert.equal(await portalMethod(bot, task, goal, () => {}), true);
+  assert.match(offered.cast_frame, /This is the way chosen, worked on for 21 minutes so far\. Since it was chosen: obsidian carried 0 to 0, 0 of the frame's ten standing/);
+  for (const key of ['build_new', 'cast_frame', 'cast_at_lava', 'craft_buckets']) {
+    assert.match(offered[key], /the nearest known lava is 121 blocks away \(a lava pool remembered\)/, key);
+    assert.match(offered[key], /Diamond ore lies between y -64 and 16, most around y -59: 123 blocks below here/, key);
+    assert.match(offered[key], /Diamond ore needs an iron pickaxe or better \(none carried\)/, key);
+    assert.match(offered[key], /1 empty bucket, 1 of water and 0 of lava, 8 iron ingots/, key);
+  }
+  assert.match(offered.build_new, /mined with a diamond pickaxe only \(none carried: three diamonds make one, 0 carried/);
+  assert.match(offered.cast_at_lava, /at y -54, 118 blocks below here/);
+  assert.match(offered.cast_frame, /each trip carries one lava per bucket held, so with 1 bucket that is about 10 trips/);
+  assert.match(offered.cast_frame, /The 8 iron ingots carried make 2 more buckets, about 4 trips with them/);
+  assert.match(offered.craft_buckets, /Make 2 more buckets first from the 8 iron ingots carried/);
+  // Moved beside the lava: the frame up here is left, and the new one goes down there.
+  assert.equal(goal.portalMethod.kind, 'cast');
+  assert.deepEqual(goal.portalMethod.near, { x: 20, y: -54, z: 40 });
+  assert.equal(goal.portalMethod.activeMs, 0, 'a new way starts its own clock');
+  assert.equal(goal.portalFrame, undefined);
+  // Buckets first, the way held going on with them.
+  goal.portalMethod.activeMs = 20 * 60000; pick = 'craft_buckets';
+  assert.equal(await portalMethod(bot, task, goal, () => {}), false);
+  assert.deepEqual(goal.portalBuckets, { target: 3 });
+  assert.equal(goal.portalMethod.reasked, 1); assert.deepEqual(goal.portalMethod.near, { x: 20, y: -54, z: 40 });
+  // A frame begun by hand is finished as a cast when the cast is chosen.
+  const built = { portalFrame: { ...newFrame('x'), cast: undefined }, portalMethod: { kind: 'build', activeMs: 20 * 60000, from: {} } };
+  pick = 'cast_frame';
+  assert.equal(await portalMethod(bot, task, built, () => {}), true);
+  assert.equal(built.portalFrame.cast, true); assert.equal(built.portalMethod.kind, 'cast');
+  // Jev unreachable: the way held is kept and its clock runs on to the next twenty minutes.
+  const quiet = { portalMethod: { kind: 'build', activeMs: 25 * 60000, from: {} } };
+  assert.equal(await portalMethod(bot, new Task('nether'), quiet, () => {}), true);
+  assert.equal(quiet.portalMethod.kind, 'build'); assert.equal(quiet.portalMethod.reasked, 1);
+  assert.equal(portalDue(quiet.portalMethod), false);
 });

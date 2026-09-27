@@ -204,9 +204,13 @@ function castSays({ obsidian = 0, waterBucket = false, buckets = 0, lavaBuckets 
   const toFetch = Math.max(0, cast - lavaBuckets);
   const trips = carriers ? Math.ceil(toFetch / carriers) : toFetch;
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-  const tripsSay = carriers
-    ? `Each block is one lava bucket, so with ${plural(carriers, 'bucket')} that is about ${plural(trips, 'trip')} to lava.`
-    : `With no bucket carried one has to be made first; each block is one lava bucket, so with one that is ${plural(trips, 'trip')} to lava.`;
+  // Each trip carries one lava per bucket held, and the iron in hand makes
+  // more: mid-237-d cast with one bucket and eight ingots in its pockets.
+  const more = Math.floor(iron / 3);
+  const tripsSay = (carriers
+    ? `Each block is one lava bucket and each trip carries one lava per bucket held, so with ${plural(carriers, 'bucket')} that is about ${plural(trips, 'trip')} to lava.`
+    : `With no bucket carried one has to be made first; each block is one lava bucket, so with one that is ${plural(trips, 'trip')} to lava.`) +
+    (more && toFetch ? ` The ${iron} iron ingots carried make ${plural(more, 'more bucket')}, about ${plural(Math.ceil(toFetch / (Math.max(1, carriers) + more)), 'trip')} with them.` : '');
   const round = lava && Math.round(lava.distance * 2 / 4.3);
   const lavaSay = lava ? `The nearest known lava is ${lava.distance} blocks away (${lava.how}): about ${round} seconds there and back a trip, ${round * trips} in all.`
     : 'No lava is known nearby: a pool has to be found first.';

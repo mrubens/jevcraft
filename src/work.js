@@ -133,12 +133,11 @@ async function withUsableWorkstations(bot, task, stock, requested = []) {
   return available;
 }
 
-// The pickaxe that goes down must have enough left to come back up.
-const SPARE_PICKAXE_DURABILITY = 24;
-const EXPEDITION_LOGS = 8;
+// The pickaxe that goes down must have enough left to come back up, and
+// eight logs go with it (crossing-kit.js, where the Nether's kit is said).
+const { SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS, logsCarried, kitItems, valuablesAt } = require('./crossing-kit');
 const WOOD = /_log$|_planks$|^stick$/;
 const woodCarried = bot => bot.inventory.items().filter(i => WOOD.test(i.name)).reduce((n, i) => n + i.count, 0);
-const logsCarried = bot => bot.inventory.items().filter(i => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0);
 // A pickaxe about to break with no wood in the pockets is a bot sealed in its
 // own shaft: the exit needs a tool and the tool needs sticks. The dream run
 // went down with three pickaxes at six or seven durability and no wood.
@@ -147,9 +146,6 @@ const logsCarried = bot => bot.inventory.items().filter(i => /_log$/.test(i.name
 // pickaxe to nothing on a climb for gravel and left the bot digging out by
 // hand; the durability and fuel checks above only caught it some of the time.
 const descentSuppliesLow = bot => woodCarried(bot) < 2;
-// Blocks for bridging, pillaring and pockets in the Nether.
-const NETHER_BLOCKS = 128;
-const netherBlocks = bot => ['cobblestone', 'cobbled_deepslate', 'netherrack', 'blackstone', 'stone', 'deepslate', 'dirt'].reduce((n, name) => n + countOf(bot, name), 0);
 
 // A pickaxe wears out in the shaft, not at the crafting table. The stone
 // pickaxe on the ninth climb had seventy-seven uses when the iron tunnel
@@ -2917,9 +2913,19 @@ async function tunnelToward(bot, task, goal, save, target, key) {
 
 // How the portal comes to be, Jev's to choose when there is more than one
 // way: a frame of its own (ten obsidian, made from lava with a diamond
-// pickaxe), or a remembered ruined portal finished and lit (no diamonds).
-// Held once chosen; a ruin whose frame will not do is marked and the
-// question asked again.
+// pickaxe), one cast in place from lava and water, or a remembered ruined
+// portal finished and lit (no diamonds). Held once chosen, as a rung is
+// (game-progress.js timeRung): every twenty working minutes on it the
+// question is asked again, with the minutes and what they have made said,
+// and the way can be kept or changed. Held for good, one trial cast for
+// three hours (834 bucket passes) and another spent its whole run on the
+// diamond route with no chance to change (the decision review, 2026-09-26).
+// A ruin whose frame will not do is marked and the question asked again.
+const PORTAL_BUDGET_MS = 20 * 60000;
+const portalDue = method => !!method && (method.activeMs || 0) >= PORTAL_BUDGET_MS * ((method.reasked || 0) + 1);
+const diamondPickaxeCarried = bot => bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
+const methodKey = (method, ruins) => method?.kind === 'build' ? 'build_new' : method?.kind === 'cast' ? (method.near ? 'cast_at_lava' : 'cast_frame')
+  : method?.kind === 'ruin' ? (i => i < 0 ? null : `ruin_${i}`)(ruins.findIndex(k => k.landmark.x === method.at.x && k.landmark.z === method.at.z)) : null;
 // A ruined portal as an option, with what finishing it takes. The missing
 // blocks are obsidian too, said as such: mid-218-a chose a ruin with three
 // of ten standing, told they were "placed like any block", and spent its
@@ -2933,14 +2939,39 @@ function ruinSays(k, { obsidian, diamonds, diamondPickaxe }) {
     : `${missing} of the frame's ten are missing and are obsidian, placed like any block: ${obsidian} carried${short ? `, ${short} short; those are made by pouring water on lava and mined with a diamond pickaxe (${diamondPickaxe ? 'one carried' : `none carried; three diamonds make one, ${diamonds} carried`}), unless the ruin's chest holds them` : ', enough'}`;
   return `Finish the ruined portal ${k.distance} blocks away and light it: its frame is part standing (${seen ?? 'some'} obsidian seen there when it was found); ${need}. Crying obsidian or obsidian where the frame or its inside must be clear needs a diamond pickaxe to take out. Its chest often holds obsidian, flint and steel or a fire charge. About ${Math.round(k.distance / 4.3)} seconds' walk.`;
 }
+// A frame of its own from ten obsidian: the diamond route, said as the
+// steps it is. It had said "about ten seconds a block once at a lava pool"
+// and "three diamonds make one", and nothing of where diamonds lie.
+function buildSays({ obsidian, diamonds, diamondPickaxe }) {
+  return `Build a portal frame of its own: ten obsidian (${obsidian} carried), lit with flint and steel. Obsidian is where water has met a lava source, at a lava pool or poured there, and is mined with a diamond pickaxe only (${diamondPickaxe ? 'one carried' : `none carried: three diamonds make one, ${diamonds} carried, and diamond ore is mined with an iron pickaxe or better`}), about ten seconds a block.`;
+}
+// What every way is weighed with, said with each of them alike: only the
+// cast was told where the lava was, and only the ruins how far they lay.
+function portalFacts(bot, goal, ruins, lava = nearestLava(bot, goal)) {
+  const depth = require('./strategy').oreFacts(bot, goal, [{ action: 'mine', item: 'diamond_ore' }]).trim();
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  return ` Known for every way: ${lava ? `the nearest known lava is ${lava.distance} blocks away (${lava.how}), about ${Math.round(lava.distance / 4.3)} seconds' walk` : 'no lava is known nearby'}. ${depth} Diamond ore needs an iron pickaxe or better (${pickaxeTier(bot) >= 3 ? 'one carried' : 'none carried'}); a diamond pickaxe is three diamonds (${diamondPickaxeCarried(bot) ? 'one carried' : `${countOf(bot, 'diamond')} diamonds carried`}). ` +
+    `Carried: ${countOf(bot, 'obsidian')} obsidian, ${plural(countOf(bot, 'bucket'), 'empty bucket')}, ${countOf(bot, 'water_bucket')} of water and ${countOf(bot, 'lava_bucket')} of lava, ${countOf(bot, 'iron_ingot')} iron ingots (three make a bucket). ` +
+    `${ruins.length ? `Ruined portals remembered: ${ruins.map(k => `${k.distance} blocks away`).join(', ')}.` : 'No ruined portal is remembered within 512 blocks.'}`;
+}
+// The way held, asked again: how long it has had and what that made.
+function methodSoFar(bot, goal, method, ruin) {
+  const from = method.from || {};
+  const placed = goal.portalFrame ? goal.portalFrame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
+  const madePick = from.diamondPickaxe === false && diamondPickaxeCarried(bot);
+  const walk = ruin && Number.isFinite(from.distance) ? `, the ruin ${from.distance} blocks away then and ${ruin.distance} now` : '';
+  return ` This is the way chosen, worked on for ${Math.round((method.activeMs || 0) / 60000)} minutes so far. Since it was chosen: obsidian carried ${from.obsidian ?? 0} to ${countOf(bot, 'obsidian')}, ${goal.portalFrame ? `${placed} of the frame's ten standing` : 'no frame begun'}, diamonds carried ${from.diamonds ?? 0} to ${countOf(bot, 'diamond')}${madePick ? ', a diamond pickaxe made' : ''}${walk}. Kept, it is asked again after another ${PORTAL_BUDGET_MS / 60000} working minutes.`;
+}
 
-async function portalMethod(bot, task, goal, save) {
+async function portalMethod(bot, task, goal, save, client = task.opportunityClient) {
   const { fitRuin, adopt } = require('./ruined-portal');
   const { knownLandmarks } = require('./exploration');
-  const diamondPickaxe = bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
+  const diamondPickaxe = diamondPickaxeCarried(bot);
   const method = goal.portalMethod;
-  if (method?.kind === 'build' || method?.kind === 'cast') return true;
-  if (method?.kind === 'ruin') {
+  const due = portalDue(method);
+  if (!due && (method?.kind === 'build' || method?.kind === 'cast')) return true;
+  if (!due && method?.kind === 'ruin') {
+    if (goal.portalFrame) return true;
     const r = new Vec3(method.at.x, method.at.y ?? bot.entity.position.y, method.at.z);
     if (!bot.blockAt(r) || bot.entity.position.distanceTo(r) > 12) {
       goal.step = { action: 'to_ruined_portal', at: { ...method.at }, distance: Math.round(bot.entity.position.distanceTo(r)) }; save();
@@ -2958,72 +2989,107 @@ async function portalMethod(bot, task, goal, save) {
     return true;
   }
   const ruins = knownLandmarks(bot, goal, 'ruined_portal', 512).filter(k => !k.landmark.noFrame).slice(0, 3);
-  const client = task.opportunityClient;
-  // A frame of its own and one cast in place are always there to choose
-  // between, ruins or none.
-  if (!client) { goal.portalMethod = { kind: 'build' }; save(); return true; }
+  // The ruin held stays on offer to be kept, however many lie nearer.
+  if (method?.kind === 'ruin' && methodKey(method, ruins) === null) {
+    const held = knownLandmarks(bot, goal, 'ruined_portal', 4096).find(k => k.landmark.x === method.at.x && k.landmark.z === method.at.z);
+    if (held) ruins.push(held);
+  }
   const diamonds = countOf(bot, 'diamond'), obsidian = countOf(bot, 'obsidian');
   const lighter = countOf(bot, 'flint_and_steel') + countOf(bot, 'fire_charge') > 0;
+  const lava = nearestLava(bot, goal);
+  const facts = portalFacts(bot, goal, ruins, lava);
+  const current = due ? methodKey(method, ruins) : null;
   const tree = {
-    build_new: { description: `Build a portal frame of its own: ten obsidian (${obsidian} carried), lit with flint and steel. Obsidian is made by pouring water on lava and mined with a diamond pickaxe (${diamondPickaxe ? 'one carried' : `none carried; three diamonds make one, ${diamonds} carried`}), about ten seconds a block once at a lava pool.` },
+    build_new: { description: buildSays({ obsidian, diamonds, diamondPickaxe }) + facts },
     cast_frame: { description: castSays({ obsidian, waterBucket: countOf(bot, 'water_bucket') > 0, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket'),
-      iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava: nearestLava(bot, goal) }) },
+      iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava }) + facts },
   };
+  // Where a cast frame stands is part of the way: mid-237-d cast on the
+  // surface at y 68 with its lava at y -54 and one bucket, a round trip of
+  // a hundred and twenty blocks for every block, and after three hours had
+  // none cast (fill_bucket 1003 s against 186 s casting, 2026-09-26).
+  // The lava held, when that is the way held, stays on offer to be kept.
+  const castBy = current === 'cast_at_lava'
+    ? { at: method.near, how: 'the lava chosen before', distance: Math.round(bot.entity.position.distanceTo(new Vec3(method.near.x, method.near.y, method.near.z))) } : lava;
+  if (castBy?.at && (castBy.distance > 16 || current === 'cast_at_lava')) {
+    const dy = Math.round(castBy.at.y - bot.entity.position.y);
+    tree.cast_at_lava = { description: `Cast a frame of its own as above, but beside ${current === 'cast_at_lava' ? 'the lava chosen before' : 'the nearest known lava'} rather than here: it is ${castBy.distance} blocks away (${castBy.how}), at y ${Math.round(castBy.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}. The bot walks there first and puts the frame down within a few blocks of it, so a trip for lava is a few seconds, against about ${Math.round(castBy.distance * 2 / 4.3)} seconds there and back from a frame here. The portal is then down there, and the way back from the Nether comes out beside that lava.` + facts };
+  }
+  // Buckets are the trips: each carries one lava per bucket held, and the
+  // iron in hand makes more (mid-237-d carried one bucket and eight ingots).
+  const iron = countOf(bot, 'iron_ingot'), more = Math.floor(iron / 3);
+  if (more > 0) {
+    const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket'), toFetch = Math.max(0, 10 - obsidian - countOf(bot, 'lava_bucket'));
+    const trips = n => Math.ceil(toFetch / Math.max(1, n));
+    tree.craft_buckets = { description: `Make ${more} more bucket${more === 1 ? '' : 's'} first from the ${iron} iron ingots carried (three each). A cast frame takes one lava bucket a block and each trip to lava carries one lava per bucket held: with ${carriers + more} buckets the ${toFetch} lava still to fetch is about ${trips(carriers + more)} trips, against ${trips(carriers)} with ${carriers ? `the ${carriers} carried` : 'the one a cast would make'}. The iron goes to buckets, not to armour or tools. ${current ? 'The way held goes on with them.' : 'Then this is asked again with them in hand.'}` + facts };
+  }
   ruins.forEach((k, i) => {
-    tree[`ruin_${i}`] = { description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) };
+    tree[`ruin_${i}`] = { description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) + facts };
   });
-  const decision = await decide('portal_method', { client, bot, task, goal, save, tree,
+  // Asked again: the way held says its minutes and what they made; the
+  // others say what becomes of a frame begun.
+  if (current) {
+    const placed = goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
+    for (const [key, node] of Object.entries(tree)) {
+      if (key === current) node.description += methodSoFar(bot, goal, method, key.startsWith('ruin_') ? ruins[Number(key.slice(5))] : null);
+      else if (placed && key !== 'craft_buckets') node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
+    }
+  }
+  const decision = await decide('portal_method', { client, bot, task, goal, save, tree, context: { current },
     state: { dimension: String(bot.game?.dimension || ''), obsidian, diamonds, diamondPickaxe, flintAndSteel: countOf(bot, 'flint_and_steel'), fireCharges: countOf(bot, 'fire_charge'),
       buckets: countOf(bot, 'bucket'), waterBuckets: countOf(bot, 'water_bucket'), lavaBuckets: countOf(bot, 'lava_bucket'), ironIngots: countOf(bot, 'iron_ingot'),
+      ...(current ? { wayHeld: current, minutesOnWay: Math.round((method.activeMs || 0) / 60000) } : {}),
       riskNow: require('./risk').riskNow(bot) } });
   if (decision.stale) return false;
-  const pick = decision.fallback ? 'build_new' : decision.path.at(-1);
-  if (pick === 'build_new' || pick === 'cast_frame') { goal.portalMethod = { kind: pick === 'build_new' ? 'build' : 'cast' }; save(); return true; }
-  const ruin = ruins[Number(pick.slice(5))].landmark;
-  goal.portalMethod = { kind: 'ruin', at: { x: ruin.x, y: ruin.y, z: ruin.z } };
+  const pick = decision.path.at(-1);
+  // Buckets first: made on the next passes (netherStep), the way held
+  // going on with them, or none held and the question asked with them.
+  if (pick === 'craft_buckets') {
+    goal.portalBuckets = { target: countOf(bot, 'bucket') + countOf(bot, 'lava_bucket') + more };
+    if (current) method.reasked = (method.reasked || 0) + 1;
+    save(); return false;
+  }
+  // Kept: the clock runs on to the next twenty minutes.
+  if (current && pick === current) { method.reasked = (method.reasked || 0) + 1; save(); return goal.portalFrame ? true : portalMethod(bot, task, goal, save, client); }
+  const ruin = pick.startsWith('ruin_') ? ruins[Number(pick.slice(5))] : null;
+  const next = pick === 'build_new' ? { kind: 'build' } : pick === 'cast_frame' ? { kind: 'cast' } : pick === 'cast_at_lava' ? { kind: 'cast', near: { ...castBy.at } }
+    : { kind: 'ruin', at: { x: ruin.landmark.x, y: ruin.landmark.y, z: ruin.landmark.z } };
+  // A frame begun goes on the new way: its obsidian stays in its slots and
+  // the rest is cast or placed. A ruin's frame, or a move to a ruin, leaves
+  // the frame where it stands.
+  const frame = goal.portalFrame;
+  if (frame && (frame.ruin || next.kind === 'ruin' || next.near)) delete goal.portalFrame;
+  else if (frame && next.kind === 'cast') { frame.cast = true; frame.axis ||= 'x'; frame.castTemp ||= []; }
+  else if (frame && next.kind === 'build') delete frame.cast;
+  goal.portalMethod = { ...next, activeMs: 0, reasked: 0, from: { obsidian, diamonds, diamondPickaxe, ...(ruin ? { distance: ruin.distance } : {}) } };
   save();
-  return false;
+  return next.kind !== 'ruin' || (goal.portalFrame ? true : portalMethod(bot, task, goal, save, client));
 }
 
 // The nearest lava the bot knows of, for the cast option's trips: a pool
 // loaded about it, or one remembered (exploration.js), not one spent.
 function nearestLava(bot, goal) {
   const here = bot.entity.position;
-  const loaded = require('./obsidian').poolSurface(bot).map(p => ({ distance: Math.round(p.distanceTo(here)), how: 'in sight about here' }));
+  const loaded = require('./obsidian').poolSurface(bot).map(p => ({ distance: Math.round(p.distanceTo(here)), how: 'in sight about here', at: { x: p.x, y: p.y, z: p.z } }));
   const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool').filter(k => !k.landmark.spent)
-    .map(k => ({ distance: k.distance, how: 'a lava pool remembered' }));
+    .map(k => ({ distance: k.distance, how: 'a lava pool remembered', at: { x: k.landmark.x, y: k.landmark.y, z: k.landmark.z } }));
   return [...loaded, ...known].sort((a, b) => a.distance - b.distance)[0] || null;
 }
 
-async function netherStep(bot, task, goal, save) {
+// The crossing: the kit said and Jev's to top up (crossingKitReady), then
+// a lit portal, a known one, or one made. With Jev's client from whichever
+// task asks: from the ladder's own step the task had none, and the food
+// question was skipped there (mid-230-e, 2026-09-26).
+async function netherStep(bot, task, goal, save, client = task.opportunityClient) {
   if (String(bot.game.dimension).includes('nether')) return true;
-  // Fed and healed before the portal, however the crossing was reached.
-  if (bot.game?.gameMode === 'survival' && bot.game.difficulty !== 'peaceful') {
-    if (!await netherFoodReady(bot, task, goal, save)) return false;
-    if ((bot.health ?? 20) < NETHER_HEALTH) {
-      goal.step = { action: 'recover_before_nether', health: Math.round(bot.health), needed: NETHER_HEALTH, food: bot.food }; save();
-      for (let i = 0; i < 10; i++) { task.check(); await sleep(100); }
-      return false;
-    }
-  }
-  // Blocks to cross with: mid-87-k came out of its portal on an island in
-  // the lava sea with fifty-odd, bridged forty blocks east, found no shore,
-  // and stood on the island with eighteen while every leg of the fortress
-  // sweep failed (2026-09-26). A stack and more, from the stone at hand.
-  if (bot.game?.gameMode === 'survival' && netherBlocks(bot) < NETHER_BLOCKS) {
-    goal.step = { action: 'blocks_for_nether', carried: netherBlocks(bot), needed: NETHER_BLOCKS }; save();
-    await acquireStep(bot, task, 'cobblestone', countOf(bot, 'cobblestone') + NETHER_BLOCKS - netherBlocks(bot), goal, save);
-    return false;
-  }
-  // The portal is often underground and the Nether has no wood: the same
-  // supplies a descent needs, checked before the walk rather than after a
-  // stone pickaxe wears to five on the way.
-  if (bot.game?.gameMode !== 'creative' && !goal.expeditionPrepActive && (goal.preparingExpedition || descentSuppliesLow(bot))) {
-    goal.preparingExpedition = true; delete goal.expeditionReady; goal.expeditionPrepActive = true; save();
-    try { await prepareExpeditionStep(bot, task, goal, save); }
-    finally { delete goal.expeditionPrepActive; }
-    return false;
-  }
+  // Working time at the crossing, a pass at a time: the kit's answer holds
+  // for ten minutes of it, not of nights sat out between passes.
+  const started = Date.now();
+  try { return await crossing(bot, task, goal, save, client); }
+  finally { if (goal.crossingKit) goal.crossingKit.workedMs = (goal.crossingKit.workedMs || 0) + Date.now() - started; }
+}
+async function crossing(bot, task, goal, save, client) {
+  if (!await crossingKitReady(bot, task, goal, save, client)) return false;
   const portal = lowestPortalBlock(bot);
   if (portal) {
     goal.portal = { ...portal }; rememberPortal(goal, save, portal, 'overworld'); save();
@@ -3038,6 +3104,25 @@ async function netherStep(bot, task, goal, save) {
     }
   }
   if (await walkToKnownPortal(bot, task, goal, save, 'overworld')) return false;
+  // The portal's own work is timed for the way it is made (portalMethod):
+  // the time its passes take.
+  const method = goal.portalMethod, started = Date.now();
+  try { return await portalStep(bot, task, goal, save, client); }
+  finally { if (method && goal.portalMethod === method) method.activeMs = (method.activeMs || 0) + Date.now() - started; }
+}
+async function portalStep(bot, task, goal, save, client) {
+  // Buckets Jev chose to make for the cast, before anything else of it.
+  const buckets = goal.portalBuckets;
+  if (buckets) {
+    const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket');
+    if (carriers >= buckets.target || countOf(bot, 'iron_ingot') < 3) { delete goal.portalBuckets; save(); }
+    else {
+      goal.step = { action: 'buckets_for_portal', carried: carriers, target: buckets.target }; save();
+      try { await acquireStep(bot, task, 'bucket', countOf(bot, 'bucket') + buckets.target - carriers, goal, save); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; delete goal.portalBuckets; save(); }
+      return false;
+    }
+  }
   // A frame whose blocks are not loaded is a portal somewhere else, not ten
   // missing obsidian: go and look at it before planning another.
   if (goal.portalFrame && goal.portalFrame.blocks.some(p => !bot.blockAt(pos(p)))) {
@@ -3051,7 +3136,7 @@ async function netherStep(bot, task, goal, save) {
   if (goal.portalFrame && goal.portalFrame.blocks.every(p => bot.blockAt(pos(p)) && bot.blockAt(pos(p)).name !== 'obsidian') &&
       ![...(goal.portalFrame.supports || []), ...(goal.portalFrame.castTemp || [])].some(p => bot.blockAt(pos(p))?.name === p.material) &&
       !portalSiteClear(bot, goal.portalFrame.origin)) { delete goal.portalFrame; save(); }
-  if (!goal.portalFrame && !await portalMethod(bot, task, goal, save)) return false;
+  if ((!goal.portalFrame || portalDue(goal.portalMethod)) && !await portalMethod(bot, task, goal, save, client)) return false;
   if (!goal.portalFrame) {
     // Cast in place (portal-cast.js), the obsidian is made in its slots.
     const casting = goal.portalMethod?.kind === 'cast';
@@ -3061,6 +3146,19 @@ async function netherStep(bot, task, goal, save) {
     // its foundations to obtain temporary supports. A cast frame's are its
     // lava's walls.
     if (!await preparePortalSupports(bot, task, goal, save, casting ? plannedWalls() : 3)) return false;
+    // Cast beside the lava, as Jev chose: the walk there first, and the
+    // site picked about where the bot then stands.
+    const near = casting && goal.portalMethod.near;
+    if (near && bot.entity.position.distanceTo(new Vec3(near.x, near.y, near.z)) > 12) {
+      const at = new Vec3(near.x, near.y, near.z);
+      goal.step = { action: 'to_lava_for_portal', at: { ...near }, distance: Math.round(bot.entity.position.distanceTo(at)) }; save();
+      try { await navigate(bot, task, new goals.GoalNear(at.x, at.y, at.z, 6), { timeoutMs: 120000, stallMs: 8000, sprint: true }); }
+      catch (err) {
+        task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+        await tunnelToward(bot, task, goal, save, at, 'lava_for_portal');
+      }
+      return false;
+    }
     const site = selectPortalSite(bot);
     if (!site) {
       if (surfaceObserver(bot)(bot.entity.position)) await explore(bot, task, goal, save, 'portal site', { surfaceOnly: true });
@@ -3098,6 +3196,15 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     if (!await castFrame(bot, task, goal, save, { navigate, place, dig, acquireStep })) return false;
   } else if (missing.length) {
     if (!await acquireStep(bot, task, 'obsidian', missing.length, goal, save)) return false;
+    // A frame begun as a cast and finished by hand: a temporary block left
+    // in a slot comes out before the obsidian goes in.
+    for (const t of [...(frame.castTemp || [])]) {
+      const p = pos(t);
+      if (!missing.some(q => pos(q).equals(p)) || air(bot.blockAt(p))) continue;
+      goal.step = { action: 'clear_cast_walls', at: { ...t }, block: bot.blockAt(p)?.name }; save();
+      await dig(bot, task, p, { requireDrops: false });
+      frame.castTemp = frame.castTemp.filter(q => !pos(q).equals(p)); save();
+    }
     // The cornerless frame still needs temporary placement anchors. The top
     // beam cannot be placed in midair: build its left corner after the column.
     const o = pos(frame.origin);
@@ -3123,7 +3230,8 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
   }
   // A cast frame's temporary walls inside it and at its corners come out
   // before lighting: the portal fills only an empty inside. The rest stand.
-  if (frame.cast) {
+  // A frame cast in part and finished by hand has them too.
+  if (frame.cast || frame.castTemp?.length) {
     const inside = [...cells.interior, ...cells.corners];
     for (const t of [...(frame.castTemp || [])]) {
       const p = pos(t);
@@ -3715,57 +3823,106 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
 // the planner for anything craftable, and a search for sheep or cows.
 const homeActions = () => ({ acquireStep, navigate, place, dig, explore, tunnel: tunnelToward });
 
-// Two steaks was the whole larder for the first Nether trip. The survival
-// layer's stock-driven search fills the reserve; a search it has set aside
-// as fruitless lets the trip go with what there is. It is asked at the
-// crossing itself as well as on the ladder: after a death the blaze hunt
-// walked straight back through the portal with three pieces of food, fought
-// at four health, and was knocked off the ledge.
-const NETHER_HEALTH = 16;
-const NETHER_FOOD_HOLD_MS = 10 * 60000;
-async function netherFoodReady(bot, task, goal, save, client = task.opportunityClient) {
-  // The gate never waits. It takes food from the chest, harvests the
-  // plot, or sends the survival layer hunting, and after twenty
-  // working minutes of that it lets the crossing go with what there
-  // is. It used to return having done nothing whenever the chest
-  // would not open and the animal search was resting, and the loop
-  // spun on it at twenty passes a second.
-  const NETHER_FOOD = NETHER_FOOD_POINTS, now = Date.now();
-  if (foodSupply(bot) >= NETHER_FOOD) { delete goal.preparingNether; unwatch(goal, 'food_gate', 'nether'); return true; }
-  // The supervisor: twenty minutes with no more food carried lets the
-  // crossing go with what there is, but not with nothing: with
-  // nothing the hunt sends it straight home, a round trip for every
-  // twenty minutes. Finding some food restarts the clock.
-  const gate = watch(goal, 'food_gate', 'nether', foodSupply(bot), { better: 'higher', stallMs: 20 * 60000, restMs: 60000,
-    why: 'twenty minutes without any more food', now });
-  if (gate.stalled && foodSupply(bot) > 0) {
-    bot.chat?.(`I've spent twenty minutes getting food together. Going with what I have (${foodSupply(bot)} points).`);
-    delete goal.preparingNether; return true;
-  }
-  // Short of the reserve with some food carried: cross or gather more is
-  // Jev's to weigh, told what is carried, what the reserve is for and what
-  // the gathering has cost so far; held ten minutes once chosen.
-  const choice = goal.netherFoodChoice;
-  if (choice && choice.until > now) { if (choice.pick === 'go_now') { delete goal.preparingNether; return true; } }
-  else if (foodSupply(bot) > 0 && client) {
-    const carried = foodSupply(bot), stash = goal.survival?.home?.stash?.contents || {};
-    const inChest = Object.entries(stash).reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
-    const spent = Math.round((now - (gate.record?.startedAt || now)) / 60000);
-    const meals = bot.inventory.items().filter(i => safeFood(bot, i)).map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`).join(', ');
-    const tree = {
-      go_now: { description: `Cross now with ${carried} food points carried (${meals || 'nothing named'}), short of the ${NETHER_FOOD} the ladder aims for. Health comes back only while hunger stays at eighteen or more, and a fortress trip is fighting and running; in the Nether, hoglins are the meat and little else is food.` },
-      gather_more: { description: `Gather food first, up to ${NETHER_FOOD} points: ${inChest ? `${inChest} points in the home chest, ` : ''}the farm plot if there is one, or hunting animals. ${spent ? `${spent} minutes have gone to gathering since the last food was found.` : 'Nothing has gone to it yet.'}` },
-    };
-    const decision = await decide('nether_food', { client, bot, task, goal, save, tree,
-      state: { foodPoints: carried, reserve: NETHER_FOOD, hunger: bot.food, health: bot.health, inHomeChest: inChest, minutesGathering: spent } });
+// The kit for the crossing (crossing-kit.js): each item carried against
+// what the code would take and why, and crossing now or topping up a named
+// item first is Jev's. These were six gates in a row, none said: forty food
+// points (asked, but gathered by default and let go by a twenty-minute
+// rule), sixteen health waited for, a hundred and twenty-eight blocks, a
+// spare pickaxe, eight logs and a table, and the valuables walked home from
+// up to a hundred and twenty-eight blocks (the decision review,
+// 2026-09-26). Two steaks had been the whole larder for the first Nether
+// trip, and after a death the blaze hunt walked back through the portal
+// with three pieces of food and fought at four health: those are why the
+// facts are said, here at the crossing however it is reached.
+// The answer holds: asked again when what is on offer changes (an item
+// topped up or newly short, the valuables left) or after ten working
+// minutes on one answer. A top-up says the working minutes it has had at
+// this crossing and what they brought.
+const KIT_HOLD_MS = 10 * 60000;
+// Without Jev, the code's walk: the valuables home, then each short item
+// in turn, one worked on twenty minutes passed over unless none of it is
+// carried, then the crossing.
+const KIT_FALLBACK_MS = 20 * 60000;
+const KIT_ORDER = ['stash_valuables', 'top_up_food', 'top_up_health', 'top_up_blocks', 'top_up_pickaxe', 'top_up_wood', 'cache_valuables'];
+const TOP_UP = {
+  food: 'Gather food first, up to the forty points: the home chest, the farm plot if there is one, or hunting animals.',
+  health: 'Wait here and heal first, to sixteen.',
+  blocks: 'Mine stone first, up to two stacks of blocks.',
+  pickaxe: 'Make a stone pickaxe first, as the spare.',
+  wood: 'Gather wood first: logs up to eight, and a crafting table.',
+};
+async function crossingKitReady(bot, task, goal, save, client = task.opportunityClient, now = Date.now()) {
+  if (bot.game?.gameMode !== 'survival') return true;
+  const items = kitItems(bot), valuables = valuablesAt(bot, goal);
+  const short = items.filter(i => i.short);
+  if (!short.length && !valuables) { delete goal.preparingNether; return true; }
+  // A record left from another crossing, untouched half an hour, starts afresh.
+  if (goal.crossingKit && now - (goal.crossingKit.lastAt || 0) > 30 * 60000) delete goal.crossingKit;
+  const kit = goal.crossingKit ||= { workedMs: 0, spent: {} };
+  kit.lastAt = now;
+  const stash = goal.survival?.home?.stash?.contents || {};
+  const inChest = Object.entries(stash).reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
+  const soFar = i => {
+    const s = kit.spent[i.key];
+    return s?.ms >= 60000 ? ` ${Math.round(s.ms / 60000)} working minutes have gone to it at this crossing, from ${s.from} to ${i.carried}.` : ' Nothing has gone to it yet at this crossing.';
+  };
+  const tree = {
+    cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}. ${items.map(i => i.says).join(' ')}` },
+  };
+  for (const i of short) tree[`top_up_${i.key}`] = { description: `${TOP_UP[i.key]}${i.key === 'food' && inChest ? ` The home chest holds ${inChest} food points.` : ''} ${i.says}${soFar(i)}` };
+  if (valuables?.how === 'stash') tree.stash_valuables = { description: `Walk ${valuables.far} blocks to the stash chest at home first and leave the valuables in it (${valuables.what}), about ${Math.round(valuables.far / 4.3)} seconds each way: a death in the Nether drops everything carried, often into lava.` };
+  if (valuables?.how === 'cache') tree.cache_valuables = { description: `Put ${valuables.chest} down here first and leave the valuables in it (${valuables.what}): home's chest is out of reach, and a death in the Nether drops everything carried, often into lava. They are taken back passing by.${pickaxeLeft(bot, valuables.spends)}` };
+  const keys = Object.keys(tree).sort().join(',');
+  const held = kit.choice && kit.choice.keys === keys && kit.workedMs - kit.choice.at < KIT_HOLD_MS && tree[kit.choice.pick];
+  let pick = held ? kit.choice.pick : null;
+  if (!pick) {
+    const worn = k => { const i = short.find(s => `top_up_${s.key}` === k); return i && kit.spent[i.key]?.ms >= KIT_FALLBACK_MS && i.carried > 0; };
+    const fallback = KIT_ORDER.find(k => tree[k] && !worn(k)) || 'cross_now';
+    const decision = await decide('crossing_kit', { client, bot, task, goal, save, tree, context: { fallback },
+      state: { kit: Object.fromEntries(items.map(i => [i.key, `${i.carried} carried, the code would take ${i.wants}`])), health: bot.health, hunger: bot.food,
+        minutesAtCrossing: Math.round(kit.workedMs / 60000), riskNow: require('./risk').riskNow(bot) } });
     if (decision.stale) return false;
-    const pick = decision.fallback ? 'gather_more' : decision.path.at(-1);
-    goal.netherFoodChoice = { pick, until: now + NETHER_FOOD_HOLD_MS }; save();
-    if (pick === 'go_now') { delete goal.preparingNether; return true; }
+    pick = decision.path.at(-1);
+    kit.choice = { pick, keys, at: kit.workedMs }; save();
   }
+  if (pick !== 'top_up_food') delete goal.preparingNether;
+  if (pick === 'cross_now') return true;
+  const item = short.find(i => `top_up_${i.key}` === pick);
+  const spent = item && (kit.spent[item.key] ||= { ms: 0, from: item.carried });
+  const started = Date.now();
+  try {
+    if (pick === 'stash_valuables') await stashValuables(bot, task, goal, save, homeActions());
+    else if (pick === 'cache_valuables') await require('./field-cache').cacheValuables(bot, task, goal, save, homeActions());
+    else if (item.key === 'food') await gatherNetherFood(bot, task, goal, save, now);
+    else if (item.key === 'health') {
+      goal.step = { action: 'recover_before_nether', health: Math.round(bot.health), needed: item.wants, food: bot.food }; save();
+      for (let i = 0; i < 10; i++) { task.check(); await sleep(100); }
+    } else if (item.key === 'blocks') {
+      goal.step = { action: 'blocks_for_nether', carried: item.carried, needed: item.wants }; save();
+      await acquireStep(bot, task, 'cobblestone', countOf(bot, 'cobblestone') + item.wants - item.carried, goal, save);
+    } else if (item.key === 'pickaxe') {
+      goal.step = { action: 'pickaxe_for_nether', uses: item.carried, needed: item.wants }; save();
+      await acquireStep(bot, task, 'stone_pickaxe', countOf(bot, 'stone_pickaxe') + 1, goal, save);
+    } else if (item.key === 'wood') {
+      goal.step = { action: 'wood_for_nether', logs: item.carried, needed: item.wants }; save();
+      // The trees that were seen here, not oak by name.
+      const species = (bot._catalogObservation?.nearby || []).find(name => /_log$/.test(name)) || 'oak_log';
+      if (logsCarried(bot) < EXPEDITION_LOGS) await acquireStep(bot, task, species, countOf(bot, species) + EXPEDITION_LOGS - logsCarried(bot), goal, save);
+      else await acquireStep(bot, task, 'crafting_table', 1, goal, save);
+    }
+  } finally { if (spent) { spent.ms += Date.now() - started; save(); } }
+  return false;
+}
+
+// Food for the crossing, once Jev has chosen to gather it: the chest first,
+// from wherever the bot is, then the plot, then the hunt. It never waits:
+// it used to return having done nothing whenever the chest would not open
+// and the animal search was resting, and the loop spun on it at twenty
+// passes a second.
+async function gatherNetherFood(bot, task, goal, save, now = Date.now()) {
+  const NETHER_FOOD = NETHER_FOOD_POINTS;
   goal.preparingNether = true; goal.stockFood = true;
   const survivalState = goal.survival || {};
-  // The chest first, from wherever the bot is.
   const stashFood = Object.entries(survivalState.home?.stash?.contents || {})
     .reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
   const home = require('./home-base').homeOf(bot, goal);
@@ -3777,7 +3934,7 @@ async function netherFoodReady(bot, task, goal, save, client = task.opportunityC
       task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
       attempts.fail('fetch_food', 'stash', err, { restMs: 120000 }); save();
     }
-    return false;
+    return;
   }
   // Then the plot: wheat into bread.
   const chore = require('./home-base').homeChores(bot, goal).harvest_and_bake;
@@ -3788,14 +3945,13 @@ async function netherFoodReady(bot, task, goal, save, client = task.opportunityC
       task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
       attempts.fail('chore', 'harvest_and_bake', err, { restMs: 120000 }); save();
     }
-    return false;
+    return;
   }
   // Then the hunt. A search set aside as fruitless is taken up again:
-  // the gate is the reason to look, and resting it was the stall.
+  // gathering was chosen, and resting it was the stall.
   if (attempts.resting('food_search', 'stock', now)) { attempts.clear('food_search', 'stock'); unwatch(goal, 'food_search', 'stock'); }
-  goal.step = { action: 'hunt_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD, minutes: Math.round((now - (gate.record?.startedAt || now)) / 60000) }; save();
+  goal.step = { action: 'hunt_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
   await explore(bot, task, goal, save, 'animals', { surfaceOnly: true });
-  return false;
 }
 
 // The executors the game-completion ladder can call, shared by the win
@@ -3813,20 +3969,12 @@ function gameHandlers(bot, decisionClient) {
         // Which open rung, or a side trip, next: Jev's choice (strategy.js).
         strategy: (bot, task, goal, save, stage) => strategyStep(bot, task, goal, save, stage, { client: decisionClient, decide, sides: sideTrips(bot, goal, decisionClient),
           planFor: (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g) }),
-        acquireStep, acquireSetStep, enter_nether: netherStep, return_overworld: returnFromNether,
+        acquireStep, acquireSetStep, return_overworld: returnFromNether,
+        enter_nether: (bot, task, goal, save) => netherStep(bot, task, goal, save, decisionClient || task.opportunityClient),
         enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate }),
         fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate, dig }, decisionClient),
         exit_end: (bot, task, goal, save) => exitEnd(bot, task, goal, save, { navigate }),
         prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
-        // Two steaks was the whole larder for the first Nether trip. The
-        // survival layer's stock-driven search fills the reserve; a search
-        // it has set aside as fruitless lets the trip go with what there is.
-        // With Jev's client whichever task asks: from the ladder's own step
-        // the task had none, so the crossing-or-gathering question was
-        // skipped and mid-230-e hunted at ten to fourteen food points, over
-        // four hundred passes, having chosen to cross twenty-nine times
-        // (2026-09-26).
-        food_reserve: (bot, task, goal, save) => netherFoodReady(bot, task, goal, save, decisionClient || task.opportunityClient),
         barter: (bot, task, goal, save) => barterStep(bot, task, goal, save, { acquireStep, navigate }),
         bastion_gold: async (bot, task, goal, save) => {
           try { return await gatherBastionGold(bot, task, goal, save, { acquireStep, navigate, dig, place, approachDryMining, collectNearbyDrops,
@@ -3877,8 +4025,6 @@ function gameHandlers(bot, decisionClient) {
         wolves: (bot, task, goal, save, sit) => require('./wolves').commandWolves(bot, task, goal, save, sit),
         // Back for a death's drops (corpse-run.js).
         corpse_run: (bot, task, goal, save) => require('./corpse-run').corpseRunStep(bot, task, goal, save, { move: navigate }),
-        // A chest on the spot when home is too far (field-cache.js).
-        cache_valuables: (bot, task, goal, save) => require('./field-cache').cacheValuables(bot, task, goal, save, homeActions()),
         take_cache: async (bot, task, goal, save) => {
           const { nearCache, emptyCache } = require('./field-cache');
           const near = nearCache(bot, goal);
@@ -4050,7 +4196,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
           complete = await deliver(bot, task, goal, save);
         }
       }
-      if (prepared && goal.kind === 'nether') complete = await netherStep(bot, task, goal, save);
+      if (prepared && goal.kind === 'nether') complete = await netherStep(bot, task, goal, save, decisionClient || task.opportunityClient);
       if (prepared && goal.kind === 'win') complete = await gameStep(bot, task, goal, save, gameHandlers(bot, decisionClient));
       task.check();
       goal.failures = 0;
@@ -4133,4 +4279,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

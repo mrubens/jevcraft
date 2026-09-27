@@ -210,21 +210,30 @@ define({
   fallback: (children, path, context = {}) => children[context.quicker] ? context.quicker : Object.keys(children)[0],
 });
 
-// The food carried into the Nether (src/work.js netherFoodReady). A reserve
-// of forty points was a gate the bot could not see past: mid-220-a stood at
-// thirty-nine for forty-four passes and mid-218-a at thirty-seven for
-// twenty-five, hunting, and neither crossed in three hours (2026-09-26).
+// The kit carried into the Nether (src/work.js crossingKitReady,
+// src/crossing-kit.js). Forty food points were a gate the bot could not see
+// past (mid-220-a stood at thirty-nine for forty-four passes, 2026-09-26),
+// and five more stood behind it unsaid: sixteen health, a hundred and
+// twenty-eight blocks, a spare pickaxe, eight logs and a table, and the
+// valuables walked home (the decision review, 2026-09-26). One question now,
+// every item said with what is carried against what the code would take.
 define({
-  id: 'nether_food', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'Cross into the Nether with the food carried now, or gather more first?',
-  trigger: 'At the crossing with less food carried than the reserve the ladder aims for, and some carried; held for ten minutes once chosen.',
-  source: 'src/work.js (netherFoodReady)',
+  id: 'crossing_kit', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Cross into the Nether with the kit carried now, or first top up one named item of it (food, health, blocks, a spare pickaxe, wood) or leave the valuables behind?',
+  trigger: 'In the Overworld on the way through a portal, in Survival, with some item of the kit short of what the code would take or valuables carried that could be left; held until what is on offer changes or for ten working minutes.',
+  source: 'src/work.js (crossingKitReady), src/crossing-kit.js (kitItems, valuablesAt)',
   options: [
-    { key: 'go_now', label: 'cross with the food carried', when: 'some food carried', level: 'root' },
-    { key: 'gather_more', label: 'gather more food first', when: 'always', level: 'root' },
+    { key: 'cross_now', label: 'cross with what is carried', when: 'always', level: 'root' },
+    { key: 'top_up_food', label: 'gather food first, up to forty points', when: 'fewer than forty food points carried, monsters on', level: 'root' },
+    { key: 'top_up_health', label: 'wait and heal first, to sixteen', when: 'health under sixteen, monsters on', level: 'root' },
+    { key: 'top_up_blocks', label: 'mine stone first, up to two stacks of blocks', when: 'fewer than 128 building blocks carried', level: 'root' },
+    { key: 'top_up_pickaxe', label: 'make a stone pickaxe first, as the spare', when: 'no stone pickaxe or better, or the best has under 24 uses', level: 'root' },
+    { key: 'top_up_wood', label: 'gather logs up to eight and make a crafting table first', when: 'fewer than eight logs or no crafting table carried', level: 'root' },
+    { key: 'stash_valuables', label: 'walk home and leave the valuables in the stash chest first', when: 'the home stash chest within 128 blocks and valuables carried', level: 'root' },
+    { key: 'cache_valuables', label: 'leave the valuables in a chest put down here first', when: 'home\'s chest out of reach, valuables carried, and a chest or the wood for one', level: 'root' },
   ],
-  instructions: { task: 'The bot is ready for the Nether but for its food. Choose whether to cross now or gather more first.', guidance: 'Each option says what is carried, what the reserve is for, and where more would come from and what that has cost so far. Health comes back only while hunger stays at eighteen or more; the Nether has hoglins for meat and little else to eat.' },
-  fallback: () => 'gather_more',
+  instructions: { task: 'The bot is on its way through a portal into the Nether. Choose whether to cross with what it carries now or to top up one item of its kit first.', guidance: 'Every option lists the kit item by item: what is carried, what the code would take, and why. The amounts the code would take are a careful default, not a rule: a player often crosses with a stack of blocks, a few steaks and a pickaxe. A top-up says the working minutes it has had at this crossing and what they brought. `kit` is each item carried against what the code would take.' },
+  fallback: (children, path, context = {}) => children[context.fallback] ? context.fallback : 'cross_now',
 });
 
 // Back for what a death dropped (src/corpse-run.js). A rule that went
