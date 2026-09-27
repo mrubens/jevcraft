@@ -101,6 +101,9 @@ async function start(world, source, archive) {
   const saved = fs.existsSync(arc) && fs.readdirSync(arc).filter(f => /-Jev(-[a-z-]+)?\.json$/.test(f));
   if (!saved?.length) throw new Error(`No bot state in ${archive}`);
   if (fs.existsSync(path.join(SERVER, world))) throw new Error(`${world} already exists on ${PORT}`);
+  // A trial's record is kept by its world's name, across every port: a
+  // second world of the same name on another port would take its record.
+  if (fs.existsSync(path.join(LOG_DIR, `${world}.json`))) throw new Error(`${world} already has a trial record`);
   const starting = BOT_PID.replace(/\.pid$/, '.starting');
   fs.mkdirSync(path.dirname(starting), { recursive: true }); fs.writeFileSync(starting, `${process.pid}\n`);
   try {
