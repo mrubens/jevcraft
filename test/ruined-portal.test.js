@@ -423,3 +423,21 @@ test('before lighting, any block inside the frame is in the way, not only the re
   const bot = { blockAt: p => ({ name: names.get(`${p}`) || 'air', position: p }) };
   assert.deepEqual(portalInteriorBlockers(bot, cells).map(String), [`${b}`]);
 });
+
+test('a ruin that fails at its site ten times is marked no frame, and the way to a portal is asked again', async () => {
+  // mid-218-f: a ruin's corner support with nothing to place against, 125 failures, until the loop watch ended the trial.
+  const { Task } = require('../src/skills');
+  const { buildPortalFrame } = require('../src/work');
+  const { bot, w } = castingBot({ cobblestone: 64, flint_and_steel: 1 });
+  const base = newFrame('x');
+  const inside = frameCells(base.origin, 'x').interior[0];
+  const frame = { ...base, cast: false, ruin: true, interior: [{ x: inside.x, y: inside.y, z: inside.z }] };
+  w.set(inside, 'stone');
+  const goal = { portalFrame: frame, portalMethod: { kind: 'ruin', at: { x: 10, z: 20 } }, landmarks: [{ kind: 'ruined_portal', x: 11, z: 20 }] };
+  for (let n = 1; n <= 9; n++) await assert.rejects(buildPortalFrame(bot, new Task('ruin'), goal, () => {}, frame));
+  assert.equal(goal.portalFrame, frame, 'kept through nine');
+  assert.equal(await buildPortalFrame(bot, new Task('ruin'), goal, () => {}, frame), false);
+  assert.equal(goal.portalFrame, undefined);
+  assert.equal(goal.portalMethod, undefined, 'the way to a portal is asked again');
+  assert.equal(goal.landmarks[0].noFrame, true, 'and the ruin is not on offer');
+});

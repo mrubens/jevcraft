@@ -3252,17 +3252,6 @@ const SITE_REACH = 12;
 async function buildPortalFrame(bot, task, goal, save, frame) {
   const { frameCells, across } = require('./ruined-portal');
   const axis = frame.axis || 'x', cells = frameCells(frame.origin, axis);
-  // A ruin's frame: what stands in its empty slots and inside it comes out
-  // first (a diamond pickaxe for obsidian where it should not be).
-  if (frame.ruin) {
-    for (const p of [...frame.blocks.map(pos), ...(frame.interior || []).map(pos)]) {
-      const b = bot.blockAt(p);
-      const inSlot = frame.blocks.some(q => pos(q).equals(p));
-      if (!b || air(b) || (inSlot && b.name === 'obsidian') || /^(short_grass|tall_grass|fern|large_fern|dead_bush|vine|snow|fire|soul_fire)$/.test(b.name)) continue;
-      goal.step = { action: 'clear_ruined_portal', at: { ...p }, block: b.name }; save();
-      await dig(bot, task, p, { requireDrops: false });
-    }
-  }
   const missing = frame.blocks.filter(p => bot.blockAt(pos(p))?.name !== 'obsidian');
   // A frame that fails at its site again and again, no obsidian in it yet,
   // is the site's fault: mid-227-e's cast frame went down at y 28 in a cave
@@ -3271,6 +3260,17 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
   // against, 126 times; the stall watch ended both (2026-09-27). After
   // three, with no obsidian in the frame, the site is left for another.
   try {
+    // A ruin's frame: what stands in its empty slots and inside it comes out
+    // first (a diamond pickaxe for obsidian where it should not be).
+    if (frame.ruin) {
+      for (const p of [...frame.blocks.map(pos), ...(frame.interior || []).map(pos)]) {
+        const b = bot.blockAt(p);
+        const inSlot = frame.blocks.some(q => pos(q).equals(p));
+        if (!b || air(b) || (inSlot && b.name === 'obsidian') || /^(short_grass|tall_grass|fern|large_fern|dead_bush|vine|snow|fire|soul_fire)$/.test(b.name)) continue;
+        goal.step = { action: 'clear_ruined_portal', at: { ...p }, block: b.name }; save();
+        await dig(bot, task, p, { requireDrops: false });
+      }
+    }
     if (!await (async () => {
       if (missing.length && frame.cast) {
         // Far from the frame with no walk there (it lies below, and a walk
@@ -3345,6 +3345,19 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
       (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
       delete goal.portalFrame; save();
       bot.chat?.('This spot will not take the portal. Finding another.');
+      return false;
+    }
+    // A ruin's frame, after ten: it cannot be moved, so the ruin is marked as
+    // no frame to finish and the way to a portal is asked again without it.
+    // mid-218-f's ruin had a corner with nothing beside it to place its
+    // support against, and failed there 125 times until the loop watch
+    // ended the trial (2026-09-27).
+    if (frame.ruin && goal.portalFrame === frame && frame.siteFailures >= 10) {
+      const mark = (goal.landmarks || []).find(l => l.kind === 'ruined_portal' && Math.hypot(l.x - frame.origin.x, l.z - frame.origin.z) <= 16);
+      if (mark) { mark.noFrame = true; mark.why = err.message; }
+      (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
+      delete goal.portalFrame; delete goal.portalMethod; save();
+      bot.chat?.('This ruined portal will not take a frame. Finding another way.');
       return false;
     }
     throw err;
