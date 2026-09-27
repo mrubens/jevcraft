@@ -2255,6 +2255,15 @@ test('a drowned with a trident is a shooter, and its throw is counted at eight',
   assert(est.mobs[0].hitsBot > 4, `a throw through iron: ${est.mobs[0].hitsBot}`);
 });
 
+test('a thrown trident flying at the bot is incoming, for the shield', () => {
+  // mid-243-i: four drowned throws through iron and a shield never raised.
+  const { Vec3 } = require('vec3');
+  const { incoming } = require('../src/projectile-guard');
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, entities: {
+    1: { name: 'trident', position: new Vec3(8, 65.5, 0), velocity: new Vec3(-1.5, 0, 0) } } };
+  assert.deepEqual(incoming(bot).map(e => e.name), ['trident']);
+});
+
 // A bed nook: the carried bed where no two level cells lie beside the feet.
 // Six midgame trials (2026-09-26): the one bot carrying a bed sealed itself
 // in eleven times with it, sleep offered only on two level cells.

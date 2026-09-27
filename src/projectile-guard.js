@@ -11,7 +11,10 @@
 // look is half the answer.
 const { raiseShield, lowerShield } = require('./combat');
 
-const INCOMING = new Set(['small_fireball', 'fireball', 'dragon_fireball', 'arrow', 'spectral_arrow',
+// A drowned's thrown trident too: mid-243-i, in full iron with a shield,
+// stood and took four of them, 4.5 a throw, twenty health to none, the
+// shield never raised (2026-09-27).
+const INCOMING = new Set(['small_fireball', 'fireball', 'dragon_fireball', 'arrow', 'spectral_arrow', 'trident',
   'wither_skull', 'shulker_bullet', 'llama_spit', 'wind_charge', 'breeze_wind_charge']);
 const REACH = 20;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));

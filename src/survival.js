@@ -1142,7 +1142,18 @@ class Survival {
     // skeletons, told nothing of what that cost, and the blast was all of it.
     const pillarCost = stanceCost({ mobs, setup: up ? 0 : PILLAR_SECONDS, fight: { only: m => CLIMBERS.has(m.name) }, reaches: m => m.shoots || m.name === 'creeper' || m.name === 'warden', shield: shielded });
     if ((scaffold >= 2 && headroom) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote + climbers(danger) + (up ? '' : above(bot, danger)) + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: 'Two up' }) + (edge && heavyHitters(danger, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
-      run: async () => up || this.pillarFrom(task, goal, save, danger) };
+      // Held up there, the stance is kept: facing the nearest, the swing and
+      // the shield (the tick's own, before this) taking what comes. Returned
+      // at once, it ran twenty passes a second with nothing reported, and the
+      // hurt watchdog stopped the work under it at each hit (mid-243-i).
+      run: async () => {
+        if (!up) return this.pillarFrom(task, goal, save, danger);
+        const nearest = danger[0];
+        this.report(goal, save, { action: 'pillar_hold', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
+        if (nearest?.entity?.position) await bot.lookAt?.(nearest.entity.position.offset(0, 1, 0), true);
+        await sleep(250);
+        return true;
+      } };
     // Down off a pillar of the bot's own: stood on one, nothing else here
     // moves it (a route drops three blocks at most), and mid-83-e stood five
     // up on its dirt for seventy seconds, shot by a skeleton, choosing to
