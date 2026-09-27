@@ -692,7 +692,11 @@ class Survival {
       const { RANGE } = require('./combat-estimate');
       const shots = require('./projectile-guard').incoming(bot, { reach: 24 }).length > 0 ||
         threats(bot, 48).some(t => t.visible && shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
-      if (!bot._spanning && (shots || close.some(t => t.distance <= 6 && !shooter(t.entity))) && await this.railSpan(task, goal, save)) return;
+      // While a span is being laid too, but not on the side it goes on:
+      // mid-243-j, crossing at y 59 over the lava sea, was hit twice by an
+      // enderman, no wall up, and the second hit threw it thirty blocks into
+      // the lava (2026-09-27).
+      if ((shots || close.some(t => t.distance <= 6 && !shooter(t.entity))) && await this.railSpan(task, goal, save, { ahead: bot._spanning?.target })) return;
       // A mob at arm's length is struck crouched and still (combat.js
       // defendNearby on a span); nothing else is done about it here.
       if (await defendNearby(bot, task, goal, save)) return;
@@ -1822,12 +1826,15 @@ class Survival {
   // carried; true once the feet are clear of what was beneath them.
   // The open sides of a one-wide ledge walled at the feet, each with the
   // floor beside it laid first to place against. True when a block went down.
-  async railSpan(task, goal, save) {
+  async railSpan(task, goal, save, { ahead = null } = {}) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function') return false;
     const { dropAt } = require('./terrain');
     const feet = bot.entity.position.floored();
-    const open = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => dropAt(bot, c));
+    // The side a span being laid goes on is left open for it.
+    const onward = ahead && require('./bridging').stepToward(feet, ahead);
+    const open = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => !(onward && onward.x === dx && onward.z === dz))
+      .map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => dropAt(bot, c));
     const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 2 * open.length)?.name;
     if (!open.length || !material) return false;
     this.report(goal, save, { action: 'rail_span', sides: open.length, health: bot.health });

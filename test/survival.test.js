@@ -3250,3 +3250,21 @@ test('while Jev is asked the stance, a mob in reach is still struck', async () =
   await survival.stanceStep(new Task('cubes'), {}, () => {}, [{ entity: zombie, distance: 1.5, visible: true }], false);
   assert(attacks.length >= 1, 'struck while the answer was out');
 });
+
+test('laying a span with a mob close, its sides are walled but not the way on', async () => {
+  // mid-243-j: crossing at y 59 over the lava sea, hit twice by an enderman with no wall up, thrown thirty blocks into the lava.
+  const placed = new Set();
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, health: 12, food: 18,
+    entities: { 3: { id: 3, name: 'zombie', type: 'hostile', position: new Vec3(0.5, 64, -2.5), height: 1.95, isValid: true } }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'netherrack', count: 32 }, { name: 'iron_sword' }], slots: {} }, world: { raycast: () => null },
+    // One block laid so far, open air all round: the span goes on toward +x.
+    blockAt: p => { const q = p.floored(); const solid = placed.has(`${q}`) || (q.y === 63 && q.x === 0 && q.z === 0); return { name: solid ? 'netherrack' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; },
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, attack() {}, equip: async () => {}, activateItem() {}, deactivateItem() {} });
+  bot._spanning = { target: { x: 20, y: 64, z: 0 }, since: Date.now() };
+  const survival = new Survival(bot, { navigate: async () => {}, place: async (b, t, p) => { placed.add(`${p}`); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('span'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'rail_span');
+  assert(placed.has(`${new Vec3(0, 64, 1)}`) && placed.has(`${new Vec3(0, 64, -1)}`), 'both sides walled');
+  assert(!placed.has(`${new Vec3(1, 64, 0)}`), 'the way on left open');
+});
