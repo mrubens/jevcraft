@@ -719,6 +719,19 @@ function hitboxIntrudes(bot, p, margin = 0.02) {
     b.y + height > p.y + margin && b.y < p.y + 1 - margin;
 }
 
+// Whether the body, backed out of p along the line away from its centre
+// until clear, stands on a floor under some part of its 0.6 width.
+function backingOutLands(bot, p) {
+  const pos = bot.entity.position, dx = pos.x - (p.x + 0.5), dz = pos.z - (p.z + 0.5), len = Math.hypot(dx, dz) || 1;
+  const x = pos.x + dx / len * 0.6, z = pos.z + dz / len * 0.6, y = Math.floor(pos.y);
+  const { dropAt } = require('./terrain');
+  return [[-0.29, -0.29], [-0.29, 0.29], [0.29, -0.29], [0.29, 0.29]].some(([ox, oz]) => {
+    const c = new Vec3(Math.floor(x + ox), y, Math.floor(z + oz));
+    if (bot.blockAt(c)?.boundingBox === 'block' || (c.x === p.x && c.z === p.z)) return false;
+    return !dropAt(bot, c);
+  });
+}
+
 async function nudgeClear(bot, task, p) {
   if (!hitboxIntrudes(bot, p) || typeof bot.setControlState !== 'function') return;
   // Face the cell and step backward until the body is clear of it.
@@ -802,6 +815,13 @@ async function place(bot, task, p, material, { face, properties, stay = false } 
   }
   const body = occupant(bot, p);
   if (body) throw new Error(`Placement obstructed: ${occupiedSays(body, p)}`);
+  // Backing out of the cell must end on something: the step back is blind,
+  // and at a rim it is the fall. mid-241-w's take_cover put its wall in the
+  // cell under its own feet, crossed a tenth of a block, backed out of it
+  // and fell eighteen blocks, 17.2 to 3.2 (note 493). Physics, whoever
+  // places: where no floor lies under the body backed out, it is refused
+  // with the drop said, as the ledge rule above refuses for its callers.
+  if (hitboxIntrudes(bot, p) && !backingOutLands(bot, p)) throw new Error(`Placing at ${p} would move me off this ledge: no floor where the body backs out to`);
   await stepOff(bot, task, p);
   await nudgeClear(bot, task, p);
   const eye = bot.entity.position.offset(0, 1.62, 0);
