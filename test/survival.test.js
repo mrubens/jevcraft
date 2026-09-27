@@ -2918,3 +2918,19 @@ test('the pillar says when the mobs stand above the bot\'s feet: two up is withi
   const level = survival.stanceOptions(new Task('t'), {}, () => {}, [zombie(1, 9, 3.5)], false);
   assert.doesNotMatch(level.pillar.description, /above the bot's feet/);
 });
+
+test('in water with a drowned, the stances say so, no pillar, pocket or bunker is offered, and getting out of the water is', () => {
+  // mid-227-d fell into a flooded pit, chose the fight, the pillar and the bunker while it sank, and was drowned-and-hit to nothing (2026-09-27).
+  const water = p => p.y >= 10 && p.y <= 20 && Math.abs(p.x) <= 4 && Math.abs(p.z) <= 4;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal' }, registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 15, 0.5), isInWater: true }, entities: {},
+    health: 14, food: 17, oxygenLevel: 12, inventory: { items: () => [{ name: 'cobblestone', count: 32 }, { name: 'iron_sword' }], slots: { 5: { name: 'iron_helmet' } } }, heldItem: { name: 'iron_sword' },
+    world: { raycast: () => null }, findBlocks: () => [],
+    blockAt: p => { const q = p.floored ? p.floored() : p; return water(q) ? { name: 'water', position: q, boundingBox: 'empty' } : { name: 'stone', position: q, boundingBox: 'block' }; } });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} });
+  const drowned = { entity: { id: 1, name: 'drowned', position: new Vec3(2.5, 15, 0.5), height: 1.95, isValid: true }, distance: 2, visible: true };
+  const options = survival.stanceOptions(new Task('t'), {}, () => {}, [drowned], false);
+  for (const k of ['pillar', 'seal', 'bunker', 'dig_down']) assert.equal(options[k], undefined, k);
+  assert(options.get_out_of_water, Object.keys(options).join(','));
+  assert.match(options.get_out_of_water.description, /in water, air 12 of 20.*sinks unless it swims.*The drowned swims faster than the bot in water/);
+  assert.match(options.fight.description, /The bot is in water/);
+});

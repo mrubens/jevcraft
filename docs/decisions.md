@@ -219,6 +219,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `creeper_dance` | root | hit the creeper and back out of its blast, again and again | a creeper within six, a sword or axe carried, no drop or lava to back into |
 | `keep_working` | root | carry on with the work and leave the mobs be for fifteen seconds | nothing within three blocks; ends early when one comes within three or lands a hit |
 | `retreat` | root | run for footing out of reach and sight | always |
+| `get_out_of_water` | root | swim for dry ground and deal with the mobs from there | in water; the pillar, the pocket, the bunker and digging down are not offered there |
 | `portal_back` | root | go back through the portal to the Overworld | in the Nether with a portal within eight blocks and a way back through it |
 | `shoot_\d+` (pattern) | root | shoot this mob with the bow | a bow, arrows and a clear arrow path (up to two targets) |
 

@@ -1298,6 +1298,22 @@ class Survival {
       const at = t.entity.name === 'creeper' ? Math.max(0, (t.distance - LIGHTS_AT) / APPROACH) + FUSE : Math.max(0, (t.distance - 1.5) / APPROACH);
       return `${arrows ? ` About ${arrows} arrow${arrows === 1 ? '' : 's'} bring it down, about ${arrows} seconds of drawing.` : ''}${walks ? ` It walks on meanwhile: ${t.entity.name === 'creeper' ? `beside the bot and going off in about ${Math.round(at * 10) / 10} seconds if it keeps coming` : `at the bot in about ${Math.round(at * 10) / 10} seconds`}.` : ''}`;
     };
+    // In water: the blocks of a pillar, a pocket or a bunker do not hold
+    // the bot there (a pocket is full of water, a pillar's jump is a swim),
+    // the bot sinks unless it swims, and a drowned is at home in it. Out
+    // of the water is a stance of its own. mid-227-d fell into a flooded
+    // pit with a drowned, chose the fight, the pillar and the bunker in
+    // turn while it sank, and drowned-and-was-hit from fourteen to none;
+    // no option said it was in water (2026-09-27).
+    if (inWater(bot)) {
+      for (const k of ['pillar', 'seal', 'bunker', 'dig_down']) delete options[k];
+      const drowned = danger.filter(t => t.entity.name === 'drowned').length;
+      const wet = ` The bot is in water, air ${bot.oxygenLevel ?? 20} of 20 (air runs out in about fifteen seconds under water, then it drowns at two health a second), and sinks unless it swims; a pillar, a pocket or a bunker cannot be built here.${drowned ? ` ${drowned === 1 ? 'The drowned swims' : `${drowned} drowned swim`} faster than the bot in water.` : ''}`;
+      if (options.fight) options.fight.description += wet;
+      options.get_out_of_water = { description: `Swim for the nearest dry ground with air over it, digging a step into the bank if that is the way out, and deal with the mobs from there.${wet}`,
+        run: async () => { this.report(goal, save, { action: 'out_of_water', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, air: bot.oxygenLevel });
+          return !!await reachShore(bot, task, goal, save, { move: this.actions.navigate, client: this.client, dig: this.actions.dig }); } };
+    }
     for (const t of shotTargets(bot, danger, { any: true }).slice(0, 3)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + shotFacts(t) + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
     return options;
