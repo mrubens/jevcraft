@@ -3060,3 +3060,21 @@ test('no shaft pocket is dug with a zombie at arm\'s length: it follows the bot 
   assert.equal(await survival.shaftPocket(new Task('night'), {}, () => {}), false);
   assert.deepEqual(dug, []);
 });
+
+test('a fireball on its way is a threat with its ghast out of view: the shield comes up to it', async () => {
+  // mid-230-g was hit by four fireballs in six seconds from a ghast out of view, the fourth throwing it into the lava (2026-09-27).
+  const { immediateThreat } = require('../src/danger');
+  const fireball = { id: 9, name: 'fireball', position: new Vec3(0.5, 66, 8.5), velocity: new Vec3(0, 0, -1), isValid: true };
+  let raised = false;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 14, food: 18,
+    entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, entities: { 9: fireball }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: { 45: { name: 'shield' } } }, world: { raycast: () => null },
+    blockAt: p => ({ name: p.y < 64 ? 'netherrack' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }),
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, activateItem() { raised = true; }, deactivateItem() {} });
+  assert.equal(immediateThreat(bot)?.entity.name, 'fireball');
+  const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('shot'), goal, () => {});
+  assert.equal(raised, true);
+  assert.equal(goal.survivalAction?.action, 'block_shot');
+});

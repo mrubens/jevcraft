@@ -750,7 +750,12 @@ class Survival {
     // With a creeper out of sight within four blocks among them (danger.js
     // immediateThreat): it is the danger, seen or not.
     const danger = threats(bot).filter(t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4));
-    if (!danger.length) { lowerShield(bot); return; }
+    // A shot from a shooter out of view: the shield up to it, since there
+    // is no mob here to answer (danger.js immediateThreat, projectile).
+    if (!danger.length) {
+      if (!swung && await deflect(bot, task)) { this.report(goal, save, { action: 'block_shot', threats: [], health: bot.health }); return; }
+      lowerShield(bot); return;
+    }
     // Something already in the air is answered before anything is decided:
     // the decision takes longer than the flight.
     // Not while a stance that moves or builds holds: with three skeletons
@@ -3038,13 +3043,15 @@ class Survival {
     // the edge with it and fifty blocks into the lava (2026-09-26).
     const inReach = new Set(threats(bot).map(t => t.entity.id));
     const pusher = t => t.visible && (t.entity.name === 'ghast' || inReach.has(t.entity.id));
+    // A fireball on its way pushes as its ghast does, the ghast in view or not.
+    const fireball = () => require('./projectile-guard').incoming(bot, { reach: 24 }).some(e => /fireball/.test(e.name || ''));
     // Not off a stance that moves, nor off the bot's own pillar: flee's
     // copy of this rule has both guards (notes 218, 250), and this one had
     // neither (the decision review, 2026-09-26).
     const heldStance = stanceHeld(bot), feetHere = bot.entity.position.floored(), ownPillar = this.state.pillar;
     const guarded = (heldStance && MOVING_STANCES.has(heldStance.choice)) ||
       (ownPillar && Math.hypot(feetHere.x - ownPillar.x, feetHere.z - ownPillar.z) < 1 && feetHere.y >= ownPillar.y + 1);
-    if (!guarded && !(this.state.edgeTriedAt > Date.now() - 10000) && threats(bot, 64).some(pusher)) {
+    if (!guarded && !(this.state.edgeTriedAt > Date.now() - 10000) && (threats(bot, 64).some(pusher) || fireball())) {
       const { dropNear } = require('./terrain');
       const deep = dropNear(bot, bot.entity.position.floored(), 2);
       if ((deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) || lavaBeside(bot, bot.entity.position.floored())) {

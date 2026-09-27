@@ -231,8 +231,17 @@ function immediateThreat(bot) {
   // fireball threw the bot off, shield in hand (2026-09-27).
   const { RANGE } = require('./combat-estimate');
   const shooterReach = t => fighting ? 8 : Math.max(hurt ? 32 : 16, RANGE[t.entity.name] || 0);
-  return threats(bot, 48).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) && !nightHunted(bot, t.entity) &&
+  const mob = threats(bot, 48).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) && !nightHunted(bot, t.entity) &&
     t.distance <= (shooter(t.entity) ? shooterReach(t) : (fighting ? 5 : 8)));
+  if (mob) return mob;
+  // A shot on its way is a threat of its own, its shooter seen or not:
+  // mid-230-g, waiting to heal by a fortress, was hit by four fireballs in
+  // six seconds from a ghast out of view, the fourth throwing it into the
+  // lava (2026-09-27). Not while fighting: the fight answers shots.
+  if (fighting) return undefined;
+  const shot = require('./projectile-guard').incoming(bot, { reach: 16 })[0];
+  if (shot) return { entity: shot, distance: shot.position.distanceTo(bot.entity.position), visible: true, projectile: true };
+  return undefined;
 }
 
 // Keep a route outside attack range plus a movement margin. If a mob already
