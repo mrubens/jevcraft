@@ -1921,7 +1921,7 @@ test('the bed at home is offered with its walk and the monsters beside it that r
   await survival.step(new Task('night'), goal, () => {});
   assert(tree?.sleep_in_bed, tree && Object.keys(tree).join(','));
   assert.match(tree.sleep_in_bed.description, /Walk to the bed 5 blocks away \(about 1 seconds\)/);
-  assert.match(tree.sleep_in_bed.description, /1 monster is within eight blocks of the bed now: sleep is refused while any are/);
+  assert.match(tree.sleep_in_bed.description, /1 monster is within eight blocks sideways and five up or down of the bed now, seen or not: sleep is refused while any are/);
 });
 
 test('a walk home held past bedtime still walks: trial 94 held it thirty blocks off and did nothing twenty times a second', async () => {
@@ -2812,4 +2812,21 @@ test('"carry on" by day is held like a food trip: not asked again every step, an
   bot.food = 16;
   await survival.step(new Task('t', 'food'), goal, () => {});
   assert.equal(asked, 2, 'hunger fell two: asked again');
+});
+
+test('a mob nine blocks off does not hide the bed: sleep is offered with the monsters by it counted, and worn kit is said beside armed-and-armoured', async () => {
+  const { Survival } = require('../src/survival');
+  let seen;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, time: { timeOfDay: 13000, age: 100000 },
+    entities: { 50: { id: 50, name: 'zombie', position: new Vec3(9.5, 64, 0.5), height: 1.95, isValid: true } },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' } } }, heldItem: { name: 'iron_sword' },
+    blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => ({}) } });
+  survival.decide = async (task, goal, save, q) => { seen = q; return { path: ['secure_shelter'], action: { run: async () => {} }, stale: false }; };
+  await survival.step(new Task('t', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert(seen.tree.sleep_in_bed, Object.keys(seen.tree).join(','));
+  assert.doesNotMatch(seen.tree.sleep_in_bed.description, /monster/, 'nine blocks off is outside the eight that refuse a sleep');
+  assert.deepEqual(seen.state.survivalFacts.armourWorn, ['iron_helmet', 'iron_chestplate']);
+  assert.equal(seen.state.survivalFacts.weapon, 'iron_sword');
 });

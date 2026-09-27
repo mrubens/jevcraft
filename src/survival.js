@@ -3106,7 +3106,7 @@ class Survival {
             stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor),
             inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
             riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
-            health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
+            health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), armourWorn: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
             threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity) })) } });
         if (decision.stale) { onStep(goal); return true; }
         choice = decision.path.at(-1);
@@ -3287,7 +3287,7 @@ class Survival {
       survivalFacts: { difficulty: bot.game.difficulty, hostileMobsSpawnAtNight: true,
         nightStartsAt: DAY.NIGHT, dawnAt: DAY.DAWN, daylightTicksRemaining: Math.max(0, DAY.NIGHT - bot.time.timeOfDay),
         bedCarried: !!bed, homeBedNearby: !!homeBed, homeBedDistance: homeBed ? Math.round(homeBed.foot.distanceTo(bot.entity.position)) : null, underground,
-        sleepPossibleFrom: SLEEP_FROM, armedAndArmoured: kitReady(bot), nightsWithoutSleepTooMany: !!this.sleepDebt(),
+        sleepPossibleFrom: SLEEP_FROM, armedAndArmoured: kitReady(bot), armourWorn: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, nightsWithoutSleepTooMany: !!this.sleepDebt(),
         shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null },
       recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot),
       foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: desiredFood, hungerMaximum: 20, starvationAt: 0,
@@ -3333,18 +3333,22 @@ class Survival {
     }
     // Sleep is an option where the bed fits: two level cells beside the
     // feet. In a one-wide shaft it is not, and the shelter path digs in.
-    if (needsShelter && bedReady && sleepable(bot) && ((homeBed && !underground) || bedSite(bot)) && !threats(bot).some(t => t.distance < 10)) {
+    if (needsShelter && bedReady && sleepable(bot) && ((homeBed && !underground) || bedSite(bot))) {
       // The walk to the bed and the monsters about it, seen or not: sleep is
       // refused while any is within eight blocks (the decision audit).
       const walk = homeBed ? Math.round(homeBed.foot.distanceTo(bot.entity.position)) : 0;
-      const byBed = homeBed ? monstersByBed(bot, homeBed.foot) : 0;
-      tree.sleep_in_bed = { description: homeBed && !bed ? `Walk to the bed ${walk} blocks away (about ${Math.round(walk / 4.3)} seconds) and sleep in it. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${byBed ? ` ${byBed} monster${byBed === 1 ? ' is' : 's are'} within eight blocks of the bed now: sleep is refused while any are.` : ''}` : 'Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.', run: () => this.sleepStep(task, goal, save) };
+      // Offered with them counted, not hidden while any mob is within ten
+      // (the decision review, 2026-09-26): one may be killed first, or be
+      // outside the eight and five that refuse a sleep.
+      const byBed = monstersByBed(bot, homeBed && !bed ? homeBed.foot : bot.entity.position);
+      const refused = byBed ? ` ${byBed} monster${byBed === 1 ? ' is' : 's are'} within eight blocks sideways and five up or down of the bed now, seen or not: sleep is refused while any are.` : '';
+      tree.sleep_in_bed = { description: homeBed && !bed ? `Walk to the bed ${walk} blocks away (about ${Math.round(walk / 4.3)} seconds) and sleep in it. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${refused}` : `Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${refused}`, run: () => this.sleepStep(task, goal, save) };
     }
     // Where the carried bed does not fit (a staircase, a shaft), a nook dug
     // for it beside the bot: the bed that went down in the midgame trials
     // of 2026-09-26 was offered only on two level cells, and the bot sealed
     // itself in eleven times with it on its back.
-    const nook = needsShelter && bed && bedReady && sleepable(bot) && !bedSite(bot) && !isSetAside(this, 'bed_nook', 'here') && !threats(bot).some(t => t.distance < 10) && bedNook(bot, goal);
+    const nook = needsShelter && bed && bedReady && sleepable(bot) && !bedSite(bot) && !isSetAside(this, 'bed_nook', 'here') && bedNook(bot, goal);
     if (nook) tree.sleep_in_nook = { description: `Where the bed does not fit as the ground lies, ${nookSays(bot, nook)} Nothing is built or spent, and the request resumes at dawn.`, run: () => this.nookSleep(task, goal, save) };
     // Beside a bed a shelter is the worse answer, and the option says so
     // rather than being hidden.
