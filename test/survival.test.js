@@ -3903,3 +3903,11 @@ test('digging down is not offered with a biter within three blocks: its shaft wo
   const far = survival.stanceOptions(new Task('x'), {}, () => {}, [crowdMob(1, 'zombie', 6)], false);
   assert(far.dig_down, Object.keys(far).join(','));
 });
+
+test('a swimmer is on no span and takes no step off an edge', () => {
+  // mid-202-n, swimming in a flooded column with a creeper near, was walked out of the water by the span and edge steps and fell thirty blocks (2026-09-27).
+  const { onSpan } = require('../src/terrain');
+  const blockAt = p => { const f = p.floored(); const water = f.x === 0 && f.z === 0 && f.y >= -6; return { position: f, name: water ? 'water' : f.y < -35 ? 'stone' : 'air', boundingBox: f.y < -35 ? 'block' : 'empty' }; };
+  const bot = { entity: { position: new Vec3(0.5, -4.8, 0.5), isInWater: true }, blockAt };
+  assert.equal(onSpan(bot), false);
+});

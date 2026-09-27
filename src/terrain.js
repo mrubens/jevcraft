@@ -69,6 +69,11 @@ const besideDrop = (bot, feet) => AROUND.some(([dx, dz]) => dropAt(bot, feet.off
 function onSpan(bot, feet = bot.entity?.position?.floored?.()) {
   if (bot._spanning) return true;
   if (!feet || typeof bot.blockAt !== 'function') return false;
+  // A swimmer is on no span: water holds it where it is, and the span's
+  // answers (walls, a step off to firm ground) walked mid-202-n and
+  // mid-241-l out of the water and down drops of thirty and thirteen
+  // (notes 439, 459).
+  if (bot.entity?.isInWater || /water|bubble_column/.test(bot.blockAt(feet)?.name || '')) return false;
   const drop = (dx, dz) => dropAt(bot, feet.offset(dx, 0, dz));
   return (drop(1, 0) && drop(-1, 0)) || (drop(0, 1) && drop(0, -1));
 }
