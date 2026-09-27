@@ -201,3 +201,18 @@ test('the stance and the turn are told whether health comes back, the food carri
     assert.match(said, /healing is the bot's health and hunger/);
   }
 });
+
+test('a decision records when it was asked beside when it was answered, and tells the flight at once', async () => {
+  // note 530: the timeline read the answer's stamp as the asking and the
+  // next step's frame as the answer.
+  const { decide } = require('../src/decisions');
+  const { EventEmitter } = require('node:events');
+  const bot = new EventEmitter(); bot.entity = { position: { x: 0, y: 64, z: 0 } }; bot.game = { dimension: 'overworld' };
+  const goal = {}, heard = [];
+  bot.on('jev_decision', g => heard.push(g.decisions.at(-1)));
+  const client = { systemOne: async () => { await new Promise(r => setTimeout(r, 30)); return { answers: { branch_0: { choice: 'go_back', confidence: 0.9 } } }; } };
+  await decide('corpse_run', { client, bot, goal, tree: { go_back: { description: 'a' }, leave_them: { description: 'b' } }, state: {} });
+  const entry = goal.decisions.at(-1);
+  assert.ok(Date.parse(entry.askedAt) <= Date.parse(entry.at) - 25, `${entry.askedAt} then ${entry.at}`);
+  assert.equal(heard.length, 1); assert.equal(heard[0], entry);
+});

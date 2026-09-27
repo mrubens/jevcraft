@@ -246,6 +246,8 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // The question out is what holds the turn while it is out (turn.js).
   const { takeTurn, giveBack } = require('../turn');
   const turnBefore = takeTurn(bot, 'decision', `asking Jev: ${id}`);
+  // When the question went out, beside `at`, when its answer came back.
+  const askedAt = new Date().toISOString();
   let decision;
   try {
   if (!client) {
@@ -286,10 +288,16 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
   if (goal) {
     goal.decisions ||= [];
-    goal.decisions.push({ at: new Date().toISOString(), id, kind: spec.kind, path: decision.path, state, options: JSON.parse(JSON.stringify(tree)),
+    goal.decisions.push({ at: new Date().toISOString(), askedAt, id, kind: spec.kind, path: decision.path, state, options: JSON.parse(JSON.stringify(tree)),
       latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, asked: decision.asked, model: client?.model,
       stale: decision.stale, fallback: decision.fallback, gated: decision.gated, ...(decision.noneGood ? { noneGood: true } : {}) });
     goal.decisions = goal.decisions.slice(-40); save();
+    // The flight records it now. Its frame used to wait for the next step's
+    // report, after the chosen stance had run, and read as seconds of
+    // waiting for Jev: mid-229-s's dig_down, answered in 0.2 seconds at
+    // 23:36:43.9, was framed at 23:36:49 with the digging and its 5 health
+    // lost between (note 530).
+    if (bot && typeof bot.emit === 'function') { try { bot.emit('jev_decision', goal); } catch (_) { /* the record only */ } }
   }
   return decision;
 }

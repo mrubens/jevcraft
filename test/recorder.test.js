@@ -189,3 +189,22 @@ test('every frame says the mobs about and where they stand', () => {
   assert.equal(mobs[0].d, 3);
   assert.equal(mobs[0].seen, true);
 });
+
+test('a decision is framed when Jev answers, not at the next step report after its action ran', () => {
+  // mid-229-s's dig_down was answered in 0.2 seconds at 23:36:43.9 and framed
+  // at 23:36:49, after the digging and 5 health lost, reading as five seconds
+  // of waiting for Jev (note 530).
+  const b = bot(), trace = new Trace(), goal = { request: 'beat the game', decisions: [] };
+  const observation = observeBot(trace, b, { getGoal: () => ({}) });
+  b.emit('spawn');
+  goal.decisions.push({ at: '2026-09-27T23:36:43.900Z', askedAt: '2026-09-27T23:36:43.700Z', id: 'encounter_stance', path: ['dig_down'], judgments: [{ choice: 'dig_down' }] });
+  b.emit('jev_decision', goal);
+  const frame = trace.frames.at(-1);
+  assert.equal(frame.kind, 'decision'); assert.equal(frame.source, 'jev');
+  assert.equal(frame.snapshot.decision.askedAt, '2026-09-27T23:36:43.700Z');
+  goal.step = { action: 'dig_down' };
+  observation.sample('step', undefined, goal);
+  assert.equal(trace.frames.at(-1).kind, 'action');
+  assert.equal(trace.frames.filter(f => f.kind === 'decision').length, 1);
+  observation.detach();
+});

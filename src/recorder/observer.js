@@ -92,7 +92,11 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
     const decision = goal.decisions?.at(-1), action = goal.survivalAction;
     const freshDecision = decision?.at && decision.at !== previousDecision;
     const freshAction = action?.at && action.at !== previousAction;
+    if (kind === 'decision' && !decision) return;
     if (kind === 'step') { previousDecision = decision?.at; previousAction = action?.at; }
+    // A decision framed when it was made: the step's report after it is not
+    // the decision again.
+    else if (kind === 'decision') previousDecision = decision.at;
     if (kind === 'step') kind = freshDecision ? 'decision' : goal.lastError ? 'error' : freshAction ? 'survival' : 'action';
     // An idle step with nothing to name is a heartbeat, not an activity. The
     // idle loop reports one every second, and hundreds of blank "action"
@@ -120,6 +124,8 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
   on('path_reset', () => { route = []; });
   for (const kind of ['health', 'death', 'no_route', 'navigation_stall', 'navigation_recovery', 'handover', 'mob_hunt', 'stronghold_search', 'end_combat', 'fall_recovery', 'recovery_advice', 'recovery_result']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
   on('chat', (from, message) => sample('chat', { from, message }));
+  // Every answer from Jev, at the moment it came (decisions/index.js decide).
+  on('jev_decision', goal => sample('decision', undefined, goal));
   // What hurt the bot, from the server's own damage event: its damage type
   // (by name where the registry was seen) and the mob that caused it. The
   // vitals frames showed a point lost and nothing of why: mid-241-d lost its
