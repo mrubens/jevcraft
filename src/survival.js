@@ -48,7 +48,11 @@ const REACH_UP = { spider: 'climbs', cave_spider: 'climbs', enderman: 'teleports
   wither_skeleton: 'is tall enough to hit a player two up', ravager: 'is tall enough to hit two up', iron_golem: 'is tall enough to hit two up', warden: 'is tall enough to hit two up',
   // Those that fly: mid-205-g pillared from phantoms twice at five health,
   // told two up was out of reach of all but the climbers (2026-09-27).
-  phantom: 'flies, and dives on a player wherever it stands; only a roof keeps it off', blaze: 'flies', vex: 'flies, through walls too', bee: 'flies', allay: 'flies' };
+  phantom: 'flies, and dives on a player wherever it stands; only a roof keeps it off', blaze: 'flies', vex: 'flies, through walls too', bee: 'flies', allay: 'flies',
+  // Those that jump: mid-211-h pillared from a magma cube over the lava sea
+  // and it jumped up and knocked the bot off, fifty-five blocks down
+  // (2026-09-27).
+  magma_cube: 'jumps higher than two blocks, and its hit throws', slime: 'jumps higher than two blocks' };
 const climbers = danger => { const kinds = [...new Set(danger.map(t => t.entity.name).filter(n => REACH_UP[n]))]; return kinds.length ? ` Two up does not stop ${kinds.map(n => `a ${n.replaceAll('_', ' ')} (${REACH_UP[n]})`).join(' or ')}.` : ''; };
 // Two up is out of reach only of mobs on the bot's own level: one standing
 // a block or more higher (stairs, a slope, a ledge) is level with the top

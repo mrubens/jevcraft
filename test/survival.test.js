@@ -3055,6 +3055,9 @@ test('the pillar says a phantom flies and dives on a player wherever it stands',
   const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
   const options = survival.stanceOptions(new Task('night'), {}, () => {}, [crowdMob(1, 'zombie', 3), crowdMob(2, 'phantom', 0, 4)], false);
   assert.match(options.pillar.description, /Two up does not stop a phantom \(flies, and dives on a player wherever it stands; only a roof keeps it off\)/);
+  // mid-211-h pillared from a magma cube over the lava sea and was knocked off (2026-09-27).
+  const cube = survival.stanceOptions(new Task('nether'), {}, () => {}, [crowdMob(3, 'magma_cube', 3)], false);
+  assert.match(cube.pillar.description, /Two up does not stop a magma cube \(jumps higher than two blocks, and its hit throws\)/);
 });
 
 test('no shaft pocket is dug with a zombie at arm\'s length: it follows the bot down the open shaft', async () => {
