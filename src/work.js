@@ -3210,57 +3210,63 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     }
   }
   const missing = frame.blocks.filter(p => bot.blockAt(pos(p))?.name !== 'obsidian');
-  if (missing.length && frame.cast) {
-    // A cast that fails at its site again and again, nothing cast yet, is
-    // the site's fault: mid-227-e's frame went down at y 28 in a cave by
-    // the lava, "nowhere to stand to pour" and then "no route" every pass,
-    // until the stall watch ended the trial (2026-09-27). After three, with
-    // no obsidian in it, the site is left and another chosen.
-    try { if (!await castFrame(bot, task, goal, save, { navigate, place, dig, acquireStep })) return false; frame.castFailures = 0; }
-    catch (err) {
-      task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-      frame.castFailures = (frame.castFailures || 0) + 1; frame.castFailure = err.message; save();
-      if (frame.castFailures >= 3 && goal.portalFrame === frame && !frame.blocks.some(q => bot.blockAt(pos(q))?.name === 'obsidian')) {
-        (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
-        delete goal.portalFrame; save();
-        bot.chat?.('This spot will not take the portal. Finding another.');
-        return false;
+  // A frame that fails at its site again and again, no obsidian in it yet,
+  // is the site's fault: mid-227-e's cast frame went down at y 28 in a cave
+  // by the lava, "nowhere to stand to pour" and then "no route" every pass,
+  // and mid-218-b's corner support had nothing solid beside it to place
+  // against, 126 times; the stall watch ended both (2026-09-27). After
+  // three, with no obsidian in the frame, the site is left for another.
+  try {
+    if (!await (async () => {
+      if (missing.length && frame.cast) {
+        if (!await castFrame(bot, task, goal, save, { navigate, place, dig, acquireStep })) return false;
+      } else if (missing.length) {
+        if (!await acquireStep(bot, task, 'obsidian', missing.length, goal, save)) return false;
+        // A frame begun as a cast and finished by hand: a temporary block left
+        // in a slot comes out before the obsidian goes in.
+        for (const t of [...(frame.castTemp || [])]) {
+          const p = pos(t);
+          if (!missing.some(q => pos(q).equals(p)) || air(bot.blockAt(p))) continue;
+          goal.step = { action: 'clear_cast_walls', at: { ...t }, block: bot.blockAt(p)?.name }; save();
+          await dig(bot, task, p, { requireDrops: false });
+          frame.castTemp = frame.castTemp.filter(q => !pos(q).equals(p)); save();
+        }
+        // The cornerless frame still needs temporary placement anchors. The top
+        // beam cannot be placed in midair: build its left corner after the column.
+        const o = pos(frame.origin);
+        const scaffold = [cells.corners[0], cells.corners[1], cells.corners[2]];
+        const neededSupports = scaffold.filter(p => air(bot.blockAt(p))).length;
+        if (!await preparePortalSupports(bot, task, goal, save, neededSupports)) return false;
+        const stand = o.minus(across(axis));
+        if (frame.ruin) await navigate(bot, task, new goals.GoalNear(o.x, o.y, o.z, 3));
+        else await navigate(bot, task, new goals.GoalBlock(stand.x, stand.y, stand.z));
+        const anchor = async p => {
+          const material = portalSupports(bot).material;
+          if (!material) throw new Blocked('Portal supports were consumed during travel; need another ordinary stone block');
+          frame.supports ||= [];
+          frame.supports = frame.supports.filter(s => !pos(s).equals(p));
+          frame.supports.push({ ...p, material }); save();
+          await place(bot, task, p, material);
+        };
+        for (const p of scaffold.slice(0, 2)) if (air(bot.blockAt(p))) await anchor(p);
+        for (const p of missing) {
+          if (p.y === o.y + 4 && air(bot.blockAt(scaffold[2]))) await anchor(scaffold[2]);
+          await place(bot, task, pos(p), 'obsidian');
+        }
       }
-      throw err;
+      return true;
+    })()) return false;
+    frame.siteFailures = 0;
+  } catch (err) {
+    task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) || err instanceof Blocked) throw err;
+    frame.siteFailures = (frame.siteFailures || 0) + 1; frame.siteFailure = err.message; save();
+    if (frame.siteFailures >= 3 && !frame.ruin && goal.portalFrame === frame && !frame.blocks.some(q => bot.blockAt(pos(q))?.name === 'obsidian')) {
+      (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
+      delete goal.portalFrame; save();
+      bot.chat?.('This spot will not take the portal. Finding another.');
+      return false;
     }
-  } else if (missing.length) {
-    if (!await acquireStep(bot, task, 'obsidian', missing.length, goal, save)) return false;
-    // A frame begun as a cast and finished by hand: a temporary block left
-    // in a slot comes out before the obsidian goes in.
-    for (const t of [...(frame.castTemp || [])]) {
-      const p = pos(t);
-      if (!missing.some(q => pos(q).equals(p)) || air(bot.blockAt(p))) continue;
-      goal.step = { action: 'clear_cast_walls', at: { ...t }, block: bot.blockAt(p)?.name }; save();
-      await dig(bot, task, p, { requireDrops: false });
-      frame.castTemp = frame.castTemp.filter(q => !pos(q).equals(p)); save();
-    }
-    // The cornerless frame still needs temporary placement anchors. The top
-    // beam cannot be placed in midair: build its left corner after the column.
-    const o = pos(frame.origin);
-    const scaffold = [cells.corners[0], cells.corners[1], cells.corners[2]];
-    const neededSupports = scaffold.filter(p => air(bot.blockAt(p))).length;
-    if (!await preparePortalSupports(bot, task, goal, save, neededSupports)) return false;
-    const stand = o.minus(across(axis));
-    if (frame.ruin) await navigate(bot, task, new goals.GoalNear(o.x, o.y, o.z, 3));
-    else await navigate(bot, task, new goals.GoalBlock(stand.x, stand.y, stand.z));
-    const anchor = async p => {
-      const material = portalSupports(bot).material;
-      if (!material) throw new Blocked('Portal supports were consumed during travel; need another ordinary stone block');
-      frame.supports ||= [];
-      frame.supports = frame.supports.filter(s => !pos(s).equals(p));
-      frame.supports.push({ ...p, material }); save();
-      await place(bot, task, p, material);
-    };
-    for (const p of scaffold.slice(0, 2)) if (air(bot.blockAt(p))) await anchor(p);
-    for (const p of missing) {
-      if (p.y === o.y + 4 && air(bot.blockAt(scaffold[2]))) await anchor(scaffold[2]);
-      await place(bot, task, pos(p), 'obsidian');
-    }
+    throw err;
   }
   // A cast frame's temporary walls inside it and at its corners come out
   // before lighting: the portal fills only an empty inside. The rest stand.
