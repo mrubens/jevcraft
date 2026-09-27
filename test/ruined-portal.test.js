@@ -534,7 +534,7 @@ test('three walks to the lava Jev chose that come no nearer ask the way again, t
     portalMethod: { kind: 'cast', near: { ...near }, activeMs: 0, reasked: 0, from: { obsidian: 0, diamonds: 0, diamondPickaxe: false } } };
   let offered = null;
   const task = new Task('nether');
-  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cast_at_lava', confidence: 0.8 } } }; } };
+  task.opportunityClient = { systemOne: async ({ questions }) => { if (questions.branch_0.criteria.cast_at_lava) offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cast_at_lava', confidence: 0.8 } } }; } };
   const pass = async () => {
     goal.survivalAction = { action: 'climb_to_surface', at: new Date(Date.now() + 60000).toISOString() };
     await portalStep(bot, task, goal, () => {}, task.opportunityClient).catch(err => { if (err.name !== 'NeedsSafety') throw err; });
@@ -543,11 +543,18 @@ test('three walks to the lava Jev chose that come no nearer ask the way again, t
   assert.deepEqual(goal.portalMethod.near, near, 'the lava Jev chose is not dropped unasked');
   assert.equal(offered, null);
   assert.equal(goal.portalMethod.nearFailed.walks, 3);
-  await pass();
-  assert.match(offered.cast_at_lava, /The walk there has failed: 3 walks toward it came no nearer than \d+ blocks \(what ended them: survival: climb to surface 3\)/);
+  // Kept, the walk goes on by staircase, as said (no pickaxe here: its fetch is the next thing met).
+  await pass().catch(() => {});
+  assert.match(offered.cast_at_lava, /^Not reached so far\. The walk there has failed: 3 walks toward it came no nearer than \d+ blocks \(what ended them: survival: climb to surface 3\)/);
   assert.deepEqual(goal.portalMethod.near, near, 'kept, as Jev chose');
   assert.equal(goal.portalMethod.nearFailed, undefined);
   assert.equal(goal.portalMethod.reasked, 1);
+  assert.equal(goal.portalMethod.nearByStairs, true, 'kept, by staircase, its rounds judging it (note 505)');
+  // mid-214-g (note 505): counted afresh after the keep, three more passes pulled back up asked again, every five to
+  // eight seconds; kept, the staircase's own set-aside is what asks again.
+  offered = null;
+  for (let i = 0; i < 4; i++) await pass().catch(() => {});
+  assert.equal(offered, null, 'not asked again for the passes that do not gain');
 });
 
 test('the lava held with its staircase resting says the rest, not that the walk goes on, and kept, every way to it resting is said', async () => {
@@ -576,7 +583,8 @@ test('the lava held with its staircase resting says the rest, not that the walk 
   assert.equal(asked, 1, 'the way is asked again');
   assert.match(offered.cast_at_lava, /set aside \(refusing to open a drop.*\), taken up again in \d+ minute/);
   assert.doesNotMatch(offered.cast_at_lava, /goes on by staircase/);
-  assert.match(offered.cast_at_lava, /what ended them: the staircase set aside: refusing to open a drop/, 'the stall is what ended the walks');
+  // The rest known, it is asked with, not walked into three times first (mid-214-g, note 505).
+  assert.match(offered.cast_at_lava, /^Not reachable now: the staircase toward it is set aside/);
   // Kept while it rests: every way to it resting, said, not the staircase tried again.
   assert.equal(kept?.name, 'WaysResting', `kept: ${kept?.message}`);
   assert.notEqual(goal.step?.action, 'tunnel');
@@ -586,6 +594,48 @@ test('the lava held with its staircase resting says the rest, not that the walk 
   assert.equal(again?.name, 'WaysResting');
   assert.notEqual(goal.step?.action, 'tunnel');
   assert.equal(asked, 1);
+});
+
+test('a kept lava whose staircase rests by its landing, not its area, holds until the rest ends: no walk, no question again, the rest said first', async () => {
+  // mid-214-g (note 505): the lava at (-517, 53, -60), 14 blocks off and 11 below; portal_method asked nine times in three
+  // minutes, every five to eight seconds, cast_at_lava kept each time at 0.40 to 0.60, its option leading with "a trip for
+  // lava is a few seconds" and saying the failed walks and the rest only after. A rest by the landing and heading
+  // (staircase_from, note 487) was not read by the held way's rest, so a keep was a walk into it and a question again.
+  const { portalStep } = require('../src/work');
+  const { setAside } = require('../src/progress');
+  const { landingKey } = require('../src/tunneling');
+  const { Task } = require('../src/skills');
+  const { bot } = castingBot({ bucket: 1, water_bucket: 1, cobblestone: 64, flint_and_steel: 1, stone_pickaxe: 1, iron_ingot: 3 });
+  bot.findBlocks = () => [];
+  bot.on = () => {}; bot.removeListener = () => {}; bot.off = () => {};
+  bot.pathfinder.setGoal = () => {}; bot.pathfinder.stop = () => {};
+  let walks = 0;
+  bot.pathfinder.goto = async () => { walks++; throw new Error('No path to the goal'); };
+  bot.entity.position = new Vec3(-522.5, 64, -52.5);
+  const near = { x: -517, y: 53, z: -60 };
+  const why = 'paced the same few cells round where the round began, 12 blocks from it';
+  const goal = { landmarks: [{ kind: 'lava_pool', ...near, dimension: 'overworld' }],
+    portalMethod: { kind: 'cast', near: { ...near }, nearByStairs: true, nearFailed: { walks: 3, best: 14, now: 14, stopped: `the staircase set aside: ${why}`.slice(0, 80) }, activeMs: 0, reasked: 0, from: { obsidian: 0, diamonds: 0, diamondPickaxe: false } } };
+  // Rested by the landing and heading only, as a stall at a landing is: the lava's area is open.
+  setAside(goal, 'staircase_from', landingKey(bot.entity.position.floored(), new Vec3(near.x, near.y, near.z)), why, 10 * 60000);
+  let offered = null, asked = 0;
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked++; offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cast_at_lava', confidence: 0.5 } } }; } };
+  const steps = [];
+  const pass = () => { delete goal.step; return portalStep(bot, task, goal, () => steps.push(goal.step?.action), task.opportunityClient).then(() => null, err => err); };
+  const kept = await pass();
+  assert.equal(asked, 1, 'asked with the walks failed');
+  assert.match(offered.cast_at_lava, /^Not reachable now: the staircase toward it from here is set aside \(paced the same few cells round where the round began, 12 blocks from it\), taken up again in 10 minutes\. The walk there has failed: 3 walks/, 'the rest leads');
+  assert.match(offered.cast_at_lava, /once there a trip for lava is a few seconds, but getting there waits the 10 minutes of the rest/, 'the trip as it is');
+  assert.doesNotMatch(offered.cast_at_lava, /goes on by staircase/);
+  assert.equal(kept?.name, 'WaysResting', `kept, every way to it resting: ${kept?.message}`);
+  assert.match(kept.message, /the staircase toward it from here is set aside/);
+  // The next passes, while it rests: the same fact, no walk, no staircase, no question.
+  for (let i = 0; i < 5; i++) assert.equal((await pass())?.name, 'WaysResting');
+  assert.equal(asked, 1, `not asked again: ${asked}`);
+  assert.equal(walks, 0, 'no walk');
+  assert(!steps.includes('tunnel') && !steps.includes('to_lava_for_portal'), `no walk or staircase: ${steps}`);
+  assert.deepEqual(goal.portalMethod.near, near, 'kept, as Jev chose');
 });
 
 // mid-215-h (note 481): 137 blocks from its cast frame at (212, 69, -393) with a lava bucket, the walk there failed, the

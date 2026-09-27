@@ -3439,6 +3439,11 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const castBy = current === 'cast_at_lava'
     ? { at: method.near, how: 'the lava chosen before', distance: Math.round(bot.entity.position.distanceTo(new Vec3(method.near.x, method.near.y, method.near.z))) } : lava;
   const far = castBy?.at && lavaTrip(frameAt, castBy);
+  // The staircase to the held lava resting, said as the nearest lava's
+  // and the frame's are: mid-214-f was told "Kept, the walk goes on by
+  // staircase" while that staircase rested ten minutes, kept it, and met
+  // the rest every half second, asked again every few (note 488).
+  const heldRest = current === 'cast_at_lava' ? nearRest(goal, method.near, bot.entity.position) : null;
   if (far && (far.distance > 16 || current === 'cast_at_lava')) {
     const dy = Math.round(castBy.at.y - bot.entity.position.y);
     const where = frameBegun ? 'the frame begun' : 'a frame here';
@@ -3448,14 +3453,18 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     // it: three walks that came no nearer had dropped the lava without a
     // word and cast the frame 122 blocks up (mid-244-v, note 470).
     const nf = current === 'cast_at_lava' && method.nearFailed;
-    // The staircase to the held lava resting, said as the nearest lava's
-    // and the frame's are: mid-214-f was told "Kept, the walk goes on by
-    // staircase" while that staircase rested ten minutes, kept it, and met
-    // the rest every half second, asked again every few (note 488).
-    const heldRest = current === 'cast_at_lava' ? nearRest(goal, method.near) : null;
-    const rests = heldRest ? ` The staircase toward it is set aside (${heldRest.why}), taken up again in ${heldRest.minutes} minute${heldRest.minutes === 1 ? '' : 's'}; kept, that is said as every way to it resting, not tried again before then.` : '';
-    const failed = (nf ? ` The walk there has failed: ${nf.walks} walks toward it came no nearer than ${nf.best} blocks (what ended them: ${nf.stopped || 'not known'}).${heldRest ? '' : ' Kept, the walk goes on by staircase.'}` : '') + rests;
-    tree.cast_at_lava = { description: `Cast a frame of its own as above, but beside ${current === 'cast_at_lava' ? 'the lava chosen before' : 'the nearest known lava'} rather than ${frameBegun ? 'at the frame begun' : 'here'}: it is ${castBy.distance} blocks away (${castBy.how}), at y ${Math.round(castBy.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}${frameBegun ? `, and ${far.distance} blocks from the frame begun` : ''}. The bot ${castBy.distance > 12 ? 'walks there first and ' : ''}puts the frame down within a few blocks of it, so a trip for lava is a few seconds, against ${tripSays(far)} from ${where}.${standing} The portal is then down there, and the way back from the Nether comes out beside that lava.${failed}` + facts };
+    // What cannot be reached now leads, and the trip is said as it then
+    // is: mid-214-g's option began "a trip for lava is a few seconds"
+    // and said the failed walks and the ten-minute rest only after, and
+    // Jev kept it at 0.40 to 0.60 nine times in three minutes (note 505).
+    const restSays = heldRest && `${heldRest.what} is set aside (${heldRest.why}), taken up again in ${heldRest.minutes} minute${heldRest.minutes === 1 ? '' : 's'}`;
+    const walksSays = nf?.walks ? `${nf.walks} walks toward it came no nearer than ${nf.best} blocks (what ended them: ${nf.stopped || 'not known'})` : '';
+    const failed = walksSays ? ` The walk there has failed: ${walksSays}.` : '';
+    const lead = heldRest ? `Not reachable now: ${restSays}.${failed} Kept, that is said as every way to it resting, not tried again before then, and the minutes go to other work. `
+      : failed ? `Not reached so far.${failed} Kept, the walk goes on by staircase until the staircase gains on it or is set aside, not asked again for the walks before then. ` : '';
+    const trips = heldRest ? `once there a trip for lava is a few seconds, but getting there waits the ${heldRest.minutes} minute${heldRest.minutes === 1 ? '' : 's'} of the rest; against ${tripSays(far)} from ${where}, begun now`
+      : `so a trip for lava is a few seconds, against ${tripSays(far)} from ${where}`;
+    tree.cast_at_lava = { description: `${lead}Cast a frame of its own as above, but beside ${current === 'cast_at_lava' ? 'the lava chosen before' : 'the nearest known lava'} rather than ${frameBegun ? 'at the frame begun' : 'here'}: it is ${castBy.distance} blocks away (${castBy.how}), at y ${Math.round(castBy.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}${frameBegun ? `, and ${far.distance} blocks from the frame begun` : ''}. The bot ${castBy.distance > 12 ? 'walks there first and ' : ''}puts the frame down within a few blocks of it, ${trips}.${standing} The portal is then down there, and the way back from the Nether comes out beside that lava.` + facts };
   }
   // With the frame out of reach, a frame cast where the bot stands, the
   // one begun left behind: mid-215-h, 137 blocks from its frame, was
@@ -3474,7 +3483,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // its stairs stopped at the roof of a cave (mid-214-f, note 490). Down
   // into that cave, when the fall is one a body takes; another lava whose
   // way is open; or a frame cast here.
-  const heldResting = current === 'cast_at_lava' && nearRest(goal, method.near);
+  const heldResting = !!heldRest;
   const cave = heldResting ? heldCave(bot, goal, method.near) : null;
   if (cave) {
     const health = Math.round(bot.health ?? 20), damage = cave.into === 'water' ? 0 : Math.max(0, cave.fall - 3);
@@ -3528,6 +3537,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
       riskNow: require('./risk').riskNow(bot) } });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
+  const nearWalked = method?.nearFailed;
   // The failed walk is answered, whatever the answer.
   if (method?.nearFailed || method?.frameFailed) { delete method.nearFailed; delete method.frameFailed; save(); }
   // Buckets first: made on the next passes (netherStep), the way held
@@ -3542,8 +3552,15 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     method.reasked = (method.reasked || 0) + 1;
     // Kept with its staircase resting: every way to it rests until then, a
     // fact for persist to answer, not a pass to repeat (note 488).
-    const rest = current === 'cast_at_lava' && nearRest(goal, method.near);
+    const rest = current === 'cast_at_lava' && nearRest(goal, method.near, bot.entity.position);
     if (rest) { method.nearAsked = rest.until; save(); throw nearResting(method.near, rest); }
+    // Kept with its walks failed: the staircase goes on, as the option
+    // says, and its own rounds judge it; it is asked again when the
+    // staircase is set aside, not for every three passes it does not
+    // gain. Counted afresh after each keep, mid-214-g was asked nine times
+    // in three minutes, every five to eight seconds, while survival pulled
+    // it back up each pass (note 505).
+    if (current === 'cast_at_lava' && nearWalked) { method.nearByStairs = true; method.nearKept = true; }
     save(); return goal.portalFrame ? true : portalMethod(bot, task, goal, save, client);
   }
   // Down into the cave: the way held, gone on from its floor (intoCave).
@@ -3570,14 +3587,16 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
 
 // The rest on the way to a lava: the staircase dug toward it (portalStep
 // tunnels to the lava's own block) or the one into it (lavaResting, as
-// nearestLava drops it by). Null when neither rests.
-function nearRest(goal, near) {
-  const { staircaseResting, staircaseWhy, staircaseUntil, lavaWay } = require('./tunneling');
+// nearestLava drops it by), by the target's area or, from where the bot
+// stands, by the landing and heading (tunneling.js restingWay, note 500):
+// tunnelStep meets either at once. Read by the area alone, a rest by the
+// landing was not seen, the way kept as open, and the walk met the rest
+// and asked again (mid-214-g, note 505). Null when neither rests.
+function nearRest(goal, near, from = null) {
+  const { restingWay, lavaWay } = require('./tunneling');
   const at = new Vec3(near.x, near.y, near.z);
-  const target = [at, lavaWay(at)].find(t => staircaseResting(goal, t));
-  if (!target) return null;
-  const until = staircaseUntil(goal, target);
-  return { why: staircaseWhy(goal, target), until, minutes: Math.max(1, Math.ceil((until - Date.now()) / 60000)) };
+  for (const t of [at, lavaWay(at)]) { const rest = restingWay(goal, t, from); if (rest) return rest; }
+  return null;
 }
 // The cave the staircase to the held lava stopped over (tunneling.js
 // caveUnder), while its stall stands: offered to go down into when what is
@@ -3614,9 +3633,9 @@ async function intoCave(bot, task, goal, save, cave) {
   finally { movements.maxDropDown = before; }
   const near = method.near && new Vec3(method.near.x, method.near.y, method.near.z);
   if (near) { liftStaircaseRest(goal, near); liftStaircaseRest(goal, lavaWay(near)); }
-  delete goal.staircaseStalled; delete method.nearAsked; delete method.nearTries; save();
+  delete goal.staircaseStalled; delete method.nearAsked; delete method.nearTries; delete method.nearKept; save();
 }
-const nearResting = (near, rest) => new (require('./tunneling').WaysResting)(`The lava chosen for the portal, at (${near.x}, ${near.y}, ${near.z}): the staircase toward it is set aside (${rest.why}), taken up again in ${rest.minutes} minute${rest.minutes === 1 ? '' : 's'}. The way to the portal was asked with this and kept.`, rest.until);
+const nearResting = (near, rest) => new (require('./tunneling').WaysResting)(`The lava chosen for the portal, at (${near.x}, ${near.y}, ${near.z}): ${rest.what} is set aside (${rest.why}), taken up again in ${rest.minutes} minute${rest.minutes === 1 ? '' : 's'}. The way to the portal was asked with this and kept.`, rest.until);
 
 // The nearest lava the bot knows of, for the cast option's trips: a pool
 // loaded about it, or one remembered (exploration.js), not one spent.
@@ -3739,7 +3758,8 @@ async function portalStep(bot, task, goal, save, client) {
       // and what ended each (survival's step since, or the walk's error).
       // Asked with this very rest said, and kept: every way to it rests
       // until then, not a walk counted and asked about again (note 488).
-      const rest = goal.portalMethod.nearByStairs && nearRest(goal, near);
+      // A rest by the landing is met from where the bot stands (nearRest).
+      const rest = goal.portalMethod.nearByStairs && nearRest(goal, near, bot.entity.position);
       if (rest && goal.portalMethod.nearAsked === rest.until) throw nearResting(near, rest);
       const d = bot.entity.position.distanceTo(at), tries = goal.portalMethod.nearTries ||= { best: Infinity, stale: 0, walks: 0, stops: {} };
       if (tries.lastAt) {
@@ -3747,12 +3767,20 @@ async function portalStep(bot, task, goal, save, client) {
         const by = since ? `survival: ${String(s.action || 'a survival step').replaceAll('_', ' ')}` : tries.error || 'the walk ended short';
         tries.stops[by] = (tries.stops[by] || 0) + 1; delete tries.error;
       }
-      if (d < tries.best - 1) { tries.best = d; tries.stale = 0; } else if (++tries.stale >= 3) {
+      const failed = () => {
         const stopped = Object.entries(tries.stops).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ');
-        goal.portalMethod.nearFailed = { walks: tries.walks, best: Math.round(tries.best), now: Math.round(d), stopped };
+        goal.portalMethod.nearFailed = { walks: tries.walks, best: Math.round(Math.min(tries.best, d)), now: Math.round(d), stopped };
         delete goal.portalMethod.nearTries; save();
         return false;
-      }
+      };
+      // A rest not yet asked with is asked with now, not walked into: the
+      // staircase meets it at once, and three such walks were three
+      // passes and a question in a second and a half (mid-214-g, note 505).
+      if (rest) return failed();
+      if (d < tries.best - 1) { tries.best = d; tries.stale = 0; }
+      // Kept with the walks failed: the staircase's own rounds judge it,
+      // and its set-aside is the rest above (portalMethod, note 505).
+      else if (++tries.stale >= 3 && !(goal.portalMethod.nearKept && goal.portalMethod.nearByStairs)) return failed();
       tries.walks++; tries.lastAt = Date.now();
       // Once the walk has failed, the staircase goes on without a walk tried
       // first each pass: mid-211-i gained a block a pass down its stairs,

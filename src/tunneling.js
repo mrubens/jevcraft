@@ -314,13 +314,19 @@ const staircaseUntil = (goal, target) => attemptsFor(goal).entries[keyOf('stairc
 // lava (note 494), and mid-202-o-nether-2's seek_fortress_height, chosen
 // at 0.64 to 0.87 for three minutes with its staircase resting (note 500).
 function restingSays(goal, target, from = null, now = Date.now()) {
+  const rest = restingWay(goal, target, from, now);
+  return rest && `${rest.what} is set aside (${rest.why}), taken up again in ${rest.minutes} minute${rest.minutes === 1 ? '' : 's'}`;
+}
+// The same rest as parts: what rests, why, and until when. For a caller
+// that holds a way until the rest ends (work.js nearRest): read by the
+// area alone, mid-214-g's held lava met a rest the step could not see.
+function restingWay(goal, target, from = null, now = Date.now()) {
   const ways = [['staircase', area(target), 'the staircase toward it']];
   if (from) ways.push(['staircase_from', landingKey(new Vec3(Math.floor(from.x), Math.floor(from.y), Math.floor(from.z)), target), 'the staircase toward it from here']);
   for (const [kind, key, what] of ways) {
     const entry = attemptsFor(goal).entries[keyOf(kind, key)];
     if (!(entry?.until > now)) continue;
-    const minutes = Math.max(1, Math.ceil((entry.until - now) / 60000));
-    return `${what} is set aside (${entry.why || 'resting'}), taken up again in ${minutes} minute${minutes === 1 ? '' : 's'}`;
+    return { what, why: entry.why || 'resting', until: entry.until, minutes: Math.max(1, Math.ceil((entry.until - now) / 60000)) };
   }
   return null;
 }
@@ -646,4 +652,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, restingSays, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
