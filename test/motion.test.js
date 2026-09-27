@@ -77,3 +77,16 @@ test('a move aimed somewhere keeps that heading while its keys are held, whateve
     until: () => { headings.push(bot.entity.yaw); if (++ticks === 2) bot.entity.yaw = 0; return ticks > 4; } });
   assert.equal(headings.at(-1), Math.PI, `turned back: ${headings}`);
 });
+
+test('while the heading is wrong the keys are let go, and pressed again once it is right', async () => {
+  // mid-215-e: a swing at a hoglin turned the bot about on a span, and forward, held through the turn, took it off.
+  const bot = fakeBot();
+  bot.entity = { yaw: 0, pitch: 0 };
+  bot.lookAt = async () => { bot.entity.yaw = Math.PI; };
+  const forwardWhileWrong = [];
+  bot.look = async (yaw, pitch) => { forwardWhileWrong.push(bot.getControlState ? bot.getControlState('forward') : bot.controlState?.forward); bot.entity.yaw = yaw; bot.entity.pitch = pitch; };
+  let ticks = 0;
+  await move(bot, new Task('m'), { label: 'bridge_step', look: { x: 0, y: 0, z: 1 }, tick: 5, maxMs: 200,
+    until: () => { if (++ticks === 2) bot.entity.yaw = 0; return ticks > 4; } });
+  assert.deepEqual(forwardWhileWrong, [false], 'forward was let go while it turned back');
+});

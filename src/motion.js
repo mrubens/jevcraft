@@ -51,7 +51,14 @@ async function move(bot, task, { label, keys = ['forward'], sneak = true, why, l
       if (aim && Math.abs(Math.atan2(Math.sin(bot.entity.yaw - aim.yaw), Math.cos(bot.entity.yaw - aim.yaw))) > 0.05) {
         controller.turned = (controller.turned || 0) + 1;
         if (controller.turned === 1) console.log(`[motion] ${label}: turned from ${aim.yaw.toFixed(2)} to ${bot.entity.yaw.toFixed(2)} mid-move; turned back`);
+        // The keys let go while the heading is wrong, and pressed again once
+        // it is right: held through the turn, they walk the bot the way it
+        // was turned. mid-215-e's crossing on a span over the lava sea was
+        // turned about by a swing at a hoglin behind it, and forward took it
+        // off the other end, thirty-five blocks down (2026-09-26).
+        for (const key of keys) if (HORIZONTAL.has(key)) bot.setControlState(key, false);
         await bot.look(aim.yaw, aim.pitch, true);
+        for (const key of keys) if (HORIZONTAL.has(key)) bot.setControlState(key, true);
       }
       await sleep(tick);
     }
