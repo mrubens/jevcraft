@@ -1317,6 +1317,8 @@ test('sealed in, the mobs the wall hides are named in the choice to leave', asyn
   assert.match(leave || '', /past a creeper 10 blocks off \(heard, not seen: the wall is between\)/);
   // mid-83-i: the fight's figure left the creepers out, and said so nowhere.
   assert.match(leave || '', /the creeper not counted in it: each that reaches the bot goes off for about [\d.]+ health/);
+  // mid-230-l: what leaving does with a creeper by the doors, said.
+  assert.match(leave || '', /A door within six blocks of a creeper stays shut \(the creeper 10 blocks off now, behind the rock\): with every door so, the pocket waits for it to move off/);
 });
 
 test('sealed in hurt and hungry at night, staying and leaving both say the health and that it does not come back', async () => {

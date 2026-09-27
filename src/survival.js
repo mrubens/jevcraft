@@ -3326,7 +3326,13 @@ class Survival {
         (!homeBed && bot.game?.dimension === 'overworld' && sleepable(bot) && !sleepWaiting(this) && bedCarried(bot) && surfaceObserver(bot)(bot.entity.position));
       // Say who is keeping the bot in, and whether the hunt had claimed it:
       // a wait with no named reason cost an hour of guessing.
-      const watcher = threats(bot).find(t => t.distance < 20 && (t.visible || t.distance < 6) && !claimed(bot, t.entity));
+      // A creeper within sixteen, seen or not, is watching too: leaving
+      // keeps every door within six of one shut (leave, below). mid-230-l
+      // was told nothing watched its pocket with a creeper drifting three to
+      // seven blocks off behind the rock, chose to leave sixty-seven times,
+      // and every door was refused for it: an hour and forty minutes in the
+      // pocket (2026-09-27).
+      const watcher = threats(bot).find(t => t.distance < 20 && (t.visible || t.distance < 6 || (t.entity.name === 'creeper' && t.distance <= 16)) && !claimed(bot, t.entity));
       const hunt = bot._huntingEntity;
       // Inside the pocket with the bot, or at arm's length through a gap:
       // fought, not waited out (a reflex). The clean run sealed itself in
@@ -3348,7 +3354,7 @@ class Survival {
       // from twenty health in iron (2026-09-25).
       const about = threats(bot, 16).filter(t => t.entity !== watcher?.entity).slice(0, 4);
       const hidden = about.length ? `${about.map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}${about.some(t => !t.visible) ? ' (heard, not seen: the wall is between)' : ''}` : '';
-      const who = watcher ? `the ${watcher.entity.name.replaceAll('_', ' ')} ${Math.round(watcher.distance)} blocks off${watcher.visible ? ', in sight' : ''}${hidden ? `, and ${hidden}` : ''}` : hidden || null;
+      const who = watcher ? `${watcher.visible ? 'the' : 'a'} ${watcher.entity.name.replaceAll('_', ' ')} ${Math.round(watcher.distance)} blocks off${watcher.visible ? ', in sight' : ' (heard, not seen: the wall is between)'}${hidden ? `, and ${hidden}` : ''}` : hidden || null;
       const options = {};
       const outside = who ? ` Outside is ${who}.` : '';
       // Sleep is refused with a monster within eight blocks of the bed, seen
@@ -3419,7 +3425,11 @@ class Survival {
       const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
       const hitsOf = name => Math.max(1, Math.ceil(hp / Math.max(0.5, ce.afterArmour(ce.MOBS[name].hit, worn))));
       const outHealth = hp >= 20 ? '' : ` It goes out at ${hp} health${(bot.food ?? 20) < 18 ? `, not healing at hunger ${bot.food}` : ''}: about ${hitsOf('zombie')} zombie hits or ${hitsOf('skeleton')} arrows end it${ce.afterArmour(ce.MOBS.creeper.hit, worn) >= hp ? ', or one creeper\'s blast' : ''}.`;
-      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${outSays}${outHealth}`,
+      // What leaving does with a creeper about, said: a door within six
+      // blocks of one stays shut, and with every door so, the pocket waits.
+      const creeperNear = threats(bot, 16).filter(t => t.entity.name === 'creeper').sort((a, b) => a.distance - b.distance)[0];
+      const doorsSay = creeperNear ? ` A door within six blocks of a creeper stays shut (the creeper ${Math.round(creeperNear.distance)} blocks off now${creeperNear.visible ? '' : ', behind the rock'}): with every door so, the pocket waits for it to move off.` : '';
+      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${doorsSay}${outSays}${outHealth}`,
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the
