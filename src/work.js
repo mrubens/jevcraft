@@ -3079,7 +3079,12 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
 function nearestLava(bot, goal) {
   const here = bot.entity.position;
   const loaded = require('./obsidian').poolSurface(bot).map(p => ({ distance: Math.round(p.distanceTo(here)), how: 'in sight about here', at: { x: p.x, y: p.y, z: p.z } }));
-  const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool').filter(k => !k.landmark.spent)
+  // The pools the lava fetch would use (obsidian.js collectLava): not one
+  // whose staircase rests. mid-211-g was told of lava seven blocks off
+  // forty minutes into its cast while every bucket went to a staircase
+  // toward the deep lava instead, that pool's way resting (2026-09-27).
+  const { staircaseResting } = require('./tunneling');
+  const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool').filter(k => !k.landmark.spent && !staircaseResting(goal, new Vec3(k.landmark.x, k.landmark.y ?? 0, k.landmark.z)))
     .map(k => ({ distance: k.distance, how: 'a lava pool remembered', at: { x: k.landmark.x, y: k.landmark.y, z: k.landmark.z } }));
   return [...loaded, ...known].sort((a, b) => a.distance - b.distance)[0] || null;
 }
@@ -4319,4 +4324,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

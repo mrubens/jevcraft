@@ -359,3 +359,14 @@ test('a cast that fails at its site three passes running, nothing cast, leaves t
   const { selectPortalSite } = require('../src/build-sites');
   assert.equal(typeof selectPortalSite, 'function');
 });
+
+test('the lava said to the portal question is lava the fetch would use: not a pool whose staircase rests', () => {
+  // mid-211-g was told of lava seven blocks off while every bucket went toward the deep lava (2026-09-27).
+  const { nearestLava } = require('../src/work');
+  const { setAside } = require('../src/progress');
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, game: { dimension: 'overworld' }, registry: require('minecraft-data')('26.1'), findBlocks: () => [] };
+  const goal = { landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: 5, y: 60, z: 5, firstAt: 1, seenAt: 1 }] };
+  assert.equal(nearestLava(bot, goal)?.distance <= 8, true, 'known and open');
+  setAside(goal, 'staircase', { x: 0, y: 56, z: 0 }, 'paced the same few cells', 600000);
+  assert.equal(nearestLava(bot, goal), null, 'its way rests: not said');
+});
