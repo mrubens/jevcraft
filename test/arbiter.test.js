@@ -68,8 +68,9 @@ test('a ruling is held by its fingerprint until a newcomer, health, a food band 
   // The claims changed: asked again.
   assert.equal((await arbiter.arbitrate(bot, [...claims(), claim('vitals')], { state, decide, now: 2000, mobs: [] })).why, 'the claims changed');
   assert.equal(asked, 2);
-  // A newcomer within six blocks.
-  assert.equal((await at(3000, { mobs: [mob('zombie', 4, 7)] })).why, 'the claims changed');
+  // A newcomer within six blocks (the vitals absent one pass still count:
+  // ABSENT_PASSES, note 509).
+  assert.equal((await at(3000, { mobs: [mob('zombie', 4, 7)] })).why, 'a newcomer within six blocks');
   assert.equal((await at(3500)).by, 'held');
   assert.equal((await at(4000, { mobs: [mob('zombie', 10, 1), mob('skeleton', 5, 9)] })).why, 'a newcomer within six blocks');
   // Health down six.
@@ -422,4 +423,54 @@ test('a ruling for the work that the loop marks stopped is asked again (mid-236-
   assert.equal(arbiter.rule(null, claims, { state, mobs: [], dry: true }).by, 'held');
   state.ruling.stoppedBy = 'Threat nearby: skeleton at 9 blocks';
   assert.equal(arbiter.rule(null, claims, { state, mobs: [], dry: true }).ask, true);
+});
+
+test('hurt at 5.5 with a blaze in sight 16.5 blocks off whose fireballs land, survival claims it, said with its reach (mid-235-p-fortress-1)', () => {
+  const bot = world({ health: 5.5, food: 16 });
+  bot.game.dimension = 'the_nether';
+  bot.entities = { 39: { id: 39, name: 'blaze', type: 'hostile', position: new Vec3(16.5, 64, 0), height: 1.8, metadata: [] } };
+  bot._hurtBy = { blaze: Date.now() - 8000 }; bot._recentHurtAt = Date.now() - 8000;
+  const goal = { kind: 'win', step: { action: 'find_fortress' }, mobHunt: { entity: 'blaze', item: 'blaze_rod', targetCount: 8 }, survival: {} };
+  const mine = require('../src/survival').claim(bot, goal, { state: goal.survival, currentShelter: () => null });
+  assert.equal(mine?.action, 'escape_threat', 'survival claims the shooter whose fire reaches here');
+  assert.equal(mine.urgency, 'pressing');
+  assert.deepEqual(mine.facts.threat, { name: 'blaze', distance: 16.5, seen: true, shoots: true, reach: 48, hitItSecondsAgo: 8 });
+  assert.equal(mine.facts.healing, false);
+  assert.match(arbiter.claimSays(mine), /^Answer the blaze 16\.5 blocks off, which fires from as far as 48 blocks and hit the bot 8 seconds ago: the stance is asked next .* Health 5\.5\. It does not come back at hunger 16\.$/);
+});
+
+test('turn_priority says the hunt and every other claim in words, none as its bare code (mid-235-p-fortress-1)', () => {
+  const hunt = { layer: 'hunt', action: 'hunt', urgency: 'routine', facts: { entity: 'blaze', distance: 16.5, item: 'blaze_rod', have: 0, want: 8, health: 5.5 } };
+  assert.match(arbiter.claimSays(hunt), /^Hunt the blaze 16\.5 blocks off for blaze rods \(0 of 8 carried\): close on it and fight it.* Health 5\.5\.$/);
+  const actions = { survival: ['escape_threat', 'creeper_back_off', 'leave_lava', 'pocket_next', 'night_hunt', 'recover_items', 'secure_shelter', 'go_home_for_night', 'obtain_food'],
+    vitals: ['out_of_fire', 'dig_out_of_block', 'swim_up', 'out_of_powder_snow', 'surface', 'eat'], hunt: ['hunt'] };
+  for (const [layer, list] of Object.entries(actions)) for (const action of list) {
+    const says = arbiter.claimSays({ layer, action, urgency: 'routine', facts: { health: 9, food: 12 } });
+    assert.doesNotMatch(says, new RegExp(`^${layer}: `), `${layer} ${action} is said in words: ${says}`);
+  }
+});
+
+test('a claim that drops out for one pass does not re-ask each pass; absent two, its absence counts (mid-235-p-fortress-1)', async () => {
+  let asked = 0;
+  const decide = async () => { asked++; return { path: ['survival'] }; };
+  const bot = fakeBot({ health: 5.5, food: 16 });
+  const survival = () => claim('survival', 'pressing', { action: 'escape_threat' }), hunt = () => claim('hunt'), work = () => claim('work');
+  const state = {};
+  const pass = (claims, now) => arbiter.take(bot, claims, { state, decide, mobs: [], now });
+  assert.equal((await pass([survival(), hunt(), work()], 0)).by, 'jev');
+  // The blaze drifts past a reach and back: the winner out one pass is a
+  // breath, not a question, and the ruling stands.
+  const out = await pass([hunt(), work()], 250);
+  assert.equal(out.by, 'absent'); assert.equal(out.layer, null); assert.equal(out.acted, false);
+  assert.equal((await pass([survival(), hunt(), work()], 500)).by, 'held');
+  // The hunt's target coming and going past its twenty-four blocks.
+  for (let i = 0; i < 6; i++) {
+    const turn = await pass(i % 2 ? [survival(), hunt(), work()] : [survival(), work()], 750 + i * 250);
+    assert.equal(turn.by, 'held'); assert.equal(turn.layer, 'survival');
+  }
+  assert.equal(asked, 1, 'asked once, not at each coming and going');
+  // Gone two passes, its absence counts.
+  await pass([hunt(), work()], 3000);
+  const again = await pass([hunt(), work()], 3250);
+  assert.equal(again.why, 'its winner no longer claims'); assert.equal(asked, 2);
 });

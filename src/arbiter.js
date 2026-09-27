@@ -130,7 +130,25 @@ function rulesPick(claims) {
 // Nor is a layer's own action changing (survival between its shelter and
 // the creeper's answer: mid-236-j was asked twice in a second): who acts is
 // the question, and an alert's coming or going is part of that (note 492).
-const fingerprintOf = claims => claims.map(c => `${c.layer}${c.alert ? `:${c.alert}` : ''}`).sort().join('|');
+const keyOf = c => `${c.layer}${c.alert ? `:${c.alert}` : ''}`;
+const fingerprintOf = claims => claims.map(keyOf).sort().join('|');
+// A claim's absence counts once it has been absent two passes running. A
+// claim read from a mob at the edge of a reach comes and goes: in twenty
+// seconds mid-235-p-fortress-1 was asked turn_priority six times, three of
+// them survival's claim going and coming (its blaze drifting across the
+// sixteen blocks then counted, a fireball in flight and then not), each
+// absence taken as the ruling's end, the one-claim pass between dropping
+// the ruling so the return was asked as new (note 509). A claim that comes
+// counts at once: that is news.
+const ABSENT_PASSES = 2;
+// The layers absent this pass that were here the last, as layer -> key.
+function missing(state, live) {
+  const was = state.claimed || {}, now = {};
+  for (const c of live) now[c.layer] = { key: keyOf(c), missed: 0 };
+  for (const [layer, e] of Object.entries(was)) if (!now[layer] && e.missed + 1 < ABSENT_PASSES) now[layer] = { key: e.key, missed: e.missed + 1 };
+  state.claimed = now;
+  return new Map(Object.entries(now).filter(([, e]) => e.missed).map(([layer, e]) => [layer, e.key]));
+}
 // When a claim's last run was stopped, as a time.
 const stoppedAt = c => { const t = c?.facts?.lastErrorAt; return typeof t === 'number' ? t : Date.parse(t || '') || 0; };
 const STOPPED_BY_THREAT = /Threat nearby|Preempted|hurt|NeedsSafety/i;
@@ -143,7 +161,7 @@ function observe(bot, ctx) {
 }
 
 // Why a held ruling no longer holds, or null while it does.
-function broken(ruling, claims, seen, now) {
+function broken(ruling, claims, seen, now, print = fingerprintOf(claims)) {
   if (!ruling) return 'no ruling';
   const winner = claims.find(c => c.layer === ruling.winner);
   if (!winner) return 'its winner no longer claims';
@@ -158,7 +176,7 @@ function broken(ruling, claims, seen, now) {
   // each time on the ruling held, at seven health (note 490).
   if (stoppedAt(winner) > ruling.at && STOPPED_BY_THREAT.test(winner.facts?.lastError || '')) return `its winner was stopped: ${winner.facts.lastError}`;
   if (ruling.idleSince && now - ruling.idleSince >= IDLE_MS) return `its winner did nothing for ${IDLE_MS / 1000} seconds`;
-  if (fingerprintOf(claims) !== ruling.fingerprint) return 'the claims changed';
+  if (print !== ruling.fingerprint) return 'the claims changed';
   if (seen.ids.some(id => !ruling.ids.includes(id))) return 'a newcomer within six blocks';
   if (seen.health <= ruling.health - STANCE_HEALTH) return `health fell ${STANCE_HEALTH}`;
   if (seen.band !== ruling.band) return 'food crossed a band';
@@ -179,8 +197,13 @@ const optionOf = (c, held = null, now = Date.now()) => {
 function claimSays(c) {
   const f = c.facts || {}, mob = t => t ? `the ${String(t.name).replaceAll('_', ' ')} ${t.distance} blocks off${t.seen === false ? ' (out of sight)' : ''}` : 'the mobs about';
   const hp = f.health !== undefined ? ` Health ${Math.round(f.health * 10) / 10}.` : '';
+  const heals = f.healing === false ? ` It does not come back at hunger ${f.food}.` : f.healing ? ' It comes back meanwhile, at hunger eighteen or more.' : '';
+  // A shooter's reach and what it has done, said: mid-235-p-fortress-1's
+  // blaze fired from 16.5 blocks (note 509).
+  const fire = t => t?.shoots ? `, which fires from as far as ${t.reach} blocks${t.hitItSecondsAgo !== undefined ? ` and hit the bot ${t.hitItSecondsAgo} seconds ago` : ''}${t.shotsInFlight ? `, ${t.shotsInFlight} shot${t.shotsInFlight === 1 ? '' : 's'} on the way now` : ''}` : '';
+  const plural = item => { const s = String(item).replaceAll('_', ' '); return s.endsWith('s') ? s : `${s}s`; };
   switch (c.action) {
-    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}: the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest). The work waits.${hp}`;
+    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest). The work waits.${hp}${heals}`;
     case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; the stance is asked next. The work waits.`;
     case 'surface': return `Swim up for air: the head is under water, air ${f.air} of 20; at none, drowning takes 2 health a second.${hp}`;
     case 'eat': return `Eat ${f.item ? String(f.item).replaceAll('_', ' ') : 'food'} now, about ${c.cost?.seconds || 1.6} seconds.${hp} Hunger ${f.food}.`;
@@ -190,7 +213,14 @@ function claimSays(c) {
     case 'swim_up': return `Swim up: air ${f.air} of 20.`;
     case 'pocket_next': return `In a sealed pocket: whether to stay, leave or do something else there is asked next.${hp}`;
     case 'secure_shelter': return `Shelter for the night: the way (a room, a pocket here, a shaft, the bed) is asked next.${hp}`;
-    case 'obtain_food': return `Find food: where is asked next. Hunger ${f.food}${f.foodCarried !== undefined ? `, ${f.foodCarried} food points carried` : ''}.${hp}`;
+    case 'obtain_food': return `Find food: where is asked next. Hunger ${f.food}${f.foodCarried !== undefined ? `, ${f.foodCarried} food points carried` : ''}${f.foodWanted !== undefined ? ` of ${f.foodWanted} wanted` : ''}.${hp}`;
+    // The hunt's claim was said as "hunt: hunt." to mid-235-p-fortress-1,
+    // at 5.5 health beside the work (note 509): what it goes for, and why.
+    case 'hunt': return `Hunt ${f.entity ? mob({ name: f.entity, distance: f.distance }) : 'the mob in view'}${f.item ? ` for ${plural(f.item)} (${f.have ?? 0} of ${f.want} carried)` : ''}: close on it and fight it; which one, and the fight's cost, is asked next. The work waits.${hp}`;
+    case 'night_hunt': return `Go on with tonight's hunt${f.hunting ? ` of ${plural(f.hunting)}` : ''}, as chosen for the night: close on those met and fight them.${hp}`;
+    case 'recover_items': return `Go back for the items dropped at the death${f.dropsAt ? ` at ${Math.round(f.dropsAt.x)}, ${Math.round(f.dropsAt.y)}, ${Math.round(f.dropsAt.z)}` : ''}: the way there is walked; items left lying in a loaded area vanish five minutes after they drop.${hp}`;
+    case 'go_home_for_night': return `Go home for the night, as planned: the walk to the bed and sleep.${hp}`;
+    case 'out_of_powder_snow': return `Get out of the powder snow: freezing takes health while the bot stands in it.${hp}`;
     default:
       if (c.layer === 'work') return `Go on with the work: ${f.doing || String(c.action).replaceAll('_', ' ')}${f.request ? ` (toward "${f.request}")` : ''}.${f.lastError ? ` Its last try ended: ${f.lastError}.` : ''}`;
       return `${c.layer}: ${String(c.action).replaceAll('_', ' ')}.${hp}`;
@@ -251,12 +281,21 @@ function rule(bot, claims, ctx = {}) {
   // holder for: the reflex is among these claims and wins (it or one above
   // it), or it has gone; a newcomer is among the mobs this ruling reads.
   if (!ctx.dry && bot?._preempt) { console.log(`[arbiter] picked up ${bot._preempt.by}`); delete bot._preempt; }
+  const gone = missing(state, live);
   if (reflexes.length) { delete state.ruling; return { winner: reflexes[0], by: 'reflex', ask: false }; }
+  // The ruling's claims absent one pass still count for it (ABSENT_PASSES).
+  // Its winner absent one pass: nobody has the turn this pass, a breath,
+  // and the ruling stands; its claim's run is not taken from a pass it was
+  // not in.
+  const ruling = state.ruling, ruled = ruling ? new Set(ruling.fingerprint.split('|')) : new Set();
+  const kept = [...gone.values()].filter(key => ruled.has(key));
+  if (ruling && gone.has(ruling.winner) && !ruling.stoppedBy && now < ruling.until) return { winner: null, by: 'absent', ask: false, why: `its winner, ${ruling.winner}, missed one look`, ruling };
   if (!live.length) { delete state.ruling; return { winner: null, by: 'none', ask: false }; }
-  if (live.length === 1) { delete state.ruling; return { winner: live[0], by: 'single', ask: false }; }
+  if (live.length === 1 && !kept.length) { delete state.ruling; return { winner: live[0], by: 'single', ask: false }; }
   const seen = observe(bot, ctx);
-  const why = broken(state.ruling, live, seen, now);
-  if (!why) return { winner: live.find(c => c.layer === state.ruling.winner), by: 'held', ask: false, ruling: state.ruling };
+  const why = broken(ruling, live, seen, now, [...live.map(keyOf), ...kept].sort().join('|'));
+  if (!why) return { winner: live.find(c => c.layer === ruling.winner), by: 'held', ask: false, ruling };
+  if (live.length === 1) { delete state.ruling; return { winner: live[0], by: 'single', ask: false }; }
   if (!ctx.dry) return { winner: null, ask: true, why, pending: { live, seen, now, why } };
   const winner = rulesPick(live);
   state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + RULING_MS, ...seen };
@@ -320,6 +359,7 @@ async function take(bot, claims, ctx = {}) {
   const r = await arbitrate(bot, live, { ...ctx, run: false });
   const now = ctx.now ?? Date.now();
   const unclaimed = !live.some(c => c.layer === 'survival');
+  if (r.by === 'absent') said(bot, `[arbiter] held for ${r.ruling.winner}: ${r.why}`, now);
   if (!r.winner) return { ...r, layer: null, acted: false, unclaimed };
   const holding = (layer, action, extra = {}) => {
     const was = state.holder;
@@ -436,4 +476,4 @@ function unwatch(bot) {
   if (bot) delete bot._preempt;
 }
 
-module.exports = { claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };
+module.exports = { ABSENT_PASSES, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };

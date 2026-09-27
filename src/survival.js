@@ -4578,8 +4578,20 @@ function claim(bot, goal = {}, survival = null) {
   if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot) });
   const nightPlan = state.nightPlan?.until > now ? state.nightPlan : null;
   if (nightPlan?.plan === 'hunt' && (nightPlan.food || shelterNeeded(bot))) return make('night_hunt', 'routine', { hunting: nightPlan.kind || null });
+  // A shooter is a threat as far as its own fire reaches (combat-estimate
+  // RANGE, danger.js immediateThreat), hurt or not: being in its sight is
+  // being under fire. mid-235-p-fortress-1 stood at 5.5 health with a blaze
+  // 16.5 blocks off, past the sixteen then counted for a blaze; survival
+  // claimed nothing, only the hunt and the work were offered, and the next
+  // fireball threw it off the edge (note 509). Said with what it has done
+  // and whether health comes back, for Jev to weigh.
   const threat = immediateThreat(bot);
-  if (threat) return make('escape_threat', 'pressing', { threat: threat.projectile ? { name: threat.entity.name, distance: round(threat.distance), projectile: true } : mob(threat) });
+  const firing = t => {
+    const hit = bot._hurtBy?.[t.entity.name], inFlight = require('./projectile-guard').incoming(bot, { reach: RANGE[t.entity.name] || 15 }).length;
+    return { shoots: true, reach: RANGE[t.entity.name] || 15, ...(hit > now - 30000 ? { hitItSecondsAgo: Math.round((now - hit) / 1000) } : {}), ...(inFlight ? { shotsInFlight: inFlight } : {}) };
+  };
+  if (threat) return make('escape_threat', 'pressing', threat.projectile ? { threat: { name: threat.entity.name, distance: round(threat.distance), projectile: true } }
+    : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: mob(threat) });
   const underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
   // sleepDebt() without its first-look write of sleptAtAge.
   const debt = Number.isFinite(worldAge(bot)) && Number.isFinite(state.sleptAtAge) && worldAge(bot) - state.sleptAtAge > SLEEP_DEBT_TICKS;

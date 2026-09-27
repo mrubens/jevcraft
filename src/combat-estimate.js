@@ -86,7 +86,13 @@ function creeperBlastSays(worn) {
 
 // How far a shooter shoots from: one further off walks in first. A witch
 // throws from about ten blocks; the bows about fifteen.
-const RANGE = { witch: 10, ghast: 40, blaze: 16 };
+// A blaze fires at whatever it targets in sight within its follow range,
+// forty-eight blocks (the game's Blaze attributes and its attack goal), its
+// aim scattering with the distance. Sixteen was a guess: mid-235-p-fortress-1
+// took its last fireball from a blaze 16.5 blocks off, counted by nothing,
+// and mid-227-r-nether-3 was hit from thirty-two to thirty-five (notes 491,
+// 509).
+const RANGE = { witch: 10, ghast: 40, blaze: 48 };
 const HOLD_SECONDS = 15, APPROACH = 3, FUSE = 1.5, LIGHTS_AT = 3;
 const inRange = m => Math.max(0, ((m.distance || 0) - (RANGE[m.name] || 15)) / APPROACH);
 // A shot every two seconds (a witch's potion every three). A shield takes
