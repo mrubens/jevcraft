@@ -3403,7 +3403,13 @@ class Survival {
   async step(task, goal, save, onStep = () => {}) {
     try { return await this.stepOnce(task, goal, save, onStep); }
     catch (err) {
-      if (err.name === 'SetAside') return false;
+      // An answer set aside is no answer to a mob that is hitting the bot:
+      // the encounter's own question comes instead. Returned as "nothing to
+      // do", the turn went to vitals throwing "Threat nearby" every few
+      // milliseconds while mid-244-t's skeleton shot it from two blocks,
+      // twenty seconds, 9.6 to none, its seal spinning and set aside by
+      // turns (note 431); mid-242-o's span hold the same (note 420).
+      if (err.name === 'SetAside') return this.answerWhileSetAside(task, goal, save, onStep, err);
       if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
       const recent = goal.survivalAction, name = recent?.action;
       if (!name || EMERGENCIES.has(name) || Date.now() - Date.parse(recent.at || 0) > 60000) throw err;
@@ -3411,6 +3417,22 @@ class Survival {
       console.log(`[survival] ${name} failed and rests three minutes: ${err.message}`);
       return false;
     }
+  }
+
+  async answerWhileSetAside(task, goal, save, onStep, err) {
+    const bot = this.bot;
+    const hurt = (bot._hurtTimes || []).some(t => Date.now() - t < 4000);
+    const close = threats(bot, 8).some(t => t.visible || t.distance <= 3);
+    if ((!hurt && !close) || this._answeringSetAside) return false;
+    this._answeringSetAside = true;
+    try {
+      console.log(`[survival] ${err.message}; answering the mob instead`);
+      await this.flee(task, goal, save);
+      onStep(goal); return true;
+    } catch (inner) {
+      if (inner.name === 'SetAside') return false;
+      throw inner;
+    } finally { this._answeringSetAside = false; }
   }
 
   async stepOnce(task, goal, save, onStep) {

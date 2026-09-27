@@ -3747,3 +3747,20 @@ test('at dusk with a bed carried and no nook, a pocket now and the bed beside it
   assert.match(asked?.bed_beside?.description || '', /Seal a pocket where the bot stands, .* and at bedtime .* put the carried bed down on level ground \d+ blocks off and sleep/, Object.keys(asked || {}).join(','));
   assert(survival.state.bedBesidePlan?.until > Date.now(), 'the plan is kept for bedtime');
 });
+
+test('a step whose answer is set aside, with a mob hitting the bot, answers the mob instead of doing nothing', async () => {
+  // mid-244-t: its seal spun and was set aside by turns, the step returned "nothing to do", and a skeleton shot it from two blocks for twenty seconds (2026-09-27).
+  const skeleton = { id: 4, name: 'skeleton', type: 'hostile', position: new Vec3(2.5, 64, 0.5), height: 1.99, width: 0.6, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, entities: { 4: skeleton }, health: 9.6,
+    entity: { position: new Vec3(0.5, 64, 0.5) }, world: { raycast: () => null }, _hurtTimes: [Date.now() - 1000] });
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  survival.stepOnce = async () => { throw Object.assign(new Error('seal shelter is set aside: it ran twenty times in a second and the bot did not move'), { name: 'SetAside' }); };
+  let fled = 0;
+  survival.flee = async () => { fled++; };
+  assert.equal(await survival.step(new Task('x'), {}, () => {}), true);
+  assert.equal(fled, 1, 'the encounter was answered');
+  // Nothing about and nothing hurting: a set-aside is still nothing to do.
+  bot.entities = {}; bot._hurtTimes = [];
+  assert.equal(await survival.step(new Task('x'), {}, () => {}), false);
+  assert.equal(fled, 1);
+});
