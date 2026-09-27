@@ -1344,7 +1344,12 @@ class Survival {
         this.state.mealCutAt = Date.now();
         const hungerBefore = bot.food ?? 20, saturationBefore = bot.foodSaturation ?? 0;
         try {
-          await bot.equip(meal, 'hand'); await bot.consume();
+          await bot.equip(meal, 'hand');
+          // The hand settles first: its change arriving after the eat began
+          // ended the eat at once (see the golden apple below).
+          for (let n = 0; n < 10 && bot.heldItem?.name !== meal.name; n++) { task.check(); await sleep(50); }
+          await sleep(100);
+          await bot.consume();
           if ((bot.food ?? 20) > hungerBefore || (bot.foodSaturation ?? 0) > saturationBefore) { delete this.state.mealCutAt; return true; }
           return false;
         }
@@ -1402,7 +1407,19 @@ class Survival {
         : `Eat the golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds. Eight gold ingots and an apple to make another.`,
       run: async () => {
         this.report(goal, save, { action: 'eat', item: apple.name, food: bot.food, health: bot.health, stance: true });
-        try { await bot.equip(apple, 'hand'); await bot.consume(); return true; }
+        // Eaten only when one is gone: the equip's own held-item change came
+        // after the eating began and ended it at once (mineflayer finishes an
+        // eat on any held-item change), and mid-244-n "ate" its golden apple
+        // every half second for four seconds, none eaten, zombies hitting it
+        // from 9.6 to none (2026-09-27). The hand settles before the eat.
+        const before = countOf(bot, apple.name);
+        try {
+          await bot.equip(apple, 'hand');
+          for (let n = 0; n < 10 && bot.heldItem?.name !== apple.name; n++) { task.check(); await sleep(50); }
+          await sleep(100);
+          await bot.consume();
+          return countOf(bot, apple.name) < before;
+        }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
       } };
     // Where a run could go, said before it is chosen: with three or more

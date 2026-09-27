@@ -3402,3 +3402,13 @@ test('leaving the mobs be is asked again once one of them stops the work, not ru
   await survival.stanceStep(new Task('t'), {}, () => {}, [{ entity: creeper, distance: 5, visible: true }], false);
   assert.equal(asked, 2, 'within its fuse\'s reach: asked again');
 });
+
+test('a golden apple is eaten only when one is gone: an eat cut short by the hand\'s change is not taken for one', async () => {
+  // mid-244-n "ate" its golden apple every half second for four seconds, none eaten, zombies hitting it to none.
+  const bot = crowdBot({ health: 9, items: [{ name: 'golden_apple', count: 2 }] });
+  Object.assign(bot, { equip: async item => { setTimeout(() => { bot.heldItem = item; }, 60); }, consume: async () => {}, heldItem: null });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const option = survival.stanceOptions(new Task('t'), {}, () => {}, [crowdMob(1, 'zombie', 1.5)], false).eat_golden_apple;
+  assert(option);
+  assert.equal(await option.run(), false, 'nothing eaten: not done');
+});
