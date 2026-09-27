@@ -2934,3 +2934,23 @@ test('in water with a drowned, the stances say so, no pillar, pocket or bunker i
   assert.match(options.get_out_of_water.description, /in water, air 12 of 20.*sinks unless it swims.*The drowned swims faster than the bot in water/);
   assert.match(options.fight.description, /The bot is in water/);
 });
+
+test('on a one-wide ledge with a zombie close, the open sides are walled before anything else: knockback there is the fall', async () => {
+  // mid-230-f held still on a ravine ledge at y -28 with zombies at arm's length and was knocked twenty-three blocks down (2026-09-27).
+  const placed = new Set();
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, health: 10, food: 18,
+    entities: { 3: { id: 3, name: 'zombie', type: 'hostile', position: new Vec3(0.5, 64, 3.5), height: 1.95, isValid: true } }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'cobblestone', count: 32 }, { name: 'iron_sword' }], slots: {} }, world: { raycast: () => null },
+    // A ledge one wide along z at y 63, open air to the bottom on both sides.
+    blockAt: p => { const q = p.floored(); const solid = placed.has(`${q}`) || (q.y === 63 && q.x === 0); return { name: solid ? 'stone' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; },
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, attack() {}, equip: async () => {}, activateItem() {}, deactivateItem() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, place: async (b, t, p) => { placed.add(`${p}`); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('ledge'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'rail_span');
+  for (const x of [1, -1]) {
+    assert(placed.has(`${new Vec3(x, 63, 0)}`), `the floor beside at x ${x}`);
+    assert(placed.has(`${new Vec3(x, 64, 0)}`), `and the wall on it at x ${x}`);
+  }
+  assert.equal(require('../src/terrain').onSpan(bot), false, 'no longer a ledge');
+});

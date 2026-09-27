@@ -663,6 +663,14 @@ class Survival {
       this.report(goal, save, { action: 'hold_on_span', threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health });
       bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.(); lowerShield(bot);
       bot.setControlState?.('sneak', true);
+      // Crouched is no hold against a hit: its knockback throws a player a
+      // block, and off a one-wide ledge that is the fall. mid-230-f, on a
+      // ravine ledge at y -28 with zombies at arm's length, held still,
+      // was hit from ten to seven and knocked twenty-three blocks down
+      // (2026-09-27). With a mob that hits within six, the open sides are
+      // walled first, the floor beside the feet and a block on it: a
+      // player thrown into a wall stays where it is.
+      if (!bot._spanning && close.some(t => t.distance <= 6 && !shooter(t.entity)) && await this.railSpan(task, goal, save)) return;
       // A mob at arm's length is struck crouched and still (combat.js
       // defendNearby on a span); nothing else is done about it here.
       if (await defendNearby(bot, task, goal, save)) return;
@@ -1732,6 +1740,29 @@ class Survival {
 
   // Two blocks straight up, where the head room allows and blocks are
   // carried; true once the feet are clear of what was beneath them.
+  // The open sides of a one-wide ledge walled at the feet, each with the
+  // floor beside it laid first to place against. True when a block went down.
+  async railSpan(task, goal, save) {
+    const bot = this.bot;
+    if (typeof this.actions.place !== 'function') return false;
+    const { dropAt } = require('./terrain');
+    const feet = bot.entity.position.floored();
+    const open = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => dropAt(bot, c));
+    const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 2 * open.length)?.name;
+    if (!open.length || !material) return false;
+    this.report(goal, save, { action: 'rail_span', sides: open.length, health: bot.health });
+    let placed = 0;
+    for (const c of open) {
+      for (const p of [c.offset(0, -1, 0), c]) {
+        if (bot.blockAt(p)?.boundingBox === 'block') continue;
+        task.check();
+        try { await this.actions.place(bot, task, p, material); placed++; }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; break; }
+      }
+    }
+    return placed > 0;
+  }
+
   async pillarFrom(task, goal, save, danger) {
     const bot = this.bot;
     const feet = bot.entity.position.floored();
