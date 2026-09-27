@@ -469,3 +469,22 @@ test('a stand no walk reaches is built up to with the blocks carried, as a playe
   assert(phases.some(s => s.built), 'a high stand reached by building up');
   assert.equal(bot.pathfinder.movements.allow1by1towers, undefined, 'the towering let go after');
 });
+
+test('a source feeding a slot that the bucket cannot scoop is filled with a block instead', async () => {
+  // mid-242-r tried to scoop a source inside its own cast walls round after round until the loop watch ended the trial (2026-09-27).
+  const { Task } = require('../src/skills');
+  // No empty bucket to scoop with (and a scoop that fails is counted the same way, in the code).
+  const { bot, w, actions } = castingBot({ water_bucket: 0, bucket: 0, lava_bucket: 1, cobblestone: 64, flint_and_steel: 1 });
+  const goal = { portalFrame: newFrame('x') };
+  const slot = cast.castOrder(goal.portalFrame)[0];
+  const feeder = slot.offset(0, 1, 1);
+  w.set(slot, 'water'); w.set(feeder, 'water');
+  const base = bot.blockAt;
+  bot.blockAt = p => { const b = base(p); return p.floored().equals(slot) ? { ...b, getProperties: () => ({ level: 1 }) } : b; };
+  let passes = 0;
+  const phases = [];
+  while (passes++ < 3 && w.nameAt(feeder) === 'water') { await cast.castFrame(bot, new Task('cast'), goal, () => phases.push(goal.step?.phase), actions).catch(e => phases.push('ERR ' + e.message)); }
+  if (process.env.DBG) console.log('DBG', phases, w.nameAt(feeder), JSON.stringify(goal.portalFrame.castTemp), `${slot}`, `${feeder}`);
+  assert.notEqual(w.nameAt(feeder), 'water', 'the feeding source is filled');
+  assert(goal.portalFrame.castTemp.some(t => t.x === feeder.x && t.y === feeder.y && t.z === feeder.z), 'and tracked as a temporary block');
+});

@@ -313,8 +313,29 @@ async function castFrame(bot, task, goal, save, actions) {
         if (!sourceWater(bot.blockAt(p)) || !material) {
           // Flowing water drains once nothing feeds it: a source that does
           // (the cast's own left behind, or one beside the frame) is scooped.
-          const feeder = !sourceWater(bot.blockAt(p)) && countOf(bot, 'bucket') ? feedingSources(bot, p)[0] : null;
-          if (feeder) { stepIs(p, 'stop_water', { source: { x: feeder.x, y: feeder.y, z: feeder.z } }); await scoopSource(bot, task, feeder, navigate, err => { frame.castWaterError = err.message; save(); }); return false; }
+          const feeder = !sourceWater(bot.blockAt(p)) ? feedingSources(bot, p)[0] : null;
+          // A feeder the bucket cannot reach (walled in by the cast's own
+          // temporary blocks, no bucket, or a scoop that failed there) is
+          // filled with a block instead, tracked like the others: mid-242-r
+          // tried to scoop a source inside its own walls round after round
+          // until the loop watch ended the trial (note 453).
+          const scoopFailed = feeder && frame.castWaterFailedAt?.key === `${feeder}` && frame.castWaterFailedAt.n >= 1;
+          if (feeder && material && (scoopFailed || !countOf(bot, 'bucket'))) {
+            stepIs(p, 'fill_source', { source: { x: feeder.x, y: feeder.y, z: feeder.z } });
+            try { await place(bot, task, feeder, material); track(feeder, material); delete frame.castWaterFailedAt; save(); }
+            catch (err) { task.check(); if (fatal(err)) throw err; frame.castWaterError = err.message; save(); }
+            return false;
+          }
+          if (feeder && countOf(bot, 'bucket')) {
+            stepIs(p, 'stop_water', { source: { x: feeder.x, y: feeder.y, z: feeder.z } });
+            const had = countOf(bot, 'water_bucket');
+            await scoopSource(bot, task, feeder, navigate, err => { frame.castWaterError = err.message; save(); });
+            if (countOf(bot, 'water_bucket') <= had && sourceWater(bot.blockAt(feeder))) {
+              const prev = frame.castWaterFailedAt?.key === `${feeder}` ? frame.castWaterFailedAt.n : 0;
+              frame.castWaterFailedAt = { key: `${feeder}`, n: prev + 1 }; save();
+            }
+            return false;
+          }
           stepIs(p, 'drain'); await sleep(500); return false;
         }
         stepIs(p, 'displace_water'); await place(bot, task, p, material); track(p, material); save();
