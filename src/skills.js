@@ -347,6 +347,27 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
   };
   bot.on?.('forcedMove', corrected);
   bot.on?.('path_update', observedRoute);
+  // Crouched along a deadly edge in the Nether, as a player walks a ridge
+  // over the lava: a crouching body cannot step off an edge. Not before a
+  // step down the path means to take. mid-229-h walked a one-wide netherrack
+  // ridge five blocks over a lava lake upright, slid off it with nothing
+  // pushing, and burned from twenty to none (2026-09-27).
+  let edgeCrouch = false;
+  const crouchOnEdge = () => {
+    try {
+      if (!/nether/.test(String(bot.game?.dimension || '')) || !bot.entity?.onGround) return;
+      const feet = bot.entity.position.floored();
+      const drop = require('./terrain').dropNear(bot, feet, 1);
+      const deadly = !!drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2);
+      const next = latestRoute?.path?.find(n => Math.hypot(n.x - feet.x - 0.5, n.z - feet.z - 0.5) > 0.4);
+      const down = next && next.y < feet.y;
+      const want = deadly && !down;
+      const held = !!bot.controlState?.sneak;
+      if (want && !held) { bot.setControlState?.('sneak', true); edgeCrouch = true; }
+      else if (!want && edgeCrouch && held) { bot.setControlState?.('sneak', false); edgeCrouch = false; }
+    } catch (_) { /* no world here */ }
+  };
+  bot.on?.('physicsTick', crouchOnEdge);
   const watchdog = new Promise((resolve, reject) => {
     const started = Date.now();
     let lastProgress = started;
@@ -463,6 +484,8 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
     clearInterval(timer);
     bot.removeListener?.('forcedMove', corrected);
     bot.removeListener?.('path_update', observedRoute);
+    bot.removeListener?.('physicsTick', crouchOnEdge);
+    if (edgeCrouch) bot.setControlState?.('sneak', false);
   }
 }
 

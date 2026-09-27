@@ -661,3 +661,27 @@ test('a staircase digs a snow block without a shovel: the tool is for the drop, 
   const choices = stairOptions(bot, {}, new Vec3(20, 80, 0));
   assert(choices.some(c => c.destination.x === 1 && c.destination.y === 65), `up onto the stone through the snow: ${JSON.stringify(choices.blocked)}`);
 });
+
+test('walking a one-wide ridge over lava in the Nether, the bot crouches; before a step down it does not', async () => {
+  // mid-229-h walked a netherrack ridge five blocks over a lava lake upright, slid off, and burned.
+  const { EventEmitter } = require('node:events');
+  const { Vec3 } = require('vec3');
+  const { navigate } = require('../src/skills');
+  const { Task } = require('../src/skills');
+  const controls = {};
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether' }, health: 20, oxygenLevel: 20, entities: {},
+    entity: { position: new Vec3(0.5, 36, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, controlState: controls,
+    setControlState: (k, v) => { controls[k] = v; }, clearControlStates() {}, stopDigging() {},
+    blockAt: p => { const q = p.floored(); const solid = q.y === 35 && q.x === 0; return { name: solid ? 'netherrack' : q.y <= 30 ? 'lava' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; },
+    pathfinder: { movements: {}, setGoal() {}, isMoving: () => true, goal: null, goto: () => new Promise(r => setTimeout(r, 300)) } });
+  const { goals } = require('mineflayer-pathfinder');
+  const walking = navigate(bot, new Task('ridge'), new goals.GoalBlock(0, 36, 10), { timeoutMs: 400, stallMs: 300 }).catch(e => { bot._err = e; });
+  for (let i = 0; i < 20 && !bot.listenerCount('physicsTick'); i++) await new Promise(r => setTimeout(r, 5));
+  bot.emit('path_update', { status: 'success', path: [{ x: 0.5, y: 36, z: 1.5 }, { x: 0.5, y: 36, z: 2.5 }] });
+  bot.emit('physicsTick');
+  assert.equal(controls.sneak, true, `crouched on the ridge ${bot._err?.stack}`);
+  bot.emit('path_update', { status: 'success', path: [{ x: 0.5, y: 34, z: 1.5 }] });
+  bot.emit('physicsTick');
+  assert.equal(controls.sneak, false, 'not before a step down');
+  await walking;
+});
