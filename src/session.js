@@ -108,6 +108,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // Mineflayer injects its own chat plugin after createBot, which would
   // overwrite a wrapper installed now; the filter goes on once chat exists.
   bot.once('spawn', () => quietRepeats(bot));
+  // A new build is taken at a quiet moment (quiet-restart.js).
+  if (!process.env.JEV_NO_QUIET_RESTART) bot.once('spawn', () => require('./quiet-restart').watchRestartRequest(bot, path.join(stateDirectory, 'restart-requested'), { startedAt: connectedAt }));
   const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');
   const commandLog = path.join(stateDirectory, `${identity}-commands.jsonl`);
   bot._client.on('declare_commands', tree => {
