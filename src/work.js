@@ -3401,7 +3401,11 @@ function sideTrips(bot, goal, client) {
   // user's call (2026-09-26), after the scoreboard put nights at over a
   // third of the time before the Nether.
   const hb = require('./home-base'), home = hb.homeOf(bot, goal);
-  if (home?.bed?.claimedAt && !hb.bedCarried(bot) && !home.bed.carriedAt && /overworld/.test(String(bot.game?.dimension || ''))) {
+  // Only a bed that stands there, or one out of sight to say otherwise:
+  // mid-244-b was offered its base's bed with none there, chose it, and
+  // found nothing five times over (2026-09-26).
+  const standing = home?.bed ? hb.bedStatus(bot, home) : null;
+  if (home?.bed?.claimedAt && standing && (standing.placed || !standing.loaded) && !hb.bedCarried(bot) && !home.bed.carriedAt && /overworld/.test(String(bot.game?.dimension || ''))) {
     const foot = hb.layout(home).bed.foot, far = Math.round(new Vec3(foot.x, foot.y, foot.z).distanceTo(bot.entity.position));
     trips.take_home_bed = { description: `Take the base's bed along: walk ${far} blocks to it, pick it up and carry it. Then any night passes in seconds wherever it comes: put down in a nook or on open ground, slept in, picked back up. Sleep is refused with a monster within about eight blocks of the bed. The spawn point is wherever the bot last slept: a death sends it there, not to the base, and a death drops the bed with everything else.${tripTime(bot, far)}`,
       says: 'I\'ll take my bed along', walkBlocks: far,

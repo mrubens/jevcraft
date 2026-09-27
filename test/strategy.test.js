@@ -327,3 +327,13 @@ test('a step that may wait, back on the ladder after its time ran out, has the N
   assert(options.nether_first, 'the Nether first beside it');
   assert.match(options.nether_first.description, /Leave diamond sword for later and go for the Nether now/);
 });
+
+test('taking the base bed along is not offered when no bed stands there', () => {
+  // mid-244-b: offered with none there, chosen, and nothing found five times.
+  const { sideTrips } = require('../src/work');
+  const { establishedHome } = require('./fixtures/home-world');
+  return establishedHome().then(w => {
+    w.set(w.layout.bed.foot, 'air'); w.set(w.layout.bed.head, 'air');
+    assert.equal(sideTrips(w.bot, w.goal, null).take_home_bed, undefined);
+  });
+});
