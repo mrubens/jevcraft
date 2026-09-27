@@ -107,9 +107,12 @@ const blocksCarried = bot => (bot.inventory?.items?.() || []).filter(i => MATERI
 // that can see it, the bot stops rather than stand in the open on one
 // block, and the approach finds another way.
 const SHOOTER_RANGE = 24;
+// Each shooter within its own reach: a ghast's is forty, and mid-230-j laid
+// a span toward its portal with one in sight thirty-nine blocks off, was hit
+// by its fireball and thrown sixteen blocks down (2026-09-27).
 function underFire(bot) {
-  const { threats } = require('./danger'), { shooter } = require('./mob-policy');
-  return threats(bot, SHOOTER_RANGE).find(t => t.visible && shooter(t.entity));
+  const { threats } = require('./danger'), { shooter } = require('./mob-policy'), { RANGE } = require('./combat-estimate');
+  return threats(bot, 64).find(t => t.visible && shooter(t.entity) && t.distance <= Math.max(SHOOTER_RANGE, RANGE[t.entity.name] || 0));
 }
 // `maxSteps` cells at most: a crossing laid a stretch at a time, as far as
 // its survey saw.

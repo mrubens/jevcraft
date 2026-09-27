@@ -3268,3 +3268,14 @@ test('laying a span with a mob close, its sides are walled but not the way on', 
   assert(placed.has(`${new Vec3(0, 64, 1)}`) && placed.has(`${new Vec3(0, 64, -1)}`), 'both sides walled');
   assert(!placed.has(`${new Vec3(1, 64, 0)}`), 'the way on left open');
 });
+
+test('a ghast in sight within its own reach puts a span under fire, not only a shooter within twenty-four', () => {
+  // mid-230-j laid a span with a ghast in sight thirty-nine blocks off and was thrown sixteen blocks down.
+  const { underFire } = require('../src/bridging');
+  const ghast = { id: 4, name: 'ghast', type: 'hostile', position: new Vec3(39.5, 70, 0.5), height: 4, isValid: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5), height: 1.8 }, entities: { 4: ghast }, game: { dimension: 'the_nether' }, world: { raycast: () => null },
+    blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) };
+  assert.equal(underFire(bot)?.entity?.name, 'ghast');
+  ghast.position = new Vec3(60.5, 70, 0.5);
+  assert.equal(underFire(bot), undefined, 'past its forty');
+});
