@@ -224,6 +224,20 @@ test('a mob with a spear is reckoned at its thrust, not its hand', () => {
   assert.match(spear.note, /spear/);
 });
 
+test('a spear holder jabs from its reach as often while struck, and puts the bot back to close again (mid-244-z)', () => {
+  // mid-244-z was told 2.5 seconds and 7.2 damage from 15.4 health; jabbed from 2.5 to 3 blocks about once a second, it went to 2.7 in six.
+  const { fightEstimate } = require('../src/combat-estimate');
+  const armour = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+  const at = held => fightEstimate({ threats: [{ name: 'zombie', distance: 2.1, visible: true, ...(held ? { held } : {}) }], armour, weapon: 'iron_sword', health: 15.4 });
+  const bare = at(null), spear = at('iron_spear');
+  assert.equal(spear.mobs[0].reach, 3, 'its reach said');
+  assert.equal(spear.mobs[0].jab, 2.5, 'five before armour, 2.5 through iron');
+  assert.match(spear.mobs[0].note, /from about 3 blocks.*a block back/);
+  assert.equal(spear.fightHere.seconds, 2 * bare.fightHere.seconds, 'closed on again after each jab');
+  assert(spear.fightHere.damageTaken >= 12, `a jab a second for five seconds: ${spear.fightHere.damageTaken}`);
+  assert(spear.fightHere.damageTaken > bare.fightHere.damageTaken * 5, `${spear.fightHere.damageTaken} against ${bare.fightHere.damageTaken}`);
+});
+
 test('biters already at arm\'s length are counted however few open cells there are round the bot', () => {
   // mid-235-f in a shaft with three zombies in it was told the fight cost nothing, took it at 0.91 from 5.9 health and was killed (2026-09-27).
   const zombies = [0.4, 1.8, 2.5].map(distance => ({ name: 'zombie', distance, visible: true }));

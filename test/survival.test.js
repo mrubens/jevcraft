@@ -3497,6 +3497,25 @@ test('two up is not out of a spear\'s reach: the pillar says so and counts its t
   assert(withSpear.expects.damage > without.expects.damage, `${withSpear.expects.damage} against ${without.expects.damage}`);
 });
 
+test('the fight says a spear\'s reach and knock, and how many jabs off the drop is (mid-244-z)', () => {
+  // mid-244-z fought a spear zombie told only its cost; jabbed a block back each second, the last jab put it over a fifteen-block drop.
+  const zombie = { id: 1, name: 'zombie', type: 'hostile', position: new Vec3(-1.5, 74, 0.5), height: 1.95, isValid: true, heldItem: { name: 'iron_spear' } };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: { 1: zombie }, health: 15.4, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 6000 }, entity: { position: new Vec3(0.5, 74, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }], emptySlotCount: () => 10, slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' } } },
+    blockAt: p => ({ position: p, name: p.y < (p.x >= 3 ? 58 : 74) ? 'stone' : 'air', boundingBox: p.y < (p.x >= 3 ? 58 : 74) ? 'block' : 'empty' }),
+    world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {} });
+  const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [] } });
+  const fight = survival.stanceOptions(new Task('t'), {}, () => {}, [{ entity: zombie, distance: 2, visible: true }], false).fight;
+  assert.match(fight.description, /The zombie with a spear jabs from about 3 blocks, as far as a sword reaches and past an arm, about once a second for about 2\.5 each after armour/);
+  assert.match(fight.description, /each jab knocks the bot about a block back out of its swing/);
+  assert.match(fight.description, /A drop of 16 blocks is 3 blocks off.*The drop 3 blocks off is 3 jabs away/);
+  delete zombie.heldItem;
+  const plain = survival.stanceOptions(new Task('t'), {}, () => {}, [{ entity: zombie, distance: 2, visible: true }], false).fight;
+  assert.doesNotMatch(plain.description, /spear/);
+  assert(fight.expects.damage > plain.expects.damage * 5, `${fight.expects.damage} against ${plain.expects.damage}`);
+});
+
 test('leaving the mobs be is asked again once one of them stops the work, not run again every tick', async () => {
   // mid-227-k: a creeper left be came within its fuse's reach; the held stance ran a hundred times a second until it went off.
   const creeper = { id: 3, name: 'creeper', type: 'hostile', position: new Vec3(12.5, 64, 0.5), height: 1.7, isValid: true };
