@@ -10,7 +10,7 @@
 // fact said to Jev, and topping any of them up is Jev's choice (work.js
 // crossingKitReady, the crossing_kit question).
 const { countOf, pickaxeDurability, pickaxeTier } = require('./skills');
-const { foodSupply } = require('./foraging');
+const { foodSupply, lastResortSupply } = require('./foraging');
 const { safeFood } = require('./vitals');
 const { NETHER_FOOD_POINTS } = require('./home-stash');
 
@@ -29,22 +29,40 @@ const EXPEDITION_LOGS = 8;
 const logsCarried = bot => bot.inventory.items().filter(i => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0);
 const words = s => String(s).replaceAll('_', ' ');
 
+// What the health is in Nether terms, through what is worn: a blaze's
+// fireball (combat-estimate MOBS, afterArmour) and the five seconds of burn
+// each that lands sets, about one a second that armour does not stop (note
+// 512), and a wither skeleton's blade. "Health 9" was a number; the four
+// low-health deaths of 2026-09-27 went on told no more (note 515).
+function netherHitSays(bot) {
+  const { MOBS, afterArmour, armourOf } = require('./combat-estimate');
+  const r = n => Math.round(n * 10) / 10;
+  const names = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+  const worn = armourOf(names);
+  const hp = r(bot.health ?? 20), hunger = bot.food ?? 20;
+  const hit = r(afterArmour(MOBS.blaze.hit, worn)), burn = (MOBS.blaze.burns || 0) * 5, blade = r(afterArmour(MOBS.wither_skeleton.hit, worn));
+  const fireballs = Math.max(1, Math.ceil(hp / (hit + burn)));
+  const back = hunger >= 18 ? 'coming back about one each four seconds at hunger ' + hunger : `not coming back at hunger ${hunger}, under eighteen`;
+  return `One blaze fireball through what is worn (${names.length ? names.map(words).join(', ') : 'no armour'}): about ${hit} hit and ${burn} burn over the next five seconds; a wither skeleton's blade about ${blade}, and wither on top. Health ${hp}, ${back}: about ${fireballs} fireball${fireballs === 1 ? '' : 's'} end${fireballs === 1 ? 's' : ''} it.`;
+}
+
 // The kit, item by item: { key, short, carried, wants, says }. Food and
 // health only where monsters are; all of it only in Survival.
 function kitItems(bot) {
   if (bot.game?.gameMode !== 'survival') return [];
   const items = [];
   if (bot.game?.difficulty !== 'peaceful') {
-    const food = foodSupply(bot);
+    const food = foodSupply(bot), last = lastResortSupply(bot);
     const meals = bot.inventory.items().filter(i => safeFood(bot, i)).map(i => `${i.count} ${words(i.name)}`).join(', ');
+    const lastSays = last.points ? ` Beside it, ${last.points} points in the last resort, not counted: ${last.says}.` : '';
     items.push({ key: 'food', short: food < NETHER_FOOD_POINTS, carried: food, wants: NETHER_FOOD_POINTS,
-      says: `Food: ${food} food points carried (${meals || 'nothing to eat'}); the code would take ${NETHER_FOOD_POINTS}, about ${Math.ceil(NETHER_FOOD_POINTS / 8)} cooked steaks' worth (a steak or a cooked porkchop is eight, bread five). Health comes back only while hunger stays at eighteen or more, and a fortress trip is fighting and running; in the Nether, hoglins are the meat and little else is food.` });
+      says: `Food: ${food} food points carried (${meals || 'nothing to eat'}); the code would take ${NETHER_FOOD_POINTS}, about ${Math.ceil(NETHER_FOOD_POINTS / 8)} cooked steaks' worth (a steak or a cooked porkchop is eight, bread five). Health comes back only while hunger stays at eighteen or more, and a fortress trip is fighting and running; in the Nether, hoglins are the meat and little else is food.${lastSays}` });
     const health = Math.round(bot.health ?? 20), hunger = bot.food ?? 20;
     const back = health >= NETHER_HEALTH ? '' : hunger >= 18
       ? ` At hunger ${hunger} it comes back about a point every four seconds: about ${(NETHER_HEALTH - health) * 4} seconds to ${NETHER_HEALTH}.`
       : ` At hunger ${hunger} none comes back until the bot has eaten to eighteen.`;
     items.push({ key: 'health', short: health < NETHER_HEALTH, carried: health, wants: NETHER_HEALTH,
-      says: `Health: ${health} of 20; the code would step through at ${NETHER_HEALTH} or more. The far side of a portal can be a fight at once: a blaze's fireball is about five, a wither skeleton's blade about eight, before armour.${back}` });
+      says: `Health: ${health} of 20; the code would step through at ${NETHER_HEALTH} or more. The far side of a portal can be a fight at once. ${netherHitSays(bot)}${back}` });
   }
   const blocks = netherBlocks(bot);
   items.push({ key: 'blocks', short: blocks < NETHER_BLOCKS, carried: blocks, wants: NETHER_BLOCKS,
@@ -102,4 +120,4 @@ function kitSummary(bot, goal) {
     : ' The kit for the crossing (food, blocks, a pickaxe, gold, wood) is carried.';
 }
 
-module.exports = { kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
+module.exports = { netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };

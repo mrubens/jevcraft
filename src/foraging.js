@@ -31,6 +31,20 @@ function foodSupply(bot) {
   return bot.inventory.items().filter(i => safeFood(bot, i))
     .reduce((sum, i) => sum + i.count * bot.registry.foodsByName[i.name].foodPoints, 0);
 }
+// The last-resort food beside it, counted apart: the reserve the stock and
+// the crossing are measured by stays safe food, and rotten flesh is not
+// stocked for a trip; but it is food, and a bot carrying five was told "0
+// food points carried" at four health (note 515). Its points, and what it
+// may cost, said together.
+function lastResortSupply(bot) {
+  const { lastResortFoods, sideEffectSays } = require('./vitals');
+  const items = bot.inventory.items().filter(i => lastResortFoods.has(i.name) && bot.registry.foodsByName?.[i.name]);
+  const counts = {};
+  for (const i of items) counts[i.name] = (counts[i.name] || 0) + i.count;
+  const points = Object.entries(counts).reduce((sum, [name, n]) => sum + n * bot.registry.foodsByName[name].foodPoints, 0);
+  const says = Object.entries(counts).map(([name, n]) => `${n} ${name === 'chicken' ? 'raw chicken' : name.replaceAll('_', ' ')}, ${bot.registry.foodsByName[name].foodPoints} hunger each; ${sideEffectSays(name)}`).join('; ');
+  return { points, says };
+}
 
 async function candidates(bot, task, state) {
   const surface = surfaceMovement(bot);
@@ -289,4 +303,4 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   return choices;
 }
 
-module.exports = { foodSupply, forageChoices, hunt };
+module.exports = { foodSupply, lastResortSupply, forageChoices, hunt };

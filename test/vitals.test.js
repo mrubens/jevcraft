@@ -590,3 +590,25 @@ test('straight up is not dug where the lid takes longer than the breath and heal
   await assert.rejects(surfaceForAir(bot, new Task('test', 'surface')), /breathable air/);
   assert.deepEqual(dug, [], 'no hand against the stone');
 });
+
+test('rotten flesh is eaten with no rule of ours on health, and offered with its Hunger said: on the claim and as a stance (note 515)', async () => {
+  // The gate ate it only hurt and under eighteen hunger; several of the day's low-health deaths carried it.
+  const { maintainVitals, claim } = require('../src/vitals');
+  const { claimSays } = require('../src/arbiter');
+  const { mealHelps, eatSays } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  let ate = 0;
+  const bot = { registry, health: 20, food: 16, oxygenLevel: 20, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, game: { gameMode: 'survival', dimension: 'overworld' },
+    inventory: { items: () => [{ name: 'rotten_flesh', count: 3 }] }, heldItem: { name: 'rotten_flesh' },
+    equip: async () => {}, consume: async () => { ate++; bot.food += 4; }, deactivateItem() {}, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) };
+  const c = claim(bot);
+  assert.equal(c?.action, 'eat');
+  assert.equal(c.facts.item, 'rotten_flesh');
+  assert.match(claimSays(c), /Eat rotten flesh now.*Hunger 16 to 20\. It is the last resort: each eaten has a 80% chance of Hunger for 30 seconds/);
+  assert.equal(await maintainVitals(bot, new Task('full health, hunger sixteen')), true);
+  assert.equal(ate, 1);
+  bot.health = 9; bot.food = 15;
+  const meal = mealHelps(bot);
+  assert.equal(meal?.name, 'rotten_flesh', 'with nothing safe, the last resort is a stance');
+  assert.match(eatSays(bot, meal), /hunger 15 to 19, then health comes back.*It is the last resort: each eaten has a 80% chance of Hunger/);
+});

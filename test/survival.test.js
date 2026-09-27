@@ -4292,3 +4292,20 @@ test('a fight that just failed stays on offer with a skeleton at arm\'s length, 
   await survival.stanceStep(new Task('t'), {}, () => {}, [skeleton], false).catch(() => {});
   assert(q?.tree?.fight, Object.keys(q?.tree || {}).join(','));
 });
+
+test('on the surface by day, hurt, with no food and no healing: waiting sealed for daylight is offered, priced in minutes and about no hunger (note 515)', async () => {
+  // mid-231-q and mid-211-x went on hunting and working hurt under eighteen hunger with nothing safe to eat; sealing in was offered only underground at night.
+  const { bot } = nookFixture({ time: 6000, items: [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], open: p => p.y >= 30 });
+  bot.health = 6; bot.food = 14; bot.pathfinder = { movements: {}, getPathTo: () => ({ status: 'noPath', path: [] }), setGoal() {} };
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } } });
+  let tree = null, state = null;
+  survival.decide = async (task, goal, save, q) => { if (q.id === 'survival_priority') { tree = tree || q.tree; state = state || q.state; } return { path: ['continue_request'], action: q.tree.continue_request || Object.values(q.tree)[0], stale: true }; };
+  await survival.step(new Task('hurt'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert(tree?.wait_for_day_sealed, Object.keys(tree || {}).join(','));
+  assert.equal(tree.secure_shelter, undefined, 'by day no night shelter is on offer');
+  assert.match(tree.wait_for_day_sealed.description, /wait in it for daylight, about 14 real minutes off: it is day now, so the wait runs through dusk and the whole night.*6 health, which does not come back meanwhile \(hunger 14, below eighteen\), and standing still in it spends no hunger/);
+  // Health that comes back is no such wait.
+  bot.food = 18; tree = null;
+  await survival.step(new Task('fed'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert.equal(tree?.wait_for_day_sealed, undefined);
+});

@@ -522,6 +522,21 @@ const lastResortFoods = new Set(['rotten_flesh', 'chicken']);
 function lastResortFood(bot) {
   return bot.inventory.items().find(item => lastResortFoods.has(item.name) && bot.registry.foodsByName?.[item.name]);
 }
+// The game's side effects of these foods, which minecraft-data's foods do
+// not carry (it has the hunger and saturation: rotten flesh 4 and 0.8, raw
+// chicken 2 and 1.2): rotten flesh gives Hunger for thirty seconds four
+// times in five, raw chicken three times in ten. Hunger I adds 0.005
+// exhaustion a tick, three over the thirty seconds, and four exhaustion is
+// one point off saturation first, then hunger: about three quarters of a
+// point, against the four the flesh gives. Said wherever the food is,
+// since four of the day's low-health deaths carried rotten flesh told only
+// "no food" (note 515: mid-231-o, mid-207-l, mid-211-x, mid-231-q).
+const SIDE_EFFECTS = { rotten_flesh: { chance: 0.8, effect: 'hunger', seconds: 30 }, chicken: { chance: 0.3, effect: 'hunger', seconds: 30 } };
+const HUNGER_EFFECT_POINTS = 0.005 * 20 * 30 / 4;
+function sideEffectSays(name) {
+  const e = SIDE_EFFECTS[name];
+  return e ? `each eaten has a ${Math.round(e.chance * 100)}% chance of Hunger for ${e.seconds} seconds, which spends about ${HUNGER_EFFECT_POINTS} of a hunger point (saturation first)` : null;
+}
 
 const CLOSE = 5;
 // Close and able to get at the bot: through a wall it is not. Sealed in a
@@ -663,9 +678,11 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   // Down to six hunger, where the bot can no longer sprint, it still eats.
   const held = require('./danger').stanceHeld(bot);
   if (bot.food > 6 && held && held.choice !== 'keep_working' && held.choice !== 'eat') return false;
-  // Last resort only when it unlocks regeneration or holds off starvation;
-  // a bot at full health does not eat rotten flesh for the fun of it.
-  const food = chooseFood(bot) || ((bot.food < 18 && bot.health < 20) || bot.food <= 6 ? lastResortFood(bot) : null);
+  // The last resort after the safe food, with no rule of its own: its four
+  // points are worth more than the three quarters its Hunger may spend, and
+  // the gate that ate it only hurt and under eighteen was a threshold of
+  // ours, not the game's (note 515). The claim says what it is and does.
+  const food = chooseFood(bot) || lastResortFood(bot);
   if (!food) return false; // The higher-level survival planner must forage.
   onAction({ action: 'eat', item: food.name, food: bot.food, health: bot.health });
   require('./turn').takeTurn(bot, 'vitals', 'eat', food.name);
@@ -702,20 +719,21 @@ function claim(bot) {
   // who answers it is Jev's (arbiter.js ALERTS); the body's physics is a reflex.
   if (reflex && require('./arbiter').ALERTS.has(reflex.key)) return { layer: 'vitals', action: reflex.action, urgency: 'pressing', alert: reflex.key, facts: reflex.facts };
   if (reflex) return { layer: 'vitals', action: reflex.action, urgency: 'reflex', reflex: reflex.key, facts: reflex.facts, preemptible: false };
-  const facts = { health: bot.health, food: bot.food, air: bot.oxygenLevel };
+  const facts = { health: bot.health, food: bot.food, air: bot.oxygenLevel, ...(bot.health < 20 ? { healing: bot.food >= 18 } : {}) };
   if (inPowderSnow(bot) || bot._freezingAt > Date.now() - 3000) return { layer: 'vitals', action: 'out_of_powder_snow', urgency: 'pressing', facts: { ...facts, freezing: true } };
   if (headSubmerged(bot) && !(bot._surfaceFailedAt > Date.now() - 60000)) return { layer: 'vitals', action: 'surface', urgency: 'pressing', facts: { ...facts, headUnderwater: true } };
   if (!(bot.food <= 16 || (bot.health < 20 && bot.food < 18) || (bot.health <= 12 && bot.food < 20))) return null;
   if (bot.food > 2 && closeHostile(bot)) return null;
   const held = require('./danger').stanceHeld(bot);
   if (bot.food > 6 && held && held.choice !== 'keep_working' && held.choice !== 'eat') return null;
-  const food = chooseFood(bot) || ((bot.food < 18 && bot.health < 20) || bot.food <= 6 ? lastResortFood(bot) : null);
+  const food = chooseFood(bot) || lastResortFood(bot);
   if (!food) return null;
-  return { layer: 'vitals', action: 'eat', urgency: bot.food <= 6 ? 'pressing' : 'routine', facts: { ...facts, item: food.name }, cost: { seconds: EAT_MEAL_SECONDS } };
+  const effect = sideEffectSays(food.name);
+  return { layer: 'vitals', action: 'eat', urgency: bot.food <= 6 ? 'pressing' : 'routine', facts: { ...facts, item: food.name, foodPoints: bot.registry.foodsByName?.[food.name]?.foodPoints, ...(effect ? { effect } : {}) }, cost: { seconds: EAT_MEAL_SECONDS } };
 }
 
 // The actions this layer reports, wherever it is run from (survival.js
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'out_of_powder_snow', 'surface']);
 
-module.exports = { claim, ACTIONS, suffocatingBlock, douse, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S };
+module.exports = { claim, ACTIONS, suffocatingBlock, douse, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S };

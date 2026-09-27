@@ -132,6 +132,7 @@ const DEATHS = 'recentDeaths are the bot\'s deaths of the last two hours: how, w
 // compare with.
 const CLOCK = 'runClock is the run so far: minutes played toward the goal, when each milestone was reached, what it is on now, and where the minutes went, all told and in the last half hour. For pace, a practiced player from a settled start with iron reaches the Nether within the first hour and has the blaze rods and ender pearls within the next two; minutes already spent on a way are spent, and what counts is the minutes each option still costs.';
 const SCULK = 'sculk says the sculk sensors and shriekers near, what hears the bot and what a shrieker calls.';
+const HEALING = 'healing is the bot\'s health and hunger, whether health comes back, the food carried by kind (the last resort with what it may cost), the nearest food known, the time to daylight, and what standing still costs.';
 const TRAIL = 'recentPositions is where the bot has been over the last few minutes, fifteen seconds apart, and what it was doing: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 function withRealTime(spec, state = {}) {
   if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
@@ -139,7 +140,7 @@ function withRealTime(spec, state = {}) {
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = state?.recentPositions ? ` ${TRAIL}` : '';
   const deaths = state?.recentDeaths ? ` ${DEATHS}` : '';
-  const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '');
+  const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '');
   return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${clock}${risk}${trail}${deaths}` };
 }
 
@@ -219,6 +220,15 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.runClock) {
     const clock = require('../game-progress').runClock(goal);
     if (clock) state = { ...state, runClock: clock };
+  }
+  // Whether health comes back, with every such question, and what could
+  // bring it back: four deaths of 2026-09-27 went on working or hunting
+  // hurt, under eighteen hunger with nothing safe to eat, told of it in a
+  // few options of a few questions (note 515: mid-231-o, mid-207-l,
+  // mid-211-x, mid-231-q).
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.healing) {
+    let healing = null; try { healing = require('../healing').healingSays(bot, goal); } catch (_) { /* no body */ }
+    if (healing) state = { ...state, healing };
   }
   // Sculk near, with every such question: mid-230-n worked beside a
   // shrieker it was never told of, and the warden it called killed it.

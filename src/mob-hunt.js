@@ -1235,13 +1235,16 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   const counted = {};
   for (const t of atBricks) counted[t.entity.name] = (counted[t.entity.name] || 0) + 1;
   const waiting = Object.entries(counted).map(([n, c]) => `${c} ${n.replaceAll('_', ' ')}${c === 1 ? '' : 's'}`).join(', ');
-  if (waiting) for (const option of Object.values(options)) option.description += ` Within sixteen blocks of the bricks, seen or not: ${waiting}; a way that arrives among them arrives in their fight.`;
+  // And the health in Nether terms, through what is worn: a way that
+  // arrives among blazes arrives at it (note 515).
+  let hits = null; try { hits = require('./crossing-kit').netherHitSays(bot); } catch (_) { /* no body */ }
+  if (waiting) for (const [key, option] of Object.entries(options)) option.description += ` Within sixteen blocks of the bricks, seen or not: ${waiting}; a way that arrives among them arrives in their fight.${hits && key !== 'keep_searching' ? ` ${hits}` : ''}`;
   // What each way came to on this approach, said with it.
   for (const [key, option] of Object.entries(options)) {
     const tries = (state.approach?.failed || []).filter(f => f.choice === key);
     if (tries.length) option.description += ` Tried on this approach ${tries.length === 1 ? 'once' : `${tries.length} times`} and ended no nearer: ${tries.at(-1).why}.`;
   }
-  return { options, facts: { fortress: { distance: flat, height: dy }, health: bot.health, food: bot.food, blocksCarried: blocksCarried(bot),
+  return { options, facts: { fortress: { distance: flat, height: dy }, health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
     threatsInView: inView.map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(waiting ? { atTheBricks: waiting } : {}),
     ...(state.approach?.failed?.length ? { failed: state.approach.failed.map(f => `${f.choice.replaceAll('_', ' ')}: ${f.why}`) } : {}) } };

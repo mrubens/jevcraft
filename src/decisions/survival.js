@@ -39,6 +39,7 @@ define({
     { pattern: 'hunt_[a-z_]+', label: 'go out and hunt this kind of mob for its drops', when: 'at night in the Overworld where staying up is on offer, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back', level: 'root', dynamic: true },
     { key: 'stash_valuables', label: 'put the valuables in the stash chest first', when: 'at night where staying up is on offer, a stash chest within 128 blocks and valuables carried', level: 'root' },
     { key: 'cache_valuables', label: 'put a chest down here for the valuables', when: 'at night where staying up is on offer, home\'s chest out of reach, valuables carried, and a chest or the wood for one', level: 'root' },
+    { key: 'wait_for_day_sealed', label: 'seal a pocket and wait in it for daylight while health does not come back', when: 'in the Overworld, health under twenty and hunger under eighteen, no shelter already on offer and one possible here; by day or night, on the surface or below, priced in real minutes to dawn and about no hunger standing still; held until dawn or until hunger reaches eighteen', level: 'root' },
     { key: 'rest_to_heal', label: 'stay still where it is while health comes back', when: 'health under twenty and hunger eighteen or more, with the seconds to twenty and the mobs about said; held half a minute', level: 'root' },
     ...FOOD_OPTIONS,
   ],

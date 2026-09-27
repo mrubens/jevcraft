@@ -201,3 +201,14 @@ test('the food search says the climb out, the health and whether it comes back, 
   assert.match(d.climbFirst, /up to the surface first/);
   assert.match(d.hostilesWithin24, /1 zombie/);
 });
+
+test('rotten flesh is counted beside the reserve, its points and its Hunger said; the reserve stays safe food (note 515)', () => {
+  // Several of the day's low-health deaths carried rotten flesh and were told "0 food points carried".
+  const { lastResortSupply } = require('../src/foraging');
+  const bot = fixture([{ name: 'rotten_flesh', count: 3 }, { name: 'rotten_flesh', count: 2 }, { name: 'bread', count: 1 }]);
+  assert.equal(foodSupply(bot), 5, 'the reserve is the bread');
+  const last = lastResortSupply(bot);
+  assert.equal(last.points, 20);
+  assert.match(last.says, /^5 rotten flesh, 4 hunger each; each eaten has a 80% chance of Hunger for 30 seconds, which spends about 0\.75 of a hunger point/);
+  assert.equal(lastResortSupply(fixture([{ name: 'bread', count: 2 }])).points, 0);
+});

@@ -206,14 +206,17 @@ function claimSays(c) {
     case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest). The work waits.${hp}${heals}`;
     case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; the stance is asked next. The work waits.`;
     case 'surface': return `Swim up for air: the head is under water, air ${f.air} of 20; at none, drowning takes 2 health a second.${hp}`;
-    case 'eat': return `Eat ${f.item ? String(f.item).replaceAll('_', ' ') : 'food'} now, about ${c.cost?.seconds || 1.6} seconds.${hp} Hunger ${f.food}.`;
+    case 'eat': return `Eat ${f.item ? (f.item === 'chicken' ? 'raw chicken' : String(f.item).replaceAll('_', ' ')) : 'food'} now, about ${c.cost?.seconds || 1.6} seconds.${hp} Hunger ${f.food}${f.foodPoints ? ` to ${Math.min(20, f.food + f.foodPoints)}` : ''}.${heals}${f.effect ? ` It is the last resort: ${f.effect}.` : ''}`;
     case 'leave_lava': return 'Get out of the lava.';
     case 'out_of_fire': return 'Put out the fire on the bot.';
     case 'dig_out_of_block': return 'Dig the head out of the block it is in.';
     case 'swim_up': return `Swim up: air ${f.air} of 20.`;
-    case 'pocket_next': return `In a sealed pocket: whether to stay, leave or do something else there is asked next.${hp}`;
-    case 'secure_shelter': return `Shelter for the night: the way (a room, a pocket here, a shaft, the bed) is asked next.${hp}`;
-    case 'obtain_food': return `Find food: where is asked next. Hunger ${f.food}${f.foodCarried !== undefined ? `, ${f.foodCarried} food points carried` : ''}${f.foodWanted !== undefined ? ` of ${f.foodWanted} wanted` : ''}.${hp}`;
+    case 'pocket_next': return `In a sealed pocket: whether to stay, leave or do something else there is asked next.${hp}${heals}`;
+    case 'secure_shelter': return `Shelter for the night: the way (a room, a pocket here, a shaft, the bed) is asked next.${hp}${heals}`;
+    // Said with the last resort carried and, when health does not come back,
+    // the sealed wait for daylight among the ways asked next (note 515).
+    case 'obtain_food': return `Find food: where is asked next${f.waitSealedMinutes !== undefined ? `, beside waiting sealed in a pocket for daylight, about ${f.waitSealedMinutes} real minutes, standing still and spending no hunger` : ''}. Hunger ${f.food}${f.foodCarried !== undefined ? `, ${f.foodCarried} food points carried` : ''}${f.foodWanted !== undefined ? ` of ${f.foodWanted} wanted` : ''}${f.lastResortCarried ? `, and ${f.lastResortCarried} more in the last resort (rotten flesh or raw chicken, which may bring on Hunger)` : ''}.${hp}${heals}`;
+    case 'wait_for_day_sealed': return `Go on sealing a pocket and waiting in it for daylight, as chosen: about ${f.minutesToDawn} real minutes to dawn, standing still and spending no hunger.${hp}${heals}`;
     // The hunt's claim was said as "hunt: hunt." to mid-235-p-fortress-1,
     // at 5.5 health beside the work (note 509): what it goes for, and why.
     case 'hunt': return `Hunt ${f.entity ? mob({ name: f.entity, distance: f.distance }) : 'the mob in view'}${f.item ? ` for ${plural(f.item)} (${f.have ?? 0} of ${f.want} carried)` : ''}: close on it and fight it; which one, and the fight's cost, is asked next. The work waits.${hp}`;

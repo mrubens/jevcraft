@@ -8,8 +8,8 @@ const { goals } = require('mineflayer-pathfinder');
 const { threats, immediateThreat, checkThreats, hunted, claimed, hostileEntities, nightHunted, stanceHeld, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER } = require('./danger');
 const shelter = require('./shelter');
 const { decide } = require('./decisions');
-const { maintainVitals, chooseFood, checkAir } = require('./vitals');
-const { foodSupply, forageChoices } = require('./foraging');
+const { maintainVitals, chooseFood, lastResortFood, sideEffectSays, checkAir } = require('./vitals');
+const { foodSupply, lastResortSupply, forageChoices } = require('./foraging');
 const { bedCarried, placeOriented, isBed, homeOf, layout, homeChores } = require('./home-base');
 const { kitReady } = require('./mob-policy');
 const { fightEstimate, stanceCost, RANGE } = require('./combat-estimate');
@@ -150,9 +150,12 @@ function openCells(bot, feet = bot.entity.position.floored()) {
 // it, eating in a fight is a second and a half for nothing; offered anyway,
 // its small bill (the mobs over those seconds only) outbid the stances that
 // deal with them (mid-92-e's replay, 2026-09-26).
+// With no safe food, the last resort (rotten flesh, raw chicken), its
+// Hunger said: offered only under a hidden rule, it was never a stance, and
+// four of the day's low-health deaths carried rotten flesh (note 515).
 function mealHelps(bot) {
   if ((bot.food ?? 20) >= 20 || (bot.health ?? 20) >= 20) return null;
-  const food = chooseFood(bot);
+  const food = chooseFood(bot) || lastResortFood(bot);
   if (!food) return null;
   return (bot.food ?? 20) + (bot.registry.foodsByName?.[food.name]?.foodPoints || 0) >= 18 ? food : null;
 }
@@ -171,7 +174,8 @@ function eatSays(bot, food) {
   const back = hunger >= 20 && saturation >= 1.5 && missing
     ? `then health comes back about one each half second while the saturation lasts, about ${Math.min(missing, Math.floor(saturation / 1.5))} in ${Math.round(Math.min(missing, Math.floor(saturation / 1.5)) / 2)} seconds`
     : hunger >= 18 && missing ? 'then health comes back about one each four seconds' : missing ? 'and health does not come back below eighteen hunger' : 'health is full';
-  return `Eat the ${food.name.replaceAll('_', ' ')} now (${countOf(bot, food.name)} carried): about ${EAT_SECONDS} seconds standing still, the hand busy and the shield down, no swing; hunger ${bot.food} to ${hunger}, ${back}.`;
+  const effect = sideEffectSays(food.name);
+  return `Eat the ${food.name === 'chicken' ? 'raw chicken' : food.name.replaceAll('_', ' ')} now (${countOf(bot, food.name)} carried): about ${EAT_SECONDS} seconds standing still, the hand busy and the shield down, no swing; hunger ${bot.food} to ${hunger}, ${back}.${effect ? ` It is the last resort: ${effect}.` : ''}`;
 }
 function firmStep(bot, p) {
   if (!p) return false;
@@ -504,6 +508,16 @@ const { SLEEP_FROM, SLEEP_UNTIL } = DAY;
 const sleepWaiting = holder => isSetAside(holder, 'sleep', 'bed');
 // Real minutes until dawn: what a night waited out costs the run.
 const minutesToDawn = bot => Math.round(((DAY.DAWN - (bot.time?.timeOfDay ?? 0) + 24000) % 24000) / 1200);
+// A sealed wait for daylight, when health does not come back: in the
+// Overworld, hurt, under eighteen hunger. Its price is the minutes to dawn
+// (by day, through dusk and the whole night) and about no hunger, standing
+// still; null when it is no wait of that kind (note 515).
+function sealedWaitSays(bot) {
+  if (bot.game?.dimension !== 'overworld' || bot.game?.difficulty === 'peaceful' || (bot.health ?? 20) >= 20 || (bot.food ?? 20) >= 18) return null;
+  const t = bot.time?.timeOfDay ?? 0, ticks = (DAY.DAWN - t + 24000) % 24000, minutes = Math.round(ticks / 1200);
+  const day = t >= DAY.DAWN || t < DAY.DUSK;
+  return { ticks, minutes, says: `Seal a pocket (the way is asked next) and wait in it for daylight, about ${minutes} real minutes off${day ? `: it is day now, so the wait runs through dusk and the whole night, and daylight is what the bot already has` : ''}. ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and standing still in it spends no hunger: it falls with moving, mining, fighting and healing, so the wait costs minutes, not food. At dawn the mobs in the open burn; eating to eighteen ends the wait, health coming back.` };
+}
 const sleepable = bot => bot.time?.timeOfDay >= SLEEP_FROM && bot.time.timeOfDay <= SLEEP_UNTIL;
 // Three cells in a line: where the bot stands, the bed's foot, its head.
 // Level floor under both bed cells, air at feet and head height.
@@ -4192,7 +4206,10 @@ class Survival {
       const held = this.state.pocketPlan?.key === key && this.state.pocketPlan.until > Date.now() && options[this.state.pocketPlan.choice] ? this.state.pocketPlan.choice : null;
       // The nook Jev chose for tonight when the pocket was sealed (shelter
       // method bed_nook) is carried out at bedtime, not asked again.
+      // So is the wait for daylight chosen sealed (wait_for_day_sealed), while
+      // health does not come back.
       let choice = held || (this.state.bedNookPlan?.until > Date.now() && options.sleep_in_nook ? 'sleep_in_nook' : null)
+        || (this.state.sealedWait?.until > Date.now() && (bot.food ?? 20) < 18 && options.stay ? 'stay' : null)
         || (this.state.bedBesidePlan?.until > Date.now() && options.sleep_beside ? 'sleep_beside' : null);
       if (!choice) {
         const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
@@ -4325,6 +4342,15 @@ class Survival {
     // Renewed while it is being carried out: a plan that lapsed after two
     // minutes of gathering blocks put the question again, and "carry on"
     // left the half-built shell standing in the dark.
+    // A wait for daylight Jev chose, sealed (wait_for_day_sealed below): the
+    // pocket is made here until it is sealed, then held in the pocket's step
+    // until dawn. It ends when health comes back (hunger eighteen or more),
+    // its reason gone, or when there is no way to shelter here.
+    if (this.state.sealedWait && !(this.state.sealedWait.until > Date.now() && (bot.food ?? 20) < 18)) delete this.state.sealedWait;
+    if (this.state.sealedWait) {
+      if (await this.refugeStep(task, goal, save) !== false) { onStep(goal); return true; }
+      delete this.state.sealedWait;
+    }
     if (needsShelter && plan?.plan === 'shelter' && !(bedReady && sleepable(bot))) {
       plan.until = Date.now() + 120000;
       if (await this.refugeStep(task, goal, save) !== false) { onStep(goal); return true; }
@@ -4392,7 +4418,7 @@ class Survival {
         shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null },
       recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot),
       foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: desiredFood, hungerMaximum: 20, starvationAt: 0,
-        requiredBeforeExpedition: !!expeditionFood } };
+        requiredBeforeExpedition: !!expeditionFood, ...(() => { const last = lastResortSupply(bot); return last.points ? { lastResort: `${last.points} more food points in the last resort, not counted in the reserve: ${last.says}` } : {}; })() } };
     const armed = kitReady(bot);
     // Phantoms come for a player who has not slept in three nights. After
     // two nights awake (sealed in, night mining, staying up), staying up is
@@ -4481,6 +4507,20 @@ class Survival {
         (night(bot) && underground ? ` Food is mostly on the surface, and it is night there until dawn, about ${minutesToDawn(bot)} real minutes off; the climb up comes out among its mobs. ${Math.round(bot.health * 10) / 10} health now${healing ? ', not coming back' : ''}.` : ''),
       children: offWorld && this.actions.returnOverworld ? this.offWorldFood(task, goal, save) : await forageChoices(bot, task, goal, save, this.actions, this.state) };
     if (tree.obtain_food && !Object.keys(tree.obtain_food.children).length) delete tree.obtain_food;
+    // Waiting sealed for daylight, anywhere in the Overworld, when health
+    // does not come back and no shelter is on offer already: by day, on the
+    // surface, it was never a choice. mid-231-q and mid-211-x went on hunting
+    // and working hurt under eighteen hunger with nothing safe to eat, and
+    // the next encounter finished them (note 515). Priced in minutes, since
+    // standing still spends no hunger, with what is outside.
+    const sealedWait = sealedWaitSays(bot);
+    if (sealedWait && !tree.secure_shelter && !isSetAside(this, 'refuge', 'anywhere'))
+      tree.wait_for_day_sealed = { description: `${sealedWait.says}${underground ? ' Underground the dark is the same at any hour.' : ''}${nowAbout || ' Nothing hostile is within twenty-four blocks now.'}${creeperRaceSays}`,
+        run: async () => {
+          this.state.sealedWait = { until: Date.now() + sealedWait.ticks * 50, at: new Date().toISOString() };
+          this.report(goal, save, { action: 'wait_for_day_sealed', health: bot.health, food: bot.food, minutes: sealedWait.minutes });
+          await this.refugeStep(task, goal, save);
+        } };
     // Resting where it is while health comes back, when it does (hunger
     // eighteen or more): mid-241-i, at 2.3 health and hunger nineteen, had
     // only food to choose, walked back past the skeleton it had got away
@@ -4566,7 +4606,9 @@ function claim(bot, goal = {}, survival = null) {
   for (const entry of attempts) if (entry.action === 'act' && entry.until > now && String(entry.target).startsWith('survival:'))
     resting[String(entry.target).slice(9)] = `${entry.why}; back in about ${Math.max(1, Math.round((entry.until - now) / 1000))} seconds`;
   const hurt = bot._recentHurtAt > now - 4000;
-  const facts = { health: hp, food: bot.food, ...(bot.time?.timeOfDay !== undefined ? { timeOfDay: bot.time.timeOfDay } : {}), ...(hurt ? { hurtLately: true } : {}),
+  // Whether health comes back, on every claim of a hurt bot: it was said on
+  // a shooter's alone (note 515).
+  const facts = { health: hp, food: bot.food, ...(hp < 20 ? { healing: (bot.food ?? 0) >= 18 } : {}), ...(bot.time?.timeOfDay !== undefined ? { timeOfDay: bot.time.timeOfDay } : {}), ...(hurt ? { hurtLately: true } : {}),
     ...(Object.keys(resting).length ? { setAside: resting } : {}) };
   const make = (action, urgency, more = {}) => ({ layer: 'survival', action, urgency: hurt && urgency === 'routine' ? 'pressing' : urgency, facts: { ...facts, ...more } });
   const mob = t => ({ name: t.entity.name, distance: round(t.distance), seen: !!t.visible });
@@ -4577,6 +4619,8 @@ function claim(bot, goal = {}, survival = null) {
   const refuge = survival?.currentShelter?.();
   if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot) });
   const nightPlan = state.nightPlan?.until > now ? state.nightPlan : null;
+  // The wait for daylight Jev chose, sealed, while it is being sealed.
+  if (state.sealedWait?.until > now && (bot.food ?? 20) < 18) return make('wait_for_day_sealed', 'routine', { minutesToDawn: minutesToDawn(bot), healing: false });
   if (nightPlan?.plan === 'hunt' && (nightPlan.food || shelterNeeded(bot))) return make('night_hunt', 'routine', { hunting: nightPlan.kind || null });
   // A shooter is a threat as far as its own fire reaches (combat-estimate
   // RANGE, danger.js immediateThreat), hurt or not: being in its sight is
@@ -4611,8 +4655,14 @@ function claim(bot, goal = {}, survival = null) {
   const carryOn = state.carryOnPlan;
   if (carryOn && !(carryOn.until < now || needsShelter || bot.food <= carryOn.food - 2 || hp <= carryOn.health - 4)) return null;
   const plan = nightPlan?.plan === 'shelter' || nightPlan?.plan === 'home' ? nightPlan.plan : null;
+  // Whether health comes back, and the sealed wait for daylight when it does
+  // not, said on the claim: turn_priority read "find food" beside the work
+  // with neither (note 515).
+  const last = needsFood ? lastResortSupply(bot) : null;
+  const wait = sealedWaitSays(bot);
   return make(needsShelter ? (plan === 'home' ? 'go_home_for_night' : 'secure_shelter') : 'obtain_food', needsShelter || bot.food <= 6 ? 'pressing' : 'routine',
-    { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}) } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood } : {}) });
+    { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}) } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood, ...(last.points ? { lastResortCarried: last.points } : {}) } : {}),
+      ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
 module.exports = { claim, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

@@ -175,3 +175,29 @@ test('every question about playing the game offers "none of these options are go
     if (env.LOG === undefined) delete process.env.JEV_MISSING_OPTIONS; else process.env.JEV_MISSING_OPTIONS = env.LOG;
   }
 });
+
+test('the stance and the turn are told whether health comes back, the food carried by kind with rotten flesh\'s Hunger, the nearest food and the time to daylight (note 515)', async () => {
+  // mid-231-o, mid-207-l, mid-211-x, mid-231-q: hurt, no healing under eighteen, told a bare hunger number; several carried rotten flesh.
+  const { decide } = require('../src/decisions');
+  const { Vec3 } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, game: { dimension: 'overworld', gameMode: 'survival' }, registry, health: 6, food: 14, time: { timeOfDay: 14000 },
+    entities: { 7: { name: 'cow', position: new Vec3(12.5, 64, 0.5), isValid: true } }, inventory: { items: () => [{ name: 'rotten_flesh', count: 5 }, { name: 'cobblestone', count: 30 }] } };
+  const asked = [];
+  const answering = choice => ({ systemOne: async ({ state, questions }) => { asked.push({ state, said: JSON.stringify(questions) }); return { answers: { branch_0: { choice, confidence: 0.9 } } }; } });
+  await decide('encounter_stance', { client: answering('eat'), bot, goal: {}, tree: { eat: { description: 'a' }, retreat: { description: 'b' } }, state: { health: 6 } });
+  await decide('turn_priority', { client: answering('survival'), bot, goal: {}, tree: { survival: { description: 'a' }, work: { description: 'b' } }, state: { claims: ['survival', 'work'] } });
+  assert.equal(asked.length, 2);
+  for (const { state, said } of asked) {
+    const h = state.healing;
+    assert(h, 'the healing fact is on the state');
+    assert.equal(h.health, 6); assert.equal(h.hunger, 14);
+    assert.match(h.healthComesBack, /^no: hunger 14, under eighteen/);
+    assert.match(h.foodCarried[0], /5 rotten flesh, 4 hunger each; each eaten has a 80% chance of Hunger for 30 seconds/);
+    assert.match(h.eatingItAll, /brings hunger to 20, where health comes back/);
+    assert.match(h.nearestFood[0], /a cow in view, 12 blocks off/);
+    assert.match(h.daylight, /^night: dawn in about 8 real minutes/);
+    assert.match(h.standingStill, /standing still spends no hunger/);
+    assert.match(said, /healing is the bot's health and hunger/);
+  }
+});
