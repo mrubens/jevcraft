@@ -56,3 +56,13 @@ test('two adult sheep and two wheat breed; not again for five minutes', async ()
   assert.equal(breeding.breedReady(b, goal, 'sheep'), false, 'resting');
   assert.equal(breeding.breedReady(b, {}, 'chicken'), false, 'no chickens, no seeds');
 });
+
+test('two cows in the field and two wheat breed too, for the food', async () => {
+  // The evening's deaths were mostly too hungry to heal; the base's pen never held two cows.
+  const cow = id => ({ id, name: 'cow', position: new Vec3(id, 64, 0), isValid: true, metadata: [] });
+  const b = bot({ 1: cow(1), 2: cow(2) }, [{ name: 'wheat', count: 2 }]);
+  const goal = {};
+  assert(breeding.breedReady(b, goal, 'cow'));
+  assert.equal(await breeding.breedNearby(b, new Task('breed'), goal, () => {}, 'cow', { navigate: async () => {} }), true);
+  assert.deepEqual(b.used, [1, 2]);
+});

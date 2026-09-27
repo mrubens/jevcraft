@@ -3514,7 +3514,13 @@ function sideTrips(bot, goal, client) {
   const wolves = require('./wolves'), breeding = require('./breeding');
   if (wolves.tameReady(bot, goal)) trips.tame_wolf = { description: `Tame the wolf in view with the ${countOf(bot, 'bone')} bones carried (a third of bones tame, on average): a companion that fights skeletons and zombies beside the bot. It is told to sit before a Nether or End crossing.`,
     says: "I'll tame that wolf", run: (b, t, g, sv) => wolves.tameWolf(b, t, g, sv, { navigate }) };
-  if (breeding.breedReady(bot, goal, 'sheep')) trips.breed_sheep = { description: 'Breed the two sheep in view with two wheat: more sheep near here are wool for the next bed.',
+  // What a bred animal is worth, in the game's terms: a calf or a lamb is
+  // grown in twenty real minutes; a grown cow is one to three beef (eight
+  // hunger a steak once cooked), a sheep one to two mutton (six cooked) and
+  // a wool.
+  if (breeding.breedReady(bot, goal, 'cow')) trips.breed_cows_here = { description: `Breed two of the ${breeding.adults(bot, 'cow').length} cows in view with two of the ${countOf(bot, 'wheat')} wheat carried: the calf is grown in about twenty real minutes, and a grown cow is one to three beef, eight hunger a steak once cooked, and leather. Food carried now: ${require('./foraging').foodSupply(bot)} points.`,
+    says: "I'll breed these cows", run: (b, t, g, sv) => breeding.breedNearby(b, t, g, sv, 'cow', { navigate }) };
+  if (breeding.breedReady(bot, goal, 'sheep')) trips.breed_sheep = { description: 'Breed the two sheep in view with two wheat: the lamb is grown in about twenty real minutes, a wool a shearing (three from killing) for the next bed, and one to two mutton, six hunger a piece cooked.',
     says: "I'll breed these sheep", run: (b, t, g, sv) => breeding.breedNearby(b, t, g, sv, 'sheep', { navigate }) };
   if (breeding.breedReady(bot, goal, 'chicken')) trips.breed_chickens = { description: 'Breed the two chickens in view with two seeds: more chickens near here are feathers for arrows.',
     says: "I'll breed these chickens", run: (b, t, g, sv) => breeding.breedNearby(b, t, g, sv, 'chicken', { navigate }) };

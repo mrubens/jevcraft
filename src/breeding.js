@@ -6,7 +6,10 @@
 const { goals } = require('mineflayer-pathfinder');
 const { countOf } = require('./skills');
 
-const FOODS = Object.freeze({ sheep: 'wheat', chicken: 'wheat_seeds' });
+// Cows too, for the food: the evening's deaths were mostly too hungry to
+// heal with nothing to eat, and the base's pen had never held two cows (the
+// user, 2026-09-26).
+const FOODS = Object.freeze({ sheep: 'wheat', chicken: 'wheat_seeds', cow: 'wheat' });
 const REST_MS = 5 * 60 * 1000, REACH = 16;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const baby = (bot, e) => e.metadata?.[(bot.registry?.entitiesByName?.[e.name]?.metadataKeys || []).indexOf('baby')] === true;
@@ -44,7 +47,7 @@ async function breedNearby(bot, task, goal, save, species, { navigate }) {
     await sleep(400);
   }
   (goal.bred ||= {})[species] = new Date().toISOString(); save();
-  if (fed === 2) bot.chat?.(`Bred two ${species === 'sheep' ? 'sheep' : 'chickens'}.`);
+  if (fed === 2) bot.chat?.(`Bred two ${species === 'sheep' ? 'sheep' : species === 'cow' ? 'cows' : 'chickens'}.`);
   return fed === 2;
 }
 

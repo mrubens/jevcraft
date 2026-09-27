@@ -277,6 +277,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `copper_armour` | root | make copper armour first | in the Overworld with a stone pickaxe or better and no armour worn or carried |
 | `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | by day and fit, another biome twenty-four or more blocks off in the Overworld (the nearest four), said with what it holds, and the walk there and back fits in the daylight left |
 | `tame_wolf` | root | tame a wolf | a wild adult wolf in view, bones carried, fewer than two tamed, in the Overworld |
+| `breed_cows_here` | root | breed two cows in the field | two adult cows within sixteen blocks, two wheat carried, none bred in five minutes |
 | `breed_sheep` | root | breed two sheep | two adult sheep within sixteen blocks, two wheat carried, none bred in five minutes |
 | `breed_chickens` | root | breed two chickens | two adult chickens within sixteen blocks, two seeds carried, none bred in five minutes |
 | `rung_[a-z_]+` (pattern) | root | a rung of the ladder | the ladder's next rung (the fallback), and each rung after it the ladder may reach while the ones before it wait (shield, iron sword, bucket, golden boots, bow, arrows, diamond sword); pickaxes and armour are never skipped |
@@ -621,6 +622,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `enchant` | root | enchant gear at the enchanting table | a table is carried, in view or remembered, lapis is carried, the experience level is five or more, and gear is unenchanted |
 | `trial_chambers` | root | an expedition to the trial chambers | in the Overworld with an iron pickaxe or better, healthy and fed |
 | `tame_wolf` | root | tame a wolf | a wild adult wolf in view and bones carried, fewer than two tamed |
+| `breed_cows_here` | root | breed two cows in the field | two adult cows near and two wheat carried |
 | `breed_sheep` | root | breed two sheep | two adult sheep near and two wheat carried |
 | `breed_chickens` | root | breed two chickens | two adult chickens near and two seeds carried |
 | `fetch_cache` | root | fetch the things left in a field cache | a full field cache between 48 and 512 blocks away |
@@ -671,6 +673,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `enchant` | root | enchant gear at the enchanting table | by day in the Overworld, and a table is carried, in view or remembered, lapis is carried, the experience level is five or more, and gear is unenchanted |
 | `trial_chambers` | root | an expedition to the trial chambers | by day in the Overworld, and in the Overworld with an iron pickaxe or better, healthy and fed |
 | `tame_wolf` | root | tame a wolf | by day in the Overworld, and a wild adult wolf in view and bones carried, fewer than two tamed |
+| `breed_cows_here` | root | breed two cows in the field | by day in the Overworld, and two adult cows near and two wheat carried |
 | `breed_sheep` | root | breed two sheep | by day in the Overworld, and two adult sheep near and two wheat carried |
 | `breed_chickens` | root | breed two chickens | by day in the Overworld, and two adult chickens near and two seeds carried |
 | `fetch_cache` | root | fetch the things left in a field cache | by day in the Overworld, and a full field cache between 48 and 512 blocks away |
