@@ -757,8 +757,14 @@ test('a staircase that steps out and backs off to the same landing, its target n
   assert(stalled.blocked['bedrock in the way']);
   // Set aside by the landing, not only by the target's area: a target from
   // elsewhere, begun from the same spot, meets the rest with its reasons.
-  const fresh = new Vec3(-200, -59, 300);
+  const fresh = new Vec3(400, -59, 30);
   assert.equal(staircaseResting(goal, fresh), false);
   await assert.rejects(tunnelStep(bot, new Task('again'), goal, () => {}, fresh, actions), err => err.name === 'StaircaseStalled' && /bedrock in the way/.test(err.message));
   assert(retreats <= 1, 'not walked again');
+  // Only on the heading that stalled: a way west from the same landing is
+  // not refused by it (mid-237-g, note 487: all sixteen lava headings rested).
+  const { isSetAside } = require('../src/progress'), { landingKey } = require('../src/tunneling');
+  const at = new Vec3(1, 59, 0);
+  assert.equal(isSetAside(goal, 'staircase_from', landingKey(at, new Vec3(400, -59, 30))), true);
+  assert.equal(isSetAside(goal, 'staircase_from', landingKey(at, new Vec3(-200, -59, 0))), false);
 });

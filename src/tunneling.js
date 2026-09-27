@@ -239,9 +239,16 @@ const blockedSays = blocked => Object.entries(blocked || {}).map(([k, n]) => `${
 // target's area never met the same area twice while it stepped out to
 // (367, 75, 999) and backed off again nine times in two minutes (note 485).
 // Kept apart by the way it was going, up, down or level.
+// And by the heading from it, one of eight: keyed by the landing and up or
+// down alone, one stall rested every staircase from there, and the deep
+// lava's sixteen headings, each refused at once from the same landing, all
+// rested within seconds (mid-237-g, "every way rests" three times in six
+// minutes, note 487). A stall says nothing of the ways it did not try.
 const landingKey = (landing, target) => {
   const a = area(landing), dy = Math.sign(target.y - landing.y);
-  return `${a.x},${a.y},${a.z} ${dy > 0 ? 'up' : dy < 0 ? 'down' : 'level'}`;
+  const dx = target.x - landing.x, dz = target.z - landing.z;
+  const heading = Math.hypot(dx, dz) < 2 ? 'straight' : ((Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) % 8) + 8) % 8;
+  return `${a.x},${a.y},${a.z} ${dy > 0 ? 'up' : dy < 0 ? 'down' : 'level'} ${heading}`;
 };
 // A staircase stalled at a landing: rested by the target's area and by the
 // landing's, and kept on the goal as the fact the stall question gives Jev.
@@ -544,4 +551,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
