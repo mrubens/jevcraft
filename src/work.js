@@ -3405,6 +3405,15 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
   task.check();
   await bot.activateBlock(bot.blockAt(bottom), new Vec3(0, 1, 0));
   await waitFor(task, () => bot.blockAt(bottom.offset(0, 1, 0))?.name === 'nether_portal');
+  // The cast's walls in the doorway, before and behind the opening, come out
+  // once it is lit: they boxed mid-242-m's portal in (2026-09-27).
+  const doorway = cells.interior.flatMap(q => [1, -1].map(d => q.plus(across(axis).scaled(d))));
+  for (const t of [...(frame.castTemp || [])]) {
+    const p = pos(t);
+    if (!doorway.some(q => q.equals(p))) continue;
+    if (!air(bot.blockAt(p))) { try { await dig(bot, task, p, { requireDrops: false }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; } }
+    frame.castTemp = frame.castTemp.filter(q => !pos(q).equals(p)); save();
+  }
   return true;
 }
 

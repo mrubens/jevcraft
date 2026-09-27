@@ -68,3 +68,12 @@ test('a saved shelter is not a wall around the bot standing in it, only around o
   const house = { survival: { shelters: [{ kind: 'house', origin: { x: 385, y: 35, z: -139 } }] } };
   assert(reservedForConstruction(house, step, { from: new Vec3(386, 35, -139) }), 'a house is never dug through');
 });
+
+test('a portal\'s doorway, in front of and behind the opening, is not reserved: it is the way in', () => {
+  // mid-242-m's portal was boxed in by its own cast walls, every stair toward it "a building in the way".
+  const goal = { portalFrame: { origin: { x: 37, y: 72, z: 89 }, axis: 'x' } };
+  assert.equal(reservedForConstruction(goal, new Vec3(38, 73, 90)), false, 'in front of the opening');
+  assert.equal(reservedForConstruction(goal, new Vec3(39, 75, 88)), false, 'behind it');
+  assert.equal(reservedForConstruction(goal, new Vec3(38, 72, 90)), true, 'the floor in front is kept');
+  assert.equal(reservedForConstruction(goal, new Vec3(37, 73, 90)), true, 'beside the frame is kept');
+});

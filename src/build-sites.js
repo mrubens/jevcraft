@@ -33,6 +33,13 @@ function reservedForConstruction(goal, p, { from = null } = {}) {
   const portal = goal.portalFrame?.origin;
   if (!portal) return false;
   const [along, acrossAxis] = goal.portalFrame.axis === 'z' ? ['z', 'x'] : ['x', 'z'];
+  // Not the doorway, the cells in front of and behind the opening: those are
+  // the way in. mid-242-m's portal was boxed in by its own cast walls there,
+  // every stair toward it "a building in the way", and the walk back to it
+  // failed until the loop watch ended the trial (2026-09-27).
+  const doorway = p[along] >= portal[along] + 1 && p[along] <= portal[along] + 2 && Math.abs(p[acrossAxis] - portal[acrossAxis]) >= 1 &&
+    Math.abs(p[acrossAxis] - portal[acrossAxis]) <= 2 && p.y >= portal.y + 1 && p.y <= portal.y + 3;
+  if (doorway) return false;
   return p[along] >= portal[along] - 1 && p[along] <= portal[along] + 4 &&
     Math.abs(p[acrossAxis] - portal[acrossAxis]) <= 2 && p.y >= portal.y - 4;
 }
