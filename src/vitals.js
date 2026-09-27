@@ -698,6 +698,9 @@ async function maintainVitals(bot, task, onAction = () => {}) {
 function claim(bot) {
   if (!bot?.entity?.position || bot.game?.gameMode === 'creative') return null;
   const reflex = require('./arbiter').observeReflexes(bot).find(r => r.layer === 'vitals');
+  // An alert (a creeper in reach, a mob at arm's length) is pressing, and
+  // who answers it is Jev's (arbiter.js ALERTS); the body's physics is a reflex.
+  if (reflex && require('./arbiter').ALERTS.has(reflex.key)) return { layer: 'vitals', action: reflex.action, urgency: 'pressing', alert: reflex.key, facts: reflex.facts };
   if (reflex) return { layer: 'vitals', action: reflex.action, urgency: 'reflex', reflex: reflex.key, facts: reflex.facts, preemptible: false };
   const facts = { health: bot.health, food: bot.food, air: bot.oxygenLevel };
   if (inPowderSnow(bot) || bot._freezingAt > Date.now() - 3000) return { layer: 'vitals', action: 'out_of_powder_snow', urgency: 'pressing', facts: { ...facts, freezing: true } };

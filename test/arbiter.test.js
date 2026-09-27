@@ -136,30 +136,32 @@ const world = (over = {}) => {
 const claimsOf = (bot, goal, survival) => [require('../src/survival').claim(bot, goal, survival), require('../src/vitals').claim(bot),
   require('../src/mob-hunt').claim(bot, goal), { layer: 'work', action: goal.step?.action || 'step', urgency: 'routine', facts: {} }];
 
-test('a creeper coming on while the work holds the turn is a reflex: the shadow says the work was given it', async () => {
+test('a creeper coming on while the work holds the turn is an alert for Jev, not a rule: the shadow says it would ask, and the work was given it', async () => {
   const bot = world();
   bot.entities = { 7: { id: 7, name: 'creeper', type: 'hostile', position: new Vec3(5, 64, 0), height: 1.7, metadata: [] } };
   const goal = { kind: 'win', step: { action: 'mine', item: 'iron_ore' }, survival: {} };
   const survival = { state: goal.survival, currentShelter: () => null };
   const claims = claimsOf(bot, goal, survival);
-  assert.equal(claims[0].urgency, 'reflex'); assert.equal(claims[0].reflex, 'creeper'); assert.equal(claims[0].action, 'creeper_back_off');
+  // Who answers a creeper is Jev's (the user, 2026-09-27): pressing, with its facts, beside the work.
+  assert.equal(claims[0].urgency, 'pressing'); assert.equal(claims[0].alert, 'creeper'); assert.equal(claims[0].reflex, undefined); assert.equal(claims[0].action, 'creeper_back_off');
   assert.equal(claims[0].facts.creeper, 5); assert.equal(claims[0].facts.seen, true);
   const lines = [];
   const turn = arbiter.shadow(bot, () => claims, { log: line => lines.push(line) });
-  assert.deepEqual({ layer: turn.would.layer, by: turn.would.by, ask: turn.would.ask }, { layer: 'survival', by: 'reflex', ask: false });
+  assert.equal(turn.would.layer, 'survival'); assert.equal(turn.would.ask, true, 'several claims: Jev is asked');
   turn.gave('work');
-  assert.deepEqual(lines, ['[arbiter] would survival creeper_back_off, gave work']);
-  assert.deepEqual(bot._arbiterShadow.would, { layer: 'survival', action: 'creeper_back_off', by: 'reflex' });
+  assert.equal(lines.length, 1); assert.match(lines[0], /^\[arbiter\] would survival creeper_back_off \(would ask Jev: .*\), gave work$/);
+  assert.equal(bot._arbiterShadow.would.action, 'creeper_back_off'); assert.equal(bot._arbiterShadow.would.ask, true);
   assert.equal(bot._arbiterShadow.gave, 'work');
-  // The same difference again at once is not said again; agreement never is.
+  // Held after Jev would have been asked, the same difference is said once more as held; agreement never is.
+  arbiter.shadow(bot, () => claims, { log: line => lines.push(line) }).gave('work');
   arbiter.shadow(bot, () => claims, { log: line => lines.push(line) }).gave('work');
   arbiter.shadow(bot, () => claims, { log: line => lines.push(line) }).gave('survival');
-  assert.equal(lines.length, 1);
+  assert.equal(lines.length, 2); assert.equal(lines[1], '[arbiter] would survival creeper_back_off, gave work');
   // Held to two past the line: the creeper steps back to nine and a half.
   bot.entities[7].position = new Vec3(arbiter.CREEPER_REACH + 1.5, 64, 0);
-  assert.equal(require('../src/survival').claim(bot, goal, survival).reflex, 'creeper');
+  assert.equal(require('../src/survival').claim(bot, goal, survival).alert, 'creeper');
   bot._arbiter.reflexes = [];
-  assert.notEqual(require('../src/survival').claim(bot, goal, survival)?.reflex, 'creeper');
+  assert.notEqual(require('../src/survival').claim(bot, goal, survival)?.alert, 'creeper');
 });
 
 test('a shelter set aside at 0.9 health, at night, is a live survival claim beside the work, not a fall-through', async () => {

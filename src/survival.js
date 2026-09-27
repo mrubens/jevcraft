@@ -4418,6 +4418,9 @@ function claim(bot, goal = {}, survival = null) {
   const hp = bot.health ?? 20, now = Date.now();
   const round = n => Math.round(n * 10) / 10;
   const reflex = require('./arbiter').observeReflexes(bot).find(r => r.layer === 'survival');
+  // An alert (a creeper in reach, a mob at arm's length) is pressing, and
+  // who answers it is Jev's (arbiter.js ALERTS); the body's physics is a reflex.
+  if (reflex && require('./arbiter').ALERTS.has(reflex.key)) return { layer: 'survival', action: reflex.action, urgency: 'pressing', alert: reflex.key, facts: reflex.facts };
   if (reflex) return { layer: 'survival', action: reflex.action, urgency: 'reflex', reflex: reflex.key, facts: reflex.facts, preemptible: false };
   // What rests, and why: the facts a failed plan leaves. Read straight from
   // the record (progress.js), which attemptsFor would create on a first look.

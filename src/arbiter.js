@@ -74,6 +74,13 @@ const REFLEXES = [
   { key: 'arm', layer: 'survival', action: 'escape_threat' },
 ];
 const REFLEX_RANK = Object.fromEntries(REFLEXES.map((r, i) => [r.key, i]));
+// Of these, the creeper and the mob at arm's length are alerts, not rules:
+// the watch still stops what is running for them, since a creeper's fuse
+// is a second and a half, but who acts next is Jev's, the claim said with
+// its facts beside the others (the user, 2026-09-27: "go to Jev on the
+// routing too"). Only the body's own physics (lava, fire, the head in a
+// block, air) is taken by rule.
+const ALERTS = new Set(['creeper', 'arm']);
 // Without Jev (the question's fallback, and the shadow's pick): the more
 // urgent claim, and among equals the layer that keeps the bot alive first.
 const LAYERS = ['survival', 'vitals', 'hunt', 'work'];
@@ -200,7 +207,8 @@ function rule(bot, claims, ctx = {}) {
   const state = stateOf(bot, ctx);
   const live = (claims || []).filter(Boolean);
   const reflexes = live.filter(c => c.urgency === 'reflex').sort((a, b) => (REFLEX_RANK[a.reflex] ?? 99) - (REFLEX_RANK[b.reflex] ?? 99));
-  state.reflexes = [...new Set(reflexes.map(c => c.reflex).filter(Boolean))];
+  // Held to two past its line, reflex or alert alike (observeReflexes).
+  state.reflexes = [...new Set(live.map(c => c.reflex || c.alert).filter(Boolean))];
   // Ruling for real, the arbiter has picked up what the watch stopped the
   // holder for: the reflex is among these claims and wins (it or one above
   // it), or it has gone; a newcomer is among the mobs this ruling reads.
@@ -373,4 +381,4 @@ function unwatch(bot) {
   if (bot) delete bot._preempt;
 }
 
-module.exports = { mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };
+module.exports = { ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };
