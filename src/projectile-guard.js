@@ -82,9 +82,13 @@ async function deflect(bot, task, { holdMs = 700 } = {}) {
     await bot.lookAt(shot.position, true);
     task.check();
     raiseShield(bot);
+    // Held while what it rose for is still coming, at the reach it rose
+    // for: held only while a shot was within twelve, a trident fifteen off
+    // raised and dropped it at once, a hundred times a second, and mid-244-m
+    // blocked nothing; two tridents took it from 8.9 (2026-09-27).
     while (Date.now() < deadline) {
       task.check();
-      if (!incoming(bot, { reach: 12 }).length) break;
+      if (!incoming(bot).length) break;
       await sleep(50);
     }
   } finally { lowerShield(bot); }

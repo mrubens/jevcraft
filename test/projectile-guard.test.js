@@ -51,3 +51,14 @@ test('an arrow stuck in the ground is not a shot: the shield comes up for a stil
   stuck._seenAt = Date.now() - 5000;
   assert.equal(await deflect(bot, new Task('guard'), { holdMs: 50 }), false, 'still after five seconds: stuck in the ground');
 });
+
+test('a shot still fifteen blocks off holds the shield up while it comes, not up and down at once', async () => {
+  // mid-244-m: a trident fifteen off raised and dropped the shield a hundred times a second, and nothing was blocked.
+  const trident = { id: 10, name: 'trident', position: new Vec3(0.5, 15.5, 15.5), velocity: new Vec3(0, 0, -1), isValid: true };
+  const bot = fixture({ 1: mob(1, 'drowned', 0.5, 20.5), 10: trident });
+  let heldFor = 0, raisedAt = null;
+  bot.activateItem = () => { raisedAt = Date.now(); };
+  bot.deactivateItem = () => { heldFor = Date.now() - raisedAt; };
+  assert.equal(await deflect(bot, new Task('guard'), { holdMs: 200 }), true);
+  assert(heldFor >= 150, `held ${heldFor} ms`);
+});
