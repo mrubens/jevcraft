@@ -602,7 +602,19 @@ function opensPit(bot, p) {
   if (p.y >= feetY || p.y < feetY - 2) return false;
   if (Math.hypot(p.x + 0.5 - here.x, p.z + 0.5 - here.z) > 2.5) return false;
   const under = bot.blockAt(p.offset(0, -1, 0)), deeper = bot.blockAt(p.offset(0, -2, 0));
-  return !!under && under.boundingBox !== 'block' && (!deeper || deeper.boundingBox !== 'block');
+  if (!under || under.boundingBox === 'block' || (deeper && deeper.boundingBox === 'block')) return false;
+  // A pit is refused by what the fall does, not by its depth: a drop of
+  // four onto a cave floor costs a health, and mid-208-j's staircase to
+  // its lava rested on "a fall of 4" again and again (note 519). Lava
+  // below, an unloaded column, or a fall of half the health or more is.
+  for (let dy = 1; dy <= 32; dy++) {
+    const b = bot.blockAt(p.offset(0, -dy, 0));
+    if (!b) return true;
+    if (/lava/.test(b.name)) return true;
+    if (/water/.test(b.name)) return false;
+    if (b.boundingBox === 'block') { const fall = feetY - (p.y - dy + 1); return Math.max(0, fall - 3) >= (bot.health ?? 20) / 2; }
+  }
+  return true;
 }
 
 // The block underfoot is dug from beside it, as a player does: a night
