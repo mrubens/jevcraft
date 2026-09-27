@@ -194,7 +194,11 @@ async function lootMinecart(bot, task, goal, save, cart, { navigate, openEntity 
 // bot unthreatened and able to carry something more, is opened. Returns
 // whether one was.
 async function lootNearby(bot, task, goal, save, actions) {
+  // Not with a hostile in sight within sixteen: mid-244-j, just retreated
+  // from spear zombies ten blocks off, stopped to loot a minecart it had
+  // spotted, and they were on it in four seconds (2026-09-27).
   if (bot.game?.gameMode === 'creative' || immediateThreat(bot) || (bot.health ?? 20) < 10) return false;
+  if (require('./danger').threats(bot, 16).some(t => t.visible)) return false;
   const chest = lootableChests(bot, goal)[0];
   if (!chest) {
     const cart = actions.navigate && lootableMinecarts(bot, goal)[0];

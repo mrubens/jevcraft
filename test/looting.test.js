@@ -145,3 +145,15 @@ test('any chest seen is opened unless it is the bot\'s own: the stash, a field c
   const goal = { caches: [{ position: { x: 40, y: 64, z: 40 } }], placedWorkstations: ['chest:(60, 64, 60)'] };
   assert.deepEqual(lootableChests(bot, goal).map(p => `${p}`), ['(50, 64, 50)'], 'the wild chest, not the cache or the placed one');
 });
+
+test('nothing is looted with a hostile in sight within sixteen blocks', async () => {
+  // mid-244-j stopped to loot a minecart with spear zombies ten blocks off and was killed there (2026-09-27).
+  const { Vec3 } = require('vec3');
+  const { bot, items } = world({ '22,64,21': 'chest' });
+  bot.entities = { 5: { id: 5, name: 'zombie', type: 'hostile', position: bot.entity.position.offset(10, 0, 0), height: 1.95, isValid: true } };
+  bot.world = { raycast: () => null };
+  const goal = { landmarks: [portal] }, opened = [];
+  assert.equal(await lootNearby(bot, task, goal, () => {}, chestActions(items, [['gold_ingot', 5]], opened)), false);
+  assert.equal(opened.length, 0);
+  void Vec3;
+});
