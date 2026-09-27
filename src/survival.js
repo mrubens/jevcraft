@@ -1456,7 +1456,12 @@ class Survival {
     // caught each time, 11.3 health to 4.4 in one charge (2026-09-26).
     const riders = danger.filter(t => t.entity.vehicle).map(t => `a ${t.entity.name.replaceAll('_', ' ')} on a ${t.entity.vehicle.name?.replaceAll('_', ' ') || 'mount'}`);
     const riderSays = riders.length ? ` ${riders[0][0].toUpperCase()}${riders[0].slice(1)}${riders.length > 1 ? ` and ${riders.length - 1} more riding` : ''} ${riders.length > 1 ? 'are' : 'is'} faster than a running player: a run from ${riders.length > 1 ? 'them' : 'it'} is caught.` : '';
-    options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + (creeperCount ? ' Creepers and spiders follow a running player.' : '') + riderSays + footing + unseen,
+    // An angry enderman teleports to whoever it is after: mid-211-m ran from
+    // one three times, told only that a way was found, and was hit on
+    // arrival each time, 16 health to none (2026-09-27).
+    const endermen = danger.some(t => t.entity.name === 'enderman');
+    const endermanSays = endermen ? ' An enderman after the bot teleports to it: a run from one ends with it beside the bot again.' : '';
+    options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + (creeperCount ? ' Creepers and spiders follow a running player.' : '') + riderSays + endermanSays + footing + unseen,
       run: () => this.runAway(task, goal, save, danger) };
     // In the Nether with its portal close, the way home is a stance too:
     // mid-92-q came out beside its portal among skeletons and ghasts, turned

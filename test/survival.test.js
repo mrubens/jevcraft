@@ -3450,3 +3450,11 @@ test('an action reported twenty times in a second without the bot moving is set 
   const moving = new Survival(Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {} }), {}, { state: { shelters: [] } });
   for (let n = 0; n < 25; n++) { moving.bot.entity.position = new Vec3(0.5 + n, 64, 0.5); moving.report(goal, () => {}, { action: 'off_the_edge' }); }
 });
+
+test('the run from an enderman says it teleports after the bot', () => {
+  // mid-211-m ran from one three times, told only that a way was found, and was hit on arrival each time.
+  const bot = crowdBot({ health: 12 });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('t'), {}, () => {}, [crowdMob(1, 'enderman', 3)], false);
+  assert.match(options.retreat.description, /An enderman after the bot teleports to it: a run from one ends with it beside the bot again/);
+});
