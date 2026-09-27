@@ -2804,7 +2804,12 @@ class Survival {
     const pocket = !formal.length && farthest(shelter.closures(bot, refuge).filter(door => danger.every(t => t.entity.position.distanceTo(door) > (t.reach ?? 20))));
     const exit = formal[0] || (pocket.length ? { door: pocket[0], outside: null } : null);
     if (!exit) { await this.wait(task, goal, save, 'Nearby threats still block the shelter exits'); return; }
-    this.report(goal, save, { action: 'leave_shelter', origin: refuge.origin, reason });
+    // Who walked the bot out, in the record: mid-243-m left its pocket at
+    // night at 9.3 health, a spider and a skeleton outside, 0.2 seconds
+    // after Jev chose to sleep in a nook, and no path in the code read as
+    // the one (note 422).
+    const via = (new Error().stack || '').split('\n').slice(2, 5).map(l => (l.match(/at (?:async )?([\w.<>]+)/) || [])[1]).filter(Boolean).join(' < ');
+    this.report(goal, save, { action: 'leave_shelter', origin: refuge.origin, reason, via });
     // Opening our temporary closure is necessary even if the last pick broke.
     // Bare-handed stone clearing loses its drop but must not imprison the bot
     // inside a one-cell shelter with no room to place a crafting table.
