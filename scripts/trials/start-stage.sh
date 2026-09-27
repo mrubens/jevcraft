@@ -18,6 +18,9 @@ done
 [ -n "$BEST" ] || { echo "no usable $STAGE snapshot"; exit 1; }
 SRC=$(basename "$BEST" | sed -E 's/^mid-//; s/-[0-9]{6}$//')
 K=$((BESTN + 1))
+# A name already used (a snapshot started by hand, a counter behind) is
+# passed over: midgame.js refuses a trial name that exists.
+while [ -e "$ROOT/artifacts/midgame-mid-$SRC-$STAGE-$K.log" ]; do K=$((K + 1)); done
 NAME="mid-$SRC-$STAGE-$K"
 echo "$K" > "$BEST/started"
 cd "$ROOT" && MIDGAME_PORT=$PORT node scripts/midgame.js start "$NAME" "$BEST/world" "$BEST/state"
