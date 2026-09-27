@@ -3226,6 +3226,7 @@ function portalInteriorBlockers(bot, cells) {
   return cells.interior.filter(p => { const b = bot.blockAt(p); return b && !air(b) && !['fire', 'soul_fire', 'nether_portal'].includes(b.name); });
 }
 
+const SITE_REACH = 12;
 async function buildPortalFrame(bot, task, goal, save, frame) {
   const { frameCells, across } = require('./ruined-portal');
   const axis = frame.axis || 'x', cells = frameCells(frame.origin, axis);
@@ -3308,6 +3309,11 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     frame.siteFailures = 0;
   } catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) || err instanceof Blocked) throw err;
+    // Only a failure at the site is the site's: one on the way to the lava
+    // is the trip's. mid-207-e left twelve sites in three hours, seven of
+    // them for "refusing to open a drop" in the tunnel down to the lava,
+    // far from each frame, and never got its portal made (2026-09-27).
+    if (bot.entity.position.distanceTo(pos(frame.origin)) > SITE_REACH) throw err;
     frame.siteFailures = (frame.siteFailures || 0) + 1; frame.siteFailure = err.message; save();
     // With obsidian in it, after ten: a cast block is a lava trip, and
     // mid-243-h's part-cast frame on a mountain failed ninety-five times at

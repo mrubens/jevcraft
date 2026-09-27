@@ -367,6 +367,17 @@ test('a cast that fails at its site three passes running, nothing cast, leaves t
   assert.equal(await buildPortalFrame(bot, new Task('cast'), goal2, () => {}, cast2), false);
   assert.equal(goal2.portalFrame, undefined, 'left at ten');
   assert.equal(goal.portalSitesLeft.length, 1);
+  // Failing far from the frame, on the way to lava, is the trip's, not the site's.
+  const far = newFrame('x', new Vec3(40, 64, 20));
+  const goal3 = { portalFrame: far };
+  const slot3 = cast.castOrder(far)[0];
+  w.set(slot3, 'lava');
+  const inner3 = bot.blockAt; bot.blockAt = p => { const b = inner3(p); return p.floored().equals(slot3) ? { ...b, getProperties: () => ({ level: 3 }) } : b; };
+  const home = bot.entity.position; bot.entity.position = new Vec3(40.5, 64, 60.5);
+  for (let n = 1; n <= 4; n++) await assert.rejects(buildPortalFrame(bot, new Task('cast'), goal3, () => {}, far));
+  assert.equal(goal3.portalFrame, far, 'kept: every failure was forty blocks off');
+  assert.equal(far.siteFailures || 0, 0);
+  bot.entity.position = home;
   const { selectPortalSite } = require('../src/build-sites');
   assert.equal(typeof selectPortalSite, 'function');
 });
