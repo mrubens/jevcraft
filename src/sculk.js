@@ -51,4 +51,11 @@ function hearing(bot, reach = 40) {
   return p => sensors.some(s => s.distanceTo(p) <= SENSOR_HEARS);
 }
 
-module.exports = { sculkAbout, hearing, SENSOR_HEARS };
+// An area of sculk Jev chose to take the work out of: its lava and its
+// landmarks are passed over while it rests.
+const ZONE_REACH = 16, ZONE_REST_MS = 30 * 60000;
+function inQuietZone(goal, p, now = Date.now()) {
+  return (goal?.quietZones || []).some(z => z.until > now && Math.hypot(z.x - p.x, z.y - p.y, z.z - p.z) <= ZONE_REACH);
+}
+
+module.exports = { sculkAbout, hearing, inQuietZone, SENSOR_HEARS, ZONE_REACH, ZONE_REST_MS };

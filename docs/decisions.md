@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-79 questions: 31 decision trees and 48 batched questions.
+80 questions: 32 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -322,6 +322,22 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `cast_at_lava` | root | cast a frame of its own beside the nearest known lava | lava known more than sixteen blocks away |
 | `craft_buckets` | root | make more buckets first from the iron carried | three or more iron ingots carried |
 | `ruin_[0-9]+` (pattern) | root | finish and light a remembered ruined portal | a ruined portal remembered within 512 blocks, not found frameless (and the one held, however far) |
+
+### `sculk_work`
+
+**The work is within reach of sculk (a sensor that hears the bot, or a shrieker that calls a warden): carry on as now, carry on crouched, or take the work out of its reach?**
+
+- When: Between work steps in the Overworld, with Jev reachable, when the bot is within a sculk sensor's hearing (eight blocks) or sixteen blocks of a shrieker that can call a warden; once per patch, the answer held five minutes.
+- Decision tree, choice; stakes high; ledger kind `upkeep`
+- Bar: none: Jev's pick is taken at any confidence: every answer is held only five minutes, so a close call is soon asked again, and the warden is not a rule code can weigh for it
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (sculkStep)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `carry_on` | root | carry on here as now | always |
+| `work_crouched` | root | carry on here, walking crouched | always; five minutes crouched, a third of walking speed, digging and placing still heard |
+| `move_away` | root | take the work out of the sculk's reach | a standing place out of every sensor's hearing within thirty-two blocks; its lava and remembered places within sixteen blocks passed over for thirty minutes |
 
 ## resources
 

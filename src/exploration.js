@@ -353,7 +353,8 @@ function noticeLandmarks(bot, goal, save, { now = Date.now(), every = 30, moved 
 function knownLandmarks(bot, goal, kind, reach = Infinity) {
   const here = bot.entity?.position, where = dimensionOf(bot);
   if (!here) return [];
-  return (goal.landmarks || []).filter(l => l.kind === kind && l.dimension === where)
+  const { inQuietZone } = require('./sculk');
+  return (goal.landmarks || []).filter(l => l.kind === kind && l.dimension === where && !inQuietZone(goal, { x: l.x, y: l.y ?? here.y, z: l.z }))
     .map(landmark => ({ landmark, distance: Math.round(Math.hypot(landmark.x - here.x, (landmark.y ?? here.y) - here.y, landmark.z - here.z)) }))
     .filter(l => l.distance <= reach).sort((a, b) => a.distance - b.distance);
 }

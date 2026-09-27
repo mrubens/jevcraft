@@ -34,8 +34,9 @@ const at = p => new Vec3(p.x, p.y, p.z);
 function poolSurface(bot, { distance = 48, count = 256 } = {}) {
   const id = bot.registry.blocksByName.lava?.id;
   if (id === undefined) return [];
+  const { inQuietZone } = require('./sculk');
   return bot.findBlocks({ matching: id, maxDistance: distance, count,
-    useExtraInfo: b => sourceLava(b) && open(bot.blockAt(b.position.plus(UP))) });
+    useExtraInfo: b => sourceLava(b) && open(bot.blockAt(b.position.plus(UP))) }).filter(p => !inQuietZone(bot._goal, p));
 }
 
 // Shore blocks: solid, at pool level, beside a surface source, with room to

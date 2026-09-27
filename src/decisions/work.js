@@ -314,6 +314,23 @@ define({
   fallback: children => ['spare_pickaxe', 'wood_reserve', 'block_reserve'].find(k => children[k]) || 'carry_on',
 });
 
+// Work within reach of sculk: mid-230-n made its obsidian four blocks over
+// a shrieker and the warden it called killed it (notes 412, 414).
+define({
+  id: 'sculk_work', area: 'work', kind: 'upkeep', primitive: 'choice', stakes: 'high', tree: true,
+  ungated: 'Jev\'s pick is taken at any confidence: every answer is held only five minutes, so a close call is soon asked again, and the warden is not a rule code can weigh for it',
+  question: 'The work is within reach of sculk (a sensor that hears the bot, or a shrieker that calls a warden): carry on as now, carry on crouched, or take the work out of its reach?',
+  trigger: 'Between work steps in the Overworld, with Jev reachable, when the bot is within a sculk sensor\'s hearing (eight blocks) or sixteen blocks of a shrieker that can call a warden; once per patch, the answer held five minutes.',
+  source: 'src/work.js (sculkStep)',
+  options: [
+    { key: 'carry_on', label: 'carry on here as now', when: 'always', level: 'root' },
+    { key: 'work_crouched', label: 'carry on here, walking crouched', when: 'always; five minutes crouched, a third of walking speed, digging and placing still heard', level: 'root' },
+    { key: 'move_away', label: 'take the work out of the sculk\'s reach', when: 'a standing place out of every sensor\'s hearing within thirty-two blocks; its lava and remembered places within sixteen blocks passed over for thirty minutes', level: 'root' },
+  ],
+  instructions: workInstructions('The work is within reach of sculk. Each option says what it does; `sculk` says what is near, what hears the bot, and what a shrieker calls.'),
+  fallback: children => children.move_away ? 'move_away' : 'work_crouched',
+});
+
 // Short detours along the way: bounded, optional, and never at the cost of
 // the main request. An error or a five-second timeout is swallowed.
 define({

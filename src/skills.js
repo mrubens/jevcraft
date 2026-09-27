@@ -355,13 +355,20 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
   let edgeCrouch = false;
   const crouchOnEdge = () => {
     try {
-      if (!/nether/.test(String(bot.game?.dimension || '')) || !bot.entity?.onGround) return;
+      // Crouched too while Jev chose to work quietly by sculk: walking
+      // crouched sets off no sensor (sculk.js, work.js sculkStep).
+      const quiet = (bot._quietUntil || 0) > Date.now(), nether = /nether/.test(String(bot.game?.dimension || ''));
+      if (!quiet && !nether && !edgeCrouch) return;
+      if (!bot.entity?.onGround) return;
       const feet = bot.entity.position.floored();
-      const drop = require('./terrain').dropNear(bot, feet, 1);
-      const deadly = !!drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2);
-      const next = latestRoute?.path?.find(n => Math.hypot(n.x - feet.x - 0.5, n.z - feet.z - 0.5) > 0.4);
-      const down = next && next.y < feet.y;
-      const want = deadly && !down;
+      let deadly = false, down = false;
+      if (nether) {
+        const drop = require('./terrain').dropNear(bot, feet, 1);
+        deadly = !!drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2);
+        const next = latestRoute?.path?.find(n => Math.hypot(n.x - feet.x - 0.5, n.z - feet.z - 0.5) > 0.4);
+        down = next && next.y < feet.y;
+      }
+      const want = quiet || (deadly && !down);
       const held = !!bot.controlState?.sneak;
       if (want && !held) { bot.setControlState?.('sneak', true); edgeCrouch = true; }
       else if (!want && edgeCrouch && held) { bot.setControlState?.('sneak', false); edgeCrouch = false; }

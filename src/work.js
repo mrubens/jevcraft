@@ -374,6 +374,53 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   return chosen !== null && chosen !== 'carry_on';
 }
 
+// Work within a sculk sensor's hearing or beside a shrieker that calls a
+// warden: carry on, carry on crouched, or take the work out of its reach.
+// mid-230-n ran from a creeper into the deep dark and made its obsidian at
+// the lava there, digging and placing four blocks over a shrieker, and the
+// warden it called killed it (notes 412, 414). Asked once per patch of
+// sculk; the answer holds five minutes, the patch left thirty.
+const SCULK_HOLD_MS = 5 * 60000;
+async function sculkStep(bot, task, goal, save, client, onStep = () => {}) {
+  if (!client || !/overworld/.test(String(bot.game?.dimension || ''))) return false;
+  const sculk = require('./sculk');
+  const about = sculk.sculkAbout(bot);
+  if (!about || !(about.withinHearing || (about.nearestShrieker !== null && about.nearestShrieker <= sculk.ZONE_REACH))) return false;
+  const here = bot.entity.position.floored();
+  const holds = (goal.sculkHolds || []).filter(h => h.until > Date.now());
+  if (holds.some(h => Math.hypot(h.x - here.x, h.y - here.y, h.z - here.z) <= sculk.ZONE_REACH)) return false;
+  const doing = goal.step?.action ? String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ') : 'the work';
+  const hold = extra => { goal.sculkHolds = [...holds, { x: here.x, y: here.y, z: here.z, until: Date.now() + SCULK_HOLD_MS, ...extra }]; save(); };
+  // The nearest standing place out of every sensor's hearing and past the
+  // shriekers' patch, for the way out.
+  const heard = sculk.hearing(bot, 32), passable = require('./terrain').dryPassable;
+  const ids = ['stone', 'deepslate', 'tuff', 'dirt', 'grass_block', 'cobblestone', 'cobbled_deepslate', 'andesite', 'diorite', 'granite', 'calcite', 'sculk']
+    .map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
+  const quietAt = typeof bot.findBlocks === 'function' ? bot.findBlocks({ matching: ids, maxDistance: 32, count: 400,
+    useExtraInfo: b => !/sculk_/.test(b.name) && passable(bot.blockAt(b.position.offset(0, 1, 0))) && passable(bot.blockAt(b.position.offset(0, 2, 0))) })
+    .map(p => p.offset(0, 1, 0)).filter(p => !heard(p) && p.distanceTo(here) >= sculk.SENSOR_HEARS)
+    .sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0] : null;
+  const options = {
+    carry_on: { description: `Carry on with ${doing} here as now.`, run: async () => hold() },
+    work_crouched: { description: `Carry on with ${doing} here, walking crouched: a crouched step sets off no sensor, at about a third of walking speed. Digging, placing, eating and landing still do.`,
+      run: async () => { bot._quietUntil = Date.now() + SCULK_HOLD_MS; hold({ crouched: true }); } },
+  };
+  if (quietAt) options.move_away = { description: `Take the work out of the sculk's reach: walk to a place ${Math.round(quietAt.distanceTo(here))} blocks off, out of every sensor's hearing, and pass over the lava and places remembered within ${sculk.ZONE_REACH} blocks of here for thirty minutes; ${doing} goes on from there, elsewhere.`,
+    run: async () => {
+      goal.quietZones = [...(goal.quietZones || []).filter(z => z.until > Date.now()), { x: here.x, y: here.y, z: here.z, until: Date.now() + sculk.ZONE_REST_MS }];
+      hold(); bot._quietUntil = Date.now() + 60000;
+      try { await navigate(bot, task, new goals.GoalBlock(quietAt.x, quietAt.y, quietAt.z), { timeoutMs: 30000, stallMs: 5000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      finally { bot._quietUntil = 0; }
+    } };
+  let chosen = null;
+  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description + ' ' + about.says, run: async () => { chosen = k; await o.run(); } }]));
+  const step = goal.step;
+  try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: 'The work is within reach of sculk. Choose whether to carry on here as now, carry on crouched, or take the work out of its reach.', sculk: about.says }, 'sculk_work'); }
+  finally { if (chosen !== 'move_away') goal.step = step; }
+  return chosen === 'move_away';
+}
+
 async function prepareExpeditionStep(bot, task, goal, save) {
   goal.preparingExpedition = true;
   // The reserve is the survival layer's to gather; once its search has been
@@ -4346,6 +4393,8 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       }
       require('./turn').takeTurn(bot, 'work', goal.step?.action || 'step');
       if (!endTask && await upkeepStep(bot, task, goal, save, decisionClient, onStep)) { goal.stalls = 0; save(); onStep(goal); continue; }
+      bot._goal = goal;
+      if (!endTask && await sculkStep(bot, task, goal, save, decisionClient, onStep)) { goal.stalls = 0; save(); onStep(goal); continue; }
       // A structure's chest within reach is opened as a rule (looting.js).
       if (goal.kind === 'win' && !endTask && await inCatch(task, goal, () => lootNearby(bot, task, goal, save, lootActions()))) { goal.stalls = 0; save(); onStep(goal); continue; }
       // Work starts on dry ground. A crafting table placed from a pool under
@@ -4460,4 +4509,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
