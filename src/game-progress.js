@@ -385,6 +385,43 @@ function timeRung(bot, goal, phase, now = Date.now()) {
   return true;
 }
 
+// The run's own clock, for every choice to see. Each question said the
+// minutes of its own option and none said the run's: mid-207-i kept a
+// surface frame through three askings, seventy minutes on the way into
+// the Nether, told each time only of the twenty just gone (the user: "Jev
+// doesn't care about time", 2026-09-27). Played time is counted from the
+// trail's samples, a gap (a restart) at most half a minute, and by what
+// the bot was on: a survival action by its name, work by its rung and step.
+function tallyClock(goal, doing, now = Date.now()) {
+  const progress = goal?.gameProgress;
+  if (!progress || !doing) return;
+  const clock = progress.clock ||= { startedAt: now, lastAt: now, playedMs: 0, byDoing: {} };
+  const dt = Math.min(30000, Math.max(0, now - clock.lastAt));
+  clock.lastAt = now; clock.playedMs += dt;
+  clock.byDoing[doing] = (clock.byDoing[doing] || 0) + dt;
+  const recent = clock.recent ||= [];
+  recent.push([now, doing, dt]);
+  while (recent.length && now - recent[0][0] > 30 * 60000) recent.shift();
+}
+const minutes = ms => Math.round(ms / 60000);
+const byMinutes = pairs => Object.fromEntries(Object.entries(pairs).filter(([, ms]) => ms >= 30000).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, ms]) => [k.replaceAll('_', ' '), minutes(ms)]));
+function runClock(goal, now = Date.now()) {
+  const clock = goal?.gameProgress?.clock;
+  if (!clock) return null;
+  const reached = {};
+  for (const [name, m] of Object.entries(goal.gameProgress.milestones || {})) {
+    if (!Number.isFinite(m?.at)) continue;
+    reached[name.replaceAll('_', ' ')] = m.at < clock.startedAt ? 'before this clock began' : `${Math.round((m.at - clock.startedAt) / 60000)} minutes in`;
+  }
+  const last = {};
+  for (const [, doing, dt] of clock.recent || []) last[doing] = (last[doing] || 0) + dt;
+  return {
+    minutesPlayed: Math.round(clock.playedMs / 60000), minutesSinceStart: Math.round((now - clock.startedAt) / 60000),
+    reached, ...(goal.gameProgress.phase ? { nowOn: goal.gameProgress.phase.replaceAll('_', ' ') } : {}),
+    minutesBy: byMinutes(clock.byDoing), lastHalfHourBy: byMinutes(last),
+  };
+}
+
 async function gameStep(bot, task, goal, save, actions) {
   task.check();
   if (bot.game.gameMode !== 'survival') throw Object.assign(new Error('The game-completion task requires Survival mode'), { name: 'Blocked' });
@@ -479,4 +516,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };
+module.exports = { tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep };

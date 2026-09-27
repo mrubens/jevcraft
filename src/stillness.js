@@ -352,6 +352,8 @@ function noteTrail(bot, goal, now = Date.now()) {
   const p = bot.entity?.position;
   if (!p) return;
   const doing = goal?.survivalAction && now - Date.parse(goal.survivalAction.at || 0) < 20000 ? goal.survivalAction.action : goal?.step?.action;
+  const phase = goal?.rungTime?.phase || goal?.gameProgress?.phase;
+  require('./game-progress').tallyClock(goal, doing && doing === goal?.step?.action && phase ? `${phase}: ${doing}` : doing || 'between steps', now);
   trail.push({ at: now, x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), doing: doing || null });
   if (trail.length > TRAIL_KEEP) trail.splice(0, trail.length - TRAIL_KEEP);
 }

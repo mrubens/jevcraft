@@ -121,6 +121,9 @@ const GAMEPLAY_AREAS = new Set(['combat', 'endgame', 'home', 'idle', 'resources'
 const REAL_TIME = 'The player counts real time: a Minecraft day is twenty real minutes, and a night about eleven from dusk to dawn. A death ends this attempt and loses what is carried; after that, minutes spent waiting, hiding or going back are the cost that counts.';
 const RISK = 'riskNow is how likely a death is now (the mobs about, what fighting them all here would cost, whether more spawn around, whether health comes back); deathWouldCost is what a death now would lose.';
 const DEATHS = 'recentDeaths are the bot\'s deaths of the last two hours: how, where, what was about, and what was chosen last before each; the same answer in the same place seldom ends differently.';
+// A sense of pace said as a fact, not a limit: what the minutes played
+// compare with.
+const CLOCK = 'runClock is the run so far: minutes played toward the goal, when each milestone was reached, what it is on now, and where the minutes went, all told and in the last half hour. For pace, a practiced player from a settled start with iron reaches the Nether within the first hour and has the blaze rods and ender pearls within the next two; minutes already spent on a way are spent, and what counts is the minutes each option still costs.';
 const TRAIL = 'recentPositions is where the bot has been over the last few minutes, fifteen seconds apart, and what it was doing: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 function withRealTime(spec, state = {}) {
   if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
@@ -128,7 +131,8 @@ function withRealTime(spec, state = {}) {
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = state?.recentPositions ? ` ${TRAIL}` : '';
   const deaths = state?.recentDeaths ? ` ${DEATHS}` : '';
-  return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${risk}${trail}${deaths}` };
+  const clock = state?.runClock ? ` ${CLOCK}` : '';
+  return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${clock}${risk}${trail}${deaths}` };
 }
 
 // The deaths of the last two hours, newest first: how, where from here,
@@ -175,6 +179,10 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       const nights = Math.floor((age - slept) / 24000);
       if (nights >= 1) state = { ...state, nightsWithoutSleep: nights, phantoms: nights >= 3 ? 'phantoms are coming at night now: three nights without sleep brings them, diving from the sky; sleeping in a bed stops them' : `phantoms come after three nights without sleep (${3 - nights} more)` };
     }
+  }
+  if (state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.runClock) {
+    const clock = require('../game-progress').runClock(goal);
+    if (clock) state = { ...state, runClock: clock };
   }
   checkOptions(spec, tree);
   const fallback = typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : null;

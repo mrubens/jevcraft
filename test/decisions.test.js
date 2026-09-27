@@ -116,3 +116,22 @@ test('every question about playing the game is told the nights without sleep and
   assert.equal(seen.nightsWithoutSleep, 3);
   assert.match(seen.phantoms, /phantoms are coming at night now/);
 });
+
+test('every question about playing the game is told the run clock: minutes played, milestones and where the minutes went', async () => {
+  // mid-207-i kept a surface frame through three askings, seventy minutes on the way into the Nether, told only of the twenty just gone.
+  const { decide } = require('../src/decisions');
+  const { noteTrail } = require('../src/stillness');
+  const t0 = Date.now() - 80 * 60000;
+  const goal = { kind: 'win', gameProgress: { version: 1, startedAt: t0, milestones: {}, phase: 'enter_nether' }, rungTime: { phase: 'enter_nether' }, step: { action: 'collect_lava' } };
+  const bot = { entity: { position: { x: 0, y: 64, z: 0 } }, game: { dimension: 'overworld' } };
+  for (let t = t0; t < t0 + 70 * 60000; t += 15000) noteTrail(bot, goal, t);
+  for (let t = t0 + 70 * 60000; t <= t0 + 80 * 60000; t += 15000) { goal.survivalAction = { action: 'seal_shelter', at: new Date(t).toISOString() }; noteTrail(bot, goal, t); }
+  goal.gameProgress.milestones.nether_entered = { at: t0 + 79 * 60000 };
+  let seen = null, said = null;
+  const client = { systemOne: async ({ state, rootInstructions, instructions }) => { seen = state; said = rootInstructions || instructions; return { answers: { branch_0: { choice: 'go_back', confidence: 0.9 } } }; } };
+  await decide('corpse_run', { client, bot, goal, tree: { go_back: { description: 'a' }, leave_them: { description: 'b' } }, state: {} });
+  assert.equal(seen.runClock?.minutesPlayed, 80);
+  assert.equal(seen.runClock.minutesBy['enter nether: collect lava'], 70);
+  assert.equal(seen.runClock.lastHalfHourBy['seal shelter'], 10);
+  assert.equal(seen.runClock.reached['nether entered'], '79 minutes in');
+});
