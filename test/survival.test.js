@@ -2993,3 +2993,24 @@ test('a pocket beside a drop walls the drop side first, from the bottom: a hit w
   assert(placed.length > 2, placed.join(' '));
   assert(/^\(1, 6[34], 0\)$/.test(placed[0]), `the hole's side first: ${placed.slice(0, 3).join(' ')}`);
 });
+
+test('no shaft pocket is dug while a creeper would reach the open shaft before the cap', async () => {
+  // mid-231-g dug down with a creeper eight blocks off; it came down on top of the bot and went off (2026-09-27).
+  const registry = require('minecraft-data')('26.1'), Block = require('prismarine-block')(registry);
+  const dug = new Set(), capped = new Set();
+  const blockAt = p => { const f = p.floored(); const name = capped.has(`${f}`) ? 'cobblestone' : dug.has(`${f}`) ? 'air' : f.y >= 63 ? 'air' : f.y >= 58 ? 'dirt' : 'stone'; const b = Block.fromStateId(registry.blocksByName[name].defaultState); b.position = f; return b; };
+  const make = distance => {
+    const creeper = { id: 4, name: 'creeper', type: 'hostile', position: new Vec3(distance + 0.5, 63, 0.5), height: 1.7, isValid: true };
+    const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: { 4: creeper }, registry, entity: { position: new Vec3(0.5, 63, 0.5), onGround: true },
+      health: 13, inventory: { items: () => [{ name: 'cobblestone', count: 8 }], slots: {} }, blockAt, world: { raycast: () => null } });
+    const seen = [];
+    const survival = new Survival(bot, { navigate: async () => {}, dig: async (b, t, p) => { seen.push(`${p}`); dug.add(`${p.floored()}`); bot.entity.position = new Vec3(p.x + 0.5, p.y, p.z + 0.5); }, place: async (b, t, p) => { capped.add(`${p.floored()}`); } }, { state: { shelters: [] } });
+    return { survival, seen };
+  };
+  const near = make(8);
+  assert.equal(await near.survival.shaftPocket(new Task('night'), {}, () => {}), false);
+  assert.deepEqual(near.seen, [], 'not a block dug');
+  dug.clear();
+  const far = make(40);
+  assert.equal(await far.survival.shaftPocket(new Task('night'), {}, () => {}), true, 'forty off: time to dig and cap');
+});

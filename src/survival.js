@@ -2199,9 +2199,21 @@ class Survival {
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       if (!bot.entity.position.floored().equals(start)) { setAside(this, 'shaft_pocket', spot, 'could not stand on the dry column', 120000); return false; }
     }
+    // A creeper that reaches the open shaft before the cap follows the bot
+    // into it: counted as the seal counts it, before every block (note 226).
+    // mid-231-g dug down with one eight blocks off; it came down on top of
+    // the bot five blocks down and went off, twelve health to none
+    // (2026-09-27).
+    // Priced as the dig it is: each block's dig with the tool it takes and
+    // the drop into its cell, and the cap, not as blocks placed.
+    const digSecs = c => { const b = bot.blockAt(c); if (!b || b.boundingBox !== 'block') return 0; if (typeof b.digTime !== 'function') return 1.3; const tool = require('./skills').cheapestTool(bot, b); return b.digTime(tool?.type ?? null, false, false, false, [], {}) / 1000 + 0.3; };
+    const racing = y => { let secs = BLOCK_SECONDS; for (let yy = y; yy >= bottom.y; yy--) secs += digSecs(new Vec3(start.x, yy, start.z)); return creeperRace(bot, secs / BLOCK_SECONDS); };
+    const raced = () => { setAside(this, 'shaft_pocket', spot, 'a creeper would reach the open shaft before the cap', 30000); save(); return false; };
+    if (racing(start.y - 1)) return raced();
     this.report(goal, save, { action: 'shaft_pocket', from: { ...start }, to: { ...bottom } });
     for (let y = start.y - 1; y >= bottom.y; y--) {
       task.check(); checkAir(bot);
+      if (racing(y)) return raced();
       const c = new Vec3(start.x, y, start.z);
       if (bot.blockAt(c)?.boundingBox === 'block') await this.actions.dig(bot, task, c, { requireDrops: false, dropInto: true });
       for (let i = 0; i < 20 && bot.entity.position.y > y + 0.1; i++) { task.check(); await sleep(50); }
