@@ -259,6 +259,31 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
             const alts = key.split(',').filter(a => registry.itemsByName[a] && !visiting.has(a)), need = n * batches;
             fixed[key] = alts.find(a => have(a) >= need) || alts.find(a => have(a) + makeableNow(a) >= need) || null;
           }
+          // No one alternative covers every batch, but those carried do
+          // together: the batches are split, a craft for each carried one.
+          // Three white wool from two black, a light gray and a gray were
+          // planned as a black dye to make a third black (mid-202-e's bed,
+          // 2026-09-27).
+          const [splitKey, splitN] = Object.entries(groups).find(([key]) => !fixed[key]) || [];
+          if (splitKey && batches > 1 && Object.keys(groups).length === 1) {
+            const alts = splitKey.split(',').filter(a => registry.itemsByName[a] && !visiting.has(a) && have(a) >= splitN);
+            if (alts.reduce((sum, a) => sum + Math.floor(have(a) / splitN), 0) >= batches) {
+              let left = batches;
+              for (const alt of alts.sort((a, b) => have(b) - have(a))) {
+                if (!left) break;
+                const take = Math.min(left, Math.floor(have(alt) / splitN));
+                const ingredients = {};
+                const pick = slot => { if (!slot) return null; const chosenName = slot.length > 1 && slot.join(',') === splitKey ? alt : chooseIngredient(slot, ingredients); ingredients[chosenName] = (ingredients[chosenName] || 0) + 1; return chosenName; };
+                const chosen = recipe.shape ? { shape: recipe.shape.map(row => row.map(pick)) } : { ingredients: recipe.ingredients.map(pick) };
+                const consumes = {};
+                for (const [ingredient, amount] of Object.entries(ingredients)) { consume(ingredient, amount * take); consumes[ingredient] = amount * take; }
+                steps.push({ action: 'craft', item: name, count: take * recipe.count, needs_table: table,
+                  recipe: { ...chosen, count: recipe.count, id: recipe.id }, requires: table ? { crafting_table: 1 } : {}, consumes, produces: { [name]: take * recipe.count } });
+                add(name, take * recipe.count); left -= take;
+              }
+              return;
+            }
+          }
           const pick = alts => {
             if (!alts) return null;
             const selected = (alts.length > 1 && fixed[alts.join(',')]) || chooseIngredient(alts, ingredients);

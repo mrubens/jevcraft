@@ -240,6 +240,8 @@ function ladderRung(bot, goal, waiting) {
 // home-base.js gatherWool).
 function bedRung(bot, goal, phase = 'bed') {
   const wool = woolCarried(bot);
+  // Mixed wool dyed white first, then the bed (home-base.js woolCarried).
+  if (wool.dyed) return { phase, action: 'acquire', item: 'white_wool', count: 3 };
   if (wool.count >= 3) return { phase, action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
   const village = villageBedRung(bot, goal);
   if (village) return { ...village, phase };

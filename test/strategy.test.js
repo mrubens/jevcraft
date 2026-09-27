@@ -231,7 +231,7 @@ test('once the base\'s bed is claimed, a second bed to carry is Jev\'s option, w
   const d = options.carry_bed.description;
   assert.match(d, /three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed/);
   assert.match(d, /any night, anywhere: .*the night passes in seconds, instead of about eleven real minutes in a pocket or a night mine and the climb out after/);
-  assert.match(d, /In hand: 0 wool \(three of one colour make the bed\), 5 string, 8 planks and 0 logs; no sheep in view or remembered/);
+  assert.match(d, /In hand: 0 wool \(three of one colour make the bed; wool of mixed colours is dyed white, a bone's bone meal for three\), 5 string, 8 planks and 0 logs; no sheep in view or remembered/);
   assert.equal(options.carry_bed.fallback, undefined, 'not the ladder\'s default');
   assert.deepEqual(options.carry_bed.rung, { phase: 'carry_bed', action: 'gather_wool', count: 3 }, 'the wool the way the bed rung gathers it');
   // Not with a bed in the pack, nor before the base's bed is claimed, nor with the wool search set aside.

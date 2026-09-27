@@ -654,3 +654,21 @@ test('a biome the sheep search could not walk to rests, and a bed is three wool 
   await home.searchForSheep(bot, task, goal, save, { navigate: async () => {}, explore: async () => {} });
   assert(goal.woolSearch.unreachable['0,400'], 'no nearer: rests');
 });
+
+test('wool of mixed colours with a bone to hand makes a white bed by dyeing, and the plan dyes it', () => {
+  // mid-202-e carried two black, a light gray and a gray for three hours, a bone's dye from a bed (2026-09-27).
+  const home = require('../src/home-base');
+  const mixed = [{ name: 'black_wool', count: 2 }, { name: 'light_gray_wool', count: 1 }, { name: 'gray_wool', count: 1 }];
+  const without = { inventory: { items: () => mixed } };
+  assert.equal(without.inventory && home.woolCarried(without).count, 2, 'no dye: two of one colour');
+  const withBone = { inventory: { items: () => [...mixed, { name: 'bone', count: 1 }] } };
+  assert.deepEqual(home.woolCarried(withBone), { colour: 'white', count: 3, total: 4, dyed: 3 });
+  const { planCatalog } = require('../src/knowledge');
+  const registry = require('minecraft-data')('26.1');
+  const plan = planCatalog(registry, 'white_wool', 3, { black_wool: 2, light_gray_wool: 1, gray_wool: 1, bone: 1, oak_planks: 3, crafting_table: 1 });
+  const steps = plan.map(s => `${s.action}:${s.item}`);
+  assert(steps.includes('craft:white_wool'), steps.join(' '));
+  assert(steps.includes('craft:white_dye') && steps.includes('craft:bone_meal'), steps.join(' '));
+  assert(!plan.some(s => ['mine', 'hunt_mob', 'gather_wool'].includes(s.action)), `nothing fetched: ${steps.join(' ')}`);
+  assert.equal(plan.filter(s => s.item === 'white_wool').reduce((n, s) => n + s.count, 0), 3, 'three white wool from the wool carried');
+});

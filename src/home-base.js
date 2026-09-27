@@ -367,11 +367,23 @@ function penStatus(bot, home) {
 
 const bedCarried = bot => bot.inventory.items().find(i => /_bed$/.test(i.name))?.name || null;
 const hoeCarried = bot => bot.inventory.items().some(i => /_hoe$/.test(i.name));
+// Three of one colour make a bed; wool of mixed colours is dyed to one: a
+// white dye each, from bone meal (a bone makes three) or a lily of the
+// valley. mid-202-e carried two black, a light gray and a gray for three
+// hours, one short of a bed, a bone's dye from one (2026-09-27). When the
+// dye to hand makes up the difference, the white bed is the one to make:
+// count is the wool that bed has, and dyed says how many are dyed.
 function woolCarried(bot) {
   const counts = {};
-  for (const i of bot.inventory.items()) if (/_wool$/.test(i.name)) counts[i.name] = (counts[i.name] || 0) + i.count;
+  const items = bot.inventory.items();
+  for (const i of items) if (/_wool$/.test(i.name)) counts[i.name] = (counts[i.name] || 0) + i.count;
   const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-  return best ? { colour: best[0].replace(/_wool$/, ''), count: best[1], total: Object.values(counts).reduce((n, c) => n + c, 0) } : { colour: 'white', count: 0, total: 0 };
+  const total = Object.values(counts).reduce((n, c) => n + c, 0);
+  const has = name => items.filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
+  const whiteDye = has('white_dye') + has('bone_meal') + 3 * has('bone') + has('lily_of_the_valley');
+  const white = counts.white_wool || 0;
+  if ((!best || best[1] < 3) && total >= 3 && whiteDye >= 3 - Math.min(3, white)) return { colour: 'white', count: 3, total, dyed: 3 - Math.min(3, white) };
+  return best ? { colour: best[0].replace(/_wool$/, ''), count: best[1], total } : { colour: 'white', count: 0, total: 0 };
 }
 // Fences from the wood already carried, then the trees that were seen.
 function woodSpecies(bot) {
@@ -443,6 +455,7 @@ function homeStage(bot, goal, { now = Date.now() } = {}) {
     const carried = bedCarried(bot);
     if (carried) return { phase: 'home_bed', action: 'place_bed', item: carried };
     const wool = woolCarried(bot);
+    if (wool.dyed) return { phase: 'home_bed', action: 'acquire', item: 'white_wool', count: 3 };
     if (wool.count >= 3) return { phase: 'home_bed', action: 'acquire', item: `${wool.colour}_bed`, count: 1 };
     return { phase: 'home_bed', action: 'gather_wool', count: 3 - wool.count };
   }

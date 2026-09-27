@@ -32,6 +32,7 @@ async function prepareEndSupplies(bot, task, goal, save, actions) {
     const shearing = require('./shearing');
     const wool = woolCarried(bot);
     goal.step = { action: 'prepare_end_supplies', item: 'bed', count: END_BEDS, carried: beds, wool: wool.total }; save();
+    if (wool.dyed) { await actions.acquireStep(bot, task, 'white_wool', countOf(bot, 'white_wool') + wool.dyed, goal, save); return false; }
     if (wool.count >= 3) { await actions.acquireStep(bot, task, `${wool.colour}_bed`, countOf(bot, `${wool.colour}_bed`) + 1, goal, save); return false; }
     if (shearing.canShear(bot) && shearing.woollySheep(bot, goal).length) {
       await shearing.shearSheep(bot, task, goal, save, { navigate: actions.navigate, acquireStep: actions.acquireStep, want: wool.total + 3 }); return false;
