@@ -2,7 +2,7 @@
 const { DAY } = require('./day');
 const { barterReady, goldOnHand, bastionKnown } = require('./bartering');
 const { isSetAside, setAside, attemptsFor } = require('./progress');
-const { homeStage, bedCarried, woolCarried, homeOf } = require('./home-base');
+const { bedCarried, woolCarried, homeOf } = require('./home-base');
 const { restockStage, rungWants } = require('./home-stash');
 const { villageBedRung } = require('./villages');
 
@@ -109,6 +109,9 @@ function preparationStage(bot, goal = {}) {
 // The rest of the home too (its site, levelling, chest and bed): trial 39
 // placed its bed and could not walk back to claim it, and the bed's step
 // held the armour off the ladder with ninety-three raw iron in the pack.
+// The home is off the ladder now (a side trip, strategy.js homeOption);
+// its steps stay here so a chosen one is timed as a rung (timeRung) and the
+// choice is put to Jev again after twenty minutes of it.
 // Iron armour may wait too: a player goes to the Nether with an iron
 // pickaxe, a bucket and food, and twenty-four ingots of armour were a
 // quarter of the midgame trials' time before it (the scoreboard,
@@ -185,12 +188,11 @@ function ladderRung(bot, goal, waiting) {
   if (!carried.includes('shield') && ready({ phase: 'shield' })) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
   if (best('sword') < 3 && ready({ phase: 'iron_sword' })) return another('iron_sword');
   if (!carried.includes('bucket') && !carried.includes('water_bucket') && ready({ phase: 'bucket' })) return { phase: 'bucket', action: 'acquire', item: 'bucket', count: 1 };
-  // Home before the long descents: a bed so a death costs a walk from the
-  // base rather than from world spawn, a plot and a pen so food is a known
-  // distance away. The walkthrough order every speedrunner keeps: iron
-  // tools, then a base and a bed, then the mine.
-  const home = homeStage(bot, goal);
-  if (home && ready({ phase: home.phase })) return { ...home, action: 'home', home };
+  // The home base is not a rung: it is a side trip offered with what it
+  // buys and what it takes (strategy.js homeOption). It had stood here,
+  // seven steps ahead of the armour, as "the walkthrough order every
+  // speedrunner keeps"; no speedrunner builds a base, and none of it is on
+  // the way to the pearls (the critical review, 2026-09-26).
   // Armour is four rungs, not one label. The Nether trip needs all of it,
   // and each piece is a visible step rather than "reach the Nether" for an
   // hour while twenty-four ingots accumulate.
@@ -374,7 +376,7 @@ function timeRung(bot, goal, phase, now = Date.now()) {
   rung.activeMs += Math.min(30000, Math.max(0, now - previous)); rung.lastAt = now;
   goal.rungTime = { phase, ...rung };
   // Every twenty working minutes without finishing, the strategy is asked
-  // again with the minutes said (minutesOnLadderNext): another open rung can
+  // again with the minutes said (minutesWorkedOn): another open rung can
   // go first, and that is Jev's to weigh, not a set-aside by rule.
   if (!DEFERRABLE.has(phase) || rung.activeMs < RUNG_BUDGET_MS * ((rung.reasked || 0) + 1)) return false;
   rung.reasked = (rung.reasked || 0) + 1; delete goal.strategy;

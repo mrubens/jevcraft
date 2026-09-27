@@ -1,25 +1,32 @@
 'use strict';
 // Strategy on the way to the dragon: of the things open now, which next.
-// The ladder's order is the code's answer and stays the fallback. What
-// Jev weighs is what the order cannot see: that the ruined portal's chest
-// two hundred blocks off holds the gold the golden-boots rung is digging
-// for, that the diamond sword is worth more today than the bow, that the
-// levels in hand should go on the sword before the next fight.
+// The ladder's order is the code's answer when Jev cannot be reached, and
+// nothing in the wording favours it. What Jev weighs is what the order
+// cannot see: that the ruined portal's chest two hundred blocks off holds
+// the gold the golden-boots rung is digging for, that the diamond sword is
+// worth more today than the bow, that the levels in hand should go on the
+// sword before the next fight.
 //
-// On offer, all of them already checked feasible:
+// On offer, all of them already checked feasible, as a short tree:
 //   the rungs open now (game-progress.js openRungs): the ladder's next,
 //     and each one after it the ladder may reach while those before it
-//     wait. Pickaxes and armour may not wait, so they are never skipped.
-//   side trips, by day and in good health: loot a remembered structure,
-//     trade at a remembered village, enchant at a known table.
+//     wait. Pickaxes may not wait, so they are never skipped.
+//   the Nether now, when every rung left may wait.
+//   side_trip, one branch holding the trips off the way to the pearls:
+//     loot, trade, explore, travel, animals, a bed to carry, the home base,
+//     copper armour, the expeditions, smelting, enchanting, a cache. Each
+//     says what it buys and what it takes, on the branch's own question.
+//     Twenty of them beside the rungs in one list was the question the
+//     critical review of 2026-09-26 found Jev answering.
 //
 // The choice holds: asked when the ladder's next rung changes, when the
-// set of options changes, or after ten minutes, and not at every step.
-// A side trip runs once and rests ten minutes (thirty if it failed), so
-// the answer after it is asked again with the trip done.
+// top-level choices change (a trip coming into view among the others does
+// not), or after ten minutes, and not at every step. A side trip runs once
+// and rests ten minutes (thirty if it failed), so the answer after it is
+// asked again with the trip done.
 const { DAY } = require('./day');
 const { openRungs, dimension, carryBedRung } = require('./game-progress');
-const { woolCarried } = require('./home-base');
+const { woolCarried, homeStage, bedCarried } = require('./home-base');
 const { setAside, isSetAside } = require('./progress');
 const { immediateThreat } = require('./danger');
 
@@ -182,7 +189,10 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   const clock = goal?.rungClocks?.[rung.phase];
   const spent = clock?.activeMs >= 60000 ? ` Worked on for ${Math.round(clock.activeMs / 60000)} minutes so far.` : '';
   const without = WITHOUT[piece] ? ` Until it is done, ${WITHOUT[piece]}.` : '';
-  return { description: `${first ? 'The ladder\'s next step: ' : 'Do this step first, ahead of the ladder\'s order: '}get ${what}${why ? ` (${why})` : ''}.${bot && goal ? searchSoFar(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
+  // Said alike whichever rung is first: "the ladder's next step" beside
+  // "ahead of the ladder's order" was a thumb on the scale (the critical
+  // review, 2026-09-26). The first is still the fallback.
+  return { description: `Get ${what}${why ? ` (${why})` : ''}.${bot && goal ? searchSoFar(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
 }
 
 // A second bed to carry, once the base's is claimed and none is in the
@@ -209,8 +219,40 @@ function carryBedOption(bot, goal, planFor = null) {
   };
 }
 
+// The home base, one side trip with what it buys and what it takes (the
+// critical review, 2026-09-26): its seven steps stood on the ladder ahead
+// of the armour as "the walkthrough order every speedrunner keeps", and no
+// speedrunner builds a base. None of it is on the way to the pearls. A base
+// begun in an older world is offered the same way, from where it stopped;
+// chosen, it holds like a rung, a step at a time (home-base.js homeStage).
+const HOME_STEPS = {
+  home_site: 'a site by water on flat ground', home_level: 'the ground levelled',
+  home_stash: 'a chest by the bed (eight planks)', home_bed: 'the bed placed there and slept in (three wool and three planks, or the one carried)',
+  home_water: 'a pond poured for the plot (a water bucket)', home_plot: 'a wheat plot tilled and sown (a hoe and seeds)', home_pen: 'a fenced pen for cows (fences and a gate)',
+};
+function homeOption(bot, goal, planFor = null) {
+  let step;
+  try { step = homeStage(bot, goal); } catch (_) { step = null; }
+  if (!step || isSetAside(goal, 'rung', step.phase)) return null;
+  const rung = { ...step, action: 'home', home: step };
+  const home = goal.survival?.home;
+  // What is left, read off the record: the plot and the pen are known only
+  // by looking, so they are said as left until the base is finished.
+  const done = { home_site: !!home, home_level: !!home && !(home.levelling > 0 && !home.levelledAt), home_stash: !!home?.stash?.position,
+    home_bed: !!home?.bed?.claimedAt, home_water: !!home && !home.pourWater, home_plot: false, home_pen: false };
+  const left = Object.keys(HOME_STEPS).filter(p => !done[p] || p === step.phase).map(p => HOME_STEPS[p]);
+  const spent = Object.entries(goal.rungClocks || {}).filter(([p]) => p in HOME_STEPS).reduce((n, [, c]) => n + (c.activeMs || 0), 0);
+  const bed = bedCarried(bot) && !done.home_bed ? ' The bed carried becomes the base\'s: nights away from it are spent without one until a second is made.' : '';
+  const at = home?.origin ? `the base at ${home.origin.x}, ${home.origin.z}, begun; left, in order: ` : 'none yet; its steps, in order: ';
+  return {
+    description: `Work on a home base: ${at}${left.join('; ')}. What it buys: the bed there keeps the spawn point while the bot sleeps nowhere else, so a death respawns by the chest and not at the world spawn; what is left in the chest does not drop on a death; the plot is bread and the pen steak and leather, a known walk away. None of it is needed for the Nether, blaze rods or ender pearls.${bed} The step at hand: ${HOME_STEPS[step.phase] || label(step.phase)}.${searchSoFar(bot, goal, rung)}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)} ${spent >= 60000 ? `Worked on for ${Math.round(spent / 60000)} minutes so far.` : 'Not worked on yet.'}`,
+    says: home ? 'I\'ll work on the base' : 'I\'ll make a home base', rung, trip: true,
+  };
+}
+
 // The options now, keyed for the decision tree. Only in the Overworld on
-// the preparation ladder with more than one thing to do.
+// the preparation ladder with more than one thing to do. A side trip is
+// marked `trip`: strategyTree puts them all under one branch.
 function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   if (bot.game?.gameMode !== 'survival' || dimension(bot) !== 'overworld') return null;
   const rungs = openRungs(bot, goal);
@@ -234,7 +276,7 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
     };
     const without = p => /^iron_(armour|helmet|chestplate|leggings|boots)$/.test(p) ? armourHits() : WITHOUT[p] || RUNG_WHY[p] || 'it waits';
     return {
-      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now: the portal, and through it for a fortress, blaze rods and ender pearls. ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.`).join(' ')}${clock ? ` The ladder's next step has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.`,
+      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now: the portal, and through it for a fortress, blaze rods and ender pearls. ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.`).join(' ')}${clock ? ` The ${label(stage.phase)} has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.`,
       says: `I'll leave the ${left.map(label).join(' and the ')} for later`,
       side: true,
       run: async () => { for (const p of left) setAside(goal, 'rung', p, 'Jev chose the Nether first', 1800000); },
@@ -247,7 +289,7 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   // ladder's stage and the side trips. The dream run spent an afternoon
   // walking about after endermen with an ancient city never looked for.
   else if (LATER.has(stage.action) || stage.phase === 'obtain_ender_pearls') {
-    options[`stage_${stage.phase}`] = { description: `The ladder's next step: ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase] ? ` It is for this: ${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase]}.` : ''}`, stage, fallback: true };
+    options[`stage_${stage.phase}`] = { description: `Go on to ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase] ? ` It is for this: ${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase]}.` : ''}`, stage, fallback: true };
     // A step that may wait, back on the ladder after its time was up (the
     // ladder returns a set-aside step when nothing else is left): the
     // Nether first is on offer beside it too. mid-237-c was handed the
@@ -268,25 +310,46 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   const toolless = rungs.length && /^(stone_pickaxe|stone_sword|iron_pickaxe)$/.test(rungs[0].phase);
   // A bed to carry, at any hour: spiders' string is a night's wool.
   const carryBed = !toolless && carryBedOption(bot, goal, planFor);
-  if (carryBed) options.carry_bed = carryBed;
+  if (carryBed) options.carry_bed = { ...carryBed, trip: true };
+  // The home base, at any hour and in any health, as its steps were on the
+  // ladder: a hurt bot is the one a bed and a chest would serve.
+  const home = !toolless && homeOption(bot, goal, planFor);
+  if (home) options.home_base = home;
   if (fit && !toolless) for (const [key, side] of Object.entries(sides)) {
-    if (side && !isSetAside(goal, 'strategy_side', key)) options[key] = { description: side.description, says: side.says, run: side.run, side: true };
+    if (side && !isSetAside(goal, 'strategy_side', key)) options[key] = { description: side.description, says: side.says, run: side.run, side: true, trip: true };
   }
   // Work that needs no walk or daylight (smelting the ore carried) is on
   // offer at any hour while nothing is on the bot.
   if (!immediateThreat(bot)) for (const [key, side] of Object.entries(sides)) {
-    if (side?.anyTime && !options[key] && !isSetAside(goal, 'strategy_side', key)) options[key] = { description: side.description, says: side.says, run: side.run, side: true };
+    if (side?.anyTime && !options[key] && !isSetAside(goal, 'strategy_side', key)) options[key] = { description: side.description, says: side.says, run: side.run, side: true, trip: true };
   }
   return Object.keys(options).length > 1 ? options : null;
 }
 
-function strategyState(bot, goal, stage, options) {
+// The question as Jev sees it: the rungs, the Nether now, and one
+// side_trip branch whose children are the trips, each with its facts. The
+// branch names what it holds, so the top question is answered knowing what
+// a side trip would be; with one trip, it says all of it.
+const tripSays = (key, o) => o.says ? o.says.replace(/^I'll /, '') : key.replaceAll('_', ' ');
+function strategyTree(options) {
+  const top = {}, trips = {};
+  for (const [key, o] of Object.entries(options)) (o.trip ? trips : top)[key] = { description: o.description, ...(o.fallback ? { fallback: true } : {}) };
+  const keys = Object.keys(trips);
+  if (keys.length === 1) top.side_trip = { description: `A side trip, off the way to the Nether: ${trips[keys[0]].description}`, children: trips };
+  else if (keys.length) top.side_trip = { description: `A side trip, off the way to the Nether, one of ${keys.length}: ${keys.map(k => tripSays(k, options[k])).join('; ')}. Each says what it buys and what it takes on its own question.`, children: trips };
+  return top;
+}
+
+function strategyState(bot, goal, stage) {
   const clock = goal.rungClocks?.[stage.phase];
   const t = bot.time?.timeOfDay ?? 0;
+  // The options are not repeated here: each is in its question, and the
+  // state had carried every description a second time (the critical
+  // review, 2026-09-26).
   return {
-    situation: 'On the way to beating the game (Nether, blaze rods, ender pearls, the stronghold, the dragon). Several things are open; choose which to do next. The ladder\'s order is a sensible default, not a rule.',
-    ladderNext: stage.phase, minutesOnLadderNext: clock ? Math.round(clock.activeMs / 60000) : 0,
-    note: 'minutesOnLadderNext is how long the ladder\'s next step has been worked on without finishing; this is asked again every twenty of them. Another open step can go first. Nothing skipped here is skipped for good.',
+    situation: 'On the way to beating the game (Nether, blaze rods, ender pearls, the stronghold, the dragon). Several things are open; choose which to do next.',
+    workingOn: label(stage.phase), minutesWorkedOn: clock ? Math.round(clock.activeMs / 60000) : 0,
+    note: 'minutesWorkedOn is how long the step being worked on has gone without finishing; this is asked again every twenty of them. Nothing skipped here is skipped for good.',
     timeOfDay: t, daylightMinutesRemaining: Math.round(Math.max(0, DAY.DUSK - t) / 1200 * 10) / 10,
     ...(require('./exploration').biomeView(bot) || {}),
     // What the Nether truly waits on, said: the note had told Jev "every
@@ -302,19 +365,21 @@ function strategyState(bot, goal, stage, options) {
     health: bot.health, food: bot.food, experienceLevel: bot.experience?.level ?? 0,
     inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
     deaths: (goal.survival?.deaths || []).length,
-    options: Object.fromEntries(Object.entries(options).map(([k, o]) => [k, o.description])),
   };
 }
 
 async function strategyStep(bot, task, goal, save, stage, { client, decide, sides = {}, planFor = null, now = Date.now } = {}) {
   const options = strategyOptions(bot, goal, stage, sides, planFor);
   if (!options) { delete goal.strategy; return null; }
-  const keys = Object.keys(options).sort().join(',');
+  const tree = strategyTree(options);
+  // Held while the top-level choices stand: a trip coming into view or
+  // going beside the others changes nothing chosen between at the top.
+  // Biomes coming into view had re-asked the whole list on most walks.
+  const keys = Object.keys(tree).sort().join(',');
   const held = goal.strategy;
   let choice = held && held.ladderNext === stage.phase && held.keys === keys && now() - held.at < HOLD_MS && options[held.choice] ? held.choice : null;
   if (!choice) {
-    const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, fallback: o.fallback }]));
-    const decision = await decide('win_strategy', { client, bot, task, goal, save, tree, state: strategyState(bot, goal, stage, options) });
+    const decision = await decide('win_strategy', { client, bot, task, goal, save, tree, state: strategyState(bot, goal, stage) });
     choice = decision.path.at(-1);
     goal.strategy = { choice, ladderNext: stage.phase, keys, at: now(), source: decision.fallback ? 'fallback' : 'jev' };
     save();
@@ -337,4 +402,4 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   return { ran: true };
 }
 
-module.exports = { carryBedOption, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };
+module.exports = { carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };

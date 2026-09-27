@@ -114,7 +114,7 @@ test('a set is offered by its name and pieces, with what it takes from the pocke
   const armour = { phase: 'iron_armour', action: 'acquire_set', item: 'iron_helmet', items: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], count: 4 };
   const planFor = (b, items) => [{ action: 'smelt', item: 'iron_ingot', count: 23 }, ...items.map(({ item }) => ({ action: 'craft', item, count: 1 }))];
   const d = rungOption(armour, false, { entity: { position: { x: 0, y: 0, z: 0 } } }, {}, planFor).description;
-  assert.match(d, /get iron armour \(iron helmet, iron chestplate, iron leggings, iron boots\)/);
+  assert.match(d, /^Get iron armour \(iron helmet, iron chestplate, iron leggings, iron boots\)/);
   assert.match(d, /twenty-four ingots/);
   assert.match(d, /smelt 23 iron ingot, craft 1 iron helmet/);
   assert.match(d, /no gathering/);
@@ -336,4 +336,83 @@ test('taking the base bed along is not offered when no bed stands there', () => 
     w.set(w.layout.bed.foot, 'air'); w.set(w.layout.bed.head, 'air');
     assert.equal(sideTrips(w.bot, w.goal, null).take_home_bed, undefined);
   });
+});
+
+// The critical review (2026-09-26): win_strategy was fifteen to twenty-five
+// options in one list, the first labelled "the ladder's next step" and the
+// rest "ahead of the ladder's order", re-asked whenever a biome came into
+// view, with every description in the state a second time.
+const trips = { loot: { description: 'Loot: walk 120 blocks to the ruined portal and open its chests.', says: 'I\'ll loot the ruined portal 120 blocks away', run: async () => {} },
+  trade: { description: 'Trade at the remembered village 90 blocks away.', says: 'I\'ll go trade at the village', run: async () => {} } };
+const treeOf = () => { const asked = []; return { asked, decide: async (id, args) => { asked.push(args); return { path: ['rung_golden_boots'] }; } }; };
+
+test('the question\'s top level is the rungs, the Nether now and one side trip; the trips are its children, each with its facts', async () => {
+  const { bot, goal, task } = fixture(['golden_boots', 'diamond_sword']);
+  const { asked, decide } = treeOf();
+  await strategyStep(bot, task, goal, () => {}, { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 }, { decide, sides: trips, now: () => 1e12 });
+  const { tree } = asked[0];
+  assert.deepEqual(Object.keys(tree), ['rung_golden_boots', 'rung_diamond_sword', 'nether_first', 'side_trip']);
+  assert.deepEqual(Object.keys(tree.side_trip.children), ['loot', 'trade']);
+  assert.equal(tree.side_trip.children.loot.description, trips.loot.description, 'the trip\'s facts on its own question');
+  assert.match(tree.side_trip.description, /one of 2: loot the ruined portal 120 blocks away; go trade at the village/);
+  // With one trip, the branch says all of it.
+  const lone = treeOf();
+  await strategyStep(bot, task, { ...goal, strategy: undefined }, () => {}, { phase: 'golden_boots' }, { decide: lone.decide, sides: { loot: trips.loot }, now: () => 1e12 });
+  assert.match(lone.asked[0].tree.side_trip.description, /Loot: walk 120 blocks to the ruined portal and open its chests\./);
+  // The registry takes the tree: every key is declared at its level.
+  const { question } = require('../src/decisions');
+  const levels = Object.fromEntries(question('win_strategy').options.map(o => [o.key || o.pattern, o.level]));
+  assert.equal(levels.side_trip, 'root'); assert.equal(levels.loot, 'side_trip'); assert.equal(levels.home_base, 'side_trip'); assert.equal(levels.carry_bed, 'side_trip');
+});
+
+test('the rungs are said alike, none as the ladder\'s own; the first is still the fallback', () => {
+  const { bot, goal } = fixture(['golden_boots', 'diamond_sword']);
+  const options = strategyOptions(bot, goal, { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 });
+  for (const key of ['rung_golden_boots', 'rung_diamond_sword']) {
+    assert.match(options[key].description, /^Get /, key);
+    assert.doesNotMatch(options[key].description, /ladder/, key);
+  }
+  assert.equal(options.rung_golden_boots.fallback, true);
+  assert(!options.rung_diamond_sword.fallback);
+  const f = fixture([]);
+  const later = strategyOptions(f.bot, f.goal, { phase: 'obtain_ender_pearls', action: 'pearl_patrol', item: 'ender_pearl', count: 12 }, trips);
+  assert.doesNotMatch(later.stage_obtain_ender_pearls.description, /ladder/);
+});
+
+test('a trip coming into view beside the others does not re-ask; the top-level choices changing does; the state does not repeat the options', async () => {
+  const { bot, goal, task } = fixture(['golden_boots', 'diamond_sword']);
+  const { asked, decide } = treeOf();
+  const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
+  let now = 1e12;
+  await strategyStep(bot, task, goal, () => {}, stage, { decide, sides: { loot: trips.loot }, now: () => now });
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].state.options, undefined, 'each description is in its question once');
+  assert.doesNotMatch(JSON.stringify(asked[0].state), /Loot: walk 120 blocks/);
+  now += 60000;
+  await strategyStep(bot, task, goal, () => {}, stage, { decide, sides: trips, now: () => now });
+  assert.equal(asked.length, 1, 'the village came into view among the trips: held');
+  now += 60000;
+  await strategyStep(bot, task, goal, () => {}, stage, { decide, sides: {}, now: () => now });
+  assert.equal(asked.length, 2, 'no side trip left: the top level changed, asked again');
+});
+
+test('a base begun in an older world is offered from where it stopped, and chosen it holds as a rung, a step at a time', async () => {
+  const { bot, goal, task } = homeFixture(['golden_boots', 'diamond_sword']);
+  const h = goal.survival.home; delete h.completedAt; delete h.bed.claimedAt;
+  const stage = openRungs(bot, goal)[0];
+  assert.equal(stage.phase, 'bed', 'the base\'s step is not on the ladder; the bed rung is');
+  goal.rungClocks = { home_level: { activeMs: 7 * 60000, lastAt: 0 } };
+  const options = strategyOptions(bot, goal, stage);
+  assert(options.home_base, Object.keys(options).join(','));
+  assert.match(options.home_base.description, /the base at 400, 0, begun; left, in order: a chest by the bed \(eight planks\); the bed placed there and slept in/);
+  assert.match(options.home_base.description, /Worked on for 7 minutes so far/);
+  assert.equal(options.home_base.rung.action, 'home');
+  const { asked, decide } = picking('home_base');
+  const said = []; bot.chat = line => said.push(line);
+  const chosen = await strategyStep(bot, task, goal, () => {}, stage, { decide, now: () => 1e12 });
+  assert.equal(chosen.stage.phase, options.home_base.rung.phase);
+  assert.equal(chosen.stage.action, 'home');
+  assert.match(said[0], /I'll work on the base/);
+  await strategyStep(bot, task, goal, () => {}, stage, { decide, now: () => 1e12 + 60000 });
+  assert.equal(asked.length, 1, 'held like a rung');
 });
