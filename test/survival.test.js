@@ -3292,3 +3292,15 @@ test('the charge at a shooter is no answer with a biter at arm\'s length, in vie
   const danger = [{ entity: skeleton, distance: 10, visible: true }];
   assert.equal(await survival.closeOnShooter(new Task('t'), {}, () => {}, danger), false);
 });
+
+test('the night mine is told what is left once the pickaxes wear out', () => {
+  // mid-244-k wore six pickaxes to none with one stick and no wood, and dug seventy blocks up by hand for forty-six minutes.
+  const { pickaxeReserve } = require('../src/survival');
+  const items = [{ name: 'stick', count: 1 }, { name: 'cobblestone', count: 128 }, { name: 'crafting_table', count: 1 }];
+  const bot = { inventory: { items: () => items }, blockAt: p => ({ name: p.y < 70 ? 'stone' : 'air', position: p, boundingBox: p.y < 70 ? 'block' : 'empty' }) };
+  const r = pickaxeReserve(bot, new Vec3(0, 10, 0));
+  assert.equal(r.stonePickaxesMakeable, 0, 'one stick makes none');
+  assert(r.climbOutByHandMinutes >= 20, JSON.stringify(r));
+  items.push({ name: 'oak_log', count: 2 });
+  assert.equal(pickaxeReserve(bot, new Vec3(0, 10, 0)).stonePickaxesMakeable, 8, 'two logs are sixteen sticks more');
+});

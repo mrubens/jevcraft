@@ -331,6 +331,21 @@ function lavaExit(bot, radius = 6, { water = false } = {}) {
 const { besideDrop, dropWithin, KNOCKBACK } = require('./terrain');
 const BUNKER_DIG_MS = 3000;
 const heavyHitters = (danger, radius) => danger.filter(t => KNOCKBACK.has(t.entity.name) && t.distance <= radius);
+// What is left once the pickaxes carried wear out: how many more stone ones
+// the sticks, wood and cobblestone carried make, and what the climb out is
+// by hand without one. mid-244-k night-mined six pickaxes down to none, one
+// stick and no wood left, and dug seventy blocks up by hand, forty-six
+// minutes of its three hours (2026-09-27).
+function pickaxeReserve(bot, feet) {
+  const n = name => bot.inventory.items().filter(i => i.name === name || (name === 'log' && /_log$/.test(i.name)) || (name === 'planks' && /_planks$/.test(i.name))).reduce((t, i) => t + i.count, 0);
+  const sticks = n('stick') + 2 * n('planks') + 8 * n('log');
+  const stone = ['cobblestone', 'cobbled_deepslate', 'blackstone'].reduce((t, m) => t + n(m), 0);
+  const table = n('crafting_table') > 0 || n('planks') + 4 * n('log') >= 4;
+  const more = table ? Math.min(Math.floor(sticks / 2), Math.floor(stone / 3)) : 0;
+  const up = require('./surface').climbToSurface(bot, feet);
+  return { stonePickaxesMakeable: more, sticksAvailable: sticks, ...(up ? { blocksToOpenSky: up, climbOutByHandMinutes: Math.round(up * 3 * 7.5 / 60) } : {}) };
+}
+
 function firmGround(bot, radius = 4, { margin = 1 } = {}) {
   const feet = bot.entity.position.floored(), cells = [];
   const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water|powder_snow/.test(b.name); };
@@ -2902,7 +2917,7 @@ class Survival {
     tree.branch = { description: `Dig a branch down to a working depth and along it, looking for ore on the way: ${branchY < feet.y ? `down to y ${branchY}, ${feet.y - branchY} blocks below here` : branchY > feet.y ? `up to y ${branchY}, ${branchY - feet.y} blocks above here` : `level, at y ${branchY}`}, then twenty-four blocks along.` };
     if (dark.length) tree.light_tunnel = { description: `Put a torch in the tunnel here: ${dark.length} cells around the bot are dark enough for monsters to spawn in, and light stops them (${countOf(bot, 'torch')} torches carried).` };
     const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree, context: {},
-      state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
+      state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), afterThePickaxes: pickaxeReserve(bot, feet), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
     if (decision.stale) return null;
     if (decision.fallback) return nightOre(bot, feet, attemptsFor(this));
     const pick = decision.path.at(-1);
@@ -3631,4 +3646,4 @@ class Survival {
   }
 }
 
-module.exports = { chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
