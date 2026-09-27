@@ -162,6 +162,16 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     const deaths = recentDeaths(bot, goal);
     if (deaths.length) state = { ...state, recentDeaths: deaths };
   }
+  // Nights without sleep, with every such question: phantoms come for a
+  // player on the third, and mid-231-e was killed by them at seven hunger,
+  // told of it only in one option of one question (2026-09-26).
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && state.nightsWithoutSleep === undefined) {
+    const slept = goal?.survival?.sleptAtAge, age = bot.time?.age;
+    if (Number.isFinite(slept) && Number.isFinite(age) && /overworld/.test(String(bot.game?.dimension || 'overworld'))) {
+      const nights = Math.floor((age - slept) / 24000);
+      if (nights >= 1) state = { ...state, nightsWithoutSleep: nights, phantoms: nights >= 3 ? 'phantoms are coming at night now: three nights without sleep brings them, diving from the sky; sleeping in a bed stops them' : `phantoms come after three nights without sleep (${3 - nights} more)` };
+    }
+  }
   checkOptions(spec, tree);
   const fallback = typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : null;
   let decision;

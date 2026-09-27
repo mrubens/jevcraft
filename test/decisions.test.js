@@ -104,3 +104,15 @@ test('every question about playing the game is told how the bot died lately', as
   await decide('corpse_run', { client, bot, goal, tree: { go_back: { description: 'a' }, leave_them: { description: 'b' } }, state: { distance: 50 } });
   assert.equal(seen.recentDeaths?.[0]?.cause, 'was impaled by Drowned');
 });
+
+test('every question about playing the game is told the nights without sleep and when phantoms come', async () => {
+  // mid-231-e was killed by phantoms, told of them only in one option of one question.
+  const { decide } = require('../src/decisions');
+  const bot = { entity: { position: { x: 0, y: 64, z: 0 } }, game: { dimension: 'overworld' }, time: { age: 100000 } };
+  const goal = { survival: { sleptAtAge: 100000 - 3 * 24000 - 100 } };
+  let seen = null;
+  const client = { systemOne: async ({ state }) => { seen = state; return { answers: { branch_0: { choice: 'go_back', confidence: 0.9 } } }; } };
+  await decide('corpse_run', { client, bot, goal, tree: { go_back: { description: 'a' }, leave_them: { description: 'b' } }, state: {} });
+  assert.equal(seen.nightsWithoutSleep, 3);
+  assert.match(seen.phantoms, /phantoms are coming at night now/);
+});
