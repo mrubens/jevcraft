@@ -83,7 +83,14 @@ function question(id) {
 
 // Every key in the tree must be one its question declares. Under the test
 // runner an undeclared key fails; in play it is logged once as a bug.
-const declared = (spec, key) => spec.options.some(o => o.key === key || (o.pattern && new RegExp(`^(?:${o.pattern})$`).test(key)));
+const declared = (spec, key) => key === NONE_GOOD_KEY || spec.options.some(o => o.key === key || (o.pattern && new RegExp(`^(?:${o.pattern})$`).test(key)));
+// "None of these options are good", on every question about playing the
+// game: Jev's way of saying the move a player would make is not on the
+// list. It is recorded for us to add what is missing, and the best of the
+// options that are there is taken all the same (the user, 2026-09-27: the
+// deaths of the day were read, one by one, to find missing moves).
+const NONE_GOOD_KEY = 'none_good';
+const NONE_GOOD = 'None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken.';
 const reported = new Set();
 function checkOptions(spec, tree) {
   const unknown = [];
@@ -153,6 +160,29 @@ function recentDeaths(bot, goal, now = Date.now()) {
   }));
 }
 
+// Recorded, and the best listed option taken instead: the likeliest by
+// Jev's own weights, walked on down its branch by the question's fallback.
+function noneGood(id, decision, listed, fallback, { bot, goal, state }) {
+  const weights = decision.judgments?.[0]?.probabilities || {};
+  const keys = Object.keys(listed);
+  const best = keys.slice().sort((a, b) => (weights[b] || 0) - (weights[a] || 0))[0];
+  const node = listed[best];
+  const rest = node?.children ? walk(node.children, fallback || firstOption) : { path: [], action: node };
+  const took = { path: [best, ...rest.path], action: rest.action };
+  const entry = { at: new Date().toISOString(), question: id, bot: bot?.username || null, port: bot?._client?.socket?.remotePort ?? null,
+    dimension: String(bot?.game?.dimension || '').replace('minecraft:', ''), position: bot?.entity?.position ? { x: Math.round(bot.entity.position.x), y: Math.round(bot.entity.position.y), z: Math.round(bot.entity.position.z) } : null,
+    health: bot?.health ?? null, request: goal?.request || null, weights, tookInstead: took.path,
+    options: Object.fromEntries(keys.map(k => [k, typeof listed[k].description === 'string' ? listed[k].description : JSON.stringify(listed[k].description)])), state };
+  try {
+    const fs = require('fs'), path = require('path');
+    const log = process.env.JEV_MISSING_OPTIONS || 'artifacts/missing-options.jsonl';
+    fs.mkdirSync(path.dirname(log), { recursive: true });
+    fs.appendFileSync(log, JSON.stringify(entry) + '\n');
+  } catch (_) { /* the flight record still has it */ }
+  console.log(`[missing option] ${id}: none of the options was good; took ${took.path.join('/')} instead`);
+  return { ...decision, ...took, noneGood: true };
+}
+
 class NoSafeDefault extends Error {
   constructor(id, reason) { super(`${id}: Jev is unreachable (${reason}) and this decision has no safe default`); this.name = 'Blocked'; }
 }
@@ -191,6 +221,11 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     let sculk = null; try { sculk = require('../sculk').sculkAbout(bot); } catch (_) { /* no world */ }
     if (sculk) state = { ...state, sculk: sculk.says };
   }
+  // On unless JEV_NONE_GOOD=0 (the test runner, whose tests name the options
+  // each question offers; test/decisions.test.js turns it back on).
+  const offerNoneGood = process.env.JEV_NONE_GOOD !== '0' && !!client && GAMEPLAY_AREAS.has(spec.area) && Object.keys(tree).length >= 2 && !tree[NONE_GOOD_KEY];
+  const listed = tree;
+  if (offerNoneGood) tree = { ...tree, [NONE_GOOD_KEY]: { description: NONE_GOOD } };
   checkOptions(spec, tree);
   const fallback = typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : null;
   // The question out is what holds the turn while it is out (turn.js).
@@ -224,6 +259,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       if (spec.gate.below === 'fallback') decision = { ...decision, ...walk(tree, fallback) };
     }
     if (goal && bot && !decision.stale) announceFallback(bot, goal, decision);
+    if (!decision.stale && decision.path?.[0] === NONE_GOOD_KEY) decision = noneGood(id, decision, listed, fallback, { bot, goal, state });
   }
   } finally { giveBack(bot, turnBefore); }
   decision.id = id;
@@ -233,7 +269,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     goal.decisions ||= [];
     goal.decisions.push({ at: new Date().toISOString(), id, kind: spec.kind, path: decision.path, state, options: JSON.parse(JSON.stringify(tree)),
       latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, asked: decision.asked, model: client?.model,
-      stale: decision.stale, fallback: decision.fallback, gated: decision.gated });
+      stale: decision.stale, fallback: decision.fallback, gated: decision.gated, ...(decision.noneGood ? { noneGood: true } : {}) });
     goal.decisions = goal.decisions.slice(-40); save();
   }
   return decision;

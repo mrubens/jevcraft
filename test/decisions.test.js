@@ -145,3 +145,27 @@ test('the portal way question, a work question, is told the run clock too', asyn
   await decide('portal_method', { client, bot: null, goal, tree: { cast_frame: { description: 'a' }, build_new: { description: 'b' } }, state: {} });
   assert.equal(seen.runClock?.minutesPlayed, 1);
 });
+
+test('every question about playing the game offers "none of these options are good": recorded, and the best listed option taken instead', async () => {
+  // The user (2026-09-27): a way for Jev to say the move a player would make is missing, recorded for us to add.
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'jev-')), 'missing.jsonl');
+  const env = { NONE: process.env.JEV_NONE_GOOD, LOG: process.env.JEV_MISSING_OPTIONS };
+  process.env.JEV_NONE_GOOD = '1'; process.env.JEV_MISSING_OPTIONS = log;
+  try {
+    const { decide } = require('../src/decisions');
+    let offered = null;
+    const client = { systemOne: async ({ questions }) => { offered = Object.keys(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'none_good', confidence: 0.7, probabilities: { none_good: 0.6, leave_them: 0.3, go_back: 0.1 } } } }; } };
+    const goal = {};
+    const r = await decide('corpse_run', { client, bot: null, goal, tree: { go_back: { description: 'a' }, leave_them: { description: 'b' } }, state: { distance: 50 } });
+    assert(offered.includes('none_good'), offered.join(','));
+    assert.deepEqual(r.path, ['leave_them'], 'the best listed option taken instead');
+    assert.equal(r.noneGood, true);
+    const entry = JSON.parse(fs.readFileSync(log, 'utf8').trim().split('\n').at(-1));
+    assert.equal(entry.question, 'corpse_run'); assert.deepEqual(entry.tookInstead, ['leave_them']); assert.equal(entry.options.go_back, 'a');
+    assert.equal(goal.decisions.at(-1).noneGood, true);
+  } finally {
+    if (env.NONE === undefined) delete process.env.JEV_NONE_GOOD; else process.env.JEV_NONE_GOOD = env.NONE;
+    if (env.LOG === undefined) delete process.env.JEV_MISSING_OPTIONS; else process.env.JEV_MISSING_OPTIONS = env.LOG;
+  }
+});
