@@ -90,47 +90,75 @@ async function digWithAirGuard(bot, task, block) {
 // under water. Trial 63 drowned a pointed dripstone's width from a dry cave:
 // water and air alone found no way, and the straight dig up broke into the
 // lake over its head. A block dug is named on the route cell (`digs`).
-const STEP_S = 0.4, DIG_MAX_S = 4;
-function digSeconds(bot, block) {
+const STEP_S = 0.4;
+// Breath, in seconds: a point of air lasts fifteen ticks with the head
+// under, less a margin for a stroke that goes wrong. Out of it, drowning
+// takes two health a second.
+const AIR_POINT_S = 0.75, BREATH_MARGIN_S = 2;
+const breathSeconds = (bot, oxygen = bot.oxygenLevel ?? 20) => Math.max(0, oxygen * AIR_POINT_S - BREATH_MARGIN_S);
+const drowningSeconds = bot => Math.max(0, ((bot.health ?? 20) - 1) / 2);
+// The dig time from where the digger stands (`stand`, its feet): wet with
+// the head in water, afloat with no floor under it. A swimmer with a floor
+// sinks to stand and dig, five times quicker than afloat. mid-244-y's
+// estimate took the swimmer's own footing, afloat in the lake, for every
+// block on the way, twenty-five times a dig it would have made standing
+// (note 477). Without `stand`, where the bot is now.
+function digSeconds(bot, block, stand = null) {
   if (!block || typeof block.digTime !== 'function' || block.diggable === false || /bedrock|lava|obsidian/.test(block.name)) return null;
   const tools = [null, ...new Set((bot.inventory?.items?.() || []).filter(i => /_(pickaxe|shovel|axe)$/.test(i.name)).map(i => i.type))];
-  // A swimmer with a floor under it sinks to stand and dig: five times
-  // quicker than digging afloat.
-  const below = bot.entity?.position && bot.blockAt?.(bot.entity.position.floored().offset(0, -1, 0));
-  const wet = !!bot.entity?.isInWater, floating = !bot.entity?.onGround && below?.boundingBox !== 'block';
+  let wet, floating;
+  if (stand) {
+    wet = swimmableWater(bot.blockAt?.(stand.offset(0, 1, 0))) || swimmableWater(bot.blockAt?.(stand));
+    floating = bot.blockAt?.(stand.offset(0, -1, 0))?.boundingBox !== 'block';
+  } else {
+    const below = bot.entity?.position && bot.blockAt?.(bot.entity.position.floored().offset(0, -1, 0));
+    wet = !!bot.entity?.isInWater; floating = !bot.entity?.onGround && below?.boundingBox !== 'block';
+  }
   let best = Infinity;
   for (const type of tools) { try { best = Math.min(best, block.digTime(type, false, wet, floating, [], bot.entity?.effects || {})); } catch (_) { /* not for this tool */ } }
   return Number.isFinite(best) ? best / 1000 : null;
 }
+// Cheapest first, without sorting the whole frontier each step.
+function heap() {
+  const a = [];
+  const up = i => { while (i) { const j = (i - 1) >> 1; if (a[j].cost <= a[i].cost) break; [a[i], a[j]] = [a[j], a[i]]; i = j; } };
+  const down = i => { for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < a.length && a[l].cost < a[m].cost) m = l; if (r < a.length && a[r].cost < a[m].cost) m = r; if (m === i) return; [a[i], a[m]] = [a[m], a[i]]; i = m; } };
+  return { get size() { return a.length; }, push(x) { a.push(x); up(a.length - 1); }, pop() { const top = a[0], last = a.pop(); if (a.length) { a[0] = last; down(0); } return top; } };
+}
 // `closed` names cells a swimmer was held out of on the way (see
-// surfaceForAir): the search goes round them.
-function airRoute(bot, closed = new Set()) {
-  const start = bot.entity.position.floored();
+// surfaceForAir): the search goes round them. `from` is where the swim
+// starts (the bot's feet by default), and `budgetS` how far it may go, in
+// seconds: the breath left, not a box. mid-244-y's air was nine blocks west
+// along a flooded column, a search boxed to eight each way found none, and
+// it dug straight up into twelve blocks of stone (note 477). A node count
+// bounds the search's cost.
+const ROUTE_NODES = 4096;
+function airRoute(bot, closed = new Set(), { from = null, budgetS = breathSeconds(bot) } = {}) {
+  const start = (from || bot.entity.position).floored();
   const open = b => swimmableWater(b) || b && ['air', 'cave_air', 'void_air'].includes(b.name);
   const water = p => swimmableWater(bot.blockAt(p));
-  // Seconds to make a cell passable: 0 open, the dig time for a block that
-  // comes away quickly and brings nothing down, null otherwise.
-  const clear = p => {
+  // Seconds to make a cell passable, dug from `stand`: 0 open, the dig time
+  // for a block that brings nothing down, null otherwise.
+  const clear = (p, stand) => {
     const b = bot.blockAt(p);
     if (open(b)) return 0;
     if (/sand|gravel|concrete_powder/.test(b?.name || '')) return null;
-    const t = digSeconds(bot, b);
-    return t != null && t <= DIG_MAX_S ? t : null;
+    return digSeconds(bot, b, stand);
   };
   const directions = [new Vec3(0, 1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, -1, 0)];
-  const frontier = [{ p: start, path: [], cost: 0 }];
+  const frontier = heap();
+  frontier.push({ p: start, path: [], cost: 0 });
   const best = new Map([[`${start}`, 0]]);
-  for (let n = 0; frontier.length && n < 4096; n++) {
-    frontier.sort((a, b) => a.cost - b.cost);
-    const { p, path, cost } = frontier.shift();
+  for (let n = 0; frontier.size && n < ROUTE_NODES; n++) {
+    const { p, path, cost } = frontier.pop();
     if (cost > (best.get(`${p}`) ?? Infinity)) continue;
     if (!closed.has(`${p}`) && open(bot.blockAt(p)) && open(bot.blockAt(p.offset(0, 1, 0))) && !water(p.offset(0, 1, 0)) &&
-      (water(p) || bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block')) return path.length ? path : [p];
+      (water(p) || bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block')) return Object.assign(path.length ? path : [p], { seconds: cost });
     for (const d of directions) {
       const next = p.plus(d);
-      if (next.y - start.y > 20 || next.y < start.y - 4 || Math.abs(next.x - start.x) > 8 || Math.abs(next.z - start.z) > 8) continue;
+      if (next.y < start.y - 4) continue;
       if (closed.has(`${next}`)) continue;
-      const feet = clear(next), head = clear(next.offset(0, 1, 0));
+      const feet = clear(next, p), head = clear(next.offset(0, 1, 0), p);
       if (feet == null || head == null) continue;
       // A block with a collision box is in the way however quickly it comes
       // away, and is named to be dug: mid-92-b's way to air went up through
@@ -145,7 +173,7 @@ function airRoute(bot, closed = new Set()) {
       const ground = [1, 2, 3].some(dy => bot.blockAt(next.offset(0, -dy, 0))?.boundingBox === 'block');
       if (!dug && !water(next) && !water(next.offset(0, 1, 0)) && !water(next.offset(0, -1, 0)) && !ground && d.y >= 0) continue;
       const total = cost + STEP_S + feet + head;
-      if (total >= (best.get(`${next}`) ?? Infinity)) continue;
+      if (total > budgetS || total >= (best.get(`${next}`) ?? Infinity)) continue;
       best.set(`${next}`, total);
       const cell = next.clone();
       cell.digs = [feetDug && next, headDug && next.offset(0, 1, 0)].filter(Boolean);
@@ -155,11 +183,44 @@ function airRoute(bot, closed = new Set()) {
   return null;
 }
 
+// Before a route that takes the head under water: each stretch of it with
+// the head under, from the last breath to the next, in seconds (a step
+// about 0.4 s, each block at the game's time dug from the cell before), set
+// against the breath there is. A cell dug beside water fills with it.
+// mid-244-y's way to shore swam up into a sealed lake toward a landing and
+// stalled under its lid, the air twenty blocks off, no breath counted
+// (note 477). Null when every stretch fits; else how long, the breath, and
+// the cell where it runs out.
+function breathShort(bot, path) {
+  const water = p => swimmableWater(bot.blockAt(p));
+  const dug = new Set(), around = [new Vec3(0, 1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+  const under = c => water(c) || (dug.has(`${c}`) && around.some(d => water(c.plus(d))));
+  const full = breathSeconds(bot, 20), now = headSubmerged(bot);
+  let breath = now ? breathSeconds(bot) : full, held = now ? 0 : null, stand = bot.entity.position.floored();
+  for (const node of path) {
+    const p = new Vec3(node.x, node.y, node.z).floored();
+    let t = STEP_S;
+    for (const q of node.toBreak || []) {
+      const c = new Vec3(q.x, q.y, q.z).floored();
+      t += digSeconds(bot, bot.blockAt(c), stand) ?? Infinity; dug.add(`${c}`);
+    }
+    if (under(p.offset(0, 1, 0))) {
+      held = (held ?? 0) + t;
+      if (held > breath) return { seconds: Number.isFinite(held) ? Math.round(held * 10) / 10 : null, breath: Math.round(breath * 10) / 10, at: { x: p.x, y: p.y, z: p.z } };
+    } else { held = null; breath = full; }
+    stand = p;
+  }
+  return null;
+}
+
 async function surfaceForAir(bot, task, onAction = () => {}) {
   onAction({ action: 'surface', oxygen: bot.oxygenLevel });
   bot.pathfinder.setGoal(null); bot.stopDigging(); bot.clearControlStates();
   const closed = new Set();
-  let route = airRoute(bot, closed);
+  // The shortest way within the breath left; with none, within the breath
+  // and the drowning after it, the last seconds there are.
+  const find = () => airRoute(bot, closed, { budgetS: breathSeconds(bot) }) || airRoute(bot, closed, { budgetS: breathSeconds(bot) + drowningSeconds(bot) });
+  let route = find();
   if (!route) return straightUp(bot, task);
   const deadline = Date.now() + 15000;
   let index = 0;
@@ -200,7 +261,7 @@ async function surfaceForAir(bot, task, onAction = () => {}) {
         closed.add(`${route[index]}`);
         onAction({ action: 'surface', oxygen: bot.oxygenLevel, heldOutOf: { x: route[index].x, y: route[index].y, z: route[index].z } });
         bot.clearControlStates();
-        route = airRoute(bot, closed); index = 0; last = mark();
+        route = find(); index = 0; last = mark();
         if (!route) return await straightUp(bot, task);
         continue;
       }
@@ -231,18 +292,37 @@ async function surfaceForAir(bot, task, onAction = () => {}) {
 // broke into a lakebed on its way up a staircase, the sand came down and the
 // water after it, and "no observed swimming route" was thrown twenty times a
 // second until it drowned (2026-09-24).
+// Only where the way up fits the time there is: every block over the head
+// at the game's time with the best tool from where the bot stands, a step
+// a cell. mid-244-y sank under a lid twelve blocks of stone thick and dug at
+// it by hand, afloat, until it drowned (note 477).
+function secondsUp(bot) {
+  const feet = bot.entity.position.floored();
+  let seconds = 0;
+  for (let y = 2; y <= 40; y++) {
+    const b = bot.blockAt(feet.offset(0, y, 0));
+    if (!b) return null;
+    if (b.boundingBox === 'block') { const t = digSeconds(bot, b, feet.offset(0, y - 2, 0)); if (t == null) return null; seconds += t; }
+    else if (!swimmableWater(b)) return seconds + STEP_S;
+    seconds += STEP_S;
+  }
+  return null;
+}
 async function straightUp(bot, task, { maxMs = 8000 } = {}) {
   const deadline = Date.now() + maxMs;
+  // Worded to match the minute's pause after a failed swim (maintainVitals
+  // looks for "breathable air"): unmatched, it ran every tick with the air
+  // bar full in trial 11's flooded shaft (2026-09-24).
+  const up = secondsUp(bot), left = breathSeconds(bot) + drowningSeconds(bot);
+  if (up == null || up > left) throw new Error(`No way up to breathable air found: straight up ${up == null ? 'cannot be dug through' : `takes about ${Math.round(up)} s`}, with ${Math.round(left)} s of breath and health left`);
   try {
     while ((bot.oxygenLevel ?? 20) < 20 || headSubmerged(bot)) {
       task.check();
-      // Worded to match the minute's pause after a failed swim (maintainVitals
-      // looks for "breathable air"): unmatched, it ran every tick with the air
-      // bar full in trial 11's flooded shaft (2026-09-24).
       if (Date.now() >= deadline) throw new Error('No way up to breathable air found: dug and swam straight up for eight seconds');
       const above = bot.blockAt(bot.entity.position.offset(0, 2, 0).floored());
       if (above && above.boundingBox === 'block' && above.diggable && !/bedrock/.test(above.name)) {
         bot.clearControlStates();
+        try { await require('./skills').equipBestTool(bot, above); } catch (_) { /* the hand, then */ }
         await bot.lookAt(above.position.offset(0.5, 0.5, 0.5), true);
         try { await bot.dig(above, true); } catch (_) { await sleep(100); }
         continue;
@@ -635,4 +715,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'out_of_powder_snow', 'surface']);
 
-module.exports = { claim, ACTIONS, suffocatingBlock, douse, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
+module.exports = { claim, ACTIONS, suffocatingBlock, douse, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S };

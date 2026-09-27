@@ -77,9 +77,13 @@ test('digging up with water beside the block says the water pours down, and fill
   // Trial 77: dug up out of its own pillar shaft into rock beside water; told only "would flow in".
   const { localMoves, describeMove } = require('../src/unstuck');
   const { Vec3 } = require('vec3');
-  const view = { name: p => (p.x === 0 && p.z === 0 && (p.y === 10 || p.y === 11)) ? 'air' : (p.x === 1 && p.z === 0 && p.y === 12) ? 'water' : 'stone', carried: {}, pickaxe: 'stone_pickaxe' };
+  // The water open to air over it.
+  const view = { name: p => (p.x === 0 && p.z === 0 && (p.y === 10 || p.y === 11)) || (p.x === 1 && p.z === 0 && p.y === 13) ? 'air' : (p.x === 1 && p.z === 0 && p.y === 12) ? 'water' : 'stone', carried: {}, pickaxe: 'stone_pickaxe' };
   const up = localMoves(view, new Vec3(0, 10, 0), { goal: 'sky' }).moves.find(m => m.key === 'dig_up');
   assert.match(describeMove(up), /water beside it would pour down onto the bot and fill the one-block shaft it stands in/);
+  // Sealed, with no air to swim to, the dig is not offered (mid-244-y, note 477).
+  const sealed = { ...view, name: p => p.x === 1 && p.z === 0 && p.y === 13 ? 'stone' : view.name(p) };
+  assert(!localMoves(sealed, new Vec3(0, 10, 0), { goal: 'sky' }).moves.some(m => m.key === 'dig_up'));
 });
 
 test('a move that already failed from this cell says so', () => {
@@ -148,4 +152,21 @@ test('a step onto dry ground says the drop one block past it, where a step that 
   const step = localMoves(view(cells), new Vec3(0, 70, 0), { goal: 'dry' }).moves.find(m => m.key === 'step_south');
   assert(step, 'the step south is on offer');
   assert.match(describeMove(step), /one block past it, a drop of 24\+? blocks|one block past it, no floor within 24 blocks/);
+});
+
+test('a dig into a sealed lake says how far its air is, and is not offered where the air is past the breath', () => {
+  // mid-244-y (note 477): dug into a lake under a stone lid, told only "it opens onto water"; its air was twenty blocks off, and it drowned.
+  const lake = (air, breathS) => {
+    // A dry pocket at x 0, a wall at x 1, the lake past it to x 25 with its one opening up at the far end.
+    const name = p => {
+      if (p.x === 0 && p.z === 0 && (p.y === 70 || p.y === 71)) return 'air';
+      if (p.x >= 2 && p.x <= 25 && p.z === 0 && p.y >= 70 && p.y <= 72) return 'water';
+      if (air && p.x === 25 && p.z === 0 && p.y === 73) return 'air';
+      return 'stone';
+    };
+    return localMoves({ name, carried: {}, pickaxe: 'iron_pickaxe' }, new Vec3(0, 70, 0), { goal: 'sky', breathS }).moves.find(m => m.key === 'dig_east_feet');
+  };
+  assert.match(describeMove(lake(true, 13)), /it opens onto water.*the nearest air through that water is a swim of 27 blocks from here \(about 10.8 s\)/);
+  assert.equal(lake(true, 5), undefined, 'not with five seconds of breath');
+  assert.equal(lake(false, 13), undefined, 'not with no air within the swim');
 });

@@ -300,3 +300,26 @@ test('a landing far below the water\'s surface is not a shore: reached by a drop
   await reachShore(f.bot, f.task, f.goal, () => {}, { surface: f.surface, move: async () => { walked = true; throw new Error('stop'); } }).catch(() => {});
   assert.equal(walked, false, 'not walked to the low landing');
 });
+
+test('the dig to shore does not take a route with the head under water longer than the breath there is', async () => {
+  // mid-244-y (note 477): swam up into a sealed lake toward a landing, stalled under its lid with its air twenty blocks off, and drowned.
+  const { digToShore } = require('../src/shore');
+  for (const [length, taken] of [[40, false], [10, true]]) {
+    const registry = require('prismarine-registry')('26.1'), Block = require('prismarine-block')(registry), blocks = new Map();
+    const name = (x, y, z) => z === 0 && (y === 60 || y === 61) && x >= 0 && x <= length + 2 ? (x <= length ? 'water' : 'air') : 'stone';
+    const blockAt = q => { const p = q.floored(), k = `${p}`; if (!blocks.has(k)) { const b = Block.fromStateId(registry.blocksByName[name(p.x, p.y, p.z)].defaultState); b.position = p; blocks.set(k, b); } return blocks.get(k); };
+    const landing = new Vec3(length + 1, 60, 0), path = [];
+    for (let x = 1; x <= length + 1; x++) path.push({ x, y: 60, z: 0, toBreak: [], toPlace: [] });
+    const bot = { registry, blockAt, entities: {}, oxygenLevel: 20, health: 20, game: {}, inventory: { items: () => [] },
+      entity: { position: new Vec3(0.5, 60, 0.5), onGround: false, isInWater: true },
+      findBlocks: ({ useExtraInfo }) => useExtraInfo(blockAt(landing.offset(0, -1, 0))) ? [landing.offset(0, -1, 0)] : [],
+      pathfinder: { getPathTo: () => ({ status: 'success', path }) } };
+    let moved = false;
+    const move = async () => { moved = true; bot.entity.position = landing.offset(0.5, 0, 0.5); bot.entity.onGround = true; };
+    const goal = {};
+    const out = await digToShore(bot, new Task('shore'), goal, () => {}, { canDig: false }, move, {});
+    assert.equal(moved, taken, `a tunnel of ${length}`);
+    assert.equal(out, taken);
+    if (!taken) assert.equal(goal.shoreRecovery.dig.tried[0].breathShort.breath, 13);
+  }
+});

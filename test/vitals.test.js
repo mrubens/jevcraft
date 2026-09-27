@@ -69,7 +69,7 @@ test('with no swimming route the bot digs up through the sand that fell on it an
     blockAt: p => {
       const k = `${p.x},${p.y},${p.z}`;
       const name = sand.has(k) ? 'sand' : p.x === 0 && p.z === 0 && p.y >= 56 && p.y < 64 ? 'water' : p.y >= 64 ? 'air' : 'stone';
-      return { name, position: p, boundingBox: name === 'sand' || name === 'stone' ? 'block' : 'empty', diggable: true, getProperties: () => ({ level: 0 }) };
+      return { name, position: p, boundingBox: name === 'sand' || name === 'stone' ? 'block' : 'empty', diggable: true, digTime: () => 750, getProperties: () => ({ level: 0 }) };
     },
     pathfinder: { setGoal() {} }, stopDigging() {}, clearControlStates() {}, setControlState() {}, lookAt: async () => {},
     dig: async block => { sand.delete(`${block.position.x},${block.position.y},${block.position.z}`); dug.push(`${block.position}`); } };
@@ -559,4 +559,34 @@ test('suffocation is tested as the game does, a box round the eye: a block in th
   assert.equal(suffocatingBlock(bot).position.x, -370);
   bot.entity.position = new Vec3(-368.5, 67, 577.5);
   assert.equal(suffocatingBlock(bot), null, 'centred in its cell: clear');
+});
+
+// mid-244-y (note 477): a lake sealed under stone at x 19-32, y 49-57, its
+// air up a flooded column at x 18.
+function sealedLake({ column = true } = {}) {
+  const mcData = require('minecraft-data')('26.1'), Block = require('prismarine-block')('26.1'), blocks = new Map();
+  const world = (x, y, z) => {
+    if (column && x === 18 && z === 143) return y >= 63 ? 'air' : y >= 49 ? 'water' : 'stone';
+    if (x >= 19 && x <= 32 && z >= 140 && z <= 146 && y >= 49 && y <= 57) return 'water';
+    return y >= 72 ? 'air' : 'stone';
+  };
+  const blockAt = q => { const p = q.floored(), k = `${p}`; if (!blocks.has(k)) { const b = Block.fromStateId(mcData.blocksByName[world(p.x, p.y, p.z)].defaultState, 0); b.position = p; blocks.set(k, b); } return blocks.get(k); };
+  return { entity: { position: new Vec3(27.5, 56, 143.5), isInWater: true, onGround: false, effects: {} }, oxygenLevel: 12, health: 20, inventory: { items: () => [] }, blockAt };
+}
+
+test('the way to air is searched as far as the breath goes, not eight blocks each way', () => {
+  // Boxed to eight, the search found none, and it dug by hand into the twelve-block lid and drowned.
+  const bot = sealedLake();
+  const route = airRoute(bot);
+  assert(route, 'a way to air');
+  assert.deepEqual([route.at(-1).x, route.at(-1).y, route.at(-1).z], [18, 62, 143], 'up the flooded column');
+  assert(route.every(c => !c.digs.length), 'swum, not dug');
+});
+
+test('straight up is not dug where the lid takes longer than the breath and health there are', async () => {
+  const bot = sealedLake({ column: false }), dug = [];
+  bot.oxygenLevel = 2; bot.health = 4;
+  Object.assign(bot, { pathfinder: { setGoal() {} }, stopDigging() {}, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, dig: async b => { dug.push(`${b.position}`); } });
+  await assert.rejects(surfaceForAir(bot, new Task('test', 'surface')), /breathable air/);
+  assert.deepEqual(dug, [], 'no hand against the stone');
 });

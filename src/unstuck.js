@@ -77,6 +77,30 @@ function opensOnto(view, beyond) {
   return `past it is more ${n.replaceAll('_', ' ')}`;
 }
 
+// Where the air is through the water a dig lets in: the swim from the feet,
+// through the dug cell and the water past it, to a water cell with air
+// over it, within `reach` blocks' swim; and whether that water stands at
+// the head's height, so the pocket fills over the head. mid-244-y dug into
+// a sealed lake whose air was twenty blocks off, told only "it opens onto
+// water", and drowned under its lid (note 477).
+function waterAir(view, cell, feet, { reach = 32, nodes = 4096 } = {}) {
+  const queue = [{ p: cell, n: 1 }], seen = new Set([`${cell}`]);
+  let floods = false;
+  for (let i = 0; i < queue.length && i < nodes; i++) {
+    const { p, n } = queue[i];
+    if (isWater(view.name(p)) && p.y >= feet.y + 1) floods = true;
+    const over = view.name(p.plus(UP));
+    if (i > 0 && isWater(view.name(p)) && over != null && open(over) && !isWater(over)) return { swim: n, floods: floods || p.y >= feet.y + 1 };
+    if (n >= reach) continue;
+    for (const d of [UP, ...Object.values(DIRS), DOWN]) {
+      const next = p.plus(d);
+      if (seen.has(`${next}`) || !isWater(view.name(next))) continue;
+      seen.add(`${next}`); queue.push({ p: next, n: n + 1 });
+    }
+  }
+  return { swim: null, floods };
+}
+
 // The fall under an opened cell, down to the next solid block or water:
 // a dig down or to the side was told what it opened onto and nothing of
 // the drop past it (the decision audit, 2026-09-25). A fall of more than
@@ -97,7 +121,9 @@ function dropBelow(view, cell, { reach = 24, extra = 0 } = {}) {
 
 // Every single move from here, each with its facts. `goal` is 'dry' (out
 // of water onto solid ground) or 'sky' (open sky over dry ground).
-function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null } = {}) {
+// `breathS` is the breath there is, in seconds, less the margin (a full bar
+// by default).
+function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null, breathS = 13 } = {}) {
   let moves = [];
   const inWater = isWater(view.name(feet));
   const headroom = open(view.name(feet.offset(0, 2, 0))) && !isWater(view.name(feet.offset(0, 2, 0)));
@@ -145,7 +171,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       const seconds = digSeconds(name, view, inWater);
       if (seconds == null) continue;
       const drop = part !== 'over' && (part === 'feet' || open(view.name(level))) ? dropBelow(view, level) : null;
-      moves.push({ key: `dig_${dir}_${part}`, does: `Dig the ${name.replaceAll('_', ' ')} ${dir}, at ${part === 'over' ? 'the level over the head' : `${part} height`} (about ${seconds} s).`, kind: 'dig', cell, effects: [opensOnto(view, cell.plus(d)), ...(drop ? [drop] : []), ...digEffects(view, cell, feet)] });
+      moves.push({ key: `dig_${dir}_${part}`, does: `Dig the ${name.replaceAll('_', ' ')} ${dir}, at ${part === 'over' ? 'the level over the head' : `${part} height`} (about ${seconds} s).`, kind: 'dig', cell, seconds, effects: [opensOnto(view, cell.plus(d)), ...(drop ? [drop] : []), ...digEffects(view, cell, feet)] });
     }
     // A block placed into water or air beside, at the feet: a step at the
     // waterline, or a wall.
@@ -164,7 +190,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   const over = feet.offset(0, 2, 0), overName = view.name(over);
   if (solid(overName) && natural.test(overName)) {
     const seconds = digSeconds(overName, view, inWater);
-    if (seconds != null) moves.push({ key: 'dig_up', does: `Dig the ${overName.replaceAll('_', ' ')} over the head (about ${seconds} s).`, kind: 'dig', cell: over, effects: [opensOnto(view, over.plus(UP)), ...digEffects(view, over, feet)] });
+    if (seconds != null) moves.push({ key: 'dig_up', does: `Dig the ${overName.replaceAll('_', ' ')} over the head (about ${seconds} s).`, kind: 'dig', cell: over, seconds, effects: [opensOnto(view, over.plus(UP)), ...digEffects(view, over, feet)] });
   }
   if (inWater && isWater(view.name(feet.plus(UP)))) moves.push({ key: 'swim_up', does: 'Swim up a block.', kind: 'move', to: feet.plus(UP), ...where(feet.plus(UP)) });
   const block = PLACEABLE.find(n => (view.carried?.[n] || 0) > 0);
@@ -174,7 +200,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   if (!inWater && solid(floorName) && natural.test(floorName) && !isWater(view.name(floor.plus(DOWN))) && !isLava(view.name(floor.plus(DOWN)))) {
     const seconds = digSeconds(floorName, view, false);
     const drop = dropBelow(view, floor, { extra: 1 });
-    if (seconds != null) moves.push({ key: 'dig_down', does: `Dig the ${floorName.replaceAll('_', ' ')} underfoot and drop a block (about ${seconds} s).`, kind: 'dig', cell: floor, effects: [opensOnto(view, floor.plus(DOWN)), ...(drop ? [drop] : []), ...digEffects(view, floor)] });
+    if (seconds != null) moves.push({ key: 'dig_down', does: `Dig the ${floorName.replaceAll('_', ' ')} underfoot and drop a block (about ${seconds} s).`, kind: 'dig', cell: floor, seconds, effects: [opensOnto(view, floor.plus(DOWN)), ...(drop ? [drop] : []), ...digEffects(view, floor)] });
   }
   // 'away': off a spot every walk failed from, onto dry ground eight blocks off.
   const done = goal === 'dry' ? dryFooting(view, feet)
@@ -185,6 +211,18 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   // beside and over its head with lava behind it, the option saying so,
   // and burned in what poured in (2026-09-26). The other moves stay Jev's.
   moves = moves.filter(m => m.kind !== 'dig' || !(m.effects || []).some(e => /^lava beside it/.test(e)));
+  // A dig that lets water in says where that water's air is. And none that
+  // fills the pocket over the head with the air farther than the breath
+  // there is: air is physical safety (mid-244-y, note 477). With the head
+  // under already, the dig does not take it under: the fact alone.
+  const { STEP_S } = require('./vitals'), reach = Math.floor(breathS / STEP_S), headDry = !isWater(view.name(feet.plus(UP)));
+  moves = moves.filter(m => {
+    if (m.kind !== 'dig' || ![UP, ...Object.values(DIRS)].some(d => isWater(view.name(m.cell.plus(d))))) return true;
+    const { swim, floods } = waterAir(view, m.cell, feet, { reach });
+    m.letsWater = true;
+    m.effects.push(swim != null ? `the nearest air through that water is a swim of ${swim} block${swim === 1 ? '' : 's'} from here (about ${Math.round(swim * STEP_S * 10) / 10} s)` : `no air through that water within a swim of ${reach} blocks`);
+    return !(headDry && floods && (swim == null || swim * STEP_S + (m.seconds || 0) > breathS));
+  });
   return { moves, done, here: { feet: { x: feet.x, y: feet.y, z: feet.z }, inWater, headInWater: isWater(view.name(feet.plus(UP))), headroomToRise: headroom, dryFooting: dryFooting(view, feet), openSkyAbove: skyAbove(view, feet), atSurface: atSurface(view, feet) } };
 }
 
@@ -296,7 +334,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const feet = bot.entity.position.floored();
     record.visits[`${feet}`] = (record.visits[`${feet}`] || 0) + 1;
     const view = liveView(bot);
-    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null });
+    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null, breathS: require('./vitals').breathSeconds(bot) });
     const surfaced = aim.goal === 'sky' && here.dryFooting && require('./surface').surfaceObserver(bot)(bot.entity.position);
     if (done || surfaced) { record.out = true; save(); return true; }
     if (!moves.length) return false;
@@ -307,7 +345,10 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
       state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6), health: bot.health, food: bot.food,
         // The mobs about while it works free, seen or not (the decision audit).
         threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(),
-        ...(here.inWater ? { breathSecondsLeft: Math.round((bot.oxygenLevel ?? 20) * 0.75) } : {}) } });
+        // And whenever a move could flood the pocket, not only in water
+        // already: mid-244-y chose its dig into a lake with no breath in
+        // the state (note 477).
+        ...(here.inWater || moves.some(m => m.letsWater) ? { breathSecondsLeft: Math.round((bot.oxygenLevel ?? 20) * 0.75) } : {}) } });
     if (decision.stale) continue;
     const m = moves.find(x => x.key === decision.path.at(-1));
     const before = bot.entity.position.clone(), blocks = m.cell ? bot.blockAt(m.cell)?.name : null;
@@ -339,4 +380,4 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   return false;
 }
 
-module.exports = { moveReached, dropBelow, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+module.exports = { moveReached, dropBelow, waterAir, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

@@ -6,7 +6,7 @@ const { surfaceMovement } = require('./surface');
 const { dryPassable, swimmableWater, damagingTerrain, supportCell } = require('./terrain');
 const { dryStanding } = require('./mining-access');
 const { safeFromHostiles, checkThreats } = require('./danger');
-const { checkAir } = require('./vitals');
+const { checkAir, breathShort } = require('./vitals');
 const { floatAfterBoat, clearOwnedBoatAtFeet, leaveBoat } = require('./boats');
 const { move: motion } = require('./motion');
 
@@ -342,6 +342,11 @@ async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
       // air rule brought it up, and it dived again every ten seconds.
       const dives = (route.path || []).some(q => q.y < Math.floor(bot.entity.position.y) - 1);
       if (route.status !== 'success' || lava || dives) continue;
+      // Not where the head goes under for longer than the breath there is:
+      // mid-244-y swam up into a sealed lake toward a landing, stalled under
+      // its lid with its air twenty blocks off, and drowned (note 477).
+      const short = breathShort(bot, route.path || []);
+      if (short) { record.tried.at(-1).breathShort = short; save(); continue; }
       goal.step = { action: 'dig_to_shore', from: { ...bot.entity.position }, destination: { ...p } };
       goal.survivalAction = { action: 'dig_to_shore', at: new Date().toISOString() }; save();
       try { await move(bot, task, destination, { timeoutMs: 45000, stallMs: 8000 }); }
