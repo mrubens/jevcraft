@@ -1949,7 +1949,11 @@ class Survival {
     // and a half blocks, the zombie came down to one, and with the fight
     // set aside the bot was offered a pillar, a retreat and a pocket in a
     // one-wide staircase, and died from fifteen health in nine seconds.
-    const atReach = danger.some(t => !shooter(t.entity) && (t.distance <= 3.2 || (t.entity.position && canStrike(bot, t.entity))));
+    // A shooter at arm's length is struck as a biter is: mid-239-g had a
+    // skeleton at 1.7 blocks, the fight and the charge set aside a moment
+    // before, and was offered only cover, a pocket and digging down; Jev
+    // said none of these, twice, and a creeper came (note 510).
+    const atReach = danger.some(t => t.distance <= 3.2 || (t.entity.position && canStrike(bot, t.entity)));
     // And an eat cut short with the food still carried: nothing about the
     // place made it fail, and at low health it is the stance that counts.
     // mid-205-q chose its golden apple at 0.9 health, the eat was cut short

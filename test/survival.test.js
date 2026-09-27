@@ -4277,3 +4277,15 @@ test('the bed at night says a creeper coming as the shelter does (mid-243-p)', a
   assert(sleep, Object.keys(tree || {}).join(','));
   assert.match(sleep.description, /A creeper is 11 blocks off: coming on, it could go off beside the bot in about/);
 });
+
+test('a fight that just failed stays on offer with a skeleton at arm\'s length, as with a biter (mid-239-g)', async () => {
+  const bot = crowdBot({ health: 8 });
+  const skeleton = crowdMob(1, 'skeleton', 1.7);
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } }, state: { shelters: [] } });
+  const feet = bot.entity.position.floored();
+  survival.state.stanceFailed = [{ choice: 'fight', where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now() - 500 }];
+  let q = null;
+  survival.decide = async (task, goal, save, question) => { q = q || question; return { path: ['fight'], action: question.tree.fight || Object.values(question.tree)[0], stale: true }; };
+  await survival.stanceStep(new Task('t'), {}, () => {}, [skeleton], false).catch(() => {});
+  assert(q?.tree?.fight, Object.keys(q?.tree || {}).join(','));
+});
