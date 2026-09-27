@@ -655,6 +655,9 @@ class Survival {
       this.report(goal, save, { action: 'hold_on_span', threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health });
       bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.(); lowerShield(bot);
       bot.setControlState?.('sneak', true);
+      // A mob at arm's length is struck crouched and still (combat.js
+      // defendNearby on a span); nothing else is done about it here.
+      if (await defendNearby(bot, task, goal, save)) return;
       try { for (let n = 0; n < 4; n++) { task.check(); await sleep(100); } }
       finally { if (!bot._spanning) bot.setControlState?.('sneak', false); }
       return;

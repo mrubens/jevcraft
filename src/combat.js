@@ -165,10 +165,13 @@ function strikeTarget(bot) {
 // health, air and new threats are observed again before the next action.
 async function defendNearby(bot, task, goal, save) {
   task.check(); checkAir(bot);
-  // Not on a one-wide span over a drop (terrain.js onSpan): a swing turns
-  // the bot to the mob, and mid-215-e's, at a hoglin behind it on its span,
-  // ended thirty-five blocks down in the lava sea (note 273).
-  if (require('./terrain').onSpan(bot)) return false;
+  // On a one-wide span over a drop (terrain.js onSpan) the swing is crouched
+  // and still: no keys, no critical's jump (sneak lets go for the jump). A
+  // player crouched with its keys up cannot walk off an edge whichever way
+  // it faces; mid-215-e went into the lava sea with forward held through a
+  // turn (note 273). Not swinging at all left a mob at arm's length hitting
+  // a bot that only stood there.
+  const span = require('./terrain').onSpan(bot);
   let threat = strikeTarget(bot);
   if (!threat) return false;
   const weapon = defenseWeapon(bot), kind = weapon?.name.split('_').at(-1);
@@ -182,6 +185,7 @@ async function defendNearby(bot, task, goal, save) {
     await sleep(Math.min(remaining, 100)); task.check(); checkAir(bot); return true;
   }
   bot.pathfinder.setGoal(null); bot.clearControlStates(); lowerShield(bot);
+  if (span) bot.setControlState('sneak', true);
   if (weapon) await bot.equip(weapon, 'hand');
   else if (bot.heldItem) await bot.unequip('hand');
   task.check(); checkAir(bot);
@@ -191,7 +195,7 @@ async function defendNearby(bot, task, goal, save) {
   await bot.lookAt(target.position.offset(0, (target.height || 1.8) / 2, 0), true);
   task.check(); checkAir(bot);
   if (bot.entities[target.id] !== target || target.isValid === false || strikeTarget(bot)?.entity !== target) return false;
-  const swing = await strike(bot, task, target); bot._defenseAttackAt = bot._threatResponseAt = Date.now();
+  const swing = span ? (bot.attack(target), 'on_span') : await strike(bot, task, target); bot._defenseAttackAt = bot._threatResponseAt = Date.now();
   bot._struck = { id: target.id, at: bot._defenseAttackAt };
   // The shield comes up for the cooldown between swings: a wither skeleton
   // took twenty health in six seconds of unguarded swordplay. Not against

@@ -2757,7 +2757,7 @@ test('up on its own pillar, the step back from the edge does not take the bot of
   assert.notEqual(goal.survivalAction?.action, 'off_the_edge');
 });
 
-test('on a one-wide span over the lava sea, a hoglin at arm\'s length is not swung at or turned to: the bot holds still, crouched', async () => {
+test('on a one-wide span over the lava sea, a hoglin at arm\'s length is struck crouched and still, with no jump and no key down; a shot is not turned to', async () => {
   // mid-215-e: a swing at a hoglin behind it turned it about on its span, and the crossing walked it off the far end into the lava sea (note 273).
   const { onSpan } = require('../src/terrain');
   const { defendNearby } = require('../src/combat');
@@ -2776,13 +2776,17 @@ test('on a one-wide span over the lava sea, a hoglin at arm\'s length is not swu
     setControlState(k, v) { keys[k] = v; }, getControlState: k => !!keys[k], activateItem() {}, deactivateItem() {},
     lookAt: async p => { looks.push(p); }, look: async () => { looks.push('look'); }, equip: async () => {}, attack: e => attacks.push(e) });
   assert.equal(onSpan(bot), true, 'open air over lava on both sides');
-  assert.equal(await defendNearby(bot, new Task('span'), {}, () => {}), false, 'no swing on the span');
+  // The crit's jump would let the sneak go; on the span the swing is plain.
+  bot.entity.onGround = true; const jumps = []; const set = bot.setControlState; bot.setControlState = (k, v) => { if (k === 'jump' && v) jumps.push(k); set(k, v); };
+  assert.equal(await defendNearby(bot, new Task('span'), {}, () => {}), true, 'struck where it stands');
+  assert.deepEqual([attacks.length, jumps, keys.sneak, keys.forward || false, keys.back || false], [1, [], true, false, false], 'one plain swing, crouched, no jump, no walking');
+  attacks.length = 0; looks.length = 0; bot._defenseAttackAt = 0;
   assert.equal(await deflect(bot, new Task('span'), { holdMs: 50 }), false, 'no turn to a shot on the span');
   const survival = new Survival(bot, { navigate: async () => { throw new Error('not walked from a span'); } }, { state: { shelters: [] } });
   const goal = {};
   await survival.flee(new Task('span'), goal, () => {});
-  assert.equal(goal.survivalAction?.action, 'hold_on_span');
-  assert.deepEqual(attacks, []); assert.deepEqual(looks, [], 'not turned toward the hoglin');
+  assert.equal(goal.survivalAction?.action, 'defend', 'held on the span, and the hoglin struck from there');
+  assert.equal(attacks.length, 1); assert.equal(keys.sneak, true);
   // Laying a span is being on one; on wide ground the reflexes are back.
   const wide = p => Math.floor(p.y) === 64 ? { position: p, name: 'netherrack', boundingBox: 'block' } : { position: p, name: 'air', boundingBox: 'empty' };
   assert.equal(onSpan({ entity: bot.entity, blockAt: wide }), false);
