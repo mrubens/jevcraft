@@ -318,3 +318,21 @@ test('the way into the Nether is asked again every twenty working minutes, with 
   assert.equal(quiet.portalMethod.kind, 'build'); assert.equal(quiet.portalMethod.reasked, 1);
   assert.equal(portalDue(quiet.portalMethod), false);
 });
+
+test('the cast\'s water left standing is walked back to and scooped, from out of reach too', async () => {
+  // mid-229-d waited twenty minutes on a slot to drain while the water it had left ran into it, the scoop failing from fifty blocks off (2026-09-27).
+  const { Task } = require('../src/skills');
+  const { bot, w, actions } = castingBot({ bucket: 1, cobblestone: 64 });
+  const goal = { portalFrame: newFrame('x') };
+  const slot = cast.castOrder(goal.portalFrame)[0];
+  const left = slot.offset(0, 1, 1);
+  w.set(left, 'water');
+  goal.portalFrame.castWater = { x: left.x, y: left.y, z: left.z };
+  bot.entity.position = new Vec3(slot.x + 60.5, 64, slot.z + 0.5);
+  const walked = [];
+  const go = actions.navigate; actions.navigate = async (b, t, g) => { walked.push(g); await go(b, t, g); };
+  await cast.castFrame(bot, new Task('cast'), goal, () => {}, actions);
+  assert(walked.length && walked[0].x === left.x && walked[0].z === left.z, 'walked back to the water');
+  assert.notEqual(w.nameAt(left), 'water', 'and scooped it');
+  assert.equal(goal.portalFrame.castWater, undefined);
+});

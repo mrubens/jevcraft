@@ -247,13 +247,35 @@ async function pourAlong(bot, task, item, aim, done) {
 
 const fatal = err => ['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name);
 
-// Scoop back the water a cast left, when it is still a source.
-async function takeWaterBack(bot, task, frame, save) {
+// Scoop back the water a cast left, when it is still a source, walking
+// back to it first: from out of reach the scoop failed every pass, quietly,
+// and the water it left ran on into the next slot. mid-229-d waited on
+// that slot to drain for twenty minutes while it wandered fifty blocks off
+// (2026-09-27).
+async function takeWaterBack(bot, task, frame, save, navigate) {
   if (!frame.castWater) return;
   const w = at(frame.castWater);
   if (!bot.blockAt(w) || !sourceWater(bot.blockAt(w))) { delete frame.castWater; save(); return; }
-  try { await fillWaterBucket(bot, task, w, { guard: () => checkThreats(bot) }); delete frame.castWater; save(); }
-  catch (err) { task.check(); if (fatal(err)) throw err; frame.castWaterError = err.message; save(); }
+  await scoopSource(bot, task, w, navigate, err => { frame.castWaterError = err.message; save(); });
+  if (!sourceWater(bot.blockAt(w))) { delete frame.castWater; save(); }
+}
+async function scoopSource(bot, task, w, navigate, failed) {
+  try {
+    const eye = bot.entity.position.offset(0, EYE, 0);
+    if (navigate && eye.distanceTo(w.offset(0.5, 0.5, 0.5)) > REACH - 0.5) await navigate(bot, task, new goals.GoalNear(w.x, w.y, w.z, 2), { timeoutMs: 20000, stallMs: 5000 });
+    await fillWaterBucket(bot, task, w, { guard: () => checkThreats(bot) });
+  } catch (err) { task.check(); if (fatal(err)) throw err; failed(err); }
+}
+// The water sources that can run into a slot: at its level or above, within
+// three blocks, the way flowing water comes (a source runs seven blocks, but
+// the slot's walls leave only the top open).
+function feedingSources(bot, p) {
+  const out = [];
+  for (let dy = 0; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) {
+    const q = p.offset(dx, dy, dz), b = bot.blockAt(q);
+    if (b && sourceWater(b)) out.push(q);
+  }
+  return out.sort((a, b) => a.distanceTo(p) - b.distanceTo(p));
 }
 
 // Cast the frame's missing slots in order. True when all ten are obsidian;
@@ -273,14 +295,20 @@ async function castFrame(bot, task, goal, save, actions) {
     if (w.name(p) === 'obsidian') continue;
     if (!bot.blockAt(p)) return false;
     check();
-    await takeWaterBack(bot, task, frame, save);
+    await takeWaterBack(bot, task, frame, save, navigate);
     if (!sourceLava(bot.blockAt(p))) {
       if (/water/.test(w.name(p) || '')) {
         // Water left from the slot below runs off once its source is gone.
         // A source never does: a block put in it takes it, and comes out
         // again below as any temporary block does.
         const material = portalSupports(bot).material;
-        if (!sourceWater(bot.blockAt(p)) || !material) { stepIs(p, 'drain'); await sleep(500); return false; }
+        if (!sourceWater(bot.blockAt(p)) || !material) {
+          // Flowing water drains once nothing feeds it: a source that does
+          // (the cast's own left behind, or one beside the frame) is scooped.
+          const feeder = !sourceWater(bot.blockAt(p)) && countOf(bot, 'bucket') ? feedingSources(bot, p)[0] : null;
+          if (feeder) { stepIs(p, 'stop_water', { source: { x: feeder.x, y: feeder.y, z: feeder.z } }); await scoopSource(bot, task, feeder, navigate, err => { frame.castWaterError = err.message; save(); }); return false; }
+          stepIs(p, 'drain'); await sleep(500); return false;
+        }
         stepIs(p, 'displace_water'); await place(bot, task, p, material); track(p, material); save();
       }
       if (/lava/.test(w.name(p) || '')) throw new Error(`Flowing lava in the frame slot at ${p}: its walls are not whole`);
@@ -364,7 +392,7 @@ async function castFrame(bot, task, goal, save, actions) {
     await pourAlong(bot, task, 'water_bucket', water, () => /water/.test(w.name(water.into) || '') || w.name(p) === 'obsidian');
     frame.castWater = { x: water.into.x, y: water.into.y, z: water.into.z }; save();
     const cast = await waitUntil(task, () => w.name(p) === 'obsidian', CONVERSION_MS);
-    await takeWaterBack(bot, task, frame, save);
+    await takeWaterBack(bot, task, frame, save, navigate);
     if (!cast) throw new Error(`The lava in the frame slot at ${p} did not turn to obsidian`);
   }
   return true;
