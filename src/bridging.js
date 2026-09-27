@@ -120,7 +120,15 @@ async function bridgeTo(bot, task, target, { maxBlocks = 64, maxSteps = maxBlock
   bot._spanning = spanning;
   bot.setControlState('sneak', true);
   try { return await span(bot, task, target, maxBlocks, maxSteps); }
-  finally { bot.setControlState('forward', false); bot.setControlState('sneak', false); if (bot._spanning === spanning) bot._spanning = null; }
+  finally {
+    // The crouch let go only once the body has stopped: let go with the
+    // walk, the step's way on carried mid-227-h off the end of its span, no
+    // key held, fifteen blocks down among magma cubes (2026-09-27).
+    bot.setControlState('forward', false);
+    for (let n = 0; n < 10; n++) { const v = bot.entity?.velocity; if (!v || Math.hypot(v.x, v.z) < 0.01) break; await sleep(50); }
+    bot.setControlState('sneak', false);
+    if (bot._spanning === spanning) bot._spanning = null;
+  }
 }
 async function span(bot, task, target, maxBlocks, maxSteps) {
   let placed = 0;

@@ -898,3 +898,28 @@ test('a sword carried is ready: the kit does not put it in the hand over the too
   assert.equal(ready, require('../src/mob-policy').kitReady(bot));
   void held; void slots;
 });
+
+test('at the end of a span the crouch is let go only once the body has stopped', async () => {
+  // mid-227-h slid off the end of its span with no key held when the crouch was let go with the walk (2026-09-27).
+  const { bridgeTo } = require('../src/bridging');
+  const { Vec3 } = require('vec3');
+  const blocks = new Map([[`${new Vec3(0, 64, 0)}`, 'netherrack']]);
+  const at = p => ({ name: blocks.get(`${p}`) || 'air', boundingBox: blocks.has(`${p}`) ? 'block' : 'empty', diggable: true, position: p, digTime: () => 500 });
+  let look = null;
+  const controls = {}, log = [];
+  const bot = {
+    entity: { position: new Vec3(0.5, 65, 0.5), velocity: new Vec3(0, 0, 0) }, health: 20,
+    inventory: { items: () => [{ name: 'netherrack', count: 20, type: 1 }] },
+    blockAt: at, equip: async () => {}, lookAt: async p => { look = p; },
+    placeBlock: async (ref, face) => { const p = ref.position.plus(face); blocks.set(`${p}`, 'netherrack'); },
+    setControlState: (name, on) => {
+      controls[name] = on; log.push(`${name}:${on}:${Math.hypot(bot.entity.velocity.x, bot.entity.velocity.z).toFixed(2)}`);
+      if (name === 'forward' && on && look) { bot.entity.position = new Vec3(Math.floor(look.x) + 0.5, 65, Math.floor(look.z) + 0.5); bot.entity.velocity = new Vec3(0.12, 0, 0); }
+      if (name === 'forward' && !on) setTimeout(() => { bot.entity.velocity = new Vec3(0, 0, 0); }, 120);
+    },
+    getControlState: name => !!controls[name], dig: async () => {},
+  };
+  await bridgeTo(bot, new Task('hunt'), new Vec3(3, 64, 0));
+  const release = log.filter(l => l.startsWith('sneak:false')).at(-1);
+  assert.equal(release, 'sneak:false:0.00', `the crouch let go at rest: ${log.slice(-4).join(' ')}`);
+});
