@@ -905,7 +905,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Searching the Nether for a fortress: which way should the next leg go, should the bot first dig toward the heights fortresses stand at, or first get blocks to lay spans with?**
 
-- When: On the fortress search, each time a leg begins: at the start, when the last leg reached its end, and when the sweep turned for a leg that made no ground.
+- When: On the fortress search, each time a leg begins: at the start, when the last leg reached its end, when the sweep turned for a leg that made no ground, and when a pass over every stretch of a fortress in view ended.
 - Decision tree, choice; stakes medium; ledger kind `fortress`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -916,6 +916,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `leg_(east\|south\|west\|north)` (pattern) | root | go this way ninety-six blocks at the height the bot stands | always, one for each heading; said with the cells ahead at this height (open air, how many of them over a drop of four or more, rock to dig at about six seconds a cell, and what stops it), the cells with no floor against the blocks carried and where they run out, about how long, whether it is back the way the last leg came, and how the last leg this way ended, kept on that heading |
 | `seek_fortress_height` | root | dig a staircase toward y 64 first, along the most open heading | the bot stands more than eight blocks above or below y 64 and a staircase is at hand; said with the height to make up and where fortresses stand |
 | `restock_blocks` | root | mine a stack of the most plentiful block a span is laid with nearby, then choose the leg again | a leg runs out of the blocks carried and some within sixteen blocks can be mined; said with each kind counted, the nearest, and about how long |
+| `stay_in_fortress` | root | stay in the fortress in view and walk its stretches again for blazes | a pass over every stretch of the fortress in view has ended; said with the bricks in view, the passes made and minutes spent there, and the blazes seen near it |
+| `back_to_fortress` | root | go back into the fortress in view that was left or set aside | two dozen or more fortress bricks are in view but left behind or set aside; said with when and why, how far the nearest is, and the blazes seen near it |
 | `return_for_blocks` | root | go back through the portal to the Overworld for stone | a leg runs out of the blocks carried and the way back through the portal is at hand; said with the nearest portal known |
 
 ## travel

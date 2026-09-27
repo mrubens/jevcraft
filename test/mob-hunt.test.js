@@ -717,7 +717,51 @@ test('a fortress whose every stretch in view was walked is patrolled again, not 
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target) => tunnels.push([target.x, target.z]) });
   assert.equal(tunnels.length, 0, 'no sweep leg while the fortress is in view');
   assert.equal(goal.fortressSearch.patrols, 1); assert.deepEqual(goal.fortressSearch.target, { x: 96, y: 65, z: 0 }, 'the leg target is kept for later');
-  assert.equal(goal.fortressSearch.visited.length, 2);
+  assert.equal(goal.fortressSearch.visited.length, 0, 'every stretch is walked again on the next pass');
+});
+
+test('a fortress the bot stands in is one of the ways when the leg is asked: staying, or going back once left (mid-235-p, note 507)', async () => {
+  // mid-235-p entered its fortress at minute 52, "patrolled" six ticks in 0.4 seconds and was asked only for legs; four minutes
+  // later, at the same fortress's far side with its bricks filtered as left behind, it chose leg_north again and never came back.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const clear = { boundingBox: 'empty' };
+  const bricks = [new Vec3(2, 64, 0), new Vec3(20, 64, 0), ...Array.from({ length: 24 }, (_, i) => new Vec3(21 + i, 64, 1))];
+  const bot = { registry: require('minecraft-data')('26.1'), game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 65, 0.5) }, chat() {},
+    blockAt: () => clear, findBlocks: () => bricks };
+  const goal = { mobHunt: { sightings: [{ x: 30, y: 66, z: 4, dimension: 'the_nether', at: Date.now(), seen: 2 }] },
+    fortressSearch: { axis: 1, legs: 13, visited: [{ x: 20, y: 64, z: 0 }, { x: 40, y: 64, z: 0 }] } };
+  const client = jevStub(['stay_in_fortress', 'leg_north', 'back_to_fortress']);
+  const walked = [];
+  const actions = { client, navigate: async (b, t, g) => { walked.push([g.x, g.z]); }, tunnel: async () => {} };
+  // The pass over every stretch in view ended: the leg is asked with the fortress among the ways.
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 1);
+  let { options, state } = client.asked[0];
+  assert.match(options.stay_in_fortress, /^Stay in the fortress the bot is in and walk its stretches again for blazes: 26 of its bricks in view, the nearest 2 blocks off; 1 pass over every stretch in view/);
+  assert.match(options.stay_in_fortress, /blazes seen near it 2 times/);
+  assert.equal(state.fortressInView.passes, 1);
+  assert(options.leg_north, 'the legs are offered beside it');
+  // Staying walks the stretches again: a step taken, not a tick.
+  assert.equal(goal.fortressSearch.target, undefined, 'no leg begun');
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(walked.length, 1, 'the next pass walks a stretch');
+  // Next pass ended, Jev chose a leg: the section is left behind, the leg begun.
+  goal.fortressSearch.visited = [{ x: 20, y: 64, z: 0 }, { x: 40, y: 64, z: 0 }];
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 2);
+  assert(goal.fortressSearch.leaving, 'left as Jev chose'); assert.equal(goal.fortressSearch.heading, 3);
+  // Back among the same bricks with the leg at its end: going back is offered, said with why they were passed over.
+  Object.assign(goal.fortressSearch, { target: { x: 1, y: 65, z: 1 }, rememberedTarget: true });
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 3);
+  ({ options, state } = client.asked[2]);
+  assert.match(options.back_to_fortress, /^Go back into the fortress in view: 26 of its bricks, the nearest 2 blocks off, left 0 minutes ago after its passes/);
+  assert.doesNotMatch(options.seek_fortress_height || '', /none is seen/);
+  assert.match(state.fortressInView.setAside, /^left 0 minutes ago/);
+  assert.equal(goal.fortressSearch.leaving, undefined, 'taken, the fortress is no longer set behind the bot');
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(goal.step.action, 'find_fortress'); assert(goal.step.walking, 'its stretches walked again');
 });
 
 test('after six empty patrols the sweep leaves along the fortress, and the section left behind does not pull it back', async () => {
