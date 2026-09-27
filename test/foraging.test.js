@@ -179,3 +179,12 @@ test('a search that finds no dry ground to walk to is rested, so it is not chose
   const again = await forageChoices(bot, new Task('food'), goal, () => {}, actions, {});
   assert.equal(again.search_food, undefined, 'rested after finding nowhere to walk');
 });
+
+test('a food step gives the work its threat check back when it ends, not nothing (mid-231-o: a creeper went unanswered after)', async () => {
+  const bot = fixture([{ name: 'chicken', count: 3 }]), task = new Task('test', 'food');
+  const outer = () => {};
+  task.interruptCheck = outer;
+  const choices = await forageChoices(bot, task, {}, () => {}, { acquireStep: async () => {} }, {});
+  await choices.cook_cooked_chicken.run();
+  assert.equal(task.interruptCheck, outer);
+});

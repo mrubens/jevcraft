@@ -128,9 +128,9 @@ async function forageChoices(bot, task, goal, save, actions, state) {
     valid: () => count(bot, input) >= amount,
     run: async () => {
       goal.survivalAction = { action: 'cook_food', input, output, amount, at: new Date().toISOString() }; save();
-      task.interruptCheck = () => checkThreats(bot);
+      const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
       try { await actions.acquireStep(bot, task, output, targetCount, goal, save); }
-      finally { task.interruptCheck = undefined; }
+      finally { task.interruptCheck = outerCheck; }
     } };
   }
   const prey = await candidates(bot, task, state);
@@ -142,9 +142,9 @@ async function forageChoices(bot, task, goal, save, actions, state) {
         animals: prey.map(e => e.name), weapon: 'wooden_sword', currentWeapon: 'bare hands' },
       run: async () => {
         goal.survivalAction = { action: 'prepare_hunting_weapon', item: 'wooden_sword', at: new Date().toISOString() }; save();
-        task.interruptCheck = () => checkThreats(bot);
+        const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
         try { await actions.acquireStep(bot, task, 'wooden_sword', 1, goal, save); }
-        finally { task.interruptCheck = undefined; }
+        finally { task.interruptCheck = outerCheck; }
       },
     };
   }
@@ -175,14 +175,14 @@ async function forageChoices(bot, task, goal, save, actions, state) {
     valid: () => bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) === item && target.position.distanceTo(observed) < 2,
     run: async () => {
       goal.survivalAction = { action: 'gather_food', animal: target.name, position: { ...target.position }, at: new Date().toISOString() }; save();
-      task.interruptCheck = () => checkThreats(bot);
+      const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
       try { await hunt(bot, task, target, actions, goal, save); }
       catch (err) {
         if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) {
           state.failedPrey ||= {}; state.failedPrey[target.uuid || target.id] = Date.now(); save();
         }
         throw err;
-      } finally { task.interruptCheck = undefined; }
+      } finally { task.interruptCheck = outerCheck; }
     } };
   }
   // Bread and steak at the base are a reserve within reach: when the base
@@ -217,9 +217,9 @@ async function forageChoices(bot, task, goal, save, actions, state) {
       distance: home.distance, loavesAvailable: home.loaves, steaksAvailable: home.steaks, plotLoaded: !home.unloaded, ...walkFacts(home.distance) },
     run: async () => {
       goal.survivalAction = { action: 'go_home_for_food', distance: home.distance, at: new Date().toISOString() }; save();
-      task.interruptCheck = () => checkThreats(bot);
+      const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
       try { await eatFromHome(bot, task, goal, save, actions); }
-      finally { task.interruptCheck = undefined; }
+      finally { task.interruptCheck = outerCheck; }
     },
   };
   // A remembered village within reach has wheat already grown and hay
@@ -232,9 +232,9 @@ async function forageChoices(bot, task, goal, save, actions, state) {
       distance: village.distance, ripeCrops: village.ripeCrops, hayBales: village.hayBales, villageLoaded: village.loaded, ...walkFacts(village.distance) },
     run: async () => {
       goal.survivalAction = { action: 'village_food', distance: village.distance, at: new Date().toISOString() }; save();
-      task.interruptCheck = () => checkThreats(bot);
+      const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
       try { await eatFromVillage(bot, task, goal, save, village.village, actions); }
-      finally { task.interruptCheck = undefined; }
+      finally { task.interruptCheck = outerCheck; }
     },
   };
   // Herds seen earlier and out of view now (sightings.js): a walk of known
@@ -246,9 +246,9 @@ async function forageChoices(bot, task, goal, save, actions, state) {
     choices[`seen_food_${i}`] = { description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo, ...walkFacts(s.distance, s) },
       run: async () => {
         goal.survivalAction = { action: 'search_food', toward: { x: s.x, y: s.y, z: s.z }, animal: kind, at: new Date().toISOString() }; save();
-        task.interruptCheck = () => checkThreats(bot);
+        const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
         try { await sightings.walkToSighting(bot, task, goal, save, kind, s, actions.navigate); }
-        finally { task.interruptCheck = undefined; }
+        finally { task.interruptCheck = outerCheck; }
       } };
   });
   // Always on offer: the animals in view may be the wrong ones to go for.
@@ -262,13 +262,13 @@ async function forageChoices(bot, task, goal, save, actions, state) {
     description: 'Walk to another observed dry area to search for passive animals; avoid remembered failed targets.',
     run: async () => {
       goal.survivalAction = { action: 'search_food', at: new Date().toISOString() }; save();
-      task.interruptCheck = () => checkThreats(bot);
+      const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
       try { await actions.explore(bot, task, goal, save, 'food animals', { surfaceOnly: true }); }
       catch (err) {
         if (/No reachable surveyed ground/.test(err.message || '')) { setAside(goal, 'forage', 'search_food', 'no dry ground to walk to within forty-eight blocks', 120000); save(); }
         throw err;
       }
-      finally { task.interruptCheck = undefined; }
+      finally { task.interruptCheck = outerCheck; }
     },
   };
   return choices;

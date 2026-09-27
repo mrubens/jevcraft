@@ -2380,11 +2380,11 @@ class Survival {
       // after every block, one dirt a trip, with a creeper closing in.
       if (bot.entity.position.y < refuge.origin.y - 1.5 && emptySite(bot, refuge)) {
         this.report(goal, save, { action: 'return_to_surface', target: refuge.origin });
-        task.interruptCheck = () => checkThreats(bot);
+        const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
         try {
           const o = refuge.origin;
           await this.approachRefuge(task, goal, refuge, new goals.GoalBlock(o.x, o.y, o.z));
-        } finally { task.interruptCheck = undefined; }
+        } finally { task.interruptCheck = outerCheck; }
         return;
       }
       if (shelter.inside(bot, refuge)) {
@@ -2398,12 +2398,12 @@ class Survival {
       // Without Jev only: a room Jev chose knowing the count is built.
       if (!this.client && !shelter.inside(bot, refuge) && await this.shaftPocket(task, goal, save)) return;
       this.report(goal, save, { action: 'gather_shelter_materials', need: required, carried: stock, origin: refuge.origin });
-      task.interruptCheck = () => checkThreats(bot);
+      const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
       try {
         const supply = shelter.supplyTarget(bot, required - stock);
         await this.actions.acquireStep(bot, task, supply.item, supply.count, goal, save,
           { minimumMiningY: Math.min(refuge.origin.y, bot.entity.position.floored().y) - 1 });
-      } finally { task.interruptCheck = undefined; }
+      } finally { task.interruptCheck = outerCheck; }
       return;
     }
     if (!shelter.inside(bot, refuge)) {
