@@ -236,6 +236,21 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
   if (staircaseResting(goal, target)) throw new StaircaseStalled(target, attemptsFor(goal).why('staircase', area(target)));
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
+  // Where a way down began at the surface, remembered: the way back up is
+  // the stairs already dug (surface.js returnToSurface). mid-207-k spent
+  // forty-four of its minutes climbing, each time digging a new staircase
+  // up beside the one it came down (note 452; the Fable advice).
+  try {
+    const feet = bot.entity.position.floored();
+    if (target.y < feet.y - 4 && require('./surface').surfaceObserver(bot)(feet)) {
+      const dim = String(bot.game?.dimension || ''), list = goal.surfaceEntrances ||= [];
+      if (!list.some(e => e.dimension === dim && Math.hypot(e.x - feet.x, e.y - feet.y, e.z - feet.z) < 4)) {
+        list.push({ x: feet.x, y: feet.y, z: feet.z, dimension: dim, at: Date.now() });
+        if (list.length > 8) list.splice(0, list.length - 8);
+        save();
+      }
+    }
+  } catch (_) { /* no surface to judge by */ }
   // A spent budget is a shaft that has wandered, not a reason to stop: the
   // count outlived seven climbs of the dream run and then refused every
   // dig. Start a fresh shaft from here with a clean map of visited cells.

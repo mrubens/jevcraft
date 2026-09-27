@@ -707,3 +707,22 @@ test('packed and blue ice are rock to tunnel through; plain ice, which melts to 
   const test_ = n => (typeof natural === 'function' ? natural({ name: n }) : natural.test(n));
   assert.equal(test_('packed_ice'), true); assert.equal(test_('blue_ice'), true); assert.equal(test_('ice'), false);
 });
+
+test('the climb back up walks the stairs it came down by, remembered at their top, before digging a new way', async () => {
+  // mid-207-k spent forty-four minutes climbing, each time digging a new staircase beside the one it came down (2026-09-27).
+  const { returnToSurface } = require('../src/surface');
+  const { EventEmitter } = require('node:events');
+  const solid = p => p.y < 64 && !(p.x === 0 && p.z === 0 && p.y >= 40 && p.y <= 41);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', minY: 0, height: 128 }, entity: { position: new Vec3(0.5, 40, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) },
+    registry: require('minecraft-data')('26.1'), entities: {}, health: 20, food: 20, oxygenLevel: 20, inventory: { items: () => [] },
+    blockAt: p => { const f = p.floored(); return { position: f, name: solid(f) ? 'stone' : 'air', boundingBox: solid(f) ? 'block' : 'empty' }; },
+    world: { raycast: () => null }, findBlocks: () => [], clearControlStates() {}, setControlState() {}, stopDigging() {} });
+  const walked = [];
+  bot.pathfinder = { movements: { scafoldingBlocks: [] }, setGoal() {}, isMoving: () => false,
+    getPathTo: () => ({ status: 'success', path: [] }),
+    goto: async g => { walked.push([g.x, g.y, g.z]); bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } };
+  const goal = { surfaceEntrances: [{ x: 30, y: 64, z: 0, dimension: 'overworld', at: Date.now() }] };
+  await returnToSurface(bot, new Task('up'), goal, () => {}, {});
+  assert.deepEqual(walked[0], [30, 64, 0], 'to the stairs\' top');
+  assert.equal(goal.survivalAction?.by, 'the stairs down');
+});

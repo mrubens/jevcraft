@@ -310,6 +310,23 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       if (surfaceReturnComplete(bot, goal, surfaceObserver(bot))) { delete goal.surfaceReturn; save(); }
       return;
     }
+    // The stairs it came down by, walked back up, before any new way is dug:
+    // the nearest remembered entrance in this dimension within a long walk,
+    // routed without digging (note 452).
+    const dim = String(bot.game?.dimension || '');
+    const entrances = (goal.surfaceEntrances || []).filter(e => e.dimension === dim && Math.hypot(e.x - start.x, e.z - start.z) <= 160 && e.y > start.y + 4 && !state.triedEntrances?.includes(`${e.x},${e.y},${e.z}`))
+      .sort((a, b) => Math.hypot(a.x - start.x, a.y - start.y, a.z - start.z) - Math.hypot(b.x - start.x, b.y - start.y, b.z - start.z));
+    for (const e of entrances.slice(0, 2)) {
+      task.check();
+      (state.triedEntrances ||= []).push(`${e.x},${e.y},${e.z}`); save();
+      const goalAt = new goals.GoalNear(e.x, e.y, e.z, 1);
+      const route = await surveyRoute(bot, task, movements, goalAt, 2000);
+      if (route.status !== 'success') continue;
+      goal.survivalAction = { action: 'return_to_surface', by: 'the stairs down', to: { x: e.x, y: e.y, z: e.z }, at: new Date().toISOString() }; save();
+      try { await navigate(bot, task, goalAt, { timeoutMs: 120000, stallMs: 10000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
+      if (surfaceReturnComplete(bot, goal, surfaceObserver(bot))) { delete goal.surfaceReturn; save(); return; }
+    }
     const clear = p => dryPassable(bot.blockAt(p));
     const candidates = bot.findBlocks({ matching: ['grass_block', 'dirt', 'stone', 'sand', 'gravel', 'deepslate'].map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined),
       maxDistance: 48, count: 128, useExtraInfo: block => {
