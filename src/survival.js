@@ -1502,7 +1502,13 @@ class Survival {
     // blow of the hardest hitter's give; past its seconds, done.
     const elapsed = held ? (Date.now() - held.at) / 1000 : 0;
     const overEstimate = !!held?.expects && (held.health - bot.health > held.expects.damage * Math.min(1, elapsed / Math.max(0.1, held.expects.seconds)) + (held.expects.oneHit || 0) || elapsed > held.expects.seconds);
-    const holding = held && (held.ids ? !newcomer : held.kinds === kinds) && Date.now() - held.at < STANCE_HOLD_MS && (held.expects ? !overEstimate : bot.health > held.health - STANCE_HEALTH) && !hitSince;
+    // Leaving the mobs be is not held once the turn is back here: the work it
+    // left them for has just been stopped by one of them (a creeper come
+    // within its fuse's reach, note 329). Held, it ran again at every tick,
+    // a hundred times a second, and mid-227-k's creeper walked up through
+    // it; mid-202-h and mid-227-i spun the same way (2026-09-27).
+    const leftBe = held?.choice === 'keep_working' && !!immediateThreat(bot);
+    const holding = held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && Date.now() - held.at < STANCE_HOLD_MS && (held.expects ? !overEstimate : bot.health > held.health - STANCE_HEALTH) && !hitSince;
     // About to ask: the run's way is looked for first, so the retreat says
     // whether there is one (a moment ago from here will do).
     const scouted = this.state.retreatScout;

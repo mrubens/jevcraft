@@ -3384,3 +3384,21 @@ test('two up is not out of a spear\'s reach: the pillar says so and counts its t
   assert.match(withSpear.description, /A spear reaches past an arm: the zombie with a spear still reaches the bot two up/);
   assert(withSpear.expects.damage > without.expects.damage, `${withSpear.expects.damage} against ${without.expects.damage}`);
 });
+
+test('leaving the mobs be is asked again once one of them stops the work, not run again every tick', async () => {
+  // mid-227-k: a creeper left be came within its fuse's reach; the held stance ran a hundred times a second until it went off.
+  const creeper = { id: 3, name: 'creeper', type: 'hostile', position: new Vec3(12.5, 64, 0.5), height: 1.7, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 3: creeper }, health: 20, food: 20,
+    inventory: { items: () => [], slots: {} }, world: { raycast: () => null }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }) });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  let asked = 0;
+  survival.stanceOptions = () => ({ keep_working: { description: 'on', run: async () => { bot._wavedOff = { ids: [3], until: Date.now() + 15000 }; return true; } }, seal: { description: 'in', run: async () => true } });
+  survival.decide = async () => { asked++; return { path: ['keep_working'] }; };
+  const danger = [{ entity: creeper, distance: 12, visible: true }];
+  await survival.stanceStep(new Task('t'), {}, () => {}, danger, false);
+  await survival.stanceStep(new Task('t'), {}, () => {}, danger, false);
+  assert.equal(asked, 1, 'far off and left be: held');
+  creeper.position = new Vec3(5.5, 64, 0.5);
+  await survival.stanceStep(new Task('t'), {}, () => {}, [{ entity: creeper, distance: 5, visible: true }], false);
+  assert.equal(asked, 2, 'within its fuse\'s reach: asked again');
+});
