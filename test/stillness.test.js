@@ -421,6 +421,11 @@ test('the survival layer turning between leaving a shelter and digging in is a f
   let r2 = null;
   for (const a of ['fight', 'block_shot', 'fight', 'block_shot', 'fight']) { t += 2000; g2.survivalAction = { action: a, at: new Date(t).toISOString() }; r2 = flipWatch(fighter, g2, t) || r2; }
   assert.equal(r2, null);
+  // mid-205-i: a fight trading names with its swing at three spiders, the swing set aside as a stall.
+  const swinger = { entity: { position: new Vec3(0.5, 100, 0.5) }, inventory: { items: () => [] } }, g3 = { step: { action: 'mine' } };
+  let r3 = null;
+  for (const a of ['defend', 'fight', 'defend', 'fight', 'defend']) { t += 400; g3.survivalAction = { action: a, at: new Date(t).toISOString() }; r3 = flipWatch(swinger, g3, t) || r3; }
+  assert.equal(r3, null, 'a fight and its swing are one fight');
 });
 
 test('a step flipping under a recent survival action is still caught: the two are watched apart', () => {

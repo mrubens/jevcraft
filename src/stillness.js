@@ -45,14 +45,18 @@ const FILLER = /^(cobblestone|cobbled_deepslate|netherrack|dirt|coarse_dirt|grav
 // The waits that are the right thing to be doing. Each is bounded where it
 // is chosen; this only keeps the stall rule from interrupting it. The names
 // are the ones survival and the hunt actually report.
-const HOLDS = new Set(['hold_bunker', 'hold_defensive_position', 'fight', 'block_shot', 'end_combat', 'dig_in', 'dig_in_bunker',
+// The swing at a mob in reach (defend) and a pillar held up top are the
+// fight too: mid-205-i's fight with three spiders traded names with its
+// swing, the flip watch called it a stall, and the swing was set aside while
+// the spiders took it from nine health to none (2026-09-27).
+const HOLDS = new Set(['hold_bunker', 'hold_defensive_position', 'fight', 'defend', 'pillar_hold', 'block_shot', 'end_combat', 'dig_in', 'dig_in_bunker',
   'seal_shelter', 'wall_off', 'take_cover', 'dig_in_to_recover', 'break_their_line', 'take_the_door',
   // A shelter held because something outside is watching, and the minute
   // by the bed before it can be slept in.
   'wait_in_shelter', 'wait_for_bedtime', 'sleep']);
 // Emergencies end when the danger does; a rule that set aside the way out
 // of lava would be the death of the bot.
-const EMERGENCIES = new Set(['leave_lava', 'leave_lava_edge', 'escape_threat', 'eat', 'dig_out_of_block', 'creeper_back_off',
+const EMERGENCIES = new Set(['leave_lava', 'leave_lava_edge', 'out_of_fire', 'escape_threat', 'eat', 'dig_out_of_block', 'creeper_back_off',
   'creeper_close_in', 'fight_in_pocket', 'shoot', 'charge', 'off_the_edge', 'surface', 'swim_up']);
 // Goals whose whole point is to be near a player who may be standing still.
 const COMPANY = new Set(['follow', 'come']);
