@@ -359,14 +359,30 @@ async function castFrame(bot, task, goal, save, actions) {
     // Where to stand: beside the frame, where both pours can be made.
     const stands = standsFor(frame, p, w).sort((a, b) => a.feet.distanceTo(bot.entity.position) - b.feet.distanceTo(bot.entity.position));
     let stand = stands.find(s => s.feet.equals(bot.entity.position.floored()));
-    for (const s of stand ? [] : stands.slice(0, 6)) {
-      task.check();
-      const destination = new goals.GoalBlock(s.feet.x, s.feet.y, s.feet.z);
-      if ((await route(bot, task, bot.pathfinder.movements, destination, 500)).status !== 'success') continue;
-      stepIs(p, 'to_stand', { stand: { x: s.feet.x, y: s.feet.y, z: s.feet.z } });
-      try { await navigate(bot, task, destination, { timeoutMs: 30000, stallMs: 5000 }); }
-      catch (err) { task.check(); if (fatal(err)) throw err; continue; }
-      if (bot.entity.position.floored().equals(s.feet)) { stand = s; break; }
+    // Walked to if a walk reaches one; else built up to, a block at a time
+    // with the blocks carried, as a player pillars beside a frame for its
+    // top row. mid-244-r made a stand four blocks up for the top slot, no
+    // walk reached it, the next round found no stand left to make, and
+    // "nowhere to stand" flipped with the way in until the loop watch
+    // ended the trial (note 425).
+    const movements = bot.pathfinder.movements;
+    const scaffold = portalSupports(bot).material;
+    const scaffoldId = scaffold && bot.registry?.itemsByName?.[scaffold]?.id;
+    for (const tower of scaffoldId === undefined ? [false] : [false, true]) {
+      if (stand) break;
+      const saved = { allow1by1towers: movements.allow1by1towers, scafoldingBlocks: movements.scafoldingBlocks };
+      if (tower) Object.assign(movements, { allow1by1towers: true, scafoldingBlocks: [...new Set([...(movements.scafoldingBlocks || []), scaffoldId])] });
+      try {
+        for (const s of stands.slice(0, 6)) {
+          task.check();
+          const destination = new goals.GoalBlock(s.feet.x, s.feet.y, s.feet.z);
+          if ((await route(bot, task, movements, destination, 500)).status !== 'success') continue;
+          stepIs(p, 'to_stand', { stand: { x: s.feet.x, y: s.feet.y, z: s.feet.z }, ...(tower ? { built: true } : {}) });
+          try { await navigate(bot, task, destination, { timeoutMs: 30000, stallMs: 5000 }); }
+          catch (err) { task.check(); if (fatal(err)) throw err; continue; }
+          if (bot.entity.position.floored().equals(s.feet)) { stand = s; break; }
+        }
+      } finally { if (tower) Object.assign(movements, saved); }
     }
     // From a lava trip the stands are too far off to survey a route to in
     // the time: to the frame first.

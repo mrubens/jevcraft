@@ -453,3 +453,19 @@ test('the cast option counts the frame already standing and says when the lava i
   assert.match(says, /about 7 trips to lava/);
   assert.match(says, /the lava is 136 blocks below here/);
 });
+
+test('a stand no walk reaches is built up to with the blocks carried, as a player pillars beside a frame', async () => {
+  // mid-244-r made a stand four blocks up for the top slot, no walk reached it, and "nowhere to stand" flipped with the way in until the loop watch ended it (2026-09-27).
+  const { Task } = require('../src/skills');
+  const { bot, w, actions } = castingBot({ water_bucket: 1, lava_bucket: 10, cobblestone: 64, flint_and_steel: 1 });
+  const phases = [];
+  actions.surveyRoute = async (b, t, movements, goal) => (goal.y <= 65 || movements.allow1by1towers ? { status: 'success' } : { status: 'noPath' });
+  const goal = { portalFrame: newFrame('x') };
+  const save = () => { if (goal.step?.phase === 'to_stand') phases.push(goal.step); };
+  let done = false;
+  for (let pass = 0; pass < 8 && !done; pass++) done = await cast.castFrame(bot, new Task('cast'), goal, save, actions);
+  assert(done, 'cast');
+  assert(goal.portalFrame.blocks.every(p => w.nameAt(new Vec3(p.x, p.y, p.z)) === 'obsidian'));
+  assert(phases.some(s => s.built), 'a high stand reached by building up');
+  assert.equal(bot.pathfinder.movements.allow1by1towers, undefined, 'the towering let go after');
+});
