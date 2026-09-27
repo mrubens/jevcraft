@@ -427,8 +427,12 @@ async function gameStep(bot, task, goal, save, actions) {
   else {
     // Gather combat supplies in the Overworld before a first Nether trip;
     // iron ore is not available to repair this dependency once inside.
-    // Valuables stay home before the crossing: nothing in the chest burns
-    // with the body, and the Nether needs none of it.
+    // The rest of the crossing's kit (food, health, blocks, a spare pickaxe,
+    // wood, the valuables left at home or in a chest here) is said at the
+    // crossing itself and topping it up is Jev's (work.js
+    // crossingKitReady): gates here, one after another and none of them
+    // said, were a second ladder between "Nether first" and the portal (the
+    // decision review, 2026-09-26).
     // Wolves sit here: they attack what the bot hits, and the far side is
     // zombified piglins and endermen.
     if (['enter_nether', 'enter_end'].includes(stage.action) && actions.wolves) await actions.wolves(bot, task, goal, save, true);
@@ -437,12 +441,9 @@ async function gameStep(bot, task, goal, save, actions) {
     // thirty-six raw iron and nineteen ingots, and after the kit restore was
     // stopped a death took all of it. The keepsakes' keeps hold back what
     // the stage spends (pearls, rods, eyes, the diamonds before the pickaxe).
-    if (actions.stash_valuables && !await actions.stash_valuables(bot, task, goal, save)) return false;
-    if (stage.action === 'enter_nether' && actions.food_reserve && !await actions.food_reserve(bot, task, goal, save)) return false;
+    // Before the Nether the walk home is offered with the kit instead.
+    if (stage.action !== 'enter_nether' && actions.stash_valuables && !await actions.stash_valuables(bot, task, goal, save)) return false;
     if (stage.action === 'enter_nether' && actions.prepare_combat && !await actions.prepare_combat(bot, task, goal, save)) return false;
-    // Home too far to walk them back to: a chest on the spot, once the
-    // preparations are done and the crossing is next (field-cache.js).
-    if (stage.action === 'enter_nether' && actions.cache_valuables) await actions.cache_valuables(bot, task, goal, save);
     if (stage.action === 'enter_end' && actions.prepare_end && !await actions.prepare_end(bot, task, goal, save)) return false;
     const execute = actions[stage.action];
     if (!execute) throw Object.assign(new Error(`Game progression is blocked at ${stage.phase.replaceAll('_', ' ')}: the ${stage.action.replaceAll('_', ' ')} action is not implemented yet. Earlier progress is saved.`), { name: 'Blocked' });

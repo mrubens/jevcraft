@@ -212,7 +212,9 @@ test('the ladder restocks from the stash ahead of its rungs, only within reach, 
   assert(require('../src/progress').isSetAside(goal, 'stash', 'chest')); assert.equal(preparationStage(bot, goal).phase, 'shield');
 });
 
-test('before the Nether the valuables go home once, and the ladder moves on with lighter pockets', async () => {
+test('before the Nether the walk home with the valuables is the kit\'s to offer, said with the walk; chosen, they go home once', async () => {
+  // The decision review (2026-09-26): the ladder walked the valuables home from up to 128 blocks before the
+  // portal, a gate said nowhere; now it is an option of the crossing kit.
   const gear = [['white_bed', 1], ['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['water_bucket', 1], ['oak_log', 8], ['cobblestone', 64], ['cooked_beef', 4], ['crafting_table', 1], ['furnace', 1],
     ['iron_helmet', 1], ['iron_chestplate', 1], ['iron_leggings', 1], ['iron_boots', 1], ['golden_boots', 1], ['bow', 1], ['arrow', 16], ['diamond_sword', 1], ['diamond_pickaxe', 1], ['diamond', 3], ['iron_ingot', 12], ['gold_ingot', 2]];
   const w = await establishedHome({ items: gear });
@@ -222,12 +224,19 @@ test('before the Nether the valuables go home once, and the ladder moves on with
   const ran = [];
   const handlers = { stash_valuables: (b, t, g, s) => stash.stashValuables(b, t, g, s, actions), prepare_combat: async () => { ran.push('prepare_combat'); return false; }, enter_nether: async () => { ran.push('enter_nether'); } };
   assert.equal(await gameStep(bot, new Task('win'), goal, save, handlers), false);
-  assert.deepEqual(ran, [], 'the stash trip came before the combat check');
-  assert.equal(goal.step.action, 'stash_valuables');
+  assert.deepEqual(ran, ['prepare_combat'], 'no walk home unasked before the crossing');
+  assert.equal(chest.window.opened || 0, 0);
+  const { crossingKitReady } = require('../src/work');
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.9 } } }; } };
+  assert.equal(await crossingKitReady(bot, new Task('win'), goal, save, client), true);
+  assert.match(asked.stash_valuables, /^Walk 19 blocks to the stash chest at home first and leave the valuables in it \(4 iron ingot, 2 gold ingot, 3 diamond\), about 4 seconds each way: a death in the Nether drops everything carried/);
+  assert.match(asked.cross_now, /and with the valuables carried/);
+  // Chosen, the stash itself: once, and the next pass has nothing to leave.
+  assert.equal(await stash.stashValuables(bot, new Task('win'), goal, save, actions), false);
   assert.deepEqual(chest.stored(), { diamond: 3, iron_ingot: 4, gold_ingot: 2, iron_pickaxe: 1, iron_sword: 1, cooked_beef: 2 }, 'eight ingots stay for a tool; the rest, the diamonds, and the kit spares while there (the iron pickaxe behind the diamond one, the iron sword behind the diamond one, two steaks over the reserve) go in');
   assert(bot.inventory.items().some(i => i.name === 'diamond_pickaxe'), 'the pickaxe is a tool, not a valuable');
-  await gameStep(bot, new Task('win'), goal, save, handlers);
-  assert.deepEqual(ran, ['prepare_combat'], 'nothing left to stash, the ladder went on');
+  assert.equal(await stash.stashValuables(bot, new Task('win'), goal, save, actions), true);
   assert.equal(chest.window.opened, 1);
   // With no chest, or the base out of reach, the crossing is not delayed.
   bot.entity.position = new Vec3(400.5, LEVEL + 1, 0.5); w.give('diamond', 2);

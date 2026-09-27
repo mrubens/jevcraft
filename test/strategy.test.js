@@ -286,11 +286,15 @@ test('when every step left before the Nether may wait, going now is offered, and
 test('the question says what the Nether waits on, and never that every step comes first', async () => {
   // mid-207-a: told "every step is done before the Nether", it chose the arrows 196 times over three hours beside the Nether-first option.
   const { bot, goal, task } = fixture(['golden_boots', 'diamond_sword']);
+  bot.registry = require('minecraft-data')('26.1'); bot.game.difficulty = 'normal';
   const { asked, decide } = picking('rung_golden_boots');
   await strategyStep(bot, task, goal, () => {}, { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 }, { decide, now: () => 1e12 });
   const state = asked[0].state;
   assert.match(state.beforeTheNether, /Nothing left is needed before the Nether/);
   assert.match(state.beforeTheNether, /May wait until after it: golden boots, diamond sword/);
+  // And the kit for the crossing, which had been gates at the portal said nowhere (the decision review, 2026-09-26).
+  assert.match(state.beforeTheNether, /At the portal the kit is said and topping any of it up is a choice, not a wait: short now of 0 of 40 food points; 0 of 128 blocks; 0 of 8 logs and no crafting table\./);
+  assert.match(asked[0].state.options.nether_first, /short now of 0 of 40 food points/);
   assert.doesNotMatch(state.note, /every step is done before the Nether/);
 });
 

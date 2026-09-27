@@ -41,19 +41,23 @@ const IDLE_OPTIONS = [
 ];
 
 // How the portal comes to be: a frame of its own, one cast in place from
-// lava and water, or a ruin finished.
+// lava and water (here or beside the lava), or a ruin finished; buckets
+// made first for a cast. Held on a clock, as a rung is: re-asked every
+// twenty working minutes with the minutes and what they made.
 define({
   id: 'portal_method', area: 'work', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'The way into the Nether: build a portal frame of its own from obsidian, cast one in place from lava and water, or finish and light a remembered ruined portal?',
-  trigger: 'In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen, asked again when a chosen ruin\'s frame will not do.',
-  source: 'src/work.js (portalMethod), src/portal-cast.js (castSays)',
+  question: 'The way into the Nether: build a portal frame of its own from obsidian, cast one in place from lava and water (here, or beside the known lava), or finish and light a remembered ruined portal; or make more buckets first?',
+  trigger: 'In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), or when a chosen ruin\'s frame will not do.',
+  source: 'src/work.js (portalMethod, portalFacts, methodSoFar), src/portal-cast.js (castSays)',
   options: [
     { key: 'build_new', label: 'build a frame of its own from ten obsidian', when: 'always', level: 'root' },
     { key: 'cast_frame', label: 'cast a frame of its own in place from lava and water', when: 'always', level: 'root' },
-    { key: /^ruin_\d+$/, label: 'finish and light a remembered ruined portal', when: 'a ruined portal remembered within 512 blocks, not found frameless', level: 'root' },
+    { key: 'cast_at_lava', label: 'cast a frame of its own beside the nearest known lava', when: 'lava known more than sixteen blocks away', level: 'root' },
+    { key: 'craft_buckets', label: 'make more buckets first from the iron carried', when: 'three or more iron ingots carried', level: 'root' },
+    { pattern: 'ruin_[0-9]+', label: 'finish and light a remembered ruined portal', when: 'a ruined portal remembered within 512 blocks, not found frameless (and the one held, however far)', level: 'root', dynamic: true },
   ],
-  instructions: { task: 'Choose how the bot gets a portal to the Nether.', guidance: 'Each option says its walk, what it needs against what is carried, and whether a diamond pickaxe is needed. A new frame needs ten obsidian, which without a diamond pickaxe means finding diamonds first; a frame cast in place needs no pickaxe but one lava bucket a block, so its trips to lava depend on the buckets carried; a ruin needs only its missing blocks.' },
-  fallback: () => 'build_new',
+  instructions: { task: 'Choose how the bot gets a portal to the Nether.', guidance: 'Each option says its walk, what it needs against what is carried, and whether a diamond pickaxe is needed, and every option ends with the same facts: the nearest known lava, how deep diamonds lie, the pickaxes, buckets and iron carried, and the ruins remembered. A new frame needs ten obsidian, which without a diamond pickaxe means finding diamonds first; a frame cast in place needs no pickaxe but one lava bucket a block, each trip carrying one lava per bucket held, so where it stands against the lava and the buckets carried decide its trips; a ruin needs only its missing blocks. Asked again, the way held says how long it has been worked on and what that made.' },
+  fallback: (children, path, context = {}) => children[context.current] ? context.current : 'build_new',
 });
 
 define({
