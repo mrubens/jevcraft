@@ -3303,7 +3303,11 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
   } catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) || err instanceof Blocked) throw err;
     frame.siteFailures = (frame.siteFailures || 0) + 1; frame.siteFailure = err.message; save();
-    if (frame.siteFailures >= 3 && !frame.ruin && goal.portalFrame === frame && !frame.blocks.some(q => bot.blockAt(pos(q))?.name === 'obsidian')) {
+    // With obsidian in it, after ten: a cast block is a lava trip, and
+    // mid-243-h's part-cast frame on a mountain failed ninety-five times at
+    // the same slot, a stand dug and still no pour (2026-09-27).
+    const castIn = frame.blocks.filter(q => bot.blockAt(pos(q))?.name === 'obsidian').length;
+    if (!frame.ruin && goal.portalFrame === frame && ((frame.siteFailures >= 3 && !castIn) || frame.siteFailures >= 10)) {
       (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
       delete goal.portalFrame; save();
       bot.chat?.('This spot will not take the portal. Finding another.');

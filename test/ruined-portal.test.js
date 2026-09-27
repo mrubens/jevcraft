@@ -355,6 +355,17 @@ test('a cast that fails at its site three passes running, nothing cast, leaves t
   }
   assert.equal(await buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), false);
   assert.equal(goal.portalFrame, undefined, 'left after three');
+  // With obsidian cast in it, the site is kept longer, and left after ten.
+  const cast2 = newFrame('x', new Vec3(8, 64, 23));
+  const goal2 = { portalFrame: cast2 };
+  w.set(new Vec3(cast2.blocks[0].x, cast2.blocks[0].y, cast2.blocks[0].z), 'obsidian');
+  const slot2 = cast.castOrder(cast2).find(q => w.nameAt(q) !== 'obsidian');
+  w.set(slot2, 'lava');
+  const inner = bot.blockAt; bot.blockAt = p => { const b = inner(p); return p.floored().equals(slot2) ? { ...b, getProperties: () => ({ level: 3 }) } : b; };
+  for (let n = 1; n <= 9; n++) await assert.rejects(buildPortalFrame(bot, new Task('cast'), goal2, () => {}, cast2), /Flowing lava/);
+  assert.equal(goal2.portalFrame, cast2, 'kept through nine');
+  assert.equal(await buildPortalFrame(bot, new Task('cast'), goal2, () => {}, cast2), false);
+  assert.equal(goal2.portalFrame, undefined, 'left at ten');
   assert.equal(goal.portalSitesLeft.length, 1);
   const { selectPortalSite } = require('../src/build-sites');
   assert.equal(typeof selectPortalSite, 'function');
