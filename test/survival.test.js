@@ -3036,6 +3036,15 @@ test('a meal cut short is not offered as a stance again for ten seconds', async 
   survival.report = () => {};
   assert.equal(await first.eat.run(), false);
   assert.equal(survival.stanceOptions(new Task('t'), {}, () => {}, crowd, false).eat, undefined, 'cut short: not offered');
+  // A consume that comes back with nothing eaten is cut short too.
+  survival.state.mealCutAt = Date.now() - 11000;
+  const again = survival.stanceOptions(new Task('t'), {}, () => {}, crowd, false);
+  bot.consume = async () => {};
+  assert.equal(await again.eat.run(), false, 'hunger did not go up');
+  assert.equal(survival.stanceOptions(new Task('t'), {}, () => {}, crowd, false).eat, undefined, 'and not offered');
+  bot.consume = async () => { bot.food += 3; };
+  survival.state.mealCutAt = Date.now() - 11000;
+  assert.equal(await survival.stanceOptions(new Task('t'), {}, () => {}, crowd, false).eat.run(), true, 'eaten');
   survival.state.mealCutAt = Date.now() - 11000;
   assert(survival.stanceOptions(new Task('t'), {}, () => {}, crowd, false).eat, 'offered again after ten seconds');
 });

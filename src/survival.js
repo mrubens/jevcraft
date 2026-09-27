@@ -1222,8 +1222,16 @@ class Survival {
         // mid-235-g chose to eat with two drowned at arm's length; the meal
         // began every half second and was never eaten, food at seventeen
         // throughout, twelve health to none (2026-09-27).
+        // Eaten is hunger up: the consume came back in half a second with
+        // nothing eaten while a zombie hit, was taken for a meal and the
+        // mark cleared, and mid-227-f began its beef nine times (2026-09-27).
         this.state.mealCutAt = Date.now();
-        try { await bot.equip(meal, 'hand'); await bot.consume(); delete this.state.mealCutAt; return true; }
+        const hungerBefore = bot.food ?? 20, saturationBefore = bot.foodSaturation ?? 0;
+        try {
+          await bot.equip(meal, 'hand'); await bot.consume();
+          if ((bot.food ?? 20) > hungerBefore || (bot.foodSaturation ?? 0) > saturationBefore) { delete this.state.mealCutAt; return true; }
+          return false;
+        }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
       } };
     // The charge at a few ground shooters, where it can be run.
