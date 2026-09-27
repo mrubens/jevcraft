@@ -3069,9 +3069,10 @@ function methodSoFar(bot, goal, method, ruin) {
   const minutes = Math.round((method.activeMs || 0) / 60000);
   const gained = Math.max(0, placed - (from.placed || 0)) + Math.max(0, countOf(bot, 'obsidian') - (from.obsidian || 0));
   const left = Math.max(0, 10 - placed - countOf(bot, 'obsidian'));
-  const pace = minutes < 10 || ruin || !left ? '' : gained
+  const went = Object.entries(method.byStep || {}).filter(([, ms]) => ms >= 60000).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, ms]) => `${k} ${Math.round(ms / 60000)}`).join(', ');
+  const pace = minutes < 10 || ruin || !left ? '' : (went ? ` Its minutes went to: ${went}.` : '') + (gained
     ? ` At the pace so far, ${gained} obsidian in ${minutes} minutes (about ${Math.round(minutes / gained)} a block), the ${left} still to come would take about ${Math.round(minutes / gained * left)} minutes more.`
-    : ` No obsidian has come of it in ${minutes} minutes.`;
+    : ` No obsidian has come of it in ${minutes} minutes.`);
   return ` This is the way chosen, worked on for ${minutes} minutes so far. Since it was chosen: obsidian carried ${from.obsidian ?? 0} to ${countOf(bot, 'obsidian')}, ${goal.portalFrame ? `${placed} of the frame's ten standing` : 'no frame begun'}, diamonds carried ${from.diamonds ?? 0} to ${countOf(bot, 'diamond')}${madePick ? ', a diamond pickaxe made' : ''}${walk}.${pace} Kept, it is asked again after another ${PORTAL_BUDGET_MS / 60000} working minutes.`;
 }
 
@@ -3242,7 +3243,15 @@ async function crossing(bot, task, goal, save, client) {
   // The portal's own work is timed for the way it is made (portalMethod):
   // the time its passes take.
   const method = goal.portalMethod;
-  return timed(save, ms => { if (method && goal.portalMethod === method) method.activeMs = (method.activeMs || 0) + ms; }, () => portalStep(bot, task, goal, save, client));
+  // And by what the pass was on, for the way's pace to say where its
+  // minutes went: mid-235-l was told "2 obsidian in 40 minutes, about 20 a
+  // block", its minutes mostly climbs and a pickaxe made (note 426).
+  return timed(save, ms => {
+    if (!method || goal.portalMethod !== method) return;
+    method.activeMs = (method.activeMs || 0) + ms;
+    const on = String(goal.step?.action === 'cast_portal' ? `cast: ${goal.step.phase || 'cast'}` : goal.step?.action || 'other').replaceAll('_', ' ');
+    (method.byStep ||= {})[on] = (method.byStep[on] || 0) + ms;
+  }, () => portalStep(bot, task, goal, save, client));
 }
 async function portalStep(bot, task, goal, save, client) {
   // Buckets Jev chose to make for the cast, before anything else of it.
@@ -4533,4 +4542,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };

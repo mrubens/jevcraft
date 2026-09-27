@@ -85,3 +85,16 @@ test('a round of gathering blocks that gains none counts: twice in ten minutes a
   assert.equal(isSetAside(goal, 'block_reserve', 'gather'), true, 'twice with none gained rests it');
   assert.deepEqual(goal.blockRounds.map(r => r.gained), [0, 0]);
 });
+
+test('the portal way held says its pace and where its minutes went', () => {
+  // mid-235-l was told "2 obsidian in 40 minutes, about 20 a block", the minutes mostly climbs and a pickaxe (2026-09-27).
+  const { methodSoFar } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  const frame = { blocks: Array.from({ length: 10 }, (_, i) => ({ x: i, y: 64, z: 0 })) };
+  const bot = { inventory: { items: () => [] }, blockAt: p => ({ name: p.x < 2 ? 'obsidian' : 'air', position: p }) };
+  const method = { kind: 'cast', activeMs: 40 * 60000, from: { obsidian: 0, diamonds: 0 },
+    byStep: { 'ascend to surface': 14 * 60000, 'fill bucket': 9 * 60000, 'cast: pour': 6 * 60000, 'mine': 11 * 60000 } };
+  const says = methodSoFar(bot, { portalFrame: frame }, method, null);
+  assert.match(says, /Its minutes went to: ascend to surface 14, mine 11, fill bucket 9, cast: pour 6\./);
+  assert.match(says, /2 obsidian in 40 minutes \(about 20 a block\), the 8 still to come would take about 160 minutes more/);
+});
