@@ -153,7 +153,7 @@ define({
 // Jev cannot be reached, or with JEV_ENCOUNTERS=0.
 define({
   id: 'encounter_stance', area: 'combat', kind: 'combat', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
-  question: 'Hostile mobs are near the bot: fight here, go up, dig into the wall, dig down, seal in, run, eat, shoot, charge the shooters, dance with the creeper, or leave them be and keep working?',
+  question: 'Hostile mobs are near the bot: fight here, go up, step out of the shooters\' line, dig into the wall, dig down, seal in, run, eat, shoot, charge the shooters, dance with the creeper, or leave them be and keep working?',
   trigger: 'An encounter the reflexes (the swing at arm\'s length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible (one is taken without asking); held for fifteen seconds, until health falls by six, until the stance fails, or until a mob it was not chosen against comes within six blocks (not when a kind of mob comes into view further off or goes out of it). A stance that failed is not offered again within four blocks of where it failed for twenty seconds. While a stance holds, the shield at each arrow gives way to a stance that moves or builds, the hurt watchdog to any stance but keep_working, and eating to the eat stance. Off with JEV_ENCOUNTERS=0.',
   source: 'src/survival.js (stanceOptions)',
   instructions: {
@@ -168,7 +168,9 @@ define({
     { key: 'eat_golden_apple', label: 'eat a golden apple now', when: 'a golden or enchanted golden apple is carried and health is below full', level: 'root' },
     { key: 'pillar', label: 'go two blocks up and fight from there', when: 'two scaffold blocks carried and three clear blocks overhead', level: 'root' },
     { key: 'come_down', label: 'come down the bot\'s own pillar, digging the block underfoot', when: 'standing on a pillar of its own blocks with a floor under it', level: 'root' },
-    { key: 'bunker', label: 'dig into the nearby wall and fight at the doorway', when: 'a wall is near that digs in three seconds', level: 'root' },
+    { key: 'bunker', label: 'dig into the nearby wall and fight at the doorway', when: 'natural rock to dig into where the bot stands or within five blocks; said with its seconds of digging with the tools carried', level: 'root' },
+    { key: 'out_of_sight', label: 'walk to a spot no shooter\'s line reaches and fight what comes round', when: 'a shooter has a line to the bot and a spot out of every shooter\'s line is within eight blocks of walking (the game\'s raycast from each shooter\'s eye), not in water; said with the blocks, the seconds in their fire and what still reaches it', level: 'root' },
+    { key: 'nook', label: 'dig an L into the rock, two in and one to the side, out of every shooter\'s line', when: 'a shooter has a line to the bot, natural rock for the L where the bot stands or within five blocks, and its end out of every shooter\'s line; said with the blocks, the tool and the seconds of digging', level: 'root' },
     { key: 'seal', label: 'seal a pocket and wait', when: 'four or more building blocks are carried', level: 'root' },
     { key: 'dig_down', label: 'dig straight down where the bot stands and close the hole over its head', when: 'a dry column of diggable ground under the bot walls it in within twelve blocks, a block carried for the cap, a pickaxe or ground soft enough for the hand, not in water', level: 'root' },
     { key: 'eat', label: 'eat food now', when: 'food carried, health below full, hunger below full and eighteen or more after the meal (health comes back)', level: 'root' },

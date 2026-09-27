@@ -12,7 +12,7 @@ function wall(items) {
     inventory: { items: () => items.map(name => ({ name, type: registry.itemsByName[name].id, count: 1, durabilityUsed: 0 })) } };
 }
 
-test('a bunker is quick with an iron pickaxe and slow by hand: the stance offers it only when it is quick', () => {
+test('a bunker is quick with an iron pickaxe and slow by hand: the stance says its seconds', () => {
   const from = new Vec3(-5, 64, 0);
   const iron = bunkerDigMs(wall(['iron_pickaxe']), from), hand = bunkerDigMs(wall([]), from);
   assert(iron <= 3000, `iron: ${iron}`);

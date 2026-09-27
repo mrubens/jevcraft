@@ -4134,3 +4134,86 @@ test('a golden apple is priced as every stance is, and an eat cut short with the
   assert.match(q.tree.eat_golden_apple.description, /Tried \d+ seconds? ago here and cut short before it was eaten; still carried/);
   assert.equal(q.state.failedHereJustNow[0].choice, 'eat_golden_apple');
 });
+
+// A world of stone with the air cells given, blocks from the registry so
+// their dig times are the game's; the raycast walks it as the game's does.
+function rockWorld(air, items = []) {
+  const registry = require('minecraft-data')('26.1'), Block = require('prismarine-block')(registry);
+  const cache = new Map();
+  const blockAt = p => {
+    const f = p.floored(), key = `${f}`;
+    if (!cache.has(key)) { const b = Block.fromStateId(registry.blocksByName[air(f) ? 'air' : 'stone'].defaultState); b.position = f; cache.set(key, b); }
+    return cache.get(key);
+  };
+  const raycast = (from, dir, range) => {
+    for (let t = 0; t <= range; t += 0.02) { const at = from.plus(dir.scaled(t)), b = blockAt(at); if (b.boundingBox === 'block') return { position: b.position, name: b.name, intersect: at }; }
+    return null;
+  };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 14, food: 20, entities: {},
+    entity: { position: new Vec3(0.5, 64, 0.5), onGround: true }, registry, time: { timeOfDay: 6000 },
+    inventory: { items: () => items.map(name => ({ name, type: registry.itemsByName[name].id, count: /pickaxe|sword/.test(name) ? 1 : 64, durabilityUsed: 0 })), slots: {} },
+    blockAt, world: { raycast }, findBlocks: () => [], pathfinder: { movements: {} } });
+  return bot;
+}
+const skeletonAt = (x, z) => ({ id: 9, name: 'skeleton', type: 'hostile', position: new Vec3(x, 64, z), height: 1.99, isValid: true, heldItem: { name: 'bow' } });
+const threat = (bot, entity) => ({ entity, distance: entity.position.distanceTo(bot.entity.position), visible: true });
+
+test('in a corridor with a skeleton down its length, the side opening out of its line is offered, the walk and what still reaches said (note 499)', async () => {
+  // The 78 "none of these" picks with shooters of 2026-09-27: 57 underground,
+  // the pillar taken 49 times, nothing offered that left the arrows' line.
+  const corridor = p => (p.y === 64 || p.y === 65) && ((p.z === 0 && p.x >= -6 && p.x <= 20) || (p.x === -3 && (p.z === 1 || p.z === 2)));
+  const bot = rockWorld(corridor, ['iron_sword', 'cobblestone']);
+  const skeleton = skeletonAt(15.5, 0.5);
+  let went = null;
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async (b, t, goal) => { went = new Vec3(goal.x, goal.y, goal.z); } }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false);
+  assert(options.out_of_sight, Object.keys(options).join(','));
+  assert.match(options.out_of_sight.description, /^Walk 4 blocks to a spot [\d.]+ blocks off that no line from the skeleton reaches \(rock stands between\), about 0\.9 seconds in their fire on the way/);
+  assert.match(options.out_of_sight.description, /About [\d.]+ damage from the mobs here in the next fifteen seconds this way, the 0\.9 seconds of walking there included/);
+  await options.out_of_sight.run();
+  assert.deepEqual(went, new Vec3(-3, 64, 1));
+  const { seenFrom } = require('../src/bunker');
+  assert.deepEqual(seenFrom(bot, [skeleton], went), [], 'no line from the skeleton to the side opening');
+  assert.equal(seenFrom(bot, [skeleton], new Vec3(0, 64, 0)).length, 1, 'where it stands, in its line');
+});
+
+test('in a wall of stone with a skeleton in the open, an L dug in out of its line is offered, its seconds from the tool carried', () => {
+  const open = p => p.y >= 64 && p.x < 1;
+  const make = pick => {
+    const bot = rockWorld(open, [pick, 'cobblestone']);
+    const skeleton = skeletonAt(-10.5, 0.5);
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    return { bot, skeleton, options: survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false) };
+  };
+  const { bot, skeleton, options } = make('iron_pickaxe');
+  assert(options.nook, Object.keys(options).join(','));
+  const { nookSite, blockDigMs, seenFrom } = require('../src/bunker');
+  const site = nookSite(bot, [skeleton]);
+  const stone = bot.blockAt(new Vec3(1, 64, 0));
+  assert.equal(site.blocks, 6);
+  assert.equal(site.digMs, 6 * blockDigMs(bot, stone));
+  const secs = Math.round((site.ms + 3 * 250) / 100) / 10;
+  assert.match(options.nook.description, new RegExp(`^Dig an L into the rock: two blocks in and one to the side, 6 blocks with the iron pickaxe, about ${secs} seconds of digging and stepping in`));
+  assert.match(options.nook.description, /no line from the skeleton reaches its end/);
+  assert.match(options.nook.description, /What bites comes to the mouth and round the turn one at a time/);
+  const openCells = new Set(site.cells.flatMap(c => [`${c}`, `${c.offset(0, 1, 0)}`]));
+  assert.deepEqual(seenFrom(bot, [skeleton], site.end, { open: openCells }), [], 'its end out of the line once dug');
+  assert.equal(seenFrom(bot, [skeleton], site.cells[0], { open: openCells }).length, 1, 'its mouth in the line');
+  // A wooden pickaxe digs it slower, and says so.
+  const wooden = make('wooden_pickaxe');
+  assert.match(wooden.options.nook.description, /6 blocks with the wooden pickaxe/);
+  const woodSecs = Number(/about ([\d.]+) seconds of digging/.exec(wooden.options.nook.description)[1]);
+  assert(woodSecs > secs, `${woodSecs} against ${secs}`);
+});
+
+test('a bunker that takes five seconds or more to dig is offered with its seconds said, not hidden', () => {
+  const open = p => p.y >= 64 && p.x < 1;
+  const bot = rockWorld(open, ['wooden_pickaxe', 'cobblestone']);
+  const zombie = { id: 5, name: 'zombie', type: 'hostile', position: new Vec3(-9.5, 64, 0.5), height: 1.95, isValid: true };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const ms = require('../src/bunker').bunkerDigMs(bot, zombie.position);
+  assert(ms >= 5000, `${ms}`);
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, zombie)], false);
+  assert(options.bunker, Object.keys(options).join(','));
+  assert.match(options.bunker.description, new RegExp(`about ${Math.round(ms / 100) / 10} seconds of digging with the tools carried`));
+});

@@ -221,7 +221,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `encounter_stance`
 
-**Hostile mobs are near the bot: fight here, go up, dig into the wall, dig down, seal in, run, eat, shoot, charge the shooters, dance with the creeper, or leave them be and keep working?**
+**Hostile mobs are near the bot: fight here, go up, step out of the shooters' line, dig into the wall, dig down, seal in, run, eat, shoot, charge the shooters, dance with the creeper, or leave them be and keep working?**
 
 - When: An encounter the reflexes (the swing at arm's length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible (one is taken without asking); held for fifteen seconds, until health falls by six, until the stance fails, or until a mob it was not chosen against comes within six blocks (not when a kind of mob comes into view further off or goes out of it). A stance that failed is not offered again within four blocks of where it failed for twenty seconds. While a stance holds, the shield at each arrow gives way to a stance that moves or builds, the hurt watchdog to any stance but keep_working, and eating to the eat stance. Off with JEV_ENCOUNTERS=0.
 - Decision tree, choice; stakes high; ledger kind `combat`
@@ -238,7 +238,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `eat_golden_apple` | root | eat a golden apple now | a golden or enchanted golden apple is carried and health is below full |
 | `pillar` | root | go two blocks up and fight from there | two scaffold blocks carried and three clear blocks overhead |
 | `come_down` | root | come down the bot's own pillar, digging the block underfoot | standing on a pillar of its own blocks with a floor under it |
-| `bunker` | root | dig into the nearby wall and fight at the doorway | a wall is near that digs in three seconds |
+| `bunker` | root | dig into the nearby wall and fight at the doorway | natural rock to dig into where the bot stands or within five blocks; said with its seconds of digging with the tools carried |
+| `out_of_sight` | root | walk to a spot no shooter's line reaches and fight what comes round | a shooter has a line to the bot and a spot out of every shooter's line is within eight blocks of walking (the game's raycast from each shooter's eye), not in water; said with the blocks, the seconds in their fire and what still reaches it |
+| `nook` | root | dig an L into the rock, two in and one to the side, out of every shooter's line | a shooter has a line to the bot, natural rock for the L where the bot stands or within five blocks, and its end out of every shooter's line; said with the blocks, the tool and the seconds of digging |
 | `seal` | root | seal a pocket and wait | four or more building blocks are carried |
 | `dig_down` | root | dig straight down where the bot stands and close the hole over its head | a dry column of diggable ground under the bot walls it in within twelve blocks, a block carried for the cap, a pickaxe or ground soft enough for the hand, not in water |
 | `eat` | root | eat food now | food carried, health below full, hunger below full and eighteen or more after the meal (health comes back) |

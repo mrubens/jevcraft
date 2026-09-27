@@ -348,6 +348,8 @@ function lavaExit(bot, radius = 6, { water = false } = {}) {
 // drop means a neighbouring cell the body could be pushed into with no
 // floor for three blocks under it, or lava under it.
 const { besideDrop, dropWithin, KNOCKBACK } = require('./terrain');
+// The encounter rules' own bunker, when Jev cannot be asked: three seconds
+// of digging under fire the most it is worth. Jev is told the seconds.
 const BUNKER_DIG_MS = 3000;
 const heavyHitters = (danger, radius) => danger.filter(t => KNOCKBACK.has(t.entity.name) && t.distance <= radius);
 // What is left once the pickaxes carried wear out: how many more stone ones
@@ -1516,16 +1518,90 @@ class Survival {
           return steps > 0;
         } };
     }
-    // A bunker that is quick to dig: three seconds of digging under fire is
-    // the most it is worth (bunker.js bunkerDigMs).
+    // A bunker where there is a wall to dig: its seconds said (bunker.js
+    // bunkerDigMs, the game's dig times with the tool carried) and weighed
+    // by Jev. Offered only under three seconds of digging, it was offered in
+    // none of the 78 "none of these" picks with shooters about of
+    // 2026-09-27, 57 of them underground, where the pillar was taken 49
+    // times though its own text says shooters still hit (note 499).
     // At the doorway the biters come one at a time and are fought; the
     // shooters in line with it and a creeper at it still reach.
     const bunkerMs = nearWall(bot, centroid(danger)) ? require('./bunker').bunkerDigMs(bot, centroid(danger)) : Infinity;
-    if (bunkerMs <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.' + buildCost + creeperNote + witchNote +
+    if (Number.isFinite(bunkerMs)) options.bunker = { description: `Dig into the nearby wall, three blocks in and one to the side at the end where the rock allows, so only one mob at a time can reach, and fight them at the doorway: about ${Math.round(bunkerMs / 100) / 10} seconds of digging with the tools carried, shot at meanwhile.` + buildCost + creeperNote + witchNote +
       costSays(stanceCost({ mobs, setup: bunkerMs / 1000 + BLOCK_SECONDS, fight: { atOnce: 1, only: m => !m.shoots }, reaches: m => m.shoots || m.name === 'creeper' || m.name === 'warden', shield: shielded }), bot.health, mobs, { doing: 'digging in', done: 'At the doorway, one biter at a time' }),
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
+    // Out of the shooters' line, as a player under arrows steps behind a
+    // corner of rock or back into the tunnel it came by, or digs a short L
+    // into the wall: the 78 picks above had only the pillar, a block of
+    // cover in the open and pockets of twenty to thirty-four blocks. Each is
+    // checked with the game's raycast from every shooter's eye to where the
+    // bot would stand (bunker.js seenFrom), and priced as the rest are: the
+    // walk or the digging under fire, then what still reaches it, the biters
+    // that come round fought at arm's length a few at a time.
+    const shooting = danger.filter(t => shooter(t.entity)).map(t => t.entity);
+    const biting = danger.filter(t => !shooter(t.entity)).map(t => t.entity);
+    const seenHere = shooting.length ? require('./bunker').seenFrom(bot, shooting, feet) : [];
+    const shooterNames = list => mobList([...new Set(list.map(e => e.name))], list.map(e => ({ name: e.name })));
+    const heldHidden = this.state.stance?.choice === 'out_of_sight' || this.state.stance?.choice === 'nook';
+    const cover = shooting.length && !inWater(bot) && (seenHere.length || heldHidden) ? require('./bunker').coverWithin(bot, shooting, { steps: 8, avoid: biting }) : null;
+    if (cover) {
+      const secs = Math.round(cover.steps / 4.3 * 10) / 10;
+      const atOnce = Math.max(1, openCells(bot, cover.cell));
+      const hiddenCost = stanceCost({ mobs, setup: secs, fight: { atOnce, only: m => !m.shoots }, reaches: m => m.name === 'creeper' || m.name === 'warden', shield: shielded });
+      const off = Math.round(cover.cell.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
+      const biters = biting.length ? ` What bites comes round to it and is fought at arm's length, at most ${atOnce} at once there.` : '';
+      options.out_of_sight = { expects: { damage: hiddenCost.damage, seconds: hiddenCost.seconds, oneHit },
+        description: (cover.steps
+          ? `Walk ${plural(cover.steps, 'block')} to a spot ${off} blocks off that no line from ${shooterNames(shooting)} reaches (rock stands between), about ${secs} seconds in their fire on the way, and stay there.`
+          : `Stay where the bot stands: no line from ${shooterNames(shooting)} reaches it here (rock stands between).`) + biters + ' A shooter that walks round to a new line finds the bot open again.' +
+          costSays(hiddenCost, bot.health, mobs, { doing: cover.steps ? 'walking there' : null, done: 'Out of their line' }) + hitsLeft,
+        run: async () => {
+          if (!cover.steps) {
+            this.report(goal, save, { action: 'out_of_sight_hold', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
+            const next = [...biting].sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
+            if (next) await bot.lookAt?.(next.position.offset(0, 1.6, 0), true);
+            await sleep(250);
+            return true;
+          }
+          this.report(goal, save, { action: 'out_of_sight', to: { x: cover.cell.x, y: cover.cell.y, z: cover.cell.z }, blocks: cover.steps, threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cover.cell.x, cover.cell.y, cover.cell.z), { timeoutMs: Math.max(3000, secs * 3000), stallMs: 1200 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          return bot.entity.position.floored().equals(cover.cell);
+        } };
+    }
+    // The L dug in: two in and one to the side, its end out of every
+    // shooter's line with the rock that is left (bunker.js nookSite).
+    const inNook = this.state.nook && `${feet}` === this.state.nook.end;
+    const nook = !inNook && seenHere.length && !inWater(bot) && typeof this.actions.dig === 'function' ? require('./bunker').nookSite(bot, shooting) : null;
+    if (nook || inNook) {
+      const setup = nook ? Math.round((nook.ms + nook.cells.length * 250) / 100) / 10 : 0;
+      const nookCost = stanceCost({ mobs, setup, fight: { atOnce: 1, only: m => !m.shoots }, reaches: m => m.name === 'creeper' || m.name === 'warden', shield: shielded });
+      const walk = nook && nook.walkMs ? ` from the wall ${Math.round(nook.stand.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10} blocks off` : '';
+      options.nook = { expects: { damage: nookCost.damage, seconds: nookCost.seconds, oneHit },
+        description: (nook
+          ? `Dig an L into the rock${walk}: two blocks in and one to the side, ${nook.blocks} blocks ${nook.with}, about ${setup} seconds of digging and stepping in, shot at meanwhile; no line from ${shooterNames(shooting)} reaches its end.`
+          : `Stay round the turn of the nook dug here: no line from ${shooterNames(shooting)} reaches it.`) +
+          ' What bites comes to the mouth and round the turn one at a time and is fought at arm\'s length; a shooter has to come to the mouth to see in.' + (nook ? buildCost + creeperNote : '') +
+          costSays(nookCost, bot.health, mobs, { doing: nook ? 'digging in' : null, done: 'Round the turn' }) + hitsLeft,
+        run: async () => {
+          if (inNook) {
+            this.report(goal, save, { action: 'nook_hold', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
+            const w = this.state.nook.watch;
+            if (w) await bot.lookAt?.(new Vec3(w.x + 0.5, w.y + 1.2, w.z + 0.5), true);
+            await sleep(250);
+            return true;
+          }
+          this.report(goal, save, { action: 'dig_nook', stand: { ...nook.stand }, end: { ...nook.end }, blocks: nook.blocks, threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
+          try {
+            const dug = await require('./bunker').digNook(bot, task, nook, { navigate: this.actions.navigate });
+            if (!dug) return false;
+            this.state.nook = { end: `${nook.end}`, watch: { x: nook.watch.x, y: nook.watch.y, z: nook.watch.z } };
+            return true;
+          } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+        } };
+    }
     const race = pocketRace(bot, danger);
     // Underground the dawn changes nothing: no mob there burns in it.
     const nightLong = shelterNeeded(bot) && surfaceObserver(bot)(bot.entity.position) ? ` At night the mobs outside do not lose interest: about ${minutesToDawn(bot)} real minutes to dawn.` : '';
@@ -1743,7 +1819,7 @@ class Survival {
     // turn while it sank, and drowned-and-was-hit from fourteen to none;
     // no option said it was in water (2026-09-27).
     if (inWater(bot)) {
-      for (const k of ['pillar', 'seal', 'bunker', 'dig_down']) delete options[k];
+      for (const k of ['pillar', 'seal', 'bunker', 'dig_down', 'nook']) delete options[k];
       const drowned = danger.filter(t => t.entity.name === 'drowned').length;
       const wet = ` The bot is in water, air ${bot.oxygenLevel ?? 20} of 20 (air runs out in about fifteen seconds under water, then it drowns at two health a second), and sinks unless it swims; a pillar, a pocket or a bunker cannot be built here.${drowned ? ` ${drowned === 1 ? 'The drowned swims' : `${drowned} drowned swim`} faster than the bot in water.` : ''}`;
       if (options.fight) options.fight.description += wet;

@@ -1,4 +1,5 @@
 'use strict';
+const { Vec3 } = require('vec3');
 const { DAY } = require('./day');
 const { handlers, kitReady, observedDead, shooter, fitToFight } = require('./mob-policy');
 
@@ -121,6 +122,39 @@ function unseenNote(bot, shown = [], radius = 16) {
   if (!hidden.length) return '';
   return ` Out of sight but about: ${hidden.map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}.`;
 }
+// A straight line from one point to another with no block across it: the
+// game's raycast, a hit within half a block of the target counted as none.
+// `open`, cell keys of blocks still to be dug: a line that meets one goes on
+// through it, cell by cell, as it will once they are dug (the nook below the
+// rock, survival.js).
+function lineClear(bot, from, to, { open = null } = {}) {
+  const direction = to.minus(from), length = direction.norm();
+  if (length < 1e-6) return true;
+  const hit = bot.world?.raycast?.(from, direction.unit(), length);
+  if (!hit || from.distanceTo(hit.intersect || hit.position) >= length - 0.5) return true;
+  const at = hit.position ? hit.position.floored() : null;
+  if (!open || !at || !open.has(`${at}`)) return false;
+  return cellsClear(bot, hit.intersect || at.offset(0.5, 0.5, 0.5), to, open);
+}
+// Cell by cell along the line (Amanatides and Woo), a solid block not in
+// `open` stopping it.
+function cellsClear(bot, from, to, open) {
+  const d = to.minus(from), length = d.norm(), u = d.scaled(1 / length);
+  const cell = from.floored(), end = to.floored();
+  const step = ['x', 'y', 'z'].map(k => Math.sign(u[k]));
+  const next = ['x', 'y', 'z'].map((k, i) => step[i] ? ((step[i] > 0 ? cell[k] + 1 : cell[k]) - from[k]) / u[k] : Infinity);
+  const delta = ['x', 'y', 'z'].map((k, i) => step[i] ? Math.abs(1 / u[k]) : Infinity);
+  const c = [cell.x, cell.y, cell.z];
+  for (let n = 0; n < 512; n++) {
+    const key = `(${c[0]}, ${c[1]}, ${c[2]})`;
+    if (c[0] === end.x && c[1] === end.y && c[2] === end.z) return true;
+    if (!open.has(key) && bot.blockAt?.(new Vec3(c[0], c[1], c[2]))?.boundingBox === 'block') return false;
+    const i = next[0] < next[1] ? (next[0] < next[2] ? 0 : 2) : (next[1] < next[2] ? 1 : 2);
+    if (next[i] > length) return true;
+    c[i] += step[i]; next[i] += delta[i];
+  }
+  return false;
+}
 function threats(bot, radius = 24) {
   const position = bot.entity.position;
   const list = hostileEntities(bot, radius).map(entity => {
@@ -130,12 +164,7 @@ function threats(bot, radius = 24) {
     // and the bot walled itself in against "something shooting" that was in
     // plain sight (the user, 2026-09-24).
     const eye = position.offset(0, 1.62, 0), height = entity.height || 1.6;
-    const clear = target => {
-      const direction = target.minus(eye);
-      const hit = bot.world?.raycast?.(eye, direction.unit(), direction.norm());
-      return !hit || eye.distanceTo(hit.intersect || hit.position) >= eye.distanceTo(target) - 0.5;
-    };
-    const visible = [Math.min(height, 1.6), height / 2, 0.15].some(dy => clear(entity.position.offset(0, dy, 0)));
+    const visible = [Math.min(height, 1.6), height / 2, 0.15].some(dy => lineClear(bot, eye, entity.position.offset(0, dy, 0)));
     return { entity, distance, visible, sighted: visible };
   }).sort((a, b) => a.distance - b.distance);
   // Hit by a kind of mob a moment ago and none of that kind in sight: the
@@ -339,4 +368,4 @@ function stanceHeld(bot, now = Date.now()) {
   return s && now - s.at < STANCE_HOLD_MS && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - STANCE_HEALTH ? s : null;
 }
 
-module.exports = { UNPROVOKED, stanceHeld, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };
+module.exports = { lineClear, UNPROVOKED, stanceHeld, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };

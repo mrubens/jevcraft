@@ -157,7 +157,6 @@ function nearWall(bot, from, { within = WALK_TO_WALL } = {}) {
 // pickaxe for fifteen seconds under two skeletons' arrows and died at the
 // doorway (2026-09-23 23:16).
 function bunkerDigMs(bot, from) {
-  const { cheapestTool } = require('./skills');
   let feet = bot.entity.position.floored(), side = bunkerSide(bot, feet, from), ms = 0;
   if (!side) {
     const stand = wallStands(bot, from, { distance: WALK_TO_WALL + 2 }).find(c => c.distanceTo(bot.entity.position) <= WALK_TO_WALL);
@@ -166,16 +165,107 @@ function bunkerDigMs(bot, from) {
     if (!side) return Infinity;
     ms += feet.distanceTo(bot.entity.position) * 250;
   }
-  const cellMs = b => {
-    if (typeof b.digTime !== 'function') return 750;
-    const tool = cheapestTool(bot, b);
-    return b.digTime(tool ? tool.type : null, false, false, false, [], {});
-  };
   for (let d = 1; d <= DEPTH; d++) {
     const cell = feet.plus(side.scaled(d));
-    for (const p of [cell, cell.offset(0, 1, 0)]) { const b = bot.blockAt(p); if (solid(b)) ms += cellMs(b); }
+    for (const p of [cell, cell.offset(0, 1, 0)]) { const b = bot.blockAt(p); if (solid(b)) ms += blockDigMs(bot, b); }
   }
   return ms;
+}
+
+// The game's own time to dig a block with the best tool carried for it.
+function blockDigMs(bot, b) {
+  if (typeof b.digTime !== 'function') return 750;
+  const tool = require('./skills').cheapestTool(bot, b);
+  return b.digTime(tool ? tool.type : null, false, false, false, [], {});
+}
+// What it is dug with, said: "an iron pickaxe", or "by hand".
+function digsWith(bot, b) {
+  const tool = b && typeof b.digTime === 'function' ? require('./skills').cheapestTool(bot, b) : null;
+  return tool ? `with the ${tool.name.replaceAll('_', ' ')}` : 'by hand';
+}
+
+// Out of a shooter's line: none of the points a standing player is hit at
+// (head, middle, feet, as threats() looks at a mob) is in a straight line
+// from its eye (the game's eye height, 0.85 of its height). `open`, blocks
+// still to be dug, counted dug.
+const BODY = [1.6, 0.9, 0.15];
+const eyeOf = e => e.position.offset(0, (e.height || 1.8) * 0.85, 0);
+function seenFrom(bot, shooters, cell, { open = null } = {}) {
+  const { lineClear } = require('./danger');
+  return shooters.filter(e => e.position && BODY.some(dy => lineClear(bot, eyeOf(e), cell.offset(0.5, dy, 0.5), { open })));
+}
+const inSight = (bot, shooters, cell, opts) => shooters.some(e => seenFrom(bot, [e], cell, opts).length);
+
+// The nearest cell a walk reaches, within `steps` blocks of walking, that
+// no shooter's line reaches: a corner of rock, a pillar, a side passage, the
+// tunnel the bot came by. A player under arrows steps out of their line
+// before anything else. A walk passes no cell beside a mob that bites.
+const standable = (bot, c) => { const f = bot.blockAt(c), h = bot.blockAt(c.offset(0, 1, 0)), u = bot.blockAt(c.offset(0, -1, 0));
+  return passable(f) && passable(h) && !/lava|water|fire/.test(`${f?.name} ${h?.name}`) && solid(u) && !/magma|campfire/.test(u.name || ''); };
+function coverWithin(bot, shooters, { steps = 8, avoid = [] } = {}) {
+  const feet = bot.entity.position.floored();
+  const near = c => avoid.some(e => e.position && Math.hypot(e.position.x - (c.x + 0.5), e.position.z - (c.z + 0.5)) < 1.5 && Math.abs(e.position.y - c.y) < 2);
+  const seen = new Set([`${feet}`]);
+  let ring = [feet];
+  for (let n = 0; n <= steps && ring.length; n++) {
+    const hidden = ring.filter(c => !inSight(bot, shooters, c));
+    if (hidden.length) return { cell: hidden.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0], steps: n };
+    const next = [];
+    for (const c of ring) for (const s of SIDES) for (const dy of [0, 1, -1]) {
+      const to = c.plus(s).offset(0, dy, 0), key = `${to}`;
+      if (seen.has(key)) continue;
+      // A step up wants the head room over where it steps from.
+      if (dy === 1 && !passable(bot.blockAt(c.offset(0, 2, 0)))) continue;
+      if (dy === -1 && !passable(bot.blockAt(c.plus(s).offset(0, 1, 0)))) continue;
+      if (!standable(bot, to) || near(to)) continue;
+      seen.add(key); next.push(to);
+    }
+    ring = next;
+  }
+  return null;
+}
+
+// An L dug into the rock, in two and turned one, whose end no shooter's
+// line reaches: the doorway a player digs under arrows. Anything that
+// wants the bot comes to the mouth and round the turn, one at a time,
+// within a sword's reach. From where the bot stands or a wall stand within
+// a short walk; the seconds are the game's dig times with the tool carried.
+function nookSite(bot, shooters, { within = WALK_TO_WALL } = {}) {
+  const { safeExcavation } = require('./tunneling');
+  const here = bot.entity.position, feet = here.floored();
+  const from = shooters.length ? shooters.reduce((t, e) => t.plus(e.position), new Vec3(0, 0, 0)).scaled(1 / shooters.length) : null;
+  const stands = [feet, ...wallStands(bot, from, { distance: within + 2 }).filter(c => c.distanceTo(here) <= within && !c.equals(feet))];
+  const rock = p => { const b = bot.blockAt(p); return solid(b) && NATURAL.test(b.name) && b.diggable !== false && safeExcavation(bot, p); };
+  let best = null;
+  for (const stand of stands) {
+    const walkMs = stand.equals(feet) ? 0 : stand.distanceTo(here) * 250;
+    for (const side of SIDES) for (const turn of SIDES.filter(t => t.x * side.x + t.z * side.z === 0)) {
+      const cells = [stand.plus(side), stand.plus(side.scaled(2)), stand.plus(side.scaled(2)).plus(turn)];
+      if (!cells.every(c => rock(c) && rock(c.offset(0, 1, 0)) && solid(bot.blockAt(c.offset(0, -1, 0))))) continue;
+      const end = cells[2];
+      const open = new Set(cells.flatMap(c => [`${c}`, `${c.offset(0, 1, 0)}`]));
+      if (inSight(bot, shooters, end, { open })) continue;
+      const blocks = cells.flatMap(c => [bot.blockAt(c), bot.blockAt(c.offset(0, 1, 0))]);
+      const ms = walkMs + blocks.reduce((n, b) => n + blockDigMs(bot, b), 0);
+      if (!best || ms < best.ms) best = { stand, side, turn, cells, end, mouth: cells[0], watch: cells[1], blocks: blocks.length, digMs: ms - walkMs, walkMs, ms, with: digsWith(bot, blocks[0]) };
+    }
+  }
+  return best;
+}
+
+// Dig the nook found and step round its turn.
+async function digNook(bot, task, site, { navigate = null } = {}) {
+  if (!bot.entity.position.floored().equals(site.stand)) {
+    if (!navigate) return null;
+    await navigate(bot, task, new goals.GoalBlock(site.stand.x, site.stand.y, site.stand.z), { timeoutMs: Math.max(4000, site.walkMs * 3), stallMs: 1500 });
+    if (!bot.entity.position.floored().equals(site.stand)) return null;
+  }
+  for (const cell of site.cells) {
+    task.check(); checkAir(bot);
+    await digCell(bot, task, cell.offset(0, 1, 0)); await digCell(bot, task, cell);
+    if (!await stepTo(bot, task, cell)) return null;
+  }
+  return site;
 }
 
 async function reachWall(bot, task, from, navigate) {
@@ -314,4 +404,4 @@ async function raiseCover(bot, task, from) {
   return solid(bot.blockAt(cell)) ? cell : false;
 }
 
-module.exports = { bunkerDigMs, bunkerFight, digBunker, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, WALK_TO_WALL, SWARM };
+module.exports = { blockDigMs, digsWith, seenFrom, coverWithin, nookSite, digNook, bunkerDigMs, bunkerFight, digBunker, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, WALK_TO_WALL, SWARM };
