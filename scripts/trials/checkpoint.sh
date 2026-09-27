@@ -53,6 +53,15 @@ while :; do
     cp -R "$SERVER/$WORLD" "$DEST/world" 2>/dev/null
     rm -f "$DEST/world/session.lock"
     cp "$ROOT/.bot-state/127_0_0_1-$PORT-Jev"*.json "$DEST/state/" 2>/dev/null
+    # The first time a trial stands in the Nether or at a fortress, this
+    # snapshot is kept as a start for that stage (milestone.js; start one
+    # with scripts/trials/start-stage.sh). Once per world per milestone.
+    for M in $(node "$ROOT/scripts/trials/milestone.js" "$PORT" 2>/dev/null); do
+      MARK="$BASE/$WORLD/milestone-$M"
+      if [ ! -f "$MARK" ]; then
+        STAGE="$BASE/stages/$M/$WORLD-$AT"; mkdir -p "$STAGE" && cp -R "$DEST"/* "$STAGE"/ && touch "$MARK" && echo "$(date -u +%H:%M:%S) $WORLD reached $M: kept $STAGE"
+      fi
+    done
     N=$(ls -1d "$RING"/* | wc -l)
     [ "$N" -gt "$KEEP" ] && ls -1d "$RING"/* | sort | head -n $((N - KEEP)) | while read old; do rm -rf "$old"; done
   done

@@ -1,0 +1,32 @@
+'use strict';
+// The milestones the bot on a port stands at now, from the tail of its
+// newest flight record, as midgame.js reads them: "nether" in the Nether,
+// "fortress" on the fortress search's walk to one it found. One per line.
+// Used by checkpoint.sh to keep a snapshot the first time a trial gets there,
+// so later stages can be started from it (the user, 2026-09-27: trials spent
+// one to two hours reaching the Nether, and the fortress, rods and pearls
+// were tried a few times a day).
+//   node scripts/trials/milestone.js <port>
+const fs = require('fs');
+const path = require('path');
+
+const port = process.argv[2];
+const dir = path.join(__dirname, '..', '..', '.bot-state', 'flight');
+let newest = null;
+try {
+  newest = fs.readdirSync(dir).filter(f => f.includes(`-${port}-`) && f.endsWith('.jsonl'))
+    .map(f => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t)[0]?.f;
+} catch (_) { process.exit(0); }
+if (!newest) process.exit(0);
+const file = path.join(dir, newest);
+const size = fs.statSync(file).size, from = Math.max(0, size - 200000);
+const fd = fs.openSync(file, 'r'), buf = Buffer.alloc(size - from);
+fs.readSync(fd, buf, 0, buf.length, from); fs.closeSync(fd);
+const frames = buf.toString('utf8').split('\n').slice(1).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+const last = frames.filter(f => f.snapshot?.dimension).at(-1)?.snapshot;
+if (!last || last.health === 0) process.exit(0);
+const out = [];
+if (/nether/.test(String(last.dimension))) out.push('nether');
+const step = last.goal?.step || last.step;
+if (frames.slice(-40).some(f => { const s = f.snapshot?.goal?.step || f.snapshot?.step; return s?.action === 'find_fortress' && s.walking; }) || step?.action === 'stalk_mob') out.push('fortress');
+process.stdout.write(out.join('\n'));
