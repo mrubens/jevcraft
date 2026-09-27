@@ -259,7 +259,11 @@ function fitness(bot) {
     : !(names.includes(equipped(bot, destination)?.name) && durable(bot.registry, equipped(bot, destination)))).map(([d]) => d);
   const foodCarried = hasFood(bot);
   return { health, food, floor: HUNT_FLOOR, healing: food >= 18, foodCarried, burning, kitMissing,
-    fit: health >= HUNT_FLOOR && food >= HUNT_FLOOR && !kitMissing.length && (food >= 18 || foodCarried) && !(burning && health < 10) };
+    // The kit is Jev's choice (combat_kit, note 480), said here as a fact,
+    // not a condition health can meet: mid-227-r-nether-4 sat in "recover
+    // before combat" at twenty health and nineteen food, waiting on iron no
+    // rest would bring (note 508).
+    fit: health >= HUNT_FLOOR && food >= HUNT_FLOOR && (food >= 18 || foodCarried) && !(burning && health < 10) };
 }
 function fitnessSays(bot, f = fitness(bot)) {
   const parts = [`Health ${f.health}${f.health < f.floor ? ` (under the ${f.floor} the code once required to start a fight)` : ''}`,

@@ -81,7 +81,8 @@ function hasFood(bot) {
 // at seventeen hunger with nothing to eat, the claim did not, so the bot
 // left its pocket for claimed blazes, could not begin, and sealed in again.
 function fitToFight(bot) {
-  return (bot.health ?? 20) >= FIGHT_FLOOR && (bot.food ?? 20) >= FIGHT_FLOOR && kitReady(bot) && ((bot.food ?? 20) >= 18 || hasFood(bot));
+  // The kit is Jev's to weigh (combat_kit, note 480), not a floor (note 508).
+  return (bot.health ?? 20) >= FIGHT_FLOOR && (bot.food ?? 20) >= FIGHT_FLOOR && ((bot.food ?? 20) >= 18 || hasFood(bot));
 }
 const SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pillager', 'witch', 'blaze', 'ghast', 'breeze']);
 // A drowned with a trident throws it, as a skeleton shoots: counted a biter

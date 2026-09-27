@@ -1132,3 +1132,11 @@ test('a resting staircase is not offered fresh as seek_fortress_height', async (
   assert.match(options.seek_fortress_height, /heading south.*The last staircase this way, begun 1 blocks from here, ended no nearer: Staircase toward \(1, 64, 97\) stalled/);
   assert.doesNotMatch(options.leg_south, /ended no nearer/);
 });
+
+test('fit to fight is health and food, not the kit: the kit is for Jev to weigh (mid-227-r-nether-4)', () => {
+  const { fitToFight } = require('../src/mob-policy');
+  const bot = { health: 20, food: 19, entity: { metadata: [] }, inventory: { items: () => [{ name: 'stone_sword', count: 1 }], slots: [] }, registry: require('minecraft-data')('26.1') };
+  assert.equal(fitToFight(bot), true, 'no iron worn, full health and food: fit');
+  bot.health = 6;
+  assert.equal(fitToFight(bot), false);
+});
