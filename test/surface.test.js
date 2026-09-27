@@ -578,3 +578,13 @@ test('the climb is asked again when the pickaxes carried change', async () => {
   assert.equal(goal.surfaceReturn.climb.method, 'straight_up');
   assert.equal(bot.entity.position.y, 41);
 });
+
+test('with a shooter in sight, every way up says so and what its arrow does on the climb (mid-237-f)', () => {
+  const { straightUpColumn, climbOptions } = require('../src/surface');
+  const { bot } = shaft();
+  bot.entities = { 5: { id: 5, name: 'skeleton', type: 'hostile', position: bot.entity.position.offset(11, 0, 0), height: 1.99, isValid: true } };
+  bot.world = { raycast: () => null };
+  const { options, state } = climbOptions(bot, new Vec3(0, 64, 24), straightUpColumn(bot));
+  for (const o of Object.values(options)) assert.match(o.description, /In sight and shooting: a skeleton 11 blocks off; on the climb an arrow's knockback/);
+  assert.equal(state.shootersInSight[0].name, 'skeleton');
+});

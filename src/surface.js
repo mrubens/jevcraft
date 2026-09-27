@@ -157,6 +157,18 @@ function climbOptions(bot, target, column, { landing = false } = {}) {
   }
   const state = { blocksToOpenSky: climbToSurface(bot, feet), pickaxes: tools, pickaxeUsesLeft: usesLeft,
     ...(column?.blocked ? { straightUpBlocked: column.blocked } : {}) };
+  // The shooters in sight, said on every way up: mid-237-f chose to climb
+  // at 11.7 health with a skeleton eleven blocks off, told nothing of it,
+  // and its arrow knocked the bot off the climb, thirteen blocks down (note 483).
+  try {
+    const { threats } = require('./danger'), { shooter } = require('./mob-policy');
+    const shooting = threats(bot, 32).filter(t => t.visible && shooter(t.entity));
+    if (shooting.length) {
+      const says = ` In sight and shooting: ${shooting.slice(0, 3).map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}; on the climb an arrow's knockback where the side is open is a fall, and the hands are on the pickaxe and the blocks, not the shield.`;
+      for (const o of Object.values(options)) o.description += says;
+      state.shootersInSight = shooting.slice(0, 3).map(t => ({ name: t.entity.name, distance: Math.round(t.distance) }));
+    }
+  } catch (_) { /* the climb is still asked */ }
   return { options, estimate, state };
 }
 
