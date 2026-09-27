@@ -185,22 +185,34 @@ test('the bed is claimed on the server saying so, or sleeping, and reopens if it
   assert.match(goal.survival.home.bed.evidence, /assumed/);
 });
 
-test('the ladder opens the home rung after the bucket and before the armour, and the idle loop offers the chores', async () => {
+test('the home base is a side trip beside the armour, not a rung ahead of it; chosen, the ladder step builds it, and the idle loop offers the chores', async () => {
+  // The critical review (2026-09-26): seven home steps stood on the ladder
+  // ahead of the armour, "the walkthrough order every speedrunner keeps".
+  const { strategyOptions, strategyStep } = require('../src/strategy');
   const gear = [['white_bed', 1], ['stone_pickaxe', 1], ['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['bucket', 1], ['oak_log', 16]];
   const { bot } = world({ ponds: [pond(20, 0)], items: gear });
   const goal = goalWith(bot);
-  assert.equal(nextGameStage(bot, goal).phase, 'home_site');
-  assert.equal(nextGameStage(bot, goal).action, 'home');
+  const stage = nextGameStage(bot, goal);
+  assert.equal(stage.phase, 'iron_armour', 'the armour is the ladder\'s next; the base is not a rung');
+  const offered = strategyOptions(bot, goal, stage);
+  assert(offered.home_base, Object.keys(offered).join(','));
+  assert.equal(offered.home_base.trip, true, 'under the side trip');
+  assert.match(offered.home_base.description, /none yet; its steps, in order: a site by water on flat ground; the ground levelled; a chest/);
+  assert.match(offered.home_base.description, /keeps the spawn point .* a death respawns by the chest/);
+  assert.match(offered.home_base.description, /None of it is needed for the Nether, blaze rods or ender pearls/);
+  assert.match(offered.home_base.description, /The bed carried becomes the base's/);
   const ran = [];
-  await gameStep(bot, new Task('win'), goal, () => {}, { home: async (b, t, g, s, stage) => { ran.push(stage.action); } });
+  await gameStep(bot, new Task('win'), goal, () => {}, { home: async (b, t, g, s, stage) => { ran.push(stage.action); }, acquireSetStep: async () => assert.fail('Jev chose the base'),
+    strategy: (b, t, g, sv, stage) => strategyStep(b, t, g, sv, stage, { decide: async () => ({ path: ['side_trip', 'home_base'] }) }) });
   assert.deepEqual(ran, ['choose_site']); assert.equal(goal.gameProgress.phase, 'home_site');
-  assert.equal(nextGameStage(bot, { kind: 'win' }).phase, 'iron_armour', 'no survival layer, no base');
+  assert.equal(strategyOptions(bot, { kind: 'win' }, stage)?.home_base, undefined, 'no survival layer, no base');
   goal.survival.homeSearch = { attempts: 3 }; require('../src/progress').setAside(goal, 'home_site', 'search', 'three places looked at', 60000);
-  assert.equal(nextGameStage(bot, goal).phase, 'iron_armour', 'a world with nowhere to build waits out a deferral');
+  assert.equal(strategyOptions(bot, goal, stage)?.home_base, undefined, 'a world with nowhere to build waits out a deferral');
   // With the base standing, the ladder moves on and idle time has farm work in it.
   const w = await establishedHome();
   w.give('white_bed', 1); w.give('stone_pickaxe', 1); w.give('iron_pickaxe', 1); w.give('iron_sword', 1); w.give('shield', 1); w.give('bucket', 1);
   assert.equal(nextGameStage(w.bot, w.goal).phase, 'iron_armour');
+  assert.equal(strategyOptions(w.bot, w.goal, nextGameStage(w.bot, w.goal))?.home_base, undefined, 'a finished base is not offered');
   for (const p of w.layout.plot) w.set(new Vec3(p.x, p.y + 1, p.z), 'wheat', { age: 7 });
   const idle = { ...w.goal, kind: 'survive' };
   const options = idleOptions(w.bot, idle);
