@@ -3083,6 +3083,36 @@ test('the pillar says when the mobs stand above the bot\'s feet: two up is withi
   assert.doesNotMatch(level.pillar.description, /above the bot's feet/);
 });
 
+test('at the foot of a shaft open onto a tunnel, the mobs drop into the bot\'s own cells: the fight is not one at a time, and the pillar and the pocket say what a body in its cells does', () => {
+  // mid-229-r (note 526): dug down from a tunnel, three zombies came down into its cell; the fight was priced one at a time (3.5 damage),
+  // then the pillar and the pocket were offered as "none of them reaches it" five times, and none placed a block.
+  const openAt = p => (p.x === 0 && p.z === 0 && p.y >= 9 && p.y <= 12) || (p.x === 0 && p.z >= 1 && p.z <= 6 && (p.y === 11 || p.y === 12));
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal' }, registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 9, 0.5), onGround: true }, entities: {}, health: 20, food: 18,
+    inventory: { items: () => [{ name: 'cobblestone', count: 32 }, { name: 'iron_sword' }], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' } } },
+    heldItem: { name: 'iron_sword' }, world: { raycast: () => null }, findBlocks: () => [],
+    blockAt: p => { const q = p.floored ? p.floored() : p; return openAt(q) ? { name: 'air', position: q, boundingBox: 'empty' } : { name: 'stone', position: q, boundingBox: 'block' }; } });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const zombie = (id, x, y, z) => ({ entity: { id, name: 'zombie', position: new Vec3(x, y, z), height: 1.95, width: 0.6, isValid: true }, distance: Math.hypot(x - 0.5, y - 9, z - 0.5), visible: true });
+  // In the tunnel, coming: all three can be on the bot at once.
+  const coming = survival.stanceOptions(new Task('t'), {}, () => {}, [zombie(1, 0.5, 11, 2.5), zombie(2, 0.5, 11, 3.5), zombie(3, 0.5, 11, 4.5)], false);
+  assert.doesNotMatch(coming.fight.description, /at most 0 at arm's length/);
+  assert.match(coming.fight.description, /the column over the bot is open 2 up onto ground beside it at \(0, 11, 1\): mobs walk to its edge and drop in, into the bot's own cells, as many as come/);
+  const damage = Number(coming.fight.description.match(/and ([\d.]+) damage to kill them all/)[1]);
+  assert(damage > 5, `three at once, not one at a time: ${damage}`);
+  assert.match(coming.pillar.description, /The column over the bot opens onto ground 2 up at \(0, 11, 1\): two up is level with it/);
+  assert.doesNotMatch(coming.pillar.description, /none of them reaches it/);
+  // In its cell: the pillar's block has nowhere to go, and the pocket shuts them in with it.
+  const inCell = survival.stanceOptions(new Task('t'), {}, () => {}, [zombie(1, 0.5, 9, 0.5), zombie(2, 0.7, 9, 0.7), zombie(3, 0.3, 9, 0.3)], false);
+  assert.match(inCell.pillar.description, /3 zombies stand in the bot's own cells with it: the pillar's first block goes into the cell under the bot's feet, and no block goes where a body is, so it does not rise while they stay there/);
+  assert.match(inCell.pillar.description, /Not up while they stand there, 3 zombies still reach it/);
+  assert.match(inCell.seal.description, /3 zombies stand in the bot's own cells with it: they are inside the pocket, and closed, it shuts them in with the bot/);
+  assert.doesNotMatch(inCell.seal.description, /none of them reaches it/);
+  assert.match(inCell.fight.description, /3 zombies stand in the bot's own cells with it, at arm's length whatever the cells round it hold/);
+  // One of three in its cell: the one shut in with it is said, not the kind.
+  const one = survival.stanceOptions(new Task('t'), {}, () => {}, [zombie(1, 0.5, 9, 0.5), zombie(2, 0.5, 11, 2.5), zombie(3, 0.5, 11, 3.5)], false);
+  assert.match(one.seal.description, /A zombie stands in the bot's own cells with it: it is inside the pocket, and closed, it shuts it in with the bot\..*Shut in, the zombie still reaches it\./);
+});
+
 test('in water with a drowned, the stances say so, no pillar, pocket or bunker is offered, and getting out of the water is', () => {
   // mid-227-d fell into a flooded pit, chose the fight, the pillar and the bunker while it sank, and was drowned-and-hit to nothing (2026-09-27).
   const water = p => p.y >= 10 && p.y <= 20 && Math.abs(p.x) <= 4 && Math.abs(p.z) <= 4;

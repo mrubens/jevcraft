@@ -132,7 +132,8 @@ function costSays(cost, health, mobs, { doing = null, done = null, over = 'in th
   // said with when, and counted from then.
   const later = (cost.later || []).map(l => `the ${l.name.replaceAll('_', ' ')} after about ${l.seconds} seconds`);
   const laterSays = later.length ? `; ${later.length > 1 ? `${later.slice(0, -1).join(', ')} and ${later.at(-1)}` : later[0]} reach${later.length === 1 ? 'es' : ''} it again, counted from then` : '';
-  if (done && cost.setup < cost.seconds) s += cost.still.length ? ` ${done}, ${mobList(cost.still, mobs)} still reach${cost.still.length === 1 && mobs.filter(m => m.name === cost.still[0]).length === 1 ? 'es' : ''} it${laterSays}.` : ` ${done}, none of them reaches it${later.length ? ' at first' : ''}${laterSays}.`;
+  const stillOf = cost.stillMobs || mobs;
+  if (done && cost.setup < cost.seconds) s += cost.still.length ? ` ${done}, ${mobList(cost.still, stillOf)} still reach${cost.still.length === 1 && stillOf.filter(m => m.name === cost.still[0]).length === 1 ? 'es' : ''} it${laterSays}.` : ` ${done}, none of them reaches it${later.length ? ' at first' : ''}${laterSays}.`;
   return s;
 }
 // How many biters can be at arm's length at once where the bot stands: the
@@ -150,6 +151,45 @@ function openCells(bot, feet = bot.entity.position.floored()) {
   }
   return n;
 }
+// The bot's column open overhead onto ground a walker stands on: a shaft
+// dug down from a tunnel's floor, a hole under a ledge. Mobs walk to its
+// edge and drop in, into the bot's own cells, as many as come, whatever the
+// cells round it hold; and a pillar's top in it is level with that ground.
+// mid-229-r dug down three from a tunnel with zombies eight blocks off, the
+// lid not on when they came; told its fight was one zombie at a time
+// ("0 of the eight cells round the bot are open ground"), about 3.5
+// damage, it fought, and the three came down into its cell (note 526).
+// The first cell up the column (two to `most` over the feet) with ground
+// beside it: { up, ground }, or null.
+function columnOpening(bot, feet = bot.entity.position.floored(), most = 4) {
+  const open = p => { const b = bot.blockAt(p); return !!b && b.boundingBox === 'empty' && !/lava|water/.test(b.name); };
+  const floor = p => bot.blockAt(p)?.boundingBox === 'block';
+  for (let up = 2; up <= most; up++) {
+    const c = feet.offset(0, up, 0);
+    if (!open(c)) return null;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const n = c.offset(dx, 0, dz);
+      if (open(n) && open(n.offset(0, 1, 0)) && floor(n.offset(0, -1, 0))) return { up, ground: n };
+    }
+  }
+  return null;
+}
+// The mobs whose bodies are in the bot's own cells (its feet and head):
+// fallen into a one-wide shaft on top of it, or pressed into it. No block
+// goes where a body is: a pillar's first block goes into the feet cell, and
+// a pocket closed round them shuts them in with the bot. mid-229-r was
+// offered the pillar ("two up, none of them reaches it", 6.3 damage) and the
+// pocket ("shut in, none of them reaches it", 2.5) five times with three
+// zombies in its cell, each failed without a block placed, and the zombies
+// took it from 12.7 to none in ten seconds (note 526).
+function inOwnCells(bot, danger, feet = bot.entity.position.floored()) {
+  const { bodyIn } = require('./work');
+  return danger.filter(t => t.entity?.position && [0, 1].some(dy => bodyIn(t.entity, feet.offset(0, dy, 0))));
+}
+const ownCellsSays = list => {
+  const kinds = mobList([...new Set(list.map(t => t.entity.name))], list.map(t => ({ name: t.entity.name })));
+  return `${list.length === 1 ? `${kinds.replace(/^the /, 'A ')} stands` : `${kinds.replace(/^the /, 'The ')} stand`} in the bot's own cells with it`;
+};
 // A meal worth a stance: the bot is hurt, and hunger after it is high enough
 // for health to come back. At full health, or still under eighteen after
 // it, eating in a fight is a second and a half for nothing; offered anyway,
@@ -1380,13 +1420,17 @@ class Survival {
     const witch = danger.find(t => t.entity.name === 'witch');
     const witchNote = witch ? ` A witch ${Math.round(witch.distance)} blocks off throws its potions over a pillar and into a doorway: harm that armour does not stop, and poison that keeps taking health for half a minute; a shut pocket stops them.` : '';
     // How many can reach at once here: two in a tunnel, eight in the open.
+    // Unless the column over the bot opens onto ground: then they drop in on
+    // top of it, and nothing bounds how many (columnOpening).
     const open = openCells(bot, feet);
+    const opening = columnOpening(bot, feet);
+    const inCell = inOwnCells(bot, danger, feet), inCellIds = new Set(inCell.map(t => t.entity.id));
     const shielded = bot.inventory?.slots?.[45]?.name === 'shield';
     // The eight counted are those that can get to the bot first: eight
     // walkers held below it crowded the skeleton out of the figures.
     const counted = apart.ids.size ? [...coming, ...danger.filter(t => apart.ids.has(t.entity.id))] : danger;
     const estimate = fightEstimate({ threats: counted.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, id: t.entity.id, ...(apart.ids.has(t.entity.id) ? { apart: true } : {}) })),
-      armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded, atOnce: open });
+      armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded, atOnce: opening ? Infinity : open + inCell.length });
     const cost = estimate.fightHere;
     const mobs = estimate.mobs || [];
     // One blow from the hardest hitter here: the give a stance's pace is
@@ -1417,7 +1461,9 @@ class Survival {
     const edge = require('./terrain').dropNote(require('./terrain').dropNear(bot, feet, 3), bot.health) + (blazeAbout ? require('./blaze-stand').knockSays(bot, feet) : '');
     // How many can be at arm's length at once, said where it is not all of
     // them: in a tunnel a crowd comes one or two at a time.
-    const atOnceNote = bitersHere >= 2 ? (open >= 8 ? ' Open ground all round: every biter can be at arm\'s length at once.' : ` ${open} of the eight cells round the bot are open ground: at most ${open} at arm's length at once.`) : '';
+    const inCellSays = inCell.length ? ` ${ownCellsSays(inCell)}, at arm's length whatever the cells round it hold.` : '';
+    const openingSays = opening ? `, but the column over the bot is open ${opening.up} up onto ground beside it at ${opening.ground}: mobs walk to its edge and drop in, into the bot's own cells, as many as come, and all of them are at arm's length at once` : '';
+    const atOnceNote = (bitersHere >= 2 ? (open >= 8 ? ' Open ground all round: every biter can be at arm\'s length at once.' : opening ? ` ${open} of the eight cells round the bot are open ground${openingSays}.` : ` ${open} of the eight cells round the bot are open ground: at most ${open + inCell.length} at arm's length at once${inCell.length ? ', counting those in its own cells' : ''}.`) : '') + inCellSays;
     // What the estimate leaves out, said wherever it is quoted: the charge
     // quoted it without, and mid-110-k's replay went from the pillar to the
     // charge past a creeper six blocks off.
@@ -1541,9 +1587,17 @@ class Survival {
     const topY = up ? feet.y : feet.y + 2;
     const onLedge = coming.filter(t => !shooter(t.entity) && t.entity.position && t.distance <= 5 && t.entity.position.y >= topY - 1.2);
     const ledgeKinds = new Set(onLedge.map(t => t.entity.name));
-    const pillarCost = stanceCost({ mobs, setup: up ? 0 : PILLAR_SECONDS, fight: { only: m => CLIMBERS.has(m.name) }, reaches: m => m.shoots || m.spear || m.name === 'creeper' || m.name === 'warden' || ledgeKinds.has(m.name), shield: shielded });
+    // Its top in an open column is level with the ground the column opens
+    // onto, where walkers stand (columnOpening); and with a mob in the bot's
+    // own cells the first block does not go down, so it does not rise while
+    // that one stays, and every one about reaches it where it stands.
+    const topBesideGround = !up && opening && opening.up <= 3;
+    const notRising = !up && inCell.length > 0;
+    const pillarCost = stanceCost({ mobs, setup: up ? 0 : PILLAR_SECONDS, fight: { only: m => CLIMBERS.has(m.name) }, reaches: m => notRising || m.shoots || m.spear || m.name === 'creeper' || m.name === 'warden' || ledgeKinds.has(m.name) || (topBesideGround && !CLIMBERS.has(m.name)), shield: shielded });
+    const pillarBlocked = (notRising ? ` ${ownCellsSays(inCell)}: the pillar's first block goes into the cell under the bot's feet, and no block goes where a body is, so it does not rise while ${inCell.length === 1 ? 'that one stays' : 'they stay'} there.` : '') +
+      (topBesideGround ? ` The column over the bot opens onto ground ${opening.up} up at ${opening.ground}: two up is level with ${opening.up === 2 ? 'it' : 'a block under it'}, and walkers that stand there reach a player on the pillar's top.` : '');
     const ledgeSays = onLedge.length ? ` ${onLedge.length === 1 ? `The ${onLedge[0].entity.name.replaceAll('_', ' ')} ${Math.round(onLedge[0].distance)} blocks off stands` : `${onLedge.length} of them stand`} on ground within a block of the pillar's top (a ledge or a slope): from there ${onLedge.length === 1 ? 'it reaches' : 'they reach'} a player two up.` : '';
-    if ((scaffold >= 2 && headroom) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.' + ledgeSays + (spears.length ? ` A spear reaches past an arm: the ${[...new Set(spears.map(t => t.entity.name.replaceAll('_', ' ')))].join(' and ')} with a spear still reach${spears.length === 1 ? 'es' : ''} the bot two up.` : '') + (up ? '' : buildCost) + creeperNote + climbers(coming) + (up ? '' : above(bot, coming)) + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: 'Two up' }) + (noStep && shootersOnly ? ` With only shooters about, none at reach, there is nothing ${up ? 'up here' : 'two up'} to swing at: held, it is standing in their line of fire, and they shoot with no end while it holds.` : '') + (edge && heavyHitters(coming, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
+    if ((scaffold >= 2 && headroom) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.' + ledgeSays + (spears.length ? ` A spear reaches past an arm: the ${[...new Set(spears.map(t => t.entity.name.replaceAll('_', ' ')))].join(' and ')} with a spear still reach${spears.length === 1 ? 'es' : ''} the bot two up.` : '') + (up ? '' : buildCost) + pillarBlocked + creeperNote + climbers(coming) + (up ? '' : above(bot, coming)) + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: notRising ? `Not up while ${inCell.length === 1 ? 'it stands' : 'they stand'} there` : 'Two up' }) + (noStep && shootersOnly ? ` With only shooters about, none at reach, there is nothing ${up ? 'up here' : 'two up'} to swing at: held, it is standing in their line of fire, and they shoot with no end while it holds.` : '') + (edge && heavyHitters(coming, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
       // Held up there, the stance is kept: facing the nearest, the swing and
       // the shield (the tick's own, before this) taking what comes. Returned
       // at once, it ran twenty passes a second with nothing reported, and the
@@ -1728,8 +1782,9 @@ class Survival {
     // and mid-83-d chose pockets of twenty to thirty-four blocks with a
     // zombie at arm's length and four shooters about, and neither was shut.
     const shellCells = (() => { try { return shelter.missingShell(bot, { origin: { x: feet.x, y: feet.y, z: feet.z } }).length; } catch (_) { return null; } })();
-    const sealPriced = shellCells != null ? stanceCost({ mobs, setup: shellCells * BLOCK_SECONDS }) : null;
-    const sealCost = sealPriced ? costSays(sealPriced, bot.health, mobs, { doing: 'building', done: 'Shut in' }) : '';
+    // A mob in the bot's own cells is inside the pocket: shut in with it.
+    const sealPriced = shellCells != null ? stanceCost({ mobs, setup: shellCells * BLOCK_SECONDS, reaches: m => inCellIds.has(m.id) }) : null;
+    const sealCost = (inCell.length ? ` ${ownCellsSays(inCell)}: ${inCell.length === 1 ? 'it is' : 'they are'} inside the pocket, and closed, it shuts ${inCell.length === 1 ? 'it' : 'them'} in with the bot.` : '') + (sealPriced ? costSays(sealPriced, bot.health, mobs, { doing: 'building', done: 'Shut in' }) : '');
     if (shelter.materialStock(bot) >= 4) options.seal = { ...(sealPriced ? { expects: { damage: sealPriced.damage, seconds: sealPriced.seconds, oneHit } } : {}), description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + sealCost + nightLong + unseen + (high ? ` The bot stands ${high} block${high === 1 ? '' : 's'} above the ground beside it: the walls go up beside nothing, placed against open air.` : ''),
       run: () => this.sealHere(task, goal, save, danger) };
     // Down into the ground where the bot stands, a block over its head: a
@@ -1764,7 +1819,14 @@ class Survival {
       // it", and the blast came through the cap fourteen seconds later
       // (2026-09-26).
       const digCost = stanceCost({ mobs, setup, reaches: m => m.name === 'creeper' || m.name === 'warden' });
-      options.dig_down = { expects: { damage: digCost.damage, seconds: digCost.seconds, oneHit }, description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting. Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + buildCost + creeperNote + costSays(digCost, bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
+      // The race it is, as the pocket's is said: mid-229-r dug down with a
+      // zombie eight blocks off, 5.4 seconds of digging against its two of
+      // walking; the three came to the shaft's top before the lid, the dig
+      // stopped for them, and they dropped in on the bot (note 526).
+      const firstBiter = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper').sort((a, b) => a.distance - b.distance)[0];
+      const biterAt = firstBiter ? Math.max(0, Math.round((firstBiter.distance - 1.5) / 3)) : null;
+      const digRace = firstBiter && biterAt < setup ? ` The nearest ${firstBiter.entity.name.replaceAll('_', ' ')}, ${Math.round(firstBiter.distance)} blocks off, can be at the shaft's top in about ${biterAt} second${biterAt === 1 ? '' : 's'}, before the lid: a biter within three stops the dig (it follows down an open shaft), and the bot is left at the foot of an open shaft that mobs drop into, onto it.` : '';
+      options.dig_down = { expects: { damage: digCost.damage, seconds: digCost.seconds, oneHit }, description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting. Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + digRace + buildCost + creeperNote + costSays(digCost, bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
         run: async () => {
           this.report(goal, save, { action: 'dig_down', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, depth, stance: true });
           try { return await this.digShaft(task, goal, save, { start: column.start, bottom: column.bottom, spot: column.spot, here: feet, stance: true }); }
@@ -1779,10 +1841,17 @@ class Survival {
     // five seconds.
     const meal = mealHelps(bot);
     const eatCost = stanceCost({ mobs, setup: EAT_SECONDS, seconds: EAT_SECONDS });
+    // What the bot meets them with after it, beside what the fight here
+    // costs: its figure is the meal's second and a half only, where every
+    // other stance is priced over fifteen, and mid-229-r's replay took it at
+    // 12.7 health five times in five with three zombies in the bot's cell,
+    // the fight priced at 14 (note 526).
+    const eatLeaves = armsLength && !noStep ? (() => { const h = Math.round(Math.max(0, bot.health - eatCost.damage) * 10) / 10;
+      return ` It deals with none of them: they meet the bot with about ${h} health where it has ${Math.round(bot.health * 10) / 10} now, and the fight here is about ${cost.damageTaken} damage${cost.damageTaken >= h ? ` (more than ${h})` : ''}.`; })() : '';
     // Held to what it was said to cost: mid-205-a chose to eat told about
     // 1.6 seconds, and ate on for four more with two zombies hitting and a
     // creeper walking up to it (2026-09-26).
-    if (meal && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + EAT_AFTER,
+    if (meal && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + EAT_AFTER + eatLeaves,
       run: async () => {
         this.report(goal, save, { action: 'eat', item: meal.name, food: bot.food, health: bot.health, stance: true });
         // Marked before the meal and cleared when it is eaten: a meal cut
@@ -2130,7 +2199,7 @@ class Survival {
         // This bot's numbers: each mob's hit after its armour, swings to
         // kill with its weapon, and what fighting all of them here costs.
         estimate: fightEstimate({ threats: (this.lastApart?.ids.size ? [...danger.filter(t => !this.lastApart.ids.has(t.entity.id)), ...danger.filter(t => this.lastApart.ids.has(t.entity.id))] : danger).slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, ...(this.lastApart?.ids.has(t.entity.id) ? { apart: true } : {}) })),
-          armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: openCells(bot, feet) }),
+          armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: columnOpening(bot, feet) ? Infinity : openCells(bot, feet) + inOwnCells(bot, danger, feet).length }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health,
           ...(lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
             : offSpot ? { askedAgainFor: 'the bot is off the spot it hid in' }
@@ -2192,6 +2261,7 @@ class Survival {
     // more (note 525).
     let why = null;
     delete this.state.failWhy;
+    delete this.state.stanceWhy;
     try { done = await options[choice].run(); }
     catch (err) { if (err.name === 'NoRoute') why = noRouteSays(err, `the ${choice.replaceAll('_', ' ')} walk`); else if (err.name !== 'SetAside') throw err; done = false; }
     finally { stance.running = false; stance.ranAt = Date.now(); }
@@ -2199,6 +2269,7 @@ class Survival {
     delete this.state.failWhy;
     // A stance that could not be carried out is not offered again for a
     // while, and Jev chooses again at the next tick from what is left.
+    why ||= this.state.stanceWhy || null; delete this.state.stanceWhy;
     if (!done) { delete this.state.stance; delete bot._stance; this.state.stanceFailed = [...failed, { choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), ...(why ? { why } : {}) }]; }
     return true;
   }
@@ -2565,9 +2636,17 @@ class Survival {
     if (![1, 2, 3].every(dy => { const b = bot.blockAt(feet.offset(0, dy, 0)); return b && b.boundingBox === 'empty' && !/lava|water/.test(b.name); })) return false;
     this.report(goal, save, { action: 'pillar_from', threats: danger.map(t => t.entity.name), health: bot.health });
     lowerShield(bot);
-    try { await pillarUp(bot, task, feet.y + 2, { dig: this.actions.dig, maxBlocks: 2, threats: false }); }
+    let placed = 0;
+    try { placed = await pillarUp(bot, task, feet.y + 2, { dig: this.actions.dig, maxBlocks: 2, threats: false }); }
     catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
-    if (bot.entity.position.y < feet.y + 1.9) return false;
+    if (bot.entity.position.y < feet.y + 1.9) {
+      // Why, for the next question: the failure was said bare, and
+      // mid-229-r chose the pillar again twice with the zombies still in
+      // the cell its block went into (note 526).
+      const inCell = inOwnCells(bot, danger, feet);
+      this.state.stanceWhy = inCell.length ? `${placed ? `${placed} of 2 blocks went down; ` : 'no block went down: '}${ownCellsSays(inCell).replace(/^./, c => c.toLowerCase())}, where the pillar's block goes` : `${placed} of 2 blocks went down`;
+      return false;
+    }
     this.state.pillar = { x: feet.x, y: feet.y, z: feet.z, at: Date.now() };
     return true;
   }

@@ -314,6 +314,9 @@ const bites = m => m.jab ?? m.hitsBot;
 function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => false, fight = null, shield = false }) {
   let damage = 0;
   const blasts = [], still = new Set(), later = [];
+  // Which mobs, not only their kinds: "3 zombies still reach it" was said
+  // where one of three did (note 526).
+  const stillMobs = new Set(), stillReach = m => { still.add(m.name); stillMobs.add(m); };
   const fought = m => !!fight && !m.apart && m.name !== 'creeper' && (!fight.only || fight.only(m));
   for (const m of mobs) {
     // No way to the bot: it neither arrives nor goes off beside it.
@@ -321,7 +324,7 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     if (m.name === 'creeper') {
       const at = arrives(m) + FUSE;
       if (at <= setup || (at <= seconds && reaches(m))) { blasts.push({ name: m.name, distance: m.distance, seconds: round(at), hitsBot: m.hitsBot }); damage += m.hitsBot; }
-      if (reaches(m)) still.add(m.name);
+      if (reaches(m)) stillReach(m);
       continue;
     }
     if (m.shoots && !m.visible) continue;
@@ -336,7 +339,7 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     if (!fought(m) && again != null && seconds > setup) {
       const start = Math.max(setup, from, again);
       if (again > 0 && Math.max(setup, again) >= seconds) continue;
-      if (again > setup) later.push({ name: m.name, seconds: round(again) }); else still.add(m.name);
+      if (again > setup) later.push({ name: m.name, seconds: round(again) }); else stillReach(m);
       damage += Math.max(0, seconds - start) * (m.shoots ? shooting(m, shield) : bites(m));
     }
   }
@@ -344,9 +347,10 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     const order = mobs.filter(fought).sort((a, b) => a.distance - b.distance);
     const reach = order.filter(m => !m.shoots && m.name !== 'creeper' && m.distance <= 3).length;
     damage += within(fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach) }), seconds - setup);
-    for (const m of order) if (!m.shoots || m.visible) still.add(m.name);
+    for (const m of order) if (!m.shoots || m.visible) stillReach(m);
   }
-  return { seconds, setup: round(setup), damage: round(damage), blasts, still: [...still], later: later.sort((a, b) => a.seconds - b.seconds) };
+  const out = { seconds, setup: round(setup), damage: round(damage), blasts, still: [...still], later: later.sort((a, b) => a.seconds - b.seconds) };
+  return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
 module.exports = { SPEAR, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };

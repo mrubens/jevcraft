@@ -805,13 +805,17 @@ function knockedAway(bot, block) {
 // player stands. first-days-221's pen gate "did not go where it was placed"
 // two hundred and ninety-one times with a trader llama standing in its
 // cell, and nothing said so (2026-09-26).
+// Whether an entity's body reaches into the block cell at p.
+function bodyIn(e, p) {
+  if (!e?.position) return false;
+  const half = (e.width || 0.6) / 2, h = e.height || 1.8;
+  return e.position.x + half > p.x && e.position.x - half < p.x + 1 && e.position.z + half > p.z && e.position.z - half < p.z + 1 && e.position.y + h > p.y && e.position.y < p.y + 1;
+}
 function occupant(bot, p) {
-  const cell = { x0: p.x, x1: p.x + 1, y0: p.y, y1: p.y + 1, z0: p.z, z1: p.z + 1 };
   // A spectator has no body in the game.
   const spectator = e => e.type === 'player' && bot.players?.[e.username]?.gamemode === 3;
   return Object.values(bot.entities || {}).find(e => e !== bot.entity && e.position && e.isValid !== false && !spectator(e) && !/^(item|experience_orb|arrow|spectral_arrow|trident)$/.test(e.name || '') &&
-    e.type !== 'orb' && e.type !== 'projectile' && (() => { const half = (e.width || 0.6) / 2, h = e.height || 1.8;
-      return e.position.x + half > cell.x0 && e.position.x - half < cell.x1 && e.position.z + half > cell.z0 && e.position.z - half < cell.z1 && e.position.y + h > cell.y0 && e.position.y < cell.y1; })()) || null;
+    e.type !== 'orb' && e.type !== 'projectile' && bodyIn(e, p)) || null;
 }
 const occupiedSays = (e, p) => `a ${(e.username || e.name || 'mob').replaceAll('_', ' ')} stands in the cell at ${p}, and the game puts no block where a body is`;
 
@@ -5305,4 +5309,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { opensPit, persist, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };
+module.exports = { opensPit, persist, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };
