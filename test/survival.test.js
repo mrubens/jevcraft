@@ -3191,3 +3191,17 @@ test('a warden behind the rock is a threat within its boom\'s reach, seen or not
     world: { raycast: from => ({ position: from.floored(), intersect: from }) }, blockAt: p => ({ name: 'deepslate', position: p, boundingBox: 'block' }) };
   assert.equal(immediateThreat(bot)?.entity.name, 'warden');
 });
+
+test('the Nether forest floor and its trees are ground to dig through, not walls', () => {
+  // mid-242-k: a crimson nylium block at head height held a fortress leg for minutes, "crimson nylium in the way".
+  const { natural } = require('../src/tunneling');
+  const { surveyCrossing } = require('../src/bridging');
+  for (const n of ['crimson_nylium', 'warped_nylium', 'nether_wart_block', 'crimson_stem', 'shroomlight']) assert(natural.test(n), n);
+  assert(!natural.test('magma_block'), 'not magma: it burns whoever stands on it');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0.5, 57, 0.5) }, inventory: { items: () => [{ name: 'netherrack', count: 64 }] },
+    blockAt: p => { const name = p.y < 57 ? 'netherrack' : p.z === 2 && p.y === 58 ? 'crimson_nylium' : 'air'; return { name, position: p, diggable: true, boundingBox: name === 'air' ? 'empty' : 'block' }; } };
+  const survey = surveyCrossing(bot, new Vec3(0, 57, 20), { cells: 8 });
+  assert.equal(survey.stoppedBy, null, survey.stoppedBy);
+  assert.equal(survey.dig, 1);
+});
