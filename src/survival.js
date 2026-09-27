@@ -756,7 +756,10 @@ class Survival {
     // the crossing walked it off the far end into the lava sea (note 273).
     if (require('./terrain').onSpan(bot)) {
       const close = threats(bot).filter(t => t.distance <= 8);
-      this.report(goal, save, { action: 'hold_on_span', threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health });
+      // A hold refused (a stall, a spin) is no reason to stop answering the
+      // mob: the swing and the shield below still come (note 420).
+      try { this.report(goal, save, { action: 'hold_on_span', threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health }); }
+      catch (err) { if (err.name !== 'SetAside') throw err; }
       bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.(); lowerShield(bot);
       bot.setControlState?.('sneak', true);
       // Crouched is no hold against a hit: its knockback throws a player a

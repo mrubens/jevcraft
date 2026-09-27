@@ -53,7 +53,11 @@ const HOLDS = new Set(['hold_bunker', 'hold_defensive_position', 'fight', 'defen
   'seal_shelter', 'wall_off', 'take_cover', 'dig_in_to_recover', 'break_their_line', 'take_the_door',
   // A shelter held because something outside is watching, and the minute
   // by the bed before it can be slept in.
-  'wait_in_shelter', 'wait_for_bedtime', 'sleep', 'rest_to_heal']);
+  'wait_in_shelter', 'wait_for_bedtime', 'sleep', 'rest_to_heal',
+  // Crouched still on a span with a mob about: still is the point. Set
+  // aside as a stall, every hold after threw, and nothing swung or
+  // shielded while mid-242-o's piglin hit it off its span (note 420).
+  'hold_on_span']);
 // Emergencies end when the danger does; a rule that set aside the way out
 // of lava would be the death of the bot.
 const EMERGENCIES = new Set(['leave_lava', 'leave_lava_edge', 'out_of_fire', 'off_span', 'escape_threat', 'eat', 'dig_out_of_block', 'creeper_back_off',

@@ -101,6 +101,7 @@ test('asleep, in a fight, holding a door or getting out of danger is not measure
   assert.equal(permittedWait({}, { step: { action: 'hold_bunker' } }, now), 'hold_bunker');
   assert.equal(permittedWait({}, { survivalAction: { action: 'hold_defensive_position', at } }, now), 'hold_defensive_position');
   assert.equal(permittedWait({}, { survivalAction: { action: 'wait_in_shelter', at } }, now), 'wait_in_shelter', 'held in by something watching');
+  assert.equal(permittedWait({}, { survivalAction: { action: 'hold_on_span', at } }, now), 'hold_on_span', 'crouched still on a span with a mob about (mid-242-o)');
   assert.equal(permittedWait({}, { survivalAction: { action: 'leave_lava', at } }, now), 'leave_lava', 'the way out of lava is never set aside');
   assert.equal(permittedWait({}, { survivalAction: { action: 'surface', at } }, now), 'surface', 'nor the way up to air, by the name vitals reports');
   assert.equal(permittedWait({}, { survivalAction: { action: 'return_to_surface', at } }, now), null);

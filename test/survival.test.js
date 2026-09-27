@@ -3658,3 +3658,23 @@ test('on a pillar with a shooter out of reach, no charge that carries no step is
   // Holding the pillar is the same: nothing to swing at, shot with no end.
   assert.match(options.pillar?.description || '', /nothing (up here|two up) to swing at: held, it is standing in their line of fire/);
 });
+
+test('on a span with the hold refused, a piglin at arm\'s length is still struck', async () => {
+  // mid-242-o: its span hold was set aside as a stall, every hold after threw, and nothing swung while a piglin hit it off into the lava (2026-09-27).
+  const span = p => { const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+    return y === 32 && x === -16 && z >= 40 && z <= 60 ? { position: p, name: 'netherrack', boundingBox: 'block' }
+      : y <= 31 ? { position: p, name: 'lava', boundingBox: 'empty' } : { position: p, name: 'air', boundingBox: 'empty' }; };
+  const piglin = { id: 3, name: 'piglin', type: 'hostile', position: new Vec3(-15.5, 33, 50.2), height: 1.95, width: 0.6, isValid: true };
+  const attacks = [], keys = {};
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 15, food: 20, oxygenLevel: 20,
+    entity: { position: new Vec3(-15.5, 33, 49), onGround: true, height: 1.8 }, entities: { 3: piglin }, time: { timeOfDay: 6000 }, _hurtBy: { piglin: Date.now() },
+    inventory: { items: () => [{ name: 'iron_sword', type: 1 }], slots: {} }, world: { raycast: () => null }, blockAt: span,
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState(k, v) { keys[k] = v; }, getControlState: k => !!keys[k],
+    activateItem() {}, deactivateItem() {}, lookAt: async () => {}, look: async () => {}, equip: async () => {}, attack: e => attacks.push(e) });
+  const survival = new Survival(bot, { navigate: async () => { throw new Error('No path'); } }, { state: { shelters: [] } });
+  const goal = {};
+  require('../src/progress').setAside(survival, 'act', 'survival:hold_on_span', 'it stalled', 600000);
+  survival._spin = { until: { 'survival:hold_on_span': Date.now() + 5000 } };
+  await survival.flee(new Task('span'), goal, () => {});
+  assert.equal(attacks.length, 1, 'struck, though the hold was refused');
+});
