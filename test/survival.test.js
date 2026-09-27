@@ -3858,3 +3858,19 @@ test('a hold that fails (the swing\'s walk timing out) rests ten seconds, not th
   const entry = attemptsFor(survival).of('act')['survival:defend'];
   assert(entry && entry.until - Date.now() <= 10000, `rests ${entry && Math.round((entry.until - Date.now()) / 1000)} seconds`);
 });
+
+test('a fight at a shooter the charge would not run at (beside a drop) is priced as standing in its fire', () => {
+  // mid-244-x's fight at a skeleton in a mineshaft was offered as a kill and ended at once (2026-09-27).
+  const solid = p => p.y < 64 && !(p.x === 1 && p.z === 0);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, health: 8.6, food: 18, entities: {},
+    entity: { position: new Vec3(0.5, 64, 0.5), onGround: true }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cobblestone', count: 64 }], slots: {} },
+    blockAt: p => { const f = p.floored(); return { position: f, name: solid(f) ? 'stone' : 'air', boundingBox: solid(f) ? 'block' : 'empty' }; },
+    world: { raycast: () => null }, findBlocks: () => [] });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const skeleton = { entity: { id: 9, name: 'skeleton', position: new Vec3(-5.5, 64, 0.5), height: 1.99 }, distance: 6, visible: true };
+  const spider = { entity: { id: 10, name: 'cave_spider', position: new Vec3(-14.5, 64, 0.5), height: 0.5 }, distance: 15, visible: true };
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [skeleton, spider], false);
+  assert.match(options.fight.description, /The nearest, a skeleton 6 blocks off, shoots and cannot be run at from here/);
+  assert.equal(options.fight.expects.seconds, 15);
+});
