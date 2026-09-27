@@ -681,7 +681,13 @@ class Survival {
       // Shots too: a blocked fireball still pushes, and mid-242-h, bridging
       // toward a fortress under a blaze's fire, blocked four and drifted
       // off its span with them, thirty blocks into the lava (2026-09-27).
-      const shots = require('./projectile-guard').incoming(bot, { reach: 24 }).length > 0 || close.some(t => t.visible && shooter(t.entity));
+      // A shooter in sight within its own reach counts, not only within
+      // eight: mid-202-g held still on a span four seconds with a ghast in
+      // sight twenty-two blocks off, walls never raised, and its fireball
+      // threw the bot into the lava (2026-09-27).
+      const { RANGE } = require('./combat-estimate');
+      const shots = require('./projectile-guard').incoming(bot, { reach: 24 }).length > 0 ||
+        threats(bot, 48).some(t => t.visible && shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
       if (!bot._spanning && (shots || close.some(t => t.distance <= 6 && !shooter(t.entity))) && await this.railSpan(task, goal, save)) return;
       // A mob at arm's length is struck crouched and still (combat.js
       // defendNearby on a span); nothing else is done about it here.

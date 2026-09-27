@@ -3140,3 +3140,18 @@ test('a creeper Jev chose to leave be is a threat again well before its fuse\'s 
   creeper.position = new Vec3(10.5, 64, 0.5);
   assert.equal(immediateThreat(bot), undefined, 'ten off: still left be');
 });
+
+test('on a span with a ghast in sight twenty blocks off, the walls go up before its fireball', async () => {
+  // mid-202-g held still on its span with a ghast in sight at twenty-two blocks and was thrown into the lava (2026-09-27).
+  const placed = new Set();
+  const ghast = { id: 4, name: 'ghast', type: 'hostile', position: new Vec3(0.5, 70, 22.5), height: 4, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, health: 20, food: 18,
+    entities: { 4: ghast }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'netherrack', count: 32 }, { name: 'iron_sword' }], slots: { 45: { name: 'shield' } } }, world: { raycast: () => null },
+    blockAt: p => { const q = p.floored(); const solid = placed.has(`${q}`) || (q.y === 63 && q.x === 0); return { name: solid ? 'netherrack' : q.y < 30 ? 'lava' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; },
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, attack() {}, equip: async () => {}, activateItem() {}, deactivateItem() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, place: async (b, t, p) => { placed.add(`${p}`); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('span'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'rail_span');
+});
