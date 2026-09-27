@@ -233,7 +233,11 @@ function immediateThreat(bot) {
   // comes round the corner already at its fuse's distance. mid-79-b stood
   // recovering for five seconds with one out of sight beside it, and the
   // blast was the first it knew (2026-09-26).
-  const seen = t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4);
+  // Nor does a warden need to be seen: its sonic boom goes through walls,
+  // ten a hit. mid-230-h stood recovering at y -52 with one sixteen blocks
+  // off behind the rock and was "obliterated by a sonically-charged
+  // shriek" with nothing answering it (2026-09-27).
+  const seen = t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24);
   // A shooter is a threat within its own reach: a ghast fires from forty
   // blocks. mid-244-e walked a ledge at y 89 with one in sight at seventeen
   // to nineteen, outside the sixteen counted for any shooter, and its
@@ -241,7 +245,7 @@ function immediateThreat(bot) {
   const { RANGE } = require('./combat-estimate');
   const shooterReach = t => fighting ? 8 : Math.max(hurt ? 32 : 16, RANGE[t.entity.name] || 0);
   const mob = threats(bot, 48).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) && !nightHunted(bot, t.entity) &&
-    t.distance <= (shooter(t.entity) ? shooterReach(t) : (fighting ? 5 : 8)));
+    t.distance <= (shooter(t.entity) ? shooterReach(t) : t.entity.name === 'warden' ? 24 : (fighting ? 5 : 8)));
   if (mob) return mob;
   // A shot on its way is a threat of its own, its shooter seen or not:
   // mid-230-g, waiting to heal by a fortress, was hit by four fireballs in

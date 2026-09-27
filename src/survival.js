@@ -763,7 +763,7 @@ class Survival {
     const swung = await defendNearby(bot, task, goal, save);
     // With a creeper out of sight within four blocks among them (danger.js
     // immediateThreat): it is the danger, seen or not.
-    const danger = threats(bot).filter(t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4));
+    const danger = threats(bot).filter(t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24));
     // The mob that stopped the work is among them, whatever its sight line
     // reads this time: mid-244-f's skeleton at three blocks stopped the work
     // twenty times a second for four minutes while the stance, held for a
@@ -1140,7 +1140,7 @@ class Survival {
     // there), a witch's potions and a creeper's blast at the foot. mid-110-k
     // pillared at thirteen health with a creeper six blocks off and three
     // skeletons, told nothing of what that cost, and the blast was all of it.
-    const pillarCost = stanceCost({ mobs, setup: up ? 0 : PILLAR_SECONDS, fight: { only: m => CLIMBERS.has(m.name) }, reaches: m => m.shoots || m.name === 'creeper', shield: shielded });
+    const pillarCost = stanceCost({ mobs, setup: up ? 0 : PILLAR_SECONDS, fight: { only: m => CLIMBERS.has(m.name) }, reaches: m => m.shoots || m.name === 'creeper' || m.name === 'warden', shield: shielded });
     if ((scaffold >= 2 && headroom) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.' + (up ? '' : buildCost) + creeperNote + climbers(danger) + (up ? '' : above(bot, danger)) + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: 'Two up' }) + (edge && heavyHitters(danger, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
       run: async () => up || this.pillarFrom(task, goal, save, danger) };
     // Down off a pillar of the bot's own: stood on one, nothing else here
@@ -1176,7 +1176,7 @@ class Survival {
     // shooters in line with it and a creeper at it still reach.
     const bunkerMs = nearWall(bot, centroid(danger)) ? require('./bunker').bunkerDigMs(bot, centroid(danger)) : Infinity;
     if (bunkerMs <= BUNKER_DIG_MS) options.bunker = { description: 'Dig one block into the nearby wall so only one mob at a time can reach, and fight them at the doorway.' + buildCost + creeperNote + witchNote +
-      costSays(stanceCost({ mobs, setup: bunkerMs / 1000 + BLOCK_SECONDS, fight: { atOnce: 1, only: m => !m.shoots }, reaches: m => m.shoots || m.name === 'creeper', shield: shielded }), bot.health, mobs, { doing: 'digging in', done: 'At the doorway, one biter at a time' }),
+      costSays(stanceCost({ mobs, setup: bunkerMs / 1000 + BLOCK_SECONDS, fight: { atOnce: 1, only: m => !m.shoots }, reaches: m => m.shoots || m.name === 'creeper' || m.name === 'warden', shield: shielded }), bot.health, mobs, { doing: 'digging in', done: 'At the doorway, one biter at a time' }),
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
@@ -1216,7 +1216,7 @@ class Survival {
       // down three with one seventeen blocks off, told "none of them reaches
       // it", and the blast came through the cap fourteen seconds later
       // (2026-09-26).
-      const digCost = stanceCost({ mobs, setup, reaches: m => m.name === 'creeper' });
+      const digCost = stanceCost({ mobs, setup, reaches: m => m.name === 'creeper' || m.name === 'warden' });
       options.dig_down = { expects: { damage: digCost.damage, seconds: digCost.seconds, oneHit }, description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting. Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + buildCost + creeperNote + costSays(digCost, bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
         run: async () => {
           this.report(goal, save, { action: 'dig_down', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, depth, stance: true });

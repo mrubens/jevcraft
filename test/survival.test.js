@@ -3155,3 +3155,12 @@ test('on a span with a ghast in sight twenty blocks off, the walls go up before 
   await survival.flee(new Task('span'), goal, () => {});
   assert.equal(goal.survivalAction?.action, 'rail_span');
 });
+
+test('a warden behind the rock is a threat within its boom\'s reach, seen or not', () => {
+  // mid-230-h stood recovering at y -52 with a warden sixteen blocks off behind the rock and was killed by its sonic boom (2026-09-27).
+  const { immediateThreat } = require('../src/danger');
+  const warden = { id: 3, name: 'warden', type: 'hostile', position: new Vec3(16.5, -52, 0.5), height: 2.9, isValid: true };
+  const bot = { entity: { position: new Vec3(0.5, -52, 0.5), height: 1.8 }, entities: { 3: warden }, game: { dimension: 'overworld' }, health: 20,
+    world: { raycast: from => ({ position: from.floored(), intersect: from }) }, blockAt: p => ({ name: 'deepslate', position: p, boundingBox: 'block' }) };
+  assert.equal(immediateThreat(bot)?.entity.name, 'warden');
+});
