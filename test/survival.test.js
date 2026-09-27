@@ -3479,3 +3479,12 @@ test('held on a span with a shot on its way and no walls or ground to be had, th
   assert.equal(raised, true, 'the shield came up');
   assert.equal(goal.survivalAction?.action, 'block_shot');
 });
+
+test('a span wall counts only when it stands: a place that leaves nothing is no wall', async () => {
+  // mid-243-l "walled" its span eleven times in four seconds under a ghast, no wall ever standing, and was thrown into the lava.
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, health: 20,
+    entities: {}, inventory: { items: () => [{ name: 'cobblestone', count: 32 }], slots: {} },
+    blockAt: p => { const q = p.floored(); const solid = q.y === 63 && q.z === 0; return { name: solid ? 'cobblestone' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; } });
+  const survival = new Survival(bot, { place: async () => {} }, { state: { shelters: [] } });
+  assert.equal(await survival.railSpan(new Task('span'), {}, () => {}), false);
+});

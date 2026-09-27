@@ -1966,7 +1966,11 @@ class Survival {
       for (const p of [c.offset(0, -1, 0), c]) {
         if (bot.blockAt(p)?.boundingBox === 'block') continue;
         task.check();
-        try { await this.actions.place(bot, task, p, material); placed++; }
+        // Counted only when the block stands: mid-243-l "walled" its span
+        // eleven times in four seconds under a ghast, no wall ever standing,
+        // and each report ended the turn before the step off or the shield;
+        // a fireball threw it into the lava (2026-09-27).
+        try { await this.actions.place(bot, task, p, material); if (bot.blockAt(p)?.boundingBox === 'block') placed++; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; break; }
       }
     }
