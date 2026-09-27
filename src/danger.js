@@ -24,7 +24,12 @@ function combatTarget(bot, entity) {
 // the bot: in the game one angry zombified piglin brings every one in range,
 // and none of them was ever a threat here, so a horde could beat the bot
 // down while it went on digging.
-const GROUP_ANGER = { zombified_piglin: 30000, piglin: 30000 };
+// Wolves, bees and llamas turn as a pack too: mid-218-k was bitten from
+// twenty to none by wolves, never counted a threat, while it went on
+// choosing which cow to hunt (2026-09-27).
+const GROUP_ANGER = { zombified_piglin: 30000, piglin: 30000, wolf: 30000, bee: 30000, llama: 30000, trader_llama: 30000 };
+// Any other mob that hurt the bot itself, for as long.
+const STRUCK_MS = 30000;
 // Three blocks nearer within three seconds: an enderman walks about a block
 // a second when it wanders.
 const ENDERMAN_WINDOW_MS = 3000, ENDERMAN_CLOSING = 3;
@@ -55,6 +60,7 @@ function provoked(bot, entity) {
     }
     return false;
   }
+  if (bot._hurtById?.[entity.id] > Date.now() - STRUCK_MS) return true;
   return Object.hasOwn(GROUP_ANGER, entity.name) && bot._hurtBy?.[entity.name] > Date.now() - GROUP_ANGER[entity.name];
 }
 // Animals that hit a player unprovoked, now and then: a goat rams whoever

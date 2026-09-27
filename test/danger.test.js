@@ -65,3 +65,20 @@ test('an angry enderman closing on the bot is the bot\'s before it is at arm\'s 
   far.position = new Vec3(-19, 64, 1);
   assert.equal(provoked(bot, far), false, 'angry at something else, wandering');
 });
+
+test('a wolf that bites turns its pack into threats; any other mob that hurt the bot is one too', () => {
+  // mid-218-k was bitten from twenty to none by wolves, never counted a threat, while it chose which cow to hunt (2026-09-27).
+  const { threats } = require('../src/danger');
+  const registry = require('minecraft-data')('26.1');
+  const wolf = (id, x) => ({ id, name: 'wolf', type: 'animal', position: new Vec3(x, 64, 0.5), height: 0.85, width: 0.6, isValid: true });
+  const bear = { id: 9, name: 'polar_bear', type: 'animal', position: new Vec3(0.5, 64, 5.5), height: 1.4, width: 1.4, isValid: true };
+  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, world: { raycast: () => null }, time: { timeOfDay: 6000 },
+    entities: { 1: wolf(1, 2.5), 2: wolf(2, 4.5), 3: wolf(3, 6.5), 9: bear } };
+  assert.equal(threats(bot).length, 0, 'wolves and a bear left be are not threats');
+  bot._hurtBy = { wolf: Date.now() }; bot._hurtById = { 1: Date.now() };
+  assert.deepEqual(threats(bot).map(t => t.entity.id).sort(), [1, 2, 3], 'the whole pack');
+  bot._hurtById[9] = Date.now();
+  assert(threats(bot).some(t => t.entity.id === 9), 'a bear that struck the bot');
+  bot._hurtBy = { wolf: Date.now() - 60000 }; bot._hurtById = { 1: Date.now() - 60000, 9: Date.now() - 60000 };
+  assert.equal(threats(bot).length, 0, 'a minute on, calm again');
+});

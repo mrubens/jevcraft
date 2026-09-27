@@ -637,6 +637,7 @@ class Survival {
         bot._recentHurtAt = Date.now();
         // Who did it, by kind: a neutral mob that hits the bot has turned.
         if (source?.name) (bot._hurtBy ||= {})[source.name] = Date.now();
+        if (source?.id !== undefined) (bot._hurtById ||= {})[source.id] = Date.now();
         // Hurt three times in fifteen seconds with no survival action at all
         // is a bug with no trace: the replay run was shot for forty-eight
         // seconds in the Nether and the record held nothing but its health.

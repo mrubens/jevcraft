@@ -36,6 +36,11 @@ const MOBS = {
   warden: { hit: 30, health: 500, note: 'never to be fought' }, creaking: { hit: 3, health: 1, note: 'cannot be hurt while its heart stands' },
   illusioner: { hit: 4, health: 32, shoots: true }, endermite: { hit: 2, health: 8 },
   goat: { hit: 2, health: 10, note: 'rams now and then unprovoked, and throws the bot several blocks' }, polar_bear: { hit: 6, health: 30, note: 'goes for a player near its cubs' },
+  // Neutral until struck or hurt by the bot (danger.js provoked), then a
+  // pack: mid-218-k (2026-09-27).
+  wolf: { hit: 4, health: 8, note: 'the whole pack turns on a player that strikes one' }, bee: { hit: 2, health: 10, note: 'the hive turns together, and each sting poisons' },
+  llama: { hit: 1, health: 22, shoots: true, note: 'spits, and the herd spits together' }, trader_llama: { hit: 1, health: 22, shoots: true, note: 'spits, and the herd spits together' },
+  iron_golem: { hit: 15, health: 100, note: 'throws the bot high' }, panda: { hit: 6, health: 20 }, dolphin: { hit: 3, health: 10 },
 };
 // Damage and swings a second.
 const WEAPONS = {
