@@ -3007,8 +3007,20 @@ const inPortal = bot => [0, 1].some(dy => bot.blockAt?.(bot.entity.position.offs
 async function enterPortal(bot, task, portal, arrived) {
   // Standing in the portal it just came through, the bot must step out
   // first: a player is not sent back until it has left the sheet.
+  // Out of either face of the sheet: the one behind can be fire. mid-218-m-
+  // nether-3's step back went into the soul fire before its Nether-side
+  // portal, the other face clear (note 502); the move will not walk into
+  // fire (motion.js), and the sheet is left the other way.
   if (inPortal(bot) && !arrived()) {
-    await move(bot, task, { label: 'leave_portal', keys: ['back'], sneak: true, maxMs: 1200, tick: 50, until: () => !inPortal(bot) });
+    const refused = [];
+    for (const key of ['back', 'forward']) {
+      const since = Date.now();
+      if (await move(bot, task, { label: 'leave_portal', keys: [key], sneak: true, maxMs: 1200, tick: 50, until: () => !inPortal(bot) })) break;
+      if (bot._moveRefused?.label === 'leave_portal' && bot._moveRefused.at >= since) refused.push(bot._moveRefused);
+    }
+    if (inPortal(bot) && refused.length === 2) {
+      throw new Error(`Both faces of the portal the bot stands in step into fire or lava (${refused.map(r => `${r.name.replace('_', ' ')} at ${r.x}, ${r.y}, ${r.z}`).join('; ')}); not walked into`);
+    }
   }
   await navigate(bot, task, new goals.GoalNear(portal.x, portal.y, portal.z, 1), { timeoutMs: 20000 });
   if (arrived()) return;
@@ -3966,7 +3978,12 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
   await bot.equip(bot.inventory.items().find(i => i.name === (lighter || 'flint_and_steel')), 'hand');
   task.check();
   await bot.activateBlock(bot.blockAt(bottom), new Vec3(0, 1, 0));
-  await waitFor(task, () => bot.blockAt(bottom.offset(0, 1, 0))?.name === 'nether_portal');
+  // Lit and no portal: said as that, the fire left burning in the frame
+  // (walked round by the pathfinder and the held-key moves; note 502).
+  await waitFor(task, () => bot.blockAt(bottom.offset(0, 1, 0))?.name === 'nether_portal', 4000, () => {
+    const left = bot.blockAt(bottom.offset(0, 1, 0))?.name;
+    return /fire/.test(left || '') ? `the frame at (${bottom.x}, ${bottom.y + 1}, ${bottom.z}) lit to ${left.replace('_', ' ')} and no portal: the frame is not whole or its inside not empty; the fire burns there` : `no portal in the frame at (${bottom.x}, ${bottom.y + 1}, ${bottom.z}) after lighting (${left || 'nothing'} there)`;
+  });
   // The cast's walls in the doorway, before and behind the opening, come out
   // once it is lit: they boxed mid-242-m's portal in (2026-09-27).
   const doorway = cells.interior.flatMap(q => [1, -1].map(d => q.plus(across(axis).scaled(d))));

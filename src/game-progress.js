@@ -23,6 +23,9 @@ function observeProgress(bot, goal, now = Date.now()) {
     ['eyes_obtained', count(bot, 'ender_eye') >= 12]]) {
     if (present && !milestones[name]) milestones[name] = { at: now, dimension: where, position: position(bot) };
   }
+  // When the bot came into the dimension it is in, for a choice made in
+  // one stay there to end with that stay (netherLeaveHeld).
+  if (where && progress.here?.dimension !== where) progress.here = { dimension: where, at: now };
   return progress;
 }
 
@@ -365,11 +368,17 @@ function rodsRest(goal, phase = 'obtain_blaze_rods', now = Date.now()) {
   return entry?.until > now ? { why: entry.why || 'set aside', until: entry.until } : { why: goingOnHere(goal, phase, now) ? 'Jev chose to go on here first' : 'set aside', until: 0 };
 }
 // Jev's "go back" for this reason, kept while the reason stands: the rest
-// it was asked with, or ten minutes for a trip back for food.
+// it was asked with, or ten minutes for a trip back for food. And only for
+// the stay it was chosen in: once out of the Nether it is done, and a way
+// in again is its own crossing (crossing_kit). mid-218-m-nether-3 went back
+// for food at 20:59, Jev chose to cross again with none at 21:03, and on
+// the far side the held "go back" turned it round at once, stepping out of
+// the sheet into the soul fire before it (note 502).
 const NETHER_LEAVE_MS = 10 * 60000;
 function netherLeaveHeld(goal, reason, now = Date.now()) {
   const held = goal.leaveNether;
   if (!held || held.reason !== reason || held.pick !== 'go_back') return false;
+  if (goal.gameProgress?.here?.at > held.at) return false;
   return held.until ? held.until > now && rodsRest(goal, reason, now).until === held.until : now - held.at < NETHER_LEAVE_MS;
 }
 

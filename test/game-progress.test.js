@@ -316,3 +316,18 @@ test('the rods set aside in the Nether for a stall: leaving is Jev\'s, with why 
   assert(!isSetAside(goal, 'rung', 'obtain_blaze_rods'));
   assert.equal(nextGameStage(bot, goal).action, 'acquire');
 });
+
+test('a "go back" Jev chose ends with the stay it was chosen in: in again by the crossing, leaving is asked again', () => {
+  // mid-218-m-nether-3 (note 502): back for food at 20:59, in again with none by Jev's cross_now at 21:03, and on the
+  // far side the held go_back turned it round at once, out of the sheet into soul fire.
+  const { netherLeaveHeld } = require('../src/game-progress');
+  const { bot, goal } = fixture(), t0 = 1_000_000;
+  bot.game.dimension = 'minecraft:the_nether'; observeProgress(bot, goal, t0);
+  goal.leaveNether = { reason: 'food', pick: 'go_back', until: 0, at: t0 + 1000 };
+  observeProgress(bot, goal, t0 + 1500);
+  assert.equal(netherLeaveHeld(goal, 'food', t0 + 2000), true, 'kept on the way to the portal');
+  bot.game.dimension = 'overworld'; observeProgress(bot, goal, t0 + 60000);
+  observeProgress(bot, goal, t0 + 90000);
+  bot.game.dimension = 'minecraft:the_nether'; observeProgress(bot, goal, t0 + 240000);
+  assert.equal(netherLeaveHeld(goal, 'food', t0 + 241000), false, 'a new stay: the way back is Jev\'s to choose again');
+});

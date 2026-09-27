@@ -90,3 +90,51 @@ test('while the heading is wrong the keys are let go, and pressed again once it 
     until: () => { if (++ticks === 2) bot.entity.yaw = 0; return ticks > 4; } });
   assert.deepEqual(forwardWhileWrong, [false], 'forward was let go while it turned back');
 });
+
+// A world of named cells; everything else air.
+const worldBot = (cells, position, yaw) => {
+  const bot = fakeBot();
+  const solid = new Set(['obsidian', 'soul_sand', 'netherrack']);
+  bot.entity = { position, yaw, pitch: 0 };
+  bot.blockAt = p => { const name = cells[`${p.x},${p.y},${p.z}`] || 'air'; return { name, boundingBox: solid.has(name) ? 'block' : 'empty' }; };
+  return bot;
+};
+
+test('a held-key move never walks into fire, nor off an edge into it; a way out of fire is left alone', async () => {
+  // mid-218-m-nether-3 (note 502): out of its Nether-side portal, the step back out of the sheet went off the frame's
+  // obsidian into the soul fire before it, on soul sand a block down, at 7.7 health; it burned to death in six seconds.
+  const { Vec3 } = require('vec3');
+  const cells = {};
+  for (let x = -24; x <= -20; x++) for (let z = 80; z <= 86; z++) cells[`${x},64,${z}`] = 'soul_sand';
+  for (const x of [-24, -23, -22, -21]) { cells[`${x},65,83`] = 'obsidian'; cells[`${x},65,84`] = 'soul_sand'; }
+  cells['-22,65,82'] = 'soul_fire'; cells['-23,65,81'] = 'soul_fire';
+  for (const y of [66, 67, 68]) { cells[`-23,${y},83`] = 'nether_portal'; cells[`-22,${y},83`] = 'nether_portal'; }
+  // Facing south (+z), as it came out: back is north, into the fire.
+  const bot = worldBot(cells, new Vec3(-21.5, 66, 83.5), -Math.PI);
+  let held = false;
+  const reached = await move(bot, new Task('m'), { label: 'leave_portal', keys: ['back'], maxMs: 200, tick: 5, until: () => { held = held || !!bot.controls.back; return false; } });
+  assert.equal(reached, false);
+  assert.equal(held, false, 'the key is never pressed toward the fire');
+  assert.deepEqual({ ...bot._moveRefused, at: 0 }, { label: 'leave_portal', name: 'soul_fire', x: -22, y: 65, z: 82, at: 0 });
+  // The other face, a soul sand floor, is walked.
+  let ticks = 0;
+  assert.equal(await move(bot, new Task('m'), { label: 'leave_portal', keys: ['forward'], maxMs: 200, tick: 5, until: () => ++ticks > 2 }), true);
+  // Standing in the fire, the move out is its own way and not refused.
+  const burning = worldBot(cells, new Vec3(-21.5, 64.875, 82.5), -Math.PI);
+  ticks = 0;
+  assert.equal(await move(burning, new Task('m'), { label: 'out_of_fire', keys: ['forward'], sneak: false, why: 'out', maxMs: 200, tick: 5, until: () => ++ticks > 2 }), true);
+});
+
+test('a span over the lava sea is walked with the body\'s side over the lava, and not off its end', async () => {
+  const { Vec3 } = require('vec3');
+  const cells = {};
+  for (let x = -3; x <= 3; x++) for (let z = -3; z <= 6; z++) cells[`${x},31,${z}`] = 'lava';
+  for (let z = 0; z <= 3; z++) cells[`0,32,${z}`] = 'netherrack';
+  // Off the span's middle, toward its edge, heading along it (+z: yaw pi).
+  const bot = worldBot(cells, new Vec3(0.75, 33, 0.5), Math.PI);
+  let ticks = 0;
+  assert.equal(await move(bot, new Task('m'), { label: 'bridge_step', maxMs: 200, tick: 5, until: () => ++ticks > 2 }), true);
+  bot.entity.position = new Vec3(0.5, 33, 3.5);
+  assert.equal(await move(bot, new Task('m'), { label: 'bridge_step', maxMs: 200, tick: 5 }), false);
+  assert.equal(bot._moveRefused.name, 'lava');
+});
