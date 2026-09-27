@@ -644,3 +644,17 @@ test('a block with lava beside it is not dug within the lava\'s run of the bot',
   bot.entity.position = new Vec3(50.5, -55, 286.5);
   assert.equal(opensLava(bot, new Vec3(43, -55, 286)), false, 'seven blocks off: past its run');
 });
+
+test('a staircase digs a snow block without a shovel: the tool is for the drop, not the room', () => {
+  // mid-231-j: stairs up a mountain rested ten minutes on "no tool for snow block".
+  const { stairOptions } = require('../src/tunneling');
+  const { Vec3 } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  const snow = registry.blocksByName.snow_block;
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, inventory: { items: () => [] }, entities: {},
+    blockAt: p => { const q = p.floored(); if (q.y < 64 || (q.x === 1 && q.y === 64)) return { name: 'stone', position: q, boundingBox: 'block', diggable: true, hardness: 1.5, harvestTools: { 1: true } };
+      if (q.x === 1 && q.y >= 65 && q.y <= 66) return { name: 'snow_block', position: q, boundingBox: 'block', diggable: true, hardness: snow.hardness, harvestTools: { 999: true } };
+      return { name: 'air', position: q, boundingBox: 'empty' }; } };
+  const choices = stairOptions(bot, {}, new Vec3(20, 80, 0));
+  assert(choices.some(c => c.destination.x === 1 && c.destination.y === 65), `up onto the stone through the snow: ${JSON.stringify(choices.blocked)}`);
+});

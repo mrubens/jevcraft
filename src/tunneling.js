@@ -169,7 +169,11 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
       if (!natural.test(cell.name) || !cell.diggable) { why = `${cell.name.replaceAll('_', ' ')} in the way`; return false; }
       if (reservedForConstruction(goal, p, { from: feet })) { why = 'a building in the way'; return false; }
       if (!safeExcavation(bot, p)) { why = 'water or lava behind the rock'; return false; }
-      if (byHand || !cell.harvestTools || bot.inventory.items().some(i => cell.harvestTools[i.type])) return true;
+      // A block soft enough to dig by hand in a moment is dug without its
+      // tool: the tool is for the drop, and a stair wants the room, not the
+      // drop. mid-231-j's stairs up a mountain were "no tool for snow block"
+      // and rested ten minutes (2026-09-27).
+      if (byHand || !cell.harvestTools || bot.inventory.items().some(i => cell.harvestTools[i.type]) || (cell.hardness ?? Infinity) < 1) return true;
       why = `no tool for ${cell.name.replaceAll('_', ' ')}`; return false;
     });
     if (!safe) { block(destination, why); continue; }
@@ -329,7 +333,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
       // pass: the staircase rests, as for no safe step. mid-242-j's stairs
       // toward iron were refused so four times a pass and turned with the
       // mine step until the flip watch ended the trial (2026-09-27).
-      try { await dig(bot, task, p); }
+      try { await dig(bot, task, p, { requireDrops: false }); }
       catch (err) {
         if (!/Refusing to (open a drop|open lava|dig directly beneath)/.test(err.message || '')) throw err;
         setAside(goal, 'staircase', area(target), err.message.toLowerCase(), STAIRCASE_REST_MS); save();
