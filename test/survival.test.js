@@ -2551,7 +2551,7 @@ const crowdMob = (id, name, x, z = 0) => ({ entity: { id, name, position: new Ve
 test('in a crowd every stance says what the mobs cost it over the same fifteen seconds, the pillar and the pocket as well as the fight', () => {
   const bot = crowdBot();
   const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
-  const crowd = [crowdMob(1, 'spider', 1.8), crowdMob(2, 'zombie', -3.2), crowdMob(3, 'creeper', 0, 6.4), crowdMob(4, 'skeleton', 6.4), crowdMob(5, 'skeleton', -8.5), crowdMob(6, 'skeleton', 0, -20)];
+  const crowd = [crowdMob(1, 'spider', 4.2), crowdMob(2, 'zombie', -3.2), crowdMob(3, 'creeper', 0, 6.4), crowdMob(4, 'skeleton', 6.4), crowdMob(5, 'skeleton', -8.5), crowdMob(6, 'skeleton', 0, -20)];
   const options = survival.stanceOptions(new Task('dusk'), {}, () => {}, crowd, false);
   const priced = /About [\d.]+ damage from the mobs here in the next fifteen seconds this way/;
   // The pillar under a creeper and three skeletons carried no figure, and was taken (mid-110-k).
@@ -3889,4 +3889,17 @@ test('with a shooter in sight, cover is offered: a block two high in its line, p
   assert.match(options.take_cover?.description || '', /Put a block two high in the line of the blaze \(20 blocks off\).*About [\d.]+ damage/);
   assert.equal(await options.take_cover.run(), true);
   assert.deepEqual(placed.sort(), ['(1, 72, 0)', '(1, 73, 0)']);
+});
+
+test('digging down is not offered with a biter within three blocks: its shaft would stop for it at once', () => {
+  // mid-205-p chose it three times with a zombie and a spider at arm's length, each ended at once (2026-09-27).
+  const survival = new Survival(Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, health: 16, food: 20, entities: {},
+    entity: { position: new Vec3(0.5, 64, 0.5) }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'iron_pickaxe' }, { name: 'cobblestone', count: 64 }], slots: {} },
+    blockAt: p => ({ position: p, name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }), world: { raycast: () => null }, findBlocks: () => [] }),
+    { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const near = survival.stanceOptions(new Task('x'), {}, () => {}, [crowdMob(1, 'zombie', 1.8)], false);
+  assert.equal(near.dig_down, undefined, Object.keys(near).join(','));
+  const far = survival.stanceOptions(new Task('x'), {}, () => {}, [crowdMob(1, 'zombie', 6)], false);
+  assert(far.dig_down, Object.keys(far).join(','));
 });

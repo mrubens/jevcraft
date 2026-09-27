@@ -1434,7 +1434,13 @@ class Survival {
     // ground. The night's shaft pocket (digShaft), straight down from here
     // only: a walk to another column is a walk through the crowd.
     const column = typeof this.actions.dig === 'function' && typeof this.actions.place === 'function' && shelter.materialStock(bot) >= 1 && !inWater(bot) ? this.shaftColumn({ radius: 0 }) : null;
-    if (column?.bottom && column.start.equals(feet)) {
+    // Not offered where its dig would refuse at once: a biter within three
+    // follows the bot down an open shaft, and digShaft stops for one (note
+    // 410's rule). mid-205-p chose it three times with a zombie and a
+    // spider at arm's length, each ended at once, and the crowd had it
+    // between the tries (note 455).
+    const biterClose = danger.some(t => t.distance <= 3 && !shooter(t.entity) && t.entity.name !== 'creeper');
+    if (column?.bottom && column.start.equals(feet) && !biterClose) {
       const { cheapestTool } = require('./skills');
       let digMs = 0, depth = 0;
       for (let y = feet.y - 1; y >= column.bottom.y; y--) {
