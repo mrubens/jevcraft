@@ -169,9 +169,16 @@ function noneGood(id, decision, listed, fallback, { bot, goal, state }) {
   const node = listed[best];
   const rest = node?.children ? walk(node.children, fallback || firstOption) : { path: [], action: node };
   const took = { path: [best, ...rest.path], action: rest.action };
-  const entry = { at: new Date().toISOString(), question: id, bot: bot?.username || null, port: bot?._client?.socket?.remotePort ?? null,
+  recordMissing(id, decision, listed, { bot, goal, state }, { took: took.path });
+  console.log(`[missing option] ${id}: none of the options was good; took ${took.path.join('/')} instead`);
+  return { ...decision, ...took, noneGood: true };
+}
+function recordMissing(id, decision, listed, { bot, goal, state }, { near = false, took = [] } = {}) {
+  const weights = decision.judgments?.[0]?.probabilities || {};
+  const keys = Object.keys(listed);
+  const entry = { ...(near ? { near: true } : {}), at: new Date().toISOString(), question: id, bot: bot?.username || null, port: bot?._client?.socket?.remotePort ?? null,
     dimension: String(bot?.game?.dimension || '').replace('minecraft:', ''), position: bot?.entity?.position ? { x: Math.round(bot.entity.position.x), y: Math.round(bot.entity.position.y), z: Math.round(bot.entity.position.z) } : null,
-    health: bot?.health ?? null, request: goal?.request || null, weights, tookInstead: took.path,
+    health: bot?.health ?? null, request: goal?.request || null, weights, tookInstead: took,
     options: Object.fromEntries(keys.map(k => [k, typeof listed[k].description === 'string' ? listed[k].description : JSON.stringify(listed[k].description)])), state };
   try {
     const fs = require('fs'), path = require('path');
@@ -179,8 +186,6 @@ function noneGood(id, decision, listed, fallback, { bot, goal, state }) {
     fs.mkdirSync(path.dirname(log), { recursive: true });
     fs.appendFileSync(log, JSON.stringify(entry) + '\n');
   } catch (_) { /* the flight record still has it */ }
-  console.log(`[missing option] ${id}: none of the options was good; took ${took.path.join('/')} instead`);
-  return { ...decision, ...took, noneGood: true };
 }
 
 class NoSafeDefault extends Error {
@@ -260,6 +265,10 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     }
     if (goal && bot && !decision.stale) announceFallback(bot, goal, decision);
     if (!decision.stale && decision.path?.[0] === NONE_GOOD_KEY) decision = noneGood(id, decision, listed, fallback, { bot, goal, state });
+    // A near flag: "none of these" weighed a quarter or more but not taken.
+    // In the replay of mid-227-q's blaze at 1.4 health, cover missing, it was
+    // a close second (0.32 against the pillar's 0.37) every time (note 462).
+    else if (!decision.stale && offerNoneGood && (decision.judgments?.[0]?.probabilities?.[NONE_GOOD_KEY] || 0) >= 0.25) recordMissing(id, decision, listed, { bot, goal, state }, { near: true, took: decision.path });
   }
   } finally { giveBack(bot, turnBefore); }
   decision.id = id;

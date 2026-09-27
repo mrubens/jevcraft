@@ -164,6 +164,12 @@ test('every question about playing the game offers "none of these options are go
     const entry = JSON.parse(fs.readFileSync(log, 'utf8').trim().split('\n').at(-1));
     assert.equal(entry.question, 'corpse_run'); assert.deepEqual(entry.tookInstead, ['leave_them']); assert.equal(entry.options.go_back, 'a');
     assert.equal(goal.decisions.at(-1).noneGood, true);
+    // A near flag: weighed a quarter or more, not taken, recorded all the same.
+    const nearClient = { systemOne: async () => ({ answers: { branch_0: { choice: 'go_back', confidence: 0.4, probabilities: { go_back: 0.4, none_good: 0.33, leave_them: 0.27 } } } }) };
+    const r2 = await decide('corpse_run', { client: nearClient, bot: null, goal: {}, tree: { go_back: { description: 'a' }, leave_them: { description: 'b' } }, state: {} });
+    assert.deepEqual(r2.path, ['go_back']);
+    const near = JSON.parse(fs.readFileSync(log, 'utf8').trim().split('\n').at(-1));
+    assert.equal(near.near, true); assert.deepEqual(near.tookInstead, ['go_back']);
   } finally {
     if (env.NONE === undefined) delete process.env.JEV_NONE_GOOD; else process.env.JEV_NONE_GOOD = env.NONE;
     if (env.LOG === undefined) delete process.env.JEV_MISSING_OPTIONS; else process.env.JEV_MISSING_OPTIONS = env.LOG;
