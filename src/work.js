@@ -2,7 +2,7 @@
 const { move } = require('./motion');
 const { attemptsFor, setAside, isSetAside, watch, unwatch } = require('./progress');
 const { DAY } = require('./day');
-const { STALL_MS, watchStalls, unwatchStalls, checkStall, takeStall, recordStill } = require('./stillness');
+const { STALL_MS, GROUND, watchStalls, unwatchStalls, checkStall, takeStall, recordStill } = require('./stillness');
 
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
@@ -211,9 +211,16 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   looseEnds(goal, now);
   const answers = {};
   const mine = [goal.step, goal.lastStruggleStep].find(step => step?.action === 'mine' && step.block);
+  // Kept with the world's survival state, as the heading is.
+  const turn = goal.survival || goal;
+  // The last "another way" that reached no fresh ground, said: mid-230-s's
+  // walk eight blocks off moved two, its failure was swallowed, and the new
+  // shaft began from the same spot (note 485).
+  const short = turn.wayOffShort && now - turn.wayOffShort.at < DETOUR_MEMORY_MS ? turn.wayOffShort : null;
+  const shortSays = short && `the last time, the walk off got ${short.moved} of ${short.aimed} blocks from (${short.from.x}, ${short.from.y}, ${short.from.z}), no fresh ground${short.error ? ` (${short.error})` : ''}`;
   if (!idle) answers.differently = { description: mine
     ? `Keep at the ${thing} another way: leave this patch of ${String(mine.block).replaceAll('_', ' ')} for one further off.`
-    : `Keep at the ${thing} another way: step eight blocks off to fresh ground and come at it again from there; the search turns to a heading not tried, and the shaft or site it was using is dropped.`,
+    : `Keep at the ${thing} another way: step eight blocks off to fresh ground and come at it again from there; the search turns to a heading not tried, and the shaft or site it was using is dropped.${shortSays ? ` Chosen before: ${shortSays}.` : ''}`,
   run: async () => {
     // After failures, first out of whatever it is wedged in.
     if (stall.error) await shakeLoose(bot, task, Date.now() + 25000, { guard: () => checkThreats(bot) });
@@ -228,12 +235,20 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       // Another way starts from somewhere else: the same spot is the same
       // attempt. Trial 24 answered a stalled plot by turning a search it
       // was not using, and stood by the same cell until the audit failed it.
-      const turn = goal.survival || goal;
       const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; turn.detourHeading = heading;
-      const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
+      const angle = heading * Math.PI / 4, here = bot.entity.position.floored(), start = bot.entity.position.clone();
       const target = here.offset(Math.round(Math.cos(angle) * 8), 0, Math.round(Math.sin(angle) * 8));
+      let failed = null;
       try { await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 2), { timeoutMs: 15000, stallMs: 5000 }); }
-      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; failed = err; }
+      // How far it got, kept for the next question: fresh ground is the
+      // stall rule's own measure (stillness.js GROUND).
+      const moved = bot.entity.position.distanceTo(start);
+      if (moved > GROUND.radius) delete turn.wayOffShort;
+      else {
+        turn.wayOffShort = { at: Date.now(), from: { x: here.x, y: here.y, z: here.z }, aimed: 8, moved: Math.round(moved), ...(failed ? { error: String(failed.message || failed).slice(0, 120) } : {}) };
+        save();
+      }
     }
   } };
   if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}.`,
@@ -252,7 +267,12 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   Object.assign(answers, nether);
   // What it is stuck on, named: a step for another dimension (note 476).
   const blocker = stall.blocker || require('./stillness').actionOf(goal, now).blocker;
-  const stalled = { what: thing, strikes: stall.strikes, ...(stall.error ? { failure: stall.error } : {}), ...(blocker ? { blocker } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}) };
+  // A staircase set aside for want of ground gained is the failure, with
+  // the landing and what blocked every step from it, while it rests: the
+  // stall itself said only strikes (mid-230-s, note 485).
+  const stairs = goal.staircaseStalled && now - goal.staircaseStalled.at < require('./tunneling').STAIRCASE_REST_MS ? goal.staircaseStalled : null;
+  const failure = stall.error || (stairs && `the staircase is set aside: ${stairs.why}`);
+  const stalled = { what: thing, strikes: stall.strikes, ...(failure ? { failure } : {}), ...(shortSays ? { lastWayOff: shortSays } : {}), ...(blocker ? { blocker } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}) };
   await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled });
 }
 

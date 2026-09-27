@@ -735,3 +735,33 @@ test('a step dropped for another dimension still names the stall: the WrongDimen
   assert.deepEqual(asked[0].stalled.blocker.from, from);
   assert.match(asked[0].situation || asked[0].stalled.what, /iron ore/);
 });
+
+test('a staircase stalled for want of ground gained is the stall question\'s failure, and a differently walk that went nowhere is the next ask\'s fact', async () => {
+  // mid-230-s: flipping tunnel and retreat_from_tunnel, asked with only the strikes; its "differently" moved two
+  // blocks, the walk's failure swallowed, and the new shaft began from the same spot (note 485).
+  const { answerStall } = require('../src/work');
+  const { tunnelStep } = require('../src/tunneling');
+  // From A the only step is down to B; B has none, and the retreat is back to A.
+  const open = new Set(['0,60,0', '0,61,0', '1,59,0', '1,60,0', '1,61,0']);
+  const bot = Object.assign(botAt(0.5, 60, 0.5), { registry, health: 20, food: 20, findBlocks: () => [], time: { timeOfDay: 1000 }, clearControlStates() {}, chat() {},
+    blockAt: p => { const f = p.floored(), air = open.has(`${f.x},${f.y},${f.z}`); return { position: f, name: air ? 'air' : 'bedrock', boundingBox: air ? 'empty' : 'block', diggable: false }; },
+    pathfinder: { movements: {}, setGoal() {}, goto: async () => { throw new Error('No route to the ground eight blocks off'); } } });
+  const goal = { kind: 'win', survival: {}, rungTime: { phase: 'reach_nether' } };
+  const actions = { dig: async () => {}, navigate: async (_bot, _task, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+    retreat: async () => { bot.entity.position = new Vec3(0.5, 60, 0.5); } };
+  let stalled = null;
+  for (let round = 0; round < 24 && !stalled; round++) {
+    try { await tunnelStep(bot, new Task('stair'), goal, () => {}, new Vec3(20 + round * 9, -59, 0), actions); }
+    catch (err) { stalled = err; }
+  }
+  assert.equal(stalled?.name, 'StaircaseStalled', 'the staircase stalled');
+  const asked = [];
+  const client = { systemOne: async ({ state }) => { asked.push(state); return { answers: { branch_0: { choice: 'differently', confidence: 0.9 } } }; } };
+  await answerStall(bot, new Task('stall'), goal, () => {}, { key: 'step:rung:reach_nether', layer: 'work', strikes: 1 }, { client });
+  assert(asked.length, 'Jev was asked');
+  assert.match(asked[0].stalled.failure || '', /\(1, 59, 0\).*bedrock in the way/, `the blocked reasons are the failure: ${JSON.stringify(asked[0].stalled)}`);
+  // The differently walk could not move: the next ask carries that.
+  await answerStall(bot, new Task('stall'), goal, () => {}, { key: 'step:rung:reach_nether', layer: 'work', strikes: 2 }, { client });
+  assert.equal(asked.length, 2);
+  assert.match(JSON.stringify(asked[1].stalled), /0 of 8 blocks.*No route to the ground eight blocks off/, `the short walk is a fact: ${JSON.stringify(asked[1].stalled)}`);
+});

@@ -726,3 +726,39 @@ test('the climb back up walks the stairs it came down by, remembered at their to
   assert.deepEqual(walked[0], [30, 64, 0], 'to the stairs\' top');
   assert.equal(goal.survivalAction?.by, 'the stairs down');
 });
+
+// Two landings: from A the only open step leads down to B, and B has none.
+// The retreat from B goes back to A. Bedrock everywhere else.
+function pingPongWorld() {
+  const open = new Set(['0,60,0', '0,61,0', '1,59,0', '1,60,0', '1,61,0']);
+  return { registry: require('minecraft-data')('26.1'), game: { difficulty: 'normal', dimension: 'overworld' }, health: 20, entities: {},
+    entity: { position: new Vec3(0.5, 60, 0.5) }, inventory: { items: () => [] }, findBlocks: () => [], pathfinder: { movements: {} },
+    blockAt: p => { const f = p.floored(), air = open.has(`${f.x},${f.y},${f.z}`);
+      return { position: f, name: air ? 'air' : 'bedrock', boundingBox: air ? 'empty' : 'block', diggable: false }; } };
+}
+test('a staircase that steps out and backs off to the same landing, its target new each round, stalls within one retreat cycle', async () => {
+  // mid-230-s: (368,74,997) to (367,75,999) and back, nine retreats in two minutes toward y -59, the target new each
+  // round, and neither count stopped it: any step reset the retreats, and the rest went by the target's area (note 485).
+  const { staircaseResting } = require('../src/tunneling');
+  const bot = pingPongWorld(), goal = {};
+  let retreats = 0, stalled = null;
+  const actions = { dig: async () => {}, navigate: async (_bot, _task, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+    retreat: async () => { retreats++; bot.entity.position = new Vec3(0.5, 60, 0.5); } };
+  for (let round = 0; round < 24 && !stalled; round++) {
+    try { await tunnelStep(bot, new Task('stair'), goal, () => {}, new Vec3(20 + round * 9, -59, 0), actions); }
+    catch (err) { stalled = err; }
+  }
+  assert(stalled, `alternated for ${retreats} retreats without a stall`);
+  assert.equal(stalled.name, 'StaircaseStalled', stalled.message);
+  assert(retreats <= 1, `within one retreat cycle: ${retreats} retreats`);
+  assert.match(stalled.message, /\(1, 59, 0\)/, 'names the landing');
+  assert.match(stalled.message, /bedrock in the way/, 'and what blocked every step from it');
+  assert.deepEqual(stalled.landing, { x: 1, y: 59, z: 0 });
+  assert(stalled.blocked['bedrock in the way']);
+  // Set aside by the landing, not only by the target's area: a target from
+  // elsewhere, begun from the same spot, meets the rest with its reasons.
+  const fresh = new Vec3(-200, -59, 300);
+  assert.equal(staircaseResting(goal, fresh), false);
+  await assert.rejects(tunnelStep(bot, new Task('again'), goal, () => {}, fresh, actions), err => err.name === 'StaircaseStalled' && /bedrock in the way/.test(err.message));
+  assert(retreats <= 1, 'not walked again');
+});

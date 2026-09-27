@@ -222,8 +222,35 @@ class NoSafeWay extends Error {
 }
 
 const STALE_ROUNDS = 3, STAIRCASE_REST_MS = 10 * 60000;
+// How far a retreat looks for a dry landing (retreatForTunnel).
+const RETREAT_REACH = 16;
 class StaircaseStalled extends Error {
-  constructor(target, why) { super(`The staircase toward ${target} is set aside (${why}); trying another way`); this.name = 'StaircaseStalled'; }
+  // The landing it stalled at and what blocked each step from there travel
+  // with it, for the stall's question to say (work.js answerStall).
+  constructor(target, why, { landing = null, blocked = null } = {}) {
+    super(`The staircase toward ${target} is set aside (${why}); trying another way`); this.name = 'StaircaseStalled';
+    if (landing) this.landing = landing;
+    if (blocked) this.blocked = blocked;
+  }
+}
+const blockedSays = blocked => Object.entries(blocked || {}).map(([k, n]) => `${k} ${n}`).join(', ') || 'nothing open';
+// A landing with no step on is resting by where it is, whatever the target:
+// the way-down target is new every round, and mid-230-s's rest by the
+// target's area never met the same area twice while it stepped out to
+// (367, 75, 999) and backed off again nine times in two minutes (note 485).
+// Kept apart by the way it was going, up, down or level.
+const landingKey = (landing, target) => {
+  const a = area(landing), dy = Math.sign(target.y - landing.y);
+  return `${a.x},${a.y},${a.z} ${dy > 0 ? 'up' : dy < 0 ? 'down' : 'level'}`;
+};
+// A staircase stalled at a landing: rested by the target's area and by the
+// landing's, and kept on the goal as the fact the stall question gives Jev.
+function staircaseStalled(goal, save, target, why, { landing, blocked } = {}) {
+  setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
+  if (landing) setAside(goal, 'staircase_from', landingKey(landing, target), why, STAIRCASE_REST_MS);
+  goal.staircaseStalled = { why, at: Date.now(), ...(landing ? { landing: { x: landing.x, y: landing.y, z: landing.z } } : {}), ...(blocked ? { blocked } : {}) };
+  save();
+  return new StaircaseStalled(target, why, { landing: goal.staircaseStalled.landing, blocked });
 }
 // By the eight-block area: the way-up target is the nearest landing, and it
 // moves a block or two with every step taken toward it.
@@ -251,6 +278,11 @@ class WaysResting extends Error {
 
 async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false, within = null, retreat = retreatForTunnel }) {
   if (staircaseResting(goal, target)) throw new StaircaseStalled(target, attemptsFor(goal).why('staircase', area(target)));
+  const from = bot.entity.position.floored();
+  if (isSetAside(goal, 'staircase_from', landingKey(from, target))) {
+    const rest = goal.staircaseStalled;
+    throw new StaircaseStalled(target, attemptsFor(goal).why('staircase_from', landingKey(from, target)), rest ? { landing: rest.landing, blocked: rest.blocked } : {});
+  }
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
   // Where a way down began at the surface, remembered: the way back up is
@@ -287,7 +319,25 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
   // below a beach, every step up filtered out, and returned at once five
   // times a second for two minutes, the landing chosen again each time.
   if (!choice) {
-    const before = bot.entity.position.clone();
+    const before = bot.entity.position.clone(), landing = before.floored();
+    // Progress is ground gained, not a step taken: a landing with no step
+    // on is measured against the last one it backed off from, both against
+    // today's target (it moves), by the distance to it or the height gained
+    // toward it. Nothing gained, and the cycle between is over: stepping out
+    // and backing off again gets no further. mid-230-s stepped out to
+    // (367, 75, 999) and backed off nine times in two minutes, each step out
+    // clearing the count of retreats (note 485). A landing past the
+    // retreat's reach is another stretch of shaft, measured afresh.
+    const last = tunnel.lastLanding && new Vec3(tunnel.lastLanding.x, tunnel.lastLanding.y, tunnel.lastLanding.z);
+    if (last && last.distanceTo(landing) <= RETREAT_REACH) {
+      const nearer = last.distanceTo(target) - landing.distanceTo(target), deeper = Math.sign(target.y - landing.y) * (landing.y - last.y);
+      if (Math.max(nearer, deeper) < 1) {
+        delete tunnel.lastLanding; tunnel.retreatsWithoutStep = 0; tunnel.noWay = 0;
+        throw staircaseStalled(goal, save, target, `gained no ground from the landing at ${landing} since backing off there last, ${Math.round(landing.distanceTo(target))} blocks from it; every step on was blocked (${blockedSays(options.blocked)})`,
+          { landing, blocked: options.blocked });
+      }
+    }
+    tunnel.lastLanding = { x: landing.x, y: landing.y, z: landing.z };
     let stuck = null;
     try { await retreat(bot, task, goal, save, { navigate }); }
     catch (err) { if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; stuck = err; }
@@ -303,21 +353,15 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
     const landingHadNone = (tunnel.retreatsWithoutStep || 0) >= 1;
     tunnel.retreatsWithoutStep = (tunnel.retreatsWithoutStep || 0) + 1;
     if (landingHadNone) {
-      tunnel.retreatsWithoutStep = 0; tunnel.noWay = 0;
-      const why = `backed off to a landing with no step toward it there either (${Object.entries(options.blocked || {}).map(([k, n]) => `${k} ${n}`).join(', ') || 'nothing open'})`;
-      setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
-      save();
-      throw new StaircaseStalled(target, why);
+      tunnel.retreatsWithoutStep = 0; tunnel.noWay = 0; delete tunnel.lastLanding;
+      throw staircaseStalled(goal, save, target, `backed off to a landing at ${landing} with no step toward it there either (${blockedSays(options.blocked)})`, { landing, blocked: options.blocked });
     }
     if (bot.entity.position.distanceTo(before) >= 0.5) { tunnel.noWay = 0; save(); if (stuck) throw stuck; return; }
     // Nowhere to back off to, and no step: nothing more to try from here.
     tunnel.noWay = (tunnel.noWay || 0) + 1;
     if (tunnel.noWay >= 1) {
-      tunnel.noWay = 0;
-      const why = `no safe step toward it (${Object.entries(options.blocked || {}).map(([k, n]) => `${k} ${n}`).join(', ') || 'nothing open'})`;
-      setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
-      save();
-      throw new StaircaseStalled(target, why);
+      tunnel.noWay = 0; delete tunnel.lastLanding;
+      throw staircaseStalled(goal, save, target, `no safe step toward it from ${landing} (${blockedSays(options.blocked)})`, { landing, blocked: options.blocked });
     }
     save();
     if (stuck) throw stuck;
@@ -463,7 +507,7 @@ async function retreatForTunnel(bot, task, goal, save, { navigate }) {
   Object.assign(movement, { canDig: false, allow1by1towers: false, scafoldingBlocks: [], allowedPosition: allowed });
   try {
     const matching = bot.registry.blocksArray.filter(b => natural.test(b.name) && !['sand', 'gravel'].includes(b.name)).map(b => b.id);
-    const candidates = bot.findBlocks({ matching, maxDistance: 16, count: 128, useExtraInfo: b => {
+    const candidates = bot.findBlocks({ matching, maxDistance: RETREAT_REACH, count: 128, useExtraInfo: b => {
       const p = b.position.offset(0, 1, 0);
       return p.y >= start.y - 2 && p.y <= start.y + 8 && !p.equals(start) && dry(p) && safeFromHostiles(bot, p);
     } }).map(p => p.offset(0, 1, 0));
@@ -500,4 +544,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
