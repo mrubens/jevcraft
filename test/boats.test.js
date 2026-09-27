@@ -162,3 +162,14 @@ test('resuming navigation clears an owned empty boat but leaves occupied and oth
   await clearOwnedBoatAtFeet(bot, new Task('continue'));
   assert.equal(bot.entities[1], undefined); assert.equal(bot.entities[2], occupied); assert.equal(bot.entities[3], stranger);
 });
+
+test('sitting in a boat between work passes, the bot gets out', async () => {
+  // mid-218-e: restarted in its boat, no physics for a rider, and a spider killed it where it sat.
+  const { leaveStrandedVehicle } = require('../src/boats');
+  const written = [];
+  const bot = { vehicle: { id: 7 }, supportFeature: () => true, _client: { write: (name, data) => { written.push(name); if (name === 'player_input' && data.inputs.shift) setTimeout(() => { bot.vehicle = null; }, 20); } } };
+  assert.equal(await leaveStrandedVehicle(bot), true);
+  assert.equal(bot.vehicle, null);
+  assert(written.includes('player_input'));
+  assert.equal(await leaveStrandedVehicle({ vehicle: null }), false);
+});

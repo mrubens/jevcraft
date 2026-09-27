@@ -585,6 +585,13 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       spawned = true;
       configureMovements(bot);
       console.log(`[bot] spawned as ${bot.username} (${bot.version})`);
+      // Put back in the boat it left in (boats.js leaveStrandedVehicle): the
+      // seat comes a moment after the spawn, and no crossing is under way
+      // this soon after joining.
+      const joinedAt = Date.now();
+      const seated = () => { if (Date.now() - joinedAt < 5000) require('./boats').leaveStrandedVehicle(bot).then(left => left && console.log('[bot] joined in a boat; got out'), err => console.log(`[bot] joined in a boat and could not get out: ${err.message}`)); };
+      bot.once('mount', seated);
+      if (bot.vehicle) seated();
       await bot.waitForChunksToLoad();
       if (ended || !bot.isAlive) return;
       ready = true;

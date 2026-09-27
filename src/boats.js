@@ -141,6 +141,19 @@ async function leaveBoat(bot) {
   if (bot.vehicle) throw new Error('Boat dismount was not confirmed by the server');
 }
 
+// Sitting in a boat between work passes: a crossing leaves its boat before
+// it returns, so a rider here is one left there, most often by a restart
+// (the server puts a player back in the vehicle it left in). Mineflayer runs
+// no physics for a rider, so every walk and wait after it went nowhere:
+// mid-218-e was restarted in its boat at the end of a crossing, twice sat
+// in it for minutes with no survival check, and a spider killed it where
+// it sat (2026-09-27). The trip, if still wanted, boards again.
+async function leaveStrandedVehicle(bot) {
+  if (!bot.vehicle) return false;
+  await leaveBoat(bot);
+  return true;
+}
+
 async function clearOwnedBoatAtFeet(bot, task) {
   if (bot.vehicle || !bot._ownedBoats?.size) return;
   for (const boat of Object.values(bot.entities || {})) {
@@ -334,4 +347,4 @@ async function boatTravelStep(bot, task, goal, save, destination, actions, clien
   }
 }
 
-module.exports = { LIMITS, boatItem, boatWater, dockNear, surveyBoatTrip, chooseBoat, boatTick, paddle, leaveBoat, clearOwnedBoatAtFeet, floatAfterBoat, preferredBoat, boatTravelStep };
+module.exports = { LIMITS, boatItem, boatWater, dockNear, surveyBoatTrip, chooseBoat, boatTick, paddle, leaveBoat, leaveStrandedVehicle, clearOwnedBoatAtFeet, floatAfterBoat, preferredBoat, boatTravelStep };
