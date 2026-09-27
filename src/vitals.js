@@ -610,4 +610,29 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   return true;
 }
 
-module.exports = { suffocatingBlock, douse, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
+// What maintainVitals would do this turn, as a claim (src/arbiter.js): the
+// same conditions, nothing done. The fire, the air and the head in a block
+// are reflexes; powder snow and a submerged head are pressing; the meal is
+// routine, pressing once sprinting is gone. A meal that waits on a renewing
+// shelter plan is a claim beside it now, not a turn that never comes.
+function claim(bot) {
+  if (!bot?.entity?.position || bot.game?.gameMode === 'creative') return null;
+  const reflex = require('./arbiter').observeReflexes(bot).find(r => r.layer === 'vitals');
+  if (reflex) return { layer: 'vitals', action: reflex.action, urgency: 'reflex', reflex: reflex.key, facts: reflex.facts, preemptible: false };
+  const facts = { health: bot.health, food: bot.food, air: bot.oxygenLevel };
+  if (inPowderSnow(bot) || bot._freezingAt > Date.now() - 3000) return { layer: 'vitals', action: 'out_of_powder_snow', urgency: 'pressing', facts: { ...facts, freezing: true } };
+  if (headSubmerged(bot) && !(bot._surfaceFailedAt > Date.now() - 60000)) return { layer: 'vitals', action: 'surface', urgency: 'pressing', facts: { ...facts, headUnderwater: true } };
+  if (!(bot.food <= 16 || (bot.health < 20 && bot.food < 18) || (bot.health <= 12 && bot.food < 20))) return null;
+  if (bot.food > 2 && closeHostile(bot)) return null;
+  const held = require('./danger').stanceHeld(bot);
+  if (bot.food > 6 && held && held.choice !== 'keep_working' && held.choice !== 'eat') return null;
+  const food = chooseFood(bot) || ((bot.food < 18 && bot.health < 20) || bot.food <= 6 ? lastResortFood(bot) : null);
+  if (!food) return null;
+  return { layer: 'vitals', action: 'eat', urgency: bot.food <= 6 ? 'pressing' : 'routine', facts: { ...facts, item: food.name }, cost: { seconds: EAT_MEAL_SECONDS } };
+}
+
+// The actions this layer reports, wherever it is run from (survival.js
+// stepOnce runs it too): the turn they took was the vitals'.
+const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'out_of_powder_snow', 'surface']);
+
+module.exports = { claim, ACTIONS, suffocatingBlock, douse, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };

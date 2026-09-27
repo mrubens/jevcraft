@@ -1183,4 +1183,22 @@ async function findFortressStep(bot, task, goal, save, actions) {
   }
 }
 
-module.exports = { prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };
+// What huntObserved would take the turn for (src/arbiter.js): a hunt on,
+// footing to fight from, and one of its kind in reach and alone. The route
+// to it (combatRoute) is a search and is not asked, so a mob the hunt then
+// finds no way to is claimed here and passed over there. Nor is the claim
+// on its kind staked: that is huntObserved's, as it runs.
+function claim(bot, goal = {}) {
+  const state = goal.mobHunt;
+  if (!state || !bot?.entity?.position || countOf(bot, state.item) >= state.targetCount) return null;
+  const handler = handlers[state.entity] || {};
+  if (!canBegin(bot, handler)) return null;
+  const near = Object.values(bot.entities || {}).filter(e => e.name === state.entity && valid(bot, e) && e.position.distanceTo(bot.entity.position) < 24)
+    .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position)).slice(0, 4);
+  const target = near.find(e => isolated(bot, e, handler) && !isSetAside(goal, 'hunt_target', e.uuid || e.id));
+  if (!target) return null;
+  return { layer: 'hunt', action: 'hunt', urgency: 'routine', facts: { entity: target.name, distance: Math.round(target.position.distanceTo(bot.entity.position) * 10) / 10,
+    item: state.item, have: countOf(bot, state.item), want: state.targetCount, health: bot.health } };
+}
+
+module.exports = { claim, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };

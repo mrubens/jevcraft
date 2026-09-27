@@ -4217,4 +4217,62 @@ class Survival {
   }
 }
 
-module.exports = { shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+// What this layer would claim of the turn (src/arbiter.js), read from the
+// same conditions stepOnce acts on and without acting: nothing is walked,
+// searched, reported or set aside here. A plan that failed or rests is a
+// fact on the claim, not the claim's end: stepOnce returned false for one,
+// and mid-231-o's turn fell to the work at 0.9 health (notes 465, 466).
+// The edge step (off_the_edge) is left out: its drop and ground searches
+// are not cheap.
+function claim(bot, goal = {}, survival = null) {
+  if (!bot?.entity?.position || bot.game?.gameMode === 'creative') return null;
+  const state = survival?.state || goal.survival || {};
+  const hp = bot.health ?? 20, now = Date.now();
+  const round = n => Math.round(n * 10) / 10;
+  const reflex = require('./arbiter').observeReflexes(bot).find(r => r.layer === 'survival');
+  if (reflex) return { layer: 'survival', action: reflex.action, urgency: 'reflex', reflex: reflex.key, facts: reflex.facts, preemptible: false };
+  // What rests, and why: the facts a failed plan leaves. Read straight from
+  // the record (progress.js), which attemptsFor would create on a first look.
+  const resting = {}, attempts = Object.values(state.attempts || {});
+  const rests = (action, target) => attempts.some(e => e.action === action && String(e.target) === target && e.until > now);
+  for (const entry of attempts) if (entry.action === 'act' && entry.until > now && String(entry.target).startsWith('survival:'))
+    resting[String(entry.target).slice(9)] = `${entry.why}; back in about ${Math.max(1, Math.round((entry.until - now) / 1000))} seconds`;
+  const hurt = bot._recentHurtAt > now - 4000;
+  const facts = { health: hp, food: bot.food, ...(bot.time?.timeOfDay !== undefined ? { timeOfDay: bot.time.timeOfDay } : {}), ...(hurt ? { hurtLately: true } : {}),
+    ...(Object.keys(resting).length ? { setAside: resting } : {}) };
+  const make = (action, urgency, more = {}) => ({ layer: 'survival', action, urgency: hurt && urgency === 'routine' ? 'pressing' : urgency, facts: { ...facts, ...more } });
+  const mob = t => ({ name: t.entity.name, distance: round(t.distance), seen: !!t.visible });
+  // A mob at arm's length, as stepOnce's atArm (in sight: canStrike is not
+  // asked here).
+  const atArm = threats(bot).filter(t => t.distance <= 3 && !shooter(t.entity) && t.visible && !nightHunted(bot, t.entity));
+  if (atArm.length && !claimed(bot, atArm[0].entity)) return make('escape_threat', 'pressing', { atArm: atArm.slice(0, 3).map(mob) });
+  const refuge = survival?.currentShelter?.();
+  if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot) });
+  const nightPlan = state.nightPlan?.until > now ? state.nightPlan : null;
+  if (nightPlan?.plan === 'hunt' && (nightPlan.food || shelterNeeded(bot))) return make('night_hunt', 'routine', { hunting: nightPlan.kind || null });
+  const threat = immediateThreat(bot);
+  if (threat) return make('escape_threat', 'pressing', { threat: threat.projectile ? { name: threat.entity.name, distance: round(threat.distance), projectile: true } : mob(threat) });
+  const underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
+  // sleepDebt() without its first-look write of sleptAtAge.
+  const debt = Number.isFinite(worldAge(bot)) && Number.isFinite(state.sleptAtAge) && worldAge(bot) - state.sleptAtAge > SLEEP_DEBT_TICKS;
+  const nightFree = underground && !debt && nightPlan?.plan !== 'shelter';
+  const needsShelter = shelterNeeded(bot) && !nightFree && nightPlan?.plan !== 'stay_up' && nightPlan?.plan !== 'hunt';
+  if (!needsShelter && state.recovery?.status === 'pending') return make('recover_items', 'routine', { dropsAt: state.recovery.position || null });
+  const expeditionFood = ((goal.preparingExpedition && goal.kind !== 'win') || goal.preparingEnd || goal.preparingNether) && bot.game?.difficulty !== 'peaceful';
+  const desiredFood = goal.preparingEnd ? 64 : goal.preparingNether ? NETHER_FOOD_POINTS : KIT_FOOD_POINTS;
+  const offWorld = !/overworld/.test(String(bot.game?.dimension || 'overworld'));
+  const hungerTrigger = offWorld ? 8 : !underground ? 18 : 12;
+  const hungry = bot.food <= hungerTrigger || (!offWorld && hp < 14 && bot.food < 18 && !chooseFood(bot));
+  const stockDriven = !offWorld && (goal.stockFood || expeditionFood || (goal.kind === 'survive' && bot.game?.difficulty !== 'peaceful'));
+  const supply = foodSupply(bot);
+  const needsFood = supply < desiredFood && (hungry || (stockDriven && !rests('food_search', 'stock')));
+  if (!needsShelter && !needsFood) return null;
+  // "Carry on" is Jev's own answer, held: the work's turn by his choice.
+  const carryOn = state.carryOnPlan;
+  if (carryOn && !(carryOn.until < now || needsShelter || bot.food <= carryOn.food - 2 || hp <= carryOn.health - 4)) return null;
+  const plan = nightPlan?.plan === 'shelter' || nightPlan?.plan === 'home' ? nightPlan.plan : null;
+  return make(needsShelter ? (plan === 'home' ? 'go_home_for_night' : 'secure_shelter') : 'obtain_food', needsShelter || bot.food <= 6 ? 'pressing' : 'routine',
+    { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}) } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood } : {}) });
+}
+
+module.exports = { claim, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

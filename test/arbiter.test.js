@@ -123,3 +123,75 @@ test('the arbiter keeps the held reflexes for the next look', async () => {
   await arbiter.arbitrate(fakeBot(), [claim('work')], { state, dry: true });
   assert.deepEqual(state.reflexes, []);
 });
+
+// The shadow's claims, from a bot on open ground: air above y 64, stone
+// under it.
+const world = (over = {}) => {
+  const bot = fakeBot({ game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival', minY: -64, height: 384 },
+    time: { timeOfDay: 6000, age: 100000 }, inventory: { items: () => [], slots: [] }, registry: { entitiesByName: {} },
+    blockAt: p => p.y < 64 ? { name: 'stone', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p }, ...over });
+  bot.entity.eyeHeight = 1.62; bot.entity.metadata = [0];
+  return bot;
+};
+const claimsOf = (bot, goal, survival) => [require('../src/survival').claim(bot, goal, survival), require('../src/vitals').claim(bot),
+  require('../src/mob-hunt').claim(bot, goal), { layer: 'work', action: goal.step?.action || 'step', urgency: 'routine', facts: {} }];
+
+test('a creeper coming on while the work holds the turn is a reflex: the shadow says the work was given it', async () => {
+  const bot = world();
+  bot.entities = { 7: { id: 7, name: 'creeper', type: 'hostile', position: new Vec3(5, 64, 0), height: 1.7, metadata: [] } };
+  const goal = { kind: 'win', step: { action: 'mine', item: 'iron_ore' }, survival: {} };
+  const survival = { state: goal.survival, currentShelter: () => null };
+  const claims = claimsOf(bot, goal, survival);
+  assert.equal(claims[0].urgency, 'reflex'); assert.equal(claims[0].reflex, 'creeper'); assert.equal(claims[0].action, 'creeper_back_off');
+  assert.equal(claims[0].facts.creeper, 5); assert.equal(claims[0].facts.seen, true);
+  const lines = [];
+  const turn = arbiter.shadow(bot, () => claims, { log: line => lines.push(line) });
+  assert.deepEqual({ layer: turn.would.layer, by: turn.would.by, ask: turn.would.ask }, { layer: 'survival', by: 'reflex', ask: false });
+  turn.gave('work');
+  assert.deepEqual(lines, ['[arbiter] would survival creeper_back_off, gave work']);
+  assert.deepEqual(bot._arbiterShadow.would, { layer: 'survival', action: 'creeper_back_off', by: 'reflex' });
+  assert.equal(bot._arbiterShadow.gave, 'work');
+  // The same difference again at once is not said again; agreement never is.
+  arbiter.shadow(bot, () => claims, { log: line => lines.push(line) }).gave('work');
+  arbiter.shadow(bot, () => claims, { log: line => lines.push(line) }).gave('survival');
+  assert.equal(lines.length, 1);
+  // Held to two past the line: the creeper steps back to nine and a half.
+  bot.entities[7].position = new Vec3(arbiter.CREEPER_REACH + 1.5, 64, 0);
+  assert.equal(require('../src/survival').claim(bot, goal, survival).reflex, 'creeper');
+  bot._arbiter.reflexes = [];
+  assert.notEqual(require('../src/survival').claim(bot, goal, survival)?.reflex, 'creeper');
+});
+
+test('a shelter set aside at 0.9 health, at night, is a live survival claim beside the work, not a fall-through', async () => {
+  const bot = world({ health: 0.9, food: 10, time: { timeOfDay: 14000, age: 100000 } });
+  const now = Date.now();
+  const goal = { kind: 'win', step: { action: 'obtain', item: 'bread' }, survival: { attempts: {
+    'act:survival:secure_shelter': { action: 'act', target: 'survival:secure_shelter', why: 'no route to a shelter site (the search ran out of time)', at: now, until: now + 600000, count: 1 } } } };
+  const survival = { state: goal.survival, currentShelter: () => null };
+  const claims = claimsOf(bot, goal, survival);
+  const mine = claims[0];
+  assert.equal(mine.layer, 'survival'); assert.equal(mine.action, 'secure_shelter'); assert.equal(mine.urgency, 'pressing');
+  assert.equal(mine.facts.health, 0.9);
+  assert.match(mine.facts.setAside.secure_shelter, /no route to a shelter site/);
+  assert.equal(claims[1], null, 'nothing to eat carried: no meal to claim');
+  assert.deepEqual(Object.keys(goal.survival), ['attempts'], 'the claim wrote nothing');
+  // Shadow: the rules would give it to survival, and Jev would be asked.
+  const lines = [];
+  const turn = arbiter.shadow(bot, () => claims, { log: line => lines.push(line) });
+  assert.equal(turn.would.layer, 'survival'); assert.equal(turn.would.ask, true);
+  turn.gave('work');
+  assert.deepEqual(lines, ['[arbiter] would survival secure_shelter (would ask Jev: survival, work), gave work']);
+  // Live: one turn_priority question, the set-aside said as a fact.
+  let tree;
+  const out = await arbiter.arbitrate(bot, claims, { state: {}, mobs: [], decide: async (id, q) => { tree = q.tree; return { path: ['survival'] }; } });
+  assert.deepEqual(Object.keys(tree).sort(), ['survival', 'work']);
+  assert.match(tree.survival.description.facts.setAside.secure_shelter, /ran out of time/);
+  assert.equal(out.winner.layer, 'survival');
+});
+
+test('the shadow never throws into the loop: a claim that fails is logged once and passed over', () => {
+  const bot = fakeBot();
+  const turn = arbiter.shadow(bot, () => { throw new Error('no world'); });
+  assert.equal(turn.would, undefined);
+  assert.doesNotThrow(() => turn.gave('work'));
+});

@@ -126,33 +126,80 @@ const optionOf = c => ({ description: { action: c.action, urgency: c.urgency, fa
 //   ctx.decide  the question runner (decisions.decide), for the tests
 //   ctx.now, ctx.mobs, ctx.task, ctx.goal, ctx.save, ctx.client
 async function arbitrate(bot, claims, ctx = {}) {
-  const now = ctx.now ?? Date.now();
-  const state = ctx.state || (bot ? (bot._arbiter ||= {}) : {});
-  const live = (claims || []).filter(Boolean);
-  const reflexes = live.filter(c => c.urgency === 'reflex').sort((a, b) => (REFLEX_RANK[a.reflex] ?? 99) - (REFLEX_RANK[b.reflex] ?? 99));
-  state.reflexes = [...new Set(reflexes.map(c => c.reflex).filter(Boolean))];
-  const done = async (result) => {
-    if (!ctx.dry && result.winner?.run) result.acted = !!(await result.winner.run(ctx.task));
-    return result;
-  };
-  if (reflexes.length) { delete state.ruling; return done({ winner: reflexes[0], by: 'reflex', ask: false }); }
-  if (!live.length) { delete state.ruling; return { winner: null, by: 'none', ask: false }; }
-  if (live.length === 1) { delete state.ruling; return done({ winner: live[0], by: 'single', ask: false }); }
-  const seen = observe(bot, ctx);
-  const why = broken(state.ruling, live, seen, now);
-  if (!why) return done({ winner: live.find(c => c.layer === state.ruling.winner), by: 'held', ask: false, ruling: state.ruling });
-  let winner;
-  if (ctx.dry) winner = rulesPick(live);
-  else {
+  const result = rule(bot, claims, ctx);
+  if (result.pending) {
+    const { live, seen, now, why } = result.pending;
     const decide = ctx.decide || require('./decisions').decide;
     const tree = Object.fromEntries(live.map(c => [c.layer, optionOf(c)]));
     const decision = await decide('turn_priority', { client: ctx.client, bot, task: ctx.task, goal: ctx.goal, save: ctx.save, tree,
       state: { health: bot?.health, food: bot?.food, claims: live.map(c => c.layer) } });
     if (decision?.stale) return { winner: null, by: 'stale', ask: true, why };
-    winner = live.find(c => c.layer === decision?.path?.[0]) || rulesPick(live);
+    const winner = live.find(c => c.layer === decision?.path?.[0]) || rulesPick(live);
+    const state = stateOf(bot, ctx);
+    state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + RULING_MS, ...seen };
+    Object.assign(result, { winner, by: 'jev', ruling: state.ruling });
+    delete result.pending;
   }
-  state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + RULING_MS, ...seen };
-  return done({ winner, by: ctx.dry ? 'rules' : 'jev', ask: true, why, ruling: state.ruling });
+  if (!ctx.dry && result.winner?.run) result.acted = !!(await result.winner.run(ctx.task));
+  return result;
 }
 
-module.exports = { arbitrate, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, FOOD_BANDS };
+const stateOf = (bot, ctx) => ctx.state || (bot ? (bot._arbiter ||= {}) : (ctx.state = {}));
+
+// The ruling by rules alone, at once: everything but the question. Dry, the
+// rules' pick stands where Jev would be asked, and is held as his would be.
+function rule(bot, claims, ctx = {}) {
+  const now = ctx.now ?? Date.now();
+  const state = stateOf(bot, ctx);
+  const live = (claims || []).filter(Boolean);
+  const reflexes = live.filter(c => c.urgency === 'reflex').sort((a, b) => (REFLEX_RANK[a.reflex] ?? 99) - (REFLEX_RANK[b.reflex] ?? 99));
+  state.reflexes = [...new Set(reflexes.map(c => c.reflex).filter(Boolean))];
+  if (reflexes.length) { delete state.ruling; return { winner: reflexes[0], by: 'reflex', ask: false }; }
+  if (!live.length) { delete state.ruling; return { winner: null, by: 'none', ask: false }; }
+  if (live.length === 1) { delete state.ruling; return { winner: live[0], by: 'single', ask: false }; }
+  const seen = observe(bot, ctx);
+  const why = broken(state.ruling, live, seen, now);
+  if (!why) return { winner: live.find(c => c.layer === state.ruling.winner), by: 'held', ask: false, ruling: state.ruling };
+  if (!ctx.dry) return { winner: null, ask: true, why, pending: { live, seen, now, why } };
+  const winner = rulesPick(live);
+  state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + RULING_MS, ...seen };
+  return { winner, by: 'rules', ask: true, why, ruling: state.ruling };
+}
+
+// Shadow mode: the arbiter's ruling beside what the old layers did, before
+// it has the turn. makeClaims is called at once; gave(layer) is called with
+// the layer that acted. A difference is logged (the same one at most every
+// ten seconds) and the pair kept on bot._arbiterShadow for the flight
+// record. Nothing here may stop the loop: a failure is logged once.
+const SHADOW_REPEAT_MS = 10000;
+let shadowFailed = false;
+const failedOnce = err => { if (!shadowFailed) { shadowFailed = true; console.log(`[arbiter] shadow failed (said once): ${err?.stack || err}`); } };
+const says = w => w ? `${w.layer} ${w.action}${w.ask ? ` (would ask Jev: ${w.claims.join(', ')})` : ''}` : 'nothing';
+function shadow(bot, makeClaims, { log = console.log, now = Date.now } = {}) {
+  let would;
+  try {
+    const claims = (makeClaims() || []).filter(Boolean);
+    const r = rule(bot, claims, { dry: true, now: now() });
+    would = r.winner ? { layer: r.winner.layer, action: r.winner.action, by: r.by, ask: r.ask, claims: claims.map(c => c.layer) } : null;
+  } catch (err) { failedOnce(err); return { would: undefined, gave() {} }; }
+  let given = false;
+  return {
+    would,
+    gave(layer) {
+      if (given || !bot) return;
+      given = true;
+      try {
+        const at = now();
+        bot._arbiterShadow = { would: would ? { layer: would.layer, action: would.action, by: would.by, ...(would.ask ? { ask: true } : {}) } : null, gave: layer, at };
+        if ((would?.layer || null) === (layer || null)) return;
+        const line = `[arbiter] would ${says(would)}, gave ${layer || 'nothing'}`;
+        const last = bot._arbiterShadowSaid;
+        if (last?.line === line && at - last.at < SHADOW_REPEAT_MS) return;
+        bot._arbiterShadowSaid = { line, at };
+        log(line);
+      } catch (err) { failedOnce(err); }
+    },
+  };
+}
+
+module.exports = { arbitrate, rule, shadow, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, FOOD_BANDS };

@@ -4400,6 +4400,26 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
   return { ok: true, goal };
 }
 
+// The request's claim on the turn (src/arbiter.js): its next step, and how
+// it has been going. Always there while the request runs.
+function workClaim(goal) {
+  if (!goal) return null;
+  return { layer: 'work', action: goal.step?.action || 'step', urgency: 'routine', facts: { request: goal.request || goal.kind || null,
+    ...(goal.step?.item || goal.step?.block ? { item: goal.step.item || goal.step.block } : {}), failures: goal.failures || 0, stalls: goal.stalls || 0,
+    ...(goal.lastError ? { lastError: String(goal.lastError).slice(0, 160) } : {}) } };
+}
+
+// The arbiter in shadow (src/arbiter.js): what it would give this pass to,
+// from every layer's claim, beside what the layers below did. It acts on
+// nothing, and a failure in it is logged once and passed over.
+function shadowTurn(bot, goal, activeWork, survival) {
+  return require('./arbiter').shadow(bot, () => [require('./survival').claim(bot, activeWork, survival), require('./vitals').claim(bot),
+    require('./mob-hunt').claim(bot, activeWork), workClaim(goal)]);
+}
+// The layer an action reported during the survival step belongs to: the
+// step runs the vitals' own meal and douse.
+const reportedLayer = (before, after) => after?.at && after.at !== before && require('./vitals').ACTIONS.has(after.action) ? 'vitals' : null;
+
 async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = () => {}, decisionClient, survival, recoveryAdviser, backoffMs = 3000 } = {}) {
   const save = () => store.save(goal);
   task.opportunityClient = decisionClient;
@@ -4450,6 +4470,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     const before = JSON.stringify(inventory(bot));
     const constructionBefore = constructionObservation(bot, goal);
     const location = bot.entity.position.clone();
+    let turnShadow = null, layerNow = null;
     try {
       let complete = false;
       const activeWork = goal.kind === 'bundle' ? goal.batchWork || goal.tasks.find(child => child.status !== 'complete') || goal : goal;
@@ -4457,27 +4478,36 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // A requested, equipped encounter can approach its selected mob. All
       // other survival work keeps the ordinary hostile-avoidance policy.
       const endTask = goal.kind === 'win' && dimension(bot) === 'end';
+      // End combat owns the End's turn: no shadow there.
+      turnShadow = endTask ? null : shadowTurn(bot, goal, activeWork, survival); layerNow = 'hunt';
       require('./turn').takeTurn(bot, 'hunt', 'observed');
       if (!endTask && await huntObserved(bot, task, activeWork, saveWork, { navigate }, decisionClient)) {
+        turnShadow?.gave('hunt');
         goal.failures = 0; goal.stalls = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); continue;
       }
+      layerNow = 'work';
       if (goal.recoveryAdvice?.active) {
         await maintainVitals(bot, task);
-        if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
+        if (await recoveryAdviser.step(task, goal, save)) { turnShadow?.gave('work'); save(); onStep(goal); continue; }
       }
       // End combat owns eating and arena escape. Overworld nighttime shelter
       // choices are invalid in the End, where the dragon can destroy them.
       await keepRoom(bot, task, goal);
+      const reportedBefore = activeWork.survivalAction?.at; layerNow = 'survival';
       if (!endTask && await survival.step(task, activeWork, saveWork, () => onStep(goal))) {
+        turnShadow?.gave(reportedLayer(reportedBefore, activeWork.survivalAction) || 'survival');
         goal.stalls = 0; goal.failures = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); continue;
       }
+      let vitalsActed = !!reportedLayer(reportedBefore, activeWork.survivalAction);
       task.interruptCheck = bot.game.gameMode === 'creative' || endTask ? undefined : () => checkThreats(bot);
       // Air and eating carried food are rules, not judgments: there is no
       // request that is better served by staying hungry with bread in hand.
+      layerNow = 'vitals';
       if (!endTask) {
         require('./turn').takeTurn(bot, 'vitals', 'maintain');
-        await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
+        await maintainVitals(bot, task, step => { vitalsActed = true; goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
       }
+      turnShadow?.gave(vitalsActed ? 'vitals' : 'work');
       require('./turn').takeTurn(bot, 'work', goal.step?.action || 'step');
       if (!endTask && await upkeepStep(bot, task, goal, save, decisionClient, onStep)) { goal.stalls = 0; save(); onStep(goal); continue; }
       bot._goal = goal;
@@ -4542,6 +4572,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       if (goal.stalls > 30) throw new Blocked(`No measurable progress on ${JSON.stringify(goal.step)}`);
     } catch (err) {
       task.interruptCheck = undefined;
+      // Thrown before a layer said it had the turn: the one that was
+      // running (not bot._turn, which the hunt marks before it looks).
+      turnShadow?.gave(layerNow);
       if (err.name === 'Stalled' || bot._stalls?.stall) continue;
       if (loopCheck(task)) { noteError(goal, err); save(); onStep(goal); continue; }
       noteError(goal, err);
