@@ -333,3 +333,46 @@ test('no gap jumps in the Nether: a jump that falls short there is the lava sea'
   const movement = configureMovements(bot);
   assert.deepEqual(jumps(movement, gapWorld()), [], 'the crack a miss survives in the Overworld is not jumped here');
 });
+
+// A world of named cells for the pathfinder's view; `name(p)` names each.
+function namedWorld(dimension, name) {
+  const bot = botFixture(), Block = require('prismarine-block')(bot.registry);
+  bot.game.dimension = dimension; bot.health = 8;
+  bot.blockAt = point => {
+    const p = point.floored();
+    const block = Block.fromStateId(bot.registry.blocksByName[name(p)].defaultState); block.position = p; return block;
+  };
+  bot.inventory.items = () => [{ name: 'cobblestone', type: bot.registry.itemsByName.cobblestone.id, count: 64 }];
+  const movement = configureMovements(bot); movement.canDig = false;
+  return movement;
+}
+
+test('no block is laid level beside the floor where a miss ends in lava or beside it', () => {
+  // mid-235-p-nether-2 towered beside its span over the lava sea, backed off the top to lay a block beside it, fell five onto the span and slid into the sea (note 514).
+  for (const sea of [true, false]) {
+    // A one-wide span at y 31 along z 0 over lava (or ground), and a tower on it at x 5 up to y 35.
+    const movement = namedWorld('the_nether', p => p.x === 5 && p.z === 0 && p.y >= 31 && p.y <= 35 ? 'cobblestone'
+      : p.y === 31 && p.z === 0 ? 'cobblestone' : p.y <= 31 ? (sea ? 'lava' : 'netherrack') : 'air');
+    const neighbors = movement.getNeighbors({ x: 5, y: 36, z: 0, remainingBlocks: 64 });
+    const beside = neighbors.filter(n => n.toPlace.some(p => p.dy === 0));
+    if (sea) assert.equal(beside.length, 0, 'nothing laid beside the tower over the span and the sea');
+    else assert(beside.some(n => n.x === 4 && n.y === 36), 'over ground the tower still bridges off');
+    assert(neighbors.some(n => n.x === 5 && n.y === 37 && n.z === 0), 'the tower still goes up');
+  }
+  // Nor a span laid out over the lava sea itself: a miss is the sea.
+  const movement = namedWorld('the_nether', p => p.y === 31 && p.z === 0 && p.x <= 0 ? 'cobblestone' : p.y <= 31 ? 'lava' : 'air');
+  const out = movement.getNeighbors({ x: 0, y: 32, z: 0, remainingBlocks: 64 });
+  assert(!out.some(n => n.toPlace.some(p => p.dy === 0)), 'no block laid out over the lava from the span\'s end');
+  assert(out.some(n => n.x === -1 && n.y === 32), 'back along the span is open');
+});
+
+test('no jump up, across, onto a cell with lava beside it', () => {
+  // mid-235-p-fortress-3 jumped out of a trench onto the cells beside a lava flow and its side went into it (note 514).
+  for (const lava of [true, false]) {
+    // A trench floor at y 47 for x >= 0; a step up at x -1 (floor y 48); lava at feet height beside the step at z 1.
+    const movement = namedWorld('the_nether', p => p.x === -1 && p.y === 49 && p.z === 1 ? (lava ? 'lava' : 'air')
+      : p.y <= 47 || p.x <= -1 && p.y <= 48 ? 'netherrack' : 'air');
+    const up = movement.getNeighbors({ x: 0, y: 48, z: 0, remainingBlocks: 0 }).filter(n => n.x === -1 && n.y === 49 && n.z === 0);
+    assert.equal(up.length, lava ? 0 : 1, lava ? 'not up beside the lava' : 'up the step as before');
+  }
+});

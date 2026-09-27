@@ -120,7 +120,22 @@ class SurvivalMovements extends Movements {
     // it back until it lands. mid-220-e, on a fortress leg, dropped three
     // blocks to the lava sea's shore and went on into the sea (2026-09-27).
     const lavaBy = next => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava'));
-    for (let i = kept.length - 1; i >= 0; i--) if (node.y - kept[i].y >= 2 && lavaBy(kept[i])) kept.splice(i, 1);
+    // Nor a jump up onto one, across: the jump's arc carries the body on
+    // past the cell as the fall does. mid-235-p-fortress-3 jumped out of a
+    // trench onto the cells beside a lava flow at 14.6 health and its side
+    // went into the flow; fifteen seconds of burning after (note 514).
+    const airborne = next => node.y - next.y >= 2 || next.y > node.y && (next.x !== node.x || next.z !== node.z);
+    // No block laid level beside the floor where a miss ends in lava: the
+    // pathfinder lays it by backing to the edge crouched, and off the ground
+    // mid-jump a crouch holds nothing. mid-235-p-nether-2, towering beside
+    // its own span over the lava sea at 8.1 health, backed off the tower's
+    // top to lay a block beside it, fell five onto the one-wide span and
+    // slid off into the sea (note 514). Over lava a span is Jev's to choose
+    // (cross_toward), said with its cost.
+    const missIntoLava = p => (p.dx || p.dz) && !p.useOne && p.dy === 0 && this.fallIntoLava({ x: p.x + p.dx, y: p.y + 1, z: p.z + p.dz });
+    for (let i = kept.length - 1; i >= 0; i--) {
+      if (airborne(kept[i]) && lavaBy(kept[i]) || kept[i].toPlace?.some(missIntoLava)) kept.splice(i, 1);
+    }
     for (const next of kept) {
       if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava')) ||
         (nether && this.deadlyDropBeside(next))) next.cost += LAVA_EDGE_COST;
@@ -128,6 +143,23 @@ class SurvivalMovements extends Movements {
     // Nor back onto the edge the bot has just stepped back from, while the
     // mobs it stepped back from are about (terrain.js holdOffEdge).
     return this.bot?._edgeHold ? kept.filter(next => !edgeHeld(this.bot, next, this._hostileObservation.entities)) : kept;
+  }
+
+  // Where a body with its feet at `feet`, over nothing, comes down: into
+  // lava, or two or more onto a cell with lava beside it (the mid-220-e
+  // rule above). Unknown is no fact.
+  fallIntoLava(feet) {
+    for (let dy = 1; dy <= DROP_DEEPEST; dy++) {
+      const under = this.getBlock(feet, 0, -dy, 0);
+      if (under.name === undefined) return false;
+      if (/lava/.test(under.name)) return true;
+      if (under.liquid) return false;
+      if (!under.physical) continue;
+      if (dy - 1 < 2) return false;
+      const landing = { x: feet.x, y: feet.y - dy + 1, z: feet.z };
+      return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(y => this.getBlock(landing, dx, y, dz)?.name === 'lava'));
+    }
+    return false;
   }
 
   // What lies below each cell round `node` that the body could go over: the
