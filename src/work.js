@@ -296,7 +296,17 @@ async function gatherBlocks(bot, task, goal, save, { acquire = acquireStep } = {
   const nether = /nether/.test(String(bot.game?.dimension || ''));
   const item = nether ? 'netherrack' : pickaxeTier(bot) >= 1 ? 'cobblestone' : 'dirt';
   goal.step = { action: 'block_reserve', item, have }; save();
-  try { await acquire(bot, task, item, countOf(bot, item) + (BLOCK_RESERVE - have), goal, save); }
+  // Round after round until the reserve is met or a round gains nothing: a
+  // mining round ends after one block of stone or netherrack, and each end
+  // was a new upkeep question, sixteen for a reserve of sixteen (the Fable
+  // advice on note 423).
+  try {
+    for (let round = 0; round < BLOCK_RESERVE && blockStock(bot) < BLOCK_RESERVE; round++) {
+      const before = blockStock(bot);
+      await acquire(bot, task, item, countOf(bot, item) + (BLOCK_RESERVE - blockStock(bot)), goal, save);
+      if (blockStock(bot) <= before) break;
+    }
+  }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'block_reserve', 'gather', err, 600000); }
   // A round that gained nothing is a failure too, said on the option next
   // time and resting it after two: mid-202-l chose "mine netherrack" sixteen

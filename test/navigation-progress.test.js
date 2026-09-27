@@ -98,3 +98,16 @@ test('the portal way held says its pace and where its minutes went', () => {
   assert.match(says, /Its minutes went to: ascend to surface 14, mine 11, fill bucket 9, cast: pour 6\./);
   assert.match(says, /2 obsidian in 40 minutes \(about 20 a block\), the 8 still to come would take about 160 minutes more/);
 });
+
+test('blocks chosen for the reserve are gathered round after round until the reserve is met', async () => {
+  // A mining round ends after one block of stone: sixteen upkeep questions for a reserve of sixteen (the Fable advice, 2026-09-27).
+  const { gatherBlocks } = require('../src/work');
+  const { BLOCK_RESERVE } = require('../src/inventory-tidy');
+  let n = 0;
+  const bot = { game: { dimension: 'the_nether' }, inventory: { items: () => (n ? [{ name: 'netherrack', count: n }] : []) } };
+  const goal = { kind: 'win' };
+  let rounds = 0;
+  await gatherBlocks(bot, new Task('blocks'), goal, () => {}, { acquire: async () => { rounds++; n++; } });
+  assert.equal(n, BLOCK_RESERVE, 'the reserve met in one choice');
+  assert.equal(rounds, BLOCK_RESERVE);
+});
