@@ -960,6 +960,15 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
       bot.chat?.('Leaving this fortress for now. Searching on for another way in.');
       return null;
     } };
+  // What waits at the bricks, seen or not: mid-227-o dug down ten blocks
+  // into its fortress told "none in view", onto a blaze two blocks off and
+  // six wither skeletons, and was dead in five seconds (note 418). The
+  // bot knows the mobs about whether a wall is between or not.
+  const atBricks = (() => { try { return threats(bot, 64).filter(t => t.entity.position && t.entity.position.distanceTo(new Vec3(nearest.x, nearest.y, nearest.z)) <= 16); } catch (_) { return []; } })();
+  const counted = {};
+  for (const t of atBricks) counted[t.entity.name] = (counted[t.entity.name] || 0) + 1;
+  const waiting = Object.entries(counted).map(([n, c]) => `${c} ${n.replaceAll('_', ' ')}${c === 1 ? '' : 's'}`).join(', ');
+  if (waiting) for (const option of Object.values(options)) option.description += ` Within sixteen blocks of the bricks, seen or not: ${waiting}; a way that arrives among them arrives in their fight.`;
   // What each way came to on this approach, said with it.
   for (const [key, option] of Object.entries(options)) {
     const tries = (state.approach?.failed || []).filter(f => f.choice === key);
@@ -967,6 +976,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   }
   return { options, facts: { fortress: { distance: flat, height: dy }, health: bot.health, food: bot.food, blocksCarried: blocksCarried(bot),
     threatsInView: inView.map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
+    ...(waiting ? { atTheBricks: waiting } : {}),
     ...(state.approach?.failed?.length ? { failed: state.approach.failed.map(f => `${f.choice.replaceAll('_', ' ')}: ${f.why}`) } : {}) } };
 }
 

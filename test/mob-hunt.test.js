@@ -975,3 +975,21 @@ test('at the end of a span the crouch is let go only once the body has stopped',
   const release = log.filter(l => l.startsWith('sneak:false')).at(-1);
   assert.equal(release, 'sneak:false:0.00', `the crouch let go at rest: ${log.slice(-4).join(' ')}`);
 });
+
+test('the ways to a fortress say the mobs at its bricks, seen or not', async () => {
+  // mid-227-o dug down into its fortress told "none in view", onto a blaze two blocks off and six wither skeletons (2026-09-27).
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot } = fortressAcrossLava();
+  bot.entities = {
+    4: { id: 4, name: 'wither_skeleton', type: 'hostile', position: new Vec3(33.5, 65, 1.5), height: 2.4, width: 0.7, isValid: true },
+    5: { id: 5, name: 'wither_skeleton', type: 'hostile', position: new Vec3(36.5, 65, 0.5), height: 2.4, width: 0.7, isValid: true },
+    6: { id: 6, name: 'blaze', type: 'hostile', position: new Vec3(31.5, 67, 0.5), height: 1.8, width: 0.6, isValid: true },
+  };
+  bot.world = { raycast: () => ({ intersect: bot.entity.position }) };
+  const client = jevStub(['keep_searching']);
+  const goal = { fortressSearch: { axis: 1, legs: 3, target: { x: 96, y: 65, z: 0 } } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => {}, tunnel: async () => {} });
+  const { options, state } = client.asked[0];
+  assert.match(state.atTheBricks || '', /2 wither skeletons, 1 blaze|1 blaze, 2 wither skeletons/);
+  for (const [key, text] of Object.entries(options)) assert.match(text, /Within sixteen blocks of the bricks, seen or not: .*wither skeleton/, key);
+});
