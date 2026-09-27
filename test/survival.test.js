@@ -3437,3 +3437,16 @@ test('a step back from the lava edge that goes nowhere is no answer: the next fo
   assert.equal(await survival.runAway(new Task('t'), {}, () => {}, []), false);
   assert.equal(walks.length, 2, 'both footings tried');
 });
+
+test('an action reported twenty times in a second without the bot moving is set aside a moment, emergencies too', () => {
+  // The step off an edge, the step back from lava and keep working each spun a hundred times a second (notes 370, 377, 380).
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {} });
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  const goal = {};
+  for (let n = 0; n < 20; n++) survival.report(goal, () => {}, { action: 'leave_lava_edge' });
+  assert.throws(() => survival.report(goal, () => {}, { action: 'leave_lava_edge' }), e => e.name === 'SetAside');
+  assert.doesNotThrow(() => survival.report(goal, () => {}, { action: 'fight' }), 'another action is not');
+  // Moving, it is not a spin.
+  const moving = new Survival(Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {} }), {}, { state: { shelters: [] } });
+  for (let n = 0; n < 25; n++) { moving.bot.entity.position = new Vec3(0.5 + n, 64, 0.5); moving.report(goal, () => {}, { action: 'off_the_edge' }); }
+});

@@ -672,6 +672,19 @@ class Survival {
     // dig in, once a second at the surface with a spider coming) was set
     // aside on the goal and never refused here (2026-09-25).
     const key = `survival:${action.action}`;
+    // Any action, an emergency's too, reported twenty times in a second with
+    // the bot not moving is answering nothing: it is refused five seconds and
+    // the rest of the turn answers. The step off an edge, the step back from
+    // lava, keep working and the pillar held each spun so, a hundred times a
+    // second, until a creeper, an arrow or a zombie ended it (notes 339,
+    // 370, 377, 380; 2026-09-27).
+    const now = Date.now(), here = this.bot.entity?.position;
+    const spin = this._spin ||= {};
+    if (spin.until?.[key] > now) throw Object.assign(new Error(`${action.action.replaceAll('_', ' ')} is set aside: it ran twenty times in a second and the bot did not move`), { name: 'SetAside', until: spin.until[key] });
+    const run = spin.runs?.[key];
+    if (run && now - run.since < 1000 && here && run.at && here.distanceTo(run.at) < 0.3) run.count++;
+    else (spin.runs ||= {})[key] = { since: now, at: here?.clone?.() || null, count: 1 };
+    if (spin.runs[key].count >= 20) { (spin.until ||= {})[key] = now + 5000; delete spin.runs[key]; console.log(`[survival] ${action.action} ran twenty times in a second without the bot moving: set aside five seconds`); }
     const flip = !EMERGENCIES.has(action.action) && flipped(goal, key);
     if (flip || (!HOLDS.has(action.action) && !EMERGENCIES.has(action.action) && (refused(this, key) || refused(goal, key)))) {
       const entry = (flip && attemptsFor(goal).of('flip')[key]) || attemptsFor(this).of('act')[key] || attemptsFor(goal).of('act')[key];
