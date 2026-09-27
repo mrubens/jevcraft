@@ -183,3 +183,22 @@ test('seated by the server before the boat is known, the bot still gets out', as
   assert.equal(bot._seatedIn, null);
   assert.deepEqual(written.map(w => w[0]), ['player_input', 'player_input'], 'shift down, then let go');
 });
+
+test('on the way back to a portal across water, the boat is offered, and a way refused says why', async () => {
+  // mid-229-k walked the shore of a lake eighty blocks across for twenty minutes with an oak boat in its pack; its error said "undefined" (2026-09-27).
+  const { walkToKnownPortal } = require('../src/work');
+  const { setAside } = require('../src/progress');
+  const bot = Object.assign(new EventEmitter(), lake(200), { registry: require('minecraft-data')('26.1'), oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'oak_boat', count: 1 }] }, world: { raycast: () => null },
+    clearControlStates() {}, setControlState() {}, stopDigging() {} });
+  bot.pathfinder = { ...bot.pathfinder, setGoal() {}, isMoving: () => false, goto: async () => { throw Object.assign(new Error('No path'), { name: 'NoPath' }); } };
+  const asked = [];
+  const task = new Task('back');
+  task.opportunityClient = { systemOne: async ({ state }) => { asked.push(state); return { answers: { travel: { choice: 'swim' } } }; } };
+  const goal = { portals: [{ x: 120, y: 65, z: 0, dimension: 'overworld' }] };
+  setAside(goal, 'staircase', { x: 120, y: 64, z: 0 }, 'lava or water underfoot', 600000);
+  await assert.rejects(walkToKnownPortal(bot, task, goal, () => {}, 'overworld'), err => !/undefined/.test(err.message) && /lava or water underfoot/.test(err.message));
+  assert.equal(asked.length, 1, 'the boat was Jev\'s to choose');
+  assert(asked[0].waterBlocks >= 30);
+  assert.equal(asked[0].carriedBoat, 'oak_boat');
+});

@@ -226,6 +226,8 @@ class StaircaseStalled extends Error {
 // moves a block or two with every step taken toward it.
 const area = t => ({ x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 });
 const staircaseResting = (goal, target) => isSetAside(goal, 'staircase', area(target));
+// Why the staircase toward `target` rests, as its set-aside said it.
+const staircaseWhy = (goal, target) => attemptsFor(goal).why('staircase', area(target)) || 'the staircase toward it is resting';
 
 async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approach = false, strict = false, within = null, retreat = retreatForTunnel }) {
   if (staircaseResting(goal, target)) throw new StaircaseStalled(target, attemptsFor(goal).why('staircase', area(target)));
@@ -463,4 +465,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { descentTargets, natural, NoSafeWay, StaircaseStalled, staircaseResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { descentTargets, natural, NoSafeWay, StaircaseStalled, staircaseResting, staircaseWhy, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };

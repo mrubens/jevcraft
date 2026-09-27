@@ -2910,8 +2910,15 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   // Farther off, a leg of the way on foot first: ninety-six blocks from
   // the portal the staircase was the only thing tried, and it went up and
   // down one fortress corridor for eighty-eight rounds.
+  // Across water, the boat: mid-229-k walked the shore of a lake eighty
+  // blocks across for twenty minutes with an oak boat in its pack, the walk
+  // and the staircase both failing at the water (note 419). Jev's to
+  // choose, with the swim it saves (boats.js chooseBoat).
+  if (where === 'overworld') {
+    if (await boatTravelStep(bot, task, goal, save, pos(p), { acquireStep })) return true;
+  }
   if (staircaseResting(goal, pos(p))) {
-    const err = new Error(`No way back to the ${where} portal at ${p.x}, ${p.y}, ${p.z}: ${attemptsFor(goal).why('staircase', pos(p))}, and the walk made no ground`);
+    const err = new Error(`No way back to the ${where} portal at ${p.x}, ${p.y}, ${p.z}: ${require('./tunneling').staircaseWhy(goal, pos(p))}, and the walk made no ground`);
     err.name = 'Blocked'; throw err;
   }
   await tunnelToward(bot, task, goal, save, pos(p), `portal_${where}`);
