@@ -39,7 +39,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       // over the edge into the lava with its route east, and the record
       // could not say what moved it (note 320).
       velocity: bot.entity?.velocity ? position(bot.entity.velocity) : undefined, onGround: bot.entity?.onGround,
-      keys: bot.controlState ? Object.keys(bot.controlState).filter(k => bot.controlState[k]) : undefined,
+      keys: bot.controlState ? [...Object.keys(bot.controlState).filter(k => bot.controlState[k]), ...(bot._shieldRaised ? ['shield'] : [])] : undefined,
       inventory: Object.fromEntries([...new Set(items.map(i => i.name))].map(n => [n, items.filter(i => i.name === n).reduce((a, i) => a + i.count, 0)])),
       tools: items.filter(i => bot.registry?.itemsByName?.[i.name]?.maxDurability).map(i => ({ name: i.name,
         remaining: bot.registry.itemsByName[i.name].maxDurability - (i.durabilityUsed || 0) })),
