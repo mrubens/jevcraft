@@ -738,7 +738,7 @@ test('a fortress the bot stands in is one of the ways when the leg is asked: sta
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   assert.equal(client.asked.length, 1);
   let { options, state } = client.asked[0];
-  assert.match(options.stay_in_fortress, /^Stay in the fortress the bot is in and walk its stretches again for blazes: 26 of its bricks in view, the nearest 2 blocks off; 1 pass over every stretch in view/);
+  assert.match(options.stay_in_fortress, /^Stay in the fortress the bot is in and walk its stretches again for blazes: 26 of its bricks in view, the nearest 2 blocks off, the bot stands at the height of its floors; 1 pass over every stretch in view/);
   assert.match(options.stay_in_fortress, /blazes seen near it 2 times/);
   assert.equal(state.fortressInView.passes, 1);
   assert(options.leg_north, 'the legs are offered beside it');
@@ -762,6 +762,80 @@ test('a fortress the bot stands in is one of the ways when the leg is asked: sta
   assert.equal(goal.fortressSearch.leaving, undefined, 'taken, the fortress is no longer set behind the bot');
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   assert.equal(goal.step.action, 'find_fortress'); assert(goal.step.walking, 'its stretches walked again');
+});
+
+// A bridge deck of nether bricks at y 55 from x 1 to 30 (or `length`), z -1 to 1, on a
+// footing at x 1 and 2 down to the lava sea; the bot on its own netherrack
+// span at y 48 beside the footing (mid-235-p-fortress-6, note 523).
+function fortressOverhead(position, length = 30) {
+  const deck = p => p.y === 55 && p.x >= 1 && p.x <= length && p.z >= -1 && p.z <= 1;
+  const footing = p => p.x >= 1 && p.x <= 2 && p.z >= -1 && p.z <= 1 && p.y >= 32 && p.y < 55;
+  const rock = p => p.y <= 31 ? 'lava' : deck(p) || footing(p) ? 'nether_bricks' : p.y === 48 && p.z === 0 && p.x >= -10 && p.x <= 0 ? 'netherrack' : null;
+  const world = netherWorld(position, rock);
+  const bricks = [];
+  for (let x = 1; x <= length; x++) for (let z = -1; z <= 1; z++) bricks.push(new Vec3(x, 55, z));
+  for (let x = 1; x <= 2; x++) for (let z = -1; z <= 1; z++) for (let y = 40; y < 55; y++) bricks.push(new Vec3(x, y, z));
+  world.bricks = bricks;
+  world.bot.findBlocks = ({ matching }) => matching === registry.blocksByName.spawner.id ? [] : bricks;
+  return world;
+}
+
+test('bricks a block off with the fortress\'s floors seven blocks up are not the fortress entered: the way up is asked, a pillar among the ways, and the hunt\'s step is the search (mid-235-p-fortress-6, note 523)', async () => {
+  // mid-235-p-fortress-6 stood on its own span beside the fortress's footing, "inside" by a brick a block off, and set out
+  // for bricks eight blocks up that no step reached, two a second; each "pass" of that asked stay_in_fortress, and the
+  // hunt's step and the search's traded names until the stall watch struck fifty times.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot } = fortressOverhead(new Vec3(0.5, 49, 0.5), 12);
+  const client = jevStub(['keep_searching']);
+  const walked = [];
+  const goal = { step: { action: 'hunt_mob', entity: 'blaze' }, fortressSearch: { axis: 1, legs: 15 } };
+  const actions = { client, dig: async () => {}, navigate: async (b, t, g) => { walked.push(g); throw new Error('No route'); }, tunnel: async () => { throw new Error('The staircase is set aside'); } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(walked.length, 0, 'no stretch set out for from beside the footing');
+  assert.equal(client.asked.length, 1); assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
+  const { options, state } = client.asked[0];
+  assert.deepEqual(state.fortress, { distance: 1, height: 7 }, 'the way is to its nearest floor, seven up');
+  assert.match(options.pillar_up, /^Pillar straight up 7 blocks to the fortress floor's height \(jump and lay a block under the feet, 64 carried that can be laid, 57 left after\)/);
+  assert.match(options.pillar_up, /a push is a fall of up to 7 blocks, about 4 health/);
+  assert.equal(goal.step.action, 'find_fortress');
+  // Set aside as Jev chose: going back to it is asked with the legs, and the step is still the search.
+  goal.step = { action: 'hunt_mob', entity: 'blaze' };
+  const legs = jevStub(['back_to_fortress']);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client: legs });
+  assert.equal(legs.asked.length, 1); assert.equal(goal.decisions.at(-1).id, 'fortress_leg');
+  assert.match(legs.asked[0].options.back_to_fortress, /the nearest of its floors 1 blocks across and 7 up/);
+  assert.equal(goal.step.action, 'find_fortress', 'the hunt\'s step does not come back between the questions');
+});
+
+test('a pass whose stretches no walk reached is said so when staying is offered, and a spawner in view is a wait of its own', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot, bricks } = fortressOverhead(new Vec3(3.5, 56, 0.5));
+  const refused = 'The staircase toward it is set aside (no safe step toward it (a deadly drop beside the step 2, no floor 2))';
+  const actions = { dig: async () => {}, navigate: async () => { throw new Error('No route'); }, tunnel: async () => { throw new Error(refused); } };
+  const goal = { fortressSearch: { axis: 1, legs: 15 } };
+  await assert.rejects(findFortressStep(bot, new Task('hunt'), goal, () => {}, actions), /set aside/);
+  await assert.rejects(findFortressStep(bot, new Task('hunt'), goal, () => {}, actions), /set aside/);
+  assert.deepEqual(goal.fortressSearch.visited.map(v => v.reached), [false, false]);
+  // A spawner under the deck.
+  const at = bot.blockAt;
+  bot.blockAt = p => p.x === 10 && p.y === 50 && p.z === 0 ? { name: 'spawner', boundingBox: 'block', position: p } : at(p);
+  bot.findBlocks = ({ matching }) => matching === registry.blocksByName.spawner.id ? [new Vec3(10, 50, 0)] : bricks;
+  const client = jevStub(['wait_at_spawner']);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client });
+  assert.equal(client.asked.length, 1);
+  const { options, state } = client.asked[0];
+  assert.match(options.stay_in_fortress, /the bot stands at the height of its floors/);
+  assert.match(options.stay_in_fortress, /The last pass set out for 2 stretches and reached 0; not reached: \(\d+, 56, -?\d\): The staircase toward it is set aside/);
+  assert.deepEqual([state.fortressInView.lastPass.stretches, state.fortressInView.lastPass.reached], [2, 0]);
+  assert.match(options.wait_at_spawner, /^Wait by the spawner at \(10, 50, 0\), 9 blocks off, for 3 minutes/);
+  assert.match(options.leg_east, /The fortress's bricks in view run 27 blocks this way from here/);
+  // Taken: the bot goes to the cage and waits there, a wait the stall watch lets be.
+  const walks = [];
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, navigate: async (b, t, g) => { walks.push(g); bot.entity.position = new Vec3(8.5, 51, 0.5); } });
+  assert.equal(walks.length, 1); assert.equal(goal.step.action, 'wait_at_spawner');
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(goal.step.action, 'wait_at_spawner'); assert.equal(walks.length, 1, 'at the cage, it waits');
+  assert.equal(require('../src/stillness').permittedWait(bot, goal), 'waiting by a spawner');
 });
 
 test('after six empty patrols the sweep leaves along the fortress, and the section left behind does not pull it back', async () => {

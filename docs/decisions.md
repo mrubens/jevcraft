@@ -910,7 +910,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **A Nether fortress is in view: which way should the bot go to it, or should it leave it and keep searching?**
 
-- When: On the fortress search, when a fortress (two dozen or more of its bricks) comes into view more than six blocks off, and again each time the way chosen ends no nearer; the answer holds for the approach until it fails, five minutes at most.
+- When: On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most.
 - Decision tree, choice; stakes high; ledger kind `fortress`
 - Bar: none: every way offered was surveyed and runs under the hard rules (a span laid crouched and never under a shooter's fire, no rock dug with lava behind it, no drop into lava, no swing or turn on a span); a way that fails is asked again with what failed, and the outage default is the order the code kept, a failed way passed over
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -921,6 +921,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `walk_route` | root | walk the pathfinder's route to it, level with the bot first, then at the bricks' height | a pathfinder is at hand; said with its surveyed route (cells, blocks it would place and dig, how many beside lava, how much nearer it ends) and that it walks upright |
 | `descend` | root | dig straight down to the bricks below | the bricks are more than two blocks below and within twelve blocks across; said with the drop and that a drop too deep for the health or ending in lava is refused |
 | `cross_level` | root | go straight at it at the height the bot stands, digging rock and laying a one-wide span | the cells ahead at this height let it come a block or more nearer (surveyCrossing); said with the cells, the blocks to lay against those carried, how many over lava, how much nearer it ends, what stops it, about how long, and the mobs in view |
+| `pillar_up` | root | pillar straight up to the height of its floor overhead | its nearest floor is two or more blocks up and within twelve across, a column near the bot has no lava or water in or beside it, and blocks to lay are carried; said with the height, the blocks against those carried, how far across the floor is from the top, and the fall a push would be |
 | `tunnel` | root | dig a staircase through the rock toward it | a staircase is at hand |
 | `keep_searching` | root | leave this fortress for ten minutes and go on searching | always |
 
@@ -939,7 +940,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `leg_(east\|south\|west\|north)` (pattern) | root | go this way ninety-six blocks at the height the bot stands | always, one for each heading; said with the cells ahead at this height (open air, how many of them over a drop of four or more, rock to dig at about six seconds a cell, and what stops it), the cells with no floor against the blocks carried and where they run out, about how long, whether it is back the way the last leg came, and how the last leg this way ended, kept on that heading |
 | `seek_fortress_height` | root | dig a staircase toward y 64 first, along the most open heading | the bot stands more than eight blocks above or below y 64 and a staircase is at hand; said with the height to make up and where fortresses stand |
 | `restock_blocks` | root | mine a stack of the most plentiful block a span is laid with nearby, then choose the leg again | a leg runs out of the blocks carried and some within sixteen blocks can be mined; said with each kind counted, the nearest, and about how long |
-| `stay_in_fortress` | root | stay in the fortress in view and walk its stretches again for blazes | a pass over every stretch of the fortress in view has ended; said with the bricks in view, the passes made and minutes spent there, and the blazes seen near it |
+| `stay_in_fortress` | root | stay in the fortress in view and walk its stretches again for blazes | a pass over every stretch of the fortress in view has ended; said with the bricks in view, where its floors are against the bot, the passes made and minutes spent there, how many stretches the last pass reached and why the rest were not, and the blazes seen near it |
+| `wait_at_spawner` | root | wait by the spawner in view for three minutes, the hunt taking each blaze it makes | a pass over every stretch of the fortress in view has ended and a spawner is within twenty-four blocks; said with where it is, how it makes blazes, and how the last wait there ended |
 | `back_to_fortress` | root | go back into the fortress in view that was left or set aside | two dozen or more fortress bricks are in view but left behind or set aside; said with when and why, how far the nearest is, and the blazes seen near it |
 | `return_for_blocks` | root | go back through the portal to the Overworld for stone | a leg runs out of the blocks carried and the way back through the portal is at hand; said with the nearest portal known |
 

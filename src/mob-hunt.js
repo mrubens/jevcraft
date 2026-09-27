@@ -965,6 +965,8 @@ function rememberedSpot(state, bot) {
 }
 
 const FORTRESS_MIN_BRICKS = 24;
+// A wait by a spawner Jev chose (wait_at_spawner), before the legs are asked again.
+const SPAWNER_WAIT_MS = 3 * 60000;
 const LEAVE_RADIUS = 48, LEAVE_MS = 4 * 60 * 1000;
 const FORTRESS_BLOCKS = ['nether_bricks', 'nether_brick_fence', 'nether_brick_stairs', 'nether_brick_slab', 'nether_wart'];
 const FORTRESS_LEG = 96;
@@ -1094,7 +1096,14 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
       (seekRests[most] ? ` ${capital(seekRests[most])}: taken now, it digs nothing until then.` : '') + passed + legHistorySays(state, legKey(most, true), here, 'staircase'),
       run: () => { state.heading = most; state.legMode = 'descend'; return true; } };
   }
-  if (fortress) options[fortress.key] = { description: fortress.description, run: fortress.run };
+  if (fortress) {
+    options[fortress.key] = { description: fortress.description, run: fortress.run };
+    for (const [key, o] of Object.entries(fortress.others || {})) options[key] = o;
+    // Where the fortress's bricks go from here, said with each heading: its
+    // corridors run on past the last brick seen (fortressRuns).
+    const runs = fortressRuns(fortress.bricks || [], here);
+    HEADINGS.forEach((h, i) => { if (runs[i] >= 8) options[`leg_${HEADING_NAMES[i]}`].description += ` The fortress's bricks in view run ${runs[i]} blocks this way from here; what lies past them is unseen.`; });
+  }
   const short = surveys.some(s => Number.isInteger(s?.runsOut));
   if (short && actions.acquireStep) {
     const kinds = bridgingNearby(bot).filter(k => !isSetAside(goal, 'restock', k.name));
@@ -1255,6 +1264,30 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
         run: async () => { await bridgeTo(bot, task, nearest, { maxBlocks: survey.bridge, maxSteps: survey.cells }); return survey.stoppedBy; } };
     }
   }
+  // Up to a floor overhead by a pillar: jump and lay a block under the
+  // feet, from a column with no lava or water in or beside it. mid-235-p-
+  // fortress-6 stood on its own span at y 49 beside the fortress's footing,
+  // its corridors eight above, and every staircase up was refused for the
+  // drop beside its steps (note 523).
+  if (actions.dig && dy >= 2 && flatTo(nearest, here) <= 12 && typeof bot.blockAt === 'function') {
+    const { pillarSite, pillarUp, SCAFFOLD } = require('./pillar-recovery');
+    const site = pillarSite(bot, nearest.y + 1, nearest, { radius: 5 });
+    const scaffold = bot.inventory?.items?.().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0) || 0;
+    if (site && scaffold >= 1) {
+      const up = nearest.y + 1 - site.y, walk = Math.round(site.offset(0.5, 0, 0.5).distanceTo(here));
+      const across = Math.round(Math.hypot(nearest.x - site.x, nearest.z - site.z));
+      options.pillar_up = { description: `Pillar straight up ${up} blocks to the fortress floor's height (jump and lay a block under the feet, ${scaffold} carried that can be laid${scaffold < up ? `: they run out ${scaffold} up` : `, ${scaffold - up} left after`}), from ${walk ? `a column ${walk} blocks from here` : 'where the bot stands'}, with no lava or water in or beside it; the floor at (${nearest.x}, ${nearest.y + 1}, ${nearest.z}) is then ${across} block${across === 1 ? '' : 's'} across. On top a push is a fall of up to ${up} blocks, about ${Math.max(0, up - 3)} health.${inView.length ? ` In sight: ${mobsSaid(inView)}.` : ''}`,
+        run: async () => {
+          if (site.distanceTo(bot.entity.position.floored()) >= 1 && actions.navigate) {
+            try { await actions.navigate(bot, task, new goals.GoalBlock(site.x, site.y, site.z), { timeoutMs: 10000, stallMs: 3000 }); }
+            catch (err) { task.check(); if (!retryable(err)) throw err; return `no way to the column at (${site.x}, ${site.y}, ${site.z}): ${err.message}`; }
+          }
+          if (site.distanceTo(bot.entity.position.floored()) >= 1.5) return `not at the column at (${site.x}, ${site.y}, ${site.z})`;
+          const placed = await pillarUp(bot, task, nearest.y + 1, { dig: actions.dig });
+          return placed ? null : 'the pillar would not rise';
+        } };
+    }
+  }
   if (actions.tunnel) {
     const rest = require('./tunneling').restingSays(goal, nearest, here);
     options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}`,
@@ -1318,6 +1351,24 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest) 
   delete approach.choice; delete approach.until; save();
 }
 
+// A fortress's floors: its bricks with two blocks of air over them, the
+// corridors and bridges a player walks. Walls, footings and roofs are not.
+function fortressFloors(bot, bricks) {
+  if (typeof bot.blockAt !== 'function') return bricks;
+  const clear = q => { const b = bot.blockAt(q); return !b || b.boundingBox === 'empty'; };
+  return bricks.filter(b => clear(b.offset(0, 1, 0)) && clear(b.offset(0, 2, 0)));
+}
+// In the fortress: standing at the height of one of its floors, within six
+// blocks of it. The one test for the patrol, the approach and staying.
+function onFortressFloor(here, floors) {
+  return floors.some(f => Math.abs(f.y + 1 - here.y) <= 1.5 && Math.hypot(f.x + 0.5 - here.x, f.z + 0.5 - here.z) <= 6);
+}
+// How far the fortress's bricks in view run from here along each heading
+// (east, south, west, north): a corridor goes on past its last brick seen.
+function fortressRuns(bricks, here) {
+  return HEADINGS.map(([dx, dz]) => Math.max(0, ...bricks.map(b => Math.round((b.x + 0.5 - here.x) * dx + (b.z + 0.5 - here.z) * dz))));
+}
+
 // The fortress in view, as fortress_leg offers it (chooseLeg). `stay`:
 // a pass over its every stretch ended, and walking them again is Jev's to
 // weigh against the legs with what the passes came to; blazes come from
@@ -1333,16 +1384,40 @@ function fortressInView(bot, goal, save, state, bricks, { stay }) {
   const seen = blazes ? `blazes seen near it ${blazes} time${blazes === 1 ? '' : 's'}` : 'no blaze seen near it yet';
   const passes = state.patrols || 0;
   const minutes = state.inFortressSince ? Math.round((Date.now() - state.inFortressSince) / 60000) : 0;
-  const facts = { bricks: bricks.length, nearestBlocksOff: off, passes, minutesThere: minutes, blazesSeenNear: blazes };
-  if (stay) return { key: 'stay_in_fortress', passes, facts,
-    description: `Stay in the fortress the bot is in and walk its stretches again for blazes: ${bricks.length} of its bricks in view, the nearest ${off} blocks off; ${passes} pass${passes === 1 ? '' : 'es'} over every stretch in view, ${minutes} minute${minutes === 1 ? '' : 's'} there, ${seen}. Blazes come from their spawners and spawn on the fortress's bricks as time passes; the stretches out of view are found only by a leg. The legs are asked again after the next pass.`,
-    run: () => { state.visited = []; save(); return 'stay'; } };
+  // Its floors against where the bot stands: bricks a block off can be a
+  // footing under corridors eight blocks up (note 523).
+  const floors = fortressFloors(bot, bricks);
+  const floor = floors.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+  const floorSays = !floor ? 'none of its bricks in view has room to stand on it'
+    : onFortressFloor(here, floors) ? 'the bot stands at the height of its floors'
+    : `the nearest of its floors ${Math.round(Math.hypot(floor.x + 0.5 - here.x, floor.z + 0.5 - here.z))} blocks across and ${Math.abs(Math.round(floor.y + 1 - here.y))} ${floor.y + 1 >= here.y ? 'up' : 'down'}`;
+  const pass = state.lastPass;
+  const passSays = pass?.stretches ? ` The last pass set out for ${pass.stretches} stretch${pass.stretches === 1 ? '' : 'es'} and reached ${pass.reached}${pass.notReached.length ? `; not reached: ${pass.notReached.join('; ')}` : ''}.` : '';
+  const facts = { bricks: bricks.length, nearestBlocksOff: off, floors: floorSays, passes, minutesThere: minutes, blazesSeenNear: blazes,
+    ...(pass?.stretches ? { lastPass: { stretches: pass.stretches, reached: pass.reached, ...(pass.notReached.length ? { notReached: pass.notReached } : {}) } } : {}) };
+  if (stay) {
+    // A spawner in view is where blazes come without walking: waiting by
+    // it is a player's way (blaze-stand.js has how it makes them).
+    const others = {};
+    let spawner = null;
+    try { spawner = require('./blaze-stand').spawnerAt(bot); } catch (_) { spawner = null; }
+    if (spawner && bot.blockAt?.(spawner)?.name !== 'spawner') spawner = null;
+    if (spawner) {
+      const d = Math.round(spawner.offset(0.5, 0.5, 0.5).distanceTo(here));
+      facts.spawner = `a spawner ${d} blocks off at (${spawner.x}, ${spawner.y}, ${spawner.z})`;
+      others.wait_at_spawner = { description: `Wait by the spawner at (${spawner.x}, ${spawner.y}, ${spawner.z}), ${d} blocks off, for ${SPAWNER_WAIT_MS / 60000} minutes: a fortress's spawners are blaze spawners, and while a player is within sixteen blocks of one it makes up to four blazes within four blocks of itself every ten to forty seconds, and the hunt takes each one as it comes into view. ${capital(seen)}. The legs are asked again after.${state.spawnerWaitEnded ? ` The last wait here ended: ${state.spawnerWaitEnded}.` : ''}`,
+        run: () => { state.spawnerWait = { x: spawner.x, y: spawner.y, z: spawner.z, until: Date.now() + SPAWNER_WAIT_MS }; delete state.spawnerWaitEnded; save(); return 'wait'; } };
+    }
+    return { key: 'stay_in_fortress', passes, bricks, facts, others,
+      description: `Stay in the fortress the bot is in and walk its stretches again for blazes: ${bricks.length} of its bricks in view, the nearest ${off} blocks off, ${floorSays}; ${passes} pass${passes === 1 ? '' : 'es'} over every stretch in view, ${minutes} minute${minutes === 1 ? '' : 's'} there, ${seen}.${passSays} Blazes come from their spawners and spawn on the fortress's bricks as time passes; the stretches out of view are found only by a leg. The legs are asked again after the next pass.`,
+      run: () => { state.visited = []; save(); return 'stay'; } };
+  }
   const leftAgo = state.leaving ? Math.round((LEAVE_MS - (state.leaving.until - Date.now())) / 60000) : null;
   const why = state.leaving && Math.hypot(state.leaving.x - nearest.x, state.leaving.z - nearest.z) <= LEAVE_RADIUS
     ? `left ${leftAgo} minute${leftAgo === 1 ? '' : 's'} ago after its passes, and set behind the bot for ${Math.round((state.leaving.until - Date.now()) / 60000)} more`
     : 'set aside as a face not approached, for ten minutes';
-  return { key: 'back_to_fortress', passes, facts: { ...facts, setAside: why },
-    description: `Go back into the fortress in view: ${bricks.length} of its bricks, the nearest ${off} blocks off, ${why}; ${seen}. Taken, it is no longer set aside, and the way to its bricks is asked (fortress_approach), or its stretches walked when the bot is among them.`,
+  return { key: 'back_to_fortress', passes, bricks, facts: { ...facts, setAside: why },
+    description: `Go back into the fortress in view: ${bricks.length} of its bricks, the nearest ${off} blocks off, ${why}; ${floorSays}; ${seen}.${passSays} Taken, it is no longer set aside, and the way to its bricks is asked (fortress_approach), or its stretches walked when the bot is among them.`,
     run: () => {
       delete state.leaving;
       state.shunned = (state.shunned || []).filter(sh => !bricks.some(b => Math.hypot(sh.x - b.x, sh.z - b.z) <= (sh.radius || 16)));
@@ -1355,6 +1430,29 @@ async function findFortressStep(bot, task, goal, save, actions) {
   const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
   if (await mineGoldInPassing(bot, task, goal, save, actions)) return;
   const stopWhen = () => goldInPassing(bot, goal);
+  // The hunt's work while no blaze is near is this search, whatever branch
+  // of it runs: a tick that only asked Jev left the hunt's own step named,
+  // and the step "turned between find fortress and hunt mob" twice a
+  // second in mid-235-p-fortress-6 (note 523).
+  if (goal.step?.action !== 'find_fortress') { goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save(); }
+  // A wait by a spawner Jev chose (wait_at_spawner): near its cage until
+  // the wait is up; the hunt takes a blaze the moment one is in view.
+  if (state.spawnerWait) {
+    const w = state.spawnerWait, cage = new Vec3(w.x, w.y, w.z);
+    const off = cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position);
+    if (!(w.until > Date.now())) { state.spawnerWaitEnded = 'waited its minutes'; delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save(); }
+    else {
+      goal.step = { action: 'wait_at_spawner', spawner: { x: w.x, y: w.y, z: w.z }, off: Math.round(off), secondsLeft: Math.round((w.until - Date.now()) / 1000), legs: state.legs || 0 }; save();
+      if (off <= 8) { await sleep(1000); task.check(); return; }
+      let why = null;
+      if (actions.navigate) {
+        try { await actions.navigate(bot, task, new goals.GoalNear(w.x, w.y, w.z, 4), { timeoutMs: 30000, stallMs: 6000, stopWhen }); }
+        catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
+      } else why = 'no way to walk there';
+      if (cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) > 8) { state.spawnerWaitEnded = `no way to it: ${why || 'came no nearer'}`; delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save(); }
+      return;
+    }
+  }
   const ids = FORTRESS_BLOCKS.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
   // Bricks near a face that would not be approached are ignored for ten
   // minutes: the fortress was straight below a shelf with a cave between,
@@ -1381,9 +1479,15 @@ async function findFortressStep(bot, task, goal, save, actions) {
   const setAside = !bricks.length && seen.length >= FORTRESS_MIN_BRICKS ? fortressInView(bot, goal, save, state, seen, { stay: false }) : null;
   if (bricks.length) {
     const here = bot.entity.position;
-    const nearest = bricks.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+    const byNear = list => list.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+    // In the fortress is on its floors (onFortressFloor), not within six
+    // blocks of any brick: mid-235-p-fortress-6 stood on its own span a
+    // block from the fortress's footing, its corridors eight blocks up,
+    // was "inside", and set out for bricks it had no way to (note 523).
+    const floors = fortressFloors(bot, bricks);
+    const nearest = byNear(bricks)[0];
     state.found = { x: nearest.x, y: nearest.y, z: nearest.z };
-    if (nearest.distanceTo(here) > 6) { await approachFortress(bot, task, goal, save, actions, state, nearest); return; }
+    if (!onFortressFloor(here, floors)) { await approachFortress(bot, task, goal, save, actions, state, byNear(floors.length ? floors : bricks)[0]); return; }
     // Inside: walk the structure. The farthest brick not yet walked to is
     // the next stretch of corridor; blazes come into view on the way and
     // the observed hunt takes them. Standing on the first brick found was
@@ -1392,9 +1496,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // Floor bricks only: two blocks of air over them and near the bot's
     // level. Aiming at a ceiling brick had the bot pillaring up to it and
     // being sent back down, twice a second.
-    const clear = q => { const b = bot.blockAt(q); return !b || b.boundingBox === 'empty'; };
-    const floors = bricks.filter(b => clear(b.offset(0, 1, 0)) && clear(b.offset(0, 2, 0)) && Math.abs(b.y + 1 - here.y) <= 6);
-    const walkable = floors.length ? floors : bricks;
+    const walkable = floors.filter(b => Math.abs(b.y + 1 - here.y) <= 6);
     // The nearest fresh stretch beyond twelve blocks, not the farthest: the
     // farthest brick in view is the one across the lava.
     const fresh = walkable.filter(b => !state.visited.some(v => Math.hypot(v.x - b.x, v.z - b.z) < 12));
@@ -1419,6 +1521,13 @@ async function findFortressStep(bot, task, goal, save, actions) {
       // left its fortress 0.4 seconds after the first, not a step walked
       // (note 507).
       state.patrols = (state.patrols || 0) + 1; state.inFortressSince ||= Date.now();
+      // What the pass came to, stretch by stretch: a pass whose every walk
+      // was refused at once is not a pass walked, and staying for another
+      // is said so. mid-235-p-fortress-6 "passed" twice a second over two
+      // stretches eight blocks up that no step reached (note 523).
+      const tried = state.visited.filter(v => v.reached !== undefined);
+      state.lastPass = { stretches: tried.length, reached: tried.filter(v => v.reached).length,
+        notReached: tried.filter(v => !v.reached).slice(-3).map(v => `(${v.x}, ${v.y + 1}, ${v.z}): ${v.why || 'came no nearer'}`) };
       if (!(state.patrolSaidAt > Date.now() - 120000)) { state.patrolSaidAt = Date.now(); bot.chat?.('Walked this stretch. Patrolling the fortress for blazes.'); }
       // Along the fortress's own length, away from where it was patrolled,
       // as the outage default: fortress corridors run straight along x or z.
@@ -1434,12 +1543,23 @@ async function findFortressStep(bot, task, goal, save, actions) {
       return;
     }
     else {
-    state.visited.push({ x: next.x, y: next.y, z: next.z }); state.visited = state.visited.slice(-32); state.inFortressSince ||= Date.now();
+    const stretch = { x: next.x, y: next.y, z: next.z, reached: false };
+    state.visited.push(stretch); state.visited = state.visited.slice(-32); state.inFortressSince ||= Date.now();
     goal.step = { action: 'find_fortress', found: state.found, walking: { x: next.x, y: next.y, z: next.z }, legs: state.legs }; save();
-    if (actions.navigate) {
-      try { await actions.navigate(bot, task, new goals.GoalNear(next.x, next.y + 1, next.z, 3), { timeoutMs: 30000, stallMs: 6000, stopWhen }); }
-      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; await actions.tunnel(bot, task, goal, save, next, 'fortress'); }
-    } else await actions.tunnel(bot, task, goal, save, next, 'fortress');
+    const tunnel = async () => {
+      try { await actions.tunnel(bot, task, goal, save, next, 'fortress'); }
+      catch (err) { task.check(); if (!retryable(err)) throw err; stretch.why = err.message; save(); throw err; }
+    };
+    try {
+      if (actions.navigate) {
+        try { await actions.navigate(bot, task, new goals.GoalNear(next.x, next.y + 1, next.z, 3), { timeoutMs: 30000, stallMs: 6000, stopWhen }); }
+        catch (err) { task.check(); if (!retryable(err)) throw err; stretch.why = err.message; await tunnel(); }
+      } else await tunnel();
+    } finally {
+      stretch.reached = !!bot.entity?.position && next.offset(0.5, 1, 0.5).distanceTo(bot.entity.position) <= 4;
+      if (stretch.reached) delete stretch.why;
+      save();
+    }
     return;
     }
   }

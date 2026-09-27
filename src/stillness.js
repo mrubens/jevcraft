@@ -118,6 +118,9 @@ function permittedWait(bot, goal, now = Date.now()) {
   if (batch?.startedAt && now < batch.startedAt + (batch.count || 1) * 10000 + 20000) return 'a batch cooking';
   // Waiting for health, hurt and fed: fine while it is coming back.
   if (['recover_before_combat', 'recover_before_nether'].includes(action) && (bot.health ?? 20) < 20 && (bot.food ?? 20) >= 18) return 'recovering';
+  // By a spawner for the minutes Jev chose to wait there (mob-hunt.js
+  // wait_at_spawner): it makes the blazes, the bot need not move.
+  if (action === 'wait_at_spawner' && goal?.fortressSearch?.spawnerWait?.until > now && goal.step.off <= 8) return 'waiting by a spawner';
   return null;
 }
 

@@ -25,7 +25,7 @@ define({
 // chosen: mid-242-c walking the lava sea's shore toward one (note 264),
 // mid-215-e on a span with a hoglin behind it (note 273). The order the
 // code kept is the fallback, each way failed on this approach passed over.
-const APPROACH_ORDER = ['walk_route', 'descend', 'cross_level', 'tunnel', 'keep_searching'];
+const APPROACH_ORDER = ['walk_route', 'descend', 'cross_level', 'pillar_up', 'tunnel', 'keep_searching'];
 const approachFallback = (children, path, context = {}) => {
   const failed = new Set(context.failed || []);
   return APPROACH_ORDER.find(k => children[k] && !failed.has(k)) || (children.keep_searching ? 'keep_searching' : Object.keys(children)[0]);
@@ -33,12 +33,13 @@ const approachFallback = (children, path, context = {}) => {
 define({
   id: 'fortress_approach', area: 'endgame', kind: 'fortress', primitive: 'choice', stakes: 'high', tree: true,
   question: 'A Nether fortress is in view: which way should the bot go to it, or should it leave it and keep searching?',
-  trigger: 'On the fortress search, when a fortress (two dozen or more of its bricks) comes into view more than six blocks off, and again each time the way chosen ends no nearer; the answer holds for the approach until it fails, five minutes at most.',
+  trigger: 'On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most.',
   source: 'src/mob-hunt.js (fortressApproaches, approachFortress), src/bridging.js (surveyCrossing), src/nether-travel.js (crossingSays)',
   options: [
     { key: 'walk_route', label: 'walk the pathfinder\'s route to it, level with the bot first, then at the bricks\' height', when: 'a pathfinder is at hand; said with its surveyed route (cells, blocks it would place and dig, how many beside lava, how much nearer it ends) and that it walks upright', level: 'root' },
     { key: 'descend', label: 'dig straight down to the bricks below', when: 'the bricks are more than two blocks below and within twelve blocks across; said with the drop and that a drop too deep for the health or ending in lava is refused', level: 'root' },
     { key: 'cross_level', label: 'go straight at it at the height the bot stands, digging rock and laying a one-wide span', when: 'the cells ahead at this height let it come a block or more nearer (surveyCrossing); said with the cells, the blocks to lay against those carried, how many over lava, how much nearer it ends, what stops it, about how long, and the mobs in view', level: 'root' },
+    { key: 'pillar_up', label: 'pillar straight up to the height of its floor overhead', when: 'its nearest floor is two or more blocks up and within twelve across, a column near the bot has no lava or water in or beside it, and blocks to lay are carried; said with the height, the blocks against those carried, how far across the floor is from the top, and the fall a push would be', level: 'root' },
     { key: 'tunnel', label: 'dig a staircase through the rock toward it', when: 'a staircase is at hand', level: 'root' },
     { key: 'keep_searching', label: 'leave this fortress for ten minutes and go on searching', when: 'always', level: 'root' },
   ],
@@ -78,7 +79,8 @@ define({
     { pattern: 'leg_(east|south|west|north)', label: 'go this way ninety-six blocks at the height the bot stands', when: 'always, one for each heading; said with the cells ahead at this height (open air, how many of them over a drop of four or more, rock to dig at about six seconds a cell, and what stops it), the cells with no floor against the blocks carried and where they run out, about how long, whether it is back the way the last leg came, and how the last leg this way ended, kept on that heading', level: 'root', dynamic: true },
     { key: 'seek_fortress_height', label: 'dig a staircase toward y 64 first, along the most open heading', when: 'the bot stands more than eight blocks above or below y 64 and a staircase is at hand; said with the height to make up and where fortresses stand', level: 'root' },
     { key: 'restock_blocks', label: 'mine a stack of the most plentiful block a span is laid with nearby, then choose the leg again', when: 'a leg runs out of the blocks carried and some within sixteen blocks can be mined; said with each kind counted, the nearest, and about how long', level: 'root' },
-    { key: 'stay_in_fortress', label: 'stay in the fortress in view and walk its stretches again for blazes', when: 'a pass over every stretch of the fortress in view has ended; said with the bricks in view, the passes made and minutes spent there, and the blazes seen near it', level: 'root' },
+    { key: 'stay_in_fortress', label: 'stay in the fortress in view and walk its stretches again for blazes', when: 'a pass over every stretch of the fortress in view has ended; said with the bricks in view, where its floors are against the bot, the passes made and minutes spent there, how many stretches the last pass reached and why the rest were not, and the blazes seen near it', level: 'root' },
+    { key: 'wait_at_spawner', label: 'wait by the spawner in view for three minutes, the hunt taking each blaze it makes', when: 'a pass over every stretch of the fortress in view has ended and a spawner is within twenty-four blocks; said with where it is, how it makes blazes, and how the last wait there ended', level: 'root' },
     { key: 'back_to_fortress', label: 'go back into the fortress in view that was left or set aside', when: 'two dozen or more fortress bricks are in view but left behind or set aside; said with when and why, how far the nearest is, and the blazes seen near it', level: 'root' },
     { key: 'return_for_blocks', label: 'go back through the portal to the Overworld for stone', when: 'a leg runs out of the blocks carried and the way back through the portal is at hand; said with the nearest portal known', level: 'root' },
   ],
