@@ -4428,6 +4428,11 @@ class Survival {
       tree.go_home_for_night = { description: `Walk home to the bed ${distance} blocks away${underground ? `, climbing out of the mine first (${climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known'})` : ''}, about ${Math.round(distance / 4.3)} seconds at a walk, ${arrival}, and wait there for bedtime (sleep is possible from ${SLEEP_FROM}; it is ${Math.round(bot.time.timeOfDay)} now). Held until the bot is there.`,
         run: async () => { this.state.nightPlan = { plan: 'home', until: Date.now() + 120000 }; await this.goHomeForNight(task, goal, save, homeBed, underground); } };
     }
+    // A creeper about and how soon it could go off beside the bot, on every
+    // way to spend the night: mid-243-p chose the bed with a creeper eleven
+    // blocks off, told only of monsters within eight of it, and was blown up
+    // putting it down (note 503), where the shelter said the race.
+    const creeperRaceSays = creeperSays(bot);
     // Sleep is an option where the bed fits: two level cells beside the
     // feet. In a one-wide shaft it is not, and the shelter path digs in.
     if (needsShelter && bedReady && sleepable(bot) && ((homeBed && !underground) || bedSite(bot))) {
@@ -4439,21 +4444,20 @@ class Survival {
       // outside the eight and five that refuse a sleep.
       const byBed = monstersByBed(bot, homeBed && !bed ? homeBed.foot : bot.entity.position);
       const refused = byBed ? ` ${byBed} monster${byBed === 1 ? ' is' : 's are'} within eight blocks sideways and five up or down of the bed now, seen or not: sleep is refused while any are.` : '';
-      tree.sleep_in_bed = { description: homeBed && !bed ? `Walk to the bed ${walk} blocks away (about ${Math.round(walk / 4.3)} seconds) and sleep in it. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${refused}` : `Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${refused}`, run: () => this.sleepStep(task, goal, save) };
+      tree.sleep_in_bed = { description: homeBed && !bed ? `Walk to the bed ${walk} blocks away (about ${Math.round(walk / 4.3)} seconds) and sleep in it. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${refused}${creeperRaceSays}` : `Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${refused}${creeperRaceSays}`, run: () => this.sleepStep(task, goal, save) };
     }
     // Where the carried bed does not fit (a staircase, a shaft), a nook dug
     // for it beside the bot: the bed that went down in the midgame trials
     // of 2026-09-26 was offered only on two level cells, and the bot sealed
     // itself in eleven times with it on its back.
     const nook = needsShelter && bed && bedReady && sleepable(bot) && !bedSite(bot) && !isSetAside(this, 'bed_nook', 'here') && bedNook(bot, goal);
-    if (nook) tree.sleep_in_nook = { description: `Where the bed does not fit as the ground lies, ${nookSays(bot, nook)} Nothing is built or spent, and the request resumes at dawn.`, run: () => this.nookSleep(task, goal, save) };
+    if (nook) tree.sleep_in_nook = { description: `Where the bed does not fit as the ground lies, ${nookSays(bot, nook)} Nothing is built or spent, and the request resumes at dawn.${creeperRaceSays}`, run: () => this.nookSleep(task, goal, save) };
     // Beside a bed a shelter is the worse answer, and the option says so
     // rather than being hidden.
     // A creeper about, and how soon it could go off beside the bot, said on
     // the shelter as on every stance: first-days-222 chose the shelter with
     // a creeper five blocks off, told only of sealing a room before night,
     // and was blown up three seconds later (2026-09-26).
-    const creeperRaceSays = creeperSays(bot);
     // Underground at night the shelter is no question while health comes
     // back or is whole. When it does not, sealing in until dawn is a real
     // way beside the climb to food on the night surface: mid-207-l, at 5.2

@@ -4262,3 +4262,18 @@ test('a NoRoute from an emergency walk is not persisted as the work step', async
   await persist(bot, new Task('work'), work, () => {}, noRoute(), g => { seen ||= { ...g.step }; }).catch(() => {});
   assert.deepEqual(seen, { action: 'persist', attempt: 1, problem: 'No route from here to (89, 88, 115) (partial)', retrying: 'find_fortress', destination: { x: 89, y: 88, z: 115 } });
 });
+
+test('the bed at night says a creeper coming as the shelter does (mid-243-p)', async () => {
+  const { bot } = nookFixture({ open: p => p.y >= 30 });
+  bot.time.timeOfDay = 13500;
+  bot.entities[9] = { id: 9, name: 'creeper', type: 'hostile', position: new Vec3(11.5, 30, 0.5), height: 1.7, isValid: true };
+  bot.pathfinder = { movements: {}, getPathTo: () => ({ status: 'noPath', path: [] }), setGoal() {} };
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } } });
+  let tree = null;
+  survival.decide = async (task, goal, save, q) => { if (q.id === 'survival_priority') tree = tree || q.tree; return { path: [Object.keys(q.tree)[0]], action: Object.values(q.tree)[0], stale: true }; };
+  survival.stanceStep = async () => false;
+  await survival.step(new Task('night'), { kind: 'win', request: 'beat the game' }, () => {}).catch(() => {});
+  const sleep = tree?.sleep_in_bed || tree?.sleep_in_nook;
+  assert(sleep, Object.keys(tree || {}).join(','));
+  assert.match(sleep.description, /A creeper is 11 blocks off: coming on, it could go off beside the bot in about/);
+});
