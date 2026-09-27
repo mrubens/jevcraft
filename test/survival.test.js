@@ -3304,3 +3304,19 @@ test('the night mine is told what is left once the pickaxes wear out', () => {
   items.push({ name: 'oak_log', count: 2 });
   assert.equal(pickaxeReserve(bot, new Vec3(0, 10, 0)).stonePickaxesMakeable, 8, 'two logs are sixteen sticks more');
 });
+
+test('on a span with no blocks for walls and a shooter in reach, off the span to firm ground', async () => {
+  // mid-235-j held still at the end of its span, no blocks for walls, and a ghast's fireball threw it into the lava.
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, health: 20, food: 18,
+    entities: { 4: { id: 4, name: 'ghast', type: 'hostile', position: new Vec3(0.5, 70, 36.5), height: 4, isValid: true } }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'gravel', count: 16 }, { name: 'iron_sword' }], slots: {} }, world: { raycast: () => null },
+    // A span one wide along x from firm ground at x <= -4.
+    blockAt: p => { const q = p.floored(); const solid = q.y === 63 && (q.x <= -4 || (q.x <= 0 && q.z === 0)); return { name: solid ? 'netherrack' : q.y < 30 ? 'lava' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; },
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, attack() {}, equip: async () => {}, activateItem() {}, deactivateItem() {} });
+  let to = null;
+  const survival = new Survival(bot, { navigate: async (b, t, g) => { to = g; }, place: async () => { throw new Error('nothing to place'); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('span'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'off_span');
+  assert(to && to.x <= -4, `to firm ground: ${to && to.x}`);
+});

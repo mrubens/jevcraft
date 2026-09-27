@@ -711,7 +711,22 @@ class Survival {
       // mid-243-j, crossing at y 59 over the lava sea, was hit twice by an
       // enderman, no wall up, and the second hit threw it thirty blocks into
       // the lava (2026-09-27).
-      if ((shots || close.some(t => t.distance <= 6 && !shooter(t.entity))) && await this.railSpan(task, goal, save, { ahead: bot._spanning?.target })) return;
+      const pressed = shots || close.some(t => t.distance <= 6 && !shooter(t.entity));
+      if (pressed && await this.railSpan(task, goal, save, { ahead: bot._spanning?.target })) return;
+      // No walls to be had (no blocks for them): off the span to firm
+      // ground near by, crouched, as a player steps back from a ledge.
+      // mid-235-j stood at the end of its span over the lava sea with
+      // sixteen gravel and two planks, a ghast shooting, held still five
+      // times, and the fireball threw it into the lava (2026-09-27).
+      if (pressed && !isSetAside(this, 'off_span', 'here')) {
+        const cell = firmGround(bot, 8, { margin: 2 }) || firmGround(bot, 8);
+        if (cell && !cell.equals(bot.entity.position.floored())) {
+          this.report(goal, save, { action: 'off_span', to: { ...cell }, threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health });
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'off_span', 'here', err, 10000); }
+          return;
+        }
+      }
       // A mob at arm's length is struck crouched and still (combat.js
       // defendNearby on a span); nothing else is done about it here.
       if (await defendNearby(bot, task, goal, save)) return;
