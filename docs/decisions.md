@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-78 questions: 30 decision trees and 48 batched questions.
+79 questions: 31 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -73,7 +73,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `pocket_next`
 
-**Sealed in a pocket: stay, leave, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
+**Sealed in a pocket: stay, leave, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, dig a passage out away from a creeper, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
 
 - When: Each survival step inside a sealed pocket, unless a mob is inside or at arm's length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.
 - Decision tree, choice; stakes medium; ledger kind `survival`
@@ -91,6 +91,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `hunt_[a-z_]+` (pattern) | root | open the pocket and hunt this kind of mob for its drops | night, nothing watching, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back |
 | `stash_valuables` | root | open the pocket and put the valuables in the stash chest | night, nothing watching, a stash chest within 128 blocks and valuables carried |
 | `cache_valuables` | root | open the pocket and put a chest down outside for the valuables | night, nothing watching, home's chest out of reach, valuables carried, and a chest or the wood for one |
+| `tunnel_out` | root | dig a passage out through the far wall, away from the creeper, and go back to work from its end | a creeper within sixteen blocks (the rule that keeps a door within six of one shut would refuse the doors), the bot not in water, digging and walking at hand, and the rock away from the creeper safe to dig for at least four cells to a point ten or more blocks from it; said with the direction, the cells, about how long, the clearance at its end, and that it stops, the bot still enclosed, if the creeper comes round toward its head within six blocks |
 | `stay` | root | stay in the pocket | always |
 | `leave` | root | open the pocket and go back to work | always |
 
@@ -229,16 +230,16 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **The request needs a mob's drop: which observed mob should the bot fight now, or leave them for now?**
 
-- When: A mob hunt step with at least one candidate that passed the fight-readiness and isolation checks.
+- When: A mob hunt step with at least one candidate in view that is reachable and isolated, the bot on ground it can fight from (dry, not on a one-wide span, air to breathe).
 - Decision tree, choice; stakes high; ledger kind `combat`
-- Bar: none: every target offered already passed canBegin and isolated; a close call between fighting and leaving it is a preference, and the outage default is the same nearest target
+- Bar: none: every target offered is reachable and isolated and the bot has footing for a fight; the fitness is said in full on every option, a close call between fighting and leaving it is a preference, and the outage default is the same nearest target
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
-- Options built in: src/mob-hunt.js (huntObserved)
+- Options built in: src/mob-hunt.js (huntObserved, fitness, fitnessSays)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `hunt_\d+` (pattern) | root | fight this mob | observed, reachable, isolated from others of its kind, and the bot fit to fight |
-| `defer` | root | leave them for now | always |
+| `hunt_\d+` (pattern) | root | fight this mob | observed, reachable, isolated from others of its kind; said with the one fight's estimate and the bot's fitness: health against the fourteen the code once required, hunger and whether health comes back, food carried, fire, and the kit |
+| `defer` | root | leave them for now | always; said with the fitness, and what the hunt does meanwhile when the bot is short of it (food, cover, health) |
 
 ## strategy
 
@@ -787,6 +788,21 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `cross_level` | root | go straight at it at the height the bot stands, digging rock and laying a one-wide span | the cells ahead at this height let it come a block or more nearer (surveyCrossing); said with the cells, the blocks to lay against those carried, how many over lava, how much nearer it ends, what stops it, about how long, and the mobs in view |
 | `tunnel` | root | dig a staircase through the rock toward it | a staircase is at hand |
 | `keep_searching` | root | leave this fortress for ten minutes and go on searching | always |
+
+### `fortress_leg`
+
+**Searching the Nether for a fortress: which way should the next leg go, or should the bot first dig toward the heights fortresses stand at?**
+
+- When: On the fortress search, each time a leg begins: at the start, when the last leg reached its end, and when the sweep turned for a leg that made no ground.
+- Decision tree, choice; stakes medium; ledger kind `fortress`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/mob-hunt.js (chooseLeg, findFortressStep), src/nether-travel.js (surveyLeg, legSays)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `leg_(east\|south\|west\|north)` (pattern) | root | go this way ninety-six blocks at the height the bot stands | always, one for each heading; said with the cells ahead at this height (open air, how many of them over a drop of four or more, rock to dig at about six seconds a cell, and what stops it), about how long, whether it is back the way the last leg came, and how the last leg this way ended |
+| `seek_fortress_height` | root | dig a staircase toward y 64 first, along the most open heading | the bot stands more than eight blocks above or below y 64 and a staircase is at hand; said with the height to make up and where fortresses stand |
 
 ## travel
 

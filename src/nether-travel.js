@@ -75,6 +75,56 @@ async function crossToward(bot, task, goal, save, target, { what = 'the target' 
   return { tried: true, survey };
 }
 
+// What a sweep leg would meet along a heading at the height the bot stands,
+// cell by cell before it is chosen: open air the bot walks through and sees
+// from, rock the crossing digs blind, lava or unloaded ground that stops it.
+// mid-205-m spent fifty-one of its sixty Nether minutes on legs of ninety-
+// odd blocks at y 96 to 104 straight through solid netherrack, about six
+// seconds a cell, thirteen legs and nothing seen from inside the rock (note
+// 394, 2026-09-27): the leg kept the height it started at and went the way
+// the compass said, whatever lay that way. Now each heading is surveyed and
+// the leg is Jev's to choose (mob-hunt.js chooseLeg), with these facts.
+const WALK_SPEED = 4.3;
+// Measured on mid-205-m: two blocks dug a cell, about six seconds a cell.
+const ROCK_CELL_SECONDS = 6;
+// Open air over a drop this deep is a cavern or the lava sea's edge, where a
+// fortress is seen from afar (its bricks are found within 128 blocks).
+const CAVERN_DROP = 4;
+const passable = b => !b || b.boundingBox === 'empty';
+function surveyLeg(bot, heading, { cells = 96, from = null } = {}) {
+  if (typeof bot.blockAt !== 'function' || !bot.entity?.position) return null;
+  const [dx, dz] = heading;
+  const out = { cells: 0, open: 0, rock: 0, cavern: 0, stoppedBy: null, stoppedAt: null };
+  let here = from || bot.entity.position.floored();
+  for (let n = 0; n < cells; n++) {
+    const next = here.offset(dx, 0, dz);
+    const body = [next, next.offset(0, 1, 0)].map(p => bot.blockAt(p));
+    if (body.some(b => !b)) { out.stoppedBy = 'unloaded ground'; out.stoppedAt = out.cells; break; }
+    if (body.some(b => /lava|fire/.test(b.name || ''))) { out.stoppedBy = 'lava in the way'; out.stoppedAt = out.cells; break; }
+    if (body.some(b => !passable(b))) out.rock++;
+    else {
+      out.open++;
+      let depth = 0;
+      for (; depth < CAVERN_DROP; depth++) { const b = bot.blockAt(next.offset(0, -1 - depth, 0)); if (!b || !passable(b) || /lava/.test(b.name || '')) break; }
+      if (depth >= CAVERN_DROP) out.cavern++;
+    }
+    out.cells++; here = next;
+  }
+  out.seconds = Math.round(out.open / WALK_SPEED + out.rock * ROCK_CELL_SECONDS);
+  return out;
+}
+
+// The leg as a fact: what is open, what is rock and about how long, and
+// that nothing is seen from inside the rock.
+function legSays(survey, { direction, length, y }) {
+  if (!survey) return `Go ${direction} ${length} blocks at y ${y}. Not surveyed from here.`;
+  const parts = [];
+  if (survey.open) parts.push(`${survey.open} of open air${survey.cavern ? ` (${survey.cavern} of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar)` : ''}`);
+  if (survey.rock) parts.push(`${survey.rock} of rock to dig (about ${ROCK_CELL_SECONDS} seconds a cell, and nothing is seen from inside it)`);
+  const stop = survey.stoppedBy ? ` ${survey.stoppedBy[0].toUpperCase()}${survey.stoppedBy.slice(1)} stops it at cell ${survey.stoppedAt}.` : '';
+  return `Go ${direction} ${length} blocks at y ${y}: of the ${survey.cells} cells ahead, ${parts.join(' and ') || 'none open'}; about ${survey.seconds} seconds.${stop}`;
+}
+
 // Whether food is why the bot is going back: hungry, with nothing to eat
 // or the return for food chosen.
 function foodReason(bot, goal) {
@@ -198,4 +248,4 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   return answers;
 }
 
-module.exports = { crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, crossingSays, crossingSeconds, foodReason, legTarget, hoglinsKnown, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
+module.exports = { crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, legTarget, hoglinsKnown, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };

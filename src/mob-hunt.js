@@ -17,7 +17,7 @@ const { decide } = require('./decisions');
 const { descendTo } = require('./descent');
 const { setAside, isSetAside, watch, unwatch } = require('./progress');
 const { bridgeTo, surveyCrossing, underFire, blocksCarried } = require('./bridging');
-const { crossToward, crossingSays, nearer } = require('./nether-travel');
+const { crossToward, crossingSays, nearer, surveyLeg, legSays } = require('./nether-travel');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
@@ -134,23 +134,40 @@ function canBegin(bot, handler = {}) {
   // a single point. Fire ends a fight only when the fight is already lost.
   const burning = !!(bot.entity.metadata?.[0] & 1);
   if (handler.passive) return standing && !burning && bot.health >= 10 && bot.food >= 6;
-  if (burning && bot.health < 10) return false;
-  // A fight is only worth starting if the health spent in it can come back.
-  // Below eighteen hunger with nothing to eat, regeneration is off: the
-  // bot left its pocket at fifteen health and seventeen hunger, took on a
-  // spawner, and every point it lost was gone for good. Without food the
-  // right fight is the walk home for some.
-  if (bot.food < 18 && !hasFood(bot)) return false;
-  // Fourteen in full armour: eighteen was a bar the Nether could not meet
-  // once the food ran out, and the wait for it never ends without regen.
-  //
-  // The armour is what has to be on; the hand is whatever the last action
-  // needed. Requiring a sword in hand here meant that drawing the bow, or
-  // placing one block, made the bot unfit to fight, and "unfit to fight"
-  // is a half-second doze in the open. Two blazes shot it through five
-  // rounds of that: thirty-four damage, one death, and the bow it was
-  // holding was the reason it would not swing.
-  return standing && bot.health >= HUNT_FLOOR && bot.food >= HUNT_FLOOR && kitReady(bot);
+  // The health, hunger, food and kit the fight used to be gated on are
+  // facts on Jev's choice now (fitness, below): the gate was a hidden rule,
+  // and mid-227-m stalked blazes at 11.9 health, was lit by a fireball and
+  // burned from 6.4 to none with no water in the Nether to put it out (note
+  // 392, 2026-09-27). What stays here is the footing: a fight is swings and
+  // turns, and that needs ground to stand on.
+  return standing;
+}
+
+// What the hunt once refused a fight for, as facts: health against the
+// fourteen the code required (eighteen was a bar the Nether could not meet
+// once the food ran out); hunger, since health comes back only at eighteen
+// or more and a bot at fifteen health and seventeen hunger with nothing to
+// eat once took on a spawner and lost every point for good; whether food is
+// carried; fire, which in the Nether nothing but waiting puts out; and the
+// kit, the armour that has to be on (the hand is whatever the last action
+// needed: requiring a sword in hand made drawing the bow a reason not to
+// swing, and two blazes shot the bot through five rounds of that).
+function fitness(bot) {
+  const health = Math.round((bot.health ?? 20) * 10) / 10, food = bot.food ?? 20;
+  const burning = !!(bot.entity?.metadata?.[0] & 1);
+  const kitMissing = Object.entries(combatGear).filter(([destination, names]) => destination === 'hand'
+    ? !carriedEquipment(bot).some(item => names.includes(item.name))
+    : !(names.includes(equipped(bot, destination)?.name) && durable(bot.registry, equipped(bot, destination)))).map(([d]) => d);
+  const foodCarried = hasFood(bot);
+  return { health, food, floor: HUNT_FLOOR, healing: food >= 18, foodCarried, burning, kitMissing,
+    fit: health >= HUNT_FLOOR && food >= HUNT_FLOOR && !kitMissing.length && (food >= 18 || foodCarried) && !(burning && health < 10) };
+}
+function fitnessSays(bot, f = fitness(bot)) {
+  const parts = [`Health ${f.health}${f.health < f.floor ? ` (under the ${f.floor} the code once required to start a fight)` : ''}`,
+    `hunger ${f.food}: ${f.healing ? 'health comes back while it stays at eighteen or more' : `health does not come back under eighteen${f.foodCarried ? ', and food is carried to eat first' : ', and nothing is carried to eat: every point lost is gone for good'}`}`];
+  if (f.burning) parts.push(`alight now: fire takes half a heart a second${dimension(bot) === 'nether' ? ', and in the Nether there is no water to put it out; only waiting burns it off' : ''}`);
+  if (f.kitMissing.length) parts.push(`the kit is short: no ${f.kitMissing.map(d => d === 'hand' ? 'sword or axe carried' : `${d} armour worn`).join(', no ')}`);
+  return `${parts.join('; ')}.`;
 }
 
 // A blaze hovers, so there is no standing room within two blocks of it: the
@@ -405,10 +422,15 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     } finally { movement.restore(); restore(); }
   }
   if (!Object.keys(tree).length) return false;
-  tree.defer = { description: 'Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.', run: async () => {
+  // The bot's fitness, on every option and in the state: what the code
+  // once refused a fight for, as facts for Jev's choice (fitness, above).
+  const fit = fitness(bot), fitSaid = fitnessSays(bot, fit);
+  for (const option of Object.values(tree)) option.description.fitness = fitSaid;
+  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved. ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000); save();
   } };
-  const snapshot = { request: goal.request, resource: state.item, need: state.targetCount - countOf(bot, state.item), health: bot.health, food: bot.food, dimension: dimension(bot), riskNow: require('./risk').riskNow(bot) };
+  const snapshot = { request: goal.request, resource: state.item, need: state.targetCount - countOf(bot, state.item), health: bot.health, food: bot.food, dimension: dimension(bot), riskNow: require('./risk').riskNow(bot),
+    fitness: { ...fit, said: fitSaid } };
   let decision;
   {
     // Fresh means the fight is still the one Jev was shown. Health equal to
@@ -477,11 +499,10 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // the head): waiting was the answer to all of canBegin, and waiting does
   // not change the footing. It stood recovering at full health on a
   // fortress roof. The stalk below moves it; a fight begins wherever that
-  // lands on dry ground.
-  const fitButFooting = !handler.passive && !canBegin(bot, handler) && bot.health >= HUNT_FLOOR && bot.food >= HUNT_FLOOR && kitReady(bot) &&
-    bot.oxygenLevel > 12 && bot.game.gameMode === 'survival' && bot.game.difficulty !== 'peaceful' &&
-    !(bot.entity.metadata?.[0] & 1 && bot.health < 10) && !(bot.food < 18 && !hasFood(bot));
-  if (!canBegin(bot, handler) && !fitButFooting) {
+  // lands on dry ground. With nothing in view to fight (huntObserved runs
+  // first, and asks Jev with the fitness as facts), a bot short of the
+  // fitness recovers here: food, cover from the shooters, health.
+  if (!handler.passive && !fitness(bot).fit) {
     // Nothing to eat and hunger under eighteen means no regeneration: the
     // recovery never comes. Off the Overworld that is a trip back for food.
     // Unless Jev chose to go on in the Nether without going back (nether-
@@ -771,10 +792,54 @@ const FORTRESS_LEG = 96;
 // height between the lava sea and the ceiling.
 // Legs run along x until a direction will not give; then the sweep turns.
 const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+const HEADING_NAMES = ['east', 'south', 'west', 'north'];
+// Where fortresses stand: their corridors and bridges mostly between y 48
+// and 75, over the lava sea at y 31. A leg at y 100 through the rock passes
+// over every one of them unseen (mid-205-m, note 394).
+const FORTRESS_Y = 64, FORTRESS_BAND = 8;
+const headingIndex = state => Number.isInteger(state.heading) ? state.heading % 4 : (state.axis === -1 ? 2 : 0);
 function fortressLegTarget(state, position) {
-  const y = Math.max(40, Math.min(80, Math.round(position.y)));
-  const [dx, dz] = Number.isInteger(state.heading) ? HEADINGS[state.heading % 4] : [state.axis, 0];
+  // A leg seeking the fortress heights (chooseLeg's seek_fortress_height)
+  // ends at them; a level leg keeps its height between the sea and the roof.
+  const y = state.legMode === 'descend' ? FORTRESS_Y : Math.max(40, Math.min(80, Math.round(position.y)));
+  const [dx, dz] = HEADINGS[headingIndex(state)];
   return new Vec3(Math.round(position.x + FORTRESS_LEG * dx), y, Math.round(position.z + FORTRESS_LEG * dz));
+}
+
+// The next leg is Jev's (fortress_leg): each heading surveyed at the
+// height the bot stands (nether-travel.js surveyLeg), and, off the
+// fortress heights, a staircase down or up toward them. mid-205-m's
+// thirteen legs went the way the compass said at y 96 to 104, six seconds a
+// cell of netherrack and nothing seen (note 394, 2026-09-27). Without Jev,
+// the heading with the most open air, the code's own heading at a tie.
+async function chooseLeg(bot, task, goal, save, actions, state) {
+  const here = bot.entity.position, y = Math.round(here.y);
+  const current = headingIndex(state);
+  const surveys = HEADINGS.map(h => surveyLeg(bot, h, { cells: FORTRESS_LEG }));
+  const back = state.legFrom && Number.isInteger(state.lastHeading) ? (state.lastHeading + 2) % 4 : null;
+  const options = {};
+  HEADINGS.forEach((h, i) => {
+    options[`leg_${HEADING_NAMES[i]}`] = { description: legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) +
+      (i === back ? ' This is back the way the last leg came.' : '') + (i === current && state.lastLegError ? ` The last leg this way ended: ${state.lastLegError}.` : ''),
+      run: () => { state.heading = i; state.legMode = 'level'; } };
+  });
+  const off = y - FORTRESS_Y;
+  if (Math.abs(off) > FORTRESS_BAND && actions.tunnel) {
+    const most = surveys.every(s => !s) ? current : surveys.map((s, i) => [s?.open || 0, i]).sort((a, b) => b[0] - a[0] || (a[1] === current ? -1 : b[1] === current ? 1 : 0))[0][1];
+    options.seek_fortress_height = { description: `Dig a staircase ${off > 0 ? 'down' : 'up'} toward y ${FORTRESS_Y} heading ${HEADING_NAMES[most]}, ${Math.abs(off)} blocks of height, a step at a time with rock round the bot and no block dug with lava or water behind it: fortress corridors and bridges stand mostly between y 48 and 75, over the lava sea at y 31, and from y ${y} none is seen through the rock. The leg goes level again once within ${FORTRESS_BAND} of y ${FORTRESS_Y}.`,
+      run: () => { state.heading = most; state.legMode = 'descend'; } };
+  }
+  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
+  const facts = { height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
+    legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
+    lastLeg: Number.isInteger(state.lastHeading) ? `${HEADING_NAMES[state.lastHeading]}${state.lastLegError ? `, ended: ${state.lastLegError}` : ''}` : null,
+    blocksCarried: blocksCarried(bot), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`) };
+  const open = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, surveys[i]?.open ?? null]));
+  const decision = await decide('fortress_leg', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree, state: facts,
+    context: { current: `leg_${HEADING_NAMES[current]}`, open } });
+  if (decision.stale) return false;
+  options[decision.path.at(-1)].run();
+  return true;
 }
 // A direction the sweep cannot make ground in for several ticks is given
 // up for the next one round the compass: a leg toward an open cavern had
@@ -1032,8 +1097,12 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // the Nether, each ended by the progress watch before the leg counted
     // its failures, and the audit called the loop (2026-09-26). Turned.
     if (state.legFrom && Math.hypot(state.legFrom.x - here.x, state.legFrom.z - here.z) < 8) turnSweep(state);
+    // The leg's heading and height are Jev's, with each heading surveyed
+    // (chooseLeg); the compass's own heading is the outage default.
+    state.since ||= Date.now();
+    if (!await chooseLeg(bot, task, goal, save, actions, state)) return;
     const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++; state.legSince = Date.now();
-    state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) };
+    state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) }; state.lastHeading = headingIndex(state); delete state.lastLegError;
     delete state.legBest;
   }
   goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();
@@ -1046,9 +1115,18 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // of reach on foot (note 251, 2026-09-26).
   const approach = { best: state.legBest };
   const gained = () => { const made = nearer(approach, flat(bot.entity.position), before); state.legBest = approach.best; return made; };
+  // Seeking the fortress heights (chooseLeg): the staircase alone, down or
+  // up toward the leg's end, until the bot is within the band; a crossing at
+  // the standing height would keep it where nothing is seen.
+  const seeking = state.legMode === 'descend' && Math.abs(here.y - FORTRESS_Y) > FORTRESS_BAND;
+  if (seeking) {
+    try { await actions.tunnel(bot, task, goal, save, leg, 'fortress'); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastLegError = err.message; }
+    if (gained() || Math.abs(bot.entity.position.y - FORTRESS_Y) < Math.abs(here.y - FORTRESS_Y) - 0.5) { state.legFails = 0; return; }
+  }
   // The pathfinder first: it walks open ground, bridges and climbs where a
   // staircase can only dig. The tunnel takes over where it finds no way.
-  if (actions.navigate) {
+  if (actions.navigate && !seeking) {
     try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 6), { timeoutMs: 30000, stallMs: 8000, stopWhen }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     if (gained()) { state.legFails = 0; return; }
@@ -1056,12 +1134,14 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // No ground on foot in the Nether: straight on at this height, through
   // the netherrack or over the air and lava on blocks laid ahead, as far as
   // the cells ahead show it can go (nether-travel.js).
-  const crossed = await crossToward(bot, task, goal, save, leg, { what: 'the fortress search\'s leg' });
+  const crossed = seeking ? { tried: false } : await crossToward(bot, task, goal, save, leg, { what: 'the fortress search\'s leg' });
   if (crossed.tried && gained()) { state.legFails = 0; return; }
   if (crossed.survey?.stoppedBy) state.lastCrossStop = crossed.survey.stoppedBy;
-  try { await actions.tunnel(bot, task, goal, save, leg, 'fortress'); }
-  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastLegError = err.message; }
-  if (gained()) { state.legFails = 0; return; }
+  if (!seeking) {
+    try { await actions.tunnel(bot, task, goal, save, leg, 'fortress'); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastLegError = err.message; }
+    if (gained()) { state.legFails = 0; return; }
+  }
   // Four failures and twenty seconds: a leg whose every attempt fails at
   // once turned the compass four times in half a minute.
   // Counted from nothing on a fresh search: incremented from undefined it
@@ -1093,4 +1173,4 @@ async function findFortressStep(bot, task, goal, save, actions) {
   }
 }
 
-module.exports = { prepareCombatGear, combatMovement, canBegin, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };
+module.exports = { prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };

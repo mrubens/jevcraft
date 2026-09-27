@@ -581,6 +581,43 @@ test('no hunt fight is begun from a one-wide span over the lava sea', async () =
   assert.deepEqual(attacks, []);
 });
 
+test('the next leg of the fortress search is Jev\'s: each heading surveyed for open air against rock, and the fortress heights offered from high up', async () => {
+  // mid-205-m (note 394): thirteen legs at y 96 to 104 straight through solid netherrack, six seconds a cell, nothing seen in fifty-one minutes.
+  const { findFortressStep, FORTRESS_LEG, FORTRESS_Y } = require('../src/mob-hunt');
+  const { legFallback } = require('../src/decisions/travel');
+  // Solid netherrack everywhere at the standing height except a cavern to the south: open air from z 1 to 40, its floor thirty blocks down.
+  const rock = p => p.y === 99 && p.z <= 0 ? 'netherrack' : (p.z >= 1 && p.z <= 40 && p.x === 0) ? (p.y < 70 ? 'netherrack' : null) : 'netherrack';
+  const { bot } = netherWorld(new Vec3(0.5, 100, 0.5), rock);
+  const client = jevStub(['leg_south']);
+  const goal = {};
+  const tunnels = [];
+  const actions = { client, navigate: async () => {}, tunnel: async (b, t, g, s, target) => tunnels.push({ x: target.x, y: target.y, z: target.z }) };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 1); assert.equal(client.asked[0].kind, 'fortress');
+  const { options, state } = client.asked[0];
+  assert.deepEqual(Object.keys(options).sort(), ['leg_east', 'leg_north', 'leg_south', 'leg_west', 'seek_fortress_height']);
+  assert.match(options.leg_east, /Go east 96 blocks at y 100: of the 96 cells ahead, 96 of rock to dig \(about 6 seconds a cell, and nothing is seen from inside it\); about 576 seconds/);
+  assert.match(options.leg_south, /40 of open air \(40 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar\) and 56 of rock to dig/);
+  assert.match(options.seek_fortress_height, /Dig a staircase down toward y 64 heading south, 36 blocks of height/);
+  assert.match(options.seek_fortress_height, /fortress corridors and bridges stand mostly between y 48 and 75/);
+  assert.equal(state.height, 100); assert.equal(state.legsSoFar, 0);
+  assert.equal(goal.fortressSearch.heading, 1, 'south, as Jev chose'); assert.equal(goal.fortressSearch.legMode, 'level');
+  assert.deepEqual([goal.fortressSearch.target.x, goal.fortressSearch.target.z], [1, FORTRESS_LEG + 1], 'a leg south from (0.5, 0.5)');
+  assert.equal(goal.decisions.at(-1).id, 'fortress_leg');
+  // From high up, the fortress heights: the staircase alone toward y 64, no crossing at the standing height.
+  const again = jevStub(['seek_fortress_height']);
+  const goal2 = {};
+  const steps = [];
+  await findFortressStep(bot, new Task('hunt'), goal2, () => {}, { client: again, navigate: async () => steps.push('walk'), tunnel: async (b, t, g, s, target) => steps.push(['tunnel', target.y]) });
+  assert.equal(goal2.fortressSearch.legMode, 'descend'); assert.equal(goal2.fortressSearch.target.y, FORTRESS_Y);
+  assert.deepEqual(steps, [['tunnel', FORTRESS_Y]], 'the staircase toward the fortress heights, no walk and no level crossing');
+  // Without Jev, the heading with the most open air; the compass's own at a tie.
+  const children = { leg_east: {}, leg_south: {}, leg_west: {}, leg_north: {}, seek_fortress_height: {} };
+  assert.equal(legFallback(children, [], { current: 'leg_east', open: { leg_east: 0, leg_south: 40, leg_west: 0, leg_north: 0 } }), 'leg_south');
+  assert.equal(legFallback(children, [], { current: 'leg_west', open: { leg_east: 5, leg_south: 5, leg_west: 5, leg_north: 5 } }), 'leg_west');
+  assert.equal(legFallback(children, [], { current: 'leg_west', open: { leg_east: null, leg_south: null, leg_west: null, leg_north: null } }), 'leg_west');
+});
+
 test('a leg walk that goes some way and comes back out is not ground made on the leg', async () => {
   const { findFortressStep } = require('../src/mob-hunt');
   // Flat netherrack, lava at the body's height at x 21: nothing to cross on.
@@ -742,24 +779,39 @@ test('something overhead is reached by standing under it, never by towering up t
   assert.equal(below[0].y, 70, 'something below is reached by going down to it');
 });
 
-test('a burning bot still fights the blaze that lit it, until the fire is the thing killing it', () => {
-  const { canBegin } = require('../src/mob-hunt');
+test('the hunt\'s health, hunger, food, fire and kit are facts on Jev\'s choice, not a gate; only the footing is a rule', async () => {
+  // mid-227-m (note 392): stalking blazes at 11.9 health, lit by a fireball, burned from 6.4 to none with no water in the Nether.
+  const { canBegin, fitness, fitnessSays } = require('../src/mob-hunt');
   const { Vec3 } = require('vec3');
   const kit = { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'golden_boots' }, 45: { name: 'shield' } };
-  const make = (health, onFire) => ({
-    game: { gameMode: 'survival', difficulty: 'normal' }, health, food: 20, oxygenLevel: 20,
+  const make = (health, onFire, food = 20) => ({
+    game: { gameMode: 'survival', difficulty: 'normal', dimension: 'the_nether' }, health, food, oxygenLevel: 20,
     entity: { position: new Vec3(0.5, 77, 0.5), metadata: { 0: onFire ? 1 : 0 } },
     registry: require('minecraft-data')('26.1'),
     inventory: { items: () => [{ name: 'diamond_sword' }], slots: kit },
     blockAt: p => ({ name: p.y < 77 ? 'netherrack' : 'air', boundingBox: p.y < 77 ? 'block' : 'empty', position: p }),
   });
   const blaze = { item: 'blaze_rod', dimension: 'nether', ranged: true };
-  assert(canBegin(make(18, false), blaze), 'unhurt and unlit: fight');
-  assert(canBegin(make(18, true), blaze), 'alight at eighteen health: still fight, the fire came from the target');
-  assert(!canBegin(make(9, true), blaze), 'alight and nearly out: the fire is what is killing it now');
-  assert(!canBegin(make(9, false), blaze), 'the ordinary health floor still applies');
+  for (const [health, fire] of [[18, false], [18, true], [9, true], [9, false]]) assert(canBegin(make(health, fire), blaze), `footing is the rule: ${health} health, ${fire ? 'alight' : 'unlit'}`);
+  assert(fitness(make(18, false)).fit);
+  const lit = fitness(make(9, true));
+  assert(!lit.fit && lit.burning);
+  assert.match(fitnessSays(make(9, true), lit), /Health 9 \(under the 14 the code once required to start a fight\); hunger 20: health comes back while it stays at eighteen or more; alight now: fire takes half a heart a second, and in the Nether there is no water to put it out; only waiting burns it off\./);
+  assert.match(fitnessSays(make(11.9, false, 12)), /Health 11.9 \(under the 14 .*\); hunger 12: health does not come back under eighteen, and nothing is carried to eat: every point lost is gone for good\./);
+  const bare = make(18, false); bare.inventory = { items: () => [], slots: {} };
+  assert.match(fitnessSays(bare), /the kit is short: no sword or axe carried, no head armour worn, no torso armour worn, no legs armour worn, no feet armour worn/);
   // A passive chase has no armour behind it, so fire still calls it off.
   assert(!canBegin(make(18, true), { item: 'feather', passive: true }), 'a chase in shirtsleeves stops for fire');
+  // In view at nine health, the fight is asked, the fitness on every option and in the state.
+  const { bot, task, goal } = fixture('blaze');
+  bot.health = 9; bot.food = 12;
+  let asked = null;
+  const client = { systemOne: async ({ state, questions }) => { asked = { state, options: questions.branch_0.criteria }; return { answers: { branch_0: { choice: 'defer', confidence: 0.9 } } }; } };
+  assert.equal(await huntObserved(bot, task, goal, () => {}, {}, client), false, 'deferred, as Jev chose');
+  assert(asked, 'asked, where the old gate refused without a word');
+  assert.match(asked.options.hunt_7.fitness, /Health 9 \(under the 14 the code once required to start a fight\); hunger 12: health does not come back under eighteen/);
+  assert.match(asked.options.defer, /Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more/);
+  assert.equal(asked.state.fitness.fit, false); assert.equal(asked.state.fitness.floor, 14);
 });
 
 test('fit in every way but its footing, the hunt moves on rather than waiting to recover', async () => {

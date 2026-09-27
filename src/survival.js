@@ -23,6 +23,7 @@ const { surveyRoute, countOf } = require('./skills');
 const { defendNearby, defenseWeapon, shooter, shotTargets, shoot, lowerShield, raiseShield, canStrike } = require('./combat');
 const { digBunker, bunkerSide, wallStands, nearWall, centroid } = require('./bunker');
 const { deflect } = require('./projectile-guard');
+const { takeTurn } = require('./turn');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
 const { surfaceObserver } = require('./surface');
@@ -285,6 +286,24 @@ const worldAge = bot => Number(bot.time?.age);
 
 const inLava = bot => require('./terrain').bodyInLava(bot);
 const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(bot.entity.position.floored())?.name === 'water';
+
+// A passage out of a pocket away from a creeper (Survival.passageOut): its
+// end at least this far from the creeper, more than the six blocks that keep
+// a door shut; at least this long, so the bot is in rock and not at a door;
+// and no longer than this.
+const PASSAGE_CLEAR = 10, PASSAGE_MIN = 4, PASSAGE_MAX = 16;
+
+// Where a held stance looks, for the shield: a shield covers only the way
+// the bot faces. A shot on its way first (the guard's own rule), then the
+// nearest shooter that can see the bot, then the nearest mob. mid-227-n
+// held its pillar facing the nearest mob each pass while the skeleton
+// behind it shot through a raised shield (note 395, 2026-09-27).
+function shieldFacing(bot, danger) {
+  const shot = require('./projectile-guard').incoming(bot, { reach: 24 })[0];
+  if (shot?.position) return { at: shot.position, name: shot.name };
+  const aimed = danger.find(t => t.visible && shooter(t.entity)) || danger[0];
+  return aimed?.entity?.position ? { at: aimed.entity.position.offset(0, 1, 0), name: aimed.entity.name } : null;
+}
 // Out to six blocks: at three, a fall into the Nether's lava sea found no
 // shore, the step did nothing, and the bot burned four seconds standing.
 function lavaExit(bot, radius = 6, { water = false } = {}) {
@@ -1249,11 +1268,15 @@ class Survival {
       // the shield (the tick's own, before this) taking what comes. Returned
       // at once, it ran twenty passes a second with nothing reported, and the
       // hurt watchdog stopped the work under it at each hit (mid-243-i).
+      // Facing the shooter, not the nearest: a shield covers only the way
+      // the bot looks, and mid-227-n on its pillar faced the spider at its
+      // foot while the skeleton shot it from 14.4 to none through a shield
+      // raised at four of the last five hits (note 395, 2026-09-27).
       run: async () => {
         if (!up) return this.pillarFrom(task, goal, save, danger);
-        const nearest = danger[0];
-        this.report(goal, save, { action: 'pillar_hold', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
-        if (nearest?.entity?.position) await bot.lookAt?.(nearest.entity.position.offset(0, 1, 0), true);
+        const face = shieldFacing(bot, danger);
+        this.report(goal, save, { action: 'pillar_hold', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, ...(face ? { facing: face.name } : {}) });
+        if (face) await bot.lookAt?.(face.at, true);
         await sleep(250);
         return true;
       } };
@@ -1502,9 +1525,19 @@ class Survival {
       const drowned = danger.filter(t => t.entity.name === 'drowned').length;
       const wet = ` The bot is in water, air ${bot.oxygenLevel ?? 20} of 20 (air runs out in about fifteen seconds under water, then it drowns at two health a second), and sinks unless it swims; a pillar, a pocket or a bunker cannot be built here.${drowned ? ` ${drowned === 1 ? 'The drowned swims' : `${drowned} drowned swim`} faster than the bot in water.` : ''}`;
       if (options.fight) options.fight.description += wet;
-      options.get_out_of_water = { description: `Swim for the nearest dry ground with air over it, digging a step into the bank if that is the way out, and deal with the mobs from there.${wet}`,
-        run: async () => { this.report(goal, save, { action: 'out_of_water', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, air: bot.oxygenLevel });
-          return !!await reachShore(bot, task, goal, save, { move: this.actions.navigate, client: this.client, dig: this.actions.dig }); } };
+      // The bank out of the shooters' sight first, and said: mid-211-l and
+      // mid-211-n, swimming a stream under four pillager crossbows, had the
+      // retreat find no route and every building stance fail in the water
+      // (notes 367 and 388, 2026-09-27).
+      const shooting = danger.filter(m => shooter(m.entity)).map(m => m.entity);
+      const banks = require('./shore').landingsAbout(bot, shooting);
+      const bankSays = !banks.nearest ? ' No dry landing near the water\'s level is in view within thirty-two blocks; the bot digs or climbs out where it can.'
+        : shooting.length ? (banks.hidden ? ` The nearest bank out of the ${shooting.length === 1 ? 'shooter\'s' : 'shooters\''} sight is ${banks.hidden.distance} blocks off${banks.hidden.distance > banks.nearest.distance ? ` (the nearest bank of all, ${banks.nearest.distance} off, is in their sight)` : ''}; it is swum for first, shot at on the way, and behind it they cannot hit the bot.`
+          : ` Every dry landing in view within thirty-two blocks is in the shooters\' sight; the nearest is ${banks.nearest.distance} blocks off.`)
+        : ` The nearest dry landing is ${banks.nearest.distance} blocks off.`;
+      options.get_out_of_water = { description: `Swim for the nearest dry ground with air over it, out of the shooters' sight where a bank hides the bot, digging a step into the bank if that is the way out, and deal with the mobs from there.${wet}${bankSays}`,
+        run: async () => { this.report(goal, save, { action: 'out_of_water', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, air: bot.oxygenLevel, hiddenBank: banks.hidden });
+          return !!await reachShore(bot, task, goal, save, { move: this.actions.navigate, client: this.client, dig: this.actions.dig, fight: danger }); } };
     }
     for (const t of shotTargets(bot, danger, { any: true }).slice(0, 3)) options[`shoot_${t.entity.id}`] = { description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + shotFacts(t) + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
@@ -1630,6 +1663,7 @@ class Survival {
     // tick and was refused, and the turn went to the work with nothing done.
     // mid-235-i chose to dig down at 6.7 health, its shaft pocket resting,
     // and stood fifteen seconds under a skeleton's arrows (2026-09-27).
+    takeTurn(bot, 'survival', `stance: ${choice}`, { threats: danger.slice(0, 4).map(t => `${t.entity.name} ${Math.round(t.distance)}`) });
     try { done = await options[choice].run(); }
     catch (err) { if (err.name !== 'SetAside') throw err; done = false; }
     finally { stance.running = false; stance.ranAt = Date.now(); }
@@ -2601,6 +2635,71 @@ class Survival {
     return true;
   }
 
+  // The passage out of a pocket away from a creeper, surveyed before it is
+  // offered (the pocket_next option tunnel_out): level, one wide and two
+  // high, along the axis that leads farthest from the creeper, cell by cell
+  // through rock that is safe to dig (nothing flowing behind it, tunneling.js
+  // safeExcavation) with a solid floor under each cell, until its end is
+  // PASSAGE_CLEAR blocks from the creeper and at least PASSAGE_MIN long. Null
+  // where the rock ahead does not allow it.
+  passageOut(creeper) {
+    const bot = this.bot;
+    const feet = bot.entity.position.floored(), at = creeper.entity.position;
+    const away = feet.offset(0.5, 0, 0.5).minus(at);
+    const dir = Math.abs(away.x) >= Math.abs(away.z) ? new Vec3(Math.sign(away.x) || 1, 0, 0) : new Vec3(0, 0, Math.sign(away.z) || 1);
+    const direction = dir.x === 1 ? 'east' : dir.x === -1 ? 'west' : dir.z === 1 ? 'south' : 'north';
+    const { safeExcavation } = require('./tunneling');
+    let here = feet, cells = 0;
+    for (let n = 0; n < PASSAGE_MAX; n++) {
+      const next = here.plus(dir);
+      const floor = bot.blockAt(next.offset(0, -1, 0));
+      if (!floor || floor.boundingBox !== 'block' || /lava|water/.test(floor.name)) break;
+      let blocked = false;
+      for (const c of [next, next.offset(0, 1, 0)]) {
+        const b = bot.blockAt(c);
+        if (!b || /lava|water|fire/.test(b.name) || (b.boundingBox === 'block' && (!b.diggable || !safeExcavation(bot, c)))) { blocked = true; break; }
+      }
+      if (blocked) break;
+      here = next; cells++;
+      if (cells >= PASSAGE_MIN && Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z) >= PASSAGE_CLEAR) break;
+    }
+    const clearance = Math.round(Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z));
+    if (cells < PASSAGE_MIN || clearance < PASSAGE_CLEAR) return null;
+    return { dir, direction, cells, clearance, end: here };
+  }
+
+  // Dig the passage surveyed (passageOut) and go on from its end: the pocket
+  // is forgotten as one left by a door. The creeper is looked for before
+  // each cell; within six blocks of the passage's head it stops, the bot
+  // still enclosed, and the pocket's next step is asked again.
+  async tunnelOut(task, goal, save, refuge, creeper, passage) {
+    const bot = this.bot;
+    this.report(goal, save, { action: 'tunnel_out', origin: refuge.origin, direction: passage.direction, cells: passage.cells, creeper: Number(creeper.distance.toFixed(1)), health: bot.health });
+    const start = bot.entity.position.floored().offset(0.5, 0, 0.5);
+    let here = bot.entity.position.floored(), dug = 0;
+    for (let n = 0; n < passage.cells; n++) {
+      task.check();
+      const next = here.plus(passage.dir), head = next.offset(0.5, 0, 0.5);
+      // Come round toward the passage: within six of its head and nearer to
+      // it than to the pocket it was dug from. (The first cell of a passage
+      // dug from five blocks off is six from the creeper by itself.)
+      const near = threats(bot, 16).filter(t => t.entity.name === 'creeper').some(t => t.entity.position.distanceTo(head) <= 6 && t.entity.position.distanceTo(head) < t.entity.position.distanceTo(start));
+      if (near) { this.report(goal, save, { action: 'tunnel_out_stopped', cells: dug, reason: 'a creeper come round within six blocks of the passage\'s head' }); return dug > 0; }
+      for (const c of [next, next.offset(0, 1, 0)]) {
+        const b = bot.blockAt(c);
+        if (b && b.boundingBox === 'block') {
+          if (!require('./tunneling').safeExcavation(bot, c)) { this.report(goal, save, { action: 'tunnel_out_stopped', cells: dug, reason: `lava or water behind the ${b.name.replaceAll('_', ' ')} ahead` }); return dug > 0; }
+          await this.actions.dig(bot, task, c, { requireDrops: false });
+        }
+      }
+      await this.actions.navigate(bot, task, new goals.GoalBlock(next.x, next.y, next.z), { timeoutMs: 6000, stallMs: 2000 });
+      here = next; dug++;
+    }
+    // Left by its passage, the pocket is one night's stop like any other.
+    if (refuge.kind !== 'house') { this.state.shelters = this.state.shelters.filter(s => s !== refuge); save(); }
+    return true;
+  }
+
   async leave(task, goal, save, refuge, reason, { past = false } = {}) {
     const bot = this.bot;
     // "Morning. Back to it." only when it is morning; a shelter left at
@@ -3168,6 +3267,7 @@ class Survival {
 
   async wait(task, goal, save, reason = 'Waiting for daylight inside the verified shelter') {
     this.report(goal, save, { action: 'wait_in_shelter', reason });
+    takeTurn(this.bot, 'survival', 'wait', reason);
     for (let i = 0; i < 50; i++) { task.check(); await sleep(100); }
   }
 
@@ -3192,6 +3292,7 @@ class Survival {
   async stepOnce(task, goal, save, onStep) {
     const bot = this.bot;
     // The survival layer has the turn: what the watchdogs held for it is met.
+    takeTurn(bot, 'survival', 'step');
     bot._airAbort = false; bot._threatAbort = false;
     goal.survival = this.state;
     task.interruptCheck = undefined;
@@ -3440,6 +3541,20 @@ class Survival {
       // blocks of one stays shut, and with every door so, the pocket waits.
       const creeperNear = threats(bot, 16).filter(t => t.entity.name === 'creeper').sort((a, b) => a.distance - b.distance)[0];
       const doorsSay = creeperNear ? ` A door within six blocks of a creeper stays shut (the creeper ${Math.round(creeperNear.distance)} blocks off now${creeperNear.visible ? '' : ', behind the rock'}): with every door so, the pocket waits for it to move off.` : '';
+      // A way out that no door rule shuts: a passage dug through the far
+      // wall, away from the creeper. mid-230-l chose to leave sixty-seven
+      // times with a creeper drifting three to seven blocks off behind the
+      // rock, every door refused for it each time, and sat a hundred minutes
+      // in the pocket (note 390, 2026-09-27). The rule that keeps a door
+      // within six blocks of a creeper shut is a physical one and stays; the
+      // passage ends farther from the creeper than that, and is Jev's.
+      const passage = creeperNear && !inWater(bot) && typeof this.actions.dig === 'function' && typeof this.actions.navigate === 'function' ? this.passageOut(creeperNear) : null;
+      if (passage) options.tunnel_out = { description: `Dig a passage out through the pocket's ${passage.direction} wall, away from the creeper: one wide and two high, ${passage.cells} blocks, about ${Math.round(passage.cells * 2.5)} seconds, and go back to work${night ? ' in the dark, where mobs spawn' : ''} from its end, ${passage.clearance} blocks from where the creeper is now (it is ${Math.round(creeperNear.distance)} off${creeperNear.visible ? '' : ', behind the rock'}). A creeper walks to a player it sees within sixteen blocks and lights its fuse within three; behind rock it sees nothing, and digging makes no noise it follows. No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if the creeper comes round toward its head within six blocks or the rock ahead is not safe to dig through.${outSays}${outHealth}`,
+        run: async () => {
+          delete this.state.watchedSince;
+          if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_out' };
+          return this.tunnelOut(task, goal, save, refuge, creeperNear, passage);
+        } };
       options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${doorsSay}${outSays}${outHealth}`,
         run: async () => {
           delete this.state.watchedSince;
@@ -3790,4 +3905,4 @@ class Survival {
   }
 }
 
-module.exports = { biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

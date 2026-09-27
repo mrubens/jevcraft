@@ -1,6 +1,7 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { clean, position, goalView, decisionSource } = require('./trace');
+const { turnHeld } = require('../turn');
 const water = new Set(['water', 'bubble_column', 'seagrass', 'kelp', 'tall_seagrass', 'kelp_plant']);
 
 function terrain(bot, radius = 12) {
@@ -50,6 +51,11 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       // Who is moving the bot, and how: the step on the goal went stale
       // while other code held the keys, and a fall had to be reconstructed.
       controller: bot._controller ? { ...bot._controller } : null,
+      // Who has the turn and for how long (turn.js): the survival step, a
+      // stance held, a question out to Jev, a meal, the work's step. Seconds
+      // of silence while hurt (notes 358, 366, 391) had no holder in the
+      // record.
+      turn: turnHeld(bot, now),
       held: Object.entries(bot.controlState || {}).filter(([, on]) => on).map(([key]) => key),
       pathing: !!bot.pathfinder?.isMoving?.(),
       memory: bot.companionMemory ? { places: bot.companionMemory.state.places.length,

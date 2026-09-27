@@ -56,6 +56,28 @@ test('shore recovery verifies arrival, retains failures and restores movement on
   }
 });
 
+test('out of the water in a fight: the threat check does not end the swim, and the bank the shooters cannot see comes first', async () => {
+  // mid-211-l and mid-211-n (notes 367, 388): shot dead swimming a stream under four pillager crossbows, the retreat finding no route in the water.
+  const { landingsAbout, hiddenFrom } = require('../src/shore');
+  const f = fixture(), { bot } = f;
+  const pillager = { id: 5, name: 'pillager', type: 'hostile', position: new Vec3(8.5, 63, -6.5), height: 1.95, isValid: true };
+  bot.entities = { 5: pillager }; bot.game.dimension = 'overworld'; bot.game.difficulty = 'normal'; bot.time = { timeOfDay: 6000 };
+  // Two banks: one in the pillager's sight (z 0), one behind the bank at z 6, farther off.
+  bot.world = { raycast: (from, dir, len) => { const to = from.plus(dir.scaled(len)); return to.z > 3 ? { intersect: from.plus(dir.scaled(2)) } : null; } };
+  bot.findBlocks = ({ useExtraInfo }) => [new Vec3(18, 62, 0), new Vec3(18, 62, 6)].map(p => bot.blockAt(p)).filter(useExtraInfo).map(b => b.position);
+  bot.pathfinder.getPathTo = (movements, g) => ({ status: 'success', path: [{ x: g.x, y: g.y, z: g.z, toPlace: [], toBreak: [] }] });
+  assert.equal(hiddenFrom(bot, new Vec3(18, 63, 6), [pillager]), true); assert.equal(hiddenFrom(bot, new Vec3(18, 63, 0), [pillager]), false);
+  assert.deepEqual(landingsAbout(bot, [pillager]), { nearest: { x: 18, y: 63, z: 0, distance: 18 }, hidden: { x: 18, y: 63, z: 6, distance: 18 } });
+  // The ordinary shore search stops for the pillager in sight.
+  await assert.rejects(reachShore(bot, f.task, f.goal, () => {}, { surface: f.surface, move: () => assert.fail('the threat check ends it') }), { name: 'NeedsSafety' });
+  // The stance chosen against it swims on, for the hidden bank.
+  const moved = [];
+  const danger = [{ entity: pillager, distance: 10, visible: true }];
+  const landed = await reachShore(bot, f.task, f.goal, () => {}, { surface: f.surface, fight: danger, move: async (b, t, g) => { moved.push([g.x, g.z]); bot.entity.position = new Vec3(g.x + .5, g.y, g.z + .5); bot.entity.onGround = true; } });
+  assert.equal(landed, true);
+  assert.deepEqual(moved, [[18, 6]], 'the bank behind cover, not the nearer one in the pillager\'s sight');
+});
+
 test('under a roof, with no landing counted as surface, the bot climbs out onto the nearest dry cell', async () => {
   const { Vec3 } = require('vec3');
   const { reachShore } = require('../src/shore');

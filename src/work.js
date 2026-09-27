@@ -4323,6 +4323,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // A requested, equipped encounter can approach its selected mob. All
       // other survival work keeps the ordinary hostile-avoidance policy.
       const endTask = goal.kind === 'win' && dimension(bot) === 'end';
+      require('./turn').takeTurn(bot, 'hunt', 'observed');
       if (!endTask && await huntObserved(bot, task, activeWork, saveWork, { navigate }, decisionClient)) {
         goal.failures = 0; goal.stalls = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); continue;
       }
@@ -4340,8 +4341,10 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // Air and eating carried food are rules, not judgments: there is no
       // request that is better served by staying hungry with bread in hand.
       if (!endTask) {
+        require('./turn').takeTurn(bot, 'vitals', 'maintain');
         await maintainVitals(bot, task, step => { goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
       }
+      require('./turn').takeTurn(bot, 'work', goal.step?.action || 'step');
       if (!endTask && await upkeepStep(bot, task, goal, save, decisionClient, onStep)) { goal.stalls = 0; save(); onStep(goal); continue; }
       // A structure's chest within reach is opened as a rule (looting.js).
       if (goal.kind === 'win' && !endTask && await inCatch(task, goal, () => lootNearby(bot, task, goal, save, lootActions()))) { goal.stalls = 0; save(); onStep(goal); continue; }

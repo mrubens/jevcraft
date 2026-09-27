@@ -1321,6 +1321,43 @@ test('sealed in, the mobs the wall hides are named in the choice to leave', asyn
   assert.match(leave || '', /A door within six blocks of a creeper stays shut \(the creeper 10 blocks off now, behind the rock\): with every door so, the pocket waits for it to move off/);
 });
 
+test('a creeper that keeps every door shut: a passage out through the far wall is Jev\'s, and it is dug away from the creeper', async () => {
+  // mid-230-l (note 390): sixty-seven choices to leave, every door refused for a creeper three to seven blocks off behind the rock, a hundred minutes in the pocket.
+  const origin = new Vec3(0, 30, 0);
+  const creeper = { id: 7, name: 'creeper', type: 'hostile', position: new Vec3(5.5, 30, 0.5), height: 1.7, width: 0.6, isValid: true };
+  const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`]);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: { 7: creeper }, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 6000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ name: open.has(`${p}`) ? 'air' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : 'block', diggable: true, position: p }),
+    world: { raycast: (from) => ({ intersect: from.offset(0.6, 0, 0) }) } });
+  const dug = [], walked = [];
+  const refuge = { origin: { ...origin }, dimension: 'overworld' };
+  const survival = new Survival(bot, { dig: async (b, t, p) => { dug.push([p.x, p.y, p.z]); open.add(`${p}`); }, navigate: async (b, t, g) => { walked.push([g.x, g.z]); bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } },
+    { state: { shelters: [refuge] }, client: { systemOne: async () => ({}) } });
+  let tree;
+  survival.decide = async (task, goal, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['tunnel_out'], stale: false }; };
+  survival.wait = async () => assert.fail('Jev chose the passage');
+  await survival.step(new Task('day'), { kind: 'win' }, () => {});
+  assert.match(tree?.tunnel_out?.description || '', /Dig a passage out through the pocket's west wall, away from the creeper: one wide and two high, 5 blocks, about 13 seconds/);
+  assert.match(tree.tunnel_out.description, /10 blocks from where the creeper is now \(it is 5 off, behind the rock\)/);
+  assert.match(tree.tunnel_out.description, /stops, the bot still enclosed, if the creeper comes round toward its head within six blocks/);
+  assert.deepEqual(dug, [[-1, 30, 0], [-1, 31, 0], [-2, 30, 0], [-2, 31, 0], [-3, 30, 0], [-3, 31, 0], [-4, 30, 0], [-4, 31, 0], [-5, 30, 0], [-5, 31, 0]], 'west, cell by cell, two high');
+  assert.deepEqual(walked.at(-1), [-5, 0]);
+  assert(!survival.state.shelters.includes(refuge), 'the pocket is left behind, as by a door');
+  // The creeper come round to the passage's head: it stops, the bot still in rock.
+  const again = new Survival(bot, { dig: async (b, t, p) => { dug.push([p.x, p.y, p.z]); open.add(`${p}`); }, navigate: async () => {} }, { state: { shelters: [refuge] } });
+  bot.entity.position = origin.offset(0.5, 0, 0.5); dug.length = 0;
+  const passage = again.passageOut({ entity: creeper, distance: 5, visible: false });
+  creeper.position = new Vec3(-3.5, 30, 0.5);
+  assert.equal(await again.tunnelOut(new Task('day'), {}, () => {}, refuge, { entity: creeper, distance: 4 }, passage), false);
+  assert.deepEqual(dug, [], 'not a block dug toward a creeper within six of the passage');
+  assert(again.state.shelters.includes(refuge), 'still the pocket');
+  // No passage where the rock ahead has water behind it.
+  const wet = new Survival(Object.assign(bot, { blockAt: p => ({ name: open.has(`${p}`) ? 'air' : p.x <= -2 ? 'water' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : p.x <= -2 ? 'empty' : 'block', diggable: true, position: p }) }), {}, {});
+  assert.equal(wet.passageOut({ entity: { position: new Vec3(5.5, 30, 0.5) }, distance: 5 }), null);
+});
+
 test('sealed in hurt and hungry at night, staying and leaving both say the health and that it does not come back', async () => {
   // mid-92-o: at eight health and twelve hunger it left the pocket told only that mobs spawn in the dark, and died in a minute.
   const origin = new Vec3(0, 30, 0);
@@ -2300,6 +2337,41 @@ test('a thrown trident flying at the bot is incoming, for the shield', () => {
   assert.deepEqual(incoming(bot).map(e => e.name), ['trident']);
 });
 
+test('a shot whose velocity has not arrived is incoming once it has moved toward the bot', () => {
+  // mid-202-k (note 382): a blaze's fireball seen eight blocks off, struck 1.3 seconds later, no shield raised between.
+  const { Vec3 } = require('vec3');
+  const { incoming } = require('../src/projectile-guard');
+  const fireball = { name: 'small_fireball', position: new Vec3(8, 65.5, 0) };
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, entities: { 1: fireball } };
+  assert.deepEqual(incoming(bot), [], 'eight blocks off and not yet seen to move: not known to be coming');
+  fireball.position = new Vec3(6.5, 65.5, 0);
+  assert.deepEqual(incoming(bot).map(e => e.name), ['small_fireball'], 'moved a block and a half nearer since the last look');
+  fireball.position = new Vec3(7.5, 65.5, 0);
+  assert.deepEqual(incoming(bot), [], 'moving away');
+});
+
+test('a held pillar faces the shooter, not the nearest mob, and a shot on its way before either', () => {
+  // mid-227-n (note 395): on its pillar the bot faced the spider at its foot while the skeleton shot it through a raised shield.
+  const { Vec3 } = require('vec3');
+  const { shieldFacing } = require('../src/survival');
+  const spider = { entity: { id: 1, name: 'spider', position: new Vec3(1.5, 62, 0.5), isValid: true }, distance: 2, visible: true };
+  const skeleton = { entity: { id: 2, name: 'skeleton', position: new Vec3(-9.5, 62, 0.5), isValid: true }, distance: 10, visible: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {} };
+  assert.equal(shieldFacing(bot, [spider, skeleton]).name, 'skeleton');
+  assert.deepEqual(shieldFacing(bot, [spider, skeleton]).at, skeleton.entity.position.offset(0, 1, 0));
+  assert.equal(shieldFacing(bot, [spider]).name, 'spider', 'nothing shoots: the nearest');
+  bot.entities[3] = { name: 'arrow', position: new Vec3(0.5, 66, 6.5), velocity: new Vec3(0, 0, -1.2) };
+  assert.equal(shieldFacing(bot, [spider, skeleton]).name, 'arrow', 'a shot on its way first');
+  // Held on the pillar, the look goes to the shooter.
+  const looks = [];
+  const world = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal' }, registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 64, 0.5), onGround: true }, entities: {}, health: 14, food: 18,
+    inventory: { items: () => [{ name: 'cobblestone', count: 32 }, { name: 'iron_sword' }], slots: { 45: { name: 'shield' } } }, heldItem: { name: 'iron_sword' }, world: { raycast: () => null }, findBlocks: () => [],
+    lookAt: async p => looks.push(p), blockAt: p => ({ name: p.y < 64 ? 'cobblestone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }) });
+  const survival = new Survival(world, { navigate: async () => {} }, { state: { pillar: { x: 0, y: 62, z: 0 } } });
+  const options = survival.stanceOptions(new Task('t'), {}, () => {}, [spider, skeleton], false);
+  return options.pillar.run().then(() => { assert.deepEqual(looks.at(-1), skeleton.entity.position.offset(0, 1, 0)); });
+});
+
 // A bed nook: the carried bed where no two level cells lie beside the feet.
 // Six midgame trials (2026-09-26): the one bot carrying a bed sealed itself
 // in eleven times with it, sleep offered only on two level cells.
@@ -2983,6 +3055,17 @@ test('in water with a drowned, the stances say so, no pillar, pocket or bunker i
   assert(options.get_out_of_water, Object.keys(options).join(','));
   assert.match(options.get_out_of_water.description, /in water, air 12 of 20.*sinks unless it swims.*The drowned swims faster than the bot in water/);
   assert.match(options.fight.description, /The bot is in water/);
+  assert.match(options.get_out_of_water.description, /No dry landing near the water's level is in view within thirty-two blocks/);
+  // A pillager on the bank (notes 367, 388): the bank out of its sight is said, and the swim for shore is run as the stance, the pillager passed with it.
+  const pillager = { entity: { id: 2, name: 'pillager', position: new Vec3(8.5, 16, -6.5), height: 1.95, isValid: true }, distance: 10, visible: true };
+  // Two banks at the water's surface (y 20 here): one at z 0 in the pillager's sight, one at z 6 behind the bank.
+  const bank = new Set(['6,20,0', '6,21,0', '6,20,6', '6,21,6']);
+  const ground = bot.blockAt;
+  bot.blockAt = p => { const q = p.floored ? p.floored() : p; return bank.has(`${q.x},${q.y},${q.z}`) ? { name: 'air', position: q, boundingBox: 'empty' } : ground(p); };
+  bot.findBlocks = ({ useExtraInfo } = {}) => [new Vec3(6, 19, 0), new Vec3(6, 19, 6)].map(p => ({ position: p })).filter(b => !useExtraInfo || useExtraInfo(b)).map(b => b.position);
+  bot.world.raycast = (from, dir, len) => { const to = from.plus(dir.scaled(len)); return to.z > 3 ? { intersect: from.plus(dir.scaled(2)) } : null; };
+  const shot = survival.stanceOptions(new Task('t'), {}, () => {}, [drowned, pillager], false);
+  assert.match(shot.get_out_of_water.description, /The nearest bank out of the shooter's sight is 9 blocks off \(the nearest bank of all, 7 off, is in their sight\); it is swum for first, shot at on the way, and behind it they cannot hit the bot/);
 });
 
 test('on a one-wide ledge with a zombie close, the open sides are walled before anything else: knockback there is the fall', async () => {
