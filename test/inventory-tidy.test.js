@@ -359,3 +359,20 @@ test('short of blocks in the Nether, the upkeep says where the nearest netherrac
   await upkeepStep(bot, { check() {} }, { kind: 'win', step: { action: 'find_fortress' } }, () => {}, client);
   assert.match(said || '', /No netherrack with an open face is within 48 blocks of here/);
 });
+
+test('making room says the flint and steel lights the Nether portal on the way to the dragon, and the tool a step needs', async () => {
+  // mid-241-v (note 496): its only flint and steel went for four sticks, said only as "1 flint and steel".
+  const { makeRoom } = require('../src/inventory-tidy');
+  const items = [];
+  const add = (name, count) => { const it = registry.itemsByName[name]; items.push({ name, count, type: it.id, stackSize: it.stackSize }); };
+  add('flint_and_steel', 1); add('iron_pickaxe', 1); add('stone_pickaxe', 1);
+  while (items.length < 36) add('white_wool', 1);
+  let offered;
+  const client = { systemOne: async ({ questions }) => { offered = Object.values({ ...questions.branch_0.criteria, ...questions.branch_1.criteria }).join('\n'); return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_0', confidence: 0.6 } } }; } };
+  const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {} };
+  const goal = { kind: 'win', step: { action: 'mine', block: 'iron_ore', drops: 'raw_iron', requires: { iron_pickaxe: 1 } } };
+  await makeRoom(bot, { check() {}, opportunityClient: client }, 'stick', { goal });
+  assert.match(offered, /1 flint and steel.*lights the Nether portal.*the only lighter carried/);
+  assert.match(offered, /1 iron pickaxe.*needed by the step in hand/);
+  assert.doesNotMatch(offered, /stone pickaxe[^\n]*needed by the step in hand/);
+});

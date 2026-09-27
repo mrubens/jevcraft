@@ -58,10 +58,12 @@ function spares(bot, keep = new Set()) {
   return out.sort((a, b) => tier(a.name) - tier(b.name));
 }
 
-// Room for one more of `name`: a free slot or a stack with space in it.
-function roomFor(bot, name) {
+// Room for `count` more of `name`: a free slot, or stacks of it with that
+// much space between them. A craft's output comes whole: four planks with
+// room for one merge none, and the rest has nowhere to go (mid-241-v, note 496).
+function roomFor(bot, name, count = 1) {
   if ((bot.inventory.emptySlotCount?.() ?? 1) > 0) return true;
-  return bot.inventory.items().some(i => i.name === name && i.count < (i.stackSize || 64));
+  return bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + Math.max(0, (i.stackSize || 64) - i.count), 0) >= count;
 }
 
 // `keep` is what the work in hand is for: "get me 64 sand" with full
@@ -170,12 +172,13 @@ const blockStock = bot => bot.inventory.items().filter(i => BUILDING.test(i.name
 // for), and "nothing" (go without what the room was for). Up to three
 // stacks a time. Without Jev, the order below.
 // Decorative finds with no use on the way to the dragon, said as such.
+const LIGHTER = /^(flint_and_steel|fire_charge)$/;
 const NO_USE = /^(pink_petals|.*_tulip|dandelion|poppy|allium|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|lily_pad|sunflower|lilac|rose_bush|peony|.*_mushroom|pointed_dripstone|dripstone_block|leaf_litter|short_grass|fern|dead_bush|sugar_cane|bamboo|cactus|.*_carpet|.*_dye)$/;
-async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null) {
+async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, room = () => roomFor(bot, name), count = 1) {
   const client = task?.opportunityClient;
   if (!client) return null;
   const { decide } = require('./decisions');
-  for (let round = 0; round < 3 && !roomFor(bot, name); round++) {
+  for (let round = 0; round < 3 && !room(); round++) {
     const counts = {};
     for (const i of bot.inventory.items()) counts[i.name] = (counts[i.name] || 0) + i.count;
     // What has no use, and what is over its keeping cap, first: with
@@ -195,13 +198,18 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null) 
     // weapon, the water bucket, the valuables (the decision audit,
     // 2026-09-25).
     const needed = new Set();
-    for (const st of [goal?.step, goal?.step?.detail].filter(Boolean)) for (const k of ['item', 'drops', 'block', 'input', 'fuel']) if (typeof st[k] === 'string') needed.add(st[k]);
+    // What a step uses and does not consume is needed too: the pickaxe the
+    // next rung mines with, the table it crafts at.
+    for (const st of [goal?.step, goal?.step?.detail].filter(Boolean)) {
+      for (const k of ['item', 'drops', 'block', 'input', 'fuel']) if (typeof st[k] === 'string') needed.add(st[k]);
+      for (const k of Object.keys({ ...st.consumes, ...st.requires })) needed.add(k);
+    }
     let nextRung = null;
     try {
       const stage = goal?.kind === 'win' ? require('./game-progress').nextGameStage(bot, goal) : null;
       if (stage?.item) {
         const { catalogPlan, planningInventory } = require('./work');
-        for (const st of catalogPlan(bot, stage.item, stage.count || 1, planningInventory(bot), goal) || []) for (const k of Object.keys(st.consumes || {})) needed.add(`rung:${k}`);
+        for (const st of catalogPlan(bot, stage.item, stage.count || 1, planningInventory(bot), goal) || []) for (const k of Object.keys({ ...st.consumes, ...st.requires })) needed.add(`rung:${k}`);
         nextRung = stage.phase;
       }
     } catch (_) { nextRung = null; }
@@ -224,6 +232,13 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null) 
       if (stack.name === 'water_bucket') notes.push(`the water bucket: breaks a fall, puts out fire, turns lava to stone${casting ? '; and the water that turns each block of the portal frame being cast to obsidian: without it the frame cannot be cast, and another is a bucket (three iron) and a trip to water' : ''}`);
       if (stack.name === 'lava_bucket' && casting) notes.push('lava for the portal frame being cast in place, a bucket a block');
       if (stack.name === 'bucket' && casting) notes.push('a bucket for the lava of the portal frame being cast in place, a bucket a block');
+      // The portal's lighter, said on the way to the dragon: mid-241-v
+      // dropped its only flint and steel for four sticks, told only its name
+      // and count (note 496).
+      if (LIGHTER.test(stack.name) && goal?.kind === 'win' && !/end/.test(String(bot.game?.dimension || ''))) {
+        const only = !bot.inventory.items().some(i => i !== stack && LIGHTER.test(i.name));
+        notes.push(`lights the Nether portal, the way to the blaze rods and back${nether(bot) ? ' (relit when a ghast puts it out)' : ''}${only ? '; the only lighter carried: without it no portal is lit, and another flint and steel takes an iron ingot and a flint' : ''}`);
+      }
       if (Object.hasOwn(VALUABLES, stack.name)) notes.push('a valuable');
       if (needed.has(stack.name)) notes.push('needed by the step in hand');
       else if (needed.has(`rung:${stack.name}`)) notes.push(`needed by the ladder's next step (${nextRung.replaceAll('_', ' ')})`);
@@ -241,7 +256,7 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null) 
     const drops = Object.entries(tree).filter(([k]) => k !== 'none');
     const junk = drops.filter(([, o]) => NO_USE.test(o.stack.name) || over(o.stack.name)).length;
     const asked = {
-      drop: { description: `Drop one stack to make room for the ${name.replaceAll('_', ' ')}: ${drops.length} stacks to choose from${junk ? `, ${junk} of them with no use on the way to the dragon or more than is worth keeping` : ', none of them without a use: each is gear, food or material the run needs'}. Which one is the next question.`,
+      drop: { description: `Drop one stack to make room for the ${count > 1 ? `${count} ` : ''}${name.replaceAll('_', ' ')}: ${drops.length} stacks to choose from${junk ? `, ${junk} of them with no use on the way to the dragon or more than is worth keeping` : ', none of them without a use: each is gear, food or material the run needs'}. Which one is the next question.`,
         children: Object.fromEntries(drops.map(([k, o]) => [k, { description: o.description }])) },
       none: { description: tree.none.description },
     };
@@ -266,33 +281,35 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null) 
   // Three rounds and still no room, without Jev ever saying "nothing": the
   // tidy's own order, not "no room". mid-79-a's diamond was refused four
   // times, half a second a time, nothing thrown (2026-09-25).
-  return roomFor(bot, name) || null;
+  return room() || null;
 }
 
-async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpose = null, goal = null } = {}) {
-  if (roomFor(bot, name)) return true;
+// `count` is how many must fit, a craft's whole output; `room` overrides the
+// test when the thing is not in the pockets yet (on the cursor, say).
+async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpose = null, goal = null, count = 1, room = () => roomFor(bot, name, count) } = {}) {
+  if (room()) return true;
   await faceAway(bot, away);
-  const chosen = await jevMakesRoom(bot, task, name, keep, purpose, goal);
+  const chosen = await jevMakesRoom(bot, task, name, keep, purpose, goal, room, count);
   if (chosen !== null) return chosen;
   // Junk before tools: with forty-six nether brick fences in the pockets the
   // tidy threw out the stone pickaxe first, and the ladder, counting the
   // worn diamond pickaxes as spent, made another and threw it out again.
   for (const [match, floorOf] of EXPENDABLE) {
-    if (roomFor(bot, name)) return true;
+    if (room()) return true;
     const floor = typeof floorOf === 'function' ? floorOf(bot) : floorOf;
     const test = typeof match === 'string' ? n => n === match : n => match.test(n);
     const stacks = bot.inventory.items().filter(i => test(i.name) && i.name !== name && !keep.has(i.name)).sort((a, b) => a.count - b.count);
     let total = stacks.reduce((n, i) => n + i.count, 0);
     for (const stack of stacks) {
-      if (roomFor(bot, name) || total - stack.count < floor) break;
+      if (room() || total - stack.count < floor) break;
       if (BUILDING.test(stack.name) && blockStock(bot) - stack.count < BLOCK_RESERVE) continue;
       task?.check?.();
       try { await (bot.tossStack ? bot.tossStack(stack) : bot.toss(stack.type, null, stack.count)); total -= stack.count; }
       catch (err) { task?.check?.(); break; }
     }
   }
-  if (!roomFor(bot, name)) await tidyInventory(bot, task, { force: true, keep: new Set([...keep, name]), away });
-  return roomFor(bot, name);
+  if (!room()) await tidyInventory(bot, task, { force: true, keep: new Set([...keep, name]), away });
+  return room();
 }
 
 module.exports = { openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };

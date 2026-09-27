@@ -1547,7 +1547,20 @@ async function craft(bot, task, step, goal) {
   // with the pockets full the crafted item had nowhere to go, and the craft
   // drill made one pickaxe in 150 seconds against eight in nine (the day
   // audit's sixteen "timed out waiting for world/inventory update").
-  if (!roomFor(bot, step.item)) await makeRoom(bot, task, step.item, { keep: new Set(Object.keys(step.consumes || {})), away: table?.position });
+  // Each batch's whole output, before its click: made room for as Jev
+  // chooses, and said as a fact when it cannot be, never left to the
+  // library, which tosses or asserts (mid-241-v, note 496). An ingredient
+  // stack the craft uses up frees its slot, and that slot is room: the four
+  // sticks from mid-241-v's last two planks cost it its flint and steel.
+  const made = recipe.result.count, what = `${made} ${step.item.replaceAll('_', ' ')}`;
+  const fits = () => roomFor(bot, step.item, made) || freesSlot(bot, recipe);
+  const roomForOutput = async () => {
+    if (fits()) return;
+    await makeRoom(bot, task, step.item, { count: made, goal, keep: new Set(Object.keys(step.consumes || {})), away: table?.position, room: fits,
+      purpose: `the craft in hand (${what})` });
+    task.check();
+    if (!fits()) throw new Blocked(`No free slot for the ${what}; the inventory is full`);
+  };
   const before = countOf(bot, step.item);
   task.check();
   // Reconcile the cursor/grid between recipes while keeping a shared batch at
@@ -1556,18 +1569,19 @@ async function craft(bot, task, step, goal) {
     Math.max(1, Math.floor((bot.registry.itemsByName[step.item].stackSize || 64) / recipe.result.count)));
   for (let n = 0; n < batches; n++) {
     task.check();
-    const made = () => countOf(bot, step.item) >= before + recipe.result.count * (n + 1);
+    const done = () => countOf(bot, step.item) >= before + recipe.result.count * (n + 1);
+    await roomForOutput();
     try { await openWindow(bot, task, () => bot.craft(recipe, 1, table), { block: table, what: 'the crafting table', timeoutMs: 10000 }); }
     finally { task.check(); await settleCraftInventory(bot, task); }
     // A craft whose ingredients were left on the cursor made nothing (both
     // runs, every ten minutes or so: "cursor oak_planks"). Settled, it is
     // clicked once more here rather than failing the whole step.
-    try { await waitFor(task, made, 4000); }
+    try { await waitFor(task, done, 4000); }
     catch (err) {
       task.check();
       try { await openWindow(bot, task, () => bot.craft(recipe, 1, table), { block: table, what: 'the crafting table', timeoutMs: 10000 }); }
       finally { task.check(); await settleCraftInventory(bot, task); }
-      await waitFor(task, made, 4000, awaitedItem(bot, step.item, before + recipe.result.count * (n + 1), `crafting${table ? ' at a table' : ''}, twice`));
+      await waitFor(task, done, 4000, awaitedItem(bot, step.item, before + recipe.result.count * (n + 1), `crafting${table ? ' at a table' : ''}, twice`));
     }
   }
   // Its own table comes back into the pack when it is the only one: trials
@@ -1586,11 +1600,31 @@ async function craft(bot, task, step, goal) {
   }
 }
 
+// A slot the craft empties: an ingredient carried as one stack of just what
+// one craft uses leaves the grid with nothing to put back.
+function freesSlot(bot, recipe) {
+  return (recipe.delta || []).some(d => d.count < 0 && (() => {
+    const stacks = bot.inventory.items().filter(i => i.type === d.id);
+    return stacks.length === 1 && stacks[0].count === -d.count;
+  })());
+}
+
 async function settleCraftInventory(bot, task) {
   task.check();
   if (bot._syncWindow) await bot._syncWindow(bot.inventory);
-  if (bot.inventory.selectedItem) {
-    await bot.putSelectedItemRange(bot.inventory.inventoryStart, bot.inventory.inventoryEnd, bot.inventory);
+  // What is on the cursor goes back only where there is room for all of
+  // it. Put back with no slot named and none free, the library clicked slot
+  // undefined: mid-241-v's four sticks stayed on the cursor with the pockets
+  // full, and every craft after began with that click and failed "invalid
+  // operation", ten times over (note 496). Room is Jev's to make; without
+  // it, that is said.
+  const held = bot.inventory.selectedItem;
+  if (held) {
+    const room = () => !bot.inventory.selectedItem || roomFor(bot, held.name, held.count);
+    if (!room()) await makeRoom(bot, task, held.name, { count: held.count, room, purpose: 'the craft just made' });
+    task.check();
+    if (!room()) throw new Blocked(`No free slot for the ${held.count} ${held.name.replaceAll('_', ' ')} on the cursor; the inventory is full`);
+    if (bot.inventory.selectedItem) await bot.putSelectedItemRange(bot.inventory.inventoryStart, bot.inventory.inventoryEnd, bot.inventory, null);
     if (bot._syncWindow) await bot._syncWindow(bot.inventory);
   }
   // With the pockets full an item left in the grid has nowhere to go and

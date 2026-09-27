@@ -101,3 +101,87 @@ test('crafting bypasses a sealed nearest table and uses a reachable alternative 
   assert.equal(stock.chest, 1); assert.deepEqual(movement, original);
   assert.equal(bot.blockAt(sealed.offset(-1, 0, 0)).name, 'stone');
 });
+
+// A bot whose clicks behave as the library's: putting the cursor back with
+// no slot named and none free clicks slot undefined, which the window refuses
+// ("invalid operation"), and a craft with nowhere for its output does too.
+function fullPockets(registry, { cursor = null, choices = [] } = {}) {
+  const slots = Array(46).fill(null);
+  const set = (i, name, count) => { const it = registry.itemsByName[name]; slots[i] = { name, count, type: it.id, stackSize: it.stackSize, slot: i }; };
+  set(9, 'acacia_log', 7); set(10, 'dirt', 20); set(11, 'flint_and_steel', 1);
+  for (let i = 12; i < 45; i++) set(i, 'white_terracotta', 64);
+  const invalid = () => { const err = new Error('invalid operation'); err.name = 'AssertionError'; throw err; };
+  const free = () => slots.findIndex((s, n) => n >= 9 && n < 45 && !s);
+  const asked = [], tossed = [];
+  const bot = {
+    registry, game: { gameMode: 'survival', dimension: 'overworld' }, entity: { position: new Vec3(0, 64, 0), yaw: 0 },
+    _catalogObservation: { at: Date.now(), position: { x: 0, y: 64, z: 0 }, nearby: [] },
+    findBlocks: () => [], blockAt: () => null, lookAt: async () => {},
+    inventory: { slots, inventoryStart: 9, inventoryEnd: 45, selectedItem: cursor ? { ...cursor, type: registry.itemsByName[cursor.name].id, stackSize: registry.itemsByName[cursor.name].stackSize } : null,
+      items: () => slots.slice(9, 45).filter(Boolean), emptySlotCount: () => slots.slice(9, 45).filter(s => !s).length },
+    // The real tossStack clicks the stack (swapping it with the cursor) and then outside.
+    tossStack: async item => { tossed.push(item.name); const held = bot.inventory.selectedItem; slots[item.slot] = held ? { ...held, slot: item.slot } : null; bot.inventory.selectedItem = null; },
+    putSelectedItemRange: async (start, end, window, slot) => {
+      const held = bot.inventory.selectedItem, i = free();
+      if (i >= 0) { slots[i] = { ...held, slot: i }; bot.inventory.selectedItem = null; return; }
+      if (slot === null) { bot.inventory.selectedItem = null; return; }
+      if (!(slot >= 0 && slot < 45)) invalid();
+    },
+    craft: async recipe => {
+      const out = registry.items[recipe.result.id], log = slots.find(s => s?.name === 'acacia_log');
+      const i = free();
+      if (i < 0 && log.count > 1) invalid();
+      if (--log.count === 0) slots[log.slot] = null;
+      set(i >= 0 ? i : log.slot, out.name, recipe.result.count);
+    },
+  };
+  const client = { systemOne: async ({ questions }) => {
+    const pick = choices.shift() || 'none';
+    asked.push({ ...questions.branch_0.criteria, ...(questions.branch_1?.criteria || {}) });
+    return { answers: { branch_0: { choice: pick === 'none' ? 'none' : 'drop', confidence: 0.7 }, branch_1: { choice: pick === 'none' ? 'drop_0' : pick, confidence: 0.7 } } };
+  } };
+  return { bot, client, asked, tossed, slots };
+}
+const dropOf = (offered, name) => Object.keys(offered).find(k => /^drop_\d+$/.test(k) && new RegExp(`^Drop \\d+ ${name}`).test(offered[k]));
+
+test('a craft with the pockets full and sticks on the cursor makes room as Jev chooses, never clicking outside the window', async () => {
+  // mid-241-v (note 496): four sticks on the cursor, thirty-six slots full, ten "invalid operation" crafting acacia planks.
+  const registry = require('minecraft-data')('26.1');
+  const { bot, tossed, slots } = fullPockets(registry, { cursor: { name: 'stick', count: 4 } });
+  // The dirt goes for the sticks; the planks then need a slot of their own.
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => {
+    const offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria }; asked.push(offered);
+    const pick = dropOf(offered, 'dirt') || dropOf(offered, 'white terracotta');
+    return { answers: { branch_0: { choice: 'drop', confidence: 0.7 }, branch_1: { choice: pick, confidence: 0.7 } } };
+  } };
+  const task = new Task('craft', 'acacia planks'); task.opportunityClient = client;
+  await acquireStep(bot, task, 'acacia_planks', 4, {}, () => {});
+  assert.equal(bot.inventory.selectedItem, null, 'the sticks are off the cursor');
+  assert(slots.some(s => s?.name === 'stick' && s.count === 4), 'the sticks are in the pockets');
+  assert(slots.some(s => s?.name === 'acacia_planks' && s.count === 4), 'the planks were made');
+  assert.deepEqual(tossed, ['dirt', 'white_terracotta']);
+  assert.match(asked[1].drop, /make room for the 4 acacia planks/);
+});
+
+test('a craft with the pockets full and no room made fails as that, named, not "invalid operation"', async () => {
+  const registry = require('minecraft-data')('26.1');
+  for (const cursor of [null, { name: 'stick', count: 4 }]) {
+    const { bot, client, tossed } = fullPockets(registry, { cursor, choices: ['none', 'none', 'none'] });
+    const task = new Task('craft', 'acacia planks'); task.opportunityClient = client;
+    await assert.rejects(acquireStep(bot, task, 'acacia_planks', 4, {}, () => {}),
+      err => err.name === 'Blocked' && (cursor ? /No free slot for the 4 stick on the cursor; the inventory is full/ : /No free slot for the 4 acacia planks; the inventory is full/).test(err.message));
+    assert.deepEqual(tossed, []);
+  }
+});
+
+test('a craft that uses up an ingredient stack takes its slot for the output, with nothing dropped', async () => {
+  const registry = require('minecraft-data')('26.1');
+  const { bot, client, asked, tossed, slots } = fullPockets(registry);
+  slots[9].count = 1;
+  const task = new Task('craft', 'acacia planks'); task.opportunityClient = client;
+  await acquireStep(bot, task, 'acacia_planks', 4, {}, () => {});
+  assert.deepEqual(tossed, []);
+  assert.equal(asked.length, 0, 'Jev is not asked to drop anything for a slot the craft frees');
+  assert(slots.some(s => s?.name === 'acacia_planks' && s.count === 4));
+});
