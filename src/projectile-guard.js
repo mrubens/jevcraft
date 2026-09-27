@@ -62,8 +62,11 @@ function meleeClose(bot, { holdMs = 700 } = {}) {
   } catch (_) { return false; }
 }
 
+// Nor on a one-wide span over a drop (terrain.js onSpan): the turn to the
+// shot is a turn on the span, and the crossing's step walks the way it
+// faces (note 273).
 async function deflect(bot, task, { holdMs = 700 } = {}) {
-  if (!shielded(bot) || meleeClose(bot, { holdMs })) return false;
+  if (!shielded(bot) || meleeClose(bot, { holdMs }) || require('./terrain').onSpan(bot)) return false;
   const shot = incoming(bot)[0];
   if (!shot) return false;
   const deadline = Date.now() + holdMs;

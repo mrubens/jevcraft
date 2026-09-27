@@ -8,7 +8,7 @@ const { canStrike, defenseWeapon, bowReady, shoot, strike } = require('./combat'
 const { deflect } = require('./projectile-guard');
 const { aimAtEntity } = require('./projectiles');
 const { dryStanding } = require('./mining-access');
-const { dryBodySpace, damagingTerrain, supportCell, dropWithin } = require('./terrain');
+const { dryBodySpace, damagingTerrain, supportCell, dropWithin, onSpan } = require('./terrain');
 const { fightEstimate } = require('./combat-estimate');
 const { checkAir } = require('./vitals');
 const { surveyRoute, countOf } = require('./skills');
@@ -16,8 +16,8 @@ const { collectNearbyDrops } = require('./drop-collection');
 const { decide } = require('./decisions');
 const { descendTo } = require('./descent');
 const { setAside, isSetAside, watch, unwatch } = require('./progress');
-const { bridgeTo } = require('./bridging');
-const { crossToward, nearer } = require('./nether-travel');
+const { bridgeTo, surveyCrossing, underFire, blocksCarried } = require('./bridging');
+const { crossToward, crossingSays, nearer } = require('./nether-travel');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
@@ -116,8 +116,10 @@ function isolated(bot, target, handler = handlers[target.name] || {}) {
 // no armour, no shield and a lower health floor. Mobs that fight back keep
 // the full kit and near-full health.
 function canBegin(bot, handler = {}) {
+  // Not from a one-wide span over a drop (terrain.js onSpan): a fight there
+  // is swings and turns where a step the wrong way is the fall (note 273).
   const standing = bot.game.gameMode === 'survival' && bot.game.difficulty !== 'peaceful' &&
-    bot.oxygenLevel > 12 && dryStanding(bot, bot.entity.position);
+    bot.oxygenLevel > 12 && dryStanding(bot, bot.entity.position) && !onSpan(bot);
   // Burning is the normal state of a blaze fight: the fireball that lights
   // the bot is thrown by the thing it came to kill, and there is no water
   // in the Nether to put it out. Refusing to fight while alight meant
@@ -245,6 +247,10 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
     }
     while (valid(bot, target) && !dead) {
       guard();
+      // Carried onto a one-wide span over a drop in the fight: no swing, no
+      // shot and no turn from there (terrain.js onSpan). The fight ends and
+      // the survival layer holds the bot still, crouched.
+      if (onSpan(bot)) throw new NeedsSafety({ entity: target, distance: target.position.distanceTo(bot.entity.position) });
       // A fireball in the air outranks everything else for half a second.
       if (!canStrike(bot, target) && await deflect(bot, task)) continue;
       if (!canStrike(bot, target)) {
@@ -771,6 +777,156 @@ function turnSweep(state) {
   const current = Number.isInteger(state.heading) ? state.heading : (state.axis === -1 ? 2 : 0);
   state.heading = (current + 1) % 4; state.legFails = 0; delete state.target;
 }
+// The way to a fortress seen is Jev's (fortress_approach). Both fortresses
+// any trial has found were lost within a second of the sighting: mid-242-c
+// walking the lava sea's shore three blocks above it as the leg turned to
+// its fortress (note 264), mid-215-e on a span over the lava sea with a
+// hoglin behind it (note 273). The code alone had tried, in its own order,
+// the pathfinder at two heights, a drop, a span of up to sixty-four blocks
+// and a staircase, and given the face up after six failures. Now each way is
+// offered with what it meets, surveyed from here, and the mobs in sight; the
+// answer holds for the approach until it ends no nearer, and is asked again
+// with what failed. Leaving the fortress for now is always one of the ways.
+const APPROACH_HOLD_MS = 5 * 60000;
+// Bricks seen within this of the last approach's are the same fortress.
+const SAME_FORTRESS = 32;
+// As far as a span toward a fortress was ever laid.
+const APPROACH_CROSS = 64;
+const retryable = err => !['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name);
+const flatTo = (a, b) => Math.hypot(a.x + 0.5 - b.x, a.z + 0.5 - b.z);
+
+// The mobs in sight a way to the fortress has to reckon with: within
+// thirty-two blocks, and a ghast within sixty-four, whose fireball's blast
+// throws a player (mid-87-l, thrown forty blocks down into the lava).
+function threatsInView(bot) {
+  try { return threats(bot, 64).filter(t => t.visible && (t.distance <= 32 || t.entity.name === 'ghast')); }
+  catch (_) { return []; }
+}
+const mobsSaid = list => [...new Set(list.map(t => `${/^[aeiou]/.test(t.entity.name) ? 'an' : 'a'} ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`))].slice(0, 4).join(', ');
+
+// The pathfinder's route toward `target`, surveyed before it is walked:
+// its cells, the blocks it would place and dig, how many of its cells are
+// within two blocks of lava, and how much nearer its end is.
+async function routeSurvey(bot, task, target, brick) {
+  if (!bot.pathfinder?.movements || !(bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) return null;
+  try {
+    const route = await surveyRoute(bot, task, bot.pathfinder.movements, target, 500);
+    const path = route?.path || [];
+    const { lavaBeside } = require('./survival');
+    const end = path.at(-1);
+    return { status: route?.status || 'noPath', cells: path.length,
+      place: path.reduce((n, p) => n + (p.toPlace?.length || 0), 0), dig: path.reduce((n, p) => n + (p.toBreak?.length || 0), 0),
+      besideLava: typeof bot.blockAt === 'function' ? path.filter(p => lavaBeside(bot, new Vec3(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)))).length : 0,
+      gain: end ? Math.round(flatTo(brick, bot.entity.position) - flatTo(brick, end)) : 0 };
+  } catch (err) { if (!retryable(err)) throw err; return null; }
+}
+
+// What lies straight under the bot, down to sixteen blocks: the first
+// floor, or lava.
+function columnBelow(bot) {
+  if (typeof bot.blockAt !== 'function') return null;
+  const feet = bot.entity.position.floored();
+  for (let k = 1; k <= 16; k++) {
+    const b = bot.blockAt(feet.offset(0, -k, 0));
+    if (!b) return null;
+    if (/lava/.test(b.name)) return { lava: true, depth: k - 1 };
+    if (k > 1 && b.boundingBox === 'block') return { name: b.name, depth: k - 1 };
+  }
+  return { depth: 16, open: true };
+}
+
+// Each way to the fortress that can be tried from here, with what it
+// meets. `run` returns why it ended, when it did not throw.
+async function fortressApproaches(bot, task, goal, save, actions, state, nearest) {
+  const here = bot.entity.position.clone(), flat = Math.round(flatTo(nearest, here)), dy = Math.round(nearest.y + 1 - here.y);
+  const where = `${flat} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}`;
+  const inView = threatsInView(bot);
+  const options = {};
+  if (actions.navigate) {
+    const level = new goals.GoalNear(nearest.x, Math.round(here.y), nearest.z, 4);
+    const route = await routeSurvey(bot, task, level, nearest);
+    const surveyed = !route ? 'Not surveyed from here.'
+      : !route.cells ? 'The pathfinder found no route toward it from here.'
+      : `Surveyed toward the first: ${route.status === 'success' ? 'a whole route' : 'a route part of the way'} of ${route.cells} cells, placing ${route.place} block${route.place === 1 ? '' : 's'} and digging ${route.dig}, ${route.besideLava} of its cells within two blocks of lava; it ends ${route.gain} blocks nearer.`;
+    const edge = route?.besideLava && inView.length ? ` In sight: ${mobsSaid(inView)}; a hit at the lava's edge is the fall.` : '';
+    options.walk_route = { description: `Walk the pathfinder's route to the fortress, ${where}: to a point level with the bot above it first, then to the bricks' own height if that comes no nearer. ${surveyed} The pathfinder walks upright, not crouched: a push or a misstep at an edge is the fall.${edge}`,
+      run: async () => {
+        const from = bot.entity.position.clone();
+        let why = null;
+        for (const g of [level, new goals.GoalNear(nearest.x, nearest.y + 1, nearest.z, 3)]) {
+          try { await actions.navigate(bot, task, g, { timeoutMs: 45000, stallMs: 8000 }); }
+          catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
+          if (nearest.distanceTo(bot.entity.position) < nearest.distanceTo(from) - 1.5) return null;
+        }
+        return why;
+      } };
+  }
+  if (flatTo(nearest, here) <= 12 && nearest.y < here.y - 2) {
+    const column = columnBelow(bot);
+    const under = !column ? '' : column.lava ? ` Lava is ${column.depth} blocks under the bot's feet.` : column.open ? ' Nothing solid within sixteen blocks under the bot\'s feet.' : ` The first floor under the bot's feet is ${column.name.replaceAll('_', ' ')}, ${column.depth} blocks down.`;
+    options.descend = { description: `Dig straight down where the bot stands toward the bricks, ${Math.round(here.y - nearest.y - 1)} blocks below and ${flat} across, a block at a time.${under} A drop deeper than the health allows (nine blocks at full health, less hurt) or one onto or beside lava is refused, and the bot stays where it is.`,
+      run: async () => { const dropped = await descendTo(bot, task, nearest); return dropped >= 1 ? null : 'dropped no lower'; } };
+  }
+  if (typeof bot.blockAt === 'function') {
+    const survey = surveyCrossing(bot, nearest, { cells: APPROACH_CROSS });
+    if (survey.cells && survey.gain >= 1) {
+      const fire = underFire(bot);
+      const open = survey.overLava ? 'lava' : 'open air';
+      const risk = survey.bridge ? `${inView.length ? ` In sight: ${mobsSaid(inView)}; a hit on a one-wide span over ${open} is the fall.` : ''} On the span no mob is swung at or turned to: the bot holds still, crouched, until it is off.` : '';
+      const shot = fire ? ` A ${fire.entity.name.replaceAll('_', ' ')} ${Math.round(fire.distance)} blocks off can see the bot now: no block is laid while something that shoots can, so the span stops at once.` : '';
+      options.cross_level = { description: `${crossingSays(survey, `the fortress, ${where}`)}${risk}${shot}`,
+        run: async () => { await bridgeTo(bot, task, nearest, { maxBlocks: survey.bridge, maxSteps: survey.cells }); return survey.stoppedBy; } };
+    }
+  }
+  if (actions.tunnel) {
+    options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.`,
+      run: async () => { await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); return null; } };
+  }
+  const minutes = state.legSince ? Math.round((Date.now() - state.legSince) / 60000) : null;
+  options.keep_searching = { description: `Leave this fortress for ten minutes and go on with the search from here (${state.legs || 0} leg${state.legs === 1 ? '' : 's'} so far${minutes ? `, ${minutes} minutes on this one` : ''}): the sweep goes on along its heading, and the fortress may be met again from another side.`,
+    run: async () => {
+      state.shunned.push({ x: nearest.x, z: nearest.z, until: Date.now() + 600000 }); delete state.target; save();
+      bot.chat?.('Leaving this fortress for now. Searching on for another way in.');
+      return null;
+    } };
+  // What each way came to on this approach, said with it.
+  for (const [key, option] of Object.entries(options)) {
+    const tries = (state.approach?.failed || []).filter(f => f.choice === key);
+    if (tries.length) option.description += ` Tried on this approach ${tries.length === 1 ? 'once' : `${tries.length} times`} and ended no nearer: ${tries.at(-1).why}.`;
+  }
+  return { options, facts: { fortress: { distance: flat, height: dy }, health: bot.health, food: bot.food, blocksCarried: blocksCarried(bot),
+    threatsInView: inView.map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
+    ...(state.approach?.failed?.length ? { failed: state.approach.failed.map(f => `${f.choice.replaceAll('_', ' ')}: ${f.why}`) } : {}) } };
+}
+
+async function approachFortress(bot, task, goal, save, actions, state, nearest) {
+  const found = { x: nearest.x, y: nearest.y, z: nearest.z };
+  if (!state.approach || Math.hypot(state.approach.found.x - found.x, state.approach.found.z - found.z) > SAME_FORTRESS) state.approach = { found, failed: [] };
+  const approach = state.approach;
+  approach.found = found;
+  goal.step = { action: 'find_fortress', found, legs: state.legs }; save();
+  const { options, facts } = await fortressApproaches(bot, task, goal, save, actions, state, nearest);
+  let pick = approach.choice && approach.until > Date.now() && options[approach.choice] ? approach.choice : null;
+  if (!pick) {
+    const tree = Object.fromEntries(Object.entries(options).map(([key, o]) => [key, { description: o.description, run: o.run }]));
+    const decision = await decide('fortress_approach', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree, state: facts,
+      context: { failed: approach.failed.map(f => f.choice) } });
+    if (decision.stale) return;
+    pick = decision.path.at(-1);
+    approach.choice = pick; approach.until = Date.now() + APPROACH_HOLD_MS; save();
+  }
+  goal.step = { action: 'find_fortress', found, approach: pick, legs: state.legs }; save();
+  const from = nearest.distanceTo(bot.entity.position);
+  let why = null;
+  try { why = await options[pick].run(); }
+  catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
+  if (pick === 'keep_searching') { delete state.approach; save(); return; }
+  // Closer counts; a shuffle along the shelf does not.
+  if (nearest.distanceTo(bot.entity.position) < from - 1.5) { approach.failed = []; save(); return; }
+  approach.failed = [...approach.failed, { choice: pick, why: why || 'came no nearer', at: Date.now() }].slice(-8);
+  delete approach.choice; delete approach.until; save();
+}
+
 async function findFortressStep(bot, task, goal, save, actions) {
   const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
   if (await mineGoldInPassing(bot, task, goal, save, actions)) return;
@@ -798,53 +954,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     const here = bot.entity.position;
     const nearest = bricks.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
     state.found = { x: nearest.x, y: nearest.y, z: nearest.z };
-    if (nearest.distanceTo(here) > 6) {
-      goal.step = { action: 'find_fortress', found: state.found, legs: state.legs }; save();
-      // The pathfinder first: it pillars and scaffolds, and the brick was
-      // nine blocks below a ledge the staircase could not step off. The
-      // tunnel is the fallback.
-      if (actions.navigate) {
-        // A point level with the bot above the fortress first: the
-        // pathfinder bridges a gap with blocks and digs down into the
-        // structure, where a slanted goal from a ledge found no path.
-        const from = bot.entity.position.clone();
-        const goalsToTry = [new goals.GoalNear(nearest.x, Math.round(here.y), nearest.z, 4), new goals.GoalNear(nearest.x, nearest.y + 1, nearest.z, 3)];
-        for (const g of goalsToTry) {
-          try { await actions.navigate(bot, task, g, { timeoutMs: 45000, stallMs: 8000 }); }
-          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-          if (nearest.distanceTo(bot.entity.position) < nearest.distanceTo(from) - 1.5) { state.approachFails = 0; return; }
-        }
-      }
-      // Above the structure with a gap between: straight down through the
-      // shelf, when the landing is solid and close.
-      const above = bot.entity.position;
-      if (Math.hypot(nearest.x + 0.5 - above.x, nearest.z + 0.5 - above.z) <= 12 && nearest.y < above.y - 2) {
-        goal.step = { action: 'find_fortress', found: state.found, descending: true, legs: state.legs }; save();
-        try { if (await descendTo(bot, task, nearest) >= 1) { state.approachFails = 0; return; } }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastDescentError = err.message; }
-      }
-      // Across open air, level with the structure or above it: lay a span
-      // straight at it. The pathfinder bridged a block a minute here.
-      const flatGap = Math.hypot(nearest.x + 0.5 - above.x, nearest.z + 0.5 - above.z);
-      if (flatGap > 1.5 && flatGap <= 64 && nearest.y <= above.y) {
-        goal.step = { action: 'find_fortress', found: state.found, bridging: true, legs: state.legs }; save();
-        const from = bot.entity.position.clone();
-        try { await bridgeTo(bot, task, nearest, { maxBlocks: 64 }); }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastBridgeError = err.message; }
-        if (nearest.distanceTo(bot.entity.position) < nearest.distanceTo(from) - 1.5) { state.approachFails = 0; return; }
-      }
-      const gapBefore = nearest.distanceTo(bot.entity.position);
-      try { await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); }
-      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-      // Closer counts; a shuffle along the shelf does not.
-      if (nearest.distanceTo(bot.entity.position) < gapBefore - 1.5) { state.approachFails = 0; return; }
-      state.approachFails = (state.approachFails || 0) + 1;
-      if (state.approachFails >= 6) {
-        state.shunned.push({ x: nearest.x, z: nearest.z, until: Date.now() + 600000 }); state.approachFails = 0; delete state.target; save();
-        bot.chat?.("No way down to the fortress here. Following it along to find a way in.");
-      }
-      return;
-    }
+    if (nearest.distanceTo(here) > 6) { await approachFortress(bot, task, goal, save, actions, state, nearest); return; }
     // Inside: walk the structure. The farthest brick not yet walked to is
     // the next stretch of corridor; blazes come into view on the way and
     // the observed hunt takes them. Standing on the first brick found was

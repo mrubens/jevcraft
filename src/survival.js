@@ -646,6 +646,19 @@ class Survival {
 
   async flee(task, goal, save) {
     const bot = this.bot;
+    // On a one-wide span over a drop, nothing is swung at, turned to or
+    // walked from: the bot holds still, crouched (terrain.js onSpan). A
+    // swing at a hoglin behind mid-215-e turned it about on its span, and
+    // the crossing walked it off the far end into the lava sea (note 273).
+    if (require('./terrain').onSpan(bot)) {
+      const close = threats(bot).filter(t => t.distance <= 8);
+      this.report(goal, save, { action: 'hold_on_span', threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health });
+      bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.(); lowerShield(bot);
+      bot.setControlState?.('sneak', true);
+      try { for (let n = 0; n < 4; n++) { task.check(); await sleep(100); } }
+      finally { if (!bot._spanning) bot.setControlState?.('sneak', false); }
+      return;
+    }
     // Off the edge before anything else is done about the mob. Only when
     // one is close enough to hit, and only to a cell a few blocks off.
     // A hoglin close and a drop within its toss: a pocket, the one thing it
@@ -2612,6 +2625,8 @@ class Survival {
     plan.targetId = target.id; plan.lastAt = { x: target.position.x, y: target.position.y, z: target.position.z };
     this.report(goal, save, { action: 'night_hunt', target: plan.kind, distance: Number(target.position.distanceTo(here).toFixed(1)), kills: plan.kills || 0, health: bot.health });
     if (canStrike(bot, target)) {
+      // Not turned to on a one-wide span over a drop (terrain.js onSpan).
+      if (require('./terrain').onSpan(bot)) { await sleep(100); return true; }
       await bot.lookAt(target.position.offset(0, (target.height || 1.8) / 2, 0), true);
       if (!(await defendNearby(bot, task, goal, save))) await sleep(100);
       return true;

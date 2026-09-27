@@ -2757,6 +2757,40 @@ test('up on its own pillar, the step back from the edge does not take the bot of
   assert.notEqual(goal.survivalAction?.action, 'off_the_edge');
 });
 
+test('on a one-wide span over the lava sea, a hoglin at arm\'s length is not swung at or turned to: the bot holds still, crouched', async () => {
+  // mid-215-e: a swing at a hoglin behind it turned it about on its span, and the crossing walked it off the far end into the lava sea (note 273).
+  const { onSpan } = require('../src/terrain');
+  const { defendNearby } = require('../src/combat');
+  const { deflect } = require('../src/projectile-guard');
+  // A span one block wide along x at y 64, over the lava sea at y 40 and below.
+  const span = p => { const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+    return y === 64 && z === 0 && x >= -10 && x <= 10 ? { position: p, name: 'netherrack', boundingBox: 'block' }
+      : y <= 40 ? { position: p, name: 'lava', boundingBox: 'empty' } : { position: p, name: 'air', boundingBox: 'empty' }; };
+  const hoglin = { id: 3, name: 'hoglin', type: 'hostile', position: new Vec3(-1.5, 65, 0.5), height: 1.4, width: 1.4, isValid: true };
+  const arrow = { id: 9, name: 'arrow', position: new Vec3(0.5, 66.5, 5.5), velocity: new Vec3(0, 0, -1), isValid: true };
+  const attacks = [], looks = [], keys = {};
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20, oxygenLevel: 20,
+    entity: { position: new Vec3(0.5, 65, 0.5), onGround: true, height: 1.8 }, entities: { 3: hoglin, 9: arrow }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'iron_sword', type: 1 }], slots: { 45: { name: 'shield' } } }, world: { raycast: () => null }, blockAt: span,
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() { for (const k of Object.keys(keys)) keys[k] = false; },
+    setControlState(k, v) { keys[k] = v; }, getControlState: k => !!keys[k], activateItem() {}, deactivateItem() {},
+    lookAt: async p => { looks.push(p); }, look: async () => { looks.push('look'); }, equip: async () => {}, attack: e => attacks.push(e) });
+  assert.equal(onSpan(bot), true, 'open air over lava on both sides');
+  assert.equal(await defendNearby(bot, new Task('span'), {}, () => {}), false, 'no swing on the span');
+  assert.equal(await deflect(bot, new Task('span'), { holdMs: 50 }), false, 'no turn to a shot on the span');
+  const survival = new Survival(bot, { navigate: async () => { throw new Error('not walked from a span'); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('span'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'hold_on_span');
+  assert.deepEqual(attacks, []); assert.deepEqual(looks, [], 'not turned toward the hoglin');
+  // Laying a span is being on one; on wide ground the reflexes are back.
+  const wide = p => Math.floor(p.y) === 64 ? { position: p, name: 'netherrack', boundingBox: 'block' } : { position: p, name: 'air', boundingBox: 'empty' };
+  assert.equal(onSpan({ entity: bot.entity, blockAt: wide }), false);
+  assert.equal(onSpan({ entity: bot.entity, blockAt: wide, _spanning: { since: Date.now() } }), true);
+  bot.blockAt = wide;
+  assert.equal(await defendNearby(bot, new Task('ground'), {}, () => {}), true, 'the swing, on firm ground');
+});
+
 test('food in the Nether is a hoglin as well as the trip back, and the trip is left out once Jev chose to go on without it', () => {
   // mid-211-c, short of food in the Nether, was offered only the portal back, 250 blocks off and lost (note 241).
   const { setAside } = require('../src/progress');

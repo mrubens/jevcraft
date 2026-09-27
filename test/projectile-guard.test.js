@@ -23,6 +23,20 @@ test('an arrow is blocked when nothing is at arm\'s length, and not with a zombi
   assert.equal(await deflect(cornered, new Task('guard'), { holdMs: 50 }), false, 'the zombie hitting the bot comes before the skeleton shooting at it');
 });
 
+test('on a one-wide span over a drop the bot does not turn to an arrow: the turn is a turn on the span', async () => {
+  // mid-215-e was turned about on its span over the lava sea and walked off the far end (note 273).
+  const bot = fixture({ 1: mob(1, 'skeleton', 0.5, 12.5), 9: { ...arrow, _seenAt: undefined } });
+  let looked = 0; bot.lookAt = async () => { looked++; };
+  bot.blockAt = p => Math.floor(p.y) === 13 && Math.floor(p.z) === 0 ? { name: 'netherrack', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  assert.equal(await deflect(bot, new Task('guard'), { holdMs: 50 }), false);
+  assert.equal(looked, 0);
+  bot._spanning = { since: Date.now() };
+  bot.blockAt = p => Math.floor(p.y) === 13 ? { name: 'netherrack', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  assert.equal(await deflect(bot, new Task('guard'), { holdMs: 50 }), false, 'nor while a span is being laid');
+  bot._spanning = null;
+  assert.equal(await deflect(bot, new Task('guard'), { holdMs: 50 }), true, 'on wide ground the shield comes up');
+});
+
 test('a creeper that would light while the shield is held comes before the arrow', async () => {
   // mid-226-b: the shield turned to a skeleton's arrows while a creeper four blocks off walked in.
   const near = fixture({ 1: mob(1, 'skeleton', 0.5, 12.5), 2: mob(2, 'creeper', 4.5, 0.5), 9: arrow });
