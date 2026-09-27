@@ -95,8 +95,12 @@ function dropWithin(bot, feet, radius = 3) {
 function dropNear(bot, feet, radius = 3, deepest = 48) {
   const open = c => { const b = bot.blockAt(c), head = bot.blockAt(c.offset(0, 1, 0)); return !!b && b.boundingBox !== 'block' && (!head || head.boundingBox !== 'block'); };
   let worst = null;
-  for (const [dx, dz] of AROUND) {
-    for (let r = 1; r <= radius; r++) {
+  // The bot's own cell first: standing on the corner of a block over an
+  // edge, the cell under its middle is the drop. mid-244-g stood so in a
+  // ravine, told no drop was within three, and a spider's hit put it
+  // twenty-two blocks down (2026-09-27).
+  for (const [dx, dz] of [[0, 0], ...AROUND]) {
+    for (let r = dx || dz ? 1 : 0; r <= (dx || dz ? radius : 0); r++) {
       const c = feet.offset(dx * r, 0, dz * r);
       if (dropAt(bot, c)) {
         let fall = 0, into = 'ground';
@@ -122,7 +126,7 @@ function dropNear(bot, feet, radius = 3, deepest = 48) {
 function dropNote(drop, health) {
   if (!drop || (drop.into !== 'lava' && drop.damage < 1)) return '';
   const end = drop.into === 'lava' ? 'into lava' : drop.damage >= (health ?? 20) ? `about ${drop.damage} health from the fall, more than the ${Math.round(health ?? 20)} the bot has` : `about ${drop.damage} of the bot's ${Math.round(health ?? 20)} health from the fall`;
-  return ` A drop of ${drop.fallBlocks} blocks is ${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off: a hit's knockback or a step back over it is ${end}.`;
+  return ` A drop of ${drop.fallBlocks} blocks is ${drop.blocksAway ? `${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off` : 'under the bot, standing on the corner of a block over it'}: a hit's knockback or a step back over it is ${end}.`;
 }
 
 // A step back from an edge that holds. mid-227-b stepped back from a

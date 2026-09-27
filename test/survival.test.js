@@ -3078,3 +3078,13 @@ test('a fireball on its way is a threat with its ghast out of view: the shield c
   assert.equal(raised, true);
   assert.equal(goal.survivalAction?.action, 'block_shot');
 });
+
+test('standing on the corner of a block over an edge, the drop is under the bot itself', () => {
+  // mid-244-g stood so in a ravine, told no drop was within three, and a spider's hit put it twenty-two blocks down (2026-09-27).
+  const { dropNear } = require('../src/terrain');
+  // The floor ends at x 1; the bot's middle is over x 0, where nothing is under it.
+  const bot = { blockAt: p => { const q = p.floored(); const solid = q.y === 63 && q.x >= 1; return { name: solid ? 'stone' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; } };
+  const drop = dropNear(bot, new Vec3(0, 64, 0), 3);
+  assert(drop, 'a drop');
+  assert.equal(drop.blocksAway, 0);
+});
