@@ -266,8 +266,14 @@ function immediateThreat(bot) {
   // to nineteen, outside the sixteen counted for any shooter, and its
   // fireball threw the bot off, shield in hand (2026-09-27).
   const { RANGE } = require('./combat-estimate');
-  const shooterReach = t => fighting ? 8 : Math.max(hurt ? 32 : 16, RANGE[t.entity.name] || 0);
-  const mob = threats(bot, 48).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && !hunted(bot, t.entity) && !leftBe(t) && !nightHunted(bot, t.entity) &&
+  // A shooter whose kind has hit the bot a moment ago is in reach by that
+  // fact, however far: mid-227-r-nether-3 stood on a span taking fire and
+  // fireballs from three blazes thirty-two to thirty-five blocks off for
+  // fourteen seconds, past the thirty-two counted when hurt and hunted
+  // besides, and no stance was asked, twenty health to none (note 491).
+  const hitBy = t => Date.now() - (bot._hurtBy?.[t.entity.name] || 0) < ATTRIBUTE_MS;
+  const shooterReach = t => fighting ? 8 : Math.max(hitBy(t) ? 48 : hurt ? 32 : 16, RANGE[t.entity.name] || 0);
+  const mob = threats(bot, 48).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) &&
     t.distance <= (shooter(t.entity) ? shooterReach(t) : t.entity.name === 'warden' ? 24 : (fighting ? 5 : 8)));
   if (mob) return mob;
   // A shot on its way is a threat of its own, its shooter seen or not:

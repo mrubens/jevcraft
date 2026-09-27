@@ -108,3 +108,15 @@ test('an unseen biter within a hit and a jump is a threat where a knock is a fal
   bot.blockAt = p => ({ position: p, name: p.y < 64 ? 'netherrack' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' });
   assert.equal(immediateThreat(bot), undefined, 'on firm ground an unseen one is not');
 });
+
+test('a shooter whose kind hit the bot a moment ago is a threat however far, hunted or not (mid-227-r-nether-3)', () => {
+  const { immediateThreat } = require('../src/danger');
+  const registry = require('minecraft-data')('26.1');
+  const blaze = { id: 4, name: 'blaze', type: 'hostile', position: new Vec3(34.5, 64, 0.5), height: 1.8, width: 0.6, isValid: true };
+  const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, health: 12, food: 20, time: { timeOfDay: 6000 },
+    world: { raycast: () => null }, blockAt: p => ({ position: p, name: p.y < 64 ? 'netherrack' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }),
+    entities: { 4: blaze }, inventory: { items: () => [], slots: [] } };
+  assert.equal(immediateThreat(bot), undefined, 'thirty-four off and landing nothing: not yet');
+  bot._recentHurtAt = Date.now(); bot._hurtBy = { blaze: Date.now() };
+  assert.equal(immediateThreat(bot)?.entity.id, 4, 'its fire landing: a threat');
+});
