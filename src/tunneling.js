@@ -331,7 +331,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, approa
       // mine step until the flip watch ended the trial (2026-09-27).
       try { await dig(bot, task, p); }
       catch (err) {
-        if (!/Refusing to (open a drop|dig directly beneath)/.test(err.message || '')) throw err;
+        if (!/Refusing to (open a drop|open lava|dig directly beneath)/.test(err.message || '')) throw err;
         setAside(goal, 'staircase', area(target), err.message.toLowerCase(), STAIRCASE_REST_MS); save();
         throw new StaircaseStalled(target, err.message.toLowerCase());
       }

@@ -632,3 +632,15 @@ test('with no ore in view, the ways down are eight headings near and far, each i
   const areas = new Set(targets.map(t => `${Math.floor(t.x / 8)},${Math.floor(t.z / 8)}`));
   assert.equal(areas.size, 16, 'no two share a resting area');
 });
+
+test('a block with lava beside it is not dug within the lava\'s run of the bot', () => {
+  // mid-207-f: dug beside a lava source a block from its feet at y -55, and burned from twenty to none.
+  const { opensLava } = require('../src/work');
+  const { Vec3 } = require('vec3');
+  const lava = new Set(['43,-55,287']);
+  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(44.5, -55, 286.5) }, blockAt: p => ({ name: lava.has(`${p.x},${p.y},${p.z}`) ? 'lava' : 'deepslate', position: p }) };
+  assert.equal(opensLava(bot, new Vec3(43, -55, 286)), true, 'beside the lava, a block from the feet');
+  assert.equal(opensLava(bot, new Vec3(45, -55, 286)), false, 'no lava beside it');
+  bot.entity.position = new Vec3(50.5, -55, 286.5);
+  assert.equal(opensLava(bot, new Vec3(43, -55, 286)), false, 'seven blocks off: past its run');
+});

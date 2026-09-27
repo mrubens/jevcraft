@@ -427,6 +427,19 @@ function safeDropBelow(bot, p) {
 // floor it was standing by, the cave below it was ten blocks deep and
 // floored with dripstone, and the fall killed it (2026-09-24). A player
 // does not open a hole they have not looked into; the ore is left.
+// Lava beside a block (level with it or above) runs into the gap and on,
+// three blocks in the Overworld, more in the Nether: dug within its run of
+// the bot, it reaches the bot before any answer. mid-207-f dug a block at
+// y -55 beside a lava source a block from its feet; the lava was on it in a
+// second and a half and it burned from twenty to none (2026-09-27). A hard
+// rule, for the body's safety; what else to dig is the step's choice.
+function opensLava(bot, p) {
+  const lava = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]].some(([x, y, z]) => /^(lava|flowing_lava)$/.test(bot.blockAt(p.offset(x, y, z))?.name || ''));
+  if (!lava) return false;
+  const feet = bot.entity.position.floored(), run = String(bot.game?.dimension || '').includes('nether') ? 7 : 3;
+  return Math.max(Math.abs(p.x - feet.x), Math.abs(p.z - feet.z)) <= run && p.y >= feet.y - 1 && p.y <= feet.y + 2;
+}
+
 function opensPit(bot, p) {
   const here = bot.entity.position, feetY = Math.floor(here.y);
   if (p.y >= feetY || p.y < feetY - 2) return false;
@@ -473,6 +486,7 @@ async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops
   block = bot.blockAt(p);
   if (p.equals(supportCell(bot.entity.position)) && !(dropInto && safeDropBelow(bot, p))) throw new Error('Refusing to dig directly beneath feet');
   if (opensPit(bot, p)) throw new Error('Refusing to open a drop beside the feet');
+  if (opensLava(bot, p)) throw new Error('Refusing to open lava beside the bot');
   if (requiredTool || enchantment) {
     const remaining = item => (bot.registry.itemsByName[item.name]?.maxDurability || Infinity) - (item.durabilityUsed || 0);
     const tool = bot.inventory.items().filter(item => (!requiredTool || item.name === requiredTool) && remaining(item) >= minimumToolDurability &&
@@ -4399,4 +4413,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
+module.exports = { opensLava, descentTargets, portalInteriorBlockers, nearestLava, mineAtSource, timed, portalHere, walkToKnownPortal, buildPortalFrame, ruinSays, portalMethod, portalDue, crossingKitReady, walksFailed, occupant, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, answerStall, looseEnds, breakOut };
