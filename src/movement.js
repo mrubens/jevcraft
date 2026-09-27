@@ -35,6 +35,12 @@ function gapSurvivable(movements, node, dir, k = 1) {
 class SurvivalMovements extends Movements {
   getMoveParkourForward(node, dir, neighbors) {
     if (!this.allowGapJumps || this.bot?._gapJumpsOffUntil > Date.now()) return;
+    // No gap jumps in the Nether: a jump that falls short lands where the
+    // body goes, and over the lava sea that is the sea. mid-243-g and
+    // mid-229-f each went into it on a fortress leg with the route running
+    // and no hit taken, twenty blocks down (2026-09-27); a gap there is
+    // bridged or walked round.
+    if (/nether/.test(String(this.bot?.game?.dimension || ''))) return;
     const found = [];
     super.getMoveParkourForward(node, dir, found);
     for (const move of found) {

@@ -326,3 +326,10 @@ test('no drop of two or more onto the lava sea\'s shore: the fall carries on pas
     assert.equal(down.length, lava ? 0 : 1, lava ? 'not down to the shore beside the lava' : 'down to dry ground as before');
   }
 });
+
+test('no gap jumps in the Nether: a jump that falls short there is the lava sea', () => {
+  // mid-243-g and mid-229-f went into the lava sea on fortress legs, the route running and no hit taken (2026-09-27).
+  const bot = botFixture(); bot.game.dimension = 'the_nether';
+  const movement = configureMovements(bot);
+  assert.deepEqual(jumps(movement, gapWorld()), [], 'the crack a miss survives in the Overworld is not jumped here');
+});
