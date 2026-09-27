@@ -413,6 +413,43 @@ function spawnerAbout(bot) {
   const distance = Math.round(p.distanceTo(bot.entity.position));
   return { at: p, distance, says: ` A mob spawner is ${distance} blocks off: while a player is within ${SPAWNER_REACH} blocks of it, it makes more of its mob, up to four at a time every ten to forty seconds, so the mobs here do not run out and do not lose interest while the bot stays within that. Beyond ${SPAWNER_REACH} blocks of it no more come; broken with a pickaxe, it makes no more.` };
 }
+// What is known of a place that keeps making mobs, said to the choices that
+// decide whether the bot stays there, not only to the fight: a spawner in
+// reach, a dungeon or mineshaft remembered near, and the mobs met and the
+// hits taken within sixteen blocks in the last fifteen minutes. mid-220-g
+// mined gravel for one flint nineteen blocks from a dungeon it knew, in a
+// mineshaft, for eighteen minutes, sealed itself in about sixty times, and
+// was shot by a skeleton; the pocket's stay and leave, the night mine's
+// target and the work's source never said where it was (note 476).
+const MOB_PLACE_REACH = 16, MOB_PLACE_MS = 15 * 60000, STRUCTURE_REACH = 24;
+function mobSourceAbout(bot, goal, { at = bot.entity?.position, places, of = 'here' } = {}) {
+  if (!at) return null;
+  const here = new Vec3(at.x, at.y, at.z);
+  const id = bot.registry?.blocksByName?.spawner?.id;
+  const found = id !== undefined && typeof bot.findBlocks === 'function' ? bot.findBlocks({ matching: [id], maxDistance: SPAWNER_REACH, count: 1, point: here })[0] : null;
+  const spawner = found && found.distanceTo(here) <= SPAWNER_REACH + 1 && bot.blockAt?.(found)?.name === 'spawner' ? { at: found, distance: Math.round(found.distanceTo(here)) } : null;
+  const where = String(bot.game?.dimension || 'overworld').replace(/^minecraft:/, '').replace(/^the_/, '');
+  const structures = (goal?.landmarks || bot._survivalGoal?.landmarks || [])
+    .filter(l => ['dungeon', 'mineshaft'].includes(l.kind) && (l.dimension || 'overworld') === where)
+    .map(l => ({ kind: l.kind, at: new Vec3(l.x, l.y ?? here.y, l.z), distance: Math.round(Math.hypot(l.x - here.x, (l.y ?? here.y) - here.y, l.z - here.z)) }))
+    .filter(l => l.distance <= STRUCTURE_REACH).sort((a, b) => a.distance - b.distance);
+  const now = Date.now(), near = e => now - e.at < MOB_PLACE_MS && Math.hypot(e.x - here.x, e.y - here.y, e.z - here.z) <= MOB_PLACE_REACH;
+  const hurts = (bot._hurtPlaces || []).filter(near).length;
+  const seen = (places || bot._survivalState?.mobPlaces || goal?.survival?.mobPlaces || []).filter(near);
+  const met = seen.filter(e => e.kind === 'encounter').length, sealed = seen.filter(e => e.kind === 'pocket').length;
+  const parts = [];
+  if (spawner) parts.push(`a mob spawner ${spawner.distance} blocks off: while a player is within ${SPAWNER_REACH} blocks of it, it makes more of its mob, up to four at a time every ten to forty seconds, day and night; its mobs do not leave at daylight, and under rock they do not burn. Beyond ${SPAWNER_REACH} blocks of it no more come; broken with a pickaxe, it makes no more`);
+  for (const s of structures.slice(0, 2)) parts.push(s.kind === 'dungeon'
+    ? `a dungeon remembered ${s.distance} blocks off: a room round a mob spawner, which makes more of its mob while a player is within ${SPAWNER_REACH} blocks of it, day and night, until it is broken`
+    : `a mineshaft remembered ${s.distance} blocks off: dark corridors where mobs spawn at any hour, often with a cave spider spawner in them`);
+  const history = [hurts && `hurt by mobs ${hurts} time${hurts === 1 ? '' : 's'}`, met && `met mobs ${met} time${met === 1 ? '' : 's'}`, sealed && `sealed in a pocket with mobs watching ${sealed} time${sealed === 1 ? '' : 's'}`].filter(Boolean);
+  if (history.length) parts.push(`within ${MOB_PLACE_REACH} blocks of ${of} in the last ${MOB_PLACE_MS / 60000} minutes the bot has been ${history.join(', ')}`);
+  if (!parts.length) return null;
+  const daylight = spawner || structures.length ? ' Daylight does not end this: underground it is as dark at noon, and a spawner\'s mobs do not leave at dawn; going farther than that from it does.' : '';
+  return { spawner, structures, hurts, met, sealed, says: ` About this place: ${parts.join('; ')}.${daylight}`,
+    state: { ...(spawner ? { spawnerBlocksAway: spawner.distance } : {}), ...(structures.length ? { remembered: structures.map(s => ({ kind: s.kind, blocksAway: s.distance })) } : {}),
+      lastFifteenMinutesWithin16: { hurtByMobs: hurts, mobEncounters: met, pocketsWatched: sealed } } };
+}
 const biterAtArm = bot => threats(bot).some(t => t.distance <= 2.2 && !shooter(t.entity));
 
 function firmGround(bot, radius = 4, { margin = 1, awayFrom = null } = {}) {
@@ -665,6 +702,8 @@ class Survival {
     this.bot = bot; this.actions = actions; this.client = client;
     this.state = state || { shelters: [] };
     this.state.shelters ||= [];
+    // The places mobs were met, for the work's choices too (mobSourceAbout).
+    bot._survivalState = this.state;
     if (!bot._survivalHurtListener) {
       bot._survivalHurtListener = (entity, source) => {
         if (entity !== bot.entity) return;
@@ -672,6 +711,11 @@ class Survival {
         // Who did it, by kind: a neutral mob that hits the bot has turned.
         if (source?.name) (bot._hurtBy ||= {})[source.name] = Date.now();
         if (source?.id !== undefined) (bot._hurtById ||= {})[source.id] = Date.now();
+        // Where a mob hurt it, for what is said of the place (mobSourceAbout).
+        if (source?.name && ['hostile', 'mob'].includes(source.type) && bot.entity?.position) {
+          const p = bot.entity.position;
+          bot._hurtPlaces = [...(bot._hurtPlaces || []).filter(e => Date.now() - e.at < MOB_PLACE_MS), { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), at: Date.now(), by: source.name }].slice(-60);
+        }
         // Hurt three times in fifteen seconds with no survival action at all
         // is a bug with no trace: the replay run was shot for forty-eight
         // seconds in the Nether and the record held nothing but its health.
@@ -723,6 +767,20 @@ class Survival {
       bot.on('entityHurt', bot._survivalHurtListener);
     }
   }
+
+  // A mob met here, or a pocket watched here, for what is said of the place
+  // (mobSourceAbout): once per twenty seconds in the same spot, the last
+  // fifteen minutes kept.
+  noteMobPlace(kind, mobs) {
+    const p = this.bot.entity?.position;
+    if (!p) return;
+    const now = Date.now(), ring = (this.state.mobPlaces || []).filter(e => now - e.at < MOB_PLACE_MS);
+    const last = [...ring].reverse().find(e => e.kind === kind);
+    if (!(last && now - last.at < 20000 && Math.hypot(last.x - p.x, last.y - p.y, last.z - p.z) <= 4)) ring.push({ kind, x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), at: now, mobs });
+    this.state.mobPlaces = ring.slice(-60);
+  }
+
+  placeAbout(goal, opts = {}) { return mobSourceAbout(this.bot, goal, { places: this.state.mobPlaces, ...opts }); }
 
   currentShelter() {
     const bot = this.bot;
@@ -1807,6 +1865,8 @@ class Survival {
     // none (2026-09-27).
     const spawner = spawnerAbout(bot);
     if (spawner) for (const o of Object.values(options)) o.description += spawner.says;
+    // Met here, for what the place is said to be later (mobSourceAbout).
+    this.noteMobPlace('encounter', danger.slice(0, 4).map(t => t.entity.name));
     // What ails the bot, and a witch's pursuit, said with every stance:
     // mid-244-w was poisoned by a witch, ran from it three times with the
     // witch walking after, held at one health by the poison, and a harming
@@ -2900,9 +2960,12 @@ class Survival {
   // where the rock ahead does not allow it.
   // A warden's too, to beyond its boom's reach (wardenSays), farther and
   // longer: mid-230-n had no way away from one but the doors (note 412).
-  passageOut(creeper, { clear = PASSAGE_CLEAR, max = PASSAGE_MAX } = {}) {
+  // And from a spawner's block (a position, not a mob), to beyond its
+  // sixteen, clear of a creeper too when one is about (also) (note 476).
+  passageOut(from, { clear = PASSAGE_CLEAR, max = PASSAGE_MAX, also = [] } = {}) {
     const bot = this.bot;
-    const feet = bot.entity.position.floored(), at = creeper.entity.position;
+    const feet = bot.entity.position.floored(), at = from.entity ? from.entity.position : from.offset(0.5, 0, 0.5);
+    const clearOf = q => also.every(a => Math.hypot(q.x + 0.5 - a.at.x, q.z + 0.5 - a.at.z) >= a.clear);
     const away = feet.offset(0.5, 0, 0.5).minus(at);
     const dir = Math.abs(away.x) >= Math.abs(away.z) ? new Vec3(Math.sign(away.x) || 1, 0, 0) : new Vec3(0, 0, Math.sign(away.z) || 1);
     const direction = dir.x === 1 ? 'east' : dir.x === -1 ? 'west' : dir.z === 1 ? 'south' : 'north';
@@ -2919,10 +2982,10 @@ class Survival {
       }
       if (blocked) break;
       here = next; cells++;
-      if (cells >= PASSAGE_MIN && Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z) >= clear) break;
+      if (cells >= PASSAGE_MIN && Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z) >= clear && clearOf(here)) break;
     }
     const clearance = Math.round(Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z));
-    if (cells < PASSAGE_MIN || clearance < clear) return null;
+    if (cells < PASSAGE_MIN || Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z) < clear || !clearOf(here)) return null;
     return { dir, direction, cells, clearance, end: here };
   }
 
@@ -3382,7 +3445,8 @@ class Survival {
     // The tunnel behind, dark enough for monsters: a torch is Jev's option
     // (never the rule's; without Jev the mine goes on as it did).
     const dark = this.client && countOf(bot, 'torch') ? darkCells(bot, groundCells(bot, feet, 3)).filter(c => !c.equals(feet)) : [];
-    if (!choices.length && !dark.length) return null;
+    const place = this.client ? this.placeAbout(goal, { at: feet }) : null;
+    if (!choices.length && !dark.length && !place?.spawner && !place?.structures.length) return null;
     if (!this.client) return nightOre(bot, feet, attemptsFor(this));
     // Where each ore lies and what is beside it, and where a branch goes
     // (the decision audit, 2026-09-25): an ore in a cave wall opens the
@@ -3400,8 +3464,24 @@ class Survival {
     const branchY = Math.max(feet.y - 10, 16);
     tree.branch = { description: `Dig a branch down to a working depth and along it, looking for ore on the way: ${branchY < feet.y ? `down to y ${branchY}, ${feet.y - branchY} blocks below here` : branchY > feet.y ? `up to y ${branchY}, ${branchY - feet.y} blocks above here` : `level, at y ${branchY}`}, then twenty-four blocks along.` };
     if (dark.length) tree.light_tunnel = { description: `Put a torch in the tunnel here: ${dark.length} cells around the bot are dark enough for monsters to spawn in, and light stops them (${countOf(bot, 'torch')} torches carried).` };
-    const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree, context: {},
-      state: { timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), afterThePickaxes: pickaxeReserve(bot, feet), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
+    // What the place is, with each target, and a branch away from what makes
+    // the mobs: mid-220-g's night mine was asked its target thirteen times
+    // beside a dungeon it knew and answered none of these each time, the
+    // one move it wanted, away, not on offer (note 476).
+    if (place) {
+      const source = place.spawner ? { at: place.spawner.at, what: 'the mob spawner', reach: SPAWNER_REACH } : place.structures[0] ? { at: place.structures[0].at, what: `the ${place.structures[0].kind}`, reach: STRUCTURE_REACH } : null;
+      if (source) {
+        const away = feet.offset(0.5, 0, 0.5).minus(source.at.offset(0.5, 0, 0.5));
+        const heading = Math.abs(away.x) >= Math.abs(away.z) ? (away.x >= 0 ? 0 : 2) : (away.z >= 0 ? 1 : 3);
+        const [dx, dz] = [[1, 0], [0, 1], [-1, 0], [0, -1]][heading];
+        const end = feet.offset(dx * 24, 0, dz * 24);
+        const endFrom = Math.round(Math.hypot(end.x - source.at.x, end.z - source.at.z));
+        tree.branch_away = { description: `Dig the branch ${['east', 'south', 'west', 'north'][heading]}, away from ${source.what}: ${branchY < feet.y ? `down to y ${branchY} and ` : ''}twenty-four blocks along, looking for ore on the way; its end is about ${endFrom} blocks across from it, ${endFrom > source.reach ? 'beyond' : 'still within'} the ${source.reach} blocks said of it here.`, heading };
+      }
+      for (const o of Object.values(tree)) o.description += place.says;
+    }
+    const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description }])), context: {},
+      state: { ...(place ? { place: place.state } : {}), timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), afterThePickaxes: pickaxeReserve(bot, feet), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
     if (decision.stale) return null;
     if (decision.fallback) return nightOre(bot, feet, attemptsFor(this));
     const pick = decision.path.at(-1);
@@ -3410,6 +3490,7 @@ class Survival {
       this.report(goal, save, { action: 'light_tunnel', placed, torches: countOf(bot, 'torch') });
       return { lit: true };
     }
+    if (pick === 'branch_away') { const mine = this.state.nightMine; if (mine) mine.heading = tree.branch_away.heading; return null; }
     return pick === 'branch' ? null : choices[Number(pick.slice(4))] || null;
   }
 
@@ -3786,6 +3867,18 @@ class Survival {
         for (let n = 0; n < 5; n++) { task.check(); await sleep(100); }
         onStep(goal); return true;
       }
+      // The same mob at the wall, and since when, day or night; and what the
+      // place is (mobSourceAbout), said with staying and leaving: mid-220-g
+      // sealed in about sixty times beside a dungeon it knew and came back
+      // out to the same gravel each time, never told the place keeps making
+      // mobs (note 476).
+      if (watcher) {
+        if (this.state.pocketWatch?.id !== watcher.entity.id) this.state.pocketWatch = { id: watcher.entity.id, since: Date.now() };
+        this.noteMobPlace('pocket', [watcher.entity.name]);
+      } else delete this.state.pocketWatch;
+      const keptFor = watcher && this.state.pocketWatch ? Math.round((Date.now() - this.state.pocketWatch.since) / 1000) : 0;
+      const place = this.placeAbout(goal);
+      const placeSays = place?.says || '';
       // What next in the pocket is Jev's: stay, leave, go to bed, open the
       // wall on a watcher, or mine the night away. Held ninety seconds for
       // the same watcher and the same night.
@@ -3869,7 +3962,7 @@ class Survival {
       // and died among them in a minute (2026-09-26).
       const hp = Math.round((bot.health ?? 20) * 10) / 10;
       const healthNow = hp >= 20 ? '' : (bot.food ?? 20) >= 18 ? `, healing from ${hp} health` : `, not healing: ${hp} health and hunger ${bot.food}, and health comes back only at eighteen or more`;
-      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes with nothing gained${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.`) + wardenSays(bot),
+      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes with nothing gained${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.`) + wardenSays(bot) + placeSays,
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };
@@ -3899,7 +3992,31 @@ class Survival {
       // in the pocket (note 390, 2026-09-27). The rule that keeps a door
       // within six blocks of a creeper shut is a physical one and stays; the
       // passage ends farther from the creeper than that, and is Jev's.
-      const passage = creeperNear && !inWater(bot) && typeof this.actions.dig === 'function' && typeof this.actions.navigate === 'function' ? this.passageOut(creeperNear) : null;
+      // And against any keeper that will not go away, not only a creeper: a
+      // spawner in reach, the passage ending beyond its sixteen blocks, or
+      // the mob at the wall. mid-220-g, beside a dungeon's spawner with
+      // skeletons, cave spiders and zombies at its pockets, was offered no
+      // way out but the doors past them, and every retreat found no route
+      // (note 476).
+      const digging = !inWater(bot) && typeof this.actions.dig === 'function' && typeof this.actions.navigate === 'function';
+      const spawnerHere = digging && place?.spawner;
+      const fromSpawner = spawnerHere ? this.passageOut(spawnerHere.at, { clear: SPAWNER_REACH + 1, max: 24, also: creeperNear ? [{ at: creeperNear.entity.position, clear: PASSAGE_CLEAR }] : [] }) : null;
+      const passage = !fromSpawner && creeperNear && digging ? this.passageOut(creeperNear) : null;
+      const fromWatcher = !fromSpawner && !passage && watcher && digging && watcher.entity.name !== 'warden' ? this.passageOut(watcher) : null;
+      const outCells = p => `one wide and two high, ${p.cells} blocks, about ${Math.round(p.cells * 2.5)} seconds`;
+      const outSafe = kind => ` No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if a ${kind.replaceAll('_', ' ')} comes round toward its head within six blocks or the rock ahead is not safe to dig through.`;
+      const walksRound = w => ` A ${w.entity.name.replaceAll('_', ' ')} after a player walks round to it through open ground, not through rock${keptFor ? `; this one has kept the pocket ${keptFor} seconds` : ''}.`;
+      const outRun = (keeper, p) => async () => {
+        delete this.state.watchedSince; delete this.state.pocketWatch;
+        if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_out' };
+        return this.tunnelOut(task, goal, save, refuge, keeper, p);
+      };
+      if (fromSpawner) {
+        const spawnerMob = watcher || { entity: { name: 'spawner', position: spawnerHere.at.offset(0.5, 0, 0.5) }, distance: spawnerHere.distance };
+        options.tunnel_out = { description: `Dig a passage out through the pocket's ${fromSpawner.direction} wall, away from the mob spawner: ${outCells(fromSpawner)}, ending ${fromSpawner.clearance} blocks from the spawner (it is ${spawnerHere.distance} off now), beyond the ${SPAWNER_REACH} within which it makes more of its mob; then go back to work${night ? ' in the dark, where mobs spawn' : ''} from its end.${watcher ? walksRound(watcher) : ''}${outSafe(watcher ? watcher.entity.name : 'mob')}${outSays}${outHealth}`,
+          run: outRun(spawnerMob, fromSpawner) };
+      } else if (fromWatcher) options.tunnel_out = { description: `Dig a passage out through the pocket's ${fromWatcher.direction} wall, away from the ${watcher.entity.name.replaceAll('_', ' ')}: ${outCells(fromWatcher)}, and go back to work${night ? ' in the dark, where mobs spawn' : ''} from its end, ${fromWatcher.clearance} blocks from where it is now (it is ${Math.round(watcher.distance)} off${watcher.visible ? '' : ', behind the rock'}).${walksRound(watcher)}${outSafe(watcher.entity.name)}${outSays}${outHealth}`,
+        run: outRun(watcher, fromWatcher) };
       if (passage) options.tunnel_out = { description: `Dig a passage out through the pocket's ${passage.direction} wall, away from the creeper: one wide and two high, ${passage.cells} blocks, about ${Math.round(passage.cells * 2.5)} seconds, and go back to work${night ? ' in the dark, where mobs spawn' : ''} from its end, ${passage.clearance} blocks from where the creeper is now (it is ${Math.round(creeperNear.distance)} off${creeperNear.visible ? '' : ', behind the rock'}). A creeper walks to a player it sees within sixteen blocks and lights its fuse within three; behind rock it sees nothing, and digging makes no noise it follows. No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if the creeper comes round toward its head within six blocks or the rock ahead is not safe to dig through.${outSays}${outHealth}`,
         run: async () => {
           delete this.state.watchedSince;
@@ -3916,7 +4033,7 @@ class Survival {
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_from_warden' };
           return this.tunnelOut(task, goal, save, refuge, wardenAbout, away);
         } };
-      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${doorsSay}${outSays}${outHealth}` + wardenSays(bot),
+      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays,
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the
@@ -4207,9 +4324,11 @@ class Survival {
     // food search, climbed toward the surface at night, and a zombie and a
     // spider met it on the way (note 466).
     const woundedBelow = underground && nightFree && shelterNeeded(bot) && (bot.health ?? 20) < 20 && healing;
+    // And what the place is, beside the wait for dawn: a spawner's mobs do
+    // not leave at daylight (mid-220-g, note 476).
     if (needsShelter || woundedBelow) tree.secure_shelter = { description: (woundedBelow
       ? `Seal a pocket here underground and wait in it for dawn, about ${minutesToDawn(bot)} real minutes off: ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and hunger drops slowly while still. The surface above is night, with its mobs, until dawn, when those in the open burn; underground the dark is the same at any hour.${nowAbout}`
-      : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off; in the shelter it can mine or wait.`) + creeperRaceSays + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
+      : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off; in the shelter it can mine or wait.`) + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
     // At night too, with what it risks said, not hidden (the decision
     // audit, 2026-09-25): hungry in the dark, the food was never offered.
@@ -4278,4 +4397,4 @@ class Survival {
   }
 }
 
-module.exports = { shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

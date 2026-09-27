@@ -15,7 +15,7 @@ const { updateDigCapabilities } = require('./movement');
 const { resourceTunnelStep, tunnelStep, staircaseResting, safeExcavation } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard, safeFood } = require('./vitals');
 const { decide, question } = require('./decisions');
-const { Survival, inWater, lavaExit, shelterNeeded } = require('./survival');
+const { Survival, inWater, lavaExit, shelterNeeded, mobSourceAbout } = require('./survival');
 const { checkThreats, safeFromHostiles, immediateThreat } = require('./danger');
 const { resourceSources, nearestRemaining, decisionFingerprint, setAsideSource, rememberSource, committedSource } = require('./decision-options');
 const { reviewDesign } = require('./design-review');
@@ -2822,8 +2822,13 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
   if (step.action === 'mine') {
     const reachable = await reachableBlocks(bot, task, await miningCandidates(bot, task, step, goal), { limit: 16 });
     // Jev chooses between sources that differ; code picks the block inside one.
+    // What the place round each source is (a spawner in reach, a dungeon or
+    // mineshaft remembered, the mobs met there lately): mid-220-g went back
+    // to the same gravel by a dungeon it knew for eighteen minutes, told
+    // only the block and its distance (note 476).
     for (const source of resourceSources(bot, reachable, { failures: attemptsFor(goal).of('option'), resting: p => isSetAside(goal, 'reach', p) })) {
-      actions[source.key] = { description: { ...source.description, resource: step.drops, requiredTool: step.tool },
+      const place = mobSourceAbout(bot, goal, { at: source.blocks[0], of: 'it' });
+      actions[source.key] = { description: { ...source.description, ...(place ? { aboutThePlace: place.says.trim() } : {}), resource: step.drops, requiredTool: step.tool },
         valid: () => !!nearestRemaining(bot, source), run: () => workSource(bot, task, step, goal, save, source) };
     }
   }

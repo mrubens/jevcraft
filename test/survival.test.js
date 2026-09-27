@@ -3641,6 +3641,55 @@ test('beside a mob spawner, every stance says it makes more of its mob while the
   for (const [key, c] of Object.entries(calls[0].questions.branch_0.criteria)) assert.match(JSON.stringify(c), /A mob spawner is 6 blocks off: while a player is within 16 blocks of it, it makes more of its mob/, key);
 });
 
+test('sealed in by a spawner with a skeleton at the wall and no creeper: a passage out to beyond the spawner\'s sixteen is Jev\'s, and staying and leaving say the spawner', async () => {
+  // mid-220-g (note 476): eighteen minutes beside a dungeon it knew, sealed in about sixty times, skeletons, cave spiders and zombies at its pockets, and shot by a skeleton; the passage out was only ever for a creeper or a warden.
+  const origin = new Vec3(0, 30, 0), spawnerAt = new Vec3(10, 30, 0);
+  const skeleton = { id: 8, name: 'skeleton', type: 'hostile', position: new Vec3(5.5, 30, 0.5), height: 1.99, width: 0.6, isValid: true };
+  const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`]);
+  const registry = require('minecraft-data')('26.1');
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: { 8: skeleton }, health: 20, food: 20, registry,
+    time: { timeOfDay: 16000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    findBlocks: ({ matching }) => [].concat(matching).includes(registry.blocksByName.spawner.id) ? [spawnerAt] : [],
+    blockAt: p => p.equals(spawnerAt) ? { name: 'spawner', boundingBox: 'block', diggable: true, position: p } : ({ name: open.has(`${p}`) ? 'air' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : 'block', diggable: true, position: p }),
+    world: { raycast: (from) => ({ intersect: from.offset(0.6, 0, 0) }) } });
+  const walked = [];
+  const survival = new Survival(bot, { dig: async (b, t, p) => { open.add(`${p}`); }, navigate: async (b, t, g) => { walked.push(new Vec3(g.x, g.y, g.z)); bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } },
+    { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld' }] }, client: { systemOne: async () => ({}) } });
+  let tree;
+  survival.decide = async (task, goal, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['tunnel_out'], stale: false }; };
+  survival.wait = async () => assert.fail('Jev chose the passage');
+  await survival.step(new Task('night'), { kind: 'win' }, () => {});
+  assert.match(tree?.tunnel_out?.description || '', /pocket's west wall, away from the mob spawner: one wide and two high, \d+ blocks/);
+  const said = Number(/ending (\d+) blocks from the spawner/.exec(tree.tunnel_out.description)?.[1]);
+  assert(said > 16, `the passage's end said ${said} from the spawner`);
+  const end = walked.at(-1);
+  assert(end && Math.hypot(end.x + 0.5 - 10.5, end.z + 0.5 - 0.5) > 16, `the passage ends at ${end}, beyond sixteen from the spawner`);
+  for (const key of ['stay', 'leave']) {
+    assert.match(tree[key].description, /a mob spawner 10 blocks off: while a player is within 16 blocks of it, it makes more of its mob/, key);
+    assert.match(tree[key].description, /its mobs do not leave at daylight/, key);
+  }
+});
+
+test('the night mine\'s target says a dungeon remembered nearby, and a branch away from it is on offer', async () => {
+  // mid-220-g (note 476): thirteen "none of these" on the night mine's target beside a dungeon it knew; the move it wanted, away, was never offered.
+  const registry = require('minecraft-data')('26.1');
+  const ores = { '3,39,0': 'iron_ore' };
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld' }, entities: {}, entity: { position: new Vec3(0.5, 40, 0.5) },
+    inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }], emptySlotCount: () => 10, slots: [] },
+    findBlocks: ({ matching }) => Object.keys(ores).filter(k => [].concat(matching).includes(registry.blocksByName[ores[k]].id)).map(k => new Vec3(...k.split(',').map(Number))),
+    blockAt: p => ({ name: ores[`${p.x},${p.y},${p.z}`] || 'stone', boundingBox: 'block', position: p }) });
+  const survival = new Survival(bot, {}, { client: { systemOne: async () => ({}) } });
+  let tree;
+  survival.decide = async (task, goal, save, q) => { tree = q.tree; return { path: ['branch_away'], stale: false }; };
+  survival.state.nightMine = { heading: 0 };
+  const goal = { landmarks: [{ kind: 'dungeon', x: 12, y: 38, z: 0, dimension: 'overworld' }] };
+  assert.equal(await survival.nightTarget(new Task('night'), goal, () => {}, new Vec3(0, 40, 0)), null);
+  for (const key of ['ore_0', 'branch']) assert.match(tree[key].description, /About this place: a dungeon remembered 12 blocks off: a room round a mob spawner/, key);
+  assert.match(tree.branch_away?.description || '', /Dig the branch west, away from the dungeon/);
+  assert.equal(survival.state.nightMine.heading, 2, 'the branch heads west, away from it');
+});
+
 test('on a pillar with a shooter out of reach, no charge that carries no step is offered, and the fight is priced as the shots taken', () => {
   // mid-244-s, on a pillar eight blocks from a pillager, was told the fight and the charge were "about 6.2 seconds and 2.9 damage"; each ended at once, twice, arrows every three seconds (2026-09-27).
   const pillar = p => p.x === 0 && p.z === 0 && p.y < 62;

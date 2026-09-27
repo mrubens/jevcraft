@@ -74,7 +74,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `pocket_next`
 
-**Sealed in a pocket: stay, leave, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, dig a passage out away from a creeper, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
+**Sealed in a pocket: stay, leave, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, dig a passage out away from a spawner, a creeper or the mob at the wall, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
 
 - When: Each survival step inside a sealed pocket, unless a mob is inside or at arm's length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.
 - Decision tree, choice; stakes medium; ledger kind `survival`
@@ -94,15 +94,15 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `stash_valuables` | root | open the pocket and put the valuables in the stash chest | night, nothing watching, a stash chest within 128 blocks and valuables carried |
 | `cache_valuables` | root | open the pocket and put a chest down outside for the valuables | night, nothing watching, home's chest out of reach, valuables carried, and a chest or the wood for one |
 | `tunnel_from_warden` | root | dig a passage out through the far wall, away from the warden, to beyond its boom, and go back to work from its end | a warden within thirty-two blocks, the bot not in water, digging and walking at hand, and the rock away from it safe to dig for at least four cells to a point seventeen or more blocks across from it (its boom reaches fifteen), twenty-four cells at most; said with the direction, the cells, about how long, the clearance, that digging is a vibration it follows, what a warden does, and the booms taken in the last minute |
-| `tunnel_out` | root | dig a passage out through the far wall, away from the creeper, and go back to work from its end | a creeper within sixteen blocks (the rule that keeps a door within six of one shut would refuse the doors), the bot not in water, digging and walking at hand, and the rock away from the creeper safe to dig for at least four cells to a point ten or more blocks from it; said with the direction, the cells, about how long, the clearance at its end, and that it stops, the bot still enclosed, if the creeper comes round toward its head within six blocks |
-| `stay` | root | stay in the pocket | always |
-| `leave` | root | open the pocket and go back to work | always |
+| `tunnel_out` | root | dig a passage out through the far wall, away from what keeps the pocket (a spawner in reach, a creeper, or the mob at the wall), and go back to work from its end | the bot not in water, digging and walking at hand, and the rock safe to dig for at least four cells: away from a mob spawner within sixteen blocks to a point seventeen or more across from it (and ten from a creeper about), twenty-four cells at most; else away from a creeper within sixteen blocks (the rule that keeps a door within six of one shut would refuse the doors) to ten or more from it; else away from the mob watching the pocket (not a warden) to ten or more from it; said with the direction, the cells, about how long, the clearance at its end, how long the same mob has kept the pocket, and that it stops, the bot still enclosed, if that kind of mob comes round toward its head within six blocks |
+| `stay` | root | stay in the pocket | always; said with what the place is (mobSourceAbout: a spawner in reach, a dungeon or mineshaft remembered within twenty-four, the mobs met and hits taken within sixteen in the last fifteen minutes) |
+| `leave` | root | open the pocket and go back to work | always; said with what the place is, as stay |
 
 ### `night_mine_target`
 
 **Mining through the night: which ore next, or a branch deeper?**
 
-- When: Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed.
+- When: Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed, or the tunnel is dark with torches carried, or a spawner or a remembered dungeon or mineshaft is near.
 - Decision tree, choice; stakes low; ledger kind `mining`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -112,6 +112,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `ore_\d+` (pattern) | root | dig to this ore | the nearest of its kind, with its distance, what is carried and what it is for |
 | `branch` | root | dig a branch down and along | always |
+| `branch_away` | root | dig the branch away from the spawner or structure that makes the mobs here | a mob spawner within sixteen blocks, or a dungeon or mineshaft remembered within twenty-four; said with where its end lies from it. Every option here is said with what the place is (mobSourceAbout) |
 | `light_tunnel` | root | put a torch in the tunnel here | torches carried and the cells around are dark enough for monsters |
 
 ### `evening_chore`

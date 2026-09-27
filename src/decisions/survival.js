@@ -69,7 +69,7 @@ define({
 // Sealed in a pocket: stay, leave, go to bed, open on a watcher, or mine.
 define({
   id: 'pocket_next', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'Sealed in a pocket: stay, leave, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, dig a passage out away from a creeper, mine the night away, hunt mobs for their drops, or take the valuables to the chest?',
+  question: 'Sealed in a pocket: stay, leave, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, dig a passage out away from a spawner, a creeper or the mob at the wall, mine the night away, hunt mobs for their drops, or take the valuables to the chest?',
   trigger: 'Each survival step inside a sealed pocket, unless a mob is inside or at arm\'s length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.',
   source: 'src/survival.js (stepOnce: the pocket)',
   options: [
@@ -83,9 +83,9 @@ define({
     { key: 'stash_valuables', label: 'open the pocket and put the valuables in the stash chest', when: 'night, nothing watching, a stash chest within 128 blocks and valuables carried', level: 'root' },
     { key: 'cache_valuables', label: 'open the pocket and put a chest down outside for the valuables', when: 'night, nothing watching, home\'s chest out of reach, valuables carried, and a chest or the wood for one', level: 'root' },
     { key: 'tunnel_from_warden', label: 'dig a passage out through the far wall, away from the warden, to beyond its boom, and go back to work from its end', when: 'a warden within thirty-two blocks, the bot not in water, digging and walking at hand, and the rock away from it safe to dig for at least four cells to a point seventeen or more blocks across from it (its boom reaches fifteen), twenty-four cells at most; said with the direction, the cells, about how long, the clearance, that digging is a vibration it follows, what a warden does, and the booms taken in the last minute', level: 'root' },
-    { key: 'tunnel_out', label: 'dig a passage out through the far wall, away from the creeper, and go back to work from its end', when: 'a creeper within sixteen blocks (the rule that keeps a door within six of one shut would refuse the doors), the bot not in water, digging and walking at hand, and the rock away from the creeper safe to dig for at least four cells to a point ten or more blocks from it; said with the direction, the cells, about how long, the clearance at its end, and that it stops, the bot still enclosed, if the creeper comes round toward its head within six blocks', level: 'root' },
-    { key: 'stay', label: 'stay in the pocket', when: 'always', level: 'root' },
-    { key: 'leave', label: 'open the pocket and go back to work', when: 'always', level: 'root' },
+    { key: 'tunnel_out', label: 'dig a passage out through the far wall, away from what keeps the pocket (a spawner in reach, a creeper, or the mob at the wall), and go back to work from its end', when: 'the bot not in water, digging and walking at hand, and the rock safe to dig for at least four cells: away from a mob spawner within sixteen blocks to a point seventeen or more across from it (and ten from a creeper about), twenty-four cells at most; else away from a creeper within sixteen blocks (the rule that keeps a door within six of one shut would refuse the doors) to ten or more from it; else away from the mob watching the pocket (not a warden) to ten or more from it; said with the direction, the cells, about how long, the clearance at its end, how long the same mob has kept the pocket, and that it stops, the bot still enclosed, if that kind of mob comes round toward its head within six blocks', level: 'root' },
+    { key: 'stay', label: 'stay in the pocket', when: 'always; said with what the place is (mobSourceAbout: a spawner in reach, a dungeon or mineshaft remembered within twenty-four, the mobs met and hits taken within sixteen in the last fifteen minutes)', level: 'root' },
+    { key: 'leave', label: 'open the pocket and go back to work', when: 'always; said with what the place is, as stay', level: 'root' },
   ],
   instructions: { task: 'The bot is sealed in a small pocket. Choose what to do next.', guidance: 'Use the time of day, health, food, armour and the mobs about (distance, in sight, whether they shoot). Mobs spawn in the dark; zombies and skeletons in the open burn once the sun is up, creepers, spiders and cave mobs do not. A pocket is safe but gains nothing, and a night in one is about eleven minutes from dusk; health comes back while fed. workWaiting is what the work outside is on; stillNeeded is the steps still open on the ladder and what each takes from the pockets as they are. watchedForSeconds is how long a mob has kept watch. The player wants the bot never to stand idle when useful work is in reach.' },
   // Without Jev, the old order, worked out by the caller.
@@ -96,11 +96,12 @@ define({
 define({
   id: 'night_mine_target', area: 'survival', kind: 'mining', primitive: 'choice', stakes: 'low', tree: true,
   question: 'Mining through the night: which ore next, or a branch deeper?',
-  trigger: 'Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed.',
+  trigger: 'Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed, or the tunnel is dark with torches carried, or a spawner or a remembered dungeon or mineshaft is near.',
   source: 'src/survival.js (nightMine, nightTarget)',
   options: [
     { pattern: 'ore_\\d+', label: 'dig to this ore', when: 'the nearest of its kind, with its distance, what is carried and what it is for', level: 'root', dynamic: true },
     { key: 'branch', label: 'dig a branch down and along', when: 'always', level: 'root' },
+    { key: 'branch_away', label: 'dig the branch away from the spawner or structure that makes the mobs here', when: 'a mob spawner within sixteen blocks, or a dungeon or mineshaft remembered within twenty-four; said with where its end lies from it. Every option here is said with what the place is (mobSourceAbout)', level: 'root' },
     { key: 'light_tunnel', label: 'put a torch in the tunnel here', when: 'torches carried and the cells around are dark enough for monsters', level: 'root' },
   ],
   instructions: { task: 'The bot is mining through the night from its shelter. Choose the next target, or light the tunnel.', guidance: 'Each ore says how far it is, how much of what it gives is carried, and what that is for. A pickaxe wears a use a block. The player wants the bot never to stand idle when useful work is in reach.' },
