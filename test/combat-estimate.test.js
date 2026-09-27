@@ -223,3 +223,11 @@ test('a mob with a spear is reckoned at its thrust, not its hand', () => {
   assert(bare.hitsBot < 3);
   assert.match(spear.note, /spear/);
 });
+
+test('biters already at arm\'s length are counted however few open cells there are round the bot', () => {
+  // mid-235-f in a shaft with three zombies in it was told the fight cost nothing, took it at 0.91 from 5.9 health and was killed (2026-09-27).
+  const zombies = [0.4, 1.8, 2.5].map(distance => ({ name: 'zombie', distance, visible: true }));
+  const e = fightEstimate({ threats: zombies, armour: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], weapon: 'iron_sword', health: 6, atOnce: 0 });
+  assert(e.fightHere.damageTaken > 3, JSON.stringify(e.fightHere));
+  assert.equal(e.fightHere.atArmsLengthAtOnce, 3);
+});

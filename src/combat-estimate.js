@@ -149,6 +149,12 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
       hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(m.every ? { every: m.every } : {}), ...(m.note ? { note: m.note } : {}) };
   }).filter(Boolean);
   const order = [...mobs].sort((a, b) => a.distance - b.distance);
+  // The cells round the bot bound how many can come at it, but not the
+  // ones already there: in a tunnel or a shaft the open cells counted none,
+  // with three zombies at arm's length, and the fight was told it cost
+  // nothing; mid-235-f took it at 0.91 from 5.9 health and was killed
+  // (2026-09-27).
+  atOnce = Math.max(atOnce, order.filter(m => !m.shoots && m.name !== 'creeper' && m.distance <= 3).length);
   const timeline = fightTimeline(order, { shield, atOnce });
   const taken = within(timeline), seconds = order.reduce((n, m) => n + m.secondsToKill, 0);
   const creepers = order.filter(m => m.name === 'creeper');
@@ -206,7 +212,8 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   }
   if (fight && seconds > setup) {
     const order = mobs.filter(fought).sort((a, b) => a.distance - b.distance);
-    damage += within(fightTimeline(order, { shield, atOnce: fight.atOnce ?? Infinity }), seconds - setup);
+    const reach = order.filter(m => !m.shoots && m.name !== 'creeper' && m.distance <= 3).length;
+    damage += within(fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach) }), seconds - setup);
     for (const m of order) if (!m.shoots || m.visible) still.add(m.name);
   }
   return { seconds, setup: round(setup), damage: round(damage), blasts, still: [...still] };
