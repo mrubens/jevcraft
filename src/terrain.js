@@ -43,14 +43,18 @@ function supportCell(point) {
 // Beside a drop: a neighbouring cell the body could be pushed into with no
 // floor for three blocks under it, or lava under it. See survival.js flee.
 const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+// Water is no drop: a fall into it does not hurt, and open water on both
+// sides is swimming, not a ledge. mid-231-f, swimming with a drowned, was
+// held still and crouched as if on a span, sinking while it was hit
+// (2026-09-27).
 function dropAt(bot, c) {
   const b = bot.blockAt(c);
-  if (!b || b.boundingBox === 'block') return false;
+  if (!b || b.boundingBox === 'block' || /water/.test(b.name || '')) return false;
   for (let dy = 1; dy <= 3; dy++) {
     const under = bot.blockAt(c.offset(0, -dy, 0));
     if (!under) return false;
     if (under.name === 'lava') return true;
-    if (under.boundingBox === 'block') return false;
+    if (under.boundingBox === 'block' || /water/.test(under.name || '')) return false;
   }
   return true;
 }

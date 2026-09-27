@@ -321,3 +321,15 @@ test('an ore chosen for the search is kept while it is there, not swapped for wh
   await explore(bot, new Task('test', 'search'), goal, () => {}, 'iron_ore', { surfaceOnly: false }).catch(() => {});
   assert.deepEqual(goal.search.iron_ore.observedTarget, first);
 });
+
+test('a mob at the swimmer stops the swim across: it is answered, not swum on from', async () => {
+  // mid-231-f swam on for sixteen seconds with a drowned hitting it from twelve to nothing (2026-09-27).
+  const { swimAcross } = require('../src/exploration');
+  const { Vec3 } = require('vec3');
+  const { Task } = require('../src/skills');
+  const sea = p => { const q = p.floored(); const name = q.x > 40 ? (q.y < 63 ? 'grass_block' : 'air') : q.y <= 62 ? 'water' : 'air'; return { name, position: q, boundingBox: name === 'grass_block' ? 'block' : 'empty' }; };
+  const bot = { entity: { position: new Vec3(0.5, 62, 0.5), onGround: false, yaw: 0, pitch: 0 }, game: { dimension: 'overworld' }, oxygenLevel: 20, health: 12, blockAt: sea, world: { raycast: () => null },
+    entities: { 7: { id: 7, name: 'drowned', type: 'hostile', position: new Vec3(1.5, 62, 0.5), height: 1.95, isValid: true } },
+    lookAt: async () => {}, look: async () => {}, setControlState() {}, getControlState() { return false; }, chat() {} };
+  await assert.rejects(swimAcross(bot, new Task('swim'), {}, () => {}, 0), err => err.name === 'NeedsSafety');
+});

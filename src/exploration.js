@@ -188,11 +188,15 @@ async function swimAcross(bot, task, goal, save, heading) {
   bot.chat?.(`Water to the ${HEADINGS[heading]}. Swimming across it, about ${ahead.to - ahead.from + 4} blocks.`);
   const water = () => /water/.test(bot.blockAt(bot.entity.position.floored())?.name || '');
   let stuck = 0;
+  // A mob at the swimmer is answered, not swum on from: mid-231-f swam on
+  // for sixteen seconds with a drowned hitting it from twelve to nothing
+  // (2026-09-27).
+  const { checkThreats } = require('./danger');
   for (let n = 0; n < 40; n++) {
-    task.check(); checkAir(bot);
+    task.check(); checkAir(bot); checkThreats(bot);
     if (along() >= land.d - 1 && !water() && bot.entity.onGround) return true;
     const was = along();
-    await move(bot, task, { label: 'swim_across', keys: ['forward', 'jump'], sneak: false, why: 'across the water on the chosen heading',
+    await move(bot, task, { label: 'swim_across', keys: ['forward', 'jump'], sneak: false, why: 'across the water on the chosen heading', guard: () => checkThreats(bot),
       look: new Vec3(land.x + 0.5, Math.max(land.y + 1.6, bot.entity.position.y + 1.2), land.z + 0.5), maxMs: 2000, tick: 50,
       until: () => along() >= land.d - 1 && !water() && bot.entity.onGround });
     if (along() - was < 0.8) { if (++stuck >= 3) return along() > 4; } else stuck = 0;

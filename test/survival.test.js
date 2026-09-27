@@ -2954,3 +2954,15 @@ test('on a one-wide ledge with a zombie close, the open sides are walled before 
   }
   assert.equal(require('../src/terrain').onSpan(bot), false, 'no longer a ledge');
 });
+
+test('open water on both sides is swimming, not a ledge: no hold on a span there', () => {
+  // mid-231-f was held still and crouched in the sea with a drowned, sinking while it was hit (2026-09-27).
+  const { onSpan, dropAt } = require('../src/terrain');
+  const sea = p => { const q = p.floored(); return { name: q.y <= 62 && q.y >= 40 ? 'water' : q.y < 40 ? 'sand' : 'air', position: q, boundingBox: q.y < 40 ? 'block' : 'empty' }; };
+  const bot = { entity: { position: new Vec3(0.5, 61.4, 0.5) }, blockAt: sea };
+  assert.equal(onSpan(bot), false);
+  assert.equal(dropAt(bot, new Vec3(1, 61, 0)), false, 'water beside is no drop');
+  // A ledge over water is no drop either: the fall into it does not hurt.
+  const ledge = { entity: { position: new Vec3(0.5, 70, 0.5) }, blockAt: p => { const q = p.floored(); return q.x === 0 && q.y === 69 ? { name: 'stone', position: q, boundingBox: 'block' } : q.y <= 67 ? { name: 'water', position: q, boundingBox: 'empty' } : { name: 'air', position: q, boundingBox: 'empty' }; } };
+  assert.equal(onSpan(ledge), false);
+});

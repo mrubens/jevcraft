@@ -420,11 +420,11 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   const began = Date.now(), before = flat();
   let stuck = 0;
   while (Date.now() - began < swimMs) {
-    task.check(); checkAir(bot);
+    task.check(); checkAir(bot); checkThreats(bot);
     if (landInView(bot, 24, own)) break;
     if (flat() < 8) { setAside(goal, 'cross_sea', target.key, 'swum there and found only water', 60 * 60000); save(); break; }
     const was = bot.entity.position.clone();
-    await motion(bot, task, { label: 'swim_for_land', keys: ['forward', 'jump'], sneak: false, why: 'swimming for the land remembered',
+    await motion(bot, task, { label: 'swim_for_land', keys: ['forward', 'jump'], sneak: false, why: 'swimming for the land remembered', guard: () => checkThreats(bot),
       look: new Vec3(target.x, bot.entity.position.y + 1.6, target.z), maxMs: segmentMs, tick: 50 });
     const moved = Math.hypot(bot.entity.position.x - was.x, bot.entity.position.z - was.z);
     // Ice over the sea, a wall of rock: three segments without a block of
