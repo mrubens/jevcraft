@@ -64,6 +64,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
+| `bed_beside` | root | seal a pocket now and at bedtime put the carried bed down beside it and sleep | before bedtime in the Overworld with a bed carried, no nook to be had, a pocket sealable here and level ground for the bed within four blocks; said with the seconds to bedtime and the monsters within the vanilla sleep range |
 | `saved_shelter` | root | go back to the saved shelter and seal it | a shelter is remembered with a route to it and dry below |
 | `build_at_site` | root | build a small room at a dry site | a dry site within reach has a route to it |
 | `seal_here` | root | seal a pocket where the bot stands | always (with too few blocks it digs in instead) |

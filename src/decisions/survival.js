@@ -53,6 +53,7 @@ define({
   trigger: 'When a shelter is chosen for the night (secure_shelter) and none is under way; held for the night, and asked again when the chosen way fails (it rests three minutes).',
   source: 'src/survival.js (refugeStep)',
   options: [
+    { key: 'bed_beside', label: 'seal a pocket now and at bedtime put the carried bed down beside it and sleep', when: 'before bedtime in the Overworld with a bed carried, no nook to be had, a pocket sealable here and level ground for the bed within four blocks; said with the seconds to bedtime and the monsters within the vanilla sleep range', level: 'root' },
     { key: 'saved_shelter', label: 'go back to the saved shelter and seal it', when: 'a shelter is remembered with a route to it and dry below', level: 'root' },
     { key: 'build_at_site', label: 'build a small room at a dry site', when: 'a dry site within reach has a route to it', level: 'root' },
     { key: 'seal_here', label: 'seal a pocket where the bot stands', when: 'always (with too few blocks it digs in instead)', level: 'root' },

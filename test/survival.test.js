@@ -3729,3 +3729,21 @@ test('at bedtime in a pocket on open ground, with a bed carried and no nook, sle
   assert(tree, 'asked what next in the pocket');
   assert.match(tree.sleep_beside?.description || '', /put the carried bed down on level ground beside it, \d+ blocks off, and sleep/, Object.keys(tree).join(','));
 });
+
+test('at dusk with a bed carried and no nook, a pocket now and the bed beside it at bedtime is offered, and kept at bedtime', async () => {
+  // The night was asked at dusk, before a bed could be slept in, and answered with a pocket; mid-211-o's nights were 62 of 180 minutes (2026-09-27).
+  const origin = new Vec3(0, 64, 0);
+  const placed = new Set();
+  const blockAt = p => { const f = p.floored(); const solid = f.y < 64 || placed.has(`${f}`); return { position: f, name: solid ? (f.y < 64 ? 'grass_block' : 'cobblestone') : 'air', boundingBox: solid ? 'block' : 'empty', diggable: true }; };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 11500 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'white_bed', count: 1 }, { name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 64 }], emptySlotCount: () => 10, slots: [] },
+    blockAt, world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: {}, setGoal() {}, getPathTo: () => ({ status: 'success', path: [] }) }, clearControlStates() {}, setControlState() {} });
+  const survival = new Survival(bot, { dig: async () => {}, place: async (b, t, p) => { placed.add(`${p.floored()}`); }, navigate: async () => {} }, { state: { shelters: [] }, client: { systemOne: async () => ({}) } });
+  let asked = null;
+  survival.decide = async (task, goal, save, { id, tree }) => { if (id === 'shelter_method') { asked = tree; return { path: ['bed_beside'], stale: false }; } return { path: ['stay'], stale: false }; };
+  survival.sealHere = async () => true;
+  await survival.refugeStep(new Task('night'), { kind: 'win' }, () => {});
+  assert.match(asked?.bed_beside?.description || '', /Seal a pocket where the bot stands, .* and at bedtime .* put the carried bed down on level ground \d+ blocks off and sleep/, Object.keys(asked || {}).join(','));
+  assert(survival.state.bedBesidePlan?.until > Date.now(), 'the plan is kept for bedtime');
+});

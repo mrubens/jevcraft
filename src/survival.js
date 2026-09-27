@@ -2229,6 +2229,13 @@ class Survival {
         if (nook) options.bed_nook = { description: now ? `Put the carried bed down here instead of a shelter: ${nookSays(bot, nook)}${creeperSays(bot)}`
           : `Seal a pocket where the bot stands, as seal_here does (${stock} blocks carried), and at bedtime ${nookSays(bot, nook, { pocket: true, later: true })}${pocketRace(bot, near)}${creeperNoteFor(near)}` };
       }
+      // Or, with no nook to be had, the carried bed put down beside the
+      // pocket at bedtime: planned at dusk, when the night is asked, and not
+      // left to a question in the pocket at bedtime (note 429).
+      if (!options.bed_nook && !sleepable(bot) && bedCarried(bot) && bot.game?.dimension === 'overworld' && !sleepWaiting(this) && !resting('bed_beside') && !isSetAside(this, 'bed_out', 'here') && options.seal_here) {
+        const site = bedSiteNear(bot);
+        if (site) options.bed_beside = { description: `Seal a pocket where the bot stands, as seal_here does (${stock} blocks carried), and at bedtime (from ${SLEEP_FROM}, about ${Math.max(0, Math.round((SLEEP_FROM - (bot.time?.timeOfDay ?? 0)) / 20))} seconds off) open it, put the carried bed down on level ground ${Math.round(site.foot.distanceTo(bot.entity.position))} blocks off and sleep: the night passes in seconds instead of about ${minutesToDawn(bot)} real minutes in the pocket, and the bed is picked back up after. Sleep is refused while a monster is within about eight blocks sideways and five up or down of the bed (vanilla), seen or not: ${monstersByBed(bot, site.foot) || 'none'} now; refused, the pocket is there to go back to.${pocketRace(bot, near)}${creeperNoteFor(near)}` };
+      }
       if (this.canNightMine(goal) && !resting('night_mine')) options.night_mine = { description: 'Dig a mine from here for the night: a staircase into the rock is shelter and a mine at once, and gains ore while the night passes.' + creeperSays(bot) };
       if (!Object.keys(options).length) {
         // Nowhere, nothing to build with, no ground to dig: failing that every
@@ -2275,6 +2282,10 @@ class Survival {
       }
       this.state.bedNookPlan = { until: Date.now() + 600000 };
       return (await this.sealHere(task, goal, save, threats(bot).filter(t => t.visible))) || failed('the pocket for the bed nook did not seal here');
+    }
+    if (method === 'bed_beside') {
+      this.state.bedBesidePlan = { until: Date.now() + 600000 };
+      return (await this.sealHere(task, goal, save, threats(bot).filter(t => t.visible))) || failed('the pocket for the bed beside did not seal here');
     }
     if (method === 'build_at_site' && !refuge) {
       if (!site) return failed('no dry site within reach');
@@ -3611,6 +3622,7 @@ class Survival {
           const near = monstersByBed(bot, site.foot);
           options.sleep_beside = { description: `Open the pocket, put the carried bed down on level ground beside it, ${Math.round(site.foot.distanceTo(bot.entity.position))} blocks off, and sleep: the night passes in seconds, instead of about ${minutesToDawn(bot)} real minutes in the pocket; the bed is picked back up after. Sleep is refused while a monster is within about eight blocks sideways and five up or down of the bed (vanilla), seen or not: ${near ? `${near} ${near === 1 ? 'is' : 'are'} now` : 'none now'}. Out of the pocket until the bed is down and slept in.${outside}`,
             run: async () => {
+              delete this.state.bedBesidePlan;
               await this.leave(task, goal, save, refuge, 'Off to bed.', { past: true });
               try {
                 await this.actions.navigate(bot, task, new goals.GoalBlock(site.stand.x, site.stand.y, site.stand.z), { timeoutMs: 10000, stallMs: 3000 });
@@ -3716,7 +3728,8 @@ class Survival {
       const held = this.state.pocketPlan?.key === key && this.state.pocketPlan.until > Date.now() && options[this.state.pocketPlan.choice] ? this.state.pocketPlan.choice : null;
       // The nook Jev chose for tonight when the pocket was sealed (shelter
       // method bed_nook) is carried out at bedtime, not asked again.
-      let choice = held || (this.state.bedNookPlan?.until > Date.now() && options.sleep_in_nook ? 'sleep_in_nook' : null);
+      let choice = held || (this.state.bedNookPlan?.until > Date.now() && options.sleep_in_nook ? 'sleep_in_nook' : null)
+        || (this.state.bedBesidePlan?.until > Date.now() && options.sleep_beside ? 'sleep_beside' : null);
       if (!choice) {
         const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
         const decision = await this.decide(task, goal, save, { id: 'pocket_next', tree, context: { rule },
