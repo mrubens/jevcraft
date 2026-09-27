@@ -588,8 +588,12 @@ class Survival {
         // a retreat out at the first hit (it reports nothing as it runs), and
         // a pocket or a charge at the first hit three seconds after they
         // began. Leaving the mobs be is not an answer.
+        // Not while standing in fire: no stance is carried out there, and
+        // the way out comes first (vitals.js outOfFire). mid-229-g sealed a
+        // pocket in a fire a ghast's fireball lit, from eleven health to
+        // none, the watchdog giving way to the seal (2026-09-27).
         const held = require('./danger').stanceHeld(bot, now);
-        const answering = held && held.choice !== 'keep_working';
+        const answering = held && held.choice !== 'keep_working' && !require('./vitals').inFire(bot);
         if (bot._hurtTimes.filter(t => now - t < 4000).length >= (byMob ? 1 : 2) && !answering && !(bot._threatResponseAt > now - 3000) && !(bot._threatAbortAt > now - 5000) && (bot.health ?? 0) > 0) {
           bot._threatAbortAt = now; bot._threatAbort = true;
           try { bot.stopDigging?.(); } catch (_) { /* not digging */ }

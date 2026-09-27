@@ -316,9 +316,14 @@ function fireNear(bot, p, r) {
   for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) for (let dy = -1; dy <= 2; dy++) if (FIRE.has(bot.blockAt?.(p.offset(dx, dy, dz))?.name)) return true;
   return false;
 }
+// Or told so by the server: an in-fire hurt within the last second and a
+// half (session.js). The flames a fireball lights can sit where the feet
+// cell does not show them: mid-229-g took ten in-fire hurts in seven
+// seconds, sealing a pocket, and nothing got it out (2026-09-27).
 function inFire(bot) {
   const feet = bot.entity?.position?.floored();
   if (!feet) return false;
+  if (bot._inFireAt > Date.now() - 1500) return true;
   if ([0, 1].some(dy => FIRE.has(bot.blockAt?.(feet.offset(0, dy, 0))?.name))) return true;
   return onFire(bot) && fireNear(bot, feet, 1);
 }

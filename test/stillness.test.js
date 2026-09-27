@@ -457,6 +457,27 @@ test('a stance Jev chose is the answer while it is carried out: a hit does not t
   assert.equal(stopped, 2, 'not carried out for four seconds (the work is back): the watchdog is too');
 });
 
+test('standing in fire, a held stance does not keep the watchdog off', () => {
+  // mid-229-g: sealed a pocket in fire from eleven health to none; the watchdog gave way to the seal.
+  const { EventEmitter } = require('node:events');
+  const { Vec3 } = require('vec3');
+  const { Survival } = require('../src/survival');
+  let stopped = 0;
+  const bot = Object.assign(new EventEmitter(), { entity: { id: 1, position: new Vec3(0, 64, 0) }, entities: {}, health: 12, game: { dimension: 'the_nether' }, time: { timeOfDay: 6000 },
+    blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }),
+    stopDigging: () => {}, pathfinder: { setGoal: () => { stopped++; } }, clearControlStates() {}, inventory: { items: () => [] } });
+  new Survival(bot, {});
+  bot._stance = { choice: 'seal', at: Date.now(), health: 13, running: true };
+  bot._inFireAt = Date.now();
+  bot.emit('entityHurt', bot.entity, null);
+  bot.emit('entityHurt', bot.entity, null);
+  assert.equal(stopped, 1, 'in fire: the seal is stopped for the way out');
+  const { inFire } = require('../src/vitals');
+  assert.equal(inFire(bot), true, 'the server\'s in-fire hurt says so, the blocks or not');
+  bot._inFireAt = Date.now() - 5000;
+  assert.equal(inFire(bot), false);
+});
+
 test('a spent search is turned whatever the stall\'s answer, not only by "another way"', () => {
   // first-days-217: its wood search spent, Jev sent it to look around each time, and each return failed at once, thirty-two times.
   const { looseEnds } = require('../src/work');
