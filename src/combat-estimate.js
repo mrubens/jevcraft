@@ -255,7 +255,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     // closes again: the same twice. mid-244-z was told 2.5 seconds and 7.2
     // damage, and was jabbed from 15.4 to 2.7 in six (note 497).
     const seconds = shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill / rate * (spear ? 2 : 1);
-    return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false,
+    return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false, ...(t.apart ? { apart: true } : {}),
       // A drowned's thrown trident is eight, where its hand is three.
       hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.note ? { note: m.note } : {}) };
   });
@@ -265,7 +265,9 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   // gave its id: a stance's cost asks where that one mob can get to.
   mobs.forEach((m, i) => { if (m && !threats[i].from && threats[i].id != null) Object.defineProperty(m, 'id', { value: threats[i].id }); });
   mobs = mobs.filter(Boolean);
-  const order = [...mobs].sort((a, b) => a.distance - b.distance);
+  // One with no way to the bot (walk-reach.js) is not fought, and does not
+  // hit (mid-205-v, note 525).
+  const order = mobs.filter(m => !m.apart).sort((a, b) => a.distance - b.distance);
   // The cells round the bot bound how many can come at it, but not the
   // ones already there: in a tunnel or a shaft the open cells counted none,
   // with three zombies at arm's length, and the fight was told it cost
@@ -283,7 +285,8 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
       inFifteenSeconds: round(within(timeline, HOLD_SECONDS)),
       ...(Number.isFinite(atOnce) ? { atArmsLengthAtOnce: atOnce } : {}),
       ...(creepers.length ? { creeper: 'not counted: a creeper that reaches the bot goes off for about ' + round(afterArmour(MOBS.creeper.hit, worn)) + ' after armour two blocks off (' + creeperBlastSays(worn) + ')' } : {}),
-      ...(unknown.length ? { notCounted: `no figures for ${[...new Set(unknown)].join(', ')}` } : {}) },
+      ...(unknown.length ? { notCounted: `no figures for ${[...new Set(unknown)].join(', ')}` } : {}),
+      ...(mobs.some(m => m.apart) ? { leftOut: `${mobs.filter(m => m.apart).length} with no way to the bot` } : {}) },
   };
 }
 
@@ -311,8 +314,10 @@ const bites = m => m.jab ?? m.hitsBot;
 function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => false, fight = null, shield = false }) {
   let damage = 0;
   const blasts = [], still = new Set(), later = [];
-  const fought = m => !!fight && m.name !== 'creeper' && (!fight.only || fight.only(m));
+  const fought = m => !!fight && !m.apart && m.name !== 'creeper' && (!fight.only || fight.only(m));
   for (const m of mobs) {
+    // No way to the bot: it neither arrives nor goes off beside it.
+    if (m.apart) continue;
     if (m.name === 'creeper') {
       const at = arrives(m) + FUSE;
       if (at <= setup || (at <= seconds && reaches(m))) { blasts.push({ name: m.name, distance: m.distance, seconds: round(at), hitsBot: m.hitsBot }); damage += m.hitsBot; }

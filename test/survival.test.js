@@ -4562,3 +4562,53 @@ test('the claim for the mob at arm\'s length says the pocket being sealed and th
   assert.equal(c?.action, 'escape_threat');
   assert.match(claimSays(c), /The pocket here is 9 of 34 blocks; a skeleton stands in the cells at \(-1, 65, 0\) and \(-1, 66, 0\)/);
 });
+
+// mid-205-v: a one-wide column five up over a cave floor, walkers held below it, a skeleton shooting (note 525).
+function columnBot({ stair = false } = {}) {
+  const solid = new Set();
+  for (let y = 60; y <= 64; y++) solid.add(`0,${y},0`);
+  if (stair) for (let x = 1; x <= 4; x++) for (let y = 60; y <= 64 - x; y++) solid.add(`${x},${y},0`);
+  const isSolid = f => f.y < 60 || solid.has(`${f.x},${f.y},${f.z}`);
+  const iron = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'].map(name => ({ name }));
+  return Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, health: 14.9, food: 20, foodSaturation: 5, entities: {}, time: { timeOfDay: 6000 },
+    entity: { position: new Vec3(0.5, 65, 0.5), onGround: true }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'cobblestone', count: 64 }], slots: { 5: iron[0], 6: iron[1], 7: iron[2], 8: iron[3], 45: { name: 'shield' } } },
+    blockAt: p => { const f = p.floored(); return { position: f, name: isSolid(f) ? 'stone' : 'air', boundingBox: isSolid(f) ? 'block' : 'empty', diggable: true }; },
+    world: { raycast: () => null }, findBlocks: () => [] });
+}
+const below = (bot, id, name, x, z) => { const position = new Vec3(x, 60, z); return { entity: { id, name, position, height: name === 'skeleton' ? 1.99 : 1.95, ...(name === 'skeleton' ? { heldItem: { name: 'bow' } } : {}) }, distance: position.distanceTo(bot.entity.position), visible: true }; };
+const columnCrowd = bot => [below(bot, 1, 'creeper', -2.5, 0.5), below(bot, 2, 'zombie', 3.5, 0.5), below(bot, 3, 'zombie', 0.5, -2.5), below(bot, 4, 'zombie_villager', 2.5, 2.5), below(bot, 5, 'skeleton', -8.5, 0.5)]
+  .sort((a, b) => a.distance - b.distance);
+
+test('walkers with no way up to the bot are said so and left out of every stance\'s figures; a stair up to it counts them again', () => {
+  const bot = columnBot();
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, columnCrowd(bot), false);
+  const damage = o => Number((o.description.match(/About ([\d.]+) damage from the mobs here/) || [])[1]);
+  // Cover from the skeleton was priced at about 144 with eight walkers counted at the bot.
+  assert(damage(options.take_cover) < 5, options.take_cover.description);
+  assert.match(options.take_cover.description, /zombie villager, the creeper and 2 zombies, 5 blocks below the bot's feet, have no way to the bot/);
+  assert.doesNotMatch(options.seal.description, /can be at the bot in about|walks up to whatever is built/);
+  assert.doesNotMatch(options.pillar.description, /creeper .* can go off beside the bot/);
+  assert.match(options.fight.description, /every one that can get to the bot shoots, none is at reach.*standing in their line of fire/);
+  assert.match(options.keep_working.description, /have no way to the bot/);
+
+  const open = columnBot({ stair: true });
+  const survival2 = new Survival(open, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const counted = survival2.stanceOptions(new Task('x'), {}, () => {}, columnCrowd(open), false);
+  assert.doesNotMatch(counted.take_cover.description, /no way to the bot/);
+  assert(damage(counted.take_cover) > 10, counted.take_cover.description);
+});
+
+test('a retreat that finds no way says why to the next question', async () => {
+  const bot = columnBot();
+  bot.pathfinder = { movements: {}, setGoal: () => {} };
+  bot.clearControlStates = () => {};
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  survival.scoutRetreat = async () => null;
+  survival.escapeFootings = () => ({ about: [], footing: [], far: [], near: [], heavy: false, persistent: false });
+  survival.decide = async () => ({ path: ['retreat'] });
+  await survival.stanceStep(new Task('x'), {}, () => {}, columnCrowd(bot), false);
+  const failed = survival.state.stanceFailed.find(f => f.choice === 'retreat');
+  assert.match(failed?.why || '', /no footing near is further from every mob/);
+});
