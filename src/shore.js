@@ -52,7 +52,11 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
   Object.assign(movement, { canDig: false, scafoldingBlocks: [], allowParkour: false });
   const state = goal.shoreRecovery ||= { failures: {} };
   state.failures = Object.fromEntries(Object.entries(state.failures || {}).filter(([, at]) => at > Date.now() - 60000));
-  const safe = p => dryStanding(bot, p) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name) &&
+  // A landing near the water's own level: one far below is reached by a
+  // drop. mid-244-p swam for a shore eighteen blocks under its pool's
+  // surface, walked off the pool's edge to it, and the fall took 14.7 health
+  // (2026-09-27).
+  const safe = p => p.y >= waterY - 3 && dryStanding(bot, p) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name) &&
     policy.isSurface(p) && movement.allowedPosition(p) && safeFromHostiles(bot, p);
   try {
     const ids = bot.registry.blocksArray.filter(b => b.boundingBox === 'block' && !/_leaves$|_log$/.test(b.name)).map(b => b.id);

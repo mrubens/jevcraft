@@ -4,13 +4,13 @@ const { Vec3 } = require('vec3');
 const { reachShore } = require('../src/shore');
 const { Task } = require('../src/skills');
 
-function fixture() {
+function fixture({ landingY = 63 } = {}) {
   const registry = require('prismarine-registry')('26.1'), Block = require('prismarine-block')(registry), blocks = new Map();
-  const landing = new Vec3(18, 63, 0);
+  const landing = new Vec3(18, landingY, 0);
   const bot = { registry, game: { minY: 0, height: 100 }, entities: {}, oxygenLevel: 20,
     entity: { position: new Vec3(.5, 61.9, .5), onGround: false },
     blockAt(point) {
-      const p = point.floored(), name = blocks.get(`${p}`) || (p.y < 59 || p.x >= 18 && p.y <= 62 ? 'stone' : p.y <= 62 ? 'water' : 'air');
+      const p = point.floored(), name = blocks.get(`${p}`) || (p.y < 59 && p.x < 18 || p.x >= 18 && p.y < landingY || p.x < 18 && p.y < 59 ? 'stone' : p.x < 18 && p.y <= 62 ? 'water' : 'air');
       if (name === 'unknown') return null;
       const b = Block.fromStateId(registry.blocksByName[name].defaultState); b.position = p; return b;
     },
@@ -268,4 +268,13 @@ test('a swim on purpose toward somewhere far is left alone by the shore rule; a 
   assert.equal(crossingWater({ ...bot, _heading: { x: 80, z: 0, at: now - 30000 } }, now), false, 'no fresh heading');
   assert.equal(crossingWater({ ...bot, _heading: { x: 25, z: 0, at: now } }, now), false, 'nearly there');
   assert.equal(crossingWater({ ...bot, oxygenLevel: 15 }, now), false, 'losing air');
+});
+
+test('a landing far below the water\'s surface is not a shore: reached by a drop', async () => {
+  // mid-244-p swam for a shore eighteen blocks under its pool's surface, walked off the edge, and the fall killed it.
+  const f = fixture({ landingY: 44 });
+  let walked = false;
+  f.bot.lookAt = async () => {};
+  await reachShore(f.bot, f.task, f.goal, () => {}, { surface: f.surface, move: async () => { walked = true; throw new Error('stop'); } }).catch(() => {});
+  assert.equal(walked, false, 'not walked to the low landing');
 });
