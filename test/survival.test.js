@@ -4051,6 +4051,41 @@ test('with a shooter in sight, cover is offered: a block two high in its line, p
   assert.deepEqual(placed.sort(), ['(1, 72, 0)', '(1, 73, 0)']);
 });
 
+test('cover beside a railed span goes on top of the rail, and cover that cannot go down fails with its why, said once with the count (mid-235-p-fortress-7, note 528)', async () => {
+  // Its span railed one high at the feet, take_cover needed both cells empty, placed nothing six times in two seconds,
+  // each "Tried N seconds ago here, and it failed" with no why, and Jev said none of these.
+  const placed = [];
+  let rail = new Set(['(1, 72, 0)']);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival' }, health: 4.2, food: 17, entities: {},
+    entity: { position: new Vec3(0.5, 72, 0.5), onGround: true }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'netherrack', count: 32 }], slots: {} },
+    blockAt: p => { const f = p.floored(); const solid = f.y < 72 || rail.has(`${f}`) || placed.includes(`${f}`); return { position: f, name: solid ? 'netherrack' : 'air', boundingBox: solid ? 'block' : 'empty' }; },
+    world: { raycast: () => null }, findBlocks: () => [] });
+  const survival = new Survival(bot, { place: async (b, t, p) => { placed.push(`${p.floored()}`); }, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const piglin = { entity: { id: 9, name: 'piglin', position: new Vec3(24.5, 72, 0.5), height: 1.95, heldItem: { name: 'crossbow' } }, distance: 24, visible: true };
+  let options = survival.stanceOptions(new Task('x'), {}, () => {}, [piglin], false);
+  assert.equal(await options.take_cover.run(), true);
+  assert.deepEqual(placed, ['(1, 73, 0)'], 'only the block on the rail');
+  // Both cells solid already and the shot still coming round them: the failure says why.
+  rail = new Set(['(1, 72, 0)', '(1, 73, 0)']); placed.length = 0;
+  options = survival.stanceOptions(new Task('x'), {}, () => {}, [piglin], false);
+  await assert.rejects(options.take_cover.run(), e => e.name === 'StanceFailed' && /the cells toward the piglin are both solid already/.test(e.message));
+});
+
+test('a blaze in sight past the stance\'s mobs, within its forty-eight, is said with what one fireball costs at this health (mid-235-p-fortress-7, note 528)', () => {
+  // At 4.2 health the stance weighed a ghast at 61; a blaze at 48 in sight was unsaid, and its fireball and the fire it set ended the bot.
+  const { fartherShootersSay } = require('../src/survival');
+  const slots = {}; ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'].forEach((name, i) => { slots[5 + i] = { name }; });
+  const ghast = { id: 8, name: 'ghast', type: 'hostile', position: new Vec3(60.5, 72, 0.5), height: 4 };
+  const blaze = { id: 9, name: 'blaze', type: 'hostile', position: new Vec3(0.5, 72, 48.5), height: 1.8 };
+  const bot = { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 4.2, entity: { position: new Vec3(0.5, 72, 0.5) }, entities: { 8: ghast, 9: blaze },
+    inventory: { items: () => [], slots }, world: { raycast: () => null }, blockAt: () => ({ name: 'air', boundingBox: 'empty' }) };
+  const said = fartherShootersSay(bot, [{ entity: ghast, distance: 60, visible: true }]);
+  assert.deepEqual(said.list, ['blaze 48 blocks off']);
+  assert.match(said.says, /^ Farther off, not in the figures above: a blaze 48 blocks off has the bot in sight and fires from as far as 48, each of its fireballs landing about 14 in 100 from there and a volley of three at least one about 3\d in 100 \(a volley about every nine seconds\); one that lands is about 2\.5 and 5 burn over the five seconds after, more than the 4\.2 health there is\.$/);
+  assert.equal(fartherShootersSay(bot, [{ entity: ghast, distance: 60, visible: true }, { entity: blaze, distance: 48, visible: true }]), null, 'one the stance weighs is not said twice');
+});
+
 test('digging down is not offered with a biter within three blocks: its shaft would stop for it at once', () => {
   // mid-205-p chose it three times with a zombie and a spider at arm's length, each ended at once (2026-09-27).
   const survival = new Survival(Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, health: 16, food: 20, entities: {},

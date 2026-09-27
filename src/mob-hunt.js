@@ -621,12 +621,18 @@ const coverKept = state => (state.cover || []).filter(c => c.until > Date.now())
 // null when the question went stale.
 async function foodLeave(bot, task, goal, save, actions) {
   const { portalTrip } = require('./game-progress');
+  // What a hit costs at this health, said with staying: "no fight is
+  // started" read as safe, and mid-235-p-fortress-7 kept on at 4.2 with
+  // nothing to eat, where one blaze fireball that landed was the end; one
+  // did, from forty-eight blocks, two minutes later (note 528).
+  let hits = null; try { hits = require('./crossing-kit').netherHitSays(bot); } catch (_) { /* no body */ }
+  const exposed = hits ? ` The search goes on where the Nether's mobs are: a blaze in sight shoots from as far as forty-eight blocks and a ghast from sixty-four, fight or no fight. ${hits}` : '';
   const tree = {
     go_back: { description: `Go back to the Overworld for food, hunted and cooked there. ${portalTrip(bot, goal)} The hunt waits till the bot is fed and back.` },
-    keep_on: { description: `Stay and go on without food for twenty minutes: hunger ${bot.food}, and health comes back only at eighteen or more, so no fight is started; the fortress search goes on meanwhile. ${fitnessSays(bot)}` },
+    keep_on: { description: `Stay and go on without food for twenty minutes: hunger ${bot.food}, and health comes back only at eighteen or more, so no fight is started; the fortress search goes on meanwhile. ${fitnessSays(bot)}${exposed}` },
   };
   const decision = await decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
-    state: { for: 'food', health: bot.health, food: bot.food, foodCarried: false, dimension: dimension(bot) } });
+    state: { for: 'food', health: bot.health, food: bot.food, foodCarried: false, dimension: dimension(bot), ...(hits ? { whatAHitCosts: hits } : {}) } });
   if (decision.stale) return null;
   const pick = decision.path.at(-1);
   goal.leaveNether = { reason: 'food', pick, until: 0, at: Date.now() };
@@ -965,6 +971,9 @@ function rememberedSpot(state, bot) {
 }
 
 const FORTRESS_MIN_BRICKS = 24;
+// Bricks looked for: the nearest this many, and where they fill it, the
+// wider count (findFortressStep).
+const FORTRESS_LOOK = 512, FORTRESS_VIEW = 4096;
 // A wait by a spawner Jev chose (wait_at_spawner), before the legs are asked again.
 const SPAWNER_WAIT_MS = 3 * 60000;
 const LEAVE_RADIUS = 48, LEAVE_MS = 4 * 60 * 1000;
@@ -1097,7 +1106,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
       run: () => { state.heading = most; state.legMode = 'descend'; return true; } };
   }
   if (fortress) {
-    options[fortress.key] = { description: fortress.description, run: fortress.run };
+    if (fortress.offer !== false) options[fortress.key] = { description: fortress.description, run: fortress.run };
     for (const [key, o] of Object.entries(fortress.others || {})) options[key] = o;
     // Where the fortress's bricks go from here, said with each heading: its
     // corridors run on past the last brick seen (fortressRuns).
@@ -1413,10 +1422,20 @@ function fortressInView(bot, goal, save, state, bricks, { stay }) {
       run: () => { state.visited = []; save(); return 'stay'; } };
   }
   const leftAgo = state.leaving ? Math.round((LEAVE_MS - (state.leaving.until - Date.now())) / 60000) : null;
+  // Set aside for what it was, not always "a face not approached": mid-235-
+  // p-fortress-7's was nothing to walk to, said as the other, and going
+  // back from the same spot was undone at once, six times (note 528).
+  const shun = (state.shunned || []).find(sh => sh.why && Math.hypot(sh.x - nearest.x, sh.z - nearest.z) <= (sh.radius || 16));
+  const mins = ms => { const m = Math.max(0, Math.round(ms / 60000)); return `${m} minute${m === 1 ? '' : 's'}`; };
+  const sameSpot = !!shun?.from && Math.hypot(shun.from.x - here.x, shun.from.y - here.y, shun.from.z - here.z) <= 4;
   const why = state.leaving && Math.hypot(state.leaving.x - nearest.x, state.leaving.z - nearest.z) <= LEAVE_RADIUS
     ? `left ${leftAgo} minute${leftAgo === 1 ? '' : 's'} ago after its passes, and set behind the bot for ${Math.round((state.leaving.until - Date.now()) / 60000)} more`
+    : shun ? `set aside ${mins(Date.now() - (shun.at || Date.now()))} ago, for ${mins(shun.until - Date.now())} more: ${shun.why}${sameSpot ? '; the bot stands where that was found, and from here the same look finds the same' : ''}`
     : 'set aside as a face not approached, for ten minutes';
-  return { key: 'back_to_fortress', passes, bricks, facts: { ...facts, setAside: why },
+  // Going back from where it was found to hold nothing to walk to is no
+  // move: the patrol sets it aside again before a step. Said as a fact
+  // with the legs, not offered (chooseLeg).
+  return { key: 'back_to_fortress', passes, bricks, facts: { ...facts, setAside: why }, ...(sameSpot ? { offer: false } : {}),
     description: `Go back into the fortress in view: ${bricks.length} of its bricks, the nearest ${off} blocks off, ${why}; ${floorSays}; ${seen}.${passSays} Taken, it is no longer set aside, and the way to its bricks is asked (fortress_approach), or its stretches walked when the bot is among them.`,
     run: () => {
       delete state.leaving;
@@ -1470,13 +1489,23 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // carries nether bricks and builds its pockets and bridges with them, and
   // the sweep "patrolled" three of its own blocks while starting a new leg
   // every tick, four hundred of them, never old enough to turn.
-  const seen = bot.findBlocks({ matching: ids, maxDistance: 128, count: 512 });
+  // The nearest bricks, and where they fill the first look, a wider one:
+  // the look keeps the nearest it counts, and a fortress's walls beside
+  // the bot are five hundred bricks within ten blocks. mid-235-p-fortress-7
+  // stood on its floor at (252, 58, 212), saw 512 bricks none past ten
+  // blocks, and set the fortress aside as "nothing twelve blocks off to
+  // walk to" with its floors at (257, 58, 216) and (273, 57, 213); back_to
+  // _fortress was chosen and undone in the same breath six times (note 528).
+  const look = count => bot.findBlocks({ matching: ids, maxDistance: 128, count });
+  let seen = look(FORTRESS_LOOK);
+  if (seen.length >= FORTRESS_LOOK) seen = look(FORTRESS_VIEW);
+  const cutShort = seen.length >= FORTRESS_VIEW;
   const found = seen.filter(b => !shunned(b));
   const bricks = found.length >= FORTRESS_MIN_BRICKS ? found : [];
   // Bricks enough for a fortress, all left behind or set aside: said to
   // Jev with the next leg, going back among the ways (fortressInView),
   // said as they stand now, before a leg's end lets them be seen again.
-  const setAside = !bricks.length && seen.length >= FORTRESS_MIN_BRICKS ? fortressInView(bot, goal, save, state, seen, { stay: false }) : null;
+  let setAside = !bricks.length && seen.length >= FORTRESS_MIN_BRICKS ? fortressInView(bot, goal, save, state, seen, { stay: false }) : null;
   if (bricks.length) {
     const here = bot.entity.position;
     const byNear = list => list.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
@@ -1511,8 +1540,17 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // return that did nothing, six times over, then a fresh leg that the
     // next look undid: twenty seconds still, again and again. It is shunned
     // like an unapproachable face, and the sweep goes on.
-    if (!next && !walkable.some(b => b.distanceTo(here) >= 12)) {
-      state.shunned.push({ x: nearest.x, z: nearest.z, until: Date.now() + 600000 }); delete state.found; state.patrols = 0; delete state.inFortressSince; save();
+    // A look cut short by its count is not a few bricks: the rest of the
+    // fortress lies past what it kept.
+    if (!next && !cutShort && !walkable.some(b => b.distanceTo(here) >= 12)) {
+      // Why, and from where, kept with it: said when going back is weighed
+      // (fortressInView), and from the same spot the same look finds the
+      // same (note 528).
+      state.shunned.push({ x: nearest.x, z: nearest.z, until: Date.now() + 600000, at: Date.now(),
+        why: 'none of its floors within six blocks of the height the bot stood at lies twelve or more blocks off: nothing for a pass to walk to',
+        from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) } });
+      delete state.found; state.patrols = 0; delete state.inFortressSince; save();
+      setAside = fortressInView(bot, goal, save, state, seen, { stay: false });
     }
     else if (!next) {
       // A pass ended: staying for another or leaving on a leg is Jev's

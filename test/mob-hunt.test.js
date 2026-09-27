@@ -1054,6 +1054,56 @@ test('bricks in view with nothing twelve blocks off to walk to are shunned and t
   assert.equal(goal.fortressSearch.legs, 3);
 });
 
+// The look keeps the nearest it counts, as mineflayer's findBlocks does.
+function nearestBricks(bricks) {
+  return ({ matching, count, point }, bot) => matching === registry.blocksByName.spawner.id ? []
+    : bricks.slice().sort((a, b) => a.distanceTo(point) - b.distanceTo(point)).slice(0, count);
+}
+
+test('a fortress whose walls fill the nearest five hundred bricks is still seen to its far floors: its stretches are walked, not set aside as nothing to walk to (mid-235-p-fortress-7, note 528)', async () => {
+  // mid-235-p-fortress-7 stood on its fortress's floor with 512 bricks in view, none past ten blocks; the patrol found
+  // no stretch twelve off, set the fortress aside, and back_to_fortress was chosen and undone at once six times.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const deck = p => p.y === 64 && p.z >= -1 && p.z <= 1 && p.x >= -3 && p.x <= 40;
+  const wall = p => p.x >= -10 && p.x <= 10 && p.z >= 2 && p.z <= 6 && p.y >= 60 && p.y <= 75;
+  const bricks = [];
+  for (let x = -10; x <= 40; x++) for (let z = -1; z <= 6; z++) for (let y = 60; y <= 75; y++) { const p = new Vec3(x, y, z); if (deck(p) || wall(p)) bricks.push(p); }
+  const { bot } = netherWorld(new Vec3(0.5, 65, 0.5), p => deck(p) || wall(p) ? 'nether_bricks' : p.y <= 31 ? 'lava' : null);
+  const find = nearestBricks(bricks);
+  bot.findBlocks = o => find({ ...o, point: o.point || bot.entity.position.floored() });
+  assert(find({ matching: 0, count: 512, point: new Vec3(0, 65, 0) }).every(b => Math.hypot(b.x, b.z) < 12), 'the nearest 512 are all within twelve');
+  const walked = [];
+  const goal = { fortressSearch: { axis: 1, legs: 15 } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client: jevStub([]), navigate: async (b, t, g) => { walked.push([g.x, g.z]); }, tunnel: async () => {} });
+  assert.equal((goal.fortressSearch.shunned || []).length, 0, 'not set aside');
+  assert.equal(walked.length, 1, 'a stretch of its deck is walked');
+  assert(walked[0][0] >= 12, `the stretch is past the walls: ${walked[0]}`);
+});
+
+test('a fortress set aside as nothing to walk to says so, and going back is not offered from the spot that found it (note 528)', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const clear = { boundingBox: 'empty' };
+  const pocket = Array.from({ length: 30 }, (_, i) => new Vec3(1 + (i % 3), 64 + Math.floor(i / 9), (i % 9) - 4));
+  const bot = { registry, game: { dimension: 'the_nether' }, health: 20, food: 20, entity: { position: new Vec3(0.5, 65, 0.5) }, entities: {}, chat() {},
+    inventory: { items: () => [] }, blockAt: () => clear, findBlocks: () => pocket };
+  const goal = { fortressSearch: { axis: 1, legs: 3 } };
+  const client = jevStub(['leg_north', 'back_to_fortress']);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, tunnel: async () => {} });
+  assert.equal(goal.fortressSearch.shunned.length, 1);
+  assert.equal(client.asked.length, 1);
+  let { options, state } = client.asked[0];
+  assert.equal(options.back_to_fortress, undefined, 'from where it was found empty, going back does nothing');
+  assert.match(state.fortressInView.setAside, /^set aside 0 minutes ago, for 10 minutes more: none of its floors within six blocks of the height the bot stood at lies twelve or more blocks off: nothing for a pass to walk to; the bot stands where that was found/);
+  // Elsewhere, going back is offered with the same why.
+  delete goal.fortressSearch.target;
+  bot.entity.position = new Vec3(0.5, 65, 20.5);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, tunnel: async () => {} });
+  assert.equal(client.asked.length, 2);
+  ({ options } = client.asked[1]);
+  assert.match(options.back_to_fortress, /set aside 0 minutes ago, for 10 minutes more: none of its floors within six blocks/);
+  assert.doesNotMatch(options.back_to_fortress, /face not approached/);
+});
+
 test('in the Nether short of pearls, with gold and a piglin in view, the ladder barters before going home', () => {
   const { nextGameStage } = require('../src/game-progress');
   const { Vec3 } = require('vec3');
@@ -1123,6 +1173,9 @@ test('hungry in the Nether with nothing to eat, the hunt asks before going back 
   assert.match(options.go_back, /The nearest portal remembered is 21 blocks off/);
   assert.match(options.go_back, /comes out in the Overworld at night/);
   assert.match(options.keep_on, /hunger 17/);
+  // What a hit costs at this health, fight or no fight (mid-235-p-fortress-7 kept on at 4.2, note 528).
+  assert.match(options.keep_on, /a blaze in sight shoots from as far as forty-eight blocks and a ghast from sixty-four, fight or no fight\. One blaze fireball through what is worn/);
+  assert.match(client.asked[0].state.whatAHitCosts, /fireballs? ends? it/);
   // Asked again once staying lapses: back, as Jev chose.
   require('../src/progress').attemptsFor(goal).clear('nether_return', 'food');
   await prepareMobHunt(bot, task, { entity: 'blaze', item: 'blaze_rod', count: 1 }, goal, () => {}, { ...actions, client });

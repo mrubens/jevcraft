@@ -281,3 +281,32 @@ test('a blaze\'s fireball lands by the game\'s scatter: about 46 in 100 at 4 blo
   assert.equal(FIREBALL.knock, 2);
   assert.match(fireballSays(16.5), /^ A blaze's fireball lands about 23 in 100 from 17 blocks, a volley of three at least one about 55 in 100 \(the game scatters its aim wider with distance: about 46 in 100 at 4 blocks, 24 at 16, 14 at 48; a volley about every 9 seconds\); each that lands pushes the bot about 2 blocks, shield raised or not\.$/);
 });
+
+test('a wither skeleton withers as it hits: half a health a second through armour while it bites and ten seconds after, and the fight says more than the bot has (mid-235-p-fortress-7, note 528)', () => {
+  // Told 13.7 damage from 15.5 against a wither skeleton at arm's length and a piglin's crossbow, the blade alone
+  // priced; the bot was at 4.2 six seconds after the skeleton was gone, withering and burning.
+  const iron = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+  const e = fightEstimate({ threats: [{ name: 'wither_skeleton', distance: 1.3, held: 'stone_sword', visible: true }, { name: 'piglin', distance: 20.3, shoots: true, held: 'crossbow', visible: true }],
+    armour: iron, weapon: 'iron_sword', health: 15.5, shield: true, atOnce: 8 });
+  assert.equal(e.mobs[0].hitsBot, 4.5, 'eight through full iron');
+  assert.equal(e.mobs[0].withers, 0.5);
+  assert.match(e.mobs[0].note, /withers the bot for ten seconds/);
+  assert(e.fightHere.damageTaken > 15.5, JSON.stringify(e.fightHere));
+  // Alone: its 2.5 seconds of blade (a third of its hits) and 12.5 seconds withering.
+  const alone = fightEstimate({ threats: [{ name: 'wither_skeleton', distance: 1.3, visible: true }], armour: iron, weapon: 'iron_sword', health: 15.5 });
+  assert.equal(alone.fightHere.damageTaken, 10);
+  // Two at once wither the bot no faster: 15 seconds of it, not 27.5.
+  const two = fightEstimate({ threats: [{ name: 'wither_skeleton', distance: 1.3, visible: true }, { name: 'wither_skeleton', distance: 1.5, visible: true }], armour: iron, weapon: 'iron_sword', health: 20 });
+  assert(Math.abs(two.fightHere.damageTaken - (2.5 * 4.5 / 3 + 2.5 * 4.5 + 2.5 * 4.5 / 3 + 15 * 0.5)) < 0.06, JSON.stringify(two.fightHere));
+  // A stance it still reaches withers the bot too.
+  const { stanceCost } = require('../src/combat-estimate');
+  assert.equal(stanceCost({ mobs: alone.mobs, reaches: () => true }).damage, 15 * 4.5 + 15 * 0.5);
+});
+
+test('the wither on the bot is said with its rate and what is left of it (note 528)', () => {
+  const { effectsSay } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const id = registry.effectsByName?.wither?.id ?? registry.effectsArray.find(x => /wither/i.test(x.name)).id;
+  const bot = { registry, entity: { effects: { [id]: { id, amplifier: 0, duration: 200 } } } };
+  assert.match(effectsSay(bot), /The bot is withering, about 10 seconds left: about one health every 2 seconds that armour does not stop, about 5 more before it ends, and it can take the last/);
+});

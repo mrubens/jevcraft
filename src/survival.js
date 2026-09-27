@@ -458,12 +458,42 @@ function effectsSay(bot) {
     const name = byId(id), secs = Number.isFinite(e?.duration) ? Math.round(e.duration / 20) : null;
     const left = secs ? `, about ${secs} seconds left` : '';
     if (name === 'poison') out.push(`The bot is poisoned${left}: poison takes about one health a second or so but never the last one; a harming potion or any hit still can.`);
-    else if (name === 'wither') out.push(`The bot is withering${left}: it takes health and can take the last.`);
+    // With its rate and what is left of it: "it takes health" priced
+    // nothing, and mid-235-p-fortress-7 fought a wither skeleton on at
+    // 15.5 and withered on to 4.2 (note 528). One every forty ticks at
+    // level I, halved each level up; armour does not stop it.
+    else if (name === 'wither') {
+      const every = Math.max(1, 40 >> (e?.amplifier || 0)) / 20;
+      const more = secs ? Math.floor(secs / every) : null;
+      out.push(`The bot is withering${left}: about one health every ${every === 1 ? 'second' : `${every} seconds`} that armour does not stop${more ? `, about ${more} more before it ends` : ''}, and it can take the last; each hit from a wither skeleton sets it back to ten seconds.`);
+    }
     else if (name === 'slowness') out.push(`The bot is slowed${left}: a run covers less ground.`);
     else if (name === 'regeneration') out.push(`The bot is regenerating${left}.`);
     else if (name === 'weakness') out.push(`The bot is weakened${left}: its hits do less.`);
   }
   return out.length ? ' ' + out.join(' ') : '';
+}
+// Shooters that fire from farther than the mobs a stance weighs, in sight
+// and in their own reach (a blaze's forty-eight, a ghast's sixty-four),
+// said with what one shot that lands costs at this health. Not priced as
+// the near ones are: a blaze's aim scatters with the distance. mid-235-p-
+// fortress-7 was asked its stance at 4.2 health against a ghast at 61, a
+// blaze at 48 in sight and unsaid; the blaze's fireball landed a second
+// later, 4.2 to 1.7, and the fire it set burned the rest (note 528).
+function fartherShootersSay(bot, danger) {
+  const { MOBS, afterArmour, armourOf, fireballHit, volleyHit } = require('./combat-estimate');
+  const worn = armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
+  const hp = Math.round((bot.health ?? 20) * 10) / 10;
+  let far = [];
+  try { far = threats(bot, 64).filter(t => t.visible && RANGE[t.entity.name] && t.distance <= RANGE[t.entity.name] && !danger.some(d => d.entity?.id === t.entity.id)); } catch (_) { far = []; }
+  const said = far.slice(0, 3).map(t => {
+    const name = t.entity.name.replaceAll('_', ' '), d = Math.round(t.distance), m = MOBS[t.entity.name] || {};
+    const hit = Math.round(afterArmour(m.hit || 0, worn) * 10) / 10, burn = t.entity.name === 'blaze' ? 5 * (m.burns || 0) : 0;
+    const chance = t.entity.name === 'blaze' ? `, each of its fireballs landing about ${Math.round(fireballHit(d) * 100)} in 100 from there and a volley of three at least one about ${Math.round(volleyHit(d) * 100)} in 100 (a volley about every nine seconds)` : '';
+    const costs = `one that lands is about ${hit}${burn ? ` and ${burn} burn over the five seconds after` : ''}`;
+    return `a ${name} ${d} blocks off has the bot in sight and fires from as far as ${RANGE[t.entity.name]}${chance}; ${costs}, ${hit + burn >= hp ? `more than the ${hp} health there is` : `from ${hp} health`}`;
+  });
+  return said.length ? { says: ` Farther off, not in the figures above: ${said.join('; ')}.`, list: far.slice(0, 3).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`) } : null;
 }
 const SPAWNER_REACH = 16;
 function spawnerAbout(bot) {
@@ -2059,7 +2089,14 @@ class Survival {
     if (shootersSeen.length && typeof this.actions.place === 'function' && shelter.materialStock(bot) >= coverBlocks && !inWater(bot)) {
       const coverCost = stanceCost({ mobs, setup: coverBlocks * BLOCK_SECONDS, reaches: m => !m.shoots || m.name === 'creeper', shield: shielded });
       options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, description: `Put a block two high in the line of ${shootersSeen.length === 1 ? `the ${shootersSeen[0].entity.name.replaceAll('_', ' ')} (${Math.round(shootersSeen[0].distance)} blocks off)` : `each of the ${shootersSeen.length} shooters in sight`}, beside the bot, and stay behind it: ${coverBlocks} blocks, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds; a shot does not come through a block, and a shooter that moves round finds the bot open again.` + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
-        run: async () => { const done = await this.wallOff(task, goal, save, shootersSeen, { reach: 64, action: 'take_cover' }); if (done && bot.inventory?.slots?.[45]?.name === 'shield') { try { await raiseShield(bot); } catch (_) { /* the block is the cover */ } } return done; } };
+        run: async () => {
+          delete this.lastWallWhy;
+          const done = await this.wallOff(task, goal, save, shootersSeen, { reach: 64, action: 'take_cover' });
+          // Failed, said why to the next question (note 528).
+          if (!done) throw Object.assign(new Error(this.lastWallWhy || 'no block went down'), { name: 'StanceFailed' });
+          if (bot.inventory?.slots?.[45]?.name === 'shield') { try { await raiseShield(bot); } catch (_) { /* the block is the cover */ } }
+          return done;
+        } };
     }
     for (const t of shotTargets(bot, danger, { any: true }).slice(0, 3)) options[`shoot_${t.entity.id}`] = { expects: (c => ({ damage: c.damage, seconds: c.seconds, oneHit }))(shotCost(t)), description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + shotFacts(t) + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + costSays(shotCost(t), bot.health, mobs, { doing: 'drawing', done: 'The shooter down' }) + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
@@ -2154,12 +2191,18 @@ class Survival {
     // (a second opinion's advice), and mid-239-h, a zombie at 0.6 blocks
     // and the fight failed two seconds before, was offered a pocket, the
     // work and a retreat, and died (note 521). Jev weighs a failure said.
-    for (const f of failed) {
+    // Said once a stance, the latest with how many times: take_cover's
+    // six failures in two seconds read as six sentences and no why in
+    // mid-235-p-fortress-7 (note 528).
+    const latest = new Map();
+    for (const f of failed) latest.set(f.choice, { ...f, times: (latest.get(f.choice)?.times || 0) + 1 });
+    for (const f of latest.values()) {
       if (!options[f.choice]) continue;
       const ago = Math.max(1, Math.round((Date.now() - f.at) / 1000));
       if (/^eat/.test(f.choice)) { options[f.choice].description += ` Tried ${ago} seconds ago here and cut short before it was eaten; still carried.`; continue; }
       if (f.choice === 'fight' && atReach) { options.fight.description += ` Tried ${ago} seconds ago here and ended; a mob is at reach now.`; continue; }
-      options[f.choice].description += ` Tried ${ago} seconds ago here, and it failed${f.why ? `: ${String(f.why).slice(0, 120)}` : ''}.`;
+      const times = f.times > 1 ? `${f.times} times in the last ${Math.max(1, Math.round((Date.now() - Math.min(...failed.filter(x => x.choice === f.choice).map(x => x.at))) / 1000))} seconds here, the last ${ago} seconds ago` : `${ago} seconds ago here`;
+      options[f.choice].description += ` Tried ${times}, and it failed${f.why ? `: ${String(f.why).slice(0, 120)}` : ''}.`;
     }
     if (!Object.keys(options).length) return false;
     // A spawner in reach, said with every stance: mid-207-j fought beside a
@@ -2168,6 +2211,8 @@ class Survival {
     // none (2026-09-27).
     const spawner = spawnerAbout(bot);
     if (spawner) for (const o of Object.values(options)) o.description += spawner.says;
+    const farther = fartherShootersSay(bot, danger);
+    if (farther) for (const o of Object.values(options)) o.description += farther.says;
     // A pocket begun here, said with the stance that would go on with it
     // and in the state: how much of it stands, and the mob in its wall
     // (mid-226-h, note 520).
@@ -2210,6 +2255,7 @@ class Survival {
         // A walk of survival's own that found no route here (step), whatever it was for.
         ...(this.state.walkFailed && Date.now() - this.state.walkFailed.at < 20000 ? { walkFailedJustNow: this.state.walkFailed.says } : {}),
         ...(spawner ? { spawner: { blocksAway: spawner.distance } } : {}),
+        ...(farther ? { shootersFartherInSight: farther.list } : {}),
         ...(sealing ? { pocketHere: { placed: sealing.placed, of: sealing.of, ...(sealing.mobInCells ? { mobInCells: sealing.mobInCells } : {}), says: sealing.says } } : {}),
         ...(ails ? { effectsNow: ails.trim() } : {}),
         ...(this.lastApart?.mobs.length ? { noWayToTheBot: apartSays(bot, this.lastApart).trim() } : {}),
@@ -2263,7 +2309,7 @@ class Survival {
     delete this.state.failWhy;
     delete this.state.stanceWhy;
     try { done = await options[choice].run(); }
-    catch (err) { if (err.name === 'NoRoute') why = noRouteSays(err, `the ${choice.replaceAll('_', ' ')} walk`); else if (err.name !== 'SetAside') throw err; done = false; }
+    catch (err) { if (err.name === 'NoRoute') why = noRouteSays(err, `the ${choice.replaceAll('_', ' ')} walk`); else if (err.name === 'StanceFailed') why = err.message; else if (err.name !== 'SetAside') throw err; done = false; }
     finally { stance.running = false; stance.ranAt = Date.now(); }
     if (!done && !why && this.state.failWhy) why = this.state.failWhy;
     delete this.state.failWhy;
@@ -3287,26 +3333,39 @@ class Survival {
     const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 2)?.name;
     if (!material) return false;
     const feet = bot.entity.position.floored();
-    const walls = [];
+    // The cells of each wall still open: a one-high rail at the feet (rail
+    // span) wants only the block on top. Needing both cells empty, mid-235-
+    // p-fortress-7's take_cover beside its railed span placed nothing six
+    // times in two seconds, "failed" each time with no why, and Jev said
+    // none of these twice (note 528).
+    const walls = [], why = [];
     for (const t of danger) {
       if (t.distance > reach) continue;
       const dx = t.entity.position.x - bot.entity.position.x, dz = t.entity.position.z - bot.entity.position.z;
       const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
       if (!step.x && !step.z) continue;
       const cell = feet.plus(step);
-      if (walls.some(w => w.equals(cell))) continue;
-      // Empty cell, and the mob not standing in it.
-      if (![cell, cell.offset(0, 1, 0)].every(p => shelter.replaceable(bot.blockAt(p)))) continue;
-      if (t.entity.position.floored().equals(cell) || t.entity.position.distanceTo(cell.offset(0.5, 0, 0.5)) < 0.9) continue;
-      walls.push(cell);
+      if (walls.some(w => w.cell.equals(cell))) continue;
+      const name = t.entity.name.replaceAll('_', ' ');
+      // The mob not standing in it.
+      if (t.entity.position.floored().equals(cell) || t.entity.position.distanceTo(cell.offset(0.5, 0, 0.5)) < 0.9) { why.push(`the ${name} stands in the cell toward it`); continue; }
+      const open = [cell, cell.offset(0, 1, 0)].filter(p => shelter.replaceable(bot.blockAt(p)));
+      if (!open.length) { why.push(`the cells toward the ${name} are both solid already, and it has a line over or round them`); continue; }
+      walls.push({ cell, open });
     }
-    if (!walls.length) return false;
-    this.report(goal, save, { action, threats: danger.map(t => t.entity.name), cells: walls.map(p => ({ ...p })) });
-    for (const cell of walls) {
-      for (const p of [cell, cell.offset(0, 1, 0)]) {
+    if (!walls.length) { this.lastWallWhy = why.join('; ') || 'no shooter in reach to wall off'; return false; }
+    this.report(goal, save, { action, threats: danger.map(t => t.entity.name), cells: walls.flatMap(w => w.open.map(p => ({ ...p }))) });
+    let placed = 0;
+    for (const { open } of walls) {
+      for (const p of open) {
         task.check();
-        try { await this.actions.place(bot, task, p, material); }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; return walls.length > 0 && p !== cell; }
+        try { await this.actions.place(bot, task, p, material); placed++; }
+        catch (err) {
+          task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err;
+          this.lastWallWhy = String(err.message || err).slice(0, 160);
+          // A wall's foot standing is some cover; nothing placed is none.
+          return placed > 0;
+        }
       }
     }
     return true;
@@ -4935,4 +4994,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { claim, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { claim, effectsSay, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

@@ -16,6 +16,33 @@
 const STRUCK = 1 / 3;
 const WALK = 4; // blocks a second, closing on a mob
 
+// Wither I, as a wither skeleton's hit gives it (26.1 WitherSkeleton
+// doHurtTarget: two hundred ticks, amplifier 0): one health every forty
+// ticks through armour, able to take the last, for ten seconds after the
+// last hit that lands; hits from two of them do not add, each renews it.
+// mid-235-p-fortress-7 fought one at 15.5 health told 13.7 damage, the
+// blade alone; it was gone at 7.2, and the wither and the fire left 4.2
+// (note 528).
+const WITHER = { perSecond: 0.5, seconds: 10 };
+// The seconds a set of [from, to] spans covers, overlaps counted once.
+function spanned(spans) {
+  let total = 0, end = -Infinity;
+  for (const [a, b] of spans.filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0])) {
+    if (b <= end) continue;
+    total += b - Math.max(a, end); end = b;
+  }
+  return total;
+}
+// The same spans merged, as timeline pieces at the wither's rate.
+function witherPieces(spans) {
+  const out = [];
+  for (const [a, b] of spans.filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0])) {
+    const last = out.at(-1);
+    if (last && a <= last.to) last.to = Math.max(last.to, b); else out.push({ from: a, to: b, perSecond: WITHER.perSecond });
+  }
+  return out;
+}
+
 // Damage per hit on Normal, and health.
 const MOBS = {
   zombie: { hit: 3, health: 20 }, husk: { hit: 3, health: 20 }, drowned: { hit: 3, health: 20 }, zombie_villager: { hit: 3, health: 20 },
@@ -26,7 +53,7 @@ const MOBS = {
   enderman: { hit: 7, health: 40 }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16, splits: [{ size: 'medium', count: 3, hit: 2, health: 4 }] },
   zombified_piglin: { hit: 8, health: 20 }, piglin: { hit: 8, health: 16 }, piglin_brute: { hit: 13, health: 50 },
   hoglin: { hit: 6, health: 40, note: '3 to 8 a hit, and throws the bot about three blocks' }, zoglin: { hit: 6, health: 40, note: 'throws the bot about three blocks' },
-  wither_skeleton: { hit: 8, health: 20, note: 'withers' }, blaze: { hit: 5, health: 20, shoots: true, burns: 1, note: 'sets alight: each fireball that lands burns for five seconds more, about one a second through armour, and there is no water in the Nether to put it out' },
+  wither_skeleton: { hit: 8, health: 20, withers: WITHER.perSecond, note: 'each hit withers the bot for ten seconds, renewed by the next: about one health every two seconds that armour does not stop, and it can take the last' }, blaze: { hit: 5, health: 20, shoots: true, burns: 1, note: 'sets alight: each fireball that lands burns for five seconds more, about one a second through armour, and there is no water in the Nether to put it out' },
   magma_cube: { hit: 6, health: 16, note: 'a big one: it splits into two to four mediums (4 a hit), each of those into two to four smalls (3 a hit)', splits: [{ size: 'medium', count: 3, hit: 4, health: 4 }, { size: 'small', count: 9, hit: 3, health: 1 }] }, silverfish: { hit: 1, health: 8 }, phantom: { hit: 4, health: 20 },
   // Every mob the danger list names (the decision audit, 2026-09-25): one
   // not here added nothing, and a ghast fight read "0 damage".
@@ -169,8 +196,10 @@ const shooting = (m, shield) => m.visible ? (m.hitsBot / (m.every || 2) + (m.bur
 // being struck a third as often. At most `atOnce` biters are at arm's
 // length together (the open cells round the bot: two in a tunnel, eight in
 // the open); the rest wait their turn. [{ from, to, perSecond }] pieces.
+// A wither skeleton that bites withers the bot from then until ten seconds
+// after it dies, steady while it hits (WITHER).
 function fightTimeline(order, { shield = false, atOnce = Infinity } = {}) {
-  const pieces = [], killed = new Map();
+  const pieces = [], killed = new Map(), withering = new Map();
   let t = 0;
   order.forEach((m0, i) => {
     const end = t + m0.secondsToKill;
@@ -190,10 +219,12 @@ function fightTimeline(order, { shield = false, atOnce = Infinity } = {}) {
       else perSecond = (j === 0 ? STRUCK : 1) * m.hitsBot;
       const from = Math.max(t, m.shoots ? inRange(m) : 0);
       if (perSecond > 0 && end > from) pieces.push({ from, to: end, perSecond });
+      if (m.withers && !m.shoots && !withering.has(m)) withering.set(m, from);
     });
     killed.set(m0, end);
     t = end;
   });
+  pieces.push(...witherPieces([...withering].map(([m, from]) => [from, killed.get(m) + WITHER.seconds])));
   return pieces;
 }
 // The damage a timeline deals in its first `seconds` (all of it without).
@@ -257,7 +288,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     const seconds = shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill / rate * (spear ? 2 : 1);
     return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false, ...(t.apart ? { apart: true } : {}),
       // A drowned's thrown trident is eight, where its hand is three.
-      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.note ? { note: m.note } : {}) };
+      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.note ? { note: m.note } : {}) };
   });
   // The mob each split one comes from, kept off the record (not enumerable).
   mobs.forEach((m, i) => { if (m && threats[i].from) Object.defineProperty(m, 'bornOf', { value: mobs[threats.indexOf(threats[i].from)] }); });
@@ -313,7 +344,7 @@ const arrives = m => Math.max(0, ((m.distance || 0) - (m.name === 'creeper' ? LI
 const bites = m => m.jab ?? m.hitsBot;
 function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => false, fight = null, shield = false }) {
   let damage = 0;
-  const blasts = [], still = new Set(), later = [];
+  const blasts = [], still = new Set(), later = [], withering = [];
   // Which mobs, not only their kinds: "3 zombies still reach it" was said
   // where one of three did (note 526).
   const stillMobs = new Set(), stillReach = m => { still.add(m.name); stillMobs.add(m); };
@@ -332,6 +363,7 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     // Building or digging: every mob that gets there, from when it does,
     // the shield down.
     damage += Math.max(0, setup - from) * (m.shoots ? shooting(m, false) : bites(m));
+    if (m.withers && !m.shoots) withering.push([from, setup]);
     // `reaches` may say from when: a shooter out of its line that walks to
     // a new one reaches the bot from the second it has it (bunker.js
     // lineRegained), not never.
@@ -341,6 +373,7 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
       if (again > 0 && Math.max(setup, again) >= seconds) continue;
       if (again > setup) later.push({ name: m.name, seconds: round(again) }); else stillReach(m);
       damage += Math.max(0, seconds - start) * (m.shoots ? shooting(m, shield) : bites(m));
+      if (m.withers && !m.shoots) withering.push([start, seconds]);
     }
   }
   if (fight && seconds > setup) {
@@ -349,8 +382,11 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     damage += within(fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach) }), seconds - setup);
     for (const m of order) if (!m.shoots || m.visible) stillReach(m);
   }
+  // Withering while one not fought bites, from its first hit to the end
+  // of the stretch (the fought wither in their timeline).
+  damage += spanned(withering.map(([a, b]) => [a, Math.min(b, seconds)])) * WITHER.perSecond;
   const out = { seconds, setup: round(setup), damage: round(damage), blasts, still: [...still], later: later.sort((a, b) => a.seconds - b.seconds) };
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { SPEAR, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
+module.exports = { WITHER, SPEAR, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
