@@ -26,7 +26,7 @@ const MOBS = {
   enderman: { hit: 7, health: 40 }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16, splits: [{ size: 'medium', count: 3, hit: 2, health: 4 }] },
   zombified_piglin: { hit: 8, health: 20 }, piglin: { hit: 8, health: 16 }, piglin_brute: { hit: 13, health: 50 },
   hoglin: { hit: 6, health: 40, note: '3 to 8 a hit, and throws the bot about three blocks' }, zoglin: { hit: 6, health: 40, note: 'throws the bot about three blocks' },
-  wither_skeleton: { hit: 8, health: 20, note: 'withers' }, blaze: { hit: 5, health: 20, shoots: true, note: 'sets alight' },
+  wither_skeleton: { hit: 8, health: 20, note: 'withers' }, blaze: { hit: 5, health: 20, shoots: true, burns: 1, note: 'sets alight: each fireball that lands burns for five seconds more, about one a second through armour, and there is no water in the Nether to put it out' },
   magma_cube: { hit: 6, health: 16, note: 'a big one: it splits into two to four mediums (4 a hit), each of those into two to four smalls (3 a hit)', splits: [{ size: 'medium', count: 3, hit: 4, health: 4 }, { size: 'small', count: 9, hit: 3, health: 1 }] }, silverfish: { hit: 1, health: 8 }, phantom: { hit: 4, health: 20 },
   // Every mob the danger list names (the decision audit, 2026-09-25): one
   // not here added nothing, and a ghast fight read "0 damage".
@@ -92,7 +92,12 @@ const inRange = m => Math.max(0, ((m.distance || 0) - (RANGE[m.name] || 15)) / A
 // A shot every two seconds (a witch's potion every three). A shield takes
 // about half of the arrows (raised between swings and against each shot
 // seen coming); a witch's thrown potion is not stopped by it.
-const shooting = (m, shield) => m.visible ? m.hitsBot / (m.every || 2) * (shield && m.name !== 'witch' ? 0.5 : 1) : 0;
+// A shooter that sets alight burns as it hits: a small fireball sets a
+// player on fire for five seconds, about one a second that armour does not
+// stop, renewed by each that lands (a blaze's fire is steady while it
+// shoots). mid-235-p-fortress-2 went from 14.7 to none in twenty seconds
+// against blazes priced at their fireball alone (note 512).
+const shooting = (m, shield) => m.visible ? (m.hitsBot / (m.every || 2) + (m.burns || 0)) * (shield && m.name !== 'witch' ? 0.5 : 1) : 0;
 
 // The fight where the bot stands, as a timeline: nearest first; every mob
 // still standing hits meanwhile, biters once a second at arm's length,
@@ -188,7 +193,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     const seconds = shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill / rate * (spear ? 2 : 1);
     return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false,
       // A drowned's thrown trident is eight, where its hand is three.
-      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.note ? { note: m.note } : {}) };
+      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.note ? { note: m.note } : {}) };
   });
   // The mob each split one comes from, kept off the record (not enumerable).
   mobs.forEach((m, i) => { if (m && threats[i].from) Object.defineProperty(m, 'bornOf', { value: mobs[threats.indexOf(threats[i].from)] }); });

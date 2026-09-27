@@ -256,3 +256,11 @@ test('a big magma cube is fought with the mediums and smalls it splits into, eac
   const zombie = fightEstimate({ threats: [{ name: 'zombie', distance: 3, visible: true }], armour: iron, weapon: 'iron_sword', health: 20 });
   assert.equal(zombie.mobs.length, 1);
 });
+
+test('a blaze is priced with the burn its fireballs set, not the hit alone (mid-235-p-fortress-2)', () => {
+  const iron = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+  const e = fightEstimate({ threats: [{ name: 'blaze', distance: 15, visible: true, shoots: true }], armour: iron, weapon: 'iron_sword', health: 20 });
+  assert.equal(e.mobs[0].burns, 1);
+  // Its fireball through iron is about 2.8 every two seconds; the burn adds one a second.
+  assert(e.fightHere.damageTaken >= 15, `${e.fightHere.damageTaken}`);
+});
