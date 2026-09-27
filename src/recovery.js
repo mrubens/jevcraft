@@ -36,6 +36,9 @@ function recordDeath(bot, state, now = Date.now()) {
   // said with every question after (decisions/index.js recentDeaths).
   const cause = bot._deathMessage && now - bot._deathMessage.at < 5000 ? bot._deathMessage.text : null;
   const lastChoice = (bot._lastDecision && now - bot._lastDecision.at < 60000) ? { question: bot._lastDecision.id, choice: bot._lastDecision.choice, secondsBefore: Math.round((now - bot._lastDecision.at) / 1000) } : null;
+  // The base's bed carried along drops with everything else: the base
+  // asks for a bed again.
+  if (state.home?.bed?.carriedAt) { delete state.home.bed.carriedAt; delete state.home.bed.claimedAt; }
   state.deaths = [...(state.deaths || []), { at: new Date(now).toISOString(), position: { ...bot.entity.position }, dimension: bot.game.dimension, about, worn,
     food: bot.food, ...(cause ? { cause } : {}), ...(lastChoice ? { lastChoice } : {}), ...(lava ? { lava } : {}) }].slice(-10);
   state.recovery = { status: 'pending', at: new Date(now).toISOString(), position: { ...bot.entity.position },

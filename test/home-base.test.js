@@ -618,8 +618,13 @@ test('the base bed taken along is still the base bed: the home does not ask for 
   assert(goal.survival.home.bed.carriedAt, 'marked as carried');
   assert.equal(home.homeStage(bot, goal), null, 'carried, the base is not reopened for its bed');
   assert.equal(home.bedStatus(bot, goal.survival.home).carried, true);
-  // Lost with a death: the bed cells are read again, and the home asks for a bed.
+  // Put down in a nook for the night, it is still carried (mid-235-d).
   w.take('white_bed', 1);
+  assert.equal(home.homeStage(bot, goal), null, 'down in a nook: not missing from home');
+  // Lost with a death: the mark is cleared, the bed cells are read again, and the home asks for a bed.
+  const { recordDeath } = require('../src/recovery');
+  bot.game.dimension = 'overworld'; bot.food = 20;
+  recordDeath(bot, goal.survival);
   assert.equal(home.homeStage(bot, goal)?.phase, 'home_bed');
 });
 

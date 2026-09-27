@@ -317,7 +317,10 @@ function bedStatus(bot, home) {
   // missing from home, and the home does not ask for it back (the user,
   // 2026-09-26: a player carries their bed). Lost (a death drops it), the
   // bed cells are read as they stand.
-  if (home.bed?.carriedAt && bedCarried(bot)) return { placed: true, loaded: true, claimed: !!home.bed?.claimedAt, carried: true };
+  // Put down in a nook for the night it is still carried, not missing:
+  // mid-235-d slept in its nook and the base asked to claim a bed at home
+  // three times over (2026-09-26). A death clears the mark (recovery.js).
+  if (home.bed?.carriedAt) return { placed: true, loaded: true, claimed: !!home.bed?.claimedAt, carried: true };
   const { bed } = layout(home);
   const foot = bot.blockAt(pos(bed.foot)), head = bot.blockAt(pos(bed.head));
   const placed = isBed(foot) && isBed(head);
