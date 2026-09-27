@@ -434,9 +434,10 @@ test('hurt at 5.5 with a blaze in sight 16.5 blocks off whose fireballs land, su
   const mine = require('../src/survival').claim(bot, goal, { state: goal.survival, currentShelter: () => null });
   assert.equal(mine?.action, 'escape_threat', 'survival claims the shooter whose fire reaches here');
   assert.equal(mine.urgency, 'pressing');
-  assert.deepEqual(mine.facts.threat, { name: 'blaze', distance: 16.5, seen: true, shoots: true, reach: 48, hitItSecondsAgo: 8 });
+  // Said with the chance its fire lands from there, the game's scatter.
+  assert.deepEqual(mine.facts.threat, { name: 'blaze', distance: 16.5, seen: true, shoots: true, reach: 48, fireballLandsPer100: 24, volleyLandsOnePer100: 56, volleysMostlyLandWithin: 22, hitItSecondsAgo: 8 });
   assert.equal(mine.facts.healing, false);
-  assert.match(arbiter.claimSays(mine), /^Answer the blaze 16\.5 blocks off, which fires from as far as 48 blocks and hit the bot 8 seconds ago: the stance is asked next .* Health 5\.5\. It does not come back at hunger 16\.$/);
+  assert.match(arbiter.claimSays(mine), /^Answer the blaze 16\.5 blocks off, which fires from as far as 48 blocks \(from here each fireball lands about 24 in 100, a volley of three at least one about 56 in 100; its volleys land more often than not within about 22\) and hit the bot 8 seconds ago: the stance is asked next .* Health 5\.5\. It does not come back at hunger 16\.$/);
 });
 
 test('turn_priority says the hunt and every other claim in words, none as its bare code (mid-235-p-fortress-1)', () => {

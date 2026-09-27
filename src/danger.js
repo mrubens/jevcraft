@@ -294,14 +294,19 @@ function immediateThreat(bot) {
   // blocks. mid-244-e walked a ledge at y 89 with one in sight at seventeen
   // to nineteen, outside the sixteen counted for any shooter, and its
   // fireball threw the bot off, shield in hand (2026-09-27).
-  const { RANGE } = require('./combat-estimate');
+  const { RANGE, FIRE_REACH } = require('./combat-estimate');
   // A shooter whose kind has hit the bot a moment ago is in reach by that
   // fact, however far: mid-227-r-nether-3 stood on a span taking fire and
   // fireballs from three blazes thirty-two to thirty-five blocks off for
   // fourteen seconds, past the thirty-two counted when hurt and hunted
   // besides, and no stance was asked, twenty health to none (note 491).
   const hitBy = t => Date.now() - (bot._hurtBy?.[t.entity.name] || 0) < ATTRIBUTE_MS;
-  const shooterReach = t => fighting ? 8 : Math.max(hitBy(t) ? 48 : hurt ? 32 : 16, RANGE[t.entity.name] || 0);
+  // A blaze is counted where its fire lands, not as far as it fires: its
+  // volleys land one more often than not within about twenty-two blocks
+  // (combat-estimate FIRE_REACH, the game's scatter), and past that its
+  // shots landing are what make it one. Counted at its forty-eight, every
+  // blaze in sight near a fortress held the turn (notes 509, 513).
+  const shooterReach = t => fighting ? 8 : Math.max(hitBy(t) ? Math.max(48, RANGE[t.entity.name] || 0) : hurt ? 32 : 16, FIRE_REACH[t.entity.name] || 0);
   const mob = threats(bot, 64).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) &&
     t.distance <= (shooter(t.entity) ? shooterReach(t) : t.entity.name === 'warden' ? 24 : (fighting ? 5 : 8)));
   if (mob) return mob;

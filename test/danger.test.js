@@ -116,9 +116,17 @@ test('a shooter whose kind hit the bot a moment ago is a threat however far, hun
   const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, health: 12, food: 20, time: { timeOfDay: 6000 },
     world: { raycast: () => null }, blockAt: p => ({ position: p, name: p.y < 64 ? 'netherrack' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }),
     entities: { 4: blaze }, inventory: { items: () => [], slots: [] } };
-  // In sight within its forty-eight blocks, a blaze's fire reaches the bot
-  // (combat-estimate RANGE, mid-235-p-fortress-1, note 509).
-  assert.equal(immediateThreat(bot)?.entity.id, 4, 'thirty-four off, in sight, unhunted: within its reach');
+  // In sight past where its volleys mostly land, a blaze fires but seldom
+  // lands (combat-estimate FIRE_REACH): not a threat until one does.
+  assert.equal(immediateThreat(bot), undefined, 'thirty-four off, in sight, unhunted, landing nothing: its volleys mostly miss from there');
+  bot._recentHurtAt = Date.now(); bot._hurtBy = { blaze: Date.now() };
+  assert.equal(immediateThreat(bot)?.entity.id, 4, 'its fire landing from thirty-four: a threat (note 491)');
+  bot._recentHurtAt = 0; bot._hurtBy = {};
+  // Within the twenty-two where a volley lands one more often than not, it
+  // is one, hit or not (mid-235-p-fortress-1 at 16.5, note 509).
+  blaze.position = new Vec3(17, 64, 0.5);
+  assert.equal(immediateThreat(bot)?.entity.id, 4, 'sixteen and a half off: its volleys land');
+  blaze.position = new Vec3(34.5, 64, 0.5);
   // Hunted and fit, it is the hunt's while it lands nothing.
   bot.health = 20; bot._huntingEntity = { name: 'blaze', until: Date.now() + 60000 };
   assert.equal(immediateThreat(bot), undefined, 'hunted and landing nothing: the hunt\'s');

@@ -7,10 +7,13 @@ const { endDecisionInstructions } = require('./end-state');
 define({
   id: 'hunt_target', area: 'combat', kind: 'combat', primitive: 'choice', stakes: 'high', tree: true,
   question: 'The request needs a mob\'s drop: which observed mob should the bot fight now, or leave them for now?',
-  trigger: 'A mob hunt step with at least one candidate in view that is reachable and isolated, the bot on ground it can fight from (dry, not on a one-wide span, air to breathe).',
+  trigger: 'A mob hunt step with at least one candidate in view that is reachable and isolated, or on a blaze hunt a blaze in sight within twenty-four and a stand to take them from, the bot on ground it can fight from (dry, not on a one-wide span, air to breathe). A blaze whose every way in the open ends within a fireball\'s push of lava or a deep drop is not offered to fight in the open (notFoughtInTheOpen in the state).',
   source: 'src/mob-hunt.js (huntObserved, fitness, fitnessSays)',
   options: [
     { pattern: 'hunt_\\d+', label: 'fight this mob', when: 'observed, reachable, isolated from others of its kind; said with the one fight\'s estimate and the bot\'s fitness: health against the fourteen the code once required, hunger and whether health comes back, food carried, fire, and the kit', level: 'root', dynamic: true },
+    { key: 'dig_in_and_fight', label: 'dig a hole into the brick or netherrack and take the blazes from inside it', when: 'a blaze hunt with a blaze in sight within twenty-four, a sword or axe carried, and rock for the hole beside the bot or a wall within five blocks; said as the encounter stance of that name, with the push where the bot stands; held until a rod is in hand, the blazes are quiet twenty seconds or two minutes pass, then the rods picked up', level: 'root' },
+    { key: 'fight_at_spawner', label: 'take the blazes at their spawner\'s cage, under a ceiling', when: 'a blaze hunt with a blaze in sight, a spawner within twenty-four and a cell within three of it under a ceiling, no drop or lava within a push, within twenty-four blocks of walking; held as the hole is', level: 'root' },
+    { key: 'back_to_wall', label: 'take the blazes from footing with a wall at its back', when: 'a blaze hunt with a blaze in sight and such footing within eight blocks of walking; held as the hole is', level: 'root' },
     { key: 'defer', label: 'leave them for now', when: 'always; said with the fitness, and what the hunt does meanwhile when the bot is short of it (food, cover, health)', level: 'root' },
   ],
   instructions: {

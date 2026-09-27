@@ -4325,3 +4325,116 @@ test('on the surface by day, hurt, with no food and no healing: waiting sealed f
   await survival.step(new Task('fed'), { kind: 'win', request: 'beat the game' }, () => {});
   assert.equal(tree?.wait_for_day_sealed, undefined);
 });
+
+// A fortress of nether brick, blocks from the registry so their dig times
+// are the game's; `solid` says where the brick is, `lava` where lava is.
+function brickWorld(solid, { lava = () => false, spawner = null, items = ['iron_sword', 'iron_pickaxe', 'netherrack'] } = {}) {
+  const registry = require('minecraft-data')('26.1'), Block = require('prismarine-block')(registry);
+  const cache = new Map();
+  const blockAt = p => {
+    const f = p.floored(), key = `${f}`;
+    if (!cache.has(key)) {
+      const name = spawner && f.equals(spawner) ? 'spawner' : lava(f) ? 'lava' : solid(f) ? 'nether_bricks' : 'air';
+      const b = Block.fromStateId(registry.blocksByName[name].defaultState); b.position = f; cache.set(key, b);
+    }
+    return cache.get(key);
+  };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20, entities: {},
+    entity: { position: new Vec3(0.5, 64, 0.5), onGround: true }, registry, time: { timeOfDay: 6000 },
+    inventory: { items: () => items.map(name => ({ name, type: registry.itemsByName[name].id, count: /pickaxe|sword/.test(name) ? 1 : 64, durabilityUsed: 0 })),
+      slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' }, 45: { name: 'shield' } } },
+    blockAt, world: { raycast: () => null }, pathfinder: { movements: {} } });
+  bot.findBlocks = ({ matching, maxDistance = 16, count = 1, point }) => {
+    const ids = [].concat(matching), at = point || bot.entity.position, out = [];
+    for (let x = -12; x <= 12; x++) for (let y = -3; y <= 3; y++) for (let z = -12; z <= 12; z++) {
+      const p = at.floored().offset(x, y, z);
+      if (p.distanceTo(at) <= maxDistance && ids.includes(blockAt(p).type)) out.push(p);
+    }
+    return out.sort((a, b) => a.distanceTo(at) - b.distanceTo(at)).slice(0, count);
+  };
+  return bot;
+}
+const blazeAt = (id, x, y, z) => ({ id, name: 'blaze', type: 'hostile', position: new Vec3(x, y, z), height: 1.8, isValid: true });
+
+test('with a blaze in sight beside a nether-brick wall, the stance offers a hole dug into it, its seconds from the pickaxe carried, and the wall at the back (notes 509, 512, 514)', async () => {
+  // Brick floor, a brick mass to the west (x <= -1), open to the east where the blaze is.
+  const solid = p => p.y <= 63 || (p.x <= -1 && p.y <= 67);
+  const make = pick => {
+    const bot = brickWorld(solid, { items: ['iron_sword', pick, 'netherrack'] });
+    const blaze = blazeAt(3, 8.5, 64.5, 0.5);
+    bot.entities = { 3: blaze };
+    const dug = [];
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    bot.dig = async b => { dug.push(`${b.position}`); };
+    return { bot, blaze, dug, options: survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, blaze)], false) };
+  };
+  const { bot, options, dug } = make('iron_pickaxe');
+  assert(options.dig_in_and_fight, Object.keys(options).join(','));
+  const { blockDigMs } = require('../src/bunker');
+  const secs = Math.round(2 * blockDigMs(bot, bot.blockAt(new Vec3(-1, 64, 0))) / 100) / 10;
+  assert.match(options.dig_in_and_fight.description, new RegExp(`^Dig a hole one wide and two high into the nether bricks beside the bot \\(2 blocks with the iron pickaxe, about ${secs} seconds? of digging`));
+  assert.match(options.dig_in_and_fight.description, /a fireball's push there meets rock, not a drop; only a blaze in line with the mouth can shoot in/);
+  assert.match(options.dig_in_and_fight.description, /within two blocks it swings for 6 before armour instead of shooting/);
+  assert.match(options.dig_in_and_fight.description, /A blaze's fireball lands about \d+ in 100 from 8 blocks/);
+  assert.match(options.dig_in_and_fight.description, /About [\d.]+ damage from the mobs here in the next fifteen seconds this way/);
+  assert(options.dig_in_and_fight.expects.damage >= 0);
+  // A wooden pickaxe digs brick slower, and says so.
+  const wooden = make('wooden_pickaxe').options.dig_in_and_fight.description;
+  assert(Number(/about ([\d.]+) seconds? of digging/.exec(wooden)[1]) > secs, wooden);
+  // The wall at the back, where the bot stands: rock west, the blaze east, no drop within a push.
+  assert(options.back_to_wall, Object.keys(options).join(','));
+  assert.match(options.back_to_wall.description, /^Stay on footing with a wall at its back on the side away from the blazes and no drop or lava within 2 blocks, and fight there: a fireball from them pushes the bot into the wall/);
+  // Taken: the two blocks dug, the bot steps in; held, it stays.
+  bot.setControlState = (key, on) => { if (key === 'forward' && on) bot.entity.position = new Vec3(-0.5, 64, 0.5); };
+  bot.clearControlStates = () => {}; bot.lookAt = async () => {}; bot.equip = async () => {};
+  assert.equal(await options.dig_in_and_fight.run(), true);
+  assert.deepEqual(dug, ['(-1, 65, 0)', '(-1, 64, 0)']);
+});
+
+test('in a hole already, the stance is to stay and fight from inside; with a spawner near under a ceiling, its cage is offered too', () => {
+  // The bot in a one-wide hole in the brick at x = -1, its mouth east; a
+  // room two high to the east with a spawner at (4, 64, 3) under the roof.
+  const hole = new Vec3(-1, 64, 0);
+  const solid = p => p.y <= 63 || p.y >= 66 || (p.x <= -1 && !(p.x === hole.x && p.z === hole.z && p.y <= 65));
+  const bot = brickWorld(solid, { spawner: new Vec3(4, 64, 3) });
+  bot.entity.position = new Vec3(-0.5, 64, 0.5);
+  const blaze = blazeAt(3, 6.5, 64.2, 0.5);
+  bot.entities = { 3: blaze };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, blaze)], false);
+  assert(options.dig_in_and_fight, Object.keys(options).join(','));
+  assert.match(options.dig_in_and_fight.description, /^Stay in the hole the bot is in and fight from inside/);
+  assert(options.fight_at_spawner, Object.keys(options).join(','));
+  assert.match(options.fight_at_spawner.description, /^Walk \d+ blocks? \(about [\d.]+ seconds?, in their fire meanwhile\) to a cell [\d.]+ blocks from the blaze spawner's cage, under a ceiling, with no drop or lava within a push/);
+  const { spawnerSite } = require('../src/blaze-stand');
+  const site = spawnerSite(bot);
+  assert(site.off <= 3 && bot.blockAt(site.cell.offset(0, 2, 0)).boundingBox === 'block', 'within three of the cage, a block over the head');
+});
+
+test('a sealed pocket with blazes about offers its wall opened toward them, fought from inside (mid-235-p-fortress-4)', () => {
+  // mid-235-p-fortress-4 sat twenty-two minutes sealed ten blocks from a spawner, blazes five to seven off, offered only to stay or leave.
+  const pocket = new Vec3(0, 64, 0);
+  const solid = p => !(p.x === pocket.x && p.z === pocket.z && (p.y === 64 || p.y === 65)) && (p.y <= 63 || Math.abs(p.x) <= 1 && Math.abs(p.z) <= 1 && p.y <= 66);
+  const bot = brickWorld(solid);
+  const blaze = blazeAt(3, 7.5, 64.5, 0.5);
+  bot.entities = { 3: blaze };
+  const { blazeStands } = require('../src/blaze-stand');
+  const { threats } = require('../src/danger');
+  const window = blazeStands(bot, threats(bot, 24), { pocket: true }).dig_in_and_fight;
+  assert(window, 'offered');
+  assert.deepEqual(window.site.window.map(String), ['(1, 65, 0)', '(1, 64, 0)'], 'the wall toward the blaze, head and feet');
+  assert.match(window.description, /^Open the pocket's wall toward the blazes, one wide and two high \(2 blocks of nether bricks with the iron pickaxe, about [\d.]+ seconds? of digging\), and fight from inside the pocket through it\./);
+});
+
+test('beside a drop into lava with a blaze about, the stances say its fireball\'s push against the drop (note 469\'s pattern)', () => {
+  // A brick bridge at y 63, x from -1 to 1, over the lava sea at y 40: the bot at its east edge, the lava one block off.
+  const solid = p => p.y === 63 && Math.abs(p.x) <= 1;
+  const bot = brickWorld(solid, { lava: p => p.y <= 40 });
+  bot.entity.position = new Vec3(1.5, 64, 0.5);
+  const blaze = blazeAt(3, 10.5, 66, 0.5);
+  bot.entities = { 3: blaze };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, blaze)], false);
+  assert.match(options.fight.description, /A blaze's fireball that lands pushes the bot about 2 blocks, shield raised or not; the drop into lava is 1 block off: one that lands puts it over\./);
+  assert.equal(options.back_to_wall, undefined, 'no wall on the bridge, and every cell a push from the lava');
+});

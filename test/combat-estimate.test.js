@@ -264,3 +264,20 @@ test('a blaze is priced with the burn its fireballs set, not the hit alone (mid-
   // Its fireball through iron is about 2.8 every two seconds; the burn adds one a second.
   assert(e.fightHere.damageTaken >= 15, `${e.fightHere.damageTaken}`);
 });
+
+test('a blaze\'s fireball lands by the game\'s scatter: about 46 in 100 at 4 blocks, 24 at 16, 14 at 48, and its volleys mostly land within about twenty-two (notes 509, 513)', () => {
+  const { fireballHit, volleyHit, FIRE_REACH, RANGE, FIREBALL, fireballSays } = require('../src/combat-estimate');
+  // Blaze$BlazeAttackGoal: triangle(0, 2.297 * sqrt(d) * 0.5) on the aim's x and z; a
+  // Monte Carlo of the same (a million shots) gave 45.9, 24.0 and 14.2.
+  assert.equal(Math.round(fireballHit(4) * 100), 46);
+  assert.equal(Math.round(fireballHit(16) * 100), 24);
+  assert.equal(Math.round(fireballHit(48) * 100), 14);
+  assert(fireballHit(8) > fireballHit(16) && fireballHit(16) > fireballHit(32), 'fewer land the farther');
+  assert.equal(RANGE.blaze, 48, 'it still fires from forty-eight: a fact');
+  assert.equal(FIRE_REACH.blaze, 22, 'a volley lands one more often than not to twenty-two');
+  assert(volleyHit(22) >= 0.5 && volleyHit(23) < 0.5);
+  assert.equal(FIRE_REACH.ghast, 64, 'a ghast is counted to its sixty-four as before (note 513)');
+  // Its push, the game's knockback 0.4 through the bot's own physics.
+  assert.equal(FIREBALL.knock, 2);
+  assert.match(fireballSays(16.5), /^ A blaze's fireball lands about 23 in 100 from 17 blocks, a volley of three at least one about 55 in 100 \(the game scatters its aim wider with distance: about 46 in 100 at 4 blocks, 24 at 16, 14 at 48; a volley about every 9 seconds\); each that lands pushes the bot about 2 blocks, shield raised or not\.$/);
+});

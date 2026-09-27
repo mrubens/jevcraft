@@ -200,7 +200,7 @@ function claimSays(c) {
   const heals = f.healing === false ? ` It does not come back at hunger ${f.food}.` : f.healing ? ' It comes back meanwhile, at hunger eighteen or more.' : '';
   // A shooter's reach and what it has done, said: mid-235-p-fortress-1's
   // blaze fired from 16.5 blocks (note 509).
-  const fire = t => t?.shoots ? `, which fires from as far as ${t.reach} blocks${t.hitItSecondsAgo !== undefined ? ` and hit the bot ${t.hitItSecondsAgo} seconds ago` : ''}${t.shotsInFlight ? `, ${t.shotsInFlight} shot${t.shotsInFlight === 1 ? '' : 's'} on the way now` : ''}` : '';
+  const fire = t => t?.shoots ? `, which fires from as far as ${t.reach} blocks${t.fireballLandsPer100 !== undefined ? ` (from here each fireball lands about ${t.fireballLandsPer100} in 100, a volley of three at least one about ${t.volleyLandsOnePer100} in 100; its volleys land more often than not within about ${t.volleysMostlyLandWithin})` : ''}${t.hitItSecondsAgo !== undefined ? ` and hit the bot ${t.hitItSecondsAgo} seconds ago` : ''}${t.shotsInFlight ? `, ${t.shotsInFlight} shot${t.shotsInFlight === 1 ? '' : 's'} on the way now` : ''}` : '';
   const plural = item => { const s = String(item).replaceAll('_', ' '); return s.endsWith('s') ? s : `${s}s`; };
   switch (c.action) {
     case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest). The work waits.${hp}${heals}`;

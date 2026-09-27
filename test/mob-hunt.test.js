@@ -1184,3 +1184,69 @@ test('fit to fight is health and food, not the kit: the kit is for Jev to weigh 
   bot.health = 6;
   assert.equal(fitToFight(bot), false);
 });
+
+// The hunt's fixture in a world of nether brick from the registry (the
+// game's dig times), `solid` where the brick is and `lava` where lava is,
+// an iron pickaxe carried.
+function brickHunt(solid, { lava = () => false } = {}) {
+  const f = fixture('blaze');
+  const Block = require('prismarine-block')(registry), cache = new Map();
+  f.bot.blockAt = p => {
+    const at = p.floored(), key = `${at}`;
+    if (!cache.has(key)) { const b = Block.fromStateId(registry.blocksByName[lava(at) ? 'lava' : solid(at) ? 'nether_bricks' : 'air'].defaultState); b.position = at; cache.set(key, b); }
+    return cache.get(key);
+  };
+  f.bot.findBlocks = ({ matching, maxDistance = 16, count = 1, point }) => {
+    const ids = [].concat(matching), at = point || f.bot.entity.position, out = [];
+    for (let x = -10; x <= 10; x++) for (let y = -3; y <= 3; y++) for (let z = -10; z <= 10; z++) {
+      const p = at.floored().offset(x, y, z);
+      if (p.distanceTo(at) <= maxDistance && ids.includes(f.bot.blockAt(p).type)) out.push(p);
+    }
+    return out.sort((a, b) => a.distanceTo(at) - b.distanceTo(at)).slice(0, count);
+  };
+  f.slots[10] = { name: 'iron_pickaxe', count: 1, type: registry.itemsByName.iron_pickaxe.id, slot: 10, durabilityUsed: 0 };
+  f.bot.dig = async () => {};
+  return f;
+}
+
+test('a blaze hunt beside a nether-brick wall is offered the hole dug into it and the wall at the back, the dig seconds from the pickaxe, beside the fight in the open (notes 509, 512, 514)', async () => {
+  // Brick floor, a brick mass to the west (x <= -1); the blaze six blocks east.
+  const { bot, task, target, goal } = brickHunt(p => p.y <= 63 || (p.x <= -1 && p.y <= 67));
+  target.position = new Vec3(6.5, 64.5, 0.5);
+  let asked = null;
+  const client = { systemOne: async ({ state, questions }) => { asked = { state, options: questions.branch_0.criteria }; return { answers: { branch_0: { choice: 'defer', confidence: 0.9 } } }; } };
+  assert.equal(await huntObserved(bot, task, goal, () => {}, {}, client), false, 'deferred');
+  assert(asked, 'asked');
+  assert(asked.options.hunt_7, Object.keys(asked.options).join(','));
+  const { blockDigMs } = require('../src/bunker');
+  const secs = Math.round(2 * blockDigMs(bot, bot.blockAt(new Vec3(-1, 64, 0))) / 100) / 10;
+  assert.match(asked.options.dig_in_and_fight, new RegExp(`^Dig a hole one wide and two high into the nether bricks beside the bot \\(2 blocks with the iron pickaxe, about ${secs} seconds? of digging`));
+  assert.match(asked.options.dig_in_and_fight, /Rods that fall where the bot cannot see them are picked up once no blaze has it in sight\./);
+  assert.match(asked.options.dig_in_and_fight, /Health 20; hunger 20/, 'the fitness said on it too');
+  assert.match(asked.options.back_to_wall, /^Stay on footing with a wall at its back/);
+  // Left for now, the stands are left too: not asked again each pass.
+  const { isSetAside } = require('../src/progress');
+  assert(isSetAside(goal, 'hunt_stand', 'blaze'));
+});
+
+test('a blaze over the lava beside a fortress bridge is not walked under: the fight goes to a stand, and the push is said where the bot stands (note 509)', async () => {
+  const { combatRoute, combatMovement } = require('../src/mob-hunt');
+  // A brick bridge at y 63 from x -6 to 2 over the lava sea at y 40; the bot at x 0, the edge three blocks east.
+  const { bot, task, target, goal } = brickHunt(p => p.y === 63 && p.x <= 2 && p.x >= -6 && Math.abs(p.z) <= 3, { lava: p => p.y <= 40 });
+  // The route under the blaze ends at the bridge's edge, the lava one block off.
+  target.position = new Vec3(4.5, 66, 0.5);
+  bot.pathfinder.getPathTo = () => ({ status: 'success', path: [{ x: 1, y: 64, z: 0 }, { x: 2, y: 64, z: 0 }] });
+  const pushed = [];
+  const movement = combatMovement(bot);
+  try { assert.equal(await combatRoute(bot, task, target, movement, 400, { pushed }), null, 'no fight at the edge'); }
+  finally { movement.restore(); }
+  assert.deepEqual(pushed.map(e => e.id), [7, 7]);
+  // One over the bridge's middle, the route ending three from the edge: fought, the push said.
+  target.position = new Vec3(-3.5, 66, 0.5);
+  bot.pathfinder.getPathTo = () => ({ status: 'success', path: [] });
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'defer', confidence: 0.9 } } }; } };
+  await huntObserved(bot, task, goal, () => {}, {}, client);
+  assert(asked?.hunt_7, Object.keys(asked || {}).join(','));
+  assert.equal(asked.hunt_7.footing, 'A blaze\'s fireball that lands pushes the bot about 2 blocks, shield raised or not; the drop into lava is 3 blocks off: about 2 landing in turn put it over.');
+});

@@ -96,6 +96,61 @@ function creeperBlastSays(worn) {
 // twice on a span by one never in the frames (the look reached forty-eight)
 // and knocked into the lava sea (note 513).
 const RANGE = { witch: 10, ghast: 64, blaze: 48 };
+// How often a blaze's fire lands, by distance, from the game's own aim
+// (26.1 Blaze$BlazeAttackGoal): each fireball's heading is scattered
+// sideways by a triangle of half-width 2.297 x half the square root of the
+// distance, three to a volley, a volley about every nine seconds (60 ticks
+// charging, 6 between shots, 100 resting). It lands where its line passes
+// within 0.6 of the player's middle (half the body's 0.6 width plus the
+// projectile's 0.3 margin, ProjectileUtil.computeMargin). The scatter grows
+// with the root of the distance, not the distance: about 46 in 100 land
+// at 4 blocks, 24 at 16, 14 at 48, and a volley lands one more often than
+// not out to about twenty-two blocks. Counted in claims by this, not by the
+// forty-eight it fires from: at forty-eight, survival held the turn near a
+// fortress on every blaze in sight (notes 509, 513).
+// A fireball that lands pushes the bot as any hit does (LivingEntity
+// knockback, 0.4, shield raised or not: the push is dealt before the
+// block is weighed): about two blocks on open ground by the bot's own
+// physics (prismarine-physics), nine ticks in the air; today's frames, 33
+// hits with no key pressed, moved a median of one block, a quarter of
+// them one and a half or more, up to three (walls and crouching stop the
+// rest). A shield raised toward it takes the fireball whole and the fire
+// with it: the game puts back the fire a fully blocked fireball set.
+const FIREBALL = { scatter: 2.297 * 0.5, within: 0.6, volley: 3, volleySeconds: 178 / 20, knock: 2, melee: 6, meleeReach: 2 };
+const fireballHits = new Map();
+// The chance one fireball lands at `distance`: the sideways miss is
+// a·X + b·Y, X and Y the two triangles and (a, b) the heading's sine and
+// cosine, summed over headings and the triangles' grid.
+function fireballHit(distance) {
+  const d = Math.max(1, Math.round((distance || 0) * 2) / 2);
+  if (fireballHits.has(d)) return fireballHits.get(d);
+  const w = FIREBALL.scatter * Math.sqrt(d), N = 60, H = 12;
+  // Triangle density on [-w, w], sampled at cell midpoints.
+  const xs = Array.from({ length: N }, (_, i) => -w + (i + 0.5) * 2 * w / N), pdf = x => (w - Math.abs(x)) / (w * w), cell = 2 * w / N;
+  let total = 0;
+  for (let h = 0; h < H; h++) {
+    const theta = (h + 0.5) * (Math.PI / 4) / H, a = Math.sin(theta), b = Math.cos(theta);
+    let p = 0;
+    for (const x of xs) for (const y of xs) if (Math.abs(a * x + b * y) < FIREBALL.within) p += pdf(x) * pdf(y) * cell * cell;
+    total += p;
+  }
+  const p = Math.min(1, total / H);
+  fireballHits.set(d, p);
+  return p;
+}
+const volleyHit = distance => 1 - (1 - fireballHit(distance)) ** FIREBALL.volley;
+// The farthest a blaze's volley lands one more often than not.
+const FIRE_LANDS = (() => { let d = 1; while (d < RANGE.blaze && volleyHit(d + 1) >= 0.5) d++; return d; })();
+const inHundred = p => Math.round(p * 100);
+// Said wherever a blaze's distance matters: the chance by distance, with
+// the push.
+function fireballSays(distance) {
+  const d = Math.round(distance);
+  return ` A blaze's fireball lands about ${inHundred(fireballHit(d))} in 100 from ${d} blocks, a volley of three at least one about ${inHundred(volleyHit(d))} in 100 (the game scatters its aim wider with distance: about ${inHundred(fireballHit(4))} in 100 at 4 blocks, ${inHundred(fireballHit(16))} at 16, ${inHundred(fireballHit(48))} at 48; a volley about every ${Math.round(FIREBALL.volleySeconds)} seconds); each that lands pushes the bot about ${FIREBALL.knock} blocks, shield raised or not.`;
+}
+// How far a shooter is counted a threat by its fire, where RANGE is how
+// far it fires from: a blaze by where its volleys land.
+const FIRE_REACH = { ...RANGE, blaze: FIRE_LANDS };
 const HOLD_SECONDS = 15, APPROACH = 3, FUSE = 1.5, LIGHTS_AT = 3;
 const inRange = m => Math.max(0, ((m.distance || 0) - (RANGE[m.name] || 15)) / APPROACH);
 // A shot every two seconds (a witch's potion every three). A shield takes
@@ -280,4 +335,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return { seconds, setup: round(setup), damage: round(damage), blasts, still: [...still] };
 }
 
-module.exports = { SPEAR, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
+module.exports = { SPEAR, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };

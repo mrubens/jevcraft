@@ -8,7 +8,7 @@ const { canStrike, defenseWeapon, bowReady, shoot, strike } = require('./combat'
 const { deflect } = require('./projectile-guard');
 const { aimAtEntity } = require('./projectiles');
 const { dryStanding } = require('./mining-access');
-const { dryBodySpace, damagingTerrain, supportCell, dropWithin, onSpan } = require('./terrain');
+const { dryBodySpace, damagingTerrain, supportCell, dropWithin, dropNear, onSpan } = require('./terrain');
 const { fightEstimate } = require('./combat-estimate');
 const { checkAir } = require('./vitals');
 const { surveyRoute, countOf } = require('./skills');
@@ -305,10 +305,24 @@ function approaches(bot, target) {
 // `movement` is the combat movement policy, whose `allowed` vets each step;
 // the survey itself runs on the pathfinder's own movements. Passing one for
 // the other threw "undefined is not a function" in the middle of a fight.
-async function combatRoute(bot, task, target, movement, timeoutMs = 400) {
+// Not to footing a blaze's fireball pushes the bot off: under a blaze
+// over a fortress bridge is the lava's edge, and a fireball that lands
+// pushes about two blocks (combat-estimate FIREBALL). mid-235-p-fortress-1
+// was thrown off an edge at 5.5 health (note 509). Such a blaze is fought
+// from a stand instead (blaze-stand.js), offered beside it.
+function pushedOff(bot, target, route) {
+  if (target.name !== 'blaze') return false;
+  const last = route.path?.at(-1), end = last ? new Vec3(Math.floor(last.x), Math.floor(last.y), Math.floor(last.z)) : bot.entity.position.floored();
+  const { FIREBALL } = require('./combat-estimate');
+  const drop = dropNear(bot, end, FIREBALL.knock);
+  return (!!drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2)) || require('./blaze-stand').lavaWithin(bot, end);
+}
+async function combatRoute(bot, task, target, movement, timeoutMs = 400, { pushed = null } = {}) {
   for (const destination of approaches(bot, target)) {
     const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, timeoutMs);
-    if (route.status === 'success' && route.path.every(movement.allowed)) return { route, destination };
+    if (route.status !== 'success' || !route.path.every(movement.allowed)) continue;
+    if (pushedOff(bot, target, route)) { if (pushed) pushed.push(target); continue; }
+    return { route, destination };
   }
   return null;
 }
@@ -505,11 +519,12 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   const candidates = Object.values(bot.entities).filter(e => e.name === state.entity && valid(bot, e) &&
     e.position.distanceTo(bot.entity.position) < 24 && isolated(bot, e, handler) &&
     !isSetAside(goal, 'hunt_target', e.uuid || e.id)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
-  const tree = {}, positions = new Map();
+  const tree = {}, positions = new Map(), pushed = [];
+  const footing = state.entity === 'blaze' ? require('./blaze-stand').knockSays(bot) : '';
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
     try {
-      if (!canStrike(bot, target) && !await combatRoute(bot, task, target, movement)) continue;
+      if (!canStrike(bot, target) && !await combatRoute(bot, task, target, movement, 400, { pushed })) continue;
       positions.set(target.id, target.position.clone());
       // What this one fight costs, and what is beside the mob (the decision
       // audit, 2026-09-25): a hoglin's toss or a blaze's knockback beside
@@ -527,21 +542,46 @@ async function huntObserved(bot, task, goal, save, actions, client) {
         item: state.item, randomDrop: true,
         ...(mob && !handler.passive ? { fight: { hitsBot: mob.hitsBot, seconds: one.fightHere.seconds, damageTaken: one.fightHere.damageTaken, healthAfter: one.fightHere.healthAfter, ...(mob.note ? { note: mob.note } : {}) } } : {}),
         ...(lavaNear ? { lavaNearIt: 'lava within two blocks of it: a knockback there lands in it' } : {}),
+        // Where the bot stands, the push against the drop (note 469).
+        ...(target.name === 'blaze' && footing ? { footing: footing.trim() } : {}),
         ...(dropNear ? { dropNearIt: 'a drop within three blocks of it' } : {}),
         ...(() => { const { UNPROVOKED } = require('./danger'); const near = Object.values(bot.entities || {}).filter(e => Object.hasOwn(UNPROVOKED, e.name) && e.position && e.position.distanceTo(target.position) <= 6);
           return near.length ? { hittersNearIt: `${near.length} ${[...new Set(near.map(e => e.name.replaceAll('_', ' ')))].join(' and ')} within six blocks of it: ${[...new Set(near.map(e => UNPROVOKED[e.name].note))].join('; ')}` } : {}; })() }, run: () => fightForDrop(bot, task, target, goal, save, actions) };
     } finally { movement.restore(); restore(); }
   }
+  // Blazes are taken from a stand as well as in the open, as a player with
+  // iron and no fire resistance takes them: a hole in the brick, the
+  // spawner's cage under a ceiling, a wall at the back (blaze-stand.js).
+  // Offered whenever one is in sight, alone or not: a spawner keeps several
+  // in the air, and mid-235-p-fortress-4 was asked about one blaze at eight
+  // blocks beside a drop, deferred, and spent the next twenty-two minutes
+  // sealed in a pocket ten blocks from their spawner (2026-09-27).
+  const blazesInSight = state.entity === 'blaze' ? threats(bot, 24).filter(t => t.entity.name === 'blaze' && t.visible) : [];
+  if (blazesInSight.length && !isSetAside(goal, 'hunt_stand', 'blaze')) {
+    const stands = require('./blaze-stand').blazeStands(bot, threats(bot, 24), { hunted: true, dig: typeof bot.dig === 'function' });
+    for (const [key, o] of Object.entries(stands)) tree[key] = { description: o.description + footing, run: async () => {
+      try { await require('./blaze-stand').huntFromStand(bot, task, goal, save, actions, o, { item: state.item, want: countOf(bot, state.item) + 1 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'hunt_stand', 'blaze', err.message, 120000); state.lastStandError = err.message; save(); }
+    } };
+  }
   if (!Object.keys(tree).length) return false;
   // The bot's fitness, on every option and in the state: what the code
   // once refused a fight for, as facts for Jev's choice (fitness, above).
   const fit = fitness(bot), fitSaid = fitnessSays(bot, fit);
-  for (const option of Object.values(tree)) option.description.fitness = fitSaid;
+  for (const option of Object.values(tree)) {
+    if (typeof option.description === 'string') option.description += ` ${fitSaid}`;
+    else option.description.fitness = fitSaid;
+  }
   tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved. ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
-    for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000); save();
+    for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000);
+    if (blazesInSight.length) setAside(goal, 'hunt_stand', 'blaze', 'Jev chose to leave them for now', 120000);
+    save();
   } };
   const snapshot = { request: goal.request, resource: state.item, need: state.targetCount - countOf(bot, state.item), health: bot.health, food: bot.food, dimension: dimension(bot), riskNow: require('./risk').riskNow(bot),
-    fitness: { ...fit, said: fitSaid } };
+    fitness: { ...fit, said: fitSaid },
+    // A blaze whose every way to fight it in the open ends within a push of
+    // lava or a deep drop: fought from a stand, not walked under.
+    ...(pushed.length ? { notFoughtInTheOpen: pushed.map(e => ({ entity: e.name, distance: Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10, why: 'every way to it ends within a fireball\'s push (about two blocks) of lava or a deep drop' })) } : {}) };
   let decision;
   {
     // Fresh means the fight is still the one Jev was shown. Health equal to

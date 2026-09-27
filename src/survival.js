@@ -1371,7 +1371,11 @@ class Survival {
     const creeperBlast = Math.round(afterArmour(blastAt(2), worn)), blastSays = creeperBlastSays(worn);
     // The drop beside the bot, measured, on every stance that stays or moves
     // on this ground (mid-100-d, 2026-09-25).
-    const edge = require('./terrain').dropNote(require('./terrain').dropNear(bot, feet, 3), bot.health);
+    // With a blaze about, the push its fireball gives against the drop's
+    // distance: mid-235-p-fortress-1 was thrown off an edge at 5.5 health by
+    // one (note 509).
+    const blazeAbout = danger.some(t => t.entity.name === 'blaze');
+    const edge = require('./terrain').dropNote(require('./terrain').dropNear(bot, feet, 3), bot.health) + (blazeAbout ? require('./blaze-stand').knockSays(bot, feet) : '');
     // How many can be at arm's length at once, said where it is not all of
     // them: in a tunnel a crowd comes one or two at a time.
     const atOnceNote = bitersHere >= 2 ? (open >= 8 ? ' Open ground all round: every biter can be at arm\'s length at once.' : ` ${open} of the eight cells round the bot are open ground: at most ${open} at arm's length at once.`) : '';
@@ -1556,6 +1560,20 @@ class Survival {
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
+    // Against blazes, the stands a player takes rods from with iron and no
+    // fire resistance, back to rock where a fireball's push meets a wall
+    // (blaze-stand.js): a hole dug into the brick, the spawner's cage under
+    // a ceiling, a wall at the back. The fortress stage's three deaths were
+    // offered none of them (notes 509, 512, 514).
+    if (blazeAbout && !inWater(bot)) {
+      const stands = require('./blaze-stand').blazeStands(bot, danger, { dig: typeof this.actions.dig === 'function' });
+      for (const [key, o] of Object.entries(stands)) options[key] = { expects: o.expects, description: o.description + (o.kind === 'hole' && !o.site.inside ? buildCost : '') + hitsLeft,
+        run: async () => {
+          this.report(goal, save, { action: key, threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
+          try { return await require('./blaze-stand').takeStand(bot, task, goal, save, o, { navigate: this.actions.navigate }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+        } };
+    }
     // Out of the shooters' line, as a player under arrows steps behind a
     // corner of rock or back into the tunnel it came by, or digs a short L
     // into the wall: the 78 picks above had only the pillar, a block of
@@ -4100,6 +4118,20 @@ class Survival {
       if (watcher && watcher.distance <= 4.5 && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && typeof this.actions.dig === 'function')
         options.open_on_watcher = { description: `Open the wall toward ${who} and fight it at the gap.${watcher.entity.name === 'creeper' ? ' A creeper at the gap goes off.' : ''}`,
           run: () => this.openOnWatcher(task, goal, save, refuge, watcher, { chosen: true }) };
+      // Blazes about the pocket: its wall opened toward them, one wide and
+      // two high, and fought from inside, the pocket's rock at the back
+      // (blaze-stand.js). mid-235-p-fortress-4 sat twenty-two minutes sealed
+      // ten blocks from a spawner with blazes five to seven blocks off,
+      // offered only to stay or leave; none of these, nine times.
+      const blazesOut = threats(bot, 24).filter(t => t.entity.name === 'blaze');
+      const opening = blazesOut.length && typeof this.actions.dig === 'function' ? require('./blaze-stand').blazeStands(bot, threats(bot, 24), { pocket: true }).dig_in_and_fight : null;
+      if (opening) options.dig_in_and_fight = { description: opening.description + outside,
+        run: async () => {
+          delete this.state.watchedSince;
+          this.report(goal, save, { action: 'dig_in_and_fight', from: 'pocket', blazes: blazesOut.length, health: bot.health });
+          try { return await require('./blaze-stand').takeStand(bot, task, goal, save, opening, { navigate: this.actions.navigate }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+        } };
       if (night && !watcher && !refused(this, 'survival:night_mine') && this.canNightMine(goal))
         options.night_mine = { description: `Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too. ${rockHolds(bot, bot.entity.position.floored(), attemptsFor(this))}${outside}`, run: () => this.nightMine(task, goal, save) };
       // Work that needs no walking: the ladder's next item made from what is
@@ -4641,9 +4673,14 @@ function claim(bot, goal = {}, survival = null) {
   // fireball threw it off the edge (note 509). Said with what it has done
   // and whether health comes back, for Jev to weigh.
   const threat = immediateThreat(bot);
+  // A blaze's with the chance its fire lands from where it is, the game's
+  // scatter (combat-estimate fireballHit): it is claimed where its volleys
+  // mostly land or its shots have landed, and said so.
   const firing = t => {
     const hit = bot._hurtBy?.[t.entity.name], inFlight = require('./projectile-guard').incoming(bot, { reach: RANGE[t.entity.name] || 15 }).length;
-    return { shoots: true, reach: RANGE[t.entity.name] || 15, ...(hit > now - 30000 ? { hitItSecondsAgo: Math.round((now - hit) / 1000) } : {}), ...(inFlight ? { shotsInFlight: inFlight } : {}) };
+    const { fireballHit, volleyHit, FIRE_REACH } = require('./combat-estimate');
+    const lands = t.entity.name === 'blaze' ? { fireballLandsPer100: Math.round(fireballHit(t.distance) * 100), volleyLandsOnePer100: Math.round(volleyHit(t.distance) * 100), volleysMostlyLandWithin: FIRE_REACH.blaze } : {};
+    return { shoots: true, reach: RANGE[t.entity.name] || 15, ...lands, ...(hit > now - 30000 ? { hitItSecondsAgo: Math.round((now - hit) / 1000) } : {}), ...(inFlight ? { shotsInFlight: inFlight } : {}) };
   };
   if (threat) return make('escape_threat', 'pressing', threat.projectile ? { threat: { name: threat.entity.name, distance: round(threat.distance), projectile: true } }
     : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: mob(threat) });
