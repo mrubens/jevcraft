@@ -3181,13 +3181,23 @@ async function portalStep(bot, task, goal, save, client) {
       const d = bot.entity.position.distanceTo(at), tries = goal.portalMethod.nearTries ||= { best: Infinity, stale: 0 };
       if (d < tries.best - 1) { tries.best = d; tries.stale = 0; } else if (++tries.stale >= 3) {
         goal.portalMethod.nearLeft = { ...near, why: `three walks came no nearer than ${Math.round(tries.best)} blocks` };
-        delete goal.portalMethod.near; delete goal.portalMethod.nearTries; save();
+        delete goal.portalMethod.near; delete goal.portalMethod.nearTries; delete goal.portalMethod.nearByStairs; save();
+        return false;
+      }
+      // Once the walk has failed, the staircase goes on without a walk tried
+      // first each pass: mid-211-i gained a block a pass down its stairs,
+      // five seconds of failed walk between, and the flip watch took the
+      // turn between them for a loop (2026-09-27).
+      if (goal.portalMethod.nearByStairs) {
+        goal.step = { action: 'tunnel', target: { ...near }, toward: 'lava_for_portal', distance: Math.round(d) }; save();
+        await tunnelToward(bot, task, goal, save, at, 'lava_for_portal');
         return false;
       }
       goal.step = { action: 'to_lava_for_portal', at: { ...near }, distance: Math.round(d) }; save();
       try { await navigate(bot, task, new goals.GoalNear(at.x, at.y, at.z, 6), { timeoutMs: 120000, stallMs: 8000, sprint: true }); }
       catch (err) {
         task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+        goal.portalMethod.nearByStairs = true; save();
         await tunnelToward(bot, task, goal, save, at, 'lava_for_portal');
       }
       return false;
