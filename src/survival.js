@@ -366,6 +366,25 @@ function pickaxeReserve(bot, feet) {
 }
 
 // A mob that bites within arm's length, in sight or not: no sealing it out.
+// What a warden does, said wherever a wall is weighed against one: it
+// hunts by the vibration of moving, digging and placing, and by smell, each
+// sniff angering it more; angry at a player it cannot reach, it strikes
+// with a sonic boom through blocks and armour. mid-230-n stayed in a pocket
+// two minutes with a warden seven to eleven blocks off, told only that it
+// was outside, and was boomed through the wall three times, twenty health
+// to none (2026-09-27).
+const BOOM_ACROSS = 15, BOOM_UP = 20;
+function wardenSays(bot) {
+  const warden = threats(bot, 32).filter(t => t.entity.name === 'warden').sort((a, b) => a.distance - b.distance)[0];
+  const booms = (bot._sonicBooms || []).filter(t => Date.now() - t < 60000).length;
+  if (!warden && !booms) return '';
+  const p = bot.entity.position, w = warden?.entity.position;
+  const inReach = w && Math.hypot(w.x - p.x, w.z - p.z) <= BOOM_ACROSS && Math.abs(w.y - p.y) <= BOOM_UP;
+  const facts = ` A warden is blind: it finds a player by the vibrations of moving, digging and placing, and by smell, and each sniff angers it more. Angry at a player it cannot reach, it strikes with a sonic boom that passes through blocks and armour: about 10 damage, every few seconds, within ${BOOM_ACROSS} blocks across and ${BOOM_UP} up or down. A wall does not stop it; only distance does.`;
+  const here = warden ? ` The warden is ${Math.round(warden.distance)} blocks off, ${inReach ? 'within the boom\'s reach' : 'beyond the boom\'s reach'}.` : '';
+  const hit = booms ? ` The bot has been hit by the boom ${booms === 1 ? 'once' : `${booms} times`} in the last minute.` : '';
+  return facts + here + hit;
+}
 const biterAtArm = bot => threats(bot).some(t => t.distance <= 2.2 && !shooter(t.entity));
 
 function firmGround(bot, radius = 4, { margin = 1, awayFrom = null } = {}) {
@@ -2653,7 +2672,9 @@ class Survival {
   // safeExcavation) with a solid floor under each cell, until its end is
   // PASSAGE_CLEAR blocks from the creeper and at least PASSAGE_MIN long. Null
   // where the rock ahead does not allow it.
-  passageOut(creeper) {
+  // A warden's too, to beyond its boom's reach (wardenSays), farther and
+  // longer: mid-230-n had no way away from one but the doors (note 412).
+  passageOut(creeper, { clear = PASSAGE_CLEAR, max = PASSAGE_MAX } = {}) {
     const bot = this.bot;
     const feet = bot.entity.position.floored(), at = creeper.entity.position;
     const away = feet.offset(0.5, 0, 0.5).minus(at);
@@ -2661,7 +2682,7 @@ class Survival {
     const direction = dir.x === 1 ? 'east' : dir.x === -1 ? 'west' : dir.z === 1 ? 'south' : 'north';
     const { safeExcavation } = require('./tunneling');
     let here = feet, cells = 0;
-    for (let n = 0; n < PASSAGE_MAX; n++) {
+    for (let n = 0; n < max; n++) {
       const next = here.plus(dir);
       const floor = bot.blockAt(next.offset(0, -1, 0));
       if (!floor || floor.boundingBox !== 'block' || /lava|water/.test(floor.name)) break;
@@ -2672,10 +2693,10 @@ class Survival {
       }
       if (blocked) break;
       here = next; cells++;
-      if (cells >= PASSAGE_MIN && Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z) >= PASSAGE_CLEAR) break;
+      if (cells >= PASSAGE_MIN && Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z) >= clear) break;
     }
     const clearance = Math.round(Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z));
-    if (cells < PASSAGE_MIN || clearance < PASSAGE_CLEAR) return null;
+    if (cells < PASSAGE_MIN || clearance < clear) return null;
     return { dir, direction, cells, clearance, end: here };
   }
 
@@ -2685,7 +2706,7 @@ class Survival {
   // still enclosed, and the pocket's next step is asked again.
   async tunnelOut(task, goal, save, refuge, creeper, passage) {
     const bot = this.bot;
-    this.report(goal, save, { action: 'tunnel_out', origin: refuge.origin, direction: passage.direction, cells: passage.cells, creeper: Number(creeper.distance.toFixed(1)), health: bot.health });
+    this.report(goal, save, { action: 'tunnel_out', origin: refuge.origin, direction: passage.direction, cells: passage.cells, from: creeper.entity.name, distance: Number(creeper.distance.toFixed(1)), health: bot.health });
     const start = bot.entity.position.floored().offset(0.5, 0, 0.5);
     let here = bot.entity.position.floored(), dug = 0;
     for (let n = 0; n < passage.cells; n++) {
@@ -2694,8 +2715,9 @@ class Survival {
       // Come round toward the passage: within six of its head and nearer to
       // it than to the pocket it was dug from. (The first cell of a passage
       // dug from five blocks off is six from the creeper by itself.)
-      const near = threats(bot, 16).filter(t => t.entity.name === 'creeper').some(t => t.entity.position.distanceTo(head) <= 6 && t.entity.position.distanceTo(head) < t.entity.position.distanceTo(start));
-      if (near) { this.report(goal, save, { action: 'tunnel_out_stopped', cells: dug, reason: 'a creeper come round within six blocks of the passage\'s head' }); return dug > 0; }
+      const kind = creeper.entity.name;
+      const near = threats(bot, 32).filter(t => t.entity.name === kind).some(t => t.entity.position.distanceTo(head) <= 6 && t.entity.position.distanceTo(head) < t.entity.position.distanceTo(start));
+      if (near) { this.report(goal, save, { action: 'tunnel_out_stopped', cells: dug, reason: `a ${kind} come round within six blocks of the passage's head` }); return dug > 0; }
       for (const c of [next, next.offset(0, 1, 0)]) {
         const b = bot.blockAt(c);
         if (b && b.boundingBox === 'block') {
@@ -3479,7 +3501,7 @@ class Survival {
       const hidden = about.length ? `${about.map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}${about.some(t => !t.visible) ? ' (heard, not seen: the wall is between)' : ''}` : '';
       const who = watcher ? `${watcher.visible ? 'the' : 'a'} ${watcher.entity.name.replaceAll('_', ' ')} ${Math.round(watcher.distance)} blocks off${watcher.visible ? ', in sight' : ' (heard, not seen: the wall is between)'}${hidden ? `, and ${hidden}` : ''}` : hidden || null;
       const options = {};
-      const outside = who ? ` Outside is ${who}.` : '';
+      const outside = (who ? ` Outside is ${who}.` : '') + wardenSays(bot);
       // Sleep is refused with a monster within eight blocks of the bed, seen
       // or not (the decision audit): said, with the walk.
       const byBed = homeBed ? monstersByBed(bot, homeBed.foot, 32) : 0;
@@ -3529,7 +3551,7 @@ class Survival {
       // and died among them in a minute (2026-09-26).
       const hp = Math.round((bot.health ?? 20) * 10) / 10;
       const healthNow = hp >= 20 ? '' : (bot.food ?? 20) >= 18 ? `, healing from ${hp} health` : `, not healing: ${hp} health and hunger ${bot.food}, and health comes back only at eighteen or more`;
-      options.stay = { description: night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes with nothing gained${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.`,
+      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes with nothing gained${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.`) + wardenSays(bot),
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };
@@ -3566,7 +3588,17 @@ class Survival {
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_out' };
           return this.tunnelOut(task, goal, save, refuge, creeperNear, passage);
         } };
-      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${doorsSay}${outSays}${outHealth}`,
+      // Away from a warden, beyond its boom: the one way out that is not a
+      // door past it (note 412).
+      const wardenAbout = threats(bot, 32).filter(t => t.entity.name === 'warden').sort((a, b) => a.distance - b.distance)[0];
+      const away = wardenAbout && !inWater(bot) && typeof this.actions.dig === 'function' && typeof this.actions.navigate === 'function' ? this.passageOut(wardenAbout, { clear: BOOM_ACROSS + 2, max: 24 }) : null;
+      if (away) options.tunnel_from_warden = { description: `Dig a passage out through the pocket's ${away.direction} wall, away from the warden: one wide and two high, ${away.cells} blocks, about ${Math.round(away.cells * 2.5)} seconds, ending ${away.clearance} blocks across from where it is now, beyond its boom's ${BOOM_ACROSS}; then go back to work from there. Digging is a vibration the warden hears and comes toward. No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if the warden comes round toward its head within six blocks.` + wardenSays(bot) + outHealth,
+        run: async () => {
+          delete this.state.watchedSince;
+          if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_from_warden' };
+          return this.tunnelOut(task, goal, save, refuge, wardenAbout, away);
+        } };
+      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${doorsSay}${outSays}${outHealth}` + wardenSays(bot),
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the

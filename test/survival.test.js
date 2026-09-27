@@ -3606,3 +3606,25 @@ test('the night\'s shaft pocket is not dug with a witch in sight and in range; a
   await survival.digShaft(new Task('stance'), {}, () => {}, { ...column, here: column.start, spot: 'x', stance: true });
   assert(dug.length > 0);
 });
+
+test('sealed in with a warden about, the pocket\'s choices say its boom goes through the wall, and the hits taken', async () => {
+  // mid-230-n stayed in a pocket two minutes told only that a warden was outside, and was boomed through the wall three times (2026-09-27).
+  const origin = new Vec3(0, -25, 0);
+  const warden = { id: 7, name: 'warden', type: 'hostile', position: new Vec3(8.5, -25, 0.5), height: 2.9, width: 0.9, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: { 7: warden }, health: 10, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 16000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20, _sonicBooms: [Date.now() - 5000],
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ name: p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'air' : 'stone', boundingBox: p.equals(origin) || p.equals(origin.offset(0, 1, 0)) ? 'empty' : 'block', diggable: true, hardness: 1.5, position: p }),
+    world: { raycast: (from) => ({ intersect: from.offset(0.6, 0, 0) }) } });
+  const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {} }, { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld' }] }, client: { systemOne: async () => ({}) } });
+  let tree;
+  survival.decide = async (task, goal, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['stay'], stale: false }; };
+  survival.wait = async () => {};
+  await survival.step(new Task('night'), { kind: 'win' }, () => {});
+  for (const key of ['stay', 'leave']) {
+    assert.match(tree?.[key]?.description || '', /sonic boom that passes through blocks and armour/, key);
+    assert.match(tree[key].description, /The warden is 8 blocks off, within the boom's reach\. The bot has been hit by the boom once in the last minute\./, key);
+  }
+  // And a way away from it, beyond the boom, that is not a door past it.
+  assert.match(tree.tunnel_from_warden?.description || '', /pocket's west wall, away from the warden: one wide and two high, 9 blocks, .* ending 17 blocks across from where it is now, beyond its boom's 15/);
+});

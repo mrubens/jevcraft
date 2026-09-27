@@ -67,6 +67,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const type = bot._damageTypeNames?.[packet.sourceTypeId];
     if (type === 'freeze') bot._freezingAt = Date.now();
     if (type === 'in_fire') bot._inFireAt = Date.now();
+    // A warden's boom, counted for the pocket's question (survival.js
+    // wardenSays): mid-230-n was boomed through its pocket's wall and asked
+    // again told nothing of it (note 412).
+    if (type === 'sonic_boom') (bot._sonicBooms ||= []).push(Date.now());
   });
   bot._client.on('registry_data', packet => { if (/damage_type/.test(String(packet?.id || '')) && Array.isArray(packet.entries)) packet.entries.forEach((e, i) => { bot._damageTypeNames[i] = String(e.key || e.id || '').replace('minecraft:', ''); }); });
   bot.on('physicsTick', () => { if (!ended) observeAliveInventory(bot); });
