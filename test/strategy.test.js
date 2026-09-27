@@ -420,3 +420,20 @@ test('a base begun in an older world is offered from where it stopped, and chose
   await strategyStep(bot, task, goal, () => {}, stage, { decide, now: () => 1e12 + 60000 });
   assert.equal(asked.length, 1, 'held like a rung');
 });
+
+test('the bed is weighed with what a night costs without one', () => {
+  // Nights were 62 of mid-211-o's 180 minutes and the most of mid-230-o's (2026-09-27).
+  const { RUNG_WHY, WITHOUT } = require('../src/strategy');
+  assert.match(RUNG_WHY.bed, /eight and a half real minutes .* an hour of play has three nights/);
+  assert.match(WITHOUT.bed, /eight and a half to eleven real minutes a night and three nights to an hour of play/);
+});
+
+test('a wool search left off long ago is not said as one going on for hours', () => {
+  // A search carried from the first days' world said "searching for sheep for 1033 minutes" to a run an hour old (2026-09-27).
+  const { rungOption } = require('../src/strategy');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0, 64, 0) }, inventory: { items: () => [] }, game: { dimension: 'overworld' } };
+  const goal = { woolSearch: { since: Date.now() - 1033 * 60000, from: { x: 0, y: 64, z: 0 } }, sightings: [] };
+  const says = JSON.stringify(rungOption({ phase: 'bed', action: 'gather_wool', item: 'white_bed' }, true, bot, goal, null));
+  assert.doesNotMatch(says, /1033 minutes/);
+});

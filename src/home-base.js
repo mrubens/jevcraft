@@ -817,7 +817,12 @@ async function buildPen(bot, task, goal, save, home, actions) {
 // pick holds until the bot is there or the walk fails. Without Jev, explore.
 const BIOME_REST_MS = 10 * 60000;
 async function searchForSheep(bot, task, goal, save, actions) {
+  // A search last worked on over half an hour ago is a new search: one
+  // carried from the first days' world said "searching for sheep for 1033
+  // minutes" to a run an hour old (note 450).
+  if (goal.woolSearch && Date.now() - (goal.woolSearch.lastAt || goal.woolSearch.since) > 30 * 60000) delete goal.woolSearch;
   const search = goal.woolSearch ||= { since: Date.now(), from: plain(bot.entity.position.floored()) };
+  search.lastAt = Date.now();
   const held = search.toward;
   // A flock is walked to where it was, height and all: seen from a mine
   // below, "back to the sheep" by x and z alone ended under them sixty
@@ -958,7 +963,11 @@ async function gatherWool(bot, task, goal, save, home, actions) {
   goal.step = { action: 'gather_wool', target: sheep ? plain(sheep.position.floored()) : null, carried: before }; save();
   // How long, and how far, without a sheep in sight (strategy.js says it).
   if (sheep) delete goal.woolSearch;
-  else goal.woolSearch ||= { since: Date.now(), from: plain(bot.entity.position.floored()) };
+  else {
+    if (goal.woolSearch && Date.now() - (goal.woolSearch.lastAt || goal.woolSearch.since) > 30 * 60000) delete goal.woolSearch;
+    goal.woolSearch ||= { since: Date.now(), from: plain(bot.entity.position.floored()) };
+    goal.woolSearch.lastAt = Date.now();
+  }
   if (!sheep) { await searchForSheep(bot, task, goal, save, actions); return; }
   const where = sheep.position.clone();
   // A sheep that could not be had rests; the next try is another sheep, not

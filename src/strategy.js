@@ -37,7 +37,10 @@ const fatal = err => ['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name
 const label = phase => phase.replaceAll('_', ' ');
 
 const RUNG_WHY = {
-  bed: 'a night slept passes in seconds and sets the spawn point; three wool from sheep or crafted from spiders\' string (four string a wool), or a bed from a village',
+  // What a night costs without one, said where the bed is weighed: nights
+  // were sixty-two of mid-211-o's hundred and eighty minutes and the most of
+  // mid-230-o's (notes 428, 449; the Fable advice).
+  bed: 'a night slept passes in seconds, where one spent awake is about eight and a half real minutes from bedtime (eleven from dusk) sealed in or night-mining, and a Minecraft day is twenty real minutes, so an hour of play has three nights; it also sets the spawn point; three wool from sheep or crafted from spiders\' string (four string a wool), or a bed from a village',
   iron_pickaxe: 'mines the iron for armour and the diamonds past it',
   iron_armour: 'a helmet, chestplate, leggings and boots, twenty-four ingots in all; worn, they take about half off a mob\'s hit and an eighth off a creeper\'s blast',
   copper_armour: 'a helmet, chestplate, leggings and boots of copper, twenty-four copper ingots (copper ore is common in caves near the surface, two to five raw copper a block); worn, ten armour points: a zombie\'s hit of three comes down to two, an arrow of four to under three, until the iron armour replaces it',
@@ -71,7 +74,7 @@ const RUNG_WHY = {
 const WITHOUT = {
   stone_pickaxe: 'no stone, coal or iron can be mined',
   stone_sword: 'every fight is with bare hands',
-  bed: 'each night is spent awake, walled in or fighting, and a death respawns at the world spawn',
+  bed: 'each night is spent awake, walled in or fighting, about eight and a half to eleven real minutes a night and three nights to an hour of play, and a death respawns at the world spawn',
   iron_pickaxe: 'no diamond, gold or redstone can be mined',
   shield: 'every arrow and every creeper blast lands in full',
   iron_armour: 'every hit lands on what is worn now',
@@ -102,6 +105,8 @@ function oreFacts(bot, goal, steps) {
 function searchSoFar(bot, goal, rung) {
   const search = rung.action === 'gather_wool' && goal.woolSearch;
   if (!search) return '';
+  // Not a search left off over half an hour ago (note 450).
+  if (Date.now() - (search.lastAt || search.since) > 30 * 60000) return '';
   const minutes = Math.round((Date.now() - search.since) / 60000);
   const blocks = Math.round(Math.hypot(bot.entity.position.x - search.from.x, bot.entity.position.z - search.from.z));
   const flocks = require('./sightings').sighted(bot, goal, 'sheep');
