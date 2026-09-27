@@ -115,3 +115,15 @@ test('with no sheep about and cobwebs in view, cutting them for string is Jev\'s
   assert.equal(state.timeOfDay, 14000);
   assert.equal(cut.length, 3, 'all three cut: ten were wanted');
 });
+
+test('a herd seen earlier says the hostiles near the way there', async () => {
+  // mid-218-g ran from a skeleton, then chose sheep sixty blocks past it, told nothing of it, and was shot.
+  const { forageChoices } = require('../src/foraging');
+  const reg = require('minecraft-data')('26.1');
+  const skeleton = { id: 9, name: 'skeleton', type: 'hostile', position: new Vec3(40, 64, 4), height: 1.99, isValid: true };
+  const bot = { registry: reg, entity: { position: new Vec3(0, 64, 0) }, game: { dimension: 'overworld' }, entities: { 9: skeleton }, time: { timeOfDay: 4000 },
+    inventory: { items: () => [] }, blockAt: () => null, findBlocks: () => [], pathfinder: { movements: {} }, world: { raycast: () => null } };
+  const goal = { sightings: { cow: [{ x: 90, y: 64, z: 0, count: 3, at: Date.now() - 120000, dimension: 'overworld' }] } };
+  const choices = await forageChoices(bot, { check() {} }, goal, () => {}, { navigate: async () => {} }, {});
+  assert.match(choices.seen_food_0?.description?.passes || '', /a skeleton 4 blocks from the way, 40 blocks along it/);
+});

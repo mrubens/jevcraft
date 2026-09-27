@@ -193,10 +193,22 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   // cows at seven health, hunger sixteen, at night met a skeleton and two
   // zombies on the way.
   const { DAY } = require('./day');
-  const walkFacts = distance => {
+  // The hostiles near the straight way there, in view or not: mid-218-g ran
+  // from a skeleton, then chose sheep sixty blocks on the far side of it,
+  // told nothing of it, and was shot on the way back (2026-09-27).
+  const passes = to => {
+    if (!to) return {};
+    const from = bot.entity.position, dx = to.x - from.x, dz = to.z - from.z, len = Math.hypot(dx, dz) || 1;
+    const near = require('./danger').hostileEntities(bot, 96).map(e => {
+      const t = Math.max(0, Math.min(1, ((e.position.x - from.x) * dx + (e.position.z - from.z) * dz) / (len * len)));
+      return { e, off: Math.hypot(from.x + dx * t - e.position.x, from.z + dz * t - e.position.z), along: Math.round(t * len) };
+    }).filter(n => n.off <= 10).sort((a, b) => a.along - b.along);
+    return near.length ? { passes: near.slice(0, 4).map(n => `a ${n.e.name.replaceAll('_', ' ')} ${Math.round(n.off)} blocks from the way, ${n.along} blocks along it`).join('; ') } : {};
+  };
+  const walkFacts = (distance, to = null) => {
     const seconds = Math.round(distance / 4.3), tod = bot.time?.timeOfDay ?? 6000;
     const dark = tod >= DAY.DARK && tod < DAY.DAWN;
-    return { walkSeconds: seconds, ...(dark ? { dark: 'night: mobs spawn along the way' } : tod + seconds * 20 >= DAY.DARK && tod < DAY.DARK ? { dark: 'arrives after dark' } : {}),
+    return { walkSeconds: seconds, ...passes(to), ...(dark ? { dark: 'night: mobs spawn along the way' } : tod + seconds * 20 >= DAY.DARK && tod < DAY.DARK ? { dark: 'arrives after dark' } : {}),
       healthNow: Math.round(bot.health ?? 20), ...((bot.food ?? 20) < 18 ? { healing: `none meanwhile: hunger ${bot.food}, below eighteen` } : {}) };
   };
   const home = homeFood(bot, goal);
@@ -231,7 +243,7 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   const herds = ['cow', 'sheep'].flatMap(kind => sightings.sighted(bot, goal, kind).filter(s => s.distance > 32 && s.distance <= 192).map(s => ({ kind, s })))
     .sort((a, b) => a.s.distance - b.s.distance).slice(0, 3);
   herds.forEach(({ kind, s }, i) => {
-    choices[`seen_food_${i}`] = { description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo, ...walkFacts(s.distance) },
+    choices[`seen_food_${i}`] = { description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo, ...walkFacts(s.distance, s) },
       run: async () => {
         goal.survivalAction = { action: 'search_food', toward: { x: s.x, y: s.y, z: s.z }, animal: kind, at: new Date().toISOString() }; save();
         task.interruptCheck = () => checkThreats(bot);
