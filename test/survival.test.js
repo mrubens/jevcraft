@@ -3711,3 +3711,21 @@ test('running from a shooter, no footing beside a drop into lava is chosen: its 
   assert(near.length > 0);
   assert(![...near, ...far].some(beside), `none by the lava: ${[...near, ...far].filter(beside).map(String).slice(0, 3)}`);
 });
+
+test('at bedtime in a pocket on open ground, with a bed carried and no nook, sleeping beside it is offered', async () => {
+  // mid-211-o carried a bed three hours and was never offered sleep from a pocket; nights were 62 of its 180 minutes (2026-09-27).
+  const origin = new Vec3(0, 64, 0);
+  const shell = new Set(require('../src/shelter').shell(origin).map(String));
+  const blockAt = p => { const f = p.floored(); const solid = f.y < 64 || shell.has(`${f}`); return { position: f, name: solid ? (f.y < 64 ? 'grass_block' : 'cobblestone') : 'air', boundingBox: solid ? 'block' : 'empty', diggable: true }; };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 13000, isDay: false }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'white_bed', count: 1 }, { name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] },
+    blockAt, world: { raycast: () => null } });
+  const survival = new Survival(bot, { dig: async () => {}, place: async () => {}, navigate: async () => {} }, { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld', verifiedAt: new Date().toISOString() }] }, client: { systemOne: async () => ({}) } });
+  let tree = null;
+  survival.decide = async (task, goal, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['stay'], stale: false }; };
+  survival.wait = async () => {};
+  await survival.step(new Task('night'), { kind: 'win' }, () => {});
+  assert(tree, 'asked what next in the pocket');
+  assert.match(tree.sleep_beside?.description || '', /put the carried bed down on level ground beside it, \d+ blocks off, and sleep/, Object.keys(tree).join(','));
+});

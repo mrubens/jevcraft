@@ -503,6 +503,24 @@ function bedSite(bot) {
   }
   return null;
 }
+// Two level cells for the bed within a few blocks, with a cell beside them
+// to stand in: from a pocket, out past its walls (sleep_beside).
+function bedSiteNear(bot, radius = 4) {
+  const here = bot.entity.position.floored();
+  const floor = p => bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block';
+  const free = p => { const b = bot.blockAt(p); return !!b && b.boundingBox === 'empty' && !/water|lava/.test(b.name); };
+  const room = p => floor(p) && free(p) && free(p.offset(0, 1, 0));
+  const sites = [];
+  for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (let dy = -1; dy <= 1; dy++) {
+    const stand = here.offset(dx, dy, dz);
+    if ((Math.abs(dx) <= 1 && Math.abs(dz) <= 1) || !room(stand)) continue;
+    for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const foot = stand.offset(ax, 0, az), head = stand.offset(2 * ax, 0, 2 * az);
+      if (room(foot) && room(head)) sites.push({ stand, foot, head });
+    }
+  }
+  return sites.sort((a, b) => a.stand.distanceTo(here) - b.stand.distanceTo(here))[0] || null;
+}
 // A bed nook: where no two level cells lie beside the feet (a staircase, a
 // shaft, a one-by-two pocket), the two are dug out of the rock as a player
 // does underground, the foot beside the bot and the head past it, each with
@@ -3582,6 +3600,26 @@ class Survival {
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
           delete this.state.bedNookPlan; return true;
         } };
+      // No nook to be had (a pocket built on open ground has no rock round
+      // the cells for one): the carried bed put down beside the pocket, as
+      // at any bedtime outside. mid-211-o carried a bed through three hours
+      // and was never offered sleep from a pocket; nights were sixty-two of
+      // its hundred and eighty minutes (note 428).
+      if (!options.sleep_in_nook && carried && sleepable(bot) && !isSetAside(this, 'bed_out', 'here')) {
+        const site = bedSiteNear(bot);
+        if (site) {
+          const near = monstersByBed(bot, site.foot);
+          options.sleep_beside = { description: `Open the pocket, put the carried bed down on level ground beside it, ${Math.round(site.foot.distanceTo(bot.entity.position))} blocks off, and sleep: the night passes in seconds, instead of about ${minutesToDawn(bot)} real minutes in the pocket; the bed is picked back up after. Sleep is refused while a monster is within about eight blocks sideways and five up or down of the bed (vanilla), seen or not: ${near ? `${near} ${near === 1 ? 'is' : 'are'} now` : 'none now'}. Out of the pocket until the bed is down and slept in.${outside}`,
+            run: async () => {
+              await this.leave(task, goal, save, refuge, 'Off to bed.', { past: true });
+              try {
+                await this.actions.navigate(bot, task, new goals.GoalBlock(site.stand.x, site.stand.y, site.stand.z), { timeoutMs: 10000, stallMs: 3000 });
+                await this.sleepStep(task, goal, save);
+              } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'bed_out', 'here', err, 180000); }
+              return true;
+            } };
+        }
+      }
       if (watcher && watcher.distance <= 4.5 && /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '') && typeof this.actions.dig === 'function')
         options.open_on_watcher = { description: `Open the wall toward ${who} and fight it at the gap.${watcher.entity.name === 'creeper' ? ' A creeper at the gap goes off.' : ''}`,
           run: () => this.openOnWatcher(task, goal, save, refuge, watcher, { chosen: true }) };

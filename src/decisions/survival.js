@@ -72,6 +72,7 @@ define({
   trigger: 'Each survival step inside a sealed pocket, unless a mob is inside or at arm\'s length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.',
   source: 'src/survival.js (stepOnce: the pocket)',
   options: [
+    { key: 'sleep_beside', label: 'open the pocket, put the carried bed down beside it and sleep', when: 'at bedtime in the Overworld with a bed carried and no nook to be had, level ground for the bed beside the pocket; said with the monsters within the vanilla sleep range now', level: 'root' },
     { key: 'go_to_bed', label: 'open the pocket and go to the bed', when: 'bedtime, with the base bed near (on the surface or within ten blocks of its level) or a bed carried on the surface', level: 'root' },
     { key: 'sleep_in_nook', label: 'dig a bed nook out of the pocket\'s wall and sleep in the carried bed', when: 'bedtime, a bed carried, and a nook beside the bot closed in rock all round, so the pocket stays shut (its wall goes back after); taken without asking when the shelter method chosen tonight was the bed nook; the monsters within eight blocks sideways and five up or down of the bed are counted in the option', level: 'root' },
     { key: 'open_on_watcher', label: 'open the wall toward the watching mob and fight it', when: 'a mob within four and a half blocks and a sword or axe carried', level: 'root' },
