@@ -435,6 +435,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `spare_pickaxe` | root | make a spare stone pickaxe now | every pickaxe carried has under twenty-four uses left and cobblestone and sticks (or wood) are carried |
 | `wood_reserve` | root | cut a few logs now | on the game ladder, fewer than three logs' worth of wood carried, in the Overworld |
 | `block_reserve` | root | gather building blocks now | on the game ladder, fewer than sixteen building blocks carried |
+| `take_bed` | root | take the base's bed along now | on the game ladder in the Overworld, the base's bed standing within a short walk and none carried |
+| `food_reserve` | root | find food before dark | on the game ladder in the Overworld, less than a kit's food carried in the last minutes of daylight |
 | `carry_on` | root | carry on and see to it later | always; asked again in five minutes |
 
 ### `opportunistic_ore`

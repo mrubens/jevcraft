@@ -292,6 +292,8 @@ define({
     { key: 'spare_pickaxe', label: 'make a spare stone pickaxe now', when: 'every pickaxe carried has under twenty-four uses left and cobblestone and sticks (or wood) are carried', level: 'root' },
     { key: 'wood_reserve', label: 'cut a few logs now', when: 'on the game ladder, fewer than three logs\' worth of wood carried, in the Overworld', level: 'root' },
     { key: 'block_reserve', label: 'gather building blocks now', when: 'on the game ladder, fewer than sixteen building blocks carried', level: 'root' },
+    { key: 'take_bed', label: 'take the base\'s bed along now', when: 'on the game ladder in the Overworld, the base\'s bed standing within a short walk and none carried', level: 'root' },
+    { key: 'food_reserve', label: 'find food before dark', when: 'on the game ladder in the Overworld, less than a kit\'s food carried in the last minutes of daylight', level: 'root' },
     { key: 'carry_on', label: 'carry on and see to it later', when: 'always; asked again in five minutes', level: 'root' },
   ],
   instructions: workInstructions('Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work; each option says what is carried and what it is for.'),

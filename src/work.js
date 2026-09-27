@@ -316,6 +316,9 @@ async function maintainBlocks(bot, task, goal, save) {
 // asked when one falls short, with what is carried, and "carry on" holds
 // for five minutes. Without Jev, the old order: pickaxe, wood, blocks.
 const UPKEEP_HOLD_MS = 5 * 60 * 1000;
+// The base's bed is offered to take along within a short walk; food before
+// dark within the last few minutes of day.
+const NEAR_BED = 64, FOOD_BEFORE_DUSK_S = 180;
 async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy');
   const options = {};
@@ -336,6 +339,23 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   };
   if (goal.kind === 'win' && woodDue(bot, goal)) options.wood_reserve = { description: `Cut a few logs now: ${Math.floor(woodUnits(bot) * 10) / 10} logs' worth of wood carried, and ${WOOD_RESERVE} make the sticks for three pickaxes and a crafting table wherever the bot is.${where()} The pickaxes carried: ${worn.join(', ') || 'none'}.`, run: () => gatherWood(bot, task, goal, save) };
   if (goal.kind === 'win' && blocksDue(bot, goal)) options.block_reserve = { description: `Gather building blocks now: ${blockStock(bot)} carried, and ${BLOCK_RESERVE} seal a pocket for the night or tower out of a hole.`, run: () => gatherBlocks(bot, task, goal, save) };
+  // Two things a night asks for, seen to before it comes (the user,
+  // 2026-09-26): the base's bed taken along while it is near, and food
+  // enough to heal on. The evening's deaths were out at night, too hungry
+  // to heal (hunger under eighteen) with nothing to eat, among crowds.
+  if (goal.kind === 'win' && /overworld/.test(String(bot.game?.dimension || ''))) {
+    const hb = require('./home-base'), home = hb.homeOf(bot, goal);
+    const standing = home?.bed ? hb.bedStatus(bot, home) : null;
+    if (home?.bed?.claimedAt && standing?.placed && !standing.carried && !hb.bedCarried(bot) && !home.bed.carriedAt) {
+      const foot = hb.layout(home).bed.foot, far = Math.round(new Vec3(foot.x, foot.y, foot.z).distanceTo(bot.entity.position));
+      if (far <= NEAR_BED) options.take_bed = { description: `Take the base's bed along now, ${far} blocks away, before going on: then any night passes in seconds wherever it comes, instead of about seven real minutes in a pocket or a night mine. The spawn point goes wherever the bot last slept, and a death drops the bed with everything else.${tripTime(bot, far)}`,
+        run: async () => { for (let i = 0; i < 4; i++) if (await hb.takeHomeBed(bot, task, goal, save, { navigate, dig, collectNearbyDrops })) return; } };
+    }
+    const { foodSupply } = require('./foraging'), { KIT_FOOD_POINTS } = require('./home-stash');
+    const carried = foodSupply(bot), t = bot.time?.timeOfDay ?? 0, toDusk = Math.round(Math.max(0, DAY.DUSK - t) / 20);
+    if (carried < KIT_FOOD_POINTS && t < DAY.DUSK && toDusk <= FOOD_BEFORE_DUSK_S && !goal.stockFood) options.food_reserve = { description: `Find food before dark: ${carried} food points carried, hunger ${bot.food}, dusk in about ${toDusk} seconds. Health comes back only while hunger is eighteen or more; a night's fights at lower hunger are fought without healing.`,
+      run: async () => { goal.stockFood = true; save(); } };
+  }
   const due = Object.keys(options);
   if (!due.length) return false;
   const keys = due.sort().join(',');

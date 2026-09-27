@@ -311,3 +311,19 @@ test('with the portal frame to be cast, the water bucket is said to be what turn
   assert.match(offered.drop_0 || '', /turns each block of the portal frame being cast to obsidian/);
   assert.match(offered.drop_2 || '', /a bucket for the lava of the portal frame/);
 });
+
+test('before dark, food enough to heal on and the base bed near are offered with the upkeep', async () => {
+  // The evening's deaths: out at night, too hungry to heal, nothing to eat; nights spent in pockets.
+  const { upkeepStep } = require('../src/work');
+  const { establishedHome } = require('./fixtures/home-world');
+  const w = await establishedHome();
+  w.bot.time.timeOfDay = 9000; w.bot.food = 16;
+  let offered = null;
+  const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'carry_on', confidence: 0.7 } } }; } };
+  const goal = { ...w.goal, kind: 'win', step: { action: 'mine', block: 'iron_ore' } };
+  await upkeepStep(w.bot, { check() {} }, goal, () => {}, client);
+  assert(offered?.food_reserve, Object.keys(offered || {}).join(','));
+  assert.match(offered.food_reserve, /Find food before dark: 0 food points carried, hunger 16, dusk in about \d+ seconds/);
+  assert(offered.take_bed, 'the base bed, a short walk away');
+  assert.match(offered.take_bed, /any night passes in seconds wherever it comes/);
+});
