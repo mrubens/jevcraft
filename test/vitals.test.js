@@ -549,3 +549,14 @@ test('told by the server it is freezing, the bot leaves the snow though the bloc
   assert.equal(went.length, 1, 'walked out');
   assert(Math.abs(went[0].x) >= 4, `to firm ground clear of the snow: ${went[0].x}`);
 });
+
+test('suffocation is tested as the game does, a box round the eye: a block in the next column counts', () => {
+  // mid-205-l rejoined with its eye at x -368.9, the box reaching into gravel at x -370, and suffocated with its eye's cell open.
+  const { suffocatingBlock } = require('../src/vitals');
+  const bot = { entity: { position: new Vec3(-368.9, 67, 577.5), width: 0.6, eyeHeight: 1.62 },
+    blockAt: p => { const q = p.floored(); const name = q.x === -370 ? 'gravel' : 'air'; return { name, position: q, boundingBox: name === 'air' ? 'empty' : 'block' }; } };
+  assert.equal(suffocatingBlock(bot)?.name, 'gravel');
+  assert.equal(suffocatingBlock(bot).position.x, -370);
+  bot.entity.position = new Vec3(-368.5, 67, 577.5);
+  assert.equal(suffocatingBlock(bot), null, 'centred in its cell: clear');
+});

@@ -14,11 +14,24 @@ class NeedsAir extends Error {
 // (2026-09-24). Counted as needing air, so work stops, and the block is dug.
 // Only while it is hurting (suffocation is a point every half second): a
 // position read mid-step inside a block's corner is not suffocation.
+// The game's test is a small box round the eye, four fifths of the body's
+// width, not the eye's cell alone: mid-205-l rejoined with its eye at x
+// -368.9, the box reaching into gravel in the next column, and suffocated
+// with its eye's own cell open, nothing dug (2026-09-27).
+const SOLID_FOR_BREATH = b => !!b && b.boundingBox === 'block' && !/_leaves$|glass|slab|stairs|fence|wall|door|trapdoor|scaffolding|chest|bed$/.test(b.name);
+function suffocatingBlock(bot) {
+  const eye = bot.entity?.position?.offset(0, bot.entity.eyeHeight || 1.62, 0);
+  if (!eye || typeof bot.blockAt !== 'function') return null;
+  const r = (bot.entity.width ?? 0.6) * 0.4;
+  const cells = [];
+  for (const dx of [-r, r]) for (const dz of [-r, r]) { const c = eye.offset(dx, 0, dz).floored(); if (!cells.some(q => q.equals(c))) cells.push(c); }
+  cells.sort((a, b) => a.offset(0.5, 0.5, 0.5).distanceTo(eye) - b.offset(0.5, 0.5, 0.5).distanceTo(eye));
+  for (const c of cells) { const b = bot.blockAt(c); if (SOLID_FOR_BREATH(b)) return b; }
+  return null;
+}
 function headInBlock(bot) {
   if (!(bot._recentHurtAt > Date.now() - 2000)) return false;
-  const eye = bot.entity?.position?.offset(0, bot.entity.eyeHeight || 1.62, 0);
-  const b = eye && bot.blockAt?.(eye.floored());
-  return !!b && b.boundingBox === 'block' && !/_leaves$|glass|slab|stairs|fence|wall|door|trapdoor|scaffolding|chest|bed$/.test(b.name);
+  return !!suffocatingBlock(bot);
 }
 function needsAir(bot) { return bot.oxygenLevel <= 12 || headInBlock(bot); }
 // In lava, whatever the step: every dig and walk checks breath here, and
@@ -537,8 +550,8 @@ async function maintainVitals(bot, task, onAction = () => {}) {
     if (task.cancelled) throw new (require('./skills').Cancelled)(task.label);
     if (headInBlock(bot) || (digging && eyeBlocked())) {
       tries++;
-      const eye = eyeCell(), block = bot.blockAt(eye);
-      onAction({ action: 'dig_out_of_block', block: block.name, at: { ...eye } });
+      const block = suffocatingBlock(bot) || bot.blockAt(eyeCell()), eye = block.position;
+      onAction({ action: 'dig_out_of_block', block: block.name, at: { x: eye.x, y: eye.y, z: eye.z } });
       try { await require('./skills').equipBestTool(bot, block); } catch (_) { /* the hand, then */ }
       try { await bot.dig(block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
       await sleep(150);
@@ -595,4 +608,4 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   return true;
 }
 
-module.exports = { douse, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
+module.exports = { suffocatingBlock, douse, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir };
