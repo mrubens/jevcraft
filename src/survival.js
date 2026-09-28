@@ -1082,6 +1082,13 @@ function costSays(cost, health, mobs, { doing = null, done = null, over = 'in th
   const poison = cost.poison > 0 ? Math.round(Math.min(cost.poison, Math.max(0, health - 1)) * 10) / 10 : 0;
   const poisonSays = poison > 0 ? ` About ${poison} of it is poison (one health every 1.25 seconds, only while health is above 1: it leaves the bot at 1 or just under, and the next bite or hit kills).` : '';
   let s = ` About ${damage} damage from the mobs here ${over}${setupSays}, from ${h} health${damage >= health ? ' (more than the bot has)' : ''}.${poisonSays}`;
+  // A figure that leaves less health than one blow of the mobs about is a
+  // coin toss, said as one: the price is an average over blows that land
+  // three at a time. mid-242-ab-nether-3-fortress-6's bunker was told "about
+  // 14.1 damage ... from 14.3 health" beside options that were each more than
+  // the bot had, was taken, and five blows of three ended it (note 628).
+  const blow = Math.max(0, ...mobs.filter(m => !m.apart && !['creeper', 'warden', 'ghast'].includes(m.name)).map(m => m.jab ?? m.hitsBot ?? 0));
+  const margin = damage > 0 && damage < health && blow > 0 && health - damage < blow ? ` That leaves ${Math.round((health - damage) * 10) / 10} health, less than the ${Math.round(blow * 10) / 10} of one blow: one blow more than the figure counts, or one landing sooner than it does, ends the bot.` : '';
   // The biters out of sight further off that can come in while the bot
   // builds or digs, said as counted (farBiters, note 581).
   const farIn = cost.farIn || [];
@@ -1093,7 +1100,7 @@ function costSays(cost, health, mobs, { doing = null, done = null, over = 'in th
   const laterSays = later.length ? `; ${later.length > 1 ? `${later.slice(0, -1).join(', ')} and ${later.at(-1)}` : later[0]} reach${later.length === 1 ? 'es' : ''} it again, counted from then` : '';
   const stillOf = cost.stillMobs || mobs;
   if (done && cost.setup < cost.seconds) s += cost.still.length ? ` ${done}, ${mobList(cost.still, stillOf)} still reach${cost.still.length === 1 && stillOf.filter(m => m.name === cost.still[0]).length === 1 ? 'es' : ''} it${laterSays}.` : ` ${done}, none of them reaches it${later.length ? ' at first' : ''}${laterSays}.`;
-  return s;
+  return s + margin;
 }
 // The biters out of sight but near, with a way to the bot (walk-reach.js;
 // a spider climbs, so is never judged apart): within the eight a biter is

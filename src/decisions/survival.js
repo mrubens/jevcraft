@@ -223,7 +223,7 @@ define({
   trigger: 'A stall while the bot is in water, or under cover on the way up (the survival layer\'s stall, or the work stall\'s work_free answer): each move asked in turn until the bot is out, twenty-four moves pass, or four in a row change nothing.',
   source: 'src/unstuck.js (localMoves)',
   options: [
-    { pattern: '(step|climb|place)_(north|east|south|west)', label: 'walk, climb or place a block that way', when: 'the cells that way allow it', level: 'root', dynamic: true },
+    { pattern: '(step|climb|place|bridge)_(north|east|south|west)', label: 'walk, climb, place a block or bridge a gap in the floor that way', when: 'the cells that way allow it', level: 'root', dynamic: true },
     { pattern: 'dig_(north|east|south|west)_(feet|head|over)', label: 'dig the block that way', when: 'a natural block there, and a tool for it if it needs one', level: 'root', dynamic: true },
     { pattern: 'dig_up|dig_down|swim_up|pillar', label: 'dig over the head or underfoot, swim up, or pillar', when: 'what is over the head or underfoot allows it', level: 'root', dynamic: true },
   ],

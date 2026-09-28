@@ -30,12 +30,14 @@ const shotsAt = bot => {
   }).length;
 };
 
-function riskNow(bot, { radius = 24, dark = null } = {}) {
+// The hostile mobs within `radius` (the shooters to forty-eight), those with
+// a way to the bot and those with none, and the fight's estimate over them
+// all at the health the bot has: what riskNow and standingAmong work from.
+function mobsAbout(bot, radius = 24) {
   const about = threats(bot, Math.max(radius, SHOOTER_REACH)).filter(t => t.distance <= radius || shooter(t.entity));
-  const shots = shotsAt(bot);
   const armour = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
   const weapon = require('./combat').defenseWeapon(bot)?.name || null;
-  const health = bot.health ?? 20, food = bot.food ?? 20;
+  const health = bot.health ?? 20;
   // Fighting them all is meeting them all, so the shooters behind a wall
   // count as in sight: first-days-201, sealed in a pocket with three
   // skeletons it could not see, was told "low: a fight the bot wins, 2.5
@@ -49,6 +51,13 @@ function riskNow(bot, { radius = 24, dark = null } = {}) {
   try { apart = require('./danger').noWayIds(bot, about); } catch (_) { apart = new Set(); }
   const reach = about.filter(t => !apart.has(t.entity.id));
   const estimate = fightEstimate({ threats: [...reach, ...about.filter(t => apart.has(t.entity.id))].slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true, ...(apart.has(t.entity.id) ? { apart: true } : {}) })), armour, weapon, health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
+  return { about, apart, reach, estimate, health };
+}
+
+function riskNow(bot, { radius = 24, dark = null } = {}) {
+  const shots = shotsAt(bot);
+  const { about, apart, reach, estimate, health } = mobsAbout(bot, radius);
+  const food = bot.food ?? 20;
   const t = bot.time?.timeOfDay ?? 0;
   const surface = (bot.blockAt?.(bot.entity.position.floored())?.skyLight ?? 15) >= 8;
   const spawning = dark ?? ((t >= DAY.NIGHT && t < DAY.DAWN && surface) || !surface);
@@ -112,4 +121,28 @@ function deathCost(bot, goal = {}, survival = goal.survival || {}) {
   };
 }
 
-module.exports = { riskNow, deathCost };
+// What standing where the bot is for `seconds` costs among the mobs about, for
+// an option that stands it there (a batch cooked at a furnace put down here,
+// a wait to heal): every biter that gets to it in that time, from when it
+// does, the hands busy, none fought; the shooters in sight from when they
+// are in range. Null with no mob about that can get to it. mid-242-ab-nether-
+// 3-fortress-6 (note 628) was asked whether to cook seven mutton for 72
+// seconds at a furnace put down where it stood, at 14.3 health, hunger 17,
+// no armour, with two zombies in sight at 10 and 20 blocks and nine shooters
+// within 48; the option said "with no walk" and nothing of who was coming,
+// and the first zombie was at it three seconds after the furnace was down.
+function standingAmong(bot, seconds, { what = 'here', radius = 24 } = {}) {
+  let about;
+  try { about = mobsAbout(bot, radius); } catch (_) { return null; }
+  const { reach, estimate, health } = about;
+  if (!reach.length || !(seconds > 0)) return null;
+  const { stanceCost } = require('./combat-estimate');
+  const cost = stanceCost({ mobs: estimate.mobs.filter(m => !m.apart), setup: seconds, seconds, health });
+  const said = require('./arbiter').mobWouldSays;
+  const line = t => `${/^[aeiou]/.test(t.entity.name) ? 'an' : 'a'} ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? '' : ' (out of sight)'}, ${said(t)}`;
+  const n = reach.length, h = Math.round(health * 10) / 10;
+  const says = `Standing ${what} for those ${Math.round(seconds)} seconds with ${n} hostile ${n === 1 ? 'mob' : 'mobs'} that can get to the bot within ${radius} blocks (the shooters to ${SHOOTER_REACH}): ${reach.slice(0, 4).map(line).join('; ')}${n > 4 ? `; ${n - 4} more` : ''}. About ${cost.damage} damage from them over those seconds if none is fought, from ${h} health${cost.damage >= health ? ' (more than the bot has)' : ''}.`;
+  return { says, damage: cost.damage, count: n };
+}
+
+module.exports = { riskNow, deathCost, standingAmong, mobsAbout };

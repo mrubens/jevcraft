@@ -2145,6 +2145,10 @@ async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTa
   if (fits) tree.mine_nearby = { description: `Walk to the ${String(bot.blockAt(fits)?.name || 'block').replaceAll('_', ' ')} ${Math.round(fits.distanceTo(bot.entity.position))} blocks off and dig it and the next nearest, back before the batch is done.` };
   if (countOf(bot, 'cobblestone') < 128) tree.dig_stone = { description: `Dig the stone around the furnace (${countOf(bot, 'cobblestone')} cobblestone carried): tools, a furnace and walls want it.` };
   tree.wait_here = { description: `Stand by the furnace for the ${seconds} seconds the ${count} ${what} take. The furnace cooks on its own whether or not the bot stands by it; standing gains nothing meanwhile.` };
+  // Each of them keeps the bot at or near the furnace for the batch, among
+  // the mobs about (note 628).
+  const among = require('./risk').standingAmong(bot, seconds, { what: 'at or near the furnace' });
+  if (among) for (const node of Object.values(tree)) node.description += ` ${among.says} The work is stopped when one of them comes within eight blocks in sight or lands a hit.`;
   for (const key of spent) delete tree[key];
   if (Object.keys(tree).length < 2) return null;
   try {
@@ -5538,6 +5542,25 @@ function cookable(bot) {
   return { items, n, now: items.reduce((s, i) => s + i.now, 0), after: items.reduce((s, i) => s + i.after, 0), furnace, stone, fuel,
     ready: !!fuel && !!(furnace || stone) };
 }
+// What a cook at a furnace put down here stands the bot through, and a wait
+// to heal: the mobs about that get to it meanwhile (risk.js standingAmong),
+// and for the cook, that the meat is in the furnace and not eaten. mid-242-ab-
+// nether-3-fortress-6 (note 628) cooked seven mutton at 14.3 health, hunger
+// 17, told "with no walk": two zombies were in sight at 10 and 20 blocks and
+// nine shooters within 48, and it was at the furnace when the first arrived.
+function cookStandsSays(bot, cook, secs) {
+  const health = bot.health ?? 20, food = bot.food ?? 20;
+  const among = require('./risk').standingAmong(bot, secs, { what: 'at the furnace' });
+  const eaten = Math.min(20, food + cook.now);
+  const unfed = health < 20 && food < 18 ? ` The meat is in the furnace, not eaten, while it cooks: health ${Math.round(health * 10) / 10} does not come back at hunger ${food} meanwhile; eaten raw now, the ${cook.now} points bring hunger to ${eaten}${eaten >= 18 ? ', where it does' : ''}.` : '';
+  return `${unfed}${among ? ` ${among.says} The cook is stopped when one of them comes within eight blocks in sight or lands a hit, and the batch stays in the furnace to be collected.` : ''}`;
+}
+function healWaitSays(bot, item) {
+  const health = bot.health ?? 20, food = bot.food ?? 20, heals = food >= 18;
+  const secs = heals ? Math.max(4, Math.ceil((item.wants - health) * 4)) : 60;
+  const among = require('./risk').standingAmong(bot, secs, { what: 'here' });
+  return among ? ` ${heals ? `About ${secs} seconds, a point each four.` : `At hunger ${food} health does not come back, so this wait has no end of its own: a minute of it is counted.`} ${among.says}` : '';
+}
 // The known food whose trip, there and on to the frame, is shortest.
 const foodNearFrame =(bot, goal, pending, short) => foodTrips(bot, goal, pending, short).filter(t => t.at && t.gives > 0).sort((a, b) => a.seconds - b.seconds)[0] || null;
 // Where the plain food top-up goes (gatherNetherFood): the home chest, the
@@ -5586,7 +5609,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const tree = {
     cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going} ${items.map(i => i.says).join(' ')}` },
   };
-  for (const i of short) tree[`top_up_${i.key}`] = { description: `${TOP_UP[i.key]}${i.key === 'food' && inChest ? ` The home chest holds ${inChest} food points.` : ''}${i.key === 'food' ? foodTopUpSays(bot, goal, pending, i) : ''} ${i.says}${soFar(i)}` };
+  for (const i of short) tree[`top_up_${i.key}`] = { description: `${TOP_UP[i.key]}${i.key === 'food' && inChest ? ` The home chest holds ${inChest} food points.` : ''}${i.key === 'food' ? foodTopUpSays(bot, goal, pending, i) : ''}${i.key === 'health' ? healWaitSays(bot, i) : ''} ${i.says}${soFar(i)}` };
   // Food at the known source nearest the frame, then back to it: the way
   // to food that keeps the portal work in reach. With no frame begun, the
   // nearest known food and back here: mid-244-ah (note 594) was offered only
@@ -5602,7 +5625,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const cook = food && cookable(bot);
   if (cook?.ready) {
     const secs = cook.n * 10 + (cook.furnace ? 2 : 6);
-    tree.top_up_cook = { description: `Cook the raw food carried first: ${cook.items.map(i => `${i.n} ${i.raw.replaceAll('_', ' ')}`).join(', ')}, ${cook.now} food points as carried, about ${cook.after} once cooked (a steak or a cooked porkchop is eight, cooked mutton six, raw beef three). ${cook.furnace ? `The ${cook.furnace} carried is` : `A furnace is made from eight of the ${cook.stone.replaceAll('_', ' ')} carried and`} put down here, fuelled with the ${cook.fuel.replaceAll('_', ' ')} carried: about ten seconds an item, about ${duration(secs)} in all, with no walk. ${food.says}${soFar(food, 'food_cook')}` };
+    tree.top_up_cook = { description: `Cook the raw food carried first: ${cook.items.map(i => `${i.n} ${i.raw.replaceAll('_', ' ')}`).join(', ')}, ${cook.now} food points as carried, about ${cook.after} once cooked (a steak or a cooked porkchop is eight, cooked mutton six, raw beef three). ${cook.furnace ? `The ${cook.furnace} carried is` : `A furnace is made from eight of the ${cook.stone.replaceAll('_', ' ')} carried and`} put down here, fuelled with the ${cook.fuel.replaceAll('_', ' ')} carried: about ten seconds an item, about ${duration(secs)} in all, with no walk.${cookStandsSays(bot, cook, secs)} ${food.says}${soFar(food, 'food_cook')}` };
   }
   if (valuables?.how === 'stash') tree.stash_valuables = { description: `Walk ${valuables.far} blocks to the stash chest at home first and leave the valuables in it (${valuables.what}), about ${Math.round(valuables.far / 4.3)} seconds each way: a death in the Nether drops everything carried, often into lava.` };
   if (valuables?.how === 'cache') tree.cache_valuables = { description: `Put ${valuables.chest} down here first and leave the valuables in it (${valuables.what}): home's chest is out of reach, and a death in the Nether drops everything carried, often into lava. They are taken back passing by.${pickaxeLeft(bot, valuables.spends)}` };
