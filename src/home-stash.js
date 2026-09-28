@@ -225,7 +225,12 @@ function stashDeposits(bot, home, { valuables = false, items = bot.inventory.ite
 // Forty since: with twenty-four, mid-92-p wanted food three minutes after
 // reaching its fortress and mid-83-j went home hungry from its spawner
 // (2026-09-26); a blaze fight is paid for in hunger, healing back.
-const NETHER_FOOD_POINTS = 40;
+// Eighty since note 607: the whole stay the goal needs (crossing-kit.js
+// netherStay), two hours for a practiced player at about forty hunger an
+// hour; with forty, the fortress cohort of 2026-09-28 sat for minutes at a
+// time under eight health with nothing to eat, and most of those stretches
+// ended in a death.
+const NETHER_FOOD_POINTS = 80;
 const foodTarget = goal => goal?.preparingNether ? NETHER_FOOD_POINTS : KIT_FOOD_POINTS;
 
 function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items(), foodPoints: target = KIT_FOOD_POINTS } = {}) {
@@ -243,10 +248,13 @@ function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items()
     if (slot.tool) {
       if (!items.some(i => slotFits(bot, slot, i.name) && usable(bot, i))) for (const name of storedTools(slot.tool)) if (take(name, 1, { slot: slot.slot })) break;
     } else if (slot.food) {
+      // The slot's eight pieces are a day's kit; food for the Nether stay
+      // is taken by its points (note 607).
       let points = pointsOf(bot, items), pieces = 0;
+      const cap = target > KIT_FOOD_POINTS ? Infinity : slot.count;
       const foods = Object.keys(stored).filter(name => safeFood(bot, { name })).sort((a, b) => foodPoints(bot, b) - foodPoints(bot, a));
       for (const name of foods) {
-        while (points < target && pieces < slot.count && take(name, 1, { slot: slot.slot })) { points += foodPoints(bot, name); pieces++; }
+        while (points < target && pieces < cap && take(name, 1, { slot: slot.slot })) { points += foodPoints(bot, name); pieces++; }
       }
     } else if (slot.bucket) {
       if (!items.some(i => isBucket(i.name))) take('water_bucket', 1, { slot: slot.slot });

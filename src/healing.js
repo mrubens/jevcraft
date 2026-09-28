@@ -117,6 +117,66 @@ function daylightSays(bot) {
   return `${t >= DAY.DARK ? 'night' : 'dusk'}: dawn in about ${minutes(DAY.DAWN - t)} real minutes`;
 }
 
+// Off the Overworld, hurt, and nothing carried brings hunger to eighteen:
+// health does not come back where the bot is, and the ways it could are
+// said with what each costs: the trip back through the portal (its walk,
+// its lava, the hour it comes out at) and the food known on the other side,
+// and in the Nether a hoglin, where one is known, with whether one can be
+// fought at this health. Across the fortress cohort of 2026-09-28 a Nether
+// trial sat under eight health, hunger under eighteen and nothing to eat
+// for a minute or more forty times, about six minutes the median, and
+// twenty-six of those ended in a death (note 607); every question was told
+// "no: hunger 17" and the nearest hoglin, and none of them the way back.
+const OVERWORLD_PREY = ['cow', 'sheep', 'rabbit'];
+function overworldFoodSays(bot, goal) {
+  const portals = goal?.portals || [];
+  const here = bot.entity?.position;
+  const netherSide = here && portals.filter(p => p.dimension === 'nether').sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
+  // The game links a Nether portal to the Overworld one nearest its x and
+  // z times eight; with no Nether portal remembered, the Overworld one
+  // nearest to where the bot is, over there.
+  const from = netherSide || here;
+  const out = from && portals.filter(p => p.dimension === 'overworld').sort((a, b) => Math.hypot(a.x - from.x * 8, a.z - from.z * 8) - Math.hypot(b.x - from.x * 8, b.z - from.z * 8))[0];
+  if (!out) return null;
+  const now = Date.now(), parts = [];
+  for (const kind of OVERWORLD_PREY) {
+    const s = (goal.sightings?.[kind] || []).filter(f => now - f.at < 30 * 60000 && /overworld/.test(String(f.dimension || 'overworld')))
+      .map(f => ({ ...f, d: Math.round(Math.hypot(f.x - out.x, f.z - out.z)) })).sort((a, b) => a.d - b.d)[0];
+    if (s) parts.push(`${s.count} ${kind} seen ${Math.max(1, Math.round((now - s.at) / 60000))} minutes ago ${s.d} blocks from that portal`);
+  }
+  const home = goal.survival?.home;
+  if (home?.stash?.position && bot.registry?.foodsByName) {
+    const { safeFood } = require('./vitals');
+    const points = Object.entries(home.stash.contents || {}).filter(([name]) => safeFood(bot, { name }) && bot.registry.foodsByName[name]).reduce((n, [name, c]) => n + c * bot.registry.foodsByName[name].foodPoints, 0);
+    if (points) parts.push(`home's chest, ${Math.round(Math.hypot(home.stash.position.x - out.x, home.stash.position.z - out.z))} blocks from that portal, with ${points} hunger of food`);
+  }
+  return parts.length ? `Known on the Overworld side: ${parts.join('; ')}.` : 'No food is known on the Overworld side: it is hunted there, where cows, sheep and pigs are common on grass.';
+}
+function withoutFoodSays(bot, goal, { health, hunger, points }) {
+  const overworld = /overworld/.test(String(bot.game?.dimension || 'overworld'));
+  if (overworld || health >= 20 || hunger >= 18 || hunger + points >= 18) return null;
+  const nether = /nether/.test(String(bot.game?.dimension || ''));
+  const out = {
+    withoutFood: `health ${health} does not come back here: ${points ? `eating all that is carried brings hunger only to ${hunger + points}` : 'nothing carried is food'}, and ${nether ? 'in the Nether nothing but a hoglin is food' : 'nothing here is food'}; every point lost from here on stays lost until the bot has eaten to eighteen`,
+  };
+  try {
+    const trip = require('./game-progress').portalTrip(bot, goal);
+    const there = overworldFoodSays(bot, goal);
+    out.tripBackForFood = `back through the portal to the Overworld for food: ${trip.trim()}${there ? ` ${there}` : ''} Food there is killed and eaten raw or cooked, and health comes back once hunger is eighteen or more.`;
+  } catch (_) { /* no trip known */ }
+  if (nether) {
+    try {
+      const { hoglinsKnown, hoglinFight } = require('./nether-travel');
+      const known = hoglinsKnown(bot, goal), nearest = known.inView[0], seen = known.seen[0];
+      const fight = hoglinFight(bot, nearest ? nearest.position.distanceTo(bot.entity.position) : 8);
+      out.hoglinHunt = nearest || seen
+        ? `${nearest ? `a hoglin in view ${Math.round(nearest.position.distanceTo(bot.entity.position))} blocks off` : `${seen.says}, about ${Math.round(seen.distance / 4.3)} seconds' walk`}; it drops two to four raw porkchops, three hunger each. ${fight.says}`
+        : `no hoglin in view or seen in the last half hour; ${fight.says}`;
+    } catch (_) { /* no estimate */ }
+  }
+  return out;
+}
+
 // The standing fact: health and hunger, whether health comes back, the food
 // carried and the nearest known, the time to daylight, and what standing
 // still costs. Null where there is nothing to say (no body, Creative).
@@ -147,9 +207,10 @@ function healingSays(bot, goal) {
     foodCarried: carried.length ? carried.map(f => f.says) : 'nothing to eat',
     ...(hunger < 18 && carried.length ? { eatingItAll: `brings hunger to ${eaten}${eaten >= 18 ? ', where health comes back' : ', still under eighteen'}` } : {}),
     nearestFood: (() => { const n = nearestFood(bot, goal); return n.length ? n : 'none known'; })(),
+    ...(withoutFoodSays(bot, goal, { health, hunger, points }) || {}),
     ...(daylightSays(bot) ? { daylight: daylightSays(bot) } : {}),
     standingStill: STILL,
   };
 }
 
-module.exports = { healingSays, foodCarried, nearestFood, foodSources, daylightSays, MEAT_POINTS, RAW_MEAT_POINTS, preyFailed };
+module.exports = { healingSays, withoutFoodSays, overworldFoodSays, foodCarried, nearestFood, foodSources, daylightSays, MEAT_POINTS, RAW_MEAT_POINTS, preyFailed };

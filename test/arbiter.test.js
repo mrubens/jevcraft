@@ -439,7 +439,7 @@ test('a layer whose turns were each stopped at once by the threat check says so 
     assert.match(trees[2].vitals.description.does, /Its last 2 turns, in the last 1 second, were each stopped at once/);
     assert.match(trees[2].vitals.description.facts.stoppedAtOnce, /stopped again at once/);
     assert(!/stopped/.test(trees[2].survival.description.does), 'only the layer that was stopped');
-    assert.match(trees[0].work.description.does, /^Go on with the work: find fortress \(toward "beat the game"\)\. Health 10\.6: it does not come back at hunger 17\. Mobs within sixteen blocks now: a blaze 6\.2 blocks off \(out of sight\), about [\d.]+ a hit through the armour worn\.$/);
+    assert.match(trees[0].work.description.does, /^Go on with the work: find fortress \(toward "beat the game"\)\. Health 10\.6: it does not come back at hunger 17, and nothing carried is food, so it does not come back while the work goes on\. Mobs within sixteen blocks now: A blaze 6\.2 blocks off \(out of sight\), about [\d.]+ a hit through the armour worn; it fires once it has the bot in sight, from as far as 48 blocks\.$/);
     // With nothing found by the check now, that is said.
     arbiter.probe.threatNow = () => undefined;
     const tree = (await (async () => { let t; await arbiter.arbitrate(bot, [survival, vitals], { state, mobs: [], decide: async (id, { tree: x }) => { t = x; return { path: ['survival'] }; }, run: false }); return t; })());

@@ -6,13 +6,43 @@
 // logs and a table, the valuables walked home), each reasonable alone and
 // together a second ladder that neither the strategy question nor the
 // crossing itself ever said (the decision review, 2026-09-26). A player
-// crosses with a stack of blocks, a few steaks and a pickaxe. Now each is a
+// crosses with a stack of blocks, food for the stay and a pickaxe. Now each is a
 // fact said to Jev, and topping any of them up is Jev's choice (work.js
 // crossingKitReady, the crossing_kit question).
 const { countOf, pickaxeDurability, pickaxeTier } = require('./skills');
 const { foodSupply, lastResortSupply } = require('./foraging');
 const { safeFood } = require('./vitals');
-const { NETHER_FOOD_POINTS } = require('./home-stash');
+
+// The Nether stay the goal still needs, and the food for it. A practiced
+// player has the six blaze rods and twelve ender pearls about two hours
+// after reaching the Nether (the pace every question is told): the rods at
+// a fortress, the pearls by piglin barter or a warped forest's endermen,
+// about an hour each. Hunger over a stay: 99.5 hours of the trials' Nether
+// time (flight records of 2026-09-27 and 28) healed 23.8 health an hour,
+// and each point healed spends a hunger point and a half, 36 an hour on
+// healing alone, the food bar falling 23.8 an hour after the saturation
+// spent first; with the walking, sprinting and fighting beside it, forty
+// an hour. The kit used to want forty points whatever the stay, and the
+// fortress cohort of 2026-09-28 sat for minutes at a time under eight
+// health, hunger under eighteen and nothing to eat, most of those
+// stretches ending in a death (note 607).
+const NETHER_HUNGER_AN_HOUR = 40;
+const STAY_FOR = { rods: { count: 6, minutes: 60 }, pearls: { count: 12, minutes: 60 } };
+function netherStay(bot) {
+  const eyes = countOf(bot, 'ender_eye'), eyesLeft = Math.max(0, STAY_FOR.pearls.count - eyes);
+  const rodsLeft = Math.max(0, Math.ceil(Math.max(0, eyesLeft - countOf(bot, 'blaze_powder')) / 2) - countOf(bot, 'blaze_rod'));
+  const pearlsLeft = Math.max(0, eyesLeft - countOf(bot, 'ender_pearl'));
+  const minutes = Math.max(30, Math.round(STAY_FOR.rods.minutes * rodsLeft / STAY_FOR.rods.count + STAY_FOR.pearls.minutes * pearlsLeft / STAY_FOR.pearls.count));
+  // Whole cooked steaks' worth: a steak or a cooked porkchop is eight.
+  const points = Math.ceil(minutes / 60 * NETHER_HUNGER_AN_HOUR / 8) * 8;
+  return { minutes, points, rodsLeft, pearlsLeft };
+}
+function staySays(stay) {
+  const left = [stay.rodsLeft ? `${stay.rodsLeft} blaze rod${stay.rodsLeft === 1 ? '' : 's'}` : null, stay.pearlsLeft ? `${stay.pearlsLeft} ender pearl${stay.pearlsLeft === 1 ? '' : 's'}` : null].filter(Boolean);
+  const hours = stay.minutes >= 90 ? `about ${Math.round(stay.minutes / 30) / 2} hours` : `about ${stay.minutes} minutes`;
+  return `${left.length ? `The goal still needs ${left.join(' and ')}: a practiced player takes ${hours} in the Nether for them (the rods at a fortress, the pearls by piglin barter or a warped forest's endermen, or the Overworld's endermen by night instead)` : `The goal needs nothing more from the Nether's fortress or barter: ${hours} is the stay counted`}. ` +
+    `A stay spends about ${NETHER_HUNGER_AN_HOUR} hunger an hour (the bot's own Nether time healed about 24 health an hour, a hunger point and a half each, besides the walking and fighting), so ${hours} is about ${stay.points} food points, ${stay.points / 8} cooked steaks or porkchops; raw meat counts at its raw points (three a beef or porkchop), and cooking it before the crossing makes it eight.`;
+}
 
 // Health the code would cross at.
 const NETHER_HEALTH = 16;
@@ -55,8 +85,9 @@ function kitItems(bot) {
     const food = foodSupply(bot), last = lastResortSupply(bot);
     const meals = bot.inventory.items().filter(i => safeFood(bot, i)).map(i => `${i.count} ${words(i.name)}`).join(', ');
     const lastSays = last.points ? ` Beside it, ${last.points} points in the last resort, not counted: ${last.says}.` : '';
-    items.push({ key: 'food', short: food < NETHER_FOOD_POINTS, carried: food, wants: NETHER_FOOD_POINTS,
-      says: `Food: ${food} food points carried (${meals || 'nothing to eat'}); the code would take ${NETHER_FOOD_POINTS}, about ${Math.ceil(NETHER_FOOD_POINTS / 8)} cooked steaks' worth (a steak or a cooked porkchop is eight, bread five). Health comes back only while hunger stays at eighteen or more, and a fortress trip is fighting and running; in the Nether, hoglins are the meat and little else is food.${lastSays}` });
+    const stay = netherStay(bot);
+    items.push({ key: 'food', short: food < stay.points, carried: food, wants: stay.points,
+      says: `Food: ${food} food points carried (${meals || 'nothing to eat'}); the code would take ${stay.points}, food for the whole stay. ${staySays(stay)} Health comes back only while hunger stays at eighteen or more, and a fortress trip is fighting and running; in the Nether, hoglins are the meat and nothing else is food, and a hoglin hits for three to eight and has forty health, so a hurt bot with nothing to eat is left to go back through the portal for food or fight one at the health it has.${lastSays}` });
     const health = Math.round(bot.health ?? 20), hunger = bot.food ?? 20;
     const back = health >= NETHER_HEALTH ? '' : hunger >= 18
       ? ` At hunger ${hunger} it comes back about a point every four seconds: about ${(NETHER_HEALTH - health) * 4} seconds to ${NETHER_HEALTH}.`
@@ -120,4 +151,4 @@ function kitSummary(bot, goal) {
     : ' The kit for the crossing (food, blocks, a pickaxe, gold, wood) is carried.';
 }
 
-module.exports = { netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
+module.exports = { netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };

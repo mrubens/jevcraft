@@ -16,7 +16,7 @@ const FOOD_OPTIONS = [
   { key: 'village_food', label: 'take ripe crops and hay from a remembered village', when: 'a village with crops or hay is remembered within reach', level: 'obtain_food' },
   { pattern: 'seen_food_\\d+', label: 'walk back to animals seen earlier', when: 'a herd of cows, sheep or rabbits seen in the last half hour, now out of view, 32 to 192 blocks off (the nearest three)', level: 'obtain_food', dynamic: true },
   { key: 'search_food', label: 'walk to another dry area to look for animals', when: 'always', level: 'obtain_food' },
-  { key: 'return_for_food', label: 'go back through the portal for food', when: 'off the Overworld, unless Jev chose to go on in the Nether without it (keep_on, twenty minutes)', level: 'obtain_food' },
+  { key: 'return_for_food', label: 'go back through the portal for food', when: 'off the Overworld; said with the trip (its walk, lava on the line, the hour it comes out at), the food known on the Overworld side and, while the choice to go on without it holds (keep_on, twenty minutes), when and at what health that was chosen (note 607)', level: 'obtain_food' },
   { key: 'hoglin_food', label: 'hunt a hoglin for porkchops', when: 'in the Nether, a hoglin in view or seen within 192 blocks; its drops, a one-hoglin fight estimate and the mobs about are said', level: 'obtain_food' },
 ];
 
@@ -266,6 +266,8 @@ define({
 // twenty-eight blocks, a spare pickaxe, eight logs and a table, and the
 // valuables walked home (the decision review, 2026-09-26). One question now,
 // every item said with what is carried against what the code would take.
+// The food is sized for the Nether stay the goal still needs and said so
+// (note 607).
 define({
   id: 'crossing_kit', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Cross into the Nether with the kit carried now, or first top up one named item of it (food, health, blocks, a spare pickaxe, wood) or leave the valuables behind?',
@@ -273,7 +275,7 @@ define({
   source: 'src/work.js (crossingKitReady), src/crossing-kit.js (kitItems, valuablesAt)',
   options: [
     { key: 'cross_now', label: 'cross with what is carried', when: 'always', level: 'root' },
-    { key: 'top_up_food', label: 'gather food first, up to forty points', when: 'fewer than forty food points carried, monsters on; said with where it goes (the home chest, the plot, an animal in view hunted, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (notes 527, 594)', level: 'root' },
+    { key: 'top_up_food', label: 'gather food first, enough for the Nether stay the goal needs', when: 'fewer food points carried than the stay the goal still needs takes (src/crossing-kit.js netherStay: the rods and pearls left, on the two hours a practiced player takes for all of them, at about forty hunger an hour; eighty points for the whole stay), monsters on; said with the stay, its hunger and what raw and cooked count for (note 607); said with where it goes (the home chest, the plot, an animal in view hunted, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (notes 527, 594)', level: 'root' },
     { key: 'top_up_food_near', label: 'gather food at the known food whose trip is shortest, on to the frame begun or, with none begun, back here', when: 'food short and some food known (animals in view, a herd seen, a village, the home plot or chest); said with the walk there, the gathering, the walk on to the frame or back here, and what it gives raw and cooked (notes 527, 594)', level: 'root' },
     { key: 'top_up_cook', label: 'cook the raw food carried first, at a furnace put down here', when: 'food short, raw food carried that cooking makes more of, fuel carried, and a furnace or smoker or eight cobblestone for one; said with the points as carried and once cooked, and the seconds (note 594)', level: 'root' },
     { key: 'top_up_health', label: 'wait and heal first, to sixteen', when: 'health under sixteen, monsters on', level: 'root' },
@@ -284,7 +286,7 @@ define({
     { key: 'stash_valuables', label: 'walk home and leave the valuables in the stash chest first', when: 'the home stash chest within 128 blocks and valuables carried', level: 'root' },
     { key: 'cache_valuables', label: 'leave the valuables in a chest put down here first', when: 'home\'s chest out of reach, valuables carried, and a chest or the wood for one', level: 'root' },
   ],
-  instructions: { task: 'The bot is on its way through a portal into the Nether. Choose whether to cross with what it carries now or to top up one item of its kit first.', guidance: 'Every option lists the kit item by item: what is carried, what the code would take, and why. The amounts the code would take are a careful default, not a rule: a player often crosses with a stack of blocks, a few steaks and a pickaxe. A top-up says the working minutes it has had at this crossing and what they brought. `kit` is each item carried against what the code would take.' },
+  instructions: { task: 'The bot is on its way through a portal into the Nether. Choose whether to cross with what it carries now or to top up one item of its kit first.', guidance: 'Every option lists the kit item by item: what is carried, what the code would take, and why. The amounts the code would take are a careful default, not a rule: a player often crosses with a stack of blocks, a pickaxe and food for the stay: in the Nether nothing but a hoglin is food, and health comes back only at eighteen hunger or more, so the food carried is what the stay heals on. A top-up says the working minutes it has had at this crossing and what they brought. `kit` is each item carried against what the code would take.' },
   fallback: (children, path, context = {}) => children[context.fallback] ? context.fallback : 'cross_now',
 });
 

@@ -52,7 +52,7 @@ const { makeObsidian, collectLava } = require('./obsidian');
 const { castFrame, leaveNoWater, castSays, plannedWalls, lavaTrip, fetchTrip, fetchSays, tripsCost, castTrips, duration } = require('./portal-cast');
 const { tidyInventory, roomFor, makeRoom, crowded } = require('./inventory-tidy');
 const { homeStep, homeChores , gatherWool, woolCarried } = require('./home-base');
-const { stashValuables, restockFromStash, NETHER_FOOD_POINTS } = require('./home-stash');
+const { stashValuables, restockFromStash } = require('./home-stash');
 const { noticeVillage, takeVillageBed } = require('./villages');
 const { discoverStep, explorationTarget } = require('./discovery');
 const { bundleStep } = require('./item-bundle');
@@ -240,7 +240,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   }
   // In the Nether, the answers that meet it, read before the loose ends
   // are dropped (the leg's target among them): nether-travel.js.
-  const nether = require('./nether-travel').netherAnswers(bot, task, goal, save, { survival, actions: { navigate, portalHere } });
+  const nether = require('./nether-travel').netherAnswers(bot, task, goal, save, { survival, actions: { navigate, portalHere, returnOverworld: returnFromNether } });
   looseEnds(goal, now);
   const answers = {};
   const mine = [goal.step, goal.lastStruggleStep].find(step => step?.action === 'mine' && step.block);
@@ -3537,8 +3537,14 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   // made for while that holds.
   const known = (goal.portals || []).filter(p => p.dimension === where && Math.hypot(p.x - here.x, p.z - here.z) <= 600 && !isSetAside(goal, 'portal_passed', { x: p.x, y: p.y, z: p.z }))
     .sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z));
+  // None seen here since the crossing: where the game put the one the bot
+  // came through, from its Overworld side (note 607). The portal is seen
+  // and remembered on the way, and walked into from there.
+  if (!known.length && where === 'nether') { const came = require('./game-progress').cameThrough(goal, here); if (came && Math.hypot(came.x - here.x, came.z - here.z) <= 600) known.push(came); }
   if (!known.length) return false;
   const p = known[0];
+  // At the place worked out and still none in view: it is not there.
+  if (p.estimated && Math.hypot(p.x - here.x, p.z - here.z) <= 8) return false;
   goal.step = { action: 'return_to_portal', portal: { x: p.x, y: p.y, z: p.z } }; save();
   // Close enough to route: walk. Otherwise, or when the walk gives out, dig
   // a staircase toward it the way an ore is reached; a portal at y=-11 is
@@ -5436,7 +5442,7 @@ const KIT_HOLD_MS = 10 * 60000;
 const KIT_FALLBACK_MS = 20 * 60000;
 const KIT_ORDER = ['stash_valuables', 'top_up_cook', 'top_up_food', 'top_up_health', 'top_up_blocks', 'top_up_pickaxe', 'top_up_gold', 'top_up_wood', 'cache_valuables'];
 const TOP_UP = {
-  food: 'Gather food first, up to the forty points: the home chest, the farm plot if there is one, or hunting animals.',
+  food: 'Gather food first, up to what the stay takes (said below): the home chest, the farm plot if there is one, or hunting animals.',
   health: 'Wait here and heal first, to sixteen.',
   blocks: 'Mine stone first, up to two stacks of blocks.',
   pickaxe: 'Make a stone pickaxe first, as the spare.',
@@ -5661,7 +5667,7 @@ async function huntInView(bot, task, goal, save, kinds = null) {
 }
 
 async function gatherNetherFood(bot, task, goal, save, now = Date.now(), { known = false, pending = null, short = 0 } = {}) {
-  const NETHER_FOOD = NETHER_FOOD_POINTS;
+  const NETHER_FOOD = require('./crossing-kit').netherStay(bot).points;
   goal.preparingNether = true; goal.stockFood = true;
   // Jev chose the known food nearest the frame (or, with none begun, nearest
   // here): that one, and nothing farther. Gone or spent, the option goes

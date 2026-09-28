@@ -270,12 +270,12 @@ test('before the Nether a restock tops food up to the crossing reserve, not a da
   const { stashWithdrawals, KIT_FOOD_POINTS, NETHER_FOOD_POINTS } = require('../src/home-stash');
   const registry = require('minecraft-data')('26.1');
   const bot = { registry, inventory: { items: () => [] } };
-  const home = { stash: { position: { x: 0, y: 64, z: 0 }, contents: { cooked_beef: 8 } } };
+  const home = { stash: { position: { x: 0, y: 64, z: 0 }, contents: { cooked_beef: 12 } } };
   const beef = moves => moves.filter(m => m.item === 'cooked_beef').reduce((n, m) => n + m.count, 0);
   const day = beef(stashWithdrawals(bot, home, [], { foodPoints: KIT_FOOD_POINTS }));
   const nether = beef(stashWithdrawals(bot, home, [], { foodPoints: NETHER_FOOD_POINTS }));
   assert.equal(day, 2, 'a day: two steaks, sixteen points');
-  assert.equal(nether, 5, 'the Nether: five steaks, forty points');
+  assert.equal(nether, 10, 'the Nether: ten steaks, eighty points, the whole stay (note 607)');
 });
 
 test('a restock item set aside after a restock that changed nothing is not planned again', () => {

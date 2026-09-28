@@ -236,7 +236,7 @@ test('without Jev, the crossing kit\'s own walk heals before the portal, however
   const { gameHandlers } = require('../src/work');
   const registry = require('minecraft-data')('26.1');
   const bot = { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 9, food: 20,
-    inventory: { items: () => [{ name: 'cooked_beef', count: 8, type: registry.itemsByName.cooked_beef.id }] }, entity: { position: { x: 0, y: 64, z: 0 } } };
+    inventory: { items: () => [{ name: 'cooked_beef', count: 10, type: registry.itemsByName.cooked_beef.id }] }, entity: { position: { x: 0, y: 64, z: 0 } } };
   const goal = {};
   const entered = await gameHandlers(bot).enter_nether(bot, new Task('cross'), goal, () => {});
   assert.equal(entered, false, 'not through the portal at nine health');
@@ -255,7 +255,7 @@ test('without Jev, the crossing kit\'s own walk gathers two stacks of blocks to 
   // mid-87-k: out of its portal on an island in the lava sea with too few blocks to reach a shore.
   const { gameHandlers } = require('../src/work');
   const registry = require('minecraft-data')('26.1');
-  const items = [{ name: 'cooked_beef', count: 8, type: registry.itemsByName.cooked_beef.id }, { name: 'cobblestone', count: 20, type: registry.itemsByName.cobblestone.id }];
+  const items = [{ name: 'cooked_beef', count: 10, type: registry.itemsByName.cooked_beef.id }, { name: 'cobblestone', count: 20, type: registry.itemsByName.cobblestone.id }];
   const bot = { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20,
     inventory: { items: () => items, emptySlotCount: () => 10, slots: [] }, entity: { position: { x: 0, y: 64, z: 0 } } };
   const goal = { expeditionReady: true };

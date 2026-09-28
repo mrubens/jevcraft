@@ -510,6 +510,30 @@ function floorTowardSays(down, floor, { what, target }) {
     `${backUpSays(down, target.y, what)}`;
 }
 
+// Jev's choice to go on in the Nether without the trip back for food
+// (keep_on, twenty minutes), kept with the health it was made at and said
+// where the trip is offered again. The trip used to be left out for those
+// twenty minutes whatever came after: mid-242-ba-fortress-1 kept on at 10.1
+// health, was at 2.2 forty seconds later, and its pocket's way to food
+// offered only a hoglin 123 blocks off (note 607).
+const KEEP_ON_WHY = 'Jev chose to go on in the Nether without going back for food';
+const keepOnWhy = bot => `${KEEP_ON_WHY}, at ${Math.round((bot.health ?? 20) * 10) / 10} health and hunger ${bot.food}`;
+function keepOnSays(bot, goal, now = Date.now()) {
+  const { attemptsFor, keyOf } = require('./progress');
+  const e = attemptsFor(goal).entries[keyOf('nether_return', 'food')];
+  if (!e || !(e.until > now)) return '';
+  const m = Math.round((now - e.at) / 60000), at = /at ([\d.]+) health/.exec(e.why || '')?.[1];
+  return ` Jev chose ${m ? `${m} minute${m === 1 ? '' : 's'} ago` : 'under a minute ago'}${at ? `, at ${at} health,` : ''} to go on in the Nether without this trip for twenty minutes; health is ${Math.round((bot.health ?? 20) * 10) / 10} now.`;
+}
+
+// The trip back for food chosen: held as leave_nether's go_back is (game-
+// progress.js netherLeaveHeld), so the walk back goes on across passes, and
+// the keep-on it replaces is ended.
+function chooseReturnForFood(goal, now = Date.now()) {
+  require('./progress').attemptsFor(goal).clear('nether_return', 'food');
+  goal.leaveNether = { reason: 'food', pick: 'go_back', until: 0, at: now };
+}
+
 // Whether food is why the bot is going back: hungry, with nothing to eat
 // or the return for food chosen.
 function foodReason(bot, goal) {
@@ -550,23 +574,43 @@ function hoglinsKnown(bot, goal) {
   return { inView, seen };
 }
 
+// One hoglin fought at the health the bot has, from the game's numbers
+// (combat-estimate.js): the fight's seconds and damage, and its blows
+// through the armour worn. Whether the hunt can be won at all is said, not
+// left to be worked out: mid-242-ba-fortress-1, at 2.2 health with nothing
+// to eat, was told "about 12.6 seconds and 17.2 damage, from 2 health" and
+// "six health lost ends it", and chose the hunt (note 607).
+function hoglinFight(bot, distance = 8) {
+  const { fightEstimate, MOBS, afterArmour, armourOf } = require('./combat-estimate');
+  const { defenseWeapon } = require('./combat');
+  const weapon = defenseWeapon(bot)?.name || null, armour = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+  const one = fightEstimate({ threats: [{ name: 'hoglin', distance, visible: true }], armour, weapon, health: bot.health,
+    shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere;
+  const worn = armourOf(armour), r = n => Math.round(n * 10) / 10, health = r(bot.health ?? 20);
+  const least = r(afterArmour(MOBS.hoglin.least, worn)), most = r(afterArmour(MOBS.hoglin.most, worn));
+  const verdict = one.damageTaken >= health
+    ? `more than the ${health} health left: at this health the bot is dead before the hoglin is`
+    : one.damageTaken >= health / 2 ? `leaving about ${r(health - one.damageTaken)} of the ${health} health` : `leaving about ${r(health - one.damageTaken)} health`;
+  const blows = least >= health ? `its weakest blow through the armour worn, about ${least}, is as much as the health left: one blow ends the bot`
+    : most >= health ? `a blow is ${least} to ${most} through the armour worn: one of its harder blows ends the bot` : `a blow is ${least} to ${most} through the armour worn`;
+  return { weapon, one, health, least, most, lost: one.damageTaken >= health,
+    says: `One hoglin with ${weapon ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands'}: about ${one.seconds} seconds and ${one.damageTaken} damage, ${verdict}; ${blows}.` };
+}
+
 // The hoglin as food: what it drops and what one costs to kill, from the
 // game's numbers (combat-estimate.js), and whether health comes back.
 function hoglinSays(bot, known) {
-  const { fightEstimate } = require('./combat-estimate');
-  const { defenseWeapon } = require('./combat');
   const nearest = known.inView[0];
-  const weapon = defenseWeapon(bot)?.name || null, armour = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
-  const one = fightEstimate({ threats: [{ name: 'hoglin', distance: nearest ? nearest.position.distanceTo(bot.entity.position) : 8, visible: true }], armour, weapon, health: bot.health,
-    shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere;
+  const fight = hoglinFight(bot, nearest ? nearest.position.distanceTo(bot.entity.position) : 8);
+  const walk = !nearest && known.seen[0] ? ` The walk there is about ${Math.round(known.seen[0].distance / 4.3)} seconds, at ${fight.health} health, and the hoglin may have moved on.` : '';
   const where = nearest ? `${known.inView.length} in view within thirty-two blocks, the nearest ${Math.round(nearest.position.distanceTo(bot.entity.position))} blocks off`
     : `none in view; ${known.seen[0].says}`;
   const others = require('./danger').threats(bot, 32).filter(t => t.entity.name !== 'hoglin');
   const crowd = others.length ? ` Also within thirty-two blocks: ${[...new Set(others.map(t => t.entity.name.replaceAll('_', ' ')))].slice(0, 5).join(', ')}.` : '';
+  const ends = fight.health <= 6 ? `Two minutes, or six health lost, ends the hunt; at ${fight.health} health that six is more than the bot has.` : 'Two minutes, and six health lost ends it.';
   return `Hunt a hoglin for its meat (${where}): each drops two to four raw porkchops, safe to eat raw at three hunger each, eight cooked. ` +
-    `A hoglin has forty health and hits for about six, throwing the bot about three blocks, off an edge if there is one beside it. ` +
-    `One with ${weapon ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands'}: about ${one.seconds} seconds and ${one.damageTaken} damage, from ${Math.round(bot.health ?? 20)} health. ` +
-    `Two minutes, and six health lost ends it.${(bot.food ?? 20) < 18 ? ` Health does not come back meanwhile: hunger ${bot.food}.` : ''}${crowd}`;
+    `A hoglin has forty health and hits for three to eight before armour, throwing the bot about three blocks, off an edge if there is one beside it. ` +
+    `${fight.says}${walk} ${ends}${(bot.food ?? 20) < 18 ? ` Health does not come back meanwhile: hunger ${bot.food}.` : ''}${crowd}`;
 }
 
 // The Overworld side of a portal built here: the game puts it at the
@@ -628,6 +672,21 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
         try { for (let i = 0; i < 4; i++) { task.check(); if (await actions.portalHere(bot, task, goal, save)) return; } }
         catch (err) { task.check(); if (!retryable(err)) throw err; setAside(goal, 'portal_here', 'nether', err, 600000); save(); }
       } };
+  // The trip back for food itself, with its walk and the food over there:
+  // mid-235-q-nether-2-fortress-4, at 4 health with nothing to eat and its
+  // portal 67 blocks off, was offered a hoglin 47 blocks off and an ore, and
+  // answered none good (0.82); the hoglin was taken as the best listed
+  // (note 607). Offered while keep_on holds too, said with when it was
+  // chosen and at what health.
+  if (food && actions.returnOverworld) {
+    let there = ''; try { there = require('./healing').overworldFoodSays(bot, goal) || ''; } catch (_) { there = ''; }
+    answers.return_for_food = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${require('./game-progress').portalTrip(bot, goal)}${there ? ` ${there}` : ''}${keepOnSays(bot, goal)}`,
+      run: async () => {
+        chooseReturnForFood(goal);
+        goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
+        await actions.returnOverworld(bot, task, goal, save);
+      } };
+  }
   if (food && !isSetAside(goal, 'nether_return', 'food')) {
     const { foodSupply } = require('./foraging');
     const points = foodSupply(bot);
@@ -635,11 +694,11 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
     const starve = { peaceful: 'no hunger at all', easy: 'starving takes health down to ten and no further', normal: 'starving takes health down to one and no further', hard: 'starving kills' }[String(bot.game?.difficulty || 'normal')] || '';
     answers.keep_on = { description: `Stay in the Nether and go on without the Overworld for twenty minutes: ${points ? `eat what is carried (${meals}, ${points} food points)` : 'nothing edible is carried'}, and go on with the work. Hunger ${bot.food}: health comes back only at eighteen or more${starve ? `, and ${starve}` : ''}. With nothing to eat below eighteen, no fight is started: the blazes wait.`,
       run: async () => {
-        setAside(goal, 'nether_return', 'food', 'Jev chose to go on in the Nether without going back for food', 20 * 60000);
+        setAside(goal, 'nether_return', 'food', keepOnWhy(bot), 20 * 60000);
         delete goal.stockFood; save();
       } };
   }
   return answers;
 }
 
-module.exports = { walkFloorToward, floorKey, floorBelow, wayDown, walkFloor, floorWay, goDown, floorToward, floorTowardSays, floorWalkSays, wayDownSays, backUpSays, headingColumns, lineColumns, FLOOR_WALKABLE, LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, legTarget, hoglinsKnown, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
+module.exports = { walkFloorToward, floorKey, floorBelow, wayDown, walkFloor, floorWay, goDown, floorToward, floorTowardSays, floorWalkSays, wayDownSays, backUpSays, headingColumns, lineColumns, FLOOR_WALKABLE, LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, keepOnWhy, keepOnSays, chooseReturnForFood, legTarget, hoglinsKnown, hoglinFight, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };

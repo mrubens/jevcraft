@@ -6190,12 +6190,19 @@ class Survival {
   }
 
   // Food off the Overworld: back through the portal, or, in the Nether,
-  // its hoglins, in view or seen earlier. The trip back is left out for the
-  // time Jev chose to go on without it (nether-travel.js keep_on).
+  // its hoglins, in view or seen earlier. The trip back is said with its
+  // walk, what it crosses and the food known on the other side, and it is
+  // offered while Jev's choice to go on without it holds too, said with
+  // when and at what health that was chosen: mid-242-ba-fortress-1 kept on
+  // at 10.1 health, was sealed in at 2.2 forty seconds later, and was
+  // offered only a hoglin 123 blocks off (note 607).
   offWorldFood(task, goal, save) {
     const bot = this.bot, children = {};
-    if (!isSetAside(goal, 'nether_return', 'food')) children.return_for_food = { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked.' + (/nether/.test(String(bot.game?.dimension || '')) ? ' In the Nether hoglins are the only meat.' : ' Nothing here is safe to eat.'),
-      run: async () => { goal.survivalAction = { action: 'return_for_food', at: new Date().toISOString() }; save(); await this.actions.returnOverworld(bot, task, goal, save); } };
+    const trip = (() => { try { return ` ${require('./game-progress').portalTrip(bot, goal)}`; } catch (_) { return ''; } })();
+    const there = (() => { try { const s = require('./healing').overworldFoodSays(bot, goal); return s ? ` ${s}` : ''; } catch (_) { return ''; } })();
+    const keptOn = require('./nether-travel').keepOnSays(bot, goal);
+    children.return_for_food = { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked.' + (/nether/.test(String(bot.game?.dimension || '')) ? ' In the Nether hoglins are the only meat.' : ' Nothing here is safe to eat.') + trip + there + keptOn,
+      run: async () => { require('./nether-travel').chooseReturnForFood(goal); goal.survivalAction = { action: 'return_for_food', at: new Date().toISOString() }; save(); await this.actions.returnOverworld(bot, task, goal, save); } };
     if (/nether/.test(String(bot.game?.dimension || ''))) {
       const { hoglinsKnown, hoglinSays } = require('./nether-travel');
       const known = hoglinsKnown(bot, goal);
@@ -7219,7 +7226,6 @@ class Survival {
         if (offWorld) {
           ways = this.offWorldFood(task, goal, save);
           if (foodTrip) delete ways.return_for_food;
-          else if (ways.return_for_food) ways.return_for_food.description += ` ${require('./game-progress').portalTrip(bot, goal)}`;
         } else if (!(this._pocketFood?.until > Date.now())) {
           try { ways = await forageChoices(bot, task, goal, save, this.actions, this.state); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
@@ -7783,7 +7789,18 @@ function claim(bot, goal = {}, survival = null) {
   // The hunt Jev chose is the claim only while nothing else is on the bot:
   // its own kind is no threat (nightHunted), anything else comes first, as
   // stepOnce answers it (note 541).
-  if (hunting && !threat) return make('night_hunt', 'routine', { hunting: nightPlan.kind || null });
+  // A hoglin hunt said with whether one can be won at this health and where
+  // the nearest is: mid-235-q-nether-2-fortress-4 went on with one at 4
+  // health, the hoglin 47 blocks off, told only "Health 4." (note 607).
+  if (hunting && !threat) {
+    let hoglin = null;
+    if (nightPlan.kind === 'hoglin') try {
+      const { hoglinsKnown, hoglinFight } = require('./nether-travel');
+      const known = hoglinsKnown(bot, goal), nearest = known.inView[0], seen = known.seen[0];
+      hoglin = { hoglinFight: `${nearest ? `The nearest hoglin is in view ${Math.round(nearest.position.distanceTo(bot.entity.position))} blocks off.` : seen ? `None in view; ${seen.says}.` : 'No hoglin in view or seen in the last half hour.'} ${hoglinFight(bot, nearest ? nearest.position.distanceTo(bot.entity.position) : 8).says}` };
+    } catch (_) { hoglin = null; }
+    return make('night_hunt', 'routine', { hunting: nightPlan.kind || null, ...(nightPlan.food ? { forFood: true } : {}), ...(hoglin || {}) });
+  }
   // A blaze's with the chance its fire lands from where it is, the game's
   // scatter (combat-estimate fireballHit): it is claimed where its volleys
   // mostly land or its shots have landed, and said so.

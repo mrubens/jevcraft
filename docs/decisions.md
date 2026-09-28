@@ -51,7 +51,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `village_food` | obtain_food | take ripe crops and hay from a remembered village | a village with crops or hay is remembered within reach |
 | `seen_food_\d+` (pattern) | obtain_food | walk back to animals seen earlier | a herd of cows, sheep or rabbits seen in the last half hour, now out of view, 32 to 192 blocks off (the nearest three) |
 | `search_food` | obtain_food | walk to another dry area to look for animals | always |
-| `return_for_food` | obtain_food | go back through the portal for food | off the Overworld, unless Jev chose to go on in the Nether without it (keep_on, twenty minutes) |
+| `return_for_food` | obtain_food | go back through the portal for food | off the Overworld; said with the trip (its walk, lava on the line, the hour it comes out at), the food known on the Overworld side and, while the choice to go on without it holds (keep_on, twenty minutes), when and at what health that was chosen (note 607) |
 | `hoglin_food` | obtain_food | hunt a hoglin for porkchops | in the Nether, a hoglin in view or seen within 192 blocks; its drops, a one-hoglin fight estimate and the mobs about are said |
 
 ### `shelter_method`
@@ -110,7 +110,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `village_food` | go_for_food | take ripe crops and hay from a remembered village | a village with crops or hay is remembered within reach |
 | `seen_food_\d+` (pattern) | go_for_food | walk back to animals seen earlier | a herd of cows, sheep or rabbits seen in the last half hour, now out of view, 32 to 192 blocks off (the nearest three) |
 | `search_food` | go_for_food | walk to another dry area to look for animals | always |
-| `return_for_food` | go_for_food | go back through the portal for food | off the Overworld, unless Jev chose to go on in the Nether without it (keep_on, twenty minutes) |
+| `return_for_food` | go_for_food | go back through the portal for food | off the Overworld; said with the trip (its walk, lava on the line, the hour it comes out at), the food known on the Overworld side and, while the choice to go on without it holds (keep_on, twenty minutes), when and at what health that was chosen (note 607) |
 | `hoglin_food` | go_for_food | hunt a hoglin for porkchops | in the Nether, a hoglin in view or seen within 192 blocks; its drops, a one-hoglin fight estimate and the mobs about are said |
 
 ### `night_mine_target`
@@ -410,7 +410,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `cross_now` | root | cross with what is carried | always |
-| `top_up_food` | root | gather food first, up to forty points | fewer than forty food points carried, monsters on; said with where it goes (the home chest, the plot, an animal in view hunted, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (notes 527, 594) |
+| `top_up_food` | root | gather food first, enough for the Nether stay the goal needs | fewer food points carried than the stay the goal still needs takes (src/crossing-kit.js netherStay: the rods and pearls left, on the two hours a practiced player takes for all of them, at about forty hunger an hour; eighty points for the whole stay), monsters on; said with the stay, its hunger and what raw and cooked count for (note 607); said with where it goes (the home chest, the plot, an animal in view hunted, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (notes 527, 594) |
 | `top_up_food_near` | root | gather food at the known food whose trip is shortest, on to the frame begun or, with none begun, back here | food short and some food known (animals in view, a herd seen, a village, the home plot or chest); said with the walk there, the gathering, the walk on to the frame or back here, and what it gives raw and cooked (notes 527, 594) |
 | `top_up_cook` | root | cook the raw food carried first, at a furnace put down here | food short, raw food carried that cooking makes more of, fuel carried, and a furnace or smoker or eight cobblestone for one; said with the points as carried and once cooked, and the seconds (note 594) |
 | `top_up_health` | root | wait and heal first, to sixteen | health under sixteen, monsters on |
@@ -538,6 +538,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `cross_toward` | root | tunnel or bridge straight toward where the stalled Nether work was going | in the Nether, a target known (the portal back, the fortress leg, the tunnel's end), and the cells ahead at this height let it come nearer: rock with no lava behind it, open air or lava to lay the blocks carried over (src/nether-travel.js) |
 | `floor_toward` | root | go down to the floor below and walk a stretch of it toward where the stalled Nether work was going | in the Nether, a target known, ground four or more below under eight or more of the sixty-four columns round the bot, a way down to it found within thirty-two blocks, and eight or more cells of floor on the line toward the target; said with the way down, the floor on that line and the height back up (src/nether-travel.js) |
 | `hoglin_food` | root | hunt a hoglin for porkchops | in the Nether, hungry with nothing to eat or on the way back for food, and a hoglin in view or seen within 192 blocks |
+| `return_for_food` | root | go back through the portal to the Overworld for food | in the Nether, hungry with nothing to eat or on the way back for food; said with the trip (its walk, lava on the line, the hour it comes out at), the food known on the Overworld side and, while the choice to go on without it holds, when and at what health that was chosen (note 607) |
 | `portal_here` | root | build a portal where the bot stands and go through | in the Nether on the way back (or hungry), ten obsidian, flint and steel or a fire charge, and three blocks for the lintel carried |
 | `keep_on` | root | go on in the Nether without going back for food | in the Nether, hungry with nothing to eat or on the way back for food; the trip back is left out for twenty minutes |
 | `cook_food` | root | cook the raw food carried | by day in the Overworld, and raw meat is carried |
@@ -1025,6 +1026,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `cross_toward` | root | tunnel or bridge straight toward where the stalled Nether work was going | in the Nether, a target known (the portal back, the fortress leg, the tunnel's end), and the cells ahead at this height let it come nearer: rock with no lava behind it, open air or lava to lay the blocks carried over (src/nether-travel.js) |
 | `floor_toward` | root | go down to the floor below and walk a stretch of it toward where the stalled Nether work was going | in the Nether, a target known, ground four or more below under eight or more of the sixty-four columns round the bot, a way down to it found within thirty-two blocks, and eight or more cells of floor on the line toward the target; said with the way down, the floor on that line and the height back up (src/nether-travel.js) |
 | `hoglin_food` | root | hunt a hoglin for porkchops | in the Nether, hungry with nothing to eat or on the way back for food, and a hoglin in view or seen within 192 blocks |
+| `return_for_food` | root | go back through the portal to the Overworld for food | in the Nether, hungry with nothing to eat or on the way back for food; said with the trip (its walk, lava on the line, the hour it comes out at), the food known on the Overworld side and, while the choice to go on without it holds, when and at what health that was chosen (note 607) |
 | `portal_here` | root | build a portal where the bot stands and go through | in the Nether on the way back (or hungry), ten obsidian, flint and steel or a fire charge, and three blocks for the lintel carried |
 | `keep_on` | root | go on in the Nether without going back for food | in the Nether, hungry with nothing to eat or on the way back for food; the trip back is left out for twenty minutes |
 | `cook_food` | root | cook the raw food carried | by day in the Overworld, and raw meat is carried |

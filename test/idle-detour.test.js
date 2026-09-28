@@ -20,7 +20,7 @@ const { setAside } = require('../src/progress');
 const tried = require('../src/tried');
 
 const HERE = new Vec3(-111.5, 41, -237.4);
-const DETOURS = ['differently', 'work_free', 'until_rest_ends', 'hoglin_food', 'mine_nearby', 'look_around', 'again', 'keep_on', ...[1, 2, 3, 4, 5, 6].map(n => `recover_${n}`)];
+const DETOURS = ['differently', 'work_free', 'until_rest_ends', 'hoglin_food', 'return_for_food', 'mine_nearby', 'look_around', 'again', 'keep_on', ...[1, 2, 3, 4, 5, 6].map(n => `recover_${n}`)];
 function recorded({ kind = 'win' } = {}) {
   const items = [{ name: 'iron_sword', count: 1 }, { name: 'netherrack', count: 20 }];
   const bot = { registry, game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 7.6, food: 12, isAlive: true, chat() {}, emit() {},
@@ -31,7 +31,8 @@ function recorded({ kind = 'win' } = {}) {
   const goal = kind === 'win'
     ? { kind: 'win', request: 'beat the game', from: 'TestPlayer', survival: {}, rungTime: { phase: 'errand' }, errand: { dimension: 'overworld', items: [{ item: 'oak_log', count: 1 }], at: Date.now(), for: 'a pickaxe' } }
     : { version: 1, kind: 'survive', request: 'Stay alive and prepare supplies between player requests', survival: {} };
-  // Every detour tried twice from here in the last minutes, and each came to nothing.
+  // Every detour tried twice from here in the last minutes, and each came to nothing; the trip back
+  // for food (note 607, offered at a Nether stall since) among them, or it is the one way left and taken.
   for (const method of DETOURS) for (const ago of [240000, 60000]) tried.record(bot, goal, { q: 'stillness_detour', method, outcome: 'blocked', why: 'no new ground, nothing gained, no block dug or placed', now: Date.now() - ago });
   return { bot, goal };
 }

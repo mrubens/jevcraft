@@ -366,10 +366,28 @@ function gearStage(bot, goal) {
   return rung;
 }
 
+// Where the Nether side of a remembered Overworld portal is: the game
+// puts it at the Overworld x and z over eight (or links to a portal of
+// its own near there). Walked to when no Nether portal is remembered.
+function cameThrough(goal, here) {
+  if (!here) return null;
+  return (goal?.portals || []).filter(p => p.dimension === 'overworld')
+    .map(p => ({ x: Math.floor(p.x / 8), y: Math.round(here.y), z: Math.floor(p.z / 8), from: p, estimated: true })).sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0] || null;
+}
+
 // The trip through a portal, said from the portals remembered here.
 function portalTrip(bot, goal = {}) {
   const where = dimension(bot), here = bot.entity?.position;
   const known = here ? (goal.portals || []).filter(p => p.dimension === where) : [];
+  // A Nether portal not seen since the crossing is still where the game put
+  // it: by the Overworld portal's x and z over eight. mid-242-ba-fortress-1
+  // remembered only its Overworld portal, and its way back was said as
+  // looked for first (note 607).
+  const came = where === 'nether' && !known.length ? cameThrough(goal, here) : null;
+  if (came) {
+    const d = Math.round(Math.hypot(came.x - here.x, came.z - here.z));
+    return `No portal here has been seen since the crossing, but the one the bot came through from the Overworld portal at (${came.from.x}, ${came.from.z}) comes out near (${came.x}, ${came.z}) here, ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk once the way is found, and back through it after.${arrivalSays(bot, d / 4.3)}${wayBackSays(bot, { x: came.x, y: here.y, z: came.z })}`;
+  }
   if (!known.length) return where === 'overworld' ? 'No portal is remembered here: one is found or built first (ten obsidian, or a bucket and a lava pool).' : `No portal is remembered in the ${where}: the way back is looked for first.`;
   const nearest = known.slice().sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
   const d = Math.round(Math.hypot(nearest.x - here.x, nearest.z - here.z));
@@ -836,4 +854,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };
+module.exports = { cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };

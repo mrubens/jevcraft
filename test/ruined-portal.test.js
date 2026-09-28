@@ -1000,7 +1000,7 @@ test('the crossing kit says where food lies against the frame begun, and offers 
   assert.match(offered.top_up_food, /The food known \(the search does not walk to what is out of view first\): 3 cow seen just now, \d+ blocks \w+ \(30, 40\), 28 blocks from the frame: about \d+ (seconds|minutes) in all/);
   assert.match(offered.top_up_food_near, /^Gather food at the known food whose trip on to the frame is shortest, then back to the cast: 3 cow seen just now/);
   // Counted raw, as the kills leave it (note 594): three cows about six a cow.
-  assert.match(offered.top_up_food_near, /the walk there about \d+ seconds, about 45 seconds for 3 cows, and on to the frame about 7 seconds\), for about 18 of the 40 points short as raw meat, about 40 once cooked/);
+  assert.match(offered.top_up_food_near, /the walk there about \d+ seconds, about 45 seconds for 3 cows, and on to the frame about 7 seconds\), for about 18 of the 80 points short as raw meat, about 48 once cooked/);
   assert.match(offered.cross_now, /No portal is lit yet: going on is the frame at \(8, 64, 23\), 4 of ten cast, 201 blocks from here, finished first, then the crossing\. Now health 20, hunger 6; health comes back: health is full; at hunger 6 a point lost would not come back until the bot eats to eighteen\. Food carried: nothing to eat\. .*at zero it starves to one health/);
   // With no frame begun, none of the frame is said, and the known food is
   // still offered, back here (note 594).

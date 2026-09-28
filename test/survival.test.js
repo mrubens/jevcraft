@@ -3238,7 +3238,7 @@ test('on a one-wide span over the lava sea, a hoglin at arm\'s length is struck 
   assert.equal(await defendNearby(bot, new Task('ground'), {}, () => {}), true, 'the swing, on firm ground');
 });
 
-test('food in the Nether is a hoglin as well as the trip back, and the trip is left out once Jev chose to go on without it', () => {
+test('food in the Nether is a hoglin as well as the trip back, and the trip stays offered once Jev chose to go on without it, said with when and at what health (note 607)', () => {
   // mid-211-c, short of food in the Nether, was offered only the portal back, 250 blocks off and lost (note 241).
   const { setAside } = require('../src/progress');
   const registry = require('minecraft-data')('26.1');
@@ -3252,9 +3252,10 @@ test('food in the Nether is a hoglin as well as the trip back, and the trip is l
   assert.match(children.hoglin_food.description, /1 in view within thirty-two blocks, the nearest 10 blocks off/);
   children.hoglin_food.run();
   assert.equal(state.nightPlan.kind, 'hoglin'); assert(state.nightPlan.food, 'a hunt for food, not ended by daylight or the Nether');
-  setAside(goal, 'nether_return', 'food', 'Jev chose to go on', 60000);
+  setAside(goal, 'nether_return', 'food', require('../src/nether-travel').keepOnWhy({ health: 10.1, food: 17 }), 60000);
   children = survival.offWorldFood(new Task('food'), goal, () => {});
-  assert.deepEqual(Object.keys(children), ['hoglin_food']);
+  assert.deepEqual(Object.keys(children).sort(), ['hoglin_food', 'return_for_food']);
+  assert.match(children.return_for_food.description, /Jev chose under a minute ago, at 10\.1 health, to go on in the Nether without this trip for twenty minutes; health is 18 now\.$/);
 });
 
 test('underground at night nothing is asked until two nights awake, and then staying up says underground, not outside', async () => {

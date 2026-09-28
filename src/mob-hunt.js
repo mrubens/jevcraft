@@ -709,7 +709,7 @@ async function foodLeave(bot, task, goal, save, actions) {
   if (decision.stale) return null;
   const pick = decision.path.at(-1);
   goal.leaveNether = { reason: 'food', pick, until: 0, at: Date.now() };
-  if (pick === 'keep_on') { setAside(goal, 'nether_return', 'food', 'Jev chose to go on in the Nether without going back for food', 20 * 60000); delete goal.stockFood; }
+  if (pick === 'keep_on') { setAside(goal, 'nether_return', 'food', require('./nether-travel').keepOnWhy(bot), 20 * 60000); delete goal.stockFood; }
   save();
   return pick;
 }

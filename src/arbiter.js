@@ -248,18 +248,44 @@ function stoppedSays(bot, state, layer, now = Date.now()) {
   const found = threat ? `the ${String(threat.entity?.name || 'mob').replaceAll('_', ' ')} ${Math.round(threat.distance)} blocks off${threat.visible === false ? ' (out of sight)' : ''}${threat.stance ? `, one the ${String(threat.stance).replaceAll('_', ' ')} stance was chosen against` : ''}` : null;
   return `${s.count === 1 ? 'Its last turn was' : `Its last ${s.count} turns, in the last ${span} second${span === 1 ? '' : 's'}, were each`} stopped at once by the threat check its run is given: ${s.why}. ${found ? `That check still finds one now: ${found}; given the turn again, it is stopped again at once.` : 'That check finds nothing now.'}`;
 }
+// What a mob about would do to a bot going on with the work: a shooter
+// fires from its own reach at what it sees, a biter comes at the bot once
+// it has seen it, at its walk. mid-235-q-nether-2-fortress-4's work was
+// given the turn at 4 health beside "a piglin 9.8 blocks off" (in sight, no
+// gold worn), and a ghast 60 blocks off, past the sixteen then said, ended
+// it eighteen seconds later (note 607).
+function mobWouldSays(t) {
+  const ce = require('./combat-estimate'), name = t.entity.name;
+  const reach = ce.RANGE[name] || (ce.MOBS[name]?.shoots ? 15 : null);
+  if (reach) return t.visible ? `it has the bot in sight and fires at it from as far as ${reach} blocks` : `it fires once it has the bot in sight, from as far as ${reach} blocks`;
+  const secs = Math.max(1, Math.round(t.distance / ce.blocksPerSecond(name)));
+  const why = name === 'piglin' ? ' (no gold is worn)' : '';
+  return t.visible ? `it sees the bot${why} and comes at it: at the bot in about ${secs} seconds at its walk` : `once it sees the bot it comes at it${why}, about ${secs} seconds at its walk`;
+}
 function workBodySays(bot, mobs) {
   const hp = bot?.health, food = bot?.food;
   if (typeof hp !== 'number') return null;
   const ce = require('./combat-estimate');
   const worn = (() => { try { return ce.armourOf([5, 6, 7, 8].map(s => bot.inventory?.slots?.[s]?.name).filter(Boolean)); } catch (_) { return null; } })();
   const hit = name => { const m = ce.MOBS[name]; return m?.hit && worn ? Math.round(ce.afterArmour(m.hit, worn) * 10) / 10 : null; };
-  const near = (mobs || []).filter(t => t.entity?.name).slice(0, 4).map(t => {
+  const heals = (food ?? 20) >= 18;
+  // Hurt with health not coming back, the shooters past sixteen whose fire
+  // reaches the bot are among the mobs about too (combat-estimate RANGE).
+  const far = heals || hp >= 20 ? [] : (() => { try { return probe.mobs(bot, 64).filter(t => t.distance > 16 && t.distance <= (ce.RANGE[t.entity.name] || 0)); } catch (_) { return []; } })();
+  const said = [...(mobs || []), ...far].filter(t => t.entity?.name);
+  const line = t => {
     const h = hit(t.entity.name);
-    return `${/^[aeiou]/.test(t.entity.name) ? 'an' : 'a'} ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? '' : ' (out of sight)'}${h ? `, about ${h} a hit through the armour worn${h >= hp ? ' (as much as the health left)' : ''}` : ''}`;
-  });
-  const heals = (food ?? 20) >= 18 ? 'it comes back meanwhile, at hunger eighteen or more' : `it does not come back at hunger ${food}`;
-  return `Health ${Math.round(hp * 10) / 10}: ${heals}.${near.length ? ` Mobs within sixteen blocks now: ${near.join('; ')}.` : ''}`;
+    return `${/^[aeiou]/.test(t.entity.name) ? 'an' : 'a'} ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? '' : ' (out of sight)'}${h ? `, about ${h} a hit through the armour worn${h >= hp ? ' (as much as the health left)' : ''}` : ''}${heals ? '' : `; ${mobWouldSays(t)}`}`;
+  };
+  // Each mob its own sentence where what it would do is said.
+  const near = said.slice(0, 5).map(line).map(l => heals ? l : `${l[0].toUpperCase()}${l.slice(1)}`);
+  let fed = '';
+  if (!heals) {
+    let points = 0; try { points = require('./foraging').foodSupply(bot); } catch (_) { points = 0; }
+    fed = points ? '' : ', and nothing carried is food, so it does not come back while the work goes on';
+  }
+  const back = heals ? 'it comes back meanwhile, at hunger eighteen or more' : `it does not come back at hunger ${food}${fed}`;
+  return `Health ${Math.round(hp * 10) / 10}: ${back}.${near.length ? ` ${far.length ? 'Mobs about now, within sixteen blocks and the shooters farther off whose fire reaches the bot' : 'Mobs within sixteen blocks now'}: ${near.join(heals ? '; ' : '. ')}.` : ''}`;
 }
 function withSays(option, c, bot, state, mobs, now) {
   const add = [];
@@ -307,7 +333,7 @@ function claimSays(c) {
     // The hunt's claim was said as "hunt: hunt." to mid-235-p-fortress-1,
     // at 5.5 health beside the work (note 509): what it goes for, and why.
     case 'hunt': return `Hunt ${f.entity ? mob({ name: f.entity, distance: f.distance }) : 'the mob in view'}${f.item ? ` for ${plural(f.item)} (${f.have ?? 0} of ${f.want} carried)` : ''}: close on it and fight it; which one, and the fight's cost, is asked next. The work waits.${hp}`;
-    case 'night_hunt': return `Go on with tonight's hunt${f.hunting ? ` of ${plural(f.hunting)}` : ''}, as chosen for the night: close on those met and fight them.${hp}`;
+    case 'night_hunt': return `Go on with ${f.forFood ? 'the hunt for food' : 'tonight\'s hunt'}${f.hunting ? ` of ${plural(f.hunting)}` : ''}, as chosen${f.forFood ? '' : ' for the night'}: close on those met and fight them.${hp}${heals}${f.hoglinFight ? ` ${f.hoglinFight}` : ''}`;
     case 'recover_items': return `Go back for the items dropped at the death${f.dropsAt ? ` at ${Math.round(f.dropsAt.x)}, ${Math.round(f.dropsAt.y)}, ${Math.round(f.dropsAt.z)}` : ''}: the way there is walked; items left lying in a loaded area vanish five minutes after they drop.${hp}`;
     case 'go_home_for_night': return `Go home for the night, as planned: the walk to the bed and sleep.${hp}`;
     case 'out_of_powder_snow': return `Get out of the powder snow: freezing takes health while the bot stands in it.${hp}`;
