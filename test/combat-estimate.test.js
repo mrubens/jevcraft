@@ -478,14 +478,16 @@ test('a cave spider\'s bite poisons: priced a point each 1.25 seconds through ar
   // Two poison the bot no faster than one: one poison, renewed.
   const one = stanceCost({ mobs: whole.mobs, reaches: () => true });
   const two = stanceCost({ mobs: fightEstimate({ threats: [...spider, { name: 'cave_spider', distance: 5.5, visible: true }], armour: IRON_KIT, weapon: 'iron_sword' }).mobs, reaches: () => true });
-  // From its first bite on arriving (5 blocks, less the reach, at three a
-  // second), three quarters of a second on.
-  assert.equal(one.poison, Math.round((15 - 3.5 / 3 - 0.75) * 0.8 * 10) / 10);
+  // From its first bite on arriving (5 blocks, less the reach, at its own
+  // chase speed, a spider's 3.9 a second: note 576), three quarters of a
+  // second on.
+  const v = require('../src/combat-estimate').blocksPerSecond('cave_spider');
+  assert.equal(one.poison, Math.round((15 - 3.5 / v - 0.75) * 0.8 * 10) / 10);
   assert.equal(two.poison, one.poison);
-  assert.equal(Math.round((two.damage - one.damage) * 10) / 10, Math.round((15 - 4 / 3) * 0.9 * 10) / 10, 'the second adds its bites alone, from its arrival');
+  assert.ok(Math.abs((two.damage - one.damage) - (15 - 4 / v) * 0.9) <= 0.1, 'the second adds its bites alone, from its arrival');
   // Floored at 1 where the health is given: the poison alone never kills.
   const low = stanceCost({ mobs: whole.mobs, reaches: () => true, health: 3 });
-  assert.equal(low.damage, Math.round(((15 - 3.5 / 3) * 0.9 + 2) * 10) / 10);
+  assert.equal(low.damage, Math.round(((15 - 3.5 / v) * 0.9 + 2) * 10) / 10);
 });
 
 test('a stance a poisoner or a wither skeleton reaches while it builds keeps the effect past the reach (note 542)', () => {

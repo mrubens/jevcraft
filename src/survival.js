@@ -134,7 +134,35 @@ function chaseSays(bot, danger, { apartIds = new Set(), destination = null, runS
       witherSays = ` The wither on the bot runs on meanwhile: about ${r1(then)} health when the first of them is at the bot again${then < 1 ? ', or none' : ''}.`;
     }
   }
-  return ` They follow a running player (the bot sprints about ${SPRINT} blocks a second): ${each.join('; ')}.${witherSays}`;
+  // How a kind gives the bot up where the jar says more than its range: a
+  // piglin brute by sight too, and home to its bastion (note 576).
+  const { GIVES_UP } = require('./combat-estimate');
+  const givesUp = [...new Set(chasers.map(t => t.entity.name))].filter(n => GIVES_UP[n]).map(n => ` By the game's rule, ${GIVES_UP[n]}.`).join('');
+  return ` They follow a running player (the bot sprints about ${SPRINT} blocks a second): ${each.join('; ')}.${witherSays}${givesUp}`;
+}
+// The hardest blow of those that can get to the bot, said first on every
+// stance: what one blow takes through the armour worn, how many end the bot
+// from the health it has, and how soon the mob can be at arm's length at
+// its own speed. mid-242-ae-nether-1 stood at 20 health beside a piglin
+// brute; the fight said "9 swings ... 50 health" and 116.5 damage all told,
+// the rail said its walling seconds with "anything at reach hitting freely
+// meanwhile" and no figure at all, and nothing said that two of the
+// brute's blows (12.2 each through an iron helmet and chestplate) were the
+// bot's twenty. The rail was chosen at 0.66; the brute came from 6.9 blocks
+// to 1.7 in about a second and struck twice (note 576).
+function blowsSay(mobs, health) {
+  const biters = (mobs || []).filter(m => !m.apart && !m.shoots && m.name !== 'creeper' && m.hitsBot > 0 && !m.bornOf);
+  if (!biters.length) return '';
+  const m = biters.slice().sort((a, b) => b.hitsBot - a.hitsBot || a.distance - b.distance)[0];
+  const { MOBS } = require('./combat-estimate');
+  const h = Math.round((health ?? 20) * 10) / 10;
+  const blows = Math.max(1, Math.ceil(h / m.hitsBot));
+  const bare = m.bornOf ? null : MOBS[m.name]?.hit;
+  const v = blocksPerSecond(m.name), soon = Math.round(Math.max(0, (m.distance || 0) - (m.reach || 1.5)) / v * 10) / 10;
+  const name = m.name.replaceAll('_', ' ');
+  const hardest = biters.length > 1 ? `, the hardest hitter of the ${biters.length} here that can get to the bot,` : '';
+  const when = soon <= 0.1 ? 'it is at arm\'s length now' : `at its own speed (about ${Math.round(v * 10) / 10} blocks a second) it can be at arm's length in about ${soon} second${soon === 1 ? '' : 's'}`;
+  return `The ${name} ${Math.round(m.distance || 0)} blocks off${hardest} hits for about ${m.hitsBot} a blow through the armour worn${bare && bare !== m.hitsBot ? ` (${bare} before it)` : ''}, a blow a second at arm's length: ${blows === 1 ? 'one blow ends' : `${blows} blows end`} the bot from ${h} health, and ${when}.`;
 }
 // A retreat's footing is found when it runs, not before (runAway): said, so
 // the run is not read as a known safe place (the decision audit, 2026-09-25).
@@ -203,7 +231,7 @@ const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pill
 // eating: a shield raised at each arrow stops them.
 // The most a route drops the bot (movement.js).
 const ROUTE_DROP = 3;
-const MOVING_STANCES = new Set(['retreat', 'fight_from_footing', 'rail_and_fight', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
+const MOVING_STANCES = new Set(['retreat', 'leave_reach', 'fight_from_footing', 'rail_and_fight', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
 // Two blocks up: from the pillar's report to two up took a second and a
 // half to two seconds in mid-92-e, mid-92-g and mid-110-k (2026-09-26).
 const PILLAR_SECONDS = 1.5;
@@ -921,7 +949,11 @@ const shoots = threat => shooter(threat.entity);
 const ESCAPE_FOOTING = ['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'stone', 'deepslate', 'tuff', 'andesite', 'diorite', 'granite',
   'sand', 'red_sand', 'gravel', 'cobblestone', 'cobbled_deepslate', 'sandstone', 'terracotta',
   'netherrack', 'soul_sand', 'soul_soil', 'basalt', 'smooth_basalt', 'blackstone', 'nether_bricks', 'crimson_nylium', 'warped_nylium',
-  'end_stone', 'obsidian'];
+  'end_stone', 'obsidian',
+  // A bastion's own floors (note 576): mid-242-ae-nether-1 stood on
+  // polished blackstone bricks among its piglins, and no run could find
+  // anywhere to stand on them.
+  'polished_blackstone_bricks', 'cracked_polished_blackstone_bricks', 'polished_blackstone', 'chiseled_polished_blackstone', 'gilded_blackstone', 'polished_basalt'];
 const shelterNeeded = bot => bot.game.difficulty !== 'peaceful' && bot.game.dimension === 'overworld' &&
   bot.time?.timeOfDay >= DAY.DUSK && bot.time.timeOfDay < DAY.DAWN;
 // The server lets a player sleep from 12541 until 23458; with the only
@@ -2195,7 +2227,11 @@ class Survival {
         if (come.length) thereSays += ` ${list(come)[0].toUpperCase()}${list(come).slice(1)}, with no way to the bot here, ${come.length === 1 ? 'is' : 'are'} not kept from that ground (a way there, or none the search can rule out): stepping there can put the bot where ${come.length === 1 ? 'it' : 'they'} can get to it.`;
         if (still.length) thereSays += ` ${list(still)[0].toUpperCase()}${list(still).slice(1)} ${still.length === 1 ? 'has' : 'have'} no way to that ground either${!coming.length && !come.length ? ': nothing here comes to be fought there, and the fight stands and waits for one that does' : ''}.`;
       }
-      options.fight_from_footing = { description: `Step to firm ground ${far} blocks off, three blocks or more from any drop (about ${Math.max(1, Math.round(far / 4.3))} second${far > 4.3 ? 's' : ''}${coming.length ? ', the mobs hitting freely meanwhile' : ''}), then fight there: a knock there lands on ground, where here it goes over the edge.${thereSays}${creeperCount ? creeperFoughtText({ there: true }) : ''}${edge}`,
+      // Priced as the rail is: the step's seconds with what gets to the bot
+      // hitting, then the fight there, begun once it is there (note 576).
+      const stepSeconds = Math.max(1, Math.round(far / 4.3));
+      const footCost = stanceCost({ mobs, setup: stepSeconds, ...(coming.length ? { fight: { lead: true } } : {}), shield: shielded, health: bot.health });
+      options.fight_from_footing = { expects: { damage: footCost.damage, seconds: footCost.seconds, oneHit }, description: `Step to firm ground ${far} blocks off, three blocks or more from any drop (about ${stepSeconds} second${far > 4.3 ? 's' : ''}${coming.length ? ', the mobs hitting freely meanwhile' : ''}), then fight there: a knock there lands on ground, where here it goes over the edge.${thereSays}${creeperCount ? creeperFoughtText({ there: true }) : ''}${edge}` + (coming.length ? costSays(footCost, bot.health, mobs, { doing: 'stepping there', done: 'There' }) : ''),
         run: async () => {
           this.report(goal, save, { action: 'fight_from_footing', to: { ...groundBy } });
           const movements = bot.pathfinder?.movements, towers = movements?.allow1by1towers;
@@ -2254,11 +2290,21 @@ class Survival {
     const railMade = railPlanks && railPlanks.available + countOf(bot, railPlanks.item) >= railBlocks ? railPlanks : null;
     if (railSides.length && (railStack || railMade)) {
       const railing = `Wall the ${railSides.length} open side${railSides.length === 1 ? '' : 's'} at the feet over the drop (${railBlocks} block${railBlocks === 1 ? '' : 's'}, about ${Math.round(railBlocks * BLOCK_SECONDS * 10) / 10} seconds${railMade ? `, the ${railMade.item.replaceAll('_', ' ')} for it made first from the logs carried, about a second more` : ''}, anything at reach hitting freely meanwhile)`;
-      const railCost = noStep ? stanceCost({ mobs, setup: railBlocks * BLOCK_SECONDS, shield: shielded }) : null;
-      options.rail_and_fight = { ...(railCost ? { expects: { damage: railCost.damage, seconds: railCost.seconds, oneHit } } : {}),
+      // Priced as every stance is, the fight after the walls too: the
+      // walling's seconds with everything that gets to the bot hitting
+      // freely, then the fight here begun once the blocks are down (as the
+      // pillar's, note 559). It was priced only where nothing could be
+      // fought: mid-242-ae-nether-1's rail read its 2.4 seconds of walling
+      // and no figure beside the fight's 116.5 against a piglin brute 6.9
+      // blocks off, was chosen at 0.66, and the brute was at it in a
+      // second and struck twice, 12.2 each (note 576).
+      const railSetup = railBlocks * BLOCK_SECONDS + (railMade ? 1 : 0);
+      const railCost = noStep ? stanceCost({ mobs, setup: railSetup, shield: shielded })
+        : stanceCost({ mobs, setup: railSetup, fight: { lead: true, atOnce: opening ? Infinity : open + inCell.length }, shield: shielded, health: bot.health });
+      options.rail_and_fight = { expects: { damage: railCost.damage, seconds: railCost.seconds, oneHit },
         description: noStep
           ? `${railing}, then hold here behind it: a push from a shot that lands, or a step back, stops at the wall; nothing is at reach to swing at, and the shooters still shoot where the bot stands.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: 'walling', done: 'Behind the wall' })
-          : `${railing}, then fight here: a knock toward the drop stops at the wall.${creeperLeftOut}${edge}${hitsLeft}`,
+          : `${railing}, then fight here: a knock toward the drop stops at the wall.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: 'walling', done: 'Walled' }) + hitsLeft,
         run: async () => {
           if (!await this.railSpan(task, goal, save, { blast: danger.some(t => t.entity.name === 'ghast') })) return false;
           return noStep ? true : options.fight.run();
@@ -2806,6 +2852,19 @@ class Survival {
     const endermanSays = endermen ? ' An enderman after the bot teleports to it: a run from one ends with it beside the bot again.' : '';
     options.retreat = { ...(runExpects ? { expects: runExpects } : {}), description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + riderSays + endermanSays + footing + chase + unseen,
       run: () => this.runAway(task, goal, save, danger) };
+    // With no way passing every mob, the way past the reach of what bites,
+    // found before the question (scoutRetreat, reachFootings): the
+    // shooters' fire over the run said, and how each that bites follows and
+    // gives up (note 576).
+    const past = !onPillar && scouted?.pastReach;
+    if (past) {
+      const secs = Math.round(past.blocks / SPRINT * 10) / 10;
+      const each = past.from.map(f => `${f.blocks} from the ${f.name.replaceAll('_', ' ')} (it follows a player to ${f.follows})`);
+      options.leave_reach = { expects: { damage: runShotCost(secs), seconds: Math.max(1, secs), oneHit },
+        description: `Run past the reach of what bites, taking the shooters' fire on the way: ${past.blocks} blocks to footing ${each.length > 1 ? `${each.slice(0, -1).join(', ')} and ${each.at(-1)}` : each[0]}, nearer the bot than any of them, by a route that passes none of those that bite (the shooters are not kept clear of), about ${secs} seconds at a run.${runShot(secs)}` +
+          chaseSays(bot, danger, { apartIds: apart.ids, destination: past.destination, runSeconds: secs }) + unseen,
+        run: () => this.leaveReach(task, goal, save, danger) };
+    }
     // In the Nether with its portal close, the way home is a stance too:
     // mid-92-q came out beside its portal among skeletons and ghasts, turned
     // between six stances in twenty-five seconds and burned, the portal
@@ -3004,6 +3063,11 @@ class Survival {
       if (CLOSES_THE_DROP.has(k)) continue;
       o.description += over.says + (k === 'keep_working' ? ' The work does not stop in time: the hit that would stop it is the one that throws the bot over.' : '');
     }
+    // The hardest blow that can get to the bot, first on every stance
+    // (blowsSay, note 576): each says after it whether that mob still
+    // reaches the bot its way.
+    const blows = blowsSay(mobs, bot.health);
+    if (blows) for (const o of Object.values(options)) o.description = `${blows} ${o.description}`;
     return options;
   }
 
@@ -3402,6 +3466,59 @@ class Survival {
     return { about, footing, far, near, heavy, persistent, radius };
   }
 
+  // Footing past the reach of what bites: further from each biter that can
+  // follow the bot than the range it follows a player to (combat-estimate
+  // followRange), and nearer the bot than any of them, so the bot is there
+  // first. The shooters are not kept clear of: their shots over the run are
+  // its price, said. Where every mob about is kept clear of, as the retreat
+  // does, a crowd leaves no way: mid-242-ae-nether-1 in a bastion, eighteen
+  // piglins within twenty-four and a piglin brute seven blocks off, was told
+  // "no way out" and never offered the way off the brute's ground (note 576).
+  reachFootings(danger) {
+    const bot = this.bot;
+    const biters = danger.filter(t => t.entity?.position && !shooter(t.entity) && !['creeper', 'enderman'].includes(t.entity.name) && !t.entity.vehicle && t.distance <= followRange(t.entity.name));
+    if (!biters.length || typeof bot.findBlocks !== 'function') return null;
+    const clear = t => followRange(t.entity.name) + 2;
+    const ids = ESCAPE_FOOTING.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
+    const radius = Math.min(32, Math.max(...biters.map(t => clear(t) + 8)));
+    const here = bot.entity.position;
+    const heavy = heavyHitters(threats(bot, 16), 16).length > 0;
+    const shot = !heavy && danger.some(t => shooter(t.entity));
+    const deadlyBeside = p => { const d = require('./terrain').dropNear(bot, p, 2); return !!d && (d.into === 'lava' || d.damage >= (bot.health ?? 20) / 2); };
+    const edgeSafe = p => heavy ? !dropWithin(bot, p, 2) : !(shot && deadlyBeside(p));
+    const candidates = bot.findBlocks({ matching: ids, maxDistance: radius, count: 512,
+      useExtraInfo: b => shelter.solid(b) && shelter.replaceable(bot.blockAt(b.position.offset(0, 1, 0))) && shelter.replaceable(bot.blockAt(b.position.offset(0, 2, 0))),
+    }).map(p => p.offset(0, 1, 0))
+      .filter(p => !isSetAside(this, 'escape', p) && !lavaBeside(bot, p) && edgeSafe(p) &&
+        biters.every(t => t.entity.position.distanceTo(p) >= clear(t) && t.entity.position.distanceTo(p) > p.distanceTo(here)))
+      .sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+    return { biters, candidates: candidates.slice(0, 12), heavy };
+  }
+
+  // The run past their reach, chosen: the way the stance question found, or
+  // searched again from here.
+  async leaveReach(task, goal, save, danger) {
+    const bot = this.bot;
+    const movements = bot.pathfinder.movements;
+    const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
+    Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
+    try {
+      const scout = this.state.retreatScout;
+      const fresh = scout?.pastReach && Date.now() - scout.at < 2000 && scout.feet === `${bot.entity.position.floored()}`;
+      let p = fresh ? pos(scout.pastReach.destination) : null;
+      if (!p) {
+        const found = this.reachFootings(danger);
+        const way = found?.candidates.length ? await this.wayAway(task, movements, { about: found.biters.map(t => t.entity), heavy: found.heavy }, found.candidates) : { p: null };
+        if (!way.p) { this.state.failWhy = 'no footing past the reach of those that bite has a route that passes none of them'; return false; }
+        p = way.p;
+      }
+      delete this.state.retreatScout;
+      this.report(goal, save, { action: 'leave_reach', destination: { x: p.x, y: p.y, z: p.z }, threats: danger.map(t => t.entity.name).slice(0, 4) });
+      try { await this.actions.navigate(bot, task, new goals.GoalBlock(p.x, p.y, p.z), { timeoutMs: 10000, stallMs: 3000 }); delete this.state.trappedSince; return true; }
+      catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; setAside(this, 'escape', p, err, 60000); save(); return true; }
+    } finally { Object.assign(movements, previous); bot.clearControlStates(); }
+  }
+
   async runAway(task, goal, save, danger, { gain = 4, only = false } = {}) {
     const bot = this.bot;
     const movements = bot.pathfinder.movements;
@@ -3487,7 +3604,16 @@ class Survival {
       const candidates = [...far.slice(0, 12), ...near.slice(0, 12)];
       const way = candidates.length ? await this.wayAway(task, movements, { about, heavy }, candidates, { budgetMs }) : { p: null, tried: 0 };
       const from = bot.entity.position;
-      return this.state.retreatScout = { at: Date.now(), feet, radius, spots: far.length + near.length, tried: way.tried, candidates: candidates.length,
+      // With no way that passes every mob, a way past the reach of what
+      // bites, the shooters' fire taken on it (reachFootings, note 576).
+      let pastReach = null;
+      if (!way.p) {
+        const found = this.reachFootings(danger);
+        const reach = found?.candidates.length ? await this.wayAway(task, movements, { about: found.biters.map(t => t.entity), heavy: found.heavy }, found.candidates, { budgetMs }) : null;
+        if (reach?.p) pastReach = { destination: { x: reach.p.x, y: reach.p.y, z: reach.p.z }, blocks: Math.round(reach.route.path.length || reach.p.distanceTo(from)),
+          from: found.biters.map(t => ({ id: t.entity.id, name: t.entity.name, blocks: Math.round(t.entity.position.distanceTo(reach.p)), follows: followRange(t.entity.name) })) };
+      }
+      return this.state.retreatScout = { at: Date.now(), feet, radius, spots: far.length + near.length, tried: way.tried, candidates: candidates.length, ...(pastReach ? { pastReach } : {}),
         ...(way.p ? { destination: { x: way.p.x, y: way.p.y, z: way.p.z }, blocks: Math.round(way.route.path.length || way.p.distanceTo(from)),
           gain: Math.round(Math.min(...about.map(e => e.position.distanceTo(way.p))) - Math.min(...about.map(e => e.position.distanceTo(from)))) } : {}) };
     } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return null; }

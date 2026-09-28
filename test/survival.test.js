@@ -4179,7 +4179,8 @@ test('a wither skeleton reaches a pillar\'s top from the bot\'s own floor, and t
   const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
   const skeleton = { entity: { id: 1, name: 'wither_skeleton', position: new Vec3(7.5, 64, 3.5), height: 2.4 }, distance: Math.hypot(7, 3), visible: true };
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [skeleton], false);
-  assert.match(options.pillar.description, /^Go two blocks straight up on placed blocks and fight from there\. Here two up is no cover from any of the mobs that bite: the wither skeleton reaches its top, and the fight up there is the fight here, begun once the blocks are down, on a top one block wide; shooters still can hit\./);
+  // After the hardest blow, said first on every stance (note 576).
+  assert.match(options.pillar.description, /^The wither skeleton 8 blocks off hits for about 8 a blow[^]*?seconds\. Go two blocks straight up on placed blocks and fight from there\. Here two up is no cover from any of the mobs that bite: the wither skeleton reaches its top, and the fight up there is the fight here, begun once the blocks are down, on a top one block wide; shooters still can hit\./);
   assert.match(options.pillar.description, /Two up does not stop a wither skeleton/);
   assert.match(options.pillar.description, /A blow that lands knocks the bot back/);
   // Fought from the top with no approach, it read 16.3 where the fight here read 23.8.
@@ -4798,7 +4799,8 @@ test('the bunker says the wall it leaves for the lava behind it, and once dug is
   // Standing in the bunker it dug: the stance is to stay, with nothing to dig.
   survival.state.bunkerDug = { cells: [{ x: 0, y: 64, z: 0 }, { x: 0, y: 64, z: 1 }], inside: { x: 0, y: 64, z: 1 }, mouth: { x: 0, y: 64, z: 1 }, watch: { x: 0, y: 64, z: 0 }, at: Date.now(), dimension: 'overworld' };
   const held = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, zombie)], false);
-  assert.match(held.bunker.description, /^Stay in the bunker already dug here/);
+  // After the hardest blow, said first on every stance (note 576).
+  assert.match(held.bunker.description, /^The zombie \d+ blocks off hits for about 3 a blow[^]*?seconds\. Stay in the bunker already dug here/);
 });
 
 test('a NoRoute from an emergency walk is not persisted as the work step', async () => {

@@ -371,6 +371,18 @@ const BODY_HEIGHT = { zombie: 1.95, husk: 1.95, drowned: 1.95, zombie_villager: 
   silverfish: 0.3, endermite: 0.3, blaze: 1.8, breeze: 1.77 };
 const bodyHeight = name => BODY_HEIGHT[name] ?? 1.95;
 const FOLLOW_RANGE = { zombie: 35, husk: 35, drowned: 35, zombie_villager: 35, zombified_piglin: 35, enderman: 64, blaze: 48, pillager: 32, ravager: 32, creaking: 32, warden: 24, breeze: 24, vindicator: 12, piglin_brute: 12, evoker: 12, illusioner: 18 };
+// How a mob gives a player up where its brain says more than the follow
+// range, read from the 26.1.2 jar. A piglin brute (PiglinBruteAi) goes after
+// the nearest player it sees within its follow range (12, createAttributes),
+// or one it is angry at (struck by it: ANGRY_AT, 600 ticks) within that
+// range seen or not, and drops it otherwise (StopAttackingIfTargetInvalid);
+// idle, it walks back to its HOME, the spot it was made at (initMemories),
+// from within a hundred blocks (StrollToPoi). No biome spawns one: it comes
+// only with a bastion's pieces. mid-242-ae-nether-1 was never told how one
+// gives up, and the way off its bastion was never offered (note 576).
+const GIVES_UP = {
+  piglin_brute: 'a piglin brute keeps after a player only while that player is within 12 blocks of it and in its sight (seen or not for 30 seconds once the bot has struck it), then walks back to the spot in its bastion it was made at; brutes come only with a bastion and are found nowhere else',
+};
 const SPRINT_SPEED = 0.13;
 const groundSpeed = s => s * s * 0.98 * 20 / (1 - 0.6 * 0.91);
 // A chase goal's own modifier where it is not 1: a skeleton kind with a
@@ -687,7 +699,12 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
 // a second and a half later, once.
 // mobs: fightEstimate's mobs.
 // A spear holder hits from its reach, and at its jab.
-const arrives = m => Math.max(0, ((m.distance || 0) - (m.name === 'creeper' ? LIGHTS_AT : m.reach || 1.5)) / APPROACH);
+// A biter comes on at its own chase speed (blocksPerSecond, from the jar),
+// not the three blocks a second once taken for all: a piglin brute runs 5.3,
+// near a sprint, and mid-242-ae-nether-1's came from 6.9 blocks to 1.7 in
+// about a second and struck twice while its rail went down (note 576). A
+// creeper keeps the walk its fuse is reckoned with.
+const arrives = m => Math.max(0, ((m.distance || 0) - (m.name === 'creeper' ? LIGHTS_AT : m.reach || 1.5)) / (m.name === 'creeper' ? APPROACH : blocksPerSecond(m.name)));
 const bites = m => m.jab ?? m.hitsBot;
 // A wither skeleton or a poisoner that gets to the bot leaves its effect on
 // it past the reach: the wither ten seconds after its last hit, the poison
@@ -777,4 +794,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };
+module.exports = { GIVES_UP, BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };
