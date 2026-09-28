@@ -105,6 +105,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // wrapped nothing.
   bot.loadPlugin(require('./skills').goalGuardPlugin);
   bot.loadPlugin(require('./skills').digGuardPlugin);
+  // After the guard, so a dig it refuses never asks the server: a dig is
+  // finished only when the server has broken the block (server-truth.js).
+  bot.loadPlugin(require('./server-truth').serverTruthPlugin);
   bot.loadPlugin(require('./own-blocks').ownBlocksPlugin);
   bot.loadPlugin(require('./gaze').gazePlugin);
   bot.loadPlugin(require('./riders').ridersPlugin);

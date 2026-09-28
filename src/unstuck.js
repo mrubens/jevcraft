@@ -295,6 +295,13 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     const drop = dropBelow(view, floor, { extra: 1 });
     if (seconds != null) moves.push({ key: 'dig_down', does: `Dig the ${floorName.replaceAll('_', ' ')} underfoot${ownSays(view, floor)} and drop a block (about ${seconds} s).`, kind: 'dig', cell: floor, seconds, effects: [opensOnto(view, floor.plus(DOWN)), ...(drop ? [drop] : []), ...digEffects(view, floor)] });
   }
+  // The server keeps putting the body back here: what this client sees may
+  // not be what the server has. The moves above are read from the view; this
+  // one asks the server, and its answer is taken for the view (server-truth.js).
+  if (view.corrections) {
+    const c = view.corrections;
+    moves.push({ key: 'ask_server', kind: 'resync', effects: [], does: `Ask the server what the blocks round the body are: it answers a use of a block's face with the block it holds there, and this client's view is made to match its answer (nothing is placed or broken; the shield or an empty hand does the asking). The server put the body back ${c.times} times in ${c.withinSeconds} seconds here, as it does when a move would put the body into a block the server has and the view does not${c.askedAbout ? `; it was asked ${c.secondsAgo} seconds ago about ${c.askedAbout} blocks and ${c.viewDiffered.length ? 'its answer differed from the view at ' + c.viewDiffered.map(x => `(${x.x}, ${x.y}, ${x.z})`).join(', ') : 'its answers matched the view'}` : ''}.` });
+  }
   // 'away': off a spot every walk failed from, onto dry ground eight blocks off.
   const done = goal === 'dry' ? dryFooting(view, feet)
     : goal === 'away' ? dryFooting(view, feet) && !!from && Math.hypot(feet.x - from.x, feet.z - from.z) >= 8
@@ -402,7 +409,8 @@ function liveView(bot) {
   try { lavaTouch = terrain.lavaTouchSays(bot); } catch (_) { /* no body to price */ }
   const { laidAt } = require('./own-blocks');
   return { name: p => bot.blockAt(p)?.name ?? null, block: p => bot.blockAt(p) ?? null, laid: p => laidAt(bot, p), carried, pickaxe: PICKS.find(n => carried[n]) || null,
-    axe: Object.keys(carried).find(n => n.endsWith('_axe') && !n.endsWith('_pickaxe')) || null, health: bot.health ?? 20, lavaTouch };
+    axe: Object.keys(carried).find(n => n.endsWith('_axe') && !n.endsWith('_pickaxe')) || null, health: bot.health ?? 20, lavaTouch,
+    corrections: (() => { try { return bot.serverTruth?.says?.() || null; } catch (_) { return null; } })() };
 }
 
 // Walled in where it stands (every side closed at the feet or the head),
@@ -447,6 +455,14 @@ async function perform(bot, task, m, { dig }) {
   const feet = bot.entity.position.floored();
   const inWater = isWater(bot.blockAt(feet)?.name);
   const equipBlock = async name => { const item = bot.inventory.items().find(i => i.name === name); if (!item) throw new Error(`No ${name} carried`); await bot.equip(item, 'hand'); };
+  // Asking the server is not a move from a cell: the body jitters over a
+  // block's top while the server holds it (79.07 and 78.99), and the cell it
+  // floors to changes with each look.
+  if (m.kind === 'resync') {
+    if (!bot.serverTruth) throw new Error('No way to ask the server here');
+    m.result = await bot.serverTruth.resyncAround(task);
+    return;
+  }
   // A move read from another cell is not this cell's: on 25583 the moves
   // were read while the body fell from y 41 to 38 (the feet taken at 40),
   // and the step south "dropping 1" was run from the cell under, against
@@ -534,6 +550,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const decision = await decide('unstuck_move', { client, bot, task, goal, save, tree,
       // Breath, in seconds: a full bar is fifteen under water.
       state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6), health: bot.health, food: bot.food,
+        ...(view.corrections ? { serverCorrections: view.corrections } : {}),
         // The mobs about while it works free, seen or not (the decision
         // audit), and the shooters farther off whose fire reaches the bot.
         threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(),
@@ -559,7 +576,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     catch (err) { task.check(); if (fatal(err)) throw err; failure = err.message; }
     finally { task.interruptCheck = previousInterrupt; }
     const after = bot.entity.position.floored();
-    const changed = before.distanceTo(bot.entity.position) >= 0.5 || (m.cell && bot.blockAt(m.cell)?.name !== blocks);
+    const changed = before.distanceTo(bot.entity.position) >= 0.5 || (m.cell && bot.blockAt(m.cell)?.name !== blocks) || (m.kind === 'resync' && m.result?.corrected?.length > 0);
     still = changed ? 0 : still + 1;
     // Got there: the column, and the height when the move rises. A pillar
     // rises in its own column, so the column alone always said so:

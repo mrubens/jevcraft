@@ -170,6 +170,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `(step\|climb\|place\|bridge)_(north\|east\|south\|west)` (pattern) | root | walk, climb, place a block or bridge a gap in the floor that way | the cells that way allow it |
 | `dig_(north\|east\|south\|west)_(feet\|head\|over)` (pattern) | root | dig the block that way | a natural block there, and a tool for it if it needs one |
 | `dig_up\|dig_down\|swim_up\|pillar` (pattern) | root | dig over the head or underfoot, swim up, or pillar | what is over the head or underfoot allows it |
+| `ask_server` | root | ask the server what the blocks round the body are, and take its answer for the view | the server put the body back where it was several times within five minutes near here (a body it will not let move where the view says it can); said with how many times, and what an earlier asking found |
 
 ### `way_down`
 

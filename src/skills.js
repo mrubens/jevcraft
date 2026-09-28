@@ -98,7 +98,12 @@ async function surveyRoute(bot, task, movements, goal, timeoutMs = 500) {
 }
 
 class NavigationCorrectionLoop extends Error {
-  constructor() { super('Repeated server movement corrections at the same position'); }
+  // Where, how many and over how long, for the recovery that asks the server
+  // what is there (server-truth.js) and for the facts said after it.
+  constructor({ position = null, count = null, seconds = null } = {}) {
+    super('Repeated server movement corrections at the same position');
+    Object.assign(this, { position, count, seconds });
+  }
 }
 class NavigationStall extends Error {
   constructor() { super('navigation timed out without reaching new ground'); }
@@ -395,6 +400,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   if (movements) movements.walkGoalY = goalPoint(goal)?.y;
   const deadline = Date.now() + timeoutMs;
   try {
+    let asked = 0;
     for (let attempt = 0; ; attempt++) {
       task.check(); checkAir(bot);
       if (stopWhen?.()) return;
@@ -402,6 +408,19 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
       if (remaining <= 0) throw new Error('navigation timed out');
       try { return await navigateAttempt(bot, task, goal, { timeoutMs: remaining, stallMs, stopWhen }); }
       catch (err) {
+        // The server keeps putting the body back: this client's view of the
+        // blocks round it is wrong somewhere (a block it dug that the server
+        // did not break, note 632). Ask the server what is there and walk
+        // again with what it says; a body pressed against a wall (the
+        // recovery below) is the case where it says nothing differs.
+        if (err instanceof NavigationCorrectionLoop && bot.serverTruth && asked < 3) {
+          asked++;
+          bot.serverTruth.noteLoop({ position: err.position || bot.entity.position, count: err.count, seconds: err.seconds });
+          const reply = await bot.serverTruth.resyncAround(task, { loop: err });
+          if (reply.corrected.length) { attempt--; continue; }
+          const rest = reply.asked ? `the server was asked about ${reply.asked} blocks round the body and its answers matched the view` : 'the server could not be asked what the blocks round the body are';
+          err.facts = `${err.count} corrections in ${Math.max(1, Math.round(err.seconds || 0))} s; ${rest}`;
+        }
         if (!(err instanceof NavigationCorrectionLoop || err instanceof NavigationStall) || attempt > 0 ||
           !await recoverNavigation(bot, task, deadline, stopWhen)) throw err;
       }
@@ -534,7 +553,7 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
         return;
       }
       if (corrections.length >= 4 && Date.now() - corrections.at(-1).at < 500) {
-        reject(new NavigationCorrectionLoop());
+        reject(new NavigationCorrectionLoop({ position: corrections.at(-1).position, count: corrections.length, seconds: (corrections.at(-1).at - corrections[0].at) / 1000 }));
         bot.pathfinder.setGoal(null); bot.stopDigging?.(); bot.clearControlStates?.();
       }
     }, 100);

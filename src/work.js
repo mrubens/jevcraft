@@ -4920,11 +4920,14 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival, r
   const key = `step:${failed?.block || failed?.item || failed?.action || 'none'}`;
   const tried = require('./tried');
   const work = require('./stillness').actionOf(goal).key;
-  tried.record(bot, goal, { q: 'step', method: failed?.action || 'none', target: stepTarget(failed), outcome: 'blocked', why: err.message });
+  // What was found out about the failure, where the failure has it said
+  // (the server's corrections, note 632).
+  const said = `${String(err.message)}${err.facts ? ` (${err.facts})` : ''}`;
+  tried.record(bot, goal, { q: 'step', method: failed?.action || 'none', target: stepTarget(failed), outcome: 'blocked', why: said });
   // What is retried and where it was going, named: mid-202-o-nether-2's
   // persist ran from attempt 1 to 12 on "No route from here to the
   // destination", neither said (note 500).
-  goal.step = { action: 'persist', attempt: goal.struggles, problem: err.message, ...(failed?.action ? { retrying: failed.action } : {}), ...(err.destination ? { destination: err.destination } : {}) }; save(); onStep(goal);
+  goal.step = { action: 'persist', attempt: goal.struggles, problem: err.message, ...(err.facts ? { facts: err.facts } : {}), ...(failed?.action ? { retrying: failed.action } : {}), ...(err.destination ? { destination: err.destination } : {}) }; save(); onStep(goal);
   // Every way resting until a time (WaysResting): when that is, for the
   // stall's question to offer other work until then; and once Jev has
   // chosen that, the same rest met again goes back to that work, not to the
@@ -4933,7 +4936,7 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival, r
   const held = until && goal.restHeld?.until === until ? goal.restHeld : null;
   // The answer this step was carrying out: asked again, not the step.
   const owner = !until && tried.owner(goal, { work, skip: new Set(['stillness_detour', 'rung_progress']) });
-  const what = `the ${String(failed?.action || 'step').replaceAll('_', ' ')} step failed${goal.struggles === 1 ? '' : ` ${goal.struggles} times running`}: ${String(err.message).slice(0, 160)}`;
+  const what = `the ${String(failed?.action || 'step').replaceAll('_', ' ')} step failed${goal.struggles === 1 ? '' : ` ${goal.struggles} times running`}: ${String(err.message).slice(0, 160)}${err.facts ? ` (${err.facts})` : ''}`;
   const up = owner ? tried.escalate(goal, { from: 'step', to: owner.q, why: what, parentOf: require('./decisions').parentOf, here: bot.entity?.position }) : null;
   if (owner) tried.markBlocked(owner, what);
   const chose = {};
