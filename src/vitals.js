@@ -411,20 +411,37 @@ async function outOfPowderSnow(bot, task, onAction = () => {}) {
 // puts it out; burning with no fire near, it burns out in a few seconds.
 const FIRE = new Set(['fire', 'soul_fire']);
 const onFire = bot => !!(bot.entity?.metadata?.[0] & 1);
-function fireNear(bot, p, r) {
-  for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) for (let dy = -1; dy <= 2; dy++) if (FIRE.has(bot.blockAt?.(p.offset(dx, dy, dz))?.name)) return true;
+function fireNear(bot, p, r, { from = -1, to = 2 } = {}) {
+  for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) for (let dy = from; dy <= to; dy++) if (FIRE.has(bot.blockAt?.(p.offset(dx, dy, dz))?.name)) return true;
   return false;
 }
 // Or told so by the server: an in-fire hurt within the last second and a
 // half (session.js). The flames a fireball lights can sit where the feet
 // cell does not show them: mid-229-g took ten in-fire hurts in seven
 // seconds, sealing a pocket, and nothing got it out (2026-09-27).
+// The server's word is about where the body was hurt: once a way out of the
+// fire has moved the body (a block put under it, a walk out), a hurt from
+// before that says nothing of where it is now, and the next hurt, if the
+// fire still reaches it, comes within half a second. Flames beside the
+// block the body stands on, a level down, do not touch it (the body's box
+// begins at its feet), as the rise onto a block says. mid-243-ad-nether-3
+// put a block of gravel in the fire's cell on its span over the lava sea and
+// stood on it, then was told it was still in fire, by a hurt from before
+// the rise and by the flame lit beside the block under it, and rose three
+// more: y 51 to 55 in a second and a half, all four sides open over a drop
+// of 23 into the lava, where the next fireball threw it off (note 582).
 function inFire(bot) {
   const feet = bot.entity?.position?.floored();
   if (!feet) return false;
-  if (bot._inFireAt > Date.now() - 1500) return true;
+  if (bot._inFireAt > Date.now() - 1500 && !(bot._fireLeftAt >= bot._inFireAt)) return true;
   if ([0, 1].some(dy => FIRE.has(bot.blockAt?.(feet.offset(0, dy, 0))?.name))) return true;
-  return onFire(bot) && fireNear(bot, feet, 1);
+  return onFire(bot) && fireNear(bot, feet, 1, { from: 0, to: 1 });
+}
+// Marked by a way out of the fire that moved the body off the cell it was
+// hurt in (inFire).
+function leftFire(bot, from) {
+  const now = bot.entity?.position?.floored();
+  if (now && from && !now.equals(from)) bot._fireLeftAt = Date.now();
 }
 // A way round the flames first; ringed by them, a way through (a player
 // runs through a block of fire rather than stand in one). Then the same
@@ -489,6 +506,7 @@ async function outOfFire(bot, task, onAction = () => {}, route = fireRoute(bot))
   // player's does, so the keys stay held until the cell is reached.
   bot.pathfinder?.setGoal?.(null);
   const { move } = require('./motion');
+  const from = bot.entity.position.floored();
   for (const [i, { cell, crouched }] of fireSteps(bot, route).entries()) {
     const target = cell.offset(0.5, 0, 0.5);
     // At a sprint the cells on the way are passed through, not stood on:
@@ -502,6 +520,7 @@ async function outOfFire(bot, task, onAction = () => {}, route = fireRoute(bot))
       ? { label: 'out_of_fire', keys: up ? ['forward', 'jump'] : ['forward'], sneak: true, look, maxMs: 2000, tick: 50, until: there }
       : { label: 'out_of_fire', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'running out of fire', look, maxMs: 1500, tick: 50, until: there });
   }
+  leftFire(bot, from);
   return !inFire(bot);
 }
 // Up out of the flames on a block put where they are, as a player does
@@ -527,8 +546,10 @@ async function riseOnBlock(bot, task, onAction = () => {}, { action = 'out_of_fi
   if (!rise) return false;
   bot.pathfinder?.setGoal?.(null);
   const { pillarUp } = require('./pillar-recovery');
+  const from = bot.entity.position.floored();
   try { await pillarUp(bot, task, rise.top.y, { maxBlocks: 1, threats: false, canDig: () => false, blocks: [...RISE_BLOCKS] }); }
   catch (err) { if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+  leftFire(bot, from);
   return done();
 }
 

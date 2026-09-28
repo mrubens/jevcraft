@@ -860,7 +860,14 @@ async function nudgeClear(bot, task, p) {
 }
 
 // What a placed block replaces, as the game does: cover on the ground.
-const GROUND_COVER = new Set(['water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'leaf_litter', 'dead_bush', 'seagrass', 'vine', 'short_dry_grass', 'tall_dry_grass', 'bush', 'firefly_bush']);
+// And fire: a flame's cell is replaceable in the game (26.1.2 Blocks: fire
+// and soul fire are registered replaceable), so a block put there puts it
+// out. mid-243-ad-nether-3's cover against a ghast went in the line through
+// a flame its first fireball had lit, and was refused "Placement obstructed
+// by fire" twelve times in two and a half seconds, the bot open on its span
+// over the lava sea until the next fireball (note 582).
+const FLAMES = new Set(['fire', 'soul_fire']);
+const GROUND_COVER = new Set(['water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'leaf_litter', 'dead_bush', 'seagrass', 'vine', 'short_dry_grass', 'tall_dry_grass', 'bush', 'firefly_bush', ...FLAMES]);
 // A cell a workstation can go in: open or only covered, over a full block.
 // In snowy plains every cell at the feet is a snow layer over grass, and
 // trial 40 found "no place for crafting_table" forty times in a minute.
@@ -870,7 +877,7 @@ const GROUND_COVER = new Set(['water', 'short_grass', 'tall_grass', 'fern', 'lar
 // seconds for two minutes.
 const openForStation = (bot, q) => {
   const at = bot.blockAt(q);
-  if (!(air(at) || (GROUND_COVER.has(at?.name) && at.name !== 'water'))) return false;
+  if (!(air(at) || (GROUND_COVER.has(at?.name) && at.name !== 'water' && !FLAMES.has(at.name)))) return false;
   const under = bot.blockAt(q.offset(0, -1, 0));
   if (!(under?.boundingBox === 'block' && under.name !== 'snow')) return false;
   if (typeof bot.world?.raycast !== 'function') return true;
