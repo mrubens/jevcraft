@@ -65,6 +65,23 @@ test('a mob at arm\'s length on a staircase is struck even when the stair edge h
   assert.deepEqual(attacks, [spider]);
 });
 
+test('the mob struck last is struck again while it is in reach, not whichever reads nearer (mid-241-aa, note 535)', async () => {
+  const { bot, spider, attacks } = fixture();
+  const other = { id: 8, name: 'cave_spider', position: new Vec3(1.6, 64, 0.5), width: 0.7, height: 0.5, isValid: true };
+  bot.entities[8] = other;
+  assert.equal(strikeTarget(bot)?.entity, other, 'nothing struck yet: the nearest');
+  bot._struck = { id: spider.id, at: Date.now() - 500 };
+  assert.equal(strikeTarget(bot)?.entity, spider, 'the one already hurt, though the other is nearer');
+  assert(await defendNearby(bot, new Task('defend'), {}, () => {}));
+  assert.deepEqual(attacks, [spider]);
+  bot._struck = { id: spider.id, at: Date.now() - 4000 };
+  assert.equal(strikeTarget(bot)?.entity, other, 'a while since: the nearest again');
+  spider.position = new Vec3(8, 64, 0.5); bot._struck = { id: spider.id, at: Date.now() };
+  assert.equal(strikeTarget(bot)?.entity, other, 'out of reach: the nearest');
+  spider.position = new Vec3(2, 64, 0.5); other.name = 'creeper';
+  assert.equal(strikeTarget(bot)?.entity, other, 'a creeper come nearest is not passed over');
+});
+
 test('bow aim rises above the straight line with distance and leads a moving target', () => {
   const origin = new Vec3(.5, 65.52, .5);
   const near = aim(origin, new Vec3(10.5, 64.9, .5)), far = aim(origin, new Vec3(20.5, 64.9, .5));

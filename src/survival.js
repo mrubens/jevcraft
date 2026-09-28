@@ -1195,7 +1195,7 @@ class Survival {
     // five zombies, and each time it was up this stepped it back off the
     // edge into them (2026-09-26). A hoglin's toss still counts.
     const pillar = this.state.pillar;
-    const onPillar = !heavy && pillar && Math.hypot(feet.x - pillar.x, feet.z - pillar.z) < 1 && feet.y >= pillar.y + 1;
+    const onPillar = !heavy && onPillarTop(bot, pillar, 1);
     // Not while swimming: the edge is under the water's surface, and the
     // step out of it walked two bots out of the water and off drops (notes
     // 439, 459).
@@ -1603,7 +1603,7 @@ class Survival {
     const counted = apart.ids.size ? [...coming, ...danger.filter(t => apart.ids.has(t.entity.id))] : danger;
     // A creeper is priced by where it goes off, and that is as far as the
     // bot can back from it (backRoom).
-    const estimate = fightEstimate({ threats: counted.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, id: t.entity.id, ...(apart.ids.has(t.entity.id) ? { apart: true } : {}), ...(t.entity.name === 'creeper' && t.entity.position ? creeperFacts(bot, t.entity) : {}) })),
+    const estimate = fightEstimate({ threats: counted.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, id: t.entity.id, ...(apart.ids.has(t.entity.id) ? { apart: true } : {}), ...(inCellIds.has(t.entity.id) ? { inCell: true } : {}), ...(t.entity.name === 'creeper' && t.entity.position ? creeperFacts(bot, t.entity) : {}) })),
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded, atOnce: opening ? Infinity : open + inCell.length });
     const cost = estimate.fightHere;
     const mobs = estimate.mobs || [];
@@ -1764,7 +1764,7 @@ class Survival {
     // Already up is the stance held, not a stance that failed: read as a
     // failure it was asked again every tick, a hundred and twenty times in
     // three hoglin drills.
-    const up = this.state.pillar && feet.y >= this.state.pillar.y + 2 && Math.hypot(feet.x - this.state.pillar.x, feet.z - this.state.pillar.z) < 1;
+    const up = onPillarTop(bot, this.state.pillar);
     // Two up, what still reaches: the shooters, the climbers (fought from
     // there), a witch's potions and a creeper's blast at the foot. mid-110-k
     // pillared at thirteen health with a creeper six blocks off and three
@@ -2429,6 +2429,7 @@ class Survival {
     if (!choice && Object.keys(options).length === 1) choice = Object.keys(options)[0];
     if (!choice) {
       const armour = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
+      const ownCells = new Set(inOwnCells(bot, danger, feet).map(t => t.entity.id));
       const state = { health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
         dropWithinThreeBlocks: require('./terrain').dropNear(bot, bot.entity.position.floored(), 3) || false,
@@ -2436,8 +2437,8 @@ class Survival {
         threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
         // This bot's numbers: each mob's hit after its armour, swings to
         // kill with its weapon, and what fighting all of them here costs.
-        estimate: fightEstimate({ threats: (this.lastApart?.ids.size ? [...danger.filter(t => !this.lastApart.ids.has(t.entity.id)), ...danger.filter(t => this.lastApart.ids.has(t.entity.id))] : danger).slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, ...(this.lastApart?.ids.has(t.entity.id) ? { apart: true } : {}) })),
-          armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: columnOpening(bot, feet) ? Infinity : openCells(bot, feet) + inOwnCells(bot, danger, feet).length }),
+        estimate: fightEstimate({ threats: (this.lastApart?.ids.size ? [...danger.filter(t => !this.lastApart.ids.has(t.entity.id)), ...danger.filter(t => this.lastApart.ids.has(t.entity.id))] : danger).slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, ...(this.lastApart?.ids.has(t.entity.id) ? { apart: true } : {}), ...(ownCells.has(t.entity.id) ? { inCell: true } : {}) })),
+          armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: columnOpening(bot, feet) ? Infinity : openCells(bot, feet) + ownCells.size }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health,
           ...(lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
             : offSpot ? { askedAgainFor: 'the bot is off the spot it hid in' }
@@ -2869,7 +2870,7 @@ class Survival {
   async pillarFrom(task, goal, save, danger) {
     const bot = this.bot;
     const feet = bot.entity.position.floored();
-    if (this.state.pillar && feet.y >= this.state.pillar.y + 2 && Math.hypot(feet.x - this.state.pillar.x, feet.z - this.state.pillar.z) < 1) return false;
+    if (onPillarTop(bot, this.state.pillar)) return false;
     const { pillarUp, SCAFFOLD } = require('./pillar-recovery');
     if (bot.inventory.items().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0) < 2) return false;
     if (![1, 2, 3].every(dy => { const b = bot.blockAt(feet.offset(0, dy, 0)); return b && b.boundingBox === 'empty' && !/lava|water/.test(b.name); })) return false;
@@ -2911,8 +2912,30 @@ class Survival {
   async reachableRefuge(task, goal, save, refuge) {
     const bot = this.bot;
     if (!refuge || shelter.inside(bot, refuge)) return refuge;
+    const status = await this.refugeWay(task, refuge);
+    if (status == null || status === 'success') return refuge;
+    refuge.avoidUntil = Date.now() + (status === 'timeout' ? 60000 : 600000);
+    this.report(goal, save, { action: 'shelter_unreachable', origin: refuge.origin, reason: status });
+    return null;
+  }
+
+  // Whether the saved shelter can be walked to from here: the route search's
+  // status ('success', 'noPath', 'timeout'), or null where there is nothing
+  // to walk (in it, within six, no pathfinder). The question that offers the
+  // shelter looks (keep) and the walk that follows its answer from the same
+  // spot reads that search once, within fifteen seconds. mid-242-a was
+  // offered "a sealed shelter" from its pillar's top told only that one stood
+  // fifteen blocks off, ready; it had no way there, and finding that out cost
+  // the walk's searches under a skeleton's arrows (note 535).
+  async refugeWay(task, refuge, { keep = false } = {}) {
+    const bot = this.bot;
+    if (!refuge || shelter.inside(bot, refuge)) return null;
     const o = pos(refuge.origin);
-    if (o.distanceTo(bot.entity.position) <= 6 || !bot.pathfinder?.movements) return refuge;
+    if (o.distanceTo(bot.entity.position) <= 6 || !bot.pathfinder?.movements) return null;
+    const here = `${bot.entity.position.floored()}`, key = `${o}`;
+    const known = (this._refugeWays ||= new Map()).get(key);
+    this._refugeWays.delete(key);
+    if (!keep && known && known.from === here && Date.now() - known.at < 15000) return known.status;
     const near = new goals.GoalNear(o.x, o.y, o.z, 2);
     let route = await surveyRoute(bot, task, bot.pathfinder.movements, near, 400);
     // A search out of time has not found that there is no way: under load
@@ -2920,10 +2943,8 @@ class Survival {
     // aside ten minutes as unreachable at 0.9 health on a "timeout" (note
     // 466). It looks longer once; still out of time, it rests a minute.
     if (route.status === 'timeout') route = await surveyRoute(bot, task, bot.pathfinder.movements, near, 2500);
-    if (route.status === 'success') return refuge;
-    refuge.avoidUntil = Date.now() + (route.status === 'timeout' ? 60000 : 600000);
-    this.report(goal, save, { action: 'shelter_unreachable', origin: refuge.origin, reason: route.status });
-    return null;
+    if (keep) this._refugeWays.set(key, { from: here, at: Date.now(), status: route.status });
+    return route.status;
   }
 
   // True when it did something toward a shelter; false when there is none
@@ -4439,9 +4460,9 @@ class Survival {
     // Not off a stance that moves, nor off the bot's own pillar: flee's
     // copy of this rule has both guards (notes 218, 250), and this one had
     // neither (the decision review, 2026-09-26).
-    const heldStance = stanceHeld(bot), feetHere = bot.entity.position.floored(), ownPillar = this.state.pillar;
+    const heldStance = stanceHeld(bot), ownPillar = this.state.pillar;
     const guarded = (heldStance && MOVING_STANCES.has(heldStance.choice)) ||
-      (ownPillar && Math.hypot(feetHere.x - ownPillar.x, feetHere.z - ownPillar.z) < 1 && feetHere.y >= ownPillar.y + 1);
+      onPillarTop(bot, ownPillar, 1);
     if (!guarded && !bot.entity?.isInWater && !inWater(bot) && !(this.state.edgeTriedAt > Date.now() - 10000) && (threats(bot, 64).some(pusher) || fireball())) {
       const { dropNear } = require('./terrain');
       // From the block the bot stands on, not the air it was knocked into:
@@ -4990,6 +5011,9 @@ class Survival {
     const carryOn = this.state.carryOnPlan;
     if (carryOn && (carryOn.until < now || needsShelter || bot.food <= carryOn.food - 2 || (bot.health ?? 20) <= carryOn.health - 4)) delete this.state.carryOnPlan;
     if (this.state.carryOnPlan) return false;
+    // Whether the shelter kept can be walked to from here, looked for before
+    // it is offered (refugeWay; the walk reads the same search).
+    const refugeWay = needsShelter && refuge ? await this.refugeWay(task, refuge, { keep: true }) : null;
     const state = { playerRequest: goal.request, retainedGoal: goal.kind, timeOfDay: bot.time.timeOfDay, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
       ...(require('./exploration').biomeView(bot) || {}),
       playerUrgency: goal.urgency ? { level: goal.urgency.level, meaning: 'How much the wording of the request pressed for speed: relaxed, ordinary or pressed. Pressure is a reason to keep working while it is still safe, never a reason to skip shelter once night is close.' } : undefined,
@@ -4998,7 +5022,8 @@ class Survival {
         nightStartsAt: DAY.NIGHT, dawnAt: DAY.DAWN, daylightTicksRemaining: Math.max(0, DAY.NIGHT - bot.time.timeOfDay),
         bedCarried: !!bed, homeBedNearby: !!homeBed, homeBedDistance: homeBed ? Math.round(homeBed.foot.distanceTo(bot.entity.position)) : null, underground,
         sleepPossibleFrom: SLEEP_FROM, armedAndArmoured: kitReady(bot), armourWorn: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, nightsWithoutSleepTooMany: !!this.sleepDebt(),
-        shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null },
+        shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null,
+        ...(refugeWay ? { shelterWayFromHere: refugeWay === 'success' ? 'found' : refugeWay === 'noPath' ? 'none found' : 'not known: the route search ran out of time' } : {}) },
       recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot),
       foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: desiredFood, hungerMaximum: 20, starvationAt: 0,
         requiredBeforeExpedition: !!expeditionFood, ...(() => { const last = lastResortSupply(bot); return last.points ? { lastResort: `${last.points} more food points in the last resort, not counted in the reserve: ${last.says}` } : {}; })() } };
@@ -5083,11 +5108,17 @@ class Survival {
     // food search, climbed toward the surface at night, and a zombie and a
     // spider met it on the way (note 466).
     const woundedBelow = underground && nightFree && shelterNeeded(bot) && (bot.health ?? 20) < 20 && healing;
+    // The shelter kept, and whether there is a way to it from here: with none,
+    // this is a pocket, a shaft or a room at a new site, asked next.
+    const refugeAt = refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null;
+    const shelterWaySays = !refugeWay ? '' : refugeWay === 'success' ? ` The shelter ${refuge.verifiedAt ? 'used before' : 'begun before'} is ${refugeAt} blocks off, and a way to it from here is found.`
+      : refugeWay === 'noPath' ? ` The shelter ${refuge.verifiedAt ? 'used before' : 'begun before'}, ${refugeAt} blocks off, has no way to it from here (a route search found none): chosen, it is set aside, and the way (a pocket here, a shaft, a room at a new site) is asked next, a new site looked for first.`
+      : ` The shelter ${refuge.verifiedAt ? 'used before' : 'begun before'} is ${refugeAt} blocks off; whether there is a way to it from here is not known (the route search ran out of time).`;
     // And what the place is, beside the wait for dawn: a spawner's mobs do
     // not leave at daylight (mid-220-g, note 476).
     if (needsShelter || woundedBelow) tree.secure_shelter = { description: (woundedBelow
       ? `Seal a pocket here underground and wait in it for dawn, about ${minutesToDawn(bot)} real minutes off: ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and hunger drops slowly while still. The surface above is night, with its mobs, until dawn, when those in the open burn; underground the dark is the same at any hour.${nowAbout}`
-      : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off: that much of the run${waiting ? ` with ${waiting} waiting` : ''}. ${(() => { const off = this.nightMineOff(); return off ? `In the shelter it can only wait: ${off}.` : 'In the shelter it can mine or wait.'; })()}${underground ? ` ${BELOW_NIGHT}` : ''}`) + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
+      : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off: that much of the run${waiting ? ` with ${waiting} waiting` : ''}. ${(() => { const off = this.nightMineOff(); return off ? `In the shelter it can only wait: ${off}.` : 'In the shelter it can mine or wait.'; })()}${underground ? ` ${BELOW_NIGHT}` : ''}`) + shelterWaySays + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
     // At night too, with what it risks said, not hidden (the decision
     // audit, 2026-09-25): hungry in the dark, the food was never offered.
@@ -5170,6 +5201,19 @@ class Survival {
   }
 }
 
+// On the bot's own pillar, `rise` or more up: its body over the pillar's
+// column, not its floored feet. A player stands on a block while any of its
+// width is over it, and mid-242-a, stepped 0.9 along its pillar's top by a
+// shelter walk, stood at x 19.15 on the top at x 18: floored, its feet read
+// as the air beside, the edge rule walked it off, and it fell six blocks
+// among the three zombies the pillar had kept off (note 535).
+function onPillarTop(bot, pillar, rise = 2) {
+  const p = bot.entity?.position;
+  if (!pillar || !p) return false;
+  const reach = 0.5 + (bot.entity.width || 0.6) / 2;
+  return Math.abs(p.x - (pillar.x + 0.5)) < reach && Math.abs(p.z - (pillar.z + 0.5)) < reach && Math.floor(p.y + 0.01) >= pillar.y + rise;
+}
+
 // What this layer would claim of the turn (src/arbiter.js), read from the
 // same conditions stepOnce acts on and without acting: nothing is walked,
 // searched, reported or set aside here. A plan that failed or rests is a
@@ -5232,8 +5276,11 @@ function claim(bot, goal = {}, survival = null) {
     const lands = t.entity.name === 'blaze' ? { fireballLandsPer100: Math.round(fireballHit(t.distance) * 100), volleyLandsOnePer100: Math.round(volleyHit(t.distance) * 100), volleysMostlyLandWithin: FIRE_REACH.blaze } : {};
     return { shoots: true, reach: RANGE[t.entity.name] || 15, ...lands, ...(hit > now - 30000 ? { hitItSecondsAgo: Math.round((now - hit) / 1000) } : {}), ...(inFlight ? { shotsInFlight: inFlight } : {}) };
   };
+  // A mob held by the stance Jev chose (danger.js stanceMobs): said with the
+  // stance, which goes on, not a stance asked next (note 535).
+  const holding = threat?.stance && bot._stance ? { stance: { choice: threat.stance, secondsAgo: Math.round((now - bot._stance.at) / 1000) } } : {};
   if (threat) return make('escape_threat', 'pressing', { ...(threat.projectile ? { threat: { name: threat.entity.name, distance: round(threat.distance), projectile: true } }
-    : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: mob(threat) }), ...pocket });
+    : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: mob(threat) }), ...holding, ...pocket });
   const underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
   // sleepDebt() without its first-look write of sleptAtAge.
   const debt = Number.isFinite(worldAge(bot)) && Number.isFinite(state.sleptAtAge) && worldAge(bot) - state.sleptAtAge > SLEEP_DEBT_TICKS;
@@ -5263,4 +5310,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { claim, effectsSay, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { claim, onPillarTop, effectsSay, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

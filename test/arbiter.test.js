@@ -475,3 +475,18 @@ test('a claim that drops out for one pass does not re-ask each pass; absent two,
   const again = await pass([hunt(), work()], 3250);
   assert.equal(again.why, 'its winner no longer claims'); assert.equal(asked, 2);
 });
+
+test('a mob held by a stance chosen against it is said with the stance, which goes on, and the survival claim holds it (mid-242-a, note 535)', () => {
+  const { Vec3 } = require('vec3');
+  const { claim } = require('../src/survival');
+  const zombie = { id: 11, name: 'zombie', type: 'hostile', position: new Vec3(8.5, 76, 0.5), height: 1.95, width: 0.6, isValid: true };
+  const bot = { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 78, 0.5) }, registry: require('minecraft-data')('26.1'),
+    health: 17.4, food: 16, time: { timeOfDay: 20000 }, world: { raycast: from => ({ position: from.floored(), intersect: from }) },
+    blockAt: p => ({ position: p, name: p.y < 76 ? 'stone' : 'air', boundingBox: p.y < 76 ? 'block' : 'empty' }), entities: { 11: zombie }, inventory: { items: () => [], slots: [] } };
+  assert.notEqual(claim(bot, {})?.action, 'escape_threat', 'with no stance, the night is the claim');
+  bot._stance = { choice: 'pillar', ids: [11], at: Date.now() - 1000, ranAt: Date.now(), health: 17.4, expects: { damage: 14.8, seconds: 15 } };
+  const held = claim(bot, {});
+  assert.equal(held.action, 'escape_threat');
+  assert.deepEqual(held.facts.stance, { choice: 'pillar', secondsAgo: 1 });
+  assert.match(arbiter.claimSays(held), /^Answer the zombie 8\.2 blocks off \(out of sight\): the pillar chosen against it 1 second ago goes on \(asked again when it fails/);
+});

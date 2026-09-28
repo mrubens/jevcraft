@@ -197,7 +197,9 @@ function claimSays(c) {
     // With the pocket begun here and the mob in its wall, said: mid-226-h's
     // Jev read "answer the skeleton" while the seal went at its cell forty
     // times (note 520).
-    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest).${f.pocket ? ` ${f.pocket}` : ''} The work waits.${hp}${heals}`;
+    // A stance chosen and holding goes on (note 535): said so, not as a
+    // question to come.
+    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen against it ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on (asked again when it fails, when a mob it was not chosen against comes within six blocks, or once it has cost more than it was said to)` : 'the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest)'}.${f.pocket ? ` ${f.pocket}` : ''} The work waits.${hp}${heals}`;
     case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; the stance is asked next. The work waits.`;
     case 'surface': return `Swim up for air: the head is under water, air ${f.air} of 20; at none, drowning takes 2 health a second.${hp}`;
     case 'eat': return `Eat ${f.item ? (f.item === 'chicken' ? 'raw chicken' : String(f.item).replaceAll('_', ' ')) : 'food'} now, about ${c.cost?.seconds || 1.6} seconds.${hp} Hunger ${f.food}${f.foodPoints ? ` to ${Math.min(20, f.food + f.foodPoints)}` : ''}.${heals}${f.effect ? ` It is the last resort: ${f.effect}.` : ''}`;

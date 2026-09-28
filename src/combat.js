@@ -176,8 +176,15 @@ async function strike(bot, task, target) {
   bot.attack(target); return 'plain';
 }
 
+// The nearest in reach, or the one struck last while it is still in reach:
+// a player finishes the mob it has hurt. mid-241-aa, two zombies in its cell
+// at 0.4 blocks, swung at whichever read nearer that moment, two swings on
+// one and two on the other, and killed neither in five seconds (note 535).
+// Not past a creeper come nearest, which the dance answers.
 function strikeTarget(bot) {
-  return threats(bot, 5).find(({ entity, visible, distance }) => (visible || distance <= 2) && canStrike(bot, entity));
+  const list = threats(bot, 5).filter(({ entity, visible, distance }) => (visible || distance <= 2) && canStrike(bot, entity));
+  const last = bot._struck && Date.now() - bot._struck.at < 3000 && list[0]?.entity.name !== 'creeper' ? list.find(t => t.entity.id === bot._struck.id) : null;
+  return last || list[0];
 }
 
 // Immediate self-defense never chases a mob or chooses an unobserved target.

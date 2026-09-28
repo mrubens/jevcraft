@@ -3036,6 +3036,48 @@ test('up on its own pillar, the step back from the edge does not take the bot of
   assert.notEqual(goal.survivalAction?.action, 'off_the_edge');
 });
 
+test('at the edge of its pillar\'s top, its feet floored over the air beside, the bot is still on its pillar and not stepped off (mid-242-a, note 535)', async () => {
+  const { onPillarTop } = require('../src/survival');
+  const zombie = { id: 3, name: 'zombie', position: new Vec3(-1.5, 65, 0.5), height: 1.9, isValid: true };
+  const blockAt = p => (p.x === 0 && p.z === 0 && p.y <= 65) || (p.y < 65 && !(p.x === 1 && p.z === 0)) ? { name: 'cobblestone', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p };
+  // x 1.15: the body's edge over the top at x 0, the feet's cell the shaft.
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20,
+    entity: { position: new Vec3(1.15, 66, 0.5), onGround: true, width: 0.6 }, entities: { 3: zombie }, time: { timeOfDay: 18000 },
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, world: { raycast: () => null }, blockAt,
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {} });
+  const pillar = { x: 0, y: 65, z: 0, at: Date.now() };
+  assert(onPillarTop(bot, pillar, 1));
+  assert(!onPillarTop({ entity: { position: new Vec3(1.35, 66, 0.5), width: 0.6 } }, pillar, 1), 'past the body\'s width: off it');
+  assert(!onPillarTop(bot, pillar, 2), 'one up is not two');
+  const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [], pillar } });
+  const goal = {};
+  await survival.flee(new Task('pillar'), goal, () => {}).catch(() => {});
+  assert.notEqual(goal.survivalAction?.action, 'off_the_edge');
+});
+
+test('the shelter kept is offered with whether a way to it from here was found, and the walk reads that search (mid-242-a, note 535)', async () => {
+  const { Survival } = require('../src/survival');
+  let tree, state, searches = 0;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, time: { timeOfDay: 20000, age: 100000 },
+    entities: {}, entity: { position: new Vec3(0.5, 64, 0.5) }, health: 17.4, food: 16, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cobblestone', count: 64 }], slots: {} }, heldItem: null,
+    pathfinder: { movements: {}, setGoal() {}, getPathTo: () => { searches++; return { status: 'noPath', path: [] }; } },
+    blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], chat() {},
+    world: { raycast: () => null } });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} },
+    { client: { systemOne: async () => ({}) }, state: { shelters: [{ origin: { x: 15, y: 64, z: 0 }, dimension: 'overworld', verifiedAt: 'x', createdAt: 'x' }] } });
+  survival.decide = async (task, goal, save, q) => { tree = q.tree; state = q.state; return { path: ['continue_request'], action: { run: async () => {} }, stale: false }; };
+  await survival.step(new Task('t', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert.match(tree.secure_shelter.description, /The shelter used before, 15 blocks off, has no way to it from here \(a route search found none\)/);
+  assert.equal(state.survivalFacts.shelterWayFromHere, 'none found');
+  const asked = searches;
+  const refuge = survival.state.shelters[0];
+  assert.equal(await survival.reachableRefuge(new Task('night'), {}, () => {}, refuge), null, 'chosen, the walk reads the same search');
+  assert.equal(searches, asked, 'and does not search again');
+  assert.equal(await survival.reachableRefuge(new Task('night'), {}, () => {}, { ...refuge, avoidUntil: 0 }), null);
+  assert.equal(searches, asked + 1, 'read once: a later walk searches afresh');
+});
+
 test('on a one-wide span over the lava sea, a hoglin at arm\'s length is struck crouched and still, with no jump and no key down', async () => {
   // mid-215-e: a swing at a hoglin behind it turned it about on its span, and the crossing walked it off the far end into the lava sea (note 273).
   const { onSpan } = require('../src/terrain');

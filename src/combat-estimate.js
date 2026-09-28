@@ -267,6 +267,21 @@ const inRange = m => Math.max(0, ((m.distance || 0) - (RANGE[m.name] || 15)) / A
 // shoots). mid-235-p-fortress-2 went from 14.7 to none in twenty seconds
 // against blazes priced at their fireball alone (note 512).
 const shooting = (m, shield) => m.visible ? (m.hitsBot / (m.every || 2) + (m.burns || 0)) * (shield && m.name !== 'witch' ? 0.5 : 1) : 0;
+// A shooter's fire as timeline pieces: its shots, each a hit, and the burn
+// they leave, which is not.
+const shotPieces = (m, shield, from, to) => {
+  if (!m.visible || !(to > from)) return [];
+  const f = shield && m.name !== 'witch' ? 0.5 : 1;
+  return [{ from, to, perSecond: m.hitsBot / (m.every || 2) * f, hit: m.hitsBot }, ...(m.burns ? [{ from, to, perSecond: m.burns * f }] : [])];
+};
+// A body that has just been hurt cannot be hurt again for half a second
+// (26.1 LivingEntity.hurtServer: within ten ticks of a hit, a blow no
+// bigger than the last one does nothing, a bigger one only its excess), so
+// however many bite, at most two full hits a second land: mid-241-aa's two
+// zombies in its cell struck it every half second, never faster (note 535;
+// note 526 left it open). Summed hit by hit, eight zombies round the bot
+// were priced at eight hits a second. The wither and a burn are not hits.
+const HURT_PER_SECOND = 2;
 
 // The fight where the bot stands, as a timeline: nearest first; every mob
 // still standing hits meanwhile, biters once a second at arm's length,
@@ -290,13 +305,17 @@ function fightTimeline(order, { shield = false, atOnce = Infinity } = {}) {
       // shooter being closed on shoots as ever. A spear holder jabs as
       // ever too: a swing's knockback leaves it within its reach, and it
       // reaches past the ones at arm's length (mid-244-z, note 497).
-      let perSecond;
-      if (m.shoots) perSecond = shooting(m, shield);
-      else if (m.jab) perSecond = m.jab;
-      else if (++biters > atOnce) return;
-      else perSecond = (j === 0 ? STRUCK : 1) * m.hitsBot;
+      // One in the bot's own cells is not knocked out of reach by the swing
+      // that strikes it: mid-241-aa's two zombies in its cell each bit about
+      // once a second while it was struck, where a third as often was
+      // reckoned for the one fought (note 535).
       const from = Math.max(t, m.shoots ? inRange(m) : 0);
-      if (perSecond > 0 && end > from) pieces.push({ from, to: end, perSecond });
+      if (m.shoots) { pieces.push(...shotPieces(m, shield, from, end)); return; }
+      let perSecond;
+      if (m.jab) perSecond = m.jab;
+      else if (++biters > atOnce) return;
+      else perSecond = (j === 0 && !m.inCell ? STRUCK : 1) * m.hitsBot;
+      if (perSecond > 0 && end > from) pieces.push({ from, to: end, perSecond, hit: m.jab ?? m.hitsBot });
       if (m.withers && !m.shoots && !withering.has(m)) withering.set(m, from);
     });
     killed.set(m0, end);
@@ -305,9 +324,22 @@ function fightTimeline(order, { shield = false, atOnce = Infinity } = {}) {
   pieces.push(...witherPieces([...withering].map(([m, from]) => [from, killed.get(m) + WITHER.seconds])));
   return pieces;
 }
-// The damage a timeline deals in its first `seconds` (all of it without).
+// The damage a timeline deals in its first `seconds` (all of it without):
+// the pieces that are hits (`hit`, the size of one) at most two of the
+// biggest landing a second between them (HURT_PER_SECOND), the rest as they
+// come.
 function within(pieces, seconds = Infinity) {
-  return pieces.reduce((n, p) => n + p.perSecond * Math.max(0, Math.min(p.to, seconds) - p.from), 0);
+  const end = p => Math.min(p.to, seconds);
+  const hits = pieces.filter(p => p.hit > 0 && end(p) > p.from);
+  let total = pieces.filter(p => !(p.hit > 0)).reduce((n, p) => n + p.perSecond * Math.max(0, end(p) - p.from), 0);
+  const cuts = [...new Set(hits.flatMap(p => [p.from, end(p)]))].sort((a, b) => a - b);
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const a = cuts[i], b = cuts[i + 1];
+    const on = hits.filter(p => p.from <= a && end(p) >= b);
+    if (!on.length || !Number.isFinite(b - a)) continue;
+    total += Math.min(on.reduce((n, p) => n + p.perSecond, 0), HURT_PER_SECOND * Math.max(...on.map(p => p.hit))) * (b - a);
+  }
+  return total;
 }
 
 // threats: [{ name, distance, shoots, visible }]; armour: piece names worn;
@@ -367,7 +399,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     // fight with it lasts the swings or the fuse.
     const fought = t.name === 'creeper' && !t.split ? creeperFought({ weapon, worn, room: t.backRoom ?? null, distance: t.distance, litFor: t.litFor ?? null, ...(Number.isFinite(t.health) ? { health: t.health } : {}) }) : null;
     const seconds = fought ? (fought.fuseLeft != null ? (fought.diesFirst ? fought.killSeconds : fought.fuseLeft) : (fought.diesFirst ? fought.killSeconds : FUSE) + Math.max(0, (t.distance || 0) - LIGHTS_AT) / WALK) : shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill / rate * (spear ? 2 : 1);
-    return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false, ...(t.apart ? { apart: true } : {}),
+    return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false, ...(t.apart ? { apart: true } : {}), ...(t.inCell ? { inCell: true } : {}),
       ...(fought ? { fought: { swings: fought.swings, secondsToKillIt: fought.killSeconds, ...(fought.health < MOBS.creeper.health ? { healthLeft: fought.health } : {}), ...(fought.fuseLeft != null ? { litNowFuseLeft: fought.fuseLeft } : {}), ...(fought.diesFirst ? { diesBeforeItGoesOff: true } : { goesOffAt: fought.goesOffAt, blast: fought.hitsBot }), ...(fought.room != null ? { roomBehind: round(fought.room) } : {}) } } : {}),
       // A drowned's thrown trident is eight, where its hand is three.
       hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.note ? { note: m.note } : {}) };
@@ -435,6 +467,10 @@ const arrives = m => Math.max(0, ((m.distance || 0) - (m.name === 'creeper' ? LI
 const bites = m => m.jab ?? m.hitsBot;
 function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => false, fight = null, shield = false }) {
   let damage = 0;
+  // The hits as timeline pieces, summed at the end under the half second a
+  // hurt body cannot be hurt again (within).
+  const pieces = [];
+  const hurts = (m, from, to, shielded) => { if (!(to > from)) return; if (m.shoots) pieces.push(...shotPieces(m, shielded, from, to)); else pieces.push({ from, to, perSecond: bites(m), hit: bites(m) }); };
   const blasts = [], still = new Set(), later = [], withering = [];
   // Which mobs, not only their kinds: "3 zombies still reach it" was said
   // where one of three did (note 526).
@@ -460,7 +496,7 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     const from = m.shoots ? inRange(m) : arrives(m);
     // Building or digging: every mob that gets there, from when it does,
     // the shield down.
-    damage += Math.max(0, setup - from) * (m.shoots ? shooting(m, false) : bites(m));
+    hurts(m, from, setup, false);
     if (m.withers && !m.shoots) withering.push([from, setup]);
     // `reaches` may say from when: a shooter out of its line that walks to
     // a new one reaches the bot from the second it has it (bunker.js
@@ -470,16 +506,17 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
       const start = Math.max(setup, from, again);
       if (again > 0 && Math.max(setup, again) >= seconds) continue;
       if (again > setup) later.push({ name: m.name, seconds: round(again) }); else stillReach(m);
-      damage += Math.max(0, seconds - start) * (m.shoots ? shooting(m, shield) : bites(m));
+      hurts(m, start, seconds, shield);
       if (m.withers && !m.shoots) withering.push([start, seconds]);
     }
   }
   if (fight && seconds > setup) {
     const order = mobs.filter(fought).sort((a, b) => a.distance - b.distance);
     const reach = order.filter(m => !m.shoots && m.name !== 'creeper' && m.distance <= 3).length;
-    damage += within(fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach) }), seconds - setup);
+    for (const p of fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach) })) if (p.from < seconds - setup) pieces.push({ ...p, from: p.from + setup, to: Math.min(seconds, p.to + setup) });
     for (const m of order) if (!m.shoots || m.visible) stillReach(m);
   }
+  damage += within(pieces, seconds);
   // Withering while one not fought bites, from its first hit to the end
   // of the stretch (the fought wither in their timeline).
   damage += spanned(withering.map(([a, b]) => [a, Math.min(b, seconds)])) * WITHER.perSecond;

@@ -310,6 +310,15 @@ function immediateThreat(bot) {
   const mob = threats(bot, 64).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) &&
     t.distance <= (shooter(t.entity) ? shooterReach(t) : t.entity.name === 'warden' ? 24 : (fighting ? 5 : 8)));
   if (mob) return mob;
+  // The mobs a stance Jev chose was chosen against, while it holds: the
+  // survival layer's, seen or not. mid-242-a's pillar went two up with
+  // zombies seven to eight blocks off, now out of sight under its top and
+  // past the eight counted for a biter, the skeletons past sixteen: nothing
+  // was a threat any more, the claim became shelter, survival_priority was
+  // asked in the pillar's place, and the shelter's route searches stood the
+  // bot on the pillar's edge five seconds under a skeleton's arrows (note 535).
+  const kept = stanceMobs(bot)[0];
+  if (kept) return kept;
   // A shot on its way is a threat of its own, its shooter seen or not:
   // mid-230-g, waiting to heal by a fortress, was hit by four fireballs in
   // six seconds from a ghast out of view, the fourth throwing it into the
@@ -372,5 +381,20 @@ function stanceHeld(bot, now = Date.now()) {
   const s = bot?._stance;
   return s && now - s.at < STANCE_HOLD_MS && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - STANCE_HEALTH ? s : null;
 }
+// The mobs the stance holds against: those it was chosen against (its ids)
+// still within the twenty-four a stance counts, nearest first, for as long
+// as it was said to hold (fifteen seconds, its estimate's seconds where it
+// had one, six health), once it has run. A stance ends when it fails
+// (survival.js stanceStep drops it), when its time or health is spent, and
+// is asked again when a mob it was not chosen against comes near; not
+// because one of its mobs stepped out of sight or out of a count. Leaving
+// the mobs be (keep_working) holds nothing against them.
+function stanceMobs(bot, now = Date.now()) {
+  const s = bot?._stance;
+  if (!s || s.choice === 'keep_working' || !s.ids?.length || !(s.running || s.ranAt)) return [];
+  if (now - s.at >= Math.min(STANCE_HOLD_MS, s.expects?.seconds ? s.expects.seconds * 1000 : Infinity)) return [];
+  if ((bot.health ?? 0) <= s.health - STANCE_HEALTH) return [];
+  return threats(bot).filter(t => s.ids.includes(t.entity.id) && !combatTarget(bot, t.entity)).map(t => ({ ...t, stance: s.choice }));
+}
 
-module.exports = { lineClear, UNPROVOKED, stanceHeld, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };
+module.exports = { lineClear, UNPROVOKED, stanceHeld, stanceMobs,STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };

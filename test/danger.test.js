@@ -133,3 +133,31 @@ test('a shooter whose kind hit the bot a moment ago is a threat however far, hun
   bot._recentHurtAt = Date.now(); bot._hurtBy = { blaze: Date.now() };
   assert.equal(immediateThreat(bot)?.entity.id, 4, 'its fire landing: a threat');
 });
+
+test('the mobs a held stance was chosen against stay the survival layer\'s while it holds, out of sight or past a count (mid-242-a, note 535)', () => {
+  const { immediateThreat, stanceMobs } = require('../src/danger');
+  const registry = require('minecraft-data')('26.1');
+  const zombie = { id: 11, name: 'zombie', type: 'hostile', position: new Vec3(8.5, 76, 0.5), height: 1.95, width: 0.6, isValid: true };
+  // Two up on its pillar, the zombie below out of sight under its top and
+  // eight blocks off: no threat by the ordinary rules.
+  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 78, 0.5) }, registry, health: 17.4, food: 16, time: { timeOfDay: 20000 },
+    world: { raycast: from => ({ position: from.floored(), intersect: from }) }, blockAt: p => ({ position: p, name: p.y < 76 ? 'stone' : 'air', boundingBox: p.y < 76 ? 'block' : 'empty' }),
+    entities: { 11: zombie }, inventory: { items: () => [], slots: [] } };
+  assert.equal(immediateThreat(bot), undefined, 'no stance: by the ordinary rules it is not one');
+  bot._stance = { choice: 'pillar', ids: [11], at: Date.now() - 1000, ranAt: Date.now() - 500, health: 17.4, expects: { damage: 14.8, seconds: 15, oneHit: 2.2 } };
+  assert.equal(immediateThreat(bot)?.entity.id, 11, 'the pillar was chosen against it: it holds');
+  assert.equal(immediateThreat(bot).stance, 'pillar');
+  assert.equal(stanceMobs(bot).length, 1);
+  bot._stance.ids = [12];
+  assert.equal(immediateThreat(bot), undefined, 'a mob it was not chosen against is judged as ever');
+  bot._stance.ids = [11]; bot._stance.choice = 'keep_working';
+  assert.equal(immediateThreat(bot), undefined, 'leaving the mobs be holds nothing against them');
+  bot._stance.choice = 'pillar'; bot._stance.at = Date.now() - 16000;
+  assert.equal(immediateThreat(bot), undefined, 'past its fifteen seconds it is asked again, not held');
+  bot._stance.at = Date.now() - 3000; bot._stance.expects.seconds = 2.5;
+  assert.equal(immediateThreat(bot), undefined, 'past the seconds it was priced over');
+  bot._stance.expects.seconds = 15; bot.health = 11;
+  assert.equal(immediateThreat(bot), undefined, 'six health gone since it was chosen');
+  bot.health = 17.4; delete bot._stance.ranAt;
+  assert.equal(immediateThreat(bot), undefined, 'chosen but not yet run: nothing to hold');
+});

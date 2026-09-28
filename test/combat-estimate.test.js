@@ -15,8 +15,10 @@ test('three zombies against a stone sword and no armour cost more than eight hea
   const e = fightEstimate({ threats: [zombie(6), zombie(7), zombie(8)], armour: [], weapon: 'stone_sword', health: 8 });
   assert.equal(e.mobs[0].swingsToKill, 4); assert.equal(e.mobs[0].secondsToKill, 2.5); assert.equal(e.mobs[0].hitsBot, 3);
   // 2.5 s under three, then two, then one, the one being struck landing a
-  // third of its hits: (7 + 4 + 1) * 2.5 = 30.
-  assert.equal(e.fightHere.damageTaken, 30);
+  // third of its hits: 7, 4 and 1 a second, but no more than two hits a
+  // second land on a body hurt half a second ago (note 535): (6 + 4 + 1) *
+  // 2.5 = 27.5.
+  assert.equal(e.fightHere.damageTaken, 27.5);
   assert(e.fightHere.healthAfter < 0);
   const armed = fightEstimate({ threats: [zombie(6)], armour: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], weapon: 'iron_sword', health: 20 });
   assert(armed.fightHere.damageTaken < 5, JSON.stringify(armed.fightHere));
@@ -250,7 +252,9 @@ test('in a tunnel a crowd comes one or two at a time: the fight costs less than 
   const zombies = [2, 3, 4, 5].map(distance => ({ name: 'zombie', distance, visible: true }));
   const open = fightEstimate({ threats: zombies, armour: IRON, weapon: 'iron_sword', health: 20 });
   const tunnel = fightEstimate({ threats: zombies, armour: IRON, weapon: 'iron_sword', health: 20, atOnce: 2 });
-  assert(tunnel.fightHere.damageTaken < open.fightHere.damageTaken * 0.7, `${tunnel.fightHere.damageTaken} against ${open.fightHere.damageTaken}`);
+  // Less, not a third less: two hits a second at most land on open ground
+  // too, where four bite (note 535).
+  assert(tunnel.fightHere.damageTaken < open.fightHere.damageTaken, `${tunnel.fightHere.damageTaken} against ${open.fightHere.damageTaken}`);
   assert.equal(tunnel.fightHere.atArmsLengthAtOnce, 2);
   assert.equal(open.fightHere.atArmsLengthAtOnce, undefined);
 });
@@ -362,4 +366,33 @@ test('the wither on the bot is said with its rate and what is left of it (note 5
   const id = registry.effectsByName?.wither?.id ?? registry.effectsArray.find(x => /wither/i.test(x.name)).id;
   const bot = { registry, entity: { effects: { [id]: { id, amplifier: 0, duration: 200 } } } };
   assert.match(effectsSay(bot), /The bot is withering, about 10 seconds left: about one health every 2 seconds that armour does not stop, about 5 more before it ends, and it can take the last/);
+});
+
+test('a body hurt half a second ago cannot be hurt again: however many bite, two full hits a second land (note 535)', () => {
+  const { stanceCost } = require('../src/combat-estimate');
+  const IRON_SET = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+  const eight = Array.from({ length: 8 }, (_, i) => ({ name: 'zombie', distance: 1 + i * 0.1, visible: true }));
+  const e = fightEstimate({ threats: eight, armour: IRON_SET, weapon: 'iron_sword', health: 20 });
+  const hit = e.mobs[0].hitsBot;
+  // The first 2.5 seconds: eight biting, summed seven and a third hits a
+  // second; at most two land.
+  assert(e.fightHere.inFifteenSeconds <= 2 * hit * 15 + 0.01, JSON.stringify(e.fightHere));
+  const held = stanceCost({ mobs: e.mobs, reaches: () => true });
+  assert.equal(held.damage, Math.round(2 * hit * 15 * 10) / 10, 'eight standing round the bot for fifteen seconds: thirty hits, not a hundred and twenty');
+  // The wither is not a hit: it runs beside the capped bites.
+  const mobs = fightEstimate({ threats: [{ name: 'wither_skeleton', distance: 1, visible: true }, ...eight], armour: IRON_SET, weapon: 'iron_sword' }).mobs;
+  const withered = stanceCost({ mobs, reaches: () => true });
+  const blade = mobs.find(m => m.name === 'wither_skeleton').hitsBot;
+  assert.equal(withered.damage, Math.round((2 * blade * 15 + 0.5 * 15) * 10) / 10, 'two of the hardest hits a second, and the wither on top');
+});
+
+test('two zombies in the bot\'s own cell each bite at full rate while struck: mid-241-aa, told 5.8, took 10.8 in five seconds (note 535)', () => {
+  const armour = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+  const zombies = inCell => [1.3, 1.6].map(distance => ({ name: 'zombie', distance, visible: true, ...(inCell ? { inCell: true } : {}) }));
+  const then = fightEstimate({ threats: zombies(false), armour, weapon: 'iron_sword', health: 10.8, atOnce: 2 });
+  assert.equal(then.fightHere.damageTaken, 5.8, 'as it was told: the one struck at a third');
+  const now = fightEstimate({ threats: zombies(true), armour, weapon: 'iron_sword', health: 10.8, atOnce: 2 });
+  // 1.4 a bite: two a second for 2.5 seconds, then one for 2.5.
+  assert.equal(now.fightHere.damageTaken, 10.5);
+  assert(now.mobs.every(m => m.inCell));
 });
