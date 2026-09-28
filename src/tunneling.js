@@ -4,7 +4,7 @@ const { opportunisticMining } = require('./opportunistic-mining');
 const { opportunisticPickups } = require('./opportunistic-pickups');
 const { goals } = require('mineflayer-pathfinder');
 const { reservedForConstruction } = require('./build-sites');
-const { safeFromHostiles, hostileEntities } = require('./danger');
+const { safeFromHostiles, hostileEntities, pushersAbout } = require('./danger');
 const { fitToFight } = require('./mob-policy');
 const { advance, attemptsFor, setAside, isSetAside, keyOf } = require('./progress');
 const { surveyRoute } = require('./skills');
@@ -160,8 +160,17 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
     // down onto a one-block ledge over a ravine, a skeleton's alert stopped
     // the step, and it went on over the edge, forty-three blocks to the
     // rails below (2026-09-27). Deadly as the Nether crouch counts it.
+    // A drop onto it, always: the fall's drift is the body's own. A step
+    // (level, or one down onto the floor under it) while something about
+    // can push the bot over (danger.js pushersAbout): with nothing that
+    // can, a player steps onto a fortress bridge's edge, and mid-235-p-
+    // nether-3-fortress-2's staircases onto its floors were all refused so
+    // with nothing about (note 541).
     const edge = dropNear(bot, dropTo || destination, 1);
-    if (edge && (edge.into === 'lava' || edge.damage >= (bot.health ?? 20) / 2)) { block(destination, 'a deadly drop beside the step'); continue; }
+    if (edge && (edge.into === 'lava' || edge.damage >= (bot.health ?? 20) / 2)) {
+      if (dropTo) { block(destination, 'a drop onto a lip beside a deadly drop'); continue; }
+      if (pushersAbout(bot).length) { block(destination, 'a deadly drop beside the step while something about can push the bot'); continue; }
+    }
     if (bot.pathfinder?.movements?.allowedPosition && !bot.pathfinder.movements.allowedPosition(destination)) { block(destination, 'a forbidden cell'); continue; }
     const clear = [];
     // A jump needs three blocks of headroom in the cell we leave. Inspect and

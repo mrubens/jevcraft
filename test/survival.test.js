@@ -4203,7 +4203,7 @@ test('with a shooter in sight, cover is offered: a block two high in its line, p
   const survival = new Survival(bot, { place: async (b, t, p) => { placed.push(`${p.floored()}`); }, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
   const blaze = { entity: { id: 9, name: 'blaze', position: new Vec3(20.5, 74, 0.5), height: 1.8 }, distance: 20, visible: true };
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [blaze], false);
-  assert.match(options.take_cover?.description || '', /Put a block two high in the line of the blaze \(20 blocks off\).*About [\d.]+ damage/);
+  assert.match(options.take_cover?.description || '', /Put 2 blocks, two high, in the line from the eyes of the blaze \(20 blocks off\) to the bot's, beside the bot at head height.*About [\d.]+ damage/);
   assert.equal(await options.take_cover.run(), true);
   assert.deepEqual(placed.sort(), ['(1, 72, 0)', '(1, 73, 0)']);
 });
@@ -4223,10 +4223,37 @@ test('cover beside a railed span goes on top of the rail, and cover that cannot 
   let options = survival.stanceOptions(new Task('x'), {}, () => {}, [piglin], false);
   assert.equal(await options.take_cover.run(), true);
   assert.deepEqual(placed, ['(1, 73, 0)'], 'only the block on the rail');
-  // Both cells solid already and the shot still coming round them: the failure says why.
+  // Both cells solid already: its line is stopped, and the bot stays behind what is there.
   rail = new Set(['(1, 72, 0)', '(1, 73, 0)']); placed.length = 0;
   options = survival.stanceOptions(new Task('x'), {}, () => {}, [piglin], false);
-  await assert.rejects(options.take_cover.run(), e => e.name === 'StanceFailed' && /the cells toward the piglin are both solid already/.test(e.message));
+  assert.match(options.take_cover.description, /^Stay here behind what stands in the line already: nothing for the piglin \(24 blocks off\): the netherrack at \(1, 73, 0\) is in its line already/);
+  assert.equal(await options.take_cover.run(), true);
+  assert.deepEqual(placed, []);
+  // A cover that cannot go down fails with its why.
+  rail = new Set(['(1, 72, 0)']);
+  const failing = new Survival(bot, { place: async () => { throw new Error('no face to place against'); }, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  options = failing.stanceOptions(new Task('x'), {}, () => {}, [piglin], false);
+  await assert.rejects(options.take_cover.run(), e => e.name === 'StanceFailed' && /no face to place against \(the cell in the line of the piglin at \(1, 73, 0\)\)/.test(e.message));
+});
+
+test('cover from a blaze on the diagonal goes in its line, not on the side of its larger axis (mid-235-q-nether-2, note 541)', async () => {
+  // At the lip of a thirty-block drop, a blaze thirty blocks off to the south-west and two below: the cover went up at head height
+  // west (its larger axis), the fireball came in past it, and its push put the bot over the edge.
+  const { sightLine } = require('../src/creeper-sight');
+  const placed = [];
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival' }, health: 9.4, food: 20, entities: {},
+    entity: { position: new Vec3(235.92, 62, 212.17), onGround: true }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cobblestone', count: 64 }], slots: {} },
+    blockAt: p => { const f = p.floored(); const solid = (f.y === 61 && f.x >= 230 && f.x <= 235 && f.z >= 208 && f.z <= 214) || placed.includes(`${f}`); return { position: f, name: solid ? 'netherrack' : 'air', boundingBox: solid ? 'block' : 'empty' }; },
+    world: { raycast: () => null }, findBlocks: () => [] });
+  const survival = new Survival(bot, { place: async (b, t, p) => { placed.push(`${p.floored()}`); }, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const blaze = { id: 9, name: 'blaze', position: new Vec3(212.8, 60.1, 192.6), height: 1.8, width: 0.6 };
+  bot.entities[9] = blaze;
+  assert.equal(sightLine(bot, blaze).stoppedBy, null, 'the blaze has its line');
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: blaze, distance: 30.3, visible: true }], false);
+  assert.equal(await options.take_cover.run(), true);
+  assert(!placed.includes('(234, 63, 212)'), `not on the west side of the larger axis: ${placed}`);
+  assert(sightLine(bot, blaze).stoppedBy, `its line is cut: ${placed}`);
 });
 
 test('a blaze in sight past the stance\'s mobs, within its forty-eight, is said with what one fireball costs at this health (mid-235-p-fortress-7, note 528)', () => {
@@ -4374,6 +4401,29 @@ test('on a ledge with no ground near, walling the open edge and then fighting is
   assert.equal(await options.rail_and_fight.run(), true);
   assert(placed.has(`${new Vec3(0, 74, 1)}`) && placed.has(`${new Vec3(0, 74, -1)}`), [...placed].join(' '));
   assert(fought);
+});
+
+test('with only a shooter out of reach at the lip of a deadly drop, walling the edge and holding behind it is on offer, priced (mid-235-q-nether-2, note 541)', async () => {
+  // At 9.4 health on its own span thirty blocks over the lava sea under a blaze's fire, the rail was offered only while something
+  // could be fought; the fireball's push put the bot over.
+  const blaze = { id: 4, name: 'blaze', type: 'hostile', position: new Vec3(-25.5, 72, -19.5), height: 1.8, isValid: true };
+  const placed = new Set();
+  const solid = p => placed.has(`${p}`) || (p.y === 73 && p.z === 0 && p.x > -30 && p.x <= 5);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: { 4: blaze }, health: 9.4, food: 20, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay: 6000 }, entity: { position: new Vec3(0.5, 74, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'netherrack', count: 16 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ position: p, name: solid(p) ? 'netherrack' : p.y <= 30 ? 'lava' : 'air', boundingBox: solid(p) ? 'block' : 'empty' }),
+    world: { raycast: () => null }, findBlocks: () => [], pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, place: async (b, t, p) => { placed.add(`${p}`); } }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('t'), {}, () => {}, [{ entity: blaze, distance: 32, visible: true }], false);
+  assert(options.rail_and_fight, Object.keys(options).join(','));
+  assert.match(options.rail_and_fight.description, /Wall the 2 open sides at the feet over the drop \(4 blocks.*then hold here behind it: a push from a shot that lands, or a step back, stops at the wall.*About [\d.]+ damage from the mobs here/);
+  assert(options.rail_and_fight.expects);
+  let fought = false;
+  options.fight.run = async () => { fought = true; return true; };
+  assert.equal(await options.rail_and_fight.run(), true);
+  assert(placed.has(`${new Vec3(0, 74, 1)}`) && placed.has(`${new Vec3(0, 74, -1)}`), [...placed].join(' '));
+  assert(!fought, 'nothing to swing at: held, not fought');
 });
 
 test('a golden apple is priced as every stance is, and an eat cut short with the apple still carried stays on offer, said (mid-205-q)', async () => {
@@ -5230,4 +5280,23 @@ test('a leave that finds no door says so and rests a minute, not chosen again fi
   await survival.step(new Task('day'), goal, () => {});
   assert(!asked.t.leave, 'leave rests');
   assert.match(asked.state.notNow.leave, /did nothing from this pocket \(no wall of this pocket can be opened as a door\)/);
+});
+
+test('a ghast firing on the bot is survival\'s claim over the food hunt Jev chose, and the hunted kind alone keeps the hunt (mid-235-q-nether-1, note 541)', () => {
+  // Hunting hoglins for food, a ghast's fireball threw the bot off a ledge (16.5 to 8.2); the claim said only the hunt, the turn
+  // went to the work six times, and the next fireball ended it.
+  const { claim } = require('../src/survival');
+  const hoglin = { id: 3, name: 'hoglin', type: 'hostile', position: new Vec3(20.5, 64, 0.5), height: 1.4, metadata: [] };
+  const ghast = { id: 4, name: 'ghast', type: 'hostile', position: new Vec3(0.5, 70, 44.5), height: 4, metadata: [] };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 8.2, food: 17,
+    time: { timeOfDay: 0 }, entity: { position: new Vec3(0.5, 64, 0.5), height: 1.8, eyeHeight: 1.62, metadata: [0], velocity: new Vec3(0, 0, 0), onGround: true },
+    entities: { 3: hoglin }, inventory: { items: () => [], slots: [] }, registry: { entitiesByName: {} },
+    blockAt: p => p.y < 64 ? { name: 'netherrack', boundingBox: 'block', position: p } : { name: 'air', boundingBox: 'empty', position: p } });
+  const state = { nightPlan: { plan: 'hunt', kind: 'hoglin', food: true, until: Date.now() + 120000, startHealth: 16.5 } };
+  bot._nightHunt = { name: 'hoglin', until: Date.now() + 120000 };
+  assert.equal(claim(bot, { kind: 'win' }, { state, currentShelter: () => null })?.action, 'night_hunt', 'the hunted kind alone: the hunt');
+  bot.entities[4] = ghast; bot._hurtBy = { ghast: Date.now() - 1000 }; bot._recentHurtAt = Date.now() - 1000;
+  const c = claim(bot, { kind: 'win' }, { state, currentShelter: () => null });
+  assert.equal(c?.action, 'escape_threat', JSON.stringify(c));
+  assert.equal(c.facts.threat.name, 'ghast');
 });

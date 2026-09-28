@@ -16,7 +16,12 @@
 // offered only stances that cost more than its health (note 534).
 const { Vec3 } = require('vec3');
 
-const EYE = { player: 1.62, creeper: 1.445 };
+// Eye heights from the 26.1.2 jar (EntityType eyeHeight); any other mob's
+// is the game's default, 0.85 of its height. A shooter fires only with its
+// eyes on the bot's (a blaze or ghast's attack goal and a bow's alike ask
+// hasLineOfSight), so the same ray is the one cover has to cut (note 541).
+const EYE = { player: 1.62, creeper: 1.445, blaze: 1.53, ghast: 2.6, skeleton: 1.74, stray: 1.74, bogged: 1.74, wither_skeleton: 2.1, piglin: 1.79, pillager: 1.62, drowned: 1.74 };
+const eyeOf = mob => EYE[mob?.name] ?? (mob?.height ?? 1.7) * 0.85;
 // How far a block is placed from the eyes, as place() reaches without a walk.
 const REACH = 4.5;
 
@@ -64,7 +69,7 @@ const FACES = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -
 // { eyes, cells: [{ cell, enter, exit, inside }], stoppedBy: { cell, name } | null }
 function sightLine(bot, creeper) {
   const eye = bot.entity.position.offset(0, EYE.player, 0);
-  const its = creeper.position.offset(0, EYE.creeper, 0);
+  const its = creeper.position.offset(0, eyeOf(creeper), 0);
   const self = { position: bot.entity.position, width: 0.6, height: 1.8 };
   const cells = lineCells(eye, its)
     .filter(c => !bodyIn(self, c.cell) && !bodyIn(creeper, c.cell, { width: creeper.width ?? 0.6, height: creeper.height ?? 1.7 }))
@@ -98,6 +103,12 @@ function blockPlan(bot, creeper, { reach = REACH } = {}) {
   const partner = beside ? cut.offset(0, cut.y === feet.y ? 1 : -1, 0) : null;
   let cells = [cut];
   if (partner && free(partner) && inReach(partner)) cells = [cut, partner].sort((a, b) => a.y - b.y);
+  // Over open air at an edge the lowest has no face to go on: the cell
+  // under it first, where that one has one, as a player lays a block down
+  // the side of a ledge to build up on (note 541).
+  const low = cells.slice().sort((a, b) => a.y - b.y)[0], under = low.offset(0, -1, 0);
+  if (!anchored(low) && free(under) && inReach(under) && anchored(under)) cells = [under, ...cells];
+  cells.sort((a, b) => a.y - b.y);
   // Bottom up, each on a solid face or one already placed; a cell with
   // neither is dropped, and the ray's cell without one is no plan.
   const placed = [];
@@ -119,4 +130,4 @@ function whereSays(bot, cell) {
   return `${d} blocks from the bot's eyes toward it, ${dy >= 0 ? `${dy} above` : `${-dy} below`} its feet`;
 }
 
-module.exports = { lineCells, sightLine, blockPlan, whereSays, EYE, REACH };
+module.exports = { lineCells, sightLine, blockPlan, whereSays, eyeOf, EYE, REACH };

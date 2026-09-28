@@ -141,6 +141,10 @@ class SurvivalMovements extends Movements {
     const missIntoLava = p => (p.dx || p.dz) && !p.useOne && p.dy === 0 && this.fallIntoLava({ x: p.x + p.dx, y: p.y + 1, z: p.z + p.dz });
     for (let i = kept.length - 1; i >= 0; i--) {
       if (airborne(kept[i]) && lavaBy(kept[i]) || kept[i].toPlace?.some(missIntoLava)) kept.splice(i, 1);
+      // Nor a drop or a jump onto a lip beside a deadly drop, pushers or
+      // not: the body's own drift carries on past the cell (the staircase's
+      // rule, mid-244-q). A step there is the edge rule below (note 541).
+      else if (nether && airborne(kept[i]) && !this.besideLava?.(kept[i]) && this.deadlyDropBeside(kept[i])) { kept.splice(i, 1); this.edgeRefusals = (this.edgeRefusals || 0) + 1; }
       // In the Nether no cell a block sideways of lava, or of an edge whose
       // fall ends in lava or costs half the health, whatever the move:
       // refused one kind of move at a time, the pathfinder's routes found
@@ -171,11 +175,18 @@ class SurvivalMovements extends Movements {
   // whose fall ends in lava; 'edge' for an edge whose fall costs half the
   // health; null for neither. `besideLava` is the opt-out: a predicate of
   // cells the caller has chosen to take all the same.
+  // An edge is refused only while something about can push the bot over
+  // it (danger.js pushersAbout); with nothing that can, it is walked at its
+  // cost, as a player walks a fortress bridge. mid-235-p-nether-3-fortress-
+  // 2 reached none of its fortress's stretches in seventy-three minutes,
+  // every bridge edge refused with nothing about (note 541). Lava itself
+  // beside the feet stays refused: a misstep there is the burn.
   besideLavaRefused(next) {
     if (this.besideLava?.(next)) return null;
     if (AROUND.some(([dx, dz]) => [1, 0, -1].some(dy => /lava/.test(this.getBlock(next, dx, dy, dz)?.name || '')))) return 'lava';
     const drop = this.deadlyDropBeside(next);
-    return drop ? (drop.into === 'lava' ? 'lava' : 'edge') : null;
+    if (!drop || !require('./danger').pushersAbout(this.bot).length) return null;
+    return drop.into === 'lava' ? 'lava' : 'edge';
   }
 
   // Where a body with its feet at `feet`, over nothing, comes down: into

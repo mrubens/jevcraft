@@ -397,4 +397,33 @@ function stanceMobs(bot, now = Date.now()) {
   return threats(bot).filter(t => s.ids.includes(t.entity.id) && !combatTarget(bot, t.entity)).map(t => ({ ...t, stance: s.choice }));
 }
 
-module.exports = { lineClear, UNPROVOKED, stanceHeld, stanceMobs,STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };
+// What can push the bot where it stands, now: a shooter in sight within
+// its own reach (a shot that lands pushes, shield raised or not: note 517),
+// anything that bites within eight blocks in sight or four out of it, a
+// creeper among them (its blast throws), or a shot on its way. An edge is a
+// fall only by a push or a misstep: the Nether's pathfinder and staircases
+// refuse a cell beside a deadly drop while something here can push, and
+// walk it at its cost while nothing can. mid-235-p-nether-3-fortress-2
+// patrolled its fortress for seventy-three minutes and reached none of its
+// stretches, every bridge's edge refused with no mob about, while the four
+// knock-offs of the same hour were a push each (note 541). Kept half a
+// second: the pathfinder asks for every cell it weighs.
+const PUSH_REACH = 8;
+function pushersAbout(bot) {
+  const now = Date.now(), kept = bot?._pushers;
+  if (kept && now - kept.at < 500) return kept.list;
+  let list = [];
+  try {
+    const { RANGE } = require('./combat-estimate');
+    list = threats(bot, 64).filter(t => shooter(t.entity) ? t.visible && t.distance <= Math.max(16, RANGE[t.entity.name] || 0)
+      : t.distance <= (t.visible ? PUSH_REACH : 4));
+    if (!list.length) {
+      const shot = require('./projectile-guard').incoming(bot, { reach: 24 })[0];
+      if (shot) list = [{ entity: shot, distance: shot.position.distanceTo(bot.entity.position), visible: true, projectile: true }];
+    }
+  } catch (_) { list = []; }
+  if (bot) bot._pushers = { at: now, list };
+  return list;
+}
+
+module.exports = { pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs,STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };

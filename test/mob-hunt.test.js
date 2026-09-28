@@ -798,13 +798,24 @@ test('bricks a block off with the fortress\'s floors seven blocks up are not the
   assert.match(options.pillar_up, /^Pillar straight up 7 blocks to the fortress floor's height \(jump and lay a block under the feet, 64 carried that can be laid, 57 left after\)/);
   assert.match(options.pillar_up, /a push is a fall of up to 7 blocks, about 4 health/);
   assert.equal(goal.step.action, 'find_fortress');
-  // Set aside as Jev chose: going back to it is asked with the legs, and the step is still the search.
+  // Set aside as Jev chose: the legs are asked, and the step is still the search. From the spot it was left, going back is
+  // those same ways asked again, and mid-235-q-nether-2 left and took back its fortress every three seconds for a
+  // minute (note 541): said in the state, not offered.
   goal.step = { action: 'hunt_mob', entity: 'blaze' };
-  const legs = jevStub(['back_to_fortress']);
+  const legs = jevStub(['leg_north']);
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client: legs });
   assert.equal(legs.asked.length, 1); assert.equal(goal.decisions.at(-1).id, 'fortress_leg');
-  assert.match(legs.asked[0].options.back_to_fortress, /the nearest of its floors 1 blocks across and 7 up/);
-  assert.equal(goal.step.action, 'find_fortress', 'the hunt\'s step does not come back between the questions');
+  assert.equal(legs.asked[0].options.back_to_fortress, undefined, 'not from where it was just left');
+  assert.match(legs.asked[0].state.fortressInView.setAside, /Jev chose to leave it and search on, from where the bot stands, over the ways into it from here \([^)]*pillar up[^)]*\): going back from here is asking those same ways again/);
+  assert.match(legs.asked[0].state.fortressInView.floors, /the nearest of its floors 1 blocks across and 7 up/);
+  assert.notEqual(goal.step.action, 'hunt_mob', 'the hunt\'s step does not come back between the questions');
+  // Elsewhere, going back is offered with the same why.
+  goal.step = { action: 'hunt_mob', entity: 'blaze' };
+  delete goal.fortressSearch.target;
+  bot.entity.position = new Vec3(0.5, 49, 8.5);
+  const later = jevStub(['back_to_fortress']);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client: later });
+  assert.match(later.asked.find(a => a.options.back_to_fortress)?.options.back_to_fortress || '', /set aside 0 minutes ago, for 10 minutes more: Jev chose to leave it and search on;/);
 });
 
 test('a pass whose stretches no walk reached is said so when staying is offered, and a spawner in view is a wait of its own', async () => {

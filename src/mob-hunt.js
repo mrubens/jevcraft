@@ -1333,7 +1333,15 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   const extent = fortressExtent(bricks, nearest);
   options.keep_searching = { description: `Leave this fortress for ten minutes and go on with the search from here (${state.legs || 0} leg${state.legs === 1 ? '' : 's'} so far${minutes ? `, ${minutes} minutes on this one` : ''}): the sweep goes on along its heading, and the fortress may be met again from another side. Left is all of it in view, its bricks out to ${extent} blocks from the nearest.`,
     run: async () => {
-      state.shunned.push({ x: nearest.x, z: nearest.z, radius: extent, until: Date.now() + 600000, at: Date.now(), why: 'Jev chose to leave it and search on' });
+      // From where, kept with it: going back from the same spot asks the
+      // same ways again (fortressInView). mid-235-q-nether-2 left its
+      // fortress and went back to it every three seconds for a minute, each
+      // way in weighed and left in the one question and the fortress taken
+      // back in the next (note 541).
+      const at = bot.entity.position;
+      const ways = Object.keys(options).filter(k => k !== 'keep_searching').map(k => k.replaceAll('_', ' '));
+      state.shunned.push({ x: nearest.x, z: nearest.z, radius: extent, until: Date.now() + 600000, at: Date.now(), why: 'Jev chose to leave it and search on',
+        from: { x: Math.round(at.x), y: Math.round(at.y), z: Math.round(at.z) }, left: ways });
       delete state.target; save();
       bot.chat?.('Leaving this fortress for now. Searching on for another way in.');
       return null;
@@ -1483,10 +1491,12 @@ function fortressInView(bot, goal, save, state, bricks, { stay }) {
   const sameSpot = !!shun?.from && Math.hypot(shun.from.x - here.x, shun.from.y - here.y, shun.from.z - here.z) <= 4;
   const why = state.leaving && Math.hypot(state.leaving.x - nearest.x, state.leaving.z - nearest.z) <= LEAVE_RADIUS
     ? `left ${leftAgo} minute${leftAgo === 1 ? '' : 's'} ago after its passes, and set behind the bot for ${Math.round((state.leaving.until - Date.now()) / 60000)} more`
-    : shun ? `set aside ${mins(Date.now() - (shun.at || Date.now()))} ago, for ${mins(shun.until - Date.now())} more: ${shun.why}${sameSpot ? '; the bot stands where that was found, and from here the same look finds the same' : ''}`
+    : shun ? `set aside ${mins(Date.now() - (shun.at || Date.now()))} ago, for ${mins(shun.until - Date.now())} more: ${shun.why}${!sameSpot ? '' : shun.left ? `, from where the bot stands, over the ways into it from here (${shun.left.length ? shun.left.join(', ') : 'none but leaving'}): going back from here is asking those same ways again` : '; the bot stands where that was found, and from here the same look finds the same'}`
     : 'set aside as a face not approached, for ten minutes';
   // Going back from where it was found to hold nothing to walk to is no
-  // move: the patrol sets it aside again before a step. Said as a fact
+  // move: the patrol sets it aside again before a step. Nor from where Jev
+  // left it over its ways in (keep_searching): the same ways are asked
+  // again, and each answer undid the other (note 541). Said as a fact
   // with the legs, not offered (chooseLeg).
   return { key: 'back_to_fortress', passes, bricks, facts: { ...facts, setAside: why }, ...(sameSpot ? { offer: false } : {}),
     description: `Go back into the fortress in view: ${bricks.length} of its bricks, the nearest ${off} blocks off, ${why}; ${floorSays}; ${seen}.${passSays} Taken, it is no longer set aside, and the way to its bricks is asked (fortress_approach), or its stretches walked when the bot is among them.`,

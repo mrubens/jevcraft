@@ -1764,14 +1764,25 @@ class Survival {
     // netherrack wall with lava in it and no ground three from a drop within
     // sixteen; its snapshot, started again, fought on the open edge and fell
     // twice (note 471). The span's own railing (railSpan), chosen.
-    const railSides = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2) && !noStep
+    // With only shooters about and nothing to swing at too: a shot that
+    // lands pushes as a hit does, and mid-235-q-nether-2 at the lip of a
+    // thirty-block drop under a blaze's fire was offered the fight's rail
+    // only while something could be fought; from 9.4 health it had cover
+    // (in the wrong line) and a walk to ground eighteen blocks off, and a
+    // fireball put it over (note 541). The rail is walled and held.
+    const railSides = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2)
       ? [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => require('./terrain').dropAt(bot, c)) : [];
     const railBlocks = railSides.reduce((n, c) => n + (bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' ? 1 : 2), 0);
     if (railSides.length && bot.inventory.items().some(i => shelter.buildingMaterials.has(i.name) && i.count >= railBlocks)) {
-      options.rail_and_fight = { description: `Wall the ${railSides.length} open side${railSides.length === 1 ? '' : 's'} at the feet over the drop (${railBlocks} block${railBlocks === 1 ? '' : 's'}, about ${Math.round(railBlocks * BLOCK_SECONDS * 10) / 10} seconds, anything at reach hitting freely meanwhile), then fight here: a knock toward the drop stops at the wall.${creeperLeftOut}${edge}${hitsLeft}`,
+      const railing = `Wall the ${railSides.length} open side${railSides.length === 1 ? '' : 's'} at the feet over the drop (${railBlocks} block${railBlocks === 1 ? '' : 's'}, about ${Math.round(railBlocks * BLOCK_SECONDS * 10) / 10} seconds, anything at reach hitting freely meanwhile)`;
+      const railCost = noStep ? stanceCost({ mobs, setup: railBlocks * BLOCK_SECONDS, shield: shielded }) : null;
+      options.rail_and_fight = { ...(railCost ? { expects: { damage: railCost.damage, seconds: railCost.seconds, oneHit } } : {}),
+        description: noStep
+          ? `${railing}, then hold here behind it: a push from a shot that lands, or a step back, stops at the wall; nothing is at reach to swing at, and the shooters still shoot where the bot stands.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: 'walling', done: 'Behind the wall' })
+          : `${railing}, then fight here: a knock toward the drop stops at the wall.${creeperLeftOut}${edge}${hitsLeft}`,
         run: async () => {
           if (!await this.railSpan(task, goal, save)) return false;
-          return options.fight.run();
+          return noStep ? true : options.fight.run();
         } };
     }
     options.fight = { expects: noStep || noneCome ? { damage: shotsIn15, seconds: 15, oneHit } : { damage: cost.damageTaken, seconds: cost.seconds, oneHit }, description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. ${noneCome ? 'None of them can get to the bot and none of them shoots: a fight here stands and waits for one that comes, with nothing to swing at meanwhile.' : noStep ? `${shootersOnly ? `None of them can be reached from here: ${apart.ids.size ? 'every one that can get to the bot' : 'every one'} shoots, none is at reach, and the ground toward the nearest carries no step.` : `The nearest, a ${nearest.entity.name.replaceAll('_', ' ')} ${Math.round(nearest.distance)} blocks off, shoots and cannot be run at from here (a drop beside the bot, too far, or too far up or down).`} ${shootersOnly ? '' : 'The rest are not at arm\'s length either. '}Fighting here is standing in their line of fire with nothing to swing at: about ${shotsIn15} damage from their shots in the next fifteen seconds, from ${cost.healthNow} health${shotsIn15 >= cost.healthNow ? ' (more than the bot has)' : ''}, and no end while they shoot.` : `Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.`}${atOnceNote}${creeperLeftOut}${nearestCreeper}${nearest && shooter(nearest.entity) && !inReach(nearest) ? (() => { const stop = chargeStopsAt(bot, nearest.entity); return stop ? ` The nearest shoots, and the ground straight at it stops a closing run after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in its line of fire.` : ''; })() : ''}${nearest && !inReach(nearest) ? chargeSays(bot, nearest.entity) : ''}${unseen}${edge}${spearSays}${edgeHits}${hitsLeft}`,
@@ -2321,17 +2332,51 @@ class Survival {
     // were burned down at twenty blocks from their blazes with no way to
     // break the line offered (notes 443, 451).
     const shootersSeen = danger.filter(t => t.visible && shooter(t.entity)).slice(0, 3);
-    const coverBlocks = shootersSeen.length * 2;
-    if (shootersSeen.length && typeof this.actions.place === 'function' && shelter.materialStock(bot) >= coverBlocks && !inWater(bot)) {
-      const coverCost = stanceCost({ mobs, setup: coverBlocks * BLOCK_SECONDS, reaches: m => !m.shoots || m.name === 'creeper', shield: shielded });
-      options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, description: `Put a block two high in the line of ${shootersSeen.length === 1 ? `the ${shootersSeen[0].entity.name.replaceAll('_', ' ')} (${Math.round(shootersSeen[0].distance)} blocks off)` : `each of the ${shootersSeen.length} shooters in sight`}, beside the bot, and stay behind it: ${coverBlocks} blocks, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds; a shot does not come through a block, and a shooter that moves round finds the bot open again.` + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
+    // Each in its own line: the ray from its eyes to the bot's, which it
+    // must have to fire, cut where it passes nearest the bot (creeper-
+    // sight.js blockPlan), two high where that is beside the bot. The cover
+    // went on the side toward the shooter's larger axis, which from a blaze
+    // thirty blocks off on the diagonal left the ray open a block to one
+    // side: mid-235-q-nether-2's cover went up at head height west, the
+    // fireball came in from the south-west past it, and its push put the
+    // bot over a thirty-block drop (note 541).
+    const { blockPlan, whereSays } = require('./creeper-sight');
+    const plans = shootersSeen.map(t => ({ t, plan: blockPlan(bot, t.entity) }));
+    const cut = plans.filter(p => p.plan.cells.length), behind = plans.filter(p => p.plan.stoppedBy);
+    const coverBlocks = cut.reduce((n, p) => n + p.plan.cells.length, 0);
+    const covered = new Set([...cut, ...behind].map(p => p.t.entity.id));
+    if (covered.size && typeof this.actions.place === 'function' && shelter.materialStock(bot) >= coverBlocks && !inWater(bot)) {
+      const named = t => `the ${t.entity.name.replaceAll('_', ' ')} (${Math.round(t.distance)} blocks off)`;
+      const open = plans.filter(p => !covered.has(p.t.entity.id));
+      const coverCost = stanceCost({ mobs, setup: coverBlocks * BLOCK_SECONDS, reaches: m => !m.shoots || m.name === 'creeper' || open.some(p => p.t.entity.name === m.name), shield: shielded });
+      const says = [
+        ...cut.map(p => `${p.plan.cells.length === 1 ? 'a block' : `${p.plan.cells.length} blocks, two high,`} in the line from the eyes of ${named(p.t)} to the bot's, ${whereSays(bot, p.plan.cuts)}`),
+        ...behind.map(p => `nothing for ${named(p.t)}: the ${p.plan.stoppedBy.name.replaceAll('_', ' ')} at ${p.plan.stoppedBy.cell} is in its line already`)];
+      const openSays = open.length ? ` No cover can go in the line of ${open.map(p => `${named(p.t)} (${p.plan.why})`).join(', ')}: it still has the bot in its fire.` : '';
+      options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, description: `${coverBlocks ? `Put ${says.join('; and ')}, and stay behind it: ${coverBlocks} block${coverBlocks === 1 ? '' : 's'}, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds` : `Stay here behind what stands in the line already: ${says.join('; ')}`}; a shooter fires only with a line to the bot, a shot does not come through a block, and a shooter that moves round finds the bot open again.${openSays}` + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
         run: async () => {
-          delete this.lastWallWhy;
-          const done = await this.wallOff(task, goal, save, shootersSeen, { reach: 64, action: 'take_cover' });
-          // Failed, said why to the next question (note 528).
-          if (!done) throw Object.assign(new Error(this.lastWallWhy || 'no block went down'), { name: 'StanceFailed' });
+          const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 1)?.name;
+          const now = plans.map(({ t }) => { const e = bot.entities?.[t.entity.id] || t.entity; return { t, e, plan: e.isValid === false ? { cells: [], stoppedBy: true } : blockPlan(bot, e) }; });
+          const todo = now.filter(p => p.plan.cells.length);
+          if (!todo.length && !now.some(p => p.plan.stoppedBy)) throw Object.assign(new Error(now.map(p => `${p.t.entity.name.replaceAll('_', ' ')}: ${p.plan.why}`).join('; ') || 'no shooter in its line'), { name: 'StanceFailed' });
+          if (todo.length && !material) throw Object.assign(new Error('no building blocks carried'), { name: 'StanceFailed' });
+          if (todo.length) this.report(goal, save, { action: 'take_cover', threats: todo.map(p => p.t.entity.name), cells: todo.flatMap(p => p.plan.cells.map(c => ({ ...c }))) });
+          let placed = 0;
+          for (const p of todo) {
+            for (const c of p.plan.cells) {
+              task.check();
+              try { await this.actions.place(bot, task, c, material, { stay: true }); placed++; }
+              catch (err) {
+                task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+                // The line cut is the cover; the rest is the second of two high.
+                if (blockPlan(bot, p.e).stoppedBy) break;
+                throw Object.assign(new Error(`${String(err.message || err).slice(0, 160)} (the cell in the line of the ${p.t.entity.name.replaceAll('_', ' ')} at ${c})`), { name: 'StanceFailed' });
+              }
+            }
+          }
           if (bot.inventory?.slots?.[45]?.name === 'shield') { try { await raiseShield(bot); } catch (_) { /* the block is the cover */ } }
-          return done;
+          if (!placed) await sleep(250);
+          return true;
         } };
     }
     const blockCreeper = this.creeperBlockOption(task, goal, save, { coming, mobs, shielded, oneHit, edge });
@@ -5019,7 +5064,13 @@ class Survival {
     const hunt = this.state.nightPlan?.plan === 'hunt' ? this.state.nightPlan : null;
     // A hunt for food (foodHunt) is not a night's: day or Nether, it runs its time.
     if (hunt && (hunt.until < Date.now() || (!hunt.food && !shelterNeeded(bot)))) { delete this.state.nightPlan; delete bot._nightHunt; }
-    else if (hunt && await this.huntStep(task, goal, save)) { onStep(goal); return true; }
+    // Not under something else's fire or teeth: the hunted kind is no
+    // threat (danger.js nightHunted), anything else is answered first, as
+    // the claim says. mid-235-q-nether-1's food hunt of hoglins held the
+    // claim while a ghast's fireball threw it off a ledge; the turn went to
+    // the work six times at 12 then 8 health, and the next fireball ended
+    // it (note 541).
+    else if (hunt && !immediateThreat(bot) && await this.huntStep(task, goal, save)) { onStep(goal); return true; }
     if (!shelterNeeded(bot)) delete this.state.nightMine;
     else if (this.state.nightMine && !immediateThreat(bot) && !surfaceObserver(bot)(bot.entity.position.offset(0, 1, 0)) &&
         await this.nightMine(task, goal, save)) { onStep(goal); return true; }
@@ -5449,7 +5500,7 @@ function claim(bot, goal = {}, survival = null) {
   const nightPlan = state.nightPlan?.until > now ? state.nightPlan : null;
   // The wait for daylight Jev chose, sealed, while it is being sealed.
   if (state.sealedWait?.until > now && (bot.food ?? 20) < 18) return make('wait_for_day_sealed', 'routine', { minutesToDawn: minutesToDawn(bot), healing: false });
-  if (nightPlan?.plan === 'hunt' && (nightPlan.food || shelterNeeded(bot))) return make('night_hunt', 'routine', { hunting: nightPlan.kind || null });
+  const hunting = nightPlan?.plan === 'hunt' && (nightPlan.food || shelterNeeded(bot));
   // A shooter is a threat as far as its own fire reaches (combat-estimate
   // RANGE, danger.js immediateThreat), hurt or not: being in its sight is
   // being under fire. mid-235-p-fortress-1 stood at 5.5 health with a blaze
@@ -5458,6 +5509,10 @@ function claim(bot, goal = {}, survival = null) {
   // fireball threw it off the edge (note 509). Said with what it has done
   // and whether health comes back, for Jev to weigh.
   const threat = immediateThreat(bot);
+  // The hunt Jev chose is the claim only while nothing else is on the bot:
+  // its own kind is no threat (nightHunted), anything else comes first, as
+  // stepOnce answers it (note 541).
+  if (hunting && !threat) return make('night_hunt', 'routine', { hunting: nightPlan.kind || null });
   // A blaze's with the chance its fire lands from where it is, the game's
   // scatter (combat-estimate fireballHit): it is claimed where its volleys
   // mostly land or its shots have landed, and said so.

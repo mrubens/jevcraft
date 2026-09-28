@@ -819,3 +819,38 @@ test('a pit is refused by what its fall does, not its depth: a drop of four onto
   floorY.value = 14; below.name = 'lava';
   assert.equal(opensPit(bot, new Vec3(1, 19, 0)), true, 'lava below');
 });
+
+// A one-wide fortress bridge of nether bricks at y 56 (feet 57) along x >= 0, the lava sea at y 31 under open air on both
+// sides; the bot on its own column at x -1, `above` blocks over the deck's feet height.
+function bridgeBot(above, { blaze = false, wide = 0 } = {}) {
+  const solid = q => (q.y === 56 && Math.abs(q.z) <= wide && q.x >= 0 && q.x <= 40) || (q.x === -1 && q.z === 0 && q.y >= 40 && q.y < 57 + above);
+  const bot = { game: { dimension: 'the_nether' }, health: 20, entity: { position: new Vec3(-0.5, 57 + above, 0.5) }, inventory: { items: () => [] }, entities: {},
+    blockAt: p => { const q = p.floored(); const s = solid(q); return { name: s ? 'nether_bricks' : q.y <= 31 ? 'lava' : 'air', position: q, boundingBox: s ? 'block' : 'empty', diggable: s }; } };
+  if (blaze) bot.entities = { 9: { id: 9, name: 'blaze', type: 'hostile', position: new Vec3(12.5, 60, 8.5), height: 1.8, isValid: true } };
+  return bot;
+}
+
+test('a fortress bridge with drops on both sides is stepped down onto and walked along while nothing can push the bot, and refused while something can (mid-235-p-nether-3-fortress-2, note 541)', () => {
+  // Seventy-three minutes at its fortress and none of its stretches reached: every staircase onto its floors was refused
+  // for "a deadly drop beside the step" and "no floor", with nothing about.
+  const target = new Vec3(20, 57, 0);
+  const choices = stairOptions(bridgeBot(1), {}, target);
+  assert(choices.some(c => c.destination.x === 0 && c.destination.z === 0 && c.destination.y === 57), `a step down onto the deck: ${JSON.stringify(choices.map(c => c.destination))}`);
+  // A drop of two or more onto it is still not taken: the fall's drift carries on past a one-wide lip (mid-244-q).
+  for (let above = 2; above <= 4; above++) assert(!stairOptions(bridgeBot(above), {}, target).some(c => c.destination.x === 0 && c.destination.z === 0), `${above} above`);
+  // Onto the middle of a three-wide bridge, from a column on it, a drop of up to four is taken.
+  for (let above = 2; above <= 4; above++) {
+    const bot = bridgeBot(above, { wide: 1 }), at = bot.blockAt;
+    bot.blockAt = p => { const q = p.floored(); return q.x === 2 && q.z === 0 && q.y >= 57 && q.y < 57 + above ? { name: 'netherrack', position: q, boundingBox: 'block', diggable: true } : at(p); };
+    bot.entity.position = new Vec3(2.5, 57 + above, 0.5);
+    assert(stairOptions(bot, {}, target).some(c => c.destination.x === 3 && c.destination.z === 0 && (c.dropTo || c.destination).y === 57), `${above} above the middle of a wide deck`);
+  }
+  // Along the deck itself, five blocks of it, nothing about.
+  const along = bridgeBot(0);
+  along.entity.position = new Vec3(0.5, 57, 0.5);
+  assert(stairOptions(along, {}, target).some(c => c.destination.x === 1 && c.destination.y === 57), 'along the one-wide deck');
+  // A blaze in sight: the step beside the drop waits.
+  const shot = bridgeBot(1, { blaze: true });
+  const refused = stairOptions(shot, {}, target);
+  assert(!refused.some(c => c.destination.x === 0 && c.destination.z === 0 && c.destination.y <= 57), JSON.stringify(refused.map(c => c.destination)));
+});

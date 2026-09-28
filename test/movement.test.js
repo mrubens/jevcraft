@@ -280,18 +280,27 @@ function ledgeFixture(dimension) {
   return { bot, movement };
 }
 
-test('in the Nether a cell beside a drop into the lava sea is refused, and costs more where a walk opts out', () => {
+// Something that can push the bot, where the pathfinder asks (danger.js pushersAbout): a blaze in sight, in its reach.
+function pusher(bot, at = new Vec3(10.5, 72, 6.5)) {
+  bot.entities = { 9: { id: 9, name: 'blaze', type: 'hostile', position: at, height: 1.8, isValid: true } };
+  delete bot._pushers;
+}
+
+test('in the Nether a cell beside a drop into the lava sea is walked at its cost while nothing can push the bot, and refused while something can', () => {
   // mid-227-a and mid-227-b were routed along ledges high over the lava sea and went over (notes 217, 248);
-  // mid-243-q-nether-1 was knocked off one by a ghast's fireball (note 516).
-  const { movement } = ledgeFixture('the_nether');
+  // mid-243-q-nether-1 was knocked off one by a ghast's fireball (note 516). mid-235-p-nether-3-fortress-2 reached none of
+  // its fortress's stretches in seventy-three minutes with every bridge edge refused and nothing about (note 541).
+  const { bot, movement } = ledgeFixture('the_nether');
   let neighbors = movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
-  assert(!neighbors.some(p => p.z === 0), 'not onto the edge');
+  const edge = neighbors.find(p => p.x === 0 && p.z === 0 && p.y === 70), back = neighbors.find(p => p.x === -1 && p.z === 1 && p.y === 70);
+  assert(edge && back, 'nothing about: both walkable');
+  assert(edge.cost > back.cost + 3, `the ledge costs more: ${edge.cost} against ${back.cost}`);
+  pusher(bot);
+  neighbors = movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
+  assert(!neighbors.some(p => p.z === 0), 'a blaze in sight: not onto the edge');
   assert(neighbors.some(p => p.x === -1 && p.z === 1 && p.y === 70), 'a block back from it is open');
   movement.besideLava = () => true;
-  neighbors = movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
-  const edge = neighbors.find(p => p.x === 0 && p.z === 0 && p.y === 70), back = neighbors.find(p => p.x === -1 && p.z === 1 && p.y === 70);
-  assert(edge && back, 'opted out, both walkable');
-  assert(edge.cost > back.cost + 3, `the ledge costs more: ${edge.cost} against ${back.cost}`);
+  assert(movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 }).some(p => p.x === 0 && p.z === 0 && p.y === 70), 'a walk that opts out takes it');
   // In the Overworld the cost is left as it was.
   const overworld = ledgeFixture('overworld').movement.getNeighbors({ x: 0, y: 70, z: 1, remainingBlocks: 0 });
   assert.equal(overworld.find(p => p.x === 0 && p.z === 0 && p.y === 70).cost, overworld.find(p => p.x === -1 && p.z === 1 && p.y === 70).cost);
@@ -364,8 +373,11 @@ test('no block is laid level beside the floor where a miss ends in lava or besid
     const beside = neighbors.filter(n => n.toPlace.some(p => p.dy === 0));
     if (sea) assert.equal(beside.length, 0, 'nothing laid beside the tower over the span and the sea');
     else assert(beside.some(n => n.x === 4 && n.y === 36), 'over ground the tower still bridges off');
-    // Over the sea the tower's top is itself a block from a short fall into lava (note 516).
-    assert.equal(neighbors.some(n => n.x === 5 && n.y === 37 && n.z === 0), !sea, sea ? 'no higher over the sea' : 'the tower still goes up');
+    // Over the sea the tower's top is itself a block from a short fall into lava (note 516): refused while something
+    // can push the bot off it, priced while nothing can (note 541).
+    assert(neighbors.some(n => n.x === 5 && n.y === 37 && n.z === 0), 'the tower goes up while nothing can push');
+    movement.bot.entities = { 9: { id: 9, name: 'blaze', type: 'hostile', position: new Vec3(15.5, 38, 6.5), height: 1.8, isValid: true } }; delete movement.bot._pushers;
+    assert.equal(movement.getNeighbors({ x: 5, y: 36, z: 0, remainingBlocks: 64 }).some(n => n.x === 5 && n.y === 37 && n.z === 0), !sea, sea ? 'no higher over the sea under fire' : 'the tower still goes up');
   }
   // Nor a span laid out over the lava sea itself: a miss is the sea.
   const movement = namedWorld('the_nether', p => p.y === 31 && p.z === 0 && p.x <= 0 ? 'cobblestone' : p.y <= 31 ? 'lava' : 'air');
@@ -397,10 +409,17 @@ test('in the Nether no cell a block sideways of lava is walked: along a one-wide
   assert(nether.lavaRefusals > 0, 'the refusal is counted for the no-route error');
   // Nor beside a column that falls into lava within reach: a ledge at z >= 0, open air at z < 0 down to lava four below.
   const ledge = namedWorld('the_nether', p => p.z < 0 ? (p.y <= 43 ? 'lava' : 'air') : p.y <= 47 ? 'netherrack' : 'air');
-  assert(!ledge.getNeighbors({ x: 0, y: 48, z: 1, remainingBlocks: 0 }).some(n => n.z === 0), 'not beside a short fall into lava');
-  // A fortress bridge three wide with the sea forty blocks down: its edges are refused, its middle walked.
+  ledge.bot.entities = { 9: { id: 9, name: 'blaze', type: 'hostile', position: new Vec3(10.5, 50, 6.5), height: 1.8, isValid: true } };
+  assert(!ledge.getNeighbors({ x: 0, y: 48, z: 1, remainingBlocks: 0 }).some(n => n.z === 0), 'not beside a short fall into lava while something can push');
+  // A fortress bridge three wide with the sea forty blocks down: with nothing about, its edges are walked at their cost; with a
+  // blaze in sight, they are refused and its middle walked (note 541).
   const bridge = namedWorld('the_nether', p => p.y <= 8 ? 'lava' : p.y === 47 && p.z >= 0 && p.z <= 2 ? 'nether_bricks' : 'air');
-  const deck = bridge.getNeighbors({ x: 0, y: 48, z: 1, remainingBlocks: 0 });
+  let deck = bridge.getNeighbors({ x: 0, y: 48, z: 1, remainingBlocks: 0 });
+  const middle = deck.find(n => n.x === 1 && n.z === 1 && n.y === 48), side = deck.find(n => n.x === 0 && n.z === 0 && n.y === 48);
+  assert(middle && side, 'nothing about: the whole deck');
+  assert(side.cost > middle.cost, 'its edge costs more');
+  bridge.bot.entities = { 9: { id: 9, name: 'blaze', type: 'hostile', position: new Vec3(10.5, 50, 6.5), height: 1.8, isValid: true } }; delete bridge.bot._pushers;
+  deck = bridge.getNeighbors({ x: 0, y: 48, z: 1, remainingBlocks: 0 });
   assert(deck.some(n => n.x === 1 && n.z === 1 && n.y === 48), 'along the middle');
   assert(!deck.some(n => n.z !== 1), 'not along an edge');
   // An opt-out by name takes the shore, and the Overworld keeps its cost.
