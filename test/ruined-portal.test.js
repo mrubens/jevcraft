@@ -845,3 +845,35 @@ test('the crossing kit says where food lies against the frame begun, and offers 
   assert.equal(offered.top_up_food_near, undefined);
   assert.doesNotMatch(offered.cross_now, /No portal is lit yet/);
 });
+
+test('a climb chosen for a portal site, made, looks for the site up there, not the lava walked back down to first (mid-243-a, note 537)', async () => {
+  // mid-243-a: its lava at (21, 67, -4); the stairs down stopped at y 78, eleven from it, no site level and dry; Jev chose
+  // the climb, five blocks to open sky ("the frame then goes down up there"). At the top the lava was seventeen off, the
+  // stairs were dug back down to 78 and the question asked again: eight climbs in three minutes, tunnel and enter_nether
+  // trading the step, until the staircase was set aside for pacing its own cells.
+  const { portalStep } = require('../src/work');
+  const { Task } = require('../src/skills');
+  const { bot } = castingBot({ bucket: 1, water_bucket: 1, cobblestone: 64, flint_and_steel: 1, stone_pickaxe: 1, iron_pickaxe: 1 });
+  // The grass up here, open over it.
+  bot.findBlocks = () => { const out = []; for (let x = 0; x <= 14; x++) for (let z = 10; z <= 24; z++) out.push(new Vec3(x, 63, z)); return out; };
+  bot.on = () => {}; bot.removeListener = () => {}; bot.off = () => {};
+  bot.pathfinder.setGoal = () => {}; bot.pathfinder.stop = () => {};
+  let walks = 0;
+  bot.pathfinder.goto = async () => { walks++; throw new Error('No path to the goal'); };
+  const near = { x: 7, y: 47, z: 17 };
+  const goal = { landmarks: [{ kind: 'lava_pool', ...near, dimension: 'overworld' }],
+    portalMethod: { kind: 'cast', near: { ...near }, nearByStairs: true, activeMs: 0, reasked: 0, from: { obsidian: 0, diamonds: 0, diamondPickaxe: false } },
+    // The climb made: at open sky, no surfaceReturn left.
+    surfaceTrip: { need: 'a portal site (none level and dry down here)', pick: 'climb', phase: 'reach_nether', up: 5, lava: { ...near }, at: new Date().toISOString() } };
+  let asked = 0;
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async () => { asked++; return { answers: { branch_0: { choice: 'climb', confidence: 0.7 } } }; } };
+  const steps = [];
+  await portalStep(bot, task, goal, () => steps.push(goal.step?.action), task.opportunityClient).catch(() => {});
+  assert(!steps.includes('tunnel') && !steps.includes('to_lava_for_portal'), `not back down to the lava: ${steps}`);
+  assert.equal(walks, 0, 'no walk to the lava');
+  assert(goal.portalFrame, 'the frame set out up here');
+  assert(Math.abs(goal.portalFrame.origin.y - 64) <= 1, `on the ground up here: ${JSON.stringify(goal.portalFrame.origin)}`);
+  assert.equal(goal.surfaceTrip, undefined, 'the climb for the site is done with');
+  assert.equal(asked, 0, 'not asked again');
+});

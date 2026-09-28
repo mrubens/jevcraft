@@ -1444,7 +1444,7 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
     }
     return;
   }
-  goal.surfaceTrip = { need, pick, ...(phase ? { phase } : {}), ...(cost ? { up: cost.up } : {}), at: new Date().toISOString() };
+  goal.surfaceTrip = { need, pick, ...(phase ? { phase } : {}), ...(cost ? { up: cost.up } : {}), ...(lava ? { lava: { x: lava.x, y: lava.y, z: lava.z } } : {}), at: new Date().toISOString() };
   if (pick === 'stay_below') {
     const { RUNG_WAIT_MS } = require('./game-progress');
     setAside(goal, 'rung', phase, `Jev chose to stay below rather than climb${cost ? ` ${cost.up} blocks` : ''} for ${need}`, RUNG_WAIT_MS);
@@ -3890,10 +3890,18 @@ async function portalStep(bot, task, goal, save, client) {
     if (near && goal.portalMethod.intoCave) { await intoCave(bot, task, goal, save, goal.portalMethod.intoCave); return false; }
     // A climb chosen for the frame's site holds to the top, not undone by
     // the walk back to the lava each pass: mid-220-h went six stairs up and
-    // back down to the lava for thirteen minutes (note 531).
-    const siteClimb = goal.surfaceTrip?.pick === 'climb' && /^a portal site/.test(goal.surfaceTrip.need || '') && goal.surfaceReturn;
-    if (near && siteClimb) { await surfaceTrip(bot, task, goal, save, goal.surfaceTrip.need); return false; }
-    if (near && bot.entity.position.distanceTo(new Vec3(near.x, near.y, near.z)) > 12) {
+    // back down to the lava for thirteen minutes (note 531). And at the top
+    // the site is looked for up there, as the climb said ("the frame then
+    // goes down up there"), not the lava walked back down to first: mid-243-a
+    // climbed five blocks to open sky, was then seventeen from its lava, dug
+    // the stairs back down to eleven, found no site and was asked again,
+    // eight climbs in three minutes, until the staircase was set aside for
+    // pacing its own cells (note 537). Held for the lava it was chosen with,
+    // until a frame is set out.
+    const siteClimb = near && goal.surfaceTrip?.pick === 'climb' && /^a portal site/.test(goal.surfaceTrip.need || '') &&
+      (!goal.surfaceTrip.lava || ['x', 'y', 'z'].every(k => goal.surfaceTrip.lava[k] === near[k]));
+    if (siteClimb && !surfaceReturnComplete(bot, goal)) { await surfaceStep(bot, task, goal, save); return false; }
+    if (near && !siteClimb && bot.entity.position.distanceTo(new Vec3(near.x, near.y, near.z)) > 12) {
       const at = new Vec3(near.x, near.y, near.z);
       // Three walks that come no nearer and the lava is not walked to:
       // mid-243-f walked at a pool fourteen blocks off for minutes, up and
@@ -3966,6 +3974,8 @@ async function portalStep(bot, task, goal, save, client) {
       return false;
     }
     delete goal.portalSiteDug;
+    // The site found, the climb for it is done with.
+    if (/^a portal site/.test(goal.surfaceTrip?.need || '')) delete goal.surfaceTrip;
     const o = pos(site);
     // Minimal frame: two bottom/top blocks, three on each side, no corners.
     goal.portalFrame = { origin: { ...o }, blocks: cornerlessFrame(o), ...(casting ? { axis: 'x', cast: true, castTemp: [] } : {}) };
