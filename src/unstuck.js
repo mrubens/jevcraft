@@ -28,8 +28,10 @@ const open = n => OPEN.test(n || '') || isWater(n);
 const solid = n => !!n && !open(n) && !isLava(n);
 // The wart blocks too, as a span is laid with them (bridging.js LAID, note
 // 622): at the end of its own span twenty over the floor with thirty-two
-// warped wart blocks carried, the one block offered to put was gravel.
-const PLACEABLE = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack', 'andesite', 'diorite', 'granite', 'tuff', 'stone', 'deepslate', 'sandstone', 'nether_wart_block', 'warped_wart_block', 'gravel', 'sand'];
+// warped wart blocks carried, the one block offered to put was gravel. And
+// the wools (shelter.js LAST_MATERIALS, note 619), all before the gravel
+// and the sand, which fall.
+const PLACEABLE = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack', 'andesite', 'diorite', 'granite', 'tuff', 'stone', 'deepslate', 'sandstone', 'nether_wart_block', 'warped_wart_block', ...require('./shelter').LAST_MATERIALS, 'gravel', 'sand'];
 const ORE = /_ore$/;
 // Stone and ore take a pickaxe; the rest comes away in the hand.
 function digSeconds(name, view, inWater) {
@@ -253,6 +255,28 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       const over = view.name(level.plus(UP)), overThat = view.name(level.offset(0, 2, 0));
       const stepOut = !inWater || (open(over) && !isWater(over) && open(overThat) && !isWater(overThat));
       moves.push({ key: `place_${dir}`, does: `Put a ${block.replaceAll('_', ' ')} into the ${isWater(view.name(level)) ? 'water' : 'space'} ${dir}, at the feet: ${stepOut ? `a step up${inWater ? ' out of the water' : ''}` : 'a block to stand on, with water over it: still under water there'}.`, kind: 'place', cell: level, block });
+    }
+  }
+  // A floor laid across a gap beside, and the floor of a cell beside taken
+  // up to lay it with. A bot on an island of its own blocks over the lava
+  // sea, a cell short of its span and nothing carried to put down, stood
+  // fifteen minutes and then a ghast's fireball threw it off: every walk was
+  // "no route" (a jump over lava is not taken), the moves offered were
+  // steps on the island and gravel that falls, and the four blocks under its
+  // feet were the blocks to bridge with (note 625).
+  const carriedBlock = PLACEABLE.find(n => !falls(n) && (view.carried?.[n] || 0) > 0);
+  for (const [dir, d] of Object.entries(DIRS)) {
+    const gap = feet.plus(d).plus(DOWN), beyond = gap.plus(d);
+    if (inWater || !solid(view.name(feet.plus(DOWN)))) break;
+    if (carriedBlock && open(view.name(gap)) && !isLava(view.name(gap)) && !isWater(view.name(gap)) && open(view.name(feet.plus(d))) && open(view.name(feet.plus(d).plus(UP)))) {
+      const leads = solid(view.name(beyond)) ? `the floor beyond it, ${dir}, is solid: it joins that ground` : `beyond it, ${dir}, there is no floor`;
+      moves.push({ key: `bridge_${dir}`, does: `Put a ${carriedBlock.replaceAll('_', ' ')} into the gap in the floor ${dir}, against the floor stood on: a floor cell to walk onto; ${leads}; ${dropBelow(view, gap) ? `under it, ${dropBelow(view, gap)}` : 'ground close under it'}.`, kind: 'place', cell: gap, block: carriedBlock, to: null });
+    }
+    // The floor of the cell beside, when nothing is carried to put down and
+    // the block is the bot's own: one block of it to carry, the rest stays.
+    if (!carriedBlock && diggable(view, gap, view.name(gap)) && !!laidOf(view, gap) && solid(view.name(feet.plus(DOWN))) && open(view.name(feet.plus(d)))) {
+      const seconds = digSeconds(view.name(gap), view, false);
+      if (seconds != null) moves.push({ key: `take_floor_${dir}`, does: `Dig up the ${view.name(gap).replaceAll('_', ' ')} in the floor ${dir}, a block the bot laid itself${Number.isFinite(laidOf(view, gap).at) ? ` at ${hhmm(laidOf(view, gap).at)}Z` : ''} (about ${seconds} s) and pick it up, to put down somewhere else: the floor stood on stays; that cell of the floor is gone, ${dropBelow(view, gap) ? `a drop there: ${dropBelow(view, gap)}` : 'ground close under it'}.`, kind: 'dig', cell: gap, seconds, effects: [] });
     }
   }
   // Straight up: dig what is over the head, swim up, or pillar.
