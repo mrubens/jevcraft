@@ -573,9 +573,66 @@ function shieldFacing(bot, danger) {
 }
 // Out to six blocks: at three, a fall into the Nether's lava sea found no
 // shore, the step did nothing, and the bot burned four seconds standing.
-// Through lava a body moves about a block a second: not measured, and said
-// as rough wherever a way through lava is priced (body_way).
-const LAVA_BLOCKS_A_SECOND = 1;
+// Through lava a body moves about 0.4 blocks a second, from the 26.1 jar
+// (LivingEntity.travelInLava): the input adds 0.02 of the keys' 0.98 a
+// tick and the lava halves the motion every tick, sprinting or not, so
+// 0.0196 a tick at most. The flow's push (Entity, 0.007 a tick in the
+// Nether's fast lava, 0.0023 elsewhere, halved as well) adds or takes up
+// to about 0.14 a second. It was said as a block a second, not measured,
+// and mid-244-ab's ways out were priced at twice what they took (note 569).
+const LAVA_BLOCKS_A_SECOND = 0.4;
+// And how lava spreads, from the same jar (LavaFluid): a block every ten
+// ticks and up to seven from where it pours in the Nether (fast lava), a
+// block every thirty ticks and up to three elsewhere. Faster than a body
+// swims either way.
+const lavaSpreads = bot => /nether/.test(String(bot.game?.dimension || ''))
+  ? 'lava spreads a block every half second here, up to seven blocks from where it pours'
+  : 'lava spreads a block every second and a half, up to three blocks from where it pours';
+
+// The way through lava to each cell near, walked as a body goes: a cell
+// the body fits in (feet and head with no collision box, lava counting as
+// room), a step to a side up to one up (a jump, with head room over where
+// it jumps from) or one down. -> Map of 'x,y,z' to { blocks, from }.
+// Straight-line distance went through rock: mid-244-ab was told of a dry
+// cell 2.9 blocks off behind the tunnel's corner and swam into the wall
+// (note 569).
+function lavaRoutes(bot, feet, radius = 6) {
+  const fits = c => [c, c.offset(0, 1, 0)].every(p => bot.blockAt(p)?.boundingBox === 'empty');
+  const key = c => `${c.x},${c.y},${c.z}`;
+  const out = new Map([[key(feet), { blocks: 0, from: null, cell: feet }]]);
+  const open = [feet], done = new Set();
+  // A diagonal step where both cells beside it at its level fit, as a body
+  // slides past a corner only with room.
+  const steps = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
+  while (open.length) {
+    let bi = 0;
+    for (let i = 1; i < open.length; i++) if (out.get(key(open[i])).blocks < out.get(key(open[bi])).blocks) bi = i;
+    const c = open.splice(bi, 1)[0], ck = key(c);
+    if (done.has(ck)) continue;
+    done.add(ck);
+    const here = out.get(ck);
+    for (const [dx, dz, cost] of steps) for (const dy of dx && dz ? [0] : [0, 1, -1]) {
+      const to = c.offset(dx, dy, dz), k = key(to);
+      if (done.has(k) || Math.abs(to.x - feet.x) > radius + 1 || Math.abs(to.z - feet.z) > radius + 1 || to.y < feet.y - 2 || to.y > feet.y + 6) continue;
+      if (dy === 1 && bot.blockAt(c.offset(0, 2, 0))?.boundingBox !== 'empty') continue;
+      if (dy === -1 && bot.blockAt(to.offset(0, 2, 0))?.boundingBox !== 'empty') continue;
+      if (dx && dz && !(fits(c.offset(dx, 0, 0)) && fits(c.offset(0, 0, dz)))) continue;
+      if (!fits(to)) continue;
+      const blocks = here.blocks + cost;
+      if (out.has(k) && out.get(k).blocks <= blocks) continue;
+      out.set(k, { blocks, from: c, cell: to }); open.push(to);
+    }
+  }
+  return out;
+}
+// The cells walked to reach `to`, the first step first; null with no way.
+function routeOf(routes, to) {
+  const k = c => `${c.x},${c.y},${c.z}`;
+  if (!routes.has(k(to))) return null;
+  const path = [];
+  for (let c = to; c && routes.get(k(c))?.from; c = routes.get(k(c)).from) path.unshift(c);
+  return path;
+}
 // A shot's speed, roughly (not measured here), for shield_policy: an arrow
 // or a trident about thirty blocks a second, a fireball about ten.
 const SHOT_SPEED = { arrow: 30, fireball: 10 };
@@ -624,7 +681,13 @@ function lavaExit(bot, radius = 6, { water = false, dryOnly = false } = {}) {
     if (dryOnly && [c, c.offset(0, 1, 0)].some(p => bot.blockAt(p)?.name === 'water')) continue;
     cells.push(c);
   }
-  const far = c => c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
+  // By the way through, not the straight line: a cell behind rock is as
+  // far as the walk round it. One out of a jump's reach (two or more up)
+  // keeps its straight line: the pillar rises to it.
+  const routes = lavaRoutes(bot, feet, radius);
+  const routed = c => routes.get(`${c.x},${c.y},${c.z}`);
+  const far = c => routed(c) ? routed(c).blocks : c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
+  for (let i = cells.length - 1; i >= 0; i--) if (!routed(cells[i]) && cells[i].y <= feet.y + 1) cells.splice(i, 1);
   const lavaBy = c => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => [0, 1].some(dy => /lava/.test(bot.blockAt(c.offset(x, dy, z))?.name || ''))) ? 4 : 0;
   // Out of lava upright, the push can carry past the cell: one on a ledge
   // comes after one with a floor all round. mid-235-a stepped out onto the
@@ -636,7 +699,10 @@ function lavaExit(bot, radius = 6, { water = false, dryOnly = false } = {}) {
   // place five seconds and burned (2026-09-26).
   const high = c => c.y > feet.y + 1 ? 8 : 0;
   const cost = c => far(c) + (water ? lavaBy(c) : 0) + edge(c) + high(c);
-  return cells.sort((a, b) => cost(a) - cost(b))[0] || null;
+  const best = cells.sort((a, b) => cost(a) - cost(b))[0] || null;
+  // The way to it, for the walk and its seconds.
+  if (best && routed(best)) { best.route = routeOf(routes, best); best.blocks = routed(best).blocks; }
+  return best;
 }
 
 // A fight is not taken with a drop beside the bot: one hit's knockback on
@@ -2344,11 +2410,20 @@ class Survival {
     // times though its own text says shooters still hit (note 499).
     // At the doorway the biters come one at a time and are fought; the
     // shooters in line with it and a creeper at it still reach.
-    const bunkerMs = nearWall(bot, centroid(danger)) ? require('./bunker').bunkerDigMs(bot, centroid(danger)) : Infinity;
-    if (Number.isFinite(bunkerMs)) options.bunker = { description: `Dig into the nearby wall, three blocks in and one to the side at the end where the rock allows, so only one mob at a time can reach, and fight them at the doorway: about ${Math.round(bunkerMs / 100) / 10} seconds of digging with the tools carried, shot at meanwhile.` + buildCost + creeperNote + witchNote +
+    // Dug once: in the bunker already, the stance is to stay in it (note
+    // 569). A wall left undug for the lava or water behind it is said: no
+    // cell with liquid beside it or above it is opened (tunneling.js
+    // safeExcavation), and another side is dug instead.
+    const dug = this.state.bunkerDug, inDug = require('./bunker').inBunker(bot, dug);
+    const bunkerMs = nearWall(bot, centroid(danger), { dug }) ? require('./bunker').bunkerDigMs(bot, centroid(danger), { dug }) : Infinity;
+    const undug = !inDug && Number.isFinite(bunkerMs) ? require('./bunker').liquidBehind(bot, bot.entity.position.floored(), centroid(danger)) : [];
+    const undugSays = undug.length ? ` Not dug where ${undug.length === 1 ? 'there is' : 'there are'} ${undug.slice(0, 3).join('; ')}: a cell opened there lets it in, and lava in a tunnel spreads faster than a body moves through it.` : '';
+    if (Number.isFinite(bunkerMs)) options.bunker = { description: (inDug
+      ? `Stay in the bunker already dug here, at its inside cell facing the doorway, so only one mob at a time can reach, and fight them there: no more digging.`
+      : `Dig into the nearby wall, three blocks in and one to the side at the end where the rock allows, so only one mob at a time can reach, and fight them at the doorway: about ${Math.round(bunkerMs / 100) / 10} seconds of digging with the tools carried, shot at meanwhile.${undugSays}`) + buildCost + creeperNote + witchNote +
       costSays(stanceCost({ mobs, setup: bunkerMs / 1000 + BLOCK_SECONDS, fight: { atOnce: 1, only: m => !m.shoots }, reaches: m => m.shoots || m.name === 'creeper' || m.name === 'warden', shield: shielded }), bot.health, mobs, { doing: 'digging in', done: 'At the doorway, one biter at a time' }),
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
-        try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); return true; }
+        try { this.state.bunkerDug = await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate, dug: this.state.bunkerDug }); save(); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
     // Against blazes, the stands a player takes rods from with iron and no
     // fire resistance, back to rock where a fireball's push meets a wall
@@ -3457,10 +3532,11 @@ class Survival {
       // answer, but a hold with no end would be a new way to stall a run.
       if (pack) this.state.bunkerSince ||= Date.now(); else delete this.state.bunkerSince;
       const holding = this.state.bunkerSince && Date.now() - this.state.bunkerSince > 45000;
-      if (pack && !holding && bot.health >= 10 && nearWall(bot, centroid(danger)) && require('./bunker').bunkerDigMs(bot, centroid(danger)) <= BUNKER_DIG_MS) {
+      const dug = this.state.bunkerDug;
+      if (pack && !holding && bot.health >= 10 && nearWall(bot, centroid(danger), { dug }) && require('./bunker').bunkerDigMs(bot, centroid(danger), { dug }) <= BUNKER_DIG_MS) {
         this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health,
           held: Math.round((Date.now() - this.state.bunkerSince) / 1000) });
-        try { await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate }); delete this.state.trappedSince; return; }
+        try { this.state.bunkerDug = await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate, dug }); save(); delete this.state.trappedSince; return; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
       }
       if ((crowd || danger.some(shoots)) && !creepers.length && await this.sealHere(task, goal, save, danger)) { delete this.state.trappedSince; return; }
@@ -5242,13 +5318,15 @@ class Survival {
     // Of this dimension; one kept before the dimension was recorded counts.
     const last = this.state.lastDry && (!this.state.lastDry.dimension || String(this.state.lastDry.dimension) === String(bot.game?.dimension || '')) ? pos(this.state.lastDry) : null;
     const round = n => Math.round(n * 10) / 10;
-    const far = c => round(c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position));
-    // Not measured: the body moves slowly in lava, and this is said as rough.
+    // By the way through the lava (lavaRoutes), not the straight line.
+    const routes = lavaRoutes(bot, feet, 8);
+    const routed = c => routes.get(`${c.x},${c.y},${c.z}`);
+    const far = c => round(routed(c) ? routed(c).blocks : c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position));
     const seconds = c => Math.max(0.5, round(far(c) / LAVA_BLOCKS_A_SECOND));
     const lavaBy = c => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => [0, 1].some(dy => /lava/.test(bot.blockAt(c.offset(x, dy, z))?.name || '')));
-    const where = c => `${far(c)} blocks off at (${c.x}, ${c.y}, ${c.z})${c.y - feetY >= 2 ? `, ${c.y - feetY} above the feet: a jump out of lava rises one, so a walk alone does not reach it` : c.y - feetY === 1 ? ', a block up (a jump)' : ''}` +
-      `${lavaBy(c) ? ', lava beside it' : ''}${besideDrop(bot, c) ? ', beside a drop' : ''}`;
-    const said = (c, lead) => `${lead} ${where(c)}: about ${seconds(c)} seconds at roughly a block a second through lava (not measured).`;
+    const where = c => `${far(c)} blocks off ${routed(c) ? 'by the way through' : 'in a straight line'} at (${c.x}, ${c.y}, ${c.z})${c.y - feetY >= 2 ? `, ${c.y - feetY} above the feet: a jump out of lava rises one, so a walk alone does not reach it` : c.y - feetY === 1 ? ', a block up (a jump)' : ''}` +
+      `${lavaBy(c) ? `, lava beside it (${lavaSpreads(bot)}, so it may be lava by the time the body gets there)` : ''}${besideDrop(bot, c) ? ', beside a drop' : ''}`;
+    const said = (c, lead) => `${lead} ${where(c)}: about ${seconds(c)} seconds at the ${LAVA_BLOCKS_A_SECOND} blocks a second a body swims through lava (the game's lava drag).`;
     const report = (way, to) => this.report(goal, save, { action: 'leave_lava', way, to: to && { ...to }, health: bot.health });
     // The walk out, as the old rule walked it. Out of the lava and over the
     // cell chosen is out: the keys held after that carried mid-235-a on past
@@ -5259,12 +5337,25 @@ class Survival {
     // (note 518). With no cell, never stand: the step with nothing to do
     // returned at once, a thousand times in four seconds, while the bot
     // burned.
+    // Cell by cell along the way through, jumping as it goes: a straight
+    // line to a cell round a corner swims into the rock (note 569). Each
+    // cell is given the seconds a body takes to cross one in lava and a
+    // second over; out of the lava ends it wherever it is.
+    const out = to => !inLava(bot) && (bot.entity.onGround || bot.entity.isInWater || (to && bot.entity.position.floored().x === to.x && bot.entity.position.floored().z === to.z));
     const walk = async (to, why) => {
-      const toward = to ? to.offset(0.5, 1, 0.5) : null;
+      const route = to ? routeOf(routes, to) : null;
+      const points = route?.length ? route : [to];
       bot._leavingLava = true;
       try {
-        await move(bot, task, { label: 'out_of_lava', keys: toward ? ['forward', 'jump'] : ['jump'], sneak: false, why, look: toward || undefined, maxMs: 2500, tick: 50,
-          until: () => !inLava(bot) && (bot.entity.onGround || bot.entity.isInWater || (to && bot.entity.position.floored().x === to.x && bot.entity.position.floored().z === to.z)) });
+        for (let i = 0; i < points.length; i++) {
+          const wp = points[i], last = i === points.length - 1;
+          const toward = wp ? wp.offset(0.5, 1, 0.5) : null;
+          const centre = () => wp && Math.hypot(bot.entity.position.x - (wp.x + 0.5), bot.entity.position.z - (wp.z + 0.5)) < 0.35;
+          const done = await move(bot, task, { label: 'out_of_lava', keys: toward ? ['forward', 'jump'] : ['jump'], sneak: false, why, look: toward || undefined,
+            maxMs: last && !route ? 2500 : Math.round(1000 / LAVA_BLOCKS_A_SECOND + 1000), tick: 50,
+            until: () => out(to) || (!last && centre()) });
+          if (out(to) || (!done && !last)) break;
+        }
       } finally { bot._leavingLava = false; }
       return !inLava(bot);
     };
@@ -5287,7 +5378,8 @@ class Survival {
           return inLava(bot) ? walk(high, 'in lava: onto the ledge the pillar rose to') : true;
         } };
     }
-    if (last) ways.back_the_way_came = { description: `Back toward the last dry footing stood on, ${far(last)} blocks off at (${last.x}, ${last.y}, ${last.z}), swimming up as it goes: about ${seconds(last)} seconds at roughly a block a second through lava (not measured)${far(last) > 6 ? '; farther than any cell out seen from here' : ''}.`,
+    const lastLava = last && [last, last.offset(0, 1, 0)].some(p => /lava/.test(bot.blockAt(p)?.name || ''));
+    if (last) ways.back_the_way_came = { description: `Back toward the last dry footing stood on, ${far(last)} blocks off ${routed(last) ? 'by the way through' : 'in a straight line, no way through seen'} at (${last.x}, ${last.y}, ${last.z}), swimming up as it goes: about ${seconds(last)} seconds at the ${LAVA_BLOCKS_A_SECOND} blocks a second a body swims through lava${lastLava ? `; it is lava now itself (${lavaSpreads(bot)})` : lavaBy(last) ? `; lava beside it (${lavaSpreads(bot)})` : ''}${far(last) > 6 ? '; farther than any cell out seen from here' : ''}.`,
       run: async () => { report('back_the_way_came', last); return walk(last, 'in lava with no dry cell in sight: up, and back the way the bot came'); } };
     if (!Object.keys(ways).length) ways.swim_up = { description: 'Swim straight up in the lava: no cell out within six blocks and no dry footing known.', run: async () => { report('swim_up', null); return walk(null, 'in lava with nothing out in sight: up'); } };
     const apple = bot.inventory.items().find(i => i.name === 'enchanted_golden_apple');

@@ -55,7 +55,22 @@ function lasts(bot, key, { air = bot.oxygenLevel ?? 20, inFire = false } = {}) {
     const left = round(require('./combat-estimate').burnLeft(bot));
     return { losesPerSecond: rate, fireLeftSeconds: left, healthItTakes: round(Math.min(hp, left * rate)), secondsToDeath: round(hp / rate), ...(left * rate >= hp ? { burnsToDeath: true } : {}) };
   }
+  // Lava through the armour worn: its four a time is cut by the game's
+  // armour formula (lava is not among the damage that bypasses armour).
+  // mid-244-ab in full iron was told "about 2.3 seconds to death" at 18.1
+  // health and lasted 4.9, about 1.9 a hit (note 569). Fire protection is
+  // not counted.
+  if (key === 'lava') {
+    const worn = lavaThroughArmour(bot);
+    if (worn != null && worn < rate) return { losesPerSecond: round(worn), throughArmourWorn: true, secondsToDeath: round(hp / worn) };
+  }
   return { losesPerSecond: rate, ...(key === 'lava' || (key === 'fire' && inFire) ? { beforeArmour: true } : {}), secondsToDeath: round(hp / rate) };
+}
+function lavaThroughArmour(bot) {
+  const names = [5, 6, 7, 8].map(slot => bot?.inventory?.slots?.[slot]?.name).filter(Boolean);
+  if (!names.length) return null;
+  const ce = require('./combat-estimate');
+  return 2 * ce.afterArmour(4, ce.armourOf(names));
 }
 
 // The condition in words, for the question's state.
@@ -64,7 +79,7 @@ function conditionSays(bot, key, facts = {}) {
   const hp = round(bot.health ?? 20);
   if (l.fireResistance) return `${key === 'lava' ? 'In lava' : facts.inFire ? 'Standing in fire' : 'Alight'} at ${hp} health, with fire resistance on the body: it does not hurt while that lasts.`;
   switch (key) {
-    case 'lava': return `In lava at ${hp} health: it takes about ${l.losesPerSecond} health a second before armour, about ${l.secondsToDeath} seconds to death at that rate; once out, the body burns on up to ${BURNS_AFTER.lava} seconds at a health a second unless put out in water.`;
+    case 'lava': return `In lava at ${hp} health: it takes about ${l.losesPerSecond} health a second ${l.throughArmourWorn ? 'through the armour worn (fire protection not counted)' : 'before armour'}, about ${l.secondsToDeath} seconds to death at that rate; once out, the body burns on up to ${BURNS_AFTER.lava} seconds at a health a second unless put out in water.`;
     case 'fire': return facts.inFire
       ? `Standing in fire at ${hp} health: about ${l.losesPerSecond} health a second before armour, about ${l.secondsToDeath} seconds to death at that rate, and it burns on up to ${BURNS_AFTER.fire} seconds after the fire is left.`
       : `Alight at ${hp} health, out of the fire: about ${l.fireLeftSeconds} second${l.fireLeftSeconds === 1 ? '' : 's'} of fire left (from the hurt that lit it: ${BURNS_AFTER.lava} after lava, ${BURNS_AFTER.fire} after fire, 5 after a fireball), a health a second that armour does not stop, about ${l.healthItTakes} health${l.burnsToDeath ? ', all the health the bot has' : ''}; water puts it out at once, and the Nether has no water.`;

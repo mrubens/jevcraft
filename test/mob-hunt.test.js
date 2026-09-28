@@ -1079,7 +1079,7 @@ test('blaze sightings are remembered by place and the hunt walks back to the bus
 test('a swarm of blazes is fought from a bunker dug into natural rock away from them', () => {
   const { bunkerSide, swarm } = require('../src/bunker');
   const { Vec3 } = require('vec3');
-  const rock = { name: 'netherrack', boundingBox: 'block', diggable: true }, air = { boundingBox: 'empty' };
+  const rock = { name: 'netherrack', boundingBox: 'block', diggable: true }, air = { name: 'air', boundingBox: 'empty' };
   const bot = { entity: { position: new Vec3(0.5, 65, 0.5) }, game: { dimension: 'the_nether' }, world: { raycast: () => null },
     time: { timeOfDay: 6000 },
     entities: Object.fromEntries([1, 2, 3].map(i => [i, { id: i, name: 'blaze', position: new Vec3(8 + i, 66, 0.5), isValid: true, height: 1.8 }])),

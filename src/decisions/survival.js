@@ -344,7 +344,7 @@ define({
   source: 'src/body.js (answer), src/survival.js (lavaWays), src/vitals.js (fireWays, headWays, airWays)',
   instructions: {
     task: 'The bot\'s body is in danger right now. Choose the way out it takes at once.',
-    guidance: 'says is the danger and the rate it costs health at; secondsToDeath is how long the body lasts at that rate. Each way says where it goes, about how many seconds it takes, and what is left after (burning on, lava beside the landing, a drop). Lava is the quickest killer: every second in it is about eight health before armour. Water puts burning out at once; in the Nether nothing does but the burning ending.',
+    guidance: 'says is the danger and the rate it costs health at; secondsToDeath is how long the body lasts at that rate. Each way says where it goes, about how many seconds it takes, and what is left after (burning on, lava beside the landing, a drop). Lava is the quickest killer: every second in it is about eight health before armour, and the state says it through the armour worn. A body in lava moves about 0.4 blocks a second, and lava spreads into a dug tunnel faster than that. Water puts burning out at once; in the Nether nothing does but the burning ending.',
   },
   options: [
     { key: 'to_dry_ground', label: 'out of the lava onto the nearest dry cell', when: 'in lava with a dry cell (floor under it, air over it) within six blocks; said with its distance, how high above the feet (a jump rises one), lava or a drop beside it, and the seconds', level: 'root' },

@@ -31,20 +31,60 @@ function blazes(bot, radius = 24) {
 }
 const swarm = (bot, radius = 24) => blazes(bot, radius).length >= SWARM;
 
-// A side whose next DEPTH cells at feet and head height are natural rock
-// on solid floor, facing away from the blazes: the bunker goes there.
-function bunkerSide(bot, feet, from) {
-  const away = SIDES.filter(s => !from || (s.x * (from.x - feet.x) + s.z * (from.z - feet.z)) <= 0);
-  for (const side of [...away, ...SIDES.filter(s => !away.includes(s))]) {
-    let ok = true;
-    for (let d = 1; d <= DEPTH && ok; d++) {
-      const cell = feet.plus(side.scaled(d));
-      for (const p of [cell, cell.offset(0, 1, 0)]) { const b = bot.blockAt(p); if (!solid(b) || !NATURAL.test(b.name) || !b.diggable) ok = false; }
-      if (!solid(bot.blockAt(cell.offset(0, -1, 0)))) ok = false;
-    }
-    if (ok) return side;
+// A cell of rock the bunker may open: no lava or water beside it or
+// above it (tunneling.js safeExcavation, the rule every tunnel digs by).
+// mid-244-ab dug its bunker's head cell under a lava fall in the Nether,
+// the lava came down into the tunnel faster than a body swims in it, and
+// the bot burned from twenty health in five seconds (note 569).
+const safeToOpen = (bot, p) => require('./tunneling').safeExcavation(bot, p);
+const liquidNear = (bot, p) => {
+  for (const f of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+    const b = bot.blockAt(p.offset(...f));
+    if (b && /^(lava|water)$/.test(b.name)) return { name: b.name, at: p.offset(...f) };
   }
   return null;
+};
+
+// Why a side's DEPTH cells will not do for the bunker, or null when they
+// will: each at feet and head height natural rock on a solid floor, and
+// none with lava or water behind it.
+function sideRefused(bot, feet, side) {
+  for (let d = 1; d <= DEPTH; d++) {
+    const cell = feet.plus(side.scaled(d));
+    for (const p of [cell, cell.offset(0, 1, 0)]) {
+      const b = bot.blockAt(p);
+      if (!solid(b) || !NATURAL.test(b.name) || !b.diggable) return { rock: false };
+    }
+    if (!solid(bot.blockAt(cell.offset(0, -1, 0)))) return { rock: false };
+    for (const p of [cell, cell.offset(0, 1, 0)]) {
+      if (!safeToOpen(bot, p)) return { rock: true, at: p, block: bot.blockAt(p).name, liquid: liquidNear(bot, p) || { name: 'lava or water', at: null } };
+    }
+  }
+  return null;
+}
+
+const awayFirst = (feet, from) => {
+  const away = SIDES.filter(s => !from || (s.x * (from.x - feet.x) + s.z * (from.z - feet.z)) <= 0);
+  return [...away, ...SIDES.filter(s => !away.includes(s))];
+};
+
+// A side whose next DEPTH cells at feet and head height are natural rock
+// on solid floor with nothing liquid behind them, facing away from the
+// blazes: the bunker goes there.
+function bunkerSide(bot, feet, from) {
+  for (const side of awayFirst(feet, from)) if (!sideRefused(bot, feet, side)) return side;
+  return null;
+}
+
+// The walls of rock beside `feet` left undug for the liquid behind them,
+// said: "lava behind the netherrack at (-4, 40, 233)".
+function liquidBehind(bot, feet, from) {
+  const out = [];
+  for (const side of awayFirst(feet, from)) {
+    const r = sideRefused(bot, feet, side);
+    if (r?.rock) out.push(`${r.liquid.name} behind the ${r.block.replaceAll('_', ' ')} at (${r.at.x}, ${r.at.y}, ${r.at.z})`);
+  }
+  return out;
 }
 
 // Open the adjacent cell toward `from` when something diggable stands in
@@ -83,7 +123,7 @@ function cornerCell(bot, inside, side) {
   const turns = SIDES.filter(s => s.x * side.x + s.z * side.z === 0);
   for (const turn of turns) {
     const cell = inside.plus(turn);
-    const diggable = p => { const b = bot.blockAt(p); return solid(b) && NATURAL.test(b.name) && b.diggable; };
+    const diggable = p => { const b = bot.blockAt(p); return solid(b) && NATURAL.test(b.name) && b.diggable && safeToOpen(bot, p); };
     if (diggable(cell) && diggable(cell.offset(0, 1, 0)) && solid(bot.blockAt(cell.offset(0, -1, 0)))) return cell;
   }
   return null;
@@ -145,7 +185,8 @@ function wallStands(bot, from, { distance = 16, count = 512 } = {}) {
 // blaze pair forty-one health against twenty-six for simply fighting where
 // it stood: a doorway is worth having, not worth travelling for.
 const WALK_TO_WALL = 5;
-function nearWall(bot, from, { within = WALK_TO_WALL } = {}) {
+function nearWall(bot, from, { within = WALK_TO_WALL, dug = null } = {}) {
+  if (inBunker(bot, dug)) return true;
   if (bunkerSide(bot, bot.entity.position.floored(), from)) return true;
   const here = bot.entity.position;
   return wallStands(bot, from, { distance: within + 2 }).some(cell => cell.distanceTo(here) <= within);
@@ -156,7 +197,8 @@ function nearWall(bot, from, { within = WALK_TO_WALL } = {}) {
 // Rebuilding its kit after a death, the dream run dug one with a stone
 // pickaxe for fifteen seconds under two skeletons' arrows and died at the
 // doorway (2026-09-23 23:16).
-function bunkerDigMs(bot, from) {
+function bunkerDigMs(bot, from, { dug = null } = {}) {
+  if (inBunker(bot, dug)) return 0;
   let feet = bot.entity.position.floored(), side = bunkerSide(bot, feet, from), ms = 0;
   if (!side) {
     const stand = wallStands(bot, from, { distance: WALK_TO_WALL + 2 }).find(c => c.distanceTo(bot.entity.position) <= WALK_TO_WALL);
@@ -357,32 +399,66 @@ async function reachWall(bot, task, from, navigate) {
   return false;
 }
 
-async function digBunker(bot, task, goal, save, { from = null, navigate = null } = {}) {
+// The cells a bunker dug (the tunnel and its turn), and whether the bot
+// stands in one of them: a bunker is dug once. The held stance ran the dig
+// again from wherever the last one ended, and mid-244-ab dug four of them
+// end to end, twelve blocks into the rock in ten seconds, the last under a
+// lava fall (note 569).
+const DUG_MS = 5 * 60000;
+function inBunker(bot, dug, now = Date.now()) {
+  if (!dug?.cells?.length || now - (dug.at || 0) > DUG_MS) return false;
+  if (dug.dimension && String(dug.dimension) !== String(bot.game?.dimension || '')) return false;
+  const f = bot.entity.position.floored();
+  return dug.cells.some(c => c.x === f.x && c.y === f.y && c.z === f.z);
+}
+const record = (bot, bunker, cells) => ({ ...bunker, cells: cells.map(c => ({ x: c.x, y: c.y, z: c.z })), at: Date.now(), dimension: String(bot.game?.dimension || '') });
+
+async function digBunker(bot, task, goal, save, { from = null, navigate = null, dug = null } = {}) {
+  // In the bunker already: back to its inside, facing the door, and no more
+  // digging.
+  if (inBunker(bot, dug)) {
+    const inside = new Vec3(dug.inside.x, dug.inside.y, dug.inside.z), watch = new Vec3(dug.watch.x, dug.watch.y, dug.watch.z);
+    if (!bot.entity.position.floored().equals(inside)) await stepTo(bot, task, inside);
+    await bot.lookAt?.(watch.offset(0.5, 1.2, 0.5), true);
+    return { ...dug, mouth: new Vec3(dug.mouth.x, dug.mouth.y, dug.mouth.z), inside, watch, held: true };
+  }
   const centre = from || centroid(blazes(bot));
   await reachWall(bot, task, centre, navigate);
   const feet = bot.entity.position.floored();
   const side = bunkerSide(bot, feet, centre);
   if (!side) throw new Error('No rock to dig a bunker into here');
   goal.step = { action: 'dig_bunker', side: { x: side.x, z: side.z }, depth: DEPTH }; save();
+  const cells = [feet];
+  // Each cell looked at again as it is reached: what was seen from the
+  // stand is what the dig finds only while nothing has flowed meanwhile.
+  const unsafe = p => { const b = bot.blockAt(p); return !passable(b) && !safeToOpen(bot, p); };
+  let reached = 0;
   for (let d = 1; d <= DEPTH; d++) {
     task.check(); checkAir(bot);
     const cell = feet.plus(side.scaled(d));
+    const bad = [cell.offset(0, 1, 0), cell].find(unsafe);
+    if (bad) {
+      const liquid = liquidNear(bot, bad);
+      if (reached) break;
+      throw new Error(`${liquid ? liquid.name[0].toUpperCase() + liquid.name.slice(1) : 'Lava or water'} behind the rock at (${bad.x}, ${bad.y}, ${bad.z}): the bunker is not dug there`);
+    }
     await digCell(bot, task, cell.offset(0, 1, 0)); await digCell(bot, task, cell);
     if (!await stepTo(bot, task, cell)) throw new Error('Could not step into the bunker');
+    cells.push(cell); reached = d;
   }
-  const mouth = feet.plus(side), end = feet.plus(side.scaled(DEPTH));
+  const mouth = feet.plus(side), end = feet.plus(side.scaled(reached));
   // The turn, when the rock allows one. Without it the bunker is a corridor
   // with the bot at one end and the shooters at the other.
-  const corner = cornerCell(bot, end, side);
+  const corner = reached === DEPTH ? cornerCell(bot, end, side) : null;
   if (corner) {
     task.check(); checkAir(bot);
     await digCell(bot, task, corner.offset(0, 1, 0)); await digCell(bot, task, corner);
     if (await stepTo(bot, task, corner)) {
       goal.step = { action: 'dig_bunker', side: { x: side.x, z: side.z }, depth: DEPTH, turned: true }; save();
-      return { mouth, inside: corner, watch: end, side, turned: true };
+      return record(bot, { mouth, inside: corner, watch: end, side, turned: true }, [...cells, corner]);
     }
   }
-  return { mouth, inside: end, watch: mouth, side, turned: false };
+  return record(bot, { mouth, inside: end, watch: mouth, side, turned: false }, cells);
 }
 
 // Hold the bunker: shield up, strike whatever comes within reach, until
@@ -481,4 +557,4 @@ async function raiseCover(bot, task, from) {
   return solid(bot.blockAt(cell)) ? cell : false;
 }
 
-module.exports = { blockDigMs, digsWith, seenFrom, lineRegained, DRAW_SECONDS, coverWithin, nookSite, digNook, bunkerDigMs, bunkerFight, digBunker, holdBunker, collectRods, digCell, stepTo, standable, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, NATURAL, WALK_TO_WALL, SWARM };
+module.exports = { inBunker, liquidBehind, sideRefused, blockDigMs, digsWith, seenFrom, lineRegained, DRAW_SECONDS, coverWithin, nookSite, digNook, bunkerDigMs, bunkerFight, digBunker, holdBunker, collectRods, digCell, stepTo, standable, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, NATURAL, WALK_TO_WALL, SWARM };

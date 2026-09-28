@@ -1495,6 +1495,37 @@ test('with the night planned for a shelter, a bed in sight does not keep the nig
   assert.equal(survival.canNightMine({}), true, 'the plan is a shelter: mine');
 });
 
+test('in lava, the way out is priced and walked by the way through at the jar\'s 0.4 blocks a second, not the straight line through rock (mid-244-ab, note 569)', { timeout: 10000 }, async () => {
+  // The bunker's last leg, flooded: lava in the tunnel at z 233 (x -4..-1),
+  // its turn north at x -1 and the dry leg before it at z 232 (x -1..2), and
+  // a dug pocket at (-3, 39, 231) behind a block of rock, nearer in a
+  // straight line.
+  const lava = new Set(['-4,39,233', '-3,39,233', '-2,39,233', '-1,39,233', '-4,40,233']);
+  const open = new Set(['-3,40,233', '-2,40,233', '-1,40,233', '-3,39,231', '-3,40,231']);
+  for (let x = -1; x <= 2; x++) { open.add(`${x},39,232`); open.add(`${x},40,232`); }
+  const blockAt = p => { const k = `${p.x},${p.y},${p.z}`;
+    return lava.has(k) ? { name: 'lava', boundingBox: 'empty', position: p } : open.has(k) ? { name: 'air', boundingBox: 'empty', position: p } : { name: 'netherrack', boundingBox: 'block', position: p }; };
+  const { Survival, lavaExit, LAVA_BLOCKS_A_SECOND } = require('../src/survival');
+  assert.equal(LAVA_BLOCKS_A_SECOND, 0.4, 'the jar: 0.02 of the keys a tick, the motion halved every tick');
+  const looks = [];
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 18, food: 20,
+    entity: { position: new Vec3(-3.5, 39, 233.5), onGround: false, isInLava: true, yaw: 0, pitch: 0 }, entities: {}, blockAt,
+    inventory: { items: () => [], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' } } },
+    lookAt: async p => { looks.push(p); }, look: async () => {}, getControlState: () => false,
+    // A held key takes the body to the cell looked at; out of the lava there.
+    setControlState(k, v) { if (k === 'forward' && v && looks.length) { const l = looks.at(-1); this.entity.position = new Vec3(l.x, 39, l.z); this.entity.isInLava = lava.has(`${Math.floor(l.x)},39,${Math.floor(l.z)}`); this.entity.onGround = !this.entity.isInLava; } } });
+  const exit = lavaExit(bot, 6, { dryOnly: true });
+  // The turn itself has the lava beside it, so the cell past it is first.
+  assert.deepEqual([exit.x, exit.y, exit.z], [0, 39, 232], `round the corner, not the pocket behind the rock: ${exit}`);
+  assert.equal(exit.blocks, 5);
+  const survival = new Survival(bot, {}, { state: { shelters: [] } });
+  const ways = survival.lavaWays(new Task('lava'), {}, () => {});
+  assert.match(ways.to_dry_ground.description, /5 blocks off by the way through at \(0, 39, 232\).*about 12\.5 seconds at the 0\.4 blocks a second/);
+  assert.match(require('../src/body').conditionSays(bot, 'lava'), /about 3\.8 health a second through the armour worn/, 'full iron: 1.92 a hit, two hits a second');
+  assert.equal(await ways.to_dry_ground.run(), true, 'out');
+  assert.deepEqual(looks.map(l => [Math.floor(l.x), Math.floor(l.z)]), [[-3, 233], [-2, 233], [-1, 233], [-1, 232]], 'cell by cell along the tunnel and round its turn, ended once out');
+});
+
 test('in lava with no dry cell in sight the bot swims up and back toward its last dry footing, and never stands', { timeout: 6000 }, async () => {
   const held = new Set(); let looked = null;
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 15, food: 20,
@@ -4727,6 +4758,22 @@ test('a bunker that takes five seconds or more to dig is offered with its second
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, zombie)], false);
   assert(options.bunker, Object.keys(options).join(','));
   assert.match(options.bunker.description, new RegExp(`about ${Math.round(ms / 100) / 10} seconds of digging with the tools carried`));
+});
+
+test('the bunker says the wall it leaves for the lava behind it, and once dug is stayed in, not dug again (mid-244-ab, note 569)', async () => {
+  // Rock east and south of the bot; lava over the third cell east's head.
+  const bot = rockWorld(p => p.y >= 64 && p.x < 1 && p.z <= 0, ['iron_pickaxe']);
+  const rock = bot.blockAt;
+  bot.blockAt = p => { const f = p.floored(); return f.x === 3 && f.y === 66 && f.z === 0 ? { name: 'lava', boundingBox: 'empty', position: f } : rock(p); };
+  const zombie = { id: 5, name: 'zombie', type: 'hostile', position: new Vec3(-9.5, 64, 0.5), height: 1.95, isValid: true };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, zombie)], false);
+  assert(options.bunker, Object.keys(options).join(','));
+  assert.match(options.bunker.description, /Not dug where there is lava behind the stone at \(3, 65, 0\): a cell opened there lets it in/);
+  // Standing in the bunker it dug: the stance is to stay, with nothing to dig.
+  survival.state.bunkerDug = { cells: [{ x: 0, y: 64, z: 0 }, { x: 0, y: 64, z: 1 }], inside: { x: 0, y: 64, z: 1 }, mouth: { x: 0, y: 64, z: 1 }, watch: { x: 0, y: 64, z: 0 }, at: Date.now(), dimension: 'overworld' };
+  const held = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, zombie)], false);
+  assert.match(held.bunker.description, /^Stay in the bunker already dug here/);
 });
 
 test('a NoRoute from an emergency walk is not persisted as the work step', async () => {
