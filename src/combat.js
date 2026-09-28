@@ -70,9 +70,11 @@ function defenseWeapon(bot) {
   return bot.inventory.items().filter(item => rank(item) > 0).sort((a, b) => rank(b) - rank(a))[0];
 }
 
-function canStrike(bot, entity) {
+// `from`, where the feet would stand instead of where they stand: a stand
+// judged before stepping to it (strike-below.js).
+function canStrike(bot, entity, { from = null } = {}) {
   if (!entity?.position || entity.isValid === false) return false;
-  const eye = bot.entity.position.offset(0, 1.62, 0);
+  const eye = (from || bot.entity.position).offset(0, 1.62, 0);
   const halfWidth = (entity.width || 0.6) / 2;
   const closest = entity.position.clone();
   closest.x = Math.max(entity.position.x - halfWidth, Math.min(eye.x, entity.position.x + halfWidth));

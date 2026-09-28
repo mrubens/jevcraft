@@ -2058,7 +2058,9 @@ test('a stance that failed stays on offer with its failure said, not taken off f
     inventory: { items: () => [], slots: {} }, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) });
   const survival = new Survival(bot, { navigate: async () => {} });
   const ran = [], trees = [];
-  survival.stanceOptions = () => ({ pillar: { description: 'up', run: async () => { ran.push('pillar'); return false; } },
+  // Knocked off after its blocks went down (a block placed is the stance
+  // acting, note 596): one that did nothing is the next test's.
+  survival.stanceOptions = () => ({ pillar: { description: 'up', run: async () => { ran.push('pillar'); bot._stalls = { marked: (bot._stalls?.marked || 0) + 2 }; return false; } },
     fight: { description: 'fight', run: async () => { ran.push('fight'); return true; } }, seal: { description: 'seal', run: async () => true } });
   survival.decide = async (task, goal, save, q) => { trees.push(q.tree); return { path: [/Tried/.test(q.tree.pillar?.description || '') ? 'fight' : 'pillar'] }; };
   const danger = [{ entity: { name: 'zombie' }, distance: 2 }];

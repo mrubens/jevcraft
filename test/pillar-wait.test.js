@@ -45,19 +45,28 @@ test('up on its pillar over a hoglin that neither comes nor goes, the pillar say
   const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [], pillar: { x: 0, y: 60, z: 0, at: t0 - 3000 },
     stance: { choice: 'pillar', kinds: 'hoglin', ids: [5], mobs: [{ name: 'hoglin', distance: 4.3, visible: true }], at: t0 - 3000, health: 7.9, expects: { damage: 0, seconds: 15 } } }, client: { systemOne: async () => ({}) } });
   let n = 0, last;
-  // As recorded: pillar three times and the fight the fourth.
-  for (let s = 0; s <= 11 * 60; s += 15) last = await stanceAt(survival, t0 + s * 1000, [threat()], () => (++n % 4 === 0 ? 'fight' : 'pillar'));
-  const pillar = last.tree.pillar.description, fight = last.tree.fight.description;
+  // As recorded: pillar three times and the fight the fourth, while the
+  // fight is offered. Held its fifteen seconds with nothing struck and
+  // nothing changed since, it is not offered again (note 596): it is said
+  // in the state instead.
+  let fightLast;
+  for (let s = 0; s <= 11 * 60; s += 15) {
+    last = await stanceAt(survival, t0 + s * 1000, [threat()], t => (++n % 4 === 0 && t.fight ? 'fight' : 'pillar'));
+    if (last.tree?.fight) fightLast = last.tree.fight.description;
+  }
+  const pillar = last.tree.pillar.description;
   assert.match(pillar, /^.*Hold on the pillar's top, two up, and fight from there/);
   assert.doesNotMatch(pillar, /Go two blocks straight up/);
   assert.match(pillar, /Up on this pillar 11 minutes so far, chosen against the hoglin 4 blocks off\. In that time: no health lost up here, nothing struck, nothing killed\./);
-  assert.match(pillar, /The fight has been chosen up here 10 times in this hold: nothing came within the sword's reach and nothing was struck\./);
+  assert.match(pillar, /The fight has been chosen up here once in this hold: nothing came within the sword's reach and nothing was struck\./);
   assert.match(pillar, /Of the mobs about: the hoglin 4 blocks off, about for 11 minutes of the hold, 4 blocks off all that time, never nearer, in sight; it does not reach the top, and the sword does not reach it from up here\./);
   assert.match(pillar, /The hoglin has not come nearer, reached the bot or come within the sword's reach in 11 minutes, and it has not gone: the hold has had nothing to strike, and waiting up here has not sent it away\. No daylight comes here: nothing about burns off or goes away with the hour, so a hold here ends only when the bot leaves the top\. Health 7\.9 does not come back at hunger 17: holding heals nothing\./);
-  assert.match(fight, /Up on the pillar 11 minutes so far\. The fight has been chosen up here 10 times in this hold: nothing came within the sword's reach and nothing was struck\./);
+  assert.equal(last.tree.fight, undefined, 'the fight that struck nothing, nothing changed since, is not offered as if it might');
+  assert.match(last.state.notOfferedNow.find(f => f.choice === 'fight').why, /^ended here without acting, the last \d+ seconds ago: held 15 seconds: nothing was struck, not a step was taken and no block was placed or dug; nothing has changed here since/);
+  assert.match(fightLast, /^The hoglin 4 blocks off .*Fight here/, 'offered until it was chosen and struck nothing');
   assert.equal(last.state.pillarSoFar.minutes, 11);
   assert.equal(last.state.pillarSoFar.swings, 0);
-  assert.equal(last.state.pillarSoFar.fightChosenUpHere, 10);
+  assert.equal(last.state.pillarSoFar.fightChosenUpHere, 1);
   // The turn's own question says it too.
   const real = Date.now; Date.now = () => t0 + 11 * 60000;
   let c; try { c = claim(bot, { survival: survival.state }, survival); } finally { Date.now = real; }

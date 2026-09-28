@@ -43,6 +43,21 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP, at = null } = {
   const none = { ids: new Set(), mobs: [], round: [] };
   const walkers = danger.filter(t => t.entity?.position && WALKERS.has(t.entity.name) && !shooter(t.entity) && !t.entity.vehicle);
   if (!walkers.length || typeof bot.blockAt !== 'function') return none;
+  // A creeper's three and a half blocks are its own: it lights from below,
+  // through a floor, where no other walker touches the bot. The search began
+  // from those cells for every walker, so any mob that could stand within
+  // three and a half of the bot got to it: mid-208-k-nether-4-fortress-1's
+  // hoglin, two below a one-wide ledge it had no way onto, was priced as at
+  // the bot in 0.4 seconds at every asking for twenty minutes, and never came
+  // (note 596). With both, each is searched for by its own reach.
+  const creepers = walkers.filter(t => t.entity.name === 'creeper'), others = walkers.filter(t => t.entity.name !== 'creeper');
+  if (creepers.length && others.length) {
+    const a = walkersApart(bot, creepers, { radius, cap, at }), b = walkersApart(bot, others, { radius, cap, at });
+    // In the order they were given, as one search gave them.
+    const order = t => walkers.indexOf(t.t || t);
+    return { ids: new Set([...a.ids, ...b.ids]), mobs: [...a.mobs, ...b.mobs].sort((x, y) => order(x) - order(y)), radius, round: [...(a.round || []), ...(b.round || [])].sort((x, y) => order(x) - order(y)) };
+  }
+  const lighter = creepers.length > 0;
   const here = at || bot.entity.position, feet = here.floored();
   const key = c => `${c.x},${c.y},${c.z}`;
   const cache = new Map();
@@ -71,7 +86,7 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP, at = null } = {
   for (let dx = -reachX; dx <= reachX; dx++) for (let dz = -reachX; dz <= reachX; dz++) for (let y = feet.y - reachX; y <= feet.y + reachX; y++) {
     const c = new Vec3(feet.x + dx, y, feet.z + dz);
     const touches = Math.abs(c.x + 0.5 - here.x) <= sideways && Math.abs(c.z + 0.5 - here.z) <= sideways && y >= lo && y <= here.y + ABOVE;
-    const lights = Math.hypot(c.x + 0.5 - here.x, y - here.y, c.z + 0.5 - here.z) < LIGHTS;
+    const lights = lighter && Math.hypot(c.x + 0.5 - here.x, y - here.y, c.z + 0.5 - here.z) < LIGHTS;
     if ((touches || lights) && standable(c)) add(c);
   }
   // Back from there: the cells a mob could come from in one move.

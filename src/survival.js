@@ -326,6 +326,38 @@ const SHOT_WORDS = { witch: 'potion', ghast: 'fireball', blaze: 'fireball', bree
 const shotWord = name => SHOT_WORDS[name] || 'arrow';
 // The stances that hide the bot from shooters rather than meet them.
 const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
+// Whether a stance did anything (note 596): a swing, a block placed or dug,
+// a step of a block or more, what is carried changed (eaten, placed,
+// picked up). A stance whose point is to strike (STRIKING_STANCES) and was
+// held to its end with none of these failed; any stance that ended without
+// them, with nothing changed about it since, would end the same again.
+const STRIKING_STANCES = new Set(['fight', 'fight_from_footing', 'rail_and_fight', 'strike_from_above']);
+const STANCE_IDLE_MS = 10 * 60000;
+const carriedCount = bot => { try { return bot.inventory?.items?.().reduce((n, i) => n + (i.count || 0), 0) ?? 0; } catch (_) { return 0; } };
+function stanceMark(bot) {
+  const p = bot.entity?.position;
+  return { swingAt: bot._defenseAttackAt || 0, blocks: bot._stalls?.marked || 0, carried: carriedCount(bot), food: bot.food, pos: p ? { x: p.x, y: p.y, z: p.z } : null };
+}
+function stanceActed(bot, start) {
+  if (!start) return true;
+  const now = stanceMark(bot);
+  if (now.swingAt > start.swingAt || now.blocks !== start.blocks || now.carried !== start.carried || (now.food ?? 0) > (start.food ?? 0)) return true;
+  return !!(start.pos && now.pos) && Math.hypot(now.pos.x - start.pos.x, now.pos.y - start.pos.y, now.pos.z - start.pos.z) >= 1;
+}
+// The scene a stance ended in: the bot's place and health, each mob about.
+function stanceScene(bot, danger) {
+  const p = bot.entity?.position;
+  return { pos: p ? { x: p.x, y: p.y, z: p.z } : null, health: bot.health ?? 20,
+    mobs: (danger || []).filter(t => t.entity?.position).map(t => ({ id: t.entity.id, x: t.entity.position.x, y: t.entity.position.y, z: t.entity.position.z })) };
+}
+// The same scene: the bot within a block of where it was, health within a
+// point, the same mobs about, each within a block of where it stood.
+function sameScene(a, b) {
+  if (!a?.pos || !b?.pos) return false;
+  const far = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) >= 1;
+  if (far(a.pos, b.pos) || Math.abs(a.health - b.health) >= 1 || a.mobs.length !== b.mobs.length) return false;
+  return b.mobs.every(m => { const was = a.mobs.find(x => x.id === m.id); return !!was && !far(was, m); });
+}
 // A hiding spot whose walk just failed is passed over this long, while the
 // bot stands within four blocks of where that walk began (note 570).
 const COVER_FAILED_MS = 30000;
@@ -2623,10 +2655,19 @@ class Survival {
     }
     options.fight = { expects: noStep || noneCome ? { damage: shotsIn15, seconds: 15, oneHit } : { damage: cost.damageTaken, seconds: cost.seconds, oneHit }, description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. ${noneCome ? 'None of them can get to the bot and none of them shoots: a fight here stands and waits for one that comes, with nothing to swing at meanwhile.' : noStep ? `${shootersOnly ? `None of them can be reached from here: ${apart.ids.size ? 'every one that can get to the bot' : 'every one'} shoots, none is at reach, and the ground toward the nearest carries no step.` : `The nearest, a ${nearest.entity.name.replaceAll('_', ' ')} ${Math.round(nearest.distance)} blocks off, shoots and cannot be run at from here (a drop beside the bot, too far, or too far up or down).`} ${shootersOnly ? '' : 'The rest are not at arm\'s length either. '}Fighting here is standing in their line of fire with nothing to swing at: about ${shotsIn15} damage from their shots in the next fifteen seconds, from ${cost.healthNow} health${shotsIn15 >= cost.healthNow ? ' (more than the bot has)' : ''}, and no end while they shoot.` : `Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${cost.pace ? ` ${cost.pace}` : ''}${cost.poison ? ` ${cost.poison}` : ''}`}${atOnceNote}${creeperLeftOut}${nearestCreeper}${nearest && shooter(nearest.entity) && !inReach(nearest) ? (() => { const stop = chargeStopsAt(bot, nearest.entity); return stop ? ` The nearest shoots, and the ground straight at it stops a closing run after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in its line of fire.` : ''; })() : ''}${nearest && !inReach(nearest) ? chargeSays(bot, nearest.entity) : ''}${unseen}${edge}${spearSays}${edgeHits}${hitsLeft}`,
       run: async () => {
-        if (danger.some(inReach)) { this.report(goal, save, { action: 'fight', threats: danger.filter(inReach).map(t => t.entity.name), health: bot.health, stance: true }); await this.swingFor(task, goal, save); return true; }
+        // Swung only where the swing can land (the swing's own test,
+        // canStrike): a mob 3.2 blocks off counted as at reach by distance
+        // alone, with the ledge's edge between the eye and it, held the fight
+        // "swinging" a second at a time with not one swing made, for as long
+        // as its estimate ran, 467 times (mid-208-k-nether-4-fortress-1's
+        // hoglin two below, note 596).
+        const strikable = danger.filter(t => t.entity?.position && canStrike(bot, t.entity));
+        if (strikable.length) { this.report(goal, save, { action: 'fight', threats: strikable.map(t => t.entity.name), health: bot.health, stance: true }); await this.swingFor(task, goal, save); return true; }
+        const said = `the ${nearest.entity.name.replaceAll('_', ' ')} ${Math.round(nearest.distance * 10) / 10} blocks off`;
+        const outOfSword = inReach(nearest) ? `: ${said} is ${Math.round(Math.abs(nearest.entity.position.y - bot.entity.position.y) * 10) / 10} blocks ${nearest.entity.position.y < bot.entity.position.y ? 'below' : 'above'} the feet and out of the sword's reach from where the bot stands (no clear swing at it)` : '';
         if (await this.charge(task, goal, save, nearest, false, { chosen: true })) return true;
         // Out of reach, and the charge showed it: a stance that failed.
-        if (bot._unreachable?.until > Date.now() && bot._unreachable.ids.includes(nearest.entity.id)) return false;
+        if (bot._unreachable?.until > Date.now() && bot._unreachable.ids.includes(nearest.entity.id)) { this.state.stanceWhy = `nothing was struck${outOfSword}, and the run at ${said} found no way to it`; return false; }
         // A shooter does not come into reach: held, the fight stood in its
         // fire. mid-100-e held one at eleven blocks from 5.9 health to 4 and
         // chose a pocket too late (2026-09-25). Not taken, so the stance is
@@ -2651,6 +2692,7 @@ class Survival {
         else if (nearest.distance < held.distance - 1) Object.assign(held, { since: now, distance: nearest.distance, lastAt: now });
         else if (now - held.since <= 8000) held.lastAt = now;
         else {
+          this.state.stanceWhy = `held ${Math.round((now - held.since) / 1000)} seconds facing ${said}: it came no nearer and nothing was struck${outOfSword}`;
           delete this.state.standing;
           bot._unreachable = { ids: [...new Set([...(bot._unreachable?.until > Date.now() ? bot._unreachable.ids : []), nearest.entity.id])], until: Date.now() + 20000 };
           return false;
@@ -2665,6 +2707,13 @@ class Survival {
         await sleep(250);
         return true;
       } };
+    // A walker below the bot's ground, struck from the edge above it, where
+    // the sword reaches it and its blow does not reach up (strike-below.js,
+    // note 596). mid-208-k-nether-4-fortress-1's hoglin stood two below a
+    // one-wide ledge for twenty minutes, the fight chosen 467 times and each
+    // standing with nothing in reach; Jev said none of these 365 times.
+    const strikeBelow = this.strikeBelowOption(task, goal, save, { danger, apart, mobs, shielded, cost });
+    if (strikeBelow) options.strike_from_above = strikeBelow;
     // A spear holder met as a player meets one (note 586): facing it with
     // the shield up, striking it as it comes within the sword's reach on its
     // run in. It charges from up to ten blocks, strikes on the way in and
@@ -3608,6 +3657,13 @@ class Survival {
     // and was asked again only when the bot was off the spot (note 551).
     const shotThrough = HIDING_STANCES.has(held?.choice) ? (held.shooters || []).find(k => (bot._hurtBy?.[k] || 0) > held.at) : null;
     const holding = held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && Date.now() - held.at < STANCE_HOLD_MS && (held.expects ? !overEstimate : bot.health > held.health - STANCE_HEALTH) && !hitSince && !offSpot && !lineAgain.length && !blockAgain && !shotThrough;
+    // A stance whose point is to strike, held to its end without a swing, a
+    // step or a block: it failed, whatever its run said each tick (note 596).
+    // mid-208-k-nether-4-fortress-1's fight "held" 5.4 seconds at a time with
+    // no swing made, and was asked again as if it had been fought.
+    if (held && !holding && STRIKING_STANCES.has(held.choice) && held.start && Date.now() - held.at >= 1000 && !stanceActed(bot, held.start)) {
+      this.noteStanceIdle(held.choice, `held ${Math.round((Date.now() - held.at) / 1000)} seconds: nothing was struck, not a step was taken and no block was placed or dug`, danger);
+    }
     // About to ask: the run's way is looked for first, so the retreat says
     // whether there is one (a moment ago from here will do).
     // And when the stance held is no longer on offer, as that asks too:
@@ -3666,8 +3722,33 @@ class Survival {
       if (/^eat/.test(f.choice)) { options[f.choice].description += ` Tried ${ago} seconds ago here and cut short before it was eaten; still carried.`; continue; }
       if (f.choice === 'fight' && atReach) { options.fight.description += ` Tried ${ago} seconds ago here and ended; a mob is at reach now.`; continue; }
       const times = f.times > 1 ? `${f.times} times in the last ${Math.max(1, Math.round((Date.now() - Math.min(...failed.filter(x => x.choice === f.choice).map(x => x.at))) / 1000))} seconds here, the last ${ago} seconds ago` : `${ago} seconds ago here`;
-      options[f.choice].description += ` Tried ${times}, and it failed${f.why ? `: ${String(f.why).slice(0, 120)}` : ''}.`;
+      options[f.choice].description += ` Tried ${times}, and it failed${f.why ? `: ${String(f.why).slice(0, 200)}` : ''}.`;
     }
+    // A stance that ended without doing anything (no swing, no step, no
+    // block, nothing eaten), with nothing changed here since (the bot where
+    // it was, each mob within a block of where it was and none come, health
+    // as it was), would end the same again: it is not offered as if it might
+    // not, only said, until something changes (note 596). Asked again every
+    // quarter second with the same facts, mid-208-k-nether-4-fortress-1 took
+    // the fight 350 times in two and a half minutes, each run at the hoglin
+    // two below failing at once, "Tried 6 times ... and it failed" with no
+    // why; and every seven seconds for twenty minutes after, each fight
+    // standing with nothing to strike. Asking faster than anything changes
+    // is the loop. Only while two or more other ways stay on offer: with one
+    // left, leaving these out would be the code's choice, taken unasked;
+    // then each stays on offer with the same said on it.
+    const idle = this.stanceIdleNow(danger);
+    const leftOut = [];
+    const rest = () => Object.keys(options).filter(k => k !== 'none_good' && !leftOut.includes(k));
+    const idleSays = f => `${f.times > 1 ? `ended ${f.times} times` : 'ended'} here without acting, the last ${Math.max(1, Math.round((Date.now() - f.at) / 1000))} seconds ago${f.why ? `: ${f.why}` : ''}; nothing has changed here since (the bot, the mobs and the health as they were), so it would end the same`;
+    for (const f of idle) {
+      if (!options[f.choice]) continue;
+      if (rest().length > 2) { leftOut.push(f.choice); continue; }
+      const s = idleSays(f);
+      options[f.choice].description += ` It ${s}.`;
+    }
+    for (const k of leftOut) delete options[k];
+    const notOfferedNow = idle.filter(f => leftOut.includes(f.choice)).map(f => ({ choice: f.choice, why: `${idleSays(f)}; offered again when something changes` }));
     if (!Object.keys(options).length) return false;
     // A spawner in reach, said with every stance: mid-207-j fought beside a
     // dungeon's zombie spawner six blocks off, told each time of "a zombie,
@@ -3736,6 +3817,8 @@ class Survival {
         // What failed here just now, and so is not asked again for a while:
         // each question after a failure began with nothing said of it.
         ...(failed.length ? { failedHereJustNow: failed.map(f => ({ choice: f.choice, secondsAgo: Math.round((Date.now() - f.at) / 1000), ...(f.why ? { why: f.why } : {}) })) } : {}),
+        // Left out until something changes: each ended here without acting.
+        ...(notOfferedNow.length ? { notOfferedNow } : {}),
         // A walk of survival's own that found no route here (step), whatever it was for.
         ...(this.state.walkFailed && Date.now() - this.state.walkFailed.at < 20000 ? { walkFailedJustNow: this.state.walkFailed.says } : {}),
         ...(spawner ? { spawner: { blocksAway: spawner.distance, ...(spawner.mob ? { makes: spawner.mob } : {}) } } : {}),
@@ -3779,7 +3862,10 @@ class Survival {
     // The mobs it was chosen against as they were, for a pocket it makes to
     // say what it was sealed against (pocket-wait.js, note 584).
     if (!holding || held.choice !== choice) this.state.stance = { choice, kinds, ids: [...new Set([...danger, ...(this.lastHidden || [])].map(t => t.entity.id))],
-      mobs: danger.slice(0, 4).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: !!t.visible })), shooters: [...new Set(danger.filter(t => shooter(t.entity)).map(t => t.entity.name))], at: Date.now(), health: bot.health, ...(options[choice]?.expects ? { expects: options[choice].expects } : {}) };
+      mobs: danger.slice(0, 4).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: !!t.visible })), shooters: [...new Set(danger.filter(t => shooter(t.entity)).map(t => t.entity.name))], at: Date.now(), health: bot.health, ...(options[choice]?.expects ? { expects: options[choice].expects } : {}),
+      // What the bot had done when it was chosen: whether the stance acts is
+      // measured from here (stanceActed, note 596).
+      start: stanceMark(bot) };
     // The reflexes see the stance too (the hurt watchdog, the shield, the
     // meal): they give way to it while it holds.
     const stance = bot._stance = this.state.stance;
@@ -3809,8 +3895,33 @@ class Survival {
     // A stance that could not be carried out is not offered again for a
     // while, and Jev chooses again at the next tick from what is left.
     why ||= this.state.stanceWhy || null; delete this.state.stanceWhy;
-    if (!done) { delete this.state.stance; delete bot._stance; this.state.stanceFailed = [...failed, { choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), ...(why ? { why } : {}) }]; }
+    if (!done) {
+      delete this.state.stance; delete bot._stance;
+      this.state.stanceFailed = [...failed, { choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), ...(why ? { why } : {}) }];
+      // Ended without acting: left out while nothing here changes.
+      // Not a meal cut short with the food still carried: nothing about the
+      // place made it fail (note 475).
+      if (!/^eat/.test(choice) && !stanceActed(bot, stance.start)) this.noteStanceIdle(choice, why, danger);
+    }
     return true;
+  }
+
+  // A stance that ended here without acting, kept with the scene it ended
+  // in (note 596): the bot's place, health, and each mob about by where it
+  // stood. Kept ten minutes at most; read while the scene is the same.
+  noteStanceIdle(choice, why, danger) {
+    const now = Date.now();
+    const list = (this.state.stanceIdle || []).filter(f => now - f.at < STANCE_IDLE_MS);
+    const scene = stanceScene(this.bot, danger);
+    const before = list.find(f => f.choice === choice && sameScene(f.scene, scene));
+    const entry = { choice, at: now, scene, times: (before?.times || 0) + 1, first: before?.first ?? now, ...(why ? { why: String(why).slice(0, 240) } : before?.why ? { why: before.why } : {}) };
+    this.state.stanceIdle = [...list.filter(f => f !== before), entry];
+  }
+  // Those whose scene is the scene now.
+  stanceIdleNow(danger) {
+    const now = Date.now(), scene = stanceScene(this.bot, danger);
+    this.state.stanceIdle = (this.state.stanceIdle || []).filter(f => now - f.at < STANCE_IDLE_MS && sameScene(f.scene, scene));
+    return this.state.stanceIdle;
   }
 
   // A shooter in view at bow range, and a bow in the pack: running from a
@@ -4959,6 +5070,93 @@ class Survival {
     }
     await defendNearby(bot, task, goal, save);
     return true;
+  }
+
+  // A walker standing below the bot's ground, struck from the edge above it
+  // (strike-below.js, note 596): offered for the nearest walker within six
+  // blocks, not a creeper, whose top is at or below the feet of a stand on
+  // the bot's own level within two steps from which the sword reaches it.
+  // Said with the game's rule (its blow reaches sideways, not up), the step,
+  // the swings, whether it has a way up, what it drops, and the price with
+  // every other mob still reaching. Run: the step, crouched at the edge, and
+  // the swings while it is in reach and below; failed, with why, when no
+  // swing could be made.
+  strikeBelowOption(task, goal, save, { danger, apart, mobs, shielded, cost }) {
+    const bot = this.bot;
+    const { WALKERS } = require('./walk-reach');
+    const { strikeStand, belowReach } = require('./strike-below');
+    const weapon = defenseWeapon(bot);
+    if (inWater(bot) || !bot.entity?.onGround) return null;
+    let target = null, stand = null;
+    for (const t of danger) {
+      if (t.distance > 6 || !t.entity?.position || shooter(t.entity) || t.entity.name === 'creeper' || !WALKERS.has(t.entity.name)) continue;
+      stand = strikeStand(bot, t.entity);
+      if (stand) { target = t; break; }
+    }
+    if (!target) return null;
+    const e = target.entity, name = e.name.replaceAll('_', ' ');
+    const m = mobs.find(x => x.id === e.id) || mobs.find(x => x.name === e.name);
+    const r1 = v => Math.round(v * 10) / 10;
+    const weaponSays = weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands';
+    const step = stand.steps ? `Step ${stand.steps} block${stand.steps === 1 ? '' : 's'} along this ground to (${stand.cell.x}, ${stand.cell.y}, ${stand.cell.z}), crouched, and from there strike` : 'Strike';
+    const rule = ` It stands ${stand.below} blocks below that ground, its top ${stand.clearance ? `${stand.clearance} under` : 'level with'} the bot's feet there: a mob's blow reaches out from its body sideways and not up (the game's rule), so while it stands down there it cannot strike the bot, and the sword reaches it from there (within three blocks of the eye, a clear line).`;
+    const kill = m?.swingsToKill ? ` To kill: about ${m.swingsToKill} swing${m.swingsToKill === 1 ? '' : 's'} that land${m.secondsToKill ? `, about ${m.secondsToKill} seconds` : ''}.` : '';
+    const knock = ['hoglin', 'zoglin'].includes(e.name) ? ` A sword's knockback barely moves a ${name} (it resists knockback): struck, it turns on the bot and stays below, still out of its own reach.` : ' Each swing knocks it back about a block: it comes back under the edge to be struck again, or walks out of the sword\'s reach, and the swings go on only while it is in reach and below.';
+    // Its way up, from walk-reach: none within its bounds, one round past
+    // them, or one it can walk.
+    const round = (apart?.round || []).find(x => x.t.entity.id === e.id);
+    const way = apart?.ids?.has(e.id)
+      ? (round ? ` Any way up to the bot it has goes round, ${round.atLeast} blocks of walking or more, if there is one at all.` : ` It has no way up to the bot: no ground it can walk, step up or drop along within ${apart.radius} blocks comes within its reach of the bot.`)
+      : ' It has a way up to the bot by walking (the search finds ground that leads there): taking it, it is at the bot as in the fight here.';
+    const { MOB_DROPS } = require('./mob-drops');
+    const drops = MOB_DROPS[e.name];
+    const noFood = require('./healing').foodCarried(bot).length === 0;
+    const food = drops ? ` Killed, it drops ${drops.drops} on its floor ${Math.round(stand.below)} blocks below, fetched by going down there${drops.for && /^food/.test(drops.for) ? ` (${drops.for})` : ''}${noFood && /^food/.test(drops.for || '') ? '; nothing to eat is carried now' : ''}.` : '';
+    // Priced with this one out of the figures: the rest reach as they do.
+    const others = mobs.map(x => x === m ? { ...x, apart: true } : x);
+    const stepSeconds = stand.steps ? Math.max(1, Math.round(stand.steps / 2)) : 0;
+    const price = stanceCost({ mobs: others, setup: stepSeconds, fight: { lead: true }, shield: shielded, health: bot.health });
+    const othersSay = others.some(x => !x.apart && !x.far) ? costSays(price, bot.health, others, { doing: stand.steps ? 'stepping there' : null, done: 'At the edge' }) : ` Nothing else here reaches the bot meanwhile: about ${price.damage} damage in the next fifteen seconds this way, from ${r1(bot.health)} health.`;
+    const seconds = Math.max(4, Math.min(15, Math.round((m?.secondsToKill || 6) + stepSeconds + 1)));
+    return { expects: { damage: price.damage, seconds, oneHit: 0 }, target: e.id,
+      description: `${step} down at the ${name} ${r1(target.distance)} blocks off with ${weaponSays}.${rule}${kill}${knock}${way}${food}${othersSay}`,
+      run: async () => {
+        this.report(goal, save, { action: 'strike_from_above', target: e.name, to: { ...stand.cell }, health: bot.health, stance: true });
+        const feet = bot.entity.position.floored();
+        if (!feet.equals(stand.cell)) {
+          const movements = bot.pathfinder?.movements, kept = movements && { allow1by1towers: movements.allow1by1towers, canDig: movements.canDig, maxDropDown: movements.maxDropDown };
+          if (movements) Object.assign(movements, { allow1by1towers: false, canDig: false, maxDropDown: 0 });
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(stand.cell.x, stand.cell.y, stand.cell.z), { timeoutMs: 4000, stallMs: 1500 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          finally { if (movements) Object.assign(movements, kept); }
+          const at = bot.entity.position.floored();
+          if (!at.equals(stand.cell)) throw Object.assign(new Error(`the step to (${stand.cell.x}, ${stand.cell.y}, ${stand.cell.z}) above the ${name} ended at (${at.x}, ${at.y}, ${at.z})`), { name: 'StanceFailed' });
+        }
+        // Crouched at the edge: a player crouched does not walk off it.
+        bot.setControlState?.('sneak', true);
+        let swings = 0;
+        try {
+          const until = Date.now() + 1500;
+          while (Date.now() < until) {
+            task.check(); checkAir(bot);
+            if (bot.entities?.[e.id] !== e || e.isValid === false) break;
+            if (!belowReach(e, bot.entity.position.y) || !canStrike(bot, e)) break;
+            const { SWING_MS } = require('./combat-estimate');
+            const kind = weapon?.name.split('_').at(-1);
+            const wait = (SWING_MS[kind] || SWING_MS.fist) - (Date.now() - (bot._defenseAttackAt || 0));
+            if (wait > 0) { await sleep(Math.min(wait, 100)); continue; }
+            lowerShield(bot);
+            if (weapon && bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand');
+            await bot.lookAt?.(e.position.offset(0, (e.height || bodyHeight(e.name)) * 0.8, 0), true);
+            bot.attack(e); swings++;
+            bot._defenseAttackAt = bot._threatResponseAt = Date.now();
+            bot._struck = { id: e.id, at: bot._defenseAttackAt };
+          }
+        } finally { bot.setControlState?.('sneak', false); }
+        if (swings) return true;
+        if (bot.entities?.[e.id] !== e || e.isValid === false) return true;
+        throw Object.assign(new Error(`no swing could be made at the ${name}: ${belowReach(e, bot.entity.position.y) ? 'the sword does not reach it from where the bot stands' : 'it is no longer below the bot\'s feet'}`), { name: 'StanceFailed' });
+      } };
   }
 
   // Why a held block in a creeper's line is to be asked again, or null
