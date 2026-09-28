@@ -1,6 +1,6 @@
 'use strict';
 const { DAY } = require('./day');
-const { barterReady, goldOnHand, bastionKnown } = require('./bartering');
+const { barterReady, barterGold, bastionKnown } = require('./bartering');
 const { isSetAside, setAside, attemptsFor } = require('./progress');
 const { bedCarried, woolCarried, homeOf } = require('./home-base');
 const { restockStage, rungWants } = require('./home-stash');
@@ -604,8 +604,9 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // Short of pearls with gold on hand and a piglin in view: barter before
   // going back. The enderman hunt in the Overworld is the other way.
   if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && barterReady(bot, goal)) return { phase: 'obtain_ender_pearls', action: 'barter', item: 'ender_pearl', count: target - eyes };
-  // No gold to throw, and a bastion remembered: its gold blocks first.
-  if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && !goldOnHand(bot) && bastionKnown(bot, goal) && !isSetAside(goal, 'rung', 'bastion_gold'))
+  // No gold to throw (none, or too little for the boots worn first and a
+  // throw, note 616), and a bastion remembered: its gold blocks first.
+  if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && !barterGold(bot).throwable && bastionKnown(bot, goal) && !isSetAside(goal, 'rung', 'bastion_gold'))
     return { phase: 'obtain_ender_pearls', action: 'bastion_gold', item: 'gold_ingot' };
   // Pearls from the warped forest while here: one known, or a sweep for one
   // (warped-pearls.js), before the walk back.

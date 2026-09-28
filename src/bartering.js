@@ -36,10 +36,30 @@ function piglins(bot, goal) {
     .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here));
 }
 
-// Whether a barter can happen from here now: in the Nether, gold to throw,
-// and a piglin in view.
+// The gold a barter can throw: all of it with a gold piece worn or
+// carried; without one, what is left after the four ingots of the golden
+// boots made first (wearGold makes them from five or more, one left to
+// throw). mid-242-af-fortress-5 (25587) carried three ingots and six
+// nuggets and no gold piece: the ladder took the barter by "gold on hand"
+// and it failed at once, "No gold to wear", over and over for an hour
+// ("loop: flipping detour <-> barter", note 616).
+const BOOTS_INGOTS = 4;
+const dressed = bot => wearingGold(bot) || (bot.inventory?.items?.() || []).some(i => GOLD_PIECES.includes(i.name));
+function barterGold(bot) {
+  const total = goldOnHand(bot), worn = dressed(bot);
+  return { total, dressed: worn, throwable: worn ? total : Math.max(0, total - BOOTS_INGOTS) };
+}
+// Said where a barter is not on offer for want of gold to wear.
+function barterGoldSays(bot) {
+  const g = barterGold(bot);
+  if (g.throwable > 0 || !g.total) return null;
+  return `gold for ${g.total} ingot${g.total === 1 ? '' : 's'} carried and no gold piece to wear: piglins turn on a player in no gold, golden boots take ${BOOTS_INGOTS} ingots, and one more is needed to throw`;
+}
+
+// Whether a barter can happen from here now: in the Nether, gold to throw
+// once a gold piece is worn, and a piglin in view.
 function barterReady(bot, goal) {
-  return nether(bot) && goldOnHand(bot) > 0 && piglins(bot, goal).length > 0;
+  return nether(bot) && barterGold(bot).throwable > 0 && piglins(bot, goal).length > 0;
 }
 
 async function wearGold(bot, task, goal, save, actions) {
@@ -61,9 +81,11 @@ async function wearGold(bot, task, goal, save, actions) {
 async function barterStep(bot, task, goal, save, actions = {}) {
   task.check(); checkAir(bot);
   if (!nether(bot)) throw new Error('Bartering is done in the Nether: piglins turn in the Overworld');
-  if (!ingots(bot) && nuggets(bot) >= 9) {
+  // Nuggets to ingots when the ingots alone are short of a throw, or of
+  // the boots and a throw (barterGold counts the nuggets).
+  if ((!ingots(bot) || (!dressed(bot) && ingots(bot) < BOOTS_INGOTS + 1)) && nuggets(bot) >= 9) {
     goal.step = { action: 'barter_make_ingots', nuggets: nuggets(bot) }; save();
-    await actions.acquireStep(bot, task, 'gold_ingot', Math.floor(nuggets(bot) / 9), goal, save);
+    await actions.acquireStep(bot, task, 'gold_ingot', ingots(bot) + Math.floor(nuggets(bot) / 9), goal, save);
   }
   if (!ingots(bot)) throw new Error('No gold to barter with');
   if (!await wearGold(bot, task, goal, save, actions)) throw new Error('No gold to wear: piglins will not barter with a player in no gold');
@@ -145,4 +167,4 @@ async function gatherBastionGold(bot, task, goal, save, actions = {}) {
   return countOf(bot, 'gold_block') + countOf(bot, 'gold_nugget') + countOf(bot, 'gold_ingot') > before;
 }
 
-module.exports = { barterReady, barterStep, goldOnHand, wearingGold, KEEP, bastionGold, bastionKnown, gatherBastionGold };
+module.exports = { barterReady, barterGold, barterGoldSays, barterStep, goldOnHand, wearingGold, KEEP, bastionGold, bastionKnown, gatherBastionGold };

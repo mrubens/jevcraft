@@ -32,7 +32,9 @@ const ORE = /_ore$/;
 function digSeconds(name, view, inWater) {
   const stony = /stone|deepslate|granite|diorite|andesite|tuff|calcite|terracotta|basalt|netherrack/.test(name) || ORE.test(name);
   if (stony && !view.pickaxe) return null;
-  const s = stony ? (view.pickaxe === 'wooden_pickaxe' ? 1.2 : 0.6) : 0.5;
+  // Wood by hand is slow: a plank is three seconds without an axe (note 615).
+  const woody = /_planks$|_log$|_wood$|_stem$|_hyphae$|_fence$|_slab$|_stairs$/.test(name) && !/^nether_brick/.test(name);
+  const s = stony ? (view.pickaxe === 'wooden_pickaxe' ? 1.2 : 0.6) : woody ? (view.axe ? 0.6 : 3) : 0.5;
   return Math.round(s * (inWater ? 5 : 1) * 10) / 10;
 }
 
@@ -146,6 +148,22 @@ function dropBelow(view, cell, { reach = 24, extra = 0 } = {}) {
   return `a drop of ${n} block${n === 1 ? '' : 's'} under it${fall > 3 ? `: falling ${fall} blocks costs about ${fall - 3} health` : ''}`;
 }
 
+// A block dug to work free: natural ground, or one the bot laid itself
+// (view.laid, own-blocks.js), whatever it is made of. Planks are not
+// ground, and a house is left standing; but the cover the bot put round
+// itself is its own to leave through: two trials walled in by the oak
+// planks of their own cover were offered only a cobblestone into the one
+// open cell and the dig of it again, for eighty and ninety minutes (note
+// 615).
+const laidOf = (view, p) => (typeof view.laid === 'function' ? view.laid(p) : null) || null;
+const diggable = (view, p, name) => solid(name) && (natural.test(name) || !!laidOf(view, p));
+const hhmm = at => new Date(at).toISOString().slice(11, 16);
+function ownSays(view, p) {
+  if (natural.test(view.name(p) || '')) return '';
+  const laid = laidOf(view, p);
+  return laid ? `, a block the bot laid itself${Number.isFinite(laid.at) ? ` at ${hhmm(laid.at)}Z` : ''}` : '';
+}
+
 // Every single move from here, each with its facts. `goal` is 'dry' (out
 // of water onto solid ground) or 'sky' (open sky over dry ground).
 // `breathS` is the breath there is, in seconds, less the margin (a full bar
@@ -199,11 +217,11 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     // A block dug beside: at the feet, at the head, or one over (for a climb).
     for (const [part, cell] of [['feet', level], ['head', level.plus(UP)], ['over', level.offset(0, 2, 0)]]) {
       const name = view.name(cell);
-      if (!solid(name) || !natural.test(name)) continue;
+      if (!diggable(view, cell, name)) continue;
       const seconds = digSeconds(name, view, inWater);
       if (seconds == null) continue;
       const drop = part !== 'over' && (part === 'feet' || open(view.name(level))) ? dropBelow(view, level) : null;
-      moves.push({ key: `dig_${dir}_${part}`, does: `Dig the ${name.replaceAll('_', ' ')} ${dir}, at ${part === 'over' ? 'the level over the head' : `${part} height`} (about ${seconds} s).`, kind: 'dig', cell, seconds, effects: [opensOnto(view, cell.plus(d)), ...(drop ? [drop] : []), ...digEffects(view, cell, feet)] });
+      moves.push({ key: `dig_${dir}_${part}`, does: `Dig the ${name.replaceAll('_', ' ')} ${dir}, at ${part === 'over' ? 'the level over the head' : `${part} height`}${ownSays(view, cell)} (about ${seconds} s).`, kind: 'dig', cell, seconds, effects: [opensOnto(view, cell.plus(d)), ...(drop ? [drop] : []), ...digEffects(view, cell, feet)] });
     }
     // A block placed into water or air beside, at the feet: a step at the
     // waterline, or a wall.
@@ -227,19 +245,19 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   }
   // Straight up: dig what is over the head, swim up, or pillar.
   const over = feet.offset(0, 2, 0), overName = view.name(over);
-  if (solid(overName) && natural.test(overName)) {
+  if (diggable(view, over, overName)) {
     const seconds = digSeconds(overName, view, inWater);
-    if (seconds != null) moves.push({ key: 'dig_up', does: `Dig the ${overName.replaceAll('_', ' ')} over the head (about ${seconds} s).`, kind: 'dig', cell: over, seconds, effects: [opensOnto(view, over.plus(UP)), ...digEffects(view, over, feet)] });
+    if (seconds != null) moves.push({ key: 'dig_up', does: `Dig the ${overName.replaceAll('_', ' ')} over the head${ownSays(view, over)} (about ${seconds} s).`, kind: 'dig', cell: over, seconds, effects: [opensOnto(view, over.plus(UP)), ...digEffects(view, over, feet)] });
   }
   if (inWater && isWater(view.name(feet.plus(UP)))) moves.push({ key: 'swim_up', does: 'Swim up a block.', kind: 'move', to: feet.plus(UP), ...where(feet.plus(UP)) });
   const block = PLACEABLE.find(n => (view.carried?.[n] || 0) > 0);
   if (block && !inWater && headroom && solid(view.name(feet.plus(DOWN)))) moves.push({ key: 'pillar', does: `Jump and put a ${block.replaceAll('_', ' ')} under the feet: up a block where it stands.`, kind: 'pillar', block, to: feet.plus(UP), ...where(feet.plus(UP)) });
   // Down: dig the floor, when not over water or lava.
   const floor = feet.plus(DOWN), floorName = view.name(floor);
-  if (!inWater && solid(floorName) && natural.test(floorName) && !isWater(view.name(floor.plus(DOWN))) && !isLava(view.name(floor.plus(DOWN)))) {
+  if (!inWater && diggable(view, floor, floorName) && !isWater(view.name(floor.plus(DOWN))) && !isLava(view.name(floor.plus(DOWN)))) {
     const seconds = digSeconds(floorName, view, false);
     const drop = dropBelow(view, floor, { extra: 1 });
-    if (seconds != null) moves.push({ key: 'dig_down', does: `Dig the ${floorName.replaceAll('_', ' ')} underfoot and drop a block (about ${seconds} s).`, kind: 'dig', cell: floor, seconds, effects: [opensOnto(view, floor.plus(DOWN)), ...(drop ? [drop] : []), ...digEffects(view, floor)] });
+    if (seconds != null) moves.push({ key: 'dig_down', does: `Dig the ${floorName.replaceAll('_', ' ')} underfoot${ownSays(view, floor)} and drop a block (about ${seconds} s).`, kind: 'dig', cell: floor, seconds, effects: [opensOnto(view, floor.plus(DOWN)), ...(drop ? [drop] : []), ...digEffects(view, floor)] });
   }
   // 'away': off a spot every walk failed from, onto dry ground eight blocks off.
   const done = goal === 'dry' ? dryFooting(view, feet)
@@ -322,7 +340,24 @@ function liveView(bot) {
   for (const i of bot.inventory.items()) carried[i.name] = (carried[i.name] || 0) + i.count;
   let lavaTouch = null;
   try { lavaTouch = terrain.lavaTouchSays(bot); } catch (_) { /* no body to price */ }
-  return { name: p => bot.blockAt(p)?.name ?? null, block: p => bot.blockAt(p) ?? null, carried, pickaxe: PICKS.find(n => carried[n]) || null, health: bot.health ?? 20, lavaTouch };
+  const { laidAt } = require('./own-blocks');
+  return { name: p => bot.blockAt(p)?.name ?? null, block: p => bot.blockAt(p) ?? null, laid: p => laidAt(bot, p), carried, pickaxe: PICKS.find(n => carried[n]) || null,
+    axe: Object.keys(carried).find(n => n.endsWith('_axe') && !n.endsWith('_pickaxe')) || null, health: bot.health ?? 20, lavaTouch };
+}
+
+// Walled in where it stands (every side closed at the feet or the head),
+// and how much of it is the bot's own: said on the offer to work free, so
+// the question says the walls are its own planks and not only that every
+// walk failed (note 615). Null when a side is open.
+function walledSays(view, feet) {
+  const sides = Object.values(DIRS).map(d => [feet.plus(d), feet.plus(d).plus(UP)]);
+  if (!sides.every(cells => cells.some(c => !open(view.name(c))))) return null;
+  const round = [...sides.flat(), feet.offset(0, 2, 0)].filter(c => solid(view.name(c)));
+  const own = round.filter(c => laidOf(view, c));
+  if (!own.length) return 'walled in where it stands: every side is closed at the feet or the head';
+  const names = [...new Set(own.map(c => view.name(c).replaceAll('_', ' ')))].join(', ');
+  const at = Math.min(...own.map(c => laidOf(view, c).at).filter(Number.isFinite));
+  return `walled in where it stands: every side is closed at the feet or the head, ${own.length} of the ${round.length} blocks round it its own (${names}${Number.isFinite(at) ? `, laid from ${hhmm(at)}Z` : ''}), which it can dig through`;
 }
 
 // Where the bot has to get: out of water onto dry ground, or up to the
@@ -469,4 +504,4 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   return false;
 }
 
-module.exports = { moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+module.exports = { walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

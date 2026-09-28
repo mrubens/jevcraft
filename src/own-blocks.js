@@ -40,10 +40,44 @@ function noteChange(bot, was, now, at = Date.now()) {
   else if (near) remember(dug, k, at);
 }
 
+// Every block the bot laid itself, of any kind, as the game answered its
+// placement (mineflayer's blockPlaced, which is the bot's own and no one
+// else's): kept on the bot and in the goal, so a restart does not forget
+// the walls it put round itself. mid-242-ae-nether-2-fortress-5 (25584)
+// and mid-242-af-fortress-5 (25587) each took cover from a ghast behind
+// oak planks made from the logs carried, walled in on every side, and
+// stood there eighty and ninety minutes: navigation will not break planks
+// (a house is planks) and working free dug natural blocks only, so the
+// only moves offered were a cobblestone put into the one open cell and
+// dug out again (note 615). A cell the bot laid is its own to dig through.
+const LAID_MOST = 128;
+function trimLaid(kept) {
+  const keys = Object.keys(kept);
+  if (keys.length > LAID_MOST) for (const k of keys.sort((a, b) => kept[a].at - kept[b].at).slice(0, keys.length - LAID_MOST)) delete kept[k];
+}
+function noteLaid(bot, now, { at = Date.now(), goal = bot._stalls?.goalOf?.() } = {}) {
+  if (!now?.position || !now.name) return;
+  const k = keyOf(now.position), rec = { name: now.name, at };
+  remember(bot._laid ||= new Map(), k, rec);
+  if (bot._laid.size > LAID_MOST) bot._laid.delete(bot._laid.keys().next().value);
+  if (goal && typeof goal === 'object') { const kept = goal.laid ||= {}; kept[k] = rec; trimLaid(kept); }
+}
+// The bot's own block at p: { name, at } while that block is still there,
+// else null (dug, burnt, or never its own).
+function laidAt(bot, p, goal = bot._stalls?.goalOf?.()) {
+  if (!p) return null;
+  const k = keyOf(p), rec = bot._laid?.get(k) || goal?.laid?.[k];
+  if (!rec) return null;
+  let b = null; try { b = bot.blockAt?.(p); } catch (_) { b = null; }
+  if (!b || b.name !== rec.name) { bot._laid?.delete(k); if (goal?.laid && b) delete goal.laid[k]; return null; }
+  return rec;
+}
+
 function ownBlocksPlugin(bot) {
   if (bot._ownBlocksWatched) return;
   bot._ownBlocksWatched = true;
   bot.on?.('blockUpdate', (was, now) => { try { noteChange(bot, was, now); } catch (_) { /* a change missed */ } });
+  bot.on?.('blockPlaced', (was, now) => { try { noteLaid(bot, now); } catch (_) { /* a placement missed */ } });
 }
 
 // Noted this session merged into the search's record (`state[field]`), and
@@ -71,4 +105,4 @@ function ownSet(bot, state) {
 // Dug out by the bot: the cells over a floor it made by digging.
 const dugOut = (bot, p) => !!bot._ownDugSet?.has(keyOf(p));
 
-module.exports = { OWN_BLOCKS, ownBlocksPlugin, noteChange, ownSet, dugOut, keyOf };
+module.exports = { OWN_BLOCKS, ownBlocksPlugin, noteChange, ownSet, dugOut, keyOf, noteLaid, laidAt };

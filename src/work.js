@@ -297,7 +297,8 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       }
     }
   } };
-  if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}.`,
+  const walled = terrain ? (() => { try { const u = require('./unstuck'); return u.walledSays(u.liveView(bot), bot.entity.position.floored()); } catch (_) { return null; } })() : null;
+  if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}.${walled ? ` It is ${walled}.` : ''}`,
     run: () => require('./unstuck').workFree(bot, task, goal, save, { client, dig, aim: terrain }) };
   const rung = goal.rungTime?.phase;
   // What the rung is for and what half an hour without it costs (the

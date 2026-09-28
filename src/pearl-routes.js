@@ -60,14 +60,16 @@ function pearlRoutes(bot, goal, { now = Date.now(), save = () => {}, actions = {
     }
     // A barter: gold to throw, and piglins about but none near enough for
     // the ladder's own barter (which needs one within 32).
+    // Gold to throw is gold left once a gold piece is worn: three ingots
+    // and no gold piece is no barter (note 616).
     const bartering = require('./bartering');
-    const gold = bartering.goldOnHand(bot);
+    const gold = bartering.barterGold(bot).throwable;
     const piglins = Object.values(bot.entities || {}).filter(e => e.name === 'piglin' && e.isValid !== false && e.position)
       .map(e => ({ e, d: e.position.distanceTo(here) })).sort((a, b) => a.d - b.d);
     if (gold > 0 && piglins.length && !bartering.barterReady(bot, goal) && actions.navigate) {
       const near = piglins[0];
       options.pearls_barter = { target: { x: Math.round(near.e.position.x), y: Math.round(near.e.position.y), z: Math.round(near.e.position.z) },
-        description: `Barter with piglins for pearls: gold enough for ${plural(gold, 'ingot')} carried, measured on this server at about nine ingots a pearl, and a gold piece is worn first or they turn on the bot. ${plural(piglins.length, 'piglin')} about, the nearest ${Math.round(near.d)} blocks off; chosen, the bot walks toward it and barters once one is within thirty-two.`,
+        description: `Barter with piglins for pearls: gold enough for ${plural(gold, 'ingot')} to throw, measured on this server at about nine ingots a pearl, ${bartering.barterGold(bot).dressed ? 'a gold piece worn first or they turn on the bot' : 'golden boots made from four more first and worn, or they turn on the bot'}. ${plural(piglins.length, 'piglin')} about, the nearest ${Math.round(near.d)} blocks off; chosen, the bot walks toward it and barters once one is within thirty-two.`,
         run: async (task) => {
           const { goals } = require('mineflayer-pathfinder');
           const p = near.e.position;
@@ -76,7 +78,8 @@ function pearlRoutes(bot, goal, { now = Date.now(), save = () => {}, actions = {
     } else if (gold <= 0) {
       let bastion = false;
       try { bastion = bartering.bastionKnown(bot, goal); } catch (_) { bastion = false; }
-      if (!bastion) notOffered.push(`a barter with piglins: no gold carried (about nine ingots a pearl, measured) and no bastion known to take gold from${piglins.length ? `; ${plural(piglins.length, 'piglin')} about, the nearest ${Math.round(piglins[0].d)} blocks off` : ''}`);
+      const short = bartering.barterGoldSays(bot);
+      if (!bastion) notOffered.push(`a barter with piglins: ${short || 'no gold carried'} (about nine ingots a pearl, measured) and no bastion known to take gold from${piglins.length ? `; ${plural(piglins.length, 'piglin')} about, the nearest ${Math.round(piglins[0].d)} blocks off` : ''}`);
     } else if (!piglins.length) notOffered.push(`a barter with piglins: gold enough for ${plural(gold, 'ingot')} carried, but no piglin about`);
     // Back to the Overworld for its endermen (and a cleric's pearls when
     // one is known), the pearls there before the Nether again.
