@@ -1,358 +1,145 @@
 # jevcraft
 
-jevcraft is a harness that lets a decision model play Minecraft Survival. The model is [TypeSafe's Jev](https://typesafe.ai/), a [System One](https://docs.typesafe.ai/concepts/system-one) model: given a state and a set of typed options, it returns a choice with probabilities in about 0.2 seconds. The bot is built on [mineflayer](https://github.com/PrismarineJS/mineflayer). Code handles the mechanics of the game, and Jev makes the judgment calls: when to fight or run, which way to go, when a plan has stopped working.
+jevcraft is a Minecraft Survival bot built on [mineflayer](https://github.com/PrismarineJS/mineflayer). Code handles the mechanics: pathfinding, digging, crafting, combat moves. The judgment calls go to [TypeSafe's Jev](https://typesafe.ai/), a [System One](https://docs.typesafe.ai/concepts/system-one) model that picks one option from a typed list in about 0.2 seconds.
 
-The goal is the whole game from a fresh world with an empty inventory: Overworld, Nether, blaze rods, Eyes of Ender, the stronghold and the dragon ([GOAL.md](GOAL.md)). Getting there has meant running many trials in parallel and triaging every death and every loop. Most of this README is what that work taught us. It covers how Jev was given real agency and how each decision is put to it, then the loop we built to improve the harness. Jev can also be used as an in-game chat companion; that material is [further down](#using-jev-as-a-chat-companion).
+The goal is to beat the game from a fresh world with an empty inventory ([GOAL.md](GOAL.md)). This README describes how the bot is set up and what we learned running it. The bot can also be used as a chat companion; see [the end of this file](#using-jev-as-a-chat-companion).
 
 | | |
 |---|---|
 | ![Jev kills a wither skeleton on a fortress bridge](docs/media/wither-skeleton-kill.gif) | ![Jev kills a blaze on a fortress bridge](docs/media/blaze-kill.gif) |
-| Jev holds his shield up and kills a wither skeleton on a fortress bridge (shield_guard, p=0.98). | Jev closes in on a blaze and takes his first rod (close_in, p=0.42). |
+| Killing a wither skeleton (Jev chose `shield_guard`, p=0.98). | Killing a blaze for a rod (`close_in`, p=0.42). |
 | ![Jev steps through his portal into the Nether](docs/media/nether-entered.gif) | ![A ghast's fireball knocks Jev into lava](docs/media/ghast-death.gif) |
-| A fresh world: Jev steps through his portal into the Nether 7 minutes in. | A ghast's fireball pushes Jev off his footing into lava (fight, p=0.22). |
+| Entering the Nether 7 minutes into a fresh world. | Knocked into lava by a ghast fireball (`fight`, p=0.22). |
 
-All four are rendered from the trials' own recordings with ReplayMod, in third person. The name is the option Jev picked and p its probability.
+The clips are rendered with ReplayMod from recordings of the trials.
 
-- [Where it stands](#where-it-stands)
-- [Who decides what](#who-decides-what)
-- [Giving Jev agency](#giving-jev-agency)
-- [How a decision is presented](#how-a-decision-is-presented)
-- [How fixes are made](#how-fixes-are-made)
-- [Catching loops](#catching-loops)
-- [The iteration loop](#the-iteration-loop)
-- [Tools](#tools)
-- [Running many trials at once](#running-many-trials-at-once)
-- [What did not work](#what-did-not-work)
-- [Code map](#code-map)
-- [Using Jev as a chat companion](#using-jev-as-a-chat-companion)
+## Status (2026-09-28)
 
-## Where it stands
+- The first three in-game days (iron tools and armor, a shield, a bed, a home, no deaths) pass reliably.
+- Fresh worlds reach the Nether in 7 to 30 minutes, and usually find a fortress.
+- Blaze rods are the current wall. A handful of trials have taken one or two rods; none has taken the six needed. Most deaths are blazes at a spawner, ghast fireballs pushing the bot into lava, and running out of health in the Nether with little food.
+- The dragon has only been fought from staged worlds.
 
-As of 2026-09-28, the Overworld is mostly solved. Fresh worlds reach the Nether in roughly 7 to 30 minutes of play. Fortresses are found often, and many trials reach one.
+Every trial and fix is logged in [docs/trial-notes.md](docs/trial-notes.md).
 
-Blaze rods are the wall. For most of the run's history, no trial had taken a single rod (note 577). On 2026-09-28 a few did. The fresh world mid-242-ba reached the Nether in 7 minutes and a fortress at minute 35, and took two rods. mid-243-ah (Nether at 23, fortress at 44) and mid-242-ba-fortress-4 took one each, and the progress audit counts 5 fortress-start trials with a first rod. All of them then died to blazes. Six are needed.
+## How it works
 
-What kills the bot now is blazes at a live spawner, ghast fireballs that push it off a ledge into lava (notes 610, 612), and low health that never comes back in the Nether, where there is little food (note 607).
+Code decides what is possible. Jev decides what to do.
 
-The first-days milestone, three in-game days with no deaths and iron tools, armor, a shield, a bed and a home by minute 45, has passed repeatedly ([GOAL.md](GOAL.md#where-it-stands)). The dragon has been fought in rehearsals from staged worlds, never reached from a fresh start. Every trial and what it changed is in [docs/trial-notes.md](docs/trial-notes.md), newest first.
+- Code builds the options from the game state. Jev never names a coordinate, item or command, and its pick is checked against what was offered.
+- Each option's description says what it does, what it costs (damage and seconds, against the bot's actual health) and what it gains toward the goal. Mob behavior and numbers such as fireball knockback are taken from the game's own code and checked on a test server.
+- Every play question also offers `none_good` ("the move a player would make is not listed"). Picking it logs a missing option and takes the best listed one. Those logs became a worklist for new options.
+- If only one option is possible, Jev is not asked.
+- Each question has a code fallback, used only if the service is down or too slow.
 
-## Who decides what
+There are 91 questions, defined in [src/decisions/](src/decisions/index.js) and listed in [docs/decisions.md](docs/decisions.md). They cover fight stances, routes, when to give up on a goal, how to get out of lava or fire, and which part of the bot (survival, eating, work) gets the next turn. [How Jev thinks](docs/how-jev-thinks.md) walks through one request end to end.
 
-Most "LLM plays Minecraft" projects hand a large model the whole problem and parse what comes back. jevcraft splits the work the other way.
+Speed is what makes this work. A fight stance has to be chosen while a blaze is firing. Measured answers averaged 0.17 to 0.18 seconds, at about 500 decisions per trial per hour.
 
-Code, mostly mineflayer and its plugins, owns the mechanics. Pathfinding is `mineflayer-pathfinder` with custom movement rules in [src/movement.js](src/movement.js): lava shores, jumps priced by what is under the gap, and moves refused where they would drop a gravel or sand floor lying on lava (note 592). A dig guard wraps `bot.dig` ([src/skills.js](src/skills.js) `digGuardPlugin`) and refuses a dig that would let lava in, drop the bot into lava, or collapse the gravel or sand floor it stands on (note 600). Knockback, falls and whether a step holds are checked with prismarine-physics ([src/motion.js](src/motion.js), [src/combat-estimate.js](src/combat-estimate.js)).
+## What we tried and learned
 
-Recipes, smelting and crafting plans come from the real game data ([src/knowledge.js](src/knowledge.js), [src/plan.js](src/plan.js), [src/batch-plan.js](src/batch-plan.js)). Bridging, pillaring, shelters and schematics are in [src/bridging.js](src/bridging.js), [src/shelter.js](src/shelter.js) and [src/builds.js](src/builds.js). Code also works out what is possible right now: which routes exist, which blocks are carried, which stances can be carried out from here. And it keeps the books on what has been tried and what came of it.
+**Confidence gates.** At first, a low-confidence pick was handed to hand-written rules. In practice the rules then played most of the hard moments. We now take Jev's pick at any confidence on play questions. Confidence bars remain only for requests from a person (chat, server commands, builds that replace something).
 
-Built-in skills live in `src/*.js`, one file per capability: [src/tunneling.js](src/tunneling.js), [src/blaze-tactics.js](src/blaze-tactics.js), [src/nether-travel.js](src/nether-travel.js), [src/portal-cast.js](src/portal-cast.js), [src/mob-hunt.js](src/mob-hunt.js), [src/healing.js](src/healing.js), and so on. A skill knows *how* to do something. Whether to do it is Jev's call.
+**Reflexes.** Lava escapes, fire escapes, creeper dodges and shield use used to run before Jev was asked. Several deaths started with a reflex (note 548). They are now questions, such as `body_way` for lava, fire and suffocation, with code only as the fallback (note 549).
 
-Jev owns the judgments. It picks the stance in a fight, the way toward a fortress, whether to keep at a rung of the game or set it aside, which way out of lava, and which layer of the bot gets the turn. All 91 questions are defined in [src/decisions/](src/decisions/index.js) and listed with their options in [docs/decisions.md](docs/decisions.md), which is generated from that code.
+**Who gets the turn.** Survival, eating and work each used to take control by their own rules. Now each states a claim and Jev picks one (`turn_priority`, [src/arbiter.js](src/arbiter.js)). The question can hang, so the arbiter falls back if the bot is hurt while waiting or five seconds pass.
 
-Two rules keep the line sharp ([CONTRIBUTING.md](CONTRIBUTING.md)):
+**Fix facts, not add rules.** When Jev chooses badly, the fix is almost always a wrong price, a false fact or a missing option, not a new threshold. Example (note 614): Jev kept choosing cover with a blaze four blocks away. The cause was that the aggressive option was only offered with a shield, several options claimed a shield the bot didn't have, and no option said what it gained toward the rods. Fixing those changed the answers.
 
-1. **Jev chooses, code enumerates.** The model never names a coordinate, an item or a command. Code builds the options from the game state, and Jev's pick is checked against what was offered before anything runs.
-2. **Judgments go to Jev, with the facts.** Offer a real choice as options, with the numbers that bear on it. Do not settle it with a rule.
+**Loops.** Deaths are easy to spot. Trials that stay busy without progressing are not: pacing a bridge for 70 minutes, or sitting in a sealed pocket for half an hour. Each feature used to keep its own list of what had failed, and none saw the others; one question was answered the same way 4,423 times. We replaced them with a single ledger ([src/tried.js](src/tried.js), note 571). An option that came to nothing twice rests for five minutes. When every option rests, the parent question is asked instead and told what failed. Waits and held stances are ledger entries too. A hold ends when something it was chosen on changes, not on a timer (notes 599, 611).
 
-## Giving Jev agency
+**Goal budgets.** Each step of the game (for example, "obtain blaze rods") gets ten minutes without progress. Then Jev is asked whether to keep going, change plan, or set it aside.
 
-The operator's standing instruction was: *"Let Jev choose: judgments go to Jev as options with honest facts, not hidden rules. Hard rules only for physical safety."* It took several passes to take that seriously.
+**Prices from the right fight.** Quoting an arena average against three distant blazes to a bot facing four at a spawner made charging in look cheap (note 602). Prices now come from the fight at hand.
 
-The first pass took confidence gates off play decisions. Early on, a stance Jev picked with low confidence went to hand-written rules for fifteen seconds. Now Jev's pick is taken at any confidence on every play question. Confidence bars remain only where a person is on the other end: a chat request, a server command, a build that would replace something. Below the bar, the bot asks the player. [docs/rule-audit.md](docs/rule-audit.md) lists each rule that was handed over and the probe that checked it.
+**Blaze tactics.** We built boxing in, lighting the spawner, a corner ambush and retreating to heal, and measured them in an arena. At a live spawner none beat walking in and fighting. The safe ones produce no rods. They are still offered, with their measured numbers (note 606).
 
-The second pass brought hidden options out. Health thresholds that hid a stance, a creeper dance that ran before the question was asked, and a three-failure rule that moved on by itself all became options with their costs stated.
+**A second model.** A generative model reviewing recovery decisions agreed with Jev, took 14 seconds, and cost about a hundred times more. We removed it.
 
-In the third pass, reflexes went to Jev (note 549). The operator asked: "Which reflexes do we have? Can we get rid of them and just ask Jev". For almost all of them, we could. Lava, fire, suffocation and air are now one question, `body_way` ([src/body.js](src/body.js)), and each way out comes with where it goes, how many seconds it takes, and how long the body lasts at the current damage rate. The first moves of an encounter are stance options, such as holding on a one-block span, fighting from an edge or blocking a creeper's line. The shield is `shield_policy`. A shot is in the air for less time than an answer takes, so Jev is asked in advance what to do about the shooters that are around.
+**Judging trials.** Judging by deaths alone missed some of the worst trials, which never died. The progress audit and trail maps now flag trials that aren't getting anywhere.
 
-Code still acts in these moments, but only as each question's fallback: the answer used when Jev cannot be reached or has not answered in time. The fallback is written into the question's definition (`define` in [src/decisions/index.js](src/decisions/index.js)) and only ever stands in for Jev's answer.
+## How we iterated
 
-The fourth pass made who acts Jev's decision too (notes 536, 539). The survival layer, the meal and the work each used to take the turn by their own rules. Now each layer states what it would do as a *claim* with the facts behind it, and the arbiter ([src/arbiter.js](src/arbiter.js)) sends two or more claims to Jev as one question, `turn_priority`. This is live on every trial. `JEV_ARBITER=shadow` keeps the old order, logged beside Jev's ruling for comparison. Note 539 turned up one problem: a question can hang. So the arbiter watches its own question and gives the turn by the fallback if the bot is hurt while waiting or five seconds pass.
-
-None of this would work without speed. Answers come back in about 0.2 seconds; note 530 measured 518 to 539 decisions an hour per trial at 0.17 to 0.18 seconds on average, the slowest 0.8. A frontier LLM taking several seconds per call could not make a stance decision while a blaze is firing. A System One model can.
-
-## How a decision is presented
-
-Every question is a tree of typed options. Each option has a `description` that says what the option does, what it costs in damage and seconds from this bot's health, and what it gains toward the goal. Here is a real question from the replay suite (case `poisoned-by-witch-apple-offered`, from note 442). The bot is at 1 health, poisoned, in full iron, with a witch 19 blocks off. The descriptions are shortened here:
-
-> `fight`: Fight here ... about 10.2 seconds and 14.4 damage to kill them all, from 1 health (more than the bot has) ... At 1 health, 1 potion from the witch (about 6 each after armour) end it.
->
-> `pillar`: Go two blocks straight up ... Two up does not stop a witch (throws potions up) ...
->
-> `eat_golden_apple`: Eat the golden apple now (2 carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds.
->
-> `retreat`: Run for footing out of the mobs' reach and sight ... A witch walks after a player it has seen and throws within about ten blocks; a run that stays in its sight stays in its reach.
-
-Note the phrase "more than the bot has": the fight's cost is set against the bot's actual health. The facts about each mob's behavior are read from the game's own code.
-
-Besides health, armor, threats and a fight estimate, the state for a play question carries the context a player would have:
-
-- `riskNow`: how bad things are right now.
-- `deathWouldCost`: what would drop, the walk back from respawn, and the real minutes to make it all again.
-- `healing`: whether health comes back here at all.
-- `runClock` and pace: minutes spent, set against how fast a practiced player gets there.
-- `recentPositions`: where the bot has been over the last few minutes, so it can see a loop.
-- The ledger's record of what was already tried from here (below).
-
-The shared guidance explaining each of these fields is added to the instructions only when the field is present (`withRealTime` in [src/decisions/index.js](src/decisions/index.js)).
-
-Every play question with two or more options also offers `none_good`: "none of these options are good: the move a player would make here is not among them." Picking it records a missing option in the log, and the best listed option is taken in the meantime. The recorded misses became a worklist, and many options in [docs/decisions.md](docs/decisions.md) exist because Jev said one was missing. Two confident `none_good` answers in a row to the same situation mark that question as spent, and the question above it is asked instead (note 599).
-
-If only one option is feasible, the question is not asked. The bot takes the one way and logs it as such, so the decision log shows how often the model was actually needed.
-
-For the full anatomy of one request, with real latencies and token counts, see [How Jev thinks](docs/how-jev-thinks.md).
-
-## How fixes are made
-
-When Jev chooses badly in a trial, the fix is almost never a rule. We ask what Jev did not know, or what the code got wrong about the game. The operator's shorthand was "no bandaids; give Jev facts, not hidden thresholds." A fix is usually one of these:
-
-- An honest fact. A price was wrong, a fact was false, or something the choice turns on was missing.
-- A price from the game's own numbers. How far a blaze hovers, when a spawner fails in light, and how hard a ghast fireball pushes were all read from the 26.1.2 server jar, then checked on a test server.
-- The missing option. Offer the whole game tree: every route a player would really consider, as an option with its price.
-
-Note 614 is a typical example. The operator, watching a trial, said: "It seems like it should charge the thing more." A blaze was four blocks off, and Jev kept choosing cover and retreat. The triage found no bad judgment. It found several things the question got wrong:
-
-> close_in ... was offered only with a shield in the off hand; this bot had none, so neither question could offer it. ... several facts were false or missing. ... fight_at_spawner, dig_in_at_spawner, box_here and corner_ambush each said "the shield up" ... with no shield carried. ... And no option said what it gains toward the rods: cover, heal, retreat and seal were priced in damage alone.
-
-The fix offered `close_in` without a shield, priced accordingly. It added `charge_nearest`, which goes after one blaze and asks again after the kill. It corrected the false facts. Every blaze option now says what it gains toward the rods; for cover, heal, retreat and defer, that is nothing. No threshold was added, and Jev still decides.
-
-Each fix is tested twice. Unit tests have to fail without the fix. Then a live probe asks Jev the recorded question five times before the change and five times after. If the answers don't move, the fix hasn't landed yet.
-
-## Catching loops
-
-Deaths are easy to see. A bot that is busy but not progressing is harder to catch: walking back and forth at a fortress for seventy minutes (note 558), or sitting in a sealed pocket for half an hour (notes 589, 597). The operator pushed to judge trials by progress as well as deaths, and most of the harness's structure came out of that.
-
-Note 571 introduced one ledger of what was tried ([src/tried.js](src/tried.js)). Before it, every place that offered ways kept its own memory of what had failed. There were seven or more such memories, each with its own radius and clock, and none saw the others. On one trial, `fortress_approach` was answered `other_way` 4,423 times. Now every answer, asked or taken as the only way, is a ledger entry with its question, where it was going, and what came of it: progressed, blocked with a reason, waited, or pending.
-
-Every play question reads the ledger. An option tried from here recently that came to nothing says so in its description. If it comes to nothing twice, it rests for five minutes, left out and listed in `waysResting`. When every option rests, the question is not asked again. Its parent is asked instead, told what failed below (`whatFailedBelow`). Parents are declared in each question's definition: step, way, plan, rung.
-
-The first ledger left out the layer where most of the day's loops lived: stances, pockets, pillars and `turn_priority`. Notes 599 and 611 made waits and holds entries too. A wait now records the scene it began in. If that scene did not change (same health, same place, same mobs, no swing), the wait came to nothing and rests like any other way. A held stance ([src/holds.js](src/holds.js)) ends when something observed contradicts what it was chosen on. No clock is involved. Note 611 found four leaks in the hold rule, among them that nested answers were never held and that a hold could fall out of a capped ledger. Each was fixed in general.
-
-Rungs have a budget (notes 583, 588, 605). Each rung of the game ladder, such as "obtain blaze rods", gets ten minutes on the wall clock with nothing to show: no milestone, no new best distance to its target, no new ground. Then `rung_progress` asks Jev whether to keep at it, change the plan, or set it aside, with what has been tried in front of it. Setting aside and taking up again are both Jev's answers.
-
-## The iteration loop
-
-The harness improved through a loop that ran for days with an operator (an AI agent) and a human user:
-
-1. About 14 to 20 trials run in parallel, each on its own Minecraft server and port. Some start from fresh worlds. Most start from saved stages (below), so the hard parts get tried many times an hour.
-2. A watcher wakes the operator on a death or a loop. Every hour or so the operator also runs the progress audit and looks at trail maps for trials that are busy but getting nowhere.
-3. An Opus subagent triages each death, loop or stall in its own git worktree. It reads the flight record, the death timeline and the world's region files, finds the cause, and fixes it in general by changing facts, prices or options. It adds tests that fail without the fix, probes live Jev five times on the recorded question before and after, and writes a numbered entry in [docs/trial-notes.md](docs/trial-notes.md). Notes 500 to 614 were written this way.
-4. Fixes are squash-merged in a separate merge worktree. There they run through `npm test` (about 2,000 tests, no network), a `JEV_ARBITER=shadow` check, and the replay suite. Then main is fast-forwarded. Merging in the main checkout directly once crashed 23 running bots, because the bots load code from that checkout and it briefly held conflict markers.
-5. Running bots pick up the new code through a quiet restart. The operator touches `.bot-state/restart-requested`. Each bot quits once nothing hostile is within sixteen blocks and it stands on dry ground, or after five minutes ([src/quiet-restart.js](src/quiet-restart.js)), and its supervisor starts it again. Killing bots mid-fight had caused deaths right after restarts.
-6. Every three hours a Fable subagent gives read-only design advice on the open problems. The operator acts on the advice that holds up and doesn't wait on the rest. One review found that holds and stances were exempt from the ledger, which explained a whole class of loops (note 599). Another recommended one shared ledger in place of seven separate memories (note 571).
+1. Run 7 to 20 trials in parallel, one Minecraft server each. Most start from saved stages (entering the Nether, reaching a fortress) so the hard parts get many attempts per hour.
+2. A watcher reports each death or loop. The progress audit and trail maps catch trials that are stuck without failing.
+3. A Claude subagent triages each failure in its own git worktree. It fixes the cause in general, adds tests that fail without the fix, checks the recorded question against live Jev before and after, and writes a trial note. Notes 500 to 616 were written this way.
+4. Fixes are merged in a separate worktree after `npm test`, a `JEV_ARBITER=shadow` check and the replay suite. Bots run from the main checkout. Merging there once crashed 23 bots on conflict markers.
+5. Bots pick up new code with a quiet restart: each quits once no mob is within 16 blocks, or after five minutes, and its supervisor restarts it.
 
 ## Tools
 
-Each of these tools was built when the loop kept missing something.
+- **Flight record** ([src/recorder/](src/recorder/index.js)): one frame per second plus one per decision, with options, probabilities and latency.
+- **Death timeline** ([scripts/death-timeline.js](scripts/death-timeline.js)): a trial's last seconds, frame by frame, with each decision.
+- **Replay suite** ([scripts/replay-suite.js](scripts/replay-suite.js)): recorded questions from past failures, each with acceptable and forbidden answers, asked live five times. It runs in seconds with no server.
+- **Arena** ([scripts/arena.js](scripts/arena.js)): staged fights (blaze spawner, wither skeletons, hoglins) that measure damage, time to kill and deaths. Its numbers are quoted to Jev.
+- **Stage saves** ([checkpoint.sh](scripts/trials/checkpoint.sh), [start-stage.sh](scripts/trials/start-stage.sh)): world snapshots every 30 seconds, promoted to a stage save the first time a trial reaches the Nether or a fortress.
+- **Trail maps** ([trail-map.js](scripts/trials/trail-map.js)): a top-down PNG of where a trial walked, colored by activity. They make pacing and circling easy to see.
+- **Progress audit** ([progress-audit.js](scripts/trials/progress-audit.js)): time since the last milestone, new ground covered, repeated questions, wait share. `--cohort` compares all trials before and after a deploy.
+- **Replays** ([death-camera.js](scripts/trials/death-camera.js), [highlights.js](scripts/trials/highlights.js)): trial servers record with ServerReplay, and these scripts write a third-person camera path around deaths and notable moments for rendering in ReplayMod.
 
-The flight record ([src/recorder/](src/recorder/index.js)) holds what the bot saw and did, one frame a second and one at every decision, in `.bot-state/flight/`. Each decision is framed the moment Jev answers, with its options, probabilities and latency. `node scripts/flight.js --deaths` prints the frames before each death.
+Trial setup and ports are in [scripts/README.md](scripts/README.md).
 
-The death timeline ([scripts/death-timeline.js](scripts/death-timeline.js)) is the first thing a triage reads. It shows a trial's last seconds frame by frame: health, position, who held the turn, the mobs about, and each Jev decision with its weights, how long it took and the health when it was asked. `--options` prints the option descriptions.
+## Running many trials on one machine
 
-The replay suite ([scripts/replay-suite.js](scripts/replay-suite.js), [evals/replays/cases.jsonl](evals/replays/cases.jsonl)) holds recorded questions from deaths and loops, each with the answers that are acceptable and the ones that are forbidden. Each case is asked live five times, in seconds, with no Minecraft server. A case passes when most answers are expected and at most a third are forbidden. Cases marked `known` are gaps we have listed; they don't count as failures. Borderline cases get loosened when every option is fatal. In the witch case above, at 1 health, the apple and the retreat are both accepted, because neither is clearly right. The suite runs before every merge that touches what Jev is told.
-
-The arena ([scripts/arena.js](scripts/arena.js), [scripts/lib/arena.js](scripts/lib/arena.js)) stages drills on a separate server, such as a live blaze spawner, a wither skeleton pair or a hoglin herd. Each drill runs the real survival and hunting code against the encounter and measures damage, time to kill, rods taken and deaths. `ARENA_LOADOUT=trial` uses the kit trials actually carry. `ARENA_PREFER` forces one tactic, to measure it alone. The arena's rows are quoted to Jev in the option descriptions ("as measured"). Note 606 built four player tactics against blazes (a box with a window, lighting the spawner, a corner ambush, retreating to heal). None beat walking straight in (`close_in`) at a live four-blaze spawner. The ones that were safe once set up, but killed nothing, are offered with their numbers. The ones that could not be done under fire are offered only in the arena.
-
-Stage saves ([scripts/trials/checkpoint.sh](scripts/trials/checkpoint.sh), [start-stage.sh](scripts/trials/start-stage.sh)) let most trials start at the hard part. Every 30 seconds, each trial's world and bot state go into a ring of snapshots. When the bot dies, the last three are kept. The first time a trial reaches the Nether or a fortress, a snapshot is promoted to a stage save. `start-stage.sh <port> fortress` starts a new trial from the least-used save. [start-fresh.sh](scripts/trials/start-fresh.sh) starts one from a first-days world instead.
-
-Trail maps ([scripts/trials/trail-map.js](scripts/trials/trail-map.js), note 562) are one PNG per trial: a top-down map of the ground it walked, read from the server's saved region files, with a side view underneath. The path is colored by what the bot was doing, with a dot each minute, deaths and mobs marked, and the audit's flags in the header. You can see at a glance when a bot is pacing a bridge, stuck on a pillar or circling a fortress wall. They are written with a pure-JS PNG writer and no new dependencies. The human user especially liked these.
-
-The progress audit ([scripts/trials/progress-audit.js](scripts/trials/progress-audit.js), notes 558, 573, 598) reports, per trial over a recent window:
-
-- Where the trial is, and how long since its last milestone.
-- Minutes by step or rung.
-- New ground covered against ground walked before.
-- The questions asked most and their commonest answer.
-- The loop measures: `reaskAfterHold`, `quickNothing` (answers that came back within seconds with nothing to show), `stallShare`, `waitShare`, the stance rate while nothing changes, and the longest `none_good` run.
-
-Each flag states its threshold. `--cohort <time>` sums the measures over every trial before and after a deploy. That is how we check whether a fix worked. Note 611 used it to trace a deploy after which re-asks following a hold jumped from about 7 an hour to about 103.
-
-For death replays, trial servers run Fabric with ServerReplay, which records the bot from join to leave. [scripts/trials/death-camera.js](scripts/trials/death-camera.js) writes a third-person camera path around each death into the replay, so ReplayMod can render real footage of what happened. [scripts/trials/highlights.js](scripts/trials/highlights.js) does the same for a day's notable moments: blaze kills and rods, fights won, fireballs sent back, a fresh world's first Nether and fortress, and deaths by kind. Each one comes with Jev's call and its probability, for captions.
-
-Supporting scripts:
-
-- [watch.sh](scripts/trials/watch.sh) returns when a trial's verdict is done or has failed by a death or a loop. Each check has a two-minute limit; a check that hung once kept it silent for five hours while trials failed.
-- [supervisor.sh](scripts/trials/supervisor.sh) restarts a bot whose flight record goes quiet for 60 seconds.
-- [scripts/midgame.js](scripts/midgame.js) starts a trial and gives it a verdict. It also makes a watching player (`TRIAL_WATCHER`, DoloresDoodle by default) an operator on every trial server, so the human can spectate ([spectate.sh](scripts/trials/spectate.sh)).
-- [setup.sh](scripts/trials/setup.sh) builds the trial servers from scratch: Java 25, the 26.1.2 server, Fabric and ServerReplay.
-
-The ports and server folders are listed in [scripts/README.md](scripts/README.md).
-
-## Running many trials at once
-
-We ran 14 to 20 trials at a time on one 16-core machine. Some of what that involved:
-
-- CPU runs out first. Twenty trials saturated 16 cores, and bots stalled for 2 to 4 seconds at a time, which is fatal in a fight. The cap became about 14, and the ReplayMod client is closed when not in use. The human user later asked for 7, to keep the machine usable.
-- Disk fills quietly. Death snapshots reached 53 GB (190 deaths in a day). Now a death keeps three snapshots for six hours, and the oldest go first when free space drops below 25 GB ([checkpoint.sh](scripts/trials/checkpoint.sh)).
-- On macOS, a subagent's `pkill -f ... -P 1` killed every process with "1" in its command line, including every trial server. Agents now stop only the exact process IDs they started, and restarts go through the quiet-restart file. Never pattern-kill processes.
-- The decision service can go down. During outages (503s and 520s) the bot walks each question's fallback and says so once in chat. Deploys and triage pause until the service is healthy. Deaths during an outage say nothing about Jev, so they are not triaged.
-- A watcher needs its own watchdog. Any check that can hang needs a time limit (see `watch.sh`).
-- Slow answers usually come from the service. Prompt size made no difference: note 614 found stance questions of 1,500 and 8,000 tokens equally slow in the same minute, and equally fast a minute later.
-
-## What did not work
-
-Confidence gates on play decisions handed an unsure pick to rules for fifteen seconds, so the rules played most of the hard moments. Taking Jev's pick at any confidence, with honest prices, did better.
-
-Reflexes that ran before the question pre-empted Jev in exactly the moments that mattered, and several deaths started with a reflex (note 548). They became questions, with code acting only as the fallback.
-
-Each feature kept its own "tried here" list. There were seven or more, each blind to the others, and they produced loops of thousands of re-asks (note 571). One ledger replaced them.
-
-Holds used to run on a clock. Asking a held stance again every fifteen seconds produced 48 identical answers over a crossbow piglin that never shot (note 590). Holds now end on observed change.
-
-Prices were once taken from the wrong fight. Quoting the arena's median against three distant blazes to a bot facing four at a spawner made `close_in` look cheap (note 602). Prices now come from the fight at hand.
-
-Boxing in, lighting the spawner and corner ambushes are safe, but at a live spawner they don't produce rods (note 606). They are still offered, with their measured numbers.
-
-A second opinion from a generative model on recovery decisions agreed with Jev in fourteen seconds at a hundred times the cost. It was removed ([How Jev thinks](docs/how-jev-thinks.md#when-things-go-wrong)).
-
-Judging trials by deaths alone missed several of the worst trials. They never died; they walked in circles for an hour. The progress audit and trail maps now look for that.
+- CPU runs out first. Twenty trials saturated 16 cores and bots stalled 2 to 4 seconds at a time, which kills them in fights. About 14 is the practical limit.
+- Disk fills quietly. Death snapshots reached 53 GB in a day; they are now kept for six hours with a free-space floor.
+- On macOS, `pkill -f ... -P 1` matches far more than intended and once killed every trial server. Stop processes by PID only.
+- The decision service has outages. The bot uses fallbacks and says so in chat; deaths during an outage aren't triaged.
+- Anything that watches trials needs a timeout. A hung check once kept the watcher silent for five hours.
 
 ## Code map
 
 | Area | Where |
 | --- | --- |
-| Every question Jev is asked; `decide`, `none_good`, escalation | [src/decisions/](src/decisions/index.js) |
-| The TypeSafe client | [src/typesafe.js](src/typesafe.js) |
-| Who gets the turn (`turn_priority`) | [src/arbiter.js](src/arbiter.js) |
-| The ledger of what was tried | [src/tried.js](src/tried.js), [src/decisions/repeats.js](src/decisions/repeats.js) |
-| Stance holds | [src/holds.js](src/holds.js) |
-| Stall detection and waits | [src/stillness.js](src/stillness.js) |
-| Survival, stances, the body's dangers | [src/survival.js](src/survival.js), [src/body.js](src/body.js), [src/vitals.js](src/vitals.js) |
-| Fight prices | [src/combat-estimate.js](src/combat-estimate.js), [src/blaze-stand.js](src/blaze-stand.js), [src/risk.js](src/risk.js) |
-| The game ladder and its rungs | [src/game-progress.js](src/game-progress.js), [src/strategy.js](src/strategy.js), [src/work.js](src/work.js) |
-| Nether travel and fortresses | [src/nether-travel.js](src/nether-travel.js), [src/fortress-map.js](src/fortress-map.js) |
-| Movement and pathfinding rules | [src/movement.js](src/movement.js), [src/terrain.js](src/terrain.js), [src/motion.js](src/motion.js) |
-| Flight recording | [src/recorder/](src/recorder/index.js) |
-| Trial scripts | [scripts/trials/](scripts/trials/), [scripts/midgame.js](scripts/midgame.js), [scripts/first-days.js](scripts/first-days.js) |
+| Questions, `none_good`, escalation | [src/decisions/](src/decisions/index.js) |
+| TypeSafe client | [src/typesafe.js](src/typesafe.js) |
+| Turn arbiter | [src/arbiter.js](src/arbiter.js) |
+| Ledger and holds | [src/tried.js](src/tried.js), [src/holds.js](src/holds.js) |
+| Survival and body dangers | [src/survival.js](src/survival.js), [src/body.js](src/body.js) |
+| Fight prices | [src/combat-estimate.js](src/combat-estimate.js), [src/blaze-stand.js](src/blaze-stand.js) |
+| Game ladder | [src/game-progress.js](src/game-progress.js), [src/work.js](src/work.js) |
+| Nether travel | [src/nether-travel.js](src/nether-travel.js), [src/fortress-map.js](src/fortress-map.js) |
+| Movement | [src/movement.js](src/movement.js), [src/motion.js](src/motion.js) |
+| Trials | [scripts/trials/](scripts/trials/), [scripts/midgame.js](scripts/midgame.js) |
 
-Further reading:
-
-- [How Jev thinks](docs/how-jev-thinks.md): one request, end to end.
-- [Every question](docs/decisions.md): the generated list of questions and options.
-- [Rule audit](docs/rule-audit.md): what code still decides.
-- [Trial notes](docs/trial-notes.md): the lab notebook.
-- [docs/](docs/README.md): everything else.
+More in [docs/](docs/README.md), including the [rule audit](docs/rule-audit.md) of what code still decides.
 
 ---
 
 ## Using Jev as a chat companion
 
-The same bot is a Minecraft companion you talk to in game chat. Ask it to gather, craft, build, find a biome, or chase a long-term goal. Every judgment about what you meant goes through the same questions and is logged.
+The same bot takes requests in game chat: gather, craft, build, explore, or pursue a long-term goal.
 
-### Quick start
-
-You need:
-
-- Node.js 22 or newer.
-- A Minecraft Java Edition 26.1 server you run. The repository does not include one.
-- A TypeSafe API key, or an OpenRouter key.
+You need Node.js 22+, a Minecraft Java 26.1 server you run, and a TypeSafe or OpenRouter API key.
 
 ```sh
 git clone https://github.com/mrubens/jevcraft.git
 cd jevcraft
 npm ci
-cp .env.example .env
+cp .env.example .env   # set TYPESAFE_API_KEY and MC_HOST/MC_PORT
+npm start
 ```
 
-Edit `.env`:
-
-```dotenv
-TYPESAFE_API_KEY=your_typesafe_key
-# or OPENROUTER_API_KEY=your_openrouter_key
-
-MC_HOST=localhost
-MC_PORT=25565
-MC_VERSION=26.1
-MC_USERNAME=Jev
-MC_AUTH=offline
-```
-
-Use `MC_AUTH=microsoft` on an authenticated server, with the bot's own account. Then start the bot with `npm start`, join the same server, and try `Jev come here`, `Jev craft me a chest` or `Jev build a house`. The console prints each step and the decision behind it.
-
-### Talking to Jev
-
-Start a message with "Jev" or the bot's username. There is no fixed vocabulary; these are examples:
+Use `MC_AUTH=microsoft` on an authenticated server, with the bot's own account. Start messages with "Jev":
 
 | Request | What it does |
 | --- | --- |
-| `Jev follow me` | Follow until stopped or replaced. |
+| `Jev follow me` | Follow until stopped. |
 | `Jev get me a pumpkin` | Find, collect and deliver one. |
-| `Jev give me full diamond armor and a bed` | Plan all five items together, sharing materials. |
-| `Jev get me 32 purple concrete` | Craft the powder, harden it in water, deliver. |
-| `Jev find a cherry biome` | Explore using observed biome data. |
-| `Jev build a small cherry mansion` | Design and build a structure. |
-| `Jev find a way to the Nether` | Build or find a portal and cross. |
-| `Jev status` / `stop` / `resume` | Report, pause or continue the current task. |
+| `Jev give me full diamond armor and a bed` | Plan all items together. |
+| `Jev find a cherry biome` | Explore. |
+| `Jev build a small cherry mansion` | Design and build. |
+| `Jev your dream is to beat the game` | A standing goal, pursued when idle. |
+| `Jev remember this as home` / `Jev go home` | Named places. |
+| `Jev status` / `stop` / `resume` | Control the current task. |
 
-"For me" means delivery: `Jev craft me a chest` brings it to you. A new request replaces the active one. Tasks survive reconnects and restarts; state lives in `.bot-state/`. When Jev is unsure what you meant, it asks: "Did you mean short grass or grass block?" The confidence it needs scales with the stakes: 0.5 to come here, 0.65 for builds and the Nether, 0.75 to forget something.
+A new request replaces the current one, and tasks survive restarts (state is in `.bot-state/`). When a request is ambiguous, Jev asks. Building in Survival uses templates or 45 ready-made designs; in Creative with an OpenRouter key, a generative model can draw a schematic. Server commands work only for players in `MC_COMMAND_USERS`, and are never used on the bot's own initiative. Settings are in [.env.example](.env.example).
 
-### Dreams
-
-Give Jev a standing goal and it pursues it whenever nothing else needs it:
-
-```text
-Jev your dream is to beat the game
-Jev your dream is to build a village
-Jev set your dream aside
-Jev chase your dream
-```
-
-To beat the game, Jev follows the survival ladder: stone tools, iron, a shield, a bucket, a home base with a bed, farm and stash chest, iron armor, then the Nether, blaze rods, Eyes of Ender, the stronghold and the dragon. Progress is read from the world, never from a counter.
-
-For a village, Jev picks the next part from what already stands, choosing from 45 validated designs.
-
-A chat request always comes first, and the dream resumes afterward.
-
-### Memory
-
-```text
-Jev remember this as home
-Jev go home
-Jev remember I prefer cherry planks
-Jev make another one like last time
-Jev forget home
-```
-
-Places carry their dimension. Jev also learns a soft wood preference from ordinary requests. Notebooks are per player, in `.bot-state/*-memory.json`.
-
-### Building
-
-In Creative with an OpenRouter key, a generative designer draws a schematic from the request and a terrain survey. Code validates it, and Jev judges whether it answers the request before any blocks are placed. In Survival, Jev configures cottage, mansion or tower templates, or picks from 45 ready-made designs in `data/schematics`. Structures go up to 25 × 16 × 25 in the ordinary case, with at most 16 materials. Jev never builds over a structure it did not place.
-
-### Configuration
-
-| Setting | Purpose |
-| --- | --- |
-| `TYPESAFE_API_KEY` | Use Jev through TypeSafe. |
-| `OPENROUTER_API_KEY` | Use Jev through OpenRouter, and enable the Creative designer. |
-| `JEV_PROVIDER` | Force `typesafe` or `openrouter`. |
-| `TYPESAFE_DEFAULT_MODEL` | Default `jev-latest`. |
-| `OPENROUTER_JEV_MODEL` | Default `typesafe/jev-1.13`. |
-| `BUILD_DESIGNER` | `auto`, `jev` (templates only) or `openrouter`. |
-| `OPENROUTER_BUILD_MODEL` | The generative building model; default `anthropic/claude-opus-5.5`. |
-| `RECOVERY_ADVISER` | `jev` (default) or `off`. |
-| `JEV_ARBITER` | Live by default; `shadow` keeps the old turn order and logs Jev's ruling beside it. |
-| `JEV_FLIGHT` | `0` turns off the flight recording. |
-| `MC_COMMAND_USERS` | Players allowed to ask for server commands (see below). |
-
-See [.env.example](.env.example) for the rest. Keep credentials in `.env`, which git ignores.
-
-Server commands work when `MC_COMMAND_USERS` is set and the bot has been given permissions. Requests like `Jev make it daytime` are translated into server commands. Jev walks the server's own command tree and checks the result against the request before running it. Commands are never used on the bot's own initiative.
-
-### Seeing what Jev decided
-
-The console prints a JSON line per step, with the decision, its path and Jev's probabilities. Each task keeps its decision trail in `.bot-state/`, including one-way steps and fallback decisions.
-
-The flight recording is in `.bot-state/flight/`, kept for a day, and `node scripts/audit-day.js` audits a day for standing still, retries and damage. Calls, tokens and latency per run go to the run ledger, `.bot-state/run-ledger.md`.
-
-### Development
+## Development
 
 ```sh
-npm test                           # about 2,000 tests, no server or key
-npm run plan -- iron_pickaxe 1     # the recipe planner, offline
-node scripts/replay-suite.js       # recorded decisions, asked live
-node scripts/eval-intents.js       # chat routing, asked live
-node scripts/eval-decisions.js     # trade-off judgments, asked live
+npm test                        # about 2,000 tests, no server or key
+node scripts/replay-suite.js    # recorded decisions, asked live
 ```
 
-Gameplay tests, trials and the arena need a separate, disposable server. [scripts/README.md](scripts/README.md) lists every script and its port. Contributions are most useful when they turn a concrete failure into a test and a general fix; see [CONTRIBUTING.md](CONTRIBUTING.md). Flight records and logs can contain chat, player names and coordinates, so review them before sharing.
-
-The [roadmap](ROADMAP.md) has what comes next. jevcraft is released under the [MIT License](LICENSE).
+Gameplay tests, trials and the arena need a separate, disposable server. See [CONTRIBUTING.md](CONTRIBUTING.md). Flight records and logs can contain chat, player names and coordinates, so review them before sharing. The [roadmap](ROADMAP.md) has what's next. MIT License ([LICENSE](LICENSE)).
