@@ -325,7 +325,9 @@ test('the way into the Nether is asked again every twenty working minutes, with 
   assert.match(offered.cast_frame, /The 8 iron ingots carried make 2 more buckets, about 4 trips with them/);
   assert.match(offered.craft_buckets, /Make 2 more buckets first from the iron ingots carried \(three each, 6 of the 8\)/);
   // mid-244-j: each trip's time said, either way; from the frame, the climb in it (note 470).
-  assert.match(offered.craft_buckets, /about 4 trips \(about \d+ minutes of trips\), against 10 \(about \d+ minutes of trips\).*A trip to the nearest known lava, 120 blocks from the frame, is about 7 minutes there and back, a staircase of about 6 minutes of it/);
+  // The same trip, in the same words, as the cast's (note 553).
+  assert.match(offered.craft_buckets, /about 4 trips \(about 28 minutes of trips\), against 10 \(about 69 minutes of trips\).*A trip to the nearest known lava, 120 blocks from the frame, is about 7 minutes there and back a trip: the walk 56 seconds, and the lava 118 blocks below, a staircase of about 6 minutes each trip\./);
+  assert(offered.cast_frame.includes('about 7 minutes there and back a trip: the walk 56 seconds, and the lava 118 blocks below, a staircase of about 6 minutes each trip, 69 minutes in all'), offered.cast_frame);
   // Moved beside the lava: the frame up here is left, and the new one goes down there.
   assert.equal(goal.portalMethod.kind, 'cast');
   assert.deepEqual(goal.portalMethod.near, { x: 20, y: -54, z: 40 });
@@ -538,12 +540,53 @@ test('at the lava with the frame far above, the cast beside the lava is offered 
   assert.match(offered.cast_at_lava, /and 124 blocks from the frame begun/);
   assert.match(offered.cast_at_lava, /The frame begun, 5 of ten standing, is left as it stands and all ten are cast down there/);
   assert.match(offered.cast_frame, /5 of the ten to cast \(5 standing/);
-  assert.match(offered.cast_frame, /124 blocks from the frame \(a lava pool remembered\): about 7 minutes there and back a trip: the walk 58 seconds, and the lava 122 blocks below, a staircase of about 6 minutes each trip, 35 minutes in all/);
-  assert.doesNotMatch(offered.cast_frame, /about \d+ seconds there and back a trip/);
-  assert.match(offered.cast_frame, /So far 2 trips for lava have been made, about 25 minutes of working time each/);
+  // The trips made are the price of a trip, the reckoning beside them (note 553).
+  assert.match(offered.cast_frame, /124 blocks from the frame \(a lava pool remembered\): about 25 minutes a trip, as the 2 trips for lava made so far took in working time \(from leaving the frame to pouring\), against about 7 minutes there and back reckoned: the walk 58 seconds, and the lava 122 blocks below, a staircase of about 6 minutes each trip, 125 minutes in all/);
+  assert.doesNotMatch(offered.cast_frame, /about \d+ seconds there and back/);
   // The diamond route, with the same trip to set against the cast's.
   assert.match(offered.build_new, /the 5 obsidian wanted are about 60 seconds of pouring and mining there, all carried to the frame at once: the bot is beside that lava now, so one way to the frame, about 6 minutes with a staircase of about 6 minutes/);
-  assert.match(offered.build_new, /The cast fetches a bucket a block: 5 trips of the same, about 35 minutes/);
+  assert.match(offered.build_new, /The cast fetches a bucket a block: 5 trips of the same, about 125 minutes/);
+});
+
+test('every way prices the lava trip alike: from the frame to the lava that serves the next bucket, at what the trips made took; the lava chosen before, taken, is said so', async () => {
+  // mid-242-aa (note 553): the held cast_at_lava option said the lava chosen before was seven blocks off and "a trip for
+  // lava is a few seconds" once no bucket came from it; each came from a pool forty blocks off, about four minutes a
+  // trip over ten trips; cast_frame beside it said eighty seconds and craft_buckets the measured four minutes.
+  const { portalMethod, nearestLava, lavaGone } = require('../src/work');
+  const { Task } = require('../src/skills');
+  const { bot, w } = castingBot({ bucket: 1, water_bucket: 1, cobblestone: 64, flint_and_steel: 1, iron_ingot: 4 });
+  const frame = newFrame('x');
+  frame.blocks.slice(0, 3).forEach(p => w.set(new Vec3(p.x, p.y, p.z), 'obsidian'));
+  // The lava chosen before, beside the frame: taken, flowing lava left where its source was.
+  const near = { x: 12, y: 63, z: 24 };
+  const blockAt = bot.blockAt;
+  bot.blockAt = p => p.floored().equals(new Vec3(near.x, near.y, near.z)) ? { name: 'lava', position: p.floored(), boundingBox: 'empty', getProperties: () => ({ level: 2 }) } : blockAt(p);
+  // A source in a cave twenty-four below, one open cell over it that no bucket reaches from, and the pool forty off
+  // on open ground, its edge dry to stand on.
+  const deep = new Vec3(14, 40, 22), pool = new Vec3(50, 63, 20);
+  w.set(deep, 'lava'); w.set(deep.offset(0, 1, 0), 'air'); w.set(pool, 'lava');
+  const lavaId = bot.registry.blocksByName.lava.id;
+  bot.findBlocks = ({ matching }) => matching === lavaId ? [deep, pool] : [];
+  const goal = { portalFrame: frame,
+    portalMethod: { kind: 'cast', near: { ...near }, activeMs: 21 * 60000, reasked: 0, lavaTrips: { n: 10, ms: 39 * 60000 }, from: { obsidian: 0, diamonds: 0, diamondPickaxe: false } } };
+  assert.deepEqual(nearestLava(bot, goal)?.at, { x: 50, y: 63, z: 20 }, 'the lava a bucket can be filled from, not the nearer one no scoop reaches');
+  assert.equal(lavaGone(bot, near), true);
+  let offered = null;
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cast_at_lava', confidence: 0.6 } } }; } };
+  await portalMethod(bot, task, goal, () => {});
+  const trip = 'about 4 minutes a trip, as the 10 trips for lava made so far took in working time (from leaving the frame to pouring), against about 19 seconds there and back reckoned';
+  for (const key of ['cast_at_lava', 'cast_frame', 'build_new', 'craft_buckets']) assert(offered[key].includes(trip), `${key}: ${offered[key]}`);
+  assert.doesNotMatch(offered.cast_at_lava, /few seconds/);
+  assert.match(offered.cast_at_lava, /beside the lava chosen before .* but that lava has no source left to scoop .*: each bucket is fetched from the nearest lava that serves, 40 blocks from the frame begun, about 4 minutes a trip/);
+  assert.match(offered.cast_frame, /The nearest known lava is 40 blocks from the frame \(in sight about here\): about 4 minutes a trip.*, 27 minutes in all/);
+  assert.match(offered.build_new, /7 trips of the same, about 27 minutes/);
+  assert.match(offered.craft_buckets, /with 2 buckets the 7 lava still to fetch is about 4 trips \(about 16 minutes of trips\), against 7 \(about 27 minutes of trips\)/);
+  // Its own block still a source, the lava chosen is not gone; nor when it is out of sight.
+  bot.blockAt = p => p.floored().equals(new Vec3(near.x, near.y, near.z)) ? { name: 'lava', position: p.floored(), getProperties: () => ({ level: 0 }) } : blockAt(p);
+  assert.equal(lavaGone(bot, near), false);
+  bot.blockAt = p => p.floored().equals(new Vec3(near.x, near.y, near.z)) ? null : blockAt(p);
+  assert.equal(lavaGone(bot, near), false);
 });
 
 test('three walks to the lava Jev chose that come no nearer ask the way again, the walks said, and the lava is kept if Jev keeps it', async () => {
@@ -632,7 +675,7 @@ test('a kept lava whose staircase rests by its landing, not its area, holds unti
   const { setAside } = require('../src/progress');
   const { landingKey } = require('../src/tunneling');
   const { Task } = require('../src/skills');
-  const { bot } = castingBot({ bucket: 1, water_bucket: 1, cobblestone: 64, flint_and_steel: 1, stone_pickaxe: 1, iron_ingot: 3 });
+  const { bot, w } = castingBot({ bucket: 1, water_bucket: 1, cobblestone: 64, flint_and_steel: 1, stone_pickaxe: 1, iron_ingot: 3 });
   bot.findBlocks = () => [];
   bot.on = () => {}; bot.removeListener = () => {}; bot.off = () => {};
   bot.pathfinder.setGoal = () => {}; bot.pathfinder.stop = () => {};
@@ -640,6 +683,7 @@ test('a kept lava whose staircase rests by its landing, not its area, holds unti
   bot.pathfinder.goto = async () => { walks++; throw new Error('No path to the goal'); };
   bot.entity.position = new Vec3(-522.5, 64, -52.5);
   const near = { x: -517, y: 53, z: -60 };
+  w.set(new Vec3(near.x, near.y, near.z), 'lava'); // the lava itself, a source still (note 553)
   const why = 'paced the same few cells round where the round began, 12 blocks from it';
   const goal = { landmarks: [{ kind: 'lava_pool', ...near, dimension: 'overworld' }],
     portalMethod: { kind: 'cast', near: { ...near }, nearByStairs: true, nearFailed: { walks: 3, best: 14, now: 14, stopped: `the staircase set aside: ${why}`.slice(0, 80) }, activeMs: 0, reasked: 0, from: { obsidian: 0, diamonds: 0, diamondPickaxe: false } } };

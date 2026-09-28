@@ -238,6 +238,30 @@ function tripsSoFar(method) {
   const each = Math.round(t.ms / t.n / 1000);
   return ` So far ${t.n} trip${t.n === 1 ? '' : 's'} for lava ${t.n === 1 ? 'has' : 'have'} been made, about ${duration(each)} of working time each.`;
 }
+// The trip for lava, one measure for every way into the Nether: from the
+// frame (or here, none begun) to the lava that serves the next bucket and
+// back, the climb in it; and once trips have been made for this frame,
+// their working time each, which is what a trip has cost, pouring,
+// scooping and the ways round included. mid-242-aa was told a trip was "a
+// few seconds" (the lava chosen before, no longer scooped from), eighty
+// seconds (the pool that served, reckoned) and four minutes (measured) in
+// one question, three prices for the same fetch (note 553).
+function fetchTrip(from, lava, method = null) {
+  if (!lava) return null;
+  const walk = Math.round(lava.distance * 2 / 4.3);
+  const trip = lavaTrip(from, lava) || { distance: lava.distance, rise: 0, below: 0, walk, climb: 0, seconds: walk };
+  const t = method?.lavaTrips;
+  if (!t?.n) return trip;
+  return { ...trip, reckoned: trip.seconds, made: t.n, seconds: Math.max(1, Math.round(t.ms / t.n / 1000)) };
+}
+// The trip said, the same words wherever it is said.
+function fetchSays(trip) {
+  if (!trip.made) return tripSays(trip);
+  return `about ${duration(trip.seconds)} a trip, as the ${trip.made} trip${trip.made === 1 ? '' : 's'} for lava made so far took in working time (from leaving the frame to pouring), against ${tripSays({ ...trip, seconds: trip.reckoned }).replace(' there and back a trip', ' there and back reckoned')}`;
+}
+// The trips' time together, at the trip's one price.
+const tripsCost = (trip, n) => duration(n * trip.seconds);
+
 // How many trips for lava the cast still takes.
 function castTrips({ obsidian = 0, standing = 0, buckets = 0, lavaBuckets = 0 }) {
   const cast = Math.max(0, 10 - standing - obsidian), carriers = buckets + lavaBuckets, toFetch = Math.max(0, cast - lavaBuckets);
@@ -250,7 +274,8 @@ function castTrips({ obsidian = 0, standing = 0, buckets = 0, lavaBuckets = 0 })
 // told "10 of the ten to cast" with 3 standing (2026-09-27).
 // The lava's distance and each trip are from the frame (`from`), or from
 // here when none is begun (note 470).
-function castSays({ obsidian = 0, standing = 0, waterBucket = false, buckets = 0, lavaBuckets = 0, iron = 0, walls, blocks = 0, lighter = false, lava = null, from = null, frameBegun = false, method = null }) {
+// The trip is the one every way says (fetchTrip), passed in when it is.
+function castSays({ obsidian = 0, standing = 0, waterBucket = false, buckets = 0, lavaBuckets = 0, iron = 0, walls, blocks = 0, lighter = false, lava = null, from = null, frameBegun = false, method = null, trip = fetchTrip(from, lava, method) }) {
   const { cast, carriers, toFetch, trips } = castTrips({ obsidian, standing, buckets, lavaBuckets });
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   // Each trip carries one lava per bucket held, and the iron in hand makes
@@ -260,8 +285,7 @@ function castSays({ obsidian = 0, standing = 0, waterBucket = false, buckets = 0
     ? `Each block is one lava bucket and each trip carries one lava per bucket held, so with ${plural(carriers, 'bucket')} that is about ${plural(trips, 'trip')} to lava.`
     : `With no bucket carried one has to be made first; each block is one lava bucket, so with one that is ${plural(trips, 'trip')} to lava.`) +
     (more && toFetch ? ` The ${iron} iron ingots carried make ${plural(more, 'more bucket')}, about ${plural(Math.ceil(toFetch / (Math.max(1, carriers) + more)), 'trip')} with them.` : '');
-  const trip = lava && (lavaTrip(from, lava) || { distance: lava.distance, rise: 0, below: 0, walk: Math.round(lava.distance * 2 / 4.3), climb: 0, seconds: Math.round(lava.distance * 2 / 4.3) });
-  const lavaSay = lava ? `The nearest known lava is ${trip.distance} blocks ${frameBegun ? 'from the frame' : 'away'} (${lava.how}): ${tripSays(trip)}, ${duration(trip.seconds * trips)} in all.${tripsSoFar(method)}`
+  const lavaSay = lava && trip ? `The nearest known lava is ${trip.distance} blocks ${frameBegun ? 'from the frame' : 'away'} (${lava.how}): ${fetchSays(trip)}, ${tripsCost(trip, trips)} in all.`
     : 'No lava is known nearby: a pool has to be found first.';
   return `Build a portal frame of its own and cast each missing block in place, with no diamond pickaxe: the bot walls a frame slot round with temporary blocks, pours a lava bucket into it, pours water on top and takes the water back, and the lava source turns to obsidian. ${cast} of the ten to cast (${standing ? `${standing} standing, ` : ''}${obsidian} obsidian carried, placed as it is). ` +
     `Needs: a water bucket (${waterBucket ? 'one carried' : 'none carried'}); a lava bucket for each block (${plural(buckets, 'empty bucket')} and ${lavaBuckets} full of lava carried; a bucket is three iron ingots, ${iron} carried); ` +
@@ -549,4 +573,4 @@ function wetAbout(bot, p) {
   return false;
 }
 
-module.exports = { castFrame, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, castTrips, duration, view };
+module.exports = { castFrame, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, fetchTrip, fetchSays, tripsCost, castTrips, duration, view };

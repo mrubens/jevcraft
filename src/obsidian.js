@@ -86,6 +86,15 @@ function scoopSpots(bot, surface, { want = 1, limit = 8 } = {}) {
     .sort((a, b) => Math.min(b.reach, want) - Math.min(a.reach, want) || a.feet.distanceTo(here) - b.feet.distanceTo(here)).slice(0, limit);
 }
 
+// The surface sources a bucket can still take: those in reach from a
+// scooping spot (scoopSpots). The rest are lava in sight that no fetch
+// fills a bucket from, as a pool's middle is once its edge is taken.
+function scoopable(bot, surface = poolSurface(bot)) {
+  if (!surface.length) return [];
+  const spots = scoopSpots(bot, surface, { want: 1, limit: 64 });
+  return surface.filter(q => spots.some(s => s.feet.y > q.y && s.feet.offset(0.5, 1.62, 0.5).distanceTo(q.offset(0.5, 0.5, 0.5)) <= REACH));
+}
+
 // Crust blocks safe to open: obsidian with nothing molten beside or beneath,
 // so opening one lets no lava in and the drop lands on a floor.
 function safeCrust(bot, origin, { distance = 12, count = 64 } = {}) {
@@ -401,4 +410,4 @@ function noLavaWay(bot, goal, surface = []) {
   return new WaysResting(`${known}, and the deep lava on all sixteen headings near and far rests ${rests(deepUntil)}`, Math.min(poolUntil, deepUntil));
 }
 
-module.exports = { makeObsidian, collectLava, poolSurface, pourSpots, scoopSpots, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };
+module.exports = { makeObsidian, collectLava, poolSurface, pourSpots, scoopSpots, scoopable, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };
