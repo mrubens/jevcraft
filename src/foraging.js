@@ -254,7 +254,7 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   // Herds seen earlier and out of view now (sightings.js): a walk of known
   // length, where the search is a wander.
   const sightings = require('./sightings');
-  const herds = ['cow', 'sheep'].flatMap(kind => sightings.sighted(bot, goal, kind).filter(s => s.distance > 32 && s.distance <= 192).map(s => ({ kind, s })))
+  const herds = ['cow', 'sheep', 'rabbit'].flatMap(kind => sightings.sighted(bot, goal, kind).filter(s => s.distance > 32 && s.distance <= 192).map(s => ({ kind, s })))
     .sort((a, b) => a.s.distance - b.s.distance).slice(0, 3);
   herds.forEach(({ kind, s }, i) => {
     choices[`seen_food_${i}`] = { description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo, ...walkFacts(s.distance, s) },

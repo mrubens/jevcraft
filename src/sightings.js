@@ -10,7 +10,10 @@
 // Chickens and pigs are never food (protected-animals.js), so not noted.
 // And hoglins, the Nether's meat, for when food is short there
 // (nether-travel.js).
-const KINDS = ['sheep', 'cow', 'hoglin'];
+// Rabbits too: the food of snowy and desert ground, hunted there when no
+// cow is about (mid-231-r ate one a minute before sealing in, and its
+// pocket was told of no food for an hour; note 538).
+const KINDS = ['sheep', 'cow', 'rabbit', 'hoglin'];
 const FLOCK = 24;
 const KEEP_MS = 30 * 60000;
 const EVERY_MS = 15000;

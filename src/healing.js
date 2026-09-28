@@ -61,7 +61,7 @@ function foodSources(bot, goal) {
   });
   guard(() => {
     const sightings = require('./sightings');
-    for (const kind of overworld ? ['cow', 'sheep'] : ['hoglin']) {
+    for (const kind of overworld ? ['cow', 'sheep', 'rabbit'] : ['hoglin']) {
       const s = sightings.sighted(bot, goal, kind).find(f => f.distance > 32);
       if (s) found.push({ kind: 'herd', animal: kind, count: s.count, points: (s.count || 1) * (MEAT_POINTS[kind] || 6), distance: s.distance, at: { x: s.x, y: s.y, z: s.z }, sighting: s, says: s.says });
     }

@@ -48,7 +48,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `hunt_\d+` (pattern) | obtain_food | hunt this animal | an adult food animal in view is reachable on safe surface ground; the nearest hostile to it is said |
 | `go_home_for_food` | obtain_food | walk home and eat from its stores | the base has bread, ripe wheat or a cow to spare within reach |
 | `village_food` | obtain_food | take ripe crops and hay from a remembered village | a village with crops or hay is remembered within reach |
-| `seen_food_\d+` (pattern) | obtain_food | walk back to animals seen earlier | a herd of cows, pigs, chickens or sheep seen in the last half hour, now out of view, 32 to 192 blocks off (the nearest three) |
+| `seen_food_\d+` (pattern) | obtain_food | walk back to animals seen earlier | a herd of cows, sheep or rabbits seen in the last half hour, now out of view, 32 to 192 blocks off (the nearest three) |
 | `search_food` | obtain_food | walk to another dry area to look for animals | always |
 | `return_for_food` | obtain_food | go back through the portal for food | off the Overworld, unless Jev chose to go on in the Nether without it (keep_on, twenty minutes) |
 | `hoglin_food` | obtain_food | hunt a hoglin for porkchops | in the Nether, a hoglin in view or seen within 192 blocks; its drops, a one-hoglin fight estimate and the mobs about are said |
@@ -75,7 +75,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `pocket_next`
 
-**Sealed in a pocket: stay, leave, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, dig a passage out away from a spawner, a creeper or the mob at the wall, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
+**Sealed in a pocket: stay, leave, go out for food, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, dig a passage out away from a spawner, a creeper or the mob at the wall, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
 
 - When: Each survival step inside a sealed pocket, unless a mob is inside or at arm's length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.
 - Decision tree, choice; stakes medium; ledger kind `survival`
@@ -97,8 +97,16 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `tunnel_from_warden` | root | dig a passage out through the far wall, away from the warden, to beyond its boom, and go back to work from its end | a warden within thirty-two blocks, the bot not in water, digging and walking at hand, and the rock away from it safe to dig for at least four cells to a point seventeen or more blocks across from it (its boom reaches fifteen), twenty-four cells at most; said with the direction, the cells, about how long, the clearance, that digging is a vibration it follows, what a warden does, and the booms taken in the last minute |
 | `tunnel_out` | root | dig a passage out through the far wall, away from what keeps the pocket (a spawner in reach, a creeper, or the mob at the wall), and go back to work from its end | the bot not in water, digging and walking at hand, and the rock safe to dig for at least four cells: away from a mob spawner within sixteen blocks to a point seventeen or more across from it (and ten from a creeper about), twenty-four cells at most; else away from a creeper within sixteen blocks (the rule that keeps a door within six of one shut would refuse the doors) to ten or more from it; else away from the mob watching the pocket (not a warden) to ten or more from it; said with the direction, the cells, about how long, the clearance at its end, how long the same mob has kept the pocket, and that it stops, the bot still enclosed, if that kind of mob comes round toward its head within six blocks |
 | `dig_in_and_fight` | root | open the pocket's wall toward the blazes, one wide and two high, and fight them from inside | a blaze within twenty-four blocks, a sword or axe carried, digging at hand, and the wall toward them safe to dig with the pocket's rock on the other three sides and over it; said with the blocks, the tool, the seconds, how many would see in, what a blaze does, its fireball's chance to land by distance and its push, and the damage in the next fifteen seconds |
-| `stay` | root | stay in the pocket | always; said with what the place is (mobSourceAbout: a spawner in reach, a dungeon or mineshaft remembered within twenty-four, the mobs met and hits taken within sixteen in the last fifteen minutes), and at night with the minutes to dawn, the work they hold up, and why no night mine is on offer when it is not |
-| `leave` | root | open the pocket and go back to work | always; said with what the place is, as stay, the work named, and underground at night that the dark there is the same at any hour |
+| `stay` | root | stay in the pocket | always; said with what the place is (mobSourceAbout: a spawner in reach, a dungeon or mineshaft remembered within twenty-four, the mobs met and hits taken within sixteen in the last fifteen minutes), and at night with the minutes to dawn, the work they hold up, and why no night mine is on offer when it is not; by day with the daylight left and, hurt under eighteen hunger, that staying brings no health back |
+| `leave` | root | open the pocket and go back to work | always; said with what the place is, as stay, the work named, and underground at night that the dark there is the same at any hour; a shaft pocket with no side to open is left up through its cap, and a leave that finds no door rests a minute with why (note 538) |
+| `go_for_food` | root | open the pocket and go for food, the way chosen next | in the Overworld, day or night, hunger under eighteen and the safe food carried not enough to bring it there; said with the food known (in view, herds and rabbits seen, a village, home), health and whether it comes back, the daylight left, and what is outside (note 538) |
+| `cook_[a-z_]+` (pattern) | go_for_food | cook a carried ingredient | raw food and fuel are carried; the output is safe food |
+| `prepare_hunting_sword` | go_for_food | make a wooden sword to hunt with | animals are in view and no weapon is carried |
+| `hunt_\d+` (pattern) | go_for_food | hunt this animal | an adult food animal in view is reachable on safe surface ground; the nearest hostile to it is said |
+| `go_home_for_food` | go_for_food | walk home and eat from its stores | the base has bread, ripe wheat or a cow to spare within reach |
+| `village_food` | go_for_food | take ripe crops and hay from a remembered village | a village with crops or hay is remembered within reach |
+| `seen_food_\d+` (pattern) | go_for_food | walk back to animals seen earlier | a herd of cows, sheep or rabbits seen in the last half hour, now out of view, 32 to 192 blocks off (the nearest three) |
+| `search_food` | go_for_food | walk to another dry area to look for animals | always |
 
 ### `night_mine_target`
 

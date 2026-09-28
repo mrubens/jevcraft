@@ -5144,3 +5144,90 @@ test('a held stance no longer on offer scouts the run before it asks, as a new q
   assert.equal(scouted.length, 1, 'the run was looked for before the question');
   assert.equal(trees[0].retreat.description, 'scouted');
 });
+
+// mid-231-r (note 538): a shaft pocket dug on a snowy slope at dusk, 0.7
+// health, hunger 3, nothing to eat. Three days went by in it: by day it was
+// offered only staying and going back to the work, answered "none of these"
+// over and over, and the four leaves chosen were each refused as "threats
+// block the exits" with none in sight, the shaft having no side to open.
+function snowShaft({ health = 0.7, food = 3, timeOfDay = 4619, goal = {} } = {}) {
+  const origin = new Vec3(0, 81, 0), cap = origin.offset(0, 2, 0);
+  const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`]);
+  const block = p => open.has(`${p}`) || p.y >= 84 ? 'air' : p.equals(cap) ? 'cobbled_deepslate' : p.y < 78 ? 'stone' : 'snow_block';
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 }, entities: {}, health, food, registry: require('minecraft-data')('26.1'),
+    time: { timeOfDay }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'stone_axe', count: 1 }, { name: 'cobbled_deepslate', count: 62 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ name: block(p), boundingBox: block(p) === 'air' ? 'empty' : 'block', diggable: true, position: p }),
+    pathfinder: { movements: {}, getPathTo: () => ({ status: 'success', path: [] }), setGoal() {} },
+    world: { raycast: (from) => ({ intersect: from.offset(0.6, 0, 0) }) } });
+  const refuge = { origin: { ...origin }, dimension: 'overworld', shaft: true, top: { x: 0, y: 84, z: 0 } };
+  const dug = [], walked = [], explored = [];
+  const actions = { dig: async (b, t, p) => { dug.push([p.x, p.y, p.z]); open.add(`${p}`); },
+    navigate: async (b, t, g) => { walked.push([g.x, g.y, g.z]); }, explore: async (b, t, g, s, what) => { explored.push(what); } };
+  const survival = new Survival(bot, actions, { state: { shelters: [refuge] }, client: { systemOne: async () => ({}) } });
+  return { bot, survival, refuge, dug, walked, explored, goal: { kind: 'win', ...goal } };
+}
+
+test('sealed in a shaft by day, hurt and hungry with nothing to eat: going for food is a way out, the rabbits seen said, and staying says the daylight it spends', async () => {
+  const seen = { rabbit: [{ x: 0, y: 82, z: 80, count: 2, at: Date.now() - 60000, dimension: 'overworld' }] };
+  const { survival, goal } = snowShaft({ goal: { sightings: seen } });
+  let tree;
+  survival.decide = async (task, g, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['stay'], stale: false }; };
+  survival.wait = async () => {};
+  await survival.step(new Task('day'), goal, () => {});
+  assert(tree?.go_for_food, `going for food is offered (${Object.keys(tree || {}).join(', ')})`);
+  assert.match(tree.go_for_food.description, /2 rabbit seen 1 minute ago, 80 blocks south/);
+  assert.match(tree.go_for_food.description, /Food is the only way health comes back: 0.7 health and hunger 3/);
+  assert.match(tree.go_for_food.description, /Day: dusk in about \d+ real minutes/);
+  assert(tree.go_for_food.children.search_food, 'the search, as the food question has it');
+  assert(tree.go_for_food.children.seen_food_0, 'and the walk back to the rabbits');
+  assert.match(tree.stay.description, /It is day, dusk in about \d+ real minutes: the daylight waited out here .* and staying brings no health back/);
+});
+
+test('fed, the pocket offers no food trip', async () => {
+  const { survival, goal } = snowShaft({ health: 20, food: 20 });
+  let tree;
+  survival.decide = async (task, g, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['stay'], stale: false }; };
+  survival.wait = async () => {};
+  await survival.step(new Task('day'), goal, () => {});
+  assert(tree && !tree.go_for_food);
+});
+
+test('leaving a shaft pocket with no side to open goes up through its cap, not "threats block the exits"', async () => {
+  const { survival, goal, refuge, dug, walked } = snowShaft();
+  const waits = [];
+  survival.decide = async () => ({ path: ['leave'], stale: false });
+  survival.wait = async (t, g, s, why) => { waits.push(why); };
+  await survival.step(new Task('day'), goal, () => {});
+  assert.deepEqual(waits, [], 'the leave is not refused');
+  assert.deepEqual(dug, [[0, 83, 0]], 'the cap is dug');
+  assert.deepEqual(walked.at(-1), [0, 84, 0], 'and the bot climbs to where the shaft was dug from');
+  assert(!survival.state.shelters.includes(refuge), 'the pocket is left behind');
+});
+
+test('going for food from the pocket opens it first and runs the way chosen', async () => {
+  const { survival, goal, dug, explored } = snowShaft();
+  survival.decide = async (task, g, save, { id }) => ({ path: id === 'pocket_next' ? ['go_for_food', 'search_food'] : ['stay'], stale: false });
+  survival.wait = async () => assert.fail('Jev chose food');
+  await survival.step(new Task('day'), goal, () => {});
+  assert.deepEqual(dug, [[0, 83, 0]]);
+  assert.deepEqual(explored, ['food animals']);
+  assert(survival.state.foodPlan?.until > Date.now(), 'held as the food question\'s plan');
+});
+
+test('a leave that finds no door says so and rests a minute, not chosen again five seconds on', async () => {
+  // A pocket in snow with no cap placed by the bot and no side to open.
+  const { survival, goal, refuge } = snowShaft();
+  delete refuge.shaft;
+  const waits = [];
+  survival.decide = async () => ({ path: ['leave'], stale: false });
+  survival.wait = async (t, g, s, why) => { waits.push(why); };
+  await survival.step(new Task('day'), goal, () => {});
+  assert.equal(waits[0], 'No wall of this pocket can be opened as a door');
+  let asked;
+  survival.decide = async (task, g, save, { id, tree: t, state }) => { if (id === 'pocket_next') asked = { t, state }; return { path: ['stay'], stale: false }; };
+  delete survival.state.pocketPlan;
+  await survival.step(new Task('day'), goal, () => {});
+  assert(!asked.t.leave, 'leave rests');
+  assert.match(asked.state.notNow.leave, /did nothing from this pocket \(no wall of this pocket can be opened as a door\)/);
+});

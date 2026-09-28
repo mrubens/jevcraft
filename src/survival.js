@@ -648,6 +648,16 @@ function sealedWaitSays(bot) {
   const day = t >= DAY.DAWN || t < DAY.DUSK;
   return { ticks, minutes, says: `Seal a pocket (the way is asked next) and wait in it for daylight, about ${minutes} real minutes off${day ? `: it is day now, so the wait runs through dusk and the whole night, and daylight is what the bot already has` : ''}. ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and standing still in it spends no hunger: it falls with moving, mining, fighting and healing, so the wait costs minutes, not food. At dawn the mobs in the open burn; eating to eighteen ends the wait, health coming back.` };
 }
+// The cap over a shaft pocket (shaftPocket puts it two over the floor):
+// the block its way out is dug through. Null when the column over the head
+// holds nothing solid to dig, or a liquid or a falling block sits on it.
+function shaftCap(bot, refuge) {
+  const cap = pos(refuge.origin).offset(0, 2, 0);
+  if (!shelter.solid(bot.blockAt(cap))) return null;
+  const over = bot.blockAt(cap.offset(0, 1, 0))?.name || '';
+  if (/^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$|concrete_powder|water|lava/.test(over)) return null;
+  return cap;
+}
 // A pocket being sealed where the bot stands, as its last pass left it: the
 // blocks of it in place, and a mob standing in a cell of it, which no block
 // goes into while it stands there. Said on the claim and the stance, not
@@ -3494,7 +3504,7 @@ class Survival {
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
     if (!shelter.solid(bot.blockAt(roof))) { setAside(this, 'shaft_pocket', spot, 'the cap would not go on', 600000); return false; }
-    const refuge = { origin: { ...bottom }, dimension: bot.game.dimension, createdAt: new Date().toISOString(), emergency: true, shaft: true };
+    const refuge = { origin: { ...bottom }, dimension: bot.game.dimension, createdAt: new Date().toISOString(), emergency: true, shaft: true, top: { ...start } };
     if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) refuge.verifiedAt = new Date().toISOString();
     this.state.shelters.push(refuge); save();
     return true;
@@ -3818,8 +3828,23 @@ class Survival {
     // A pocket sealed in a staircase has no two-block exit: its door is the
     // closure the bot placed, and the way on is dug from there.
     const pocket = !formal.length && farthest(shelter.closures(bot, refuge).filter(door => danger.every(t => t.entity.position.distanceTo(door) > (t.reach ?? 20))));
-    const exit = formal[0] || (pocket.length ? { door: pocket[0], outside: null } : null);
-    if (!exit) { await this.wait(task, goal, save, 'Nearby threats still block the shelter exits'); return; }
+    // A shaft pocket's door is its cap: dug straight down with rock (or
+    // snow, ice) all round, it has no side a door can be dug through, and
+    // the way out is up. mid-231-r's shaft on a snowy slope was chosen to be
+    // left four times by day and refused each time as "threats block the
+    // exits", with none in sight, for an hour (note 538).
+    const cap = !formal.length && !pocket.length && refuge.shaft ? shaftCap(bot, refuge) : null;
+    const capClear = cap && danger.every(t => t.entity.position.distanceTo(cap) > (t.reach ?? 20));
+    const exit = formal[0] || (pocket.length ? { door: pocket[0], outside: null } : capClear ? { door: cap, outside: null, up: true } : null);
+    if (!exit) {
+      // Said as it is: a door refused for a mob, or no door at all.
+      const sides = shelter.exits(bot, refuge).length + shelter.closures(bot, refuge).length + (cap ? 1 : 0);
+      const why = sides ? 'Nearby threats still block the shelter exits' : 'No wall of this pocket can be opened as a door';
+      this.state.leaveRefused = why;
+      await this.wait(task, goal, save, why);
+      return false;
+    }
+    delete this.state.leaveRefused;
     // Who walked the bot out, in the record: mid-243-m left its pocket at
     // night at 9.3 health, a spider and a skeleton outside, 0.2 seconds
     // after Jev chose to sleep in a nook, and no path in the code read as
@@ -3832,6 +3857,16 @@ class Survival {
     // A pocket is one night's stop, not a home: every closure comes down so
     // the staircase continues in both directions, and the pocket is
     // forgotten so its shell no longer stands reserved against the climb.
+    if (exit.up) {
+      await this.actions.dig(bot, task, exit.door, { requireDrops: false });
+      this.state.shelters = this.state.shelters.filter(s => s !== refuge); save();
+      // Up the open shaft to where it was dug from: the walk climbs it,
+      // a block under the feet where a step is too high.
+      const top = refuge.top ? pos(refuge.top) : exit.door.offset(0, 1, 0);
+      try { await this.actions.navigate(bot, task, new goals.GoalBlock(top.x, top.y, top.z), { timeoutMs: 15000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      return true;
+    }
     const doors = exit.outside ? [exit.door] : pocket;
     for (const door of doors) {
       await this.actions.dig(bot, task, door.offset(0, 1, 0), { requireDrops: false });
@@ -3854,6 +3889,7 @@ class Survival {
       for (const p of placed) { try { await this.actions.dig(bot, task, p, { requireDrops: false }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; } }
     }
     if (exit.outside) await this.actions.navigate(bot, task, new goals.GoalBlock(exit.outside.x, exit.outside.y, exit.outside.z), { timeoutMs: 10000 });
+    return true;
   }
 
   // One Jev decision over a tree the code built: the question is defined in
@@ -4810,7 +4846,11 @@ class Survival {
       const healthNow = hp >= 20 ? '' : (bot.food ?? 20) >= 18 ? `, healing from ${hp} health` : `, not healing: ${hp} health and hunger ${bot.food}, and health comes back only at eighteen or more`;
       // Why no mine is on offer when it is not (note 531).
       const mineOff = night && !options.night_mine ? this.nightMineOff() : null;
-      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes of the run with nothing gained${waiting ? ` and ${waiting} waiting` : ''}${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}${mineOff ? ` No night mine from here: ${mineOff}.` : ''}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.`) + lidSays + wardenSays(bot) + placeSays,
+      // By day, the daylight a stay spends: mid-231-r stayed three days
+      // through in its pocket, the stay said as "nothing is watching it"
+      // and never that the day was going by (note 538).
+      const dayLeft = night ? '' : (() => { const d = require('./healing').daylightSays(bot); return d && /^day/.test(d) ? ` It is ${d.replace(/^day: /, 'day, ')}: the daylight waited out here is the time in which the surface's zombies and skeletons burn${(bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? ', and staying brings no health back' : ''}.` : ''; })();
+      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes of the run with nothing gained${waiting ? ` and ${waiting} waiting` : ''}${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}${mineOff ? ` No night mine from here: ${mineOff}.` : ''}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.${dayLeft}`) + lidSays + wardenSays(bot) + placeSays,
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };
@@ -4889,18 +4929,57 @@ class Survival {
           // in, and the work opened the lid again, every two seconds for a
           // minute (mid-92-f, 2026-09-26). Held as staying up for two minutes.
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'leave' };
-          await this.leave(task, goal, save, refuge, undefined, { past: true }); return true;
+          return (await this.leave(task, goal, save, refuge, undefined, { past: true })) !== false;
         } };
+      // Out for food, by day or night, when hunger is under eighteen and the
+      // food carried would not bring it there: the one way health comes back.
+      // mid-231-r sat an hour in a shaft pocket at 0.7 health and hunger 3,
+      // three days going by, offered only staying and going back to the work
+      // (a stone pickaxe), and answered "none of these" over and over; the
+      // rabbits it had hunted a minute before sealing in were never said
+      // (note 538). The ways are the food question's own (forageChoices),
+      // each with its walk, the dark and the hostiles on the way, and the
+      // pocket is opened first.
+      const foodWays = {};
+      if ((bot.food ?? 20) < 18 && foodSupply(bot) < 18 - (bot.food ?? 20) && goal.kind !== 'creative') {
+        // Surveyed once in half a minute: the pocket is visited every step,
+        // and each animal in view is a route found.
+        let ways = this._pocketFood?.until > Date.now() ? this._pocketFood.ways : {};
+        if (!(this._pocketFood?.until > Date.now())) {
+          try { ways = !/overworld/.test(String(bot.game?.dimension || 'overworld')) ? {} : await forageChoices(bot, task, goal, save, this.actions, this.state); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+          this._pocketFood = { until: Date.now() + 30000, ways };
+        }
+        for (const [k, way] of Object.entries(ways)) foodWays[k] = { description: way.description,
+          run: async () => {
+            delete this.state.watchedSince; delete this.state.pocketWatch;
+            if (!(await this.leave(task, goal, save, refuge, 'Out for food.', { past: true }))) return false;
+            // Held as the food question's own plan: the next steps go on
+            // with food, not back to the question.
+            this.state.foodPlan = { until: Date.now() + 300000, at: new Date().toISOString() };
+            if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'go_for_food' };
+            if (way.valid && !way.valid()) return true;
+            try { await way.run(); }
+            catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+            return true;
+          } };
+        const heal = require('./healing').healingSays(bot, goal);
+        const known = Array.isArray(heal?.nearestFood) ? `the food known: ${heal.nearestFood.join('; ')}` : 'no food known nearby: a search walks to look for animals';
+        if (Object.keys(foodWays).length) options.go_for_food = {
+          description: `Open the pocket and go for food, the way chosen next: ${known}. Food is the only way health comes back: ${hp} health and hunger ${bot.food}, and health returns only at eighteen or more${(bot.food ?? 20) <= 6 ? `; at hunger 0 the bot starves, a health every four seconds` : ''}. ${heal?.daylight ? `${heal.daylight.charAt(0).toUpperCase()}${heal.daylight.slice(1)}.` : ''}${night ? ' Mobs spawn in the dark on the way.' : ''}${who ? ` Outside is ${who}.` : ''}${outSays}${outHealth}`,
+          children: foodWays };
+      }
       // A choice that did nothing when it ran is not on offer again for a
       // minute, and why is said: the stay it fell back to was asked about
       // again five seconds later, the same choice came back, and did nothing
       // again, all night (note 531).
       const notNow = {};
       for (const [k, entry] of Object.entries(attemptsFor(this).of('pocket_option'))) {
-        if (!options[k] || k === 'stay') continue;
-        delete options[k];
+        if (k === 'stay' || !(options[k] || foodWays[k])) continue;
+        delete options[k]; delete foodWays[k];
         notNow[k] = `${entry.why}; back in about ${Math.max(1, Math.round((entry.until - Date.now()) / 1000))} seconds`;
       }
+      if (options.go_for_food && !Object.keys(foodWays).length) delete options.go_for_food;
       // Without Jev, the old order.
       const rule = bedNear && !watched ? 'go_to_bed' : (night || watched) && !outwaited
         ? (options.open_on_watcher && (bot.health ?? 20) >= 16 && watcher.entity.name !== 'creeper' && threats(bot, 16).filter(t => t.entity !== watcher.entity).length <= 1 ? 'open_on_watcher' : options.night_mine && !watched ? 'night_mine' : 'stay')
@@ -4915,7 +4994,7 @@ class Survival {
         || (this.state.sealedWait?.until > Date.now() && (bot.food ?? 20) < 18 && options.stay ? 'stay' : null)
         || (this.state.bedBesidePlan?.until > Date.now() && options.sleep_beside ? 'sleep_beside' : null);
       if (!choice) {
-        const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
+        const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.children ? { children: Object.fromEntries(Object.entries(o.children).map(([ck, c]) => [ck, { description: c.description }])) } : {}) }]));
         const decision = await this.decide(task, goal, save, { id: 'pocket_next', tree, context: { rule },
           state: { timeOfDay: bot.time?.timeOfDay, night, daylight: night ? 'night' : (bot.time?.timeOfDay ?? 0) >= 22000 ? 'dawn: zombies and skeletons in the open burn once the sun is up' : 'day',
             workWaiting: goal.rungTime?.phase || goal.step?.item || goal.step?.block || goal.request || null,
@@ -4929,9 +5008,9 @@ class Survival {
         choice = decision.path.at(-1);
         this.state.pocketPlan = { choice, key, until: Date.now() + 90000 };
       }
-      if (!(await options[choice].run())) {
+      if (!(await (options[choice] || foodWays[choice]).run())) {
         delete this.state.pocketPlan;
-        if (choice !== 'stay') { setAside(this, 'pocket_option', choice, `chosen at ${new Date().toISOString().slice(11, 19)} and it did nothing from this pocket`, 60000); save(); }
+        if (choice !== 'stay') { setAside(this, 'pocket_option', choice, `chosen at ${new Date().toISOString().slice(11, 19)} and it did nothing from this pocket${this.state.leaveRefused ? ` (${this.state.leaveRefused.charAt(0).toLowerCase()}${this.state.leaveRefused.slice(1)})` : ''}`, 60000); delete this.state.leaveRefused; save(); }
         await options.stay.run();
       }
       onStep(goal); return true;
