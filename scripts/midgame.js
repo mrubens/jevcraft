@@ -127,6 +127,9 @@ async function start(world, source, archive) {
     const log = () => { try { return fs.readFileSync(path.join(SERVER, 'logs', 'latest.log'), 'utf8'); } catch (_) { return ''; } };
     for (let i = 0; i < 60 && !log().includes(`Preparing level "${world}"`); i++) await sleep(1000);
     if (!log().includes(`Preparing level "${world}"`)) throw new Error(`The server on ${PORT} did not load ${world}`);
+    // The watcher (TRIAL_WATCHER, DoloresDoodle) is made an operator on every
+    // trial server, to spectate and follow Jev; Jev itself never is.
+    fs.writeFileSync(path.join(SERVER, 'console.in'), `op ${process.env.TRIAL_WATCHER || 'DoloresDoodle'}\n`);
     for (let i = 0; i < 20; i++) { const other = botPid(); if (!other) break; process.kill(Number(other), 'SIGKILL'); await sleep(1500); }
     // This server's state set aside; the source trial's state in its place,
     // under this server's name.
