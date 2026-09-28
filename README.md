@@ -6,8 +6,8 @@ The goal is the whole game from a fresh world with an empty inventory: Overworld
 
 | | |
 |---|---|
-| ![Jev swings a ghast's fireball back at it](docs/media/fireball-returned.gif) | ![Jev kills a blaze on a fortress bridge](docs/media/blaze-kill.gif) |
-| A ghast fires and Jev returns the fireball (return_fireball, p=0.31). | Jev closes in on a blaze and takes his first rod (close_in, p=0.42). |
+| ![Jev kills a wither skeleton on a fortress bridge](docs/media/wither-skeleton-kill.gif) | ![Jev kills a blaze on a fortress bridge](docs/media/blaze-kill.gif) |
+| Jev holds his shield up and kills a wither skeleton on a fortress bridge (shield_guard, p=0.98). | Jev closes in on a blaze and takes his first rod (close_in, p=0.42). |
 | ![Jev steps through his portal into the Nether](docs/media/nether-entered.gif) | ![A ghast's fireball knocks Jev into lava](docs/media/ghast-death.gif) |
 | A fresh world: Jev steps through his portal into the Nether 7 minutes in. | A ghast's fireball pushes Jev off his footing into lava (fight, p=0.22). |
 
