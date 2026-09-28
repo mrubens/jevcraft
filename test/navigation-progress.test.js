@@ -125,3 +125,41 @@ test('blocks chosen for the reserve are gathered round after round until the res
   assert.equal(n, BLOCK_RESERVE, 'the reserve met in one choice');
   assert.equal(rounds, BLOCK_RESERVE);
 });
+
+test('the portal back in view, the walk in failed and the staircase resting: the way is Jev\'s with the climb among it, asked once from a place, not the staircase met again (mid-208-k-nether-3, note 556)', async () => {
+  // mid-208-k-nether-3 stood on its own span over the lava sea at (-15, 35, 14), the portal back at (10, 73, -13) in view: the
+  // walk in failed, the staircase was set aside ("no safe step ... (no floor 6)"), and each pass went into it again, the rest
+  // thrown to the stall question seven times in a minute with only a detour and a crossing offered.
+  const { returnFromNether } = require('../src/work');
+  const { setAside } = require('../src/progress');
+  const registry = require('minecraft-data')('26.1');
+  const portal = new Vec3(10, 73, -13);
+  const bot = Object.assign(new EventEmitter(), { registry, entity: { position: new Vec3(-14.5, 35, 14.5), isInWater: false }, game: { dimension: 'the_nether', gameMode: 'survival' }, oxygenLevel: 20,
+    health: 8.6, food: 17, entities: {}, world: { raycast: () => null },
+    inventory: { items: () => [{ name: 'netherrack', count: 64, type: 1 }, { name: 'iron_pickaxe', count: 1, type: registry.itemsByName.iron_pickaxe.id }] },
+    findBlocks: ({ matching }) => matching.includes(registry.blocksByName.nether_portal.id) ? [portal] : [],
+    blockAt: p => {
+      const name = p.equals(portal) ? 'nether_portal' : p.y <= 31 ? 'lava' : p.y === 34 && p.z === 14 && p.x >= -40 && p.x <= -15 ? 'netherrack' : 'air';
+      return { name, boundingBox: name === 'netherrack' ? 'block' : 'empty', diggable: true, position: p };
+    },
+    clearControlStates() {}, getControlState() { return false; }, setControlState() {}, stopDigging() {} });
+  bot.pathfinder = { movements: {}, setGoal() {}, isMoving: () => false, goto: async () => { throw Object.assign(new Error('No path'), { name: 'NoPath' }); } };
+  const task = new Task('back'), asked = [], picks = ['wait_rest'];
+  task.opportunityClient = { systemOne: async ({ state, questions }) => { asked.push({ state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
+  const goal = { survival: {} };
+  setAside(goal, 'staircase', { x: 8, y: 72, z: -16 }, 'no safe step toward it from (-15, 35, 14) (no floor to step onto (a gap, for a span or a pillar): 6 of the steps nearer)', 600000);
+  // The crossing at this height was tried from here and rests.
+  setAside(goal, 'crossing', '-2,1>10,-13', 'it laid nothing nearer', 300000);
+  await assert.rejects(returnFromNether(bot, task, goal, () => {}), err => err.name === 'WaysResting' && /Jev chose other work until then/.test(err.message));
+  assert.equal(asked.length, 1, 'the way is asked, not the staircase\'s rest thrown to the stall');
+  const { options, state } = asked[0];
+  assert.deepEqual(Object.keys(options).sort(), ['around_left', 'around_right', 'climb_here', 'wait_rest']);
+  assert.match(options.climb_here, /^Pillar straight up 38 blocks to the portal's height \(jump and lay a block under the feet, 64 carried that can be laid, 26 left after\), from where the bot stands, with no lava or water in or beside it; the portal is then 37 blocks across at that height/);
+  assert.match(options.climb_here, /On top a push is a fall of 41 blocks into lava\./);
+  assert.equal(state.portalAbove, 38);
+  assert.match(state.walk, /^the walk into it failed/);
+  assert.match(state.staircase, /no floor to step onto \(a gap, for a span or a pillar\): 6 of the steps nearer/);
+  // Met again from the same place in the same rest: every way resting, said, not asked again.
+  await assert.rejects(returnFromNether(bot, task, goal, () => {}), err => err.name === 'WaysResting' && /asked from here with this, and other work chosen/.test(err.message));
+  assert.equal(asked.length, 1);
+});

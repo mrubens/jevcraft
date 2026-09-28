@@ -1261,7 +1261,7 @@ function columnBelow(bot) {
 
 // Each way to the fortress that can be tried from here, with what it
 // meets. `run` returns why it ended, when it did not throw.
-async function fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks = []) {
+async function fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks = [], record = state.approach) {
   const here = bot.entity.position.clone(), flat = Math.round(flatTo(nearest, here)), dy = Math.round(nearest.y + 1 - here.y);
   const where = `${flat} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}`;
   const inView = threatsInView(bot);
@@ -1379,26 +1379,37 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   if (waiting) for (const [key, option] of Object.entries(options)) option.description += ` Within sixteen blocks of the bricks, seen or not: ${waiting}; a way that arrives among them arrives in their fight.${hits && key !== 'keep_searching' ? ` ${hits}` : ''}`;
   // What each way came to on this approach, said with it.
   for (const [key, option] of Object.entries(options)) {
-    const tries = (state.approach?.failed || []).filter(f => f.choice === key);
+    const tries = (record?.failed || []).filter(f => f.choice === key);
     if (tries.length) option.description += ` Tried on this approach ${tries.length === 1 ? 'once' : `${tries.length} times`} and ended no nearer: ${tries.at(-1).why}.`;
   }
   return { options, facts: { fortress: { distance: flat, height: dy }, health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
     threatsInView: inView.map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(waiting ? { atTheBricks: waiting } : {}),
-    ...(state.approach?.failed?.length ? { failed: state.approach.failed.map(f => `${f.choice.replaceAll('_', ' ')}: ${f.why}`) } : {}) } };
+    ...(record?.failed?.length ? { failed: record.failed.map(f => `${f.choice.replaceAll('_', ' ')}: ${f.why}`) } : {}) } };
 }
 
-async function approachFortress(bot, task, goal, save, actions, state, nearest, bricks = []) {
+// `stretch`: on the fortress's floors, the way to a stretch of them the
+// patrol's walk did not reach (its why), kept apart from the way into the
+// fortress and asked afresh for each stretch. mid-235-p-nether-3-fortress-3
+// stood on a floor with the next stretch twelve blocks off across a gap of
+// two: the walk refused the edge, the staircase found "no floor 2" and
+// rested, and every pass for an hour reached nothing, the span never tried
+// (note 556).
+async function approachFortress(bot, task, goal, save, actions, state, nearest, bricks = [], { stretch = null } = {}) {
   // Every way is surveyed and walked from a cell with a floor: crouched
   // over an edge on the block beside, the bot steps back onto it first.
   try { await stepOntoFooting(bot, task); }
   catch (err) { task.check(); if (!retryable(err)) throw err; }
   const found = { x: nearest.x, y: nearest.y, z: nearest.z };
-  if (!state.approach || Math.hypot(state.approach.found.x - found.x, state.approach.found.z - found.z) > SAME_FORTRESS) state.approach = { found, failed: [] };
-  const approach = state.approach;
+  const kind = stretch ? 'stretchWay' : 'approach', same = stretch ? 2 : SAME_FORTRESS;
+  if (!state[kind] || Math.hypot(state[kind].found.x - found.x, state[kind].found.z - found.z) > same || (stretch && Math.abs(state[kind].found.y - found.y) > 1)) {
+    state[kind] = { found, failed: stretch ? [{ choice: 'walk_route', why: stretch.why, at: Date.now() }] : [] };
+  }
+  const approach = state[kind];
   approach.found = found;
-  goal.step = { action: 'find_fortress', found, legs: state.legs }; save();
-  const { options, facts } = await fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks);
+  goal.step = { action: 'find_fortress', found, ...(stretch ? { walking: found } : {}), legs: state.legs }; save();
+  const { options, facts } = await fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks, approach);
+  if (stretch) facts.stretch = `on the fortress's floors, a stretch of them the patrol set out for, ${Math.round(flatTo(nearest, bot.entity.position))} blocks off; the walk there failed: ${stretch.why}`;
   let pick = approach.choice && approach.until > Date.now() && options[approach.choice] ? approach.choice : null;
   if (!pick) {
     const tree = Object.fromEntries(Object.entries(options).map(([key, o]) => [key, { description: o.description, run: o.run }]));
@@ -1408,17 +1419,18 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
     pick = decision.path.at(-1);
     approach.choice = pick; approach.until = Date.now() + APPROACH_HOLD_MS; save();
   }
-  goal.step = { action: 'find_fortress', found, approach: pick, legs: state.legs }; save();
+  goal.step = { action: 'find_fortress', found, ...(stretch ? { walking: found } : {}), approach: pick, legs: state.legs }; save();
   const from = nearest.distanceTo(bot.entity.position);
   let why = null;
   try { why = await options[pick].run(); }
   catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
   // What failed is kept with the fortress: going back to it says so.
-  if (pick === 'keep_searching') { delete approach.choice; delete approach.until; save(); return; }
+  if (pick === 'keep_searching') { delete approach.choice; delete approach.until; save(); return 'Jev chose to leave the fortress and search on'; }
   // Closer counts; a shuffle along the shelf does not.
-  if (nearest.distanceTo(bot.entity.position) < from - 1.5) { approach.failed = []; save(); return; }
+  if (nearest.distanceTo(bot.entity.position) < from - 1.5) { approach.failed = []; save(); return null; }
   approach.failed = [...approach.failed, { choice: pick, why: why || 'came no nearer', at: Date.now() }].slice(-8);
   delete approach.choice; delete approach.until; save();
+  return `${pick.replaceAll('_', ' ')}: ${why || 'came no nearer'}`;
 }
 
 // A fortress's floors: its bricks with two blocks of air over them, the
@@ -1672,8 +1684,17 @@ async function findFortressStep(bot, task, goal, save, actions) {
     };
     try {
       if (actions.navigate) {
+        // The walk failed: the way to the stretch is Jev's, each way with
+        // what it meets (a span over the gap, a pillar, a drop, the
+        // staircase with its rest said), not the staircase alone again,
+        // which from the same landing was the same refusal every pass
+        // (note 556).
         try { await actions.navigate(bot, task, new goals.GoalNear(next.x, next.y + 1, next.z, 3), { timeoutMs: 30000, stallMs: 6000, stopWhen }); }
-        catch (err) { task.check(); if (!retryable(err)) throw err; stretch.why = err.message; await tunnel(); }
+        catch (err) {
+          task.check(); if (!retryable(err)) throw err; stretch.why = err.message; save();
+          const ended = await approachFortress(bot, task, goal, save, actions, state, next, bricks, { stretch: { why: err.message } });
+          if (ended) stretch.why = ended;
+        }
       } else await tunnel();
     } finally {
       stretch.reached = !!bot.entity?.position && next.offset(0.5, 1, 0.5).distanceTo(bot.entity.position) <= 4;

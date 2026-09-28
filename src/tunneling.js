@@ -154,7 +154,11 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
     }
     if (hostiles && !safeFromHostiles(bot, destination.offset(0.5, 0, 0.5), Array.isArray(hostiles) ? hostiles : undefined)) { block(destination, 'a hostile'); continue; }
     const floor = bot.blockAt((dropTo || destination).offset(0, -1, 0));
-    if (dangerous(floor) || falling(floor) || floor.boundingBox !== 'block') { block(destination, dangerous(floor) ? 'lava or water underfoot' : 'no floor'); continue; }
+    // Open air under the step is a gap the staircase does not cross: it
+    // steps on ground and digs rock, and a gap is a span's or a pillar's,
+    // laid from blocks carried (mob-hunt.js fortressApproaches, work.js
+    // portalWay). Said as such: "no floor 6" read as a count of nothing.
+    if (dangerous(floor) || falling(floor) || floor.boundingBox !== 'block') { block(destination, dangerous(floor) ? 'lava or water underfoot' : 'no floor to step onto (a gap, for a span or a pillar)'); continue; }
     // Nor onto a lip beside a deadly drop: a step down carries on past its
     // cell, and a stop mid-step leaves the body going. mid-244-q stepped two
     // down onto a one-block ledge over a ravine, a skeleton's alert stopped
@@ -243,7 +247,8 @@ class StaircaseStalled extends Error {
     if (cave) this.cave = cave;
   }
 }
-const blockedSays = blocked => Object.entries(blocked || {}).map(([k, n]) => `${k} ${n}`).join(', ') || 'nothing open';
+// Each reason with how many of the steps nearer it refused.
+const blockedSays = blocked => Object.entries(blocked || {}).map(([k, n]) => `${k}: ${n} of the steps nearer`).join('; ') || 'nothing open';
 // A landing with no step on is resting by where it is, whatever the target:
 // the way-down target is new every round, and mid-230-s's rest by the
 // target's area never met the same area twice while it stepped out to

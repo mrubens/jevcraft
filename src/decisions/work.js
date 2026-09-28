@@ -70,17 +70,18 @@ define({
 // the run ended, with a lava pool known and a bucket carried (note 495).
 define({
   id: 'portal_way', area: 'work', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'The portal the bot is making for cannot be reached from here: the walk, the boat and the staircase have failed. Make a portal here, go round another way, take the boat again, or other work until the staircase\'s rest ends?',
-  trigger: 'On the way to a remembered portal (the crossing into the Nether, or the way back from it), when the walk made no ground and the staircase toward it rests; asked once for each rest from each place, the answer kept (said as every way resting when met again).',
+  question: 'The portal the bot is making for cannot be reached from here: the walk, the boat and the staircase have failed. Make a portal here, climb to its height, go round another way, take the boat again, or other work until the staircase\'s rest ends?',
+  trigger: 'On the way to a remembered portal or one in view (the crossing into the Nether, or the way back from it), when the walk made no ground and the staircase toward it rests or stalls; asked once for each rest from each place (its eight-block area and height), the answer kept (said as every way resting when met again).',
   source: 'src/work.js (walkToKnownPortal, portalWay, lineSays)',
   options: [
     { key: 'portal_here', label: 'make a portal here instead, the one remembered passed over', when: 'in the Overworld, always (the way it is made is then asked: portal_method); in the Nether, ten obsidian, a lighter and three blocks carried', level: 'root' },
+    { key: 'climb_here', label: 'pillar straight up to the portal\'s height near where the bot stands, and the way across asked again from the top', when: 'the portal is three or more blocks up, a column within five blocks has no lava or water in or beside it, and blocks to lay are carried; said with the height, the blocks against those carried, how far across the portal is from the top, and the fall a push would be', level: 'root' },
     { key: 'around_left', label: 'a leg of thirty-two blocks on foot to the left of the heading, and the way asked again from there', when: 'always', level: 'root' },
     { key: 'around_right', label: 'a leg of thirty-two blocks on foot to the right of the heading, and the way asked again from there', when: 'always', level: 'root' },
     { key: 'boat_again', label: 'the boat again, its failure or the walk chosen over it set aside', when: 'in the Overworld, the boat failed or was declined here and rests', level: 'root' },
     { key: 'wait_rest', label: 'other work until the staircase\'s rest ends, the minutes said', when: 'the staircase toward the portal rests until a time', level: 'root' },
   ],
-  instructions: { task: 'The bot cannot get to the portal it is making for. Choose how it goes on.', guidance: 'Each option says what it takes and what it leaves. The state says where the portal is, what each way ended in, and what lies on the straight line toward it (water, lava, ground, unloaded). A portal made here comes out somewhere new on the other side; a leg round goes on foot and asks again from where it ends.' },
+  instructions: { task: 'The bot cannot get to the portal it is making for. Choose how it goes on.', guidance: 'Each option says what it takes and what it leaves. The state says where the portal is (portalAbove: how far above the bot it is), what each way ended in, and what lies on the straight line toward it (water, lava, ground, unloaded). The staircase steps on ground and digs rock: a gap of open air (\"no floor to step onto\") is crossed by a span or a pillar of blocks carried, not stairs. A portal made here comes out somewhere new on the other side; a leg round goes on foot and asks again from where it ends.' },
   fallback: children => ['portal_here', 'wait_rest'].find(k => children[k]) || Object.keys(children)[0],
 });
 

@@ -33,7 +33,7 @@ const approachFallback = (children, path, context = {}) => {
 define({
   id: 'fortress_approach', area: 'endgame', kind: 'fortress', primitive: 'choice', stakes: 'high', tree: true,
   question: 'A Nether fortress is in view: which way should the bot go to it, or should it leave it and keep searching?',
-  trigger: 'On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most.',
+  trigger: 'On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most. Also on its floors, when the patrol\'s walk to the next stretch of them failed (state.stretch says so): the way is then to that stretch, asked afresh for each, the failed walk among what failed.',
   source: 'src/mob-hunt.js (fortressApproaches, approachFortress), src/bridging.js (surveyCrossing), src/nether-travel.js (crossingSays)',
   options: [
     { key: 'walk_route', label: 'walk the pathfinder\'s route to it, level with the bot first, then at the bricks\' height', when: 'a pathfinder is at hand; said with its surveyed route (cells, blocks it would place and dig, how many beside lava, how much nearer it ends) and that it walks upright', level: 'root' },
@@ -45,7 +45,7 @@ define({
   ],
   instructions: {
     task: 'A Nether fortress is in view on the search for blazes. Choose the way to it, or leave it for now and keep searching.',
-    guidance: 'Each way says what it meets, surveyed from here. The lava sea lies under most of the Nether: a fall into it is death and loses everything carried. threatsInView are the mobs in sight now; a hit on a one-wide span or at the lava\'s edge is the fall. failed is the ways tried on this approach that ended no nearer, and why; the same way again seldom ends differently.',
+    guidance: 'Each way says what it meets, surveyed from here. The lava sea lies under most of the Nether: a fall into it is death and loses everything carried. threatsInView are the mobs in sight now; a hit on a one-wide span or at the lava\'s edge is the fall. failed is the ways tried on this approach that ended no nearer, and why; the same way again seldom ends differently. The staircase steps on ground and digs rock: a gap of open air between floors (\"no floor to step onto\") is crossed by the span or a pillar, laid from blocks carried.',
   },
   fallback: approachFallback,
   ungated: 'every way offered was surveyed and runs under the hard rules (a span laid crouched and never under a shooter\'s fire, no rock dug with lava behind it, no drop into lava, no swing or turn on a span); a way that fails is asked again with what failed, and the outage default is the order the code kept, a failed way passed over',

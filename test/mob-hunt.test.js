@@ -840,8 +840,11 @@ test('a pass whose stretches no walk reached is said so when staying is offered,
   const refused = 'The staircase toward it is set aside (no safe step toward it (a deadly drop beside the step 2, no floor 2))';
   const actions = { dig: async () => {}, navigate: async () => { throw new Error('No route'); }, tunnel: async () => { throw new Error(refused); } };
   const goal = { fortressSearch: { axis: 1, legs: 15 } };
-  await assert.rejects(findFortressStep(bot, new Task('hunt'), goal, () => {}, actions), /set aside/);
-  await assert.rejects(findFortressStep(bot, new Task('hunt'), goal, () => {}, actions), /set aside/);
+  // The walk failed: the way to each stretch is Jev's (note 556), and the staircase was chosen each time.
+  const ways = jevStub(['tunnel', 'tunnel']);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client: ways });
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client: ways });
+  assert.deepEqual(ways.asked.map(a => a.kind), ['fortress', 'fortress']);
   assert.deepEqual(goal.fortressSearch.visited.map(v => v.reached), [false, false]);
   // A spawner under the deck.
   const at = bot.blockAt;
@@ -852,7 +855,7 @@ test('a pass whose stretches no walk reached is said so when staying is offered,
   assert.equal(client.asked.length, 1);
   const { options, state } = client.asked[0];
   assert.match(options.stay_in_fortress, /the bot stands at the height of its floors/);
-  assert.match(options.stay_in_fortress, /The last pass set out for 2 stretches and reached 0; not reached: \(\d+, 56, -?\d\): The staircase toward it is set aside/);
+  assert.match(options.stay_in_fortress, /The last pass set out for 2 stretches and reached 0; not reached: \(\d+, 56, -?\d\): tunnel: The staircase toward it is set aside/);
   assert.deepEqual([state.fortressInView.lastPass.stretches, state.fortressInView.lastPass.reached], [2, 0]);
   assert.match(options.wait_at_spawner, /^Wait by the spawner at \(10, 50, 0\), 9 blocks off, for 3 minutes/);
   assert.match(options.leg_east, /The fortress's bricks in view run 27 blocks this way from here/);
@@ -863,6 +866,37 @@ test('a pass whose stretches no walk reached is said so when staying is offered,
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   assert.equal(goal.step.action, 'wait_at_spawner'); assert.equal(walks.length, 1, 'at the cage, it waits');
   assert.equal(require('../src/stillness').permittedWait(bot, goal), 'waiting by a spawner');
+});
+
+test('on the fortress\'s floor, a stretch twelve blocks off across a gap of two is Jev\'s way to choose, and the span over the gap reaches it (mid-235-p-nether-3-fortress-3, note 556)', async () => {
+  // mid-235-p-nether-3-fortress-3 stood on its fortress's floor at (245, 56, 146) with the next stretch at (257, 56, 150): the
+  // walk refused the edge, the staircase "no safe step toward it (no floor 2)" and rested, and for an hour every pass
+  // reached 0 stretches, the span over the gap never offered.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const deck = p => p.y === 64 && p.z >= -1 && p.z <= 1 && ((p.x >= 0 && p.x <= 9) || (p.x >= 12 && p.x <= 40));
+  const { bot, laid } = netherWorld(new Vec3(0.5, 65, 0.5), p => p.y <= 31 ? 'lava' : deck(p) ? 'nether_bricks' : null);
+  const bricks = [];
+  for (let x = 0; x <= 40; x++) for (let z = -1; z <= 1; z++) if (deck(new Vec3(x, 64, z))) bricks.push(new Vec3(x, 64, z));
+  bot.findBlocks = ({ matching }) => matching === registry.blocksByName.spawner.id ? [] : bricks;
+  const refused = 'The staircase toward (13, 64, 0) is set aside (no safe step toward it from (0, 65, 0) (no floor to step onto (a gap, for a span or a pillar): 2 of the steps nearer)); trying another way';
+  const tunnels = [];
+  const client = jevStub(['cross_level']);
+  const actions = { client, dig: async () => {},
+    navigate: async () => { throw new Error('No route from here to (13, 65, 0) (noPath): the way passes along a drop that would kill'); },
+    tunnel: async (b, t, g, s, target) => { tunnels.push(target); throw new Error(refused); } };
+  const goal = { fortressSearch: { axis: 1, legs: 15 } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 1, 'the way to the stretch is asked, not the staircase run again');
+  assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
+  const { options, state } = client.asked[0];
+  assert.match(options.cross_level, /laying 2 blocks over open air and lava \(2 of them over lava\)/);
+  assert.match(options.cross_level, /64 blocks carried, 62 left after/);
+  assert.match(options.walk_route, /Tried on this approach once and ended no nearer: No route from here to \(13, 65, 0\)/);
+  assert.match(state.stretch, /^on the fortress's floors, a stretch of them the patrol set out for, 13 blocks off; the walk there failed: No route/);
+  assert.equal(tunnels.length, 0, 'the staircase is one of the ways, not run unasked');
+  assert.equal(laid.size, 2, 'a block in each cell of the gap');
+  assert.equal(bot.entity.position.x, 12.5, 'across it, on the far floor');
+  assert.deepEqual(goal.fortressSearch.visited.map(v => v.reached), [true], 'the stretch is reached');
 });
 
 test('after six empty patrols the sweep leaves along the fortress, and the section left behind does not pull it back', async () => {

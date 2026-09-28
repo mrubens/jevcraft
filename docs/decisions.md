@@ -481,9 +481,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `portal_way`
 
-**The portal the bot is making for cannot be reached from here: the walk, the boat and the staircase have failed. Make a portal here, go round another way, take the boat again, or other work until the staircase's rest ends?**
+**The portal the bot is making for cannot be reached from here: the walk, the boat and the staircase have failed. Make a portal here, climb to its height, go round another way, take the boat again, or other work until the staircase's rest ends?**
 
-- When: On the way to a remembered portal (the crossing into the Nether, or the way back from it), when the walk made no ground and the staircase toward it rests; asked once for each rest from each place, the answer kept (said as every way resting when met again).
+- When: On the way to a remembered portal or one in view (the crossing into the Nether, or the way back from it), when the walk made no ground and the staircase toward it rests or stalls; asked once for each rest from each place (its eight-block area and height), the answer kept (said as every way resting when met again).
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -492,6 +492,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `portal_here` | root | make a portal here instead, the one remembered passed over | in the Overworld, always (the way it is made is then asked: portal_method); in the Nether, ten obsidian, a lighter and three blocks carried |
+| `climb_here` | root | pillar straight up to the portal's height near where the bot stands, and the way across asked again from the top | the portal is three or more blocks up, a column within five blocks has no lava or water in or beside it, and blocks to lay are carried; said with the height, the blocks against those carried, how far across the portal is from the top, and the fall a push would be |
 | `around_left` | root | a leg of thirty-two blocks on foot to the left of the heading, and the way asked again from there | always |
 | `around_right` | root | a leg of thirty-two blocks on foot to the right of the heading, and the way asked again from there | always |
 | `boat_again` | root | the boat again, its failure or the walk chosen over it set aside | in the Overworld, the boat failed or was declined here and rests |
@@ -967,7 +968,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **A Nether fortress is in view: which way should the bot go to it, or should it leave it and keep searching?**
 
-- When: On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most.
+- When: On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most. Also on its floors, when the patrol's walk to the next stretch of them failed (state.stretch says so): the way is then to that stretch, asked afresh for each, the failed walk among what failed.
 - Decision tree, choice; stakes high; ledger kind `fortress`
 - Bar: none: every way offered was surveyed and runs under the hard rules (a span laid crouched and never under a shooter's fire, no rock dug with lava behind it, no drop into lava, no swing or turn on a span); a way that fails is asked again with what failed, and the outage default is the order the code kept, a failed way passed over
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
