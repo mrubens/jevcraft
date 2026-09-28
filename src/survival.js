@@ -2052,6 +2052,19 @@ function bedNook(bot, goal = {}, { sealed = false, shell = [] } = {}) {
 // five up or down (vanilla), seen or not: counted the one way for every
 // bed option (the decision audit).
 const monstersByBed = (bot, foot, radius = 48) => threats(bot, radius).filter(t => t.entity.position.distanceTo(foot) <= 8 && Math.abs(t.entity.position.y - foot.y) <= 5).length;
+// Who they are and how far, for the fact on a bed option: "a spider 2 blocks
+// off means the server will refuse the sleep" (mid-243-bg, 2026-09-28: the
+// bed went down with a spider at two blocks and was left standing).
+const monstersAtBed = (bot, foot, radius = 48) => threats(bot, radius).filter(t => t.entity.position.distanceTo(foot) <= 8 && Math.abs(t.entity.position.y - foot.y) <= 5);
+const refusalSays = (bot, foot) => {
+  const near = monstersAtBed(bot, foot);
+  if (!near.length) return '';
+  const who = near.slice(0, 4).map(t => `a ${String(t.entity.name).replaceAll('_', ' ')} ${Math.round(t.entity.position.distanceTo(foot))} blocks off${t.visible ? '' : ' (out of sight)'}`);
+  return ` ${near.length} monster${near.length === 1 ? ' is' : 's are'} within eight blocks sideways and five up or down of the bed now, seen or not: sleep is refused while any are. ${who.join(', ').replace(/^a/, 'A')}${near.length > 4 ? ` and ${near.length - 4} more` : ''}: the server will refuse the sleep, and the bed would be put down and picked up for nothing.`;
+};
+// A task that only the owner's stop can end is not this: cleanup of what the
+// bot itself put down runs to its end whatever the threat layer preempts.
+const uncancellable = task => ({ get cancelled() { return false; }, label: task?.label, check() {} });
 // What a bed nook is, said the one way wherever it is offered.
 function nookSays(bot, nook, { pocket = false, later = false } = {}) {
   const n = nook.dig.length, near = monstersByBed(bot, nook.foot);
@@ -6715,6 +6728,18 @@ class Survival {
     const bot = this.bot, item = bedCarried(bot), placed = nook ? null : bedToSleepIn(bot, goal), site = nook || placed || (item && bedSite(bot));
     if (!site) throw new Error('No level ground beside me for the bed');
     if (nook && !item) throw new Error('No bed carried for the nook');
+    // The game refuses a sleep with a monster within eight blocks sideways and
+    // five up or down, seen or not, so the carried bed is not put down for it:
+    // said as a fact on the option, and here as what the server will do.
+    if (!placed) {
+      const near = monstersAtBed(bot, site.foot);
+      if (near.length) {
+        const err = new Error(`The server refuses a sleep with monsters within eight blocks: ${near.slice(0, 3).map(t => `${t.entity.name} ${Math.round(t.entity.position.distanceTo(site.foot))} off`).join(', ')}`);
+        setAside(this, 'sleep', 'bed', err, 600000);
+        this.state.lastSleepError = err.message; this.report(goal, save, { action: 'sleep_failed', reason: err.message, placed: false });
+        throw err;
+      }
+    }
     this.report(goal, save, { action: 'sleep', at: { ...site.foot }, home: !!placed });
     if (placed) {
       // A walk that fails is a route problem, not a bed problem: the shelter
@@ -6778,11 +6803,21 @@ class Survival {
       this.state.lastSleepError = err.message; this.report(goal, save, { action: 'sleep_failed', reason: err.message });
     }
     finally {
-      // The carried bed comes back up; the base's bed stays where it is.
+      // The carried bed comes back up; the base's bed stays where it is. The
+      // pickup is not cancellable: the threat layer preempting on a mob that
+      // comes near threw Cancelled out of this block and the bed stayed
+      // standing with its item on the floor (mid-243-bg, note 633).
       if (!placed) {
-        for (const p of [site.foot, site.head]) if (isBed(bot.blockAt(p))) { try { await this.actions.dig(bot, task, p, { requireDrops: false }); } catch (_) { task.check(); } }
-        await sleep(800);
-        if (!bedCarried(bot)) { try { await this.actions.navigate(bot, task, new goals.GoalNear(site.foot.x, site.foot.y, site.foot.z, 0.5), { timeoutMs: 4000, stallMs: 2000 }); await sleep(600); } catch (_) { task.check(); } }
+        const bed = item;
+        await this.pickUpBed(task, site.foot, site.head, bed);
+        if (bedCarried(bot)) { if (this.state.bedLeft) delete this.state.bedLeft; }
+        else {
+          const standing = [site.foot, site.head].some(p => isBed(bot.blockAt(p)));
+          const lying = Object.values(bot.entities || {}).filter(e => e.isValid !== false && e.position && e.getDroppedItem?.()?.name === bed && e.position.distanceTo(site.foot) <= 10)
+            .sort((x, y) => x.position.distanceTo(site.foot) - y.position.distanceTo(site.foot))[0];
+          this.state.bedLeft = { name: bed, ...(lying ? { drop: { x: lying.position.x, y: lying.position.y, z: lying.position.z } } : {}), foot: { x: site.foot.x, y: site.foot.y, z: site.foot.z }, head: { x: site.head.x, y: site.head.y, z: site.head.z }, dimension: String(bot.game?.dimension || ''), at: Date.now(), tries: 0 };
+          this.report(goal, save, { action: 'bed_left', bed, at: { ...site.foot }, standing, note: standing ? 'the bed is still standing where it was put down' : lying ? 'the bed was broken and its item lies on the ground near there' : 'the bed was broken and its item is not in view' });
+        }
       }
       save();
     }
@@ -6793,6 +6828,43 @@ class Survival {
     // is picked up again, and the respawn goes back to the world's spawn.
     this.state.respawn = placed ? { x: site.foot.x, y: site.foot.y, z: site.foot.z, dimension: 'overworld' } : null;
     this.report(goal, save, { action: 'leave_shelter', reason: 'Morning. Back to it.' });
+  }
+
+  // The bed this bot put down comes back up: both halves dug, then the item
+  // collected. Not cancellable (see sleepStep); each move is short and bounded.
+  async pickUpBed(task, foot, head, name) {
+    const bot = this.bot, solid = uncancellable(task);
+    for (const p of [foot, head]) if (isBed(bot.blockAt(p))) { try { await this.actions.dig(bot, solid, p, { requireDrops: false }); } catch (_) { /* the check below says whether it is still there */ } }
+    await sleep(800);
+    if (bedCarried(bot)) return true;
+    try { await require('./drop-collection').collectNearbyDrops(bot, solid, name, { origin: foot.offset(0.5, 0, 0.5), radius: 10, timeoutMs: 5000, waitForSpawnMs: 800 }); } catch (_) { /* fall through to the walk */ }
+    if (!bedCarried(bot)) { try { await this.actions.navigate(bot, solid, new goals.GoalNear(foot.x, foot.y, foot.z, 0.5), { timeoutMs: 4000, stallMs: 2000 }); await sleep(600); } catch (_) { /* still not carried */ } }
+    return !!bedCarried(bot);
+  }
+
+  // A bed left behind (state.bedLeft, from sleepStep's cleanup) is fetched
+  // when it is near and nothing hostile is: it costs three wool and three
+  // planks and sets the respawn. Three tries, twenty seconds apart, then it
+  // is given up and said.
+  async fetchLeftBed(task, goal, save) {
+    const bot = this.bot, left = this.state.bedLeft;
+    if (!left) return false;
+    if (bedCarried(bot)) { delete this.state.bedLeft; save(); return false; }
+    if (String(bot.game?.dimension || '') !== left.dimension) return false;
+    const foot = pos(left.foot), head = pos(left.head), distance = foot.distanceTo(bot.entity.position);
+    if (distance > 30 || (bot.health ?? 20) < 8 || threats(bot, 12).length || immediateThreat(bot)) return false;
+    if (Date.now() - (left.lastTry || 0) < 20000) return false;
+    left.lastTry = Date.now(); left.tries = (left.tries || 0) + 1;
+    if (left.tries > 3) { this.report(goal, save, { action: 'bed_lost', bed: left.name, at: left.foot }); delete this.state.bedLeft; save(); return false; }
+    this.report(goal, save, { action: 'bed_recover', bed: left.name, at: left.foot, distance: Math.round(distance), try: left.tries });
+    try {
+      const to = left.drop || left.foot;
+      if (distance > 3) await this.actions.navigate(bot, task, new goals.GoalNear(to.x, to.y, to.z, 2), { timeoutMs: 15000, stallMs: 5000 });
+    } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return true; }
+    const got = await this.pickUpBed(task, foot, head, left.name);
+    if (got) { this.report(goal, save, { action: 'bed_recovered', bed: left.name }); delete this.state.bedLeft; }
+    save();
+    return true;
   }
 
   // The carried bed where no level cells lie beside the feet: a nook dug
@@ -7539,6 +7611,8 @@ class Survival {
       await require('./body').answer(bot, task, 'lava', this.lavaWays(task, goal, save), { client: this.client, goal, save });
       onStep(goal); return true;
     }
+    // A bed the last bedtime left behind, when it is near and nothing is.
+    if (this.state.bedLeft && await this.fetchLeftBed(task, goal, save)) { onStep(goal); return true; }
     // The last dry footing, for the way back out of lava.
     if (bot.entity.onGround && !bot.entity.isInWater) {
       const f = feetCell(bot);
@@ -8366,7 +8440,7 @@ class Survival {
       // (the decision review, 2026-09-26): one may be killed first, or be
       // outside the eight and five that refuse a sleep.
       const byBed = monstersByBed(bot, homeBed && !bed ? homeBed.foot : bot.entity.position);
-      const refused = byBed ? ` ${byBed} monster${byBed === 1 ? ' is' : 's are'} within eight blocks sideways and five up or down of the bed now, seen or not: sleep is refused while any are.` : '';
+      const refused = byBed ? refusalSays(bot, homeBed && !bed ? homeBed.foot : bot.entity.position) : '';
       tree.sleep_in_bed = { description: homeBed && !bed ? `Walk to the bed ${walk} blocks away (about ${Math.round(walk / 4.3)} seconds) and sleep in it. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${refused}${creeperRaceSays}` : `Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${refused}${creeperRaceSays}`, run: () => this.sleepStep(task, goal, save) };
     }
     // Where the carried bed does not fit (a staircase, a shaft), a nook dug
@@ -8634,4 +8708,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

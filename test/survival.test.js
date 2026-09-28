@@ -5899,3 +5899,65 @@ test('cover from a ghast is put from a block its blast does not break, and what 
   await options.take_cover.run();
   assert(placed.length && placed.every(m => m === 'cobblestone'), placed.join(','));
 });
+
+// mid-243-bg, 2026-09-28: the carried bed went down with a spider two blocks off,
+// the server refused, the survival layer preempted, and the bed stayed standing.
+function bedBot({ spider = false } = {}) {
+  const blocks = new Map(); let items = [{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }];
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, time: { timeOfDay: 13000 },
+    entities: spider ? { 9: { id: 9, name: 'spider', type: 'hostile', position: new Vec3(0.5, 64, 2.5), height: 0.9, isValid: true } } : {},
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, isSleeping: false, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => items, slots: {} }, heldItem: null,
+    equip: async item => { bot.heldItem = item; }, lookAt: async () => {},
+    placeBlock: async () => { blocks.set(`${new Vec3(1, 64, 0)}`, 'white_bed'); blocks.set(`${new Vec3(2, 64, 0)}`, 'white_bed'); items = items.filter(i => i.name !== 'white_bed'); },
+    sleep: async () => { throw new Error('There are monsters nearby'); },
+    wake: async () => {},
+    blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
+  return { bot, blocks, give: () => items.push({ name: 'white_bed', count: 1 }), carried: () => items.some(i => i.name === 'white_bed') };
+}
+
+test('the carried bed is not put down with a monster within eight blocks, and the option says who and how far', async () => {
+  const { Survival, refusalSays } = require('../src/survival');
+  const { bot, blocks, carried } = bedBot({ spider: true });
+  let placed = 0; const inner = bot.placeBlock; bot.placeBlock = async (...a) => { placed++; return inner(...a); };
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} });
+  const actions = []; survival.report = (g, sv, action) => actions.push(action);
+  await assert.rejects(survival.sleepStep(new Task('test', 'sleep'), {}, () => {}), /refuses a sleep with monsters within eight blocks/);
+  assert.equal(placed, 0, 'no bed went down'); assert.equal(blocks.size, 0); assert(carried());
+  assert(actions.some(a => a.action === 'sleep_failed'));
+  assert.equal(survival.state.bedLeft, undefined);
+  assert.match(refusalSays(bot, bot.entity.position), /A spider 2 blocks off.*the server will refuse the sleep/);
+  assert.equal(refusalSays(bedBot().bot, new Vec3(0.5, 64, 0.5)), '');
+});
+
+test('a bed put down is picked up even when the task is cancelled by the threat layer meanwhile', async () => {
+  const { Survival } = require('../src/survival');
+  const { bot, blocks, give, carried } = bedBot();
+  const task = new Task('test', 'sleep');
+  bot.sleep = async () => { task.cancel(); throw new Error('There are monsters nearby'); };
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async (b, t, p) => { t.check(); blocks.delete(`${p}`); give(); } });
+  survival.report = () => {};
+  await assert.rejects(survival.sleepStep(task, {}, () => {}), err => err.name === 'Cancelled');
+  assert(carried(), 'the bed is back in the pack');
+  assert.equal(blocks.size, 0, 'and nothing stands in the tunnel');
+  assert.equal(survival.state.bedLeft, undefined);
+});
+
+test('a bed that cannot be picked up is recorded as left, reported, and fetched when near and quiet', async () => {
+  const { Survival } = require('../src/survival');
+  const { bot, blocks, give, carried } = bedBot();
+  let failDig = true; const task = new Task('test', 'sleep');
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async (b, t, p) => { if (failDig) throw new Error('no'); blocks.delete(`${p}`); give(); } });
+  const actions = []; survival.report = (g, sv, a) => actions.push(a);
+  await assert.rejects(survival.sleepStep(task, {}, () => {}), /monsters/);
+  const left = actions.find(a => a.action === 'bed_left');
+  assert(left && left.standing && left.bed === 'white_bed', 'reported with what and where');
+  assert.deepEqual(survival.state.bedLeft.foot, { x: 1, y: 64, z: 0 });
+  // A hostile near: not now.
+  bot.entities = { 9: { id: 9, name: 'zombie', type: 'hostile', position: new Vec3(0.5, 64, 4.5), height: 1.9, isValid: true } };
+  assert.equal(await survival.fetchLeftBed(task, {}, () => {}), false);
+  bot.entities = {}; failDig = false;
+  assert.equal(await survival.fetchLeftBed(task, {}, () => {}), true);
+  assert(carried()); assert.equal(survival.state.bedLeft, undefined);
+  assert(actions.some(a => a.action === 'bed_recovered'));
+});
