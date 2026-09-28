@@ -11,9 +11,16 @@
 // the design review's measures against their targets (note 573).
 //   node scripts/trials/progress-audit.js [auto | port ...] [--minutes 15] [--history 60] [--since <iso>] [--json]
 //   node scripts/trials/progress-audit.js --cohort <iso> [--since <iso>] [--json]
+//   node scripts/trials/progress-audit.js --by-commit [--since <iso>] [--to <iso>] [--json]
 // auto (the default) finds the running midgame servers as watch.sh does;
 // --since keeps the trials begun after it. --cohort sums the measures over
 // every trial's whole record, before and after a deploy (note 598).
+// --by-commit groups every flight record's runs (one bot process each) by
+// the commit its connection frame names (src/recorder/commit.js), not by a
+// clock time: bots restart onto new builds every 10 to 15 minutes. Per
+// commit: runs, bot-hours, deaths and rods per bot-hour, runs that gained a
+// rod, Nether entries. Records with no commit are 'unknown'. --since and
+// --to cut the frames by time here.
 // JEV_ROOT reads another checkout's servers and records (from a worktree).
 const fs = require('fs');
 const path = require('path');
@@ -1030,6 +1037,13 @@ function main() {
   const time = name => { const i = argv.indexOf(`--${name}`); if (i < 0) return null; const t = Date.parse(argv[i + 1]); if (!Number.isFinite(t)) throw new Error(`--${name} needs a time, as 2026-09-28T06:45Z`); return t; };
   const minutes = opt('minutes', 15), historyMinutes = opt('history', 60), json = argv.includes('--json');
   const since = time('since'), at = time('cohort');
+  if (argv.includes('--by-commit')) {
+    const { readRuns, groupByCommit, commitTable } = require('../lib/flight-commit');
+    const to = time('to');
+    const rows = groupByCommit(readRuns(FLIGHT, { from: since ?? -Infinity, to: to ?? Infinity }));
+    console.log(json ? JSON.stringify(rows, null, 2) : commitTable(rows));
+    return;
+  }
   if (at !== null) {
     const c = cohort({ at, since, progress: (i, n, w) => process.stderr.write(`\r${i}/${n} ${w}`.padEnd(60)) });
     process.stderr.write('\n');

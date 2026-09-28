@@ -14,7 +14,10 @@
 // FIRE_TICKS. With --deaths: the deaths by a blaze or its fire: the damage of
 // their last sixty seconds (fireball, fire, blaze blows, other) and the
 // health the bot had before its last landing.
-//   node scripts/blaze-record.js [--from 2026-09-28T00:00:00Z] [--to ISO] [--landings | --deaths] [--dir <flight dir>]
+// With --by-commit: the fights table's headline row for each commit the bot
+// ran (the connection frame's commit, src/recorder/commit.js; records
+// without one are 'unknown'), not split by a clock time.
+//   node scripts/blaze-record.js [--from 2026-09-28T00:00:00Z] [--to ISO] [--landings | --deaths | --by-commit] [--dir <flight dir>]
 const fs = require('fs');
 const path = require('path');
 
@@ -135,13 +138,15 @@ function deaths(frames) {
 
 // Every connection's frames in a day, one file at a time (a trial's records
 // would not fit in memory together): `each(frames, file)`.
-function eachFile(dir, from, needle, each) {
+// `slim` maps each parsed frame to what the caller keeps (a big file's frames
+// are heavy).
+function eachFile(dir, from, needle, each, slim = null) {
   for (const f of fs.readdirSync(dir)) {
     if (!f.endsWith('.jsonl') || fs.statSync(path.join(dir, f)).mtimeMs < from) continue;
     const text = fs.readFileSync(path.join(dir, f), 'utf8');
     if (needle && !text.includes(needle)) continue;
     const frames = [];
-    for (const line of text.split('\n')) { if (!line) continue; try { const r = JSON.parse(line); frames.push({ at: Date.parse(r.at), kind: r.kind, detail: r.detail, label: r.label, snapshot: r.snapshot }); } catch (_) { /* a torn line */ } }
+    for (const line of text.split('\n')) { if (!line) continue; try { const r = JSON.parse(line); const frame = { at: Date.parse(r.at), kind: r.kind, detail: r.detail, label: r.label, snapshot: r.snapshot }; frames.push(slim ? slim(frame) : frame); } catch (_) { /* a torn line */ } }
     frames.sort((a, b) => a.at - b.at);
     each(frames, f);
   }
@@ -170,6 +175,11 @@ if (require.main === module) {
     const bucket = v => v <= 4 ? 'to 4' : v <= 6.5 ? '4 to 6.5' : v <= 8 ? '6.5 to 8' : v <= 12 ? '8 to 12' : 'over 12';
     console.log(JSON.stringify({ deaths: all.length, byBlazeOrItsFire: blaze.length, damageOfTheirLastMinute: sum,
       lastLandingWithinFifteenSeconds: withBall.length, healthBeforeIt: withBall.reduce((m, d) => ({ ...m, [bucket(d.lastLandingHealth)]: (m[bucket(d.lastLandingHealth)] || 0) + 1 }), {}) }, null, 1));
+  } else if (args['by-commit']) {
+    const { commitsByRun, runKey } = require('./lib/flight-commit');
+    const commits = commitsByRun(dir), by = {};
+    eachFile(dir, from, '"blaze"', (frames, f) => { const c = commits.get(runKey(f)) || 'unknown'; (by[c] ||= []).push(...fights(frames, { from, to })); });
+    console.log(JSON.stringify(Object.fromEntries(Object.entries(by).map(([c, list]) => [c, row(list)])), null, 1));
   } else console.log(JSON.stringify(tables(readFights(dir, from, to)), null, 1));
 }
-module.exports = { fights, tables, row, hurts, landings, deaths, readFights, GAP_MS, MIN_MS };
+module.exports = { fights, tables, row, hurts, landings, deaths, readFights, eachFile, GAP_MS, MIN_MS };
