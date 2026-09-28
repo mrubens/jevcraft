@@ -7012,9 +7012,10 @@ class Survival {
   // two minutes or six health. The Nether's hoglins (nether-travel.js):
   // mid-211-c, short of food 250 blocks from its portal, was never offered
   // them (note 241, 2026-09-26).
-  foodHunt(goal, save, kind) {
-    this.state.nightPlan = { plan: 'hunt', kind, food: true, until: Date.now() + 120000, startHealth: this.bot.health };
-    this.report(goal, save, { action: 'food_hunt_chosen', kind });
+  foodHunt(goal, save, kind, { method = 'walk' } = {}) {
+    this.state.nightPlan = { plan: 'hunt', kind, food: true, method, until: Date.now() + 120000, startHealth: this.bot.health,
+      meatAtStart: countOf(this.bot, 'porkchop') + countOf(this.bot, 'cooked_porkchop') };
+    this.report(goal, save, { action: 'food_hunt_chosen', kind, method });
   }
 
   // Food off the Overworld: back through the portal, or, in the Nether,
@@ -7035,10 +7036,7 @@ class Survival {
       const { hoglinsKnown, hoglinSays } = require('./nether-travel');
       const known = hoglinsKnown(bot, goal);
       if (known.inView.length || known.seen.length) children.hoglin_food = { description: hoglinSays(bot, known),
-        run: async () => {
-          if (!known.inView.length) await require('./sightings').walkToSighting(bot, task, goal, save, 'hoglin', known.seen[0], this.actions.navigate);
-          this.foodHunt(goal, save, 'hoglin');
-        } };
+        run: () => require('./nether-food').huntHoglin(bot, task, goal, save, known, { navigate: this.actions.navigate, survival: this, method: 'walk' }) };
     }
     return children;
   }
@@ -7051,7 +7049,7 @@ class Survival {
     const bot = this.bot, plan = this.state.nightPlan;
     const { MOB_DROPS } = require('./mob-drops');
     const drops = MOB_DROPS[plan.kind];
-    const end = why => { this.report(goal, save, { action: 'hunt_over', kind: plan.kind, kills: plan.kills || 0, why }); delete this.state.nightPlan; delete bot._nightHunt; save(); return false; };
+    const end = why => { this.report(goal, save, { action: 'hunt_over', kind: plan.kind, kills: plan.kills || 0, why }); require('./nether-food').noteHunt(bot, goal, plan, why); delete this.state.nightPlan; delete bot._nightHunt; save(); return false; };
     if (!drops) return end('nothing known of it');
     if ((bot.health ?? 20) <= (plan.startHealth ?? 20) - 6) return end('six health lost');
     // The last one is down: what it dropped, before the next.
@@ -7074,6 +7072,21 @@ class Survival {
     bot._nightHunt = { name: plan.kind, until: plan.until };
     plan.targetId = target.id; plan.lastAt = { x: target.position.x, y: target.position.y, z: target.position.z };
     this.report(goal, save, { action: 'night_hunt', target: plan.kind, distance: Number(target.position.distanceTo(here).toFixed(1)), kills: plan.kills || 0, health: bot.health });
+    // From a pillar, for a hoglin (nether-food.js): stood up two blocks
+    // where its blow does not reach, and struck from there.
+    if (plan.method === 'pillar' && plan.kind === 'hoglin' && plan.food) {
+      const step = await require('./nether-food').pillarHuntStep({ bot, sleep, canStrike, onPillar: () => onPillarTop(bot, this.state.pillar), why: () => this.state.stanceWhy,
+        pillarFrom: danger => this.pillarFrom(task, goal, save, danger), defend: () => defendNearby(bot, task, goal, save),
+        approach: async (mob, within) => {
+          const movements = bot.pathfinder?.movements, kept = movements && { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers };
+          if (movements) Object.assign(movements, { canDig: false, allow1by1towers: false });
+          try { await this.actions.navigate(bot, task, new goals.GoalFollow(mob, within - 2), { timeoutMs: 4000, stallMs: 2000, stopWhen: () => mob.isValid === false || mob.position.distanceTo(bot.entity.position) <= within }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          finally { if (movements) Object.assign(movements, kept); }
+        } }, plan, target);
+      if (step.end) return end(step.end);
+      save(); return true;
+    }
     if (canStrike(bot, target)) {
       // Not turned to on a one-wide span over a drop (terrain.js onSpan).
       if (require('./terrain').onSpan(bot)) { await sleep(100); return true; }

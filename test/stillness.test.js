@@ -258,18 +258,40 @@ test('stranded in the Nether and short of food, the stall offers what answers it
   const survival = { state: goal.survival, canNightMine: () => false, foodHunt: (g, s, kind) => hunts.push(kind) };
   await answerStall(bot, new Task('stall'), goal, () => {}, { key: 'step:return_to_portal', layer: 'work', strikes: 2, error: 'No way back to the nether portal' }, { client, survival }).catch(() => {});
   const offered = asked[0];
-  for (const key of ['differently', 'cross_toward', 'hoglin_food', 'portal_here', 'keep_on']) assert(offered[key], `${key} on offer: ${Object.keys(offered).join(', ')}`);
+  for (const key of ['differently', 'cross_toward', 'hoglin_food', 'portal_here', 'keep_on', 'restock_food']) assert(offered[key], `${key} on offer: ${Object.keys(offered).join(', ')}`);
   assert.match(offered.cross_toward, /the portal back, 250 blocks off and 44 blocks up.*32 blocks, laying 30 blocks over open air and lava \(30 of them over lava\).*64 blocks carried, 34 left after.*It ends 32 blocks nearer/);
   assert.match(offered.hoglin_food, /1 in view within thirty-two blocks, the nearest 22 blocks off.*two to four raw porkchops.*forty health.*Health does not come back meanwhile: hunger 5/);
   assert.match(offered.portal_here, /obsidian carried \(10.*flint and steel.*near 4, 4.*a new place/);
   assert.match(offered.keep_on, /nothing edible is carried.*Hunger 5.*starving takes health down to one/);
   assert(isSetAside(goal, 'nether_return', 'food'), 'going on without the Overworld leaves the trip back out');
-  // Nothing to build a portal with, and not hungry: neither the portal, the hoglin nor going on is offered.
+  // Nothing to build a portal with, and not hungry: neither the portal, the hoglin nor going on is offered (the food step is, with nothing carried: note 639).
   const fed = stranded([stack('netherrack', 64)]);
   fed.bot.food = 20; delete fed.goal.survivalAction;
   asked.length = 0;
   await answerStall(fed.bot, new Task('stall'), fed.goal, () => {}, { key: 'step:return_to_portal', layer: 'work', strikes: 2 }, { client, survival: { ...survival, state: fed.goal.survival } }).catch(() => {});
-  assert.deepEqual(Object.keys(asked[0]).sort(), ['cross_toward', 'differently']);
+  assert.deepEqual(Object.keys(asked[0]).sort(), ['cross_toward', 'differently', 'restock_food']);
+});
+
+test('at 3.5 health with hunger 13 and nothing to eat the stall\'s options say health does not come back, the ones that say it already once (note 639, 25589 at 18:17Z)', async () => {
+  const { answerStall } = require('../src/work');
+  const { bot, goal } = stranded([stack('netherrack', 64), stack('iron_sword', 1)]);
+  Object.assign(bot, { health: 3.5, food: 13 });
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'keep_on', confidence: 0.8 } } }; } };
+  const survival = { state: goal.survival, canNightMine: () => false, foodHunt: () => {} };
+  await answerStall(bot, new Task('stall'), goal, () => {}, { key: 'step:return_to_portal', layer: 'work', strikes: 2, error: 'No way back to the nether portal' }, { client, survival }).catch(() => {});
+  const offered = asked[0];
+  const says = /Health 3\.5 does not come back at hunger 13: nothing carried is food, and in the Nether only a hoglin, a mushroom stew or what the bastions hold is, so whatever this costs in health stays lost\./;
+  for (const key of ['differently', 'cross_toward']) assert.match(offered[key], says, `${key} says it`);
+  const said = (offered.keep_on.match(/does not come back|comes back only/g) || []).length;
+  assert.equal(said, 1, 'keep_on says it already, once');
+  assert.doesNotMatch(offered.keep_on, /Health 3\.5 does not come back at hunger 13: nothing carried/);
+  // Health of ten or more: as it was.
+  const well = stranded([stack('netherrack', 64), stack('iron_sword', 1)]);
+  Object.assign(well.bot, { health: 12, food: 13 });
+  asked.length = 0;
+  await answerStall(well.bot, new Task('stall'), well.goal, () => {}, { key: 'step:return_to_portal', layer: 'work', strikes: 2, error: 'No way back to the nether portal' }, { client, survival: { ...survival, state: well.goal.survival } }).catch(() => {});
+  assert.doesNotMatch(asked[0].differently, /does not come back at hunger/);
 });
 
 test('gathering food for the crossing never waits: a rested search is taken up again; without Jev a top-up worked twenty minutes is passed over unless none is carried', async () => {

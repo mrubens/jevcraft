@@ -724,10 +724,7 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   if (food && survival?.foodHunt) {
     const known = hoglinsKnown(bot, goal);
     if (known.inView.length || known.seen.length) answers.hoglin_food = { description: hoglinSays(bot, known),
-      run: async () => {
-        if (!known.inView.length && actions.navigate) await require('./sightings').walkToSighting(bot, task, goal, save, 'hoglin', known.seen[0], actions.navigate);
-        survival.foodHunt(goal, save, 'hoglin');
-      } };
+      run: () => require('./nether-food').huntHoglin(bot, task, goal, save, known, { navigate: actions.navigate, survival, method: 'walk' }) };
   }
   const returning = food || !!target?.portal;
   const lighter = countOf(bot, 'flint_and_steel') + countOf(bot, 'fire_charge') > 0;
@@ -763,6 +760,12 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
         delete goal.stockFood; save();
       } };
   }
+  // Food as a resource of the stay (nether-food.js): the ways to it asked
+  // next, each priced, where little is carried or health cannot come back.
+  try {
+    const restock = require('./nether-food').restockFoodOption(bot, task, goal, save, { actions, survival, client: actions.client });
+    if (restock) answers.restock_food = restock;
+  } catch (_) { /* no food routes from here */ }
   return answers;
 }
 

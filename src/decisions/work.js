@@ -101,9 +101,48 @@ define({
     { key: 'search_on', label: 'take the rods step up again now, its rest lifted', when: 'the rods step waits, and what it was set aside for does not still stand from here (src/game-progress.js asideStands: within four blocks of where it was set aside, before the ways below come off rest or five minutes; said in searchOnNotOffered, note 600)', level: 'root' },
     { key: 'wait_here', label: 'other work in the Nether until the rods step\'s rest ends, the minutes said', when: 'the rods step waits until a time; chosen, that work is the waiting stage\'s own, a piece at a time (src/work.js holdForRest), not the rods step thrown at each pass (note 605)', level: 'root' },
     { key: 'keep_on', label: 'go on in the Nether without going back for food', when: 'hungry under eighteen with nothing to eat; the trip back is left out for twenty minutes', level: 'root' },
+    { key: 'restock_food', label: 'get food here first: the ways to it asked next, each priced', when: 'the food reason, in the Nether, with under eight food points carried or hunger under eighteen and health under twenty, and some way to food real from here (a hoglin known, mushrooms of both kinds in view, raw meat to cook, the trip back); said with why it is on offer, the stay the goal still wants against what is carried, and each way\'s yield (src/nether-food.js)', level: 'root' },
   ],
   instructions: { task: 'Choose whether the bot leaves the Nether now.', guidance: 'Going back says what it is for, how far the portal is and whether it is night on the other side; staying says what waits and for how long. Health comes back only at hunger eighteen or more.' },
   fallback: children => Object.keys(children).find(k => k !== 'go_back') || 'go_back',
+});
+
+// Food as a resource of the Nether stay (note 639): the ways to it, each
+// with what it yields, costs and needs, after the ladder or a stall was
+// offered the step (restock_food) and Jev took it.
+define({
+  id: 'restock_food', area: 'survival', parent: 'rung_progress', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'In the Nether with little food carried, or hurt at a hunger where health does not come back: which way to more food, or go on without?',
+  trigger: 'Chosen as the step (restock_food) at the food question of a hunt short of fitness (leave_nether), at a stalled Nether step, or at the stay\'s food kit (nether_food_kit); not asked where no way is real from here.',
+  source: 'src/nether-food.js (foodRoutes, askRestockFood), src/nether-travel.js (hoglinSays), src/game-progress.js (portalTrip), src/work.js (cookable)',
+  options: [
+    { key: 'hoglin_walk', label: 'hunt a hoglin on foot for its porkchops', when: 'a hoglin in view within thirty-two blocks or seen within 192 in the last half hour; said as the hoglin question says it (2 to 4 raw porkchops at 3 hunger each raw and 8 cooked, the fight priced from the game\'s numbers at this health, the walk at the measured pace, how the day\'s hunts went) and how this trial\'s went', level: 'root' },
+    { key: 'hoglin_pillar', label: 'hunt the hoglin from a pillar two blocks up', when: 'the same hoglin and two blocks carried that can be laid; the walk to within twelve blocks, two blocks laid, the sword struck down from the top (a hoglin\'s blow does not reach two up; 168 pillar stances measured 0.1 health lost, 2 deaths), and what a pillar does not stop; the hunt ends if the hoglin does not come in forty-five seconds', level: 'root' },
+    { key: 'mushroom_stew', label: 'make mushroom stew from mushrooms in view', when: 'a red and a brown mushroom within forty-eight blocks or carried, and a bowl or three planks\' worth of wood carried; said with the count, the nearest, 6 hunger a stew, what the stew is made of, and that the game grows them only in the nether wastes and basalt deltas and gathering them is not measured', level: 'root' },
+    { key: 'cook_meat', label: 'cook the raw meat carried', when: 'raw meat carried, and a furnace (or eight stone) and fuel that burns (coal, charcoal, a blaze rod) carried; said with the points now and cooked, the seconds standing at it, and that the meat is in the furnace, not eaten, meanwhile', level: 'root' },
+    { key: 'return_for_food', label: 'go back through the portal to the Overworld for food', when: 'the way back is at hand; said with the trip (its walk at the pace the Nether walks measured, lava on the line, the hour it comes out at) and the food known on the other side', level: 'root' },
+    { key: 'keep_on', label: 'go on in the Nether without more food for twenty minutes', when: 'hunger under eighteen', level: 'root' },
+  ],
+  instructions: workInstructions('The bot is in the Nether short of food. Choose the way to more, or to go on without. Each way says what it yields in hunger points, what it costs in seconds and health, and what the bot must carry; a way that is not real from here is not offered and is said in waysNotOffered. whatTheNetherHas lists what the Nether has to eat and what it does not, read from the game\'s data. Health comes back only at hunger eighteen or more; the stay the goal still wants is in the state against what is carried. A number said as not measured is not known: read it as unknown, neither good nor bad.'),
+  // Without Jev: what costs no health first, then the way back, then going on.
+  fallback: children => ['cook_meat', 'mushroom_stew', 'keep_on', 'return_for_food', 'hoglin_pillar', 'hoglin_walk'].find(k => children[k]) || Object.keys(children)[0],
+});
+
+// The food line of the crossing kit, asked inside the Nether (note 639): the
+// stage saves begin in the Nether with what the source world carried and were
+// never asked at a portal.
+define({
+  id: 'nether_food_kit', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'In the Nether with a stay still ahead and less food than it will spend: go on with what is carried, get food here, or go back through the portal for it?',
+  trigger: 'On the game ladder, the first time a Nether question is due in a stay (the fortress search or a blaze hunt at a fortress) with fewer food points carried than the goal\'s stay wants (crossing-kit.js netherStay), and each hour of the stay after; not with a mob in sight; asked once whatever the answer.',
+  source: 'src/nether-food.js (askStayKit), src/crossing-kit.js (netherStay), src/mob-hunt.js (stayKit)',
+  options: [
+    { key: 'go_on', label: 'go on with the stay on what is carried', when: 'always; said with the points carried and how many minutes they last at forty hunger an hour against the minutes the goal still wants', level: 'root' },
+    { key: 'restock_food', label: 'get food here first: the ways to it asked next, each priced', when: 'some way to food real from here other than the trip back (a hoglin known, mushrooms of both kinds in view, raw meat to cook); the ways not real are said', level: 'root' },
+    { key: 'return_for_food', label: 'go back through the portal to the Overworld for food', when: 'the way back is at hand; said with the trip at the measured pace of the Nether\'s walks, and the food known on the other side', level: 'root' },
+  ],
+  instructions: workInstructions('The bot is in the Nether and its food carried is less than the stay the goal still wants will spend (stay, in the state: the minutes wanted, the points that wants, the points carried and the minutes they last). Choose whether to go on as it is, to get food here (the ways are asked next, each priced), or to go back through the portal for it. A stay spends about forty hunger an hour; health comes back only at hunger eighteen or more.'),
+  fallback: children => children.go_on ? 'go_on' : Object.keys(children)[0],
 });
 
 define({
@@ -208,6 +247,7 @@ const STALL_OPTIONS = [
     { key: 'return_for_food', label: 'go back through the portal to the Overworld for food', when: 'in the Nether, hungry with nothing to eat or on the way back for food; said with the trip (its walk, the pace of the Nether walks measured, from sixty blocks, lava on the line, the hour it comes out at), the food known on the Overworld side and, while the choice to go on without it holds, when and at what health that was chosen (note 607)', level: 'root' },
     { key: 'portal_here', label: 'build a portal where the bot stands and go through', when: 'in the Nether on the way back (or hungry), ten obsidian, flint and steel or a fire charge, and three blocks for the lintel carried', level: 'root' },
     { key: 'keep_on', label: 'go on in the Nether without going back for food', when: 'in the Nether, hungry with nothing to eat or on the way back for food; the trip back is left out for twenty minutes; said, when Jev chose the trip back and it is what has stopped, that this ends it (note 625)', level: 'root' },
+    { key: 'restock_food', label: 'get food here first: the ways to it asked next, each priced', when: 'in the Nether with under eight food points carried, or hunger under eighteen and health under twenty, and some way to food real from here (a hoglin known, mushrooms of both kinds in view, raw meat to cook, the trip back); said with why it is on offer, the stay the goal still wants against what is carried, and each way\'s yield (src/nether-food.js, note 639)', level: 'root' },
     ...IDLE_OPTIONS.filter(o => o.key !== 'long_game').map(o => ({ ...o, when: `by day in the Overworld, and ${o.when}`, level: 'root' })),
     { key: 'again', label: 'try the failed step again as it was', when: 'a step failed again and again (persist), and it does not rest in the ledger from here (src/tried.js): tried twice from here and come to nothing, it rests five minutes; only this answer puts the failed step back in hand', level: 'root' },
     { pattern: 'recover_[0-9]+', label: 'a recovery move the code checked (gather footing, the surface, another standing spot, another source, down off a pillar)', when: 'a step failed again and again, and src/recovery-options.js found the move feasible from here (it was the separate recovery_action question, folded in here in note 571)', dynamic: true, level: 'root' },

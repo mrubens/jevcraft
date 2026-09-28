@@ -88,7 +88,7 @@ function kitItems(bot) {
     const lastSays = last.points ? ` Beside it, ${last.points} points in the last resort, not counted: ${last.says}.` : '';
     const stay = netherStay(bot);
     items.push({ key: 'food', short: food < stay.points, carried: food, wants: stay.points,
-      says: `Food: ${food} food points carried (${meals || 'nothing to eat'}); the code would take ${stay.points}, food for the whole stay. ${staySays(stay)} Health comes back only while hunger stays at eighteen or more, and a fortress trip is fighting and running; in the Nether, hoglins are the meat and nothing else is food, and a hoglin hits for three to eight and has forty health, so a hurt bot with nothing to eat is left to go back through the portal for food or fight one at the health it has.${lastSays}` });
+      says: `Food: ${food} food points carried (${meals || 'nothing to eat'}); the code would take ${stay.points}, food for the whole stay. ${staySays(stay)} Health comes back only while hunger stays at eighteen or more, and a fortress trip is fighting and running; in the Nether, hoglins are the meat (a mushroom stew and a bastion's chests are the only other food there, note 639), and a hoglin hits for three to eight and has forty health, so a hurt bot with nothing to eat is left to go back through the portal for food or fight one at the health it has.${lastSays}` });
     const health = Math.round(bot.health ?? 20), hunger = bot.food ?? 20;
     const back = health >= NETHER_HEALTH ? '' : hunger >= 18
       ? ` At hunger ${hunger} it comes back about a point every four seconds: about ${(NETHER_HEALTH - health) * 4} seconds to ${NETHER_HEALTH}.`

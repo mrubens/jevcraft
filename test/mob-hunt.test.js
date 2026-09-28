@@ -1576,7 +1576,8 @@ test('hungry in the Nether with nothing to eat, the hunt asks before going back 
   assert.equal(back, 0, 'staying, as Jev chose');
   assert.equal(client.asked.length, 1);
   const { options } = client.asked[0];
-  assert.deepEqual(Object.keys(options).sort(), ['go_back', 'keep_on']);
+  assert.deepEqual(Object.keys(options).sort(), ['go_back', 'keep_on', 'restock_food']);
+  assert.match(options.restock_food, /^Get food here before going back, the way asked next with each priced:|^Get food here before going on/);
   assert.match(options.go_back, /The nearest portal remembered is 21 blocks off/);
   assert.match(options.go_back, /comes out in the Overworld at night/);
   assert.match(options.keep_on, /hunger 17/);

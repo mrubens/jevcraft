@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-94 questions: 45 decision trees and 49 batched questions.
+96 questions: 47 decision trees and 49 batched questions.
 
 ## Batches
 
@@ -274,6 +274,26 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `hunt` | root | fight a mob the request needs a drop from | a mob hunt is on and one of its kind is in view |
 | `work` | root | the request's next step | always while a request is running |
 
+### `restock_food`
+
+**In the Nether with little food carried, or hurt at a hunger where health does not come back: which way to more food, or go on without?**
+
+- When: Chosen as the step (restock_food) at the food question of a hunt short of fitness (leave_nether), at a stalled Nether step, or at the stay's food kit (nether_food_kit); not asked where no way is real from here.
+- Decision tree, choice; stakes medium; ledger kind `survival`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/nether-food.js (foodRoutes, askRestockFood), src/nether-travel.js (hoglinSays), src/game-progress.js (portalTrip), src/work.js (cookable)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `hoglin_walk` | root | hunt a hoglin on foot for its porkchops | a hoglin in view within thirty-two blocks or seen within 192 in the last half hour; said as the hoglin question says it (2 to 4 raw porkchops at 3 hunger each raw and 8 cooked, the fight priced from the game's numbers at this health, the walk at the measured pace, how the day's hunts went) and how this trial's went |
+| `hoglin_pillar` | root | hunt the hoglin from a pillar two blocks up | the same hoglin and two blocks carried that can be laid; the walk to within twelve blocks, two blocks laid, the sword struck down from the top (a hoglin's blow does not reach two up; 168 pillar stances measured 0.1 health lost, 2 deaths), and what a pillar does not stop; the hunt ends if the hoglin does not come in forty-five seconds |
+| `mushroom_stew` | root | make mushroom stew from mushrooms in view | a red and a brown mushroom within forty-eight blocks or carried, and a bowl or three planks' worth of wood carried; said with the count, the nearest, 6 hunger a stew, what the stew is made of, and that the game grows them only in the nether wastes and basalt deltas and gathering them is not measured |
+| `cook_meat` | root | cook the raw meat carried | raw meat carried, and a furnace (or eight stone) and fuel that burns (coal, charcoal, a blaze rod) carried; said with the points now and cooked, the seconds standing at it, and that the meat is in the furnace, not eaten, meanwhile |
+| `return_for_food` | root | go back through the portal to the Overworld for food | the way back is at hand; said with the trip (its walk at the pace the Nether walks measured, lava on the line, the hour it comes out at) and the food known on the other side |
+| `keep_on` | root | go on in the Nether without more food for twenty minutes | hunger under eighteen |
+
 ## combat
 
 ### `ranged_response`
@@ -489,6 +509,24 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `search_on` | root | take the rods step up again now, its rest lifted | the rods step waits, and what it was set aside for does not still stand from here (src/game-progress.js asideStands: within four blocks of where it was set aside, before the ways below come off rest or five minutes; said in searchOnNotOffered, note 600) |
 | `wait_here` | root | other work in the Nether until the rods step's rest ends, the minutes said | the rods step waits until a time; chosen, that work is the waiting stage's own, a piece at a time (src/work.js holdForRest), not the rods step thrown at each pass (note 605) |
 | `keep_on` | root | go on in the Nether without going back for food | hungry under eighteen with nothing to eat; the trip back is left out for twenty minutes |
+| `restock_food` | root | get food here first: the ways to it asked next, each priced | the food reason, in the Nether, with under eight food points carried or hunger under eighteen and health under twenty, and some way to food real from here (a hoglin known, mushrooms of both kinds in view, raw meat to cook, the trip back); said with why it is on offer, the stay the goal still wants against what is carried, and each way's yield (src/nether-food.js) |
+
+### `nether_food_kit`
+
+**In the Nether with a stay still ahead and less food than it will spend: go on with what is carried, get food here, or go back through the portal for it?**
+
+- When: On the game ladder, the first time a Nether question is due in a stay (the fortress search or a blaze hunt at a fortress) with fewer food points carried than the goal's stay wants (crossing-kit.js netherStay), and each hour of the stay after; not with a mob in sight; asked once whatever the answer.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/nether-food.js (askStayKit), src/crossing-kit.js (netherStay), src/mob-hunt.js (stayKit)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `go_on` | root | go on with the stay on what is carried | always; said with the points carried and how many minutes they last at forty hunger an hour against the minutes the goal still wants |
+| `restock_food` | root | get food here first: the ways to it asked next, each priced | some way to food real from here other than the trip back (a hoglin known, mushrooms of both kinds in view, raw meat to cook); the ways not real are said |
+| `return_for_food` | root | go back through the portal to the Overworld for food | the way back is at hand; said with the trip at the measured pace of the Nether's walks, and the food known on the other side |
 
 ### `win_strategy`
 
@@ -558,6 +596,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `return_for_food` | root | go back through the portal to the Overworld for food | in the Nether, hungry with nothing to eat or on the way back for food; said with the trip (its walk, the pace of the Nether walks measured, from sixty blocks, lava on the line, the hour it comes out at), the food known on the Overworld side and, while the choice to go on without it holds, when and at what health that was chosen (note 607) |
 | `portal_here` | root | build a portal where the bot stands and go through | in the Nether on the way back (or hungry), ten obsidian, flint and steel or a fire charge, and three blocks for the lintel carried |
 | `keep_on` | root | go on in the Nether without going back for food | in the Nether, hungry with nothing to eat or on the way back for food; the trip back is left out for twenty minutes; said, when Jev chose the trip back and it is what has stopped, that this ends it (note 625) |
+| `restock_food` | root | get food here first: the ways to it asked next, each priced | in the Nether with under eight food points carried, or hunger under eighteen and health under twenty, and some way to food real from here (a hoglin known, mushrooms of both kinds in view, raw meat to cook, the trip back); said with why it is on offer, the stay the goal still wants against what is carried, and each way's yield (src/nether-food.js, note 639) |
 | `cook_food` | root | cook the raw food carried | by day in the Overworld, and raw meat is carried |
 | `stone_tools` | root | make stone tools | by day in the Overworld, and a stone pickaxe, axe or sword is missing |
 | `stock_wood` | root | stock up to sixteen logs | by day in the Overworld, and fewer than sixteen logs are carried and a tree is in view |
@@ -1063,6 +1102,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `return_for_food` | root | go back through the portal to the Overworld for food | in the Nether, hungry with nothing to eat or on the way back for food; said with the trip (its walk, the pace of the Nether walks measured, from sixty blocks, lava on the line, the hour it comes out at), the food known on the Overworld side and, while the choice to go on without it holds, when and at what health that was chosen (note 607) |
 | `portal_here` | root | build a portal where the bot stands and go through | in the Nether on the way back (or hungry), ten obsidian, flint and steel or a fire charge, and three blocks for the lintel carried |
 | `keep_on` | root | go on in the Nether without going back for food | in the Nether, hungry with nothing to eat or on the way back for food; the trip back is left out for twenty minutes; said, when Jev chose the trip back and it is what has stopped, that this ends it (note 625) |
+| `restock_food` | root | get food here first: the ways to it asked next, each priced | in the Nether with under eight food points carried, or hunger under eighteen and health under twenty, and some way to food real from here (a hoglin known, mushrooms of both kinds in view, raw meat to cook, the trip back); said with why it is on offer, the stay the goal still wants against what is carried, and each way's yield (src/nether-food.js, note 639) |
 | `cook_food` | root | cook the raw food carried | by day in the Overworld, and raw meat is carried |
 | `stone_tools` | root | make stone tools | by day in the Overworld, and a stone pickaxe, axe or sword is missing |
 | `stock_wood` | root | stock up to sixteen logs | by day in the Overworld, and fewer than sixteen logs are carried and a tree is in view |

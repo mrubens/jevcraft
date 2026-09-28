@@ -157,7 +157,7 @@ function withoutFoodSays(bot, goal, { health, hunger, points }) {
   if (overworld || health >= 20 || hunger >= 18 || hunger + points >= 18) return null;
   const nether = /nether/.test(String(bot.game?.dimension || ''));
   const out = {
-    withoutFood: `health ${health} does not come back here: ${points ? `eating all that is carried brings hunger only to ${hunger + points}` : 'nothing carried is food'}, and ${nether ? 'in the Nether nothing but a hoglin is food' : 'nothing here is food'}; every point lost from here on stays lost until the bot has eaten to eighteen`,
+    withoutFood: `health ${health} does not come back here: ${points ? `eating all that is carried brings hunger only to ${hunger + points}` : 'nothing carried is food'}, and ${nether ? 'in the Nether only a hoglin, a mushroom stew or what a bastion\'s chests hold is food' : 'nothing here is food'}; every point lost from here on stays lost until the bot has eaten to eighteen`,
   };
   try {
     const trip = require('./game-progress').portalTrip(bot, goal);
@@ -175,6 +175,36 @@ function withoutFoodSays(bot, goal, { health, hunger, points }) {
     } catch (_) { /* no estimate */ }
   }
   return out;
+}
+
+// What a hurt bot's options leave out: that health does not come back. The
+// state said it (healthComesBack, withoutFood) on every question, and the
+// options that spend health said nothing: on 25589 the stall's work_free,
+// cross_toward and differently at 3.5 health, hunger 13, nothing to eat,
+// each said what it took in seconds and never that what it cost in health
+// stayed lost (note 639). One sentence, said only where it is so: health
+// under ten, hunger under eighteen, and what is carried does not bring
+// hunger to eighteen.
+const HEALTH_SAID = 10;
+function noHealSays(bot, goal = null) {
+  if (!bot?.entity || bot.game?.gameMode === 'creative' || !Number.isFinite(bot.health)) return '';
+  const health = round(bot.health), hunger = bot.food ?? 20;
+  if (health >= HEALTH_SAID || hunger >= 18) return '';
+  const points = foodCarried(bot).reduce((n, f) => n + f.count * f.points, 0);
+  if (hunger + points >= 18) return '';
+  const nether = /nether/.test(String(bot.game?.dimension || ''));
+  return `Health ${health} does not come back at hunger ${hunger}: ${points ? `all the food carried brings hunger only to ${hunger + points}` : 'nothing carried is food'}${nether ? ', and in the Nether only a hoglin, a mushroom stew or what the bastions hold is' : ''}, so whatever this costs in health stays lost.`;
+}
+// The sentence added to the options of a tree that do not say it already
+// (each option's own words about health coming back, or its being out).
+const SAID_ALREADY = /does not come back|comes? back only|health does not|stays? lost|no healing/i;
+function withNoHealSays(bot, goal, answers) {
+  const says = noHealSays(bot, goal);
+  if (!says || !answers) return answers;
+  for (const a of Object.values(answers)) {
+    if (a && typeof a.description === 'string' && !SAID_ALREADY.test(a.description)) a.description += ` ${says}`;
+  }
+  return answers;
 }
 
 // The standing fact: health and hunger, whether health comes back, the food
@@ -213,4 +243,4 @@ function healingSays(bot, goal) {
   };
 }
 
-module.exports = { healingSays, withoutFoodSays, overworldFoodSays, foodCarried, nearestFood, foodSources, daylightSays, MEAT_POINTS, RAW_MEAT_POINTS, preyFailed };
+module.exports = { healingSays, noHealSays, withNoHealSays, HEALTH_SAID, withoutFoodSays, overworldFoodSays, foodCarried, nearestFood, foodSources, daylightSays, MEAT_POINTS, RAW_MEAT_POINTS, preyFailed };

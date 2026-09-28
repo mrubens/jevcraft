@@ -735,6 +735,17 @@ const coverKept = state => (state.cover || []).filter(c => c.until > Date.now())
 // Hungry off the Overworld with nothing to eat, short of the fitness to
 // fight: back for food, or on without it, as Jev chooses (leave_nether).
 // null when the question went stale.
+// What the food ways carry out with, from the hunt's own actions.
+const foodActions = (bot, task, goal, save, actions) => ({ navigate: actions.navigate, returnOverworld: actions.returnOverworld, acquire: actions.acquireStep, client: actions.client,
+  mineOne: actions.mineAt ? (p, block) => actions.mineAt(bot, task, goal, save, p, block, block) : null });
+// The food kit of the stay, asked inside the Nether the first time a Nether
+// question is due (nether-food.js askStayKit): true when a way was chosen and
+// carried out, so the pass ends there.
+async function stayKit(bot, task, goal, save, actions) {
+  if (goal.kind !== 'win' || !(actions.client || task.opportunityClient)) return false;
+  const pick = await require('./nether-food').askStayKit(bot, task, goal, save, { actions: foodActions(bot, task, goal, save, actions), client: actions.client || task.opportunityClient });
+  return !!pick && pick !== 'go_on';
+}
 async function foodLeave(bot, task, goal, save, actions) {
   const { portalTrip } = require('./game-progress');
   // What a hit costs at this health, said with staying: "no fight is
@@ -747,10 +758,16 @@ async function foodLeave(bot, task, goal, save, actions) {
     go_back: { description: `Go back to the Overworld for food, hunted and cooked there. ${portalTrip(bot, goal)} The hunt waits till the bot is fed and back.` },
     keep_on: { description: `Stay and go on without food for twenty minutes: hunger ${bot.food}, and health comes back only at eighteen or more, so no fight is started; the fortress search goes on meanwhile. ${fitnessSays(bot)}${exposed}` },
   };
+  // Food as a resource of the stay (nether-food.js): the ways to more here,
+  // each priced, asked next.
+  let restock = null;
+  try { restock = require('./nether-food').restockFoodOption(bot, task, goal, save, { actions: foodActions(bot, task, goal, save, actions), client: actions.client || task.opportunityClient }); } catch (_) { restock = null; }
+  if (restock) tree.restock_food = { description: restock.description };
   const decision = await decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
     state: { for: 'food', health: bot.health, food: bot.food, foodCarried: false, dimension: dimension(bot), ...(hits ? { whatAHitCosts: hits } : {}) } });
   if (decision.stale) return null;
   const pick = decision.path.at(-1);
+  if (pick === 'restock_food') { await restock.run(); save(); return null; }
   goal.leaveNether = { reason: 'food', pick, until: 0, at: Date.now() };
   if (pick === 'keep_on') { setAside(goal, 'nether_return', 'food', require('./nether-travel').keepOnWhy(bot), 20 * 60000); delete goal.stockFood; }
   save();
@@ -787,6 +804,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   }
   if (!handler.passive && !await prepareCombatGear(bot, task, goal, save, actions)) return;
   if (handler.dimension && dimension(bot) !== handler.dimension) { await actions.enterNether(bot, task, goal, save); return; }
+  if (dimension(bot) === 'nether' && await stayKit(bot, task, goal, save, actions)) return;
   // Fit in every way but where it stands (a slab, a fence top, a ceiling at
   // the head): waiting was the answer to all of canBegin, and waiting does
   // not change the footing. It stood recovering at full health on a
@@ -1574,6 +1592,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // and the stall's own question takes it from there.
   const left = waysLeftSays(state, here);
   if (!Object.keys(options).length) throw new Error(`No leg from here can be walked, dug or bridged: ${[...blocked, ...resting].join('; ')}${left ? `; and the ways Jev left: ${left.join('; ')}` : ''}`);
+  try { require('./healing').withNoHealSays(bot, goal, options); } catch (_) { /* no body */ }
   const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}) }]));
   const blazesSeen = blazesSeenFacts(bot, goal);
   const facts = { ...(blazesSeen ? { blazesSeen } : {}), height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
@@ -2255,6 +2274,7 @@ async function goToWay(bot, task, goal, save, actions, state) {
 
 async function findFortressStep(bot, task, goal, save, actions) {
   const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
+  if (await stayKit(bot, task, goal, save, actions)) return;
   if (await mineGoldInPassing(bot, task, goal, save, actions)) return;
   const stopWhen = () => goldInPassing(bot, goal);
   // The hunt's work while no blaze is near is this search, whatever branch

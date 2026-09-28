@@ -253,7 +253,8 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   }
   // In the Nether, the answers that meet it, read before the loose ends
   // are dropped (the leg's target among them): nether-travel.js.
-  const nether = require('./nether-travel').netherAnswers(bot, task, goal, save, { survival, actions: { navigate, portalHere, returnOverworld: returnFromNether } });
+  const nether = require('./nether-travel').netherAnswers(bot, task, goal, save, { survival, actions: { navigate, portalHere, returnOverworld: returnFromNether, acquire: acquireStep, client,
+      mineOne: (p, block) => mine(bot, task, { action: 'mine', block, sources: [block], drops: block, count: 1 }, goal, save, p) } });
   looseEnds(goal, now);
   const answers = {};
   const mine = [goal.step, goal.lastStruggleStep].find(step => step?.action === 'mine' && step.block);
@@ -480,6 +481,9 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     ...(worked ? { workedOnRung: worked.says } : {}), ...(instead ? { setAsideGoesOnWith: instead } : {}), ...(stall.escalated?.passed?.length ? { passedOver: stall.escalated.passed } : {}),
     ...(pearlsNotOffered ? { pearlRoutesNotOffered: pearlsNotOffered } : {}), ...(takeUpNotOffered.length ? { takeUpNotOffered } : {}), ...(setAsideNotOffered ? { setAsideNotOffered } : {}),
     ...(castWait ? { lacking: castWait } : {}) };
+  // Hurt where health does not come back, said on the options that leave it
+  // out (healing.js noHealSays, note 639).
+  try { require('./healing').withNoHealSays(bot, goal, answers); } catch (_) { /* no body */ }
   // Reached: the question goes out (a rung's question cut off before here
   // is put off to a later pass, runGoal).
   stall.asked = true;
@@ -5595,7 +5599,9 @@ function foodTrips(bot, goal, pending, short) {
 // 594) carried 126 coal and two furnaces through forty minutes of hunting
 // for the crossing's food, and its raw kills were counted and eaten at three
 // a beef, where a steak is eight.
-const FUELS = /^(coal|charcoal|coal_block|.*_log|.*_planks|.*_stem|blaze_rod)$/;
+// The Nether's stems and planks do not burn (the jar's non_flammable_wood,
+// fuel.js): a bot with crimson planks was told a furnace was fuelled (note 639).
+const FUELS = /^(coal|charcoal|coal_block|(?!crimson_|warped_).*_log|(?!crimson_|warped_).*_planks|blaze_rod)$/;
 function cookable(bot) {
   const foods = bot.registry?.foodsByName || {};
   const { safeFood } = require('./vitals');
@@ -6363,4 +6369,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };
+module.exports = { cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };

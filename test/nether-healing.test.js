@@ -63,7 +63,7 @@ function pocket25590() {
 test('at 2.2 health in the Nether with nothing to eat, every question is told health does not come back, the trip back with its walk and the food over there, and that a hoglin is lost at this health (mid-242-ba-fortress-1, note 607)', () => {
   const { bot, goal } = pocket25590();
   const h = require('../src/healing').healingSays(bot, goal);
-  assert.match(h.withoutFood, /^health 2\.2 does not come back here: nothing carried is food, and in the Nether nothing but a hoglin is food; every point lost from here on stays lost until the bot has eaten to eighteen$/);
+  assert.match(h.withoutFood, /^health 2\.2 does not come back here: nothing carried is food, and in the Nether only a hoglin, a mushroom stew or what a bastion's chests hold is food; every point lost from here on stays lost until the bot has eaten to eighteen$/);
   assert.match(h.tripBackForFood, /^back through the portal to the Overworld for food: No portal here has been seen since the crossing, but the one the bot came through from the Overworld portal at \(64, -13\) comes out near \(8, -2\) here, 2\d\d blocks off, about \d+ seconds at a walk once the way is found/);
   assert.match(h.tripBackForFood, /Health does not come back on the way: hunger 17, under eighteen, and nothing to eat; 2\.2 health is what it walks with\./);
   assert.match(h.tripBackForFood, /Known on the Overworld side: 4 cow seen 20 minutes ago \d+ blocks from that portal\./);
