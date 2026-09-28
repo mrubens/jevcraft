@@ -32,6 +32,66 @@ Code decides what is possible. Jev decides what to do.
 - If only one option is possible, Jev is not asked.
 - Each question has a code fallback, used only if the service is down or too slow.
 
+### What Jev sees
+
+Each question sends Jev two things: a `state` object describing the situation, and a set of `options`, each with a written description. Jev returns a probability for each option.
+
+The state is not a dump of the game. It holds what a player would weigh for this decision, already worked out by code: health, armor and weapon, the threats with their distance and whether they can be reached, a fight estimate against those threats, and a handful of context fields that are the same across questions:
+
+- `riskNow`: how bad things are right now (hostiles in range, shots incoming, what fighting all of them would cost).
+- `healing`: whether health comes back here, what food is carried, where the nearest food is.
+- `deathWouldCost`: what would drop, the walk back from respawn, and the real minutes to make it all again.
+- `runClock`: minutes played, what the bot is working on, and where the time has gone recently. This lets Jev see when it is spending too long on something.
+- `recentPositions`: where the bot has been, every 15 seconds, so it can see that it is going in circles.
+- `previousStance`: the last answer to this question, how long ago, and why it is being asked again.
+
+The instructions that explain each field are only included when the field is present.
+
+Here is a real `encounter_stance` question from a trial (mid-242-af-nether-3-fortress-5, 17:10:53Z), shortened. The bot is at a fortress with one blaze in sight 8 blocks off and more around.
+
+```json
+{
+  "health": 17.5, "food": 20, "dimension": "the_nether",
+  "armour": ["iron_helmet", "iron_chestplate", "iron_leggings", "iron_boots"],
+  "weapon": "iron_sword", "shield": true, "buildingBlocks": 464,
+  "threats": [{ "name": "blaze", "distance": 8.3, "shoots": true, "visible": true }],
+  "estimate": { "fightHere": { "seconds": 6.3, "damageTaken": 3.2, "healthAfter": 14.3 } },
+  "alight": "The bot is alight at 17.5 health: about 4.7 seconds of fire left, a health a second that armour does not stop. Water puts it out at once; the Nether has none.",
+  "riskNow": { "level": "high: the mobs about could kill the bot if they all came",
+               "hostilesWithin": { "blocks": 24, "count": 6, "inSight": 1, "shooters": 6 },
+               "shotsComingAtTheBot": 2 },
+  "healing": { "healthComesBack": "yes: at full hunger ...", "foodCarried": "nothing to eat",
+               "nearestFood": ["1 hoglin seen just now, 35 blocks north-west"] },
+  "deathWouldCost": { "dropsWorn": ["iron helmet", "iron chestplate", "iron leggings", "iron boots", "shield"],
+                      "levelsLost": 7, "realMinutesToMakeAgain": { "iron pickaxe": 5, "iron armour": 9 } },
+  "runClock": { "minutesPlayed": 163, "nowOn": "obtain blaze rods" }
+}
+```
+
+Fifteen options were offered. Some of their descriptions, cut short:
+
+> `charge_nearest` (0.26): Charge the nearest blaze alone: 8.3 blocks off, over ground the bot can stand on within a sword's reach of it; walk in on it while the volleys rest, behind the shield for each as it comes, strike it until it dies, pick up its rod if it drops one, and be asked again then with what is left ...
+>
+> `close_in` (0.23): Go at them with the sword ... A blaze glows for three seconds before its three shots and rests five seconds after; a shield raised and facing it as the glow ends takes all three whole ...
+>
+> `leave_and_heal` (0.20): Walk 9 blocks (about 2.8 seconds in their fire, about 2.9 damage) to (-170, 58, 128), where none of the 4 blazes about has a line to the bot, stay until the health is full ... The blazes stay where they are; the fight after is asked again with the health back. Measured in the arena with the same kit ...
+>
+> `take_cover` (0.12): Put a block in the line from the eyes of the blaze to the bot's ... About 5.3 damage in the next fifteen seconds this way ... Toward the rods: none, no blaze killed; the blazes stay, and waiting does not send them away; 7 rods still needed.
+>
+> `keep_working` (0.00): Carry on with the work and leave these mobs be for fifteen seconds ... The blaze in sight keeps shooting while the bot works: about 19 damage in the fifteen seconds, from 18 health, more than the bot has.
+
+Jev picked `charge_nearest`. Each option states what it does, what it costs from the bot's current health, and what it gains toward the goal. That last part matters: before note 614, cover and retreat were priced only in damage, so they looked cheap next to fighting.
+
+A second, smaller example, from the replay suite (`poisoned-by-witch-apple-offered`): the bot is at 1 health, poisoned, in full iron, with a witch 19 blocks off.
+
+> `fight`: ... about 10.2 seconds and 14.4 damage to kill them all, from 1 health (more than the bot has) ...
+>
+> `eat_golden_apple`: Eat the golden apple now (2 carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds.
+>
+> `retreat`: ... A witch walks after a player it has seen and throws within about ten blocks; a run that stays in its sight stays in its reach.
+
+### The questions
+
 There are 91 questions, defined in [src/decisions/](src/decisions/index.js) and listed in [docs/decisions.md](docs/decisions.md). They cover fight stances, routes, when to give up on a goal, how to get out of lava or fire, and which part of the bot (survival, eating, work) gets the next turn. [How Jev thinks](docs/how-jev-thinks.md) walks through one request end to end.
 
 Speed is what makes this work. A fight stance has to be chosen while a blaze is firing. Measured answers averaged 0.17 to 0.18 seconds, at about 500 decisions per trial per hour.
@@ -65,15 +125,29 @@ Speed is what makes this work. A fight stance has to be chosen while a blaze is 
 3. A Claude subagent triages each failure in its own git worktree. It fixes the cause in general, adds tests that fail without the fix, checks the recorded question against live Jev before and after, and writes a trial note. Notes 500 to 616 were written this way.
 4. Fixes are merged in a separate worktree after `npm test`, a `JEV_ARBITER=shadow` check and the replay suite. Bots run from the main checkout. Merging there once crashed 23 bots on conflict markers.
 5. Bots pick up new code with a quiet restart: each quits once no mob is within 16 blocks, or after five minutes, and its supervisor restarts it.
+6. Every three hours, a Fable subagent reads the trial notes, the logs and the open problems and gives design advice, without changing code. We act on the advice that holds up. Two of its reviews changed the design: one recommended a single ledger in place of the separate "tried here" lists (note 571), and one found that held stances were exempt from the ledger, which explained a whole class of loops (note 599).
 
 ## Tools
 
 - **Flight record** ([src/recorder/](src/recorder/index.js)): one frame per second plus one per decision, with options, probabilities and latency.
 - **Death timeline** ([scripts/death-timeline.js](scripts/death-timeline.js)): a trial's last seconds, frame by frame, with each decision.
 - **Replay suite** ([scripts/replay-suite.js](scripts/replay-suite.js)): recorded questions from past failures, each with acceptable and forbidden answers, asked live five times. It runs in seconds with no server.
-- **Arena** ([scripts/arena.js](scripts/arena.js)): staged fights (blaze spawner, wither skeletons, hoglins) that measure damage, time to kill and deaths. Its numbers are quoted to Jev.
+- **Arena** ([scripts/arena.js](scripts/arena.js)): staged fights (blaze spawner, wither skeletons, hoglins) on a separate server, using the real survival code. It measures damage, time to kill, rods and deaths, and the numbers are quoted to Jev in the option descriptions. An example, four blazes at a live spawner with iron armor, a sword and a shield (note 606; median damage per run, 20 is full health):
+
+  | Tactic | Runs | Kills | Rods | Damage | Deaths |
+  | --- | --- | --- | --- | --- | --- |
+  | `close_in` (walk in and fight) | 10 | 17 | 7 | 32.2 | 3 |
+  | `close_in`, leaving to heal when hurt | 5 | 4 | 3 | 23.6 | 1 |
+  | `box_here` (wall in, leave a window) | 5 | 0 | 0 | 31.5 | 1 |
+  | Walk to the spawner and box it in | 5 | 0 | 0 | 33.8 | 3 |
+  | Light up the spawner | 5 | 0 | 0 | 32.8 | 4 |
+  | Corner ambush | 5 | 1 | 0 | 32.2 | 3 |
+
+  Walking in was the only tactic that got rods. The box was safe once built, but blazes don't come to a window.
 - **Stage saves** ([checkpoint.sh](scripts/trials/checkpoint.sh), [start-stage.sh](scripts/trials/start-stage.sh)): world snapshots every 30 seconds, promoted to a stage save the first time a trial reaches the Nether or a fortress.
-- **Trail maps** ([trail-map.js](scripts/trials/trail-map.js)): a top-down PNG of where a trial walked, colored by activity. They make pacing and circling easy to see.
+- **Trail maps** ([trail-map.js](scripts/trials/trail-map.js)): one PNG per trial, drawn from the server's saved region files: a top-down map and a side view, the path colored by what the bot was doing, and the audit's flags in the header. On the left, a trial that spent 20 minutes in a bunker next to a blaze spawner without progress (the red lines are flags). On the right, an Overworld trial searching for food.
+
+  <img src="docs/media/trail-map-stuck.png" width="49%"> <img src="docs/media/trail-map-overworld.png" width="49%">
 - **Progress audit** ([progress-audit.js](scripts/trials/progress-audit.js)): time since the last milestone, new ground covered, repeated questions, wait share. `--cohort` compares all trials before and after a deploy.
 - **Replays** ([death-camera.js](scripts/trials/death-camera.js), [highlights.js](scripts/trials/highlights.js)): trial servers record with ServerReplay, and these scripts write a third-person camera path around deaths and notable moments for rendering in ReplayMod.
 
@@ -133,7 +207,13 @@ Use `MC_AUTH=microsoft` on an authenticated server, with the bot's own account. 
 | `Jev remember this as home` / `Jev go home` | Named places. |
 | `Jev status` / `stop` / `resume` | Control the current task. |
 
-A new request replaces the current one, and tasks survive restarts (state is in `.bot-state/`). When a request is ambiguous, Jev asks. Building in Survival uses templates or 45 ready-made designs; in Creative with an OpenRouter key, a generative model can draw a schematic. Server commands work only for players in `MC_COMMAND_USERS`, and are never used on the bot's own initiative. Settings are in [.env.example](.env.example).
+A new request replaces the current one, and tasks survive restarts (state is in `.bot-state/`). When a request is ambiguous, Jev asks. Server commands work only for players in `MC_COMMAND_USERS`, and are never used on the bot's own initiative. Settings are in [.env.example](.env.example).
+
+### Building, and Creative mode
+
+In Survival, Jev builds from templates (cottage, mansion, tower) that it configures, or picks from 45 ready-made designs in `data/schematics`, and gathers the materials first.
+
+In Creative mode the bot has every block, so building is limited only by the design. Here you can connect a generative LLM as the designer: set `OPENROUTER_API_KEY` and `BUILD_DESIGNER=openrouter` (or `auto`), and choose the model with `OPENROUTER_BUILD_MODEL` (default `anthropic/claude-opus-5.5`). The LLM draws a schematic from the request and a survey of the terrain. Code checks that it is valid (size up to 25 × 16 × 25, at most 16 materials), and Jev judges whether it matches the request before any block is placed. Jev never builds over a structure it did not place. Without a key, or with `BUILD_DESIGNER=jev`, it uses the templates.
 
 ## Development
 
