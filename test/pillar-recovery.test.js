@@ -219,3 +219,18 @@ test('a pillar is as high as the drop to the ground beside it, not the stone sta
   const walled = { blockAt: p => (p.x === 0 && p.z === 0 ? p.y < 28 : p.y < 31) ? solid(p) : air(p) };
   assert.equal(pillarHeight(walled, new Vec3(0, 28, 0)), null);
 });
+
+test('in a fight, on a pillar it raised itself and a fifth of a block off its middle, the way down is there: stepped to the middle, then dug (mid-242-af, note 590)', async () => {
+  const { bot, task, goal } = fixture();
+  bot.game = { difficulty: 'normal', dimension: 'the_nether' };
+  bot.entity.position = new Vec3(.3, 77, .5);
+  bot._pillarUp = { x: 0, z: 0, until: Date.now() + 600000 };
+  const keys = {};
+  Object.assign(bot, { lookAt: async () => {}, clearControlStates() { for (const k in keys) keys[k] = false; },
+    getControlState: k => !!keys[k], setControlState(k, v) { keys[k] = v; if (k === 'forward' && v) bot.entity.position.x = .45; } });
+  assert.equal(pillarDescent(bot, goal, { combat: true }), null, 'off the middle: not a quiet descent');
+  assert(pillarDescent(bot, goal, { combat: true, center: true }), 'over the block: the way down in a fight');
+  assert.equal(await descendPillar(bot, task, goal, () => {}), false, 'out of a fight, a pillar raised on purpose stays up');
+  assert(await descendPillar(bot, task, goal, () => {}, null, { combat: true }));
+  assert.equal(bot.entity.position.y, 76);
+});

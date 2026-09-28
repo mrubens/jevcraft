@@ -2652,6 +2652,11 @@ class Survival {
     // failure it was asked again every tick, a hundred and twenty times in
     // three hoglin drills.
     const up = onPillarTop(bot, this.state.pillar);
+    // The hold up there, kept while the bot is on the top and ended once it
+    // is off (pillar-wait.js, note 590).
+    const pillarWait = require('./pillar-wait');
+    if (up) pillarWait.watchPillar(this.state, this.state.pillar, danger, bot);
+    else if (this.state.pillarWait) pillarWait.endPillarHold(this.state, this.state.stance?.choice && this.state.stance.choice !== 'pillar' ? `off the top, ${this.state.stance.choice.replaceAll('_', ' ')} chosen` : 'off the top');
     // Two up, what still reaches: the shooters, the climbers (fought from
     // there), a witch's potions and a creeper's blast at the foot. mid-110-k
     // pillared at thirteen health with a creeper six blocks off and three
@@ -2705,11 +2710,22 @@ class Survival {
     // replay (note 559).
     const biters = coming.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper');
     const noCover = biters.length > 0 && biters.every(t => topReachers.includes(t));
-    const pillarOpens = noCover
+    // Up already, the hold says what it has been: the minutes, what was
+    // struck, how each mob about has gone and whether it reaches the top or
+    // the sword reaches it (pillar-wait.js). mid-208-k-nether-4-fortress-1
+    // and mid-242-af held a pillar eleven and twelve minutes over a hoglin
+    // and a piglin that neither came nor went, told each fifteen seconds to
+    // "go two blocks straight up" and nothing of the hold (note 590).
+    const holdSays = up ? pillarWait.pillarWaitSays(bot, this.state, goal, { about: danger, reachesTop: t => topReachers.includes(t) || (!shooter(t.entity) && inReach(t)), strikes: inReach, shoots: t => shooter(t.entity), hurtBy: bot._hurtBy || {} }) : null;
+    this.lastPillarHold = holdSays;
+    const pillarOpens = up && !noCover
+      ? 'Hold on the pillar\'s top, two up, and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, and the sword reaches one that stands at the column\'s foot; shooters still can hit.'
+      : noCover
       ? `Go two blocks straight up on placed blocks and fight from there. Here two up is no cover from any of the mobs that bite: ${mobList([...new Set(biters.map(t => t.entity.name))], biters.map(t => ({ name: t.entity.name })))} reach${biters.length === 1 ? 'es' : ''} its top, and the fight up there is the fight here, begun once the blocks are down, on a top one block wide; shooters still can hit.`
       : 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.';
+    const pillarSays = up && noCover ? pillarOpens.replace('Go two blocks straight up on placed blocks and fight from there.', 'Hold on the pillar\'s top and fight from there.') : pillarOpens;
     const knockSays = topReachers.length ? ` A blow that lands knocks the bot back (the game's knockback, with a hop): on a top one block wide the first leaves it at the edge and the next puts it off, two blocks down among them, where it is the fight here.` : '';
-    if ((scaffold >= 2 && headroom && !pillarStop) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: pillarOpens + ledgeSays + besideSays + (spears.length ? ` A spear reaches past an arm: the ${[...new Set(spears.map(t => t.entity.name.replaceAll('_', ' ')))].join(' and ')} with a spear still reach${spears.length === 1 ? 'es' : ''} the bot two up.` : '') + (up ? '' : buildCost) + pillarBlocked + creeperNote + climbers(coming) + (up ? '' : above(bot, coming)) + knockSays + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: notRising ? `Not up while ${inCell.length === 1 ? 'it stands' : 'they stand'} there` : 'Two up' }) + (noStep && shootersOnly ? ` With only shooters about, none at reach, there is nothing ${up ? 'up here' : 'two up'} to swing at: held, it is standing in their line of fire, and they shoot with no end while it holds.` : '') + (edge && heavyHitters(coming, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
+    if ((scaffold >= 2 && headroom && !pillarStop) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: pillarSays + ledgeSays + besideSays + (spears.length ? ` A spear reaches past an arm: the ${[...new Set(spears.map(t => t.entity.name.replaceAll('_', ' ')))].join(' and ')} with a spear still reach${spears.length === 1 ? 'es' : ''} the bot two up.` : '') + (up ? '' : buildCost) + pillarBlocked + creeperNote + climbers(coming) + (up ? '' : above(bot, coming)) + knockSays + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: notRising ? `Not up while ${inCell.length === 1 ? 'it stands' : 'they stand'} there` : 'Two up' }) + (noStep && shootersOnly ? ` With only shooters about, none at reach, there is nothing ${up ? 'up here' : 'two up'} to swing at: held, it is standing in their line of fire, and they shoot with no end while it holds.` : '') + (edge && heavyHitters(coming, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge) + (holdSays?.hold || ''),
       // Held up there, the stance is kept: facing the nearest, the swing and
       // the shield (the tick's own, before this) taking what comes. Returned
       // at once, it ran twenty passes a second with nothing reported, and the
@@ -2721,31 +2737,43 @@ class Survival {
       run: async () => {
         if (!up) return this.pillarFrom(task, goal, save, danger);
         const face = shieldFacing(bot, danger);
+        pillarWait.watchPillar(this.state, this.state.pillar, danger, bot);
         this.report(goal, save, { action: 'pillar_hold', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, ...(face ? { facing: face.name } : {}) });
         if (face) await bot.lookAt?.(face.at, true);
         await sleep(250);
         return true;
       } };
+    // The fight chosen from the top, and what it came to in this hold.
+    if (holdSays?.fight && options.fight) options.fight.description += holdSays.fight;
     // Down off a pillar of the bot's own: stood on one, nothing else here
     // moves it (a route drops three blocks at most), and mid-83-e stood five
     // up on its dirt for seventy seconds, shot by a skeleton, choosing to
     // retreat and not moving (2026-09-26). A block a time, dug underfoot.
     const { pillarDescent, descendPillar, pillarHeight } = require('./pillar-recovery');
-    const down = pillarDescent(bot, goal, { combat: true });
+    // On its own pillar's top, anywhere over the block, and as high as it
+    // was raised: mid-242-af stood 0.2 of a block off the middle and
+    // mid-208-k-nether-4-fortress-1 under a fungus's cap with no side open at
+    // head height, and neither was offered the way down in eleven and twelve
+    // minutes held (note 590).
+    const down = pillarDescent(bot, goal, { combat: true, center: up });
     // Up off the ground by more than a route drops: only then is there no
     // way off it but digging down.
     let onPillar = 0;
-    const high = down ? pillarHeight(bot, feet) : null;
+    const high = down ? (up && this.state.pillar ? feet.y - this.state.pillar.y : pillarHeight(bot, feet)) : null;
     if (down && high) {
       const stranded = high > ROUTE_DROP;
       if (stranded) onPillar = high;
-      options.come_down = { description: stranded
+      options.come_down = { description: up
+        ? `Come down the pillar the way it went up: the block under the feet is dug out and the bot drops onto the next, about a second each, ${high} block${high === 1 ? '' : 's'} down to the ground it went up from; shot at meanwhile if a shooter is about. Down there the mobs that cannot reach the top can reach the bot again, and the sword reaches them.${hitsLeft}`
+        : stranded
         ? `Get down off the pillar to the ground, ${high} blocks: its top block is dug out and the bot drops onto the next, about a second each, the only way off it; shot at meanwhile if a shooter is about. On the ground the retreat, the pocket and the charge work again; up here none of them can.${hitsLeft}`
         : `Dig out the block under the feet and drop onto the next, about a second each, down to the ground beside, ${high} block${high === 1 ? '' : 's'} below; shot at meanwhile if a shooter is about. A route steps down ${ROUTE_DROP} blocks, so the retreat and the charge get off it as well, and the walls of a pocket go up beside ${high} block${high === 1 ? '' : 's'} of open air.${hitsLeft}`,
         run: async () => {
           this.report(goal, save, { action: 'come_down', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
+          // Its own pillar, as many blocks as it went up, not into the ground under it.
           let steps = 0;
-          while (steps < 24) {
+          const limit = up ? high : 24;
+          while (steps < limit) {
             try { if (!await descendPillar(bot, task, goal, save, null, { combat: true })) break; }
             catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; break; }
             steps++;
@@ -3643,7 +3671,7 @@ class Survival {
             : lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
             : offSpot ? { askedAgainFor: 'the bot is off the spot it hid in' }
             : newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` }
-            : following.length ? { askedAgainFor: `it is over, and ${following.length === 1 ? 'a mob it was chosen against is' : `${following.length} mobs it was chosen against are`} still coming at the bot` } : {}) } : null,
+            : following.length ? { askedAgainFor: `it is over, and ${following.length === 1 ? 'a mob it was chosen against is' : `${following.length} mobs it was chosen against are`} still ${this.lastPillarHold?.stood ? `facing the bot, no nearer in the ${this.lastPillarHold.minutes} up on the pillar` : 'coming at the bot'}` } : {}) } : null,
         // Coming at the bot now, each at its own speed: a retreat's chasers
         // after the run (note 544).
         ...(towardNow.length ? { comingAtTheBot: comingFacts(towardNow) } : {}),
@@ -3656,6 +3684,8 @@ class Survival {
         ...(farther ? { shootersFartherInSight: farther.list } : {}),
         ...(sealing ? { pocketHere: { placed: sealing.placed, of: sealing.of, ...(sealing.mobInCells ? { mobInCells: sealing.mobInCells } : {}), says: sealing.says } } : {}),
         ...(ails ? { effectsNow: ails.trim() } : {}),
+        // Up on the pillar: how the hold has gone (pillar-wait.js, note 590).
+        ...(this.lastPillarHold ? { pillarSoFar: this.lastPillarHold.facts } : {}),
         // Gold, where piglins are about and none is worn (note 581).
         ...((g => g ? { piglinsAndGold: g } : {})(piglinGoldSays(bot, [...danger, ...(this.lastFar || [])]))),
 
@@ -3685,6 +3715,8 @@ class Survival {
       // Jev could not be reached: the rules answer this tick.
       if (decision.fallback) return false;
       choice = decision.path.at(-1);
+      // Chosen up on the pillar: counted for what the hold says next.
+      if (this.lastPillarHold) require('./pillar-wait').noteChoice(this.state, choice);
     }
     // The mobs it was chosen against as they were, for a pocket it makes to
     // say what it was sealed against (pocket-wait.js, note 584).
@@ -6996,8 +7028,11 @@ function claim(bot, goal = {}, survival = null) {
     // followers): said with its speed and how soon it is at the bot, the
     // stance asked again with it (note 544).
     : threat?.following ? { comingAtTheBot: { after: threat.following, blocksASecond: round(threat.speed), atBotInSeconds: round(threat.atBotIn) } } : {};
+  // Up on its own pillar, how the hold has gone (pillar-wait.js, note 590).
+  const pillarSays = onPillarTop(bot, state.pillar) ? require('./pillar-wait').pillarClaimSays(state, now) : null;
+  const onPillar = pillarSays ? { onPillar: pillarSays } : {};
   if (threat) return make('escape_threat', 'pressing', { ...(threat.projectile ? { threat: { name: threat.entity.name, distance: round(threat.distance), projectile: true } }
-    : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: mob(threat) }), ...holding, ...edgeFact, ...pocket });
+    : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: mob(threat) }), ...holding, ...edgeFact, ...pocket, ...onPillar });
   // Something that can push the bot over a deadly drop beside it, though
   // it is no threat by the counts above (a shooter in sight past the
   // sixteen counted, a biter the hunt has not claimed at eight): a push is

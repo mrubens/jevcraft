@@ -17,10 +17,16 @@ const unsafe = b => !b || damagingTerrain.has(b.name) || ['water', 'bubble_colum
 // This is an inspected one-block descent, never a general shaft-digging rule.
 // An exposed support and a full solid block immediately below distinguish a
 // pillar step from digging blindly through ordinary terrain or a cave ceiling.
-function pillarDescent(bot, goal, { combat = false } = {}) {
+// `center`: the bot on its own pillar's top, anywhere over the block (the
+// descent steps it to the middle first). mid-242-af stood 0.2 of a block off
+// its pillar's middle for twelve minutes and was never offered the way down
+// (note 590).
+const CENTERED = .18, OVER = .3;
+function pillarDescent(bot, goal, { combat = false, center = false } = {}) {
   const feet = bot.entity.position, blockPosition = supportCell(feet), block = bot.blockAt(blockPosition);
+  const off = center ? OVER : CENTERED;
   if (bot.entity.onGround === false || Math.abs(feet.y - blockPosition.y - 1) > 0.05 ||
-    Math.abs(feet.x - blockPosition.x - .5) > .18 || Math.abs(feet.z - blockPosition.z - .5) > .18) return null;
+    Math.abs(feet.x - blockPosition.x - .5) > off || Math.abs(feet.z - blockPosition.z - .5) > off) return null;
   const ownedAccess = goal.buildPhase === 'cleanup' && goal.buildOwned?.[`${blockPosition.x},${blockPosition.y},${blockPosition.z}`] === (block?.stateId ?? block?.name) &&
     !goal.blueprint?.blocks?.some(p => p.x === blockPosition.x && p.y === blockPosition.y && p.z === blockPosition.z);
   if (!material.test(block?.name || '') || !block.diggable || !fullCube(block) || reservedForConstruction(goal, blockPosition) && !ownedAccess) return null;
@@ -63,9 +69,19 @@ async function descendPillar(bot, task, goal, save, expected, { combat = false }
   const threatCheck = () => { if (!combat) checkThreats(bot); };
   task.check(); checkAir(bot); threatCheck();
   // Not a pillar raised on purpose, to a portal overhead: the climb went up
-  // to 48 and this took it back down to 47, over and over.
+  // to 48 and this took it back down to 47, over and over. Chosen in a fight
+  // it is the way down Jev took, the pillar the stance's own (note 590).
   const raised = bot._pillarUp, feet = bot.entity.position.floored();
-  if (raised && raised.until > Date.now() && raised.x === feet.x && raised.z === feet.z) return false;
+  if (!combat && raised && raised.until > Date.now() && raised.x === feet.x && raised.z === feet.z) return false;
+  // In a fight, off the block's middle but over it: stepped to the middle
+  // first, so the drop lands on the block below.
+  if (combat && !pillarDescent(bot, goal, { combat }) && pillarDescent(bot, goal, { combat, center: true })) {
+    const mid = supportCell(bot.entity.position).offset(.5, 1, .5);
+    const centered = () => Math.abs(bot.entity.position.x - mid.x) <= CENTERED - .03 && Math.abs(bot.entity.position.z - mid.z) <= CENTERED - .03;
+    const { move } = require('./motion');
+    await move(bot, task, { label: 'pillar_center', keys: ['forward'], sneak: true, look: mid.offset(0, 1.6, 0), until: centered, maxMs: 800 });
+    bot.clearControlStates?.();
+  }
   const candidate = pillarDescent(bot, goal, { combat });
   if (!candidate || expected && JSON.stringify(candidate) !== JSON.stringify(expected)) return false;
   bot.pathfinder.setGoal(null); bot.clearControlStates?.();
