@@ -33,15 +33,29 @@ const diggable = n => solid(n) && !FIXED.test(n);
 
 // The fall under a cell open at the feet: how many open cells down, and
 // what ends it. `into` is ground, water, lava or unknown (not loaded).
+// Ground where the body stands in lava (terrain.js standsInLava: the lava
+// sea's own level beside it, or soul sand's lower top under the lava's) is
+// lava: mid-242-ae-nether-3-fortress-1 dug down its column from y 50 to
+// the rock at the lava sea's level and came down into the sea beside it,
+// 20 to none in four seconds (note 580).
 function fallUnder(view, cell, reach = DEEPEST) {
   for (let n = 0; n < reach; n++) {
     const name = view.name(cell.offset(0, -n - 1, 0));
     if (name == null) return { n, into: 'unknown' };
     if (isLava(name)) return { n, into: 'lava' };
     if (isWater(name)) return { n, into: 'water' };
-    if (!open(name)) return { n, into: 'ground', landing: name };
+    if (!open(name)) return landsInLava(view, cell.offset(0, -n, 0)) ? { n, into: 'lava', beside: true, landing: name } : { n, into: 'ground', landing: name };
   }
   return { n: reach, into: 'unknown' };
+}
+function landsInLava(view, feet) {
+  const at = p => {
+    const v = new Vec3(p.x, p.y, p.z), n = view.name(v);
+    if (n == null) return null;
+    const b = view.block?.(v);
+    return b && b.name === n ? b : { name: n, boundingBox: solid(n) ? 'block' : 'empty' };
+  };
+  return require('./terrain').standsInLava(at, feet);
 }
 const damageOf = (fall, into) => into === 'water' ? 0 : Math.max(0, fall - SAFE_FALL);
 
@@ -119,7 +133,7 @@ function digSeconds(name, pickaxe) {
 // says it (stopsOver). `blocked` says why the first block cannot be dug.
 function digColumn(view, from, { pickaxe = null, pickaxeUses = 0, maxDigs = 80 } = {}) {
   const dug = new Set();
-  const seen = { name: p => dug.has(`${p}`) ? 'air' : view.name(p) };
+  const seen = { name: p => dug.has(`${p}`) ? 'air' : view.name(p), block: p => view.block?.(p) };
   const digs = [];
   let feet = from, uses = pickaxeUses, seconds = 0, most = 0;
   const done = extra => ({ from, digs, seconds: Math.round(seconds), endsAt: feet, usesSpent: pickaxeUses - uses, mostFall: most, ...extra });
@@ -130,7 +144,7 @@ function digColumn(view, from, { pickaxe = null, pickaxeUses = 0, maxDigs = 80 }
     if (floorName == null) return stop('what is under the feet is not loaded');
     if (!diggable(floorName)) return stop(`a ${said(floorName)} under the feet that cannot be dug`);
     const under = fallUnder(seen, floor);
-    if (under.into === 'lava') return stop(`lava ${under.n + 1} under the ${said(floorName)} at ${floor.y}`);
+    if (under.into === 'lava') return stop(under.beside ? `lava beside where the feet come down, under the ${said(floorName)} at ${floor.y}: the body stands in it there` : `lava ${under.n + 1} under the ${said(floorName)} at ${floor.y}`);
     if (under.into === 'unknown') return stop('the column under the feet runs into what is not loaded');
     const fall = under.n + 1, hurt = damageOf(fall, under.into);
     if (hurt > 0) return digs.length ? done({ stopsOver: { fall, damage: hurt, at: floor.y, name: floorName } }) : { from, blocked: `a fall of ${fall} under the ${said(floorName)} underfoot`, over: { fall, damage: hurt } };
@@ -237,7 +251,7 @@ function liveView(bot) {
   const picks = bot.inventory.items().filter(i => PICKS.includes(i.name));
   const best = PICKS.find(n => picks.some(i => i.name === n)) || null;
   const uses = picks.reduce((n, i) => n + Math.max(0, (bot.registry?.itemsByName?.[i.name]?.maxDurability || 0) - (i.durabilityUsed || 0)), 0);
-  return { name: p => bot.blockAt(p)?.name ?? null, carried, pickaxe: best, pickaxeUses: uses };
+  return { name: p => bot.blockAt(p)?.name ?? null, block: p => bot.blockAt(p), carried, pickaxe: best, pickaxeUses: uses };
 }
 
 // The top the bot stands on, or null: on the ground, out of water, in the
@@ -312,7 +326,7 @@ async function digDown(bot, task, plan) {
     const floor = feet.plus(DOWN), block = bot.blockAt(floor);
     if (!block || !diggable(block.name)) throw new Error(`The ${block ? said(block.name) : 'unloaded block'} under the feet cannot be dug`);
     const under = fallUnder(view, floor);
-    if (under.into === 'lava' || under.into === 'unknown') throw new Error(`The column under the feet runs into ${under.into === 'lava' ? 'lava' : 'what is not loaded'}`);
+    if (under.into === 'lava' || under.into === 'unknown') throw new Error(`The column under the feet runs into ${under.beside ? 'lava beside where the feet come down' : under.into === 'lava' ? 'lava' : 'what is not loaded'}`);
     // Never into a fall that hurts: stopped there, the way down is asked
     // again from the block over it.
     if (damageOf(under.n + 1, under.into) > 0) return i > 0;

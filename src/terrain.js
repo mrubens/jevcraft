@@ -90,6 +90,68 @@ function hotUnderfoot(bot, p = bot.entity?.position) {
 // Beside a drop: a neighbouring cell the body could be pushed into with no
 // floor for three blocks under it, or lava under it. See survival.js flee.
 const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+// Whether a body standing in `feet` (the open cell over its floor) is in
+// lava, as the game counts it (Entity.updateFluidHeightAndDoFluidPushing):
+// its box, anywhere in the cell, against each lava cell's surface. A floor
+// lower than a whole block puts the feet under the surface of the lava
+// beside it: soul sand's top is at .875, a lava source's at .889 (its
+// amount over nine; a whole block with lava over it). mid-235-p-nether-3-
+// fortress-4 and mid-235-p-nether-4-fortress-3 both stepped off a soul sand
+// ledge onto the lava sea's soul sand shore, level with the sea, and stood
+// in the lava there: 3.5 to death burning, and 20 to 18.1 the first touch
+// (note 580). A whole block at the sea's level holds the feet over it.
+// `at` reads a block at {x, y, z}; unknown ground is no fact.
+const LAVA_SOURCE_HEIGHT = 8 / 9;
+function lavaSurface(b, above) {
+  if (above && /^(flowing_)?lava$/.test(above.name || '')) return 1;
+  const level = Number(b.getProperties?.().level ?? b.metadata ?? 0) || 0;
+  return level >= 8 ? LAVA_SOURCE_HEIGHT : (8 - level) / 9;
+}
+function floorTop(b, y) {
+  const shapes = Array.isArray(b?.shapes) ? b.shapes : null;
+  return y + (shapes && shapes.length ? Math.max(...shapes.map(s => s[4])) : 1);
+}
+function standsInLava(at, feet, { height = 1.8 } = {}) {
+  const floor = at({ x: feet.x, y: feet.y - 1, z: feet.z });
+  if (!floor || floor.boundingBox !== 'block' || /lava/.test(floor.name || '')) return false;
+  const top = floorTop(floor, feet.y - 1);
+  for (const [dx, dz] of [[0, 0], ...AROUND]) {
+    for (let y = Math.floor(top); y < top + height; y++) {
+      const b = at({ x: feet.x + dx, y, z: feet.z + dz });
+      if (!b || !/^(flowing_)?lava$/.test(b.name || '')) continue;
+      if (y + lavaSurface(b, at({ x: feet.x + dx, y: y + 1, z: feet.z + dz })) > top + 0.001) return true;
+    }
+  }
+  return false;
+}
+const inLavaAt = (bot, feet) => typeof bot?.blockAt === 'function' && standsInLava(p => bot.blockAt(new Vec3(p.x, p.y, p.z)), feet);
+
+// What one touch of lava costs this body now: the lava's hits through the
+// armour worn while it gets out (a second, two hits, at the least), then the
+// fifteen seconds of fire lava sets, a point a second that armour does not
+// stop, which only water puts out, and the Nether has none to pour (a water
+// bucket boils away there). mid-235-p-nether-3-fortress-4 stepped into the
+// lava sea's edge at 3.5 health on its way back to the portal, was out in a
+// second at 1.6, and burned to death (note 580).
+function lavaTouch(bot, health = bot?.health ?? 20) {
+  const { afterArmour, armourOf, FIRE_SECONDS, BURN_PER_SECOND } = require('./combat-estimate');
+  const worn = armourOf([5, 6, 7, 8].map(slot => bot?.inventory?.slots?.[slot]?.name).filter(Boolean));
+  const r = n => Math.round(n * 10) / 10;
+  const hit = r(afterArmour(4, worn));
+  const nether = /nether/.test(String(bot?.game?.dimension || ''));
+  const water = !nether && (bot?.inventory?.items?.() || []).some(i => i.name === 'water_bucket');
+  const resistant = (() => { try { return require('./body').fireResistant?.(bot) || false; } catch (_) { return false; } })();
+  const burn = water ? 0 : FIRE_SECONDS.lava * BURN_PER_SECOND;
+  const least = resistant ? 0 : r(2 * hit + burn);
+  return { hit, perSecond: r(2 * hit), burn, fireSeconds: FIRE_SECONDS.lava, least, water, nether, resistant, deadly: !resistant && least >= health };
+}
+function lavaTouchSays(bot, health = bot?.health ?? 20) {
+  const t = lavaTouch(bot, health), hp = Math.round(health * 10) / 10;
+  if (t.resistant) return 'Fire resistance is on the body: lava does not hurt while it lasts.';
+  const out = t.water ? 'then burns until put out with the water bucket carried' : `then burns ${t.fireSeconds} seconds at a point a second that armour does not stop${t.nether ? ', with no water to put it out in the Nether' : ', no water carried to put it out'}`;
+  return `One touch of lava costs about ${t.perSecond} a second in it through the armour worn (a second to get out at the least), ${out}: about ${t.least} at the least, ${t.deadly ? `more than the ${hp} health the bot has: a touch is death` : `of the ${hp} health the bot has`}.`;
+}
 // Water is no drop: a fall into it does not hurt, and open water on both
 // sides is swimming, not a ledge. mid-231-f, swimming with a drowned, was
 // held still and crouched as if on a span, sinking while it was hit
@@ -101,7 +163,10 @@ function dropAt(bot, c) {
     const under = bot.blockAt(c.offset(0, -dy, 0));
     if (!under) return false;
     if (under.name === 'lava') return true;
-    if (under.boundingBox === 'block' || /water/.test(under.name || '')) return false;
+    if (/water/.test(under.name || '')) return false;
+    // A step down onto ground where the body stands in lava is a drop
+    // into it (note 580); level ground is the lava-beside rules'.
+    if (under.boundingBox === 'block') return dy >= 2 && inLavaAt(bot, c.offset(0, 1 - dy, 0));
   }
   return true;
 }
@@ -161,7 +226,7 @@ function dropNear(bot, feet, radius = 3, deepest = 48) {
           if (!under) { fall = deepest; into = 'unknown'; break; }
           if (under.name === 'lava') { fall = dy - 1; into = 'lava'; break; }
           if (under.name === 'water') { fall = dy - 1; into = 'water'; break; }
-          if (under.boundingBox === 'block') { fall = dy - 1; break; }
+          if (under.boundingBox === 'block') { fall = dy - 1; if (inLavaAt(bot, c.offset(0, 1 - dy, 0))) into = 'lava'; break; }
           fall = dy;
         }
         const damage = into === 'water' ? 0 : Math.max(0, fall - 3);
@@ -305,4 +370,4 @@ function bodyInLava(bot) {
   return false;
 }
 
-module.exports = { hotFloor, hotUnderfoot, HOT_FLOOR, onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { standsInLava, lavaTouch, lavaTouchSays, hotFloor, hotUnderfoot, HOT_FLOOR, onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

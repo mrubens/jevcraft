@@ -317,8 +317,32 @@ function portalTrip(bot, goal = {}) {
   const where = dimension(bot), here = bot.entity?.position;
   const known = here ? (goal.portals || []).filter(p => p.dimension === where) : [];
   if (!known.length) return where === 'overworld' ? 'No portal is remembered here: one is found or built first (ten obsidian, or a bucket and a lava pool).' : `No portal is remembered in the ${where}: the way back is looked for first.`;
-  const d = Math.round(Math.min(...known.map(p => Math.hypot(p.x - here.x, p.z - here.z))));
-  return `The nearest portal remembered is ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk, and back through one after.${where === 'overworld' ? '' : arrivalSays(bot, d / 4.3)}`;
+  const nearest = known.slice().sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
+  const d = Math.round(Math.hypot(nearest.x - here.x, nearest.z - here.z));
+  return `The nearest portal remembered is ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk, and back through one after.${where === 'overworld' ? '' : arrivalSays(bot, d / 4.3)}${where === 'nether' ? wayBackSays(bot, nearest) : ''}`;
+}
+
+// What the walk back to a Nether portal crosses, and what it can cost at
+// this health: the straight line's lava, what one touch of lava costs this
+// body now, and whether health comes back on the way. mid-235-p-nether-3-
+// fortress-4 was told only "140 blocks off, about 33 seconds at a walk" at
+// 4.5 health with nothing to eat, went back along the lava sea's shore and
+// burned to death from 3.5 after one step into its edge (note 580).
+function wayBackSays(bot, portal) {
+  let line = null;
+  try { line = require('./work').lineSays(bot, portal); } catch (_) { line = null; }
+  const overLava = !!line && / over lava/.test(line);
+  // Said where the line crosses lava, and wherever a touch would be death:
+  // the lava sea lies under much of the Nether, and the line read from the
+  // top block down (lineSays) saw ground all the way where mid-235-p's walk
+  // went down to the sea's shore.
+  let touch = '';
+  try { const terrain = require('./terrain'); touch = overLava || terrain.lavaTouch(bot).deadly ? terrain.lavaTouchSays(bot) : ''; } catch (_) { touch = ''; }
+  const hunger = bot.food ?? 20;
+  const food = (bot.inventory?.items?.() || []).some(i => { try { return require('./vitals').safeFood?.(bot, i); } catch (_) { return false; } });
+  const health = Math.round((bot.health ?? 20) * 10) / 10;
+  const heals = health >= 20 ? '' : hunger >= 18 ? ` Health comes back on the way at hunger ${hunger}, about a point every four seconds.` : food ? '' : ` Health does not come back on the way: hunger ${hunger}, under eighteen, and nothing to eat; ${health} health is what it walks with.`;
+  return `${line ? ` ${line}` : ''}${touch ? ` ${touch}` : ''}${heals}`;
 }
 
 // The hour the Overworld side is at when the bot comes out there: the

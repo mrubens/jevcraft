@@ -3488,6 +3488,12 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
   const nt = require('./nether-travel');
   const down = where === 'nether' ? nt.floorWay(bot) : null, floor = down && nt.floorToward(bot, down, target);
   if (floor && floor.floor >= nt.FLOOR_WALKABLE) tree.floor_way = { description: nt.floorTowardSays(down, floor, { what: 'the portal', target }) };
+  // Straight at it with blocks mined first, where the crossing at this
+  // height stops for want of them: mid-242-aa-nether-1-fortress-3, 145
+  // blocks from its portal with one block carried, was offered the legs
+  // round and waiting, none good 0.38 (note 580).
+  const short = where === 'nether' ? blocksShortSays(bot, goal, target) : null;
+  if (short) tree.blocks_then_cross = { description: short.says };
   if (until) tree.wait_rest = { description: `Other work until the staircase's rest ends in ${minutes} minute${minutes === 1 ? '' : 's'}, then the way to the portal again from wherever the bot is; the work is asked then.` };
   const triedSays = Object.entries(tried).map(([k, t]) => `${k.replaceAll('_', ' ')}: ended ${t.moved} block${t.moved === 1 ? '' : 's'} from here and no nearer, ${Math.max(1, Math.round((now - t.at) / 1000))} seconds ago${t.why ? ` (${t.why})` : ''}`);
   for (const k of Object.keys(tried)) delete tree[k];
@@ -3496,7 +3502,7 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
   // (the stall's question answers it), not asked again.
   if (!Object.keys(tree).length) throw new WaysResting(`${says} Every way offered from here was tried in this rest and came to nothing: ${triedSays.join('; ')}.`, Math.max(until, now + PORTAL_WAY_TRIED_MS));
   const decision = await decide('portal_way', { client, bot, task, goal, save, tree, target: p,
-    state: { portal: { x: p.x, y: p.y, z: p.z, dimension: where }, distance, ...(Math.round(p.y - here.y) >= 3 ? { portalAbove: Math.round(p.y - here.y) } : {}), walk, staircase: stairsWhy, ...(minutes ? { minutesLeft: minutes } : {}), ...(boat ? { boat } : {}), ...(between ? { between } : {}), ...(again ? { chosenFromHereBefore: again.pick } : {}), ...(triedSays.length ? { triedFromHereToNothing: triedSays } : {}), health: bot.health, food: bot.food } });
+    state: { portal: { x: p.x, y: p.y, z: p.z, dimension: where }, distance, ...(Math.round(p.y - here.y) >= 3 ? { portalAbove: Math.round(p.y - here.y) } : {}), walk, staircase: stairsWhy, ...(minutes ? { minutesLeft: minutes } : {}), ...(boat ? { boat } : {}), ...(between ? { between } : {}), ...(where === 'nether' && / over lava/.test(between || '') ? { aTouchOfLava: require('./terrain').lavaTouchSays(bot) } : {}), ...(again ? { chosenFromHereBefore: again.pick } : {}), ...(triedSays.length ? { triedFromHereToNothing: triedSays } : {}), health: bot.health, food: bot.food } });
   if (decision.stale) return true;
   const pick = decision.path.at(-1);
   goal.portalWay = { key, until, from, pick, at: now, tried }; save();
@@ -3525,6 +3531,12 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
     cameTo(site.distanceTo(bot.entity.position.floored()) >= 1.5 ? 'the walk to the column did not get there' : null);
     return true;
   }
+  if (pick === 'blocks_then_cross') {
+    await gatherBlocks(bot, task, goal, save);
+    const crossed = await nt.crossToward(bot, task, goal, save, target, { what: 'the portal back' });
+    cameTo(crossed.tried ? goal.lastCrossError : 'no crossing to make after the gather');
+    return true;
+  }
   if (pick === 'floor_way') {
     const went = await nt.walkFloorToward(bot, task, goal, save, target, down, navigate);
     // Down and nearer is ground made, whatever the four-block measure says.
@@ -3537,6 +3549,25 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
 }
 // How long a way from a place that came to nothing is left out from there.
 const PORTAL_WAY_TRIED_MS = 5 * 60000;
+
+// The crossing straight at `target` at this height, as far as a stretch
+// goes, when the blocks carried stop it short and more can be mined here:
+// what it needs, what is carried, and the crossing with the reserve mined.
+// Null where it would not stop for blocks, rests from here, or cannot be
+// mined for (no pickaxe, the gather resting).
+function blocksShortSays(bot, goal, target) {
+  const nt = require('./nether-travel'), bridging = require('./bridging');
+  const { BLOCK_RESERVE } = require('./inventory-tidy');
+  if (typeof bot.blockAt !== 'function' || pickaxeTier(bot) < 1 || isSetAside(goal, 'block_reserve', 'gather') || nt.crossingResting(bot, goal, target)) return null;
+  const carried = bridging.blocksCarried(bot);
+  let all = null, mined = null;
+  try {
+    all = bridging.surveyCrossing(bot, target, { cells: nt.CROSS_STRETCH, blocks: 999 });
+    mined = bridging.surveyCrossing(bot, target, { cells: nt.CROSS_STRETCH, blocks: Math.max(carried, BLOCK_RESERVE) });
+  } catch (_) { return null; }
+  if (!all.cells || all.gain < 1 || all.bridge <= carried || mined.gain < 1) return null;
+  return { says: `Mine netherrack for blocks first (${carried} carried; the crossing straight at the portal lays ${all.bridge} in its next ${all.cells} blocks), up to ${Math.max(carried, BLOCK_RESERVE)}, a moment a block with the pickaxe from the rock at hand; then the crossing with them. ${nt.crossingSays(mined, 'the portal')}` };
+}
 
 // Up to a portal overhead and far across, by a pillar where the bot stands:
 // jump and lay a block under the feet, from a column with no lava or water

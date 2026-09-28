@@ -199,7 +199,12 @@ async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs 
   const safeToward = (dx, dz) => {
     const ahead = [at(dx, 0, dz), at(dx, 1, dz)], below = [at(dx, -1, dz), at(dx, -2, dz), at(dx, -3, dz), at(dx, -4, dz)];
     if ([...ahead, ...below].some(b => b && (HAZARD.has(b.name) || b.name === 'lava'))) return false;
-    return below.some(b => b && b.boundingBox === 'block');
+    // Nor a step off onto ground where the body stands in lava: the lava
+    // sea's soul sand shore, level with the sea (note 580).
+    const floor = below.findIndex(b => b && b.boundingBox === 'block');
+    if (floor < 0) return false;
+    const { standsInLava } = require('./terrain');
+    return !standsInLava(p => bot.blockAt?.(new Vec3(p.x, p.y, p.z)), cell.offset(dx, -floor, dz));
   };
   const step = async (dx, dz) => {
     await bot.lookAt?.(cell.offset(dx + 0.5, 1.62, dz + 0.5), true);
@@ -389,7 +394,10 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
       const quiet = (bot._quietUntil || 0) > Date.now(), nether = /nether/.test(String(bot.game?.dimension || ''));
       if (!quiet && !nether && !edgeCrouch) return;
       if (!bot.entity?.onGround) return;
-      const feet = bot.entity.position.floored();
+      // The cell over the block stood on: on soul sand (its top at .875)
+      // the floored feet are the soul sand's own cell, and every drop was
+      // measured a block too high (note 580).
+      const at = bot.entity.position, feet = new Vec3(Math.floor(at.x), Math.ceil(at.y - 1e-4), Math.floor(at.z));
       let deadly = false, down = false;
       if (nether) {
         const drop = require('./terrain').dropNear(bot, feet, 1);

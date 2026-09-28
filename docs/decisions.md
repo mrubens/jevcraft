@@ -580,7 +580,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `portal_way`
 
-**The portal the bot is making for cannot be reached from here: the walk, the boat and the staircase have failed. Make a portal here, climb to its height, go round another way, take the boat again, or other work until the staircase's rest ends?**
+**The portal the bot is making for cannot be reached from here: the walk, the boat and the staircase have failed. Make a portal here, climb to its height, go round another way, mine blocks and cross straight at it, take the boat again, or other work until the staircase's rest ends?**
 
 - When: On the way to a remembered portal or one in view (the crossing into the Nether, or the way back from it), when the walk made no ground and the staircase toward it rests or stalls; asked once for each rest from each place (its eight-block area and height), the answer kept (said as every way resting when met again). A way chosen from a place that moved the bot under four blocks and no nearer is not offered from there again for five minutes in that rest, and is said (triedFromHereToNothing); with every way so tried, the way rests and is not asked.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
@@ -596,6 +596,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `around_left` | root | a leg of thirty-two blocks on foot to the left of the heading, and the way asked again from there | always |
 | `around_right` | root | a leg of thirty-two blocks on foot to the right of the heading, and the way asked again from there | always |
 | `floor_way` | root | go down to the floor below and walk it toward the portal, bridging only across lava and open air on it | in the Nether, ground four or more below under eight or more of the sixty-four columns round the bot, a way down to it found within thirty-two blocks (walked, dropped no more than a body takes at half its health, or stepped down through rock with a pickaxe), and eight or more cells of floor on the line toward the portal; said with the way down (steps, drops and their damage, rock dug, seconds), the floor on that line (floor to walk, rises, drops, lava on it, open air, wall, blocks to lay against those carried, the mobs by it) and the height back up to the portal |
+| `blocks_then_cross` | root | mine netherrack for blocks here first, then cross straight at the portal at this height with them | in the Nether, a pickaxe carried, the block gather not resting, the crossing straight at the portal not resting from here, and its next stretch laying more blocks than are carried; said with the blocks it lays against those carried, the reserve mined, and the crossing with them (its cells, rock dug, blocks laid over air and over lava, seconds, and where it stops) |
 | `boat_again` | root | the boat again, its failure or the walk chosen over it set aside | in the Overworld, the boat failed or was declined here and rests |
 | `wait_rest` | root | other work until the staircase's rest ends, the minutes said | the staircase toward the portal rests until a time |
 

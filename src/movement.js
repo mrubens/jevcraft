@@ -4,7 +4,7 @@ const { fixMiningMaterials, fixPathfinderResults } = require('./compatibility');
 const { hostileEntities, safeFromHostiles } = require('./danger');
 const { Vec3 } = require('vec3');
 const Move = require('mineflayer-pathfinder/lib/move');
-const { damagingTerrain, swimmingBlocks, swimmableWater, edgeHeld } = require('./terrain');
+const { damagingTerrain, swimmingBlocks, swimmableWater, edgeHeld, standsInLava } = require('./terrain');
 const { isDoor, doorAt, doorAllowsDirection } = require('./doors');
 
 // Parkour, where a miss costs nothing: with it off, the only way across a
@@ -249,9 +249,23 @@ class SurvivalMovements extends Movements {
       if (under.name === undefined) return null;
       if (/lava/.test(under.name)) return { into: 'lava', fall: dy - 1 };
       if (under.liquid) return null;
-      if (under.physical) return dy - 1 - 3 >= health / 2 ? { into: 'ground', fall: dy - 1 } : null;
+      if (under.physical) {
+        if (this.landsInLava(feet, dx, dy, dz)) return { into: 'lava', fall: dy - 1 };
+        return dy - 1 - 3 >= health / 2 ? { into: 'ground', fall: dy - 1 } : null;
+      }
     }
     return { into: 'deep', fall: deadly };
+  }
+  // Whether the body landing on the block `dy` under the cell (dx, dz) from
+  // `feet` stands in lava there (terrain.js standsInLava): the lava sea's
+  // soul sand shore, level with the sea, is in it. mid-235-p-nether-3-
+  // fortress-4 and mid-235-p-nether-4-fortress-3 went off a soul sand ledge
+  // a block and then another onto that shore walking back to the portal,
+  // no cell of the route beside lava (note 580).
+  landsInLava(feet, dx, dy, dz) {
+    if (dy < 2) return false;
+    const at = p => { const b = this.getBlock(p, 0, 0, 0); return b.name === undefined ? null : b; };
+    return standsInLava(at, { x: feet.x + dx, y: feet.y - dy + 1, z: feet.z + dz });
   }
 
   // The note 516 rule for a cell: 'lava' for lava in any of the eight
@@ -283,6 +297,7 @@ class SurvivalMovements extends Movements {
       if (/lava/.test(under.name)) return true;
       if (under.liquid) return false;
       if (!under.physical) continue;
+      if (this.landsInLava(feet, 0, dy, 0)) return true;
       if (dy - 1 < 2) return false;
       const landing = { x: feet.x, y: feet.y - dy + 1, z: feet.z };
       return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(y => this.getBlock(landing, dx, y, dz)?.name === 'lava'));
@@ -321,7 +336,10 @@ class SurvivalMovements extends Movements {
       if (under.name === undefined) return null;
       if (/lava/.test(under.name)) return { into: 'lava', fall: dy - 1, damage: Infinity };
       if (under.liquid) return { into: 'water', fall: dy - 1, damage: 0 };
-      if (under.physical) return dy <= 3 ? null : { into: 'ground', fall: dy - 1, damage: Math.max(0, dy - 1 - 3) };
+      if (under.physical) {
+        if (this.landsInLava(node, dx, dy, dz)) return { into: 'lava', fall: dy - 1, damage: Infinity };
+        return dy <= 3 ? null : { into: 'ground', fall: dy - 1, damage: Math.max(0, dy - 1 - 3) };
+      }
     }
     return { into: 'deep', fall: deadly, damage: Math.max(0, deadly - 3) };
   }
@@ -507,7 +525,7 @@ function fallBeside(bot, feet, health = bot?.health ?? 20) {
   const shim = { getBlock: (p, dx, dy, dz) => {
     const b = bot.blockAt?.(new Vec3(p.x + dx, p.y + dy, p.z + dz));
     return b ? { name: b.name, physical: b.boundingBox === 'block', liquid: /water|lava/.test(b.name) } : {};
-  } };
+  }, landsInLava: (at, dx, dy, dz) => dy >= 2 && standsInLava(p => bot.blockAt?.(new Vec3(p.x, p.y, p.z)), { x: at.x + dx, y: at.y - dy + 1, z: at.z + dz }) };
   for (const [dx, dz] of AROUND) { const fall = SurvivalMovements.prototype.fallOff.call(shim, feet, dx, dz, health); if (fall) return fall; }
   return null;
 }
