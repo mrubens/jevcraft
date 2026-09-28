@@ -303,7 +303,7 @@ const HOLDS_STEP = goal => require('../stillness').HOLDS.has(goal?.step?.action)
 // fortress walked again or a spawner waited by, a wait for day or for
 // health. Each is judged when it ends by what changed while it lasted
 // (tried.js), and one that changed nothing came to nothing.
-const WAIT_ANSWERS = new Set(['stay', 'back_to_wall', 'dig_in_and_fight', 'dig_in_at_spawner', 'fight_at_spawner', 'stay_in_fortress', 'wait_at_spawner', 'wait_for_day_sealed', 'rest_to_heal', 'pillar', 'seal', 'dig_down', 'hold_on_span', 'take_cover', 'out_of_sight', 'nook']);
+const WAIT_ANSWERS = new Set(['stay', 'back_to_wall', 'dig_in_and_fight', 'dig_in_at_spawner', 'fight_at_spawner', 'stay_in_fortress', 'wait_at_spawner', 'wait_for_day_sealed', 'rest_to_heal', 'pillar', 'seal', 'dig_down', 'hold_on_span', 'take_cover', 'out_of_sight', 'nook', 'out_of_the_push']);
 // The options offered, for the ledger (tried.js spent).
 // A nested option by its path, as the ledger records it (note 611).
 const offeredOf = (tree, target = null) => tried.leavesOf(tree).map(({ key, node }) => ({ key, target: node?.target || target || null }));

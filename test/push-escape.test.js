@@ -132,7 +132,7 @@ test('walled toward the push on its own netherrack over the lava sea, every stan
     // The pocket and the bunker close the drop and say nothing of the push.
     if (['none_good', 'seal', 'bunker'].includes(k)) continue;
     assert.doesNotMatch(o.description, /a push into the wall, not the fall/, k);
-    assert.match(o.description, /The floor under the feet is netherrack \(blast resistance 0\.4\), a block a ghast's fireball can break \(under about 4\): one that lands at the feet can open it, and a wall at the side does not hold the body up: it goes down through it into lava 1 blocks down/, k);
+    assert.match(o.description, /The floor under the feet is netherrack \(blast resistance 0\.4\), a block a ghast's fireball can break \(under about 4\): one that lands at the feet can open it, and a wall at the side does not hold the body up: it goes down through it into lava 1 block down/, k);
   }
   assert.match(options.fight.description, /Walled here toward the push: a fireball from the ghast 21 blocks off \(in sight\) pushes the bot away from it, west and south, into a block or onto ground with no drop beside it\. The floor/);
 });

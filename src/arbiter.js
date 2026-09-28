@@ -292,6 +292,12 @@ function withSays(option, c, bot, state, mobs, now) {
   const stop = stoppedSays(bot, state, c.layer, now);
   if (stop) add.push(stop);
   if (c.layer === 'work') { const body = workBodySays(bot, mobs); if (body) add.push(body); }
+  // Where the bot stands now, with a ghast in sight whose fireball's push
+  // carries it over a drop that kills: said on the work too, as on the
+  // survival claim (note 612). mid-242-bb-fortress-2's work was offered
+  // beside the piglin and the drop, the ghast 55 blocks off in sight said
+  // nowhere, and its fireball threw the bot into the lava.
+  if (c.layer === 'work') { let blast = null; try { blast = require('./survival').blastOverSays(bot); } catch (_) { blast = null; } if (blast) add.push(`Where the bot stands now:${blast.says}`); }
   if (!add.length) return option;
   const d = option.description;
   return { ...option, description: { ...d, does: `${d.does} ${add.join(' ')}`, ...(stop ? { facts: { ...d.facts, stoppedAtOnce: stop } } : {}) } };
@@ -314,7 +320,7 @@ function claimSays(c) {
     // times (note 520).
     // A stance chosen and holding goes on (note 535): said so, not as a
     // question to come.
-    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen against it ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on (asked again when it fails, when a mob it was not chosen against comes within six blocks, or once it has cost more than it was said to)` : 'the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest)'}.${f.edge ? ` ${f.edge}` : ''}${f.pocket ? ` ${f.pocket}` : ''}${f.onPillar ? ` ${f.onPillar}` : ''} The work waits.${hp}${heals}`;
+    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen against it ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on (asked again when it fails, when a mob it was not chosen against comes within six blocks, or once it has cost more than it was said to)` : 'the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest)'}.${f.edge ? ` ${f.edge}` : ''}${f.push ? ` ${f.push}` : ''}${f.pocket ? ` ${f.pocket}` : ''}${f.onPillar ? ` ${f.onPillar}` : ''} The work waits.${hp}${heals}`;
     case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; the stance is asked next. The work waits.`;
     case 'surface': return `Swim up for air: the head is under water, air ${f.air} of 20; at none, drowning takes 2 health a second.${hp}`;
     // Said with the biters walking up while it eats, standing still (note 552).

@@ -336,7 +336,7 @@ const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pill
 // eating: a shield raised at each arrow stops them.
 // The most a route drops the bot (movement.js).
 const ROUTE_DROP = 3;
-const MOVING_STANCES = new Set(['retreat', 'leave_reach', 'fight_from_footing', 'rail_and_fight', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
+const MOVING_STANCES = new Set(['retreat', 'leave_reach', 'fight_from_footing', 'out_of_the_push', 'rail_and_fight', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
 // Two blocks up: from the pillar's report to two up took a second and a
 // half to two seconds in mid-92-e, mid-92-g and mid-110-k (2026-09-26).
 const PILLAR_SECONDS = 1.5;
@@ -415,6 +415,8 @@ function coverFailedSays(list) {
 // the bot out from behind the planks, and a fireball threw it twenty-two
 // blocks into the lava (note 563).
 const FLYING_SHOOTERS = new Set(['ghast', 'blaze']);
+// Lava n blocks down, in words: level with the feet at none.
+const lavaDown = n => n ? `${n} block${n === 1 ? '' : 's'} down` : 'level with the feet';
 function shotPushers(bot, range = 64) {
   const { RANGE } = require('./combat-estimate');
   let about = [];
@@ -483,7 +485,7 @@ function shotOverEdge(bot, feet, health = bot.health ?? 20) {
   // Short: the drop's own sentence (terrain.js dropNote) says the lava's
   // figures.
   const fall = drop.into === 'lava'
-    ? `into lava ${drop.fallBlocks} blocks down, ${!fate || fate.shoreBlocks == null ? `no ground to climb out onto within ${terrain.LAVA_SHORE_RADIUS} blocks of where the body comes up` : fate.deadly ? `the nearest ground out ${fate.shoreBlocks} blocks off, more lava than the ${Math.round(after * 10) / 10} health left after the ${word}` : `the nearest ground out ${fate.shoreBlocks} blocks off, about ${fate.takes} health of lava`}`
+    ? `into lava ${lavaDown(drop.fallBlocks)}, ${!fate || fate.shoreBlocks == null ? `no ground to climb out onto within ${terrain.LAVA_SHORE_RADIUS} blocks of where the body comes up` : fate.deadly ? `the nearest ground out ${fate.shoreBlocks} block${fate.shoreBlocks === 1 ? '' : 's'} off, more lava and fire after it than the ${Math.round(after * 10) / 10} health left after the ${word}` : `the nearest ground out ${fate.shoreBlocks} block${fate.shoreBlocks === 1 ? '' : 's'} off, about ${fate.takes} health of lava and the fire after it`}`
     : `a fall of ${drop.fallBlocks} blocks, about ${drop.damage} health${drop.damage >= after ? `, more than the ${Math.round(after * 10) / 10} left after the ${word}` : ''}`;
   const seen = p.visible ? 'in sight' : `out of sight now; it flies, and can have a line again at any moment, its ${word} about a second after`;
   const more = pushers.length > 1 ? ` (and ${pushers.length - 1} more that can shoot it here)` : '';
@@ -615,6 +617,208 @@ function wallPlan(bot, feet, { onward = null } = {}) {
   if (lee.length && lee.length < all.length && fits(lee)) return { cells: lee, all, leeOnly: true };
   return { cells: all, all, leeOnly: false };
 }
+// How far a blast's push carries the body, and which way (note 612). The
+// 26.1.2 jar (ServerExplosion.hurtEntities): the push is along the line
+// from where the blast is to the eyes, times (1 - distance / (2 x power)),
+// the share of the body the blast sees and (1 - explosion knockback
+// resistance); a ghast's power of 1 pushes only a body within two blocks
+// of where its fireball bursts, at most a block a tick, and the fireball's
+// own hit knocks it as well (away from the fireball, and up). The fireball
+// bursts on the bot's side toward the ghast, so the push goes away from
+// the ghast and up. Seen in the day's seven pushes (2026-09-28, the flight
+// frames' first ticks after each hit): 0.27 to 0.42 a tick across and up
+// to 0.45 up, within 12 degrees of the line from the ghast (away from it,
+// all seven); the body rose one to three blocks and came back down to its
+// own level 2.1 (into the lava beside its span, mid-242-bb-fortress-4),
+// 2.2 (onto its span, mid-242-ac-nether-3-fortress-4), 3.3 (mid-242-ac-
+// nether-3-fortress-5, off the same span), 3.5, 3.5 and 4.0 blocks away
+// (mid-243-ah-fortress-5, mid-243-ag-nether-2, mid-242-bb-fortress-2);
+// one broke the netherrack under the feet and went down through it
+// (mid-242-ba-fortress-4, blastFloor), and in four more the save has the
+// netherrack under the feet gone (lava in its cell by the lava sea). Past
+// the cell beside the feet the body is a block up or more, so a block at
+// the feet' level there does not stop it, and one at the head's level
+// does. mid-242-bb-fortress-2 stood on
+// a one-wide netherrack path at y 46 over the lava sea with a ghast 55
+// blocks off in sight; its fireball threw the bot 4 blocks west and 1.2
+// north, over the path's edge, 18 blocks into the lava.
+const BLAST_THROW = 4, BLAST_SPREAD = 15;
+const COMPASS8 = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+const bearing = (dx, dz) => COMPASS8[((Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) % 8) + 8) % 8];
+// Where a push from `from` (a position) carries a body standing in `cell`
+// over a drop that kills: { blocksAway, fallBlocks, into, damage, toward,
+// cell }, or null where it stops at a block or on ground. Along the line
+// away from `from` and 15 degrees either side of it, as far as the throw.
+// The body is moved along x and along z apart, as the game moves it: a
+// block met on one stops that one, and the push goes on along the other,
+// sliding along the wall (a push north into a wall with a little west in
+// it goes on west). `at` is where in the cell the body stands (its middle
+// where not given).
+const BODY_HALF = 0.3;
+function pushCarries(bot, cell, from, { health = bot.health ?? 20, reach = BLAST_THROW, at = null } = {}) {
+  if (!from || typeof bot?.blockAt !== 'function') return null;
+  const terrain = require('./terrain');
+  const x0 = at ? at.x : cell.x + 0.5, z0 = at ? at.z : cell.z + 0.5;
+  const ax = x0 - from.x, az = z0 - from.z, n = Math.hypot(ax, az);
+  if (n < 1e-6) return null;
+  const solid = p => bot.blockAt(p)?.boundingBox === 'block';
+  // A block the body meets: at the feet' level only in the first block of
+  // the throw (after it the body is a block up), at the head's level all
+  // the way.
+  const stops = (x, z, s) => { const q = new Vec3(Math.floor(x), cell.y, Math.floor(z)); return solid(q.offset(0, 1, 0)) || (s <= 1 && solid(q)); };
+  const deadly = new Map();
+  const overDrop = q => {
+    const k = `${q}`;
+    if (!deadly.has(k)) {
+      let d = null;
+      if (!solid(q) && terrain.dropAt(bot, q)) { const drop = terrain.dropNear(bot, q, 0); if (drop && (drop.into === 'lava' || drop.into === 'unknown' || drop.damage >= health / 2)) d = drop; }
+      deadly.set(k, d);
+    }
+    return deadly.get(k);
+  };
+  for (const deg of [0, -BLAST_SPREAD, BLAST_SPREAD]) {
+    const r = deg * Math.PI / 180, ux = (ax * Math.cos(r) - az * Math.sin(r)) / n, uz = (ax * Math.sin(r) + az * Math.cos(r)) / n;
+    let x = x0, z = z0, xOn = Math.abs(ux) > 1e-6, zOn = Math.abs(uz) > 1e-6;
+    for (let s = 0.1; s <= reach + 1e-6 && (xOn || zOn); s += 0.1) {
+      if (xOn) { const nx = x + ux * 0.1; if (stops(nx + Math.sign(ux) * BODY_HALF, z, s)) xOn = false; else x = nx; }
+      if (zOn) { const nz = z + uz * 0.1; if (stops(x, nz + Math.sign(uz) * BODY_HALF, s)) zOn = false; else z = nz; }
+      const q = new Vec3(Math.floor(x), cell.y, Math.floor(z));
+      if (q.x === cell.x && q.z === cell.z) continue;
+      const drop = overDrop(q);
+      if (drop) return { ...drop, blocksAway: Math.max(1, Math.round(Math.hypot(q.x + 0.5 - x0, q.z + 0.5 - z0))), toward: bearing(ax, az), cell: { x: q.x, y: q.y, z: q.z } };
+    }
+  }
+  return null;
+}
+// The blast pushers that can put the bot over a drop from where it stands:
+// a ghast (or a breeze) in sight within its reach whose push carries the
+// body over a drop that kills, or the floor under the feet its blast can
+// break over such a fall. [{ t, over, floor }].
+function blastPushesOver(bot, cell = bot.entity.position.floored(), { health = bot.health ?? 20, pushers = shotPushers(bot) } = {}) {
+  return pushers.filter(t => t.visible && FAR_PUSHERS.has(t.entity?.name) && t.entity.position)
+    .map(t => ({ t, over: walledToward(bot, cell, t.entity.position) ? null : pushCarries(bot, cell, t.entity.position, { health, at: cell.equals(bot.entity.position.floored()) ? bot.entity.position : null }), floor: blastFloor(bot, cell, [t], health) }))
+    .filter(x => x.over || x.floor);
+}
+// The nearest footing, by the walk (a level step, one up with head room,
+// one down, as bunker.js wayTo), where no blast pusher's push carries the
+// body over a drop that kills, the floor holds against its blast, and no
+// lava is beside it: { cell, way, steps }, or null within `steps`.
+// Kept a moment, for the claim that asks it often.
+const FOOTING_STEPS = 16;
+function pushFooting(bot, blasts, { steps = FOOTING_STEPS, health = bot.health ?? 20 } = {}) {
+  const list = (blasts || []).filter(t => t.entity?.position);
+  if (!list.length || typeof bot?.blockAt !== 'function') return null;
+  const feet = bot.entity.position.floored();
+  const key = `${feet}|${list.map(t => `${t.entity.id}@${t.entity.position.floored()}`).join(',')}|${Math.round(health)}`;
+  const kept = bot._pushFooting;
+  if (kept && kept.key === key && Date.now() - kept.at < 1000) return kept.found;
+  const { standable } = require('./bunker');
+  const clear = p => bot.blockAt(p)?.boundingBox === 'empty';
+  // No cell the walk's own pathfinder refuses for a mob (danger.js
+  // safeFromHostiles: nearer a mob in sight than it is now, within its
+  // twelve, or a shooter's twenty): a footing toward the piglins was one
+  // the walk could not reach.
+  const { safeFromHostiles, hostileEntities } = require('./danger');
+  let hostiles = [];
+  try { hostiles = hostileEntities(bot, 64); } catch (_) { hostiles = []; }
+  const apart = c => { try { return safeFromHostiles(bot, c.offset(0.5, 0, 0.5), hostiles); } catch (_) { return true; } };
+  const safe = c => !lavaBeside(bot, c) && list.every(t => (walledToward(bot, c, t.entity.position) || !pushCarries(bot, c, t.entity.position, { health })) && !blastFloor(bot, c, [t], health));
+  const from = new Map([[`${feet}`, null]]);
+  let ring = [feet], found = null;
+  const far = c => c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
+  for (let n = 0; n < steps && ring.length && !found; n++) {
+    const next = [];
+    for (const c of ring) for (const [dx, dz] of AROUND_CARDINAL) for (const dy of [0, 1, -1]) {
+      const to = c.offset(dx, dy, dz), k = `${to}`;
+      if (from.has(k)) continue;
+      if (dy === 1 && !clear(c.offset(0, 2, 0))) continue;
+      if (dy === -1 && !clear(c.offset(dx, 1, dz))) continue;
+      if (!standable(bot, to) || lavaBeside(bot, to) || !apart(to)) continue;
+      from.set(k, c); next.push(to);
+    }
+    const cell = next.filter(safe).sort((a, b) => far(a) - far(b))[0];
+    if (cell) {
+      const way = [cell];
+      for (let p = from.get(`${cell}`); p && `${p}` !== `${feet}`; p = from.get(`${p}`)) way.unshift(p);
+      found = { cell, way, steps: way.length };
+    }
+    ring = next;
+  }
+  bot._pushFooting = { key, at: Date.now(), found };
+  return found;
+}
+// The step to that footing, in words and seconds: the walk's cells (those
+// beside a drop that kills walked crouched in the Nether, as routeEdge
+// counts them), the seconds within a push of the drop until it stands
+// there, and the chance a shot lands meanwhile by the shooter's own rate.
+// A ghast aims each fireball at where the bot is when it fires and leads
+// no target (Ghast$GhastShootFireballGoal: the line from 4 blocks in front
+// of it to the target's middle, nothing added for its motion); a large
+// fireball's box is a block wide, the body's 0.6, so a fireball meets the
+// body only where the body is within about 0.8 of the line across it when
+// it comes. Walking, the body moves across the line by its speed times the
+// fireball's flight times the sine of the angle between the walk and the
+// line: past 0.8, a fireball fired while it walks passes to the side.
+const FIREBALL_MEETS = 0.8;
+function footingStep(bot, footing, pusher, { health = bot.health ?? 20 } = {}) {
+  const { fallBeside } = require('./movement');
+  const nether = /nether/.test(String(bot.game?.dimension || ''));
+  const beside = footing.way.filter(c => fallBeside(bot, c, health)).length;
+  const seconds = Math.max(0.3, Math.round(((footing.way.length - (nether ? beside : 0)) / 4.3 + (nether ? beside / CROUCH_SPEED : 0) + 0.2) * 10) / 10);
+  const p = { name: pusher.entity.name, distance: pusher.distance, visible: !!pusher.visible };
+  // How far across the ghast's line the walk carries the body in one
+  // fireball's flight.
+  let across = null, flight = null;
+  if (p.name === 'ghast' && footing.way.length) {
+    const here = bot.entity.position, end = footing.cell.offset(0.5, 0, 0.5), g = pusher.entity.position;
+    const wx = end.x - here.x, wz = end.z - here.z, w = Math.hypot(wx, wz), lx = here.x - g.x, lz = here.z - g.z, l = Math.hypot(lx, lz);
+    if (w > 1e-6 && l > 1e-6) {
+      flight = require('./ghast').outSeconds(pusher.distance);
+      const sine = Math.abs(wx * lz - wz * lx) / (w * l);
+      across = Math.round(footing.way.length / seconds * flight * sine * 10) / 10;
+    }
+  }
+  const passes = across != null && across >= FIREBALL_MEETS;
+  // Walking across its line, what can still land is a fireball already on
+  // its way at the start that comes before the body is 0.8 across: while
+  // the ghast keeps its line one is fired each three seconds, so about the
+  // seconds that takes in three.
+  const early = passes ? Math.min(seconds, FIREBALL_MEETS / (across / flight)) : null;
+  const chance = passes ? Math.round(Math.min(1, early / require('./ghast').GHAST.every) * 100) : Math.round(shotChanceIn(p, seconds) * 100);
+  return { seconds, beside, crouched: nether && beside > 0, chance, early: early == null ? null : Math.round(early * 10) / 10, pusher: p, across, flight, passes };
+}
+// Said on turn_priority, on the survival claim and the work's option, and
+// on every stance that stays: a blast pusher in sight that can put the bot
+// over a drop that kills, what one shot that lands is, its rate of fire,
+// and the footing a push cannot carry it over from (note 612). mid-242-bb-
+// fortress-2's turn_priority said the drop beside the bot and the piglin
+// it answered; the ghast 55 blocks off in sight was said nowhere, and the
+// work and the fight stood the bot where its fireball was the fall.
+function blastOverSays(bot, { health = bot.health ?? 20 } = {}) {
+  let at = [];
+  try { at = blastPushesOver(bot, bot.entity.position.floored(), { health }); } catch (_) { at = []; }
+  if (!at.length) return null;
+  const { t, over, floor } = at[0], name = t.entity.name, said = name.replaceAll('_', ' '), word = shotWord(name);
+  const rate = name === 'ghast' ? `one ${word} every ${require('./ghast').GHAST.every} seconds while it has a line, the first about a second after it has one` : `a ${word} about every ${require('./combat-estimate').MOBS[name]?.every || 2} seconds`;
+  const fall = over ? `the drop ${over.blocksAway} block${over.blocksAway === 1 ? '' : 's'} ${over.toward}, ${over.into === 'lava' ? `into lava ${lavaDown(over.fallBlocks)}` : over.into === 'unknown' ? `a fall of at least ${over.fallBlocks} blocks, the ground under it not loaded` : `a fall of ${over.fallBlocks} blocks, about ${over.damage} health`}`
+    : `the ${floor.name.replaceAll('_', ' ')} under the feet, which its blast can break, over ${floor.into === 'lava' ? `lava ${lavaDown(floor.fall)}` : `a fall of ${floor.fall} blocks`}`;
+  // Priced by the fall, the lava by where the body comes up (terrain.js
+  // lavaFate), after the shot's own damage.
+  const { MOBS, afterArmour, armourOf } = require('./combat-estimate');
+  const worn = armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
+  const hit = MOBS[name] ? Math.round((MOBS[name].ignoresArmour ? MOBS[name].hit : afterArmour(MOBS[name].hit, worn)) * 10) / 10 : 0;
+  const after = Math.max(0, health - hit);
+  const terrain = require('./terrain');
+  const fate = over?.into === 'lava' ? terrain.lavaFate(bot, over, after) : null;
+  const deadly = over ? (over.into === 'lava' ? (fate ? fate.deadly : true) : over.into === 'unknown' || over.damage >= after) : floor.into === 'lava' || floor.damage >= after;
+  const footing = pushFooting(bot, at.map(x => x.t), { health });
+  const step = footing ? footingStep(bot, footing, t, { health }) : null;
+  const there = footing ? ` Footing a push from it cannot carry the bot over stands ${footing.steps} step${footing.steps === 1 ? '' : 's'} off at (${footing.cell.x}, ${footing.cell.y}, ${footing.cell.z}), about ${step.seconds} seconds of walking${step.crouched ? `, ${step.beside} of its cells beside the drop walked crouched` : ''}.` : ` No footing a push from it cannot carry the bot over is within ${FOOTING_STEPS} steps of walking.`;
+  const lands = over ? `one that lands pushes the body about 2 to 4 blocks away from it, ${over.toward}, and a block up or more, and here that carries it over ${fall}` : `one that lands at the feet can break ${fall}, and the body goes down through it`;
+  const says = ` The ${said} ${Math.round(t.distance)} blocks off has the bot in sight and fires ${rate}; ${lands}: ${deadly ? 'the bot\'s death, and everything carried lost with it' : 'the fall and what it costs'}.${there}`;
+  return { says, pusher: { name, distance: Math.round(t.distance * 10) / 10 }, over, floor, deadly, hit, footing, step };
+}
+
 // A stance that builds its wall or its cover stands open while it builds:
 // the walls stop the push only once they stand, and a shot that lands
 // before then is the fall. mid-243-ad-nether-3 chose rail_and_fight on its
@@ -2106,6 +2310,18 @@ class Survival {
     const danger = threats(bot).filter(t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24));
     const urgent = require('./danger').immediateThreat(bot);
     if (urgent && !urgent.projectile && !danger.some(t => t.entity.id === urgent.entity.id)) danger.push(urgent), danger.sort((a, b) => a.distance - b.distance);
+    // A ghast in sight past the twenty-four looked at, whose push can put
+    // the bot over a drop that kills beside it (danger.js pushOverDrop):
+    // survival claims the turn for it (note 586), and the stance is asked
+    // with it. mid-242-bb-fortress-2 stood by the lava sea with a ghast 45
+    // to 55 blocks off; survival had the turn and asked nothing, the code's
+    // step off the edge found no route, and the stance came only with the
+    // piglins (note 612).
+    const push = require('./danger').pushOverDrop(bot);
+    for (const t of push?.pushers || []) {
+      if (t.projectile || !t.visible || !FAR_PUSHERS.has(t.entity?.name) || danger.some(d => d.entity.id === t.entity.id)) continue;
+      danger.push(t); danger.sort((a, b) => a.distance - b.distance);
+    }
     return danger;
   }
 
@@ -2746,6 +2962,9 @@ class Survival {
     const dropHere = require('./terrain').dropNear(bot, feet, tossReach);
     const tossSays = tosser && dropHere ? ` A ${tosser}'s blow throws the bot up and back, up to about ${tossReach} blocks back and three up, not a step.` : '';
     const edge = require('./terrain').dropNote(dropHere, bot.health, bot) + tossSays + (blazeAbout ? require('./blaze-stand').knockSays(bot, feet) : '');
+    // A ghast in sight whose fireball's push carries the bot over a drop
+    // that kills from here, and the footing where it cannot (note 612).
+    const blastOver = blastOverSays(bot);
     // How many can be at arm's length at once, said where it is not all of
     // them: in a tunnel a crowd comes one or two at a time.
     const inCellSays = inCell.length ? ` ${ownCellsSays(inCell)}, at arm's length whatever the cells round it hold.` : '';
@@ -2833,6 +3052,67 @@ class Survival {
           const at = bot.entity.position.floored();
           if (Math.hypot(at.x - groundBy.x, at.z - groundBy.z) > 1.5) return false;
           return options.fight.run();
+        } };
+      // Whether a blast's push from where it is carries the bot over a drop
+      // from that ground too: three blocks from any drop is short of a
+      // fireball's throw (note 612).
+      const blastsThere = blastOver ? blastPushesOver(bot, groundBy) : [];
+      if (blastOver) options.fight_from_footing.description += blastsThere.length
+        ? ` There a ${shotWord(blastsThere[0].t.entity.name)} from the ${blastsThere[0].t.entity.name.replaceAll('_', ' ')} still carries the bot over ${blastsThere[0].over ? `the drop ${blastsThere[0].over.blocksAway} blocks ${blastsThere[0].over.toward} of it` : 'a fall through the floor its blast can break'}.`
+        : ` There a ${shotWord(blastOver.pusher.name)} from the ${blastOver.pusher.name.replaceAll('_', ' ')} pushes the bot onto ground or into rock, not over a drop.`;
+    }
+    // Out of a blast's push (note 612): a ghast in sight whose fireball
+    // pushes the bot over a drop that kills from where it stands, and
+    // footing within reach of the walk where that push cannot carry it
+    // over. A player who sees a ghast while on a ledge over the lava steps
+    // back from the edge before it fires. mid-242-bb-fortress-2 stood on a
+    // one-wide netherrack path over the lava sea, fought piglins 14 to 25
+    // blocks off with a ghast 55 blocks off in sight; every stance said the
+    // fireball was the fall, the one step off offered was to fight three
+    // blocks from any drop 4.5 blocks off, Jev answered none of these
+    // (0.47, 0.52), and the next fireball threw it 4 blocks west into the
+    // lava 18 down.
+    if (blastOver?.footing && !inWater(bot)) {
+      const { footing, step } = blastOver;
+      const cell = footing.cell, off = Math.round(cell.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
+      const wayCells = new Set(footing.way.map(c => `${c.x},${c.y},${c.z}`));
+      const g = blastOver.pusher, word = shotWord(g.name), said = g.name.replaceAll('_', ' ');
+      // From every side: wherever a ghast drifts, a push from there lands on ground.
+      const allSides = [0, 1, 2, 3, 4, 5, 6, 7].every(i => !pushCarries(bot, cell, cell.offset(0.5 - 10 * Math.cos(i * Math.PI / 4), 0, 0.5 - 10 * Math.sin(i * Math.PI / 4))));
+      const rate = g.name === 'ghast' ? `one ${word} every ${require('./ghast').GHAST.every} seconds while it has a line (one may be on its way already)` : `a ${word} about every ${require('./combat-estimate').MOBS[g.name]?.every || 2} seconds`;
+      // A ghast aims where the bot is and leads no target: a walk across
+      // its line takes the body out of where each fireball fired meanwhile
+      // comes (footingStep).
+      const aim = step.across == null ? '' : step.passes
+        ? ` It aims each ${word} where the bot is when it fires and leads no target; a ${word} takes about ${step.flight} seconds to come ${Math.round(g.distance)} blocks, and this walk carries the body about ${step.across} blocks across its line meanwhile, where a ${word} meets the body only within about ${FIREBALL_MEETS}: one fired while it walks passes to the side of it, and lands only where it meets a block within two blocks of the bot, pushing it less the farther off it bursts; one already on its way when the walk starts comes where the bot stands now, and meets it if it comes in the first ${step.early} seconds, before the body is ${FIREBALL_MEETS} across: about ${step.chance} in 100 while the ${said} has a line (one fired every ${require('./ghast').GHAST.every} seconds).`
+        : ` It aims each ${word} where the bot is when it fires and leads no target, but this walk goes nearly along its line: about ${step.across} blocks across it in the ${step.flight} seconds a ${word} takes to come ${Math.round(g.distance)} blocks, within the ${FIREBALL_MEETS} a ${word} meets the body at, so one fired while it walks still comes at it.`;
+      const window = ` Until it stands there, about ${step.seconds} seconds, it is within a push of the drop: the ${said} ${Math.round(g.distance)} blocks off fires ${rate}.${aim} ${step.passes ? `A ${word} that lands on the way` : `So ${step.chance >= 100 ? `a ${word} can all but surely land first` : `about ${step.chance} in 100 that a ${word} lands first`}, and one that lands before then`} is the push over the drop: ${blastOver.deadly ? 'the bot\'s death' : 'the fall and what it costs'}.`;
+      const thereSays = ` There a ${word} that lands costs its ${blastOver.hit || 'own'} damage and a push onto ground or into rock, the floor under it holding against the blast; ${allSides ? 'no drop is within a push of it from any side, wherever the ghast drifts to' : `from another side, where the ${said} can drift to, a push can still reach a drop`}.`;
+      const stepCost = stanceCost({ mobs, setup: step.seconds, ...(coming.length ? { fight: { lead: true } } : {}), shield: shielded, health: bot.health });
+      options.out_of_the_push = { expects: { damage: stepCost.damage, seconds: stepCost.seconds, oneHit },
+        description: `Step ${footing.steps} block${footing.steps === 1 ? '' : 's'} back from the edge to footing at (${cell.x}, ${cell.y}, ${cell.z}), ${off} blocks off, where a push from the ${said} cannot carry the bot over a drop, and stand there, striking what comes to arm's length${step.crouched ? `; ${step.beside} of the ${footing.steps} cells of its way lie beside the drop, walked crouched` : ''}.${window}${thereSays}${edge}` + costSays(stepCost, bot.health, mobs, { doing: 'stepping there', done: 'There' }),
+        run: async () => {
+          const here = bot.entity.position.floored();
+          if (here.equals(cell)) {
+            // Held there: asked again once a push from where the ghast is
+            // now would carry the bot over from this cell after all.
+            const now = blastPushesOver(bot, cell);
+            if (now.length) { this.state.stanceWhy = `from (${cell.x}, ${cell.y}, ${cell.z}) a push from the ${now[0].t.entity.name.replaceAll('_', ' ')}, where it has drifted, carries the bot over ${now[0].over ? `the drop ${now[0].over.blocksAway} blocks ${now[0].over.toward}` : 'a fall through the floor'}`; return false; }
+            this.report(goal, save, { action: 'out_of_the_push_hold', at: { ...cell }, health: bot.health });
+            await sleep(250);
+            return true;
+          }
+          this.report(goal, save, { action: 'out_of_the_push', to: { ...cell }, blocks: footing.steps, from: g.name, health: bot.health, stance: true });
+          const movements = bot.pathfinder?.movements, towers = movements?.allow1by1towers;
+          if (movements) movements.allow1by1towers = false;
+          let walkWhy = null;
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: Math.max(3000, step.seconds * 3000), stallMs: 1200, edgeTaken: n => wayCells.has(`${n.x},${n.y},${n.z}`) }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; walkWhy = err.message; }
+          finally { if (movements) movements.allow1by1towers = towers; }
+          if (bot.entity.position.floored().equals(cell)) return true;
+          const short = Math.round(cell.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
+          this.state.stanceWhy = `the step to (${cell.x}, ${cell.y}, ${cell.z}) ended ${short} blocks short of it${walkWhy ? `: ${walkWhy}` : ''}`;
+          return false;
         } };
     }
     // On a one-wide span over a drop: the span's own hold, chosen (note
@@ -2922,7 +3202,12 @@ class Survival {
       const railSetup = railBlocks * BLOCK_SECONDS + (railMade ? 1 : 0);
       const railLee = leeFirst(feet, railSides, pusherAt(bot)).lee;
       railWindow = railLee.length ? railLee.reduce((n, c) => n + (bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' ? 1 : 2), 0) * BLOCK_SECONDS + (railMade ? 1 : 0) : 0;
-      const railCost = noStep ? stanceCost({ mobs, setup: railSetup, shield: shielded })
+      // Behind the wall the shooters in sight still shoot, as its words say
+      // and the span's hold prices them (note 612): the wall stops the push,
+      // not the shot. Priced at nothing past the walling, mid-242-ac-nether-
+      // 3-fortress-5's rail read 5.8 in fifteen seconds beside a ghast firing
+      // every three.
+      const railCost = noStep ? stanceCost({ mobs, setup: railSetup, reaches: m => m.shoots, shield: shielded })
         : stanceCost({ mobs, setup: railSetup, fight: { lead: true, atOnce: opening ? Infinity : open + inCell.length }, shield: shielded, health: bot.health });
       options.rail_and_fight = { expects: { damage: railCost.damage, seconds: railCost.seconds, oneHit },
         description: noStep
@@ -3894,8 +4179,17 @@ class Survival {
         continue;
       }
       if (k === 'take_cover' && coverWindow) o.description += openWhileBuildingSays(over, coverWindow, `the first block in the ${shotWord(over.pusher.name)}'s line`);
-      if (CLOSES_THE_DROP.has(k)) continue;
+      if (CLOSES_THE_DROP.has(k) || k === 'out_of_the_push') continue;
       o.description += over.says + (k === 'keep_working' ? ' The work does not stop in time: the hit that would stop it is the one that throws the bot over.' : '');
+      // Where the push cannot carry it over, said beside it (note 612).
+      if (blastOver && k !== 'fight_from_footing') o.description += blastOver.footing ? ` Footing a push from the ${blastOver.pusher.name.replaceAll('_', ' ')} cannot carry the bot over stands ${blastOver.footing.steps} step${blastOver.footing.steps === 1 ? '' : 's'} off at (${blastOver.footing.cell.x}, ${blastOver.footing.cell.y}, ${blastOver.footing.cell.z}).` : ` No footing a push from the ${blastOver.pusher.name.replaceAll('_', ' ')} cannot carry the bot over is within ${FOOTING_STEPS} steps of walking.`;
+    }
+    // The push's own reach past the three blocks the drop is looked for in
+    // (a fireball throws the body up to about four), said where the drop
+    // sentence above was not.
+    if (blastOver && !over && !edgeNow?.walledNow) for (const [k, o] of Object.entries(options)) {
+      if (CLOSES_THE_DROP.has(k) || k === 'out_of_the_push') continue;
+      o.description += blastOver.says + (k === 'keep_working' ? ' The work does not stop in time: the hit that would stop it is the one that throws the bot over.' : '');
     }
     // A spear holder's knock over the drop, on every stance but the fight
     // (which says its jabs to the drop) and those that close the drop.
@@ -7017,7 +7311,15 @@ class Survival {
     const heldStance = stanceHeld(bot), ownPillar = this.state.pillar;
     const guarded = (heldStance && MOVING_STANCES.has(heldStance.choice)) ||
       onPillarTop(bot, ownPillar, 1);
-    if (!guarded && !bot.entity?.isInWater && !inWater(bot) && !(this.state.edgeTriedAt > Date.now() - 10000) && (threats(bot, 64).some(pusher) || fireball())) {
+    // With Jev reachable, the step off the edge is his: the stance question
+    // offers it with its way, its seconds and the push's reach
+    // (out_of_the_push and fight_from_footing), the ghast in sight among
+    // the mobs it is asked about (encounterDanger). This walk is the
+    // fallback. mid-242-bb-fortress-2's took it three times in forty
+    // seconds to firm ground ten blocks along its path over the lava sea
+    // and found no route each time, the pathfinder refusing the edge cells
+    // while the ghast could push (note 612).
+    if (!encounterJudgments(this) && !guarded &&!bot.entity?.isInWater && !inWater(bot) && !(this.state.edgeTriedAt > Date.now() - 10000) && (threats(bot, 64).some(pusher) || fireball())) {
       const { dropNear } = require('./terrain');
       // From the block the bot stands on, not the air it was knocked into:
       // mid-230-q, hit at a ravine's rim, measured and planned from the cell
@@ -7046,7 +7348,15 @@ class Survival {
           // rim is a jump over the drop (mid-230-q).
           const movements = bot.pathfinder?.movements, towers = movements?.allow1by1towers;
           if (movements) movements.allow1by1towers = false;
-          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), creeper ? { timeoutMs: 2500, stallMs: 800, stopWhen: shot } : { timeoutMs: 6000, stallMs: 2000, stopWhen: shot }); }
+          // Its own way's cells beside the drop taken, as an escape's are
+          // (note 610): refused them while the ghast could push, mid-242-bb-
+          // fortress-2's step off the edge found no route three times in
+          // forty seconds (note 612).
+          let way = null;
+          try { way = require('./bunker').wayTo(bot, cell); } catch (_) { way = null; }
+          const wayCells = new Set((way || []).map(c => `${c.x},${c.y},${c.z}`));
+          const edgeTaken = wayCells.size ? { edgeTaken: n => wayCells.has(`${n.x},${n.y},${n.z}`) } : {};
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), creeper ? { timeoutMs: 2500, stallMs: 800, stopWhen: shot, ...edgeTaken } : { timeoutMs: 6000, stallMs: 2000, stopWhen: shot, ...edgeTaken }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           finally { if (movements) movements.allow1by1towers = towers; }
           if (shot()) { this.state.edgeTriedAt = 0; await deflect(bot, task); }
@@ -7973,7 +8283,10 @@ function claim(bot, goal = {}, survival = null) {
   // drop nor the piglin's crossbow, and its arrow put the bot nineteen
   // blocks down (note 586).
   const pushOver = require('./danger').pushOverDrop(bot);
-  const edgeFact = pushOver ? { edge: require('./terrain').dropNote(pushOver.drop, hp, bot).trim() } : {};
+  // With a ghast in sight whose fireball's push carries the bot over it,
+  // that push, its rate of fire and the footing out of it (note 612).
+  const blast = pushOver ? blastOverSays(bot, { health: hp }) : null;
+  const edgeFact = pushOver ? { edge: require('./terrain').dropNote(pushOver.drop, hp, bot).trim(), ...(blast ? { push: blast.says.trim() } : {}) } : {};
   // A mob at its own reach, as stepOnce's atArm: arm's length, and a spear
   // holder's longer reach (danger.js atItsReach, note 586). In sight, or
   // within two.
@@ -8069,4 +8382,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { routeEdge, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

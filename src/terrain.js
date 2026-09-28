@@ -414,21 +414,31 @@ function lavaFate(bot, drop, health = bot?.health ?? 20) {
   let shore = null;
   try { shore = lavaShore(bot, landing); } catch (_) { shore = null; }
   const seconds = shore ? Math.max(0.5, round(shore.blocks / LAVA_SWIM_BLOCKS_A_SECOND)) : null;
-  const takes = shore ? round(seconds * perSecond) : null;
+  // And the fire lava sets, burning on once the body is out: fifteen
+  // seconds at a point a second that armour does not stop, which only
+  // water puts out and the Nether has none of (lavaTouch, note 580). It was
+  // left out here: mid-242-bb-fortress-4 stood on its own span at the lava
+  // sea's level, every stance saying a fireball's push into the lava beside
+  // it was "about 6.1 health of the 20" (a second's swim back to the span);
+  // the fireball put it in at 15.5 and it was dead three seconds later
+  // (note 612).
+  const touch = lavaTouch(bot, health);
+  const takes = shore ? round(seconds * perSecond + touch.burn) : null;
   const apple = (bot.inventory?.items?.() || []).some(i => i.name === 'enchanted_golden_apple');
   const resistant = (() => { try { return require('./body').fireResistant?.(bot) || false; } catch (_) { return false; } })();
   const deadly = !resistant && !apple && (!shore || takes >= health);
-  return { perSecond, shoreBlocks: shore ? shore.blocks : null, ...(shore ? { shore: { x: shore.x, y: shore.y, z: shore.z }, seconds, takes } : {}), ...(apple ? { enchantedGoldenApple: true } : {}), ...(resistant ? { fireResistance: true } : {}), deadly };
+  return { perSecond, shoreBlocks: shore ? shore.blocks : null, ...(shore ? { shore: { x: shore.x, y: shore.y, z: shore.z }, seconds, takes, inIt: round(seconds * perSecond), burn: touch.burn, fireSeconds: touch.fireSeconds, water: touch.water, nether: touch.nether } : {}), ...(apple ? { enchantedGoldenApple: true } : {}), ...(resistant ? { fireResistance: true } : {}), deadly };
 }
 function lavaFateSays(fate, fall, health = 20) {
   const hp = Math.round(health * 10) / 10;
   const burns = `the lava breaks the fall and burns about ${fate.perSecond} health a second through the armour worn`;
   if (fate.fireResistance) return `into lava ${fall} blocks down, where fire resistance on the body keeps the lava from hurting while it lasts`;
+  const after = fate.burn ? `, then the fire it sets burns on ${fate.fireSeconds} seconds out of it at a point a second that armour does not stop${fate.nether ? ' (no water to put it out in the Nether)' : ' (no water carried to put it out)'}: about ${fate.takes} in all` : fate.water ? ', then the fire it sets is put out with the water bucket carried' : '';
   const out = fate.shoreBlocks != null
-    ? `the nearest ground out of it from where the body comes up is about ${fate.shoreBlocks} blocks off, about ${fate.seconds} seconds swimming (not measured), about ${fate.takes} health${fate.takes >= health ? `, more than the ${hp} the bot has` : ` of the ${hp} the bot has`}`
+    ? `the nearest ground out of it from where the body comes up is about ${fate.shoreBlocks} block${fate.shoreBlocks === 1 ? '' : 's'} off, about ${fate.seconds} seconds swimming (not measured), about ${fate.inIt ?? fate.takes} health in it${after}${fate.takes >= health ? `, more than the ${hp} the bot has` : ` of the ${hp} the bot has`}`
     : `no ground out of it stands within ${LAVA_SHORE_RADIUS} blocks of where the body comes up`;
   const end = fate.enchantedGoldenApple ? ': the enchanted golden apple carried, eaten in the lava, is the one way to live through it' : fate.deadly ? ': death' : '';
-  return `into lava ${fall} blocks down; ${burns}, and ${out}${end}`;
+  return `into lava ${fall ? `${fall} block${fall === 1 ? '' : 's'} down` : 'level with the feet'}; ${burns}, and ${out}${end}`;
 }
 // The drop within `radius`, as the stance question's state gives it: into
 // lava, what the lava costs this body (lavaFate), not the fall's damage,
@@ -449,7 +459,7 @@ function dropNote(drop, health, bot = null) {
   if (!drop || (drop.into !== 'lava' && drop.damage < 1)) return '';
   const fate = drop.into === 'lava' && bot ? lavaFate(bot, drop, health ?? 20) : null;
   const end = drop.into === 'lava' ? (fate ? lavaFateSays(fate, drop.fallBlocks, health ?? 20) : 'into lava') : drop.damage >= (health ?? 20) ? `about ${drop.damage} health from the fall, more than the ${Math.round(health ?? 20)} the bot has` : `about ${drop.damage} of the bot's ${Math.round(health ?? 20)} health from the fall`;
-  return ` A drop of ${drop.fallBlocks} blocks is ${drop.blocksAway ? `${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off` : 'under the bot, standing on the corner of a block over it'}: a hit's knockback or a step back over it is ${end}.`;
+  return ` ${drop.fallBlocks ? `A drop of ${drop.fallBlocks} block${drop.fallBlocks === 1 ? '' : 's'}` : 'Lava level with the feet'} is ${drop.blocksAway ? `${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off` : 'under the bot, standing on the corner of a block over it'}: a hit's knockback or a step back over it is ${end}.`;
 }
 
 // A step back from an edge that holds. mid-227-b stepped back from a

@@ -172,8 +172,12 @@ class SurvivalMovements extends Movements {
         (nether && this.deadlyDropBeside(next))) next.cost += LAVA_EDGE_COST;
     }
     // Nor back onto the edge the bot has just stepped back from, while the
-    // mobs it stepped back from are about (terrain.js holdOffEdge).
-    return this.bot?._edgeHold ? kept.filter(next => !edgeHeld(this.bot, next, this._hostileObservation.entities)) : kept;
+    // mobs it stepped back from are about (terrain.js holdOffEdge); save the
+    // cells of the step's own way off it (edgeTaken). The step off the edge
+    // held the cells beside the drop round the feet before it walked, and on
+    // a one-wide path those are the way off: mid-242-bb-fortress-2's found
+    // no route three times with a ghast 45 to 55 blocks off (note 612).
+    return this.bot?._edgeHold ? kept.filter(next => this.edgeTaken?.(next) || !edgeHeld(this.bot, next, this._hostileObservation.entities)) : kept;
   }
 
   // Note 545, a fall-height check on the walk's own moves, in every
