@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-91 questions: 43 decision trees and 48 batched questions.
+92 questions: 43 decision trees and 49 batched questions.
 
 ## Batches
 
@@ -1472,13 +1472,23 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `dream_operation`
 
-**What does the speaker want done with Jev's dream: set one, ask, pause, resume, or clear?**
+**What does the speaker want done with Jev's dream: set one (a built-in one or one in the speaker's own words), ask, pause, resume, or clear?**
 
 - When: A message routed as dream.
 - Batched question, choice; stakes high; ledger kind `dream`
 - Bar: 0.75: clearing the dream below 0.75 and setting one below 0.65 are confirmed in words first; the rest are reversible
 - Jev unreachable: the request fails and the player is told "I'm having trouble thinking right now"
 - Options built in: src/dream.js (resolveDream)
+
+### `dream_text_fit`
+
+**Are the words given as a dream one concrete thing the bot can do?**
+
+- When: Setting a custom dream, after the operation is chosen.
+- Batched question, choice; stakes low; ledger kind `dream`
+- Bar: none
+- Jev unreachable: the custom dream is not set and the player is told "I'm having trouble thinking right now"
+- Options built in: src/dream.js (checkCustomText)
 
 ### `village_progress`
 

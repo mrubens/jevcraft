@@ -305,10 +305,11 @@ A new request replaces the current one, and tasks survive restarts (state is in 
 
 ### Dreams
 
-A dream is a standing goal that Jev works toward whenever nobody has asked it for anything. There are two:
+A dream is something Jev works toward whenever nobody has asked it for anything. Two are standing goals, and a dream can also be any single request:
 
 - `Jev your dream is to beat the game`: Jev climbs the game ladder, from wood and stone tools through iron, a shield, a bucket, a home with a bed, iron armor, then the Nether, blaze rods, ender pearls, the stronghold and the dragon. This is the same ladder the trials run: every trial starts with this dream set, and "obtain blaze rods" in the example above is one of its steps.
 - `Jev your dream is to build a village`: Jev looks at what already stands and picks the next building from the designs it has, until it judges the village complete.
+- `Jev your dream is to build a castle by the lake` or `Jev your dream is to get me a stack of diamonds`: any one thing you could ask for as a request. Jev checks it would understand the text as a request (if not, it says so and keeps no dream), does it once when nothing else needs it, says so in chat when it is done, and then the dream ends. If the request keeps failing, Jev sets the dream aside and says so.
 
 A chat request always comes first; the dream picks up again when the request is done. `Jev set your dream aside` pauses it, `Jev chase your dream` resumes it, and `Jev what is your dream` reports progress. Progress is read from the world (what is carried, worn and built), never from a counter, so a dream survives restarts.
 

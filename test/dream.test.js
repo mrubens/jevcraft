@@ -162,3 +162,129 @@ test('an unsure answer never takes the dream away or swaps it; pausing is not he
   assert.equal((await ask('set_beat_the_game', 0.55)).kind, 'clarify');
   assert.equal((await ask('pause', 0.51)).dream.operation, 'pause');
 });
+
+// Custom dreams: any single request, pursued once.
+const { customText, customVerdict, noteCustomAttempt, dreamReport, dreamTitle, CUSTOM_ATTEMPTS } = require('../src/dream');
+const { GoalStore } = require('../src/objectives');
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+// The dream question answers set_custom; the intake batch routes the text as `kind`.
+const routed = (kind, extra = {}, fit = 'doable') => ({ systemOne: async ({ questions }) => {
+  if (questions.fit) return { answers: { fit: { choice: fit, confidence: 0.9 } } };
+  if (questions.operation) return { answers: { operation: { choice: 'set_custom', confidence: 0.9 } } };
+  return { answers: { addressed: { noul: 1 }, interaction: { choice: 'request', confidence: 0.9 }, objective: { choice: kind, confidence: 0.9 }, ...extra } };
+} });
+const registry = require('minecraft-data')('26.1');
+
+test('set_custom carries the text after "dream is to" once the pipeline can route it', async () => {
+  const set = await resolveDream(routed('build'), { request: 'Jev your dream is to build a castle by the lake.', from: 'Player' }, { username: 'Jev', context: { registry } });
+  assert.equal(set.kind, 'dream'); assert.equal(set.dream.key, 'custom'); assert.equal(set.dream.operation, 'set_custom');
+  assert.equal(set.dream.text, 'build a castle by the lake'); assert.equal(set.dream.probe.kind, 'build');
+  assert.equal(customText('Jev, your dream is to get me a stack of diamonds! (yes, now)'), 'get me a stack of diamonds');
+  assert.equal(customText('what is your dream'), null);
+});
+
+test('a text that does not route to a doable request is refused with a way forward', async () => {
+  for (const kind of ['other', 'operator_command', 'dream']) {
+    const refused = await resolveDream(routed(kind), { request: 'Jev your dream is to make the base nicer', from: 'Player' }, { username: 'Jev', context: { registry } });
+    assert.equal(refused.kind, 'clarify', kind); assert.equal(refused.clarification.reason, 'dream_not_a_request');
+    assert.match(refused.message, /as a request/); assert.match(refused.message, /castle by the lake/);
+  }
+  for (const fit of ['vague', 'several']) {
+    const refused = await resolveDream(routed('build', {}, fit), { request: 'Jev your dream is to make the base nicer', from: 'Player' }, { username: 'Jev', context: { registry } });
+    assert.equal(refused.kind, 'clarify', fit); assert.equal(refused.clarification.fit, fit); assert.match(refused.message, /as a request/);
+  }
+  const noText = await resolveDream(routed('build'), { request: 'Jev set a custom dream', from: 'Player' }, { username: 'Jev', context: { registry } });
+  assert.equal(noText.clarification.reason, 'dream_no_text');
+  const long = await resolveDream(routed('build'), { request: `Jev your dream is to build ${'a very tall tower '.repeat(20)}`, from: 'Player' }, { username: 'Jev', context: { registry } });
+  assert.equal(long.clarification.reason, 'dream_not_a_request');
+});
+
+test('a custom dream needs the same bar as a built-in one to be set', async () => {
+  const unsure = confidence => resolveDream({ systemOne: async ({ questions }) => questions.operation
+    ? { answers: { operation: { choice: 'set_custom', confidence } } } : assert.fail('the text is not checked while unsure') },
+  { request: 'Jev maybe your dream is to build a castle by the lake', from: 'Player' }, { username: 'Jev', context: { registry } });
+  const asked = await unsure(0.6);
+  assert.equal(asked.kind, 'clarify'); assert.equal(asked.clarification.reason, 'dream_unsure'); assert.match(asked.message, /build a castle by the lake/);
+});
+
+test('the custom dream is stored beside the old ones and survives a restart', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dream-')), 'w-dream.json');
+  const store = new GoalStore(file);
+  store.save({ version: 1, dream: 'custom', text: 'find a cherry biome', setBy: 'Player', setAt: '2026-09-28T00:00:00Z', failures: 1 });
+  assert.deepEqual({ ...new GoalStore(file).read(), updatedAt: undefined }, { version: 1, dream: 'custom', text: 'find a cherry biome', setBy: 'Player', setAt: '2026-09-28T00:00:00Z', failures: 1, updatedAt: undefined });
+  fs.writeFileSync(file, JSON.stringify({ version: 1, dream: 'beat_the_game', setBy: 'Player', setAt: '2026-09-01T00:00:00Z' }));
+  assert.equal(new GoalStore(file).read().dream, 'beat_the_game', 'a file from before custom dreams still loads');
+  assert.equal(dreamTitle({ dream: 'beat_the_game' }), 'beat the game'); assert.equal(dreamTitle({ dream: 'custom', text: 'find a cherry biome' }), 'find a cherry biome');
+});
+
+const custom = { dream: 'custom', text: 'get me a stack of diamonds', setBy: 'Player', setAt: '2026-09-28T00:00:00Z' };
+test('nextDreamRequest hands the custom text over as a request from the dream', async () => {
+  let asked;
+  const next = await nextDreamRequest({}, custom, { interpretRequest: async text => { asked = text; return { kind: 'obtain', request: `Jev ${text}`, item: 'diamond', count: 64, deliver: true, from: 'Player' }; } });
+  assert.equal(asked, 'get me a stack of diamonds');
+  assert.equal(next.dream, 'custom'); assert.equal(next.source, 'dream'); assert.equal(next.kind, 'obtain'); assert.equal(next.count, 64);
+  assert.equal(next.request, 'get me a stack of diamonds'); assert.equal(next.dreamSetAt, custom.setAt); assert.equal(next.from, 'Player');
+  await assert.rejects(nextDreamRequest({}, custom, { interpretRequest: async () => ({ kind: 'other' }) }), /did not come out/);
+  await assert.rejects(nextDreamRequest({}, { ...custom, text: undefined }, { interpretRequest: async () => ({}) }), /no text/);
+});
+
+test('a custom dream is launched like the others, then ends when its request completes', () => {
+  const now = Date.now();
+  assert.equal(shouldLaunchDream(custom, null, { now }), true);
+  assert.equal(shouldLaunchDream(custom, { status: 'running', request: 'get me a pumpkin' }, { now }), false, 'a player request comes first');
+  assert.equal(shouldLaunchDream({ ...custom, paused: true }, null, { now }), false, 'stop pauses it');
+  assert.equal(shouldLaunchDream({ ...custom, lastAttemptAt: now - 1000 }, { status: 'blocked', dream: 'custom' }, { now }), false, 'the cool-down applies');
+  const mine = status => ({ dream: 'custom', dreamSetAt: custom.setAt, status });
+  assert.equal(customVerdict(custom, mine('running')), null);
+  assert.equal(customVerdict(custom, mine('complete')), 'done');
+  assert.equal(customVerdict({ ...custom, satisfiedAt: 'x' }, mine('complete')), null, 'ended once');
+  assert.equal(customVerdict(custom, { dream: 'custom', dreamSetAt: 'an earlier dream', status: 'complete' }), null, 'another dream\'s finished request is not this one\'s');
+  assert.equal(customVerdict(custom, { dream: 'build_a_village', status: 'complete' }), null);
+  assert.equal(customVerdict({ dream: 'build_a_village' }, mine('complete')), null, 'the standing dreams never end this way');
+});
+
+test('a custom dream whose request keeps failing is set aside after a few tries, each block counted once', () => {
+  const standing = { ...custom }, blocked = createdAt => ({ dream: 'custom', dreamSetAt: custom.setAt, status: 'blocked', createdAt });
+  noteCustomAttempt(standing, blocked('a')); noteCustomAttempt(standing, blocked('a'));
+  assert.equal(standing.failures, 1, 'the same blocked goal is one failure however often it is looked at');
+  assert.equal(customVerdict(standing, blocked('a')), null);
+  noteCustomAttempt(standing, blocked('b')); noteCustomAttempt(standing, blocked('c'));
+  assert.equal(standing.failures, CUSTOM_ATTEMPTS);
+  assert.equal(customVerdict(standing, blocked('c')), 'give_up');
+  assert.equal(customVerdict({ ...standing, paused: true }, blocked('c')), null, 'once set aside it stays aside until resumed');
+  noteCustomAttempt(standing, { dream: 'custom', dreamSetAt: 'other', status: 'blocked', createdAt: 'z' });
+  assert.equal(standing.failures, CUSTOM_ATTEMPTS, 'an older dream\'s failure is not counted');
+});
+
+test('the dream is reported in the player\'s words and how it is going', () => {
+  const mine = status => ({ dream: 'custom', dreamSetAt: custom.setAt, status });
+  assert.match(dreamReport(null), /don't have a dream.*castle by the lake/);
+  assert.match(dreamReport(custom, null), /My dream is to get me a stack of diamonds\..*start when nothing else/);
+  assert.match(dreamReport(custom, mine('running')), /working on it now/);
+  assert.match(dreamReport({ ...custom, failures: 2 }, mine('blocked')), /2 tries so far/);
+  assert.match(dreamReport({ ...custom, satisfiedAt: 'x' }), /was to get me a stack of diamonds, and it is done/);
+  assert.match(dreamReport({ ...custom, paused: true, failures: 3 }), /set it aside after 3 tries/);
+  assert.match(dreamReport({ dream: 'build_a_village' }), /My dream is to build a village\. I chase it/, 'built-in wording is unchanged');
+  assert.match(dreamReport({ dream: 'beat_the_game', paused: true }), /keeping it aside/);
+});
+
+test('pause, resume and clear work on a custom dream as on the others', async () => {
+  const ask = operation => resolveDream({ systemOne: async () => ({ answers: { operation: { choice: operation, confidence: 0.9 } } }) }, { request: 'Jev pause your dream', from: 'Player' });
+  for (const operation of ['pause', 'resume', 'clear', 'query']) assert.equal((await ask(operation)).dream.operation, operation);
+  assert.equal((await ask('none')).kind, 'clarify');
+  assert.match((await ask('none')).message, /castle by the lake/, 'the unclear reply mentions custom dreams');
+});
+
+test('"your dream is to ..." read as a personal statement still reaches the dream handler', async () => {
+  const { interpret } = require('../src/objectives');
+  const client = { systemOne: async ({ questions, state }) => {
+    const dreamy = /dream/.test(state?.request || '');
+    if (questions.fit) return { answers: { fit: { choice: 'doable', confidence: 0.9 } } };
+    if (questions.operation) return { answers: { operation: { choice: 'set_custom', confidence: 0.9 } } };
+    return { answers: { addressed: { noul: 1 }, interaction: { choice: dreamy ? 'discussion' : 'request', confidence: 0.8 }, memory_statement: { noul: dreamy ? 0.9 : 0 },
+      objective: { choice: dreamy ? 'dream' : 'build', confidence: 0.86 } } };
+  } };
+  const spec = await interpret(client, 'Jev your dream is to build a castle by the lake', 'Player', 'Jev', { registry });
+  assert.equal(spec.kind, 'dream', 'the memory statement question does not take a dream statement');
+  assert.equal(spec.dream.text, 'build a castle by the lake');
+});

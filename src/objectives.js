@@ -93,8 +93,11 @@ async function interpret(client, request, from, username, context = {}) {
   // quoted, hypothetical or negated instructions. Such statements are useful
   // even when the broad action/discussion classifier calls them discussion.
   // Asking about the dream or a memory is a question to the bot, not a
-  // discussion about one, however it is phrased.
-  const kind = a.objective.choice === 'memory' || (a.interaction.choice === 'discussion' && a.memory_statement?.noul >= question('intake_memory_statement').gate.threshold)
+  // discussion about one, however it is phrased. "Your dream is to build a
+  // castle" is a statement told to the bot too, and read as a personal fact
+  // to remember it went to memory four times in six; when the objective is
+  // the dream, the dream's own question decides what was meant.
+  const kind = a.objective.choice === 'memory' || (a.objective.choice !== 'dream' && a.interaction.choice === 'discussion' && a.memory_statement?.noul >= question('intake_memory_statement').gate.threshold)
     ? 'memory' : a.objective.choice === 'dream' ? 'dream' : a.interaction.choice === 'request' ? a.objective.choice : 'other';
   const spec = { kind, request, from, interpretation: a, usage: response.usage, latencyMs: Math.round(performance.now() - started) };
   // Kept as a plain number on the goal so decision state can carry it
@@ -123,7 +126,7 @@ async function interpret(client, request, from, username, context = {}) {
   const preferences = requestedPreferences(kind, a.wood_choice, woods);
   if (preferences.length) spec.implicitPreferences = preferences;
   if (kind === 'memory') return resolveMemory(client, spec, username, context);
-  if (kind === 'dream') return require('./dream').resolveDream(client, spec);
+  if (kind === 'dream') return require('./dream').resolveDream(client, spec, { username, context });
   const noted = a.noted_wood && (a.noted_wood.choice === 'none' || Object.hasOwn(woods, a.noted_wood.choice)) ? a.noted_wood : undefined;
   if (['come', 'follow'].includes(kind)) {
     const target = a.target?.choice;

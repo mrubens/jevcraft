@@ -17,6 +17,7 @@ function statusMessage(bot, active, saved) {
       const home = goal.survival?.home;
       if (home?.bed?.claimedAt) messages.push(`Base at ${home.origin.x}, ${home.origin.z}.`);
     }
+    if (goal.dream === 'custom' && goal.status !== 'complete') messages.unshift(`Working on my dream: ${goal.request}.`);
     if (goal.kind === 'bundle') {
       const done = goal.tasks.filter(t => t.status === 'complete').length, next = goal.tasks.find(t => t.status !== 'complete');
       messages.push(`${done} of ${goal.tasks.length} things done.${next ? ` Next: ${name(next.item)}.` : ''}`);

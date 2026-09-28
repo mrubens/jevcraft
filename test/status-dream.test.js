@@ -9,3 +9,9 @@ test('a status request during the dream names the rung, the step and the base', 
   goal.step = { action: 'level_site', digs: 45, fills: 0 }; delete goal.survival.home.bed.claimedAt;
   assert.equal(statusMessage({}, { goal }, null), "Beating the game, on the iron armour rung. I'm levelling the ground for the base: 45 to dig, 0 to fill.");
 });
+
+test('a status request while chasing a custom dream says it is the dream', () => {
+  const goal = { kind: 'obtain', dream: 'custom', request: 'get me a stack of diamonds', status: 'running', step: { action: 'tunnel', target: { x: 1, y: 16, z: 1 } } };
+  assert.match(statusMessage({}, { goal }, null), /^Working on my dream: get me a stack of diamonds\. /);
+  assert.doesNotMatch(statusMessage({}, { goal: { ...goal, status: 'complete' } }, null), /dream/);
+});

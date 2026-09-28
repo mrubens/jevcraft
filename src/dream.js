@@ -9,7 +9,12 @@
 const DREAMS = {
   beat_the_game: { title: 'beat the game', description: 'Progress through Survival: tools, iron, the Nether, blaze rods, Eyes of Ender, the stronghold, the dragon, and back alive.' },
   build_a_village: { title: 'build a village', description: 'Build a cluster of usable buildings, arranged together, that reads as a village.' },
+  // A player's own words: one request, pursued once (the text is in the standing).
+  custom: { title: 'do what I was asked', description: 'Do one request the player gave as a dream, when nothing else needs the bot.' },
 };
+
+// What a dream is called in chat: the player's own words for a custom one.
+const dreamTitle = standing => standing?.dream === 'custom' ? standing.text : DREAMS[standing?.dream]?.title;
 
 // The village vocabulary: the parts a village wants and how many of each.
 // A part is on offer only when the schematic shelf holds a design for it,
@@ -78,8 +83,16 @@ function besideNewest(structures) {
 
 // The next request the dream wants run, as a goal spec the session can
 // launch. Null means the dream is satisfied for now.
-async function nextDreamRequest(client, standing, { structures = [], shelf = [], designer = false, signal } = {}) {
+async function nextDreamRequest(client, standing, { structures = [], shelf = [], designer = false, signal, interpretRequest } = {}) {
   if (!standing?.dream || !DREAMS[standing.dream]) return null;
+  if (standing.dream === 'custom') {
+    if (!standing.text) throw new Error('The custom dream has no text');
+    // The text goes through the same routing a chat request gets, now, with
+    // the world as it is (what is carried, what stands nearby).
+    const spec = await (interpretRequest || (() => { throw new Error('No way to read the custom dream as a request'); }))(standing.text);
+    if (!spec || NOT_A_TASK.has(spec.kind)) throw new Error(`My dream "${standing.text}" did not come out as something I can do`);
+    return { ...spec, request: standing.text, dream: 'custom', source: 'dream', dreamSetAt: standing.setAt, from: standing.setBy };
+  }
   if (standing.dream === 'beat_the_game') {
     return { kind: 'win', request: 'beat the game', dream: 'beat_the_game', from: standing.setBy };
   }
@@ -124,11 +137,75 @@ function shouldLaunchDream(standing, lastGoal, { now = Date.now(), ready = true,
   return true;
 }
 
+// A custom dream is one request, pursued to completion once. It ends when the
+// request it launched completes, and is set aside (not retried forever) after
+// this many attempts that ended blocked or could not launch.
+const CUSTOM_ATTEMPTS = 3;
+// Routed kinds that are not something the bot can be sent off to do.
+const NOT_A_TASK = new Set(['clarify', 'other', 'dream', 'memory', 'status', 'stop', 'resume', 'operator_command']);
+const CUSTOM_TEXT_MAX = 200;
+
+// The words after "dream is to": the request the player wants pursued.
+// Code cuts the text out of the message; Jev has already said this is a
+// custom dream, and the request pipeline says whether it can be done.
+function customText(message) {
+  const match = String(message || '').replace(/\s*\(yes, now\)\s*$/i, '').match(/\b(?:dream|goal|wish|ambition)\s+(?:is|would be|will be)\s+to\s+(.+)$/is);
+  const text = match?.[1].replace(/\s+/g, ' ').replace(/[\s.!]+$/, '').trim();
+  return text || null;
+}
+
+// Whether the text is a single request the chat pipeline can classify,
+// through the same routing a chat request gets, without launching it.
+async function checkCustomText(client, text, { from, username, context = {} } = {}) {
+  const [probe, fit] = await Promise.all([
+    require('./objectives').interpret(client, `${username || 'Jev'} ${text}`, from, username, { ...context, continueBuilds: undefined }),
+    require('./decisions').ask(client, { state: { dream_text: text, speaker: from }, questions: { fit: ['dream_text_fit'] } }),
+  ]);
+  const verdict = fit.answers?.fit?.choice;
+  if (!Object.hasOwn(TEXT_FIT, verdict)) throw new Error('Invalid dream text judgment');
+  return { ok: !!probe && !NOT_A_TASK.has(probe.kind) && verdict === 'doable', probe, fit: verdict };
+}
+
+// Called before each attempt: an attempt that ended blocked counts once
+// (by the goal's creation time); a launch that failed counts where it fails.
+function noteCustomAttempt(standing, lastGoal) {
+  if (standing?.dream !== 'custom') return;
+  if (lastGoal?.dream === 'custom' && lastGoal.dreamSetAt === standing.setAt && lastGoal.status === 'blocked' && standing.countedGoal !== lastGoal.createdAt) {
+    standing.failures = (standing.failures || 0) + 1; standing.countedGoal = lastGoal.createdAt;
+  }
+}
+
+// 'done': the request has completed. 'give_up': too many failed attempts.
+function customVerdict(standing, lastGoal) {
+  if (standing?.dream !== 'custom' || standing.satisfiedAt || standing.paused) return null;
+  if (lastGoal?.dream === 'custom' && lastGoal.dreamSetAt === standing.setAt && lastGoal.status === 'complete') return 'done';
+  return (standing.failures || 0) >= CUSTOM_ATTEMPTS ? 'give_up' : null;
+}
+
+// What the dream is and how it is going, in words, for "what is your dream".
+// `lastGoal` is the saved request; only one this dream launched counts.
+function dreamReport(standing, lastGoal) {
+  if (!standing?.dream) return "I don't have a dream yet. You could give me one: to beat the game, to build a village, or anything you could ask me to do, like build a castle by the lake.";
+  const title = dreamTitle(standing);
+  if (standing.dream !== 'custom') return standing.satisfiedAt ? `My dream was to ${title}, and I think it's done for now. Tell me to chase it again if you want more.`
+    : standing.paused ? `My dream is to ${title}, but I'm keeping it aside until you tell me to chase it.`
+    : `My dream is to ${title}. I chase it whenever nothing else needs me.`;
+  if (standing.satisfiedAt) return `My dream was to ${title}, and it is done. Tell me to chase it again, or give me a new dream, if you want more.`;
+  if (standing.paused) return (standing.failures || 0) >= CUSTOM_ATTEMPTS
+    ? `My dream is to ${title}, but I set it aside after ${standing.failures} tries that did not work. Say "chase your dream" to try again.`
+    : `My dream is to ${title}, but I'm keeping it aside until you tell me to chase it.`;
+  const mine = lastGoal?.dream === 'custom' && lastGoal.dreamSetAt === standing.setAt ? lastGoal : null;
+  const going = mine && ['pending', 'running', 'recovering'].includes(mine.status) ? " I'm working on it now."
+    : standing.failures ? ` It has not worked out yet: ${standing.failures} ${standing.failures === 1 ? 'try' : 'tries'} so far.`
+    : ' I will start when nothing else needs me.';
+  return `My dream is to ${title}. I do it once and then it is done.${going}`;
+}
+
 // How the player gives, asks about, pauses, resumes or takes back the dream
 // in chat. A dream is something the player gives Jev, not something Jev
 // chose for itself, so every one of these is the player's call.
-const { OPERATIONS } = require('./decisions/dream');
-async function resolveDream(client, spec) {
+const { OPERATIONS, TEXT_FIT } = require('./decisions/dream');
+async function resolveDream(client, spec, { username, context } = {}) {
   const response = await require('./decisions').ask(client, { state: { request: spec.request, speaker: spec.from,
     guidance: 'The dream is what Jev chases when nobody has asked for anything. Giving one does not interrupt a request that is active.' },
   questions: { operation: ['dream_operation'] } });
@@ -140,14 +217,25 @@ async function resolveDream(client, spec) {
   const bars = require('./decisions').question('dream_operation').bars;
   const needed = operation === 'clear' ? bars.clear : operation.startsWith('set_') ? bars.set : 0;
   const confidence = response.answers.operation?.confidence;
+  const text = operation === 'set_custom' ? customText(spec.request) : null;
   if (Number.isFinite(confidence) && confidence < needed) {
     return { ...spec, kind: 'clarify', message: operation === 'clear'
       ? 'Do you want me to give up my dream for good? Say "Jev forget your dream" to be sure, or "Jev pause your dream" to set it aside.'
-      : `Should my dream be to ${DREAMS[operation.slice(4)].title}? Say "Jev your dream is to ${DREAMS[operation.slice(4)].title}" to be sure.`,
+      : `Should my dream be to ${text || DREAMS[operation.slice(4)].title}? Say "Jev your dream is to ${text || DREAMS[operation.slice(4)].title}" to be sure.`,
     clarification: { reason: 'dream_unsure', operation, confidence, threshold: needed } };
   }
-  if (operation === 'none') return { ...spec, kind: 'clarify', message: 'You can give me a dream ("Jev your dream is to build a village", "your dream is to beat the game"), ask what it is, tell me to chase it or set it aside, or tell me to forget it.', clarification: { reason: 'dream_unclear' } };
+  if (operation === 'none') return { ...spec, kind: 'clarify', message: 'You can give me a dream ("Jev your dream is to build a village", "your dream is to beat the game", or any one request, like "your dream is to build a castle by the lake"), ask what it is, tell me to chase it or set it aside, or tell me to forget it.', clarification: { reason: 'dream_unclear' } };
+  if (operation === 'set_custom') {
+    const suggestion = 'Give me a dream I could do as a request, like "your dream is to build a castle by the lake" or "your dream is to get me a stack of diamonds", or say it as a request and I will do it now.';
+    if (!text) return { ...spec, kind: 'clarify', message: `What should my dream be? Say it like "Jev your dream is to build a castle by the lake".`, clarification: { reason: 'dream_no_text' } };
+    if (text.length > CUSTOM_TEXT_MAX) return { ...spec, kind: 'clarify', message: `That is too long for one dream. ${suggestion}`, clarification: { reason: 'dream_not_a_request' } };
+    const checked = await checkCustomText(client, text, { from: spec.from, username, context });
+    if (!checked.ok) return { ...spec, kind: 'clarify', message: checked.probe?.kind === 'clarify' && checked.probe.message
+      ? `I could not take "${text}" as a dream yet: ${checked.probe.message} ${suggestion}` : `I do not know how to do "${text}" as a request, so I will not keep it as a dream. ${suggestion}`,
+    clarification: { reason: 'dream_not_a_request', text, routed: checked.probe?.kind, fit: checked.fit } };
+    return { ...spec, kind: 'dream', dream: { operation, key: 'custom', text, probe: checked.probe, judgment: response.answers.operation }, usage: response.usage };
+  }
   return { ...spec, kind: 'dream', dream: { operation, key: operation.startsWith('set_') ? operation.slice(4) : undefined, judgment: response.answers.operation }, usage: response.usage };
 }
 
-module.exports = { FAILED_LAUNCH_MS, DREAMS, VILLAGE_PARTS, VILLAGE_LEVELS, villageState, villageCandidates, chooseVillagePart, besideNewest, nextDreamRequest, shouldLaunchDream, resolveDream, COOLDOWN_MS };
+module.exports = { FAILED_LAUNCH_MS, CUSTOM_ATTEMPTS, NOT_A_TASK, DREAMS, dreamTitle, customText, checkCustomText, noteCustomAttempt, customVerdict, dreamReport, VILLAGE_PARTS, VILLAGE_LEVELS, villageState, villageCandidates, chooseVillagePart, besideNewest, nextDreamRequest, shouldLaunchDream, resolveDream, COOLDOWN_MS };

@@ -26,7 +26,7 @@ const { withRequestSignal } = require('./typesafe');
 const { suspendPrevious, resumeSaved, waitingCleared } = require('./suspended-tasks');
 const { CompanionMemory, position } = require('./memory');
 const { BuildRegistry, resolveBuildContinuation } = require('./builds');
-const { nextDreamRequest, shouldLaunchDream, DREAMS, FAILED_LAUNCH_MS } = require('./dream');
+const { nextDreamRequest, shouldLaunchDream, DREAMS, FAILED_LAUNCH_MS, dreamTitle, dreamReport, noteCustomAttempt, customVerdict } = require('./dream');
 const { immediateThreat } = require('./danger');
 const { Ledger, withRun, appendSummary } = require('./ledger');
 
@@ -181,12 +181,12 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // Whatever is active pays for the calls made on its behalf; with nothing
   // active, an idle bot that has a dream is still that dream's cost.
   const routed = withRun(client, () => active?.goal.ledgerRun ?? dreamStore.read()?.ledgerRun);
-  const dreamName = key => `dream · ${DREAMS[key].title}`;
+  const dreamName = (key, text) => `dream · ${key === 'custom' ? text : DREAMS[key].title}`;
   // The dream's run in the ledger. A standing from before the ledger
   // existed gets one now, dated from when the dream was given.
   function dreamRun(standing) {
     if (!standing?.dream || standing.satisfiedAt || ended) return standing?.ledgerRun;
-    const run = ledger.open({ id: standing.ledgerRun, kind: 'dream', name: dreamName(standing.dream), startedAt: standing.setAt });
+    const run = ledger.open({ id: standing.ledgerRun, kind: 'dream', name: dreamName(standing.dream, standing.text), startedAt: standing.setAt });
     if (standing.ledgerRun !== run.id) { standing.ledgerRun = run.id; saveDream(standing); }
     return run.id;
   }
@@ -282,6 +282,38 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         return;
       }
       if (!goal.dream && ['complete', 'blocked'].includes(goal.status)) ledger.close(goal.ledgerRun, goal.status);
+      // A custom dream is one request: done when it completes.
+      if (goal.dream === 'custom' && goal.status === 'complete' && !ended) settleCustom(dreamStore.read(), goal);
+    });
+  }
+
+  // A custom dream ends when its request completes, and is set aside after
+  // too many attempts that came to nothing: said in chat, never retried forever.
+  function settleCustom(standing, lastGoal) {
+    const verdict = customVerdict(standing, lastGoal);
+    if (!verdict || ended) return false;
+    if (verdict === 'done') {
+      const { ledgerRun, ...rest } = standing;
+      saveDream({ ...rest, satisfiedAt: new Date().toISOString() });
+      if (ledgerRun) ledger.close(ledgerRun, 'satisfied');
+      bot.chat(`I did my dream: ${standing.text}. Tell me to chase it again, or give me a new dream, if you want more.`);
+    } else {
+      saveDream({ ...standing, paused: true, pausedBy: 'failures', pausedAt: new Date().toISOString() });
+      bot.chat(`I could not do my dream (${standing.text}) after ${standing.failures} tries, so I am setting it aside. Say "chase your dream" to try again.`);
+    }
+    return true;
+  }
+  // The custom dream's text, read as a chat request would be, with the world as it is.
+  function interpretDreamText(standing, runId) {
+    const from = standing.setBy, requestClient = withRun(client, runId);
+    const speaker = bot.players[from]?.entity?.position;
+    return interpret(requestClient, `${bot.username} ${standing.text}`, from, bot.username, {
+      registry: bot.registry, players: Object.keys(bot.players),
+      speakerPosition: position(speaker), botPosition: position(bot.entity?.position), dimension: bot.game.dimension,
+      memory: { ...memory.context(from), found: require('./exploration').foundEntries(world.known) },
+      builds: builds.describe(bot, bot.entity.position, bot.game.dimension),
+      continueBuilds: (request, candidates) => resolveBuildContinuation(requestClient, request, candidates, { speaker: position(speaker) }),
+      inventory: Object.fromEntries(bot.inventory.items().map(item => [item.name, item.count])),
     });
   }
 
@@ -291,15 +323,25 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   async function launchDream(standing) {
     launchingDream = true;
     try {
+      if (standing.dream === 'custom') {
+        noteCustomAttempt(standing, store.read()); saveDream(standing);
+        if (settleCustom(standing, store.read())) return;
+      }
       const structures = builds.describe(bot, bot.entity.position, bot.game.dimension);
       const runId = dreamRun(standing);
-      const next = await nextDreamRequest(withRun(client, runId), standing, { structures, shelf: require('./schematic-library').library(bot.registry), designer: designerAvailable(bot) });
+      const next = await nextDreamRequest(withRun(client, runId), standing, { structures, shelf: require('./schematic-library').library(bot.registry), designer: designerAvailable(bot),
+        interpretRequest: () => interpretDreamText(standing, runId) });
       if (ended || active) return;
+      if (standing.dream === 'custom') {
+        if (next.kind === 'house' && designerAvailable(bot)) next.kind = 'build';
+        const impossible = unworkable(bot, next);
+        if (impossible) throw Object.assign(new Error(`My dream "${standing.text}" cannot be done here: ${impossible.message}`), { name: 'DreamRequest' });
+      }
       standing.lastAttemptAt = Date.now();
       if (!next || next.done) {
         standing.satisfiedAt = new Date().toISOString(); standing.lastScore = next?.villageScore; delete standing.ledgerRun; saveDream(standing);
         ledger.close(runId, 'satisfied');
-        bot.chat(`I think my dream to ${DREAMS[standing.dream].title} is done for now. Tell me to chase it again if you want more.`);
+        bot.chat(`I think my dream to ${dreamTitle(standing)} is done for now. Tell me to chase it again if you want more.`);
         return;
       }
       attemptsFor(survival).clear('dream_launch', standing.dream); saveDream(standing);
@@ -307,11 +349,17 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         requesterPosition: null, initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);
       const firstRung = next.kind === 'win' ? require('./game-progress').nextGameStage(bot, goal).phase?.replaceAll('_', ' ') : null;
-      bot.chat(`Nothing needs me, so I'm chasing my dream to ${DREAMS[standing.dream].title}${next.villageScore !== undefined && next.villageScore !== null ? ` (the village is ${Math.round(next.villageScore * 100 / 3)}% there)` : ''}${firstRung ? `. First: ${firstRung}.` : `: ${next.request}.`}`);
+      bot.chat(`Nothing needs me, so I'm chasing my dream to ${dreamTitle(standing)}${next.villageScore !== undefined && next.villageScore !== null ? ` (the village is ${Math.round(next.villageScore * 100 / 3)}% there)` : ''}${firstRung ? `. First: ${firstRung}.` : `: ${next.request}.`}`);
       launch(goal);
     } catch (err) {
       console.error('[dream]', err.message);
-      standing.lastAttemptAt = Date.now(); saveDream(standing);
+      standing.lastAttemptAt = Date.now();
+      // Only a text that would not come out as a doable request counts against
+      // a custom dream; Jev being unreachable is not the dream's failure.
+      const unusable = standing.dream === 'custom' && err.name === 'DreamRequest';
+      if (unusable) standing.failures = (standing.failures || 0) + 1;
+      saveDream(standing);
+      if (unusable) settleCustom(standing, store.read());
       setAside(survival, 'dream_launch', standing.dream, err, FAILED_LAUNCH_MS); saveSurvival();
     } finally { launchingDream = false; }
   }
@@ -527,12 +575,14 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (spec.kind === 'dream') {
         const standing = dreamStore.read() || {};
         const { operation, key } = spec.dream;
-        const title = standing.dream ? DREAMS[standing.dream].title : null;
+        const title = standing.dream ? dreamTitle(standing) : null;
+        if (operation === 'set_custom') {
+          // The text routes as a request; a survival route may still not exist for it.
+          const impossible = unworkable(bot, spec.dream.probe);
+          if (impossible) { bot.chat(`I can't keep that as a dream. ${friendlyProblem(impossible)}`); return; }
+        }
         if (operation === 'query') {
-          bot.chat(!standing.dream ? "I don't have a dream yet. You could give me one: to beat the game, or to build a village."
-            : standing.satisfiedAt ? `My dream was to ${title}, and I think it's done for now. Tell me to chase it again if you want more.`
-            : standing.paused ? `My dream is to ${title}, but I'm keeping it aside until you tell me to chase it.`
-            : `My dream is to ${title}. I chase it whenever nothing else needs me.`);
+          bot.chat(dreamReport(standing, store.read()));
         } else if (operation === 'clear') {
           if (standing.ledgerRun) ledger.close(standing.ledgerRun, 'cleared');
           saveDream({ dream: null, clearedBy: from, clearedAt: new Date().toISOString() });
@@ -546,22 +596,29 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
             bot.chat(`Okay, I'll set my dream aside for now. Say "chase your dream" when you want me back on it.`);
           }
         } else if (operation === 'resume') {
-          if (!standing.dream) bot.chat("I don't have a dream yet. You could give me one: to beat the game, or to build a village.");
+          if (!standing.dream) bot.chat(dreamReport(null));
           else {
             // Chasing a satisfied dream again is a new run; picking up a paused one is not.
-            saveDream({ ...standing, paused: false, satisfiedAt: undefined, resumedBy: from, resumedAt: new Date().toISOString(),
-              ledgerRun: standing.satisfiedAt || !standing.ledgerRun ? ledger.open({ kind: 'dream', name: dreamName(standing.dream) }).id : standing.ledgerRun });
+            // A custom dream begins afresh from a resume: its earlier finish or failures are behind it.
+            const fresh = standing.dream === 'custom' && (standing.satisfiedAt || standing.paused) ? { setAt: new Date().toISOString(), failures: undefined, countedGoal: undefined } : {};
+            saveDream({ ...standing, ...fresh, paused: false, satisfiedAt: undefined, resumedBy: from, resumedAt: new Date().toISOString(),
+              ledgerRun: standing.satisfiedAt || !standing.ledgerRun ? ledger.open({ kind: 'dream', name: dreamName(standing.dream, standing.text) }).id : standing.ledgerRun });
             // A stop paused the survival loop with everything else; taking the
             // dream up again takes that up too, or nothing would run it.
             survival.state.paused = false; saveSurvival();
             bot.chat(`Back to my dream: to ${title}.`);
             const saved = store.read();
-            if (saved?.dream && ['interrupted', 'cancelled', 'blocked'].includes(saved.status) && !active) launch(saved);
+            if (saved?.dream && (standing.dream !== 'custom' || saved.dream === 'custom') && ['interrupted', 'cancelled', 'blocked'].includes(saved.status) && !active) {
+              if (standing.dream === 'custom') saved.dreamSetAt = fresh.setAt ?? standing.setAt;
+              launch(saved);
+            }
           }
         } else {
           if (standing.ledgerRun && !standing.satisfiedAt) ledger.close(standing.ledgerRun, 'replaced');
-          saveDream({ dream: key, setBy: from, setAt: new Date().toISOString(), ledgerRun: ledger.open({ kind: 'dream', name: dreamName(key) }).id });
-          bot.chat(`Got it. My dream is to ${DREAMS[key].title}. I'll chase it whenever nothing else needs me.`);
+          const text = spec.dream.text;
+          saveDream({ dream: key, ...(key === 'custom' && { text }), setBy: from, setAt: new Date().toISOString(), ledgerRun: ledger.open({ kind: 'dream', name: dreamName(key, text) }).id });
+          bot.chat(key === 'custom' ? `Got it. My dream is to ${text}. I'll do it once, whenever nothing else needs me.`
+            : `Got it. My dream is to ${DREAMS[key].title}. I'll chase it whenever nothing else needs me.`);
         }
         observation?.sample('dream', { operation, key, standing: dreamStore.read() });
         return;
