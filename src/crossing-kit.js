@@ -65,15 +65,16 @@ const words = s => String(s).replaceAll('_', ' ');
 // 512), and a wither skeleton's blade. "Health 9" was a number; the four
 // low-health deaths of 2026-09-27 went on told no more (note 515).
 function netherHitSays(bot) {
-  const { MOBS, afterArmour, armourOf } = require('./combat-estimate');
+  const { MOBS, afterArmour, armourOf, FIRE_TICKS, landingsApart, landingsToEnd } = require('./combat-estimate');
   const r = n => Math.round(n * 10) / 10;
   const names = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
   const worn = armourOf(names);
   const hp = r(bot.health ?? 20), hunger = bot.food ?? 20;
-  const hit = r(afterArmour(MOBS.blaze.hit, worn)), burn = (MOBS.blaze.burns || 0) * 5, blade = r(afterArmour(MOBS.wither_skeleton.hit, worn));
-  const fireballs = Math.max(1, Math.ceil(hp / (hit + burn)));
+  // The fire a landing sets is four ticks (combat-estimate FIRE_TICKS, note 631), not five.
+  const hit = r(afterArmour(MOBS.blaze.hit, worn)), burn = (MOBS.blaze.burns || 0) * FIRE_TICKS.fireball, blade = r(afterArmour(MOBS.wither_skeleton.hit, worn));
+  const fireballs = Math.max(1, landingsApart(hp, hit) || 1), inOne = Math.max(1, landingsToEnd(hp, hit) || 1);
   const back = hunger >= 18 ? 'coming back about one each four seconds at hunger ' + hunger : `not coming back at hunger ${hunger}, under eighteen`;
-  return `One blaze fireball through what is worn (${names.length ? names.map(words).join(', ') : 'no armour'}): about ${hit} hit and ${burn} burn over the next five seconds; a wither skeleton's blade about ${blade}, and wither on top. Health ${hp}, ${back}: about ${fireballs} fireball${fireballs === 1 ? '' : 's'} end${fireballs === 1 ? 's' : ''} it.`;
+  return `One blaze fireball through what is worn (${names.length ? names.map(words).join(', ') : 'no armour'}): about ${hit} hit and ${burn} burn over the next five seconds (four ticks of fire; ${r(hit + burn)} for one landing); a wither skeleton's blade about ${blade}, and wither on top. Health ${hp}, ${back}: about ${fireballs} fireball${fireballs === 1 ? '' : 's'} end${fireballs === 1 ? 's' : ''} it, each from its own volley${inOne !== fireballs ? `; ${inOne} within one volley, whose fire is one fire` : ''}.`;
 }
 
 // The kit, item by item: { key, short, carried, wants, says }. Food and

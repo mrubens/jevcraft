@@ -540,13 +540,13 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // its own reach (a blaze's forty-eight), anything else within sixteen.
   const { RANGE } = require('./combat-estimate');
   const reaching = (() => { try { return threats(bot, 64).filter(t => shooter(t.entity) ? t.visible && t.distance <= (RANGE[t.entity.name] || 16) : t.distance <= 16); } catch (_) { return []; } })();
-  const cage = state.entity === 'blaze' && reaching.length > 1 ? require('./blaze-stand').spawnerAt(bot) : null;
+  const cage = state.entity === 'blaze' ? require('./blaze-stand').spawnerAt(bot) : null;
   // What each option gains toward the rods (note 614): mid-242-aa-fortress-5
   // deferred single blazes at full health twice, told what each fight cost
   // and nothing of what leaving them gains, which is nothing.
   const rodsNeed = state.entity === 'blaze' ? require('./blaze-stand').rodsNeeded(bot, goal) : 0;
   const { towardRods } = require('./blaze-stand');
-  const liveCage = (c => !!c && c.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) <= 16)(state.entity === 'blaze' ? require('./blaze-stand').spawnerAt(bot) : null);
+  const liveCage = !!cage && cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) <= 16;
   const spawnerSays = cage ? ` A blaze spawner is ${Math.round(cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position))} blocks off: while the bot is within sixteen of it, it makes up to four more every ten to forty seconds.` : '';
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
@@ -570,6 +570,24 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       // (note 533).
       const others = reaching.filter(t => t.entity !== target);
       const all = others.length ? fightEstimate({ threats: [asThreat(target, distance), ...others.slice(0, 7).map(t => asThreat(t.entity, t.distance))], ...kit }) : null;
+      // A live spawner keeps making them: the fight is also priced with those
+      // that come over its own seconds, counted at the cage (blaze-stand
+      // spawnerNewcomers, note 631). The 2 blazes about at first sight were
+      // the whole price of a fight in rooms that held 6 to 8 a minute later.
+      const newcomers = (() => {
+        const base = all || one;
+        if (!liveCage || target.name !== 'blaze' || !base?.fightHere) return null;
+        const cageAt = cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position);
+        const present = 1 + others.filter(t => t.entity.name === 'blaze').length;
+        let seconds = base.fightHere.seconds, n = 0, est = null;
+        for (let i = 0; i < 3; i++) {
+          n = Math.round(require('./blaze-stand').spawnerNewcomers(present, seconds));
+          if (n < 1) return null;
+          est = fightEstimate({ threats: [asThreat(target, distance), ...others.slice(0, 7).map(t => asThreat(t.entity, t.distance)), ...Array.from({ length: n }, () => asThreat({ name: 'blaze' }, cageAt))], ...kit });
+          seconds = est.fightHere.seconds;
+        }
+        return { n, cageAt: Math.round(cageAt), fight: est.fightHere };
+      })();
       const at = target.position.floored();
       const lavaNear = require('./survival').lavaBeside(bot, at), dropNear = dropWithin(bot, at, 3);
       const { UNPROVOKED } = require('./danger');
@@ -579,7 +597,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       // defer, and deferred four times in two minutes (note 557).
       // The one it goes at, by its own figures; the others' share is in the price.
       const gain = one?.fightHere ? { kills: 1, seconds: one.fightHere.seconds, dies: one.fightHere.healthAfter <= 0, all: true } : { kills: 1 };
-      tree[`hunt_${target.id}`] = { description: huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, lavaNear, dropNear, footing: target.name === 'blaze' ? footing : '', hitters, UNPROVOKED, item: state.item }) + towardRods(rodsNeed, gain, { spawner: liveCage }),
+      tree[`hunt_${target.id}`] = { description: huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, newcomers, lavaNear, dropNear, footing: target.name === 'blaze' ? footing : '', hitters, UNPROVOKED, item: state.item }) + towardRods(rodsNeed, gain, { spawner: liveCage }),
         run: () => fightForDrop(bot, task, target, goal, save, actions) };
     } finally { movement.restore(); restore(); }
   }
@@ -625,7 +643,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     save();
   } };
   const snapshot = { request: goal.request, resource: state.item, need: state.targetCount - countOf(bot, state.item),
-    ...(state.entity === 'blaze' ? { blazes: blazesSays(bot, goal, state) } : {}),
+    ...(state.entity === 'blaze' ? { blazes: blazesSays(bot, goal, state), playedRecord: require('./blaze-record').says(bot) } : {}),
     health: bot.health, food: bot.food, dimension: dimension(bot), riskNow: require('./risk').riskNow(bot),
     fitness: { ...fit, said: fitSaid },
     // A blaze whose every way to fight it in the open ends within a push of
@@ -655,7 +673,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
 // A fight the hunt offers, as a sentence: the mob and where, how it is
 // fought with what is carried, what it drops, its price alone and with the
 // others that reach the bot, and what is beside it.
-function huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, lavaNear, dropNear, footing, hitters, UNPROVOKED, item }) {
+function huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, newcomers = null, lavaNear, dropNear, footing, hitters, UNPROVOKED, item }) {
   const name = target.name.replaceAll('_', ' '), here = bot.entity.position;
   const dy = Math.round(target.position.y - here.y);
   const where = `${Math.round(distance)} blocks off${Math.abs(dy) >= 2 ? `, ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}, at (${Math.round(target.position.x)}, ${Math.round(target.position.y)}, ${Math.round(target.position.z)})`;
@@ -670,12 +688,13 @@ function huntSays(bot, target, { handler, distance, mob, one, all, others, spawn
   const drop = target.name === 'blaze' ? ` A blaze drops a rod about half the time; ${item.replaceAll('_', ' ')}s are what the request needs now, and the drop is picked up after.${require('./blaze-stand').measuredSays('open', bot).says}` : ` Its drop is picked up after.`;
   const price = !mob || handler.passive ? '' : all
     ? ` With ${mobsSaid(others)} reaching the bot here too and fighting with it: about ${all.fightHere.seconds} seconds and ${all.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health${all.fightHere.healthAfter <= 0 ? ' (more than the bot has)' : `, ${all.fightHere.healthAfter} after`}; this one alone would be about ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken}.${spawnerSays}`
-    : ` About ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health, ${one.fightHere.healthAfter} after; it lands about ${mob.hitsBot} a hit through what is worn.`;
+    : ` About ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health, ${one.fightHere.healthAfter} after; it lands about ${mob.hitsBot} a hit through what is worn.${spawnerSays || ''}`;
+  const withNewcomers = !newcomers ? '' : ` With the ${newcomers.n} more the spawner puts in over the seconds the fight then takes (one about every six, up to six about; the trials' record at a cage like this one: two within sixteen blocks at first sight, five by twenty or thirty seconds, six to eight by a minute), counted at the cage ${newcomers.cageAt} blocks off: about ${newcomers.fight.seconds} seconds and ${newcomers.fight.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health${newcomers.fight.healthAfter <= 0 ? ' (more than the bot has)' : `, ${newcomers.fight.healthAfter} after`}.`;
   const note = mob?.note ? ` It ${mob.note}.` : '';
   const beside = [lavaNear ? ' Lava is within two blocks of it: a knockback there lands in it.' : '', dropNear ? ' A drop is within three blocks of it.' : '',
     hitters.length ? ` ${hitters.length} ${[...new Set(hitters.map(e => e.name.replaceAll('_', ' ')))].join(' and ')} within six blocks of it: ${[...new Set(hitters.map(e => UNPROVOKED[e.name].note))].join('; ')}.` : '',
     footing ? ` ${footing.trim()}` : ''].join('');
-  return `Fight the ${name} ${where}${seen ? '' : ', out of sight now (heard through the walls; it comes once it sees the bot)'}, in the open: ${how}.${drop}${price}${note}${beside}`;
+  return `Fight the ${name} ${where}${seen ? '' : ', out of sight now (heard through the walls; it comes once it sees the bot)'}, in the open: ${how}.${drop}${price}${withNewcomers}${note}${beside}`;
 }
 // The blazes about, as the hunt's facts: how many, seen or heard, their
 // heights against the bot, a spawner seen, and what they are for.
@@ -1831,6 +1850,8 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     ...(bot.inventory?.items ? { pickaxe: pickaxeSays(bot) } : {}),
     threatsInView: inView.map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(waiting ? { atTheBricks: waiting } : {}),
+    // Blazes at the bricks: what the bot's fights with blazes came to, by the health and hunger begun at (blaze-record.js, note 631).
+    ...(counted.blaze ? { playedRecord: require('./blaze-record').says(bot) } : {}),
     ...(record?.failed?.length ? { failed: record.failed.map(f => `${f.choice.replaceAll('_', ' ')}: ${f.why}`) } : {}) } };
 }
 

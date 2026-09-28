@@ -1087,8 +1087,14 @@ function costSays(cost, health, mobs, { doing = null, done = null, over = 'in th
   // three at a time. mid-242-ab-nether-3-fortress-6's bunker was told "about
   // 14.1 damage ... from 14.3 health" beside options that were each more than
   // the bot had, was taken, and five blows of three ended it (note 628).
-  const blow = Math.max(0, ...mobs.filter(m => !m.apart && !['creeper', 'warden', 'ghast'].includes(m.name)).map(m => m.jab ?? m.hitsBot ?? 0));
-  const margin = damage > 0 && damage < health && blow > 0 && health - damage < blow ? ` That leaves ${Math.round((health - damage) * 10) / 10} health, less than the ${Math.round(blow * 10) / 10} of one blow: one blow more than the figure counts, or one landing sooner than it does, ends the bot.` : '';
+  // A blaze's blow is a fireball that lands with its fire (combat-estimate
+  // FIRE_TICKS, note 631): the 2.5 through iron and four more.
+  const ceLand = require('./combat-estimate');
+  const blowOf = m => m.name === 'blaze' && m.shoots && m.hitsBot > 0 ? ceLand.landingCost(m.hitsBot) : (m.jab ?? m.hitsBot ?? 0);
+  const blowMob = mobs.filter(m => !m.apart && !['creeper', 'warden', 'ghast'].includes(m.name)).sort((a, b) => blowOf(b) - blowOf(a))[0];
+  const blow = blowMob ? blowOf(blowMob) : 0;
+  const blowSays = blowMob?.name === 'blaze' && blowMob.shoots ? `the ${Math.round(blow * 10) / 10} of one fireball that lands (its hit and its fire)` : `the ${Math.round(blow * 10) / 10} of one blow`;
+  const margin = damage > 0 && damage < health && blow > 0 && health - damage < blow ? ` That leaves ${Math.round((health - damage) * 10) / 10} health, less than ${blowSays}: one blow more than the figure counts, or one landing sooner than it does, ends the bot.` : '';
   // The biters out of sight further off that can come in while the bot
   // builds or digs, said as counted (farBiters, note 581).
   const farIn = cost.farIn || [];
@@ -3089,7 +3095,16 @@ class Survival {
     const hardest = (estimate.mobs || []).filter(m => m.name !== 'creeper' && !m.apart && m.hitsBot > 0).sort((a, b) => b.hitsBot - a.hitsBot)[0];
     // Each shooter's shot by its name: a ghast's fireballs were said as "2
     // arrows from the ghast" (note 551).
-    const hitsLeft = hardest && bot.health < 14 ? ` At ${Math.round(bot.health * 10) / 10} health, ${Math.max(1, Math.ceil(bot.health / hardest.hitsBot))} ${hardest.shoots ? shotWord(hardest.name) : 'hit'}${Math.ceil(bot.health / hardest.hitsBot) === 1 ? '' : 's'} from the ${hardest.name.replaceAll('_', ' ')} (about ${hardest.hitsBot} each after armour${hardest.hitsBotMost ? `, up to ${hardest.hitsBotMost}: ${Math.max(1, Math.ceil(bot.health / hardest.hitsBotMost))} at the hardest` : ''}) end it${mobs.some(m => m.poisons && !m.apart) || mobs.some(m => m.poisonedFor > 0) ? ', or one once the poison has taken it to 1' : ''}.` : '';
+    // A blaze's fireball lands with its fire (combat-estimate FIRE_TICKS): the
+    // hits that end the bot are counted with it, not by the hit alone, which
+    // said "at 3 health, 2 fireballs end it" where one does (note 631).
+    const blazeLands = (() => {
+      const b = bot.health < 14 ? (estimate.mobs || []).find(m => m.name === 'blaze' && !m.apart && m.shoots && m.hitsBot > 0) : null;
+      if (!b) return '';
+      const ce = require('./combat-estimate');
+      return ` ${ce.landingsSays(bot.health, b.hitsBot, ce.burnLeft(bot))}`;
+    })();
+    const hitsLeft = blazeLands && hardest?.name === 'blaze' ? blazeLands : (hardest && bot.health < 14 ? ` At ${Math.round(bot.health * 10) / 10} health, ${Math.max(1, Math.ceil(bot.health / hardest.hitsBot))} ${hardest.shoots ? shotWord(hardest.name) : 'hit'}${Math.ceil(bot.health / hardest.hitsBot) === 1 ? '' : 's'} from the ${hardest.name.replaceAll('_', ' ')} (about ${hardest.hitsBot} each after armour${hardest.hitsBotMost ? `, up to ${hardest.hitsBotMost}: ${Math.max(1, Math.ceil(bot.health / hardest.hitsBotMost))} at the hardest` : ''}) end it${mobs.some(m => m.poisons && !m.apart) || mobs.some(m => m.poisonedFor > 0) ? ', or one once the poison has taken it to 1' : ''}.` : '') + (hardest?.name === 'blaze' ? '' : blazeLands);
     // The estimate counts each creeper's blast where it goes off, or none
     // where the swings kill it inside its fuse, and says why beside the
     // figures: trial 118 fought two creepers and a spider with no armour at
@@ -4742,6 +4757,9 @@ class Survival {
         ...(farther ? { shootersFartherInSight: farther.list } : {}),
         ...(sealing ? { pocketHere: { placed: sealing.placed, of: sealing.of, ...(sealing.mobInCells ? { mobInCells: sealing.mobInCells } : {}), says: sealing.says } } : {}),
         ...(ails ? { effectsNow: ails.trim() } : {}),
+        // What fights with blazes came to in the trials, by the health and hunger
+        // begun at (blaze-record.js, note 631).
+        ...(danger.some(t => t.entity.name === 'blaze') ? { playedRecord: require('./blaze-record').says(bot) } : {}),
         // Up on the pillar: how the hold has gone (pillar-wait.js, note 590).
         ...(this.lastPillarHold ? { pillarSoFar: this.lastPillarHold.facts } : {}),
         // Gold, where piglins are about and none is worn (note 581).
@@ -7871,8 +7889,8 @@ class Survival {
       // And fireballs, with blazes about: each that lands and its five
       // seconds of fire (note 548).
       const blazesAbout = threats(bot, ce.RANGE.blaze).filter(t => t.entity.name === 'blaze');
-      const fireballs = blazesAbout.length ? Math.max(1, Math.ceil(hp / (ce.afterArmour(ce.MOBS.blaze.hit, worn) + ce.FIRE_SECONDS.fireball * ce.BURN_PER_SECOND))) : 0;
-      const outHealth = hp >= 20 ? '' : ` It goes out at ${hp} health${(bot.food ?? 20) < 18 ? `, not healing at hunger ${bot.food}` : ''}: about ${hitsOf('zombie')} zombie hits or ${hitsOf('skeleton')} arrows end it${fireballs ? `, or ${fireballs} blaze fireball${fireballs === 1 ? ' that lands' : 's that land'} (about ${Math.round(ce.afterArmour(ce.MOBS.blaze.hit, worn) * 10) / 10} each after armour, and ${ce.FIRE_SECONDS.fireball} seconds of fire)` : ''}${ce.afterArmour(ce.MOBS.creeper.hit, worn) >= hp ? ', or one creeper\'s blast' : ''}.`;
+      const fireballs = blazesAbout.length ? Math.max(1, ce.landingsApart(hp, ce.afterArmour(ce.MOBS.blaze.hit, worn), ce.burnLeft(bot)) || 1) : 0;
+      const outHealth = hp >= 20 ? '' : ` It goes out at ${hp} health${(bot.food ?? 20) < 18 ? `, not healing at hunger ${bot.food}` : ''}: about ${hitsOf('zombie')} zombie hits or ${hitsOf('skeleton')} arrows end it${fireballs ? `, or ${fireballs} blaze fireball${fireballs === 1 ? ' that lands' : 's that land'} (about ${Math.round(ce.afterArmour(ce.MOBS.blaze.hit, worn) * 10) / 10} each after armour, and the ${ce.FIRE_SECONDS.fireball} seconds of fire the first sets, about ${ce.FIRE_TICKS.fireball} more health: ${Math.round(ce.landingCost(ce.afterArmour(ce.MOBS.blaze.hit, worn), ce.burnLeft(bot)) * 10) / 10} for one landing)` : ''}${ce.afterArmour(ce.MOBS.creeper.hit, worn) >= hp ? ', or one creeper\'s blast' : ''}.`;
       // What leaving does with a creeper about, said: a door within six
       // blocks of one stays shut, and with every door so, the pocket waits.
       const creeperNear = threats(bot, 16).filter(t => t.entity.name === 'creeper').sort((a, b) => a.distance - b.distance)[0];

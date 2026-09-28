@@ -933,8 +933,9 @@ function shootersAtBody(bot) {
   });
   const says = shooters.map(k => {
     const said = k.name.replaceAll('_', ' '), word = k.name === 'ghast' || k.name === 'blaze' ? 'fireball' : 'shot';
-    const lands = k.hit > 0 ? Math.max(1, Math.ceil(hp / k.hit)) : null;
-    return `The ${said} ${k.distance} blocks off has the bot in sight and fires ${k.name === 'blaze' ? `a volley of three about every ${k.every} seconds` : `a ${word} about every ${k.every} seconds while it keeps a line`}, about ${k.hit} health a ${word} through the armour worn${k.inTheAirDueIn ? `; ${k.inTheAirDueIn.length === 1 ? `one is in the air at the bot, due in about ${k.inTheAirDueIn[0]} seconds` : `${k.inTheAirDueIn.length} are in the air at the bot`}` : ''}${lands ? `: at ${hp} health, ${lands === 1 ? 'the next that lands ends it' : `${lands} that land end it`}, the burning besides` : ''}. A way whose end is out of its line is out of its fire; one whose end is in it is not.`;
+    // A blaze's landing is its hit and its fire (combat-estimate FIRE_TICKS, note 631).
+    const lands = k.hit > 0 ? (k.name === 'blaze' ? Math.max(1, ce.landingsApart(hp, k.hit, ce.burnLeft(bot)) || 1) : Math.max(1, Math.ceil(hp / k.hit))) : null;
+    return `The ${said} ${k.distance} blocks off has the bot in sight and fires ${k.name === 'blaze' ? `a volley of three about every ${k.every} seconds` : `a ${word} about every ${k.every} seconds while it keeps a line`}, about ${k.hit} health a ${word} through the armour worn${k.inTheAirDueIn ? `; ${k.inTheAirDueIn.length === 1 ? `one is in the air at the bot, due in about ${k.inTheAirDueIn[0]} seconds` : `${k.inTheAirDueIn.length} are in the air at the bot`}` : ''}${lands ? `: at ${hp} health, ${lands === 1 ? 'the next that lands ends it' : `${lands} that land end it`}${k.name === 'blaze' ? ', the fire it sets counted' : ', the burning besides'}` : ''}. A way whose end is out of its line is out of its fire; one whose end is in it is not.`;
   }).join(' ');
   return { says, shooters, entities: pushers.map(t => t.entity) };
 }

@@ -301,6 +301,15 @@ function standCost(bot, danger, { setup = 0, at = null, open = null, atOnce = In
 //   seconds, about one every six, up to six about.
 const SHIELD_LEAK = 1 / 30, SHIELD_COVER = 60;
 const SPAWN_SECONDS = 25 / 4, SPAWN_CAP = 6;
+// How many more a live spawner puts in over `seconds`, beyond the `present`
+// already about (about one every six seconds, up to six about). Measured on
+// the trials of 2026-09-28 at the cage at (-108, 77, 155), twelve of the
+// day's deaths in its rooms: two within sixteen blocks at first sight (the
+// median), five by twenty or thirty seconds, six to eight by a minute; every
+// price of a fight there counted the two (note 631).
+function spawnerNewcomers(present, seconds) {
+  return Math.max(0, Math.min(SPAWN_CAP - present, (seconds || 0) / SPAWN_SECONDS));
+}
 const bearing = (from, to) => Math.atan2(to.z - from.z, to.x - from.x) * 180 / Math.PI;
 const angleOff = (a, b) => { const d = Math.abs(((a - b) % 360 + 540) % 360 - 180); return d; };
 // Which blazes a shield faced at their middle covers: the middle of the arc
@@ -1539,4 +1548,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { rodsNeeded, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS };
+module.exports = { spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS };

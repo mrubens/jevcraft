@@ -1642,6 +1642,11 @@ test('the ways to a fortress say the mobs at its bricks, seen or not', async () 
   const { options, state } = client.asked[0];
   assert.match(state.atTheBricks || '', /2 wither skeletons, 1 blaze|1 blaze, 2 wither skeletons/);
   for (const [key, text] of Object.entries(options)) assert.match(text, /Within sixteen blocks of the bricks, seen or not: .*wither skeleton/, key);
+  // With a blaze at the bricks the state carries what the bot's fights with blazes came to (note 631); a landing's cost is
+  // its hit and four ticks of fire, not five (no armour here: 5 and 4, 9), said with how many end it from separate volleys and within one.
+  assert.match(state.playedRecord, /^In the trials of 2026-09-28, 415 fights with blazes/);
+  assert.match(options.tunnel, /about 5 hit and 4 burn over the next five seconds \(four ticks of fire; 9 for one landing\)/);
+  assert.match(options.tunnel, /Health 20, coming back about one each four seconds at hunger 20: about 3 fireballs end it, each from its own volley; 4 within one volley, whose fire is one fire\./);
 });
 
 test('a resting staircase is not offered fresh as seek_fortress_height', async () => {
@@ -2046,4 +2051,40 @@ test('with a failure owed to the leg\'s question and a fortress remembered 26 bl
   assert.match(client.asked[0].state.whatFailedBelow[0], /^fortress approach: every way it had from here rests/);
   assert.equal(tried.owed(goal, 'fortress_leg'), null, 'said to it, and so no longer owed');
   assert.match(Object.values(client.asked[0].options).join(' '), /the fortress remembered at \(-70, 32, 140\)/, 'the remembered fortress is said on the legs that lie its way');
+});
+
+// Note 631: mid-242-bc-fortress-2 (25587, 17:55:22Z) was asked hunt_target at 20 health with 2 blazes in sight
+// and the cage 8 blocks off, told "about 11.7 seconds and 10.4 damage" for the fight in the open; the rooms held
+// 5 within sixteen twenty seconds on and 6 a minute later, and the bot was dead at 17:56:35. The price counted the
+// two about at first sight; the cage's newcomers were prose.
+test('a fight near a live spawner is priced with the blazes it puts in over the fight\'s own seconds, counted at the cage (note 631)', async () => {
+  const Block = require('prismarine-block')(registry), cage = new Vec3(9, 64, 4);
+  const scene = withCage => {
+    const f = brickHunt(p => p.y <= 63);
+    f.target.position = new Vec3(6.5, 64.5, 0.5);
+    f.bot.entities[8] = { id: 8, uuid: 'second', name: 'blaze', position: new Vec3(7.5, 65.5, 1.5), width: .6, height: 1.8, isValid: true };
+    const base = f.bot.blockAt;
+    if (withCage) f.bot.blockAt = p => { const at = p.floored(); if (at.equals(cage)) { const b = Block.fromStateId(registry.blocksByName.spawner.defaultState); b.position = at; return b; } return base(p); };
+    return f;
+  };
+  const ask = async f => {
+    let asked = null, state = null;
+    const client = { systemOne: async ({ questions, state: st }) => { asked = questions.branch_0.criteria; state = st; return { answers: { branch_0: { choice: 'defer', confidence: 0.9 } } }; } };
+    await huntObserved(f.bot, f.task, f.goal, () => {}, {}, client);
+    assert(asked?.hunt_7, Object.keys(asked || {}).join(','));
+    // What the bot's own fights with blazes came to, in the state (blaze-record.js).
+    assert.match(state.playedRecord, /^In the trials of 2026-09-28, 415 fights with blazes/);
+    return asked.hunt_7;
+  };
+  const says = await ask(scene(true));
+  const plain = /reaching the bot here too and fighting with it: about ([\d.]+) seconds and ([\d.]+) damage/.exec(says);
+  const withNew = /With the (\d+) more the spawner puts in over the seconds the fight then takes .*counted at the cage 10 blocks off: about ([\d.]+) seconds and ([\d.]+) damage/.exec(says);
+  assert(plain, says);
+  assert(withNew, says);
+  assert(Number(withNew[1]) >= 1, 'the newcomers over the fight\'s seconds');
+  assert(Number(withNew[3]) > Number(plain[2]), `${withNew[3]} against ${plain[2]}: the newcomers add damage`);
+  assert(Number(withNew[1]) <= 4, 'up to six about in all, two of them here already');
+  assert.match(says, /two within sixteen blocks at first sight, five by twenty or thirty seconds, six to eight by a minute/);
+  // No cage seen: nothing added.
+  assert.doesNotMatch(await ask(scene(false)), /the spawner puts in/);
 });

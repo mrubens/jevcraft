@@ -70,6 +70,60 @@ function effectLeft(bot, name, now = Date.now()) {
 // Nether has no water.
 const FIRE_SECONDS = { fireball: 5, in_fire: 8, lava: 15 };
 const BURN_PER_SECOND = 1;
+// What a landing's fire takes, measured (note 631): over the flight records
+// of 2026-09-28, 357 blaze fireballs that landed on a bot not already alight
+// and burned out before the next hurt took four ticks of fire each in 293
+// (the first a second after the landing, then one a second, none at the
+// fifth: the 100 ticks of a five second fire, one hurt each 20), the others
+// cut short (a death, a swing of the shield) or relit, so a landing costs its
+// hit and four more, the fire half of it and more at iron: 2.5 + 4 = 6.5
+// through full iron (scripts/blaze-record.js --landings). Of the 63
+// deaths that had a landing in their last fifteen seconds, 48 took it at
+// 6.5 health or less, where one landing is the end, and the questions said
+// "at 3 health, 2 fireballs (2.5 each) end it".
+const FIRE_TICKS = { fireball: 4 };
+// One landing's cost in health: the hit and the fire it sets, less the fire
+// still to come on a bot already alight (a landing sets it back to its five
+// seconds, so it adds only what that is beyond what was left).
+function landingCost(hit, alightFor = 0) {
+  return hit + Math.max(0, FIRE_TICKS.fireball - Math.max(0, alightFor));
+}
+// How many landings end the bot from `health` when each comes from its own
+// volley (nine seconds apart, so each fire burns out before the next: a
+// landing is `landingCost` whole), the fire already on it counted first.
+function landingsApart(health, hit, alightFor = 0) {
+  if (!(hit > 0)) return null;
+  const alight = Math.max(0, alightFor), left = health - alight;
+  if (left <= 0) return 0;
+  const first = landingCost(hit, alight);
+  return first >= left ? 1 : 1 + Math.ceil((left - first) / landingCost(hit));
+}
+// A blaze's landings, said: how many end the bot, from separate volleys and
+// (the fewest) within one, and what one is (note 631).
+function landingsSays(health, hit, alightFor = 0, { who = 'the blaze' } = {}) {
+  const r = n => Math.round(n * 10) / 10, hp = r(health), alight = Math.max(0, alightFor);
+  const volley = landingsToEnd(health, hit, alight), apart = landingsApart(health, hit, alight);
+  if (volley === null) return '';
+  if (volley === 0) return `At ${hp} health the burning alone ends the bot; a fireball that lands only hurries it (about ${r(hit)} after armour).`;
+  const extra = Math.max(0, FIRE_TICKS.fireball - alight), one = r(landingCost(hit, alight));
+  const fire = extra > 0 ? `about ${extra} more health from the fire` : 'no more health than the fire already on it';
+  if (volley === 1) return `At ${hp} health, 1 fireball from ${who} that lands ends it: it is about ${r(hit)} after armour and sets the bot alight for ${FIRE_SECONDS.fireball} seconds, ${fire} (${one} for one landing${alight > 0 ? ', less the fire still to come' : ''}).`;
+  const each = r(landingCost(hit));
+  const what = `each is about ${r(hit)} after armour and sets the bot alight for ${FIRE_SECONDS.fireball} seconds, about ${FIRE_TICKS.fireball} more health from the fire: ${each} for one landing`;
+  if (apart === volley) return `At ${hp} health, ${apart} fireballs from ${who} that land end it (${what}).`;
+  return `At ${hp} health, ${apart} fireballs from ${who} that land from separate volleys end it (${what}), or ${volley} in one volley, whose fire is one fire.`;
+}
+// How many landings in one volley end the bot from `health` (the fire
+// already on it counted first): 0 where the burning alone does, else at
+// least one. A volley's three come within a fifth of a second, so their
+// fires are one fire.
+function landingsToEnd(health, hit, alightFor = 0) {
+  const left = health - Math.max(0, alightFor);
+  if (!(hit > 0)) return null;
+  if (left <= 0) return 0;
+  for (let n = 1; n <= 40; n++) if (n * hit + Math.max(0, FIRE_TICKS.fireball - Math.max(0, alightFor)) >= left) return n;
+  return 40;
+}
 // The seconds of fire left on the bot now: from the last hurt that lit it
 // (session.js stamps _alightUntil), while the game says it burns; alight
 // with nothing stamped, the second to come. mid-208-k was asked its stance
@@ -911,4 +965,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { SPEAR_SEEN, SPEAR_WAYS, arrives, GIVES_UP, BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };
+module.exports = { SPEAR_SEEN, SPEAR_WAYS, arrives, GIVES_UP, BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, FIRE_TICKS, landingCost, landingsToEnd, landingsApart, landingsSays, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };
