@@ -122,6 +122,18 @@ async function start(world, source, archive) {
     spectatorNightVision(path.join(SERVER, world));
     const props = path.join(SERVER, 'server.properties');
     fs.writeFileSync(props, fs.readFileSync(props, 'utf8').replace(/^level-name=.*$/m, `level-name=${world}`));
+    // The watcher is an operator from the start: its entries (both of its
+    // UUIDs, the one the server resolves by name and the one it joins with)
+    // copied from ops.json files where an op took.
+    try {
+      const ops = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return []; } };
+      const watcher = process.env.TRIAL_WATCHER || 'DoloresDoodle';
+      const known = new Map();
+      for (const d of fs.readdirSync(ROOT).filter(d => d.startsWith('.clean-run'))) for (const o of ops(path.join(ROOT, d, 'ops.json'))) if (o.name === watcher) known.set(o.uuid, o);
+      const mine = ops(path.join(SERVER, 'ops.json'));
+      for (const o of known.values()) if (!mine.some(m => m.uuid === o.uuid)) mine.push(o);
+      fs.writeFileSync(path.join(SERVER, 'ops.json'), JSON.stringify(mine, null, 2));
+    } catch (_) {}
     spawn('sh', ['start.sh'], { cwd: SERVER, detached: true, stdio: 'ignore' }).unref();
     for (let i = 0; i < 120 && !pid(PORT); i++) await sleep(1000);
     const log = () => { try { return fs.readFileSync(path.join(SERVER, 'logs', 'latest.log'), 'utf8'); } catch (_) { return ''; } };
